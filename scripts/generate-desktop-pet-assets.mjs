@@ -28,7 +28,7 @@ const classicVisualVariants = [
   "idle",
   "hover",
   "dragging",
-  "dragging-moving",
+  "drag-moving",
   "awaiting",
   "running",
   "done",
@@ -73,15 +73,15 @@ const communityAtlas = {
   cellHeight: 208
 };
 
-const taskRunSprite = {
+const dragMovingSprite = {
   columns: 15,
   frameWidth: 192,
   frameHeight: 208
 };
 
 const optionalCommunityAssetNames = [
-  "task-run-left.webp",
-  "dance.webp"
+  "drag-moving.webp",
+  "signature/dance.webp"
 ];
 
 const marketPetDefinitions = [
@@ -101,28 +101,23 @@ const marketPetDefinitions = [
     id: "xiao",
     displayName: "小肖",
     description: "黑发西装形象，带着花束和金色奖杯。",
-    tags: ["desktop-pet", "task-run"],
-    capabilities: {
-      taskRun: true
-    }
+    tags: ["desktop-pet", "drag-moving"],
+    animatedDragMoving: true
   },
   {
     id: "pony",
     displayName: "小凌",
     description: "侧马尾 Q 版形象，带着爱心和麦克风。",
-    tags: ["desktop-pet", "task-run", "dance"],
-    capabilities: {
-      taskRun: true,
-      dance: true
-    },
-    signatureActions: [
+    tags: ["desktop-pet", "drag-moving", "signature"],
+    animatedDragMoving: true,
+    signature: [
       {
         id: "dance",
         label: "跳舞",
         trigger: ["manual", "idle-random"],
         variants: [
           {
-            path: "dance.webp",
+            path: "signature/dance.webp",
             frameCount: 30,
             durationMs: 5200,
             weight: 1
@@ -137,44 +132,49 @@ const marketPetDefinitionById = new Map(marketPetDefinitions.map((definition) =>
 
 const marketPetStaticStates = {
   awaiting: {
-    path: "pet-awaiting.png"
+    path: "awaiting.png"
   },
   done: {
-    path: "pet-done.png",
+    path: "done.png",
     holdMs: 2500
   },
   "drag-moving": {
-    path: "pet-dragging-moving.png",
+    path: "drag-moving.png",
     mirror: true
   },
   dragging: {
-    path: "pet-dragging.png"
+    path: "dragging.png"
   },
   error: {
-    path: "pet-error.png",
+    path: "error.png",
     holdMs: 3000
   },
   hover: {
-    path: "pet-hover.png"
+    path: "hover.png"
   },
   idle: {
-    path: "pet-idle.png"
+    path: "idle.png"
+  },
+  running: {
+    path: "running.png"
   }
 };
 
 const defaultSourceAssetNames = [
   "awaiting.png",
   "done.png",
+  "done.webp",
   "drag-moving.png",
   "drag-moving.webp",
   "dragging.png",
   "error.png",
   "hover.png",
   "idle.png",
-  "message.png",
+  "idle.webp",
   "pet.json",
   "running-alt.png",
   "running.png",
+  "running.webp",
   "signature/chant.webp",
   "spritesheet.webp"
 ];
@@ -182,7 +182,7 @@ const defaultSourceAssetNames = [
 const communityFrameSelections = {
   awaiting: { row: 8, column: 2 },
   dragging: { row: 4, column: 2 },
-  "dragging-moving": { row: 1, column: 2 },
+  "drag-moving": { row: 1, column: 2 },
   done: { row: 4, column: 3 },
   error: { row: 5, column: 5 },
   hover: { row: 3, column: 1 },
@@ -193,7 +193,7 @@ const communityFrameSelections = {
 const xiaoFrameSelections = {
   awaiting: { row: 8, column: 2 },
   dragging: { row: 7, column: 2 },
-  "dragging-moving": { row: 7, column: 2 },
+  "drag-moving": { row: 7, column: 2 },
   done: { row: 6, column: 4 },
   error: { row: 5, column: 3 },
   hover: { row: 6, column: 1 },
@@ -706,7 +706,7 @@ function drawSpark(ctx) {
 }
 
 function renderPetVariant(variant) {
-  const resolvedVariant = variant === "dragging-moving" ? "dragging" : variant;
+  const resolvedVariant = variant === "drag-moving" ? "dragging" : variant;
   const canvas = createCanvas(size.width, size.height);
   const ctx = canvas.getContext("2d");
   drawBackdrop(ctx);
@@ -1000,12 +1000,12 @@ function renderXiaoPetVariant(spritesheet, variant) {
   return renderCommunityPetVariant(spritesheet, variant, selection);
 }
 
-function renderXiaoTaskRunSprite(image) {
-  const canvas = createCanvas(taskRunSprite.frameWidth * taskRunSprite.columns, taskRunSprite.frameHeight);
+function renderXiaoDragMovingSprite(image) {
+  const canvas = createCanvas(dragMovingSprite.frameWidth * dragMovingSprite.columns, dragMovingSprite.frameHeight);
   const ctx = canvas.getContext("2d");
 
-  for (let frame = 0; frame < taskRunSprite.columns; frame += 1) {
-    const frameWidth = image.width / taskRunSprite.columns;
+  for (let frame = 0; frame < dragMovingSprite.columns; frame += 1) {
+    const frameWidth = image.width / dragMovingSprite.columns;
     const sourceWidth = frameWidth * 1.52;
     const centerX = (frame + 0.5) * frameWidth;
     const sx = Math.max(0, Math.round(centerX - sourceWidth / 2));
@@ -1014,10 +1014,10 @@ function renderXiaoTaskRunSprite(image) {
     drawSubjectInFrame(
       ctx,
       subjectCanvas,
-      frame * taskRunSprite.frameWidth,
+      frame * dragMovingSprite.frameWidth,
       0,
-      taskRunSprite.frameWidth,
-      taskRunSprite.frameHeight
+      dragMovingSprite.frameWidth,
+      dragMovingSprite.frameHeight
     );
   }
 
@@ -1030,7 +1030,7 @@ async function renderScriptedAppearance(appearance) {
   }
   const sourceImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "source-chroma.png"));
   const spritesheetImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "spritesheet-source.png"));
-  const taskRunImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "task-run-left-source.png"));
+  const dragMovingImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "drag-moving-source.png"));
   const subjectCanvas = chromaKeySourceImage(sourceImage);
   const spritesheet = renderXiaoSpritesheet(spritesheetImage);
   const buffers = new Map();
@@ -1039,11 +1039,11 @@ async function renderScriptedAppearance(appearance) {
     buffers.set(variant, crispSourceBuffer);
   }
   buffers.set("dragging", drawXiaoSourceVariant(subjectCanvas, { rotate: -0.04 }));
-  buffers.set("dragging-moving", drawXiaoSourceVariant(subjectCanvas, { offsetX: -8, rotate: -0.05 }));
+  buffers.set("drag-moving", drawXiaoSourceVariant(subjectCanvas, { offsetX: -8, rotate: -0.05 }));
   return {
     buffers,
     spritesheetBuffer: spritesheet.toBuffer("image/webp"),
-    taskRunSpriteBuffer: renderXiaoTaskRunSprite(taskRunImage)
+    dragMovingSpriteBuffer: renderXiaoDragMovingSprite(dragMovingImage)
   };
 }
 
@@ -1064,7 +1064,7 @@ async function renderCommunityAppearance(appearance) {
 async function writeVariantFiles(directory, buffers) {
   await fs.mkdir(directory, { recursive: true });
   for (const [variant, buffer] of buffers.entries()) {
-    await fs.writeFile(path.join(directory, `pet-${variant}.png`), buffer);
+    await fs.writeFile(path.join(directory, `${variant}.png`), buffer);
   }
 }
 
@@ -1086,13 +1086,17 @@ async function writeMarketPetManifest(directory, petId) {
   }
   const states = {
     ...marketPetStaticStates,
-    ...(definition.capabilities?.taskRun
-      ? {}
-      : {
-          running: {
-            path: "pet-running.png"
+    ...(definition.animatedDragMoving
+      ? {
+          "drag-moving": {
+            path: "drag-moving.webp",
+            frameCount: 15,
+            durationMs: 900,
+            loop: true,
+            mirror: true
           }
-        })
+        }
+      : {})
   };
   const manifest = {
     id: definition.id,
@@ -1100,10 +1104,9 @@ async function writeMarketPetManifest(directory, petId) {
     version: "1.0.0",
     description: definition.description,
     tags: definition.tags,
-    previewAssetPath: "pet-idle.png",
+    preview: "idle.png",
     states,
-    ...(definition.capabilities ? { capabilities: definition.capabilities } : {}),
-    ...(definition.signatureActions ? { signatureActions: definition.signatureActions } : {})
+    ...(definition.signature ? { signature: definition.signature } : {})
   };
   await fs.writeFile(path.join(directory, "pet.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
@@ -1169,8 +1172,8 @@ for (const appearance of scriptedAppearances) {
   if (renderedAppearance.spritesheetBuffer) {
     await fs.writeFile(path.join(appearanceOutputDirectory, "spritesheet.webp"), renderedAppearance.spritesheetBuffer);
   }
-  if (renderedAppearance.taskRunSpriteBuffer) {
-    await fs.writeFile(path.join(appearanceOutputDirectory, "task-run-left.webp"), renderedAppearance.taskRunSpriteBuffer);
+  if (renderedAppearance.dragMovingSpriteBuffer) {
+    await fs.writeFile(path.join(appearanceOutputDirectory, "drag-moving.webp"), renderedAppearance.dragMovingSpriteBuffer);
   }
 }
 
@@ -1188,10 +1191,13 @@ for (const appearance of communityAppearances) {
   }
   for (const assetName of optionalCommunityAssetNames) {
     const sourcePath = path.join(sourceAssetDirectory, appearance.id, assetName);
+    const targetPath = path.join(appearanceOutputDirectory, assetName);
     try {
+      await fs.access(sourcePath);
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.copyFile(
         sourcePath,
-        path.join(appearanceOutputDirectory, assetName)
+        targetPath
       );
     } catch (error) {
       if (error?.code !== "ENOENT") {

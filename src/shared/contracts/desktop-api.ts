@@ -3,7 +3,7 @@ import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadRe
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
-import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
+import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
 import type { MarketCommandResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConfigResult, TaskBoardDeleteResult, TaskBoardDesktopOnlineResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult, TaskBoardSettingsInput, TaskBoardSettingsResult } from "./task-board";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
@@ -327,7 +327,7 @@ export interface DesktopApi {
     dismissPreview: () => Promise<{ ok: boolean }>;
     setMouseInteractive: (interactive: boolean) => Promise<{ ok: boolean }>;
     onStateChanged: (listener: DesktopPetStateListener) => () => void;
-    onDanceRequested: (listener: DesktopPetDanceRequestedListener) => () => void;
+    onSignatureRequested: (listener: DesktopPetSignatureRequestedListener) => () => void;
   };
   quickAssistant: {
     hide: () => Promise<{ ok: boolean }>;

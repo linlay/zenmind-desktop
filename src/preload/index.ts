@@ -14,7 +14,7 @@ import type {
   AssistantVoiceTranscriptionRequest,
   DesktopActionCallListener,
   DesktopActionRendererResponse,
-  DesktopPetDanceRequestedListener,
+  DesktopPetSignatureRequestedListener,
   DesktopSsoStatusListener,
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
@@ -382,17 +382,17 @@ const api: DesktopApi = {
         ipcRenderer.off("desktopPet.state", handleDesktopPetStateChanged);
       };
     },
-    onDanceRequested: (listener: DesktopPetDanceRequestedListener) => {
-      const handleDesktopPetDanceRequested = (
+    onSignatureRequested: (listener: DesktopPetSignatureRequestedListener) => {
+      const handleDesktopPetSignatureRequested = (
         _event: Electron.IpcRendererEvent,
-        signatureActionId?: string
+        signatureId?: string
       ) => {
-        listener(signatureActionId);
+        listener(signatureId);
       };
 
-      ipcRenderer.on("desktopPet.danceRequested", handleDesktopPetDanceRequested);
+      ipcRenderer.on("desktopPet.signatureRequested", handleDesktopPetSignatureRequested);
       return () => {
-        ipcRenderer.off("desktopPet.danceRequested", handleDesktopPetDanceRequested);
+        ipcRenderer.off("desktopPet.signatureRequested", handleDesktopPetSignatureRequested);
       };
     }
   },

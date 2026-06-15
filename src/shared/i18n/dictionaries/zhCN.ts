@@ -558,7 +558,7 @@ export const zhCNMessages = {
   "market.cli.desktopDoesNotInstall": "CLI 由配套脚本安装，Desktop 只复制脚本并读取安装状态。",
   "market.pet.invalidId": "宠物标识无效。",
   "market.pet.invalidArchivePath": "宠物包包含不安全路径。",
-  "market.pet.invalidPackage": "宠物包必须包含 pet.json 和 idle.png，或兼容旧版 pet-idle.png。",
+  "market.pet.invalidPackage": "宠物包必须使用当前 pet.json 标准，并包含所有必需状态资源。",
   "market.pet.idMismatch": "宠物包标识不匹配：期望 {expected}，实际 {actual}。",
   "market.pet.installed": "已安装宠物 {name}。",
   "market.pet.uninstalled": "已卸载宠物 {name}。",

@@ -59,6 +59,62 @@ function createAgentStatus(overrides = {}) {
   };
 }
 
+function writeStrictUserPet(petRoot, overrides = {}) {
+  fs.mkdirSync(path.join(petRoot, "signature"), { recursive: true });
+  for (const fileName of [
+    "idle.png",
+    "running.png",
+    "awaiting.png",
+    "done.png",
+    "error.png",
+    "hover.png",
+    "dragging.png",
+    "drag-moving.webp"
+  ]) {
+    fs.writeFileSync(path.join(petRoot, fileName), "fake asset", "utf8");
+  }
+  fs.writeFileSync(path.join(petRoot, "signature", "dance.webp"), "fake webp", "utf8");
+  const manifest = {
+    id: "pony",
+    displayName: "小凌",
+    version: "1.0.0",
+    description: "Strict user pet",
+    preview: "idle.png",
+    states: {
+      idle: { path: "idle.png" },
+      running: { path: "running.png" },
+      awaiting: { path: "awaiting.png" },
+      done: { path: "done.png", holdMs: 2500 },
+      error: { path: "error.png", holdMs: 3000 },
+      hover: { path: "hover.png" },
+      dragging: { path: "dragging.png" },
+      "drag-moving": {
+        path: "drag-moving.webp",
+        frameCount: 15,
+        durationMs: 900,
+        loop: true,
+        mirror: true
+      }
+    },
+    signature: [
+      {
+        id: "dance",
+        label: "跳舞",
+        trigger: ["manual"],
+        variants: [
+          {
+            path: "signature/dance.webp",
+            frameCount: 30,
+            durationMs: 5200
+          }
+        ]
+      }
+    ],
+    ...overrides
+  };
+  fs.writeFileSync(path.join(petRoot, "pet.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 test("desktop pet state exposes awaiting when the bound agent has a pending awaiting prompt", () => {
   const state = createDesktopPetState(createSettings(), {
     supported: true,
@@ -103,7 +159,7 @@ test("desktop pet state exposes awaiting when any active task is awaiting", () =
   assert.equal(state.status, "awaiting");
 });
 
-test("desktop pet visual arbitration keeps awaiting above task-run, hover, and signature", () => {
+test("desktop pet visual arbitration keeps awaiting above hover and signature", () => {
   const {
     deriveDesktopPetVisualStatus
   } = require("../dist-electron/shared/desktop-pet-visual.js");
@@ -113,7 +169,6 @@ test("desktop pet visual arbitration keeps awaiting above task-run, hover, and s
     isDragging: false,
     dragDirection: null,
     hasActiveSignature: true,
-    shouldShowTaskRunAnimation: true,
     canShowHoverReaction: true,
     isHovering: true,
     isKeyboardFocused: false
@@ -133,7 +188,6 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     dragDirection: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
-    shouldShowTaskRunAnimation: false,
     canShowHoverReaction: true,
     isHovering: true,
     isKeyboardFocused: false
@@ -145,7 +199,6 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     dragDirection: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
-    shouldShowTaskRunAnimation: false,
     canShowHoverReaction: true,
     isHovering: true,
     isKeyboardFocused: false
@@ -157,7 +210,6 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     dragDirection: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
-    shouldShowTaskRunAnimation: false,
     canShowHoverReaction: true,
     isHovering: false,
     isKeyboardFocused: false
@@ -173,7 +225,6 @@ test("desktop pet visual arbitration does not emit thinking or message states", 
     isDragging: false,
     dragDirection: null,
     hasActiveSignature: false,
-    shouldShowTaskRunAnimation: false,
     canShowHoverReaction: false,
     isHovering: false,
     isKeyboardFocused: false
@@ -201,7 +252,6 @@ test("desktop pet visual arbitration lets manual signature surface over hover", 
     dragDirection: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "manual",
-    shouldShowTaskRunAnimation: false,
     canShowHoverReaction: true,
     isHovering: true,
     isKeyboardFocused: false
@@ -211,7 +261,7 @@ test("desktop pet visual arbitration lets manual signature surface over hover", 
 test("desktop pet context menu exposes manual signature actions", () => {
   assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
     action: "signature",
-    signatureActionId: "chant",
+    signatureId: "chant",
     label: "念经"
   });
 
@@ -244,7 +294,7 @@ test("desktop pet context menu exposes manual signature actions", () => {
   ]), [
     {
       action: "signature",
-      signatureActionId: "chant",
+      signatureId: "chant",
       label: "念经"
     },
     {
@@ -257,7 +307,26 @@ test("desktop pet context menu exposes manual signature actions", () => {
 test("desktop pet keeps built-in chant available only for the default pet", () => {
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id), ["classic"]);
   assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].displayName, "小禅");
-  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].preview, "idle.png");
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].preview, "idle.webp");
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.idle, {
+    path: "idle.webp",
+    frameCount: 3,
+    durationMs: 6000,
+    loop: true
+  });
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.running, {
+    path: "running.webp",
+    frameCount: 12,
+    durationMs: 1800,
+    loop: true
+  });
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.done, {
+    path: "done.webp",
+    frameCount: 6,
+    durationMs: 1200,
+    loop: false,
+    holdMs: 2500
+  });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states["drag-moving"], {
     path: "drag-moving.webp",
     frameCount: 15,
@@ -286,7 +355,7 @@ test("desktop pet keeps built-in chant available only for the default pet", () =
     trigger: ["manual", "idle-random"],
     variants: [
       {
-        path: "dance.webp",
+        path: "signature/dance.webp",
         frameCount: 30,
         durationMs: 5200,
         weight: 1
@@ -296,55 +365,66 @@ test("desktop pet keeps built-in chant available only for the default pet", () =
   assert.deepEqual(resolveDesktopPetSignatureActions("user:pony", [ponyDanceAction]), [ponyDanceAction]);
   assert.deepEqual(getDesktopPetContextMenuItems("user:pony", [ponyDanceAction])[0], {
     action: "signature",
-    signatureActionId: "dance",
+    signatureId: "dance",
     label: "跳舞"
   });
 });
 
-test("user desktop pet appearances expose renderer-safe asset protocol URLs", () => {
+test("user desktop pet appearances expose strict renderer-safe asset protocol URLs", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-pet-assets-"));
   try {
     const app = createApp(root);
     const petRoot = path.join(getDesktopPetsDataRoot(app), "pony");
     fs.mkdirSync(petRoot, { recursive: true });
-    fs.writeFileSync(path.join(petRoot, "pet-idle.png"), "fake png", "utf8");
-    fs.writeFileSync(path.join(petRoot, "dance.webp"), "fake webp", "utf8");
-    fs.writeFileSync(path.join(petRoot, "pet.json"), `${JSON.stringify({
-      id: "pony",
-      displayName: "小凌",
-      previewAssetPath: "pet-idle.png",
-      states: {
-        idle: {
-          path: "pet-idle.png"
-        }
-      },
-      signatureActions: [
-        {
-          id: "dance",
-          label: "跳舞",
-          trigger: ["manual"],
-          variants: [
-            {
-              path: "dance.webp",
-              frameCount: 30,
-              durationMs: 5200
-            }
-          ]
-        }
-      ]
-    }, null, 2)}\n`, "utf8");
+    writeStrictUserPet(petRoot);
 
     const options = listUserDesktopPetAppearanceOptions(app);
     assert.equal(options.length, 1);
     assert.equal(options[0].id, "user:pony");
     assert.equal(options[0].assetBasePath, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/`);
-    assert.equal(options[0].previewAssetPath, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/pet-idle.png`);
+    assert.equal(options[0].previewUrl, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/idle.png`);
     assert.deepEqual(options[0].states, {
-      idle: {
-        path: "pet-idle.png"
+      idle: { path: "idle.png" },
+      running: { path: "running.png" },
+      awaiting: { path: "awaiting.png" },
+      done: { path: "done.png", holdMs: 2500 },
+      error: { path: "error.png", holdMs: 3000 },
+      hover: { path: "hover.png" },
+      dragging: { path: "dragging.png" },
+      "drag-moving": {
+        path: "drag-moving.webp",
+        frameCount: 15,
+        durationMs: 900,
+        loop: true,
+        mirror: true
       }
     });
-    assert.equal(options[0].signatureActions?.[0]?.variants[0]?.path, "dance.webp");
+    assert.equal(options[0].signature?.[0]?.variants[0]?.path, "signature/dance.webp");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("user desktop pet appearances reject legacy manifest fields and state names", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-pet-legacy-"));
+  try {
+    const app = createApp(root);
+    const petRoot = path.join(getDesktopPetsDataRoot(app), "legacy");
+    fs.mkdirSync(petRoot, { recursive: true });
+    fs.writeFileSync(path.join(petRoot, "pet-idle.png"), "fake png", "utf8");
+    fs.writeFileSync(path.join(petRoot, "pet.json"), `${JSON.stringify({
+      id: "legacy",
+      displayName: "Legacy",
+      previewAssetPath: "pet-idle.png",
+      states: {
+        idle: { path: "pet-idle.png" },
+        thinking: { path: "pet-thinking.png" },
+        "dragging-moving": { path: "task-run-left.webp" }
+      },
+      signatureActions: []
+    }, null, 2)}\n`, "utf8");
+
+    assert.deepEqual(listUserDesktopPetAppearanceOptions(app), []);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -360,7 +440,6 @@ test("desktop pet visual maps dragging movement onto a single mirrored state", (
     isDragging: true,
     dragDirection: null,
     hasActiveSignature: false,
-    shouldShowTaskRunAnimation: false,
     canShowHoverReaction: false,
     isHovering: false,
     isKeyboardFocused: false
@@ -381,7 +460,6 @@ test("desktop pet visual keeps running as the running state", () => {
     isDragging: false,
     dragDirection: null,
     hasActiveSignature: false,
-    shouldShowTaskRunAnimation: false,
     hasMessageReaction: false,
     canShowHoverReaction: false,
     isHovering: false,

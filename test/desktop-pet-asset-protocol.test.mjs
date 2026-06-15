@@ -32,12 +32,12 @@ test("desktop pet asset protocol resolves only image files inside the pet root",
     const app = createApp(root);
     const petRoot = path.join(getDesktopPetsDataRoot(app), "pony");
     fs.mkdirSync(petRoot, { recursive: true });
-    const idlePath = path.join(petRoot, "pet-idle.png");
+    const idlePath = path.join(petRoot, "idle.png");
     fs.writeFileSync(idlePath, "fake png", "utf8");
     fs.writeFileSync(path.join(petRoot, "pet.json"), "{}", "utf8");
 
     assert.equal(
-      resolveDesktopPetAssetRequest(app, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/pet-idle.png`),
+      resolveDesktopPetAssetRequest(app, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/idle.png`),
       fs.realpathSync.native(idlePath)
     );
     assert.equal(resolveDesktopPetAssetRequest(app, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/pet.json`), "");
@@ -52,7 +52,7 @@ test("desktop pet asset path containment handles Windows and macOS path rules", 
   assert.equal(
     isDesktopPetAssetPathInsideRoot(
       "C:\\Users\\Lin\\.zenmind\\.desktop\\data\\pets\\pony",
-      "C:\\Users\\Lin\\.zenmind\\.desktop\\data\\pets\\pony\\pet-idle.png",
+      "C:\\Users\\Lin\\.zenmind\\.desktop\\data\\pets\\pony\\idle.png",
       "win32"
     ),
     true
@@ -60,7 +60,7 @@ test("desktop pet asset path containment handles Windows and macOS path rules", 
   assert.equal(
     isDesktopPetAssetPathInsideRoot(
       "C:\\Users\\Lin\\.zenmind\\.desktop\\data\\pets\\pony",
-      "C:\\Users\\Lin\\.zenmind\\.desktop\\data\\pets\\other\\pet-idle.png",
+      "C:\\Users\\Lin\\.zenmind\\.desktop\\data\\pets\\other\\idle.png",
       "win32"
     ),
     false
@@ -68,7 +68,7 @@ test("desktop pet asset path containment handles Windows and macOS path rules", 
   assert.equal(
     isDesktopPetAssetPathInsideRoot(
       "/Users/lin/.zenmind/.desktop/data/pets/pony",
-      "/Users/lin/.zenmind/.desktop/data/pets/pony/pet-idle.png",
+      "/Users/lin/.zenmind/.desktop/data/pets/pony/idle.png",
       "darwin"
     ),
     true
@@ -76,7 +76,7 @@ test("desktop pet asset path containment handles Windows and macOS path rules", 
   assert.equal(
     isDesktopPetAssetPathInsideRoot(
       "/Users/lin/.zenmind/.desktop/data/pets/pony",
-      "/Users/lin/.zenmind/.desktop/data/pets/other/pet-idle.png",
+      "/Users/lin/.zenmind/.desktop/data/pets/other/idle.png",
       "darwin"
     ),
     false

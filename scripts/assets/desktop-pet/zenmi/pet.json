@@ -8,19 +8,28 @@
     "zen",
     "signature"
   ],
-  "preview": "idle.png",
+  "preview": "idle.webp",
   "states": {
     "idle": {
-      "path": "idle.png"
+      "path": "idle.webp",
+      "frameCount": 3,
+      "durationMs": 6000,
+      "loop": true
     },
     "running": {
-      "path": "running.png"
+      "path": "running.webp",
+      "frameCount": 12,
+      "durationMs": 1800,
+      "loop": true
     },
     "awaiting": {
       "path": "awaiting.png"
     },
     "done": {
-      "path": "done.png",
+      "path": "done.webp",
+      "frameCount": 6,
+      "durationMs": 1200,
+      "loop": false,
       "holdMs": 2500
     },
     "error": {

@@ -558,7 +558,7 @@ export const enUSMessages = {
   "market.cli.desktopDoesNotInstall": "CLI items are installed by their companion scripts. Desktop only copies scripts and reads installed state.",
   "market.pet.invalidId": "Pet id is invalid.",
   "market.pet.invalidArchivePath": "Pet package contains unsafe paths.",
-  "market.pet.invalidPackage": "Pet package must contain pet.json and idle.png or legacy pet-idle.png.",
+  "market.pet.invalidPackage": "Pet package must use the current pet.json schema and include all required state assets.",
   "market.pet.idMismatch": "Pet package id mismatch: expected {expected}, got {actual}.",
   "market.pet.installed": "Installed pet {name}.",
   "market.pet.uninstalled": "Uninstalled pet {name}.",

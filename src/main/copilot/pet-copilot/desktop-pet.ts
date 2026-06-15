@@ -3,7 +3,6 @@ import path from "node:path";
 import type { App, Rectangle } from "electron";
 import type {
   DesktopPetAppearanceOption,
-  DesktopPetCapabilities,
   DesktopPetSignatureAction,
   DesktopPetStateAsset,
   DesktopPetStateAssets,
@@ -21,12 +20,10 @@ import {
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_USER_ASSET_PROTOCOL,
   DESKTOP_PET_DONE_FALLBACK_TEXT,
-  DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_APPEARANCE_OPTIONS,
+  DESKTOP_PET_REQUIRED_STATE_KEYS,
   DESKTOP_PET_STATUS_HINT_TEXTS,
   applyDesktopPetActiveRunEvent,
-  getDesktopPetCapabilities,
-  getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetSignatureActions,
   normalizeDesktopPetAppearanceId,
   normalizeDesktopPetBoundAgentKey,
@@ -35,11 +32,9 @@ import {
   resolveDesktopPetRunningTaskCount,
   sanitizeDesktopPetRunningTaskCount,
   sanitizeDesktopPetUnreadCount,
-  shouldUseDesktopPetTaskRunningAnimation,
   truncateDesktopPetReplyPreview
 } from "../../../shared/desktop-pet";
 import {
-  getDesktopConfigRoot,
   getDesktopPetSettingsPath as resolveDesktopPetSettingsPath,
   getDesktopPetsDataRoot,
   getDesktopStateRoot
@@ -49,11 +44,9 @@ export {
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS,
   applyDesktopPetActiveRunEvent,
-  getDesktopPetRunningTaskAnimationDurationMs,
   normalizeDesktopPetAppearanceId,
   normalizeDesktopPetBoundAgentKey,
-  resolveDesktopPetRunningTaskCount,
-  shouldUseDesktopPetTaskRunningAnimation
+  resolveDesktopPetRunningTaskCount
 } from "../../../shared/desktop-pet";
 
 export const sanitizeDesktopPetAppearanceId = normalizeDesktopPetAppearanceId;
@@ -145,7 +138,7 @@ type DesktopPetClampOptions = {
 export type DesktopPetContextMenuItem =
   | {
       action: "signature";
-      signatureActionId: string;
+      signatureId: string;
       label: string;
     }
   | {
@@ -168,7 +161,6 @@ const DEFAULT_OFFSET = {
 const DESKTOP_PET_SCHEMA_VERSION = 1;
 const DEFAULT_DESKTOP_PET_ID = "builtin:zenmi";
 const DESKTOP_PET_CONFIG_FILE = "pet.json";
-const LEGACY_DESKTOP_PET_CONFIG_FILE = "desktop-pet.json";
 const DESKTOP_PET_STATE_FILE = "pet-state.json";
 const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 24;
 
@@ -178,10 +170,6 @@ function getDesktopPetRoot(app: App) {
 
 function getDesktopPetSettingsPath(app: App) {
   return resolveDesktopPetSettingsPath(app);
-}
-
-function getLegacyDesktopPetSettingsPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), LEGACY_DESKTOP_PET_CONFIG_FILE);
 }
 
 function getDesktopPetStatePath(app: App) {
@@ -198,15 +186,15 @@ function ensureDesktopPetStateRoot(app: App) {
 
 export function getDesktopPetContextMenuItems(
   appearanceId: unknown,
-  signatureActions: DesktopPetSignatureAction[] = getDesktopPetSignatureActions(appearanceId)
+  signature: DesktopPetSignatureAction[] = getDesktopPetSignatureActions(appearanceId)
 ): DesktopPetContextMenuItem[] {
-  const resolvedSignatureActions = resolveDesktopPetSignatureActions(appearanceId, signatureActions);
+  const resolvedSignature = resolveDesktopPetSignatureActions(appearanceId, signature);
   return [
-    ...resolvedSignatureActions
+    ...resolvedSignature
       .filter((action) => action.trigger.includes("manual"))
       .map((action) => ({
         action: "signature" as const,
-        signatureActionId: action.id,
+        signatureId: action.id,
         label: action.label
       })),
     {
@@ -422,45 +410,32 @@ function readUserPetText(manifest: Record<string, unknown>, keys: string[], fall
   return fallback;
 }
 
-function readDesktopPetManifestStatePath(manifest: Record<string, unknown>, state: string) {
-  const states = manifest.states && typeof manifest.states === "object" && !Array.isArray(manifest.states)
-    ? manifest.states as Record<string, unknown>
-    : {};
-  const asset = states[state];
-  if (typeof asset === "string") {
-    return asset.trim();
-  }
-  if (asset && typeof asset === "object" && !Array.isArray(asset)) {
-    const pathValue = (asset as { path?: unknown }).path;
-    return typeof pathValue === "string" ? pathValue.trim() : "";
-  }
-  return "";
+const FORBIDDEN_DESKTOP_PET_MANIFEST_KEYS = new Set(["previewAssetPath", "signatureActions", "capabilities"]);
+const DESKTOP_PET_REQUIRED_STATE_KEY_SET: ReadonlySet<string> = new Set(DESKTOP_PET_REQUIRED_STATE_KEYS);
+
+function isForbiddenDesktopPetAssetPath(relativePath: string) {
+  const safeRelative = sanitizeDesktopPetAssetRelativePath(relativePath);
+  const fileName = path.posix.basename(safeRelative);
+  return fileName.startsWith("pet-") ||
+    safeRelative === "task-run-left.webp" ||
+    safeRelative === "dance.webp";
 }
 
-function userPetPreviewAssetUrl(rootPath: string, manifest: Record<string, unknown>) {
-  const candidates = [
-    readUserPetText(manifest, ["preview", "previewAssetPath"]),
-    readDesktopPetManifestStatePath(manifest, "idle"),
-    "idle.png",
-    "pet-idle.png"
-  ].filter(Boolean);
-  const relative = candidates.find((candidate) => {
-    const safeRelative = candidate.replace(/\\/gu, "/").replace(/^\/+/u, "");
-    return fs.existsSync(path.join(rootPath, safeRelative));
-  }) ?? candidates[0] ?? "idle.png";
-  return userPetAssetUrl(readUserPetText(manifest, ["id"], path.basename(rootPath)), relative) ||
-    userPetAssetUrl(path.basename(rootPath), "idle.png");
+function isDesktopPetAssetFilePresent(rootPath: string, relativePath: string) {
+  const safeRelative = sanitizeDesktopPetAssetRelativePath(relativePath);
+  return Boolean(
+    safeRelative &&
+    !isForbiddenDesktopPetAssetPath(safeRelative) &&
+    fs.existsSync(path.join(rootPath, safeRelative))
+  );
 }
 
-function sanitizeDesktopPetCapabilities(value: unknown): DesktopPetCapabilities | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const candidate = value as Record<string, unknown>;
-  return {
-    ...(typeof candidate.taskRun === "boolean" ? { taskRun: candidate.taskRun } : {}),
-    ...(typeof candidate.dance === "boolean" ? { dance: candidate.dance } : {})
-  };
+function hasForbiddenDesktopPetManifestKey(manifest: Record<string, unknown>) {
+  return Object.keys(manifest).some((key) => FORBIDDEN_DESKTOP_PET_MANIFEST_KEYS.has(key));
+}
+
+function userPetPreviewUrl(pet: UserDesktopPetAsset, preview: string) {
+  return userPetAssetUrl(pet.petId, preview);
 }
 
 function sanitizeDesktopPetSignaturePath(value: unknown) {
@@ -493,7 +468,7 @@ function sanitizeDesktopPetSignatureActions(value: unknown): DesktopPetSignature
           const path = sanitizeDesktopPetSignaturePath(rawVariant.path);
           const frameCount = Math.max(1, Math.round(Number(rawVariant.frameCount) || 0));
           const durationMs = Math.max(100, Math.round(Number(rawVariant.durationMs) || 0));
-          if (!path || frameCount <= 1) {
+          if (!path) {
             return [];
           }
           return [{
@@ -518,10 +493,6 @@ function sanitizeDesktopPetSignatureActions(value: unknown): DesktopPetSignature
 }
 
 function sanitizeDesktopPetStateAsset(value: unknown): DesktopPetStateAsset | undefined {
-  if (typeof value === "string") {
-    const path = sanitizeDesktopPetSignaturePath(value);
-    return path ? { path } : undefined;
-  }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
@@ -533,13 +504,15 @@ function sanitizeDesktopPetStateAsset(value: unknown): DesktopPetStateAsset | un
   const frameCount = Math.max(1, Math.round(Number(candidate.frameCount) || 1));
   const durationMs = Math.max(0, Math.round(Number(candidate.durationMs) || 0));
   const holdMs = Math.max(0, Math.round(Number(candidate.holdMs) || 0));
+  const alts = sanitizeDesktopPetSignatureActions(candidate.alts);
   return {
     path,
     ...(frameCount > 1 ? { frameCount } : {}),
     ...(durationMs > 0 ? { durationMs } : {}),
     ...(typeof candidate.loop === "boolean" ? { loop: candidate.loop } : {}),
     ...(typeof candidate.mirror === "boolean" ? { mirror: candidate.mirror } : {}),
-    ...(holdMs > 0 ? { holdMs } : {})
+    ...(holdMs > 0 ? { holdMs } : {}),
+    ...(alts ? { alts } : {})
   };
 }
 
@@ -547,39 +520,70 @@ function sanitizeDesktopPetStates(value: unknown): DesktopPetStateAssets | undef
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
-  const states: DesktopPetStateAssets = {};
-  for (const [key, rawAsset] of Object.entries(value)) {
-    const normalizedKey = key === "dragging-moving"
-      ? "drag-moving"
-      : key === "thinking"
-        ? "running"
-        : key === "message" || key === "unread"
-          ? "done"
-          : key;
-    if (!normalizedKey) {
-      continue;
-    }
-    const asset = sanitizeDesktopPetStateAsset(rawAsset);
-    if (asset) {
-      states[normalizedKey] = asset;
-    }
+  const rawStates = value as Record<string, unknown>;
+  if (Object.keys(rawStates).some((key) => !DESKTOP_PET_REQUIRED_STATE_KEY_SET.has(key))) {
+    return undefined;
   }
-  return Object.keys(states).length > 0 ? states : undefined;
+  const states: DesktopPetStateAssets = {};
+  for (const key of DESKTOP_PET_REQUIRED_STATE_KEYS) {
+    const asset = sanitizeDesktopPetStateAsset(rawStates[key]);
+    if (!asset) {
+      return undefined;
+    }
+    states[key] = asset;
+  }
+  return states;
+}
+
+function areDesktopPetSignatureAssetsPresent(rootPath: string, actions: DesktopPetSignatureAction[] | undefined) {
+  if (!actions) {
+    return true;
+  }
+  return actions.every((action) =>
+    action.variants.every((variant) => isDesktopPetAssetFilePresent(rootPath, variant.path))
+  );
+}
+
+function areDesktopPetStateAssetsPresent(rootPath: string, states: DesktopPetStateAssets | undefined) {
+  if (!states) {
+    return false;
+  }
+  return DESKTOP_PET_REQUIRED_STATE_KEYS.every((key) => {
+    const state = states[key];
+    return state &&
+      isDesktopPetAssetFilePresent(rootPath, state.path) &&
+      areDesktopPetSignatureAssetsPresent(rootPath, state.alts);
+  });
 }
 
 export function listUserDesktopPetAppearanceOptions(app: App): DesktopPetAppearanceOption[] {
-  return listUserDesktopPets(app).map((pet) => ({
-    id: pet.id,
-    displayName: readUserPetText(pet.manifest, ["displayName", "name"], pet.petId),
-    description: readUserPetText(pet.manifest, ["description"], ""),
-    assetBasePath: userPetAssetBaseUrl(pet.petId),
-    preview: readUserPetText(pet.manifest, ["preview", "previewAssetPath"], "idle.png"),
-    previewAssetPath: userPetPreviewAssetUrl(pet.rootPath, pet.manifest),
-    capabilities: sanitizeDesktopPetCapabilities(pet.manifest.capabilities),
-    states: sanitizeDesktopPetStates(pet.manifest.states),
-    signature: sanitizeDesktopPetSignatureActions(pet.manifest.signature),
-    signatureActions: sanitizeDesktopPetSignatureActions(pet.manifest.signatureActions)
-  }));
+  return listUserDesktopPets(app).flatMap((pet): DesktopPetAppearanceOption[] => {
+    if (hasForbiddenDesktopPetManifestKey(pet.manifest)) {
+      return [];
+    }
+    const preview = readUserPetText(pet.manifest, ["preview"]);
+    const states = sanitizeDesktopPetStates(pet.manifest.states);
+    const signature = sanitizeDesktopPetSignatureActions(pet.manifest.signature);
+    if (
+      !preview ||
+      !states ||
+      !isDesktopPetAssetFilePresent(pet.rootPath, preview) ||
+      !areDesktopPetStateAssetsPresent(pet.rootPath, states) ||
+      !areDesktopPetSignatureAssetsPresent(pet.rootPath, signature)
+    ) {
+      return [];
+    }
+    return [{
+      id: pet.id,
+      displayName: readUserPetText(pet.manifest, ["displayName", "name"], pet.petId),
+      description: readUserPetText(pet.manifest, ["description"], ""),
+      assetBasePath: userPetAssetBaseUrl(pet.petId),
+      preview,
+      previewUrl: userPetPreviewUrl(pet, preview),
+      states,
+      ...(signature ? { signature } : {})
+    }];
+  });
 }
 
 export function isDesktopPetSupportedPlatform(platform: Platform) {
@@ -608,13 +612,6 @@ export function readDesktopPetStoredState(
     );
   }
 
-  const legacyPath = getLegacyDesktopPetSettingsPath(app);
-  const legacy = readJsonFile(legacyPath);
-  if (legacy) {
-    const migrated = sanitizeDesktopPetStoredState(legacy, supported, options);
-    writeDesktopPetStoredState(app, migrated, platform);
-    return migrated;
-  }
   return sanitizeDesktopPetStoredState(null, supported, options);
 }
 
@@ -842,10 +839,9 @@ export function createDesktopPetState(
     ? sanitizedAppearanceId
     : DEFAULT_DESKTOP_PET_APPEARANCE_ID;
   const appearanceOption = appearanceOptions.find((appearance) => appearance.id === appearanceId);
-  const capabilities = appearanceOption?.capabilities ?? getDesktopPetCapabilities(appearanceId);
-  const signatureActions = resolveDesktopPetSignatureActions(
+  const signature = resolveDesktopPetSignatureActions(
     appearanceId,
-    appearanceOption?.signature ?? appearanceOption?.signatureActions
+    appearanceOption?.signature
   );
   const agentUnreadCount = agentStatus && !agentStatus.stale
     ? sanitizeDesktopPetUnreadCount(agentStatus.unreadCount)
@@ -870,8 +866,7 @@ export function createDesktopPetState(
     previewPanel: options.previewPanel ?? null,
     runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
     edgeDock: options.edgeDock ?? null,
-    capabilities,
-    signatureActions,
+    signature,
     updatedAt: new Date().toISOString()
   };
 }
@@ -981,11 +976,9 @@ export const __testInternals = {
   DEFAULT_OFFSET,
   DEFAULT_DESKTOP_PET_ID,
   DESKTOP_PET_CONFIG_FILE,
-  LEGACY_DESKTOP_PET_CONFIG_FILE,
   DESKTOP_PET_STATE_FILE,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_VISIBLE_FOOTPRINT,
-  DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_WINDOW_SIZES,
   sanitizeDesktopPetStoredState,
   normalizeDesktopPetAppearanceId,
@@ -1002,7 +995,6 @@ export const __testInternals = {
   getAnchoredDesktopPetBounds,
   getDesktopPetLogicalPositionFromBounds,
   getDesktopPetRoot,
-  getLegacyDesktopPetSettingsPath,
   getDesktopPetStatePath,
   listUserDesktopPets,
   listUserDesktopPetAppearanceOptions

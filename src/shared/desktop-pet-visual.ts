@@ -18,7 +18,6 @@ export type DesktopPetVisualStatusInput = {
   dragDirection: DesktopPetDragDirection;
   hasActiveSignature: boolean;
   activeSignatureTrigger?: DesktopPetSignatureTrigger | null;
-  shouldShowTaskRunAnimation: boolean;
   canShowHoverReaction: boolean;
   isHovering: boolean;
   isKeyboardFocused: boolean;
@@ -30,9 +29,6 @@ export function deriveDesktopPetVisualStatus(input: DesktopPetVisualStatusInput)
   }
   if (input.displayStatus === "awaiting") {
     return "awaiting";
-  }
-  if (input.shouldShowTaskRunAnimation) {
-    return "running";
   }
   if (input.displayStatus === "running") {
     return "running";

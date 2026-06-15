@@ -132,16 +132,37 @@ async function writePetArchive(root, options = {}) {
   const petId = options.id ?? "cloud-pet";
   const archivePath = path.join(root, `${petId}.zip`);
   const zip = new JSZip();
+  const states = {
+    idle: { path: "idle.png" },
+    running: { path: "running.png" },
+    awaiting: { path: "awaiting.png" },
+    done: { path: "done.png", holdMs: 2500 },
+    error: { path: "error.png", holdMs: 3000 },
+    hover: { path: "hover.png" },
+    dragging: { path: "dragging.png" },
+    "drag-moving": {
+      path: "drag-moving.webp",
+      frameCount: 15,
+      durationMs: 900,
+      loop: true,
+      mirror: true
+    }
+  };
   zip.file(
     `${petId}/pet.json`,
     `${JSON.stringify({
       id: petId,
       displayName: options.displayName ?? "Cloud Pet",
       version: options.version ?? "1.0.0",
-      description: "Cloud desktop pet"
+      description: "Cloud desktop pet",
+      preview: "idle.png",
+      states
     }, null, 2)}\n`,
   );
-  zip.file(`${petId}/pet-idle.png`, "fake png");
+  for (const asset of ["idle.png", "running.png", "awaiting.png", "done.png", "error.png", "hover.png", "dragging.png"]) {
+    zip.file(`${petId}/${asset}`, "fake png");
+  }
+  zip.file(`${petId}/drag-moving.webp`, "fake webp");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
 }
@@ -1246,7 +1267,7 @@ test("listMarketItems exposes pet and cli catalog sections", async (t) => {
   const pet = result.items.find((item) => item.id === "desk-cat");
   const cli = result.items.find((item) => item.id === "zenmind-cli");
   assert.equal(pet?.type, "pet");
-  assert.equal(pet?.petPreviewAssetPath, "https://assets.example.test/desk-cat.png");
+  assert.equal(pet?.petPreviewUrl, "https://assets.example.test/desk-cat.png");
   assert.equal(cli?.type, "cli");
   assert.match(cli?.cliInstallCommand ?? "", /install\.sh/);
   assert.match(cli?.cliUninstallCommand ?? "", /uninstall\.sh/);
@@ -1337,7 +1358,7 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
         },
         dependencies: [],
         metadata: {
-          previewAssetPath: "pet-idle.png"
+          previewUrl: "https://market.example.test/artifacts/pet/dario.png"
         }
       },
       {

@@ -2283,7 +2283,7 @@ export function SettingsPage({
                 return (
                   <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
                     <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                      <img src={appearance.previewAssetPath} alt="" />
+                      <img src={appearance.previewUrl} alt="" />
                     </span>
                     <span className="desktop-pet-appearance-copy">
                       <strong>{appearanceLabel}</strong>

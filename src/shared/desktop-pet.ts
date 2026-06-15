@@ -1,5 +1,4 @@
 import type {
-  DesktopPetCapabilities,
   DesktopPetSignatureAction,
   DesktopPetStateAsset,
   DesktopPetStateAssets
@@ -23,17 +22,29 @@ export const DESKTOP_PET_STATUS_HINT_TEXTS: ReadonlySet<string> = new Set([
   "目标智能体未在线",
   DESKTOP_PET_DONE_FALLBACK_TEXT
 ]);
-export const DESKTOP_PET_RUNNING_TASK_ANIMATION_BASE_MS = 1500;
-export const DESKTOP_PET_RUNNING_TASK_ANIMATION_STEP_MS = 250;
-export const DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS = 900;
-export const DESKTOP_PET_RUNNING_TASK_ANIMATION_MAX_TASKS = 4;
+
+export const DESKTOP_PET_REQUIRED_STATE_KEYS = [
+  "idle",
+  "running",
+  "awaiting",
+  "done",
+  "error",
+  "hover",
+  "dragging",
+  "drag-moving"
+] as const;
+
+const DESKTOP_PET_STATE_ASSET_KEY_SET: ReadonlySet<string> = new Set(DESKTOP_PET_REQUIRED_STATE_KEYS);
 
 const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = {
   awaiting: {
     path: "awaiting.png"
   },
   done: {
-    path: "done.png",
+    path: "done.webp",
+    frameCount: 6,
+    durationMs: 1200,
+    loop: false,
     holdMs: 2500
   },
   "drag-moving": {
@@ -54,10 +65,16 @@ const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = {
     path: "hover.png"
   },
   idle: {
-    path: "idle.png"
+    path: "idle.webp",
+    frameCount: 3,
+    durationMs: 6000,
+    loop: true
   },
   running: {
-    path: "running.png"
+    path: "running.webp",
+    frameCount: 12,
+    durationMs: 1800,
+    loop: true
   }
 };
 
@@ -83,21 +100,14 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
     displayName: "小禅",
     description: "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
     assetBasePath: "./desktop-pet",
-    preview: "idle.png",
-    previewAssetPath: "./desktop-pet/idle.png",
+    preview: "idle.webp",
+    previewUrl: "./desktop-pet/idle.webp",
     states: DEFAULT_DESKTOP_PET_STATES,
     signature: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS
   }
 ] as const;
 
-const LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES: Record<string, string> = {
-  // Early desktop-pet builds used the display-name pinyin; agent-platform stores 小宅 as zenmi.
-  xiaozhai: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
-};
-
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
-const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set();
-const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set();
 const USER_DESKTOP_PET_APPEARANCE_PATTERN = /^user:[a-z0-9][a-z0-9._-]{0,79}$/u;
 const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetSignatureAction[]> = {
   [DEFAULT_DESKTOP_PET_APPEARANCE_ID]: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS
@@ -105,30 +115,17 @@ const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetS
 
 export const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   awaiting: "awaiting.png",
-  dancing: "idle.png",
-  done: "done.png",
+  done: "done.webp",
   "drag-moving": "drag-moving.webp",
+  "dragging-moving": "drag-moving.webp",
   dragging: "dragging.png",
   error: "error.png",
   hover: "hover.png",
-  idle: "idle.png",
-  message: "done.png",
-  running: "running.png",
-  thinking: "running.png",
-  unread: "done.png"
-};
-
-export const LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
-  awaiting: "pet-awaiting.png",
-  dancing: "pet-idle.png",
-  done: "pet-done.png",
-  "drag-moving": "pet-dragging-moving.png",
-  dragging: "pet-dragging.png",
-  "dragging-moving": "pet-dragging-moving.png",
-  error: "pet-error.png",
-  hover: "pet-hover.png",
-  idle: "pet-idle.png",
-  running: "pet-running.png"
+  idle: "idle.webp",
+  message: "done.webp",
+  running: "running.webp",
+  thinking: "running.webp",
+  unread: "done.webp"
 };
 
 const DESKTOP_PET_RUN_START_EVENT_TYPES = new Set(["run.started", "run.start", "request.query"]);
@@ -185,36 +182,16 @@ export function sanitizeDesktopPetUnreadCount(value: unknown) {
   return sanitizeDesktopPetRunningTaskCount(value);
 }
 
-export function getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount: unknown) {
-  const count = sanitizeDesktopPetRunningTaskCount(runningTaskCount);
-  if (count <= 0) {
-    return DESKTOP_PET_RUNNING_TASK_ANIMATION_BASE_MS;
-  }
-  const effectiveCount = Math.min(count, DESKTOP_PET_RUNNING_TASK_ANIMATION_MAX_TASKS);
-  return Math.max(
-    DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
-    DESKTOP_PET_RUNNING_TASK_ANIMATION_BASE_MS - ((effectiveCount - 1) * DESKTOP_PET_RUNNING_TASK_ANIMATION_STEP_MS)
-  );
-}
-
-export function getDesktopPetCapabilities(appearanceId: unknown): DesktopPetCapabilities {
-  const normalized = normalizeDesktopPetAppearanceId(appearanceId);
-  return {
-    taskRun: DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS.has(normalized),
-    dance: DESKTOP_PET_DANCE_APPEARANCE_IDS.has(normalized)
-  };
-}
-
 export function getDesktopPetSignatureActions(appearanceId: unknown): DesktopPetSignatureAction[] {
   return DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID[normalizeDesktopPetAppearanceId(appearanceId)] ?? [];
 }
 
 export function resolveDesktopPetSignatureActions(
   appearanceId: unknown,
-  signatureActions?: readonly DesktopPetSignatureAction[] | null
+  signature?: readonly DesktopPetSignatureAction[] | null
 ): DesktopPetSignatureAction[] {
-  if (Array.isArray(signatureActions) && signatureActions.length > 0) {
-    return [...signatureActions];
+  if (Array.isArray(signature) && signature.length > 0) {
+    return [...signature];
   }
   return getDesktopPetSignatureActions(appearanceId);
 }
@@ -230,7 +207,7 @@ export function normalizeDesktopPetStateAssetKey(value: unknown) {
   if (normalized === "message" || normalized === "unread") {
     return "done";
   }
-  return normalized || "idle";
+  return DESKTOP_PET_STATE_ASSET_KEY_SET.has(normalized) ? normalized : "idle";
 }
 
 export function getDesktopPetStateAsset(
@@ -244,20 +221,9 @@ export function getDesktopPetStateAsset(
   return states[key] ?? null;
 }
 
-export function getDesktopPetLegacyStatusAssetName(status: unknown) {
-  const raw = typeof status === "string" ? status.trim() : "";
-  const normalized = normalizeDesktopPetStateAssetKey(raw);
-  return LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES[raw] ??
-    LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES[normalized] ??
-    LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES.idle;
-}
-
 export function getDesktopPetStatusAssetName(status: unknown) {
-  const raw = typeof status === "string" ? status.trim() : "";
-  const normalized = normalizeDesktopPetStateAssetKey(raw);
-  return DESKTOP_PET_STATUS_ASSET_NAMES[raw] ??
-    DESKTOP_PET_STATUS_ASSET_NAMES[normalized] ??
-    DESKTOP_PET_STATUS_ASSET_NAMES.idle;
+  const normalized = normalizeDesktopPetStateAssetKey(status);
+  return DESKTOP_PET_STATUS_ASSET_NAMES[normalized] ?? DESKTOP_PET_STATUS_ASSET_NAMES.idle;
 }
 
 export function isDesktopPetAnimatedAsset(asset: DesktopPetStateAsset | null | undefined) {
@@ -267,22 +233,6 @@ export function isDesktopPetAnimatedAsset(asset: DesktopPetStateAsset | null | u
     Math.max(1, Math.round(Number(asset.frameCount) || 1)) > 1 &&
     Math.max(0, Math.round(Number(asset.durationMs) || 0)) > 0
   );
-}
-
-export function shouldUseDesktopPetTaskRunningAnimation(
-  appearanceId: unknown,
-  runningTaskCount: unknown,
-  capabilities?: DesktopPetCapabilities
-) {
-  const supportsTaskRun = typeof capabilities?.taskRun === "boolean"
-    ? capabilities.taskRun
-    : DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS.has(normalizeDesktopPetAppearanceId(appearanceId));
-  return supportsTaskRun &&
-    sanitizeDesktopPetRunningTaskCount(runningTaskCount) > 0;
-}
-
-export function isDesktopPetDanceAppearance(appearanceId: unknown) {
-  return DESKTOP_PET_DANCE_APPEARANCE_IDS.has(normalizeDesktopPetAppearanceId(appearanceId));
 }
 
 export function applyDesktopPetActiveRunEvent(
@@ -340,7 +290,7 @@ export function normalizeDesktopPetBoundAgentKey(value: unknown) {
   if (!normalized) {
     return DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
   }
-  return LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES[normalized] ?? normalized;
+  return normalized;
 }
 
 export function normalizeDesktopPetAppearanceId(value: unknown) {

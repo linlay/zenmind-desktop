@@ -97,21 +97,6 @@ function toFileUrlIfExists(filePath: string) {
   return fs.existsSync(filePath) ? pathToFileURL(filePath).toString() : "";
 }
 
-function readManifestStatePath(manifest: Record<string, unknown>, state: string) {
-  const states = manifest.states && typeof manifest.states === "object" && !Array.isArray(manifest.states)
-    ? manifest.states as Record<string, unknown>
-    : {};
-  const asset = states[state];
-  if (typeof asset === "string") {
-    return asset.trim();
-  }
-  if (asset && typeof asset === "object" && !Array.isArray(asset)) {
-    const pathValue = (asset as { path?: unknown }).path;
-    return typeof pathValue === "string" ? pathValue.trim() : "";
-  }
-  return "";
-}
-
 function getBuiltinDesktopPetAssetUrl(appearanceId: string) {
   const normalized = appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID ? "" : appearanceId;
   const relativeParts = normalized
@@ -140,19 +125,9 @@ function resolveDesktopPetBannerAsset(app: App, appearanceRequest: unknown): Des
   if (!requestedDefault && selectedPetId.startsWith("user:")) {
     const userPet = listUserDesktopPets(app).find((pet) => pet.id === selectedPetId);
     if (userPet) {
-      const relativeCandidates = [
-        readManifestText(userPet.manifest, ["preview", "previewAssetPath", "idleAssetPath", "idle"]),
-        readManifestStatePath(userPet.manifest, "idle"),
-        "idle.png",
-        "pet-idle.png"
-      ].filter(Boolean);
-      const url = relativeCandidates.reduce((resolved, relative) => {
-        if (resolved) {
-          return resolved;
-        }
-        const safeRelative = relative.replace(/\\/gu, "/").replace(/^\/+/u, "");
-        return toFileUrlIfExists(path.join(userPet.rootPath, safeRelative));
-      }, "");
+      const preview = readManifestText(userPet.manifest, ["preview"]);
+      const safeRelative = preview.replace(/\\/gu, "/").replace(/^\/+/u, "");
+      const url = safeRelative ? toFileUrlIfExists(path.join(userPet.rootPath, safeRelative)) : "";
       if (url) {
         return {
           label: readManifestText(userPet.manifest, ["displayName", "name"], userPet.petId),

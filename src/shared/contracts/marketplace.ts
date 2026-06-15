@@ -115,7 +115,7 @@ export interface MarketItem {
   cliInstallCommand?: string;
   cliUninstallCommand?: string;
   cliDetailCommand?: string;
-  petPreviewAssetPath?: string;
+  petPreviewUrl?: string;
 }
 
 export interface MarketListResult {

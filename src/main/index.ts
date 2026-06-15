@@ -1390,24 +1390,24 @@ async function openDesktopPetTaskChat(input: { agentKey?: unknown; chatId?: unkn
   };
 }
 
-function requestDesktopPetSignature(signatureActionId: string) {
+function requestDesktopPetSignature(signatureId: string) {
   if (!appState.desktopPetWindow || appState.desktopPetWindow.isDestroyed()) {
     return { ok: false };
   }
-  appState.desktopPetWindow.webContents.send("desktopPet.danceRequested", signatureActionId);
+  appState.desktopPetWindow.webContents.send("desktopPet.signatureRequested", signatureId);
   return { ok: true };
 }
 
 function buildDesktopPetContextMenu() {
   const template = getDesktopPetContextMenuItems(
     appState.desktopPetState.appearanceId,
-    appState.desktopPetState.signatureActions ?? []
+    appState.desktopPetState.signature ?? []
   )
     .map((item): MenuItemConstructorOptions => ({
       label: item.label,
       click: () => {
         if (item.action === "signature") {
-          requestDesktopPetSignature(item.signatureActionId);
+          requestDesktopPetSignature(item.signatureId);
           return;
         }
         hideDesktopPetWindow(true);

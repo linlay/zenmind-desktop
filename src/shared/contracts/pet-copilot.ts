@@ -21,12 +21,10 @@ export interface DesktopPetAppearanceOption {
   displayName: string;
   description: string;
   assetBasePath: string;
-  preview?: string;
-  previewAssetPath: string;
-  capabilities?: DesktopPetCapabilities;
-  states?: DesktopPetStateAssets;
+  preview: string;
+  previewUrl: string;
+  states: DesktopPetStateAssets;
   signature?: DesktopPetSignatureAction[];
-  signatureActions?: DesktopPetSignatureAction[];
 }
 
 export interface DesktopPetAgentOption {
@@ -105,11 +103,6 @@ export interface DesktopPetPreviewPanel {
   updatedAt: string;
 }
 
-export interface DesktopPetCapabilities {
-  taskRun?: boolean;
-  dance?: boolean;
-}
-
 export type DesktopPetSignatureTrigger = "manual" | "idle-random";
 
 export interface DesktopPetSignatureVariant {
@@ -159,10 +152,9 @@ export interface DesktopPetState {
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
-  capabilities?: DesktopPetCapabilities;
-  signatureActions?: DesktopPetSignatureAction[];
+  signature?: DesktopPetSignatureAction[];
   updatedAt: string;
 }
 
 export type DesktopPetStateListener = (state: DesktopPetState) => void;
-export type DesktopPetDanceRequestedListener = (signatureActionId?: string) => void;
+export type DesktopPetSignatureRequestedListener = (signatureId?: string) => void;

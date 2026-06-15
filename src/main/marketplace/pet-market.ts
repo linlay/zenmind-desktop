@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
-import { DEFAULT_DESKTOP_PET_APPEARANCE_ID } from "../../shared/desktop-pet";
+import { DEFAULT_DESKTOP_PET_APPEARANCE_ID, DESKTOP_PET_REQUIRED_STATE_KEYS } from "../../shared/desktop-pet";
 import { extractArchiveToDir, listArchiveEntriesAsync } from "../archive-utils";
 import {
   listUserDesktopPetAppearanceOptions,
@@ -79,6 +79,30 @@ function readJsonFile(filePath: string) {
   }
 }
 
+function sanitizePetAssetRelativePath(value: unknown) {
+  const normalized = typeof value === "string"
+    ? value.trim().replace(/\\/gu, "/").replace(/^\/+/u, "")
+    : "";
+  if (!normalized) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length === 0 || parts.some((part) => part === "." || part === ".." || part.startsWith("."))) {
+    return "";
+  }
+  return parts.join("/");
+}
+
+function isForbiddenPetAssetPath(relativePath: string) {
+  const safeRelative = sanitizePetAssetRelativePath(relativePath);
+  const parts = safeRelative.split("/").filter(Boolean);
+  const fileName = parts.at(-1) ?? "";
+  const parent = parts.at(-2) ?? "";
+  return fileName.startsWith("pet-") ||
+    fileName === "task-run-left.webp" ||
+    (fileName === "dance.webp" && parent !== "signature");
+}
+
 function assertSafeArchiveEntries(entries: Set<string>) {
   for (const rawEntry of entries) {
     const entry = rawEntry.trim().replace(/\\/gu, "/");
@@ -88,6 +112,15 @@ function assertSafeArchiveEntries(entries: Set<string>) {
     const parts = entry.split("/").filter(Boolean);
     if (parts.some((part) => part === "." || part === "..")) {
       throw new Error(t("market.pet.invalidArchivePath"));
+    }
+    const fileName = parts.at(-1) ?? "";
+    const parent = parts.at(-2) ?? "";
+    if (
+      fileName.startsWith("pet-") ||
+      fileName === "task-run-left.webp" ||
+      (fileName === "dance.webp" && parent !== "signature")
+    ) {
+      throw new Error(t("market.pet.invalidPackage"));
     }
   }
 }
@@ -100,54 +133,82 @@ function hasPetBaseAssets(entries: Set<string>) {
     if (entry.endsWith("/pet.json") || entry === "pet.json") {
       hasManifest = true;
     }
-    if (
-      entry.endsWith("/idle.png") ||
-      entry === "idle.png" ||
-      entry.endsWith("/pet-idle.png") ||
-      entry === "pet-idle.png"
-    ) {
+    if (entry.endsWith("/idle.png") || entry === "idle.png") {
       hasIdleImage = true;
     }
   }
   return hasManifest && hasIdleImage;
 }
 
-function readManifestText(manifest: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = manifest[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
+function assertPetAssetExists(petRoot: string, relativePath: unknown) {
+  const safeRelative = sanitizePetAssetRelativePath(relativePath);
+  if (!safeRelative || isForbiddenPetAssetPath(safeRelative) || !fs.existsSync(path.join(petRoot, safeRelative))) {
+    throw new Error(t("market.pet.invalidPackage"));
+  }
+}
+
+function assertPetSignatureActions(petRoot: string, value: unknown, optional = false) {
+  if (value === undefined && optional) {
+    return;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(t("market.pet.invalidPackage"));
+  }
+  for (const rawAction of value) {
+    if (!rawAction || typeof rawAction !== "object" || Array.isArray(rawAction)) {
+      throw new Error(t("market.pet.invalidPackage"));
+    }
+    const action = rawAction as Record<string, unknown>;
+    const id = readText(action.id);
+    const label = readText(action.label);
+    const triggers = Array.isArray(action.trigger) ? action.trigger : [];
+    const variants = Array.isArray(action.variants) ? action.variants : null;
+    if (
+      !/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(id) ||
+      !label ||
+      !triggers.every((trigger) => trigger === "manual" || trigger === "idle-random") ||
+      !variants
+    ) {
+      throw new Error(t("market.pet.invalidPackage"));
+    }
+    for (const rawVariant of variants) {
+      if (!rawVariant || typeof rawVariant !== "object" || Array.isArray(rawVariant)) {
+        throw new Error(t("market.pet.invalidPackage"));
+      }
+      const variant = rawVariant as Record<string, unknown>;
+      const frameCount = Math.max(1, Math.round(Number(variant.frameCount) || 0));
+      const durationMs = Math.max(0, Math.round(Number(variant.durationMs) || 0));
+      if (frameCount < 1 || durationMs <= 0) {
+        throw new Error(t("market.pet.invalidPackage"));
+      }
+      assertPetAssetExists(petRoot, variant.path);
     }
   }
-  return "";
 }
 
-function readManifestStatePath(manifest: Record<string, unknown>, state: string) {
-  const states = manifest.states && typeof manifest.states === "object" && !Array.isArray(manifest.states)
-    ? manifest.states as Record<string, unknown>
-    : {};
-  const asset = states[state];
-  if (typeof asset === "string") {
-    return asset.trim();
+function assertStrictPetManifest(petRoot: string, manifest: Record<string, unknown>) {
+  if ("previewAssetPath" in manifest || "signatureActions" in manifest || "capabilities" in manifest) {
+    throw new Error(t("market.pet.invalidPackage"));
   }
-  if (asset && typeof asset === "object" && !Array.isArray(asset)) {
-    const pathValue = (asset as { path?: unknown }).path;
-    return typeof pathValue === "string" ? pathValue.trim() : "";
+  assertPetAssetExists(petRoot, manifest.preview);
+  if (!manifest.states || typeof manifest.states !== "object" || Array.isArray(manifest.states)) {
+    throw new Error(t("market.pet.invalidPackage"));
   }
-  return "";
-}
-
-function petIdleAssetExists(petRoot: string, manifest: Record<string, unknown>) {
-  const candidates = [
-    readManifestText(manifest, ["preview", "previewAssetPath", "idleAssetPath", "idle"]),
-    readManifestStatePath(manifest, "idle"),
-    "idle.png",
-    "pet-idle.png"
-  ].filter(Boolean);
-  return candidates.some((relative) => {
-    const safeRelative = relative.replace(/\\/gu, "/").replace(/^\/+/u, "");
-    return fs.existsSync(path.join(petRoot, safeRelative));
-  });
+  const states = manifest.states as Record<string, unknown>;
+  const allowedStateKeys: ReadonlySet<string> = new Set(DESKTOP_PET_REQUIRED_STATE_KEYS);
+  if (Object.keys(states).some((key) => !allowedStateKeys.has(key))) {
+    throw new Error(t("market.pet.invalidPackage"));
+  }
+  for (const key of DESKTOP_PET_REQUIRED_STATE_KEYS) {
+    const state = states[key];
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+      throw new Error(t("market.pet.invalidPackage"));
+    }
+    const stateRecord = state as Record<string, unknown>;
+    assertPetAssetExists(petRoot, stateRecord.path);
+    assertPetSignatureActions(petRoot, stateRecord.alts, true);
+  }
+  assertPetSignatureActions(petRoot, manifest.signature, true);
 }
 
 function findExtractedPetRoot(rootPath: string): string | null {
@@ -168,15 +229,18 @@ function findExtractedPetRoot(rootPath: string): string | null {
 }
 
 function listLocalPets(app: App): MarketItem[] {
-  const optionById = new Map(listUserDesktopPetAppearanceOptions(app).map((option) => [option.id, option]));
-  return listUserDesktopPets(app).map((pet) => {
-    const option = optionById.get(pet.id);
+  const petById = new Map(listUserDesktopPets(app).map((pet) => [pet.id, pet]));
+  return listUserDesktopPetAppearanceOptions(app).flatMap((option) => {
+    const pet = petById.get(option.id);
+    if (!pet) {
+      return [];
+    }
     return {
       id: pet.petId,
       type: "pet" as const,
-      name: option?.displayName ?? pet.petId,
+      name: option.displayName,
       version: readText(pet.manifest.version) || "0.0.0",
-      description: option?.description ?? "",
+      description: option.description,
       tags: Array.isArray(pet.manifest.tags)
         ? pet.manifest.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim()))
         : [],
@@ -184,7 +248,7 @@ function listLocalPets(app: App): MarketItem[] {
       source: "local" as const,
       installedVersion: readText(pet.manifest.version) || "0.0.0",
       installPath: pet.rootPath,
-      petPreviewAssetPath: option?.previewAssetPath
+      petPreviewUrl: option.previewUrl
     };
   });
 }
@@ -192,8 +256,7 @@ function listLocalPets(app: App): MarketItem[] {
 function withPetDisplayFields(items: MarketItem[]): MarketItem[] {
   return items.map((item) => ({
     ...item,
-    petPreviewAssetPath: item.petPreviewAssetPath ||
-      item.metadata?.previewAssetPath ||
+    petPreviewUrl: item.petPreviewUrl ||
       item.metadata?.previewUrl ||
       item.metadata?.imageUrl
   }));
@@ -245,9 +308,7 @@ export async function installPetMarketItem(
     if (manifestId && normalizePetDirectoryName(manifestId) !== safePetDirName) {
       throw new Error(t("market.pet.idMismatch", { expected: item.id, actual: manifestId }));
     }
-    if (!petIdleAssetExists(petRoot, manifest as Record<string, unknown>)) {
-      throw new Error(t("market.pet.invalidPackage"));
-    }
+    assertStrictPetManifest(petRoot, manifest as Record<string, unknown>);
 
     const targetRoot = getDesktopPetsDataRoot(app);
     const installPath = path.join(targetRoot, safePetDirName);

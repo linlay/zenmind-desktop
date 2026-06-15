@@ -966,9 +966,10 @@ test("desktop pet banner resolves builtin and user pet assets", () => {
     fs.mkdirSync(petRoot, { recursive: true });
     fs.writeFileSync(path.join(petRoot, "pet.json"), `${JSON.stringify({
       id: "desk-cat",
-      displayName: "Desk Cat"
+      displayName: "Desk Cat",
+      preview: "idle.png"
     }, null, 2)}\n`, "utf8");
-    fs.writeFileSync(path.join(petRoot, "pet-idle.png"), "fake png", "utf8");
+    fs.writeFileSync(path.join(petRoot, "idle.png"), "fake png", "utf8");
 
     const userPet = desktopEffectsInternals.resolveDesktopPetBannerAsset(app, "current");
     assert.equal(userPet.source, "user");

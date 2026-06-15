@@ -148,7 +148,7 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-root.is-signature .desktop-pet-image {
-  animation: desktop-pet-dance 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  animation: desktop-pet-signature-bounce 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
   transform-origin: 50% 88%;
   filter:
     drop-shadow(0 18px 24px rgba(18, 44, 91, 0.24))
@@ -172,13 +172,13 @@ body.desktop-pet-body,
 .desktop-pet-root.is-signature .desktop-pet-button::before {
   left: 24px;
   top: 36px;
-  animation: desktop-pet-dance-spark-left 1.08s ease-in-out infinite;
+  animation: desktop-pet-signature-spark-left 1.08s ease-in-out infinite;
 }
 
 .desktop-pet-root.is-signature .desktop-pet-button::after {
   right: 22px;
   top: 54px;
-  animation: desktop-pet-dance-spark-right 1.08s ease-in-out 0.18s infinite;
+  animation: desktop-pet-signature-spark-right 1.08s ease-in-out 0.18s infinite;
 }
 
 .desktop-pet-root.has-signature-animation .desktop-pet-button::before,
@@ -205,14 +205,7 @@ body.desktop-pet-body,
   animation-name: desktop-pet-dragging-mirror;
 }
 
-.desktop-pet-root.has-task-run-animation .desktop-pet-image {
-  filter:
-    drop-shadow(0 18px 24px rgba(18, 44, 91, 0.24))
-    drop-shadow(0 0 14px rgba(255, 76, 126, 0.18));
-}
-
-.desktop-pet-state-sprite,
-.desktop-pet-task-run-sprite {
+.desktop-pet-state-sprite {
   display: block;
   width: 96px;
   height: 104px;
@@ -224,10 +217,6 @@ body.desktop-pet-body,
 
 .desktop-pet-state-sprite {
   background-size: calc(96px * var(--desktop-pet-state-frames, 1)) 104px;
-}
-
-.desktop-pet-task-run-sprite {
-  background-size: 1440px 104px;
 }
 
 .desktop-pet-signature-sprite {
@@ -257,10 +246,6 @@ body.desktop-pet-body,
   animation: desktop-pet-shake 0.42s ease-in-out 2;
 }
 
-.desktop-pet-root.has-task-run-animation .desktop-pet-task-run-sprite {
-  animation: desktop-pet-pony-run-frames var(--desktop-pet-task-run-animation-duration, 1500ms) steps(15, end) infinite;
-}
-
 .desktop-pet-root.has-state-animation .desktop-pet-state-sprite {
   animation: desktop-pet-state-frames var(--desktop-pet-state-duration, 900ms) steps(var(--desktop-pet-state-frames, 1), end) var(--desktop-pet-state-loop-count, infinite);
 }
@@ -271,12 +256,6 @@ body.desktop-pet-body,
 
 .desktop-pet-root.has-signature-animation .desktop-pet-signature-sprite {
   animation: desktop-pet-signature-frames var(--desktop-pet-signature-duration, 5200ms) steps(var(--desktop-pet-signature-frames, 30), end) 1 both;
-}
-
-.desktop-pet-root.has-dance-animation .desktop-pet-signature-sprite {
-  filter:
-    drop-shadow(0 18px 24px rgba(18, 44, 91, 0.2))
-    drop-shadow(0 0 12px rgba(255, 76, 126, 0.16));
 }
 
 .desktop-pet-speech {
@@ -732,7 +711,7 @@ body.desktop-pet-body,
   }
 }
 
-@keyframes desktop-pet-dance {
+@keyframes desktop-pet-signature-bounce {
   0%, 100% {
     transform: translateY(0) translateX(0) rotate(0deg) scale(1);
   }
@@ -753,7 +732,7 @@ body.desktop-pet-body,
   }
 }
 
-@keyframes desktop-pet-dance-spark-left {
+@keyframes desktop-pet-signature-spark-left {
   0%, 100% {
     opacity: 0;
     transform: translate(0, 4px) scale(0.68);
@@ -768,7 +747,7 @@ body.desktop-pet-body,
   }
 }
 
-@keyframes desktop-pet-dance-spark-right {
+@keyframes desktop-pet-signature-spark-right {
   0%, 100% {
     opacity: 0;
     transform: translate(0, 5px) scale(0.62);
@@ -807,12 +786,6 @@ body.desktop-pet-body,
   }
   50% {
     transform: translateY(-5px) rotate(-1.8deg) scale(1.018);
-  }
-}
-
-@keyframes desktop-pet-pony-run-frames {
-  to {
-    background-position: -1440px 0;
   }
 }
 

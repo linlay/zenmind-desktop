@@ -23,14 +23,11 @@ import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS,
-  getDesktopPetLegacyStatusAssetName,
-  getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetStateAsset,
   getDesktopPetStatusAssetPath,
   isDesktopPetAnimatedAsset,
   normalizeDesktopPetAppearanceId,
-  resolveDesktopPetSignatureActions,
-  shouldUseDesktopPetTaskRunningAnimation
+  resolveDesktopPetSignatureActions
 } from "../../../shared/desktop-pet";
 import {
   deriveDesktopPetVisualStatus,
@@ -61,8 +58,7 @@ function createFallbackDesktopPetState(): DesktopPetState {
     previewPanel: null,
     runningTaskCount: 0,
     edgeDock: null,
-    capabilities: {},
-    signatureActions: [],
+    signature: [],
     updatedAt: ""
   };
 }
@@ -202,12 +198,6 @@ function getDesktopPetSpriteAssetBasePath(appearanceId: string) {
     : `./desktop-pet/${appearanceId}`;
 }
 
-function resolveDesktopPetTaskRunAssetPath(state: DesktopPetState, appearanceId: string) {
-  const appearance = resolveDesktopPetAppearanceOption(state, appearanceId);
-  const basePath = appearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
-  return joinDesktopPetAssetPath(basePath, "task-run-left.webp");
-}
-
 function joinDesktopPetAssetPath(basePath: string, relativePath: string) {
   const normalizedBasePath = basePath.endsWith("/") ? basePath : `${basePath}/`;
   return `${normalizedBasePath}${relativePath.replace(/^\/+/u, "")}`;
@@ -218,14 +208,6 @@ function resolveDesktopPetAppearanceOption(
   appearanceId: string
 ): DesktopPetAppearanceOption | null {
   return state.appearanceOptions.find((option) => option.id === appearanceId) ?? null;
-}
-
-function resolveDesktopPetStatusAssetPath(
-  state: DesktopPetState,
-  appearanceId: string,
-  status: string
-) {
-  return resolveDesktopPetVisualAsset(state, appearanceId, status).assetPath;
 }
 
 function resolveDesktopPetVisualAsset(
@@ -240,15 +222,6 @@ function resolveDesktopPetVisualAsset(
     return {
       assetPath: joinDesktopPetAssetPath(basePath, stateAsset.path),
       asset: stateAsset
-    };
-  }
-  if (customAppearance && !DESKTOP_PET_APPEARANCE_OPTIONS.some((option) => option.id === customAppearance.id)) {
-    const basePath = customAppearance.assetBasePath.endsWith("/")
-      ? customAppearance.assetBasePath
-      : `${customAppearance.assetBasePath}/`;
-    return {
-      assetPath: `${basePath}${getDesktopPetLegacyStatusAssetName(status)}`,
-      asset: null
     };
   }
   return {
@@ -268,7 +241,7 @@ function resolveDesktopPetSignatureAssetPath(
 }
 
 function chooseDesktopPetSignatureVariant(action: DesktopPetSignatureAction): DesktopPetSignatureVariant | null {
-  const variants = action.variants.filter((variant) => variant.frameCount > 1 && variant.durationMs > 0 && variant.path.trim());
+  const variants = action.variants.filter((variant) => variant.frameCount >= 1 && variant.durationMs > 0 && variant.path.trim());
   if (variants.length === 0) {
     return null;
   }
@@ -384,7 +357,7 @@ export function DesktopPet() {
     }
     const actions = resolveDesktopPetSignatureActions(
       appearanceIdRef.current,
-      currentPetState.signatureActions
+      currentPetState.signature
     );
     const action = actions.find((candidate) =>
       (!actionId || candidate.id === actionId) && candidate.trigger.includes(trigger)
@@ -455,9 +428,9 @@ export function DesktopPet() {
         stopSignature();
       }
     });
-    const disposeDanceRequested = typeof window.electronAPI.desktopPet.onDanceRequested === "function"
-      ? window.electronAPI.desktopPet.onDanceRequested((signatureActionId) => {
-          startSignature(signatureActionId, "manual");
+    const disposeSignatureRequested = typeof window.electronAPI.desktopPet.onSignatureRequested === "function"
+      ? window.electronAPI.desktopPet.onSignatureRequested((signatureId) => {
+          startSignature(signatureId, "manual");
         })
       : () => undefined;
     const handleWindowMouseMove = (event: globalThis.MouseEvent) => {
@@ -495,7 +468,7 @@ export function DesktopPet() {
       document.removeEventListener("visibilitychange", handleMouseVisibilityChange);
       setMouseInteractive(false);
       dispose();
-      disposeDanceRequested();
+      disposeSignatureRequested();
       clearSignatureTimer();
       clearIdleRandomTimer();
       clearTerminalVisualTimer();
@@ -536,20 +509,13 @@ export function DesktopPet() {
     () => normalizeDesktopPetAppearanceId(petState.appearanceId),
     [petState.appearanceId]
   );
-  const signatureActions = resolveDesktopPetSignatureActions(appearanceId, petState.signatureActions);
-  const runningTaskCount = Math.max(0, Math.round(Number(petState.runningTaskCount) || 0));
-  const canUseTaskRunAnimation = shouldUseDesktopPetTaskRunningAnimation(
-    appearanceId,
-    runningTaskCount,
-    petState.capabilities
-  );
+  const signature = resolveDesktopPetSignatureActions(appearanceId, petState.signature);
   const visualStatus: DesktopPetVisualStatus = deriveDesktopPetVisualStatus({
     displayStatus,
     isDragging,
     dragDirection,
     hasActiveSignature: Boolean(activeSignature),
     activeSignatureTrigger: activeSignature?.trigger ?? null,
-    shouldShowTaskRunAnimation: canUseTaskRunAnimation,
     canShowHoverReaction,
     isHovering,
     isKeyboardFocused
@@ -560,12 +526,9 @@ export function DesktopPet() {
   );
   const shouldShowSignatureSpriteAnimation = visualStatus === "signature" && Boolean(activeSignature);
   const shouldShowStateSpriteAnimation = !shouldShowSignatureSpriteAnimation && isDesktopPetAnimatedAsset(visualAsset.asset);
-  const shouldShowTaskRunAnimation = visualStatus === "running" && canUseTaskRunAnimation && !visualAsset.asset;
-  const taskRunAnimationDurationMs = getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount);
   const stateAnimationFrameCount = Math.max(1, Math.round(Number(visualAsset.asset?.frameCount) || 1));
   const stateAnimationDurationMs = Math.max(100, Math.round(Number(visualAsset.asset?.durationMs) || 0));
-  const rootStyle = shouldShowTaskRunAnimation ||
-    shouldShowStateSpriteAnimation ||
+  const rootStyle = shouldShowStateSpriteAnimation ||
     (shouldShowSignatureSpriteAnimation && activeSignature)
     ? ({
         ...(shouldShowSignatureSpriteAnimation && activeSignature
@@ -580,18 +543,8 @@ export function DesktopPet() {
               "--desktop-pet-state-frames": String(stateAnimationFrameCount),
               "--desktop-pet-state-loop-count": visualAsset.asset?.loop === false ? "1" : "infinite"
             }
-          : {}),
-        ...(shouldShowTaskRunAnimation
-          ? {
-        "--desktop-pet-task-run-animation-duration": `${taskRunAnimationDurationMs}ms`
-            }
           : {})
       } as CSSProperties)
-    : undefined;
-  const taskRunSpriteStyle = shouldShowTaskRunAnimation
-    ? {
-        backgroundImage: `url("${resolveDesktopPetTaskRunAssetPath(petState, appearanceId)}")`
-      }
     : undefined;
   const signatureSpriteStyle = shouldShowSignatureSpriteAnimation && activeSignature
     ? {
@@ -622,7 +575,7 @@ export function DesktopPet() {
       hasMessageReaction ||
       showTaskPanel ||
       showPreviewPanel ||
-      !signatureActions.some((action) => action.trigger.includes("idle-random"))
+      !signature.some((action) => action.trigger.includes("idle-random"))
     ) {
       return undefined;
     }
@@ -638,7 +591,7 @@ export function DesktopPet() {
     hasMessageReaction,
     showTaskPanel,
     showPreviewPanel,
-    signatureActions,
+    signature,
     appearanceId
   ]);
   const assetPath = visualAsset.assetPath;
@@ -818,9 +771,7 @@ export function DesktopPet() {
         `is-${visualStatus}`,
         `is-appearance-${appearanceId}`,
         shouldShowSignatureSpriteAnimation ? "has-signature-animation" : "",
-        shouldShowSignatureSpriteAnimation && activeSignature?.actionId === "dance" ? "has-dance-animation" : "",
         shouldShowStateSpriteAnimation ? "has-state-animation" : "",
-        shouldShowTaskRunAnimation ? "has-task-run-animation" : "",
         showTaskPanel ? "has-tasks" : "",
         showPreviewPanel ? "has-preview" : "",
         showBubble ? "has-bubble" : "",
@@ -953,12 +904,6 @@ export function DesktopPet() {
               aria-hidden="true"
               className="desktop-pet-image desktop-pet-state-sprite"
               style={stateSpriteStyle}
-            />
-          ) : shouldShowTaskRunAnimation ? (
-            <span
-              aria-hidden="true"
-              className="desktop-pet-image desktop-pet-task-run-sprite"
-              style={taskRunSpriteStyle}
             />
           ) : (
             <img src={assetPath} alt="" aria-hidden="true" className="desktop-pet-image" />
