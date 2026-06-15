@@ -72,9 +72,8 @@ export type KanbanDesktopWsClientOptions = {
   onSnapshot: (snapshot: TaskBoardCloudSnapshot) => void;
   onDispatchIssue: (
     issue: unknown,
-    revision: number,
-    request: AssistantStartRunRequest
-  ) => TaskBoardIssueResult | Promise<TaskBoardIssueResult>;
+    revision: number
+  ) => TaskBoardIssueResult;
   onListAgents: () => Promise<DesktopPetAgentOption[]>;
   onStartRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   onAutomationSync: (payload: unknown) => Promise<unknown>;
@@ -488,9 +487,7 @@ export class KanbanDesktopWsClient {
       if (businessType === "desktop.issue.dispatch") {
         const record = isRecord(env.payload) ? env.payload : {};
         const issue = "issue" in record ? record.issue : env.payload;
-        const startRequest = normalizeStartRunPayload(env.payload, env);
-        startRequest.issue = issue;
-        payload = await this.options.onDispatchIssue(issue, env.revision ?? 0, startRequest);
+        payload = this.options.onDispatchIssue(issue, env.revision ?? 0);
       } else if (businessType === "agent.listDesktop") {
         const agents = await this.options.onListAgents();
         payload = { ok: true, items: agents, agents };

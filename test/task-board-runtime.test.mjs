@@ -331,7 +331,7 @@ test("task board runtime stores remote startRun issue locally before executing",
   }
 });
 
-test("task board runtime auto-starts legacy cloud dispatch issue", async (t) => {
+test("task board runtime stores legacy cloud dispatch issue without auto-starting", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -422,8 +422,8 @@ test("task board runtime auto-starts legacy cloud dispatch issue", async (t) => 
             boardId: "default",
             projectId: "project-1",
             workflowId: "workflow-standard-requirement",
-            title: "旧派发协议自动执行",
-            description: "云端仍然走 dispatch 时也要启动本机智能体",
+            title: "旧派发协议待本机确认",
+            description: "云端派发只展示任务，本机人员拖到进行中后才执行",
             status: "todo",
             priority: "medium",
             severity: "medium",
@@ -444,18 +444,18 @@ test("task board runtime auto-starts legacy cloud dispatch issue", async (t) => 
     const ack = socket.sent.find((frame) => frame.id === "legacy-dispatch-run");
     assert.equal(ack.ok, true);
 
-    await waitFor(() => startRuns.length === 1, "legacy dispatch startRun");
-    assert.equal(startRuns[0].agentKey, "codeAssistant");
-    assert.equal(startRuns[0].accessLevel, "full_access");
-    assert.equal(startRuns[0].message, "执行旧派发任务");
-    assert.equal(startRuns[0].issue.id, "ISS-DISPATCH");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(startRuns.length, 0);
 
     const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-DISPATCH");
     assert.ok(localIssue);
-    assert.equal(localIssue.status, "in_progress");
-    assert.equal(localIssue.runId, "run-dispatch-1");
-    assert.equal(localIssue.chatId, "chat-dispatch-1");
-    assert.equal(localIssue.runState, "running");
+    assert.equal(localIssue.status, "todo");
+    assert.equal(localIssue.origin, "cloud_dispatch");
+    assert.equal(localIssue.syncMode, "cloud");
+    assert.equal(localIssue.assigneeAgentKey, "codeAssistant");
+    assert.equal(localIssue.runId, null);
+    assert.equal(localIssue.chatId, null);
+    assert.equal(localIssue.runState, null);
   } finally {
     runtime.stop();
   }
