@@ -1085,7 +1085,6 @@ export const zhCNMessages = {
   "desktopPet.collapsePreview": "收起运行预览",
   "desktopPet.unread": "{count} 条未读消息",
   "desktopPet.doneFallback": "暂无回复预览",
-  "desktopPet.status.thinking": "思考中",
   "desktopPet.status.done": "已完成",
   "desktopPet.status.replyGenerated": "回复已生成",
   "desktopPet.status.error": "出错了",

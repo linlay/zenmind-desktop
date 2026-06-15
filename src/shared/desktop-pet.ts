@@ -71,8 +71,6 @@ export const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   error: "pet-error.png",
   hover: "pet-hover.png",
   idle: "pet-idle.png",
-  message: "pet-message.png",
-  thinking: "pet-thinking.png",
   running: "pet-running.png"
 };
 

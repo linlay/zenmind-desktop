@@ -526,7 +526,6 @@ export function DesktopPet() {
     hasActiveSignature: Boolean(activeSignature),
     activeSignatureTrigger: activeSignature?.trigger ?? null,
     shouldShowTaskRunAnimation: canUseTaskRunAnimation,
-    hasMessageReaction,
     canShowHoverReaction,
     isHovering,
     isKeyboardFocused
@@ -604,7 +603,7 @@ export function DesktopPet() {
   const statusBubbleText = displayStatus === "idle"
     ? ""
     : petState.hint.trim() || formatPetHint(displayStatus);
-  const bubbleText = visualStatus === "message"
+  const bubbleText = hasMessageReaction
     ? messagePreview || "有新消息"
     : statusBubbleText;
   const inlineBubbleText = formatInlinePetPreview(bubbleText);
@@ -881,7 +880,7 @@ export function DesktopPet() {
           </section>
         ) : showBubble ? (
           <div
-            className={`desktop-pet-speech is-${visualStatus === "message" ? "message" : displayStatus}`}
+            className={`desktop-pet-speech is-${hasMessageReaction ? "unread" : displayStatus}`}
             aria-live="polite"
           >
             <span>{inlineBubbleText}</span>

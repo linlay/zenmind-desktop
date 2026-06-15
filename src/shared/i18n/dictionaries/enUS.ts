@@ -1085,7 +1085,6 @@ export const enUSMessages = {
   "desktopPet.collapsePreview": "Collapse run preview",
   "desktopPet.unread": "{count} unread messages",
   "desktopPet.doneFallback": "No reply preview",
-  "desktopPet.status.thinking": "Thinking",
   "desktopPet.status.done": "Done",
   "desktopPet.status.replyGenerated": "Reply generated",
   "desktopPet.status.error": "Error",
