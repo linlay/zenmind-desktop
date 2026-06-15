@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSPropertie
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
-import { AgentWebclientNativeRouteOutlet } from "./agent-webclient/AgentWebclientNativeRouteOutlet";
 import { RootRouteRedirect, StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
@@ -362,9 +361,6 @@ export function AppShell() {
     ? activeAgentWebclientRoute
     : null;
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
-  const usesAgentNativeSurface =
-    activeAgentWebclientRoute?.mode === "native" &&
-    (activeAgentWebclientRoute.key === "agents" || activeAgentWebclientRoute.key === "schedules");
   const activePluginId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
     : bareAgentWebclientServiceRoute
@@ -1077,13 +1073,6 @@ export function AppShell() {
   }, [usesEmbeddedSurface]);
 
   useEffect(() => {
-    document.body.classList.toggle("agent-native-surface-body", usesAgentNativeSurface);
-    return () => {
-      document.body.classList.remove("agent-native-surface-body");
-    };
-  }, [usesAgentNativeSurface]);
-
-  useEffect(() => {
     try {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(sidebarState));
     } catch {
@@ -1676,7 +1665,6 @@ export function AppShell() {
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
-        usesAgentNativeSurface ? "has-agent-native-surface" : "",
         isTaskBoardRoute ? "has-task-board-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
@@ -1831,14 +1819,14 @@ export function AppShell() {
               <Route
                 key={routeDefinition.key}
                 path={routeDefinition.routePath}
-                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={resolvedTheme} />}
+                element={null}
               />
             ))}
             {AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS.map((routePattern) => (
               <Route
                 key={routePattern}
                 path={routePattern}
-                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={resolvedTheme} />}
+                element={null}
               />
             ))}
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
@@ -2001,7 +1989,7 @@ function resolveAgentManagementWebclientRoute(pathname: string, search: string):
     embedPath: `${pathname}${search}`,
     labelKey: "nav.agents",
     kind: "management",
-    mode: "native"
+    mode: "embedded"
   };
 }
 

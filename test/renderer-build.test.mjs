@@ -30,7 +30,6 @@ function readAppShellSource() {
     readSourceFile("src", "shared", "agent-webclient-routes.ts"),
     readSourceFile("src", "renderer", "App.tsx"),
     readSourceFile("src", "renderer", "app-shell", "AppShell.tsx"),
-    readSourceFile("src", "renderer", "app-shell", "agent-webclient", "AgentWebclientNativeRouteOutlet.tsx"),
     readSourceFile("src", "renderer", "app-shell", "startup", "StartupGate.tsx"),
     readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx"),
     readSourceFile("src", "renderer", "copilot", "sidebar-copilot", "AgentWebclientCopilotDock.tsx")
@@ -115,13 +114,17 @@ test("renderer entry uses HashRouter for Electron routing", () => {
   assert.doesNotMatch(rendererEntry, /BrowserRouter/);
 });
 
-test("agent-webclient native API normalizes unauthorized JSON errors", () => {
-  const apiSource = readSourceFile("src", "renderer", "app-shell", "agent-webclient", "api.ts");
+test("desktop renderer API no longer exposes native agent-platform request bridge", () => {
+  const preloadSource = readSourceFile("src", "preload", "index.ts");
+  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const mainProcess = readSourceFile("src", "main", "index.ts");
 
-  assert.match(apiSource, /function normalizeAgentPlatformErrorMessage/);
-  assert.match(apiSource, /智能体平台登录态已过期，请重试。/);
-  assert.match(apiSource, /"unauthorized"/);
-  assert.match(apiSource, /throw new Error\(normalizeAgentPlatformErrorMessage/);
+  assert.match(preloadSource, /agentAuth:\s*\{[\s\S]*?issueAccessToken/);
+  assert.doesNotMatch(preloadSource, /agentPlatform\.request/);
+  assert.doesNotMatch(preloadSource, /agentPlatform:\s*\{/);
+  assert.doesNotMatch(desktopApi, /AgentPlatformRequestInput/);
+  assert.doesNotMatch(desktopApi, /agentPlatform:\s*\{/);
+  assert.doesNotMatch(mainProcess, /registerAgentPlatformIpcHandlers/);
 });
 
 test("sidebar does not expose the built-in Chrome surface", () => {
@@ -156,53 +159,34 @@ test("main agent webclient keeps chat and copilot webviews separate from managem
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
 });
 
-test("agent webclient management routes render native Ant Design pages", () => {
+test("agent webclient management routes render embedded webclient pages", () => {
   const routeDefinitions = readSourceFile("src", "shared", "agent-webclient-routes.ts");
-  const nativeOutlet = readSourceFile(
+  const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const globalStyles = readSourceFile("src", "renderer", "styles.css");
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const surfaceHosts = readSourceFile(
     "src",
     "renderer",
     "app-shell",
-    "agent-webclient",
-    "AgentWebclientNativeRouteOutlet.tsx"
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
   );
-  const agentApi = readSourceFile("src", "renderer", "app-shell", "agent-webclient", "api.ts");
-  const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
-  const nativeStyles = readSourceFile("src", "renderer", "styles", "agent-webclient-native.css");
-  const globalStyles = readSourceFile("src", "renderer", "styles.css");
 
-  assert.match(routeDefinitions, /routePath:\s*"\/agents"[\s\S]*?mode:\s*"native"/);
-  assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"native"/);
+  assert.match(routeDefinitions, /routePath:\s*"\/agents"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /"\/agents\/:agentKey"/);
-  assert.match(nativeOutlet, /export function AgentWebclientNativeRouteOutlet/);
-  assert.match(nativeOutlet, /route\?\.mode !== "native"/);
-  assert.match(nativeOutlet, /from "antd"/);
-  assert.match(nativeOutlet, /ConfigProvider/);
-  assert.match(nativeOutlet, /AntdApp/);
-  assert.match(nativeOutlet, /hostTheme: "light" \| "dark"/);
-  assert.match(nativeOutlet, /hostTheme === "dark" \? theme\.darkAlgorithm : theme\.defaultAlgorithm/);
-  assert.match(nativeOutlet, /AgentsPage/);
-  assert.match(nativeOutlet, /AutomationsPage/);
-  assert.match(nativeOutlet, /route\.key === "agents"/);
-  assert.match(nativeOutlet, /route\.key === "schedules"/);
-  assert.match(agentApi, /当前窗口尚未连接智能体平台桥接/);
-  assert.match(agentApi, /No handler registered/);
-  assert.match(appShellCss, /has-agent-native-surface/);
-  assert.match(appShellCss, /agent-native-surface-body/);
-  assert.match(appShellCss, /body\.agent-native-surface-body:not\(\.mac-translucent-sidebar-body\),\s*\.app-shell\.has-agent-native-surface:not\(\.is-mac-translucent-sidebar\)\s*\{[\s\S]*?background:\s*var\(--bg-base\);/);
-  assert.match(appShellCss, /body\.agent-native-surface-body\.mac-translucent-sidebar-body,\s*\.app-shell\.is-mac-translucent-sidebar\.has-agent-native-surface\s*\{[\s\S]*?background:\s*transparent;/);
-  assert.match(appShellCss, /\.app-shell\.has-agent-native-surface \.ant-app\s*\{[\s\S]*?height:\s*100%;/);
-  assert.match(appShellCss, /\.app-shell\.has-agent-native-surface \.app-window-drag-region,\s*\.app-shell\.has-agent-native-surface \.app-main-drag-region\s*\{[\s\S]*?display:\s*none;/);
-  assert.match(nativeStyles, /\.agent-webclient-native \.agents-page,\s*\.agent-webclient-native \.automations-page\s*\{[\s\S]*?min-height:\s*100vh;[\s\S]*?padding:\s*10px;[\s\S]*?overflow:\s*auto;/);
-  assert.match(nativeStyles, /\.agent-webclient-native \.command-modal-section\s*\{[\s\S]*?gap:\s*20px;/);
-  assert.match(nativeStyles, /\.agent-webclient-native \.command-empty-state\s*\{[\s\S]*?border:\s*1px dashed color-mix\(in srgb,\s*var\(--line-strong\) 76%,\s*transparent\);/);
-  assert.match(nativeStyles, /\.automation-console-body\s*\{[\s\S]*?grid-template-columns:\s*minmax\(280px,\s*0\.9fr\) minmax\(420px,\s*1\.4fr\);[\s\S]*?overflow:\s*hidden;/);
-  assert.match(nativeStyles, /\.agent-console-body\s*\{[\s\S]*?grid-template-columns:\s*minmax\(280px,\s*0\.52fr\) minmax\(480px,\s*1\.55fr\);[\s\S]*?overflow:\s*hidden;/);
-  assert.match(nativeStyles, /\.automation-console-list,\s*\.automation-console-detail,\s*\.agent-console-list,\s*\.agent-console-detail\s*\{[\s\S]*?overflow:\s*auto;[\s\S]*?\}/);
-  assert.match(nativeStyles, /\.automation-list-item,\s*\.agent-console-list-item\s*\{[\s\S]*?border:\s*1px solid transparent;[\s\S]*?background:\s*transparent;/);
-  assert.doesNotMatch(nativeStyles, /box-shadow:\s*inset 3px 0 0/);
-  assert.match(globalStyles, /@import "\.\/styles\/agent-webclient-native\.css";/);
+  assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?element=\{null\}/);
+  assert.match(appShell, /path=\{routePattern\}[\s\S]*?element=\{null\}/);
+  assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
+  assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
+  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
+  assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
+  assert.doesNotMatch(appShell, /usesAgentNativeSurface/);
+  assert.doesNotMatch(appShellCss, /has-agent-native-surface/);
+  assert.doesNotMatch(appShellCss, /agent-native-surface-body/);
+  assert.doesNotMatch(globalStyles, /agent-webclient-native\.css/);
 });
 
 test("control center keeps service operations in the prototype dashboard layout", () => {
@@ -915,9 +899,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
   assert.match(appShell, /const activeAgentWebclientRoute = rawActiveAgentWebclientRoute[\s\S]*?label:\s*rawActiveAgentWebclientRoute\.labelKey[\s\S]*?t\(rawActiveAgentWebclientRoute\.labelKey\)/);
   assert.match(appShell, /const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute\(activeAgentWebclientRoute\)/);
-  assert.match(appShell, /const usesAgentNativeSurface =[\s\S]*?activeAgentWebclientRoute\?\.mode === "native"/);
-  assert.match(appShell, /agent-native-surface-body/);
-  assert.match(appShell, /usesAgentNativeSurface \? "has-agent-native-surface" : ""/);
+  assert.doesNotMatch(appShell, /usesAgentNativeSurface/);
+  assert.doesNotMatch(appShell, /agent-native-surface-body/);
+  assert.doesNotMatch(appShell, /has-agent-native-surface/);
   assert.match(appShell, /function readAgentWebclientRouteEmbedPath\(search: string\)/);
   assert.match(appShell, /new URLSearchParams\(search\)\.get\("embedPath"\)/);
   assert.match(appShell, /if \(pathname !== LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\) \{/);
@@ -937,18 +921,15 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)/);
   assert.match(appShell, /matchPath\("\/agents\/:agentKey", pathname\)/);
   assert.match(appShell, /embedPath:\s*`\$\{pathname\}\$\{search\}`/);
-  assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?mode:\s*"native"/);
-  assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?mode:\s*"native"/);
-  assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"native"/);
+  assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest"\]\)/);
   assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.match(appShell, /labelKey:\s*embedPath\.startsWith\("\/agent\/"\) \? "nav\.assistants" : "nav\.agents"/);
   assert.match(appShell, /activeEmbeddedAgentWebclientRoute[\s\S]*?\? AGENT_WEBCLIENT_SERVICE_ID[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
   assert.match(appShell, /findAgentWebclientRouteDefinition\(pathname\)/);
-  assert.match(appShell, /export function AgentWebclientNativeRouteOutlet/);
-  assert.match(appShell, /route\?\.mode !== "native"/);
-  assert.match(appShell, /route\.key === "agents"/);
-  assert.match(appShell, /route\.key === "schedules"/);
+  assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
   assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
   assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
@@ -956,9 +937,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)/);
   assert.match(appShell, /const usesPluginSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_DEFINITIONS\.map\(\(routeDefinition\) =>/);
-  assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?AgentWebclientNativeRouteOutlet route=\{activeAgentWebclientRoute\} hostTheme=\{resolvedTheme\}/);
+  assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?element=\{null\}/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS\.map\(\(routePattern\) =>/);
-  assert.match(appShell, /path=\{routePattern\}[\s\S]*?AgentWebclientNativeRouteOutlet route=\{activeAgentWebclientRoute\} hostTheme=\{resolvedTheme\}/);
+  assert.match(appShell, /path=\{routePattern\}[\s\S]*?element=\{null\}/);
   assert.doesNotMatch(appShell, /path="\/agents"[\s\S]{0,180}<PlaceholderPage/);
 
   assert.match(pluginPage, /embedPath\?: string;/);

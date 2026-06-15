@@ -10,7 +10,7 @@ export type AgentWebclientRouteKey =
   | "assistant-target";
 
 export type AgentWebclientRouteKind = "management" | "copilot" | "chat";
-export type AgentWebclientRouteMode = "embedded" | "native";
+export type AgentWebclientRouteMode = "embedded";
 
 export type AgentWebclientRouteDefinition = {
   key: AgentWebclientRouteKey;
@@ -38,7 +38,7 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     embedPath: "/agents",
     labelKey: "nav.agents",
     kind: "management",
-    mode: "native"
+    mode: "embedded"
   },
   {
     key: "schedules",
@@ -46,7 +46,7 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     embedPath: "/automations",
     labelKey: "nav.schedules",
     kind: "management",
-    mode: "native"
+    mode: "embedded"
   },
   {
     key: "memory",

@@ -243,7 +243,6 @@ import {
 import { registerDesktopPetIpcHandlers } from "./ipc/desktop-pet-handlers";
 import { registerShellIpcHandlers } from "./ipc/shell-handlers";
 import { registerAssistantIpcHandlers } from "./ipc/assistant-handlers";
-import { registerAgentPlatformIpcHandlers } from "./ipc/agent-platform-handlers";
 import { registerServicesIpcHandlers } from "./ipc/services-handlers";
 import { registerTaskBoardIpcHandlers } from "./ipc/task-board-handlers";
 import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
@@ -2165,11 +2164,6 @@ function registerIpcHandlers(context: MainProcessContext) {
     createAssistantAttachmentsFromFiles,
     captureAssistantScreenshot: captureAssistantScreenshot as any
   }));
-
-  registerAgentPlatformIpcHandlers(ipcMain, {
-    app,
-    callAgentPlatform
-  });
 
   registerQuickCopilotIpcHandlers(ipcMain, quickCopilotWindowController);
 

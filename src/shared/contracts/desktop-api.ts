@@ -31,19 +31,6 @@ export interface AgentAuthIssueResult {
   message: string;
 }
 
-export interface AgentPlatformRequestInput {
-  path: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
-  query?: Record<string, string | number | boolean | null | undefined>;
-  body?: unknown;
-}
-
-export interface AgentPlatformRequestResult<T = unknown> {
-  ok: boolean;
-  data?: T;
-  message?: string;
-}
-
 export interface DesktopSsoClaims {
   sub: string;
   name?: string;
@@ -283,9 +270,6 @@ export interface DesktopApi {
   };
   agentAuth: {
     issueAccessToken: (reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
-  };
-  agentPlatform: {
-    request: <T = unknown>(input: AgentPlatformRequestInput) => Promise<AgentPlatformRequestResult<T>>;
   };
   sso: {
     getStatus: () => Promise<DesktopSsoStatus>;
