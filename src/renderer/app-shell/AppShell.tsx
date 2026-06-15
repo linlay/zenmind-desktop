@@ -217,7 +217,7 @@ function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boo
 }
 
 function isMarketSettingsVisible(settings: { enabled?: boolean; marketApiBaseUrl?: string } | null | undefined) {
-  return settings?.enabled === true && Boolean(settings.marketApiBaseUrl?.trim());
+  return settings?.enabled === true;
 }
 
 function readInitialWebGroupOrder(): SidebarNavOrderItemKey[] {

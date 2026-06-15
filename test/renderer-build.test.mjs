@@ -1443,7 +1443,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
-  assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true && Boolean\(settings\.marketApiBaseUrl\.trim\(\)\);/);
+  assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true;\s*\}/);
   assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "desktopPet"[\s\S]*handleToggleDesktopPet[\s\S]*case "kanban"[\s\S]*handleToggleKanbanVisibility[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
@@ -1707,7 +1707,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /const \[kanbanEnabled, setKanbanEnabled\] = useState\(true\)/);
   assert.match(appShell, /const \[kanbanSettingsLoaded, setKanbanSettingsLoaded\] = useState\(false\)/);
   assert.match(appShell, /const \[marketEnabled, setMarketEnabled\] = useState\(false\)/);
-  assert.match(appShell, /function isMarketSettingsVisible\(settings:[\s\S]*?return settings\?\.enabled === true && Boolean\(settings\.marketApiBaseUrl\?\.trim\(\)\);/);
+  assert.match(appShell, /function isMarketSettingsVisible\(settings:[\s\S]*?return settings\?\.enabled === true;/);
   assert.match(appShell, /window\.electronAPI\.taskBoard\.getSettings\(\)/);
   assert.match(appShell, /setKanbanEnabled\(result\.settings\.enabled\)/);
   assert.match(appShell, /window\.electronAPI\.market\.getSettings\(\)/);

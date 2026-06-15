@@ -451,7 +451,7 @@ export function getMarketSettings(app: App): MarketSettings {
   try {
     const marketApiBaseUrl = normalizeMarketApiBaseUrl(saved.marketApiBaseUrl || saved.apiBaseUrl);
     return {
-      enabled: saved.enabled === true && Boolean(marketApiBaseUrl),
+      enabled: saved.enabled === true,
       marketApiBaseUrl
     };
   } catch {
@@ -465,7 +465,7 @@ export function getMarketSettings(app: App): MarketSettings {
 export function saveMarketSettings(app: App, input: MarketSettingsInput): MarketSettings {
   const marketApiBaseUrl = normalizeMarketApiBaseUrl(input.marketApiBaseUrl);
   const settings = {
-    enabled: input.enabled === true && Boolean(marketApiBaseUrl),
+    enabled: input.enabled === true,
     marketApiBaseUrl
   };
   writeJsonFile(marketplaceSettingsPath(app), settings);

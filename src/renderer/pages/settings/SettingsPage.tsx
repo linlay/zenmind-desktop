@@ -187,7 +187,7 @@ const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
 const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
 
 function isMarketVisible(settings: MarketSettings) {
-  return settings.enabled === true && Boolean(settings.marketApiBaseUrl.trim());
+  return settings.enabled === true;
 }
 
 function asRecord(value: unknown) {
