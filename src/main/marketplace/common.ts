@@ -138,25 +138,78 @@ export function normalizeMarketItemType(value: unknown): MarketItemType | null {
   return null;
 }
 
-function normalizeAsset(value: unknown): MarketAsset | null {
+function normalizeSandboxKind(value: unknown) {
+  const kind = asString(value).trim();
+  return kind === "environment-template"
+    ? "environment-template" as const
+    : kind === "container-image"
+      ? "container-image" as const
+      : undefined;
+}
+
+function isKnownArchiveType(value: string): value is MarketAsset["archiveType"] {
+  return (
+    value === "tar.gz" ||
+    value === "zip" ||
+    value === "skill" ||
+    value === "md" ||
+    value === "agent" ||
+    value === "sandbox-template" ||
+    value === "container-image" ||
+    value === "pet" ||
+    value === "cli" ||
+    value === "website-app"
+  );
+}
+
+function isZipOnlyMarketAsset(type: MarketItemType, archiveType: MarketAsset["archiveType"]) {
+  if (type === "plugin" || type === "skill") {
+    return archiveType === "zip";
+  }
+  if (type === "agent") {
+    return archiveType === "zip" || archiveType === "agent";
+  }
+  if (type === "pet") {
+    return archiveType === "zip" || archiveType === "pet";
+  }
+  if (type === "cli") {
+    return archiveType === "zip" || archiveType === "cli";
+  }
+  if (type === "website-app") {
+    return archiveType === "zip" || archiveType === "website-app";
+  }
+  return false;
+}
+
+function isAllowedMarketAsset(
+  type: MarketItemType,
+  archiveType: MarketAsset["archiveType"],
+  sandboxKind?: "environment-template" | "container-image"
+) {
+  if (isZipOnlyMarketAsset(type, archiveType)) {
+    return true;
+  }
+  if (type !== "sandbox-image") {
+    return false;
+  }
+  if (sandboxKind === "container-image" || archiveType === "container-image") {
+    return archiveType === "container-image" || archiveType === "tar.gz";
+  }
+  return archiveType === "zip" || archiveType === "sandbox-template";
+}
+
+function normalizeAsset(
+  value: unknown,
+  type: MarketItemType,
+  sandboxKind?: "environment-template" | "container-image"
+): MarketAsset | null {
   const raw = asObject(value);
   const url = asString(raw.url).trim();
   if (!url) {
     return null;
   }
   const archiveType = asString(raw.archiveType);
-  if (
-    archiveType !== "tar.gz" &&
-    archiveType !== "zip" &&
-    archiveType !== "skill" &&
-    archiveType !== "md" &&
-    archiveType !== "agent" &&
-    archiveType !== "sandbox-template" &&
-    archiveType !== "container-image" &&
-    archiveType !== "pet" &&
-    archiveType !== "cli" &&
-    archiveType !== "website-app"
-  ) {
+  if (!isKnownArchiveType(archiveType) || !isAllowedMarketAsset(type, archiveType, sandboxKind)) {
     return null;
   }
   return {
@@ -179,9 +232,10 @@ export function normalizeCatalog(input: unknown): Catalog {
     if (!id || !type) {
       continue;
     }
+    const sandboxKind = normalizeSandboxKind(item.sandboxKind);
     const assets: Record<string, MarketAsset> = {};
     for (const [key, assetRaw] of Object.entries(asObject(item.assets))) {
-      const asset = normalizeAsset(assetRaw);
+      const asset = normalizeAsset(assetRaw, type, sandboxKind);
       if (asset) {
         assets[key] = asset;
       }
@@ -219,9 +273,7 @@ export function normalizeCatalog(input: unknown): Catalog {
       description: asString(item.description),
       tags: asStringArray(item.tags),
       minDesktopVersion: asString(item.minDesktopVersion).trim() || undefined,
-      sandboxKind: asString(item.sandboxKind).trim() === "environment-template"
-        ? "environment-template"
-        : asString(item.sandboxKind).trim() === "container-image" ? "container-image" : undefined,
+      sandboxKind,
       metadata,
       assets
     });
@@ -381,11 +433,16 @@ function sha256(filePath: string) {
 function extensionForAsset(asset: MarketAsset) {
   if (asset.archiveType === "zip") return ".zip";
   if (asset.archiveType === "md") return ".md";
-  if (asset.archiveType === "skill") return ".skill";
-  if (asset.archiveType === "sandbox-template") return ".tar.gz";
-  if (asset.archiveType === "pet") return ".tar.gz";
-  if (asset.archiveType === "cli") return ".tar.gz";
-  return ".tar.gz";
+  if (asset.archiveType === "container-image" || asset.archiveType === "tar.gz") return ".tar.gz";
+  if (
+    asset.archiveType === "skill" ||
+    asset.archiveType === "sandbox-template" ||
+    asset.archiveType === "pet" ||
+    asset.archiveType === "cli" ||
+    asset.archiveType === "agent" ||
+    asset.archiveType === "website-app"
+  ) return ".zip";
+  return ".zip";
 }
 
 export async function downloadAsset(app: App, item: MarketCatalogItem, asset: MarketAsset) {

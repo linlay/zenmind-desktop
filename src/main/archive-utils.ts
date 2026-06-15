@@ -10,17 +10,12 @@ function isZipArchive(archivePath: string) {
 
 function isTarArchive(archivePath: string) {
   const normalized = archivePath.toLowerCase();
-  return normalized.endsWith(".tar.gz") || normalized.endsWith(".tgz") || normalized.endsWith(".skill");
+  return normalized.endsWith(".tar.gz") || normalized.endsWith(".tgz");
 }
 
 function ensureSupportedArchive(archivePath: string) {
   if (isZipArchive(archivePath)) {
-    const isWindows = process.platform === "win32";
-    const isMac = process.platform === "darwin";
-    if (isWindows || isMac) {
-      return "zip" as const;
-    }
-    throw new Error(`zip archives are only supported on Windows and macOS: ${archivePath}`);
+    return "zip" as const;
   }
 
   if (isTarArchive(archivePath)) {
@@ -44,6 +39,13 @@ function tarCommand() {
     return "tar";
   }
   return "tar";
+}
+
+function unzipCommand() {
+  if (process.platform === "win32") {
+    return "";
+  }
+  return "unzip";
 }
 
 function runPowerShell(script: string) {
@@ -122,10 +124,16 @@ async function extractZipArchiveWithJSZip(archivePath: string, targetDir: string
     const targetPath = resolveSafeArchiveTarget(targetDir, entryName);
     if (entry.dir || entryName.endsWith("/")) {
       fs.mkdirSync(targetPath, { recursive: true });
+      if (typeof entry.unixPermissions === "number") {
+        await fs.promises.chmod(targetPath, entry.unixPermissions & 0o777).catch(() => undefined);
+      }
       continue;
     }
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     await fs.promises.writeFile(targetPath, await entry.async("nodebuffer"));
+    if (typeof entry.unixPermissions === "number") {
+      await fs.promises.chmod(targetPath, entry.unixPermissions & 0o777).catch(() => undefined);
+    }
   }
 }
 
@@ -133,14 +141,8 @@ export function listArchiveEntries(archivePath: string) {
   const archiveType = ensureSupportedArchive(archivePath);
   if (archiveType === "zip") {
     const isWindows = process.platform === "win32";
-    const isMac = process.platform === "darwin";
-    if (isMac) {
-      throw new Error(`sync zip entry listing is not supported on macOS: ${archivePath}`);
-    }
-    if (!isWindows) {
-      throw new Error(`zip archives are only supported on Windows and macOS: ${archivePath}`);
-    }
-    const output = runPowerShellForUtf8Text(`
+    if (isWindows) {
+      const output = runPowerShellForUtf8Text(`
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead(${quotePowerShell(archivePath)})
 try {
@@ -152,14 +154,23 @@ try {
   $zip.Dispose()
 }
 `);
-    const entries = JSON.parse(output) as unknown;
-    if (!Array.isArray(entries)) {
-      throw new Error(`unexpected zip entry listing output: ${archivePath}`);
+      const entries = JSON.parse(output) as unknown;
+      if (!Array.isArray(entries)) {
+        throw new Error(`unexpected zip entry listing output: ${archivePath}`);
+      }
+
+      return new Set(
+        entries
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim().replace(/\\/g, "/"))
+          .filter(Boolean)
+      );
     }
 
+    const output = execFileSync(unzipCommand(), ["-Z1", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
     return new Set(
-      entries
-        .filter((entry): entry is string => typeof entry === "string")
+      output
+        .split(/\r?\n/u)
         .map((entry) => entry.trim().replace(/\\/g, "/"))
         .filter(Boolean)
     );
@@ -177,7 +188,7 @@ try {
 
 export async function listArchiveEntriesAsync(archivePath: string) {
   const archiveType = ensureSupportedArchive(archivePath);
-  if (archiveType === "zip" && process.platform === "darwin") {
+  if (archiveType === "zip" && process.platform !== "win32") {
     return listZipArchiveEntriesWithJSZip(archivePath);
   }
   return listArchiveEntries(archivePath);
@@ -193,13 +204,9 @@ export async function extractArchiveToDir(archivePath: string, targetDir: string
 
     if (archiveType === "zip") {
       const isWindows = process.platform === "win32";
-      const isMac = process.platform === "darwin";
-      if (isMac) {
+      if (!isWindows) {
         await extractZipArchiveWithJSZip(archivePath, targetDir);
         return;
-      }
-      if (!isWindows) {
-        throw new Error(`zip archives are only supported on Windows and macOS: ${archivePath}`);
       }
       try {
         await new Promise<void>((resolve, reject) => {
@@ -255,6 +262,9 @@ $dest = ${quotePowerShell(targetDir)}
 export function readFileFromArchive(archivePath: string, entryPath: string) {
   const archiveType = ensureSupportedArchive(archivePath);
   if (archiveType === "zip") {
+    if (process.platform !== "win32") {
+      return execFileSync(unzipCommand(), ["-p", archivePath, entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
+    }
     return runPowerShellForUtf8Text(`
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead(${quotePowerShell(archivePath)})

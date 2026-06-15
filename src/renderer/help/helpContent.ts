@@ -141,17 +141,11 @@ function getHelpTemplateVariables(isWindows: boolean): HelpTemplateVariables {
     programDataPathMac: `~/Library/Application Support/${APP_BRAND.paths.programDataDirName}/`,
     programDataPathWindows: `%APPDATA%\\${APP_BRAND.paths.programDataDirName}\\`
   };
-  if (isWindows) {
-    return {
-      pluginArchiveLabel: ".zip",
-      pluginArchiveCommand: "Compress-Archive -LiteralPath .\\my-plugin -DestinationPath .\\my-plugin.zip",
-      ...commonVariables
-    };
-  }
-
   return {
-    pluginArchiveLabel: ".tar.gz",
-    pluginArchiveCommand: "tar -czf my-plugin.tar.gz -C /path/to my-plugin/",
+    pluginArchiveLabel: ".zip",
+    pluginArchiveCommand: isWindows
+      ? "Compress-Archive -LiteralPath .\\my-plugin -DestinationPath .\\my-plugin.zip"
+      : "cd /path/to && zip -r my-plugin.zip my-plugin/",
     ...commonVariables
   };
 }

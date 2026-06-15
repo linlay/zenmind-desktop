@@ -16,7 +16,7 @@ const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
 ];
 
 function isArchiveFileName(fileName) {
-  return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
+  return fileName.endsWith(".zip");
 }
 
 function isIgnorableDirectoryReadError(error) {

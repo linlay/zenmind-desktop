@@ -150,12 +150,12 @@ function generatedArchiveScriptCommand(item: MarketCatalogItem | MarketItem, scr
       `"`
     ].join("");
   }
-  if (platform === "macos") {
+  if (platform === "macos" || platform === "linux") {
     const scriptFile = `${scriptName}.sh`;
     return [
       `tmp="$(mktemp -d)"`,
-      `curl -fsSL ${shellSingleQuote(archiveUrl)} -o "$tmp/${safeName}.tar.gz"`,
-      `tar -xzf "$tmp/${safeName}.tar.gz" -C "$tmp"`,
+      `curl -fsSL ${shellSingleQuote(archiveUrl)} -o "$tmp/${safeName}.zip"`,
+      `unzip -q "$tmp/${safeName}.zip" -d "$tmp"`,
       `script="$(find "$tmp" -name ${shellSingleQuote(scriptFile)} -type f | head -n 1)"`,
       `test -n "$script"`,
       `sh "$script"`

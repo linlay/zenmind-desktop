@@ -633,7 +633,7 @@ export const zhCNMessages = {
   "market.search.skills": "搜索技能",
   "market.skill.localUpload.eyebrow": "本地上传",
   "market.skill.localUpload.title": "从本地导入技能",
-  "market.skill.localUpload.description": "支持 `.zip`、`.tar.gz`、`.skill` 和 `SKILL.md` 文件。",
+  "market.skill.localUpload.description": "支持 `.zip` 包和 `SKILL.md` 文件。",
   "market.skill.localUpload.chooseFile": "选择文件",
   "market.skill.cloudDownload.eyebrow": "云端下载",
   "market.skill.cloudDownload.title": "输入 npm/npx 指令下载",

@@ -63,7 +63,7 @@ Desktop is responsible for:
 Service sources:
 
 - `builtin`: bundled with the app. Current builtin services include `agent-container-hub`, `agent-platform`, `agent-webclient`, and `zenmind-app-server`.
-- `plugin`: imported at runtime from `.tar.gz` archives. Desktop no longer bundles plugins in the installer.
+- `plugin`: imported at runtime from `.zip` archives. Desktop no longer bundles plugins in the installer.
 
 Frontend modes:
 

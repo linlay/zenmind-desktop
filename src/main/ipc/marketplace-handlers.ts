@@ -67,7 +67,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
 
   ipcMain.handle("plugins.install", async () => runServiceMutation(async () => {
     const result = await showArchiveDialog(
-      platform === "win32" ? "选择插件包 (.zip)" : "选择插件包 (.tar.gz)"
+      "选择插件包 (.zip)"
     );
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, message: "已取消导入。" };
@@ -179,7 +179,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
       filters: [
         {
           name: "Skill",
-          extensions: platform === "win32" ? ["zip", "skill", "md"] : ["gz", "tgz", "skill", "md"]
+          extensions: ["zip", "md"]
         }
       ]
     });

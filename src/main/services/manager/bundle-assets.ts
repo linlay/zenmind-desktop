@@ -153,6 +153,9 @@ export function ensureArchiveHealthy(service: ServiceDefinition, archivePath: st
   if (!fs.existsSync(archivePath)) {
     throw new Error(`${sourceLabel}缺失：${archivePath}`);
   }
+  if (!archivePath.toLowerCase().endsWith(".zip")) {
+    throw new Error(`${sourceLabel}必须是 .zip 包：${archivePath}`);
+  }
 
   const missingEntries = listMissingBundleEntries(service, archivePath);
   if (missingEntries.length > 0) {

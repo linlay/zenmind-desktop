@@ -633,7 +633,7 @@ export const enUSMessages = {
   "market.search.skills": "Search skills",
   "market.skill.localUpload.eyebrow": "Local upload",
   "market.skill.localUpload.title": "Import a skill locally",
-  "market.skill.localUpload.description": "Supports `.zip`, `.tar.gz`, `.skill`, and `SKILL.md` files.",
+  "market.skill.localUpload.description": "Supports `.zip` packages and `SKILL.md` files.",
   "market.skill.localUpload.chooseFile": "Choose file",
   "market.skill.cloudDownload.eyebrow": "Cloud download",
   "market.skill.cloudDownload.title": "Enter an npm/npx command",

@@ -110,7 +110,15 @@ export function getPluginInstallDir(app: App, pluginId: string, version?: string
   return resolvedVersion ? path.join(pluginRoot, resolvedVersion) : pluginRoot;
 }
 
+function ensurePluginArchivePath(archivePath: string) {
+  if (!archivePath.toLowerCase().endsWith(".zip")) {
+    throw new Error("插件包仅支持 .zip 格式。");
+  }
+}
+
 export async function installPluginFromArchive(app: App, archivePath: string) {
+  ensurePluginArchivePath(archivePath);
+
   const root = getPluginsRoot(app);
   fs.mkdirSync(root, { recursive: true });
 

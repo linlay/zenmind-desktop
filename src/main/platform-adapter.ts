@@ -55,6 +55,6 @@ export function getDesktopSsoBrowserUserAgent(
     .replace(/\sElectron\/[^\s]+/u, "");
 }
 
-export function getArchiveExtensions(platform: DesktopPlatform) {
-  return platform === "win32" ? ["zip"] : ["gz", "tgz"];
+export function getArchiveExtensions(_platform: DesktopPlatform) {
+  return ["zip"];
 }

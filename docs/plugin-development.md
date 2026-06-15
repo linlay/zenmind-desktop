@@ -2,11 +2,9 @@
 
 ## 插件包结构
 
-插件按平台分发：
-- macOS / Linux 使用 `.tar.gz`
-- Windows 使用 `.zip`
+插件统一以 `.zip` 分发，所有平台使用同一种包格式。
 
-两种格式解压后都应包含单个顶层目录，内部目录结构保持一致：
+`.zip` 解压后应包含单个顶层目录，内部目录结构保持一致：
 
 ```text
 my-plugin/
@@ -124,12 +122,10 @@ my-plugin/
 
 ## 安装方式
 
-Desktop 按平台只接受对应格式的插件包：
-- Desktop macOS / Linux 版只接受 `.tar.gz`
-- Desktop Windows 版只接受 `.zip`
+Desktop 所有平台只接受 `.zip` 插件包。
 
 导入与初始化分为两步：
-1. 在控制中心点击“导入插件”，选择平台对应的插件包。
+1. 在控制中心点击“导入插件”，选择 `.zip` 插件包。
 2. Desktop 解压并注册插件，服务卡片进入“待初始化”状态。
 3. 用户按需修改从模板回填的配置后，点击“初始化”。
 4. Desktop 会补齐缺失配置文件、修复脚本权限并执行 `scripts.deploy`。
@@ -137,7 +133,7 @@ Desktop 按平台只接受对应格式的插件包：
 ## 打包示例
 
 ```bash
-tar -czf my-plugin-v1.0.0-darwin-arm64.tar.gz my-plugin/
+zip -r my-plugin-v1.0.0-darwin-arm64.zip my-plugin/
 ```
 
 ```powershell
@@ -145,6 +141,6 @@ Compress-Archive -Path .\my-plugin -DestinationPath .\my-plugin-v1.0.0-windows-a
 ```
 
 命名规范：
-- `<id>-<version>-darwin-<arch>.tar.gz`
-- `<id>-<version>-linux-<arch>.tar.gz`
+- `<id>-<version>-darwin-<arch>.zip`
+- `<id>-<version>-linux-<arch>.zip`
 - `<id>-<version>-windows-<arch>.zip`

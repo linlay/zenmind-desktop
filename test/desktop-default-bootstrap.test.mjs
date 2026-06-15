@@ -15,6 +15,7 @@ const {
 } = require("../dist-electron/main/desktop-default-bootstrap.js");
 
 const { registerServicesIpcHandlers } = require("../dist-electron/main/ipc/services-handlers.js");
+const { getArchiveExtensions } = require("../dist-electron/main/platform-adapter.js");
 
 function createApp(homePath) {
   return {
@@ -48,6 +49,12 @@ function runtimeRoot(homePath) {
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
+
+test("archive import filters expose only zip packages", () => {
+  assert.deepEqual(getArchiveExtensions("darwin"), ["zip"]);
+  assert.deepEqual(getArchiveExtensions("linux"), ["zip"]);
+  assert.deepEqual(getArchiveExtensions("win32"), ["zip"]);
+});
 
 test("desktop-default bootstrap applies once into canonical desktop files", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-"));

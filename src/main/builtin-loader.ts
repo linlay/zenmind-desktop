@@ -36,7 +36,7 @@ function listBuiltinArchivePaths(root: string) {
     return [];
   }
 
-  const extension = process.platform === "win32" ? ".zip" : ".tar.gz";
+  const extension = ".zip";
   const archivePaths: string[] = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) {

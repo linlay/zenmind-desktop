@@ -503,12 +503,7 @@ function resolvePackageManagerExecution(command: string, args: string[]) {
 
 function isInstallableArchive(filePath: string) {
   const normalized = filePath.toLowerCase();
-  return (
-    normalized.endsWith(".tar.gz") ||
-    normalized.endsWith(".tgz") ||
-    normalized.endsWith(".skill") ||
-    normalized.endsWith(".zip")
-  );
+  return normalized.endsWith(".zip");
 }
 
 function isIgnoredCommandDiscoveryDir(name: string) {
@@ -585,7 +580,7 @@ function findDownloadedSkillSource(root: string) {
   const sortedSkillFiles = skillFiles.sort((left, right) => relativeDepth(root, left) - relativeDepth(root, right) || left.localeCompare(right));
   const candidates = [...sortedArchives, ...sortedSkillDirs, ...sortedSkillFiles];
   if (candidates.length === 0) {
-    throw new Error("下载指令执行完成，但没有找到 .skill、.tar.gz、.zip 或包含 SKILL.md 的技能目录。");
+    throw new Error("下载指令执行完成，但没有找到 .zip 或包含 SKILL.md 的技能目录。");
   }
   return candidates[0];
 }
@@ -639,7 +634,7 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
         }, null, 2)}\n`,
         "utf8"
       );
-    } else {
+    } else if (extension.endsWith(".zip")) {
       ensureSafeArchiveEntries(sourcePath);
       await extractArchiveToDir(sourcePath, tempRoot);
       preparedDir = getPreparedSkillDir(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
@@ -653,6 +648,8 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
         description: options.metadata?.description,
         tags: options.metadata?.tags
       });
+    } else {
+      throw new Error("Skill 包仅支持 .zip 或 SKILL.md 文件。");
     }
 
     const metadata = readSkillMetadata(preparedDir);

@@ -508,9 +508,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
           service: current
         };
       }
-      const archiveTitle = platform === "win32"
-        ? "选择内置服务安装包 (.zip)"
-        : "选择内置服务安装包 (.tar.gz)";
+      const archiveTitle = "选择内置服务安装包 (.zip)";
       const result = await showArchiveDialog(archiveTitle);
       if (result.canceled || result.filePaths.length === 0) {
         return {

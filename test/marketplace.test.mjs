@@ -25,7 +25,7 @@ const {
   uninstallMarketItem,
   __testInternals
 } = require("../dist-electron/main/marketplace.js");
-const { getPluginInstallDir } = require("../dist-electron/main/plugin-loader.js");
+const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
@@ -48,11 +48,25 @@ function sha256(filePath) {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
+function writeZipArchive(root, archivePath, entryName) {
+  if (process.platform === "win32") {
+    execFileSync("powershell", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      `Compress-Archive -LiteralPath '${path.join(root, entryName).replace(/'/g, "''")}' -DestinationPath '${archivePath.replace(/'/g, "''")}' -Force`
+    ]);
+    return;
+  }
+  execFileSync("zip", ["-qr", archivePath, entryName], { cwd: root });
+}
+
 function writePluginArchive(root, options = {}) {
   const pluginId = options.id ?? "cloud-plugin";
   const fixtureRoot = path.join(root, `fixture-${pluginId}`);
   const bundleRoot = path.join(fixtureRoot, pluginId);
-  const archivePath = path.join(root, `${pluginId}.tar.gz`);
+  const archivePath = path.join(root, `${pluginId}.zip`);
   fs.mkdirSync(path.join(bundleRoot, "run"), { recursive: true });
   fs.writeFileSync(path.join(bundleRoot, ".env.example"), "PORT=9300\n", "utf8");
   fs.writeFileSync(
@@ -78,7 +92,7 @@ function writePluginArchive(root, options = {}) {
   );
   fs.writeFileSync(path.join(bundleRoot, "start.sh"), "#!/usr/bin/env bash\necho start\n", "utf8");
   fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\necho stop\n", "utf8");
-  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, pluginId]);
+  writeZipArchive(fixtureRoot, archivePath, pluginId);
   return archivePath;
 }
 
@@ -86,7 +100,7 @@ function writeSkillArchive(root, options = {}) {
   const skillId = options.id ?? "cloud-skill";
   const fixtureRoot = path.join(root, `fixture-${skillId}`);
   const skillRoot = path.join(fixtureRoot, skillId);
-  const archivePath = path.join(root, `${skillId}.tar.gz`);
+  const archivePath = path.join(root, `${skillId}.zip`);
   fs.mkdirSync(skillRoot, { recursive: true });
   fs.writeFileSync(path.join(skillRoot, "SKILL.md"), "# Cloud Skill\n", "utf8");
   fs.writeFileSync(
@@ -100,17 +114,17 @@ function writeSkillArchive(root, options = {}) {
     }, null, 2)}\n`,
     "utf8"
   );
-  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, skillId]);
+  writeZipArchive(fixtureRoot, archivePath, skillId);
   return archivePath;
 }
 
 function writeRootSkillArchive(root, options = {}) {
   const skillId = options.id ?? "root-skill";
   const fixtureRoot = path.join(root, `fixture-${skillId}`);
-  const archivePath = path.join(root, `${skillId}.tar.gz`);
+  const archivePath = path.join(root, `${skillId}.zip`);
   fs.mkdirSync(fixtureRoot, { recursive: true });
   fs.writeFileSync(path.join(fixtureRoot, "SKILL.md"), `# ${skillId}\n\nRoot skill.\n`, "utf8");
-  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, "SKILL.md"]);
+  writeZipArchive(fixtureRoot, archivePath, "SKILL.md");
   return archivePath;
 }
 
@@ -379,9 +393,9 @@ test("normalizeCatalog keeps the seven public market types", () => {
         version: "1.0.0",
         assets: {
           universal: {
-            url: "https://example.com/cli.tar.gz",
+            url: "https://example.com/cli.zip",
             sizeBytes: 1,
-            archiveType: "tar.gz"
+            archiveType: "cli"
           }
         }
       },
@@ -408,6 +422,57 @@ test("normalizeCatalog keeps the seven public market types", () => {
   ]);
 });
 
+test("normalizeCatalog filters legacy tar.gz assets except container images", () => {
+  const legacyAsset = {
+    url: "https://example.test/archive.tar.gz",
+    sizeBytes: 1,
+    archiveType: "tar.gz"
+  };
+  const catalog = __testInternals.normalizeCatalog({
+    schemaVersion: 1,
+    items: [
+      { id: "plugin-tar", type: "plugin", name: "Plugin", version: "1.0.0", assets: { universal: legacyAsset } },
+      { id: "skill-tar", type: "skill", name: "Skill", version: "1.0.0", assets: { universal: legacyAsset } },
+      { id: "pet-tar", type: "pet", name: "Pet", version: "1.0.0", assets: { universal: legacyAsset } },
+      { id: "cli-tar", type: "cli", name: "CLI", version: "1.0.0", assets: { universal: legacyAsset } },
+      { id: "webapp-tar", type: "website-app", name: "WebApp", version: "1.0.0", assets: { universal: legacyAsset } },
+      {
+        id: "template-tar",
+        type: "sandbox-image",
+        sandboxKind: "environment-template",
+        name: "Template",
+        version: "1.0.0",
+        assets: { universal: legacyAsset }
+      },
+      {
+        id: "container-tar",
+        type: "sandbox-image",
+        sandboxKind: "container-image",
+        name: "Container",
+        version: "1.0.0",
+        assets: { universal: legacyAsset }
+      }
+    ]
+  });
+  const byId = new Map(catalog.items.map((item) => [item.id, item]));
+
+  for (const id of ["plugin-tar", "skill-tar", "pet-tar", "cli-tar", "webapp-tar", "template-tar"]) {
+    assert.deepEqual(byId.get(id)?.assets, {});
+  }
+  assert.equal(byId.get("container-tar")?.assets.universal?.archiveType, "tar.gz");
+});
+
+test("installPluginFromArchive rejects non-zip plugin packages", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-plugin-tar-reject-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    () => installPluginFromArchive(app, path.join(root, "plugin.tar.gz")),
+    /插件包仅支持 \.zip 格式。/
+  );
+});
+
 test("refreshMarketCatalog combines catalog plugins with catalog skills", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-list-"));
   const app = createApp(root);
@@ -425,10 +490,10 @@ test("refreshMarketCatalog combines catalog plugins with catalog skills", async 
         tags: ["remote"],
         assets: {
           universal: {
-            url: "https://assets.example.test/remote-skill.tar.gz",
+            url: "https://assets.example.test/remote-skill.zip",
             sha256: "",
             sizeBytes: 0,
-            archiveType: "tar.gz"
+            archiveType: "zip"
           }
         }
       },
@@ -1156,6 +1221,46 @@ test("listMarketItems exposes pet and cli catalog sections", async (t) => {
   assert.match(cli?.cliUninstallCommand ?? "", /uninstall\.sh/);
 });
 
+test("listMarketItems generates cli archive commands with zip assets", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-cli-zip-command-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = await listMarketItems(app, {
+    catalog: {
+      schemaVersion: 1,
+      items: [
+        {
+          id: "zip-cli",
+          type: "cli",
+          name: "Zip CLI",
+          version: "1.0.0",
+          description: "Command line companion.",
+          tags: ["cli"],
+          assets: {
+            universal: {
+              url: "https://assets.example.test/zip-cli.zip",
+              sha256: "",
+              sizeBytes: 0,
+              archiveType: "zip"
+            }
+          }
+        }
+      ]
+    },
+    sections: ["cli"]
+  });
+  const command = result.items.find((item) => item.id === "zip-cli")?.cliInstallCommand ?? "";
+
+  assert.match(command, /zip-cli\.zip/);
+  if (process.platform === "win32") {
+    assert.match(command, /tar\.exe -xf/);
+  } else {
+    assert.match(command, /unzip -q/);
+    assert.doesNotMatch(command, /tar -xzf/);
+  }
+});
+
 test("installMarketItem installs pet packages into desktop pet data", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-pet-install-"));
   const app = createApp(root);
@@ -1230,7 +1335,7 @@ test("installMarketItem downloads and installs catalog cloud skills", async (t) 
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   await withFixtureServer(new Map([
-    ["/cloud-skill.tar.gz", archiveBytes]
+    ["/cloud-skill.zip", archiveBytes]
   ]), async (baseUrl) => {
     const result = await installMarketItem(app, "cloud-skill", {
       catalog: {
@@ -1245,10 +1350,10 @@ test("installMarketItem downloads and installs catalog cloud skills", async (t) 
             tags: ["cloud"],
             assets: {
               universal: {
-                url: `${baseUrl}/cloud-skill.tar.gz`,
+                url: `${baseUrl}/cloud-skill.zip`,
                 sha256: sha256(archivePath),
                 sizeBytes: archiveBytes.length,
-                archiveType: "tar.gz"
+                archiveType: "zip"
               }
             }
           }
@@ -1288,17 +1393,17 @@ test("saved marketApiBaseUrl is used by list and install", async (t) => {
             tags: [],
             assets: {
               universal: {
-                url: `${origin}/saved-skill.tar.gz`,
+                url: `${origin}/saved-skill.zip`,
                 sha256: sha256(archivePath),
                 sizeBytes: archiveBytes.length,
-                archiveType: "tar.gz"
+                archiveType: "zip"
               }
             }
           }
         ]
       }));
     }],
-    ["/saved-skill.tar.gz", archiveBytes]
+    ["/saved-skill.zip", archiveBytes]
   ]), async (baseUrl) => {
     const settings = saveMarketSettings(app, { marketApiBaseUrl: `${baseUrl}/api/v1` });
     assert.equal(settings.marketApiBaseUrl, `${baseUrl}/api/v1`);
@@ -1488,7 +1593,7 @@ test("installMarketItem downloads plugin archives but rejects builtin manifests"
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await withFixtureServer(new Map([["/cloud-builtin.tar.gz", archiveBytes]]), async (baseUrl) => {
+  await withFixtureServer(new Map([["/cloud-builtin.zip", archiveBytes]]), async (baseUrl) => {
     const catalog = {
       schemaVersion: 1,
       items: [
@@ -1501,10 +1606,10 @@ test("installMarketItem downloads plugin archives but rejects builtin manifests"
           tags: [],
           assets: {
             universal: {
-              url: `${baseUrl}/cloud-builtin.tar.gz`,
+              url: `${baseUrl}/cloud-builtin.zip`,
               sha256: sha256(archivePath),
               sizeBytes: archiveBytes.length,
-              archiveType: "tar.gz"
+              archiveType: "zip"
             }
           }
         }
@@ -1527,7 +1632,7 @@ test("uninstallMarketItem removes skill installs and marketplace records", async
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   await withFixtureServer(new Map([
-    ["/remove-skill.tar.gz", archiveBytes]
+    ["/remove-skill.zip", archiveBytes]
   ]), async (baseUrl) => {
     const options = {
       catalog: {
@@ -1542,10 +1647,10 @@ test("uninstallMarketItem removes skill installs and marketplace records", async
             tags: [],
             assets: {
               universal: {
-                url: `${baseUrl}/remove-skill.tar.gz`,
+                url: `${baseUrl}/remove-skill.zip`,
                 sha256: sha256(archivePath),
                 sizeBytes: archiveBytes.length,
-                archiveType: "tar.gz"
+                archiveType: "zip"
               }
             }
           }
