@@ -483,6 +483,43 @@ function buildListLikeIssueResult(list: TaskBoardListResult, message: string, is
   };
 }
 
+const TASK_BOARD_STATUS_LABELS: Record<TaskBoardStatus, string> = {
+  backlog: "待整理",
+  todo: "待处理",
+  in_progress: "进行中",
+  in_review: "待验收",
+  completed: "已完成"
+};
+
+const TASK_BOARD_PRIORITY_LABELS: Record<TaskBoardIssue["priority"], string> = {
+  high: "高",
+  medium: "中",
+  low: "低"
+};
+
+function buildCloudDispatchAssistantPrompt(issue: TaskBoardIssue) {
+  const parts = [
+    "请你处理下面这个 ZenMind 任务看板任务，并在完成后总结结果。",
+    "不要直接修改任务看板文件或任务状态；桌面端会在你完成后自动把任务更新到「已完成」。",
+    `任务编号：${issue.remoteIssueId ?? issue.id}`,
+    `标题：${issue.title}`,
+    `状态：${TASK_BOARD_STATUS_LABELS[issue.status] ?? issue.status}`,
+    `优先级：${TASK_BOARD_PRIORITY_LABELS[issue.priority] ?? issue.priority}`
+  ];
+  const description = issue.description.trim();
+  if (description) {
+    parts.push(`描述：${description}`);
+  }
+  return parts.join("\n");
+}
+
+function resolveCloudDispatchAgentKey(issue: TaskBoardIssue, request: AssistantStartRunRequest) {
+  return readText(request.agentKey) ||
+    readText(issue.assigneeAgentKey) ||
+    readText(issue.workerAgent) ||
+    (issue.workerType === "agent" ? readText(issue.workerId) : "");
+}
+
 function taskBoardIssueFromAutomationPayload(payload: unknown): TaskBoardIssue | null {
   const record = isRecord(payload) && isRecord(payload.issue) ? payload.issue : payload;
   if (!isRecord(record)) {
@@ -564,7 +601,7 @@ export class TaskBoardRuntime {
       getDeviceId: () => getDesktopDeviceId(this.options.app),
       getDeviceInfo: () => getTaskBoardDeviceInfo(this.options.app),
       onSnapshot: (snapshot) => this.applySnapshot(snapshot),
-      onDispatchIssue: (issue, revision) => this.applyDispatch(issue, revision),
+      onDispatchIssue: (issue, revision, request) => this.applyDispatch(issue, revision, request),
       onListAgents: () => this.listAgents(),
       onStartRun: (request) => this.startRemoteRun(request),
       onAutomationSync: (payload) => this.syncRemoteAutomationPayload(payload),
@@ -1046,10 +1083,40 @@ export class TaskBoardRuntime {
     this.notifyChanged();
   }
 
-  private applyDispatch(issue: unknown, revision: number): TaskBoardIssueResult {
+  private async applyDispatch(
+    issue: unknown,
+    revision: number,
+    request: AssistantStartRunRequest
+  ): Promise<TaskBoardIssueResult> {
     const result = upsertDispatchedDesktopKanbanIssue(this.options.app, this.currentUser(), issue, revision, "cloud_dispatch");
     this.notifyChanged();
-    return result;
+    if (!result.ok || !result.issue) {
+      return result;
+    }
+
+    const agentKey = resolveCloudDispatchAgentKey(result.issue, request);
+    if (!agentKey) {
+      return {
+        ...result,
+        message: "云端派发任务已接收，但缺少智能体，暂未自动执行。"
+      };
+    }
+
+    const runResult = await this.startRemoteRun({
+      ...request,
+      issue,
+      revision,
+      agentKey,
+      message: readText(request.message) || buildCloudDispatchAssistantPrompt(result.issue)
+    });
+    const list = listDesktopKanbanIssues(this.options.app, this.currentUser(), this.connectionState);
+    const updatedIssue = list.issues.find((candidate) => candidate.id === result.issue?.id) ?? result.issue;
+    return {
+      ok: runResult.ok,
+      message: runResult.message || (runResult.ok ? "云端派发任务已开始执行。" : "云端派发任务启动失败。"),
+      issue: updatedIssue,
+      issues: list.issues
+    };
   }
 
   // 响应云端 desktop.project.createLocal:在本地真正创建项目。

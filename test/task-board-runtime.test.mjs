@@ -305,6 +305,136 @@ test("task board runtime stores remote startRun issue locally before executing",
   }
 });
 
+test("task board runtime auto-starts legacy cloud dispatch issue", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const app = createTempApp(t);
+  const startRuns = [];
+  const runtime = new TaskBoardRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
+      startRun: async (request) => {
+        startRuns.push(request);
+        return { ok: true, runId: "run-dispatch-1", chatId: "chat-dispatch-1", message: "started" };
+      }
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {}
+  });
+
+  runtime.saveCloudConfig({
+    serverUrl: "http://127.0.0.1:3000",
+    token: "secret",
+    selectedProjectId: "project-1",
+    remoteControlEnabled: true,
+    deviceAlias: "测试桌面"
+  });
+
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  await waitFor(() => socket.sent.length === 1, "desktop.hello", 3000);
+  const hello = socket.sent[0];
+  socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
+  await waitFor(() => socket.sent.length === 2, "snapshot request");
+  const snapshotRequest = socket.sent[1];
+  socket.onmessage({
+    data: JSON.stringify({
+      type: "rpc.res",
+      id: snapshotRequest.id,
+      op: "kanban.snapshot",
+      ok: true,
+      payload: {
+        boardId: "default",
+        projectId: "project-1",
+        revision: 30,
+        complete: true,
+        scope: "project",
+        issues: []
+      }
+    })
+  });
+
+  try {
+    socket.onmessage({
+      data: JSON.stringify({
+        type: "rpc.req",
+        id: "legacy-dispatch-run",
+        op: "desktop.kanban.issue.dispatch",
+        boardId: "default",
+        projectId: "project-1",
+        revision: 32,
+        payload: {
+          issue: {
+            id: "ISS-DISPATCH",
+            boardId: "default",
+            projectId: "project-1",
+            workflowId: "workflow-standard-requirement",
+            title: "旧派发协议自动执行",
+            description: "云端仍然走 dispatch 时也要启动本机智能体",
+            status: "todo",
+            priority: "medium",
+            severity: "medium",
+            assigneeAgentKey: "codeAssistant",
+            position: 1,
+            revision: 32,
+            createdAt: "2026-06-09T00:00:00.000Z",
+            updatedAt: "2026-06-09T00:00:00.000Z"
+          },
+          agentKey: "codeAssistant",
+          accessLevel: "full_access",
+          message: "执行旧派发任务"
+        }
+      })
+    });
+
+    await waitFor(() => socket.sent.some((frame) => frame.id === "legacy-dispatch-run"), "legacy dispatch ACK");
+    const ack = socket.sent.find((frame) => frame.id === "legacy-dispatch-run");
+    assert.equal(ack.ok, true);
+
+    await waitFor(() => startRuns.length === 1, "legacy dispatch startRun");
+    assert.equal(startRuns[0].agentKey, "codeAssistant");
+    assert.equal(startRuns[0].accessLevel, "full_access");
+    assert.equal(startRuns[0].message, "执行旧派发任务");
+    assert.equal(startRuns[0].issue.id, "ISS-DISPATCH");
+
+    const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-DISPATCH");
+    assert.ok(localIssue);
+    assert.equal(localIssue.status, "in_progress");
+    assert.equal(localIssue.runId, "run-dispatch-1");
+    assert.equal(localIssue.chatId, "chat-dispatch-1");
+    assert.equal(localIssue.runState, "running");
+  } finally {
+    runtime.stop();
+  }
+});
+
 test("task board runtime reconnects after saving device alias so cloud sees new device name", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
