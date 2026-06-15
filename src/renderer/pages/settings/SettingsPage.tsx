@@ -63,8 +63,6 @@ type SettingsPageProps = {
   sidebarNavOrder: SidebarNavOrderItemKey[];
   availableSidebarNavOrderItems: SidebarNavOrderItem[];
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
-  kanbanEnabled: boolean;
-  onKanbanEnabledChange: (enabled: boolean) => void;
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   websiteItems: WebsiteEntry[];
@@ -571,8 +569,6 @@ export function SettingsPage({
   sidebarNavOrder,
   availableSidebarNavOrderItems,
   onSidebarNavOrderChange,
-  kanbanEnabled,
-  onKanbanEnabledChange,
   marketEnabled,
   onMarketEnabledChange,
   websiteItems,
@@ -752,7 +748,6 @@ export function SettingsPage({
         if (cancelled) {
           return;
         }
-        onKanbanEnabledChange(settingsResult.settings.enabled);
         setControlCloudConfig({
           ...defaultTaskBoardCloudConfig,
           ...settingsResult.settings.cloud
@@ -777,7 +772,7 @@ export function SettingsPage({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [onKanbanEnabledChange, shouldReadControlData]);
+  }, [shouldReadControlData]);
 
   useEffect(() => {
     if (!shouldReadMarketSettings) {
@@ -1839,13 +1834,12 @@ export function SettingsPage({
     setControlConfigSaving(true);
     try {
       const result = await window.electronAPI.taskBoard.saveSettings({
-        enabled: kanbanEnabled,
+        enabled: true,
         cloud: nextConfig
       });
       if (!result.ok) {
         throw new Error(result.message || t("settings.kanban.saveFailed"));
       }
-      onKanbanEnabledChange(result.settings.enabled);
       setControlCloudConfig({
         ...defaultTaskBoardCloudConfig,
         ...result.settings.cloud

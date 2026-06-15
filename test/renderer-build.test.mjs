@@ -901,7 +901,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /key: AgentWebclientRouteKey;/);
   assert.match(appShell, /kind: AgentWebclientRouteKind;/);
   assert.match(appShell, /mode: AgentWebclientRouteMode;/);
-  assert.match(appShell, /path="\/kanban"[\s\S]*?kanbanSettingsLoaded[\s\S]*?kanbanEnabled[\s\S]*?<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>[\s\S]*?<Navigate to="\/control-center" replace \/>/);
+  assert.match(appShell, /path="\/kanban"[\s\S]*?kanbanSettingsLoaded[\s\S]*?<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>/);
+  assert.doesNotMatch(appShell, /path="\/kanban"[\s\S]*?kanbanEnabled[\s\S]*?<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
   assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
   assert.match(appShell, /assistantNavAgents/);
@@ -1686,6 +1687,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
 
   assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
   assert.match(orderHelper, /"kanban"/);
@@ -1706,6 +1708,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(orderHelper, /const availableKeys = new Set\(availableItems\.map\(\(item\) => item\.key\)\)/);
   assert.match(orderHelper, /availableKeys\.has\(key as SidebarNavOrderItemKey\)/);
   assert.match(orderHelper, /orderedKeys\.push\(item\.key\)/);
+  assert.match(orderHelper, /return \["kanban", \.\.\.orderedKeys\.filter\(\(key\) => key !== "kanban"\)\]/);
   assert.doesNotMatch(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
   assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
@@ -1714,19 +1717,19 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /key\.startsWith\("custom:"\) \? `website:\$\{key\.slice\("custom:"\.length\)\}`/);
   assert.match(appShell, /normalizeWebGroupOrder/);
   assert.match(appShell, /availableSidebarNavOrderItems/);
-  assert.match(appShell, /const \[kanbanEnabled, setKanbanEnabled\] = useState\(true\)/);
   assert.match(appShell, /const \[kanbanSettingsLoaded, setKanbanSettingsLoaded\] = useState\(false\)/);
   assert.match(appShell, /const \[marketEnabled, setMarketEnabled\] = useState\(false\)/);
   assert.match(appShell, /function isMarketSettingsVisible\(settings:[\s\S]*?return settings\?\.enabled === true;/);
   assert.match(appShell, /window\.electronAPI\.taskBoard\.getSettings\(\)/);
-  assert.match(appShell, /setKanbanEnabled\(result\.settings\.enabled\)/);
+  assert.doesNotMatch(appShell, /setKanbanEnabled/);
   assert.match(appShell, /window\.electronAPI\.market\.getSettings\(\)/);
   assert.match(appShell, /setMarketEnabled\(isMarketSettingsVisible\(settings\)\)/);
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
-  assert.match(appShell, /\.filter\(\(item\) => item\.key !== "kanban" \|\| kanbanEnabled\)/);
+  assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.match(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.doesNotMatch(appShell, /preferences\?\.kanban/);
-  assert.match(appShell, /onKanbanEnabledChange=\{setKanbanEnabled\}/);
+  assert.doesNotMatch(appShell, /onKanbanEnabledChange/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings\(\{\s*enabled:\s*true,/);
   assert.match(appShell, /onMarketEnabledChange=\{setMarketEnabled\}/);
   assert.match(appShell, /marketEnabled=\{marketEnabled\}/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
@@ -2435,11 +2438,11 @@ test("assistant navigation agents refresh immediately after startup services bec
 test("bootstrap success opens the first available navigation agent", () => {
   const appShell = readAppShellSource();
   const startupAutoOpenBlock = appShell.match(
-    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[kanbanEnabled, location\.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState\]\);/u
+    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[location\.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState\]\);/u
   )?.[0] ?? "";
 
   assert.match(startupAutoOpenBlock, /!navigationStateLoaded/);
-  assert.match(startupAutoOpenBlock, /getKanbanAwareFallbackPath\(kanbanEnabled\)/);
+  assert.match(startupAutoOpenBlock, /getKanbanAwareFallbackPath\(\)/);
   assert.match(startupAutoOpenBlock, /assistant\.listNavigationAgents\(\)/);
   assert.match(startupAutoOpenBlock, /normalizeAssistantNavAgents\(result\.items\)/);
   assert.match(startupAutoOpenBlock, /setAssistantNavAgents\(nextItems\)/);
