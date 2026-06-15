@@ -409,8 +409,8 @@ export function AppShell() {
   const isSettingsRoute = matchSettingsRoute(location.pathname);
   const currentRoute = `${location.pathname}${location.search}`;
   const settingsSectionDefinitions = useMemo(
-    () => buildLocalizedSettingsSections({ isWindows, kanbanEnabled, desktopPetSupported: isMac || isWindows, t }),
-    [isMac, isWindows, kanbanEnabled, t]
+    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported: isMac || isWindows, t }),
+    [isMac, isWindows, t]
   );
   const visibleSettingsSections = useMemo(
     () => getVisibleSettingsSections(settingsSectionDefinitions),
@@ -1810,7 +1810,6 @@ export function AppShell() {
                     sidebarNavOrder={normalizedSidebarNavOrder}
                     availableSidebarNavOrderItems={availableSidebarNavOrderItems}
                     onSidebarNavOrderChange={setSidebarNavOrder}
-                    kanbanEnabled={kanbanEnabled}
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     websiteItems={externalWebItems}

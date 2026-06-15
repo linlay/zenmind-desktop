@@ -64,7 +64,6 @@ type SettingsPageProps = {
   sidebarNavOrder: SidebarNavOrderItemKey[];
   availableSidebarNavOrderItems: SidebarNavOrderItem[];
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
-  kanbanEnabled: boolean;
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   websiteItems: WebsiteEntry[];
@@ -575,7 +574,6 @@ export function SettingsPage({
   sidebarNavOrder,
   availableSidebarNavOrderItems,
   onSidebarNavOrderChange,
-  kanbanEnabled,
   marketEnabled,
   onMarketEnabledChange,
   websiteItems,
@@ -640,8 +638,8 @@ export function SettingsPage({
   const assistantSettingsLoadedRef = useRef(false);
   const desktopPetStateLoadedRef = useRef(false);
   const sectionDefinitions = useMemo(
-    () => buildLocalizedSettingsSections({ isWindows, kanbanEnabled, desktopPetSupported, t }),
-    [desktopPetSupported, isWindows, kanbanEnabled, t]
+    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported, t }),
+    [desktopPetSupported, isWindows, t]
   );
   const visibleSections = useMemo(
     () => getVisibleSettingsSections(sectionDefinitions),

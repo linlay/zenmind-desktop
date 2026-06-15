@@ -52,6 +52,7 @@ export const enUSMessages = {
   "nav.embeddedWebs": "Websites / Apps",
   "nav.embeddedWebsCollapsed": "Webs",
   "nav.agents": "Agents",
+  "nav.registries": "Registry config",
   "nav.schedules": "Automations",
   "nav.schedulesCollapsed": "Autos",
   "nav.memory": "Memory",

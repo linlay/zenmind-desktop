@@ -52,6 +52,7 @@ export const zhCNMessages = {
   "nav.embeddedWebs": "网站 / 应用",
   "nav.embeddedWebsCollapsed": "网站",
   "nav.agents": "智能体",
+  "nav.registries": "注册配置",
   "nav.schedules": "自动化",
   "nav.schedulesCollapsed": "自动化",
   "nav.memory": "记忆管理",

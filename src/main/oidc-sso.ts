@@ -528,6 +528,10 @@ function shouldUsePkce(config: OidcConfig) {
   return config.usePkce === true || isGoogleOidcConfig(config);
 }
 
+function isPublicPkceOidcConfig(config: OidcConfig) {
+  return shouldUsePkce(config) && !config.clientSecret?.trim();
+}
+
 function shouldUseSystemBrowser(config: OidcConfig) {
   return isServerBrokerAuthMode(config) || isGoogleOidcConfig(config);
 }
@@ -968,6 +972,9 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     throw new Error("clientId 不能为空。");
   }
   if (!config.clientSecret?.trim()) {
+    if (isPublicPkceOidcConfig(config)) {
+      return config;
+    }
     if (isGoogleOidcConfig(config)) {
       throw new Error("Google Desktop SSO 需要配置 clientSecret。");
     }
@@ -1261,13 +1268,12 @@ function buildAuthorizeUrl(
   url.searchParams.set("redirect_uri", options.redirectUri || config.redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
-  if (isGoogleOidcConfig(config)) {
-    url.searchParams.set("scope", config.scope || DEFAULT_GOOGLE_SCOPE);
-    if (options.codeChallenge) {
-      url.searchParams.set("code_challenge", options.codeChallenge);
-      url.searchParams.set("code_challenge_method", "S256");
-    }
-  } else {
+  url.searchParams.set("scope", config.scope || DEFAULT_GOOGLE_SCOPE);
+  if (options.codeChallenge) {
+    url.searchParams.set("code_challenge", options.codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+  }
+  if (!isGoogleOidcConfig(config)) {
     url.searchParams.set("prompt", "login");
   }
   return url.toString();
@@ -1693,17 +1699,25 @@ function buildTokenExchangeRequest(
       body: bodyParams.toString()
     };
   }
-  tokenUrl.searchParams.set("client_id", config.clientId);
-  tokenUrl.searchParams.set("client_secret", config.clientSecret || "");
-  tokenUrl.searchParams.set("redirect_uri", options.redirectUri || config.redirectUri);
-  tokenUrl.searchParams.set("grant_type", "authorization_code");
-  tokenUrl.searchParams.set("code", code);
+  const bodyParams = new URLSearchParams();
+  bodyParams.set("client_id", config.clientId);
+  if (config.clientSecret?.trim()) {
+    bodyParams.set("client_secret", config.clientSecret.trim());
+  }
+  bodyParams.set("redirect_uri", options.redirectUri || config.redirectUri);
+  bodyParams.set("grant_type", "authorization_code");
+  bodyParams.set("code", code);
+  if (options.codeVerifier) {
+    bodyParams.set("code_verifier", options.codeVerifier);
+  }
   return {
     url: tokenUrl.toString(),
     method: "POST",
     headers: {
-      "Accept": "application/json"
-    }
+      "Accept": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: bodyParams.toString()
   };
 }
 
@@ -2098,7 +2112,11 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
 
 function buildLogoutUrl(config: OidcConfig = DEFAULT_OIDC_CONFIG) {
   const url = new URL(config.logoutUrl);
-  url.searchParams.set("callback", config.logoutCallbackUri);
+  if (config.provider && config.provider !== "google") {
+    url.searchParams.set("post_logout_redirect_uri", config.logoutCallbackUri);
+  } else {
+    url.searchParams.set("callback", config.logoutCallbackUri);
+  }
   return url.toString();
 }
 

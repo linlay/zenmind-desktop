@@ -9,11 +9,9 @@ export type {
 
 export function createSettingsSectionDefinitions({
   isWindows,
-  kanbanEnabled = true,
   desktopPetSupported = true
 }: {
   isWindows: boolean;
-  kanbanEnabled?: boolean;
   desktopPetSupported?: boolean;
 }): SettingsSectionDefinition[] {
   return [
@@ -29,7 +27,7 @@ export function createSettingsSectionDefinitions({
       label: "kanban",
       description: "",
       layout: "measure",
-      visible: kanbanEnabled
+      visible: true
     },
     {
       id: "appearance",
@@ -154,14 +152,12 @@ export function localizeSettingsSectionDefinitions(
 
 export function buildLocalizedSettingsSections({
   isWindows,
-  kanbanEnabled,
   desktopPetSupported,
   t
 }: {
   isWindows: boolean;
-  kanbanEnabled?: boolean;
   desktopPetSupported?: boolean;
   t: (key: TranslationKey) => string;
 }): SettingsSectionDefinition[] {
-  return localizeSettingsSectionDefinitions(createSettingsSectionDefinitions({ isWindows, kanbanEnabled, desktopPetSupported }), t);
+  return localizeSettingsSectionDefinitions(createSettingsSectionDefinitions({ isWindows, desktopPetSupported }), t);
 }

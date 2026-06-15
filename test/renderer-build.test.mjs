@@ -164,6 +164,8 @@ test("agent webclient management routes render embedded webclient pages", () => 
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const globalStyles = readSourceFile("src", "renderer", "styles.css");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const manifestContracts = readSourceFile("src", "shared", "contracts", "manifest.ts");
+  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
   const surfaceHosts = readSourceFile(
     "src",
     "renderer",
@@ -175,6 +177,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(routeDefinitions, /routePath:\s*"\/agents"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(routeDefinitions, /routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /"\/agents\/:agentKey"/);
   assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?element=\{null\}/);
@@ -182,6 +185,8 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(pluginPage, /normalizedEmbedPath === "\/registries"/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
   assert.doesNotMatch(appShell, /usesAgentNativeSurface/);
   assert.doesNotMatch(appShellCss, /has-agent-native-surface/);
@@ -831,7 +836,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.match(sidebarSource, /<span>删除<\/span>/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
+  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/automations"/);
@@ -895,6 +900,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"memory"[\s\S]*?routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/copilot\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
   assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
@@ -924,6 +930,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /embedPath:\s*`\$\{pathname\}\$\{search\}`/);
   assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest"\]\)/);
   assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
@@ -1164,9 +1171,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /is-settings-mode/);
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
-  assert.match(settingsSections, /kanbanEnabled\?:\s*boolean/);
+  assert.doesNotMatch(settingsSections, /kanbanEnabled\?:\s*boolean/);
   assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?label:\s*"general"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
-  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*kanbanEnabled/);
+  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*desktopPetSupported/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
@@ -1197,8 +1204,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
 
   assert.match(settingsPage, /useParams\(\)/);
   assert.match(settingsPage, /resolveSettingsSectionId/);
-  assert.match(settingsPage, /kanbanEnabled:\s*boolean/);
-  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, kanbanEnabled, desktopPetSupported, t \}\)/);
+  assert.doesNotMatch(settingsPage, /kanbanEnabled:\s*boolean/);
+  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, t \}\)/);
   assert.match(settingsPage, /switch \(activeSection\)/);
   assert.match(settingsPage, /case "appearance"/);
   assert.match(settingsPage, /settings-appearance-panel/);
@@ -1519,8 +1526,8 @@ test("settings page exposes cloud board control as a global section", () => {
   assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
   assert.match(enUS, /"settings\.control\.label":\s*"Control"/);
   assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
-  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*kanbanEnabled/);
-  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, kanbanEnabled, desktopPetSupported, t \}\)/);
+  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
+  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, t \}\)/);
 });
 
 test("Tunnel Hub settings expose enabled state and gate optional startup", () => {
@@ -3883,7 +3890,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/agents" \|\| item\.to === "\/market"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/agents" \|\| item\.to === "\/registries" \|\| item\.to === "\/market"/);
   assert.match(sidebarSource, /const middleToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/control-center" \|\| item\.to === "\/help"/);
   assert.match(sidebarSource, /const settingsToolItems = fixedToolItems\.filter\(\(item\) => item\.to === "\/settings"\);/);
   assert.match(sidebarSource, /\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?middleToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?settingsToolItems\.map\(\(item\) => renderToolLink\(item\)\)/);
@@ -3988,6 +3995,10 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(oidcSso, /GOOGLE_LOOPBACK_HOST = "127\.0\.0\.1"/u);
   assert.match(oidcSso, /port: 0,[\s\S]{0,120}closeAfterCallback: true/u);
   assert.match(oidcSso, /code_challenge/u);
+  assert.match(oidcSso, /function isPublicPkceOidcConfig/u);
+  assert.match(oidcSso, /bodyParams\.set\("code_verifier", options\.codeVerifier\)/u);
+  assert.match(oidcSso, /"Content-Type": "application\/x-www-form-urlencoded"/u);
+  assert.match(oidcSso, /post_logout_redirect_uri/u);
   assert.match(oidcSso, /openMode: "system" as const/u);
   assert.match(ssoController, /async openSystemBrowserUrl/u);
   assert.match(ssoController, /options\.openExternal\(targetUrl\)/u);

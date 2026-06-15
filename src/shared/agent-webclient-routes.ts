@@ -5,6 +5,7 @@ export type AgentWebclientRouteKey =
   | "agents"
   | "schedules"
   | "memory"
+  | "registries"
   | "copilot"
   | "agent-chat"
   | "assistant-target";
@@ -53,6 +54,14 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     routePath: "/memory",
     embedPath: "/memory",
     labelKey: "nav.memory",
+    kind: "management",
+    mode: "embedded"
+  },
+  {
+    key: "registries",
+    routePath: "/registries",
+    embedPath: "/registries",
+    labelKey: "nav.registries",
     kind: "management",
     mode: "embedded"
   },
