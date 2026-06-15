@@ -19,6 +19,7 @@ export type SidebarNavOrderItem = {
 };
 
 type SidebarNavOrderInput = {
+  kanbanEnabled?: boolean;
   serviceItems: SidebarNavOrderItem[];
   experimentalItems: SidebarNavOrderItem[];
   webItems: SidebarNavOrderItem[];
@@ -44,12 +45,13 @@ export function createWebNavOrderKey(entryKey: string): SidebarNavOrderItemKey {
 }
 
 export function createDefaultSidebarNavOrderItems({
+  kanbanEnabled = true,
   serviceItems: _serviceItems,
   experimentalItems: _experimentalItems
 }: SidebarNavOrderInput): SidebarNavOrderItem[] {
   const staticItems = new Map(STATIC_SIDEBAR_NAV_ORDER_ITEMS.map((item) => [item.key, item]));
   return [
-    staticItems.get("kanban")!,
+    ...(kanbanEnabled ? [staticItems.get("kanban")!] : []),
     staticItems.get("schedules")!,
     staticItems.get("group:assistants")!,
     staticItems.get("group:webs")!

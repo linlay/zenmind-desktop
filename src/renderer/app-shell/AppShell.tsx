@@ -201,12 +201,18 @@ function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[]
   }
 }
 
-function getKanbanAwareFallbackPath() {
-  return "/kanban";
+function isKanbanNavigationPath(targetPath: string) {
+  return /^\/kanban(?:[/?#]|$)/.test(targetPath);
 }
 
-function resolveKanbanAwareNavigationPath(targetPath: string) {
-  return targetPath;
+function getKanbanAwareFallbackPath(kanbanEnabled: boolean) {
+  return kanbanEnabled ? "/kanban" : "/control-center";
+}
+
+function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boolean) {
+  return !kanbanEnabled && isKanbanNavigationPath(targetPath)
+    ? "/control-center"
+    : targetPath;
 }
 
 function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
@@ -317,6 +323,7 @@ export function AppShell() {
   const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() =>
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
+  const [kanbanEnabled, setKanbanEnabled] = useState(true);
   const [kanbanSettingsLoaded, setKanbanSettingsLoaded] = useState(false);
   const [marketEnabled, setMarketEnabled] = useState(false);
   const [marketSettingsLoaded, setMarketSettingsLoaded] = useState(false);
@@ -402,8 +409,8 @@ export function AppShell() {
   const isSettingsRoute = matchSettingsRoute(location.pathname);
   const currentRoute = `${location.pathname}${location.search}`;
   const settingsSectionDefinitions = useMemo(
-    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported: isMac || isWindows, t }),
-    [isMac, isWindows, t]
+    () => buildLocalizedSettingsSections({ isWindows, kanbanEnabled, desktopPetSupported: isMac || isWindows, t }),
+    [isMac, isWindows, kanbanEnabled, t]
   );
   const visibleSettingsSections = useMemo(
     () => getVisibleSettingsSections(settingsSectionDefinitions),
@@ -465,6 +472,7 @@ export function AppShell() {
   const effectiveSidebarWidth = isSettingsRoute ? SETTINGS_SIDEBAR_WIDTH : renderedSidebarWidth;
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return createDefaultSidebarNavOrderItems({
+      kanbanEnabled,
       serviceItems: [],
       experimentalItems: [],
       webItems: []
@@ -475,7 +483,7 @@ export function AppShell() {
       if (item.key === "group:webs") return { ...item, label: t("nav.embeddedWebs") };
       return item;
     });
-  }, [t]);
+  }, [kanbanEnabled, t]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -802,7 +810,7 @@ export function AppShell() {
     setStartupTimedOut(false);
 
     void (async () => {
-      let targetPath = getKanbanAwareFallbackPath();
+      let targetPath = getKanbanAwareFallbackPath(kanbanEnabled);
       try {
         const result = await window.electronAPI.assistant.listNavigationAgents();
         if (cancelled) {
@@ -831,7 +839,7 @@ export function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState]);
+  }, [kanbanEnabled, location.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState]);
 
   useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
@@ -1011,11 +1019,9 @@ export function AppShell() {
         if (cancelled) {
           return;
         }
-        void result;
+        setKanbanEnabled(result.settings.enabled);
       })
-      .catch(() => {
-        // Keep the Kanban entry visible even when legacy visibility settings cannot be read.
-      })
+      .catch(() => undefined)
       .finally(() => {
         if (!cancelled) {
           setKanbanSettingsLoaded(true);
@@ -1034,6 +1040,9 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (!navigationPreferencesLoaded || !kanbanSettingsLoaded) {
+      return;
+    }
     try {
       window.localStorage.setItem(
         SIDEBAR_NAV_ORDER_STORAGE_KEY,
@@ -1042,12 +1051,10 @@ export function AppShell() {
     } catch {
       // Ignore persistence failures and keep the in-memory navigation order usable.
     }
-    if (navigationPreferencesLoaded) {
-      window.electronAPI.settings.saveNavigationPreferences({
-        mainOrder: normalizedSidebarNavOrder
-      }).catch(() => undefined);
-    }
-  }, [navigationPreferencesLoaded, normalizedSidebarNavOrder]);
+    window.electronAPI.settings.saveNavigationPreferences({
+      mainOrder: normalizedSidebarNavOrder
+    }).catch(() => undefined);
+  }, [kanbanSettingsLoaded, navigationPreferencesLoaded, normalizedSidebarNavOrder]);
 
   useEffect(() => {
     try {
@@ -1338,7 +1345,10 @@ export function AppShell() {
 
   function handleExitSettingsMode() {
     requestSidebarNavigation(
-      resolveKanbanAwareNavigationPath(lastNonSettingsRouteRef.current || getKanbanAwareFallbackPath())
+      resolveKanbanAwareNavigationPath(
+        lastNonSettingsRouteRef.current || getKanbanAwareFallbackPath(kanbanEnabled),
+        kanbanEnabled
+      )
     );
   }
 
@@ -1768,7 +1778,7 @@ export function AppShell() {
                 <RootRouteRedirect
                   startupRestoreState={startupRestoreState}
                   startupAllReady={startupAllReady}
-                  kanbanEnabled={true}
+                  kanbanEnabled={kanbanEnabled}
                   navigationPreferencesLoaded={navigationStateLoaded}
                 />
               }
@@ -1778,7 +1788,9 @@ export function AppShell() {
               element={
                 !kanbanSettingsLoaded
                   ? null
-                  : <RouteSuspense><TaskBoardPage hostTheme={resolvedTheme} /></RouteSuspense>
+                  : !kanbanEnabled
+                    ? <Navigate to="/control-center" replace />
+                    : <RouteSuspense><TaskBoardPage hostTheme={resolvedTheme} /></RouteSuspense>
               }
             />
             <Route path="/control-center" element={<RouteSuspense><ControlCenterPage /></RouteSuspense>} />
@@ -1798,6 +1810,7 @@ export function AppShell() {
                     sidebarNavOrder={normalizedSidebarNavOrder}
                     availableSidebarNavOrderItems={availableSidebarNavOrderItems}
                     onSidebarNavOrderChange={setSidebarNavOrder}
+                    kanbanEnabled={kanbanEnabled}
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     websiteItems={externalWebItems}
