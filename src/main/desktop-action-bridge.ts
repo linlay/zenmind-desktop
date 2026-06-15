@@ -238,6 +238,7 @@ function readTunnelHubSettingsInput(args: Record<string, unknown>) {
   const patch = asRecord(args.patch);
   const source = hasObjectKeys(settings) ? settings : hasObjectKeys(patch) ? patch : args;
   return {
+    enabled: typeof source.enabled === "boolean" ? source.enabled : undefined,
     relayUrl: typeof source.relayUrl === "string" ? source.relayUrl : undefined,
     agentToken: typeof source.agentToken === "string" ? source.agentToken : undefined,
     clearAgentToken: source.clearAgentToken === true,
@@ -360,10 +361,11 @@ function saveMarketSettingsPreview(
   if ("enabled" in input && typeof input.enabled !== "boolean") {
     throw new Error("market.enabled must be boolean");
   }
-  const enabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
+  const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
+  const marketApiBaseUrl = normalizeMarketApiBaseUrl(rawMarketUrl || legacyMarketUrl || current.marketApiBaseUrl);
   return {
-    enabled,
-    marketApiBaseUrl: normalizeMarketApiBaseUrl(rawMarketUrl || legacyMarketUrl || current.marketApiBaseUrl)
+    enabled: requestedEnabled && Boolean(marketApiBaseUrl),
+    marketApiBaseUrl
   };
 }
 

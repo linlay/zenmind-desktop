@@ -227,6 +227,7 @@ export interface ServiceImportResult {
 }
 
 export interface TunnelHubAgentSettings {
+  enabled: boolean;
   relayUrl: string;
   hasAgentToken: boolean;
   agentTokenPreview: string;
@@ -235,6 +236,7 @@ export interface TunnelHubAgentSettings {
 }
 
 export interface TunnelHubAgentSettingsInput {
+  enabled?: boolean;
   relayUrl?: string;
   agentToken?: string;
   clearAgentToken?: boolean;

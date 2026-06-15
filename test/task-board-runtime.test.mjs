@@ -85,7 +85,7 @@ test("task board settings read and save enabled plus cloud config", (t) => {
       deviceAlias: ""
     });
 
-    const saved = runtime.saveSettings({
+    const incomplete = runtime.saveSettings({
       enabled: true,
       cloud: {
         serverUrl: "http://127.0.0.1:3000",
@@ -94,9 +94,24 @@ test("task board settings read and save enabled plus cloud config", (t) => {
         deviceAlias: "桌面 A"
       }
     });
+    assert.equal(incomplete.settings.enabled, false);
+    assert.equal(incomplete.settings.cloud.serverUrl, "http://127.0.0.1:3000");
+    assert.equal(incomplete.settings.cloud.token, "");
+    assert.equal(readTaskBoardSettings(app).enabled, false);
+
+    const saved = runtime.saveSettings({
+      enabled: true,
+      cloud: {
+        serverUrl: "http://127.0.0.1:3000",
+        token: "secret",
+        selectedProjectId: "project-a",
+        remoteControlEnabled: true,
+        deviceAlias: "桌面 A"
+      }
+    });
     assert.equal(saved.settings.enabled, true);
     assert.equal(saved.settings.cloud.serverUrl, "http://127.0.0.1:3000");
-    assert.equal(saved.settings.cloud.token, "");
+    assert.equal(saved.settings.cloud.token, "secret");
     assert.equal(readTaskBoardSettings(app).enabled, true);
   } finally {
     runtime.stop();
@@ -203,7 +218,7 @@ test("task board runtime stores remote startRun issue locally before executing",
 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "",
+    token: "secret",
     selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
@@ -333,7 +348,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "",
+    token: "secret",
     selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "旧设备名"
@@ -352,7 +367,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "",
+    token: "secret",
     selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "牛家林"
@@ -417,7 +432,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "",
+    token: "secret",
     selectedProjectId: "project-1",
     remoteControlEnabled: true
   });
@@ -547,7 +562,7 @@ test("task board runtime falls back to local agents for remote listAgents", asyn
 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "",
+    token: "secret",
     selectedProjectId: "project-1",
     remoteControlEnabled: true
   });
@@ -638,7 +653,7 @@ test("task board runtime lists installed agents when platform listAgents times o
 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "",
+    token: "secret",
     selectedProjectId: "project-1",
     remoteControlEnabled: true
   });

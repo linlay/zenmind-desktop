@@ -252,12 +252,18 @@ function normalizeTaskBoardSettings(
       ? input.taskBoard as TaskBoardDesktopConfigFile
       : input;
   const hasCloudInput = hasTaskBoardCloudFields(cloudInput);
+  const cloud = hasCloudInput
+    ? normalizeTaskBoardCloudConfig(cloudInput)
+    : defaults.cloud ?? normalizeTaskBoardCloudConfig({});
+  const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : defaults.enabled ?? hasCloudInput;
   return {
-    enabled: typeof input.enabled === "boolean" ? input.enabled : defaults.enabled ?? hasCloudInput,
-    cloud: hasCloudInput
-      ? normalizeTaskBoardCloudConfig(cloudInput)
-      : defaults.cloud ?? normalizeTaskBoardCloudConfig({})
+    enabled: requestedEnabled && isTaskBoardCloudConfigComplete(cloud),
+    cloud
   };
+}
+
+function isTaskBoardCloudConfigComplete(config: TaskBoardCloudConfig) {
+  return Boolean(config.serverUrl.trim() && config.token.trim());
 }
 
 function readJsonConfigFile(filePath: string) {
@@ -676,9 +682,14 @@ export class TaskBoardRuntime {
   saveSettings(input: TaskBoardSettingsInput): TaskBoardSettingsResult {
     const settings = saveTaskBoardSettings(this.options.app, input);
     this.refreshConnection({ forceReconnect: true });
+    const requestedEnable = input.enabled === true;
     return {
       ok: true,
-      message: settings.enabled ? "看板设置已保存。" : "看板已关闭。",
+      message: requestedEnable && !settings.enabled
+        ? "请先配置看板云端 API 地址和 token。"
+        : settings.enabled
+          ? "看板设置已保存。"
+          : "看板已关闭。",
       settings,
       configPath: getTaskBoardConfigPath(this.options.app),
       connectionState: this.connectionState

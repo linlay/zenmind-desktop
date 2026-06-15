@@ -17,6 +17,7 @@ const MIN_RECONNECT_SECONDS = 1;
 const MAX_RECONNECT_SECONDS = 3600;
 
 type StoredTunnelHubAgentSettings = {
+  enabled?: unknown;
   relayUrl?: unknown;
   tlsInsecureSkipVerify?: unknown;
   reconnectSeconds?: unknown;
@@ -54,6 +55,15 @@ function readStoredSettings(app: App): StoredTunnelHubAgentSettings {
 function normalizeRelayUrl(value: unknown) {
   const raw = typeof value === "string" ? value.trim() : "";
   return raw || DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL;
+}
+
+function isValidRelayUrl(relayUrl: string) {
+  try {
+    const parsed = new URL(relayUrl);
+    return parsed.protocol === "ws:" || parsed.protocol === "wss:";
+  } catch {
+    return false;
+  }
 }
 
 function normalizeReconnectSeconds(value: unknown) {
@@ -109,8 +119,14 @@ function previewToken(token: string) {
 export function readTunnelHubAgentSettings(app: App): TunnelHubAgentSettings {
   const stored = readStoredSettings(app);
   const token = readTunnelHubAgentToken(app);
+  const relayUrl = normalizeRelayUrl(stored.relayUrl);
+  const complete = Boolean(token) && isValidRelayUrl(relayUrl);
+  const enabled = typeof stored.enabled === "boolean"
+    ? stored.enabled && complete
+    : complete;
   return {
-    relayUrl: normalizeRelayUrl(stored.relayUrl),
+    enabled,
+    relayUrl,
     hasAgentToken: Boolean(token),
     agentTokenPreview: previewToken(token),
     tlsInsecureSkipVerify: stored.tlsInsecureSkipVerify === true,
@@ -121,13 +137,13 @@ export function readTunnelHubAgentSettings(app: App): TunnelHubAgentSettings {
 export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSettingsInput) {
   const issues: string[] = [];
   const relayUrl = normalizeRelayUrl(input.relayUrl);
-  try {
-    const parsed = new URL(relayUrl);
-    if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
-      issues.push("Relay URL must use ws:// or wss://.");
+  if ("enabled" in input && typeof input.enabled !== "boolean") {
+    issues.push("enabled must be boolean.");
+  }
+  if (input.enabled === true || relayUrl) {
+    if (!isValidRelayUrl(relayUrl)) {
+      issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
     }
-  } catch {
-    issues.push("Relay URL is invalid.");
   }
 
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds);
@@ -144,6 +160,7 @@ export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSetting
     valid: issues.length === 0,
     issues,
     settings: {
+      enabled: input.enabled === true,
       relayUrl,
       tlsInsecureSkipVerify: input.tlsInsecureSkipVerify === true,
       reconnectSeconds
@@ -151,7 +168,10 @@ export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSetting
   };
 }
 
-function writeStoredSettings(app: App, settings: Pick<TunnelHubAgentSettings, "relayUrl" | "tlsInsecureSkipVerify" | "reconnectSeconds">) {
+function writeStoredSettings(
+  app: App,
+  settings: Pick<TunnelHubAgentSettings, "enabled" | "relayUrl" | "tlsInsecureSkipVerify" | "reconnectSeconds">
+) {
   const settingsPath = getSettingsPath(app);
   ensureDir(path.dirname(settingsPath));
   fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
@@ -192,20 +212,33 @@ export function saveTunnelHubAgentSettings(
   app: App,
   input: TunnelHubAgentSettingsInput
 ): TunnelHubAgentSettingsResult {
-  const validation = validateTunnelHubAgentSettingsInput(input);
-  if (!validation.valid) {
-    return {
-      ok: false,
-      message: validation.issues.join(" "),
-      settings: readTunnelHubAgentSettings(app),
-      configPath: getSettingsPath(app)
-    };
+  const current = readTunnelHubAgentSettings(app);
+  const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
+  const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
+  const tlsInsecureSkipVerify = typeof input.tlsInsecureSkipVerify === "boolean"
+    ? input.tlsInsecureSkipVerify
+    : current.tlsInsecureSkipVerify;
+  const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
+  const nextToken = input.clearAgentToken === true
+    ? ""
+    : typeof input.agentToken === "string" && input.agentToken.trim()
+      ? input.agentToken.trim()
+      : readTunnelHubAgentToken(app);
+  const issues: string[] = [];
+  if (requestedEnabled) {
+    if (!isValidRelayUrl(relayUrl)) {
+      issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
+    }
+    if (!nextToken) {
+      issues.push("Agent token is required.");
+    }
   }
 
   const nextSettings = {
-    relayUrl: validation.settings.relayUrl,
-    tlsInsecureSkipVerify: validation.settings.tlsInsecureSkipVerify,
-    reconnectSeconds: validation.settings.reconnectSeconds
+    enabled: requestedEnabled && issues.length === 0,
+    relayUrl,
+    tlsInsecureSkipVerify,
+    reconnectSeconds
   };
   writeStoredSettings(app, nextSettings);
 
@@ -219,9 +252,17 @@ export function saveTunnelHubAgentSettings(
   }
 
   syncTunnelHubAgentSettingsToEnv(app);
+  if (issues.length > 0) {
+    return {
+      ok: false,
+      message: issues.join(" "),
+      settings: readTunnelHubAgentSettings(app),
+      configPath: getSettingsPath(app)
+    };
+  }
   return {
     ok: true,
-    message: "Tunnel Hub Agent settings saved.",
+    message: nextSettings.enabled ? "Tunnel Hub Agent settings saved and enabled." : "Tunnel Hub Agent settings saved.",
     settings: readTunnelHubAgentSettings(app),
     configPath: getSettingsPath(app)
   };

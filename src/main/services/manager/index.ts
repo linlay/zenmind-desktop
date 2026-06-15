@@ -173,6 +173,7 @@ import {
 } from "./app-server-env";
 import {
   TUNNEL_HUB_AGENT_SERVICE_ID,
+  readTunnelHubAgentSettings,
   syncTunnelHubAgentSettingsToEnv
 } from "../../tunnel-hub-agent-settings";
 import {
@@ -3100,6 +3101,9 @@ async function startOptionalAutoStartupServices(
     try {
       getService(serviceId);
     } catch {
+      continue;
+    }
+    if (serviceId === TUNNEL_HUB_AGENT_SERVICE_ID && !readTunnelHubAgentSettings(app).enabled) {
       continue;
     }
 

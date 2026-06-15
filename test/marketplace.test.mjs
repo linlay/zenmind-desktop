@@ -1698,6 +1698,17 @@ test("saved marketApiBaseUrl without enabled true does not request the market ca
   });
 });
 
+test("market settings fall back to disabled when enabled without an API address", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-empty-api-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const settings = saveMarketSettings(app, { enabled: true, marketApiBaseUrl: "" });
+  assert.equal(settings.enabled, false);
+  assert.equal(settings.marketApiBaseUrl, "");
+  assert.equal(getMarketSettings(app).enabled, false);
+});
+
 test("importSkillFromCommand runs an npm or npx download command and installs the produced skill", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-command-skill-"));
   const app = createApp(root);

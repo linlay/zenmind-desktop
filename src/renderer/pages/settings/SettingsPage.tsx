@@ -177,12 +177,14 @@ const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
 };
 
 const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
+  enabled: false,
   relayUrl: "",
   hasAgentToken: false,
   agentTokenPreview: "",
   tlsInsecureSkipVerify: false,
   reconnectSeconds: 3
 };
+const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
 
 function isMarketVisible(settings: MarketSettings) {
   return settings.enabled === true && Boolean(settings.marketApiBaseUrl.trim());
@@ -1646,10 +1648,18 @@ export function SettingsPage({
   const memoryAutoLearnLabel = memorySettings?.autoLearn ? t("settings.memory.autoLearnEnabled") : t("settings.memory.autoLearnDisabled");
 
   async function handleToggleDesktopPet() {
+    const nextEnabled = !desktopPetState?.enabled;
+    if (nextEnabled) {
+      const appearanceAvailable = desktopPetAppearanceOptions.some((appearance) => appearance.id === currentDesktopPetAppearanceId);
+      if (!desktopPetSupported || !desktopPetState?.supported || !appearanceAvailable) {
+        showSectionNotice("desktopPet", t("settings.desktopPet.enableUnavailable"), "error");
+        return;
+      }
+    }
     setDesktopPetPending(true);
     try {
       const nextState = await window.electronAPI.desktopPet.saveSettings({
-        enabled: !desktopPetState?.enabled
+        enabled: nextEnabled
       });
       setDesktopPetState(nextState);
       setReadErrorSections(["desktopPet"], "");
@@ -1728,7 +1738,9 @@ export function SettingsPage({
   async function handleToggleKanbanVisibility() {
     const previousEnabled = kanbanEnabled;
     const nextEnabled = !kanbanEnabled;
-    onKanbanEnabledChange(nextEnabled);
+    if (!nextEnabled) {
+      onKanbanEnabledChange(false);
+    }
     setKanbanVisibilityPending(true);
     try {
       const result = await window.electronAPI.taskBoard.saveSettings({
@@ -1745,6 +1757,9 @@ export function SettingsPage({
       });
       setControlConnectionState(result.connectionState ?? "disabled");
       setReadErrorSections(["kanban"], "");
+      if (nextEnabled && !result.settings.enabled) {
+        throw new Error(result.message || t("settings.kanban.enableIncomplete"));
+      }
       showSectionNotice(
         "kanban",
         result.settings.enabled
@@ -1897,28 +1912,116 @@ export function SettingsPage({
     }
   }
 
+  async function handleToggleMarketEnabled() {
+    const previousSettings = marketSettings;
+    const nextEnabled = !marketSettings.enabled;
+    if (!nextEnabled) {
+      onMarketEnabledChange?.(false);
+    }
+    setMarketSettingsSaving(true);
+    try {
+      const settings = await window.electronAPI.market.saveSettings({
+        ...marketSettings,
+        enabled: nextEnabled
+      });
+      setMarketSettings(settings);
+      onMarketEnabledChange?.(isMarketVisible(settings));
+      setReadErrorSections(["market"], "");
+      if (nextEnabled && !isMarketVisible(settings)) {
+        throw new Error(t("settings.market.enableIncomplete"));
+      }
+      showSectionNotice(
+        "market",
+        isMarketVisible(settings) ? t("settings.market.noticeVisible") : t("settings.market.noticeHidden"),
+        "success"
+      );
+    } catch (reason) {
+      setMarketSettings(previousSettings);
+      onMarketEnabledChange?.(isMarketVisible(previousSettings));
+      showSectionNotice("market", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setMarketSettingsSaving(false);
+    }
+  }
+
   async function handleSaveTunnelHubSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setTunnelHubSaving(true);
     try {
       const result = await window.electronAPI.settings.saveTunnelHubAgentSettings({
+        enabled: tunnelHubSettings.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
         agentToken: tunnelHubAgentToken,
         clearAgentToken: tunnelHubClearToken,
         tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
       });
-      if (!result.ok) {
-        throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
-      }
       setTunnelHubSettings({
         ...defaultTunnelHubAgentSettings,
         ...result.settings
       });
       setTunnelHubAgentToken("");
       setTunnelHubClearToken(false);
+      if (!result.ok) {
+        throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
+      }
       setReadErrorSections(["tunnelHub"], "");
       showSectionNotice("tunnelHub", result.message, "success");
+    } catch (reason) {
+      showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setTunnelHubSaving(false);
+    }
+  }
+
+  async function handleToggleTunnelHubEnabled() {
+    const nextEnabled = !tunnelHubSettings.enabled;
+    setTunnelHubSaving(true);
+    try {
+      const result = await window.electronAPI.settings.saveTunnelHubAgentSettings({
+        enabled: nextEnabled,
+        relayUrl: tunnelHubSettings.relayUrl,
+        agentToken: tunnelHubAgentToken,
+        clearAgentToken: tunnelHubClearToken,
+        tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
+        reconnectSeconds: tunnelHubSettings.reconnectSeconds
+      });
+      setTunnelHubSettings({
+        ...defaultTunnelHubAgentSettings,
+        ...result.settings
+      });
+      setTunnelHubAgentToken("");
+      setTunnelHubClearToken(false);
+      if (!result.ok) {
+        throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
+      }
+      if (nextEnabled) {
+        const startResult = await window.electronAPI.services.start(TUNNEL_HUB_AGENT_SERVICE_ID);
+        if (!startResult.ok) {
+          const disabled = await window.electronAPI.settings.saveTunnelHubAgentSettings({
+            enabled: false,
+            relayUrl: result.settings.relayUrl,
+            tlsInsecureSkipVerify: result.settings.tlsInsecureSkipVerify,
+            reconnectSeconds: result.settings.reconnectSeconds
+          });
+          setTunnelHubSettings({
+            ...defaultTunnelHubAgentSettings,
+            ...disabled.settings
+          });
+          throw new Error(startResult.message || t("settings.tunnelHub.saveFailed"));
+        }
+      } else {
+        const stopResult = await window.electronAPI.services.stop(TUNNEL_HUB_AGENT_SERVICE_ID);
+        if (!stopResult.ok) {
+          throw new Error(stopResult.message || t("settings.tunnelHub.saveFailed"));
+        }
+      }
+      setReadErrorSections(["tunnelHub"], "");
+      showSectionNotice(
+        "tunnelHub",
+        nextEnabled ? t("settings.tunnelHub.noticeEnabled") : t("settings.tunnelHub.noticeDisabled"),
+        "success"
+      );
     } catch (reason) {
       showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -1985,6 +2088,67 @@ export function SettingsPage({
   const activeSectionReadError = activeSection ? sectionReadErrors[activeSection] ?? "" : "";
   const activeSectionNotice = notice && notice.sectionId === activeSection && notice.tone === "error" ? notice : null;
 
+  function renderHeaderSwitch({
+    enabled,
+    disabled,
+    label,
+    onClick
+  }: {
+    enabled: boolean;
+    disabled: boolean;
+    label: string;
+    onClick: () => void;
+  }) {
+    return (
+      <button
+        type="button"
+        className={enabled ? "settings-switch is-on" : "settings-switch"}
+        role="switch"
+        aria-checked={enabled}
+        aria-label={label}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        <span aria-hidden="true" />
+      </button>
+    );
+  }
+
+  function renderSectionHeaderAction() {
+    switch (activeSection) {
+      case "desktopPet":
+        return desktopPetSupported ? renderHeaderSwitch({
+          enabled: desktopPetEnabled,
+          disabled: desktopPetPending || !desktopPetState,
+          label: t("settings.desktopPet.label"),
+          onClick: () => void handleToggleDesktopPet()
+        }) : null;
+      case "kanban":
+        return renderHeaderSwitch({
+          enabled: kanbanEnabled,
+          disabled: kanbanVisibilityPending,
+          label: t("settings.kanban.enabled"),
+          onClick: () => void handleToggleKanbanVisibility()
+        });
+      case "market":
+        return renderHeaderSwitch({
+          enabled: marketSettings.enabled,
+          disabled: marketSettingsSaving,
+          label: t("settings.market.enabled"),
+          onClick: () => void handleToggleMarketEnabled()
+        });
+      case "tunnelHub":
+        return renderHeaderSwitch({
+          enabled: tunnelHubSettings.enabled,
+          disabled: tunnelHubSaving,
+          label: t("settings.tunnelHub.label"),
+          onClick: () => void handleToggleTunnelHubEnabled()
+        });
+      default:
+        return null;
+    }
+  }
+
   function renderActiveSection() {
     switch (activeSection) {
       case "appearance":
@@ -2041,23 +2205,6 @@ export function SettingsPage({
       case "desktopPet":
         return desktopPetSupported ? (
           <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
-            <div className="settings-item-header settings-pet-header">
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.desktopPet.label")}</strong>
-                <span>{t("settings.desktopPet.description")}</span>
-              </div>
-              <button
-                type="button"
-                className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={Boolean(desktopPetState?.enabled)}
-                aria-label={t("settings.desktopPet.label")}
-                disabled={desktopPetPending}
-                onClick={() => void handleToggleDesktopPet()}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
             <div
               className={desktopPetEnabled
                 ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
@@ -2104,31 +2251,6 @@ export function SettingsPage({
       case "kanban":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
-            <div className="settings-item-header settings-control-permission-row">
-              <span className="settings-control-app-icon" aria-hidden="true">
-                <span />
-              </span>
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.kanban.enabled")}</strong>
-                <span>{t("settings.kanban.enabledDescription")}</span>
-                <em>
-                  {kanbanEnabled
-                    ? t("settings.kanban.statusEnabled")
-                    : t("settings.kanban.statusDisabled")}
-                </em>
-              </div>
-              <button
-                type="button"
-                className={kanbanEnabled ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={kanbanEnabled}
-                aria-label={t("settings.kanban.enabled")}
-                disabled={kanbanVisibilityPending}
-                onClick={() => void handleToggleKanbanVisibility()}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
             <div className="settings-item-header settings-control-permission-row">
               <span className="settings-control-app-icon" aria-hidden="true">
                 <span />
@@ -2234,31 +2356,6 @@ export function SettingsPage({
       case "market":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.market.panelAria")}>
-            <div className="settings-item-header settings-control-permission-row">
-              <span className="settings-control-app-icon" aria-hidden="true">
-                <span />
-              </span>
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.market.enabled")}</strong>
-                <span>{t("settings.market.enabledDescription")}</span>
-                <em>
-                  {isMarketVisible(marketSettings)
-                    ? t("settings.market.statusVisible")
-                    : t("settings.market.statusHidden")}
-                </em>
-              </div>
-              <button
-                type="button"
-                className={marketSettings.enabled ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={marketSettings.enabled}
-                aria-label={t("settings.market.enabled")}
-                disabled={marketSettingsSaving}
-                onClick={() => setMarketSettings((current) => ({ ...current, enabled: !current.enabled }))}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
             <form className="settings-control-form" onSubmit={(event) => void handleSaveMarketSettings(event)}>
               <label className="settings-control-field">
                 <span>{t("settings.market.apiBaseUrl")}</span>
@@ -2346,20 +2443,6 @@ export function SettingsPage({
       case "tunnelHub":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
-            <div className="settings-item-header settings-control-permission-row">
-              <span className="settings-control-app-icon" aria-hidden="true">
-                <span />
-              </span>
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.tunnelHub.connectionTitle")}</strong>
-                <span>{t("settings.tunnelHub.description")}</span>
-                <em>
-                  {tunnelHubSettings.hasAgentToken
-                    ? t("settings.tunnelHub.tokenConfigured", { preview: tunnelHubSettings.agentTokenPreview })
-                    : t("settings.tunnelHub.tokenMissing")}
-                </em>
-              </div>
-            </div>
             <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
               <label className="settings-control-field">
                 <span>{t("settings.tunnelHub.relayUrl")}</span>
@@ -3011,8 +3094,13 @@ export function SettingsPage({
       <div className="settings-content-panel" ref={contentRef}>
         <div className="settings-content-shell">
           <div className="settings-page-head">
-            <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
-            <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
+            <div className="settings-page-head-copy">
+              <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
+              <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
+            </div>
+            <div className="settings-page-head-action">
+              {renderSectionHeaderAction()}
+            </div>
           </div>
 
           <div className="settings-section-body">

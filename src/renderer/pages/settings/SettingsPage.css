@@ -760,7 +760,29 @@
 }
 
 .settings-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   width: 100%;
+}
+
+.settings-page-head-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-page-head-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 72px;
+  padding-top: 4px;
+}
+
+.settings-page-head-action:empty {
+  display: none;
 }
 
 .settings-page-head h1 {
@@ -1090,6 +1112,15 @@
 }
 
 @media (max-width: 860px) {
+  .settings-page-head {
+    gap: 12px;
+  }
+
+  .settings-page-head-action {
+    min-width: 64px;
+    padding-top: 2px;
+  }
+
   .settings-appearance-row {
     align-items: flex-start;
     flex-direction: column;
