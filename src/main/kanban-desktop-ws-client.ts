@@ -27,9 +27,8 @@ type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
 type KanbanEnvelope = {
   v?: number;
   frame?: "request" | "response" | "push" | "stream" | string;
-  type?: "event" | "rpc.req" | "rpc.res" | string;
+  type?: string;
   id?: string;
-  op?: string;
   role?: string;
   boardId?: string;
   projectId?: string;
@@ -43,7 +42,7 @@ type KanbanEnvelope = {
 };
 
 type PendingRequest = {
-  op: string;
+  messageType: string;
   resolve: (payload: KanbanEnvelope) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
@@ -211,44 +210,38 @@ function normalizeAccessLevel(value: unknown): AssistantStartRunRequest["accessL
   return text === "default" || text === "auto_approve" || text === "full_access" ? text : undefined;
 }
 
-function toV2Type(op: string) {
-  const trimmed = op.trim();
-  const aliases: Record<string, string> = {
-    "desktop.hello": "session.hello",
-    "desktop.assistant.listAgents": "agent.listDesktop",
-    "desktop.kanban.issue.dispatch": "desktop.issue.dispatch",
-    "desktop.automation.sync": "automation.sync",
-    "kanban.snapshot": "snapshot.updated",
-    "kanban.snapshot.get": "snapshot.get",
-    "kanban.issue.assignAndRun": "issue.assignRun",
-    "kanban.issue.dispatchToDesktop": "issue.dispatchDesktop"
-  };
-  if (aliases[trimmed]) {
-    return aliases[trimmed];
+function normalizeMessageType(messageType: string) {
+  const trimmed = messageType.trim();
+  if (!trimmed) {
+    throw new Error("WebSocket 业务类型不能为空。");
   }
-  return trimmed.startsWith("kanban.") ? trimmed.slice("kanban.".length) : trimmed;
+  const blockedKanbanPrefix = `kanban${"."}`;
+  const blockedDesktopHello = `desktop${"."}hello`;
+  const blockedDesktopKanbanPrefix = `desktop${"."}kanban${"."}`;
+  if (trimmed.startsWith(blockedKanbanPrefix) || trimmed === blockedDesktopHello || trimmed.startsWith(blockedDesktopKanbanPrefix)) {
+    throw new Error(`旧 Kanban 协议业务类型已禁用：${trimmed}`);
+  }
+  return trimmed;
 }
 
 function isV2Envelope(env: KanbanEnvelope) {
-  return (env.v ?? 0) >= 2 || readText(env.frame) !== "";
+  return env.v === PROTOCOL_VERSION && readText(env.frame) !== "" && readText(env.type) !== "";
 }
 
 function envelopeBusinessType(env: KanbanEnvelope) {
-  return toV2Type(isV2Envelope(env) ? readText(env.type) : readText(env.op));
+  return readText(env.type);
 }
 
 function isResponseEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) ? env.frame === "response" : env.type === "rpc.res";
+  return isV2Envelope(env) && env.frame === "response";
 }
 
 function isRequestEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) ? env.frame === "request" : env.type === "rpc.req";
+  return isV2Envelope(env) && env.frame === "request";
 }
 
 function isSnapshotPushEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env)
-    ? env.frame === "push" && envelopeBusinessType(env) === "snapshot.updated"
-    : env.op === "kanban.snapshot";
+  return isV2Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "snapshot.updated";
 }
 
 export class KanbanDesktopWsClient {
@@ -329,7 +322,7 @@ export class KanbanDesktopWsClient {
     return this.state === "open" && Boolean(this.ws);
   }
 
-  async request<TPayload = unknown>(op: string, payload: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TPayload> {
+  async request<TPayload = unknown>(messageType: string, payload: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TPayload> {
     if (!this.ws || this.state !== "open") {
       throw new Error("云端看板服务未连接。");
     }
@@ -337,15 +330,15 @@ export class KanbanDesktopWsClient {
     const response = await new Promise<KanbanEnvelope>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this.pending.delete(id)) {
-          reject(new Error(`${op} 请求超时。`));
+          reject(new Error(`${messageType} 请求超时。`));
           this.handleClosed("error");
         }
       }, timeoutMs);
-      this.pending.set(id, { op, resolve, reject, timeout });
+      this.pending.set(id, { messageType, resolve, reject, timeout });
       const sent = this.sendEnvelope({
         v: PROTOCOL_VERSION,
         frame: "request",
-        type: toV2Type(op),
+        type: normalizeMessageType(messageType),
         id,
         role: "desktop",
         boardId: "default",
@@ -359,7 +352,7 @@ export class KanbanDesktopWsClient {
       }
     });
     if (response.ok === false) {
-      throw new Error(response.error?.message || `${op} 操作失败。`);
+      throw new Error(response.error?.message || `${messageType} 操作失败。`);
     }
     return response.payload as TPayload;
   }
@@ -465,6 +458,10 @@ export class KanbanDesktopWsClient {
       this.options.onDebug?.(`云端看板消息解析失败：${errorMessage(error)}`);
       return;
     }
+    if (!isV2Envelope(env) || !["request", "response", "push"].includes(readText(env.frame))) {
+      this.closeProtocolError("kanban v2 envelope required");
+      return;
+    }
     if (isResponseEnvelope(env) && env.id) {
       this.options.onDebug?.(`云端看板 WebSocket 收到响应：${envelopeBusinessType(env) || "unknown"} ${env.id}`);
       this.resolvePending(env);
@@ -524,33 +521,18 @@ export class KanbanDesktopWsClient {
     clearTimeout(pending.timeout);
     this.pending.delete(env.id);
     if (env.ok === false) {
-      pending.reject(new Error(env.error?.message || `${pending.op} 操作失败。`));
+      pending.reject(new Error(env.error?.message || `${pending.messageType} 操作失败。`));
       return;
     }
     pending.resolve(env);
   }
 
   private respond(env: KanbanEnvelope, ok: boolean, payload: unknown, message = "") {
-    if (isV2Envelope(env)) {
-      return this.sendEnvelope({
-        v: PROTOCOL_VERSION,
-        frame: "response",
-        type: envelopeBusinessType(env),
-        id: env.id,
-        role: "desktop",
-        boardId: env.boardId ?? "default",
-        projectId: env.projectId ?? this.config?.selectedProjectId ?? "default",
-        revision: env.revision,
-        ok,
-        error: ok ? undefined : { code: "desktop_error", message: message || "Desktop 操作失败。" },
-        payload
-      });
-    }
     return this.sendEnvelope({
-      v: 1,
-      type: "rpc.res",
+      v: PROTOCOL_VERSION,
+      frame: "response",
+      type: envelopeBusinessType(env),
       id: env.id,
-      op: env.op,
       role: "desktop",
       boardId: env.boardId ?? "default",
       projectId: env.projectId ?? this.config?.selectedProjectId ?? "default",
@@ -559,6 +541,14 @@ export class KanbanDesktopWsClient {
       error: ok ? undefined : { code: "desktop_error", message: message || "Desktop 操作失败。" },
       payload
     });
+  }
+
+  private closeProtocolError(reason: string) {
+    this.options.onDebug?.(`云端看板协议错误：${reason}`);
+    this.rejectAllPending(new Error(reason));
+    this.closeWebSocket(reason, 1002);
+    this.setState("error");
+    this.scheduleReconnect();
   }
 
   private sendEnvelope(env: KanbanEnvelope) {
@@ -606,7 +596,7 @@ export class KanbanDesktopWsClient {
     }, RECONNECT_MS);
   }
 
-  private closeWebSocket(reason: string) {
+  private closeWebSocket(reason: string, code = 1000) {
     const socket = this.ws;
     this.ws = null;
     if (!socket) {
@@ -617,7 +607,7 @@ export class KanbanDesktopWsClient {
     socket.onclose = null;
     socket.onerror = null;
     try {
-      socket.close(1000, reason);
+      socket.close(code, reason);
     } catch {
       // Ignore close failures for sockets that are already closing.
     }

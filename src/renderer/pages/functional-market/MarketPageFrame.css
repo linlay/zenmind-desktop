@@ -1,23 +1,34 @@
 .market-page {
-  --market-control-bg: var(--desktop-ui-bg, var(--bg-base));
-  --market-control-card: var(--desktop-ui-card, var(--surface-strong));
-  --market-control-card-soft: var(--desktop-ui-card-soft, var(--surface-soft));
-  --market-control-border: var(--desktop-ui-border, var(--line));
-  --market-control-text: var(--desktop-ui-text, var(--ink));
-  --market-control-muted: var(--desktop-ui-muted, var(--ink-soft));
-  --market-control-blue: var(--desktop-ui-primary, var(--accent));
-  --market-control-blue-strong: var(--desktop-ui-primary-strong, var(--accent-strong));
+  --market-control-bg: #fafafa;
+  --market-control-card: #ffffff;
+  --market-control-card-soft: #f4f4f5;
+  --market-control-border: #e4e4e7;
+  --market-control-text: #18181b;
+  --market-control-muted: #71717a;
+  --market-control-blue: #4f46e5;
+  --market-control-blue-strong: #4338ca;
   min-height: calc(100vh - 64px);
   background: var(--market-control-bg);
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
+:root[data-theme="dark"] .market-page {
+  --market-control-bg: var(--desktop-ui-bg, #181818);
+  --market-control-card: color-mix(in srgb, var(--surface-strong) 90%, #111827 10%);
+  --market-control-card-soft: rgba(255, 255, 255, 0.045);
+  --market-control-border: rgba(255, 255, 255, 0.12);
+  --market-control-text: var(--desktop-ui-text);
+  --market-control-muted: var(--desktop-ui-muted);
+  --market-control-blue: #6366f1;
+  --market-control-blue-strong: #818cf8;
+}
+
 .market-shell {
   height: calc(100vh - 72px);
   display: flex;
   flex-direction: column;
-  padding: 6px 0 0;
+  padding: 4px 0 0;
   overflow: hidden;
 }
 
@@ -30,7 +41,7 @@
   min-width: 0;
   align-items: start;
   gap: 0;
-  margin-bottom: 10px;
+  margin-bottom: 9px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
   pointer-events: auto;
@@ -48,14 +59,12 @@
   align-items: center;
   justify-self: stretch;
   width: 100%;
-  gap: 4px;
+  gap: 5px;
   padding: 4px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--market-control-border);
-  background: color-mix(in srgb, var(--market-control-card-soft) 76%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 8px 20px rgba(15, 23, 42, 0.06);
+  background: var(--market-control-card-soft);
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
   app-region: no-drag;
   -webkit-app-region: no-drag;
   pointer-events: auto;
@@ -65,14 +74,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: 36px;
   min-width: 0;
-  padding: 7px 10px;
+  padding: 6px 9px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--market-control-muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   cursor: pointer;
   transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
@@ -98,7 +107,7 @@
   justify-content: center;
   flex: none;
   color: currentColor;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
 }
 
@@ -117,11 +126,11 @@
   align-items: center;
   justify-content: center;
   min-width: 20px;
-  height: 18px;
+  height: 17px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--ink-soft);
+  background: #ffffff;
+  color: var(--market-control-muted);
   font-size: 11px;
   font-weight: 800;
   line-height: 1;
@@ -131,12 +140,12 @@
   background: var(--market-control-card);
   color: var(--market-control-text);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.52),
-    0 10px 24px rgba(15, 23, 42, 0.1);
+    inset 0 1px 0 rgba(255, 255, 255, 0.64),
+    0 6px 14px rgba(17, 24, 39, 0.08);
 }
 
 .market-tab.is-active .market-tab-count {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--market-control-blue) 10%, #ffffff);
   color: var(--market-control-blue);
 }
 
@@ -161,6 +170,16 @@
   box-shadow:
     inset 0 0 0 1px rgba(158, 197, 255, 0.24),
     0 8px 22px rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="dark"] .market-tab-count {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--desktop-ui-muted);
+}
+
+:root[data-theme="dark"] .market-tab.is-active .market-tab-count {
+  background: rgba(99, 102, 241, 0.18);
+  color: #c7d2fe;
 }
 
 .market-toolbar {
@@ -265,7 +284,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  gap: 8px;
+  gap: 10px;
   overflow: hidden;
 }
 
@@ -468,13 +487,13 @@
 }
 
 .market-status {
-  width: min(100%, 1040px);
-  max-width: 1040px;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--ink-soft);
+  width: 100%;
+  max-width: none;
+  padding: 8px 10px;
+  border: 1px solid var(--market-control-border);
+  border-radius: 8px;
+  background: var(--market-control-card);
+  color: var(--market-control-muted);
   font-size: 12px;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -521,25 +540,26 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: 34px;
   padding: 0 10px;
-  border-radius: 4px;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
+  border-radius: 8px;
+  border: 1px solid var(--market-control-border);
+  background: var(--market-control-card);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
 .market-search:focus-within,
 .market-select:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  border-color: color-mix(in srgb, var(--market-control-blue) 54%, var(--market-control-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--market-control-blue) 13%, transparent);
 }
 
 .market-search svg {
   width: 16px;
   height: 16px;
   flex: none;
-  stroke: var(--ink-muted);
+  color: var(--market-control-muted);
+  stroke: currentColor;
   fill: none;
   stroke-width: 1.8;
   stroke-linecap: round;
@@ -553,7 +573,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--market-control-text);
   font: inherit;
 }
 

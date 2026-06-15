@@ -48,7 +48,6 @@ import {
   type TaskBoardCloudSnapshot
 } from "./task-board-local-store";
 import { getDesktopConfigRoot } from "./user-paths";
-import { readLegacyKanbanNavigationPreferenceFromRoot } from "./desktop-profile-store";
 import {
   convertLocalProjectIssuesToPrivate,
   createLocalDesktopProject,
@@ -106,7 +105,6 @@ type TaskBoardAssistantSyncEvent = {
 };
 
 const KANBAN_CONFIG_FILE = "kanban.json";
-const LEGACY_CONTROL_CONFIG_FILE = "control.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
 const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
 const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv("ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS", 5_000);
@@ -172,9 +170,6 @@ function getTaskBoardConfigPath(app: App) {
   return path.join(getDesktopConfigRoot(app), KANBAN_CONFIG_FILE);
 }
 
-function getLegacyTaskBoardControlConfigPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), LEGACY_CONTROL_CONFIG_FILE);
-}
 
 function readTaskBoardOwnerConfig(input: unknown): TaskBoardDesktopConfigFile {
   if (!isRecord(input)) {
@@ -278,36 +273,20 @@ function readJsonConfigFile(filePath: string) {
   }
 }
 
-function readLegacyControlCloudConfig(app: App): TaskBoardCloudConfig {
-  const legacyPath = getLegacyTaskBoardControlConfigPath(app);
-  if (!fs.existsSync(legacyPath)) {
-    return normalizeTaskBoardCloudConfig({});
-  }
-  const parsed = readJsonConfigFile(legacyPath);
-  return normalizeTaskBoardCloudConfig(readTaskBoardOwnerConfig(parsed));
-}
-
-function readLegacyKanbanEnabled(app: App) {
-  return readLegacyKanbanNavigationPreferenceFromRoot(getDesktopConfigRoot(app)).enabled;
-}
 
 export function readTaskBoardSettings(app: App): TaskBoardSettings {
   const configPath = getTaskBoardConfigPath(app);
-  const legacyDefaults: Partial<TaskBoardSettings> = {
-    enabled: readLegacyKanbanEnabled(app),
-    cloud: readLegacyControlCloudConfig(app)
-  };
   if (fs.existsSync(configPath)) {
     const raw = readJsonConfigFile(configPath);
     const parsed = readTaskBoardOwnerConfig(raw);
-    const settings = normalizeTaskBoardSettings(parsed, legacyDefaults);
+    const settings = normalizeTaskBoardSettings(parsed);
     if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled) {
       writeTaskBoardSettings(app, settings);
     }
     return settings;
   }
 
-  const settings = normalizeTaskBoardSettings({}, legacyDefaults);
+  const settings = normalizeTaskBoardSettings({});
   writeTaskBoardSettings(app, settings);
   return settings;
 }
@@ -554,15 +533,15 @@ export class TaskBoardRuntime {
   constructor(private readonly options: TaskBoardRuntimeOptions) {
     this.wsClient = new KanbanDesktopWsClient({
       capabilities: [
-        "kanban.issue.dispatch",
-        "kanban.issue.sync",
+        "desktop.issue.dispatch",
+        "desktop.issue.sync",
         "desktop.issue.sync",
         "desktop.project.bind",
         "desktop.project.createLocal",
         "desktop.project.select",
-        "desktop.assistant.listAgents",
+        "agent.listDesktop",
         "desktop.assistant.startRun",
-        "desktop.automation.sync"
+        "automation.sync"
       ],
       getCurrentUser: () => this.currentUser(),
       getDeviceId: () => getDesktopDeviceId(this.options.app),
@@ -719,7 +698,7 @@ export class TaskBoardRuntime {
       };
     }
     try {
-      const response = await this.wsClient.request("kanban.issue.create", toCloudIssueInput(input));
+      const response = await this.wsClient.request("issue.create", toCloudIssueInput(input));
       return this.applyCloudIssueResponse(response, "任务已同步到云端看板。", "desktop");
     } catch (error) {
       return {
@@ -757,7 +736,7 @@ export class TaskBoardRuntime {
         }
         markDesktopKanbanIssueSyncing(this.options.app, currentUser, localResult.issue.id);
         try {
-          const response = await this.wsClient.request("kanban.issue.create", toCloudIssueInput(localResult.issue));
+          const response = await this.wsClient.request("issue.create", toCloudIssueInput(localResult.issue));
           const remoteIssue = resultIssuePayload(response);
           if (!remoteIssue) {
             return this.applyCloudIssueResponse(response, "任务已同步到云端看板。", "desktop");
@@ -796,7 +775,7 @@ export class TaskBoardRuntime {
     }
     try {
       markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
-      const response = await this.wsClient.request("kanban.issue.update", {
+      const response = await this.wsClient.request("issue.update", {
         id: getRemoteIssueId(issue),
         input: {
           ...toCloudIssueInput(input),
@@ -838,7 +817,7 @@ export class TaskBoardRuntime {
     }
     try {
       markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
-      const response = await this.wsClient.request("kanban.issue.move", {
+      const response = await this.wsClient.request("issue.move", {
         id: getRemoteIssueId(issue),
         status: input.status,
         position: input.position,
@@ -893,7 +872,7 @@ export class TaskBoardRuntime {
     }
     try {
       markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
-      const response = await this.wsClient.request("kanban.issue.delete", {
+      const response = await this.wsClient.request("issue.delete", {
         id: getRemoteIssueId(issue),
         baseIssueRevision: baseIssueRevision(issue)
       });
@@ -953,7 +932,7 @@ export class TaskBoardRuntime {
     }
     try {
       markDesktopKanbanIssueSyncing(this.options.app, currentUser, localResult.issue.id);
-      const response = await this.wsClient.request("kanban.issue.update", {
+      const response = await this.wsClient.request("issue.update", {
         id: getRemoteIssueId(localResult.issue),
         input: {
           ...toCloudIssueInput({

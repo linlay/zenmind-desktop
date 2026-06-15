@@ -140,42 +140,6 @@ test("task board settings read and save enabled plus cloud config", (t) => {
   }
 });
 
-test("task board settings migrate legacy profile kanban and control config", (t) => {
-  const app = createTempApp(t);
-  writeDesktopConfig(app, "profile.json", {
-    schemaVersion: 1,
-    navigation: {
-      kanban: {
-        enabled: true
-      }
-    }
-  });
-  const legacyControlPath = writeDesktopConfig(app, "control.json", {
-    taskBoard: {
-      serverUrl: "https://kanban.example.test",
-      token: "legacy-token",
-      selectedProjectId: "legacy-project",
-      remoteControlEnabled: true,
-      deviceAlias: "旧设备"
-    }
-  });
-
-  const settings = readTaskBoardSettings(app);
-  assert.equal(settings.enabled, true);
-  assert.deepEqual(settings.cloud, {
-    serverUrl: "https://kanban.example.test",
-    token: "legacy-token",
-    selectedProjectId: "legacy-project",
-    remoteControlEnabled: true,
-    deviceAlias: "旧设备"
-  });
-  assert.equal(fs.existsSync(legacyControlPath), true);
-
-  const kanbanPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", "kanban.json");
-  const migrated = JSON.parse(fs.readFileSync(kanbanPath, "utf8"));
-  assert.equal(migrated.enabled, true);
-  assert.equal(migrated.cloud.selectedProjectId, "legacy-project");
-});
 
 function waitFor(check, message = "condition", timeoutMs = 1000) {
   return new Promise((resolve, reject) => {
@@ -249,20 +213,20 @@ test("task board runtime stores remote startRun issue locally before executing",
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello", 3000);
+  await waitFor(() => socket.sent.length === 1, "session.hello", 3000);
   const hello = socket.sent[0];
   assert.equal(hello.payload.deviceName, "测试桌面");
   assert.equal(hello.payload.deviceAlias, "测试桌面");
   assert.equal(hello.payload.currentUser.name, "测试桌面");
   assert.ok(hello.payload.hostname || hello.payload.username);
-  socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      type: "rpc.res",
+      v: 2, frame: "response",
       id: snapshotRequest.id,
-      op: "kanban.snapshot",
+      type: "snapshot.get",
       ok: true,
       payload: {
         boardId: "default",
@@ -278,9 +242,9 @@ test("task board runtime stores remote startRun issue locally before executing",
   try {
     socket.onmessage({
       data: JSON.stringify({
-        type: "rpc.req",
+        v: 2, frame: "request",
         id: "start-run-remote",
-        op: "desktop.assistant.startRun",
+        type: "desktop.assistant.startRun",
         boardId: "default",
         projectId: "project-1",
         revision: 31,
@@ -327,7 +291,7 @@ test("task board runtime stores remote startRun issue locally before executing",
   }
 });
 
-test("task board runtime stores legacy cloud dispatch issue without auto-starting", async (t) => {
+test("task board runtime stores cloud dispatch issue without auto-starting", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -381,16 +345,16 @@ test("task board runtime stores legacy cloud dispatch issue without auto-startin
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello", 3000);
+  await waitFor(() => socket.sent.length === 1, "session.hello", 3000);
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      type: "rpc.res",
+      v: 2, frame: "response",
       id: snapshotRequest.id,
-      op: "kanban.snapshot",
+      type: "snapshot.get",
       ok: true,
       payload: {
         boardId: "default",
@@ -406,9 +370,9 @@ test("task board runtime stores legacy cloud dispatch issue without auto-startin
   try {
     socket.onmessage({
       data: JSON.stringify({
-        type: "rpc.req",
-        id: "legacy-dispatch-run",
-        op: "desktop.kanban.issue.dispatch",
+        v: 2, frame: "request",
+        id: "dispatch-run",
+        type: "desktop.issue.dispatch",
         boardId: "default",
         projectId: "project-1",
         revision: 32,
@@ -436,8 +400,8 @@ test("task board runtime stores legacy cloud dispatch issue without auto-startin
       })
     });
 
-    await waitFor(() => socket.sent.some((frame) => frame.id === "legacy-dispatch-run"), "legacy dispatch ACK");
-    const ack = socket.sent.find((frame) => frame.id === "legacy-dispatch-run");
+    await waitFor(() => socket.sent.some((frame) => frame.id === "dispatch-run"), "dispatch ACK");
+    const ack = socket.sent.find((frame) => frame.id === "dispatch-run");
     assert.equal(ack.ok, true);
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -509,11 +473,11 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   const firstSocket = sockets[0];
   firstSocket.readyState = 1;
   firstSocket.onopen();
-  await waitFor(() => firstSocket.sent.length === 1, "initial desktop.hello", 3000);
+  await waitFor(() => firstSocket.sent.length === 1, "initial session.hello", 3000);
   const firstHello = firstSocket.sent[0];
   assert.equal(firstHello.payload.deviceName, "旧设备名");
   firstSocket.onmessage({
-    data: JSON.stringify({ type: "rpc.res", id: firstHello.id, op: "desktop.hello", ok: true, payload: { ok: true } })
+    data: JSON.stringify({ v: 2, frame: "response", id: firstHello.id, type: "session.hello", ok: true, payload: { ok: true } })
   });
   await waitFor(() => firstSocket.sent.length === 2, "initial snapshot request", 3000);
 
@@ -530,7 +494,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   const secondSocket = sockets[1];
   secondSocket.readyState = 1;
   secondSocket.onopen();
-  await waitFor(() => secondSocket.sent.length === 1, "updated desktop.hello", 3000);
+  await waitFor(() => secondSocket.sent.length === 1, "updated session.hello", 3000);
   const secondHello = secondSocket.sent[0];
   assert.equal(secondHello.payload.deviceName, "牛家林");
   assert.equal(secondHello.payload.deviceAlias, "牛家林");
@@ -592,16 +556,16 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello");
+  await waitFor(() => socket.sent.length === 1, "session.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      type: "rpc.res",
+      v: 2, frame: "response",
       id: snapshotRequest.id,
-      op: "kanban.snapshot",
+      type: "snapshot.get",
       ok: true,
       payload: {
         boardId: "default",
@@ -617,9 +581,9 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
   try {
     socket.onmessage({
       data: JSON.stringify({
-        type: "rpc.req",
+        v: 2, frame: "request",
         id: "start-run-slow",
-        op: "desktop.assistant.startRun",
+        type: "desktop.assistant.startRun",
         boardId: "default",
         projectId: "project-1",
         revision: 31,
@@ -722,17 +686,17 @@ test("task board runtime falls back to local agents for remote listAgents", asyn
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello");
+  await waitFor(() => socket.sent.length === 1, "session.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
 
   try {
     socket.onmessage({
       data: JSON.stringify({
-        type: "rpc.req",
+        v: 2, frame: "request",
         id: "list-agents-local",
-        op: "desktop.assistant.listAgents",
+        type: "agent.listDesktop",
         boardId: "default",
         projectId: "project-1",
         payload: {}
@@ -814,15 +778,15 @@ test("task board runtime lists installed agents when platform listAgents times o
   try {
     socket.readyState = 1;
     socket.onopen();
-    await waitFor(() => socket.sent.length === 1, "desktop.hello", 3000);
+    await waitFor(() => socket.sent.length === 1, "session.hello", 3000);
     const hello = socket.sent[0];
-    socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
 
     socket.onmessage({
       data: JSON.stringify({
-        type: "rpc.req",
+        v: 2, frame: "request",
         id: "list-agents-timeout",
-        op: "desktop.assistant.listAgents",
+        type: "agent.listDesktop",
         boardId: "default",
         projectId: "project-1",
         payload: {}

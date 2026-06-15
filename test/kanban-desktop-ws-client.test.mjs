@@ -53,7 +53,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   const dispatches = [];
   const states = [];
   const client = new KanbanDesktopWsClient({
-    capabilities: ["kanban.issue.dispatch"],
+    capabilities: ["desktop.issue.dispatch"],
     getCurrentUser: () => ({
       id: "user-1",
       name: "Desktop User",
@@ -97,12 +97,11 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
 
   socket.readyState = 1;
   socket.onopen();
-    await waitFor(() => socket.sent.length === 1, "desktop.hello");
+    await waitFor(() => socket.sent.length === 1, "session.hello");
     const hello = socket.sent[0];
     assert.equal(hello.v, 2);
     assert.equal(hello.frame, "request");
     assert.equal(hello.type, "session.hello");
-    assert.equal(hello.op, undefined);
     assert.equal(hello.payload.deviceId, "device-1");
   assert.equal(hello.payload.deviceName, "佳林的 MacBook");
   assert.equal(hello.payload.deviceAlias, "佳林的 MacBook");
@@ -123,7 +122,6 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     assert.equal(snapshotRequest.v, 2);
     assert.equal(snapshotRequest.frame, "request");
     assert.equal(snapshotRequest.type, "snapshot.get");
-    assert.equal(snapshotRequest.op, undefined);
     socket.onmessage({
       data: JSON.stringify({
         v: 2,
@@ -158,7 +156,6 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     assert.equal(ack.v, 2);
     assert.equal(ack.frame, "response");
     assert.equal(ack.type, "desktop.issue.dispatch");
-    assert.equal(ack.op, undefined);
     assert.equal(ack.ok, true);
   assert.equal(ack.payload.message, "dispatched");
   assert.deepEqual(dispatches, [{
@@ -200,7 +197,7 @@ test("kanban desktop ws client decodes Blob websocket messages", async (t) => {
 
   const snapshots = [];
   const client = new KanbanDesktopWsClient({
-    capabilities: ["desktop.assistant.listAgents"],
+    capabilities: ["agent.listDesktop"],
     getCurrentUser: () => ({
       id: "user-1",
       name: "Desktop User",
@@ -222,20 +219,20 @@ test("kanban desktop ws client decodes Blob websocket messages", async (t) => {
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello");
+  await waitFor(() => socket.sent.length === 1, "session.hello");
   const hello = socket.sent[0];
 
   socket.onmessage({
-    data: new Blob([JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } })])
+    data: new Blob([JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } })])
   });
 
   await waitFor(() => socket.sent.length === 2, "snapshot request after blob hello");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: new Blob([JSON.stringify({
-      type: "rpc.res",
+      v: 2, frame: "response",
       id: snapshotRequest.id,
-      op: "kanban.snapshot",
+      type: "snapshot.get",
       ok: true,
       payload: {
         boardId: "default",
@@ -307,7 +304,7 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello");
+  await waitFor(() => socket.sent.length === 1, "session.hello");
 
     try {
       socket.onmessage({
@@ -331,7 +328,6 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
       assert.equal(ack.v, 2);
       assert.equal(ack.frame, "response");
       assert.equal(ack.type, "desktop.assistant.startRun");
-      assert.equal(ack.op, undefined);
       assert.deepEqual(startRuns, [{
       issue: { id: "ISS-9", title: "Remote run task", status: "in_progress" },
       revision: 21,
@@ -378,7 +374,7 @@ test("kanban desktop ws client reconnects after request timeout", async (t) => {
 
   const states = [];
   const client = new KanbanDesktopWsClient({
-    capabilities: ["kanban.issue.dispatch"],
+    capabilities: ["desktop.issue.dispatch"],
     getCurrentUser: () => ({
       id: "user-1",
       name: "Desktop User",
@@ -401,11 +397,11 @@ test("kanban desktop ws client reconnects after request timeout", async (t) => {
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello");
+  await waitFor(() => socket.sent.length === 1, "session.hello");
 
   await assert.rejects(
-    client.request("kanban.issue.update", { id: "ISS-1" }, 1),
-    /kanban\.issue\.update 请求超时/
+    client.request("issue.update", { id: "ISS-1" }, 1),
+    /issue\.update 请求超时/
   );
 
   assert.equal(socket.closed, true);
@@ -414,6 +410,86 @@ test("kanban desktop ws client reconnects after request timeout", async (t) => {
 
   client.stop();
 });
+
+
+test("kanban desktop ws client closes non-v2 protocol messages", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      this.closed = false;
+      this.closeCode = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close(code) {
+      this.readyState = 3;
+      this.closed = true;
+      this.closeCode = code;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const states = [];
+  const client = new KanbanDesktopWsClient({
+    capabilities: ["agent.listDesktop"],
+    getCurrentUser: () => ({
+      id: "user-1",
+      name: "Desktop User",
+      email: "desktop@example.com",
+      source: "sso"
+    }),
+    getDeviceId: () => "device-1",
+    onSnapshot: () => {},
+    onDispatchIssue: () => ({ ok: true, message: "dispatched", issues: [] }),
+    onListAgents: async () => [],
+    onStartRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" }),
+    onAutomationSync: async () => ({ ok: true }),
+    onStateChanged: (state) => states.push(state)
+  });
+
+  client.start({
+    serverUrl: "http://127.0.0.1:3000",
+    selectedProjectId: "project-1"
+  });
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  await waitFor(() => socket.sent.length === 1, "session.hello");
+
+  const oldFrameType = `rpc${"."}req`;
+  const oldBusinessField = `o${"p"}`;
+  socket.onmessage({
+    data: JSON.stringify({
+      type: oldFrameType,
+      id: "old-request",
+      [oldBusinessField]: `agent${"."}listDesktop`,
+      payload: {}
+    })
+  });
+
+  await waitFor(() => socket.closed, "protocol close");
+  assert.equal(socket.closeCode, 1002);
+  assert.equal(client.isOpen(), false);
+  assert.equal(states.at(-1), "error");
+
+  client.stop();
+});
+
 
 test("kanban desktop ws client closes when response cannot be sent", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
@@ -452,7 +528,7 @@ test("kanban desktop ws client closes when response cannot be sent", async (t) =
   const states = [];
   const debugMessages = [];
   const client = new KanbanDesktopWsClient({
-    capabilities: ["desktop.assistant.listAgents"],
+    capabilities: ["agent.listDesktop"],
     getCurrentUser: () => ({
       id: "user-1",
       name: "Desktop User",
@@ -476,14 +552,14 @@ test("kanban desktop ws client closes when response cannot be sent", async (t) =
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello");
+  await waitFor(() => socket.sent.length === 1, "session.hello");
 
   socket.failSends = true;
   socket.onmessage({
     data: JSON.stringify({
-      type: "rpc.req",
+      v: 2, frame: "request",
       id: "list-agents-1",
-      op: "desktop.assistant.listAgents",
+      type: "agent.listDesktop",
       payload: {}
     })
   });

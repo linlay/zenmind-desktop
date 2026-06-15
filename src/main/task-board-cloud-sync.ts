@@ -18,7 +18,7 @@ type AppPathProvider = {
 
 type WsRequester = {
   isOpen: () => boolean;
-  request: <T = unknown>(op: string, payload: unknown) => Promise<T>;
+  request: <T = unknown>(messageType: string, payload: unknown) => Promise<T>;
 };
 
 export type DesktopCloudSyncOptions = {

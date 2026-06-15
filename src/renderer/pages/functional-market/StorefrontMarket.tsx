@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRightOutlined,
+  ApiOutlined,
   AppstoreOutlined,
   CloudDownloadOutlined,
+  CodeOutlined,
   CopyOutlined,
   CloseOutlined,
+  GlobalOutlined,
   InfoCircleOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  RobotOutlined,
+  SafetyCertificateOutlined,
+  SmileOutlined
 } from "@ant-design/icons";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
@@ -162,6 +168,26 @@ function marketTypeLabel(type: MarketItemType, t: ReturnType<typeof useI18n>["t"
     case "plugin":
     default:
       return t("market.type.plugin");
+  }
+}
+
+function marketTypeIcon(type: MarketItemType) {
+  switch (type) {
+    case "skill":
+      return <SafetyCertificateOutlined />;
+    case "agent":
+      return <RobotOutlined />;
+    case "sandbox-image":
+      return <ApiOutlined />;
+    case "pet":
+      return <SmileOutlined />;
+    case "cli":
+      return <CodeOutlined />;
+    case "website-app":
+      return <GlobalOutlined />;
+    case "plugin":
+    default:
+      return <AppstoreOutlined />;
   }
 }
 
@@ -586,9 +612,15 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
           onClick={(event) => event.stopPropagation()}
         >
           <div className="market-store-detail-head">
-            <div className="market-store-detail-title">
-              <span className="market-store-detail-category-pill">{marketTypeLabel(selectedDetailItem.type, t)}</span>
-              <h2>{displayName}</h2>
+            <div className="market-store-detail-title-row">
+              <span className={`market-store-item-icon is-${selectedDetailItem.type}`} aria-hidden="true">
+                {marketTypeIcon(selectedDetailItem.type)}
+              </span>
+              <div className="market-store-detail-title">
+                <span className="market-store-detail-category-pill">{marketTypeLabel(selectedDetailItem.type, t)}</span>
+                <h2>{displayName}</h2>
+                <span className="market-store-detail-version">{marketVersionLabel(selectedDetailItem)}</span>
+              </div>
             </div>
             <button
               type="button"
@@ -626,11 +658,18 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     ].filter(Boolean))).slice(0, 3);
     return (
       <article key={`${item.type}:${item.id}`} className={`market-store-card is-${item.type}`}>
-        <div className="market-store-title-line">
-          <h2>{displayName}</h2>
-          <span className="market-store-version">{marketVersionLabel(item)}</span>
+        <div className="market-store-card-head">
+          <span className={`market-store-item-icon is-${item.type}`} aria-hidden="true">
+            {marketTypeIcon(item.type)}
+          </span>
+          <div className="market-store-title-block">
+            <div className="market-store-title-line">
+              <h2>{displayName}</h2>
+              <span className="market-store-version">{marketVersionLabel(item)}</span>
+            </div>
+            {description ? <p className="market-store-description">{description}</p> : null}
+          </div>
         </div>
-        {description ? <p className="market-store-description">{description}</p> : null}
         {chips.length > 0 ? (
           <div className="market-store-tags" aria-label={t("market.tags.aria", { name: displayName })}>
             {chips.map((chip) => <span key={chip}>{tagLabel(chip)}</span>)}
@@ -642,7 +681,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
             className="market-store-detail-link"
             onClick={() => openDetail(item)}
           >
-            <span>{t("market.storefront.detailsDemo")}</span>
+            <span>{t("market.action.details")}</span>
             <ArrowRightOutlined />
           </button>
           <div className="market-store-card-action">
