@@ -60,6 +60,11 @@ type AgentPlatformChatExportResult =
   | { ok: true; message: string; filename: string; bytes: Buffer }
   | { ok: false; message: string; filename: string; bytes?: never };
 
+type AssistantRunWakeLock = {
+  acquire: () => void;
+  release: () => void;
+};
+
 type PlatformUploadTicket = {
   id?: string;
   type?: string;
@@ -719,7 +724,20 @@ export class AgentPlatformAssistantBridge {
     onEvent: (event: AssistantEvent) => void;
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
+    wakeLock?: AssistantRunWakeLock;
   }) {}
+
+  private acquireWakeLockForActiveRuns() {
+    if (this.activeRuns.size === 1) {
+      this.options.wakeLock?.acquire();
+    }
+  }
+
+  private releaseWakeLockIfIdle() {
+    if (this.activeRuns.size === 0) {
+      this.options.wakeLock?.release();
+    }
+  }
 
   async startRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> {
     const message = request.message.trim();
@@ -744,6 +762,7 @@ export class AgentPlatformAssistantBridge {
     }
     const controller = new AbortController();
     this.activeRuns.set(runId, controller);
+    this.acquireWakeLockForActiveRuns();
     void this.runQuery(availability.baseUrl, availability.token, request, { chatId, runId, controller });
     return {
       ok: true,
@@ -759,7 +778,9 @@ export class AgentPlatformAssistantBridge {
   async stopRun(runId: string): Promise<AssistantStopRunResult> {
     const trimmedRunId = runId.trim();
     this.activeRuns.get(trimmedRunId)?.abort();
-    this.activeRuns.delete(trimmedRunId);
+    if (this.activeRuns.delete(trimmedRunId)) {
+      this.releaseWakeLockIfIdle();
+    }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
       return { ok: false, message: availability.message };
@@ -1155,7 +1176,9 @@ export class AgentPlatformAssistantBridge {
         error: message
       });
     } finally {
-      this.activeRuns.delete(run.runId);
+      if (this.activeRuns.delete(run.runId)) {
+        this.releaseWakeLockIfIdle();
+      }
     }
   }
 

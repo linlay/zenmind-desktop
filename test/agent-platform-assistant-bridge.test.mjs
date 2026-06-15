@@ -52,6 +52,67 @@ function sseResponse(frames) {
   });
 }
 
+function makeWakeLockRecorder() {
+  const calls = [];
+  return {
+    calls,
+    wakeLock: {
+      acquire: () => calls.push("acquire"),
+      release: () => calls.push("release")
+    }
+  };
+}
+
+function sseFrame(frame) {
+  if (frame === "[DONE]") {
+    return "event: message\ndata: [DONE]\n\n";
+  }
+  return `event: message\ndata: ${JSON.stringify(frame)}\n\n`;
+}
+
+function createControlledSseResponse() {
+  const encoder = new TextEncoder();
+  let streamController;
+  let closed = false;
+  const stream = new ReadableStream({
+    start(controller) {
+      streamController = controller;
+    }
+  });
+  return {
+    response: new Response(stream, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" }
+    }),
+    send(frame) {
+      if (!closed) {
+        streamController.enqueue(encoder.encode(sseFrame(frame)));
+      }
+    },
+    close() {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      try {
+        streamController.close();
+      } catch {
+        // Stream cancellation can win races in abort tests.
+      }
+    }
+  };
+}
+
+async function waitFor(predicate, message) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.fail(message);
+}
+
 test("agent platform assistant bridge returns a clear error when platform is unavailable", async () => {
   const { bridge } = makeBridge({
     getServiceState: async () => ({
@@ -65,6 +126,154 @@ test("agent platform assistant bridge returns a clear error when platform is una
 
   assert.equal(result.ok, false);
   assert.match(result.message, /platform stopped/u);
+});
+
+test("agent platform assistant bridge does not acquire wake lock for rejected starts", async () => {
+  const emptyWakeLock = makeWakeLockRecorder();
+  const empty = makeBridge({ wakeLock: emptyWakeLock.wakeLock });
+
+  const emptyResult = await empty.bridge.startRun({ message: "   " });
+
+  assert.equal(emptyResult.ok, false);
+  assert.deepEqual(emptyWakeLock.calls, []);
+
+  const unavailableWakeLock = makeWakeLockRecorder();
+  const unavailable = makeBridge({
+    wakeLock: unavailableWakeLock.wakeLock,
+    getServiceState: async () => ({
+      status: "stopped",
+      message: "platform stopped",
+      healthMeta: { webUrl: "", port: null }
+    })
+  });
+
+  const unavailableResult = await unavailable.bridge.startRun({ message: "hello" });
+
+  assert.equal(unavailableResult.ok, false);
+  assert.deepEqual(unavailableWakeLock.calls, []);
+});
+
+test("agent platform assistant bridge holds wake lock while a run is active", async () => {
+  const originalFetch = globalThis.fetch;
+  const wakeLock = makeWakeLockRecorder();
+  const { bridge, events } = makeBridge({ wakeLock: wakeLock.wakeLock });
+  globalThis.fetch = async (url, init = {}) => {
+    assert.equal(init.headers.Authorization, "Bearer desktop-token");
+    if (String(url).endsWith("/api/query")) {
+      assert.deepEqual(wakeLock.calls, ["acquire"]);
+      const body = JSON.parse(String(init.body));
+      return sseResponse([
+        { seq: 1, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "awake", timestamp: 1 },
+        "[DONE]"
+      ]);
+    }
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  try {
+    const result = await bridge.startRun({ message: "hello platform" });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(wakeLock.calls, ["acquire"]);
+    await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after run completion");
+    assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
+    assert.deepEqual(events.map((event) => event.type), ["content.delta", "run.complete"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge shares one wake lock across concurrent runs", async () => {
+  const originalFetch = globalThis.fetch;
+  const wakeLock = makeWakeLockRecorder();
+  const streams = [];
+  const { bridge, events } = makeBridge({ wakeLock: wakeLock.wakeLock });
+  globalThis.fetch = async (url, init = {}) => {
+    assert.equal(init.headers.Authorization, "Bearer desktop-token");
+    if (String(url).endsWith("/api/query")) {
+      const body = JSON.parse(String(init.body));
+      const stream = createControlledSseResponse();
+      streams.push({ body, stream });
+      return stream.response;
+    }
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  try {
+    const first = await bridge.startRun({ message: "first" });
+    const second = await bridge.startRun({ message: "second" });
+
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.deepEqual(wakeLock.calls, ["acquire"]);
+    await waitFor(() => streams.length === 2, "expected both query streams to start");
+
+    streams[0].stream.send({
+      seq: 1,
+      type: "content.delta",
+      runId: streams[0].body.runId,
+      chatId: streams[0].body.chatId,
+      delta: "first",
+      timestamp: 1
+    });
+    streams[0].stream.close();
+    await waitFor(
+      () => events.some((event) => event.runId === first.runId && event.type === "run.complete"),
+      "first run did not complete"
+    );
+    assert.deepEqual(wakeLock.calls, ["acquire"]);
+
+    streams[1].stream.send({
+      seq: 1,
+      type: "content.delta",
+      runId: streams[1].body.runId,
+      chatId: streams[1].body.chatId,
+      delta: "second",
+      timestamp: 1
+    });
+    streams[1].stream.close();
+    await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after both runs completed");
+    assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
+  } finally {
+    streams.forEach(({ stream }) => stream.close());
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge releases wake lock when stopRun interrupt fails", async () => {
+  const originalFetch = globalThis.fetch;
+  const wakeLock = makeWakeLockRecorder();
+  const streams = [];
+  const { bridge } = makeBridge({ wakeLock: wakeLock.wakeLock });
+  globalThis.fetch = async (url, init = {}) => {
+    assert.equal(init.headers.Authorization, "Bearer desktop-token");
+    if (String(url).endsWith("/api/query")) {
+      const stream = createControlledSseResponse();
+      init.signal?.addEventListener("abort", () => stream.close(), { once: true });
+      streams.push(stream);
+      return stream.response;
+    }
+    if (String(url).endsWith("/api/interrupt")) {
+      return new Response("interrupt failed", { status: 500 });
+    }
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  try {
+    const result = await bridge.startRun({ message: "hello platform" });
+    assert.equal(result.ok, true);
+    assert.deepEqual(wakeLock.calls, ["acquire"]);
+    await waitFor(() => streams.length === 1, "query stream did not start");
+
+    const stop = await bridge.stopRun(result.runId);
+
+    assert.equal(stop.ok, false);
+    assert.match(stop.message, /interrupt failed/u);
+    assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
+  } finally {
+    streams.forEach((stream) => stream.close());
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("agent platform assistant bridge forwards startRun accessLevel and emits aggregated completion message", async () => {

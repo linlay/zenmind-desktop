@@ -9,6 +9,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  powerSaveBlocker,
   screen,
   shell,
   session,
@@ -339,6 +340,45 @@ const INSTALLER_SHUTDOWN_ARGS = new Set<string>([
   INSTALLER_SHUTDOWN_ARG,
   ...LEGACY_INSTALLER_SHUTDOWN_ARGS
 ]);
+
+function createAssistantRunWakeLock(platform: NodeJS.Platform) {
+  const isMac = platform === "darwin";
+  const isWindows = platform === "win32";
+  const blockerType = (() => {
+    // The policy is the same today, but keep platform branches explicit for compatibility changes.
+    if (isMac) {
+      return "prevent-app-suspension" as const;
+    }
+    if (isWindows) {
+      return "prevent-app-suspension" as const;
+    }
+    return null;
+  })();
+  let blockerId: number | null = null;
+
+  return {
+    acquire() {
+      if (!blockerType) {
+        return;
+      }
+      if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
+        return;
+      }
+      blockerId = powerSaveBlocker.start(blockerType);
+    },
+    release() {
+      if (blockerId === null) {
+        return;
+      }
+      if (powerSaveBlocker.isStarted(blockerId)) {
+        powerSaveBlocker.stop(blockerId);
+      }
+      blockerId = null;
+    }
+  };
+}
+
+const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform);
 const DESKTOP_PET_DONE_PREVIEW_FALLBACK = "暂无回复预览";
 const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "思考中",
@@ -2010,6 +2050,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     app,
     getServiceState: getResponsiveServiceState,
     issueAccessToken: issueAgentAccessToken,
+    wakeLock: assistantRunWakeLock,
     onEvent: (event) => {
       state.taskBoardRuntime?.sendAssistantEvent(event);
       for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
@@ -2539,6 +2580,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("will-quit", () => {
+  assistantRunWakeLock.release();
   clearDesktopPetIdleResetTimer();
   void cdpIntegration.stop();
   appState.taskBoardRuntime?.stop();
