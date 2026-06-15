@@ -38,27 +38,53 @@ function writeDesktopConfig(app, fileName, value) {
   return configPath;
 }
 
-test("task board websocket config is disabled until remote control is allowed", (t) => {
+test("task board websocket config requires remote control but not token", (t) => {
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
-    token: "secret",
     selectedProjectId: "project-a"
   });
   assert.equal(readTaskBoardWsConfig(app), null);
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
-    token: "secret",
+    token: "",
     selectedProjectId: "project-a",
     remoteControlEnabled: true
   });
   assert.deepEqual(readTaskBoardWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
-    token: "secret",
+    token: "",
     selectedProjectId: "project-a"
   });
+});
+
+test("task board server URL ignores removed legacy enabled toggle even without token", (t) => {
+  const app = createTempApp(t);
+
+  writeKanbanConfig(app, {
+    schemaVersion: 1,
+    enabled: false,
+    cloud: {
+      serverUrl: "http://47.90.247.3",
+      token: "",
+      selectedProjectId: "default",
+      remoteControlEnabled: true,
+      deviceAlias: "家林"
+    }
+  });
+
+  assert.equal(readTaskBoardSettings(app).enabled, true);
+  assert.deepEqual(readTaskBoardWsConfig(app), {
+    serverUrl: "http://47.90.247.3",
+    token: "",
+    selectedProjectId: "default"
+  });
+
+  const configPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", "kanban.json");
+  const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  assert.equal(migrated.enabled, true);
 });
 
 test("task board settings read and save enabled plus cloud config", (t) => {
@@ -85,7 +111,7 @@ test("task board settings read and save enabled plus cloud config", (t) => {
       deviceAlias: ""
     });
 
-    const incomplete = runtime.saveSettings({
+    const serverOnly = runtime.saveSettings({
       enabled: true,
       cloud: {
         serverUrl: "http://127.0.0.1:3000",
@@ -94,10 +120,10 @@ test("task board settings read and save enabled plus cloud config", (t) => {
         deviceAlias: "桌面 A"
       }
     });
-    assert.equal(incomplete.settings.enabled, false);
-    assert.equal(incomplete.settings.cloud.serverUrl, "http://127.0.0.1:3000");
-    assert.equal(incomplete.settings.cloud.token, "");
-    assert.equal(readTaskBoardSettings(app).enabled, false);
+    assert.equal(serverOnly.settings.enabled, true);
+    assert.equal(serverOnly.settings.cloud.serverUrl, "http://127.0.0.1:3000");
+    assert.equal(serverOnly.settings.cloud.token, "");
+    assert.equal(readTaskBoardSettings(app).enabled, true);
 
     const saved = runtime.saveSettings({
       enabled: true,
