@@ -50,9 +50,9 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
-test("archive import filters expose only zip packages", () => {
-  assert.deepEqual(getArchiveExtensions("darwin"), ["zip"]);
-  assert.deepEqual(getArchiveExtensions("linux"), ["zip"]);
+test("archive import filters follow internal service package platform formats", () => {
+  assert.deepEqual(getArchiveExtensions("darwin"), ["gz", "tgz"]);
+  assert.deepEqual(getArchiveExtensions("linux"), ["gz", "tgz"]);
   assert.deepEqual(getArchiveExtensions("win32"), ["zip"]);
 });
 

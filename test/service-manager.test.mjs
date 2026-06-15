@@ -273,16 +273,20 @@ function currentManifestArch() {
   return process.arch === "x64" ? "amd64" : process.arch;
 }
 
+function currentBuiltinArchiveExtension() {
+  return process.platform === "win32" ? ".zip" : ".tar.gz";
+}
+
 function currentBuiltinArchiveFileName(serviceId, version) {
-  return `${serviceId}-${version}-${currentManifestOs()}-${currentManifestArch()}.zip`;
+  return `${serviceId}-${version}-${currentManifestOs()}-${currentManifestArch()}${currentBuiltinArchiveExtension()}`;
 }
 
 function powershellSingleQuoted(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
-function writeDirectoryZip(root, archivePath, entryName) {
-  if (process.platform === "win32") {
+function writeDirectoryArchive(root, archivePath, entryName) {
+  if (archivePath.toLowerCase().endsWith(".zip")) {
     execFileSync(
       "powershell",
       [
@@ -297,38 +301,17 @@ function writeDirectoryZip(root, archivePath, entryName) {
     return;
   }
 
-  execFileSync("zip", ["-qr", archivePath, entryName], { cwd: root });
+  execFileSync("tar", ["-czf", archivePath, "-C", root, entryName]);
 }
 
 function isReleaseArchiveName(fileName) {
   return fileName.endsWith(".zip") || fileName.endsWith(".tar.gz") || fileName.endsWith(".tgz");
 }
 
-function releaseArchiveZipName(fileName) {
-  return fileName
-    .replace(/\.tar\.gz$/u, ".zip")
-    .replace(/\.tgz$/u, ".zip");
-}
-
-function copyReleaseArchiveAsZip(sourceArchivePath, targetDir) {
-  const targetPath = path.join(targetDir, releaseArchiveZipName(path.basename(sourceArchivePath)));
-  if (sourceArchivePath.toLowerCase().endsWith(".zip")) {
-    fs.copyFileSync(sourceArchivePath, targetPath);
-    return targetPath;
-  }
-
-  const extractRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-release-to-zip-"));
-  try {
-    execFileSync("tar", ["-xzf", sourceArchivePath, "-C", extractRoot]);
-    const entries = fs.readdirSync(extractRoot, { withFileTypes: true })
-      .filter((entry) => !entry.name.startsWith("__MACOSX"));
-    assert.equal(entries.length, 1, `expected one top-level directory in ${sourceArchivePath}`);
-    assert.equal(entries[0].isDirectory(), true, `expected top-level directory in ${sourceArchivePath}`);
-    writeDirectoryZip(extractRoot, targetPath, entries[0].name);
-    return targetPath;
-  } finally {
-    fs.rmSync(extractRoot, { recursive: true, force: true });
-  }
+function copyReleaseArchive(sourceArchivePath, targetDir) {
+  const targetPath = path.join(targetDir, path.basename(sourceArchivePath));
+  fs.copyFileSync(sourceArchivePath, targetPath);
+  return targetPath;
 }
 
 function findCurrentPlatformReleaseArchive(serviceId) {
@@ -375,7 +358,7 @@ function createCurrentPlatformAssetsFixture() {
 
   writeContainerHubBundleRoot(containerHubBundleRoot);
   fs.mkdirSync(containerHubAssetDir, { recursive: true });
-  writeDirectoryZip(tempRoot, containerHubArchivePath, "agent-container-hub");
+  writeDirectoryArchive(tempRoot, containerHubArchivePath, "agent-container-hub");
 
   for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
     const archivePath = findCurrentPlatformReleaseArchive(serviceId);
@@ -383,7 +366,7 @@ function createCurrentPlatformAssetsFixture() {
 
     const targetDir = path.join(assetsRoot, serviceId);
     fs.mkdirSync(targetDir, { recursive: true });
-    copyReleaseArchiveAsZip(archivePath, targetDir);
+    copyReleaseArchive(archivePath, targetDir);
   }
 
   return {
@@ -481,7 +464,7 @@ function createBuiltinRestoreFixture() {
       }, null, 2)}\n`,
       "utf8"
     );
-    writeDirectoryZip(tempRoot, archivePath, "custom-builtin");
+    writeDirectoryArchive(tempRoot, archivePath, "custom-builtin");
   } else {
     fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
     fs.writeFileSync(
@@ -565,7 +548,7 @@ function createBuiltinRestoreFixture() {
     fs.chmodSync(path.join(bundleRoot, "stop.sh"), 0o755);
     fs.chmodSync(path.join(bundleRoot, "deploy.sh"), 0o755);
     fs.chmodSync(path.join(bundleRoot, "scripts", "program-common.sh"), 0o755);
-    writeDirectoryZip(tempRoot, archivePath, "custom-builtin");
+    writeDirectoryArchive(tempRoot, archivePath, "custom-builtin");
   }
 
   return {
@@ -1052,7 +1035,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       "utf8"
     );
 
-    writeDirectoryZip(tempRoot, archivePath, service.id);
+    writeDirectoryArchive(tempRoot, archivePath, service.id);
   }
 
   addContainerHubAssetToFixture({ tempRoot, assetsRoot }, options.containerHubOptions);
@@ -1466,7 +1449,7 @@ function createContainerHubBundleFixture(tempRoot, options = {}) {
 
   writeContainerHubBundleRoot(tarBundleRoot, { ...options, assetFileName: archiveFileName });
   fs.mkdirSync(serviceAssetDir, { recursive: true });
-  writeDirectoryZip(tarFixtureRoot, tarPath, "agent-container-hub");
+  writeDirectoryArchive(tarFixtureRoot, tarPath, "agent-container-hub");
 
   return {
     assetsRoot,
@@ -1485,7 +1468,7 @@ function addContainerHubAssetToFixture(fixture, options = {}) {
 
   writeContainerHubBundleRoot(tarBundleRoot, { ...options, assetFileName: archiveFileName });
   fs.mkdirSync(serviceAssetDir, { recursive: true });
-  writeDirectoryZip(tarFixtureRoot, tarPath, "agent-container-hub");
+  writeDirectoryArchive(tarFixtureRoot, tarPath, "agent-container-hub");
 
   return {
     tarPath,
@@ -3168,7 +3151,7 @@ test("readBuiltinAssetSignature uses the synced builtin asset manifest when avai
   const fixture = createBuiltinRestoreFixture();
   const serviceId = "custom-builtin";
   const assetFileName = fs.readdirSync(path.join(fixture.assetsRoot, serviceId))
-    .find((entry) => entry.endsWith(".zip"));
+    .find((entry) => isReleaseArchiveName(entry));
   assert.ok(assetFileName, "expected fixture archive");
   fs.writeFileSync(
     path.join(fixture.assetsRoot, "manifest.json"),
@@ -3268,38 +3251,6 @@ test("loadBuiltinServices reuses newer installed builtin manifests without openi
     assert.equal(loaded.some((item) => item.id === serviceId), true);
     assert.equal(service.version, installedVersion);
     assert.equal(service.assetFileName, assetFileName);
-  } finally {
-    registryInternals.clearServices();
-    if (previousAssetsRoot) {
-      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
-    } else {
-      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
-    }
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("loadBuiltinServices ignores legacy tar.gz builtin archives", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-tar-skip-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const assetsRoot = path.join(tempRoot, "assets");
-  const serviceId = "legacy-tar-builtin";
-  const serviceAssetDir = path.join(assetsRoot, serviceId);
-  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
-
-  fs.mkdirSync(serviceAssetDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(serviceAssetDir, currentBuiltinArchiveFileName(serviceId, "v1.0.0").replace(/\.zip$/u, ".tar.gz")),
-    "not a real archive",
-    "utf8"
-  );
-
-  try {
-    process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
-    registryInternals.clearServices();
-    const loaded = loadBuiltinServices(createApp(userDataRoot));
-
-    assert.equal(loaded.some((item) => item.id === serviceId), false);
   } finally {
     registryInternals.clearServices();
     if (previousAssetsRoot) {
@@ -4058,12 +4009,12 @@ test("installBuiltinService installs from selected archive when archivePath is p
   });
   const selectedArchiveRoot = path.join(tempRoot, "selected-root");
   const selectedBundleRoot = path.join(selectedArchiveRoot, "agent-container-hub");
-  const selectedArchivePath = path.join(tempRoot, "agent-container-hub-selected.zip");
+  const selectedArchivePath = path.join(tempRoot, `agent-container-hub-selected${currentBuiltinArchiveExtension()}`);
 
   writeContainerHubBundleRoot(selectedBundleRoot, {
     startScriptContent: selectedArchiveStartScript
   });
-  writeDirectoryZip(selectedArchiveRoot, selectedArchivePath, "agent-container-hub");
+  writeDirectoryArchive(selectedArchiveRoot, selectedArchivePath, "agent-container-hub");
 
   const { app, restore } = loadBuiltinsForTest(builtinFixture.userDataRoot, builtinFixture.assetsRoot);
   const service = getBuiltinService("agent-container-hub");

@@ -4,7 +4,7 @@
 `zenmind-desktop` 是 ZenMind 的应用壳项目，基于 Electron、React 和 Vite 构建。它负责把内置服务打包进桌面应用，并提供统一的安装、配置、启动、停止、重启和日志查看入口。
 
 当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
-- 内置服务从 `.zip` 资源包里的 `manifest.json` 自动发现。
+- 内置服务从按平台生成的 `.tar.gz` / `.zip` 资源包里的 `manifest.json` 自动发现。
 - 插件从平台程序数据目录自动扫描注册，统一使用 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/`，Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`。
 - Desktop 不再随安装包内置任何插件，插件统一通过导入 `.zip` archive 的方式接入。
 - 插件导入后需要在控制中心执行一次初始化；Desktop 会补齐模板配置并执行 `scripts.deploy`。
@@ -24,7 +24,7 @@
 - Node.js 18 及以上
 - npm 9 及以上
 - macOS arm64 或 Windows x64 开发环境
-- `zip` / `unzip` 命令可用；如需处理沙箱镜像归档，`tar` 命令也需可用
+- `zip` / `unzip` 和 `tar` 命令可用
 - 如需启动 `agent-container-hub`，本机需要 Docker 或 Podman
 
 ### 安装依赖
@@ -162,7 +162,7 @@ npm run dist:win-docker
 - `build.extraResources` 会把 `build/resources/demo` 复制进应用包；设置 `DEMO=1` 或 `DEMO=true` 打包时会把 `public/webapp-templates/` 同步为内置 demo，未设置时只写 manifest 且不包含 demo 资源。
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
-- `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。
+- `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.tar.gz` / `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。
 - 如设置 `ZENMIND_BUILTIN_ASSETS_SOURCE`，`sync:assets` 会优先从该目录扫描 `<service-id>/<archive-file>` 结构的预收集产物，再 fallback 到工作区自动发现。`../zenmind-dist` 就符合这个目录结构。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。

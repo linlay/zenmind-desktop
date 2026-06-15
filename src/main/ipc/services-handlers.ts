@@ -42,7 +42,7 @@ export interface ServicesIpcHandlerOptions {
   // Dialogs
   showFileDialog: (opts: any, owner?: any) => Promise<any>;
   showMessageBox?: (opts: any, owner?: any) => Promise<{ response: number }>;
-  showArchiveDialog: (title: string) => Promise<any>;
+  showArchiveDialog: (title: string, extensions?: string[]) => Promise<any>;
 
   // Log viewer window controls
   openLogViewerWindow: (request: any) => Promise<any>;
@@ -508,8 +508,11 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
           service: current
         };
       }
-      const archiveTitle = "选择内置服务安装包 (.zip)";
-      const result = await showArchiveDialog(archiveTitle);
+      const archiveTitle = platform === "win32"
+        ? "选择内置服务安装包 (.zip)"
+        : "选择内置服务安装包 (.tar.gz)";
+      const archiveExtensions = getArchiveExtensions?.(platform) ?? (platform === "win32" ? ["zip"] : ["gz", "tgz"]);
+      const result = await showArchiveDialog(archiveTitle, archiveExtensions);
       if (result.canceled || result.filePaths.length === 0) {
         return {
           ok: false,

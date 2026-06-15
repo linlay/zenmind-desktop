@@ -1930,11 +1930,11 @@ async function pickAssistantAttachments(chatId: string | null | undefined, owner
   });
 }
 
-function showArchiveDialog(title: string) {
+function showArchiveDialog(title: string, extensions = getArchiveExtensions(mainProcessContext.platform)) {
   return showFileDialog({
     title,
     properties: ["openFile"],
-    filters: [{ name: "Archive", extensions: getArchiveExtensions(mainProcessContext.platform) }]
+    filters: [{ name: "Archive", extensions }]
   });
 }
 

@@ -26,7 +26,7 @@ const {
   __testInternals
 } = require("../dist-electron/main/marketplace.js");
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
-const { getSkillInstallDir } = require("../dist-electron/main/skill-installer.js");
+const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 const { getDesktopPetsDataRoot, getMarketplaceConfigRoot } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
@@ -473,6 +473,28 @@ test("installPluginFromArchive rejects non-zip plugin packages", async (t) => {
     () => installPluginFromArchive(app, path.join(root, "plugin.tar.gz")),
     /插件包仅支持 \.zip 格式。/
   );
+});
+
+test("installSkillFromPath rejects non-zip skill archives but accepts SKILL.md", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-skill-local-format-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  for (const extension of [".tar.gz", ".tgz", ".skill"]) {
+    const archivePath = path.join(root, `local-skill${extension}`);
+    fs.writeFileSync(archivePath, "not a supported local skill package\n", "utf8");
+    await assert.rejects(
+      () => installSkillFromPath(app, archivePath),
+      /Skill 包仅支持 \.zip 或 SKILL\.md 文件。/
+    );
+  }
+
+  const skillFilePath = path.join(root, "Local Skill.md");
+  fs.writeFileSync(skillFilePath, "# Local Skill\n", "utf8");
+  const result = await installSkillFromPath(app, skillFilePath);
+
+  assert.equal(result.ok, true);
+  assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "local-skill"), "SKILL.md")), true);
 });
 
 test("refreshMarketCatalog combines catalog plugins with catalog skills", async (t) => {

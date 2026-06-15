@@ -6,7 +6,7 @@ export interface MarketplaceIpcHandlerOptions {
   mainWindow: any;
   t: (key: any, params?: any) => string;
   runServiceMutation: <T>(task: () => Promise<T>) => Promise<T>;
-  showArchiveDialog: (title: string) => Promise<any>;
+  showArchiveDialog: (title: string, extensions?: string[]) => Promise<any>;
   showFileDialog: (options: any, owner?: any) => Promise<any>;
   showSaveDialog: (options: any, owner?: any) => Promise<any>;
   clearSessionCache: () => Promise<void>;
@@ -67,7 +67,8 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
 
   ipcMain.handle("plugins.install", async () => runServiceMutation(async () => {
     const result = await showArchiveDialog(
-      "选择插件包 (.zip)"
+      "选择插件包 (.zip)",
+      ["zip"]
     );
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, message: "已取消导入。" };
