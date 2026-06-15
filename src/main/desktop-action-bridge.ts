@@ -321,8 +321,18 @@ function readAgentKey(args: Record<string, unknown>) {
 }
 
 function validateMarketSettings(input: Record<string, unknown>) {
+  if ("enabled" in input && typeof input.enabled !== "boolean") {
+    return {
+      valid: false,
+      issues: [{
+        field: "enabled",
+        message: "market.enabled must be boolean"
+      }]
+    };
+  }
   try {
     const settings = saveMarketSettingsPreview(input, {
+      enabled: false,
       marketApiBaseUrl: ""
     });
     return {
@@ -343,11 +353,16 @@ function validateMarketSettings(input: Record<string, unknown>) {
 
 function saveMarketSettingsPreview(
   input: Record<string, unknown>,
-  current: { marketApiBaseUrl: string }
+  current: { enabled: boolean; marketApiBaseUrl: string }
 ) {
   const rawMarketUrl = typeof input.marketApiBaseUrl === "string" ? input.marketApiBaseUrl.trim() : "";
   const legacyMarketUrl = typeof input.apiBaseUrl === "string" ? input.apiBaseUrl.trim() : "";
+  if ("enabled" in input && typeof input.enabled !== "boolean") {
+    throw new Error("market.enabled must be boolean");
+  }
+  const enabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
   return {
+    enabled,
     marketApiBaseUrl: normalizeMarketApiBaseUrl(rawMarketUrl || legacyMarketUrl || current.marketApiBaseUrl)
   };
 }
@@ -968,6 +983,11 @@ async function executeAction(
       const next = saveMarketSettingsPreview(patch, current);
       return preview(action, {
         changes: [
+          {
+            field: "enabled",
+            from: current.enabled,
+            to: next.enabled
+          },
           {
             field: "marketApiBaseUrl",
             from: current.marketApiBaseUrl,

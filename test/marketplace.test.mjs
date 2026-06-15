@@ -28,7 +28,7 @@ const {
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
-const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
+const { getDesktopPetsDataRoot, getMarketplaceConfigRoot } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
@@ -422,7 +422,7 @@ test("normalizeCatalog keeps the seven public market types", () => {
   ]);
 });
 
-test("normalizeCatalog filters legacy tar.gz assets except container images", () => {
+test("normalizeCatalog keeps server assets for display while selectAsset only chooses installable assets", () => {
   const legacyAsset = {
     url: "https://example.test/archive.tar.gz",
     sizeBytes: 1,
@@ -457,9 +457,11 @@ test("normalizeCatalog filters legacy tar.gz assets except container images", ()
   const byId = new Map(catalog.items.map((item) => [item.id, item]));
 
   for (const id of ["plugin-tar", "skill-tar", "pet-tar", "cli-tar", "webapp-tar", "template-tar"]) {
-    assert.deepEqual(byId.get(id)?.assets, {});
+    assert.equal(byId.get(id)?.assets.universal?.archiveType, "tar.gz");
+    assert.equal(__testInternals.selectAsset(byId.get(id)), null);
   }
   assert.equal(byId.get("container-tar")?.assets.universal?.archiveType, "tar.gz");
+  assert.equal(__testInternals.selectAsset(byId.get("container-tar"))?.asset.archiveType, "tar.gz");
 });
 
 test("installPluginFromArchive rejects non-zip plugin packages", async (t) => {
@@ -1194,14 +1196,16 @@ test("listMarketItems exposes pet and cli catalog sections", async (t) => {
       },
       {
         id: "zenmind-cli",
-        type: "cli",
+        type: "cli-tool",
         name: "ZenMind CLI",
         version: "2.0.0",
         description: "Command line companion.",
         tags: ["cli"],
-        metadata: {
-          macosInstallCommand: "curl -fsSL https://cli.example.test/install.sh | sh",
-          macosUninstallCommand: "curl -fsSL https://cli.example.test/uninstall.sh | sh"
+        install: {
+          command: "curl -fsSL https://cli.example.test/install.sh | sh"
+        },
+        uninstall: {
+          scriptUrl: "https://cli.example.test/uninstall.sh"
         },
         assets: {}
       }
@@ -1219,6 +1223,230 @@ test("listMarketItems exposes pet and cli catalog sections", async (t) => {
   assert.equal(cli?.type, "cli");
   assert.match(cli?.cliInstallCommand ?? "", /install\.sh/);
   assert.match(cli?.cliUninstallCommand ?? "", /uninstall\.sh/);
+});
+
+test("listMarketItems maps the desktop market server catalog shape into visible components", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-desktop-catalog-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const catalog = {
+    schemaVersion: 1,
+    generatedAt: "2026-06-15T00:00:00.000Z",
+    items: [
+      {
+        id: "desktopassistant",
+        type: "agent",
+        name: "桌面助手",
+        version: "1.0.0",
+        description: "Desktop assistant.",
+        readme: "Agent readme",
+        tags: ["agent", "assistant"],
+        assets: {
+          universal: {
+            url: "https://market.example.test/artifacts/agent/desktopassistant.tar.gz",
+            sha256: "agent-sha",
+            integrity: "sha512-agent",
+            sizeBytes: 4387,
+            archiveType: "agent",
+            platform: "universal",
+            role: "primary"
+          }
+        },
+        dependencies: [{
+          kind: "skill",
+          phase: "runtime",
+          required: true,
+          id: "desktop-action",
+          displayName: "desktop-action"
+        }],
+        metadata: {
+          agentKey: "desktopAssistant",
+          source: "zenmind-env/agents"
+        },
+        publishedAt: "2026-06-14T00:00:00.000Z",
+        updatedAt: "2026-06-15T00:00:00.000Z"
+      },
+      {
+        id: "dbx",
+        type: "cli-tool",
+        name: "dbx CLI",
+        version: "1.0.0",
+        description: "Database CLI.",
+        tags: ["cli-tool", "dependency"],
+        assets: {},
+        dependencies: [],
+        metadata: {
+          source: "metadata-only"
+        },
+        install: {
+          command: "brew install dbx"
+        },
+        uninstall: {
+          command: "brew uninstall dbx"
+        },
+        detect: {
+          commands: ["dbx"],
+          versionCommand: "dbx version"
+        }
+      },
+      {
+        id: "dario",
+        type: "pet",
+        name: "Dario",
+        version: "1.0.0",
+        description: "Desktop pet.",
+        tags: ["desktop-pet"],
+        assets: {
+          universal: {
+            url: "https://market.example.test/artifacts/pet/dario.zip",
+            sha256: "pet-sha",
+            integrity: "sha512-pet",
+            sizeBytes: 759705,
+            archiveType: "zip",
+            platform: "universal",
+            role: "primary"
+          }
+        },
+        dependencies: [],
+        metadata: {
+          previewAssetPath: "pet-idle.png"
+        }
+      },
+      {
+        id: "activity-monitor",
+        type: "plugin",
+        name: "Activity Monitor",
+        version: "v0.1.0",
+        description: "Plugin with a tar artifact.",
+        tags: ["desktop", "plugin"],
+        assets: {
+          "darwin-arm64": {
+            url: "https://market.example.test/artifacts/plugin/activity-monitor.tar.gz",
+            sha256: "plugin-sha",
+            integrity: "sha512-plugin",
+            sizeBytes: 2218267,
+            archiveType: "tar.gz",
+            platform: "darwin-arm64",
+            role: "primary"
+          }
+        },
+        dependencies: [],
+        metadata: {
+          pluginApiVersion: "1"
+        }
+      },
+      {
+        id: "automation",
+        type: "skill",
+        name: "automation",
+        version: "1.0.0",
+        description: "Skill with a tar artifact.",
+        tags: ["automation", "skill"],
+        assets: {
+          universal: {
+            url: "https://market.example.test/artifacts/skill/automation.tar.gz",
+            sha256: "skill-sha",
+            integrity: "sha512-skill",
+            sizeBytes: 4591,
+            archiveType: "tar.gz",
+            platform: "universal",
+            role: "primary"
+          }
+        },
+        dependencies: [],
+        metadata: {
+          source: "zenmind-env/skills-market"
+        },
+        npmPackage: "@zenmind-skill/automation"
+      },
+      {
+        id: "python-template",
+        type: "sandbox-image",
+        name: "Python sandbox",
+        version: "1.0.0",
+        description: "Sandbox template.",
+        tags: ["sandbox"],
+        sandboxKind: "environment-template",
+        assets: {
+          universal: {
+            url: "https://market.example.test/artifacts/sandbox/python-template.zip",
+            sizeBytes: 2048,
+            archiveType: "zip",
+            platform: "universal",
+            role: "primary"
+          }
+        },
+        dependencies: [{
+          kind: "system-command",
+          phase: "runtime",
+          required: true,
+          command: "docker",
+          displayName: "Docker"
+        }],
+        metadata: {
+          environmentName: "python"
+        }
+      },
+      {
+        id: "reg-report",
+        type: "website-app",
+        name: "监管报表连续性对比",
+        version: "0.1.0",
+        description: "Website app.",
+        tags: ["local-app", "webapp"],
+        websiteKind: "local-app",
+        assets: {
+          universal: {
+            url: "https://market.example.test/artifacts/website-app/reg-report.zip",
+            sha256: "webapp-sha",
+            integrity: "sha512-webapp",
+            sizeBytes: 12986,
+            archiveType: "zip",
+            platform: "universal",
+            role: "primary"
+          }
+        },
+        dependencies: [{
+          kind: "system-runtime",
+          phase: "runtime",
+          required: true,
+          runtime: "node"
+        }],
+        metadata: {
+          agentKey: "desktopAssistant",
+          websiteKind: "local-app"
+        }
+      }
+    ]
+  };
+
+  const result = await listMarketItems(app, { catalog });
+  const byKey = new Map(result.items.map((item) => [`${item.type}:${item.id}`, item]));
+
+  assert.deepEqual([...new Set(result.items.map((item) => item.type))].sort(), [
+    "agent",
+    "cli",
+    "pet",
+    "plugin",
+    "sandbox-image",
+    "skill",
+    "website-app"
+  ]);
+  assert.equal(byKey.get("cli:dbx")?.cliInstallCommand, "brew install dbx");
+  assert.equal(byKey.get("cli:dbx")?.cliUninstallCommand, "brew uninstall dbx");
+  assert.deepEqual(byKey.get("cli:dbx")?.detect?.commands, ["dbx"]);
+  assert.equal(byKey.get("plugin:activity-monitor")?.assets?.["darwin-arm64"]?.archiveType, "tar.gz");
+  assert.equal(byKey.get("plugin:activity-monitor")?.state, "incompatible");
+  assert.equal(byKey.get("skill:automation")?.assets?.universal?.archiveType, "tar.gz");
+  assert.equal(byKey.get("skill:automation")?.state, "incompatible");
+  assert.equal(byKey.get("agent:desktopassistant")?.dependencies?.[0]?.id, "desktop-action");
+  assert.equal(byKey.get("agent:desktopassistant")?.readme, "Agent readme");
+  assert.equal(byKey.get("agent:desktopassistant")?.publishedAt, "2026-06-14T00:00:00.000Z");
+  assert.equal(byKey.get("sandbox-image:python-template")?.sandboxKind, "environment-template");
+  assert.equal(byKey.get("website-app:reg-report")?.websiteKind, "local-app");
+  assert.equal(byKey.get("website-app:reg-report")?.dependencies?.[0]?.runtime, "node");
+  assert.equal(byKey.get("skill:automation")?.npmPackage, "@zenmind-skill/automation");
 });
 
 test("listMarketItems generates cli archive commands with zip assets", async (t) => {
@@ -1370,7 +1598,7 @@ test("installMarketItem downloads and installs catalog cloud skills", async (t) 
   });
 });
 
-test("saved marketApiBaseUrl is used by list and install", async (t) => {
+test("saved marketApiBaseUrl is used by list and install when market is enabled", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-"));
   const app = createApp(root);
   const archivePath = writeRootSkillArchive(root, { id: "saved-skill" });
@@ -1405,8 +1633,10 @@ test("saved marketApiBaseUrl is used by list and install", async (t) => {
     }],
     ["/saved-skill.zip", archiveBytes]
   ]), async (baseUrl) => {
-    const settings = saveMarketSettings(app, { marketApiBaseUrl: `${baseUrl}/api/v1` });
+    const settings = saveMarketSettings(app, { enabled: true, marketApiBaseUrl: `${baseUrl}/api/v1` });
+    assert.equal(settings.enabled, true);
     assert.equal(settings.marketApiBaseUrl, `${baseUrl}/api/v1`);
+    assert.equal(getMarketSettings(app).enabled, true);
     assert.equal(getMarketSettings(app).marketApiBaseUrl, `${baseUrl}/api/v1`);
 
     const listed = await listMarketItems(app, { sections: ["skills"] });
@@ -1415,6 +1645,34 @@ test("saved marketApiBaseUrl is used by list and install", async (t) => {
     const result = await installMarketItem(app, "saved-skill");
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "saved-skill"), "SKILL.md")), true);
+  });
+});
+
+test("saved marketApiBaseUrl without enabled true does not request the market catalog", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-disabled-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  let catalogRequests = 0;
+  await withFixtureServer(new Map([
+    ["/api/v1/desktop/catalog", (_req, res) => {
+      catalogRequests += 1;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ schemaVersion: 1, items: [] }));
+    }]
+  ]), async (baseUrl) => {
+    const settingsPath = path.join(getMarketplaceConfigRoot(app), "settings.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, `${JSON.stringify({ marketApiBaseUrl: `${baseUrl}/api/v1` }, null, 2)}\n`, "utf8");
+
+    const settings = getMarketSettings(app);
+    assert.equal(settings.enabled, false);
+    assert.equal(settings.marketApiBaseUrl, `${baseUrl}/api/v1`);
+
+    const listed = await listMarketItems(app, { sections: ["skills"] });
+    assert.equal(listed.offline, true);
+    assert.equal(listed.items.length, 0);
+    assert.equal(catalogRequests, 0);
   });
 });
 

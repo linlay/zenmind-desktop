@@ -449,6 +449,7 @@
   font-weight: 650;
   line-height: 1.45;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 :root[data-theme="dark"] .market-store-toolbar .market-search,

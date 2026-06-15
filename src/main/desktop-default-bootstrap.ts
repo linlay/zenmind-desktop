@@ -193,6 +193,7 @@ function applyMarketDefaults(app: App, marketDefaults: unknown): BootstrapApplyR
     return "absent";
   }
   return writeMarketSettingsIfAbsent(app, {
+    enabled: marketDefaults.enabled !== false,
     marketApiBaseUrl
   }) ? "applied" : "skipped";
 }

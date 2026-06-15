@@ -216,6 +216,10 @@ function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boo
     : targetPath;
 }
 
+function isMarketSettingsVisible(settings: { enabled?: boolean; marketApiBaseUrl?: string } | null | undefined) {
+  return settings?.enabled === true && Boolean(settings.marketApiBaseUrl?.trim());
+}
+
 function readInitialWebGroupOrder(): SidebarNavOrderItemKey[] {
   const savedGroupOrder = readStoredSidebarNavOrder(WEB_GROUP_ORDER_STORAGE_KEY);
   if (savedGroupOrder.length > 0) {
@@ -321,6 +325,8 @@ export function AppShell() {
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
   const [kanbanEnabled, setKanbanEnabled] = useState(true);
+  const [marketEnabled, setMarketEnabled] = useState(false);
+  const [marketSettingsLoaded, setMarketSettingsLoaded] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
   const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
@@ -989,6 +995,30 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.market.getSettings()
+      .then((settings) => {
+        if (cancelled) {
+          return;
+        }
+        setMarketEnabled(isMarketSettingsVisible(settings));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMarketEnabled(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMarketSettingsLoaded(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         SIDEBAR_NAV_ORDER_STORAGE_KEY,
@@ -1632,7 +1662,7 @@ export function AppShell() {
         usesPluginSurface ? "has-plugin-surface" : "",
         usesAgentNativeSurface ? "has-agent-native-surface" : "",
         isTaskBoardRoute ? "has-task-board-controls" : "",
-        isMarketRoute ? "has-market-controls" : "",
+        isMarketRoute && marketEnabled ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
@@ -1657,6 +1687,7 @@ export function AppShell() {
           assistantDockOpen={assistantCopilotOpen}
           assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
+          marketEnabled={marketEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
           websiteNavOrder={normalizedWebGroupOrder}
           webItems={webItems}
@@ -1758,6 +1789,7 @@ export function AppShell() {
                     onSidebarNavOrderChange={setSidebarNavOrder}
                     kanbanEnabled={kanbanEnabled}
                     onKanbanEnabledChange={setKanbanEnabled}
+                    marketEnabled={marketEnabled}
                     websiteItems={externalWebItems}
                     onWebsiteItemsChange={handleExternalWebItemsChange}
                     onAssistantSettingsChange={setAssistantSettings}
@@ -1793,7 +1825,16 @@ export function AppShell() {
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />
             <Route path="/plugin-settings/:pluginId" element={<RouteSuspense><PluginSettingsPage hostTheme={resolvedTheme} /></RouteSuspense>} />
-            <Route path="/market" element={<RouteSuspense><FunctionalMarketPage /></RouteSuspense>} />
+            <Route
+              path="/market"
+              element={
+                !marketSettingsLoaded
+                  ? null
+                  : marketEnabled
+                    ? <RouteSuspense><FunctionalMarketPage /></RouteSuspense>
+                    : <Navigate to="/control-center" replace />
+              }
+            />
             <Route path="/help" element={<RouteSuspense><HelpPage isWindows={isWindows} /></RouteSuspense>} />
           </Routes>
         </main>

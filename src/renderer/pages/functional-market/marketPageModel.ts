@@ -110,7 +110,23 @@ export function matchesMarketItemQuery(item: MarketItem, query: string, t: Trans
   if (!normalized) {
     return true;
   }
-  return `${item.name} ${item.type} ${item.description} ${item.version} ${item.tags.join(" ")} ${Object.values(item.metadata ?? {}).join(" ")} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
+  const dependencies = (item.dependencies ?? [])
+    .map((dependency) => [
+      dependency.kind,
+      dependency.phase,
+      dependency.id,
+      dependency.serviceId,
+      dependency.command,
+      dependency.runtime,
+      dependency.capability,
+      dependency.displayName,
+      dependency.installHint
+    ].filter(Boolean).join(" "))
+    .join(" ");
+  const assets = Object.values(item.assets ?? {})
+    .map((asset) => [asset.url, asset.archiveType, asset.platform, asset.role].filter(Boolean).join(" "))
+    .join(" ");
+  return `${item.id} ${item.name} ${item.type} ${item.description} ${item.version} ${item.readme ?? ""} ${item.tags.join(" ")} ${Object.values(item.metadata ?? {}).join(" ")} ${dependencies} ${assets} ${(item.detect?.commands ?? []).join(" ")} ${item.detect?.versionCommand ?? ""} ${item.websiteKind ?? ""} ${item.sandboxKind ?? ""} ${item.npmPackage ?? ""} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
     .toLowerCase()
     .includes(normalized);
 }

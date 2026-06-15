@@ -96,8 +96,15 @@ function numberFromMetadata(item: MarketItem, keys: string[]) {
 }
 
 function dateFromMetadata(item: MarketItem) {
-  for (const key of ["publishedAt", "releasedAt", "updatedAt", "createdAt"]) {
-    const raw = item.metadata?.[key];
+  const candidates = [
+    item.publishedAt,
+    item.updatedAt,
+    item.metadata?.publishedAt,
+    item.metadata?.releasedAt,
+    item.metadata?.updatedAt,
+    item.metadata?.createdAt
+  ];
+  for (const raw of candidates) {
     if (!raw) {
       continue;
     }
@@ -172,6 +179,10 @@ function compatibilityLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]
 }
 
 function marketItemDepsCount(item: MarketItem) {
+  const requiredDependencies = (item.dependencies ?? []).filter((dependency) => dependency.required);
+  if (requiredDependencies.length > 0) {
+    return requiredDependencies.length;
+  }
   for (const key of ["depsCount", "dependencyCount", "missingDepsCount", "requiredDepsCount"]) {
     const raw = item.metadata?.[key]?.trim();
     if (!raw) {
@@ -190,6 +201,85 @@ function tagLabel(tag: string) {
   return normalized ? `#${normalized}` : "";
 }
 
+function formatAssetSize(sizeBytes: number) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "";
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  let value = sizeBytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function dependencySummary(item: MarketItem) {
+  return (item.dependencies ?? [])
+    .map((dependency) => {
+      const target = dependency.displayName ||
+        dependency.id ||
+        dependency.serviceId ||
+        dependency.command ||
+        dependency.runtime ||
+        dependency.capability ||
+        dependency.kind;
+      const parts = [
+        target,
+        dependency.kind && dependency.kind !== target ? dependency.kind : "",
+        dependency.phase,
+        dependency.version,
+        dependency.required ? "required" : "optional",
+        dependency.installHint
+      ].filter(Boolean);
+      return parts.join(" · ");
+    })
+    .join("\n");
+}
+
+function assetSummary(item: MarketItem) {
+  return Object.entries(item.assets ?? {})
+    .map(([key, asset]) => {
+      const parts = [
+        key,
+        asset.archiveType,
+        asset.platform,
+        asset.role,
+        formatAssetSize(asset.sizeBytes)
+      ].filter(Boolean);
+      return parts.join(" · ");
+    })
+    .join("\n");
+}
+
+function metadataSummary(item: MarketItem) {
+  const hiddenKeys = new Set([
+    "installCommand",
+    "installScriptUrl",
+    "uninstallCommand",
+    "uninstallScriptUrl",
+    "publishedAt",
+    "updatedAt"
+  ]);
+  return Object.entries(item.metadata ?? {})
+    .filter(([key, value]) => !hiddenKeys.has(key) && value.trim())
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n");
+}
+
+function scriptSummary(script: MarketItem["install"] | MarketItem["uninstall"]) {
+  if (!script) {
+    return "";
+  }
+  return [
+    script.command,
+    script.scriptUrl,
+    script.sha256 ? `sha256: ${script.sha256}` : "",
+    script.integrity ? `integrity: ${script.integrity}` : ""
+  ].filter(Boolean).join("\n");
+}
+
 function storefrontDetailRows(
   item: MarketItem,
   service: ServiceState | null,
@@ -197,6 +287,7 @@ function storefrontDetailRows(
 ) {
   const commercialMeta = itemCommercialMeta(item, t);
   const rows = [
+    [t("market.storefront.detail.id"), item.id],
     [t("market.storefront.detail.type"), marketTypeLabel(item.type, t)],
     [t("market.storefront.detail.version"), marketVersionLabel(item)],
     [t("market.storefront.detail.status"), marketItemStateLabel(item, t)],
@@ -204,6 +295,11 @@ function storefrontDetailRows(
     [t("market.storefront.detail.compatibility"), compatibilityLabel(item, t)],
     [t("market.storefront.detail.plan"), commercialMeta],
     [t("market.storefront.detail.tags"), item.tags.map(tagLabel).filter(Boolean).join(" ")],
+    [t("market.storefront.detail.sandboxKind"), item.sandboxKind ?? ""],
+    [t("market.storefront.detail.websiteKind"), item.websiteKind ?? ""],
+    [t("market.storefront.detail.npmPackage"), item.npmPackage ?? ""],
+    [t("market.storefront.detail.dependencies"), dependencySummary(item)],
+    [t("market.storefront.detail.assets"), assetSummary(item)],
     [t("market.storefront.detail.desktopStatus"), serviceMetric(service)],
     [t("market.storefront.detail.environment"), item.environmentName ?? ""],
     [t("market.storefront.detail.engine"), item.containerEngine ?? ""],
@@ -214,8 +310,16 @@ function storefrontDetailRows(
     [t("market.storefront.detail.buildStatus"), item.buildStatus ?? ""],
     [t("market.storefront.detail.installPath"), item.installPath ?? ""],
     [t("market.storefront.detail.minDesktopVersion"), item.minDesktopVersion ?? ""],
+    [t("market.storefront.detail.detailUrl"), itemDetailUrl(item)],
     [t("market.storefront.detail.installCommand"), item.cliInstallCommand ?? ""],
-    [t("market.storefront.detail.uninstallCommand"), item.cliUninstallCommand ?? ""]
+    [t("market.storefront.detail.uninstallCommand"), item.cliUninstallCommand ?? ""],
+    [t("market.storefront.detail.installSpec"), scriptSummary(item.install)],
+    [t("market.storefront.detail.uninstallSpec"), scriptSummary(item.uninstall)],
+    [t("market.storefront.detail.detectCommands"), (item.detect?.commands ?? []).join("\n")],
+    [t("market.storefront.detail.detectVersionCommand"), item.detect?.versionCommand ?? ""],
+    [t("market.storefront.detail.publishedAt"), item.publishedAt ?? ""],
+    [t("market.storefront.detail.updatedAt"), item.updatedAt ?? ""],
+    [t("market.storefront.detail.metadata"), metadataSummary(item)]
   ];
 
   return rows
@@ -321,17 +425,8 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     setFeedback(result.ok ? t("market.cli.copied", { label }) : (result.message ?? t("market.cli.copyFailed")));
   }
 
-  async function openDetail(item: MarketItem) {
-    const detailUrl = itemDetailUrl(item);
-    if (!detailUrl) {
-      setSelectedDetailItem(item);
-      return;
-    }
-    if (detailUrl.startsWith("http")) {
-      await window.electronAPI.shell.openExternal(detailUrl);
-      return;
-    }
-    await copyText(detailUrl, t("market.action.details"));
+  function openDetail(item: MarketItem) {
+    setSelectedDetailItem(item);
   }
 
   async function handleToolbarImport() {
@@ -545,7 +640,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
           <button
             type="button"
             className="market-store-detail-link"
-            onClick={() => void openDetail(item)}
+            onClick={() => openDetail(item)}
           >
             <span>{t("market.storefront.detailsDemo")}</span>
             <ArrowRightOutlined />

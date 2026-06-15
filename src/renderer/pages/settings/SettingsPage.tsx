@@ -64,6 +64,7 @@ type SettingsPageProps = {
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
   kanbanEnabled: boolean;
   onKanbanEnabledChange: (enabled: boolean) => void;
+  marketEnabled: boolean;
   websiteItems: WebsiteEntry[];
   onWebsiteItemsChange: (items: WebsiteEntry[]) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
@@ -551,6 +552,7 @@ export function SettingsPage({
   onSidebarNavOrderChange,
   kanbanEnabled,
   onKanbanEnabledChange,
+  marketEnabled,
   websiteItems,
   onWebsiteItemsChange,
   onAssistantSettingsChange
@@ -2286,6 +2288,7 @@ export function SettingsPage({
         const navigationSettingsOrder = kanbanEnabled || sidebarNavOrder.includes("kanban")
           ? sidebarNavOrder
           : (["kanban", ...sidebarNavOrder] as SidebarNavOrderItemKey[]);
+        const visibleFixedNavigationTools = fixedNavigationTools.filter((tool) => tool.id !== "market" || marketEnabled);
         function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {
           const copilotPageKey = tool.copilotPageKey;
           const toolLabel = t(tool.labelKey);
@@ -2479,7 +2482,7 @@ export function SettingsPage({
                 </div>
               </div>
               <div className="settings-item-list navigation-order-list navigation-fixed-tool-list" role="list" aria-label={t("settings.navigation.fixedTools")}>
-                {fixedNavigationTools.map((tool) => renderFixedNavigationToolRow(tool))}
+                {visibleFixedNavigationTools.map((tool) => renderFixedNavigationToolRow(tool))}
               </div>
             </div>
           );

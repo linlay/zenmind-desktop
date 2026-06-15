@@ -5,10 +5,13 @@ import type { App } from "electron";
 import type {
   MarketAsset,
   MarketCatalogItem,
+  MarketDependency,
+  MarketDetectSpec,
   MarketInstallState,
   MarketItem,
   MarketItemType,
   MarketListOptions,
+  MarketScriptSpec,
   MarketSettings,
   MarketSettingsInput
 } from "../../shared/contracts";
@@ -43,6 +46,7 @@ export type MarketplaceOptions = MarketListOptions & {
   catalogUrl?: string;
   catalog?: Catalog;
   marketApiBaseUrl?: string;
+  marketEnabled?: boolean;
   containerHubBaseUrl?: string;
   containerHubAuthToken?: string;
 };
@@ -147,6 +151,15 @@ function normalizeSandboxKind(value: unknown) {
       : undefined;
 }
 
+function normalizeWebsiteKind(value: unknown) {
+  const kind = asString(value).trim();
+  return kind === "external"
+    ? "external" as const
+    : kind === "local-app"
+      ? "local-app" as const
+      : undefined;
+}
+
 function isKnownArchiveType(value: string): value is MarketAsset["archiveType"] {
   return (
     value === "tar.gz" ||
@@ -162,63 +175,102 @@ function isKnownArchiveType(value: string): value is MarketAsset["archiveType"] 
   );
 }
 
-function isZipOnlyMarketAsset(type: MarketItemType, archiveType: MarketAsset["archiveType"]) {
-  if (type === "plugin" || type === "skill") {
-    return archiveType === "zip";
-  }
-  if (type === "agent") {
-    return archiveType === "zip" || archiveType === "agent";
-  }
-  if (type === "pet") {
-    return archiveType === "zip" || archiveType === "pet";
-  }
-  if (type === "cli") {
-    return archiveType === "zip" || archiveType === "cli";
-  }
-  if (type === "website-app") {
-    return archiveType === "zip" || archiveType === "website-app";
-  }
-  return false;
-}
-
-function isAllowedMarketAsset(
-  type: MarketItemType,
-  archiveType: MarketAsset["archiveType"],
-  sandboxKind?: "environment-template" | "container-image"
-) {
-  if (isZipOnlyMarketAsset(type, archiveType)) {
-    return true;
-  }
-  if (type !== "sandbox-image") {
-    return false;
-  }
-  if (sandboxKind === "container-image" || archiveType === "container-image") {
-    return archiveType === "container-image" || archiveType === "tar.gz";
-  }
-  return archiveType === "zip" || archiveType === "sandbox-template";
-}
-
-function normalizeAsset(
-  value: unknown,
-  type: MarketItemType,
-  sandboxKind?: "environment-template" | "container-image"
-): MarketAsset | null {
+function normalizeAsset(value: unknown): MarketAsset | null {
   const raw = asObject(value);
   const url = asString(raw.url).trim();
   if (!url) {
     return null;
   }
   const archiveType = asString(raw.archiveType);
-  if (!isKnownArchiveType(archiveType) || !isAllowedMarketAsset(type, archiveType, sandboxKind)) {
+  if (!isKnownArchiveType(archiveType)) {
     return null;
   }
   return {
     url,
     sha256: asString(raw.sha256).trim(),
+    integrity: asString(raw.integrity).trim() || undefined,
     sizeBytes: asNumber(raw.sizeBytes),
     archiveType,
-    platform: asString(raw.platform).trim() || undefined
+    platform: asString(raw.platform).trim() || undefined,
+    role: asString(raw.role).trim() || undefined
   };
+}
+
+function normalizeDependency(value: unknown): MarketDependency | null {
+  const raw = asObject(value);
+  const kind = asString(raw.kind).trim();
+  const phase = asString(raw.phase).trim();
+  if (!kind && !phase) {
+    return null;
+  }
+  return {
+    kind,
+    phase,
+    required: raw.required === true,
+    id: asString(raw.id).trim() || undefined,
+    serviceId: asString(raw.serviceId).trim() || undefined,
+    command: asString(raw.command).trim() || undefined,
+    runtime: asString(raw.runtime).trim() || undefined,
+    capability: asString(raw.capability).trim() || undefined,
+    version: asString(raw.version).trim() || undefined,
+    displayName: asString(raw.displayName).trim() || undefined,
+    installHint: asString(raw.installHint).trim() || undefined
+  };
+}
+
+function normalizeDependencies(value: unknown) {
+  return Array.isArray(value)
+    ? value.map(normalizeDependency).filter((item): item is MarketDependency => Boolean(item))
+    : [];
+}
+
+function normalizeScriptSpec(value: unknown): MarketScriptSpec | undefined {
+  const raw = asObject(value);
+  const spec = {
+    command: asString(raw.command).trim() || undefined,
+    scriptUrl: asString(raw.scriptUrl).trim() || undefined,
+    sha256: asString(raw.sha256).trim() || undefined,
+    integrity: asString(raw.integrity).trim() || undefined
+  };
+  return spec.command || spec.scriptUrl || spec.sha256 || spec.integrity ? spec : undefined;
+}
+
+function normalizeDetectSpec(value: unknown): MarketDetectSpec | undefined {
+  const raw = asObject(value);
+  const spec = {
+    commands: asStringArray(raw.commands).map((item) => item.trim()).filter(Boolean),
+    versionCommand: asString(raw.versionCommand).trim() || undefined
+  };
+  return spec.commands.length > 0 || spec.versionCommand ? spec : undefined;
+}
+
+function isDesktopInstallableAsset(
+  item: Pick<MarketCatalogItem, "type" | "sandboxKind">,
+  asset: MarketAsset
+) {
+  if (item.type === "plugin" || item.type === "skill") {
+    return asset.archiveType === "zip";
+  }
+  if (item.type === "pet") {
+    return asset.archiveType === "zip" || asset.archiveType === "pet";
+  }
+  if (item.type === "cli") {
+    return asset.archiveType === "zip" || asset.archiveType === "cli";
+  }
+  if (item.type === "sandbox-image") {
+    if (item.sandboxKind === "container-image" || asset.archiveType === "container-image") {
+      return asset.archiveType === "container-image" || asset.archiveType === "tar.gz";
+    }
+    return asset.archiveType === "zip" || asset.archiveType === "sandbox-template";
+  }
+  return false;
+}
+
+function shouldRequireInstallableAsset(item: MarketCatalogItem) {
+  return item.type === "plugin" ||
+    item.type === "skill" ||
+    item.type === "pet" ||
+    (item.type === "sandbox-image" && item.sandboxKind === "environment-template");
 }
 
 export function normalizeCatalog(input: unknown): Catalog {
@@ -233,9 +285,10 @@ export function normalizeCatalog(input: unknown): Catalog {
       continue;
     }
     const sandboxKind = normalizeSandboxKind(item.sandboxKind);
+    const websiteKind = normalizeWebsiteKind(item.websiteKind);
     const assets: Record<string, MarketAsset> = {};
     for (const [key, assetRaw] of Object.entries(asObject(item.assets))) {
-      const asset = normalizeAsset(assetRaw, type, sandboxKind);
+      const asset = normalizeAsset(assetRaw);
       if (asset) {
         assets[key] = asset;
       }
@@ -246,6 +299,23 @@ export function normalizeCatalog(input: unknown): Catalog {
         .map(([key, value]) => [key, asString(value).trim()])
         .filter(([, value]) => value)
     );
+    const installSpec = normalizeScriptSpec(item.install);
+    const uninstallSpec = normalizeScriptSpec(item.uninstall);
+    const detectSpec = normalizeDetectSpec(item.detect);
+    const install = asObject(installSpec);
+    const installCommand = asString(install.command).trim();
+    const installScriptUrl = asString(install.scriptUrl).trim();
+    if (installCommand) metadata.installCommand = installCommand;
+    if (installScriptUrl) metadata.installScriptUrl = installScriptUrl;
+    const uninstall = asObject(uninstallSpec);
+    const uninstallCommand = asString(uninstall.command).trim();
+    const uninstallScriptUrl = asString(uninstall.scriptUrl).trim();
+    if (uninstallCommand) metadata.uninstallCommand = uninstallCommand;
+    if (uninstallScriptUrl) metadata.uninstallScriptUrl = uninstallScriptUrl;
+    const publishedAt = asString(item.publishedAt).trim() || undefined;
+    const updatedAt = asString(item.updatedAt).trim() || undefined;
+    if (publishedAt) metadata.publishedAt = publishedAt;
+    if (updatedAt) metadata.updatedAt = updatedAt;
     const rawScripts = asObject(rawMetadata.scripts || item.scripts);
     const scriptPlatforms = [
       ["macos", "macos"],
@@ -271,10 +341,19 @@ export function normalizeCatalog(input: unknown): Catalog {
       name: asString(item.name).trim() || id,
       version: asString(item.version).trim() || "0.0.0",
       description: asString(item.description),
+      readme: asString(item.readme).trim() || undefined,
       tags: asStringArray(item.tags),
       minDesktopVersion: asString(item.minDesktopVersion).trim() || undefined,
       sandboxKind,
+      websiteKind,
+      npmPackage: asString(item.npmPackage).trim() || undefined,
+      dependencies: normalizeDependencies(item.dependencies),
       metadata,
+      install: installSpec,
+      uninstall: uninstallSpec,
+      detect: detectSpec,
+      publishedAt,
+      updatedAt,
       assets
     });
   }
@@ -337,7 +416,14 @@ export function getMarketplaceCatalogUrl(app: App, options: MarketplaceOptions =
   if (options.catalogUrl) {
     return options.catalogUrl;
   }
-  return catalogUrlFromMarketApiBaseUrl(options.marketApiBaseUrl ?? getMarketSettings(app).marketApiBaseUrl);
+  if (options.marketApiBaseUrl !== undefined) {
+    return options.marketEnabled === false ? "" : catalogUrlFromMarketApiBaseUrl(options.marketApiBaseUrl);
+  }
+  const settings = getMarketSettings(app);
+  if (settings.enabled !== true) {
+    return "";
+  }
+  return catalogUrlFromMarketApiBaseUrl(settings.marketApiBaseUrl);
 }
 
 export function normalizeContainerHubBaseUrl(value: unknown) {
@@ -361,21 +447,26 @@ export function normalizeContainerHubBaseUrl(value: unknown) {
 }
 
 export function getMarketSettings(app: App): MarketSettings {
-  const saved = readJsonFile<Partial<MarketSettings>>(marketplaceSettingsPath(app), {});
+  const saved = readJsonFile<Partial<MarketSettings> & { apiBaseUrl?: string }>(marketplaceSettingsPath(app), {});
   try {
+    const marketApiBaseUrl = normalizeMarketApiBaseUrl(saved.marketApiBaseUrl || saved.apiBaseUrl);
     return {
-      marketApiBaseUrl: normalizeMarketApiBaseUrl(saved.marketApiBaseUrl)
+      enabled: saved.enabled === true,
+      marketApiBaseUrl
     };
   } catch {
     return {
+      enabled: false,
       marketApiBaseUrl: DEFAULT_MARKET_API_BASE_URL
     };
   }
 }
 
 export function saveMarketSettings(app: App, input: MarketSettingsInput): MarketSettings {
+  const marketApiBaseUrl = normalizeMarketApiBaseUrl(input.marketApiBaseUrl);
   const settings = {
-    marketApiBaseUrl: normalizeMarketApiBaseUrl(input.marketApiBaseUrl)
+    enabled: input.enabled === true,
+    marketApiBaseUrl
   };
   writeJsonFile(marketplaceSettingsPath(app), settings);
   return settings;
@@ -487,15 +578,16 @@ function platformCandidates() {
   return [`${process.platform}-${process.arch}`, "universal"];
 }
 
-export function selectAsset(item: MarketCatalogItem) {
+export function selectAsset(item: Pick<MarketCatalogItem, "type" | "sandboxKind"> & { assets?: Record<string, MarketAsset> }) {
+  const assets = item.assets ?? {};
   for (const candidate of platformCandidates()) {
-    const asset = item.assets[candidate];
-    if (asset) {
+    const asset = assets[candidate];
+    if (asset && isDesktopInstallableAsset(item, asset)) {
       return { key: candidate, asset };
     }
   }
-  const universal = item.assets.universal;
-  if (universal) {
+  const universal = assets.universal;
+  if (universal && isDesktopInstallableAsset(item, universal)) {
     return { key: "universal", asset: universal };
   }
   return null;
@@ -553,7 +645,7 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
   let installedVersion: string | undefined;
   let installPath: string | undefined;
   let source: "cloud" | "local" = "cloud";
-  if (!selectAsset(item)) {
+  if (shouldRequireInstallableAsset(item) && !selectAsset(item)) {
     state = "incompatible";
   }
   if (record) {
@@ -580,7 +672,17 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
     installPath,
     serviceId: item.type === "plugin" ? item.id : undefined,
     sandboxKind: item.sandboxKind,
+    websiteKind: item.websiteKind,
+    readme: item.readme,
+    npmPackage: item.npmPackage,
+    dependencies: item.dependencies,
     metadata: item.metadata,
+    assets: item.assets,
+    install: item.install,
+    uninstall: item.uninstall,
+    detect: item.detect,
+    publishedAt: item.publishedAt,
+    updatedAt: item.updatedAt,
     homepageUrl: item.metadata?.homepageUrl,
     message: state === "incompatible" ? t("market.main.platformUnavailable") : undefined
   };

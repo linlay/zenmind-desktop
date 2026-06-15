@@ -91,6 +91,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
       }
     },
     market: {
+      enabled: true,
       apiBaseUrl: "https://market.example.test/api/v1"
     },
     sso: {
@@ -131,6 +132,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal(pet.enabled, false);
   assert.equal(pet.selectedPetId, "builtin:zenmi");
   assert.equal("boundAgentKey" in pet, false);
+  assert.equal(market.enabled, true);
   assert.equal(market.marketApiBaseUrl, "https://market.example.test/api/v1");
   assert.equal(sso.enabled, true);
   assert.equal(website.id, "docs");
@@ -176,6 +178,26 @@ test("desktop-default bootstrap keeps kanban enabled when navigation default is 
 
   const profile = readJson(path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "profile.json"));
   assert.equal(profile.navigation.kanban.enabled, true);
+});
+
+test("desktop-default bootstrap skips market settings without a market API", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-market-disabled-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopDefault(app, "darwin", {
+    market: {
+      enabled: false
+    }
+  });
+
+  const result = applyDesktopDefaultBootstrap(app, "darwin");
+  assert.equal(result.applied, true);
+
+  const marketPath = path.join(homePath, ".zenmind", ".desktop", "config", "marketplace", "settings.json");
+  assert.equal(result.appliedResult.market, "absent");
+  assert.equal(fs.existsSync(marketPath), false);
 });
 
 test("desktop-default SSO helper writes canonical macOS config without bootstrap state", (t) => {

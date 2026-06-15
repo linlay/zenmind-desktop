@@ -685,6 +685,7 @@ type AppSidebarProps = {
   assistantDockOpen?: boolean;
   assistantLauncherDisabled?: boolean;
   assistantLauncherVisible?: boolean;
+  marketEnabled?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   websiteNavOrder?: SidebarNavOrderItemKey[];
   webItems: WebEntry[];
@@ -726,6 +727,7 @@ export function AppSidebar({
   assistantDockOpen = false,
   assistantLauncherDisabled = false,
   assistantLauncherVisible = true,
+  marketEnabled = true,
   sidebarNavOrder,
   websiteNavOrder = [],
   webItems,
@@ -851,9 +853,13 @@ export function AppSidebar({
     ],
     sidebarNavOrder,
   );
-  const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase.map((row) =>
-    row.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) })),
-  );
+  const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase
+    .map((row) =>
+      row
+        .filter((item) => item.orderKey !== "market" || marketEnabled)
+        .map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) })),
+    )
+    .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
   const settingsToolItem = fixedToolItems.find((item) => item.to === "/settings");
   const chromeToolbarClassName = [

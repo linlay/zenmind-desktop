@@ -12,6 +12,7 @@ export type MarketInstallState =
 export interface MarketAsset {
   url: string;
   sha256?: string;
+  integrity?: string;
   sizeBytes: number;
   archiveType:
     | "tar.gz"
@@ -25,6 +26,33 @@ export interface MarketAsset {
     | "cli"
     | "website-app";
   platform?: string;
+  role?: string;
+}
+
+export interface MarketDependency {
+  kind: string;
+  phase: string;
+  required: boolean;
+  id?: string;
+  serviceId?: string;
+  command?: string;
+  runtime?: string;
+  capability?: string;
+  version?: string;
+  displayName?: string;
+  installHint?: string;
+}
+
+export interface MarketScriptSpec {
+  command?: string;
+  scriptUrl?: string;
+  sha256?: string;
+  integrity?: string;
+}
+
+export interface MarketDetectSpec {
+  commands?: string[];
+  versionCommand?: string;
 }
 
 export interface MarketCatalogItem {
@@ -33,10 +61,19 @@ export interface MarketCatalogItem {
   name: string;
   version: string;
   description: string;
+  readme?: string;
   tags: string[];
   minDesktopVersion?: string;
   sandboxKind?: "environment-template" | "container-image";
+  websiteKind?: "external" | "local-app";
+  npmPackage?: string;
+  dependencies: MarketDependency[];
   metadata?: Record<string, string>;
+  install?: MarketScriptSpec;
+  uninstall?: MarketScriptSpec;
+  detect?: MarketDetectSpec;
+  publishedAt?: string;
+  updatedAt?: string;
   assets: Record<string, MarketAsset>;
 }
 
@@ -63,7 +100,17 @@ export interface MarketItem {
   buildJobId?: string;
   buildTargetCount?: number;
   sandboxKind?: "environment-template" | "container-image";
+  websiteKind?: "external" | "local-app";
+  readme?: string;
+  npmPackage?: string;
+  dependencies?: MarketDependency[];
   metadata?: Record<string, string>;
+  assets?: Record<string, MarketAsset>;
+  install?: MarketScriptSpec;
+  uninstall?: MarketScriptSpec;
+  detect?: MarketDetectSpec;
+  publishedAt?: string;
+  updatedAt?: string;
   homepageUrl?: string;
   cliInstallCommand?: string;
   cliUninstallCommand?: string;
@@ -136,9 +183,11 @@ export interface SandboxImageImportProgressEvent {
 }
 
 export interface MarketSettings {
+  enabled: boolean;
   marketApiBaseUrl: string;
 }
 
 export interface MarketSettingsInput {
+  enabled?: boolean;
   marketApiBaseUrl?: string;
 }
