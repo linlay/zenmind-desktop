@@ -1,5 +1,8 @@
 export type SettingsSectionId =
   | "appearance"
+  | "kanban"
+  | "desktopPet"
+  | "market"
   | "control"
   | "tunnelHub"
   | "navigation"

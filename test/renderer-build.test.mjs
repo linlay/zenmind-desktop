@@ -901,7 +901,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /key: AgentWebclientRouteKey;/);
   assert.match(appShell, /kind: AgentWebclientRouteKind;/);
   assert.match(appShell, /mode: AgentWebclientRouteMode;/);
-  assert.match(appShell, /<Route path="\/kanban" element=\{<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>\}/);
+  assert.match(appShell, /path="\/kanban"[\s\S]*?kanbanSettingsLoaded[\s\S]*?kanbanEnabled[\s\S]*?<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>[\s\S]*?<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
   assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
   assert.match(appShell, /assistantNavAgents/);
@@ -1182,10 +1182,12 @@ test("settings route moves section navigation into the app sidebar and uses sect
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
   assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*desktopPetSupported/);
+  assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"quickAssistant"[\s\S]*?layout:\s*"measure"/);
   assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
-  assert.doesNotMatch(settingsSections, /id:\s*"desktopPet"/);
   assert.match(settingsSections, /id:\s*"embeddedWebs"[\s\S]*?label:\s*"embeddedWebs"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
@@ -1200,6 +1202,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /settings\.backToApp/);
   assert.match(sidebarSource, /onExitSettingsMode/);
   assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
+  assert.match(sidebarSource, /case "kanban"[\s\S]*?return "futures"/);
+  assert.match(sidebarSource, /case "desktopPet"[\s\S]*?return "assistant"/);
+  assert.match(sidebarSource, /case "market"[\s\S]*?return "market"/);
   assert.doesNotMatch(sidebarSource, /case "runtimeReset"/);
   assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
   assert.match(brandMarkSource, /about:\s*aboutIcon/);
@@ -1237,7 +1242,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentBinding/);
   assert.match(settingsStyles, /\.settings-appearance-panel/);
   assert.match(settingsStyles, /\.settings-theme-segment/);
-  assert.doesNotMatch(settingsPage, /case "desktopPet"/);
+  assert.match(settingsPage, /case "desktopPet"/);
   assert.match(settingsPage, /case "memory"/);
   assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
   assert.doesNotMatch(settingsPage, /case "debug"/);
@@ -1311,7 +1316,7 @@ test("settings page scopes notices to the active section and keeps load failures
   assert.match(settingsPage, /const activeSectionReadError = activeSection \? sectionReadErrors\[activeSection\] \?\? "" : "";/);
   assert.match(settingsPage, /settings-section-feedback/);
   assert.match(settingsPage, /<PageFeedbackStack/);
-  assert.match(settingsPage, /showSectionNotice\("appearance", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
+  assert.match(settingsPage, /showSectionNotice\("desktopPet", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
   assert.doesNotMatch(settingsPage, /导航页签排序已更新/);
   assert.match(settingsPage, /showSectionNotice\("quickAssistant", reason instanceof Error \? reason\.message : String\(reason\), "error"\)/);
   assert.match(settingsPage, /feedback-banner warning-banner settings-section-read-error/);
@@ -1368,11 +1373,23 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /type="range"/);
   assert.match(settingsPage, /settings\.navigation\.fixedMain/);
   assert.match(settingsPage, /settings\.navigation\.fixedTools/);
-  assert.match(settingsPage, /settings\.navigation\.kanbanToggle/);
-  assert.match(settingsPage, /settings\.navigation\.kanbanVisible/);
-  assert.match(settingsPage, /settings\.navigation\.kanbanHidden/);
+  assert.doesNotMatch(settingsPage, /settings\.navigation\.kanbanToggle/);
+  assert.doesNotMatch(settingsPage, /settings\.navigation\.kanbanVisible/);
+  assert.doesNotMatch(settingsPage, /settings\.navigation\.kanbanHidden/);
+  assert.match(settingsPageSections, /settings\.kanban\.label/);
+  assert.match(settingsPageSections, /settings\.desktopPet\.label/);
+  assert.match(settingsPageSections, /settings\.market\.label/);
+  assert.match(settingsPage, /case "kanban"/);
+  assert.match(settingsPage, /settings\.kanban\.enabled/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
+  assert.match(settingsPage, /case "desktopPet"/);
+  assert.match(settingsPage, /activeSection === "desktopPet"/);
+  assert.match(settingsPage, /case "market"/);
+  assert.match(settingsPage, /settings\.market\.apiBaseUrl/);
+  assert.match(settingsPage, /window\.electronAPI\.market\.saveSettings/);
   assert.match(settingsPage, /handleToggleKanbanVisibility/);
-  assert.match(settingsPage, /saveNavigationPreferences\(\{\s*kanban: \{ enabled: nextEnabled \}/);
+  assert.doesNotMatch(settingsPage, /saveNavigationPreferences\(\{\s*kanban/);
   assert.match(settingsPage, /settings-item-card navigation-settings-card/);
   assert.match(settingsPage, /settings-item-list navigation-order-list/);
   assert.doesNotMatch(settingsPage, /navigation-order-grid-head/);
@@ -1474,20 +1491,25 @@ test("settings page exposes cloud board control as a global section", () => {
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(sharedSettingsSections, /"control"/);
-  assert.match(settingsSections, /id:\s*"control"[\s\S]*?settings\.control\.label/);
-  assert.match(settingsPage, /case "control"/);
+  assert.match(sharedSettingsSections, /"kanban"/);
+  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?settings\.kanban\.label/);
+  assert.match(settingsPage, /case "kanban"/);
   assert.match(settingsPage, /settings\.control\.remoteControlEnabled/);
   assert.match(settingsPage, /settings\.control\.remoteControlDescription/);
-  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getCloudConfig/);
-  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveCloudConfig/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.listOnlineDevices/);
+  assert.match(taskBoardContracts, /interface TaskBoardSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?cloud:\s*TaskBoardCloudConfig;/);
+  assert.match(taskBoardContracts, /interface TaskBoardSettingsInput[\s\S]*?enabled\?:\s*boolean;[\s\S]*?cloud\?:\s*Partial<TaskBoardCloudConfig>;/);
   assert.match(taskBoardContracts, /remoteControlEnabled:\s*boolean/);
   assert.match(taskBoardRuntime, /remoteControlEnabled/);
   assert.match(taskBoardRuntime, /config\.remoteControlEnabled/);
+  assert.match(taskBoardRuntime, /KANBAN_CONFIG_FILE = "kanban\.json"/);
   assert.match(zhCN, /"settings\.control\.label":\s*"控制"/);
+  assert.match(zhCN, /"settings\.kanban\.label":\s*"看板"/);
   assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
   assert.match(enUS, /"settings\.control\.label":\s*"Control"/);
+  assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
 });
 
 test("settings page hides assistant memory while the module is disabled", () => {
@@ -1587,8 +1609,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
   assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
-  assert.match(contracts, /getNavigationPreferences: \(\) => Promise<\{ mainOrder: string\[\]; webOrder: string\[\]; kanban: \{ enabled: boolean \}; desktopCopilotPages: DesktopCopilotPagePreferences \}>/);
-  assert.match(contracts, /saveNavigationPreferences: \(input: \{ mainOrder\?: string\[\]; webOrder\?: string\[\]; kanban\?: \{ enabled\?: boolean \} \}\)/);
+  assert.match(contracts, /getNavigationPreferences: \(\) => Promise<\{ mainOrder: string\[\]; webOrder: string\[\]; desktopCopilotPages: DesktopCopilotPagePreferences \}>/);
+  assert.match(contracts, /saveNavigationPreferences: \(input: \{ mainOrder\?: string\[\]; webOrder\?: string\[\] \}\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
@@ -1610,8 +1632,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
   assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setLocale", async \(_event: any, locale: unknown\) => \{/);
-  assert.match(settingsHandlers, /normalizeKanbanNavigationInput/);
-  assert.match(settingsHandlers, /kanban: input\?\.kanban !== undefined[\s\S]*?current\.navigation\.kanban/);
+  assert.doesNotMatch(settingsHandlers, /normalizeKanbanNavigationInput/);
+  assert.doesNotMatch(settingsHandlers, /current\.navigation\.kanban/);
   assert.match(settingsHandlers, /buildApplicationMenu\(\);[\s\S]{0,120}refreshTrayContextMenu\(\);[\s\S]{0,120}emitLocaleChanged\(settings\);/);
   assert.doesNotMatch(contracts, /setSidebarTranslucency/);
   assert.doesNotMatch(mainProcess, /settings\.setSidebarTranslucency/);
@@ -1657,13 +1679,18 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /normalizeWebGroupOrder/);
   assert.match(appShell, /availableSidebarNavOrderItems/);
   assert.match(appShell, /const \[kanbanEnabled, setKanbanEnabled\] = useState\(true\)/);
+  assert.match(appShell, /const \[kanbanSettingsLoaded, setKanbanSettingsLoaded\] = useState\(false\)/);
   assert.match(appShell, /const \[marketEnabled, setMarketEnabled\] = useState\(false\)/);
+  assert.match(appShell, /window\.electronAPI\.taskBoard\.getSettings\(\)/);
+  assert.match(appShell, /setKanbanEnabled\(result\.settings\.enabled\)/);
   assert.match(appShell, /window\.electronAPI\.market\.getSettings\(\)/);
   assert.match(appShell, /setMarketEnabled\(isMarketSettingsVisible\(settings\)\)/);
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.match(appShell, /\.filter\(\(item\) => item\.key !== "kanban" \|\| kanbanEnabled\)/);
-  assert.match(appShell, /typeof preferences\?\.kanban\?\.enabled === "boolean"/);
+  assert.match(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
+  assert.doesNotMatch(appShell, /preferences\?\.kanban/);
   assert.match(appShell, /onKanbanEnabledChange=\{setKanbanEnabled\}/);
+  assert.match(appShell, /onMarketEnabledChange=\{setMarketEnabled\}/);
   assert.match(appShell, /marketEnabled=\{marketEnabled\}/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
   assert.match(appShell, /websiteNavOrder=\{normalizedWebGroupOrder\}/);
@@ -1671,6 +1698,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
   assert.match(sidebarSource, /marketEnabled\?:\s*boolean/);
   assert.match(sidebarSource, /\.filter\(\(item\) => item\.orderKey !== "market" \|\| marketEnabled\)/);
+  assert.match(sidebarSource, /\.filter\(\(item\) => sidebarNavOrder\.includes\(item\.orderKey\)\)/);
   assert.match(sidebarSource, /webItems:\s*WebEntry\[\]/);
   assert.doesNotMatch(sidebarSource, /websiteItems/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
@@ -2370,10 +2398,10 @@ test("assistant navigation agents refresh immediately after startup services bec
 test("bootstrap success opens the first available navigation agent", () => {
   const appShell = readAppShellSource();
   const startupAutoOpenBlock = appShell.match(
-    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[kanbanEnabled, location\.pathname, navigate, navigationPreferencesLoaded, startupAllReady, startupRestoreState\]\);/u
+    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[kanbanEnabled, location\.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState\]\);/u
   )?.[0] ?? "";
 
-  assert.match(startupAutoOpenBlock, /!navigationPreferencesLoaded/);
+  assert.match(startupAutoOpenBlock, /!navigationStateLoaded/);
   assert.match(startupAutoOpenBlock, /getKanbanAwareFallbackPath\(kanbanEnabled\)/);
   assert.match(startupAutoOpenBlock, /assistant\.listNavigationAgents\(\)/);
   assert.match(startupAutoOpenBlock, /normalizeAssistantNavAgents\(result\.items\)/);
@@ -3451,9 +3479,8 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.match(settingsPage, /settings-pet-appearance-panel/);
   assert.match(settingsPage, /settings-appearance-pet-card/);
   assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentStatus/);
-  assert.match(settingsPage, /case "appearance"[\s\S]*?desktopPetSupported \? \(/);
-  assert.match(settingsPage, /const shouldReadDesktopPetState = desktopPetSupported && activeSection === "appearance";/);
-  assert.doesNotMatch(settingsPage, /activeSection === "desktopPet"/);
+  assert.match(settingsPage, /case "desktopPet"[\s\S]*?desktopPetSupported \? \(/);
+  assert.match(settingsPage, /const shouldReadDesktopPetState = desktopPetSupported && activeSection === "desktopPet";/);
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
   assert.match(settingsPage, /settings\.desktopPet\.noticeAppearanceFailed/);
   assert.match(settingsPage, /desktop-pet-appearance-list/);

@@ -325,6 +325,7 @@ export function AppShell() {
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
   const [kanbanEnabled, setKanbanEnabled] = useState(true);
+  const [kanbanSettingsLoaded, setKanbanSettingsLoaded] = useState(false);
   const [marketEnabled, setMarketEnabled] = useState(false);
   const [marketSettingsLoaded, setMarketSettingsLoaded] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
@@ -411,8 +412,8 @@ export function AppShell() {
   const isSettingsRoute = matchSettingsRoute(location.pathname);
   const currentRoute = `${location.pathname}${location.search}`;
   const settingsSectionDefinitions = useMemo(
-    () => buildLocalizedSettingsSections({ isWindows, t }),
-    [isWindows, t]
+    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported: isMac || isWindows, t }),
+    [isMac, isWindows, t]
   );
   const visibleSettingsSections = useMemo(
     () => getVisibleSettingsSections(settingsSectionDefinitions),
@@ -494,6 +495,7 @@ export function AppShell() {
     () => normalizeWebGroupOrder(webGroupOrder, webItems),
     [webGroupOrder, webItems]
   );
+  const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded;
 
   async function refreshWebItems() {
     const result = await window.electronAPI.webs.list();
@@ -778,7 +780,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (
-      !navigationPreferencesLoaded ||
+      !navigationStateLoaded ||
       !shouldAutoOpenAssistant(startupRestoreState, startupAllReady, location.pathname) ||
       startupNavigationDoneRef.current
     ) {
@@ -818,7 +820,7 @@ export function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [kanbanEnabled, location.pathname, navigate, navigationPreferencesLoaded, startupAllReady, startupRestoreState]);
+  }, [kanbanEnabled, location.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState]);
 
   useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
@@ -979,14 +981,35 @@ export function AppShell() {
         if (Array.isArray(preferences?.webOrder)) {
           setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
         }
-        if (typeof preferences?.kanban?.enabled === "boolean") {
-          setKanbanEnabled(preferences.kanban.enabled);
-        }
       })
       .catch(() => undefined)
       .finally(() => {
         if (!cancelled) {
           setNavigationPreferencesLoaded(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.taskBoard.getSettings()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setKanbanEnabled(result.settings.enabled);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setKanbanEnabled(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setKanbanSettingsLoaded(true);
         }
       });
     return () => {
@@ -1765,11 +1788,20 @@ export function AppShell() {
                   startupRestoreState={startupRestoreState}
                   startupAllReady={startupAllReady}
                   kanbanEnabled={kanbanEnabled}
-                  navigationPreferencesLoaded={navigationPreferencesLoaded}
+                  navigationPreferencesLoaded={navigationStateLoaded}
                 />
               }
             />
-            <Route path="/kanban" element={<RouteSuspense><TaskBoardPage hostTheme={resolvedTheme} /></RouteSuspense>} />
+            <Route
+              path="/kanban"
+              element={
+                !kanbanSettingsLoaded
+                  ? null
+                  : kanbanEnabled
+                    ? <RouteSuspense><TaskBoardPage hostTheme={resolvedTheme} /></RouteSuspense>
+                    : <Navigate to="/control-center" replace />
+              }
+            />
             <Route path="/control-center" element={<RouteSuspense><ControlCenterPage /></RouteSuspense>} />
             <Route
               path="/settings"
@@ -1790,6 +1822,7 @@ export function AppShell() {
                     kanbanEnabled={kanbanEnabled}
                     onKanbanEnabledChange={setKanbanEnabled}
                     marketEnabled={marketEnabled}
+                    onMarketEnabledChange={setMarketEnabled}
                     websiteItems={externalWebItems}
                     onWebsiteItemsChange={handleExternalWebItemsChange}
                     onAssistantSettingsChange={setAssistantSettings}

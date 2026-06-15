@@ -8,7 +8,8 @@ export type {
 } from "../../shared/settings-sections";
 
 export function createSettingsSectionDefinitions({
-  isWindows
+  isWindows,
+  desktopPetSupported = true
 }: {
   isWindows: boolean;
   desktopPetSupported?: boolean;
@@ -17,6 +18,27 @@ export function createSettingsSectionDefinitions({
     {
       id: "appearance",
       label: "appearance",
+      description: "",
+      layout: "measure",
+      visible: true
+    },
+    {
+      id: "kanban",
+      label: "kanban",
+      description: "",
+      layout: "measure",
+      visible: true
+    },
+    {
+      id: "desktopPet",
+      label: "desktopPet",
+      description: "",
+      layout: "measure",
+      visible: desktopPetSupported
+    },
+    {
+      id: "market",
+      label: "market",
       description: "",
       layout: "measure",
       visible: true
@@ -93,6 +115,9 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   { label: TranslationKey; description: TranslationKey }
 > = {
   appearance: { label: "settings.appearance.label", description: "settings.appearance.description" },
+  kanban: { label: "settings.kanban.label", description: "settings.kanban.description" },
+  desktopPet: { label: "settings.desktopPet.label", description: "settings.desktopPet.description" },
+  market: { label: "settings.market.label", description: "settings.market.description" },
   control: { label: "settings.control.label", description: "settings.control.description" },
   tunnelHub: { label: "settings.tunnelHub.label", description: "settings.tunnelHub.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
@@ -119,10 +144,12 @@ export function localizeSettingsSectionDefinitions(
 
 export function buildLocalizedSettingsSections({
   isWindows,
+  desktopPetSupported,
   t
 }: {
   isWindows: boolean;
+  desktopPetSupported?: boolean;
   t: (key: TranslationKey) => string;
 }): SettingsSectionDefinition[] {
-  return localizeSettingsSectionDefinitions(createSettingsSectionDefinitions({ isWindows }), t);
+  return localizeSettingsSectionDefinitions(createSettingsSectionDefinitions({ isWindows, desktopPetSupported }), t);
 }

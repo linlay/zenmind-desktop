@@ -850,7 +850,7 @@ export function AppSidebar({
         label: t("nav.embeddedWebs"),
         collapsedLabel: t("nav.embeddedWebsCollapsed"),
       },
-    ],
+    ].filter((item) => sidebarNavOrder.includes(item.orderKey)),
     sidebarNavOrder,
   );
   const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase
@@ -3082,6 +3082,12 @@ export function AppSidebar({
     switch (sectionId) {
       case "appearance":
         return "appearance";
+      case "kanban":
+        return "futures";
+      case "desktopPet":
+        return "assistant";
+      case "market":
+        return "market";
       case "control":
         return "control";
       case "navigation":

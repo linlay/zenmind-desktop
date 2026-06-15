@@ -21,6 +21,9 @@ import type {
   TaskBoardListResult,
   TaskBoardProject,
   TaskBoardRunState,
+  TaskBoardSettings,
+  TaskBoardSettingsInput,
+  TaskBoardSettingsResult,
   TaskBoardStatus
 } from "../shared/contracts";
 import { APP_BRAND } from "../shared/generated/brand";
@@ -45,6 +48,7 @@ import {
   type TaskBoardCloudSnapshot
 } from "./task-board-local-store";
 import { getDesktopConfigRoot } from "./user-paths";
+import { readLegacyKanbanNavigationPreferenceFromRoot } from "./desktop-profile-store";
 import {
   convertLocalProjectIssuesToPrivate,
   createLocalDesktopProject,
@@ -83,6 +87,8 @@ type TaskBoardRuntimeOptions = {
 type TaskBoardDesktopConfigFile = {
   schemaVersion?: unknown;
   taskBoard?: unknown;
+  enabled?: unknown;
+  cloud?: unknown;
   serverUrl?: unknown;
   token?: unknown;
   selectedProjectId?: unknown;
@@ -99,8 +105,8 @@ type TaskBoardAssistantSyncEvent = {
   error?: string | null;
 };
 
-const CONTROL_CONFIG_FILE = "control.json";
-const LEGACY_KANBAN_CONFIG_FILE = "kanban.json";
+const KANBAN_CONFIG_FILE = "kanban.json";
+const LEGACY_CONTROL_CONFIG_FILE = "control.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
 const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
 const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv("ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS", 5_000);
@@ -163,11 +169,11 @@ function buildDeviceName(input: { deviceAlias?: string; hostname?: string; usern
 }
 
 function getTaskBoardConfigPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), CONTROL_CONFIG_FILE);
+  return path.join(getDesktopConfigRoot(app), KANBAN_CONFIG_FILE);
 }
 
-function getLegacyTaskBoardConfigPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), LEGACY_KANBAN_CONFIG_FILE);
+function getLegacyTaskBoardControlConfigPath(app: App) {
+  return path.join(getDesktopConfigRoot(app), LEGACY_CONTROL_CONFIG_FILE);
 }
 
 function readTaskBoardOwnerConfig(input: unknown): TaskBoardDesktopConfigFile {
@@ -228,49 +234,81 @@ function normalizeTaskBoardCloudConfig(input: TaskBoardDesktopConfigFile): TaskB
   };
 }
 
-function readTaskBoardConfigFile(app: App): TaskBoardDesktopConfigFile {
-  const configPath = getTaskBoardConfigPath(app);
-  const legacyPath = getLegacyTaskBoardConfigPath(app);
-  if (fs.existsSync(configPath)) {
-    if (fs.existsSync(legacyPath)) {
-      try {
-        const legacyMtime = fs.statSync(legacyPath).mtimeMs;
-        const configMtime = fs.statSync(configPath).mtimeMs;
-        if (legacyMtime > configMtime) {
-          const legacy = readTaskBoardOwnerConfig(JSON.parse(fs.readFileSync(legacyPath, "utf8")));
-          writeTaskBoardCloudConfig(app, legacy);
-          return legacy;
-        }
-      } catch {
-        // Fall back to the canonical control.json below.
-      }
-    }
-    try {
-      return readTaskBoardOwnerConfig(JSON.parse(fs.readFileSync(configPath, "utf8")));
-    } catch {
-      return {};
-    }
-  }
+function hasTaskBoardCloudFields(input: TaskBoardDesktopConfigFile) {
+  return "serverUrl" in input ||
+    "token" in input ||
+    "selectedProjectId" in input ||
+    "remoteControlEnabled" in input ||
+    "deviceAlias" in input;
+}
 
-  if (!fs.existsSync(legacyPath)) {
-    return {};
-  }
+function normalizeTaskBoardSettings(
+  input: TaskBoardDesktopConfigFile,
+  defaults: Partial<TaskBoardSettings> = {}
+): TaskBoardSettings {
+  const cloudInput = isRecord(input.cloud)
+    ? input.cloud as TaskBoardDesktopConfigFile
+    : isRecord(input.taskBoard)
+      ? input.taskBoard as TaskBoardDesktopConfigFile
+      : input;
+  const hasCloudInput = hasTaskBoardCloudFields(cloudInput);
+  return {
+    enabled: typeof input.enabled === "boolean" ? input.enabled : defaults.enabled ?? hasCloudInput,
+    cloud: hasCloudInput
+      ? normalizeTaskBoardCloudConfig(cloudInput)
+      : defaults.cloud ?? normalizeTaskBoardCloudConfig({})
+  };
+}
 
+function readJsonConfigFile(filePath: string) {
   try {
-    const legacy = readTaskBoardOwnerConfig(JSON.parse(fs.readFileSync(legacyPath, "utf8")));
-    writeTaskBoardCloudConfig(app, legacy);
-    return legacy;
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
   } catch {
-    return {};
+    return null;
   }
 }
 
+function readLegacyControlCloudConfig(app: App): TaskBoardCloudConfig {
+  const legacyPath = getLegacyTaskBoardControlConfigPath(app);
+  if (!fs.existsSync(legacyPath)) {
+    return normalizeTaskBoardCloudConfig({});
+  }
+  const parsed = readJsonConfigFile(legacyPath);
+  return normalizeTaskBoardCloudConfig(readTaskBoardOwnerConfig(parsed));
+}
+
+function readLegacyKanbanEnabled(app: App) {
+  return readLegacyKanbanNavigationPreferenceFromRoot(getDesktopConfigRoot(app)).enabled;
+}
+
+export function readTaskBoardSettings(app: App): TaskBoardSettings {
+  const configPath = getTaskBoardConfigPath(app);
+  const legacyDefaults: Partial<TaskBoardSettings> = {
+    enabled: readLegacyKanbanEnabled(app),
+    cloud: readLegacyControlCloudConfig(app)
+  };
+  if (fs.existsSync(configPath)) {
+    const raw = readJsonConfigFile(configPath);
+    const parsed = readTaskBoardOwnerConfig(raw);
+    const settings = normalizeTaskBoardSettings(parsed, legacyDefaults);
+    if (!isRecord(raw) || !isRecord(raw.cloud)) {
+      writeTaskBoardSettings(app, settings);
+    }
+    return settings;
+  }
+
+  const settings = normalizeTaskBoardSettings({}, legacyDefaults);
+  writeTaskBoardSettings(app, settings);
+  return settings;
+}
+
 export function readTaskBoardWsConfig(app: App): KanbanDesktopWsConfig | null {
-  const config = normalizeTaskBoardCloudConfig(readTaskBoardConfigFile(app));
+  const settings = readTaskBoardSettings(app);
+  const config = settings.cloud;
   const serverUrl = readText(process.env.ZENMIND_KANBAN_SERVER_URL) || readText(config.serverUrl);
   const remoteControlEnabled = process.env.ZENMIND_KANBAN_REMOTE_CONTROL_ENABLED === "true" ||
     config.remoteControlEnabled;
-  if (!remoteControlEnabled || !serverUrl) {
+  if (!settings.enabled || !remoteControlEnabled || !serverUrl) {
     return null;
   }
   return {
@@ -283,18 +321,50 @@ export function readTaskBoardWsConfig(app: App): KanbanDesktopWsConfig | null {
 }
 
 function readTaskBoardCloudConfig(app: App): TaskBoardCloudConfig {
-  return normalizeTaskBoardCloudConfig(readTaskBoardConfigFile(app));
+  return readTaskBoardSettings(app).cloud;
 }
 
-function writeTaskBoardCloudConfig(app: App, input: TaskBoardDesktopConfigFile): TaskBoardCloudConfig {
-  const config = normalizeTaskBoardCloudConfig(input);
+function writeTaskBoardSettings(app: App, input: TaskBoardSettings): TaskBoardSettings {
+  const settings = normalizeTaskBoardSettings({
+    enabled: input.enabled,
+    cloud: input.cloud
+  });
   const configPath = getTaskBoardConfigPath(app);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify({
     schemaVersion: 1,
-    taskBoard: config
+    enabled: settings.enabled,
+    cloud: settings.cloud
   }, null, 2)}\n`, "utf8");
-  return config;
+  return settings;
+}
+
+export function saveTaskBoardSettings(app: App, input: TaskBoardSettingsInput): TaskBoardSettings {
+  const current = readTaskBoardSettings(app);
+  return writeTaskBoardSettings(app, {
+    enabled: typeof input.enabled === "boolean" ? input.enabled : current.enabled,
+    cloud: normalizeTaskBoardCloudConfig({
+      ...current.cloud,
+      ...(isRecord(input.cloud) ? input.cloud : {})
+    })
+  });
+}
+
+function writeTaskBoardCloudConfig(app: App, input: TaskBoardDesktopConfigFile): TaskBoardCloudConfig {
+  const configPath = getTaskBoardConfigPath(app);
+  return saveTaskBoardSettings(app, {
+    ...(fs.existsSync(configPath) ? {} : { enabled: true }),
+    cloud: input as Partial<TaskBoardCloudConfig>
+  }).cloud;
+}
+
+export function writeTaskBoardSettingsIfAbsent(app: App, input: TaskBoardSettingsInput) {
+  const configPath = getTaskBoardConfigPath(app);
+  if (fs.existsSync(configPath)) {
+    return false;
+  }
+  saveTaskBoardSettings(app, input);
+  return true;
 }
 
 function getTaskBoardDeviceInfo(app: App) {
@@ -541,6 +611,17 @@ export class TaskBoardRuntime {
     };
   }
 
+  getSettings(): TaskBoardSettingsResult {
+    this.refreshConnection();
+    return {
+      ok: true,
+      message: "看板设置已加载。",
+      settings: readTaskBoardSettings(this.options.app),
+      configPath: getTaskBoardConfigPath(this.options.app),
+      connectionState: this.connectionState
+    };
+  }
+
   async listOnlineDevices(): Promise<TaskBoardDesktopOnlineResult> {
     this.refreshConnection();
     if (!this.wsClient.isOpen()) {
@@ -587,6 +668,18 @@ export class TaskBoardRuntime {
       ok: true,
       message: config.serverUrl ? "云端看板配置已保存，正在重新连接。" : "云端看板配置已保存，连接已关闭。",
       config,
+      configPath: getTaskBoardConfigPath(this.options.app),
+      connectionState: this.connectionState
+    };
+  }
+
+  saveSettings(input: TaskBoardSettingsInput): TaskBoardSettingsResult {
+    const settings = saveTaskBoardSettings(this.options.app, input);
+    this.refreshConnection({ forceReconnect: true });
+    return {
+      ok: true,
+      message: settings.enabled ? "看板设置已保存。" : "看板已关闭。",
+      settings,
       configPath: getTaskBoardConfigPath(this.options.app),
       connectionState: this.connectionState
     };

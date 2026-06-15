@@ -34,9 +34,6 @@ export type DesktopProfile = {
   navigation: {
     mainOrder: string[];
     webOrder: string[];
-    kanban: {
-      enabled: boolean;
-    };
     desktopCopilotPages: DesktopCopilotPagePreferences;
   };
 };
@@ -90,10 +87,10 @@ function normalizeTextArray(value: unknown) {
     .filter(Boolean);
 }
 
-function normalizeKanbanNavigation(value: unknown): DesktopProfile["navigation"]["kanban"] {
+function normalizeLegacyKanbanNavigation(value: unknown): { enabled?: boolean } {
   const record = isRecord(value) ? value : {};
   return {
-    enabled: typeof record.enabled === "boolean" ? record.enabled : true
+    ...(typeof record.enabled === "boolean" ? { enabled: record.enabled } : {})
   };
 }
 
@@ -164,7 +161,6 @@ function normalizeDesktopProfile(
     navigation: {
       mainOrder: normalizeTextArray(navigation.mainOrder),
       webOrder: webOrder.length > 0 ? webOrder : legacyWebsiteOrder,
-      kanban: normalizeKanbanNavigation(navigation.kanban),
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
         navigation.desktopCopilotPages ?? legacySettings.desktopCopilotPages
       )
@@ -188,6 +184,13 @@ export function readDesktopProfileFromRoot(
     writeJsonFile(profilePath, profile);
   }
   return profile;
+}
+
+export function readLegacyKanbanNavigationPreferenceFromRoot(rootDir: string) {
+  const parsed = readJsonFile(path.join(rootDir, DESKTOP_PROFILE_FILE));
+  const record = isRecord(parsed) ? parsed : {};
+  const navigation = isRecord(record.navigation) ? record.navigation : {};
+  return normalizeLegacyKanbanNavigation(navigation.kanban);
 }
 
 export function writeDesktopProfileToRoot(rootDir: string, profile: DesktopProfile) {

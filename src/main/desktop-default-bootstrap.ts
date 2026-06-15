@@ -16,6 +16,7 @@ import { resolveDesktopSsoConfigPath } from "./oidc-sso";
 import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
 import { writeDesktopPetStoredState } from "./copilot/pet-copilot/desktop-pet";
 import { writeMarketSettingsIfAbsent } from "./marketplace/common";
+import { writeTaskBoardSettingsIfAbsent } from "./task-board-runtime";
 
 const DESKTOP_DEFAULT_FILE = "desktop-default.json";
 const BOOTSTRAP_STATE_FILE = "bootstrap.json";
@@ -24,6 +25,7 @@ type AppPathReader = Pick<App, "getPath">;
 
 type BootstrapApplyResult = {
   profile: "applied" | "skipped" | "absent";
+  kanban: "applied" | "skipped" | "absent";
   pet: "applied" | "skipped" | "absent";
   market: "applied" | "skipped" | "absent";
   sso: "applied" | "skipped" | "absent";
@@ -37,16 +39,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function readKanbanNavigationDefault(
-  value: unknown,
-  current: { enabled: boolean }
-) {
-  const record = isRecord(value) ? value : {};
-  return {
-    enabled: typeof record.enabled === "boolean" ? record.enabled : current.enabled
-  };
 }
 
 function readJsonFile(filePath: string) {
@@ -77,6 +69,55 @@ function pathApiForRuntimeRoot(platform: NodeJS.Platform, runtimeRoot: string) {
     return path.posix;
   }
   return path.posix;
+}
+
+function normalizeKanbanDefaults(value: unknown) {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const cloudDefaults = isRecord(value.cloud) ? value.cloud : value;
+  const cloud: {
+    serverUrl?: string;
+    token?: string;
+    selectedProjectId?: string;
+    remoteControlEnabled?: boolean;
+    deviceAlias?: string;
+  } = {};
+  const serverUrl = readText(cloudDefaults.serverUrl);
+  const token = readText(cloudDefaults.token);
+  const selectedProjectId = readText(cloudDefaults.selectedProjectId);
+  const deviceAlias = readText(cloudDefaults.deviceAlias);
+  if (serverUrl) {
+    cloud.serverUrl = serverUrl;
+  }
+  if (token) {
+    cloud.token = token;
+  }
+  if (selectedProjectId) {
+    cloud.selectedProjectId = selectedProjectId;
+  }
+  if (deviceAlias) {
+    cloud.deviceAlias = deviceAlias;
+  }
+  if (typeof cloudDefaults.remoteControlEnabled === "boolean") {
+    cloud.remoteControlEnabled = cloudDefaults.remoteControlEnabled;
+  }
+  const settings: { enabled?: boolean; cloud?: typeof cloud } = {};
+  if (typeof value.enabled === "boolean") {
+    settings.enabled = value.enabled;
+  }
+  if (Object.keys(cloud).length > 0) {
+    settings.cloud = cloud;
+  }
+  return Object.keys(settings).length > 0 ? settings : null;
+}
+
+function readLegacyProfileKanbanDefaults(profileDefaults: unknown) {
+  if (!isRecord(profileDefaults)) {
+    return null;
+  }
+  const navigation = isRecord(profileDefaults.navigation) ? profileDefaults.navigation : {};
+  return normalizeKanbanDefaults(navigation.kanban);
 }
 
 export function resolveDesktopDefaultPath(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
@@ -138,13 +179,24 @@ function applyProfileDefaults(app: App, profileDefaults: unknown): BootstrapAppl
         : Array.isArray(navigation.websiteOrder)
           ? navigation.websiteOrder.map(readText).filter(Boolean)
           : current.navigation.webOrder,
-      kanban: readKanbanNavigationDefault(navigation.kanban, current.navigation.kanban),
       desktopCopilotPages: isRecord(navigation.desktopCopilotPages)
         ? navigation.desktopCopilotPages as never
         : current.navigation.desktopCopilotPages
     }
   });
   return "applied";
+}
+
+function applyKanbanDefaults(
+  app: App,
+  kanbanDefaults: unknown,
+  profileDefaults: unknown
+): BootstrapApplyResult["kanban"] {
+  const settings = normalizeKanbanDefaults(kanbanDefaults) ?? readLegacyProfileKanbanDefaults(profileDefaults);
+  if (!settings) {
+    return "absent";
+  }
+  return writeTaskBoardSettingsIfAbsent(app, settings) ? "applied" : "skipped";
 }
 
 function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platform): BootstrapApplyResult["pet"] {
@@ -267,6 +319,7 @@ export function applyDesktopDefaultBootstrap(
 
   const applied: BootstrapApplyResult = {
     profile: applyProfileDefaults(app, defaults.profile),
+    kanban: applyKanbanDefaults(app, defaults.kanban, defaults.profile),
     pet: applyPetDefaults(app, defaults.pet, platform),
     market: applyMarketDefaults(app, defaults.market),
     sso: applySsoDefaults(app, defaults.sso, platform),
@@ -290,6 +343,7 @@ export const __testInternals = {
   BOOTSTRAP_STATE_FILE,
   pathApiForRuntimeRoot,
   applyProfileDefaults,
+  applyKanbanDefaults,
   applyPetDefaults,
   applyMarketDefaults,
   applySsoDefaults,

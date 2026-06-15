@@ -19,6 +19,7 @@ import type {
   DesktopPetAgentOption,
   DesktopPetState,
   DesktopRuntimeEnvResetResult,
+  MarketSettings,
   TaskBoardCloudConfig,
   TaskBoardDesktopOnlineResult,
   TaskBoardProject,
@@ -65,6 +66,7 @@ type SettingsPageProps = {
   kanbanEnabled: boolean;
   onKanbanEnabledChange: (enabled: boolean) => void;
   marketEnabled: boolean;
+  onMarketEnabledChange?: (enabled: boolean) => void;
   websiteItems: WebsiteEntry[];
   onWebsiteItemsChange: (items: WebsiteEntry[]) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
@@ -181,6 +183,10 @@ const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
   tlsInsecureSkipVerify: false,
   reconnectSeconds: 3
 };
+
+function isMarketVisible(settings: MarketSettings) {
+  return settings.enabled === true && Boolean(settings.marketApiBaseUrl.trim());
+}
 
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -553,6 +559,7 @@ export function SettingsPage({
   kanbanEnabled,
   onKanbanEnabledChange,
   marketEnabled,
+  onMarketEnabledChange,
   websiteItems,
   onWebsiteItemsChange,
   onAssistantSettingsChange
@@ -593,6 +600,8 @@ export function SettingsPage({
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
+  const [marketSettings, setMarketSettings] = useState<MarketSettings>({ enabled: false, marketApiBaseUrl: "" });
+  const [marketSettingsSaving, setMarketSettingsSaving] = useState(false);
   const [controlCloudConfig, setControlCloudConfig] = useState<TaskBoardCloudConfig>(defaultTaskBoardCloudConfig);
   const [controlCloudProjects, setControlCloudProjects] = useState<TaskBoardProject[]>([]);
   const [controlConnectionState, setControlConnectionState] = useState<TaskBoardConnectionState>("disabled");
@@ -612,8 +621,8 @@ export function SettingsPage({
   const assistantSettingsLoadedRef = useRef(false);
   const desktopPetStateLoadedRef = useRef(false);
   const sectionDefinitions = useMemo(
-    () => buildLocalizedSettingsSections({ isWindows, t }),
-    [isWindows, t]
+    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported, t }),
+    [desktopPetSupported, isWindows, t]
   );
   const visibleSections = useMemo(
     () => getVisibleSettingsSections(sectionDefinitions),
@@ -628,12 +637,13 @@ export function SettingsPage({
     visibleSectionIds
   );
   const shouldReadMemoryData = activeSection === "memory";
-  const shouldReadControlData = activeSection === "control";
+  const shouldReadControlData = activeSection === "kanban";
   const shouldReadTunnelHubData = activeSection === "tunnelHub";
+  const shouldReadMarketSettings = activeSection === "market";
   const shouldReadAssistantSettings = Boolean(
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
   );
-  const shouldReadDesktopPetState = desktopPetSupported && activeSection === "appearance";
+  const shouldReadDesktopPetState = desktopPetSupported && activeSection === "desktopPet";
   const controlProjectOptions = useMemo(
     () => sortTaskBoardProjectOptions(controlCloudProjects),
     [controlCloudProjects]
@@ -708,25 +718,26 @@ export function SettingsPage({
     let cancelled = false;
     async function refreshControlState() {
       try {
-        const [configResult, onlineResult, issueResult] = await Promise.all([
-          window.electronAPI.taskBoard.getCloudConfig(),
+        const [settingsResult, onlineResult, issueResult] = await Promise.all([
+          window.electronAPI.taskBoard.getSettings(),
           window.electronAPI.taskBoard.listOnlineDevices(),
           window.electronAPI.taskBoard.listIssues()
         ]);
         if (cancelled) {
           return;
         }
+        onKanbanEnabledChange(settingsResult.settings.enabled);
         setControlCloudConfig({
           ...defaultTaskBoardCloudConfig,
-          ...configResult.config
+          ...settingsResult.settings.cloud
         });
         setControlCloudProjects(issueResult.projects ?? []);
-        setControlConnectionState(configResult.connectionState ?? issueResult.connectionState ?? "disabled");
+        setControlConnectionState(settingsResult.connectionState ?? issueResult.connectionState ?? "disabled");
         setControlOnlineSummary(onlineResult);
-        setReadErrorSections(["control"], "");
+        setReadErrorSections(["kanban"], "");
       } catch (reason) {
         if (!cancelled) {
-          setReadErrorSections(["control"], reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["kanban"], reason instanceof Error ? reason.message : String(reason));
         }
       }
     }
@@ -740,7 +751,33 @@ export function SettingsPage({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [shouldReadControlData]);
+  }, [onKanbanEnabledChange, shouldReadControlData]);
+
+  useEffect(() => {
+    if (!shouldReadMarketSettings) {
+      return;
+    }
+
+    let cancelled = false;
+    window.electronAPI.market.getSettings()
+      .then((settings) => {
+        if (cancelled) {
+          return;
+        }
+        setMarketSettings(settings);
+        onMarketEnabledChange?.(isMarketVisible(settings));
+        setReadErrorSections(["market"], "");
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setReadErrorSections(["market"], reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onMarketEnabledChange, shouldReadMarketSettings]);
 
   useEffect(() => {
     if (!shouldReadTunnelHubData) {
@@ -861,12 +898,12 @@ export function SettingsPage({
           }
           desktopPetStateLoadedRef.current = true;
           setDesktopPetState(state);
-          setReadErrorSections(["appearance"], "");
+          setReadErrorSections(["desktopPet"], "");
         })
         .catch((reason) => {
           desktopPetStateLoadedRef.current = false;
           if (!cancelled) {
-            setReadErrorSections(["appearance"], reason instanceof Error ? reason.message : String(reason));
+            setReadErrorSections(["desktopPet"], reason instanceof Error ? reason.message : String(reason));
           }
         });
     }
@@ -875,7 +912,7 @@ export function SettingsPage({
       if (!cancelled) {
         desktopPetStateLoadedRef.current = true;
         setDesktopPetState(state);
-        setReadErrorSections(["appearance"], "");
+        setReadErrorSections(["desktopPet"], "");
       }
     });
 
@@ -975,12 +1012,12 @@ export function SettingsPage({
       setAssistantSettings(nextSettings);
       setDesktopCopilotPages(nextSettings.desktopCopilotPages);
       onAssistantSettingsChange?.(nextSettings);
-      setReadErrorSections(["sideAssistant"], "");
-      showSectionNotice("sideAssistant", t("settings.navigation.sideAssistantSaved"), "success");
+      setReadErrorSections(["navigation"], "");
+      showSectionNotice("navigation", t("settings.navigation.sideAssistantSaved"), "success");
       return nextSettings;
     } catch (reason) {
       setDesktopCopilotPages(previousPages);
-      showSectionNotice("sideAssistant", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("navigation", reason instanceof Error ? reason.message : String(reason), "error");
       throw reason;
     } finally {
       setDesktopCopilotPagePending("");
@@ -1615,10 +1652,10 @@ export function SettingsPage({
         enabled: !desktopPetState?.enabled
       });
       setDesktopPetState(nextState);
-      setReadErrorSections(["appearance"], "");
-      showSectionNotice("appearance", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
+      setReadErrorSections(["desktopPet"], "");
+      showSectionNotice("desktopPet", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
     } catch (reason) {
-      showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetPending(false);
     }
@@ -1638,20 +1675,20 @@ export function SettingsPage({
         appearanceId
       });
       setDesktopPetState(nextState);
-      setReadErrorSections(["appearance"], "");
+      setReadErrorSections(["desktopPet"], "");
       if (nextState.appearanceId === appearanceId) {
         showSectionNotice(
-          "appearance",
+          "desktopPet",
           t("settings.desktopPet.noticeAppearanceChanged", {
             name: getDesktopPetAppearanceLabel(appearanceId, selectedAppearance?.displayName ?? appearanceId, t)
           }),
           "success"
         );
       } else {
-        showSectionNotice("appearance", t("settings.desktopPet.noticeAppearanceFailed"), "error");
+        showSectionNotice("desktopPet", t("settings.desktopPet.noticeAppearanceFailed"), "error");
       }
     } catch (reason) {
-      showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetAppearancePending("");
     }
@@ -1674,15 +1711,15 @@ export function SettingsPage({
       setAssistantSettings(nextSettings);
       setDesktopHelperAgentKey(nextSettings.desktopHelperAgentKey);
       onAssistantSettingsChange?.(nextSettings);
-      setReadErrorSections(["sideAssistant"], "");
+      setReadErrorSections(["navigation"], "");
       showSectionNotice(
-        "sideAssistant",
+        "navigation",
         t("settings.navigation.defaultAgentChanged", { name: nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey }),
         "success"
       );
     } catch (reason) {
       setDesktopHelperAgentKey(previousAgentKey);
-      showSectionNotice("sideAssistant", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("navigation", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopHelperAgentPending(false);
     }
@@ -1694,21 +1731,30 @@ export function SettingsPage({
     onKanbanEnabledChange(nextEnabled);
     setKanbanVisibilityPending(true);
     try {
-      const preferences = await window.electronAPI.settings.saveNavigationPreferences({
-        kanban: { enabled: nextEnabled }
+      const result = await window.electronAPI.taskBoard.saveSettings({
+        enabled: nextEnabled,
+        cloud: controlCloudConfig
       });
-      onKanbanEnabledChange(preferences.kanban.enabled);
-      setReadErrorSections(["navigation"], "");
+      if (!result.ok) {
+        throw new Error(result.message || t("settings.kanban.saveFailed"));
+      }
+      onKanbanEnabledChange(result.settings.enabled);
+      setControlCloudConfig({
+        ...defaultTaskBoardCloudConfig,
+        ...result.settings.cloud
+      });
+      setControlConnectionState(result.connectionState ?? "disabled");
+      setReadErrorSections(["kanban"], "");
       showSectionNotice(
-        "navigation",
-        preferences.kanban.enabled
-          ? t("settings.navigation.kanbanVisible")
-          : t("settings.navigation.kanbanHidden"),
+        "kanban",
+        result.settings.enabled
+          ? t("settings.kanban.noticeEnabled")
+          : t("settings.kanban.noticeDisabled"),
         "success"
       );
     } catch (reason) {
       onKanbanEnabledChange(previousEnabled);
-      showSectionNotice("navigation", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("kanban", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setKanbanVisibilityPending(false);
     }
@@ -1791,13 +1837,17 @@ export function SettingsPage({
   async function saveControlCloudConfig(nextConfig: TaskBoardCloudConfig) {
     setControlConfigSaving(true);
     try {
-      const result = await window.electronAPI.taskBoard.saveCloudConfig(nextConfig);
+      const result = await window.electronAPI.taskBoard.saveSettings({
+        enabled: kanbanEnabled,
+        cloud: nextConfig
+      });
       if (!result.ok) {
-        throw new Error(result.message || t("settings.control.saveFailed"));
+        throw new Error(result.message || t("settings.kanban.saveFailed"));
       }
+      onKanbanEnabledChange(result.settings.enabled);
       setControlCloudConfig({
         ...defaultTaskBoardCloudConfig,
-        ...result.config
+        ...result.settings.cloud
       });
       setControlConnectionState(result.connectionState ?? "disabled");
       const [onlineResult, issueResult] = await Promise.all([
@@ -1806,10 +1856,10 @@ export function SettingsPage({
       ]);
       setControlCloudProjects(issueResult.projects ?? []);
       setControlOnlineSummary(onlineResult);
-      setReadErrorSections(["control"], "");
-      showSectionNotice("control", result.message, "success");
+      setReadErrorSections(["kanban"], "");
+      showSectionNotice("kanban", result.message, "success");
     } catch (reason) {
-      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("kanban", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setControlConfigSaving(false);
     }
@@ -1825,6 +1875,26 @@ export function SettingsPage({
       ...controlCloudConfig,
       remoteControlEnabled: !controlCloudConfig.remoteControlEnabled
     });
+  }
+
+  async function handleSaveMarketSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMarketSettingsSaving(true);
+    try {
+      const settings = await window.electronAPI.market.saveSettings(marketSettings);
+      setMarketSettings(settings);
+      onMarketEnabledChange?.(isMarketVisible(settings));
+      setReadErrorSections(["market"], "");
+      showSectionNotice(
+        "market",
+        isMarketVisible(settings) ? t("settings.market.noticeVisible") : t("settings.market.noticeHidden"),
+        "success"
+      );
+    } catch (reason) {
+      showSectionNotice("market", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setMarketSettingsSaving(false);
+    }
   }
 
   async function handleSaveTunnelHubSettings(event: FormEvent<HTMLFormElement>) {
@@ -1966,177 +2036,252 @@ export function SettingsPage({
                 </label>
               </div>
             </div>
-            {desktopPetSupported ? (
-              <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
-                <div className="settings-item-header settings-pet-header">
-                  <div className="settings-appearance-row-copy">
-                    <strong>{t("settings.desktopPet.label")}</strong>
-                    <span>{t("settings.desktopPet.description")}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
-                    role="switch"
-                    aria-checked={Boolean(desktopPetState?.enabled)}
-                    aria-label={t("settings.desktopPet.label")}
-                    disabled={desktopPetPending}
-                    onClick={() => void handleToggleDesktopPet()}
-                  >
-                    <span aria-hidden="true" />
-                  </button>
-                </div>
-                <div
-                  className={desktopPetEnabled
-                    ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
-                    : "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list is-disabled"}
-                  aria-label={t("settings.desktopPet.appearance")}
-                  aria-disabled={!desktopPetEnabled}
-                >
-                  {desktopPetAppearanceOptions.map((appearance) => {
-                    const selected = appearance.id === currentDesktopPetAppearanceId;
-                    const pending = desktopPetAppearancePending === appearance.id;
-                    const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
-                    const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
-                    let actionLabel = t("settings.desktopPet.select");
-                    if (selected) {
-                      actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
-                    }
-                    if (pending) {
-                      actionLabel = t("settings.desktopPet.switching");
-                    }
-                    return (
-                      <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
-                        <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                          <img src={appearance.previewAssetPath} alt="" />
-                        </span>
-                        <span className="desktop-pet-appearance-copy">
-                          <strong>{appearanceLabel}</strong>
-                          <small>{appearanceDescription}</small>
-                        </span>
-                        <button
-                          type="button"
-                          className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
-                          aria-pressed={selected}
-                          disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
-                          onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
-                        >
-                          {actionLabel}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
           </>
+        );
+      case "desktopPet":
+        return desktopPetSupported ? (
+          <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
+            <div className="settings-item-header settings-pet-header">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.desktopPet.label")}</strong>
+                <span>{t("settings.desktopPet.description")}</span>
+              </div>
+              <button
+                type="button"
+                className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={Boolean(desktopPetState?.enabled)}
+                aria-label={t("settings.desktopPet.label")}
+                disabled={desktopPetPending}
+                onClick={() => void handleToggleDesktopPet()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              className={desktopPetEnabled
+                ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
+                : "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list is-disabled"}
+              aria-label={t("settings.desktopPet.appearance")}
+              aria-disabled={!desktopPetEnabled}
+            >
+              {desktopPetAppearanceOptions.map((appearance) => {
+                const selected = appearance.id === currentDesktopPetAppearanceId;
+                const pending = desktopPetAppearancePending === appearance.id;
+                const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
+                const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
+                let actionLabel = t("settings.desktopPet.select");
+                if (selected) {
+                  actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
+                }
+                if (pending) {
+                  actionLabel = t("settings.desktopPet.switching");
+                }
+                return (
+                  <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
+                    <span className="desktop-pet-appearance-preview" aria-hidden="true">
+                      <img src={appearance.previewAssetPath} alt="" />
+                    </span>
+                    <span className="desktop-pet-appearance-copy">
+                      <strong>{appearanceLabel}</strong>
+                      <small>{appearanceDescription}</small>
+                    </span>
+                    <button
+                      type="button"
+                      className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
+                      aria-pressed={selected}
+                      disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
+                      onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
+                    >
+                      {actionLabel}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null;
+      case "kanban":
+        return (
+          <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
+            <div className="settings-item-header settings-control-permission-row">
+              <span className="settings-control-app-icon" aria-hidden="true">
+                <span />
+              </span>
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.kanban.enabled")}</strong>
+                <span>{t("settings.kanban.enabledDescription")}</span>
+                <em>
+                  {kanbanEnabled
+                    ? t("settings.kanban.statusEnabled")
+                    : t("settings.kanban.statusDisabled")}
+                </em>
+              </div>
+              <button
+                type="button"
+                className={kanbanEnabled ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={kanbanEnabled}
+                aria-label={t("settings.kanban.enabled")}
+                disabled={kanbanVisibilityPending}
+                onClick={() => void handleToggleKanbanVisibility()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+            <div className="settings-item-header settings-control-permission-row">
+              <span className="settings-control-app-icon" aria-hidden="true">
+                <span />
+              </span>
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.control.remoteControlEnabled")}</strong>
+                <span>{t("settings.control.remoteControlDescription")}</span>
+                <em>
+                  {controlCloudConfig.remoteControlEnabled
+                    ? t("settings.control.remoteControlOn")
+                    : t("settings.control.remoteControlOff")}
+                </em>
+              </div>
+              <button
+                type="button"
+                className={controlCloudConfig.remoteControlEnabled ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={controlCloudConfig.remoteControlEnabled}
+                aria-label={t("settings.control.remoteControlEnabled")}
+                disabled={controlConfigSaving}
+                onClick={() => void handleToggleControlRemoteControl()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+            <div className="settings-item-section-head website-list-head">
+              <div>
+                <strong>{t("settings.control.statusTitle")}</strong>
+                <span>{getControlConnectionLabel(controlConnectionState)}</span>
+              </div>
+            </div>
+            <div className="settings-control-summary">
+              {t("settings.control.onlineSummary", {
+                devices: controlOnlineSummary.deviceCount,
+                sessions: controlOnlineSummary.sessionCount,
+                agents: controlOnlineSummary.agentCount
+              })}
+            </div>
+            <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
+              <label className="settings-control-field">
+                <span>{t("taskBoard.cloud.deviceAlias")}</span>
+                <input
+                  value={controlCloudConfig.deviceAlias ?? ""}
+                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, deviceAlias: event.target.value }))}
+                  placeholder={t("taskBoard.cloud.deviceAliasPlaceholder")}
+                />
+              </label>
+              <label className="settings-control-field">
+                <span>{t("taskBoard.cloud.serverUrl")}</span>
+                <input
+                  value={controlCloudConfig.serverUrl}
+                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
+                  placeholder="http://127.0.0.1:8080"
+                />
+              </label>
+              <label className="settings-control-field">
+                <span>{t("taskBoard.cloud.token")}</span>
+                <input
+                  value={controlCloudConfig.token}
+                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, token: event.target.value }))}
+                  placeholder={t("taskBoard.cloud.tokenPlaceholder")}
+                />
+              </label>
+              <label className="settings-control-field">
+                <span>{t("taskBoard.cloud.projectId")}</span>
+                {controlProjectOptions.length > 0 ? (
+                  <select
+                    value={controlCloudConfig.selectedProjectId}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                  >
+                    {selectedControlProjectMissing ? (
+                      <option value={controlCloudConfig.selectedProjectId}>
+                        {t("taskBoard.cloud.currentProject", { id: controlCloudConfig.selectedProjectId })}
+                      </option>
+                    ) : null}
+                    {controlProjectOptions.map((project) => (
+                      <option value={project.id} key={project.id}>
+                        {getTaskBoardProjectOptionLabel(project)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={controlCloudConfig.selectedProjectId}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                    placeholder="default"
+                  />
+                )}
+                <small>
+                  {controlProjectOptions.length > 0
+                    ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
+                    : t("taskBoard.cloud.projectFallbackHelp")}
+                </small>
+              </label>
+              <div className="settings-control-actions">
+                <button type="submit" className="settings-control-primary-button" disabled={controlConfigSaving}>
+                  {controlConfigSaving ? t("settings.kanban.saving") : t("settings.kanban.save")}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      case "market":
+        return (
+          <div className="settings-item-card settings-control-card" aria-label={t("settings.market.panelAria")}>
+            <div className="settings-item-header settings-control-permission-row">
+              <span className="settings-control-app-icon" aria-hidden="true">
+                <span />
+              </span>
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.market.enabled")}</strong>
+                <span>{t("settings.market.enabledDescription")}</span>
+                <em>
+                  {isMarketVisible(marketSettings)
+                    ? t("settings.market.statusVisible")
+                    : t("settings.market.statusHidden")}
+                </em>
+              </div>
+              <button
+                type="button"
+                className={marketSettings.enabled ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={marketSettings.enabled}
+                aria-label={t("settings.market.enabled")}
+                disabled={marketSettingsSaving}
+                onClick={() => setMarketSettings((current) => ({ ...current, enabled: !current.enabled }))}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+            <form className="settings-control-form" onSubmit={(event) => void handleSaveMarketSettings(event)}>
+              <label className="settings-control-field">
+                <span>{t("settings.market.apiBaseUrl")}</span>
+                <input
+                  value={marketSettings.marketApiBaseUrl}
+                  onChange={(event) => setMarketSettings((current) => ({ ...current, marketApiBaseUrl: event.target.value }))}
+                  placeholder={t("settings.market.apiBaseUrlPlaceholder")}
+                />
+                <small>{t("settings.market.visibilityRule")}</small>
+              </label>
+              <div className="settings-control-actions">
+                <button type="submit" className="settings-control-primary-button" disabled={marketSettingsSaving}>
+                  {marketSettingsSaving ? t("settings.market.saving") : t("settings.market.save")}
+                </button>
+              </div>
+            </form>
+          </div>
         );
       case "control": {
         const pairingPayloadResult = appPairingResult?.ok ? appPairingResult : null;
         const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
         return (
           <>
-            <div className="settings-item-card settings-control-card" aria-label={t("settings.control.panelAria")}>
-              <div className="settings-item-header settings-control-permission-row">
-                <span className="settings-control-app-icon" aria-hidden="true">
-                  <span />
-                </span>
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.control.remoteControlEnabled")}</strong>
-                  <span>{t("settings.control.remoteControlDescription")}</span>
-                  <em>
-                    {controlCloudConfig.remoteControlEnabled
-                      ? t("settings.control.remoteControlOn")
-                      : t("settings.control.remoteControlOff")}
-                  </em>
-                </div>
-                <button
-                  type="button"
-                  className={controlCloudConfig.remoteControlEnabled ? "settings-switch is-on" : "settings-switch"}
-                  role="switch"
-                  aria-checked={controlCloudConfig.remoteControlEnabled}
-                  aria-label={t("settings.control.remoteControlEnabled")}
-                  disabled={controlConfigSaving}
-                  onClick={() => void handleToggleControlRemoteControl()}
-                >
-                  <span aria-hidden="true" />
-                </button>
-              </div>
-              <div className="settings-item-section-head website-list-head">
-                <div>
-                  <strong>{t("settings.control.statusTitle")}</strong>
-                  <span>{getControlConnectionLabel(controlConnectionState)}</span>
-                </div>
-              </div>
-              <div className="settings-control-summary">
-                {t("settings.control.onlineSummary", {
-                  devices: controlOnlineSummary.deviceCount,
-                  sessions: controlOnlineSummary.sessionCount,
-                  agents: controlOnlineSummary.agentCount
-                })}
-              </div>
-              <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
-                <label className="settings-control-field">
-                  <span>{t("taskBoard.cloud.deviceAlias")}</span>
-                  <input
-                    value={controlCloudConfig.deviceAlias ?? ""}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, deviceAlias: event.target.value }))}
-                    placeholder={t("taskBoard.cloud.deviceAliasPlaceholder")}
-                  />
-                </label>
-                <label className="settings-control-field">
-                  <span>{t("taskBoard.cloud.serverUrl")}</span>
-                  <input
-                    value={controlCloudConfig.serverUrl}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
-                    placeholder="http://127.0.0.1:8080"
-                  />
-                </label>
-                <label className="settings-control-field">
-                  <span>{t("taskBoard.cloud.token")}</span>
-                  <input
-                    value={controlCloudConfig.token}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, token: event.target.value }))}
-                    placeholder={t("taskBoard.cloud.tokenPlaceholder")}
-                  />
-                </label>
-                <label className="settings-control-field">
-                  <span>{t("taskBoard.cloud.projectId")}</span>
-                  {controlProjectOptions.length > 0 ? (
-                    <select
-                      value={controlCloudConfig.selectedProjectId}
-                      onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                    >
-                      {selectedControlProjectMissing ? (
-                        <option value={controlCloudConfig.selectedProjectId}>
-                          {t("taskBoard.cloud.currentProject", { id: controlCloudConfig.selectedProjectId })}
-                        </option>
-                      ) : null}
-                      {controlProjectOptions.map((project) => (
-                        <option value={project.id} key={project.id}>
-                          {getTaskBoardProjectOptionLabel(project)}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      value={controlCloudConfig.selectedProjectId}
-                      onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                      placeholder="default"
-                    />
-                  )}
-                  <small>
-                    {controlProjectOptions.length > 0
-                      ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                      : t("taskBoard.cloud.projectFallbackHelp")}
-                  </small>
-                </label>
-                <div className="settings-control-actions">
-                  <button type="submit" className="settings-control-primary-button" disabled={controlConfigSaving}>
-                    {controlConfigSaving ? t("settings.control.saving") : t("settings.control.save")}
-                  </button>
-                </div>
-              </form>
-            </div>
             <div className="settings-item-card settings-mobile-pairing-card">
               <div className="settings-item-header settings-mobile-pairing-header">
                 <div className="settings-appearance-row-copy">
@@ -2285,9 +2430,7 @@ export function SettingsPage({
 
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
-        const navigationSettingsOrder = kanbanEnabled || sidebarNavOrder.includes("kanban")
-          ? sidebarNavOrder
-          : (["kanban", ...sidebarNavOrder] as SidebarNavOrderItemKey[]);
+        const navigationSettingsOrder = sidebarNavOrder;
         const visibleFixedNavigationTools = fixedNavigationTools.filter((tool) => tool.id !== "market" || marketEnabled);
         function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {
           const copilotPageKey = tool.copilotPageKey;
@@ -2381,9 +2524,7 @@ export function SettingsPage({
               </div>
               <div className="settings-item-list navigation-order-list" role="list" aria-label={t("settings.navigation.fixedMainOrder")}>
                 {navigationSettingsOrder.map((itemKey, index) => {
-                    const itemLabel = itemKey === "kanban"
-                      ? t("nav.taskBoard")
-                      : sidebarNavOrderLabels.get(itemKey) ?? itemKey;
+                    const itemLabel = sidebarNavOrderLabels.get(itemKey) ?? itemKey;
                     const copilotPageKey = getCopilotPageKeyForSidebarNavOrderItem(itemKey);
                     const copilotPreference = copilotPageKey
                       ? desktopCopilotPages[copilotPageKey] ?? createDefaultDesktopCopilotPagePreferences()[copilotPageKey]
@@ -2447,29 +2588,8 @@ export function SettingsPage({
                             </select>
                           </span>
                         </label>
-                        <div className={itemKey === "kanban" ? "navigation-order-actions navigation-kanban-actions" : "navigation-order-actions"}>
-                          {itemKey === "kanban" ? (
-                            <>
-                              <span className="navigation-order-fixed-label">
-                                {kanbanEnabled
-                                  ? t("settings.navigation.kanbanVisible")
-                                  : t("settings.navigation.kanbanHidden")}
-                              </span>
-                              <button
-                                type="button"
-                                className={kanbanEnabled ? "settings-switch is-on" : "settings-switch"}
-                                role="switch"
-                                aria-checked={kanbanEnabled}
-                                aria-label={t("settings.navigation.kanbanToggle")}
-                                disabled={kanbanVisibilityPending}
-                                onClick={() => void handleToggleKanbanVisibility()}
-                              >
-                                <span aria-hidden="true" />
-                              </button>
-                            </>
-                          ) : (
-                            <span className="navigation-order-fixed-label">{t("settings.navigation.itemIndex", { index: index + 1 })}</span>
-                          )}
+                        <div className="navigation-order-actions">
+                          <span className="navigation-order-fixed-label">{t("settings.navigation.itemIndex", { index: index + 1 })}</span>
                         </div>
                       </div>
                     );

@@ -310,6 +310,8 @@ export function createSsoIpcHandlerOptions(
 export interface TaskBoardIpcHandlerContextDependencies {
   listTaskBoardIssues: (...args: any[]) => unknown;
   listTaskBoardOnlineDevices: (...args: any[]) => unknown;
+  getTaskBoardSettings: (...args: any[]) => unknown;
+  saveTaskBoardSettings: (...args: any[]) => unknown;
   createTaskBoardIssue: (...args: any[]) => unknown;
   updateTaskBoardIssue: (...args: any[]) => unknown;
   deleteTaskBoardIssueWithAutomation: (...args: any[]) => unknown;
@@ -328,6 +330,8 @@ export function createTaskBoardIpcHandlerOptions(
     app: context.app,
     listTaskBoardIssues: dependencies.listTaskBoardIssues,
     listTaskBoardOnlineDevices: dependencies.listTaskBoardOnlineDevices,
+    getTaskBoardSettings: dependencies.getTaskBoardSettings,
+    saveTaskBoardSettings: dependencies.saveTaskBoardSettings,
     getTaskBoardCloudConfig: dependencies.getTaskBoardCloudConfig,
     saveTaskBoardCloudConfig: dependencies.saveTaskBoardCloudConfig,
     createTaskBoardIssue: dependencies.createTaskBoardIssue,

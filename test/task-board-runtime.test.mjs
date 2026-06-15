@@ -6,7 +6,7 @@ import path from "node:path";
 
 process.env.ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS = "20";
 
-const { TaskBoardRuntime, readTaskBoardWsConfig } = await import("../dist-electron/main/task-board-runtime.js");
+const { TaskBoardRuntime, readTaskBoardSettings, readTaskBoardWsConfig } = await import("../dist-electron/main/task-board-runtime.js");
 
 function createTempApp(t) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-task-board-runtime-"));
@@ -31,6 +31,13 @@ function writeKanbanConfig(app, config) {
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
+function writeDesktopConfig(app, fileName, value) {
+  const configPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", fileName);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  return configPath;
+}
+
 test("task board websocket config is disabled until remote control is allowed", (t) => {
   const app = createTempApp(t);
 
@@ -52,6 +59,85 @@ test("task board websocket config is disabled until remote control is allowed", 
     token: "secret",
     selectedProjectId: "project-a"
   });
+});
+
+test("task board settings read and save enabled plus cloud config", (t) => {
+  const app = createTempApp(t);
+  const runtime = new TaskBoardRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {}
+  });
+
+  try {
+    const initial = runtime.getSettings();
+    assert.equal(initial.ok, true);
+    assert.equal(initial.settings.enabled, false);
+    assert.deepEqual(initial.settings.cloud, {
+      serverUrl: "",
+      token: "",
+      selectedProjectId: "default",
+      remoteControlEnabled: false,
+      deviceAlias: ""
+    });
+
+    const saved = runtime.saveSettings({
+      enabled: true,
+      cloud: {
+        serverUrl: "http://127.0.0.1:3000",
+        selectedProjectId: "project-a",
+        remoteControlEnabled: true,
+        deviceAlias: "桌面 A"
+      }
+    });
+    assert.equal(saved.settings.enabled, true);
+    assert.equal(saved.settings.cloud.serverUrl, "http://127.0.0.1:3000");
+    assert.equal(saved.settings.cloud.token, "");
+    assert.equal(readTaskBoardSettings(app).enabled, true);
+  } finally {
+    runtime.stop();
+  }
+});
+
+test("task board settings migrate legacy profile kanban and control config", (t) => {
+  const app = createTempApp(t);
+  writeDesktopConfig(app, "profile.json", {
+    schemaVersion: 1,
+    navigation: {
+      kanban: {
+        enabled: true
+      }
+    }
+  });
+  const legacyControlPath = writeDesktopConfig(app, "control.json", {
+    taskBoard: {
+      serverUrl: "https://kanban.example.test",
+      token: "legacy-token",
+      selectedProjectId: "legacy-project",
+      remoteControlEnabled: true,
+      deviceAlias: "旧设备"
+    }
+  });
+
+  const settings = readTaskBoardSettings(app);
+  assert.equal(settings.enabled, true);
+  assert.deepEqual(settings.cloud, {
+    serverUrl: "https://kanban.example.test",
+    token: "legacy-token",
+    selectedProjectId: "legacy-project",
+    remoteControlEnabled: true,
+    deviceAlias: "旧设备"
+  });
+  assert.equal(fs.existsSync(legacyControlPath), true);
+
+  const kanbanPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", "kanban.json");
+  const migrated = JSON.parse(fs.readFileSync(kanbanPath, "utf8"));
+  assert.equal(migrated.enabled, true);
+  assert.equal(migrated.cloud.selectedProjectId, "legacy-project");
 });
 
 function waitFor(check, message = "condition", timeoutMs = 1000) {

@@ -4,6 +4,8 @@ export interface TaskBoardIpcHandlerOptions {
   // Task board
   listTaskBoardIssues: (app: any) => any;
   listTaskBoardOnlineDevices: (app: any) => any;
+  getTaskBoardSettings: (app: any) => any;
+  saveTaskBoardSettings: (app: any, input: any) => any;
   getTaskBoardCloudConfig: (app: any) => any;
   saveTaskBoardCloudConfig: (app: any, input: any) => any;
   createTaskBoardIssue: (app: any, input: any) => any;
@@ -20,6 +22,8 @@ export function registerTaskBoardIpcHandlers(ipcMain: any, options: TaskBoardIpc
     app,
     listTaskBoardIssues,
     listTaskBoardOnlineDevices,
+    getTaskBoardSettings,
+    saveTaskBoardSettings,
     getTaskBoardCloudConfig,
     saveTaskBoardCloudConfig,
     createTaskBoardIssue,
@@ -39,6 +43,14 @@ export function registerTaskBoardIpcHandlers(ipcMain: any, options: TaskBoardIpc
 
   ipcMain.handle("taskBoard.listOnlineDevices", async () =>
     listTaskBoardOnlineDevices(app)
+  );
+
+  ipcMain.handle("taskBoard.getSettings", async () =>
+    getTaskBoardSettings(app)
+  );
+
+  ipcMain.handle("taskBoard.saveSettings", async (_event: any, input: any) =>
+    saveTaskBoardSettings(app, input)
   );
 
   ipcMain.handle("taskBoard.getCloudConfig", async () =>

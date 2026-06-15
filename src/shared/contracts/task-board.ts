@@ -274,6 +274,24 @@ export interface TaskBoardCloudConfig {
   deviceAlias?: string;
 }
 
+export interface TaskBoardSettings {
+  enabled: boolean;
+  cloud: TaskBoardCloudConfig;
+}
+
+export interface TaskBoardSettingsInput {
+  enabled?: boolean;
+  cloud?: Partial<TaskBoardCloudConfig>;
+}
+
+export interface TaskBoardSettingsResult {
+  ok: boolean;
+  message: string;
+  settings: TaskBoardSettings;
+  configPath?: string;
+  connectionState?: TaskBoardListResult["connectionState"];
+}
+
 export interface TaskBoardCloudConfigResult {
   ok: boolean;
   message: string;

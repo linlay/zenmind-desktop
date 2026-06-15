@@ -5,7 +5,7 @@ import type { NavigateListener, ServicesChangedListener, StartupRestoreState, St
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
 import type { MarketCommandResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
-import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConfigResult, TaskBoardDeleteResult, TaskBoardDesktopOnlineResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult } from "./task-board";
+import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConfigResult, TaskBoardDeleteResult, TaskBoardDesktopOnlineResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult, TaskBoardSettingsInput, TaskBoardSettingsResult } from "./task-board";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
@@ -155,6 +155,8 @@ export interface DesktopApi {
   taskBoard: {
     listIssues: () => Promise<TaskBoardListResult>;
     listOnlineDevices: () => Promise<TaskBoardDesktopOnlineResult>;
+    getSettings: () => Promise<TaskBoardSettingsResult>;
+    saveSettings: (input: TaskBoardSettingsInput) => Promise<TaskBoardSettingsResult>;
     getCloudConfig: () => Promise<TaskBoardCloudConfigResult>;
     saveCloudConfig: (input: TaskBoardCloudConfig) => Promise<TaskBoardCloudConfigResult>;
     createIssue: (input: TaskBoardIssueInput) => Promise<TaskBoardIssueResult>;
@@ -291,8 +293,8 @@ export interface DesktopApi {
     saveTunnelHubAgentSettings: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
-    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; kanban: { enabled: boolean }; desktopCopilotPages: DesktopCopilotPagePreferences }>;
-    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[]; kanban?: { enabled?: boolean } }) => Promise<{ mainOrder: string[]; webOrder: string[]; kanban: { enabled: boolean }; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;

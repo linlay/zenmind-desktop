@@ -76,10 +76,12 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
         }
       },
       navigation: {
-        kanban: {
-          enabled: false
-        }
+        mainOrder: [],
+        websiteOrder: []
       }
+    },
+    kanban: {
+      enabled: false
     },
     pet: {
       enabled: false,
@@ -119,6 +121,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
 
   const desktopRoot = path.join(homePath, ".zenmind", ".desktop");
   const profile = readJson(path.join(desktopRoot, "config", "desktop", "profile.json"));
+  const kanban = readJson(path.join(desktopRoot, "config", "desktop", "kanban.json"));
   const pet = readJson(path.join(desktopRoot, "config", "desktop", "pet.json"));
   const market = readJson(path.join(desktopRoot, "config", "marketplace", "settings.json"));
   const sso = readJson(path.join(desktopRoot, "config", "desktop", "sso.json"));
@@ -127,7 +130,15 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
 
   assert.equal(profile.appearance.theme, "dark");
   assert.equal(profile.appearance.locale, "en-US");
-  assert.equal(profile.navigation.kanban.enabled, false);
+  assert.equal("kanban" in profile.navigation, false);
+  assert.equal(kanban.enabled, false);
+  assert.deepEqual(kanban.cloud, {
+    serverUrl: "",
+    token: "",
+    selectedProjectId: "default",
+    remoteControlEnabled: false,
+    deviceAlias: ""
+  });
   assert.equal("bootstrapAssistant" in profile, false);
   assert.equal(pet.enabled, false);
   assert.equal(pet.selectedPetId, "builtin:zenmi");
@@ -155,10 +166,10 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal(second.reason, "already-applied");
   assert.equal(profileAfterSecondRun.appearance.theme, "dark");
   assert.equal(profileAfterSecondRun.appearance.locale, "en-US");
-  assert.equal(profileAfterSecondRun.navigation.kanban.enabled, false);
+  assert.equal("kanban" in profileAfterSecondRun.navigation, false);
 });
 
-test("desktop-default bootstrap keeps kanban enabled when navigation default is absent", (t) => {
+test("desktop-default bootstrap migrates legacy navigation kanban fallback", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-kanban-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -169,6 +180,11 @@ test("desktop-default bootstrap keeps kanban enabled when navigation default is 
       appearance: {
         theme: "system",
         locale: "zh-CN"
+      },
+      navigation: {
+        kanban: {
+          enabled: false
+        }
       }
     }
   });
@@ -176,8 +192,12 @@ test("desktop-default bootstrap keeps kanban enabled when navigation default is 
   const result = applyDesktopDefaultBootstrap(app, "darwin");
   assert.equal(result.applied, true);
 
-  const profile = readJson(path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "profile.json"));
-  assert.equal(profile.navigation.kanban.enabled, true);
+  const desktopConfigRoot = path.join(homePath, ".zenmind", ".desktop", "config", "desktop");
+  const profile = readJson(path.join(desktopConfigRoot, "profile.json"));
+  const kanban = readJson(path.join(desktopConfigRoot, "kanban.json"));
+  assert.equal("kanban" in profile.navigation, false);
+  assert.equal(kanban.enabled, false);
+  assert.equal(result.appliedResult.kanban, "applied");
 });
 
 test("desktop-default bootstrap skips market settings without a market API", (t) => {
