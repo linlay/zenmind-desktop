@@ -368,7 +368,6 @@ export const enUSMessages = {
   "market.main.catalogItemNotFound": "Market item not found: {itemId}",
   "market.main.catalogLoaded": "Loaded the specified market catalog.",
   "market.main.catalogRefreshed": "Market refreshed.",
-  "market.main.cachedCatalog": "Using cached market catalog: {reason}",
   "market.main.catalogUnavailable": "Market is unavailable: {reason}",
   "market.main.marketApiNotConfigured": "Market API is not configured. Configure the market address through the env template or settings page.",
   "market.main.pluginKindRequired": "Cloud plugin package must declare kind=plugin.",

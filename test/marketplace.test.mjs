@@ -28,7 +28,7 @@ const {
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
-const { getDesktopConfigRoot, getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
+const { getDesktopConfigRoot, getDesktopPetsDataRoot, getMarketplaceCacheRoot } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
@@ -543,6 +543,7 @@ test("refreshMarketCatalog combines catalog plugins with catalog skills", async 
     assert.equal(listed.items.find((item) => item.id === "remote-skill")?.type, "skill");
     assert.equal(listed.items.find((item) => item.id === "remote-skill")?.state, "not-installed");
     assert.equal(listed.items.find((item) => item.id === "remote-plugin")?.type, "plugin");
+    assert.equal(fs.existsSync(path.join(getMarketplaceCacheRoot(app), "catalog-cache.json")), false);
   });
 });
 
@@ -1154,11 +1155,13 @@ exit 2
   });
 });
 
-test("listMarketItems falls back to cached catalog when the remote catalog is unavailable", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-cache-"));
+test("listMarketItems reports remote catalog failures without reading cached catalog", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-no-cache-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const catalog = JSON.stringify({
+  const cachePath = path.join(getMarketplaceCacheRoot(app), "catalog-cache.json");
+  fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+  fs.writeFileSync(cachePath, `${JSON.stringify({
     schemaVersion: 1,
     items: [
       {
@@ -1171,22 +1174,24 @@ test("listMarketItems falls back to cached catalog when the remote catalog is un
         assets: {}
       }
     ]
-  });
+  }, null, 2)}\n`, "utf8");
 
-  await withFixtureServer(new Map([["/marketplace/index.json", catalog]]), async (baseUrl) => {
-    await refreshMarketCatalog(app, {
+  await withFixtureServer(new Map([
+    ["/marketplace/index.json", (_req, res) => {
+      res.statusCode = 504;
+      res.end("gateway timeout");
+    }]
+  ]), async (baseUrl) => {
+    const result = await listMarketItems(app, {
       catalogUrl: `${baseUrl}/marketplace/index.json`,
       sections: ["plugins"]
     });
+    assert.equal(result.ok, true);
+    assert.equal(result.offline, true);
+    assert.equal(result.items.some((item) => item.id === "cached-plugin"), false);
+    assert.deepEqual(result.items.filter((item) => item.source === "cloud"), []);
+    assert.match(result.message, /(?:Market is unavailable:|市场暂不可用：)market catalog request failed: 504/);
   });
-
-  const result = await listMarketItems(app, {
-    catalogUrl: "http://127.0.0.1:1/missing.json",
-    sections: ["plugins"]
-  });
-  assert.equal(result.ok, true);
-  assert.equal(result.offline, true);
-  assert.ok(result.items.some((item) => item.id === "cached-plugin"));
 });
 
 test("listMarketItems exposes pet and cli catalog sections", async (t) => {

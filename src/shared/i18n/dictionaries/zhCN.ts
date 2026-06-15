@@ -368,7 +368,6 @@ export const zhCNMessages = {
   "market.main.catalogItemNotFound": "市场中未找到 {itemId}",
   "market.main.catalogLoaded": "已加载指定市场清单。",
   "market.main.catalogRefreshed": "市场已刷新。",
-  "market.main.cachedCatalog": "当前使用缓存市场：{reason}",
   "market.main.catalogUnavailable": "市场暂不可用：{reason}",
   "market.main.marketApiNotConfigured": "市场 API 未配置，请通过环境模板或设置页配置市场地址。",
   "market.main.pluginKindRequired": "云端插件包必须声明为插件类型。",

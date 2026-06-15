@@ -76,10 +76,6 @@ function ensureMarketplaceRoots(app: App) {
   return { cacheRoot, stateRoot };
 }
 
-export function catalogCachePath(app: App) {
-  return path.join(ensureMarketplaceRoots(app).cacheRoot, "catalog-cache.json");
-}
-
 function installedRecordsPath(app: App) {
   return path.join(ensureMarketplaceRoots(app).stateRoot, "marketplace-installed.json");
 }
@@ -612,7 +608,6 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
   }
   try {
     const catalog = normalizeCatalog(await fetchJson(catalogUrl, label));
-    writeJsonFile(catalogCachePath(app), catalog);
     return {
       catalog,
       offline: false,
@@ -620,15 +615,6 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
       sourceUrl: catalogUrl
     };
   } catch (error) {
-    const cached = readJsonFile<Catalog | null>(catalogCachePath(app), null);
-    if (cached) {
-      return {
-        catalog: normalizeCatalog(cached),
-        offline: true,
-        message: t("market.main.cachedCatalog", { reason: error instanceof Error ? error.message : String(error) }),
-        sourceUrl: catalogUrl
-      };
-    }
     return {
       catalog: { schemaVersion: 1, items: [] },
       offline: true,
