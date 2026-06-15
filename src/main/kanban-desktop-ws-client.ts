@@ -26,6 +26,7 @@ type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
 
 type KanbanEnvelope = {
   v?: number;
+  frame?: "request" | "response" | "push" | "stream" | string;
   type?: "event" | "rpc.req" | "rpc.res" | string;
   id?: string;
   op?: string;
@@ -82,7 +83,7 @@ export type KanbanDesktopWsClientOptions = {
   onDebug?: (message: string) => void;
 };
 
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECONNECT_MS = 5_000;
 const WS_OPEN_STATE = 1;
@@ -104,6 +105,7 @@ function createWsUrl(config: KanbanDesktopWsConfig) {
   const url = new URL("/ws", config.serverUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("role", "desktop");
+  url.searchParams.set("v", String(PROTOCOL_VERSION));
   if (config.token?.trim()) {
     url.searchParams.set("token", config.token.trim());
   }
@@ -206,6 +208,46 @@ function normalizeAccessLevel(value: unknown): AssistantStartRunRequest["accessL
   return text === "default" || text === "auto_approve" || text === "full_access" ? text : undefined;
 }
 
+function toV2Type(op: string) {
+  const trimmed = op.trim();
+  const aliases: Record<string, string> = {
+    "desktop.hello": "session.hello",
+    "desktop.assistant.listAgents": "agent.listDesktop",
+    "desktop.kanban.issue.dispatch": "desktop.issue.dispatch",
+    "desktop.automation.sync": "automation.sync",
+    "kanban.snapshot": "snapshot.updated",
+    "kanban.snapshot.get": "snapshot.get",
+    "kanban.issue.assignAndRun": "issue.assignRun",
+    "kanban.issue.dispatchToDesktop": "issue.dispatchDesktop"
+  };
+  if (aliases[trimmed]) {
+    return aliases[trimmed];
+  }
+  return trimmed.startsWith("kanban.") ? trimmed.slice("kanban.".length) : trimmed;
+}
+
+function isV2Envelope(env: KanbanEnvelope) {
+  return (env.v ?? 0) >= 2 || readText(env.frame) !== "";
+}
+
+function envelopeBusinessType(env: KanbanEnvelope) {
+  return toV2Type(isV2Envelope(env) ? readText(env.type) : readText(env.op));
+}
+
+function isResponseEnvelope(env: KanbanEnvelope) {
+  return isV2Envelope(env) ? env.frame === "response" : env.type === "rpc.res";
+}
+
+function isRequestEnvelope(env: KanbanEnvelope) {
+  return isV2Envelope(env) ? env.frame === "request" : env.type === "rpc.req";
+}
+
+function isSnapshotPushEnvelope(env: KanbanEnvelope) {
+  return isV2Envelope(env)
+    ? env.frame === "push" && envelopeBusinessType(env) === "snapshot.updated"
+    : env.op === "kanban.snapshot";
+}
+
 export class KanbanDesktopWsClient {
   private ws: MinimalWebSocket | null = null;
   private config: KanbanDesktopWsConfig | null = null;
@@ -299,9 +341,9 @@ export class KanbanDesktopWsClient {
       this.pending.set(id, { op, resolve, reject, timeout });
       const sent = this.sendEnvelope({
         v: PROTOCOL_VERSION,
-        type: "rpc.req",
+        frame: "request",
+        type: toV2Type(op),
         id,
-        op,
         role: "desktop",
         boardId: "default",
         projectId: this.config?.selectedProjectId ?? "default",
@@ -383,7 +425,7 @@ export class KanbanDesktopWsClient {
         this.options.onDebug?.(`云端看板 hello 智能体列表读取失败：${errorMessage(error)}`);
         return [];
       });
-      await this.request("desktop.hello", {
+      await this.request("session.hello", {
         capabilities: this.options.capabilities,
         deviceId: this.options.getDeviceId(),
         ...this.options.getDeviceInfo?.(),
@@ -392,7 +434,7 @@ export class KanbanDesktopWsClient {
         scope: "project",
         agents
       });
-      const snapshot = await this.request<TaskBoardCloudSnapshot>("kanban.snapshot.get", {
+      const snapshot = await this.request<TaskBoardCloudSnapshot>("snapshot.get", {
         projectId: this.config?.selectedProjectId ?? "default"
       });
       this.options.onSnapshot(snapshot);
@@ -420,17 +462,17 @@ export class KanbanDesktopWsClient {
       this.options.onDebug?.(`云端看板消息解析失败：${errorMessage(error)}`);
       return;
     }
-    if (env.type === "rpc.res" && env.id) {
-      this.options.onDebug?.(`云端看板 WebSocket 收到响应：${env.op || "unknown"} ${env.id}`);
+    if (isResponseEnvelope(env) && env.id) {
+      this.options.onDebug?.(`云端看板 WebSocket 收到响应：${envelopeBusinessType(env) || "unknown"} ${env.id}`);
       this.resolvePending(env);
       return;
     }
-    if (env.type === "rpc.req") {
-      this.options.onDebug?.(`云端看板 WebSocket 收到请求：${env.op || "unknown"} ${env.id || ""}`);
+    if (isRequestEnvelope(env)) {
+      this.options.onDebug?.(`云端看板 WebSocket 收到请求：${envelopeBusinessType(env) || "unknown"} ${env.id || ""}`);
       void this.handleServerRequest(env);
       return;
     }
-    if (env.op === "kanban.snapshot") {
+    if (isSnapshotPushEnvelope(env)) {
       this.options.onSnapshot(normalizeSnapshot(env.payload, env));
     }
   }
@@ -438,29 +480,30 @@ export class KanbanDesktopWsClient {
   private async handleServerRequest(env: KanbanEnvelope) {
     try {
       let payload: unknown;
-      if (env.op === "desktop.kanban.issue.dispatch") {
+      const businessType = envelopeBusinessType(env);
+      if (businessType === "desktop.issue.dispatch") {
         const record = isRecord(env.payload) ? env.payload : {};
         const issue = "issue" in record ? record.issue : env.payload;
         payload = this.options.onDispatchIssue(issue, env.revision ?? 0);
-      } else if (env.op === "desktop.assistant.listAgents") {
+      } else if (businessType === "agent.listDesktop") {
         const agents = await this.options.onListAgents();
         payload = { ok: true, items: agents, agents };
-      } else if (env.op === "desktop.assistant.startRun") {
+      } else if (businessType === "desktop.assistant.startRun") {
         payload = await this.options.onStartRun(normalizeStartRunPayload(env.payload, env));
-      } else if (env.op === "desktop.automation.sync") {
+      } else if (businessType === "automation.sync") {
         payload = await this.options.onAutomationSync(env.payload);
-      } else if (env.op === "desktop.project.listLocal") {
+      } else if (businessType === "desktop.project.listLocal") {
         payload = await this.options.onListLocalProjects();
-      } else if (env.op === "desktop.project.createLocal") {
+      } else if (businessType === "desktop.project.createLocal") {
         payload = await this.options.onCreateLocalProject(env.payload);
-      } else if (env.op === "desktop.project.bind") {
+      } else if (businessType === "desktop.project.bind") {
         payload = await this.options.onBindProject(env.payload);
-      } else if (env.op === "desktop.project.unbind") {
+      } else if (businessType === "desktop.project.unbind") {
         payload = await this.options.onUnbindProject(env.payload);
       } else {
-        throw new Error(`Desktop 不支持 ${env.op || "unknown"}。`);
+        throw new Error(`Desktop 不支持 ${businessType || "unknown"}。`);
       }
-      this.options.onDebug?.(`云端看板 WebSocket 回复请求：${env.op || "unknown"} ${env.id || ""}`);
+      this.options.onDebug?.(`云端看板 WebSocket 回复请求：${businessType || "unknown"} ${env.id || ""}`);
       this.respond(env, true, payload);
     } catch (error) {
       this.respond(env, false, {
@@ -485,8 +528,23 @@ export class KanbanDesktopWsClient {
   }
 
   private respond(env: KanbanEnvelope, ok: boolean, payload: unknown, message = "") {
+    if (isV2Envelope(env)) {
+      return this.sendEnvelope({
+        v: PROTOCOL_VERSION,
+        frame: "response",
+        type: envelopeBusinessType(env),
+        id: env.id,
+        role: "desktop",
+        boardId: env.boardId ?? "default",
+        projectId: env.projectId ?? this.config?.selectedProjectId ?? "default",
+        revision: env.revision,
+        ok,
+        error: ok ? undefined : { code: "desktop_error", message: message || "Desktop 操作失败。" },
+        payload
+      });
+    }
     return this.sendEnvelope({
-      v: PROTOCOL_VERSION,
+      v: 1,
       type: "rpc.res",
       id: env.id,
       op: env.op,
@@ -509,8 +567,8 @@ export class KanbanDesktopWsClient {
     }
     try {
       socket.send(JSON.stringify(env));
-      if (env.type === "rpc.res") {
-        this.options.onDebug?.(`云端看板 WebSocket 已发送响应：${env.op || "unknown"} ${env.id || ""}`);
+      if (isResponseEnvelope(env)) {
+        this.options.onDebug?.(`云端看板 WebSocket 已发送响应：${envelopeBusinessType(env) || "unknown"} ${env.id || ""}`);
       }
       return true;
     } catch (error) {

@@ -81,7 +81,12 @@ export function loadInstalledPlugins(app: App) {
     for (const candidateDir of candidateDirs) {
       const manifest = readManifest(candidateDir);
       if (manifest && readManifestKind(manifest) !== "builtin") {
-        registerService(manifest, { defaultKind: "plugin" });
+        try {
+          registerService(manifest, { defaultKind: "plugin" });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`Skipping invalid installed plugin manifest at ${candidateDir}: ${message}`);
+        }
       }
     }
   }

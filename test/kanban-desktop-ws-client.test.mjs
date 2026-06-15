@@ -92,14 +92,18 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   const socket = sockets[0];
   assert.match(socket.url, /^ws:\/\/127\.0\.0\.1:3000\/ws\?/);
   assert.match(socket.url, /role=desktop/);
+  assert.match(socket.url, /[?&]v=2(?:&|$)/);
   assert.match(socket.url, /token=secret/);
 
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "desktop.hello");
-  const hello = socket.sent[0];
-  assert.equal(hello.op, "desktop.hello");
-  assert.equal(hello.payload.deviceId, "device-1");
+    await waitFor(() => socket.sent.length === 1, "desktop.hello");
+    const hello = socket.sent[0];
+    assert.equal(hello.v, 2);
+    assert.equal(hello.frame, "request");
+    assert.equal(hello.type, "session.hello");
+    assert.equal(hello.op, undefined);
+    assert.equal(hello.payload.deviceId, "device-1");
   assert.equal(hello.payload.deviceName, "佳林的 MacBook");
   assert.equal(hello.payload.deviceAlias, "佳林的 MacBook");
   assert.equal(hello.payload.hostname, "Jialin-MacBook");
@@ -113,16 +117,20 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     source: "sso"
   });
 
-  socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
-  await waitFor(() => socket.sent.length === 2, "snapshot request");
-  const snapshotRequest = socket.sent[1];
-  assert.equal(snapshotRequest.op, "kanban.snapshot.get");
-  socket.onmessage({
-    data: JSON.stringify({
-      type: "rpc.res",
-      id: snapshotRequest.id,
-      op: "kanban.snapshot",
-      ok: true,
+    socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
+    await waitFor(() => socket.sent.length === 2, "snapshot request");
+    const snapshotRequest = socket.sent[1];
+    assert.equal(snapshotRequest.v, 2);
+    assert.equal(snapshotRequest.frame, "request");
+    assert.equal(snapshotRequest.type, "snapshot.get");
+    assert.equal(snapshotRequest.op, undefined);
+    socket.onmessage({
+      data: JSON.stringify({
+        v: 2,
+        frame: "response",
+        id: snapshotRequest.id,
+        type: "snapshot.get",
+        ok: true,
       payload: {
         boardId: "default",
         projectId: "project-1",
@@ -135,19 +143,23 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   assert.equal(snapshots[0].revision, 12);
   assert.equal(snapshots[0].issues[0].id, "ISS-1");
 
-  socket.onmessage({
-    data: JSON.stringify({
-      type: "rpc.req",
-      id: "dispatch-1",
-      op: "desktop.kanban.issue.dispatch",
-      revision: 13,
+    socket.onmessage({
+      data: JSON.stringify({
+        v: 2,
+        frame: "request",
+        id: "dispatch-1",
+        type: "desktop.issue.dispatch",
+        revision: 13,
       payload: { issue: { id: "ISS-2", title: "Dispatched task" } }
     })
   });
-  await waitFor(() => socket.sent.some((frame) => frame.id === "dispatch-1"), "dispatch ACK");
-  const ack = socket.sent.find((frame) => frame.id === "dispatch-1");
-  assert.equal(ack.type, "rpc.res");
-  assert.equal(ack.ok, true);
+    await waitFor(() => socket.sent.some((frame) => frame.id === "dispatch-1"), "dispatch ACK");
+    const ack = socket.sent.find((frame) => frame.id === "dispatch-1");
+    assert.equal(ack.v, 2);
+    assert.equal(ack.frame, "response");
+    assert.equal(ack.type, "desktop.issue.dispatch");
+    assert.equal(ack.op, undefined);
+    assert.equal(ack.ok, true);
   assert.equal(ack.payload.message, "dispatched");
   assert.deepEqual(dispatches, [{
     issue: { id: "ISS-2", title: "Dispatched task" },
@@ -297,13 +309,14 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "desktop.hello");
 
-  try {
-    socket.onmessage({
-      data: JSON.stringify({
-        type: "rpc.req",
-        id: "start-run-1",
-        op: "desktop.assistant.startRun",
-        revision: 21,
+    try {
+      socket.onmessage({
+        data: JSON.stringify({
+          v: 2,
+          frame: "request",
+          id: "start-run-1",
+          type: "desktop.assistant.startRun",
+          revision: 21,
         payload: {
           issue: { id: "ISS-9", title: "Remote run task", status: "in_progress" },
           agentKey: "codeAssistant",
@@ -313,8 +326,13 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
       })
     });
 
-    await waitFor(() => socket.sent.some((frame) => frame.id === "start-run-1"), "startRun ACK");
-    assert.deepEqual(startRuns, [{
+      await waitFor(() => socket.sent.some((frame) => frame.id === "start-run-1"), "startRun ACK");
+      const ack = socket.sent.find((frame) => frame.id === "start-run-1");
+      assert.equal(ack.v, 2);
+      assert.equal(ack.frame, "response");
+      assert.equal(ack.type, "desktop.assistant.startRun");
+      assert.equal(ack.op, undefined);
+      assert.deepEqual(startRuns, [{
       issue: { id: "ISS-9", title: "Remote run task", status: "in_progress" },
       revision: 21,
       agentKey: "codeAssistant",
