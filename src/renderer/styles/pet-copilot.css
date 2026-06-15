@@ -191,33 +191,18 @@ body.desktop-pet-body,
   transform-origin: 50% 16%;
 }
 
-<<<<<<< HEAD
 .desktop-pet-root.is-running .desktop-pet-image {
   animation: desktop-pet-running 1.48s ease-in-out infinite;
   transform-origin: 50% 84%;
 }
 
 .desktop-pet-root.is-drag-moving .desktop-pet-image {
-=======
-.desktop-pet-root.is-dragging-moving .desktop-pet-image {
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   animation: desktop-pet-dragging 0.82s ease-in-out infinite;
   transform-origin: 50% 16%;
 }
 
 .desktop-pet-root.is-drag-moving.is-drag-mirror .desktop-pet-image {
   animation-name: desktop-pet-dragging-mirror;
-}
-
-<<<<<<< HEAD
-.desktop-pet-root.is-message .desktop-pet-image {
-  animation: desktop-pet-message-nudge 1.18s ease-in-out infinite;
-  transform-origin: 50% 86%;
-=======
-.desktop-pet-root.is-running .desktop-pet-image {
-  animation: desktop-pet-running 1.48s ease-in-out infinite;
-  transform-origin: 50% 84%;
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
 }
 
 .desktop-pet-root.has-task-run-animation .desktop-pet-image {

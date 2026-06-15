@@ -136,7 +136,6 @@ const marketPetDefinitions = [
 const marketPetDefinitionById = new Map(marketPetDefinitions.map((definition) => [definition.id, definition]));
 
 const defaultSourceAssetNames = [
-<<<<<<< HEAD
   "awaiting.png",
   "done.png",
   "drag-moving.png",
@@ -150,10 +149,6 @@ const defaultSourceAssetNames = [
   "running-alt.png",
   "running.png",
   "signature/chant.webp",
-=======
-  ...classicVisualVariants.map((variant) => `pet-${variant}.png`),
-  ...optionalCommunityAssetNames,
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   "spritesheet.webp"
 ];
 

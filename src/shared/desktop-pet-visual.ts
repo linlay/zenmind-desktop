@@ -10,10 +10,6 @@ export type DesktopPetVisualStatus =
   | "dragging"
   | "drag-moving"
   | "hover"
-<<<<<<< HEAD
-  | "message"
-=======
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   | "signature";
 
 export type DesktopPetVisualStatusInput = {

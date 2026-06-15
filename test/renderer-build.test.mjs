@@ -3714,13 +3714,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /deriveDesktopPetVisualStatus\(\{/);
   assert.match(desktopPetVisual, /input\.displayStatus === "awaiting"[\s\S]{0,80}return "awaiting"/);
   assert.match(desktopPetVisual, /input\.displayStatus === "running"[\s\S]{0,80}return "running"/);
-<<<<<<< HEAD
-  assert.match(desktopPetVisual, /input\.hasMessageReaction[\s\S]{0,80}return "message"/);
-=======
   assert.doesNotMatch(desktopPetVisual, /return "thinking"/);
   assert.doesNotMatch(desktopPetVisual, /return "message"/);
   assert.doesNotMatch(desktopPetVisual, /hasMessageReaction/);
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(desktopPetVisual, /input\.hasActiveSignature[\s\S]{0,80}return "signature"/);
   assert.match(desktopPet, /displayStatus === "idle" && !isDragging && !hasMessageReaction/);
   assert.match(desktopPetVisual, /input\.isHovering \|\| input\.isKeyboardFocused/);
@@ -3759,13 +3755,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(sharedDesktopPet, /thinking:\s*"running\.png"/);
   assert.match(sharedDesktopPet, /unread:\s*"done\.png"/);
   assert.match(sharedDesktopPet, /"dragging-moving":\s*"pet-dragging-moving\.png"/);
-<<<<<<< HEAD
-=======
   assert.match(sharedDesktopPet, /hover:\s*"pet-hover\.png"/);
   assert.doesNotMatch(sharedDesktopPet, /message:\s*"pet-message\.png"/);
   assert.doesNotMatch(sharedDesktopPet, /thinking:\s*"pet-thinking\.png"/);
   assert.match(sharedDesktopPet, /dancing:\s*"pet-idle\.png"/);
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(sharedDesktopPet, /getDesktopPetSignatureActions/);
   assert.match(sharedDesktopPet, /id:\s*"chant"/);
   assert.match(sharedDesktopPet, /path:\s*"signature\/chant\.webp"/);
@@ -3779,25 +3772,17 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(globalStyles, /\.desktop-pet-root\.is-awaiting\s+\.desktop-pet-image[\s\S]{0,120}desktop-pet-awaiting/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-running\s+\.desktop-pet-image/);
-<<<<<<< HEAD
   assert.match(globalStyles, /\.desktop-pet-root\.is-drag-moving\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-state-animation\s+\.desktop-pet-state-sprite/);
-  assert.match(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
-=======
-  assert.match(globalStyles, /\.desktop-pet-root\.is-dragging-moving\s+\.desktop-pet-image/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-thinking\s+\.desktop-pet-image/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(globalStyles, /\.desktop-pet-preview/);
   assert.match(globalStyles, /\.desktop-pet-preview-toggle/);
   assert.match(globalStyles, /@keyframes desktop-pet-hover-reaction/);
   assert.match(globalStyles, /@keyframes desktop-pet-dance/);
   assert.match(globalStyles, /@keyframes desktop-pet-dragging/);
   assert.match(globalStyles, /@keyframes desktop-pet-running/);
-<<<<<<< HEAD
   assert.match(globalStyles, /@keyframes desktop-pet-state-frames/);
-=======
->>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(globalStyles, /@keyframes desktop-pet-awaiting/);
   assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-thinking/);
   assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-message-nudge/);
