@@ -17,6 +17,17 @@ type ShellIpcResult = {
   message?: string;
 };
 
+type DesktopScreenshotCaptureResult = {
+  ok: boolean;
+  message?: string;
+  dataBase64?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  sizeBytes?: number;
+  cancelled?: boolean;
+};
+
 type ShellIpcOptions = {
   shell?: typeof electronShell;
   clipboard?: typeof electronClipboard;
@@ -42,6 +53,7 @@ type ShellIpcOptions = {
   fsAccess?: (filePath: string, mode?: number) => Promise<unknown>;
   fsMkdir?: (dir: string, options: { recursive: true }) => Promise<unknown>;
   fsWriteFile?: (filePath: string, data: Buffer) => Promise<unknown>;
+  captureDesktopScreenshot?: () => Promise<DesktopScreenshotCaptureResult> | DesktopScreenshotCaptureResult;
   reportRendererDiagnostic?: (source: string, data: Record<string, unknown>) => void;
 };
 
@@ -188,6 +200,23 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       return {
         ok: false as const,
         path: "",
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
+  ipcMain.handle("desktopScreenshot.capture", async () => {
+    try {
+      if (!options.captureDesktopScreenshot) {
+        return {
+          ok: false as const,
+          message: "截屏能力暂不可用。"
+        };
+      }
+      return await options.captureDesktopScreenshot();
+    } catch (error) {
+      return {
+        ok: false as const,
         message: error instanceof Error ? error.message : String(error)
       };
     }

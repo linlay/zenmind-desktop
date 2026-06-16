@@ -7,6 +7,8 @@ import {
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
+  DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
+  DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
@@ -155,6 +157,29 @@ export function handleServiceWebviewBridgeMessage(
       })
       .catch((reason) => {
         sendFailure(context, DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+      });
+    return true;
+  }
+
+  if (payload.type === DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE) {
+    void window.electronAPI.desktopScreenshot
+      .capture()
+      .then((result) => {
+        context.sendBridgeMessageToWebview({
+          type: DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
+          requestId: payload.requestId,
+          ok: result.ok,
+          message: result.message ?? "",
+          dataBase64: result.dataBase64,
+          mimeType: result.mimeType,
+          width: result.width,
+          height: result.height,
+          sizeBytes: result.sizeBytes,
+          cancelled: result.cancelled
+        });
+      })
+      .catch((reason) => {
+        sendFailure(context, DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
       });
     return true;
   }

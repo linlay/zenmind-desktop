@@ -12,6 +12,8 @@ export const DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE = "zenmind:desktop-shell:open-
 export const DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE = "zenmind:desktop-shell:open-path:response";
 export const DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE = "zenmind:desktop-download:file";
 export const DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE = "zenmind:desktop-download:file:response";
+export const DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE = "zenmind:desktop-screenshot:capture";
+export const DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE = "zenmind:desktop-screenshot:capture:response";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "zenmind:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "zenmind:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "zenmind:plugin-settings:write";
@@ -24,6 +26,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
+  DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -33,6 +36,7 @@ export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
+  DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -57,6 +61,10 @@ export type ServiceWebviewBridgeMessage = {
   filename?: string;
   mimeType?: string;
   dataBase64?: string;
+  width?: number;
+  height?: number;
+  sizeBytes?: number;
+  cancelled?: boolean;
   values?: Record<string, unknown>;
   defaults?: Record<string, unknown>;
   schema?: unknown;

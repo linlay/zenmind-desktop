@@ -44,6 +44,7 @@ export function createDesktopActionOptions(
 export interface ShellIpcHandlerContextDependencies {
   showFileDialog: (...args: any[]) => unknown;
   revealPathInFileManager: (...args: any[]) => unknown;
+  captureDesktopScreenshot?: (...args: any[]) => unknown;
   reportRendererDiagnostic: (...args: any[]) => unknown;
 }
 
@@ -57,6 +58,7 @@ export function createShellIpcHandlerOptions(
     mainWindow: context.state.mainWindow,
     showFileDialog: dependencies.showFileDialog,
     revealPathInFileManager: dependencies.revealPathInFileManager,
+    captureDesktopScreenshot: dependencies.captureDesktopScreenshot,
     reportRendererDiagnostic: dependencies.reportRendererDiagnostic
   };
 }

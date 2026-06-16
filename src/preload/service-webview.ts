@@ -4,6 +4,7 @@ import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
+  DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
@@ -26,6 +27,9 @@ import {
 function isBridgeMessage(value: unknown): value is ServiceWebviewBridgeMessage {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
+
+const BRIDGE_REQUEST_DEDUPE_WINDOW_MS = 5_000;
+const recentForwardedBridgeRequestKeys = new Map<string, number>();
 
 function sendBridgeDebug(stage: string, message = "") {
   try {
@@ -53,11 +57,42 @@ function isDesktopBridgeRequest(value: ServiceWebviewBridgeMessage) {
   );
 }
 
+function forwardDesktopBridgeRequest(
+  value: ServiceWebviewBridgeMessage,
+  origin: string,
+  debugStage: "bridge-request" | "bridge-window-message"
+) {
+  if (!isDesktopBridgeRequest(value) || !value.type || !value.requestId) {
+    return;
+  }
+
+  const now = Date.now();
+  for (const [key, expiresAt] of recentForwardedBridgeRequestKeys) {
+    if (expiresAt <= now) {
+      recentForwardedBridgeRequestKeys.delete(key);
+    }
+  }
+
+  const requestKey = `${value.type}:${value.requestId}`;
+  if (recentForwardedBridgeRequestKeys.has(requestKey)) {
+    sendBridgeDebug("bridge-request-duplicate", String(value.type || ""));
+    return;
+  }
+  recentForwardedBridgeRequestKeys.set(requestKey, now + BRIDGE_REQUEST_DEDUPE_WINDOW_MS);
+
+  ipcRenderer.sendToHost(SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL, {
+    ...value,
+    origin
+  });
+  sendBridgeDebug(debugStage, String(value.type || ""));
+}
+
 function isDesktopBridgeDeliver(value: ServiceWebviewBridgeMessage) {
   return value.type === AGENT_APP_CLIPBOARD_RESPONSE_TYPE ||
     value.type === DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE ||
     value.type === DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE ||
     value.type === DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE ||
+    value.type === DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE ||
     value.type === PLUGIN_SETTINGS_READ_RESPONSE_TYPE ||
     value.type === PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE ||
     value.type === DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE ||
@@ -81,11 +116,7 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
     return;
   }
 
-  ipcRenderer.sendToHost(SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL, {
-    ...payload,
-    origin: window.location.origin
-  });
-  sendBridgeDebug("bridge-request", String(payload.type || ""));
+  forwardDesktopBridgeRequest(payload, window.location.origin, "bridge-request");
 });
 
 window.addEventListener("message", (event) => {
@@ -93,11 +124,7 @@ window.addEventListener("message", (event) => {
     return;
   }
 
-  ipcRenderer.sendToHost(SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL, {
-    ...event.data,
-    origin: event.origin
-  });
-  sendBridgeDebug("bridge-window-message", String(event.data.type || ""));
+  forwardDesktopBridgeRequest(event.data, event.origin, "bridge-window-message");
 });
 
 ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, (_event, payload: ServiceWebviewBridgeMessage) => {
