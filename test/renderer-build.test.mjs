@@ -3659,6 +3659,10 @@ test("desktop pet click opens the branded app without assistant sidebar copy", (
 test("desktop pet base mode stays sprite-sized while bubble and preview modes expand separately", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
   const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "desktop-pet.ts"), "utf8");
   const globalStyles = readRendererStyles();
 
@@ -3668,14 +3672,20 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.match(petGeometry, /width:\s*176,/);
   assert.match(petGeometry, /height:\s*198/);
   assert.match(petGeometry, /bubble:\s*\{\s*width:\s*224,\s*height:\s*228/s);
-  assert.match(petGeometry, /DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT\s*=\s*\{\s*x:\s*64,\s*y:\s*92,/s);
-  assert.match(petGeometry, /if \(mode === "bubble"\) \{\s*const footprint = getDesktopPetVisibleFootprintForMode\(mode\);[\s\S]{0,180}DESKTOP_PET_VISIBLE_FOOTPRINT\.x - footprint\.x/);
+  assert.match(petGeometry, /DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS:[\s\S]{0,80}Record<DesktopPetWindowMode/);
+  assert.match(petGeometry, /"preview-expanded":\s*\{\s*x:\s*162,\s*y:\s*294,/s);
+  assert.match(petGeometry, /"task-list":\s*\{\s*x:\s*148,\s*y:\s*236,/s);
+  assert.match(petGeometry, /baseBounds\.x \+ DESKTOP_PET_VISIBLE_FOOTPRINT\.x - footprint\.x/);
   assert.match(petGeometry, /"task-list":\s*\{\s*width:\s*392,\s*height:\s*360/s);
   assert.match(desktopPetController, /activeTasks\.length > 0[\s\S]{0,80}return "task-list";/);
-  assert.match(globalStyles, /\.desktop-pet-hitbox\s*\{[\s\S]{0,220}width:\s*174px;[\s\S]{0,120}min-height:\s*134px;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s+\.desktop-pet-hitbox\s*\{[\s\S]{0,80}width:\s*220px;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-tasks\s+\.desktop-pet-hitbox\s*\{[\s\S]{0,120}width:\s*min\(100%,\s*376px\);/);
-  assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,80}width:\s*min\(216px,\s*calc\(100% - 4px\)\);/);
+  assert.match(desktopPet, /showPreviewPanel && previewPanel\?\.expanded \? "has-preview-expanded" : ""/);
+  assert.match(desktopPet, /showPreviewPanel && !previewPanel\?\.expanded \? "has-preview-collapsed" : ""/);
+  assert.match(globalStyles, /\.desktop-pet-hitbox\s*\{[\s\S]{0,160}position:\s*absolute;[\s\S]{0,80}inset:\s*0;/);
+  assert.match(globalStyles, /\.desktop-pet-button\s*\{[\s\S]{0,160}position:\s*absolute;[\s\S]{0,120}left:\s*var\(--desktop-pet-button-left\);/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-tasks\s*\{[\s\S]{0,120}--desktop-pet-button-left:\s*130px;[\s\S]{0,80}--desktop-pet-button-top:\s*220px;/);
+  assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,120}position:\s*absolute;[\s\S]{0,80}width:\s*216px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-panel\s*\{[\s\S]{0,120}position:\s*absolute;[\s\S]{0,120}width:\s*348px;/);
+  assert.match(globalStyles, /\.desktop-pet-preview\s*\{[\s\S]{0,120}position:\s*absolute;[\s\S]{0,120}width:\s*336px;/);
   assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,520}box-shadow:\s*none;/);
   assert.match(globalStyles, /\.desktop-pet-image\s*\{[\s\S]{0,120}width:\s*96px;/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
@@ -3931,7 +3941,6 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /drag-moving-source\.png/);
   assert.doesNotMatch(petAssetScript, /task-run-left-source\.png/);
   assert.match(petAssetScript, /copyDefaultBrandPetAssets/);
-  assert.match(petAssetScript, /defaultBuiltInPetId = brand\.id === "cutej" \? "cutej" : "zenmi"/);
   assert.doesNotMatch(sharedDesktopPet, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /"moving-left":\s*\{\s*row:\s*2,\s*column:\s*2\s*\}/);
@@ -3943,6 +3952,12 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /signature\/dance\.webp/);
   assert.match(petAssetScript, /function renderXiaoMovingLeftSprite/);
   assert.match(petAssetScript, /function renderXiaoSpritesheet/);
+  assert.match(
+    petAssetScript,
+    /const defaultSourceAssetDirectory = path\.join\(\s*projectRoot,\s*brand\.source\.desktopPetRoot\s*\);/
+  );
+  assert.doesNotMatch(petAssetScript, /defaultBuiltInPetId/);
+  assert.doesNotMatch(petAssetScript, /brand\.id === "cutej"/);
   assert.match(petAssetScript, /"awaiting"/);
   assert.match(petAssetScript, /"running"/);
   assert.match(petAssetScript, /"jumping"/);

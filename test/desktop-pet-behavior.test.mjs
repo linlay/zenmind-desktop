@@ -155,64 +155,83 @@ test("desktop pet state exposes awaiting when the bound agent has a pending awai
   assert.equal(state.hint, "需要你确认计划");
 });
 
-test("desktop pet bubble mode keeps the visible pet footprint anchored", () => {
+test("desktop pet window modes keep the visible pet footprint anchored", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
-    DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
     DESKTOP_PET_WINDOW_SIZES,
     getAnchoredDesktopPetBounds,
     getDesktopPetLogicalPositionFromBounds
   } = __testInternals;
   const displayArea = { x: 0, y: 0, width: 1440, height: 900 };
   const position = { x: 320, y: 240 };
-
   const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
-  const bubbleBounds = getAnchoredDesktopPetBounds(position, displayArea, "bubble");
 
-  assert.equal(bubbleBounds.width, DESKTOP_PET_WINDOW_SIZES.bubble.width);
-  assert.equal(bubbleBounds.height, DESKTOP_PET_WINDOW_SIZES.bubble.height);
-  assert.deepEqual(
-    visibleFootprintRect(bubbleBounds, DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT),
-    visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
-  );
-  assert.deepEqual(
-    visibleFootprintCenter(bubbleBounds, DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT),
-    visibleFootprintCenter(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
-  );
-  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bubbleBounds, "bubble"), {
-    x: baseBounds.x,
-    y: baseBounds.y
-  });
+  for (const mode of Object.keys(DESKTOP_PET_WINDOW_SIZES)) {
+    const modeBounds = getAnchoredDesktopPetBounds(position, displayArea, mode);
+    assert.equal(modeBounds.width, DESKTOP_PET_WINDOW_SIZES[mode].width);
+    assert.equal(modeBounds.height, DESKTOP_PET_WINDOW_SIZES[mode].height);
+    assert.deepEqual(
+      visibleFootprintRect(modeBounds, DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode]),
+      visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
+    );
+    assert.deepEqual(
+      visibleFootprintCenter(modeBounds, DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode]),
+      visibleFootprintCenter(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
+    );
+    assert.deepEqual(getDesktopPetLogicalPositionFromBounds(modeBounds, mode), {
+      x: baseBounds.x,
+      y: baseBounds.y
+    });
+  }
 });
 
-test("desktop pet bubble mode allows the bubble window to overflow edges instead of moving the pet", () => {
+test("desktop pet window modes allow panels to overflow edges instead of moving the pet", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
-    DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
     getAnchoredDesktopPetBounds,
     getDesktopPetLogicalPositionFromBounds
   } = __testInternals;
   const displayArea = { x: 100, y: 80, width: 500, height: 400 };
-  const position = {
-    x: displayArea.x + displayArea.width -
-      DESKTOP_PET_VISIBLE_FOOTPRINT.x -
-      DESKTOP_PET_VISIBLE_FOOTPRINT.width,
-    y: displayArea.y
-  };
+  const edgePositions = [
+    {
+      x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
+      y: displayArea.y
+    },
+    {
+      x: displayArea.x + displayArea.width -
+        DESKTOP_PET_VISIBLE_FOOTPRINT.x -
+        DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+      y: displayArea.y
+    },
+    {
+      x: displayArea.x + 180,
+      y: displayArea.y
+    },
+    {
+      x: displayArea.x + 180,
+      y: displayArea.y + displayArea.height -
+        DESKTOP_PET_VISIBLE_FOOTPRINT.y -
+        DESKTOP_PET_VISIBLE_FOOTPRINT.height
+    }
+  ];
 
-  const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
-  const bubbleBounds = getAnchoredDesktopPetBounds(position, displayArea, "bubble");
-
-  assert.equal(bubbleBounds.x + bubbleBounds.width > displayArea.x + displayArea.width, true);
-  assert.equal(bubbleBounds.y < displayArea.y, true);
-  assert.deepEqual(
-    visibleFootprintRect(bubbleBounds, DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT),
-    visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
-  );
-  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bubbleBounds, "bubble"), {
-    x: baseBounds.x,
-    y: baseBounds.y
-  });
+  for (const position of edgePositions) {
+    const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
+    const baseFootprint = visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT);
+    for (const mode of Object.keys(DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS)) {
+      const modeBounds = getAnchoredDesktopPetBounds(position, displayArea, mode);
+      assert.deepEqual(
+        visibleFootprintRect(modeBounds, DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode]),
+        baseFootprint
+      );
+      assert.deepEqual(getDesktopPetLogicalPositionFromBounds(modeBounds, mode), {
+        x: baseBounds.x,
+        y: baseBounds.y
+      });
+    }
+  }
 });
 
 test("desktop pet state exposes awaiting when any active task is awaiting", () => {

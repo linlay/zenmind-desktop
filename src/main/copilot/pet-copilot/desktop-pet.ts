@@ -67,13 +67,6 @@ export const DESKTOP_PET_VISIBLE_FOOTPRINT = {
   width: 96,
   height: 108
 } as const;
-// Matches the renderer bubble layout so the sprite footprint stays anchored when the speech bubble appears.
-export const DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT = {
-  x: 64,
-  y: 92,
-  width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
-  height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
-} as const;
 
 export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "preview-expanded" | "task-list";
 
@@ -94,6 +87,41 @@ export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: num
   "task-list": {
     width: 392,
     height: 360
+  }
+} as const;
+
+type DesktopPetVisibleFootprint = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export const DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS: Record<DesktopPetWindowMode, DesktopPetVisibleFootprint> = {
+  base: DESKTOP_PET_VISIBLE_FOOTPRINT,
+  bubble: {
+    x: 64,
+    y: 82,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  },
+  "preview-collapsed": {
+    x: 142,
+    y: 142,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  },
+  "preview-expanded": {
+    x: 162,
+    y: 294,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  },
+  "task-list": {
+    x: 148,
+    y: 236,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
   }
 } as const;
 
@@ -899,9 +927,7 @@ export function getDesktopPetWindowSize(mode: DesktopPetWindowMode = "base") {
 }
 
 function getDesktopPetVisibleFootprintForMode(mode: DesktopPetWindowMode) {
-  return mode === "bubble"
-    ? DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT
-    : DESKTOP_PET_VISIBLE_FOOTPRINT;
+  return DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode] ?? DESKTOP_PET_VISIBLE_FOOTPRINT;
 }
 
 export function clampDesktopPetPosition(
@@ -984,36 +1010,23 @@ export function getAnchoredDesktopPetBounds(
   if (mode === "base") {
     return baseBounds;
   }
-  if (mode === "bubble") {
-    const footprint = getDesktopPetVisibleFootprintForMode(mode);
-    return {
-      x: baseBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x - footprint.x,
-      y: baseBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y - footprint.y,
-      width: size.width,
-      height: size.height
-    };
-  }
-  return clampDesktopPetPosition({
-    x: baseBounds.x + DESKTOP_PET_WINDOW_SIZE.width - size.width,
-    y: baseBounds.y + DESKTOP_PET_WINDOW_SIZE.height - size.height
-  }, displayArea, size);
+  const footprint = getDesktopPetVisibleFootprintForMode(mode);
+  return {
+    x: baseBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x - footprint.x,
+    y: baseBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y - footprint.y,
+    width: size.width,
+    height: size.height
+  };
 }
 
 export function getDesktopPetLogicalPositionFromBounds(
   bounds: { x: number; y: number },
   mode: DesktopPetWindowMode = "base"
 ) {
-  const size = getDesktopPetWindowSize(mode);
-  if (mode === "bubble") {
-    const footprint = getDesktopPetVisibleFootprintForMode(mode);
-    return {
-      x: Math.round(bounds.x + footprint.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x),
-      y: Math.round(bounds.y + footprint.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y)
-    };
-  }
+  const footprint = getDesktopPetVisibleFootprintForMode(mode);
   return {
-    x: Math.round(bounds.x + size.width - DESKTOP_PET_WINDOW_SIZE.width),
-    y: Math.round(bounds.y + size.height - DESKTOP_PET_WINDOW_SIZE.height)
+    x: Math.round(bounds.x + footprint.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x),
+    y: Math.round(bounds.y + footprint.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y)
   };
 }
 
@@ -1024,7 +1037,7 @@ export const __testInternals = {
   DESKTOP_PET_STATE_FILE,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_VISIBLE_FOOTPRINT,
-  DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT,
+  DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
   DESKTOP_PET_WINDOW_SIZES,
   sanitizeDesktopPetStoredState,
   normalizeDesktopPetAppearanceId,

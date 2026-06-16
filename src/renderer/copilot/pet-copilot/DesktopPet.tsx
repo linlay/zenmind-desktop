@@ -867,6 +867,8 @@ export function DesktopPet() {
         shouldShowStateSpriteAnimation ? "has-state-animation" : "",
         showTaskPanel ? "has-tasks" : "",
         showPreviewPanel ? "has-preview" : "",
+        showPreviewPanel && previewPanel?.expanded ? "has-preview-expanded" : "",
+        showPreviewPanel && !previewPanel?.expanded ? "has-preview-collapsed" : "",
         showBubble ? "has-bubble" : "",
         petState.edgeDock === "top" ? "is-edge-dock-top" : "",
         isDragging ? "is-dragging" : "",
