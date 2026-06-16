@@ -15,6 +15,7 @@ const {
 } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
 const {
+  DEFAULT_DESKTOP_PET_BUILTIN_ID,
   DESKTOP_PET_APPEARANCE_OPTIONS,
   DESKTOP_PET_USER_ASSET_PROTOCOL,
   resolveDesktopPetSignatureActions
@@ -273,11 +274,18 @@ test("desktop pet visual arbitration lets manual signature surface over hover", 
 });
 
 test("desktop pet context menu exposes manual signature actions", () => {
-  assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
-    action: "signature",
-    signatureId: "chant",
-    label: "念经"
-  });
+  if (DEFAULT_DESKTOP_PET_BUILTIN_ID === "cutej") {
+    assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
+      action: "hide",
+      label: "关闭宠物"
+    });
+  } else {
+    assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
+      action: "signature",
+      signatureId: "chant",
+      label: "念经"
+    });
+  }
 
   assert.deepEqual(getDesktopPetContextMenuItems("user:desk-cat", [
     {
@@ -318,19 +326,20 @@ test("desktop pet context menu exposes manual signature actions", () => {
   ]);
 });
 
-test("desktop pet keeps built-in chant available only for the default pet", () => {
+test("desktop pet exposes brand-specific built-in appearance defaults", () => {
+  const isCuteJ = DEFAULT_DESKTOP_PET_BUILTIN_ID === "cutej";
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id), ["classic"]);
-  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].displayName, "小禅");
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].displayName, isCuteJ ? "小君" : "小禅");
   assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].preview, "idle.webp");
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.idle, {
     path: "idle.webp",
-    frameCount: 4,
+    frameCount: isCuteJ ? 6 : 4,
     durationMs: 6000,
     loop: true
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.jumping, {
     path: "jumping.webp",
-    frameCount: 4,
+    frameCount: isCuteJ ? 5 : 4,
     durationMs: 1000,
     loop: false
   });
@@ -343,55 +352,59 @@ test("desktop pet keeps built-in chant available only for the default pet", () =
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.dragging, {
     path: "dragging.webp",
-    frameCount: 4,
+    frameCount: isCuteJ ? 8 : 4,
     durationMs: 900,
     loop: true
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.done, {
     path: "done.webp",
-    frameCount: 6,
+    frameCount: isCuteJ ? 5 : 6,
     durationMs: 1200,
     loop: false,
     holdMs: 2500
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.failed, {
     path: "failed.webp",
-    frameCount: 4,
+    frameCount: isCuteJ ? 8 : 4,
     durationMs: 1000,
     loop: false,
     holdMs: 3000
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.running, {
     path: "running.webp",
-    frameCount: 8,
+    frameCount: isCuteJ ? 6 : 8,
     durationMs: 1600,
     loop: true
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.awaiting, {
     path: "awaiting.webp",
-    frameCount: 4,
+    frameCount: isCuteJ ? 6 : 4,
     durationMs: 1200,
     loop: true
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.review, {
     path: "review.webp",
-    frameCount: 4,
+    frameCount: isCuteJ ? 6 : 4,
     durationMs: 1400,
     loop: true
   });
-  assert.deepEqual(resolveDesktopPetSignatureActions("classic", [])[0], {
-    id: "chant",
-    label: "念经",
-    trigger: ["manual", "idle-random"],
-    variants: [
-      {
-        path: "signature/chant.webp",
-        frameCount: 30,
-        durationMs: 5200,
-        weight: 1
-      }
-    ]
-  });
+  if (isCuteJ) {
+    assert.deepEqual(resolveDesktopPetSignatureActions("classic", []), []);
+  } else {
+    assert.deepEqual(resolveDesktopPetSignatureActions("classic", [])[0], {
+      id: "chant",
+      label: "念经",
+      trigger: ["manual", "idle-random"],
+      variants: [
+        {
+          path: "signature/chant.webp",
+          frameCount: 30,
+          durationMs: 5200,
+          weight: 1
+        }
+      ]
+    });
+  }
 
   assert.deepEqual(resolveDesktopPetSignatureActions("user:pony", []), []);
   const ponyDanceAction = {

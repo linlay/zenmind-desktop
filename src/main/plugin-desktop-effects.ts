@@ -5,6 +5,7 @@ import { BrowserWindow, screen } from "electron";
 import type { App } from "electron";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
+  DEFAULT_DESKTOP_PET_SELECTED_ID,
   DESKTOP_PET_APPEARANCE_OPTIONS,
   listUserDesktopPets,
   readDesktopPetStoredState
@@ -97,11 +98,12 @@ function toFileUrlIfExists(filePath: string) {
   return fs.existsSync(filePath) ? pathToFileURL(filePath).toString() : "";
 }
 
-function getBuiltinDesktopPetAssetUrl(appearanceId: string) {
+function getBuiltinDesktopPetAssetUrl(appearanceId: string, preview: string) {
   const normalized = appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID ? "" : appearanceId;
+  const safePreview = preview.replace(/\\/gu, "/").replace(/^\/+/u, "") || "idle.webp";
   const relativeParts = normalized
-    ? ["desktop-pet", normalized, "idle.png"]
-    : ["desktop-pet", "idle.png"];
+    ? ["desktop-pet", normalized, safePreview]
+    : ["desktop-pet", safePreview];
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
     return `${devServerUrl.replace(/\/$/u, "")}/${relativeParts.join("/")}`;
@@ -117,9 +119,9 @@ function resolveDesktopPetBannerAsset(app: App, appearanceRequest: unknown): Des
   const settings = readDesktopPetStoredState(app, process.platform);
   const requestedDefault = appearanceRequest === "default";
   const selectedPetId = requestedDefault
-    ? "builtin:zenmi"
+    ? DEFAULT_DESKTOP_PET_SELECTED_ID
     : settings.selectedPetId || (settings.appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
-      ? "builtin:zenmi"
+      ? DEFAULT_DESKTOP_PET_SELECTED_ID
       : `builtin:${settings.appearanceId}`);
 
   if (!requestedDefault && selectedPetId.startsWith("user:")) {
@@ -143,7 +145,7 @@ function resolveDesktopPetBannerAsset(app: App, appearanceRequest: unknown): Des
     : settings.appearanceId;
   const option = DESKTOP_PET_APPEARANCE_OPTIONS.find((item) => item.id === selectedAppearanceId) ??
     DESKTOP_PET_APPEARANCE_OPTIONS[0];
-  const url = getBuiltinDesktopPetAssetUrl(option.id);
+  const url = getBuiltinDesktopPetAssetUrl(option.id, option.preview);
   if (url) {
     return {
       label: option.displayName,

@@ -10,12 +10,15 @@ const require = createRequire(import.meta.url);
 const {
   applyDesktopInitBootstrap,
   applyDesktopInitSsoDefaults,
-  resolveDesktopBootstrapStatePath,
   resolveDesktopInitPath
 } = require("../dist-electron/main/desktop-init-bootstrap.js");
 
 const { registerServicesIpcHandlers } = require("../dist-electron/main/ipc/services-handlers.js");
 const { getArchiveExtensions } = require("../dist-electron/main/platform-adapter.js");
+const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
+const { DEFAULT_DESKTOP_PET_SELECTED_ID } = require("../dist-electron/shared/desktop-pet.js");
+
+const RUNTIME_ROOT_DIR_NAME = APP_BRAND.paths.runtimeRootDirName;
 
 function createApp(homePath) {
   return {
@@ -39,11 +42,15 @@ function writeDesktopInit(app, platform, value) {
 }
 
 function canonicalSsoPath(homePath) {
-  return path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "sso.json");
+  return path.join(desktopRoot(homePath), "config", "desktop", "sso.json");
 }
 
 function runtimeRoot(homePath) {
-  return path.join(homePath, ".zenmind");
+  return path.join(homePath, RUNTIME_ROOT_DIR_NAME);
+}
+
+function desktopRoot(homePath) {
+  return path.join(runtimeRoot(homePath), ".desktop");
 }
 
 function readJson(filePath) {
@@ -56,7 +63,7 @@ test("archive import filters follow internal service package platform formats", 
   assert.deepEqual(getArchiveExtensions("win32"), ["zip"]);
 });
 
-test("desktop-init bootstrap applies once into canonical desktop files", (t) => {
+test("desktop-init bootstrap applies into canonical desktop files and rereads explicit init", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -83,7 +90,7 @@ test("desktop-init bootstrap applies once into canonical desktop files", (t) => 
     },
     pet: {
       enabled: false,
-      selectedPetId: "builtin:zenmi"
+      selectedPetId: DEFAULT_DESKTOP_PET_SELECTED_ID
     },
     market: {
       enabled: true,
@@ -106,20 +113,22 @@ test("desktop-init bootstrap applies once into canonical desktop files", (t) => 
   const first = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(first.applied, true);
 
-  const desktopRoot = path.join(homePath, ".zenmind", ".desktop");
-  const profile = readJson(path.join(desktopRoot, "config", "desktop", "profile.json"));
-  const kanban = readJson(path.join(desktopRoot, "config", "desktop", "kanban.json"));
-  const pet = readJson(path.join(desktopRoot, "config", "desktop", "pet.json"));
-  const market = readJson(path.join(desktopRoot, "config", "desktop", "market.json"));
-  const sso = readJson(path.join(desktopRoot, "config", "desktop", "sso.json"));
-  const website = readJson(path.join(desktopRoot, "data", "webs", "websites", "docs", "website.json"));
-  const bootstrap = readJson(resolveDesktopBootstrapStatePath(app));
+  const desktop = desktopRoot(homePath);
+  const profile = readJson(path.join(desktop, "config", "desktop", "profile.json"));
+  const assistantConfig = readJson(path.join(desktop, "config", "desktop", "assistant.json"));
+  const kanban = readJson(path.join(desktop, "config", "desktop", "kanban.json"));
+  const pet = readJson(path.join(desktop, "config", "desktop", "pet.json"));
+  const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
+  const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
+  const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
 
   assert.equal(profile.appearance.theme, "dark");
   assert.equal(profile.appearance.locale, "en-US");
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
   assert.equal(profile.assistant.quick.enabled, true);
   assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
+  assert.equal(assistantConfig.defaultAgentKey, "desktopAssistant");
+  assert.equal(assistantConfig.bootstrapAgentKey, "zenmi");
   assert.equal("desktopHelperAgentKey" in profile.assistant, false);
   assert.equal("quickAssistant" in profile.assistant, false);
   assert.equal("kanban" in profile.navigation, false);
@@ -133,20 +142,16 @@ test("desktop-init bootstrap applies once into canonical desktop files", (t) => 
   });
   assert.equal("bootstrapAssistant" in profile, false);
   assert.equal(pet.enabled, false);
-  assert.equal(pet.selectedPetId, "builtin:zenmi");
+  assert.equal(pet.selectedPetId, DEFAULT_DESKTOP_PET_SELECTED_ID);
   assert.equal("lastVisible" in pet, false);
   assert.equal("boundAgentKey" in pet, false);
   assert.equal(market.enabled, true);
   assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");
-  assert.equal(fs.existsSync(path.join(desktopRoot, "config", "marketplace", "settings.json")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "config", "marketplace", "settings.json")), false);
   assert.equal(sso.enabled, true);
   assert.equal(website.id, "docs");
   assert.equal(website.kind, "website");
   assert.equal(website.agentKey, "desktopAssistant");
-  assert.equal(bootstrap.applied.assistant, "recorded");
-  assert.equal(bootstrap.assistant.defaultAgentKey, "desktopAssistant");
-  assert.equal(bootstrap.assistant.bootstrapAgentKey, "zenmi");
-  assert.equal("bootstrapAssistant" in bootstrap, false);
   assert.equal(fs.existsSync(initPath), false);
 
   fs.writeFileSync(initPath, JSON.stringify({
@@ -159,11 +164,11 @@ test("desktop-init bootstrap applies once into canonical desktop files", (t) => 
   }), "utf8");
 
   const second = applyDesktopInitBootstrap(app, "darwin");
-  const profileAfterSecondRun = readJson(path.join(desktopRoot, "config", "desktop", "profile.json"));
-  assert.equal(second.applied, false);
-  assert.equal(second.reason, "already-applied");
-  assert.equal(profileAfterSecondRun.appearance.theme, "dark");
-  assert.equal(profileAfterSecondRun.appearance.locale, "en-US");
+  const profileAfterSecondRun = readJson(path.join(desktop, "config", "desktop", "profile.json"));
+  assert.equal(second.applied, true);
+  assert.equal(second.appliedResult.profile, "applied");
+  assert.equal(profileAfterSecondRun.appearance.theme, "light");
+  assert.equal(profileAfterSecondRun.appearance.locale, "zh-CN");
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
 });
 
@@ -185,7 +190,7 @@ test("desktop-init bootstrap ignores legacy desktop-default file names", (t) => 
   }, null, 2)}\n`, "utf8");
 
   const result = applyDesktopInitBootstrap(app, "darwin");
-  const profilePath = path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "profile.json");
+  const profilePath = path.join(desktopRoot(homePath), "config", "desktop", "profile.json");
 
   assert.equal(result.applied, false);
   assert.equal(result.reason, "missing");
@@ -216,7 +221,7 @@ test("desktop-init bootstrap migrates legacy navigation kanban fallback", (t) =>
   const result = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(result.applied, true);
 
-  const desktopConfigRoot = path.join(homePath, ".zenmind", ".desktop", "config", "desktop");
+  const desktopConfigRoot = path.join(desktopRoot(homePath), "config", "desktop");
   const profile = readJson(path.join(desktopConfigRoot, "profile.json"));
   const kanban = readJson(path.join(desktopConfigRoot, "kanban.json"));
   assert.equal("kanban" in profile.navigation, false);
@@ -224,7 +229,7 @@ test("desktop-init bootstrap migrates legacy navigation kanban fallback", (t) =>
   assert.equal(result.appliedResult.kanban, "applied");
 });
 
-test("desktop-init bootstrap skips market settings without a market API", (t) => {
+test("desktop-init bootstrap leaves market absent without a market API", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-market-disabled-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -239,26 +244,90 @@ test("desktop-init bootstrap skips market settings without a market API", (t) =>
   const result = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(result.applied, true);
 
-  const marketPath = path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "market.json");
-  const legacyMarketPath = path.join(homePath, ".zenmind", ".desktop", "config", "marketplace", "settings.json");
+  const marketPath = path.join(desktopRoot(homePath), "config", "desktop", "market.json");
+  const legacyMarketPath = path.join(desktopRoot(homePath), "config", "marketplace", "settings.json");
   assert.equal(result.appliedResult.market, "absent");
   assert.equal(fs.existsSync(marketPath), false);
   assert.equal(fs.existsSync(legacyMarketPath), false);
 });
 
-test("desktop-init bootstrap does not overwrite existing desktop market settings", (t) => {
+test("desktop-init bootstrap applies defaults over pre-created desktop config files", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-market-existing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  const marketPath = path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "market.json");
-  fs.mkdirSync(path.dirname(marketPath), { recursive: true });
+  const desktopConfigRoot = path.join(desktopRoot(homePath), "config", "desktop");
+  const profilePath = path.join(desktopConfigRoot, "profile.json");
+  const kanbanPath = path.join(desktopConfigRoot, "kanban.json");
+  const petPath = path.join(desktopConfigRoot, "pet.json");
+  const marketPath = path.join(desktopConfigRoot, "market.json");
+  fs.mkdirSync(desktopConfigRoot, { recursive: true });
+  fs.writeFileSync(profilePath, `${JSON.stringify({
+    schemaVersion: 1,
+    appearance: {
+      theme: "light",
+      locale: "en-US"
+    },
+    assistant: {
+      copilot: {
+        agentKey: "desktopAssistant"
+      },
+      quick: {
+        enabled: true,
+        agentKey: "desktopAssistant"
+      }
+    },
+    navigation: {
+      mainOrder: ["schedules"],
+      webOrder: ["old-site"],
+      desktopCopilotPages: {}
+    }
+  }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(kanbanPath, `${JSON.stringify({
+    schemaVersion: 1,
+    enabled: true,
+    cloud: {
+      serverUrl: "https://existing-kanban.example.test",
+      token: "",
+      selectedProjectId: "default",
+      remoteControlEnabled: true,
+      deviceAlias: ""
+    }
+  }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(petPath, `${JSON.stringify({
+    schemaVersion: 1,
+    enabled: true,
+    selectedPetId: "builtin:old"
+  }, null, 2)}\n`, "utf8");
   fs.writeFileSync(marketPath, `${JSON.stringify({
     enabled: false,
     apiBaseUrl: "https://existing.example.test/api/v1"
   }, null, 2)}\n`, "utf8");
   writeDesktopInit(app, "darwin", {
+    profile: {
+      appearance: {
+        theme: "system",
+        locale: "zh-CN"
+      },
+      navigation: {
+        mainOrder: [],
+        websiteOrder: [],
+        desktopCopilotPages: {}
+      }
+    },
+    assistant: {
+      defaultAgentKey: "cutej",
+      bootstrapAgentKey: "bootstrap"
+    },
+    kanban: {
+      enabled: false,
+      serverUrl: "https://kanban.example.test"
+    },
+    pet: {
+      enabled: false,
+      selectedPetId: DEFAULT_DESKTOP_PET_SELECTED_ID
+    },
     market: {
       enabled: true,
       apiBaseUrl: "https://market.example.test/api/v1"
@@ -266,12 +335,32 @@ test("desktop-init bootstrap does not overwrite existing desktop market settings
   });
 
   const result = applyDesktopInitBootstrap(app, "darwin");
+  const profile = readJson(profilePath);
+  const assistantConfig = readJson(path.join(desktopConfigRoot, "assistant.json"));
+  const kanban = readJson(kanbanPath);
+  const pet = readJson(petPath);
   const market = readJson(marketPath);
 
   assert.equal(result.applied, true);
-  assert.equal(result.appliedResult.market, "skipped");
-  assert.equal(market.enabled, false);
-  assert.equal(market.apiBaseUrl, "https://existing.example.test/api/v1");
+  assert.equal(result.appliedResult.profile, "applied");
+  assert.equal(result.appliedResult.kanban, "applied");
+  assert.equal(result.appliedResult.pet, "applied");
+  assert.equal(result.appliedResult.market, "applied");
+  assert.equal(profile.appearance.theme, "system");
+  assert.equal(profile.appearance.locale, "zh-CN");
+  assert.equal(profile.assistant.copilot.agentKey, "cutej");
+  assert.equal(profile.assistant.quick.agentKey, "cutej");
+  assert.deepEqual(profile.navigation.mainOrder, []);
+  assert.deepEqual(profile.navigation.webOrder, []);
+  assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "cutej");
+  assert.equal(assistantConfig.defaultAgentKey, "cutej");
+  assert.equal(assistantConfig.bootstrapAgentKey, "bootstrap");
+  assert.equal(kanban.enabled, false);
+  assert.equal(kanban.cloud.serverUrl, "https://kanban.example.test");
+  assert.equal(pet.enabled, false);
+  assert.equal(pet.selectedPetId, DEFAULT_DESKTOP_PET_SELECTED_ID);
+  assert.equal(market.enabled, true);
+  assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");
 });
 
 test("desktop-init SSO helper writes canonical macOS config without bootstrap state", (t) => {
@@ -305,29 +394,26 @@ test("desktop-init SSO helper uses explicit Windows path branches", () => {
 
   assert.equal(
     resolveDesktopInitPath(app, "win32"),
-    "C:\\Users\\tester\\.zenmind\\desktop-init.json"
+    path.win32.join("C:\\Users\\tester", RUNTIME_ROOT_DIR_NAME, "desktop-init.json")
   );
 });
 
-test("desktop-init SSO helper does not overwrite existing SSO configs", (t) => {
+test("desktop-init SSO helper writes canonical SSO even when old configs exist", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-existing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const cases = [
     {
       name: "canonical",
-      existingPath: (homePath) => canonicalSsoPath(homePath),
-      expectCanonicalCreated: true
+      existingPath: (homePath) => canonicalSsoPath(homePath)
     },
     {
       name: "legacy",
-      existingPath: (homePath) => path.join(runtimeRoot(homePath), "desktop-sso.json"),
-      expectCanonicalCreated: false
+      existingPath: (homePath) => path.join(runtimeRoot(homePath), "desktop-sso.json")
     },
     {
       name: "root",
-      existingPath: (homePath) => path.join(runtimeRoot(homePath), "sso.json"),
-      expectCanonicalCreated: false
+      existingPath: (homePath) => path.join(runtimeRoot(homePath), "sso.json")
     }
   ];
 
@@ -347,14 +433,17 @@ test("desktop-init SSO helper does not overwrite existing SSO configs", (t) => {
 
     const result = applyDesktopInitSsoDefaults(app, "darwin");
 
-    assert.equal(result, "skipped", item.name);
-    assert.equal(readJson(existingPath).marker, item.name);
-    assert.equal(fs.existsSync(canonicalSsoPath(homePath)), item.expectCanonicalCreated);
+    assert.equal(result, "applied", item.name);
+    assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
+    assert.equal(readJson(canonicalSsoPath(homePath)).authMode, "server");
+    if (existingPath !== canonicalSsoPath(homePath)) {
+      assert.equal(readJson(existingPath).marker, item.name);
+    }
   }
 });
 
-test("desktop-init SSO helper fills missing SSO even after bootstrap was marked applied", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-after-bootstrap-"));
+test("desktop-init bootstrap reads profile market and SSO from one init", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-profile-market-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
@@ -375,16 +464,16 @@ test("desktop-init SSO helper fills missing SSO even after bootstrap was marked 
       authMode: "server"
     }
   });
-  const bootstrapPath = resolveDesktopBootstrapStatePath(app);
-  fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
-  fs.writeFileSync(bootstrapPath, `${JSON.stringify({ schemaVersion: 1 })}\n`, "utf8");
 
   const fullBootstrap = applyDesktopInitBootstrap(app, "darwin");
   const ssoResult = applyDesktopInitSsoDefaults(app, "darwin");
 
-  assert.equal(fullBootstrap.applied, false);
-  assert.equal(fullBootstrap.reason, "already-applied");
-  assert.equal(ssoResult, "applied");
+  assert.equal(fullBootstrap.applied, true);
+  assert.equal(fullBootstrap.appliedResult.profile, "applied");
+  assert.equal(fullBootstrap.appliedResult.market, "applied");
+  assert.equal(fullBootstrap.appliedResult.sso, "applied");
+  assert.equal(ssoResult, "absent");
+  assert.equal(readJson(path.join(homePath, RUNTIME_ROOT_DIR_NAME, ".desktop", "config", "desktop", "profile.json")).appearance.locale, "en-US");
   assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
   assert.equal(fs.existsSync(resolveDesktopInitPath(app, "darwin")), false);
 });

@@ -1,0 +1,70 @@
+{
+  "id": "cutej",
+  "displayName": "小君",
+  "version": "1.0.0",
+  "description": "蓝发耳机、白蓝制服的 CuteJ 3D 玩具风桌面宠物。",
+  "tags": [
+    "desktop-pet",
+    "cutej"
+  ],
+  "preview": "idle.webp",
+  "states": {
+    "idle": {
+      "path": "idle.webp",
+      "frameCount": 6,
+      "durationMs": 6000,
+      "loop": true
+    },
+    "jumping": {
+      "path": "jumping.webp",
+      "frameCount": 5,
+      "durationMs": 1000,
+      "loop": false
+    },
+    "moving-left": {
+      "path": "moving-left.webp",
+      "frameCount": 8,
+      "durationMs": 900,
+      "loop": true,
+      "mirror": true
+    },
+    "dragging": {
+      "path": "dragging.webp",
+      "frameCount": 8,
+      "durationMs": 900,
+      "loop": true
+    },
+    "done": {
+      "path": "done.webp",
+      "frameCount": 5,
+      "durationMs": 1200,
+      "loop": false,
+      "holdMs": 2500
+    },
+    "failed": {
+      "path": "failed.webp",
+      "frameCount": 8,
+      "durationMs": 1000,
+      "loop": false,
+      "holdMs": 3000
+    },
+    "running": {
+      "path": "running.webp",
+      "frameCount": 6,
+      "durationMs": 1600,
+      "loop": true
+    },
+    "awaiting": {
+      "path": "awaiting.webp",
+      "frameCount": 6,
+      "durationMs": 1200,
+      "loop": true
+    },
+    "review": {
+      "path": "review.webp",
+      "frameCount": 6,
+      "durationMs": 1400,
+      "loop": true
+    }
+  }
+}

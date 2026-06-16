@@ -2,6 +2,7 @@ import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
 
 const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["zh-CN"];
 const runtimeRootDisplay = `~/${APP_BRAND.paths.runtimeRootDirName}`;
+const isCuteJBrand = String(APP_BRAND.id) === "cutej";
 
 export const zhCNMessages = {
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
@@ -321,8 +322,10 @@ export const zhCNMessages = {
   "settings.desktopPet.noticeAppearanceChanged": "桌面宠物形象已切换为 {name}。",
   "settings.desktopPet.noticeAppearanceFailed": "桌面宠物形象切换未生效，请重启应用后再试。",
   "settings.desktopPet.noticeBoundAgentChanged": "桌面宠物已绑定到 {name}。",
-  "settings.desktopPet.appearance.classic.label": "小禅",
-  "settings.desktopPet.appearance.classic.description": "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
+  "settings.desktopPet.appearance.classic.label": isCuteJBrand ? "小君" : "小禅",
+  "settings.desktopPet.appearance.classic.description": isCuteJBrand
+    ? "蓝发耳机、白蓝制服的 CuteJ 3D 玩具风桌面宠物。"
+    : "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
   "settings.desktopPet.appearance.dario.label": "达里奥",
   "settings.desktopPet.appearance.dario.description": "皱眉卷发形象，适合高压专注时刻。",
   "settings.desktopPet.appearance.sama.label": "迷你萨玛",
@@ -1008,8 +1011,10 @@ export const zhCNMessages = {
   "desktopPet.status.stopped": "已停止",
   "desktopPet.context.dance": "跳舞",
   "desktopPet.context.close": "关闭宠物",
-  "desktopPet.appearance.classic.name": "小禅",
-  "desktopPet.appearance.classic.description": "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
+  "desktopPet.appearance.classic.name": isCuteJBrand ? "小君" : "小禅",
+  "desktopPet.appearance.classic.description": isCuteJBrand
+    ? "蓝发耳机、白蓝制服的 CuteJ 3D 玩具风桌面宠物。"
+    : "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
   "desktopPet.appearance.dario.description": "适合高压专注时刻的卷发皱眉宠物。",
   "desktopPet.appearance.sama.description": "带一点会议室混乱气质、焦虑又机灵的宠物。",
   "desktopPet.appearance.xiao.name": "小萧",

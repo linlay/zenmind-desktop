@@ -18,6 +18,7 @@ import type {
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DEFAULT_DESKTOP_PET_SELECTED_ID,
   DESKTOP_PET_USER_ASSET_PROTOCOL,
   DESKTOP_PET_DONE_FALLBACK_TEXT,
   DESKTOP_PET_APPEARANCE_OPTIONS,
@@ -44,6 +45,7 @@ import {
 export {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DEFAULT_DESKTOP_PET_SELECTED_ID,
   DESKTOP_PET_APPEARANCE_OPTIONS,
   applyDesktopPetActiveRunEvent,
   normalizeDesktopPetAppearanceId,
@@ -161,7 +163,7 @@ const DEFAULT_OFFSET = {
   y: 78
 } as const;
 const DESKTOP_PET_SCHEMA_VERSION = 1;
-const DEFAULT_DESKTOP_PET_ID = "builtin:zenmi";
+const DEFAULT_DESKTOP_PET_ID = DEFAULT_DESKTOP_PET_SELECTED_ID;
 const DESKTOP_PET_CONFIG_FILE = "pet.json";
 const DESKTOP_PET_STATE_FILE = "pet-state.json";
 const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 24;
@@ -246,8 +248,9 @@ function sanitizeDesktopPetStoredState(
       : DEFAULT_DESKTOP_PET_ID) === DEFAULT_DESKTOP_PET_ID
       ? DEFAULT_DESKTOP_PET_APPEARANCE_ID
       : normalizeDesktopPetAppearanceId(String(candidate.selectedPetId).replace(/^builtin:/u, ""));
-  const selectedPetId = typeof candidate.selectedPetId === "string" && candidate.selectedPetId.trim()
-    ? candidate.selectedPetId.trim()
+  const rawSelectedPetId = typeof candidate.selectedPetId === "string" ? candidate.selectedPetId.trim() : "";
+  const selectedPetId = rawSelectedPetId.startsWith("user:")
+    ? rawSelectedPetId
     : selectedPetIdForAppearance(appearanceId);
   return {
     schemaVersion: DESKTOP_PET_SCHEMA_VERSION,

@@ -3,9 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import JSZip from "jszip";
+import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const outputDirectory = path.resolve(__dirname, "..", "public", "desktop-pet");
+const projectRoot = path.resolve(__dirname, "..");
+const brand = loadBrandConfig(projectRoot, resolveBrandId());
+const outputDirectory = path.join(projectRoot, "public", "desktop-pet");
 const configuredMarketPetsRoot = process.env.ZENMIND_PETS_ROOT
   ? path.resolve(process.env.ZENMIND_PETS_ROOT)
   : null;
@@ -17,7 +20,8 @@ const marketPetSourceDirectory = configuredMarketPetsRoot
   ? marketPetRootDirectory
   : path.join(marketPetRootDirectory, "expanded");
 const sourceAssetDirectory = path.resolve(__dirname, "assets", "desktop-pet");
-const defaultSourceAssetDirectory = path.join(sourceAssetDirectory, "zenmi");
+const defaultBuiltInPetId = brand.id === "cutej" ? "cutej" : "zenmi";
+const defaultSourceAssetDirectory = path.join(sourceAssetDirectory, defaultBuiltInPetId);
 
 const size = {
   width: 320,
@@ -194,20 +198,6 @@ const marketPetStaticStates = {
     loop: true
   }
 };
-
-const defaultSourceAssetNames = [
-  "awaiting.webp",
-  "done.webp",
-  "dragging.webp",
-  "failed.webp",
-  "idle.webp",
-  "jumping.webp",
-  "moving-left.webp",
-  "pet.json",
-  "review.webp",
-  "running.webp",
-  "signature/chant.webp"
-];
 
 const communityFrameSelections = {
   awaiting: { row: 8, column: 2 },
@@ -1178,16 +1168,79 @@ async function writeVariantFiles(directory, buffers) {
   }
 }
 
-async function copyDefaultZenmiAssets() {
+function addManifestAssetPath(assetNames, value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return;
+  }
+  const normalized = value.trim().replace(/\\/gu, "/").replace(/^\/+/u, "");
+  if (normalized && normalized !== "pet.json") {
+    assetNames.add(normalized);
+  }
+}
+
+function addSignatureAssetPaths(assetNames, actions) {
+  if (!Array.isArray(actions)) {
+    return;
+  }
+  for (const action of actions) {
+    if (!action || typeof action !== "object" || Array.isArray(action)) {
+      continue;
+    }
+    if (!Array.isArray(action.variants)) {
+      continue;
+    }
+    for (const variant of action.variants) {
+      if (variant && typeof variant === "object" && !Array.isArray(variant)) {
+        addManifestAssetPath(assetNames, variant.path);
+      }
+    }
+  }
+}
+
+function collectDefaultPetAssetNames(manifest) {
+  const assetNames = new Set(["pet.json"]);
+  addManifestAssetPath(assetNames, manifest.preview);
+  if (manifest.states && typeof manifest.states === "object" && !Array.isArray(manifest.states)) {
+    for (const state of Object.values(manifest.states)) {
+      if (!state || typeof state !== "object" || Array.isArray(state)) {
+        continue;
+      }
+      addManifestAssetPath(assetNames, state.path);
+      addSignatureAssetPaths(assetNames, state.alts);
+    }
+  }
+  addSignatureAssetPaths(assetNames, manifest.signature);
+  return assetNames;
+}
+
+async function copyDefaultBrandPetAssets() {
+  await fs.rm(outputDirectory, { recursive: true, force: true });
   await fs.mkdir(outputDirectory, { recursive: true });
-  for (const assetName of defaultSourceAssetNames) {
+  const manifest = JSON.parse(await fs.readFile(path.join(defaultSourceAssetDirectory, "pet.json"), "utf8"));
+  const assetNames = collectDefaultPetAssetNames(manifest);
+  try {
+    await fs.access(path.join(defaultSourceAssetDirectory, "spritesheet.webp"));
+    assetNames.add("spritesheet.webp");
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+  for (const assetName of assetNames) {
     await fs.mkdir(path.dirname(path.join(outputDirectory, assetName)), { recursive: true });
     await fs.copyFile(
       path.join(defaultSourceAssetDirectory, assetName),
       path.join(outputDirectory, assetName)
     );
   }
-  await fs.writeFile(path.join(outputDirectory, "spritesheet.webp"), await renderZenmiSpritesheet(outputDirectory));
+  try {
+    await fs.access(path.join(outputDirectory, "spritesheet.webp"));
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+    await fs.writeFile(path.join(outputDirectory, "spritesheet.webp"), await renderZenmiSpritesheet(outputDirectory));
+  }
 }
 
 async function writeMarketPetManifest(directory, petId) {
@@ -1274,7 +1327,7 @@ await resetMarketPetOutput();
 await fs.mkdir(outputDirectory, { recursive: true });
 await fs.mkdir(marketPetSourceDirectory, { recursive: true });
 await fs.mkdir(marketPetPackageDirectory, { recursive: true });
-await copyDefaultZenmiAssets();
+await copyDefaultBrandPetAssets();
 
 for (const appearance of scriptedAppearances) {
   const renderedAppearance = await renderScriptedAppearance(appearance);

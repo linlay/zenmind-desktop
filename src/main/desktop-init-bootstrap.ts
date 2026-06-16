@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import {
+  DESKTOP_COPILOT_PAGE_KEYS,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY
 } from "../shared/assistant-settings";
@@ -13,23 +14,23 @@ import {
 import { importWebsiteItems } from "./webs/website-actions";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { resolveDesktopSsoConfigPath } from "./oidc-sso";
-import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
-import { writeDesktopPetStoredState } from "./copilot/pet-copilot/desktop-pet";
-import { writeMarketSettingsIfAbsent } from "./marketplace/common";
-import { writeTaskBoardSettingsIfAbsent } from "./task-board-runtime";
+import { getDesktopConfigRoot } from "./user-paths";
+import { saveDesktopPetSettings } from "./copilot/pet-copilot/desktop-pet";
+import { saveMarketSettings } from "./marketplace/common";
+import { saveTaskBoardSettings } from "./task-board-runtime";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
-const BOOTSTRAP_STATE_FILE = "bootstrap.json";
+const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
 
 type AppPathReader = Pick<App, "getPath">;
 
 type BootstrapApplyResult = {
-  profile: "applied" | "skipped" | "absent";
-  kanban: "applied" | "skipped" | "absent";
-  pet: "applied" | "skipped" | "absent";
-  market: "applied" | "skipped" | "absent";
-  sso: "applied" | "skipped" | "absent";
-  webs: "applied" | "skipped" | "absent";
+  profile: "applied" | "absent";
+  kanban: "applied" | "absent";
+  pet: "applied" | "absent";
+  market: "applied" | "absent";
+  sso: "applied" | "absent";
+  webs: "applied" | "absent";
   assistant: "recorded" | "absent";
 };
 
@@ -149,14 +150,44 @@ function normalizeDesktopInitAssistantDefaults(value: unknown): DesktopInitAssis
   return Object.keys(assistant).length > 0 ? assistant : null;
 }
 
+function normalizeDesktopCopilotPageDefaults(
+  value: unknown,
+  current: ReturnType<typeof readDesktopProfileFromRoot>["navigation"]["desktopCopilotPages"],
+  defaultAgentKey: string
+) {
+  const source = isRecord(value) ? value : {};
+  return DESKTOP_COPILOT_PAGE_KEYS.reduce((pages, pageKey) => {
+    const rawPage = isRecord(source[pageKey]) ? source[pageKey] : {};
+    const currentPage = current[pageKey];
+    pages[pageKey] = {
+      enabled: typeof rawPage.enabled === "boolean" ? rawPage.enabled : (currentPage?.enabled ?? true),
+      agentKey: readText(rawPage.agentKey) ||
+        defaultAgentKey ||
+        currentPage?.agentKey ||
+        DEFAULT_DESKTOP_HELPER_AGENT_KEY
+    };
+    return pages;
+  }, {} as ReturnType<typeof readDesktopProfileFromRoot>["navigation"]["desktopCopilotPages"]);
+}
+
+function writeAssistantDefaults(
+  app: App,
+  assistantDefaults: DesktopInitAssistantDefaults | null
+): BootstrapApplyResult["assistant"] {
+  if (!assistantDefaults) {
+    return "absent";
+  }
+  writeJsonFile(path.join(getDesktopConfigRoot(app), DESKTOP_INIT_ASSISTANT_FILE), {
+    schemaVersion: 1,
+    ...assistantDefaults
+  });
+  return "recorded";
+}
+
 export function resolveDesktopInitPath(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   const runtimeRoot = resolveRuntimeRoot(app, platform);
   const pathApi = pathApiForRuntimeRoot(platform, runtimeRoot);
   return pathApi.join(runtimeRoot, DESKTOP_INIT_FILE);
-}
-
-export function resolveDesktopBootstrapStatePath(app: AppPathReader) {
-  return path.join(getDesktopStateRoot(app as App), BOOTSTRAP_STATE_FILE);
 }
 
 function applyProfileDefaults(
@@ -168,13 +199,6 @@ function applyProfileDefaults(
     return "absent";
   }
   const profileRoot = getDesktopConfigRoot(app);
-  if (
-    fs.existsSync(path.join(profileRoot, "profile.json")) ||
-    fs.existsSync(path.join(profileRoot, "preferences.json")) ||
-    fs.existsSync(path.join(profileRoot, "settings.json"))
-  ) {
-    return "skipped";
-  }
   const profile = isRecord(profileDefaults) ? profileDefaults : {};
   const general = isRecord(profile.general) ? profile.general : {};
   const appearance = isRecord(profile.appearance) ? profile.appearance : {};
@@ -184,6 +208,16 @@ function applyProfileDefaults(
   const legacyQuickAssistant = isRecord(legacyAssistant.quickAssistant) ? legacyAssistant.quickAssistant : {};
   const navigation = isRecord(profile.navigation) ? profile.navigation : {};
   const current = readDesktopProfileFromRoot(profileRoot);
+  const defaultAgentKey = readText(assistantDefaults?.defaultAgentKey) ||
+    readText(assistantCopilot.agentKey) ||
+    readText(legacyAssistant.desktopHelperAgentKey) ||
+    current.assistant.copilot.agentKey ||
+    DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+  const quickAgentKey = readText(assistantQuick.agentKey) ||
+    readText(legacyQuickAssistant.agentKey) ||
+    readText(assistantDefaults?.defaultAgentKey) ||
+    current.assistant.quick.agentKey ||
+    DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
   updateDesktopProfileInRoot(profileRoot, {
     general: {
       preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
@@ -201,11 +235,7 @@ function applyProfileDefaults(
         ? legacyAssistant.voiceCorrectionEnabled
         : current.assistant.voiceCorrectionEnabled,
       copilot: {
-        agentKey: readText(assistantDefaults?.defaultAgentKey) ||
-          readText(assistantCopilot.agentKey) ||
-          readText(legacyAssistant.desktopHelperAgentKey) ||
-          current.assistant.copilot.agentKey ||
-          DEFAULT_DESKTOP_HELPER_AGENT_KEY
+        agentKey: defaultAgentKey
       },
       quick: {
         enabled: typeof assistantQuick.enabled === "boolean"
@@ -213,10 +243,7 @@ function applyProfileDefaults(
           : typeof legacyQuickAssistant.enabled === "boolean"
             ? legacyQuickAssistant.enabled
             : current.assistant.quick.enabled,
-        agentKey: readText(assistantQuick.agentKey) ||
-          readText(legacyQuickAssistant.agentKey) ||
-          current.assistant.quick.agentKey ||
-          DEFAULT_QUICK_ASSISTANT_AGENT_KEY
+        agentKey: quickAgentKey
       }
     },
     navigation: {
@@ -228,8 +255,8 @@ function applyProfileDefaults(
         : Array.isArray(navigation.websiteOrder)
           ? navigation.websiteOrder.map(readText).filter(Boolean)
           : current.navigation.webOrder,
-      desktopCopilotPages: isRecord(navigation.desktopCopilotPages)
-        ? navigation.desktopCopilotPages as never
+      desktopCopilotPages: isRecord(navigation.desktopCopilotPages) || readText(assistantDefaults?.defaultAgentKey)
+        ? normalizeDesktopCopilotPageDefaults(navigation.desktopCopilotPages, current.navigation.desktopCopilotPages, defaultAgentKey)
         : current.navigation.desktopCopilotPages
     }
   });
@@ -245,42 +272,33 @@ function applyKanbanDefaults(
   if (!settings) {
     return "absent";
   }
-  return writeTaskBoardSettingsIfAbsent(app, settings) ? "applied" : "skipped";
+  saveTaskBoardSettings(app, settings);
+  return "applied";
 }
 
 function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platform): BootstrapApplyResult["pet"] {
   if (!isRecord(petDefaults)) {
     return "absent";
   }
-  const petPath = path.join(getDesktopConfigRoot(app), "pet.json");
-  const legacyPetPath = path.join(getDesktopConfigRoot(app), "desktop-pet.json");
-  if (fs.existsSync(petPath) || fs.existsSync(legacyPetPath)) {
-    return "skipped";
-  }
-  writeDesktopPetStoredState(app, {
+  const patch: Parameters<typeof saveDesktopPetSettings>[1] = {
     schemaVersion: 1,
-    enabled: petDefaults.enabled === true,
-    unreadCount: 0,
-    boundAgentKey: "",
-    appearanceId: "",
-    selectedPetId: readText(petDefaults.selectedPetId) || "builtin:zenmi",
-    position: isRecord(petDefaults.position)
-      ? {
-          x: Number(petDefaults.position.x),
-          y: Number(petDefaults.position.y),
-          displayId: readText(petDefaults.position.displayId) || "primary"
-        }
-      : undefined,
-    window: isRecord(petDefaults.window)
-      ? {
-          edgeDock: petDefaults.window.edgeDock === "top" ? "top" : "none",
-          previewExpanded: petDefaults.window.previewExpanded === true
-        }
-      : {
-          edgeDock: "none",
-          previewExpanded: false
-        }
-  }, platform);
+    ...(typeof petDefaults.enabled === "boolean" ? { enabled: petDefaults.enabled } : {}),
+    ...(readText(petDefaults.selectedPetId) ? { selectedPetId: readText(petDefaults.selectedPetId) } : {})
+  };
+  if (isRecord(petDefaults.position)) {
+    patch.position = {
+      x: Number(petDefaults.position.x),
+      y: Number(petDefaults.position.y),
+      displayId: readText(petDefaults.position.displayId) || "primary"
+    };
+  }
+  if (isRecord(petDefaults.window)) {
+    patch.window = {
+      edgeDock: petDefaults.window.edgeDock === "top" ? "top" : "none",
+      previewExpanded: petDefaults.window.previewExpanded === true
+    };
+  }
+  saveDesktopPetSettings(app, patch, platform);
   return "applied";
 }
 
@@ -292,10 +310,11 @@ function applyMarketDefaults(app: App, marketDefaults: unknown): BootstrapApplyR
   if (!apiBaseUrl) {
     return "absent";
   }
-  return writeMarketSettingsIfAbsent(app, {
+  saveMarketSettings(app, {
     enabled: marketDefaults.enabled !== false,
     apiBaseUrl
-  }) ? "applied" : "skipped";
+  });
+  return "applied";
 }
 
 function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platform): BootstrapApplyResult["sso"] {
@@ -303,13 +322,6 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
     return "absent";
   }
   const ssoPath = resolveDesktopSsoConfigPath(app, platform);
-  const runtimeRoot = resolveRuntimeRoot(app, platform);
-  const pathApi = pathApiForRuntimeRoot(platform, runtimeRoot);
-  const legacySsoPath = pathApi.join(runtimeRoot, "desktop-sso.json");
-  const rootSsoPath = pathApi.join(runtimeRoot, "sso.json");
-  if (fs.existsSync(ssoPath) || fs.existsSync(legacySsoPath) || fs.existsSync(rootSsoPath)) {
-    return "skipped";
-  }
   writeJsonFile(ssoPath, ssoDefaults);
   return "applied";
 }
@@ -323,11 +335,14 @@ export function applyDesktopInitSsoDefaults(
   if (!isRecord(defaults)) {
     return "absent";
   }
-  const result = applySsoDefaults(app, defaults.sso, platform);
-  if (fs.existsSync(resolveDesktopBootstrapStatePath(app))) {
-    removeDesktopInitFile(initPath);
-  }
-  return result;
+  return applySsoDefaults(app, defaults.sso, platform);
+}
+
+function hasWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
+  return (isRecord(webs) && Array.isArray(webs.websites)) ||
+    Array.isArray(webs) ||
+    Array.isArray(legacyWebsites) ||
+    (isRecord(legacyWebsites) && Array.isArray(legacyWebsites.items));
 }
 
 function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
@@ -347,26 +362,24 @@ function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
 }
 
 function applyWebsiteDefaults(app: App, webs: unknown, legacyWebsites: unknown): BootstrapApplyResult["webs"] {
-  const items = normalizeWebsiteDefaults(webs, legacyWebsites);
-  if (items.length === 0) {
+  if (!hasWebsiteDefaults(webs, legacyWebsites)) {
     return "absent";
   }
-  const result = importWebsiteItems(app, JSON.stringify({ items }));
-  return result.ok ? "applied" : "skipped";
+  const items = normalizeWebsiteDefaults(webs, legacyWebsites);
+  if (items.length > 0) {
+    importWebsiteItems(app, JSON.stringify({ items }));
+  }
+  return "applied";
 }
 
 export function applyDesktopInitBootstrap(
   app: App,
   platform: NodeJS.Platform = process.platform
 ) {
-  const statePath = resolveDesktopBootstrapStatePath(app);
-  if (fs.existsSync(statePath)) {
-    return { ok: true, applied: false, reason: "already-applied" as const, statePath };
-  }
   const initPath = resolveDesktopInitPath(app, platform);
   const defaults = readJsonFile(initPath);
   if (!isRecord(defaults)) {
-    return { ok: true, applied: false, reason: "missing" as const, statePath };
+    return { ok: true, applied: false, reason: "missing" as const };
   }
   const assistant = normalizeDesktopInitAssistantDefaults(defaults.assistant);
 
@@ -377,24 +390,14 @@ export function applyDesktopInitBootstrap(
     market: applyMarketDefaults(app, defaults.market),
     sso: applySsoDefaults(app, defaults.sso, platform),
     webs: applyWebsiteDefaults(app, defaults.webs, defaults.websites),
-    assistant: assistant ? "recorded" : "absent"
+    assistant: writeAssistantDefaults(app, assistant)
   };
-  writeJsonFile(statePath, {
-    schemaVersion: 1,
-    appliedAt: new Date().toISOString(),
-    sourcePath: initPath,
-    applied,
-    ...(assistant
-      ? { assistant }
-      : {})
-  });
   removeDesktopInitFile(initPath);
-  return { ok: true, applied: true, statePath, appliedResult: applied };
+  return { ok: true, applied: true, appliedResult: applied };
 }
 
 export const __testInternals = {
   DESKTOP_INIT_FILE,
-  BOOTSTRAP_STATE_FILE,
   pathApiForRuntimeRoot,
   normalizeDesktopInitAssistantDefaults,
   applyProfileDefaults,

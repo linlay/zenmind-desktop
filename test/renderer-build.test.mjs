@@ -3852,7 +3852,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /spritesheet-source\.png/);
   assert.match(petAssetScript, /drag-moving-source\.png/);
   assert.doesNotMatch(petAssetScript, /task-run-left-source\.png/);
-  assert.match(petAssetScript, /copyDefaultZenmiAssets/);
+  assert.match(petAssetScript, /copyDefaultBrandPetAssets/);
+  assert.match(petAssetScript, /defaultBuiltInPetId = brand\.id === "cutej" \? "cutej" : "zenmi"/);
   assert.doesNotMatch(sharedDesktopPet, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /"moving-left":\s*\{\s*row:\s*2,\s*column:\s*2\s*\}/);

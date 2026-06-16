@@ -2,6 +2,7 @@ import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
 
 const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["en-US"];
 const runtimeRootDisplay = `~/${APP_BRAND.paths.runtimeRootDirName}`;
+const isCuteJBrand = String(APP_BRAND.id) === "cutej";
 
 export const enUSMessages = {
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
@@ -321,8 +322,10 @@ export const enUSMessages = {
   "settings.desktopPet.noticeAppearanceChanged": "Desktop pet appearance changed to {name}.",
   "settings.desktopPet.noticeAppearanceFailed": "Desktop pet appearance change did not take effect. Restart the app and try again.",
   "settings.desktopPet.noticeBoundAgentChanged": "Desktop pet bound to {name}.",
-  "settings.desktopPet.appearance.classic.label": "Zenmi",
-  "settings.desktopPet.appearance.classic.description": "A small monk desktop pet with round glasses, gray robe, and prayer beads.",
+  "settings.desktopPet.appearance.classic.label": isCuteJBrand ? "CuteJ" : "Zenmi",
+  "settings.desktopPet.appearance.classic.description": isCuteJBrand
+    ? "A blue-haired CuteJ 3D toy desktop pet with a headset and blue-white uniform."
+    : "A small monk desktop pet with round glasses, gray robe, and prayer beads.",
   "settings.desktopPet.appearance.dario.label": "Dario",
   "settings.desktopPet.appearance.dario.description": "A frowning curly-haired pet for high-pressure focus.",
   "settings.desktopPet.appearance.sama.label": "Mini Sama",
@@ -1008,8 +1011,10 @@ export const enUSMessages = {
   "desktopPet.status.stopped": "Stopped",
   "desktopPet.context.dance": "Dance",
   "desktopPet.context.close": "Close pet",
-  "desktopPet.appearance.classic.name": "Zenmi",
-  "desktopPet.appearance.classic.description": "A small monk desktop pet with round glasses, gray robe, and prayer beads.",
+  "desktopPet.appearance.classic.name": isCuteJBrand ? "CuteJ" : "Zenmi",
+  "desktopPet.appearance.classic.description": isCuteJBrand
+    ? "A blue-haired CuteJ 3D toy desktop pet with a headset and blue-white uniform."
+    : "A small monk desktop pet with round glasses, gray robe, and prayer beads.",
   "desktopPet.appearance.dario.description": "A frowning curly-haired pet for high-pressure focus moments.",
   "desktopPet.appearance.sama.description": "An anxious, clever pet with boardroom-chaos energy.",
   "desktopPet.appearance.xiao.name": "Xiao",

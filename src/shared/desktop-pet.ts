@@ -7,8 +7,15 @@ import { BRAND_ID } from "./generated/brand";
 
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
 export const DESKTOP_PET_USER_ASSET_PROTOCOL = `${BRAND_ID}-pet`;
-export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = "zenmi";
 export const DEFAULT_DESKTOP_PET_APPEARANCE_ID = "classic";
+const IS_CUTEJ_BRAND = String(BRAND_ID) === "cutej";
+export const DEFAULT_DESKTOP_PET_BUILTIN_ID = IS_CUTEJ_BRAND ? "cutej" : "zenmi";
+export const DEFAULT_DESKTOP_PET_SELECTED_ID = `builtin:${DEFAULT_DESKTOP_PET_BUILTIN_ID}`;
+export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = IS_CUTEJ_BRAND ? "cutej" : "zenmi";
+export const DEFAULT_DESKTOP_PET_DISPLAY_NAME = IS_CUTEJ_BRAND ? "小君" : "小禅";
+export const DEFAULT_DESKTOP_PET_DESCRIPTION = IS_CUTEJ_BRAND
+  ? "蓝发耳机、白蓝制服的 CuteJ 3D 玩具风桌面宠物。"
+  : "戴圆眼镜、灰袍念珠的小和尚桌面宠物。";
 export const DESKTOP_PET_DONE_FALLBACK_TEXT = "暂无回复预览";
 export const DESKTOP_PET_REPLY_PREVIEW_MAX_LENGTH = 30;
 export const DESKTOP_PET_GENERIC_PREVIEW_TEXTS = [
@@ -41,7 +48,7 @@ export const DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES = 8;
 
 const DESKTOP_PET_STATE_ASSET_KEY_SET: ReadonlySet<string> = new Set(DESKTOP_PET_REQUIRED_STATE_KEYS);
 
-const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = {
+const ZENMI_DESKTOP_PET_STATES: DesktopPetStateAssets = {
   awaiting: {
     path: "awaiting.webp",
     frameCount: 4,
@@ -101,7 +108,71 @@ const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = {
   }
 };
 
-const DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS: DesktopPetSignatureAction[] = [
+const CUTEJ_DESKTOP_PET_STATES: DesktopPetStateAssets = {
+  awaiting: {
+    path: "awaiting.webp",
+    frameCount: 6,
+    durationMs: 1200,
+    loop: true
+  },
+  done: {
+    path: "done.webp",
+    frameCount: 5,
+    durationMs: 1200,
+    loop: false,
+    holdMs: 2500
+  },
+  dragging: {
+    path: "dragging.webp",
+    frameCount: 8,
+    durationMs: 900,
+    loop: true
+  },
+  failed: {
+    path: "failed.webp",
+    frameCount: 8,
+    durationMs: 1000,
+    loop: false,
+    holdMs: 3000
+  },
+  idle: {
+    path: "idle.webp",
+    frameCount: 6,
+    durationMs: 6000,
+    loop: true
+  },
+  jumping: {
+    path: "jumping.webp",
+    frameCount: 5,
+    durationMs: 1000,
+    loop: false
+  },
+  "moving-left": {
+    path: "moving-left.webp",
+    frameCount: 8,
+    durationMs: 900,
+    loop: true,
+    mirror: true
+  },
+  review: {
+    path: "review.webp",
+    frameCount: 6,
+    durationMs: 1400,
+    loop: true
+  },
+  running: {
+    path: "running.webp",
+    frameCount: 6,
+    durationMs: 1600,
+    loop: true
+  }
+};
+
+const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = IS_CUTEJ_BRAND
+  ? CUTEJ_DESKTOP_PET_STATES
+  : ZENMI_DESKTOP_PET_STATES;
+
+const ZENMI_DESKTOP_PET_SIGNATURE_ACTIONS: DesktopPetSignatureAction[] = [
   {
     id: "chant",
     label: "念经",
@@ -116,25 +187,29 @@ const DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS: DesktopPetSignatureAction[] = [
     ]
   }
 ];
+const DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS: DesktopPetSignatureAction[] = IS_CUTEJ_BRAND
+  ? []
+  : ZENMI_DESKTOP_PET_SIGNATURE_ACTIONS;
 
 export const DESKTOP_PET_APPEARANCE_OPTIONS = [
   {
     id: DEFAULT_DESKTOP_PET_APPEARANCE_ID,
-    displayName: "小禅",
-    description: "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
+    displayName: DEFAULT_DESKTOP_PET_DISPLAY_NAME,
+    description: DEFAULT_DESKTOP_PET_DESCRIPTION,
     assetBasePath: "./desktop-pet",
     preview: "idle.webp",
     previewUrl: "./desktop-pet/idle.webp",
     states: DEFAULT_DESKTOP_PET_STATES,
-    signature: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS
+    ...(DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS.length > 0 ? { signature: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS } : {})
   }
 ] as const;
 
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
 const USER_DESKTOP_PET_APPEARANCE_PATTERN = /^user:[a-z0-9][a-z0-9._-]{0,79}$/u;
-const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetSignatureAction[]> = {
-  [DEFAULT_DESKTOP_PET_APPEARANCE_ID]: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS
-};
+const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetSignatureAction[]> =
+  DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS.length > 0
+    ? { [DEFAULT_DESKTOP_PET_APPEARANCE_ID]: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS }
+    : {};
 
 export const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   awaiting: "awaiting.webp",

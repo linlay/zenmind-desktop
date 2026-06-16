@@ -1,0 +1,30 @@
+{
+  "pet_id": "cutej",
+  "pet_name": "小君",
+  "display_name": "小君",
+  "style_preset": "3d-toy",
+  "signature": null,
+  "visual_qa": "pass",
+  "notes": [
+    "Generated running-left independently rather than mirroring.",
+    "Repaired idle row for visible micro-motion.",
+    "Applied chroma cleanup and boundary trim; pure/near green residue is zero in final atlas."
+  ],
+  "outputs": {
+    "atlas_png": "/Users/linlay/Project/zenmind/zenmind-desktop/output/hatch-pet/cutej/final/spritesheet.png",
+    "atlas_webp": "/Users/linlay/Project/zenmind/zenmind-desktop/output/hatch-pet/cutej/final/spritesheet.webp",
+    "contact_sheet": "/Users/linlay/Project/zenmind/zenmind-desktop/output/hatch-pet/cutej/qa/contact-sheet.png",
+    "previews": "/Users/linlay/Project/zenmind/zenmind-desktop/output/hatch-pet/cutej/qa/previews"
+  },
+  "state_map": {
+    "idle": "idle",
+    "dragging": "running-right",
+    "moving-left": "running-left",
+    "jumping": "jumping",
+    "done": "jumping",
+    "failed": "failed",
+    "awaiting": "waiting",
+    "running": "running",
+    "review": "review"
+  }
+}
