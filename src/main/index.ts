@@ -524,7 +524,8 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
   runtimeRootExistedAtStartup
 });
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
-let startupEnvImportFailureMessage = "";
+const DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE = "首次安装需要导入 env.zip";
+let startupEnvImportFailureMessage: string | null = null;
 function initializeUserDataRootsAndSettings() {
   ensureDataRoot(app);
   applyDesktopInitBootstrap(app, mainProcessContext.platform);
@@ -2478,8 +2479,8 @@ if (gotSingleInstanceLock) {
 
     const startupRuntimeReady = await prepareStartupRuntimeEnvironment();
     if (!startupRuntimeReady.ok) {
-      startupEnvImportFailureMessage = startupRuntimeReady.message;
-      startupRestoreController.setEnvImportRequired(startupRuntimeReady.message);
+      startupEnvImportFailureMessage = startupRuntimeReady.message || DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE;
+      startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);
     }
 
     initializeUserDataRootsAndSettings();
@@ -2532,7 +2533,7 @@ if (gotSingleInstanceLock) {
 
 async function handleStartupPipeline() {
   try {
-    if (startupEnvImportFailureMessage) {
+    if (startupEnvImportFailureMessage !== null) {
       startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);
       notifyServicesChanged();
       return;
@@ -2585,7 +2586,7 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
     if (!importResult) {
       return {
         ok: false,
-        message: ""
+        message: DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE
       };
     }
 

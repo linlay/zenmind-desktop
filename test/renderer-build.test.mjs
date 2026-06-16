@@ -2336,6 +2336,11 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.equal(initializeUserDataCallIndex < createWindowCallIndex, true);
   assert.doesNotMatch(initializeUserDataBlock, /importBundledEnvZipToRuntime/);
   assert.doesNotMatch(initializeUserDataBlock, /applyDesktopInitSsoDefaults/);
+  assert.match(mainProcess, /const DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE = "首次安装需要导入 env\.zip";/);
+  assert.match(mainProcess, /let startupEnvImportFailureMessage: string \| null = null;/);
+  assert.match(mainProcess, /if \(startupEnvImportFailureMessage !== null\)/);
+  assert.doesNotMatch(mainProcess, /if \(startupEnvImportFailureMessage\)/);
+  assert.match(mainProcess, /message: DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE/);
   assert.match(mainProcess, /stopAllWebapps\(app\)/);
   assert.match(desktopActions, /"desktop\.webs\.webapps\.start"/);
   assert.match(desktopActionBridge, /case "desktop\.webs\.webapps\.restart"/);
