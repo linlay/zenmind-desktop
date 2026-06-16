@@ -3093,7 +3093,7 @@ export function AppSidebar({
         return "appearance";
       case "kanban":
         return "futures";
-      case "desktopPet":
+      case "assistant":
         return "assistant";
       case "market":
         return "market";
@@ -3101,8 +3101,6 @@ export function AppSidebar({
         return "control";
       case "navigation":
         return "sidebar-assistant-closed";
-      case "quickAssistant":
-        return "assistant";
       case "embeddedWebs":
         return "website";
       case "dataRoot":

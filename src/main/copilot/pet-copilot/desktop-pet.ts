@@ -22,6 +22,8 @@ import {
   DESKTOP_PET_DONE_FALLBACK_TEXT,
   DESKTOP_PET_APPEARANCE_OPTIONS,
   DESKTOP_PET_REQUIRED_STATE_KEYS,
+  DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES,
+  DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES,
   DESKTOP_PET_STATUS_HINT_TEXTS,
   applyDesktopPetActiveRunEvent,
   getDesktopPetSignatureActions,
@@ -492,7 +494,15 @@ function sanitizeDesktopPetSignatureActions(value: unknown): DesktopPetSignature
   return actions.length > 0 ? actions : undefined;
 }
 
-function sanitizeDesktopPetStateAsset(value: unknown): DesktopPetStateAsset | undefined {
+function isDesktopPetStandardFrameCount(frameCount: number) {
+  return frameCount >= DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES &&
+    frameCount <= DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES;
+}
+
+function sanitizeDesktopPetStateAsset(
+  value: unknown,
+  options: { requireStandardFrames?: boolean } = {}
+): DesktopPetStateAsset | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
@@ -505,6 +515,9 @@ function sanitizeDesktopPetStateAsset(value: unknown): DesktopPetStateAsset | un
   const durationMs = Math.max(0, Math.round(Number(candidate.durationMs) || 0));
   const holdMs = Math.max(0, Math.round(Number(candidate.holdMs) || 0));
   const alts = sanitizeDesktopPetSignatureActions(candidate.alts);
+  if (options.requireStandardFrames && (!isDesktopPetStandardFrameCount(frameCount) || durationMs <= 0)) {
+    return undefined;
+  }
   return {
     path,
     ...(frameCount > 1 ? { frameCount } : {}),
@@ -526,7 +539,7 @@ function sanitizeDesktopPetStates(value: unknown): DesktopPetStateAssets | undef
   }
   const states: DesktopPetStateAssets = {};
   for (const key of DESKTOP_PET_REQUIRED_STATE_KEYS) {
-    const asset = sanitizeDesktopPetStateAsset(rawStates[key]);
+    const asset = sanitizeDesktopPetStateAsset(rawStates[key], { requireStandardFrames: true });
     if (!asset) {
       return undefined;
     }

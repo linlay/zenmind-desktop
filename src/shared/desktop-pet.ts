@@ -25,20 +25,27 @@ export const DESKTOP_PET_STATUS_HINT_TEXTS: ReadonlySet<string> = new Set([
 
 export const DESKTOP_PET_REQUIRED_STATE_KEYS = [
   "idle",
+  "jumping",
+  "moving-left",
+  "dragging",
+  "done",
+  "failed",
   "running",
   "awaiting",
-  "done",
-  "error",
-  "hover",
-  "dragging",
-  "drag-moving"
+  "review"
 ] as const;
+
+export const DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES = 4;
+export const DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES = 8;
 
 const DESKTOP_PET_STATE_ASSET_KEY_SET: ReadonlySet<string> = new Set(DESKTOP_PET_REQUIRED_STATE_KEYS);
 
 const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = {
   awaiting: {
-    path: "awaiting.png"
+    path: "awaiting.webp",
+    frameCount: 4,
+    durationMs: 1200,
+    loop: true
   },
   done: {
     path: "done.webp",
@@ -47,33 +54,48 @@ const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = {
     loop: false,
     holdMs: 2500
   },
-  "drag-moving": {
-    path: "drag-moving.webp",
-    frameCount: 15,
+  dragging: {
+    path: "dragging.webp",
+    frameCount: 4,
+    durationMs: 900,
+    loop: true
+  },
+  failed: {
+    path: "failed.webp",
+    frameCount: 4,
+    durationMs: 1000,
+    loop: false,
+    holdMs: 3000
+  },
+  idle: {
+    path: "idle.webp",
+    frameCount: 4,
+    durationMs: 6000,
+    loop: true
+  },
+  jumping: {
+    path: "jumping.webp",
+    frameCount: 4,
+    durationMs: 1000,
+    loop: false
+  },
+  "moving-left": {
+    path: "moving-left.webp",
+    frameCount: 8,
     durationMs: 900,
     loop: true,
     mirror: true
   },
-  dragging: {
-    path: "dragging.png"
-  },
-  error: {
-    path: "error.png",
-    holdMs: 3000
-  },
-  hover: {
-    path: "hover.png"
-  },
-  idle: {
-    path: "idle.webp",
-    frameCount: 3,
-    durationMs: 6000,
+  review: {
+    path: "review.webp",
+    frameCount: 4,
+    durationMs: 1400,
     loop: true
   },
   running: {
     path: "running.webp",
-    frameCount: 12,
-    durationMs: 1800,
+    frameCount: 8,
+    durationMs: 1600,
     loop: true
   }
 };
@@ -114,15 +136,19 @@ const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetS
 };
 
 export const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
-  awaiting: "awaiting.png",
+  awaiting: "awaiting.webp",
   done: "done.webp",
-  "drag-moving": "drag-moving.webp",
-  "dragging-moving": "drag-moving.webp",
-  dragging: "dragging.png",
-  error: "error.png",
-  hover: "hover.png",
+  "drag-moving": "moving-left.webp",
+  "dragging-moving": "moving-left.webp",
+  dragging: "dragging.webp",
+  error: "failed.webp",
+  failed: "failed.webp",
+  hover: "idle.webp",
   idle: "idle.webp",
+  jumping: "jumping.webp",
   message: "done.webp",
+  "moving-left": "moving-left.webp",
+  review: "review.webp",
   running: "running.webp",
   thinking: "running.webp",
   unread: "done.webp"
@@ -198,11 +224,20 @@ export function resolveDesktopPetSignatureActions(
 
 export function normalizeDesktopPetStateAssetKey(value: unknown) {
   const normalized = typeof value === "string" ? value.trim() : "";
-  if (normalized === "dragging-moving") {
-    return "drag-moving";
+  if (normalized === "drag-moving" || normalized === "dragging-moving") {
+    return "moving-left";
+  }
+  if (normalized === "error") {
+    return "failed";
   }
   if (normalized === "thinking") {
     return "running";
+  }
+  if (normalized === "waiting") {
+    return "awaiting";
+  }
+  if (normalized === "hover") {
+    return "idle";
   }
   if (normalized === "message" || normalized === "unread") {
     return "done";

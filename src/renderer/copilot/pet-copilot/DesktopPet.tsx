@@ -10,6 +10,7 @@ import {
 } from "react";
 import type {
   DesktopPetAppearanceOption,
+  DesktopPetPreviewPanel,
   DesktopPetPreviewItemStatus,
   DesktopPetSignatureAction,
   DesktopPetSignatureTrigger,
@@ -159,11 +160,20 @@ type ActiveDesktopPetSignature = {
   assetPath: string;
 };
 
+type DesktopPetStandardIdleAction = "jumping";
+
+type ActiveDesktopPetStandardAction = {
+  actionId: DesktopPetStandardIdleAction;
+  durationMs: number;
+};
+
 const DESKTOP_PET_DONE_VISUAL_HOLD_MS = 2500;
 const DESKTOP_PET_ERROR_VISUAL_HOLD_MS = 3000;
 const DESKTOP_PET_IDLE_RANDOM_DELAY_MS = 25000;
 const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
 const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
+const DESKTOP_PET_STANDARD_IDLE_ACTION_ID: DesktopPetStandardIdleAction = "jumping";
+const DESKTOP_PET_REVIEW_TEXT_PATTERN = /review|检查|校验|验证|整理|复核|审阅/iu;
 
 function rectContainsPoint(rect: DOMRect, x: number, y: number, margin = 0) {
   return x >= rect.left - margin &&
@@ -190,6 +200,24 @@ function pointIntersectsVisiblePetArea(x: number, y: number) {
     pointIntersectsElement(".desktop-pet-speech", x, y) ||
     pointIntersectsElement(".desktop-pet-task-panel", x, y) ||
     pointIntersectsElement(".desktop-pet-preview", x, y);
+}
+
+function shouldShowReviewAction(previewPanel: DesktopPetPreviewPanel | null) {
+  if (!previewPanel || previewPanel.status !== "running" || previewPanel.items.length === 0) {
+    return false;
+  }
+  const latestItem = previewPanel.items[previewPanel.items.length - 1];
+  if (latestItem.kind === "plan" || latestItem.kind === "artifact") {
+    return true;
+  }
+  if (latestItem.kind !== "status") {
+    return false;
+  }
+  return DESKTOP_PET_REVIEW_TEXT_PATTERN.test([
+    latestItem.title,
+    latestItem.text,
+    latestItem.detailText ?? ""
+  ].join(" "));
 }
 
 function getDesktopPetSpriteAssetBasePath(appearanceId: string) {
@@ -263,18 +291,22 @@ export function DesktopPet() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragDirection, setDragDirection] = useState<DesktopPetDragDirection>(null);
   const [activeSignature, setActiveSignature] = useState<ActiveDesktopPetSignature | null>(null);
+  const [activeStandardAction, setActiveStandardAction] = useState<ActiveDesktopPetStandardAction | null>(null);
   const [terminalVisualStatus, setTerminalVisualStatus] = useState<"done" | "error" | null>(null);
   const dragStateRef = useRef<DesktopPetDragState | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const signatureTimeoutRef = useRef<number | null>(null);
+  const standardActionTimeoutRef = useRef<number | null>(null);
   const idleRandomTimeoutRef = useRef<number | null>(null);
   const terminalVisualTimeoutRef = useRef<number | null>(null);
   const appearanceIdRef = useRef(DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   const draggingRef = useRef(false);
   const mouseInteractiveRef = useRef(true);
   const activeSignatureRef = useRef<ActiveDesktopPetSignature | null>(activeSignature);
+  const activeStandardActionRef = useRef<ActiveDesktopPetStandardAction | null>(activeStandardAction);
   const petStateRef = useRef<DesktopPetState>(petState);
   activeSignatureRef.current = activeSignature;
+  activeStandardActionRef.current = activeStandardAction;
   petStateRef.current = petState;
 
   function clearDragCleanup() {
@@ -310,6 +342,13 @@ export function DesktopPet() {
     }
   }
 
+  function clearStandardActionTimer() {
+    if (standardActionTimeoutRef.current !== null) {
+      window.clearTimeout(standardActionTimeoutRef.current);
+      standardActionTimeoutRef.current = null;
+    }
+  }
+
   function clearIdleRandomTimer() {
     if (idleRandomTimeoutRef.current !== null) {
       window.clearTimeout(idleRandomTimeoutRef.current);
@@ -327,6 +366,11 @@ export function DesktopPet() {
   function stopSignature() {
     clearSignatureTimer();
     setActiveSignature(null);
+  }
+
+  function stopStandardAction() {
+    clearStandardActionTimer();
+    setActiveStandardAction(null);
   }
 
   function setMouseInteractive(interactive: boolean) {
@@ -383,6 +427,29 @@ export function DesktopPet() {
     }, variant.durationMs);
   }
 
+  function startStandardIdleAction(actionId: DesktopPetStandardIdleAction = DESKTOP_PET_STANDARD_IDLE_ACTION_ID) {
+    if (draggingRef.current || activeSignatureRef.current) {
+      return;
+    }
+    const currentPetState = petStateRef.current;
+    const currentStatus = normalizePetStatus(currentPetState.status);
+    if (currentStatus !== "idle") {
+      return;
+    }
+    const visual = resolveDesktopPetVisualAsset(currentPetState, appearanceIdRef.current, actionId);
+    const durationMs = Math.max(100, Math.round(Number(visual.asset?.durationMs) || 1000));
+    clearStandardActionTimer();
+    clearIdleRandomTimer();
+    setActiveStandardAction({
+      actionId,
+      durationMs
+    });
+    standardActionTimeoutRef.current = window.setTimeout(() => {
+      standardActionTimeoutRef.current = null;
+      setActiveStandardAction(null);
+    }, durationMs);
+  }
+
   function shouldInterruptSignature(nextState: DesktopPetState) {
     const currentSignature = activeSignatureRef.current;
     const nextStatus = normalizePetStatus(nextState.status);
@@ -394,6 +461,16 @@ export function DesktopPet() {
         nextMessagePreview.length > 0 ||
         Math.max(0, Math.round(Number(nextState.unreadCount) || 0)) > 0
       ));
+  }
+
+  function shouldInterruptStandardAction(nextState: DesktopPetState) {
+    const nextStatus = normalizePetStatus(nextState.status);
+    const nextMessagePreview = typeof nextState.messagePreview === "string" ? nextState.messagePreview.trim() : "";
+    return nextStatus !== "idle" ||
+      Math.max(0, Math.round(Number(nextState.runningTaskCount) || 0)) > 0 ||
+      (Array.isArray(nextState.activeTasks) && nextState.activeTasks.length > 0) ||
+      nextMessagePreview.length > 0 ||
+      Math.max(0, Math.round(Number(nextState.unreadCount) || 0)) > 0;
   }
 
   function beginDrag(point: { x: number; y: number }) {
@@ -421,11 +498,17 @@ export function DesktopPet() {
       if (!nextState.visible || shouldInterruptSignature(nextState)) {
         stopSignature();
       }
+      if (!nextState.visible || shouldInterruptStandardAction(nextState)) {
+        stopStandardAction();
+      }
     }).catch(() => undefined);
     const dispose = window.electronAPI.desktopPet.onStateChanged((nextState) => {
       setPetState(nextState);
       if (!nextState.visible || shouldInterruptSignature(nextState)) {
         stopSignature();
+      }
+      if (!nextState.visible || shouldInterruptStandardAction(nextState)) {
+        stopStandardAction();
       }
     });
     const disposeSignatureRequested = typeof window.electronAPI.desktopPet.onSignatureRequested === "function"
@@ -470,6 +553,7 @@ export function DesktopPet() {
       dispose();
       disposeSignatureRequested();
       clearSignatureTimer();
+      clearStandardActionTimer();
       clearIdleRandomTimer();
       clearTerminalVisualTimer();
       resetLocalDragState();
@@ -504,7 +588,8 @@ export function DesktopPet() {
   const showTaskPanel = !isDragging && activeTasks.length > 0;
   const showPreviewPanel = !isDragging && !showTaskPanel && Boolean(previewPanel);
   const hasMessageReaction = displayStatus === "idle" && !isDragging && (messagePreview.length > 0 || unreadCount > 0);
-  const canShowHoverReaction = displayStatus === "idle" && !isDragging && !hasMessageReaction;
+  const canShowHoverReaction = displayStatus === "idle" && !isDragging && !hasMessageReaction && !activeStandardAction;
+  const isReviewing = displayStatus === "running" && shouldShowReviewAction(previewPanel);
   const appearanceId = useMemo(
     () => normalizeDesktopPetAppearanceId(petState.appearanceId),
     [petState.appearanceId]
@@ -514,8 +599,10 @@ export function DesktopPet() {
     displayStatus,
     isDragging,
     dragDirection,
+    activeStandardAction: activeStandardAction?.actionId ?? null,
     hasActiveSignature: Boolean(activeSignature),
     activeSignatureTrigger: activeSignature?.trigger ?? null,
+    isReviewing,
     canShowHoverReaction,
     isHovering,
     isKeyboardFocused
@@ -564,6 +651,7 @@ export function DesktopPet() {
     if (isDragging) {
       setMouseInteractive(true);
       stopSignature();
+      stopStandardAction();
     }
   }, [isDragging]);
   useEffect(() => {
@@ -572,22 +660,27 @@ export function DesktopPet() {
       displayStatus !== "idle" ||
       isDragging ||
       activeSignature ||
+      activeStandardAction ||
       hasMessageReaction ||
       showTaskPanel ||
-      showPreviewPanel ||
-      !signature.some((action) => action.trigger.includes("idle-random"))
+      showPreviewPanel
     ) {
       return undefined;
     }
     idleRandomTimeoutRef.current = window.setTimeout(() => {
       idleRandomTimeoutRef.current = null;
-      startSignature(undefined, "idle-random");
+      if (signature.some((action) => action.trigger.includes("idle-random")) && Math.random() < 0.2) {
+        startSignature(undefined, "idle-random");
+        return;
+      }
+      startStandardIdleAction();
     }, DESKTOP_PET_IDLE_RANDOM_DELAY_MS);
     return clearIdleRandomTimer;
   }, [
     displayStatus,
     isDragging,
     activeSignature,
+    activeStandardAction,
     hasMessageReaction,
     showTaskPanel,
     showPreviewPanel,
@@ -777,7 +870,7 @@ export function DesktopPet() {
         showBubble ? "has-bubble" : "",
         petState.edgeDock === "top" ? "is-edge-dock-top" : "",
         isDragging ? "is-dragging" : "",
-        visualStatus === "drag-moving" && dragDirection === "right" && (visualAsset.asset?.mirror ?? true) ? "is-drag-mirror" : ""
+        visualStatus === "moving-left" && dragDirection === "right" && (visualAsset.asset?.mirror ?? true) ? "is-drag-mirror" : ""
       ].filter(Boolean).join(" ")}
       style={rootStyle}
       aria-label={`${PRODUCT_NAME} 桌面宠物`}

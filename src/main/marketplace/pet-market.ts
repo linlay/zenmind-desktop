@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
-import { DEFAULT_DESKTOP_PET_APPEARANCE_ID, DESKTOP_PET_REQUIRED_STATE_KEYS } from "../../shared/desktop-pet";
+import {
+  DEFAULT_DESKTOP_PET_APPEARANCE_ID,
+  DESKTOP_PET_REQUIRED_STATE_KEYS,
+  DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES,
+  DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES
+} from "../../shared/desktop-pet";
 import { extractArchiveToDir, listArchiveEntriesAsync } from "../archive-utils";
 import {
   listUserDesktopPetAppearanceOptions,
@@ -133,7 +138,7 @@ function hasPetBaseAssets(entries: Set<string>) {
     if (entry.endsWith("/pet.json") || entry === "pet.json") {
       hasManifest = true;
     }
-    if (entry.endsWith("/idle.png") || entry === "idle.png") {
+    if (entry.endsWith("/idle.webp") || entry === "idle.webp") {
       hasIdleImage = true;
     }
   }
@@ -186,6 +191,24 @@ function assertPetSignatureActions(petRoot: string, value: unknown, optional = f
   }
 }
 
+function assertPetStandardActionAsset(petRoot: string, state: unknown) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    throw new Error(t("market.pet.invalidPackage"));
+  }
+  const stateRecord = state as Record<string, unknown>;
+  const frameCount = Math.max(1, Math.round(Number(stateRecord.frameCount) || 0));
+  const durationMs = Math.max(0, Math.round(Number(stateRecord.durationMs) || 0));
+  if (
+    frameCount < DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES ||
+    frameCount > DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES ||
+    durationMs <= 0
+  ) {
+    throw new Error(t("market.pet.invalidPackage"));
+  }
+  assertPetAssetExists(petRoot, stateRecord.path);
+  assertPetSignatureActions(petRoot, stateRecord.alts, true);
+}
+
 function assertStrictPetManifest(petRoot: string, manifest: Record<string, unknown>) {
   if ("previewAssetPath" in manifest || "signatureActions" in manifest || "capabilities" in manifest) {
     throw new Error(t("market.pet.invalidPackage"));
@@ -200,13 +223,7 @@ function assertStrictPetManifest(petRoot: string, manifest: Record<string, unkno
     throw new Error(t("market.pet.invalidPackage"));
   }
   for (const key of DESKTOP_PET_REQUIRED_STATE_KEYS) {
-    const state = states[key];
-    if (!state || typeof state !== "object" || Array.isArray(state)) {
-      throw new Error(t("market.pet.invalidPackage"));
-    }
-    const stateRecord = state as Record<string, unknown>;
-    assertPetAssetExists(petRoot, stateRecord.path);
-    assertPetSignatureActions(petRoot, stateRecord.alts, true);
+    assertPetStandardActionAsset(petRoot, states[key]);
   }
   assertPetSignatureActions(petRoot, manifest.signature, true);
 }

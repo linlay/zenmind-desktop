@@ -154,7 +154,7 @@ const SETTINGS_ACTION_PATCH_FIELDS = [
 ] as const;
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "navigation",
-  "quickAssistant",
+  "assistant",
   "embeddedWebs"
 ];
 
@@ -661,7 +661,7 @@ export function SettingsPage({
   const shouldReadAssistantSettings = Boolean(
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
   );
-  const shouldReadDesktopPetState = desktopPetSupported && activeSection === "desktopPet";
+  const shouldReadDesktopPetState = desktopPetSupported && activeSection === "assistant";
   const controlProjectOptions = useMemo(
     () => sortTaskBoardProjectOptions(controlCloudProjects),
     [controlCloudProjects]
@@ -957,12 +957,12 @@ export function SettingsPage({
           }
           desktopPetStateLoadedRef.current = true;
           setDesktopPetState(state);
-          setReadErrorSections(["desktopPet"], "");
+          setReadErrorSections(["assistant"], "");
         })
         .catch((reason) => {
           desktopPetStateLoadedRef.current = false;
           if (!cancelled) {
-            setReadErrorSections(["desktopPet"], reason instanceof Error ? reason.message : String(reason));
+            setReadErrorSections(["assistant"], reason instanceof Error ? reason.message : String(reason));
           }
         });
     }
@@ -971,7 +971,7 @@ export function SettingsPage({
       if (!cancelled) {
         desktopPetStateLoadedRef.current = true;
         setDesktopPetState(state);
-        setReadErrorSections(["desktopPet"], "");
+        setReadErrorSections(["assistant"], "");
       }
     });
 
@@ -1360,9 +1360,9 @@ export function SettingsPage({
             setAssistantSettings(nextSettings);
             setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
             onAssistantSettingsChange?.(nextSettings);
-            setReadErrorSections(["quickAssistant"], "");
+            setReadErrorSections(["assistant"], "");
             showSectionNotice(
-              "quickAssistant",
+              "assistant",
               nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
               "success"
             );
@@ -1461,9 +1461,9 @@ export function SettingsPage({
             setAssistantSettings(nextSettings);
             setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
             onAssistantSettingsChange?.(nextSettings);
-            setReadErrorSections(["quickAssistant"], "");
+            setReadErrorSections(["assistant"], "");
             showSectionNotice(
-              "quickAssistant",
+              "assistant",
               nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
               "success"
             );
@@ -1739,7 +1739,7 @@ export function SettingsPage({
     if (nextEnabled) {
       const appearanceAvailable = desktopPetAppearanceOptions.some((appearance) => appearance.id === currentDesktopPetAppearanceId);
       if (!desktopPetSupported || !desktopPetState?.supported || !appearanceAvailable) {
-        showSectionNotice("desktopPet", t("settings.desktopPet.enableUnavailable"), "error");
+        showSectionNotice("assistant", t("settings.desktopPet.enableUnavailable"), "error");
         return;
       }
     }
@@ -1749,10 +1749,10 @@ export function SettingsPage({
         enabled: nextEnabled
       });
       setDesktopPetState(nextState);
-      setReadErrorSections(["desktopPet"], "");
-      showSectionNotice("desktopPet", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
+      setReadErrorSections(["assistant"], "");
+      showSectionNotice("assistant", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
     } catch (reason) {
-      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetPending(false);
     }
@@ -1772,20 +1772,20 @@ export function SettingsPage({
         appearanceId
       });
       setDesktopPetState(nextState);
-      setReadErrorSections(["desktopPet"], "");
+      setReadErrorSections(["assistant"], "");
       if (nextState.appearanceId === appearanceId) {
         showSectionNotice(
-          "desktopPet",
+          "assistant",
           t("settings.desktopPet.noticeAppearanceChanged", {
             name: getDesktopPetAppearanceLabel(appearanceId, selectedAppearance?.displayName ?? appearanceId, t)
           }),
           "success"
         );
       } else {
-        showSectionNotice("desktopPet", t("settings.desktopPet.noticeAppearanceFailed"), "error");
+        showSectionNotice("assistant", t("settings.desktopPet.noticeAppearanceFailed"), "error");
       }
     } catch (reason) {
-      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetAppearancePending("");
     }
@@ -1835,15 +1835,15 @@ export function SettingsPage({
       setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
       setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
       onAssistantSettingsChange?.(nextSettings);
-      setReadErrorSections(["quickAssistant"], "");
+      setReadErrorSections(["assistant"], "");
       showSectionNotice(
-        "quickAssistant",
+        "assistant",
         nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
         "success"
       );
     } catch (reason) {
       setQuickAssistantEnabled(previousEnabled);
-      showSectionNotice("quickAssistant", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setQuickAssistantPending(false);
     }
@@ -1867,15 +1867,15 @@ export function SettingsPage({
       setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
       setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey);
       onAssistantSettingsChange?.(nextSettings);
-      setReadErrorSections(["quickAssistant"], "");
+      setReadErrorSections(["assistant"], "");
       showSectionNotice(
-        "quickAssistant",
+        "assistant",
         t("settings.quickAssistant.noticeAgentChanged", { name: nextAgent?.displayName ?? nextSettings.quickAssistantAgentKey }),
         "success"
       );
     } catch (reason) {
       setQuickAssistantAgentKey(previousAgentKey);
-      showSectionNotice("quickAssistant", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setQuickAssistantAgentPending(false);
     }
@@ -2157,7 +2157,7 @@ export function SettingsPage({
 
   function renderSectionHeaderAction() {
     switch (activeSection) {
-      case "desktopPet":
+      case "assistant":
         return desktopPetSupported ? renderHeaderSwitch({
           enabled: desktopPetEnabled,
           disabled: desktopPetPending || !desktopPetState,
@@ -2258,52 +2258,108 @@ export function SettingsPage({
             </div>
           </>
         );
-      case "desktopPet":
-        return desktopPetSupported ? (
-          <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
-            <div
-              className={desktopPetEnabled
-                ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
-                : "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list is-disabled"}
-              aria-label={t("settings.desktopPet.appearance")}
-              aria-disabled={!desktopPetEnabled}
-            >
-              {desktopPetAppearanceOptions.map((appearance) => {
-                const selected = appearance.id === currentDesktopPetAppearanceId;
-                const pending = desktopPetAppearancePending === appearance.id;
-                const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
-                const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
-                let actionLabel = t("settings.desktopPet.select");
-                if (selected) {
-                  actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
-                }
-                if (pending) {
-                  actionLabel = t("settings.desktopPet.switching");
-                }
-                return (
-                  <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
-                    <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                      <img src={appearance.previewUrl} alt="" />
-                    </span>
-                    <span className="desktop-pet-appearance-copy">
-                      <strong>{appearanceLabel}</strong>
-                      <small>{appearanceDescription}</small>
-                    </span>
-                    <button
-                      type="button"
-                      className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
-                      aria-pressed={selected}
-                      disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
-                      onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
+      case "assistant":
+        return (
+          <>
+            {desktopPetSupported ? (
+              <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
+                <div
+                  className={desktopPetEnabled
+                    ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
+                    : "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list is-disabled"}
+                  aria-label={t("settings.desktopPet.appearance")}
+                  aria-disabled={!desktopPetEnabled}
+                >
+                  {desktopPetAppearanceOptions.map((appearance) => {
+                    const selected = appearance.id === currentDesktopPetAppearanceId;
+                    const pending = desktopPetAppearancePending === appearance.id;
+                    const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
+                    const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
+                    let actionLabel = t("settings.desktopPet.select");
+                    if (selected) {
+                      actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
+                    }
+                    if (pending) {
+                      actionLabel = t("settings.desktopPet.switching");
+                    }
+                    return (
+                      <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
+                        <span className="desktop-pet-appearance-preview" aria-hidden="true">
+                          <img src={appearance.previewUrl} alt="" />
+                        </span>
+                        <span className="desktop-pet-appearance-copy">
+                          <strong>{appearanceLabel}</strong>
+                          <small>{appearanceDescription}</small>
+                        </span>
+                        <button
+                          type="button"
+                          className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
+                          aria-pressed={selected}
+                          disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
+                          onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
+                        >
+                          {actionLabel}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            <div className="settings-item-card desktop-helper-settings-card" aria-label={t("settings.assistant.panelAria")}>
+              <div className="settings-item-header">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.quickAssistant.label")}</strong>
+                  <span>
+                    {quickAssistantEnabled
+                      ? t("settings.quickAssistant.statusEnabled", { name: getAgentLabel(quickAssistantAgentKey) })
+                      : t("settings.quickAssistant.statusDisabled")}
+                  </span>
+                  {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
+                    <em>{t("settings.quickAssistant.defaultUnavailable")}</em>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
+                  role="switch"
+                  aria-checked={quickAssistantEnabled}
+                  aria-label={t("settings.quickAssistant.label")}
+                  disabled={quickAssistantPending}
+                  onClick={() => void handleToggleQuickAssistantEnabled()}
+                >
+                  <span aria-hidden="true" />
+                </button>
+              </div>
+              <div className="settings-item-form desktop-pet-agent-form">
+                <label className="desktop-pet-agent-field">
+                  <span>{t("settings.quickAssistant.defaultAgent")}</span>
+                  <span className="desktop-pet-agent-select-wrap">
+                    <select
+                      value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
+                      onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
+                      disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
+                      aria-label={t("settings.quickAssistant.defaultAgent")}
                     >
-                      {actionLabel}
-                    </button>
-                  </div>
-                );
-              })}
+                      <option value="">
+                        {assistantAgentOptions.length === 0
+                          ? t("settings.navigation.agentsLoading")
+                          : isKnownAssistantAgent(quickAssistantAgentKey)
+                            ? t("settings.navigation.selectAgent")
+                            : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })}
+                      </option>
+                      {assistantAgentOptions.map((agent) => (
+                        <option value={agent.agentKey} key={agent.agentKey}>
+                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </label>
+              </div>
             </div>
-          </div>
-        ) : null;
+          </>
+        );
       case "kanban":
         return (
           <Card
@@ -2738,61 +2794,7 @@ export function SettingsPage({
             </div>
           );
       }
-      case "quickAssistant":
-        return (
-          <div className="settings-item-card desktop-helper-settings-card" aria-label={t("settings.quickAssistant.panelAria")}>
-            <div className="settings-item-header">
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.quickAssistant.label")}</strong>
-                <span>
-                  {quickAssistantEnabled
-                    ? t("settings.quickAssistant.statusEnabled", { name: getAgentLabel(quickAssistantAgentKey) })
-                    : t("settings.quickAssistant.statusDisabled")}
-                </span>
-                {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
-                  <em>{t("settings.quickAssistant.defaultUnavailable")}</em>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={quickAssistantEnabled}
-                aria-label={t("settings.quickAssistant.label")}
-                disabled={quickAssistantPending}
-                onClick={() => void handleToggleQuickAssistantEnabled()}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
-            <div className="settings-item-form desktop-pet-agent-form">
-              <label className="desktop-pet-agent-field">
-                <span>{t("settings.quickAssistant.defaultAgent")}</span>
-                <span className="desktop-pet-agent-select-wrap">
-                  <select
-                    value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
-                    onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
-                    disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
-                    aria-label={t("settings.quickAssistant.defaultAgent")}
-                  >
-                    <option value="">
-                      {assistantAgentOptions.length === 0
-                        ? t("settings.navigation.agentsLoading")
-                        : isKnownAssistantAgent(quickAssistantAgentKey)
-                          ? t("settings.navigation.selectAgent")
-                          : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })}
-                    </option>
-                    {assistantAgentOptions.map((agent) => (
-                      <option value={agent.agentKey} key={agent.agentKey}>
-                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </span>
-              </label>
-            </div>
-          </div>
-        );
+
       case "embeddedWebs":
         return (
           <div className="settings-item-card website-card">

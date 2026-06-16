@@ -24,16 +24,19 @@ const size = {
   height: 360
 };
 
-const classicVisualVariants = [
-  "idle",
-  "hover",
-  "dragging",
-  "drag-moving",
-  "awaiting",
-  "running",
-  "done",
-  "error"
+const standardActionRows = [
+  { state: "idle", frameCount: 4 },
+  { state: "jumping", frameCount: 4 },
+  { state: "moving-left", frameCount: 8 },
+  { state: "dragging", frameCount: 4 },
+  { state: "done", frameCount: 6 },
+  { state: "failed", frameCount: 4 },
+  { state: "running", frameCount: 8 },
+  { state: "awaiting", frameCount: 4 },
+  { state: "review", frameCount: 4 }
 ];
+
+const classicVisualVariants = standardActionRows.map((row) => row.state);
 
 const communityAppearances = [
   {
@@ -73,14 +76,16 @@ const communityAtlas = {
   cellHeight: 208
 };
 
-const dragMovingSprite = {
-  columns: 15,
+const standardActionFrameCounts = new Map(standardActionRows.map((row) => [row.state, row.frameCount]));
+
+const movingLeftSprite = {
+  columns: 8,
   frameWidth: 192,
   frameHeight: 208
 };
 
 const optionalCommunityAssetNames = [
-  "drag-moving.webp",
+  "moving-left.webp",
   "signature/dance.webp"
 ];
 
@@ -101,15 +106,15 @@ const marketPetDefinitions = [
     id: "xiao",
     displayName: "小肖",
     description: "黑发西装形象，带着花束和金色奖杯。",
-    tags: ["desktop-pet", "drag-moving"],
-    animatedDragMoving: true
+    tags: ["desktop-pet", "moving-left"],
+    animatedMovingLeft: true
   },
   {
     id: "pony",
     displayName: "小凌",
     description: "侧马尾 Q 版形象，带着爱心和麦克风。",
-    tags: ["desktop-pet", "drag-moving", "signature"],
-    animatedDragMoving: true,
+    tags: ["desktop-pet", "moving-left", "signature"],
+    animatedMovingLeft: true,
     signature: [
       {
         id: "dance",
@@ -132,72 +137,99 @@ const marketPetDefinitionById = new Map(marketPetDefinitions.map((definition) =>
 
 const marketPetStaticStates = {
   awaiting: {
-    path: "awaiting.png"
+    path: "awaiting.webp",
+    frameCount: 4,
+    durationMs: 1200,
+    loop: true
   },
   done: {
-    path: "done.png",
+    path: "done.webp",
+    frameCount: 6,
+    durationMs: 1200,
+    loop: false,
     holdMs: 2500
   },
-  "drag-moving": {
-    path: "drag-moving.png",
-    mirror: true
-  },
   dragging: {
-    path: "dragging.png"
+    path: "dragging.webp",
+    frameCount: 4,
+    durationMs: 900,
+    loop: true
   },
-  error: {
-    path: "error.png",
+  failed: {
+    path: "failed.webp",
+    frameCount: 4,
+    durationMs: 1000,
+    loop: false,
     holdMs: 3000
   },
-  hover: {
-    path: "hover.png"
-  },
   idle: {
-    path: "idle.png"
+    path: "idle.webp",
+    frameCount: 4,
+    durationMs: 6000,
+    loop: true
+  },
+  jumping: {
+    path: "jumping.webp",
+    frameCount: 4,
+    durationMs: 1000,
+    loop: false
+  },
+  "moving-left": {
+    path: "moving-left.webp",
+    frameCount: 8,
+    durationMs: 900,
+    loop: true,
+    mirror: true
+  },
+  review: {
+    path: "review.webp",
+    frameCount: 4,
+    durationMs: 1400,
+    loop: true
   },
   running: {
-    path: "running.png"
+    path: "running.webp",
+    frameCount: 8,
+    durationMs: 1600,
+    loop: true
   }
 };
 
 const defaultSourceAssetNames = [
-  "awaiting.png",
-  "done.png",
+  "awaiting.webp",
   "done.webp",
-  "drag-moving.png",
-  "drag-moving.webp",
-  "dragging.png",
-  "error.png",
-  "hover.png",
-  "idle.png",
+  "dragging.webp",
+  "failed.webp",
   "idle.webp",
+  "jumping.webp",
+  "moving-left.webp",
   "pet.json",
-  "running-alt.png",
-  "running.png",
+  "review.webp",
   "running.webp",
-  "signature/chant.webp",
-  "spritesheet.webp"
+  "signature/chant.webp"
 ];
 
 const communityFrameSelections = {
   awaiting: { row: 8, column: 2 },
   dragging: { row: 4, column: 2 },
-  "drag-moving": { row: 1, column: 2 },
   done: { row: 4, column: 3 },
-  error: { row: 5, column: 5 },
-  hover: { row: 3, column: 1 },
+  failed: { row: 5, column: 5 },
   idle: { row: 0, column: 0 },
-  running: { row: 8, column: 2 }
+  jumping: { row: 4, column: 1 },
+  "moving-left": { row: 2, column: 2 },
+  review: { row: 8, column: 2 },
+  running: { row: 7, column: 2 }
 };
 
 const xiaoFrameSelections = {
   awaiting: { row: 8, column: 2 },
   dragging: { row: 7, column: 2 },
-  "drag-moving": { row: 7, column: 2 },
   done: { row: 6, column: 4 },
-  error: { row: 5, column: 3 },
-  hover: { row: 6, column: 1 },
+  failed: { row: 5, column: 3 },
   idle: { row: 0, column: 0 },
+  jumping: { row: 4, column: 1 },
+  "moving-left": { row: 2, column: 2 },
+  review: { row: 6, column: 1 },
   running: { row: 1, column: 2 }
 };
 
@@ -250,6 +282,18 @@ function drawBackdrop(ctx) {
 }
 
 function resolveClassicExpressionVariant(variant) {
+  if (variant === "failed") {
+    return "error";
+  }
+  if (variant === "moving-left") {
+    return "dragging";
+  }
+  if (variant === "jumping") {
+    return "awaiting";
+  }
+  if (variant === "review") {
+    return "hover";
+  }
   return variant;
 }
 
@@ -706,7 +750,7 @@ function drawSpark(ctx) {
 }
 
 function renderPetVariant(variant) {
-  const resolvedVariant = variant === "drag-moving" ? "dragging" : variant;
+  const resolvedVariant = resolveClassicExpressionVariant(variant);
   const canvas = createCanvas(size.width, size.height);
   const ctx = canvas.getContext("2d");
   drawBackdrop(ctx);
@@ -1000,24 +1044,29 @@ function renderXiaoPetVariant(spritesheet, variant) {
   return renderCommunityPetVariant(spritesheet, variant, selection);
 }
 
-function renderXiaoDragMovingSprite(image) {
-  const canvas = createCanvas(dragMovingSprite.frameWidth * dragMovingSprite.columns, dragMovingSprite.frameHeight);
+function renderXiaoMovingLeftSprite(image) {
+  const sourceColumns = 15;
+  const canvas = createCanvas(movingLeftSprite.frameWidth * movingLeftSprite.columns, movingLeftSprite.frameHeight);
   const ctx = canvas.getContext("2d");
 
-  for (let frame = 0; frame < dragMovingSprite.columns; frame += 1) {
-    const frameWidth = image.width / dragMovingSprite.columns;
+  for (let frame = 0; frame < movingLeftSprite.columns; frame += 1) {
+    const sourceFrame = Math.min(
+      sourceColumns - 1,
+      Math.round((frame / Math.max(1, movingLeftSprite.columns - 1)) * (sourceColumns - 1))
+    );
+    const frameWidth = image.width / sourceColumns;
     const sourceWidth = frameWidth * 1.52;
-    const centerX = (frame + 0.5) * frameWidth;
+    const centerX = (sourceFrame + 0.5) * frameWidth;
     const sx = Math.max(0, Math.round(centerX - sourceWidth / 2));
     const nextSx = Math.min(image.width, Math.round(centerX + sourceWidth / 2));
     const subjectCanvas = chromaKeyMagentaCell(image, sx, 0, nextSx - sx, image.height);
     drawSubjectInFrame(
       ctx,
       subjectCanvas,
-      frame * dragMovingSprite.frameWidth,
+      frame * movingLeftSprite.frameWidth,
       0,
-      dragMovingSprite.frameWidth,
-      dragMovingSprite.frameHeight
+      movingLeftSprite.frameWidth,
+      movingLeftSprite.frameHeight
     );
   }
 
@@ -1030,7 +1079,7 @@ async function renderScriptedAppearance(appearance) {
   }
   const sourceImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "source-chroma.png"));
   const spritesheetImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "spritesheet-source.png"));
-  const dragMovingImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "drag-moving-source.png"));
+  const movingLeftImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "drag-moving-source.png"));
   const subjectCanvas = chromaKeySourceImage(sourceImage);
   const spritesheet = renderXiaoSpritesheet(spritesheetImage);
   const buffers = new Map();
@@ -1039,11 +1088,11 @@ async function renderScriptedAppearance(appearance) {
     buffers.set(variant, crispSourceBuffer);
   }
   buffers.set("dragging", drawXiaoSourceVariant(subjectCanvas, { rotate: -0.04 }));
-  buffers.set("drag-moving", drawXiaoSourceVariant(subjectCanvas, { offsetX: -8, rotate: -0.05 }));
+  buffers.set("moving-left", drawXiaoSourceVariant(subjectCanvas, { offsetX: -8, rotate: -0.05 }));
   return {
     buffers,
     spritesheetBuffer: spritesheet.toBuffer("image/webp"),
-    dragMovingSpriteBuffer: renderXiaoDragMovingSprite(dragMovingImage)
+    movingLeftSpriteBuffer: renderXiaoMovingLeftSprite(movingLeftImage)
   };
 }
 
@@ -1061,10 +1110,71 @@ async function renderCommunityAppearance(appearance) {
   return buffers;
 }
 
+async function renderAnimatedVariantStrip(buffer, variant) {
+  const image = await loadImage(buffer);
+  const frameCount = standardActionFrameCounts.get(variant) ?? 4;
+  const canvas = createCanvas(communityAtlas.cellWidth * frameCount, communityAtlas.cellHeight);
+  const ctx = canvas.getContext("2d");
+  const motions = variant === "jumping"
+    ? [0, -14, -5, 0, -10, -2, 0, -4]
+    : variant === "failed"
+      ? [0, -4, 4, -2, 2, -3, 3, 0]
+      : variant === "dragging" || variant === "moving-left"
+        ? [-3, -1, 2, 0, -2, 1, 3, 0]
+        : [0, -2, -1, 0, -1, -2, 0, -1];
+  const targetScale = Math.min(communityAtlas.cellWidth / image.width, communityAtlas.cellHeight / image.height);
+  const targetWidth = Math.round(image.width * targetScale);
+  const targetHeight = Math.round(image.height * targetScale);
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const offset = motions[frame] ?? 0;
+    const frameX = frame * communityAtlas.cellWidth;
+    const targetX = frameX + Math.round((communityAtlas.cellWidth - targetWidth) / 2) + (variant === "failed" ? offset : 0);
+    const targetY = Math.round((communityAtlas.cellHeight - targetHeight) / 2) + (variant === "failed" ? 0 : offset);
+    ctx.drawImage(image, targetX, targetY, targetWidth, targetHeight);
+  }
+  return canvas.toBuffer("image/webp");
+}
+
+async function renderZenmiSpritesheet(directory) {
+  const canvas = createCanvas(
+    communityAtlas.columns * communityAtlas.cellWidth,
+    communityAtlas.rows * communityAtlas.cellHeight
+  );
+  const ctx = canvas.getContext("2d");
+
+  for (const [rowIndex, row] of standardActionRows.entries()) {
+    const stripPath = path.join(directory, `${row.state}.webp`);
+    const strip = await loadImage(stripPath);
+    const expectedWidth = row.frameCount * communityAtlas.cellWidth;
+    if (strip.width !== expectedWidth || strip.height !== communityAtlas.cellHeight) {
+      throw new Error(
+        `${row.state}.webp must be ${expectedWidth}x${communityAtlas.cellHeight}; got ${strip.width}x${strip.height}`
+      );
+    }
+
+    for (let frame = 0; frame < row.frameCount; frame += 1) {
+      ctx.drawImage(
+        strip,
+        frame * communityAtlas.cellWidth,
+        0,
+        communityAtlas.cellWidth,
+        communityAtlas.cellHeight,
+        frame * communityAtlas.cellWidth,
+        rowIndex * communityAtlas.cellHeight,
+        communityAtlas.cellWidth,
+        communityAtlas.cellHeight
+      );
+    }
+  }
+
+  return canvas.toBuffer("image/webp");
+}
+
 async function writeVariantFiles(directory, buffers) {
   await fs.mkdir(directory, { recursive: true });
   for (const [variant, buffer] of buffers.entries()) {
     await fs.writeFile(path.join(directory, `${variant}.png`), buffer);
+    await fs.writeFile(path.join(directory, `${variant}.webp`), await renderAnimatedVariantStrip(buffer, variant));
   }
 }
 
@@ -1077,6 +1187,7 @@ async function copyDefaultZenmiAssets() {
       path.join(outputDirectory, assetName)
     );
   }
+  await fs.writeFile(path.join(outputDirectory, "spritesheet.webp"), await renderZenmiSpritesheet(outputDirectory));
 }
 
 async function writeMarketPetManifest(directory, petId) {
@@ -1086,11 +1197,11 @@ async function writeMarketPetManifest(directory, petId) {
   }
   const states = {
     ...marketPetStaticStates,
-    ...(definition.animatedDragMoving
+    ...(definition.animatedMovingLeft
       ? {
-          "drag-moving": {
-            path: "drag-moving.webp",
-            frameCount: 15,
+          "moving-left": {
+            path: "moving-left.webp",
+            frameCount: 8,
             durationMs: 900,
             loop: true,
             mirror: true
@@ -1172,8 +1283,8 @@ for (const appearance of scriptedAppearances) {
   if (renderedAppearance.spritesheetBuffer) {
     await fs.writeFile(path.join(appearanceOutputDirectory, "spritesheet.webp"), renderedAppearance.spritesheetBuffer);
   }
-  if (renderedAppearance.dragMovingSpriteBuffer) {
-    await fs.writeFile(path.join(appearanceOutputDirectory, "drag-moving.webp"), renderedAppearance.dragMovingSpriteBuffer);
+  if (renderedAppearance.movingLeftSpriteBuffer) {
+    await fs.writeFile(path.join(appearanceOutputDirectory, "moving-left.webp"), renderedAppearance.movingLeftSpriteBuffer);
   }
 }
 

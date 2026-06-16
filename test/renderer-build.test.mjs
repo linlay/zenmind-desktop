@@ -1105,10 +1105,10 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(zhCN, /"sidebar\.assistants\.sortByName": "按名称"/);
   assert.match(zhCN, /"sidebar\.assistants\.sortByTime": "按时间"/);
   assert.match(enUS, /"sidebar\.assistants\.empty": "No assistants"/);
-  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Awaiting approval"/);
-  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Awaiting submission"/);
-  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Awaiting answer"/);
-  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.plan": "Awaiting implementation"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Await Appr"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Await Submit"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Question"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.plan": "Await Impl"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByName": "By name"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByTime": "By time"/);
 });
@@ -1174,10 +1174,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.doesNotMatch(settingsSections, /kanbanEnabled\?:\s*boolean/);
   assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?label:\s*"general"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
-  assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*desktopPetSupported/);
+  assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
-  assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"quickAssistant"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"/);
   assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
   assert.match(settingsSections, /id:\s*"embeddedWebs"[\s\S]*?label:\s*"embeddedWebs"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
@@ -1195,7 +1195,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /case "general"[\s\S]*?return "settings"/);
   assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
   assert.match(sidebarSource, /case "kanban"[\s\S]*?return "futures"/);
-  assert.match(sidebarSource, /case "desktopPet"[\s\S]*?return "assistant"/);
+  assert.match(sidebarSource, /case "assistant"[\s\S]*?return "assistant"/);
   assert.match(sidebarSource, /case "market"[\s\S]*?return "market"/);
   assert.doesNotMatch(sidebarSource, /case "runtimeReset"/);
   assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
@@ -1235,7 +1235,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentBinding/);
   assert.match(settingsStyles, /\.settings-appearance-panel/);
   assert.match(settingsStyles, /\.settings-theme-segment/);
-  assert.match(settingsPage, /case "desktopPet"/);
+  assert.match(settingsPage, /case "assistant"/);
   assert.match(settingsPage, /case "memory"/);
   assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
   assert.doesNotMatch(settingsPage, /case "debug"/);
@@ -1309,9 +1309,9 @@ test("settings page scopes notices to the active section and keeps load failures
   assert.match(settingsPage, /const activeSectionReadError = activeSection \? sectionReadErrors\[activeSection\] \?\? "" : "";/);
   assert.match(settingsPage, /settings-section-feedback/);
   assert.match(settingsPage, /<PageFeedbackStack/);
-  assert.match(settingsPage, /showSectionNotice\("desktopPet", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
+  assert.match(settingsPage, /showSectionNotice\("assistant", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
   assert.doesNotMatch(settingsPage, /导航页签排序已更新/);
-  assert.match(settingsPage, /showSectionNotice\("quickAssistant", reason instanceof Error \? reason\.message : String\(reason\), "error"\)/);
+  assert.match(settingsPage, /showSectionNotice\("assistant", reason instanceof Error \? reason\.message : String\(reason\), "error"\)/);
   assert.match(settingsPage, /feedback-banner warning-banner settings-section-read-error/);
   assert.doesNotMatch(settingsPage, /\{feedback \? <div className="feedback-banner">\{feedback\}<\/div> : null\}/);
 
@@ -1374,7 +1374,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /settings\.navigation\.kanbanVisible/);
   assert.doesNotMatch(settingsPage, /settings\.navigation\.kanbanHidden/);
   assert.match(settingsPageSections, /settings\.kanban\.label/);
-  assert.match(settingsPageSections, /settings\.desktopPet\.label/);
+  assert.match(settingsPageSections, /settings\.assistant\.label/);
   assert.match(settingsPageSections, /settings\.market\.label/);
   assert.match(settingsPage, /case "kanban"/);
   assert.doesNotMatch(settingsPage, /settings\.kanban\.enabled/);
@@ -1388,8 +1388,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /<Input\.Password[\s\S]*taskBoard\.cloud\.tokenPlaceholder/);
   assert.match(settingsPage, /<Select[\s\S]*options=\{controlProjectSelectOptions\}/);
   assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.kanban\.save/);
-  assert.match(settingsPage, /case "desktopPet"/);
-  assert.match(settingsPage, /activeSection === "desktopPet"/);
+  assert.match(settingsPage, /case "assistant"/);
+  assert.match(settingsPage, /activeSection === "assistant"/);
   assert.match(settingsPage, /case "market"/);
   assert.match(settingsPage, /settings\.market\.apiBaseUrl/);
   assert.match(settingsPage, /window\.electronAPI\.market\.saveSettings/);
@@ -1431,7 +1431,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改/);
   assert.doesNotMatch(settingsPage, /按模块管理桌面工作台、助手能力和本地数据行为/);
   assert.doesNotMatch(settingsPage, /className="website-copy"/);
-  assert.match(settingsPageSections, /settings\.quickAssistant\.label/);
+  assert.match(settingsPageSections, /settings\.assistant\.label/);
   assert.doesNotMatch(settingsPage, /case "sideAssistant"/);
   assert.doesNotMatch(settingsPage, /SIDE ASSISTANT/);
   assert.match(settingsPage, /settings\.navigation\.defaultAssistant/);
@@ -1448,7 +1448,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true;\s*\}/);
-  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "desktopPet"[\s\S]*handleToggleDesktopPet[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "assistant"[\s\S]*handleToggleDesktopPet[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
   assert.match(settingsStyles, /\.settings-page-head-action\s*\{[\s\S]*justify-content:\s*flex-end;/);
@@ -1473,7 +1473,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /settings\.navigation\.defaultAssistantDescription/);
   assert.match(settingsPage, /settings\.navigation\.fixedMainDescription/);
   assert.match(settingsPage, /settings\.navigation\.fixedToolsDescription/);
-  assert.match(settingsPage, /settings\.quickAssistant\.panelAria/);
+  assert.match(settingsPage, /settings\.assistant\.panelAria/);
   assert.match(settingsPage, /settings\.navigation\.defaultAssistant/);
   assert.match(globalStyles, /grid-template-columns:\s*minmax\(140px,\s*1fr\)\s*minmax\(220px,\s*300px\)\s*124px/);
   assert.doesNotMatch(settingsPage, /onClick=\{resetSidebarNavOrder\}/);
@@ -3525,8 +3525,8 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.match(settingsPage, /settings-pet-appearance-panel/);
   assert.match(settingsPage, /settings-appearance-pet-card/);
   assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentStatus/);
-  assert.match(settingsPage, /case "desktopPet"[\s\S]*?desktopPetSupported \? \(/);
-  assert.match(settingsPage, /const shouldReadDesktopPetState = desktopPetSupported && activeSection === "desktopPet";/);
+  assert.match(settingsPage, /case "assistant"[\s\S]*?desktopPetSupported \? \(/);
+  assert.match(settingsPage, /const shouldReadDesktopPetState = desktopPetSupported && activeSection === "assistant";/);
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
   assert.match(settingsPage, /settings\.desktopPet\.noticeAppearanceFailed/);
   assert.match(settingsPage, /desktop-pet-appearance-list/);
@@ -3633,7 +3633,7 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
   assert.match(globalStyles, /\.desktop-pet-task-more/);
 });
 
-test("desktop pet drag-moving state uses the smooth high-frame strip", () => {
+test("desktop pet moving-left state uses the smooth high-frame strip", () => {
   const globalStyles = readRendererStyles();
   const desktopPetSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
@@ -3700,7 +3700,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
     "utf8"
   );
 
-  assert.match(desktopPetVisual, /"drag-moving"/);
+  assert.match(desktopPetVisual, /"moving-left"/);
+  assert.match(desktopPetVisual, /"jumping"/);
+  assert.match(desktopPetVisual, /"failed"/);
+  assert.match(desktopPetVisual, /"review"/);
   assert.match(desktopPet, /DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3/);
   assert.match(desktopPet, /const \[isHovering, setIsHovering\] = useState\(false\)/);
   assert.match(desktopPet, /const \[isKeyboardFocused, setIsKeyboardFocused\] = useState\(false\)/);
@@ -3711,7 +3714,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /desktopPet\.setMouseInteractive\(interactive\)/);
   assert.match(desktopPet, /typeof window\.electronAPI\.desktopPet\.onSignatureRequested === "function"/);
   assert.match(desktopPet, /desktopPet\.onSignatureRequested\(\(signatureId\) => \{[\s\S]{0,120}startSignature\(signatureId,\s*"manual"\);/);
-  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,80}return "drag-moving"/);
+  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,80}return input\.dragDirection \? "moving-left" : "dragging"/);
   assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
   assert.match(desktopPet, /shouldShowSignatureSpriteAnimation[\s\S]{0,220}activeSignature\.assetPath/);
   assert.match(sharedDesktopPet, /export function resolveDesktopPetSignatureActions/);
@@ -3719,7 +3722,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /getDesktopPetSpriteAssetBasePath\(appearanceId\)/);
   assert.match(desktopPet, /deriveDesktopPetVisualStatus\(\{/);
   assert.match(desktopPetVisual, /input\.displayStatus === "awaiting"[\s\S]{0,80}return "awaiting"/);
+  assert.match(desktopPetVisual, /input\.displayStatus === "running" && input\.isReviewing[\s\S]{0,80}return "review"/);
   assert.match(desktopPetVisual, /input\.displayStatus === "running"[\s\S]{0,80}return "running"/);
+  assert.match(desktopPetVisual, /input\.displayStatus === "error"[\s\S]{0,80}return "failed"/);
+  assert.match(desktopPetVisual, /input\.activeStandardAction === "jumping"[\s\S]{0,80}return "jumping"/);
   assert.doesNotMatch(desktopPetVisual, /return "thinking"/);
   assert.doesNotMatch(desktopPetVisual, /return "message"/);
   assert.doesNotMatch(desktopPetVisual, /hasMessageReaction/);
@@ -3754,14 +3760,23 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(sharedDesktopPet, /id:\s*"pony"/);
   assert.doesNotMatch(sharedDesktopPet, /assetBasePath:\s*"\.\/desktop-pet\/dario"/);
   assert.doesNotMatch(sharedDesktopPet, /assetBasePath:\s*"\.\/desktop-pet\/sama"/);
-  assert.match(sharedDesktopPet, /dragging:\s*\{\s*path:\s*"dragging\.png"/);
-  assert.match(sharedDesktopPet, /"drag-moving":\s*\{\s*path:\s*"drag-moving\.webp"/);
-  assert.match(sharedDesktopPet, /frameCount:\s*15/);
-  assert.match(sharedDesktopPet, /running:\s*\{\s*path:\s*"running\.webp"/);
-  assert.doesNotMatch(sharedDesktopPet, /message:\s*"done/);
-  assert.doesNotMatch(sharedDesktopPet, /thinking:\s*"running/);
-  assert.doesNotMatch(sharedDesktopPet, /unread:\s*"done/);
-  assert.doesNotMatch(sharedDesktopPet, /"dragging-moving":/);
+  assert.match(sharedDesktopPet, /DESKTOP_PET_REQUIRED_STATE_KEYS = \[[\s\S]*?"idle"[\s\S]*?"jumping"[\s\S]*?"moving-left"[\s\S]*?"dragging"[\s\S]*?"done"[\s\S]*?"failed"[\s\S]*?"running"[\s\S]*?"awaiting"[\s\S]*?"review"[\s\S]*?\]/);
+  assert.match(sharedDesktopPet, /DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES = 4/);
+  assert.match(sharedDesktopPet, /DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES = 8/);
+  assert.match(sharedDesktopPet, /idle:\s*\{\s*path:\s*"idle\.webp"[\s\S]*?frameCount:\s*4/);
+  assert.match(sharedDesktopPet, /jumping:\s*\{\s*path:\s*"jumping\.webp"[\s\S]*?frameCount:\s*4/);
+  assert.match(sharedDesktopPet, /"moving-left":\s*\{\s*path:\s*"moving-left\.webp"[\s\S]*?frameCount:\s*8/);
+  assert.match(sharedDesktopPet, /dragging:\s*\{\s*path:\s*"dragging\.webp"[\s\S]*?frameCount:\s*4/);
+  assert.match(sharedDesktopPet, /done:\s*\{\s*path:\s*"done\.webp"[\s\S]*?frameCount:\s*6/);
+  assert.match(sharedDesktopPet, /failed:\s*\{\s*path:\s*"failed\.webp"[\s\S]*?frameCount:\s*4/);
+  assert.match(sharedDesktopPet, /running:\s*\{\s*path:\s*"running\.webp"[\s\S]*?frameCount:\s*8/);
+  assert.match(sharedDesktopPet, /awaiting:\s*\{\s*path:\s*"awaiting\.webp"[\s\S]*?frameCount:\s*4/);
+  assert.match(sharedDesktopPet, /review:\s*\{\s*path:\s*"review\.webp"[\s\S]*?frameCount:\s*4/);
+  assert.doesNotMatch(sharedDesktopPet, /\n\s*message:\s*\{\s*path:/);
+  assert.doesNotMatch(sharedDesktopPet, /\n\s*thinking:\s*\{\s*path:/);
+  assert.doesNotMatch(sharedDesktopPet, /\n\s*unread:\s*\{\s*path:/);
+  assert.doesNotMatch(sharedDesktopPet, /"dragging-moving":\s*\{\s*path:/);
+  assert.doesNotMatch(sharedDesktopPet, /"idle-alts"/);
   assert.doesNotMatch(sharedDesktopPet, /pet-[a-z-]+\.png/);
   assert.doesNotMatch(sharedDesktopPet, /dancing:/);
   assert.match(sharedDesktopPet, /getDesktopPetSignatureActions/);
@@ -3776,8 +3791,11 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(globalStyles, /@keyframes desktop-pet-signature-frames\s*\{[\s\S]*?background-position:\s*calc\(-96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-awaiting\s+\.desktop-pet-image[\s\S]{0,120}desktop-pet-awaiting/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-jumping\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-running\s+\.desktop-pet-image/);
-  assert.match(globalStyles, /\.desktop-pet-root\.is-drag-moving\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-review\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-moving-left\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-failed\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-state-animation\s+\.desktop-pet-state-sprite/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-thinking\s+\.desktop-pet-image/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
@@ -3787,7 +3805,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(globalStyles, /@keyframes desktop-pet-signature-bounce/);
   assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-dance/);
   assert.match(globalStyles, /@keyframes desktop-pet-dragging/);
+  assert.match(globalStyles, /@keyframes desktop-pet-jumping/);
   assert.match(globalStyles, /@keyframes desktop-pet-running/);
+  assert.match(globalStyles, /@keyframes desktop-pet-review/);
   assert.match(globalStyles, /@keyframes desktop-pet-state-frames/);
   assert.match(globalStyles, /@keyframes desktop-pet-awaiting/);
   assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-thinking/);
@@ -3815,7 +3835,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(contracts, /setMouseInteractive: \(interactive: boolean\) => Promise<\{ ok: boolean \}>/);
   assert.match(contracts, /onSignatureRequested: \(listener: DesktopPetSignatureRequestedListener\) => \(\) => void/);
   assert.doesNotMatch(petAssetScript, /"dragging-moving"/);
-  assert.match(petAssetScript, /"drag-moving"/);
+  assert.doesNotMatch(petAssetScript, /"drag-moving"/);
+  assert.match(petAssetScript, /"moving-left"/);
   assert.match(petAssetScript, /ZENMIND_PETS_ROOT/);
   assert.match(petAssetScript, /marketPetPackageDirectory/);
   assert.match(petAssetScript, /marketPetSourceDirectory/);
@@ -3834,18 +3855,21 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /copyDefaultZenmiAssets/);
   assert.doesNotMatch(sharedDesktopPet, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /displayName:\s*"小凌"/);
-  assert.match(petAssetScript, /"drag-moving":\s*\{\s*row:\s*1,\s*column:\s*2\s*\}/);
-  assert.match(petAssetScript, /"drag-moving":\s*\{\s*row:\s*7,\s*column:\s*2\s*\}/);
+  assert.match(petAssetScript, /"moving-left":\s*\{\s*row:\s*2,\s*column:\s*2\s*\}/);
   assert.match(petAssetScript, /ctx\.scale\(-1,\s*1\)/);
   assert.match(petAssetScript, /dario-a7bdc389/);
   assert.match(petAssetScript, /mini-sama-3ee267a2/);
   assert.doesNotMatch(petAssetScript, /task-run-left\.webp/);
-  assert.match(petAssetScript, /drag-moving\.webp/);
+  assert.match(petAssetScript, /moving-left\.webp/);
   assert.match(petAssetScript, /signature\/dance\.webp/);
-  assert.match(petAssetScript, /function renderXiaoDragMovingSprite/);
+  assert.match(petAssetScript, /function renderXiaoMovingLeftSprite/);
   assert.match(petAssetScript, /function renderXiaoSpritesheet/);
   assert.match(petAssetScript, /"awaiting"/);
   assert.match(petAssetScript, /"running"/);
+  assert.match(petAssetScript, /"jumping"/);
+  assert.match(petAssetScript, /"review"/);
+  assert.match(petAssetScript, /"failed"/);
+  assert.doesNotMatch(petAssetScript, /"idle-alts"/);
   assert.doesNotMatch(petAssetScript, /"thinking"/);
   assert.doesNotMatch(petAssetScript, /"message"/);
   assert.match(petAssetScript, /function drawHoverArm/);

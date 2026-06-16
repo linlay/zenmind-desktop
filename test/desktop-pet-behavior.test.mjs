@@ -62,14 +62,15 @@ function createAgentStatus(overrides = {}) {
 function writeStrictUserPet(petRoot, overrides = {}) {
   fs.mkdirSync(path.join(petRoot, "signature"), { recursive: true });
   for (const fileName of [
-    "idle.png",
-    "running.png",
-    "awaiting.png",
-    "done.png",
-    "error.png",
-    "hover.png",
-    "dragging.png",
-    "drag-moving.webp"
+    "idle.webp",
+    "jumping.webp",
+    "moving-left.webp",
+    "dragging.webp",
+    "done.webp",
+    "failed.webp",
+    "running.webp",
+    "awaiting.webp",
+    "review.webp"
   ]) {
     fs.writeFileSync(path.join(petRoot, fileName), "fake asset", "utf8");
   }
@@ -79,22 +80,23 @@ function writeStrictUserPet(petRoot, overrides = {}) {
     displayName: "小凌",
     version: "1.0.0",
     description: "Strict user pet",
-    preview: "idle.png",
+    preview: "idle.webp",
     states: {
-      idle: { path: "idle.png" },
-      running: { path: "running.png" },
-      awaiting: { path: "awaiting.png" },
-      done: { path: "done.png", holdMs: 2500 },
-      error: { path: "error.png", holdMs: 3000 },
-      hover: { path: "hover.png" },
-      dragging: { path: "dragging.png" },
-      "drag-moving": {
-        path: "drag-moving.webp",
-        frameCount: 15,
+      idle: { path: "idle.webp", frameCount: 4, durationMs: 6000, loop: true },
+      jumping: { path: "jumping.webp", frameCount: 4, durationMs: 1000, loop: false },
+      "moving-left": {
+        path: "moving-left.webp",
+        frameCount: 8,
         durationMs: 900,
         loop: true,
         mirror: true
-      }
+      },
+      dragging: { path: "dragging.webp", frameCount: 4, durationMs: 900, loop: true },
+      done: { path: "done.webp", frameCount: 6, durationMs: 1200, loop: false, holdMs: 2500 },
+      failed: { path: "failed.webp", frameCount: 4, durationMs: 1000, loop: false, holdMs: 3000 },
+      running: { path: "running.webp", frameCount: 8, durationMs: 1600, loop: true },
+      awaiting: { path: "awaiting.webp", frameCount: 4, durationMs: 1200, loop: true },
+      review: { path: "review.webp", frameCount: 4, durationMs: 1400, loop: true }
     },
     signature: [
       {
@@ -168,8 +170,10 @@ test("desktop pet visual arbitration keeps awaiting above hover and signature", 
     displayStatus: "awaiting",
     isDragging: false,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: true,
     canShowHoverReaction: true,
+    isReviewing: false,
     isHovering: true,
     isKeyboardFocused: false
   });
@@ -186,9 +190,11 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     displayStatus: "idle",
     isDragging: false,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
     canShowHoverReaction: true,
+    isReviewing: false,
     isHovering: true,
     isKeyboardFocused: false
   }), "hover");
@@ -197,9 +203,11 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     displayStatus: "idle",
     isDragging: false,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
     canShowHoverReaction: true,
+    isReviewing: false,
     isHovering: true,
     isKeyboardFocused: false
   }), "hover");
@@ -208,9 +216,11 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     displayStatus: "idle",
     isDragging: false,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
     canShowHoverReaction: true,
+    isReviewing: false,
     isHovering: false,
     isKeyboardFocused: false
   }), "signature");
@@ -224,8 +234,10 @@ test("desktop pet visual arbitration does not emit thinking or message states", 
   const base = {
     isDragging: false,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: false,
     canShowHoverReaction: false,
+    isReviewing: false,
     isHovering: false,
     isKeyboardFocused: false
   };
@@ -250,9 +262,11 @@ test("desktop pet visual arbitration lets manual signature surface over hover", 
     displayStatus: "idle",
     isDragging: false,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: true,
     activeSignatureTrigger: "manual",
     canShowHoverReaction: true,
+    isReviewing: false,
     isHovering: true,
     isKeyboardFocused: false
   }), "signature");
@@ -310,14 +324,27 @@ test("desktop pet keeps built-in chant available only for the default pet", () =
   assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].preview, "idle.webp");
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.idle, {
     path: "idle.webp",
-    frameCount: 3,
+    frameCount: 4,
     durationMs: 6000,
     loop: true
   });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.running, {
-    path: "running.webp",
-    frameCount: 12,
-    durationMs: 1800,
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.jumping, {
+    path: "jumping.webp",
+    frameCount: 4,
+    durationMs: 1000,
+    loop: false
+  });
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states["moving-left"], {
+    path: "moving-left.webp",
+    frameCount: 8,
+    durationMs: 900,
+    loop: true,
+    mirror: true
+  });
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.dragging, {
+    path: "dragging.webp",
+    frameCount: 4,
+    durationMs: 900,
     loop: true
   });
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.done, {
@@ -327,12 +354,30 @@ test("desktop pet keeps built-in chant available only for the default pet", () =
     loop: false,
     holdMs: 2500
   });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states["drag-moving"], {
-    path: "drag-moving.webp",
-    frameCount: 15,
-    durationMs: 900,
-    loop: true,
-    mirror: true
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.failed, {
+    path: "failed.webp",
+    frameCount: 4,
+    durationMs: 1000,
+    loop: false,
+    holdMs: 3000
+  });
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.running, {
+    path: "running.webp",
+    frameCount: 8,
+    durationMs: 1600,
+    loop: true
+  });
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.awaiting, {
+    path: "awaiting.webp",
+    frameCount: 4,
+    durationMs: 1200,
+    loop: true
+  });
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.review, {
+    path: "review.webp",
+    frameCount: 4,
+    durationMs: 1400,
+    loop: true
   });
   assert.deepEqual(resolveDesktopPetSignatureActions("classic", [])[0], {
     id: "chant",
@@ -382,22 +427,23 @@ test("user desktop pet appearances expose strict renderer-safe asset protocol UR
     assert.equal(options.length, 1);
     assert.equal(options[0].id, "user:pony");
     assert.equal(options[0].assetBasePath, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/`);
-    assert.equal(options[0].previewUrl, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/idle.png`);
+    assert.equal(options[0].previewUrl, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/idle.webp`);
     assert.deepEqual(options[0].states, {
-      idle: { path: "idle.png" },
-      running: { path: "running.png" },
-      awaiting: { path: "awaiting.png" },
-      done: { path: "done.png", holdMs: 2500 },
-      error: { path: "error.png", holdMs: 3000 },
-      hover: { path: "hover.png" },
-      dragging: { path: "dragging.png" },
-      "drag-moving": {
-        path: "drag-moving.webp",
-        frameCount: 15,
+      idle: { path: "idle.webp", frameCount: 4, durationMs: 6000, loop: true },
+      jumping: { path: "jumping.webp", frameCount: 4, durationMs: 1000, loop: false },
+      "moving-left": {
+        path: "moving-left.webp",
+        frameCount: 8,
         durationMs: 900,
         loop: true,
         mirror: true
-      }
+      },
+      dragging: { path: "dragging.webp", frameCount: 4, durationMs: 900, loop: true },
+      done: { path: "done.webp", frameCount: 6, durationMs: 1200, loop: false, holdMs: 2500 },
+      failed: { path: "failed.webp", frameCount: 4, durationMs: 1000, loop: false, holdMs: 3000 },
+      running: { path: "running.webp", frameCount: 8, durationMs: 1600, loop: true },
+      awaiting: { path: "awaiting.webp", frameCount: 4, durationMs: 1200, loop: true },
+      review: { path: "review.webp", frameCount: 4, durationMs: 1400, loop: true }
     });
     assert.equal(options[0].signature?.[0]?.variants[0]?.path, "signature/dance.webp");
   } finally {
@@ -430,7 +476,7 @@ test("user desktop pet appearances reject legacy manifest fields and state names
   }
 });
 
-test("desktop pet visual maps dragging movement onto a single mirrored state", () => {
+test("desktop pet visual maps dragging hold and movement onto standard states", () => {
   const {
     deriveDesktopPetVisualStatus
   } = require("../dist-electron/shared/desktop-pet-visual.js");
@@ -439,15 +485,17 @@ test("desktop pet visual maps dragging movement onto a single mirrored state", (
     displayStatus: "idle",
     isDragging: true,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: false,
     canShowHoverReaction: false,
+    isReviewing: false,
     isHovering: false,
     isKeyboardFocused: false
   };
 
-  assert.equal(deriveDesktopPetVisualStatus(base), "drag-moving");
-  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "left" }), "drag-moving");
-  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "right" }), "drag-moving");
+  assert.equal(deriveDesktopPetVisualStatus(base), "dragging");
+  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "left" }), "moving-left");
+  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "right" }), "moving-left");
 });
 
 test("desktop pet visual keeps running as the running state", () => {
@@ -459,10 +507,46 @@ test("desktop pet visual keeps running as the running state", () => {
     displayStatus: "running",
     isDragging: false,
     dragDirection: null,
+    activeStandardAction: null,
     hasActiveSignature: false,
-    hasMessageReaction: false,
     canShowHoverReaction: false,
+    isReviewing: false,
     isHovering: false,
     isKeyboardFocused: false
   }), "running");
+});
+
+test("desktop pet visual maps review, failed, and rare idle jumping onto standard states", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  const base = {
+    isDragging: false,
+    dragDirection: null,
+    activeStandardAction: null,
+    hasActiveSignature: false,
+    canShowHoverReaction: false,
+    isHovering: false,
+    isKeyboardFocused: false
+  };
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    ...base,
+    displayStatus: "running",
+    isReviewing: true
+  }), "review");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    ...base,
+    displayStatus: "error",
+    isReviewing: false
+  }), "failed");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    ...base,
+    displayStatus: "idle",
+    activeStandardAction: "jumping",
+    isReviewing: false
+  }), "jumping");
 });

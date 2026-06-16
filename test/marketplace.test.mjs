@@ -133,20 +133,21 @@ async function writePetArchive(root, options = {}) {
   const archivePath = path.join(root, `${petId}.zip`);
   const zip = new JSZip();
   const states = {
-    idle: { path: "idle.png" },
-    running: { path: "running.png" },
-    awaiting: { path: "awaiting.png" },
-    done: { path: "done.png", holdMs: 2500 },
-    error: { path: "error.png", holdMs: 3000 },
-    hover: { path: "hover.png" },
-    dragging: { path: "dragging.png" },
-    "drag-moving": {
-      path: "drag-moving.webp",
-      frameCount: 15,
+    idle: { path: "idle.webp", frameCount: 4, durationMs: 6000, loop: true },
+    jumping: { path: "jumping.webp", frameCount: 4, durationMs: 1000, loop: false },
+    "moving-left": {
+      path: "moving-left.webp",
+      frameCount: 8,
       durationMs: 900,
       loop: true,
       mirror: true
-    }
+    },
+    dragging: { path: "dragging.webp", frameCount: 4, durationMs: 900, loop: true },
+    done: { path: "done.webp", frameCount: 6, durationMs: 1200, loop: false, holdMs: 2500 },
+    failed: { path: "failed.webp", frameCount: 4, durationMs: 1000, loop: false, holdMs: 3000 },
+    running: { path: "running.webp", frameCount: 8, durationMs: 1600, loop: true },
+    awaiting: { path: "awaiting.webp", frameCount: 4, durationMs: 1200, loop: true },
+    review: { path: "review.webp", frameCount: 4, durationMs: 1400, loop: true }
   };
   zip.file(
     `${petId}/pet.json`,
@@ -155,14 +156,23 @@ async function writePetArchive(root, options = {}) {
       displayName: options.displayName ?? "Cloud Pet",
       version: options.version ?? "1.0.0",
       description: "Cloud desktop pet",
-      preview: "idle.png",
+      preview: "idle.webp",
       states
     }, null, 2)}\n`,
   );
-  for (const asset of ["idle.png", "running.png", "awaiting.png", "done.png", "error.png", "hover.png", "dragging.png"]) {
-    zip.file(`${petId}/${asset}`, "fake png");
+  for (const asset of [
+    "idle.webp",
+    "jumping.webp",
+    "moving-left.webp",
+    "dragging.webp",
+    "done.webp",
+    "failed.webp",
+    "running.webp",
+    "awaiting.webp",
+    "review.webp"
+  ]) {
+    zip.file(`${petId}/${asset}`, "fake webp");
   }
-  zip.file(`${petId}/drag-moving.webp`, "fake webp");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
 }

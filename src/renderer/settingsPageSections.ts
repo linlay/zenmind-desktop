@@ -37,11 +37,11 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
-      id: "desktopPet",
-      label: "desktopPet",
+      id: "assistant",
+      label: "assistant",
       description: "",
       layout: "measure",
-      visible: desktopPetSupported
+      visible: true
     },
     {
       id: "market",
@@ -69,13 +69,6 @@ export function createSettingsSectionDefinitions({
       label: "navigation",
       description: "",
       layout: "wide",
-      visible: true
-    },
-    {
-      id: "quickAssistant",
-      label: "quickAssistant",
-      description: "",
-      layout: "measure",
       visible: true
     },
     {
@@ -124,12 +117,11 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   general: { label: "settings.general.label", description: "settings.general.description" },
   appearance: { label: "settings.appearance.label", description: "settings.appearance.description" },
   kanban: { label: "settings.kanban.label", description: "settings.kanban.description" },
-  desktopPet: { label: "settings.desktopPet.label", description: "settings.desktopPet.description" },
+  assistant: { label: "settings.assistant.label", description: "settings.assistant.description" },
   market: { label: "settings.market.label", description: "settings.market.description" },
   control: { label: "settings.control.label", description: "settings.control.description" },
   tunnelHub: { label: "settings.tunnelHub.label", description: "settings.tunnelHub.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
-  quickAssistant: { label: "settings.quickAssistant.label", description: "settings.quickAssistant.description" },
   embeddedWebs: { label: "settings.embeddedWebs.label", description: "settings.embeddedWebs.description" },
   dataRoot: { label: "settings.dataRoot.label", description: "settings.dataRoot.description" },
   memory: { label: "settings.memory.label", description: "settings.memory.description" },
