@@ -10,6 +10,7 @@ import type { TranslationKey, TranslateFunction } from "../../shared/i18n";
 
 export type AppTrayControllerOptions = {
   platform: NodeJS.Platform;
+  isPackaged: boolean;
   appName: string;
   t: TranslateFunction;
   mainDir: string;
@@ -23,6 +24,96 @@ export type AppTrayControllerOptions = {
   hideDesktopPet: () => void;
   quit: () => void;
 };
+
+export type AppTrayIconPathOptions = Pick<
+  AppTrayControllerOptions,
+  "platform" | "isPackaged" | "mainDir" | "resourcesPath"
+>;
+
+function projectRootFromMainDir(mainDir: string) {
+  return path.join(mainDir, "..", "..");
+}
+
+function projectAssetPath(options: AppTrayIconPathOptions, directoryName: string, fileName: string) {
+  return path.join(projectRootFromMainDir(options.mainDir), directoryName, fileName);
+}
+
+function packagedResourcePath(options: AppTrayIconPathOptions, fileName: string) {
+  return path.join(options.resourcesPath, APP_ICON_ASSET_DIRECTORIES.packagedResources, fileName);
+}
+
+function platformFallbackIconPath(options: AppTrayIconPathOptions) {
+  if (options.platform === "win32") {
+    return projectAssetPath(
+      options,
+      APP_ICON_ASSET_DIRECTORIES.buildIcons,
+      APP_ICON_ASSET_FILENAMES.windowsAppIcon
+    );
+  }
+  if (options.platform === "darwin") {
+    return projectAssetPath(
+      options,
+      APP_ICON_ASSET_DIRECTORIES.buildIcons,
+      APP_ICON_ASSET_FILENAMES.fallbackSmallIcon
+    );
+  }
+  return projectAssetPath(
+    options,
+    APP_ICON_ASSET_DIRECTORIES.buildIcons,
+    APP_ICON_ASSET_FILENAMES.fallbackSmallIcon
+  );
+}
+
+export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
+  const publicTrayIconPath = projectAssetPath(
+    options,
+    APP_ICON_ASSET_DIRECTORIES.public,
+    APP_ICON_ASSET_FILENAMES.trayIcon
+  );
+  const publicBrandIconPath = projectAssetPath(
+    options,
+    APP_ICON_ASSET_DIRECTORIES.public,
+    APP_ICON_ASSET_FILENAMES.brandIcon
+  );
+  const rendererTrayIconPath = projectAssetPath(
+    options,
+    APP_ICON_ASSET_DIRECTORIES.distRenderer,
+    APP_ICON_ASSET_FILENAMES.trayIcon
+  );
+  const fallbackIconPath = platformFallbackIconPath(options);
+
+  if (options.isPackaged) {
+    return [
+      packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon),
+      rendererTrayIconPath,
+      fallbackIconPath,
+      publicTrayIconPath,
+      publicBrandIconPath
+    ];
+  }
+
+  if (options.platform === "darwin") {
+    return [
+      publicTrayIconPath,
+      publicBrandIconPath,
+      fallbackIconPath
+    ];
+  }
+
+  if (options.platform === "win32") {
+    return [
+      fallbackIconPath,
+      publicTrayIconPath,
+      publicBrandIconPath
+    ];
+  }
+
+  return [
+    publicTrayIconPath,
+    fallbackIconPath,
+    publicBrandIconPath
+  ];
+}
 
 export class AppTrayController {
   private tray: Tray | null = null;
@@ -67,39 +158,7 @@ export class AppTrayController {
   }
 
   private createIcon() {
-    const platformIconPath =
-      this.options.platform === "win32"
-        ? path.join(
-            this.options.mainDir,
-            "..",
-            "..",
-            ...APP_ICON_ASSET_DIRECTORIES.buildIcons.split("/"),
-            APP_ICON_ASSET_FILENAMES.windowsAppIcon
-          )
-        : path.join(
-            this.options.mainDir,
-            "..",
-            "..",
-            ...APP_ICON_ASSET_DIRECTORIES.buildIcons.split("/"),
-            APP_ICON_ASSET_FILENAMES.fallbackSmallIcon
-          );
-    const iconPaths = [
-      path.join(
-        this.options.resourcesPath,
-        APP_ICON_ASSET_DIRECTORIES.packagedResources,
-        APP_ICON_ASSET_FILENAMES.trayIcon
-      ),
-      path.join(
-        this.options.mainDir,
-        "..",
-        "..",
-        APP_ICON_ASSET_DIRECTORIES.distRenderer,
-        APP_ICON_ASSET_FILENAMES.trayIcon
-      ),
-      path.join(this.options.mainDir, "..", "..", APP_ICON_ASSET_DIRECTORIES.public, APP_ICON_ASSET_FILENAMES.trayIcon),
-      platformIconPath,
-      path.join(this.options.mainDir, "..", "..", APP_ICON_ASSET_DIRECTORIES.public, APP_ICON_ASSET_FILENAMES.brandIcon)
-    ];
+    const iconPaths = getAppTrayIconCandidatePaths(this.options);
     const icon =
       iconPaths
         .map((iconPath) => nativeImage.createFromPath(iconPath))

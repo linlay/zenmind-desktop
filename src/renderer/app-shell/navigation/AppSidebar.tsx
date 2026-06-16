@@ -727,6 +727,7 @@ type AppSidebarProps = {
   onCloseAssistantDock?: () => void;
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
+  onRefreshDesktopSsoStatus?: () => Promise<void> | void;
   onRefreshAssistantNavAgents?: () => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (
@@ -769,6 +770,7 @@ export function AppSidebar({
   onCloseAssistantDock,
   onDesktopSsoLogin,
   onDesktopSsoLogout,
+  onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
   onRefreshCopilotAgentOptions,
   onCreateWebsiteItem,
@@ -816,6 +818,7 @@ export function AppSidebar({
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const toolMenuOpenRequestIdRef = useRef(0);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const agentMenuRef = useRef<HTMLDivElement | null>(null);
   const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
@@ -2292,6 +2295,29 @@ export function AppSidebar({
     setToolMenuOpen(false);
   }
 
+  function handleToolMenuOpenChange(open: boolean) {
+    const requestId = toolMenuOpenRequestIdRef.current + 1;
+    toolMenuOpenRequestIdRef.current = requestId;
+    if (!open) {
+      setToolMenuOpen(false);
+      return;
+    }
+
+    const refreshResult = onRefreshDesktopSsoStatus?.();
+    if (!refreshResult) {
+      setToolMenuOpen(true);
+      return;
+    }
+
+    Promise.resolve(refreshResult)
+      .catch(() => undefined)
+      .finally(() => {
+        if (toolMenuOpenRequestIdRef.current === requestId) {
+          setToolMenuOpen(true);
+        }
+      });
+  }
+
   function renderToolMenu() {
     const shouldRenderDesktopSsoAccount = desktopSsoStatus?.configured === true;
     const topToolItems = fixedToolItems.filter((item) =>
@@ -3333,7 +3359,7 @@ export function AppSidebar({
               placement="top-start"
               content={renderToolMenu()}
               open={toolMenuOpen}
-              onOpenChange={setToolMenuOpen}
+              onOpenChange={handleToolMenuOpenChange}
               className="sidebar-tool-menu-popover"
             >
               <button

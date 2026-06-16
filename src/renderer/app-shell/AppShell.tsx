@@ -648,6 +648,16 @@ export function AppShell() {
     }
   }
 
+  async function refreshDesktopSsoStatus() {
+    const ssoApi = getDesktopSsoApi();
+    if (!ssoApi) {
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
+      return;
+    }
+    const status = await ssoApi.getStatus();
+    setDesktopSsoStatus(status);
+  }
+
   useEffect(() => {
     startDesktopActionRendererBridge();
   }, []);
@@ -1720,6 +1730,7 @@ export function AppShell() {
           }}
           onDesktopSsoLogin={handleDesktopSsoLogin}
           onDesktopSsoLogout={handleDesktopSsoLogout}
+          onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateWebsiteItem={createWebsiteItem}

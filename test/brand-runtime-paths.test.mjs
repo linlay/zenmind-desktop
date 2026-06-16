@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
@@ -15,6 +16,7 @@ import { removeRendererWebappTemplatesFromStage } from "../scripts/stage-app.mjs
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
+const { createCanvas, loadImage } = require("@napi-rs/canvas");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const silentLogger = {
@@ -87,6 +89,15 @@ async function writeZip(zipPath, entries) {
   fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer" }));
 }
 
+async function renderSvgFileHash(filePath, size = 64) {
+  const image = await loadImage(Buffer.from(fs.readFileSync(filePath, "utf8")));
+  const canvas = createCanvas(size, size);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, size, size);
+  context.drawImage(image, 0, 0, size, size);
+  return createHash("sha256").update(canvas.toBuffer("image/png")).digest("hex");
+}
+
 test("brand runtime root directory is derived from brand id", () => {
   const zenmind = loadBrandConfig(projectRoot, "zenmind");
   const cutej = loadBrandConfig(projectRoot, "cutej");
@@ -105,6 +116,26 @@ test("brand runtime root directory is derived from brand id", () => {
   assert.equal(cutej.source.desktopPetRoot, "brands/cutej/desktop-pet");
   assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "zenmind", "brand.json")).paths, false);
   assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "cutej", "brand.json")).paths, false);
+});
+
+test("brand icon generation surfaces are brand-owned and distinct", async () => {
+  const zenmind = loadBrandConfig(projectRoot, "zenmind");
+  const cutej = loadBrandConfig(projectRoot, "cutej");
+  const generator = fs.readFileSync(path.join(projectRoot, "scripts", "generate-app-icons.mjs"), "utf8");
+
+  assert.notEqual(zenmind.icons.trayIconSvg, cutej.icons.trayIconSvg);
+  assert.notEqual(zenmind.icons.appIconSvg, cutej.icons.appIconSvg);
+  assert.notEqual(
+    await renderSvgFileHash(path.join(projectRoot, zenmind.icons.trayIconSvg)),
+    await renderSvgFileHash(path.join(projectRoot, cutej.icons.trayIconSvg))
+  );
+  assert.notEqual(
+    await renderSvgFileHash(path.join(projectRoot, zenmind.icons.appIconSvg)),
+    await renderSvgFileHash(path.join(projectRoot, cutej.icons.appIconSvg))
+  );
+  assert.match(generator, /writeFileIfChanged\(publicTrayIconSvgPath,\s*Buffer\.from\(trayIconSvg\)\)/u);
+  assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"tray-icon\.png"\),\s*trayPng\)/u);
+  assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-icon\.png"\),\s*renderedAppPngs\.get\(256\)\)/u);
 });
 
 test("brand sync writes CuteJ isolated runtime paths into generated artifacts", (t) => {

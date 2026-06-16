@@ -9,6 +9,10 @@ function readSourceFile(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 }
 
+function readJsonFile(...segments) {
+  return JSON.parse(fs.readFileSync(path.join(projectRoot, ...segments), "utf8"));
+}
+
 function readCssWithImports(filePath, visited = new Set()) {
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
   if (visited.has(absolutePath)) {
@@ -69,6 +73,12 @@ function collectTextFiles(root, files = []) {
 
 function textFromCodes(...codes) {
   return String.fromCharCode(...codes);
+}
+
+function indexOfRequired(content, value) {
+  const index = content.indexOf(value);
+  assert.notEqual(index, -1, `expected to find ${value}`);
+  return index;
 }
 
 test("source and tests do not contain internal endpoint or legacy icon literals", () => {
@@ -657,7 +667,7 @@ test("fixed sidebar tool menu uses controlled popover state", () => {
 
   assert.match(
     sidebarSource,
-    /<Popover[\s\S]{0,160}placement="top-start"[\s\S]{0,160}content=\{renderToolMenu\(\)\}[\s\S]{0,160}open=\{toolMenuOpen\}[\s\S]{0,160}onOpenChange=\{setToolMenuOpen\}/
+    /<Popover[\s\S]{0,160}placement="top-start"[\s\S]{0,160}content=\{renderToolMenu\(\)\}[\s\S]{0,160}open=\{toolMenuOpen\}[\s\S]{0,160}onOpenChange=\{handleToolMenuOpenChange\}/
   );
   assert.doesNotMatch(sidebarSource, /toolMenuPosition/);
   assert.doesNotMatch(sidebarSource, /toolMenuPanelRef/);
@@ -2550,12 +2560,14 @@ test("desktop action bridge exposes localhost api and renderer action providers"
 test("built index uses relative asset paths", () => {
   const builtIndex = fs.readFileSync(path.join(projectRoot, "dist-renderer", "index.html"), "utf8");
   const sourceIndex = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
+  const brand = readJsonFile("build", "generated", "brand.json");
+  const petProtocol = `${brand.id}-pet:`;
 
   assert.doesNotMatch(builtIndex, /src="\/assets\//);
   assert.doesNotMatch(builtIndex, /href="\/assets\//);
   assert.match(builtIndex, /(src|href)="\.?\/?assets\//);
-  assert.match(sourceIndex, /img-src[^"]*zenmind-pet:/);
-  assert.match(builtIndex, /img-src[^"]*zenmind-pet:/);
+  assert.match(sourceIndex, new RegExp(`img-src[^"]*${petProtocol}`, "u"));
+  assert.match(builtIndex, /img-src[^"]*[a-z0-9_-]+-pet:/u);
 });
 
 test("plugin market guards stale preload market api before skill import", () => {
@@ -3260,6 +3272,51 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.doesNotMatch(trayController, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
 });
 
+test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
+  const mainProcess = readSourceFile("src", "main", "index.ts");
+  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const helper = trayController.match(/export function getAppTrayIconCandidatePaths[\s\S]*?\n\}\n\nexport class/u)?.[0] ?? "";
+  const packagedBranch = helper.match(/if \(options\.isPackaged\) \{[\s\S]*?  \}/u)?.[0] ?? "";
+  const macDevBranch = helper.match(/if \(options\.platform === "darwin"\) \{[\s\S]*?  \}/u)?.[0] ?? "";
+  const windowsDevBranch = helper.match(/if \(options\.platform === "win32"\) \{[\s\S]*?  \}/u)?.[0] ?? "";
+
+  assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*app\.isPackaged/u);
+  assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
+  assert.match(trayController, /function platformFallbackIconPath/);
+  assert.match(trayController, /if \(options\.platform === "darwin"\)/);
+  assert.match(trayController, /if \(options\.platform === "win32"\)/);
+
+  assert(
+    indexOfRequired(packagedBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon)") <
+      indexOfRequired(packagedBranch, "rendererTrayIconPath"),
+    "packaged tray lookup should prefer packaged resources before renderer assets"
+  );
+  assert(
+    indexOfRequired(packagedBranch, "rendererTrayIconPath") <
+      indexOfRequired(packagedBranch, "fallbackIconPath"),
+    "packaged tray lookup should keep renderer assets before fallback icons"
+  );
+
+  assert(
+    indexOfRequired(macDevBranch, "publicTrayIconPath") <
+      indexOfRequired(macDevBranch, "publicBrandIconPath"),
+    "macOS dev tray lookup should prefer the active brand tray icon"
+  );
+  assert(
+    indexOfRequired(macDevBranch, "publicBrandIconPath") <
+      indexOfRequired(macDevBranch, "fallbackIconPath"),
+    "macOS dev tray lookup should use generated brand icon before build fallback"
+  );
+  assert.doesNotMatch(macDevBranch, /rendererTrayIconPath/);
+
+  assert(
+    indexOfRequired(windowsDevBranch, "fallbackIconPath") <
+      indexOfRequired(windowsDevBranch, "publicTrayIconPath"),
+    "Windows dev tray lookup should prefer the active build ico before public tray fallback"
+  );
+  assert.doesNotMatch(windowsDevBranch, /rendererTrayIconPath/);
+});
+
 test("native assistant page context captures shell sidebar, left region, and modal content separately", () => {
   const pageContextService = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "page-context", "assistantPageContext.ts"),
@@ -3788,15 +3845,11 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(sharedDesktopPet, /DESKTOP_PET_REQUIRED_STATE_KEYS = \[[\s\S]*?"idle"[\s\S]*?"jumping"[\s\S]*?"moving-left"[\s\S]*?"dragging"[\s\S]*?"done"[\s\S]*?"failed"[\s\S]*?"running"[\s\S]*?"awaiting"[\s\S]*?"review"[\s\S]*?\]/);
   assert.match(sharedDesktopPet, /DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES = 4/);
   assert.match(sharedDesktopPet, /DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES = 8/);
-  assert.match(sharedDesktopPet, /idle:\s*\{\s*path:\s*"idle\.webp"[\s\S]*?frameCount:\s*4/);
-  assert.match(sharedDesktopPet, /jumping:\s*\{\s*path:\s*"jumping\.webp"[\s\S]*?frameCount:\s*4/);
-  assert.match(sharedDesktopPet, /"moving-left":\s*\{\s*path:\s*"moving-left\.webp"[\s\S]*?frameCount:\s*8/);
-  assert.match(sharedDesktopPet, /dragging:\s*\{\s*path:\s*"dragging\.webp"[\s\S]*?frameCount:\s*4/);
-  assert.match(sharedDesktopPet, /done:\s*\{\s*path:\s*"done\.webp"[\s\S]*?frameCount:\s*6/);
-  assert.match(sharedDesktopPet, /failed:\s*\{\s*path:\s*"failed\.webp"[\s\S]*?frameCount:\s*4/);
-  assert.match(sharedDesktopPet, /running:\s*\{\s*path:\s*"running\.webp"[\s\S]*?frameCount:\s*8/);
-  assert.match(sharedDesktopPet, /awaiting:\s*\{\s*path:\s*"awaiting\.webp"[\s\S]*?frameCount:\s*4/);
-  assert.match(sharedDesktopPet, /review:\s*\{\s*path:\s*"review\.webp"[\s\S]*?frameCount:\s*4/);
+  assert.match(sharedDesktopPet, /const BRAND_DESKTOP_PET = APP_BRAND\.desktopPet/);
+  assert.match(sharedDesktopPet, /DEFAULT_DESKTOP_PET_STATES = BRAND_DESKTOP_PET\.states/);
+  assert.match(sharedDesktopPet, /DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS[\s\S]*?BRAND_DESKTOP_PET[\s\S]*?signature/);
+  assert.match(sharedDesktopPet, /preview:\s*BRAND_DESKTOP_PET\.preview/);
+  assert.match(sharedDesktopPet, /previewUrl:\s*`\.\/desktop-pet\/\$\{BRAND_DESKTOP_PET\.preview\}`/);
   assert.doesNotMatch(sharedDesktopPet, /\n\s*message:\s*\{\s*path:/);
   assert.doesNotMatch(sharedDesktopPet, /\n\s*thinking:\s*\{\s*path:/);
   assert.doesNotMatch(sharedDesktopPet, /\n\s*unread:\s*\{\s*path:/);
@@ -3805,9 +3858,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(sharedDesktopPet, /pet-[a-z-]+\.png/);
   assert.doesNotMatch(sharedDesktopPet, /dancing:/);
   assert.match(sharedDesktopPet, /getDesktopPetSignatureActions/);
-  assert.match(sharedDesktopPet, /id:\s*"chant"/);
-  assert.match(sharedDesktopPet, /path:\s*"signature\/chant\.webp"/);
-  assert.match(sharedDesktopPet, /trigger:\s*\["manual",\s*"idle-random"\]/);
+  assert.match(sharedDesktopPet, /DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID[\s\S]*?DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS/);
+  assert.doesNotMatch(sharedDesktopPet, /id:\s*"chant"/);
+  assert.doesNotMatch(sharedDesktopPet, /path:\s*"signature\/chant\.webp"/);
   assert.doesNotMatch(sharedDesktopPet, /"pony"/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-image/);
@@ -3927,11 +3980,16 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(appShell, /desktopSsoBusy=\{desktopSsoBusy\}/);
   assert.match(appShell, /onDesktopSsoLogin=\{handleDesktopSsoLogin\}/);
   assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
+  assert.match(appShell, /async function refreshDesktopSsoStatus\(\)[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
+  assert.match(appShell, /onRefreshDesktopSsoStatus=\{refreshDesktopSsoStatus\}/);
   assert.doesNotMatch(appShell, /const \[desktopSsoDismissed, setDesktopSsoDismissed\]/);
   assert.doesNotMatch(appShell, /className=\{desktopSsoClassName\}/);
   assert.doesNotMatch(appShell, /has-desktop-sso-status/);
 
   assert.match(sidebarSource, /desktopSsoStatus\?:\s*DesktopSsoStatus \| null;/);
+  assert.match(sidebarSource, /onRefreshDesktopSsoStatus\?:\s*\(\) => Promise<void> \| void;/);
+  assert.match(sidebarSource, /function handleToolMenuOpenChange\(open: boolean\)[\s\S]{0,360}onRefreshDesktopSsoStatus\?\.\(\)[\s\S]{0,360}setToolMenuOpen\(true\);/);
+  assert.match(sidebarSource, /toolMenuOpenRequestIdRef\.current === requestId/);
   assert.match(sidebarSource, /const shouldRenderDesktopSsoAccount = desktopSsoStatus\?\.configured === true;/);
   assert.doesNotMatch(sidebarSource, /visibleToolItems/);
   assert.doesNotMatch(sidebarSource, /function renderDesktopSsoEntry\(\)/);

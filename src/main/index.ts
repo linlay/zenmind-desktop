@@ -882,6 +882,7 @@ const quitConfirmationController = createQuitConfirmationController({
 
 const appTrayController = new AppTrayController({
   platform: mainProcessContext.platform,
+  isPackaged: app.isPackaged,
   appName: PRODUCT_NAME,
   t,
   mainDir: __dirname,
