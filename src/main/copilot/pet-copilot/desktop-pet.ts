@@ -67,6 +67,13 @@ export const DESKTOP_PET_VISIBLE_FOOTPRINT = {
   width: 96,
   height: 108
 } as const;
+// Matches the renderer bubble layout so the sprite footprint stays anchored when the speech bubble appears.
+export const DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT = {
+  x: 64,
+  y: 92,
+  width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+  height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+} as const;
 
 export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "preview-expanded" | "task-list";
 
@@ -891,6 +898,12 @@ export function getDesktopPetWindowSize(mode: DesktopPetWindowMode = "base") {
   return DESKTOP_PET_WINDOW_SIZES[mode] ?? DESKTOP_PET_WINDOW_SIZES.base;
 }
 
+function getDesktopPetVisibleFootprintForMode(mode: DesktopPetWindowMode) {
+  return mode === "bubble"
+    ? DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT
+    : DESKTOP_PET_VISIBLE_FOOTPRINT;
+}
+
 export function clampDesktopPetPosition(
   position: { x: number; y: number } | undefined,
   displayArea: DisplayArea,
@@ -971,6 +984,15 @@ export function getAnchoredDesktopPetBounds(
   if (mode === "base") {
     return baseBounds;
   }
+  if (mode === "bubble") {
+    const footprint = getDesktopPetVisibleFootprintForMode(mode);
+    return {
+      x: baseBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x - footprint.x,
+      y: baseBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y - footprint.y,
+      width: size.width,
+      height: size.height
+    };
+  }
   return clampDesktopPetPosition({
     x: baseBounds.x + DESKTOP_PET_WINDOW_SIZE.width - size.width,
     y: baseBounds.y + DESKTOP_PET_WINDOW_SIZE.height - size.height
@@ -982,6 +1004,13 @@ export function getDesktopPetLogicalPositionFromBounds(
   mode: DesktopPetWindowMode = "base"
 ) {
   const size = getDesktopPetWindowSize(mode);
+  if (mode === "bubble") {
+    const footprint = getDesktopPetVisibleFootprintForMode(mode);
+    return {
+      x: Math.round(bounds.x + footprint.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x),
+      y: Math.round(bounds.y + footprint.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y)
+    };
+  }
   return {
     x: Math.round(bounds.x + size.width - DESKTOP_PET_WINDOW_SIZE.width),
     y: Math.round(bounds.y + size.height - DESKTOP_PET_WINDOW_SIZE.height)
@@ -995,6 +1024,7 @@ export const __testInternals = {
   DESKTOP_PET_STATE_FILE,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_VISIBLE_FOOTPRINT,
+  DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT,
   DESKTOP_PET_WINDOW_SIZES,
   sanitizeDesktopPetStoredState,
   normalizeDesktopPetAppearanceId,

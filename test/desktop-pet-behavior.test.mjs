@@ -11,7 +11,8 @@ const {
   createDesktopPetState,
   createDefaultDesktopPetLocalStatus,
   getDesktopPetContextMenuItems,
-  listUserDesktopPetAppearanceOptions
+  listUserDesktopPetAppearanceOptions,
+  __testInternals
 } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
@@ -61,6 +62,22 @@ function createAgentStatus(overrides = {}) {
     stale: false,
     updatedAt: "2026-06-13T00:00:00.000Z",
     ...overrides
+  };
+}
+
+function visibleFootprintRect(bounds, footprint) {
+  return {
+    x: bounds.x + footprint.x,
+    y: bounds.y + footprint.y,
+    width: footprint.width,
+    height: footprint.height
+  };
+}
+
+function visibleFootprintCenter(bounds, footprint) {
+  return {
+    x: bounds.x + footprint.x + Math.round(footprint.width / 2),
+    y: bounds.y + footprint.y + Math.round(footprint.height / 2)
   };
 }
 
@@ -136,6 +153,66 @@ test("desktop pet state exposes awaiting when the bound agent has a pending awai
 
   assert.equal(state.status, "awaiting");
   assert.equal(state.hint, "需要你确认计划");
+});
+
+test("desktop pet bubble mode keeps the visible pet footprint anchored", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_WINDOW_SIZES,
+    getAnchoredDesktopPetBounds,
+    getDesktopPetLogicalPositionFromBounds
+  } = __testInternals;
+  const displayArea = { x: 0, y: 0, width: 1440, height: 900 };
+  const position = { x: 320, y: 240 };
+
+  const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
+  const bubbleBounds = getAnchoredDesktopPetBounds(position, displayArea, "bubble");
+
+  assert.equal(bubbleBounds.width, DESKTOP_PET_WINDOW_SIZES.bubble.width);
+  assert.equal(bubbleBounds.height, DESKTOP_PET_WINDOW_SIZES.bubble.height);
+  assert.deepEqual(
+    visibleFootprintRect(bubbleBounds, DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT),
+    visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
+  );
+  assert.deepEqual(
+    visibleFootprintCenter(bubbleBounds, DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT),
+    visibleFootprintCenter(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
+  );
+  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bubbleBounds, "bubble"), {
+    x: baseBounds.x,
+    y: baseBounds.y
+  });
+});
+
+test("desktop pet bubble mode allows the bubble window to overflow edges instead of moving the pet", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT,
+    getAnchoredDesktopPetBounds,
+    getDesktopPetLogicalPositionFromBounds
+  } = __testInternals;
+  const displayArea = { x: 100, y: 80, width: 500, height: 400 };
+  const position = {
+    x: displayArea.x + displayArea.width -
+      DESKTOP_PET_VISIBLE_FOOTPRINT.x -
+      DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    y: displayArea.y
+  };
+
+  const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
+  const bubbleBounds = getAnchoredDesktopPetBounds(position, displayArea, "bubble");
+
+  assert.equal(bubbleBounds.x + bubbleBounds.width > displayArea.x + displayArea.width, true);
+  assert.equal(bubbleBounds.y < displayArea.y, true);
+  assert.deepEqual(
+    visibleFootprintRect(bubbleBounds, DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT),
+    visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
+  );
+  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bubbleBounds, "bubble"), {
+    x: baseBounds.x,
+    y: baseBounds.y
+  });
 });
 
 test("desktop pet state exposes awaiting when any active task is awaiting", () => {

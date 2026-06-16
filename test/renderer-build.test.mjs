@@ -3611,6 +3611,8 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.match(petGeometry, /width:\s*176,/);
   assert.match(petGeometry, /height:\s*198/);
   assert.match(petGeometry, /bubble:\s*\{\s*width:\s*224,\s*height:\s*228/s);
+  assert.match(petGeometry, /DESKTOP_PET_BUBBLE_VISIBLE_FOOTPRINT\s*=\s*\{\s*x:\s*64,\s*y:\s*92,/s);
+  assert.match(petGeometry, /if \(mode === "bubble"\) \{\s*const footprint = getDesktopPetVisibleFootprintForMode\(mode\);[\s\S]{0,180}DESKTOP_PET_VISIBLE_FOOTPRINT\.x - footprint\.x/);
   assert.match(petGeometry, /"task-list":\s*\{\s*width:\s*392,\s*height:\s*360/s);
   assert.match(desktopPetController, /activeTasks\.length > 0[\s\S]{0,80}return "task-list";/);
   assert.match(globalStyles, /\.desktop-pet-hitbox\s*\{[\s\S]{0,220}width:\s*174px;[\s\S]{0,120}min-height:\s*134px;/);
