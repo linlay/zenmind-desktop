@@ -94,6 +94,7 @@ import {
   listMarketItems,
   refreshMarketCatalog,
   saveMarketSettings,
+  toggleMarketFavorite,
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
@@ -2253,6 +2254,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     saveMarketSettings,
     listMarketItems,
     refreshMarketCatalog,
+    toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, { issueAgentAccessToken }),
     installMarketItem,
     updateMarketItem,
     uninstallMarketItem,

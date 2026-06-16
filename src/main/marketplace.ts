@@ -1,11 +1,23 @@
 import type { App } from "electron";
-import type { MarketCommandResult, MarketListResult, MarketItemType, MarketSection } from "../shared/contracts";
+import type {
+  AgentAuthIssueResult,
+  AgentAuthRefreshReason,
+  MarketCommandResult,
+  MarketFavoriteInput,
+  MarketFavoriteResult,
+  MarketItemType,
+  MarketListResult,
+  MarketSection
+} from "../shared/contracts";
 import {
+  asObject,
   DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   getMarketSettings,
+  mergeCatalogItems,
   upsertInstalledRecord,
   normalizeCatalog,
+  normalizeMarketApiBaseUrl,
   readInstalledRecords,
   removeInstalledRecord,
   saveMarketSettings,
@@ -49,6 +61,7 @@ import {
   installSkillFromCommand as installSkillFromCommandInput,
   listInstalledSkills
 } from "./skill-installer";
+import { t } from "./i18n/main-i18n";
 
 export {
   DEFAULT_MARKET_API_BASE_URL,
@@ -73,6 +86,114 @@ const MARKET_SECTIONS: readonly MarketSection[] = [
   "cli",
   "websiteApps"
 ];
+
+type IssueMarketAccessToken = (
+  app: App,
+  reason: AgentAuthRefreshReason
+) => Promise<AgentAuthIssueResult> | AgentAuthIssueResult;
+
+type MarketFavoriteOptions = MarketplaceOptions & {
+  fetchImpl?: typeof fetch;
+  issueAgentAccessToken?: IssueMarketAccessToken;
+};
+
+class MarketApiRequestError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function marketRoute(type: MarketItemType) {
+  switch (type) {
+    case "skill":
+      return "skills";
+    case "plugin":
+      return "plugins";
+    case "agent":
+      return "agents";
+    case "sandbox-image":
+      return "sandbox-images";
+    case "pet":
+      return "pets";
+    case "cli":
+      return "cli-tools";
+    case "website-app":
+      return "webapps";
+    default:
+      return "skills";
+  }
+}
+
+function getMarketApiBaseUrlForAction(app: App, options: MarketplaceOptions = {}) {
+  if (options.apiBaseUrl !== undefined) {
+    return options.marketEnabled === false ? "" : normalizeMarketApiBaseUrl(options.apiBaseUrl);
+  }
+  const settings = getMarketSettings(app);
+  return settings.enabled === true ? settings.apiBaseUrl : "";
+}
+
+async function readMarketApiResponse(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: text.trim() };
+  }
+}
+
+function marketApiErrorMessage(status: number, data: unknown) {
+  const raw = asObject(data);
+  const error = asObject(raw.error);
+  return String(error.message || raw.message || `HTTP ${status}`);
+}
+
+async function issueFavoriteAccessToken(
+  app: App,
+  reason: AgentAuthRefreshReason,
+  options: MarketFavoriteOptions
+) {
+  if (!options.issueAgentAccessToken) {
+    return "";
+  }
+  const result = await options.issueAgentAccessToken(app, reason);
+  if (!result.ok || !result.token.trim()) {
+    throw new Error(result.message || t("market.main.favoriteAuthRequired"));
+  }
+  return result.token.trim();
+}
+
+async function requestFavoriteUpdate(
+  app: App,
+  url: string,
+  method: "POST" | "DELETE",
+  options: MarketFavoriteOptions
+) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let token = await issueFavoriteAccessToken(app, "missing", options);
+  for (const reason of ["missing", "unauthorized"] as const) {
+    if (reason === "unauthorized") {
+      token = await issueFavoriteAccessToken(app, "unauthorized", options);
+    }
+    const response = await fetchImpl(url, {
+      method,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined
+    });
+    const data = await readMarketApiResponse(response);
+    if (response.ok) {
+      return data;
+    }
+    if (response.status !== 401 || reason === "unauthorized" || !options.issueAgentAccessToken) {
+      throw new MarketApiRequestError(response.status, marketApiErrorMessage(response.status, data));
+    }
+  }
+  throw new Error(t("market.main.favoriteAuthRequired"));
+}
 
 function combineMarketSections(
   pluginMarket: MarketSectionResult,
@@ -216,6 +337,46 @@ export async function refreshMarketCatalog(app: App, options: MarketplaceOptions
 
 export async function listMarketItems(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
   return refreshMarketCatalog(app, options);
+}
+
+export async function toggleMarketFavorite(
+  app: App,
+  input: MarketFavoriteInput,
+  options: MarketFavoriteOptions = {}
+): Promise<MarketFavoriteResult> {
+  const apiBaseUrl = getMarketApiBaseUrlForAction(app, options).replace(/\/+$/u, "");
+  if (!apiBaseUrl) {
+    throw new Error(t("market.main.marketApiNotConfigured"));
+  }
+  const itemId = String(input.itemId || "").trim();
+  if (!itemId) {
+    throw new Error(t("market.main.catalogItemNotFound", { itemId }));
+  }
+  const route = marketRoute(input.type);
+  const method = input.favorited ? "DELETE" : "POST";
+  const payload = await requestFavoriteUpdate(
+    app,
+    `${apiBaseUrl}/${route}/${encodeURIComponent(itemId)}/favorite`,
+    method,
+    options
+  );
+  const rawPayload = asObject(payload);
+  const itemPayload = rawPayload.item ?? rawPayload.data ?? payload;
+  const catalogItem = normalizeCatalog({
+    schemaVersion: 1,
+    items: [itemPayload]
+  }).items[0];
+  if (!catalogItem) {
+    throw new Error(t("market.main.favoriteInvalidResponse"));
+  }
+  const [item] = mergeCatalogItems(app, [catalogItem], []);
+  return {
+    ok: true,
+    item,
+    message: item.favorited
+      ? t("market.main.favoriteAdded", { name: item.name })
+      : t("market.main.favoriteRemoved", { name: item.name })
+  };
 }
 
 export async function installMarketItem(

@@ -126,7 +126,18 @@ export function matchesMarketItemQuery(item: MarketItem, query: string, t: Trans
   const assets = Object.values(item.assets ?? {})
     .map((asset) => [asset.url, asset.archiveType, asset.platform, asset.role].filter(Boolean).join(" "))
     .join(" ");
-  return `${item.id} ${item.name} ${item.type} ${item.description} ${item.version} ${item.readme ?? ""} ${item.tags.join(" ")} ${Object.values(item.metadata ?? {}).join(" ")} ${dependencies} ${assets} ${(item.detect?.commands ?? []).join(" ")} ${item.detect?.versionCommand ?? ""} ${item.websiteKind ?? ""} ${item.sandboxKind ?? ""} ${item.npmPackage ?? ""} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
+  const platforms = Object.entries(item.platforms ?? {})
+    .map(([key, platform]) => [
+      key,
+      platform.platform,
+      platform.os,
+      platform.arch,
+      platform.description,
+      platform.minDesktopVersion,
+      Object.values(platform.metadata ?? {}).join(" ")
+    ].filter(Boolean).join(" "))
+    .join(" ");
+  return `${item.id} ${item.name} ${item.type} ${item.description} ${item.version} ${item.readme ?? ""} ${item.tags.join(" ")} ${item.author ?? ""} ${item.createdAt ?? ""} ${item.downloadCount ?? ""} ${item.favoriteCount ?? ""} ${Object.values(item.metadata ?? {}).join(" ")} ${dependencies} ${assets} ${platforms} ${(item.detect?.commands ?? []).join(" ")} ${item.detect?.versionCommand ?? ""} ${item.websiteKind ?? ""} ${item.sandboxKind ?? ""} ${item.npmPackage ?? ""} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
     .toLowerCase()
     .includes(normalized);
 }

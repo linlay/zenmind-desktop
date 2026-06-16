@@ -22,6 +22,7 @@ const {
   listMarketItems,
   refreshMarketCatalog,
   saveMarketSettings,
+  toggleMarketFavorite,
   uninstallMarketItem,
   __testInternals
 } = require("../dist-electron/main/marketplace.js");
@@ -1300,6 +1301,11 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
         description: "Desktop assistant.",
         readme: "Agent readme",
         tags: ["agent", "assistant"],
+        author: "Lin Market",
+        createdAt: "2026-06-13T00:00:00.000Z",
+        downloadCount: 1200,
+        favoriteCount: 34,
+        favorited: true,
         assets: {
           universal: {
             url: "https://market.example.test/artifacts/agent/desktopassistant.tar.gz",
@@ -1309,6 +1315,19 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
             archiveType: "agent",
             platform: "universal",
             role: "primary"
+          }
+        },
+        platforms: {
+          "darwin-arm64": {
+            os: "darwin",
+            arch: "arm64",
+            description: "Apple Silicon build",
+            minDesktopVersion: "0.3.0"
+          },
+          "windows-x64": {
+            platform: "windows-x64",
+            os: "windows",
+            arch: "x64"
           }
         },
         dependencies: [{
@@ -1335,7 +1354,11 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
         assets: {},
         dependencies: [],
         metadata: {
-          source: "metadata-only"
+          source: "metadata-only",
+          author: "Metadata CLI",
+          createdAt: "2026-06-12T00:00:00.000Z",
+          downloads: "2,345",
+          favorites: "56"
         },
         install: {
           command: "brew install dbx"
@@ -1500,7 +1523,18 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
   assert.equal(byKey.get("skill:automation")?.state, "incompatible");
   assert.equal(byKey.get("agent:desktopassistant")?.dependencies?.[0]?.id, "desktop-action");
   assert.equal(byKey.get("agent:desktopassistant")?.readme, "Agent readme");
+  assert.equal(byKey.get("agent:desktopassistant")?.author, "Lin Market");
+  assert.equal(byKey.get("agent:desktopassistant")?.createdAt, "2026-06-13T00:00:00.000Z");
+  assert.equal(byKey.get("agent:desktopassistant")?.downloadCount, 1200);
+  assert.equal(byKey.get("agent:desktopassistant")?.favoriteCount, 34);
+  assert.equal(byKey.get("agent:desktopassistant")?.favorited, true);
+  assert.equal(byKey.get("agent:desktopassistant")?.platforms?.["darwin-arm64"]?.os, "darwin");
+  assert.equal(byKey.get("agent:desktopassistant")?.platforms?.["windows-x64"]?.arch, "x64");
   assert.equal(byKey.get("agent:desktopassistant")?.publishedAt, "2026-06-14T00:00:00.000Z");
+  assert.equal(byKey.get("cli:dbx")?.author, "Metadata CLI");
+  assert.equal(byKey.get("cli:dbx")?.createdAt, "2026-06-12T00:00:00.000Z");
+  assert.equal(byKey.get("cli:dbx")?.downloadCount, 2345);
+  assert.equal(byKey.get("cli:dbx")?.favoriteCount, 56);
   assert.equal(byKey.get("sandbox-image:python-template")?.sandboxKind, "environment-template");
   assert.equal(byKey.get("website-app:reg-report")?.websiteKind, "local-app");
   assert.equal(byKey.get("website-app:reg-report")?.dependencies?.[0]?.runtime, "node");
@@ -1737,6 +1771,143 @@ test("saved apiBaseUrl without enabled true does not request the market catalog"
     assert.equal(listed.items.length, 0);
     assert.equal(catalogRequests, 0);
   });
+});
+
+test("toggleMarketFavorite posts and deletes favorite state through the market API", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const requests = [];
+  const issueCalls = [];
+  const favoriteItem = {
+    id: "automation",
+    type: "skill",
+    name: "Automation",
+    version: "1.0.0",
+    description: "Automation skill",
+    tags: ["automation"],
+    dependencies: [],
+    assets: {},
+    downloadCount: 8,
+    favoriteCount: 0,
+    favorited: false
+  };
+
+  await withFixtureServer(new Map([
+    ["/api/v1/skills/automation/favorite", (req, res) => {
+      requests.push({
+        method: req.method,
+        authorization: req.headers.authorization
+      });
+      favoriteItem.favorited = req.method === "POST";
+      favoriteItem.favoriteCount = favoriteItem.favorited ? 1 : 0;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(favoriteItem));
+    }]
+  ]), async (baseUrl) => {
+    const issueAgentAccessToken = (_app, reason) => {
+      issueCalls.push(reason);
+      return { ok: true, token: "market-token", message: "issued" };
+    };
+
+    const favorited = await toggleMarketFavorite(app, {
+      itemId: "automation",
+      type: "skill",
+      favorited: false
+    }, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      issueAgentAccessToken
+    });
+
+    const unfavorited = await toggleMarketFavorite(app, {
+      itemId: "automation",
+      type: "skill",
+      favorited: true
+    }, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      issueAgentAccessToken
+    });
+
+    assert.equal(favorited.item.favorited, true);
+    assert.equal(favorited.item.favoriteCount, 1);
+    assert.equal(unfavorited.item.favorited, false);
+    assert.equal(unfavorited.item.favoriteCount, 0);
+    assert.deepEqual(requests.map((request) => request.method), ["POST", "DELETE"]);
+    assert.deepEqual(requests.map((request) => request.authorization), ["Bearer market-token", "Bearer market-token"]);
+    assert.deepEqual(issueCalls, ["missing", "missing"]);
+  });
+});
+
+test("toggleMarketFavorite refreshes the access token once after a 401", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-retry-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const requests = [];
+  const issueCalls = [];
+  await withFixtureServer(new Map([
+    ["/api/v1/plugins/activity-monitor/favorite", (req, res) => {
+      requests.push(req.headers.authorization);
+      if (req.headers.authorization !== "Bearer fresh-token") {
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ message: "unauthorized" }));
+        return;
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        id: "activity-monitor",
+        type: "plugin",
+        name: "Activity Monitor",
+        version: "1.0.0",
+        description: "Plugin",
+        tags: [],
+        dependencies: [],
+        assets: {},
+        favoriteCount: 4,
+        favorited: true
+      }));
+    }]
+  ]), async (baseUrl) => {
+    const issueAgentAccessToken = (_app, reason) => {
+      issueCalls.push(reason);
+      return {
+        ok: true,
+        token: reason === "unauthorized" ? "fresh-token" : "stale-token",
+        message: "issued"
+      };
+    };
+
+    const result = await toggleMarketFavorite(app, {
+      itemId: "activity-monitor",
+      type: "plugin",
+      favorited: false
+    }, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      issueAgentAccessToken
+    });
+
+    assert.equal(result.item.favorited, true);
+    assert.equal(result.item.favoriteCount, 4);
+    assert.deepEqual(issueCalls, ["missing", "unauthorized"]);
+    assert.deepEqual(requests, ["Bearer stale-token", "Bearer fresh-token"]);
+  });
+});
+
+test("toggleMarketFavorite reports missing market API configuration", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-no-api-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    () => toggleMarketFavorite(app, {
+      itemId: "automation",
+      type: "skill",
+      favorited: false
+    }),
+    /(?:Market API is not configured|市场 API 未配置)/
+  );
 });
 
 test("legacy marketApiBaseUrl in desktop market settings is ignored", (t) => {

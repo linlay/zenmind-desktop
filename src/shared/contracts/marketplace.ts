@@ -55,6 +55,20 @@ export interface MarketDetectSpec {
   versionCommand?: string;
 }
 
+export interface MarketPlatformSpec {
+  platform: string;
+  os?: string;
+  arch?: string;
+  description?: string;
+  readme?: string;
+  minDesktopVersion?: string;
+  metadata?: Record<string, string>;
+  dependencies?: MarketDependency[];
+  install?: MarketScriptSpec;
+  uninstall?: MarketScriptSpec;
+  detect?: MarketDetectSpec;
+}
+
 export interface MarketCatalogItem {
   id: string;
   type: MarketItemType;
@@ -67,8 +81,14 @@ export interface MarketCatalogItem {
   sandboxKind?: "environment-template" | "container-image";
   websiteKind?: "external" | "local-app";
   npmPackage?: string;
+  author?: string;
+  createdAt?: string;
+  downloadCount?: number;
+  favoriteCount?: number;
+  favorited?: boolean;
   dependencies: MarketDependency[];
   metadata?: Record<string, string>;
+  platforms?: Record<string, MarketPlatformSpec>;
   install?: MarketScriptSpec;
   uninstall?: MarketScriptSpec;
   detect?: MarketDetectSpec;
@@ -103,8 +123,14 @@ export interface MarketItem {
   websiteKind?: "external" | "local-app";
   readme?: string;
   npmPackage?: string;
+  author?: string;
+  createdAt?: string;
+  downloadCount?: number;
+  favoriteCount?: number;
+  favorited?: boolean;
   dependencies?: MarketDependency[];
   metadata?: Record<string, string>;
+  platforms?: Record<string, MarketPlatformSpec>;
   assets?: Record<string, MarketAsset>;
   install?: MarketScriptSpec;
   uninstall?: MarketScriptSpec;
@@ -142,6 +168,18 @@ export interface MarketListResult {
 
 export interface MarketListOptions {
   sections?: MarketSection[];
+}
+
+export interface MarketFavoriteInput {
+  itemId: string;
+  type: MarketItemType;
+  favorited: boolean;
+}
+
+export interface MarketFavoriteResult {
+  ok: boolean;
+  item: MarketItem;
+  message: string;
 }
 
 export interface MarketCommandResult {

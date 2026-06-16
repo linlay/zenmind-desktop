@@ -238,6 +238,7 @@ export interface MarketplaceIpcHandlerContextDependencies {
   saveMarketSettings: (...args: any[]) => unknown;
   listMarketItems: (...args: any[]) => unknown;
   refreshMarketCatalog: (...args: any[]) => unknown;
+  toggleMarketFavorite: (...args: any[]) => unknown;
   installMarketItem: (...args: any[]) => unknown;
   updateMarketItem: (...args: any[]) => unknown;
   uninstallMarketItem: (...args: any[]) => unknown;
@@ -272,6 +273,7 @@ export function createMarketplaceIpcHandlerOptions(
     saveMarketSettings: dependencies.saveMarketSettings,
     listMarketItems: dependencies.listMarketItems,
     refreshMarketCatalog: dependencies.refreshMarketCatalog,
+    toggleMarketFavorite: dependencies.toggleMarketFavorite,
     installMarketItem: dependencies.installMarketItem,
     updateMarketItem: dependencies.updateMarketItem,
     uninstallMarketItem: dependencies.uninstallMarketItem,

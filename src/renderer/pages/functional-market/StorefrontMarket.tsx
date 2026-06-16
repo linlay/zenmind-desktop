@@ -3,16 +3,21 @@ import {
   ArrowRightOutlined,
   ApiOutlined,
   AppstoreOutlined,
+  CalendarOutlined,
   CloudDownloadOutlined,
   CodeOutlined,
   CopyOutlined,
   CloseOutlined,
+  DownloadOutlined,
   GlobalOutlined,
+  HeartFilled,
+  HeartOutlined,
   InfoCircleOutlined,
   ReloadOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
-  SmileOutlined
+  SmileOutlined,
+  UserOutlined
 } from "@ant-design/icons";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
@@ -101,13 +106,46 @@ function numberFromMetadata(item: MarketItem, keys: string[]) {
   return 0;
 }
 
+function countFromValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.replace(/[^0-9]+/gu, ""), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function itemDownloadCount(item: MarketItem) {
+  return countFromValue(
+    item.downloadCount ??
+    item.metadata?.downloadCount ??
+    item.metadata?.downloads ??
+    item.metadata?.installCount
+  );
+}
+
+function itemFavoriteCount(item: MarketItem) {
+  return countFromValue(
+    item.favoriteCount ??
+    item.metadata?.favoriteCount ??
+    item.metadata?.favorites
+  );
+}
+
+function formatCount(value: unknown) {
+  return countFromValue(value).toLocaleString();
+}
+
 function dateFromMetadata(item: MarketItem) {
   const candidates = [
-    item.publishedAt,
     item.updatedAt,
+    item.publishedAt,
+    item.createdAt,
+    item.metadata?.updatedAt,
     item.metadata?.publishedAt,
     item.metadata?.releasedAt,
-    item.metadata?.updatedAt,
     item.metadata?.createdAt
   ];
   for (const raw of candidates) {
@@ -132,9 +170,10 @@ function sortMarketItems(items: MarketItem[], sortMode: SortMode) {
       const diff = numberFromMetadata(b, ["rating", "score"]) - numberFromMetadata(a, ["rating", "score"]);
       if (diff !== 0) return diff;
     } else {
-      const diff = numberFromMetadata(b, ["featuredOrder", "popularity", "downloads", "installCount"]) -
-        numberFromMetadata(a, ["featuredOrder", "popularity", "downloads", "installCount"]);
-      if (diff !== 0) return diff;
+      const downloadDiff = itemDownloadCount(b) - itemDownloadCount(a);
+      if (downloadDiff !== 0) return downloadDiff;
+      const favoriteDiff = itemFavoriteCount(b) - itemFavoriteCount(a);
+      if (favoriteDiff !== 0) return favoriteDiff;
     }
     return a.name.localeCompare(b.name, "zh-Hans-CN");
   });
@@ -241,6 +280,48 @@ function formatAssetSize(sizeBytes: number) {
   return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 }
 
+function itemAssetSize(item: MarketItem) {
+  const size = Object.values(item.assets ?? {})
+    .reduce((total, asset) => total + (Number.isFinite(asset.sizeBytes) ? asset.sizeBytes : 0), 0);
+  return size > 0 ? formatAssetSize(size) : "";
+}
+
+function itemAuthor(item: MarketItem) {
+  return item.author || item.metadata?.author || "ZenMind";
+}
+
+function formatMarketDate(value: string | undefined, locale: string, fallback: string) {
+  if (!value) {
+    return fallback;
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric"
+  }).format(new Date(timestamp));
+}
+
+function itemCreatedAt(item: MarketItem, locale: string, fallback: string) {
+  return formatMarketDate(item.createdAt || item.publishedAt || item.metadata?.createdAt, locale, fallback);
+}
+
+function platformSummary(item: MarketItem) {
+  const platforms = Object.keys(item.platforms ?? {});
+  const assetPlatforms = Object.keys(item.assets ?? {});
+  return [...new Set([...platforms, ...assetPlatforms])]
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a === "universal") return -1;
+      if (b === "universal") return 1;
+      return a.localeCompare(b);
+    })
+    .join(", ");
+}
+
 function dependencySummary(item: MarketItem) {
   return (item.dependencies ?? [])
     .map((dependency) => {
@@ -281,6 +362,13 @@ function assetSummary(item: MarketItem) {
 
 function metadataSummary(item: MarketItem) {
   const hiddenKeys = new Set([
+    "author",
+    "createdAt",
+    "downloadCount",
+    "downloads",
+    "favoriteCount",
+    "favorites",
+    "favorited",
     "installCommand",
     "installScriptUrl",
     "uninstallCommand",
@@ -319,6 +407,7 @@ function storefrontDetailRows(
     [t("market.storefront.detail.status"), marketItemStateLabel(item, t)],
     [t("market.storefront.detail.source"), marketSourceLabel(item, t)],
     [t("market.storefront.detail.compatibility"), compatibilityLabel(item, t)],
+    [t("market.storefront.detail.platforms"), platformSummary(item)],
     [t("market.storefront.detail.plan"), commercialMeta],
     [t("market.storefront.detail.tags"), item.tags.map(tagLabel).filter(Boolean).join(" ")],
     [t("market.storefront.detail.sandboxKind"), item.sandboxKind ?? ""],
@@ -331,8 +420,8 @@ function storefrontDetailRows(
     [t("market.storefront.detail.engine"), item.containerEngine ?? ""],
     [t("market.storefront.detail.image"), item.imageRef ?? ""],
     [t("market.storefront.detail.imageId"), item.imageId ?? ""],
-    [t("market.storefront.detail.size"), item.imageSize ?? ""],
-    [t("market.storefront.detail.createdAt"), item.imageCreatedAt ?? ""],
+    [t("market.storefront.detail.size"), item.imageSize || itemAssetSize(item)],
+    [t("market.storefront.detail.imageCreatedAt"), item.imageCreatedAt ?? ""],
     [t("market.storefront.detail.buildStatus"), item.buildStatus ?? ""],
     [t("market.storefront.detail.installPath"), item.installPath ?? ""],
     [t("market.storefront.detail.minDesktopVersion"), item.minDesktopVersion ?? ""],
@@ -355,7 +444,7 @@ function storefrontDetailRows(
 
 export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   const navigate = useNavigate();
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
   const [query, setQuery] = useState("");
   const [rangeMode, setRangeMode] = useState<RangeMode>("all");
@@ -363,6 +452,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
   const [busyItemId, setBusyItemId] = useState("");
+  const [favoritingItemKey, setFavoritingItemKey] = useState("");
   const [feedback, setFeedback] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<MarketItem | null>(null);
@@ -449,6 +539,40 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     }
     const result = await window.electronAPI.clipboard.writeText(value);
     setFeedback(result.ok ? t("market.cli.copied", { label }) : (result.message ?? t("market.cli.copyFailed")));
+  }
+
+  async function toggleFavorite(item: MarketItem) {
+    const key = `${item.type}:${item.id}`;
+    if (favoritingItemKey) {
+      return;
+    }
+    setFavoritingItemKey(key);
+    try {
+      const command = getMarketMethod("toggleFavorite");
+      if (!command) {
+        throw createMissingMarketApiError("toggleFavorite", t);
+      }
+      const result = await command({
+        itemId: item.id,
+        type: item.type,
+        favorited: Boolean(item.favorited)
+      });
+      setMarketResult((current) => ({
+        ...current,
+        items: current.items.map((entry) => (
+          entry.id === result.item.id && entry.type === result.item.type ? result.item : entry
+        ))
+      }));
+      setSelectedDetailItem((current) => (
+        current && current.id === result.item.id && current.type === result.item.type ? result.item : current
+      ));
+      setFeedback(result.message);
+    } catch (reason) {
+      console.warn(`[market-storefront] favorite toggle failed for ${item.id}`, reason);
+      setFeedback(normalizeError(reason));
+    } finally {
+      setFavoritingItemKey("");
+    }
   }
 
   function openDetail(item: MarketItem) {
@@ -601,6 +725,12 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       : selectedDetailItem.name;
     const description = marketCardDescription(selectedDetailItem);
     const rows = storefrontDetailRows(selectedDetailItem, service, t);
+    const favoriteKey = `${selectedDetailItem.type}:${selectedDetailItem.id}`;
+    const isFavoriting = favoritingItemKey === favoriteKey;
+    const favoriteLabel = selectedDetailItem.favorited
+      ? t("market.favorite.unfavorite")
+      : t("market.favorite.favorite");
+    const favoriteIcon = selectedDetailItem.favorited ? <HeartFilled /> : <HeartOutlined />;
 
     return (
       <div className="market-store-detail-backdrop" onClick={() => setSelectedDetailItem(null)}>
@@ -633,6 +763,35 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
             </button>
           </div>
           {description ? <p className="market-store-detail-description">{description}</p> : null}
+          <div className="market-store-detail-meta">
+            <span className="market-store-detail-meta-pill">
+              <UserOutlined />
+              <span>{t("market.storefront.detail.author")}</span>
+              <strong>{itemAuthor(selectedDetailItem)}</strong>
+            </span>
+            <span className="market-store-detail-meta-pill">
+              <CalendarOutlined />
+              <span>{t("market.storefront.detail.createdAt")}</span>
+              <strong>{itemCreatedAt(selectedDetailItem, locale, t("common.none"))}</strong>
+            </span>
+            <span className="market-store-detail-meta-pill">
+              <DownloadOutlined />
+              <span>{t("market.stats.downloads")}</span>
+              <strong>{formatCount(itemDownloadCount(selectedDetailItem))}</strong>
+            </span>
+            <button
+              type="button"
+              className={selectedDetailItem.favorited ? "market-store-detail-meta-pill market-store-favorite is-active" : "market-store-detail-meta-pill market-store-favorite"}
+              onClick={() => void toggleFavorite(selectedDetailItem)}
+              disabled={isFavoriting}
+              aria-label={`${favoriteLabel}: ${formatCount(itemFavoriteCount(selectedDetailItem))}`}
+              title={favoriteLabel}
+            >
+              {favoriteIcon}
+              <span>{t("market.stats.favorites")}</span>
+              <strong>{formatCount(itemFavoriteCount(selectedDetailItem))}</strong>
+            </button>
+          </div>
           <dl className="market-store-detail-grid">
             {rows.map((row) => (
               <div key={row.label}>
@@ -650,6 +809,10 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     const service = item.type === "plugin" ? serviceById.get(item.id) ?? null : null;
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name) : item.name;
     const description = marketCardDescription(item);
+    const platformChip = platformSummary(item);
+    const favoriteKey = `${item.type}:${item.id}`;
+    const isFavoriting = favoritingItemKey === favoriteKey;
+    const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
     const chips = Array.from(new Set([
       ...item.tags,
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
@@ -670,20 +833,40 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
             {description ? <p className="market-store-description">{description}</p> : null}
           </div>
         </div>
-        {chips.length > 0 ? (
+        {chips.length > 0 || platformChip ? (
           <div className="market-store-tags" aria-label={t("market.tags.aria", { name: displayName })}>
             {chips.map((chip) => <span key={chip}>{tagLabel(chip)}</span>)}
+            {platformChip ? <span className="market-store-platform-chip">{platformChip}</span> : null}
           </div>
         ) : null}
         <div className="market-store-card-footer">
-          <button
-            type="button"
-            className="market-store-detail-link"
-            onClick={() => openDetail(item)}
-          >
-            <span>{t("market.action.details")}</span>
-            <ArrowRightOutlined />
-          </button>
+          <div className="market-store-footer-meta">
+            <button
+              type="button"
+              className="market-store-detail-link"
+              onClick={() => openDetail(item)}
+            >
+              <span>{t("market.action.details")}</span>
+              <ArrowRightOutlined />
+            </button>
+            <div className="market-store-stats">
+              <span className="market-store-stat-pill" title={t("market.stats.downloads")} aria-label={`${t("market.stats.downloads")}: ${formatCount(itemDownloadCount(item))}`}>
+                <DownloadOutlined />
+                <span>{formatCount(itemDownloadCount(item))}</span>
+              </span>
+              <button
+                type="button"
+                className={item.favorited ? "market-store-stat-pill market-store-stat-button is-active" : "market-store-stat-pill market-store-stat-button"}
+                onClick={() => void toggleFavorite(item)}
+                disabled={isFavoriting || Boolean(favoritingItemKey)}
+                title={favoriteLabel}
+                aria-label={`${favoriteLabel}: ${formatCount(itemFavoriteCount(item))}`}
+              >
+                {item.favorited ? <HeartFilled /> : <HeartOutlined />}
+                <span>{formatCount(itemFavoriteCount(item))}</span>
+              </button>
+            </div>
+          </div>
           <div className="market-store-card-action">
             {renderPrimaryAction(item)}
           </div>

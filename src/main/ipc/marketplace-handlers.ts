@@ -16,6 +16,7 @@ export interface MarketplaceIpcHandlerOptions {
   saveMarketSettings: (app: any, input: any) => any;
   listMarketItems: (app: any, options?: any) => any;
   refreshMarketCatalog: (app: any, options?: any) => Promise<any>;
+  toggleMarketFavorite: (app: any, input: any) => Promise<any>;
   installMarketItem: (app: any, itemId: string) => Promise<any>;
   updateMarketItem: (app: any, itemId: string) => Promise<any>;
   uninstallMarketItem: (app: any, itemId: string) => Promise<any>;
@@ -49,6 +50,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     saveMarketSettings,
     listMarketItems,
     refreshMarketCatalog,
+    toggleMarketFavorite,
     installMarketItem,
     updateMarketItem,
     uninstallMarketItem,
@@ -88,6 +90,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
   ipcMain.handle("market.saveSettings", async (_event: any, input: any) => saveMarketSettings(app, input));
   ipcMain.handle("market.list", async (_event: any, listOptions: any) => listMarketItems(app, listOptions));
   ipcMain.handle("market.refresh", async (_event: any, listOptions: any) => refreshMarketCatalog(app, listOptions));
+  ipcMain.handle("market.toggleFavorite", async (_event: any, input: any) => toggleMarketFavorite(app, input));
 
   ipcMain.handle("market.install", async (_event: any, itemId: string) => runServiceMutation(async () => {
     const result = await installMarketItem(app, itemId);

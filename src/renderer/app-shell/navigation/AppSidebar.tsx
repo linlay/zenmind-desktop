@@ -2293,6 +2293,7 @@ export function AppSidebar({
   }
 
   function renderToolMenu() {
+    const shouldRenderDesktopSsoAccount = desktopSsoStatus?.configured === true;
     const topToolItems = fixedToolItems.filter((item) =>
       item.to === "/agents" || item.to === "/registries" || item.to === "/market"
     );
@@ -2315,8 +2316,12 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
-        {renderAccountMenuUserItem()}
-        <div className="sidebar-account-menu-divider" aria-hidden="true" />
+        {shouldRenderDesktopSsoAccount ? (
+          <>
+            {renderAccountMenuUserItem()}
+            <div className="sidebar-account-menu-divider" aria-hidden="true" />
+          </>
+        ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
         {middleToolItems.map((item) => renderToolLink(item))}

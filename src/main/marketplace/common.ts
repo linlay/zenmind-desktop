@@ -11,6 +11,7 @@ import type {
   MarketItem,
   MarketItemType,
   MarketListOptions,
+  MarketPlatformSpec,
   MarketScriptSpec,
   MarketSettings,
   MarketSettingsInput
@@ -104,6 +105,31 @@ export function asStringArray(value: unknown) {
 
 export function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+export function asCount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.replace(/[^0-9]+/gu, ""), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+export function asBoolean(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+  return false;
 }
 
 export function isMarketItemType(value: unknown): value is MarketItemType {
@@ -238,6 +264,58 @@ function normalizeDetectSpec(value: unknown): MarketDetectSpec | undefined {
   return spec.commands.length > 0 || spec.versionCommand ? spec : undefined;
 }
 
+function normalizeMetadata(value: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(asObject(value))
+      .map(([key, item]) => [key, asString(item).trim()])
+      .filter(([, item]) => item)
+  );
+}
+
+function normalizePlatformSpec(key: string, value: unknown): MarketPlatformSpec | null {
+  const raw = asObject(value);
+  const platform = asString(raw.platform).trim() || asString(raw.key).trim() || key.trim() || "universal";
+  if (!platform) {
+    return null;
+  }
+  const dependencies = normalizeDependencies(raw.dependencies);
+  const metadata = normalizeMetadata(raw.metadata);
+  const spec: MarketPlatformSpec = {
+    platform,
+    os: asString(raw.os).trim() || undefined,
+    arch: asString(raw.arch).trim() || undefined,
+    description: asString(raw.description).trim() || undefined,
+    readme: asString(raw.readme).trim() || undefined,
+    minDesktopVersion: asString(raw.minDesktopVersion).trim() || undefined,
+    metadata,
+    dependencies,
+    install: normalizeScriptSpec(raw.install),
+    uninstall: normalizeScriptSpec(raw.uninstall),
+    detect: normalizeDetectSpec(raw.detect)
+  };
+  return spec;
+}
+
+function normalizePlatforms(value: unknown, assets: Record<string, MarketAsset>) {
+  const platforms: Record<string, MarketPlatformSpec> = {};
+  for (const [key, rawPlatform] of Object.entries(asObject(value))) {
+    const normalizedKey = key.trim() || "universal";
+    const platform = normalizePlatformSpec(normalizedKey, rawPlatform);
+    if (platform) {
+      platforms[platform.platform] = platform;
+    }
+  }
+  for (const [key] of Object.entries(assets)) {
+    const normalizedKey = key.trim() || "universal";
+    if (!platforms[normalizedKey]) {
+      platforms[normalizedKey] = {
+        platform: normalizedKey
+      };
+    }
+  }
+  return platforms;
+}
+
 function isDesktopInstallableAsset(
   item: Pick<MarketCatalogItem, "type" | "sandboxKind">,
   asset: MarketAsset
@@ -288,11 +366,7 @@ export function normalizeCatalog(input: unknown): Catalog {
       }
     }
     const rawMetadata = asObject(item.metadata);
-    const metadata: Record<string, string> = Object.fromEntries(
-      Object.entries(rawMetadata)
-        .map(([key, value]) => [key, asString(value).trim()])
-        .filter(([, value]) => value)
-    );
+    const metadata = normalizeMetadata(rawMetadata);
     const installSpec = normalizeScriptSpec(item.install);
     const uninstallSpec = normalizeScriptSpec(item.uninstall);
     const detectSpec = normalizeDetectSpec(item.detect);
@@ -308,8 +382,15 @@ export function normalizeCatalog(input: unknown): Catalog {
     if (uninstallScriptUrl) metadata.uninstallScriptUrl = uninstallScriptUrl;
     const publishedAt = asString(item.publishedAt).trim() || undefined;
     const updatedAt = asString(item.updatedAt).trim() || undefined;
+    const createdAt = asString(item.createdAt).trim() || asString(rawMetadata.createdAt).trim() || publishedAt;
+    const author = asString(item.author).trim() || metadata.author || undefined;
+    const downloadCount = asCount(item.downloadCount ?? rawMetadata.downloadCount ?? rawMetadata.downloads ?? item.downloads);
+    const favoriteCount = asCount(item.favoriteCount ?? rawMetadata.favoriteCount ?? rawMetadata.favorites ?? item.favorites);
+    const favorited = asBoolean(item.favorited ?? rawMetadata.favorited ?? rawMetadata.favorite);
+    const platforms = normalizePlatforms(item.platforms, assets);
     if (publishedAt) metadata.publishedAt = publishedAt;
     if (updatedAt) metadata.updatedAt = updatedAt;
+    if (createdAt) metadata.createdAt = createdAt;
     const rawScripts = asObject(rawMetadata.scripts || item.scripts);
     const scriptPlatforms = [
       ["macos", "macos"],
@@ -341,8 +422,14 @@ export function normalizeCatalog(input: unknown): Catalog {
       sandboxKind,
       websiteKind,
       npmPackage: asString(item.npmPackage).trim() || undefined,
+      author,
+      createdAt,
+      downloadCount,
+      favoriteCount,
+      favorited,
       dependencies: normalizeDependencies(item.dependencies),
       metadata,
+      platforms,
       install: installSpec,
       uninstall: uninstallSpec,
       detect: detectSpec,
@@ -661,6 +748,12 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
     npmPackage: item.npmPackage,
     dependencies: item.dependencies,
     metadata: item.metadata,
+    author: item.author,
+    createdAt: item.createdAt,
+    downloadCount: item.downloadCount,
+    favoriteCount: item.favoriteCount,
+    favorited: item.favorited,
+    platforms: item.platforms,
     assets: item.assets,
     install: item.install,
     uninstall: item.uninstall,

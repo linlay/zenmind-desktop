@@ -48,11 +48,12 @@ export function marketSourceLabel(item: MarketItem, t: TranslateFunction) {
 }
 
 export function marketVersionLabel(item: MarketItem) {
-  const version = item.installedVersion ?? item.version;
-  if (item.type === "sandbox-image") {
-    return version || "latest";
+  const rawVersion = String(item.installedVersion ?? item.version ?? "").trim();
+  const version = /^[vV]\d/u.test(rawVersion) ? rawVersion.slice(1) : rawVersion;
+  if (!version) {
+    return item.type === "sandbox-image" ? "latest" : "";
   }
-  return version.startsWith("v") ? version : `v${version}`;
+  return `v${version}`;
 }
 
 export function marketItemStateLabel(item: MarketItem, t: TranslateFunction) {
