@@ -264,6 +264,41 @@ test("sync-env rejects current brand and legacy env wrapper directories", async 
   );
 });
 
+test("sync-env clears stale bundled env zip when ENV_ZIP is not provided", async (t) => {
+  const root = createBrandFixture(t);
+  fs.writeFileSync(path.join(root, "VERSION"), "v1.2.3\n", "utf8");
+  const staleZipPath = path.join(root, "build", "resources", "env", "env.zip");
+  fs.mkdirSync(path.dirname(staleZipPath), { recursive: true });
+  fs.writeFileSync(staleZipPath, "stale", "utf8");
+
+  const result = await prepareBundledEnvZip({
+    rootDir: root,
+    env: { BRAND: "zenmind" },
+    logger: silentLogger
+  });
+  const manifest = readJson(path.join(root, "build", "resources", "env", "manifest.json"));
+
+  assert.equal(result.bundled, false);
+  assert.equal(result.fileName, null);
+  assert.equal(result.outputPath, null);
+  assert.equal(fs.existsSync(staleZipPath), false);
+  assert.deepEqual(manifest, {
+    bundled: false,
+    fileName: null,
+    version: "1.2.3"
+  });
+});
+
+test("dev startup syncs env zip resources before building the main process", () => {
+  const devScript = fs.readFileSync(path.join(projectRoot, "scripts", "dev.mjs"), "utf8");
+  const syncEnvIndex = devScript.indexOf('["./scripts/sync-env-zip.mjs"]');
+  const buildMainIndex = devScript.indexOf('["run", "build:main"]');
+
+  assert.notEqual(syncEnvIndex, -1);
+  assert.notEqual(buildMainIndex, -1);
+  assert.equal(syncEnvIndex < buildMainIndex, true);
+});
+
 test("sync-demo defaults to manifest only and copies webapp templates when enabled", async (t) => {
   const root = createBrandFixture(t);
   const sourceDir = path.join(root, "public", "webapp-templates", "demo-node-html");

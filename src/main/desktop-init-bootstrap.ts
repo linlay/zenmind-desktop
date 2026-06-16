@@ -14,13 +14,14 @@ import {
 import { importWebsiteItems } from "./webs/website-actions";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { resolveDesktopSsoConfigPath } from "./oidc-sso";
-import { getDesktopConfigRoot } from "./user-paths";
+import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
 import { saveDesktopPetSettings } from "./copilot/pet-copilot/desktop-pet";
 import { saveMarketSettings } from "./marketplace/common";
 import { saveTaskBoardSettings } from "./task-board-runtime";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
+const DESKTOP_INIT_BOOTSTRAP_STATE_FILE = "bootstrap.json";
 
 type AppPathReader = Pick<App, "getPath">;
 
@@ -32,6 +33,14 @@ type BootstrapApplyResult = {
   sso: "applied" | "absent";
   webs: "applied" | "absent";
   assistant: "recorded" | "absent";
+};
+
+type DesktopInitBootstrapState = {
+  schemaVersion: 1;
+  appliedAt: string;
+  sourcePath: string;
+  consumed: boolean;
+  appliedResult: BootstrapApplyResult;
 };
 
 type DesktopInitAssistantDefaults = {
@@ -61,6 +70,10 @@ function readJsonFile(filePath: string) {
 function writeJsonFile(filePath: string, value: unknown) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function writeBootstrapState(app: App, state: DesktopInitBootstrapState) {
+  writeJsonFile(path.join(getDesktopStateRoot(app), DESKTOP_INIT_BOOTSTRAP_STATE_FILE), state);
 }
 
 function removeDesktopInitFile(initPath: string) {
@@ -326,18 +339,6 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
   return "applied";
 }
 
-export function applyDesktopInitSsoDefaults(
-  app: App,
-  platform: NodeJS.Platform = process.platform
-): BootstrapApplyResult["sso"] {
-  const initPath = resolveDesktopInitPath(app, platform);
-  const defaults = readJsonFile(initPath);
-  if (!isRecord(defaults)) {
-    return "absent";
-  }
-  return applySsoDefaults(app, defaults.sso, platform);
-}
-
 function hasWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
   return (isRecord(webs) && Array.isArray(webs.websites)) ||
     Array.isArray(webs) ||
@@ -377,27 +378,56 @@ export function applyDesktopInitBootstrap(
   platform: NodeJS.Platform = process.platform
 ) {
   const initPath = resolveDesktopInitPath(app, platform);
-  const defaults = readJsonFile(initPath);
+  let defaults: unknown;
+  try {
+    defaults = readJsonFile(initPath);
+  } catch (error) {
+    console.warn(`[desktop-init] failed to read ${DESKTOP_INIT_FILE}:`, error);
+    return {
+      ok: false,
+      applied: false,
+      reason: "invalid" as const,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
   if (!isRecord(defaults)) {
     return { ok: true, applied: false, reason: "missing" as const };
   }
-  const assistant = normalizeDesktopInitAssistantDefaults(defaults.assistant);
+  try {
+    const assistant = normalizeDesktopInitAssistantDefaults(defaults.assistant);
 
-  const applied: BootstrapApplyResult = {
-    profile: applyProfileDefaults(app, defaults.profile, assistant),
-    kanban: applyKanbanDefaults(app, defaults.kanban, defaults.profile),
-    pet: applyPetDefaults(app, defaults.pet, platform),
-    market: applyMarketDefaults(app, defaults.market),
-    sso: applySsoDefaults(app, defaults.sso, platform),
-    webs: applyWebsiteDefaults(app, defaults.webs, defaults.websites),
-    assistant: writeAssistantDefaults(app, assistant)
-  };
-  removeDesktopInitFile(initPath);
-  return { ok: true, applied: true, appliedResult: applied };
+    const applied: BootstrapApplyResult = {
+      profile: applyProfileDefaults(app, defaults.profile, assistant),
+      kanban: applyKanbanDefaults(app, defaults.kanban, defaults.profile),
+      pet: applyPetDefaults(app, defaults.pet, platform),
+      market: applyMarketDefaults(app, defaults.market),
+      sso: applySsoDefaults(app, defaults.sso, platform),
+      webs: applyWebsiteDefaults(app, defaults.webs, defaults.websites),
+      assistant: writeAssistantDefaults(app, assistant)
+    };
+    removeDesktopInitFile(initPath);
+    writeBootstrapState(app, {
+      schemaVersion: 1,
+      appliedAt: new Date().toISOString(),
+      sourcePath: initPath,
+      consumed: true,
+      appliedResult: applied
+    });
+    return { ok: true, applied: true, appliedResult: applied };
+  } catch (error) {
+    console.warn(`[desktop-init] failed to apply ${DESKTOP_INIT_FILE}:`, error);
+    return {
+      ok: false,
+      applied: false,
+      reason: "invalid" as const,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
 
 export const __testInternals = {
   DESKTOP_INIT_FILE,
+  DESKTOP_INIT_BOOTSTRAP_STATE_FILE,
   pathApiForRuntimeRoot,
   normalizeDesktopInitAssistantDefaults,
   applyProfileDefaults,

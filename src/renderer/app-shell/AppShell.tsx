@@ -589,6 +589,68 @@ export function AppShell() {
     return nextState;
   }
 
+  async function refreshAssistantSettingsFromCanonical() {
+    try {
+      const settings = await window.electronAPI.assistant.getSettings();
+      setAssistantSettings(settings);
+    } catch {
+      // Keep the last usable settings if the bridge is not ready yet.
+    }
+  }
+
+  async function refreshThemePreferenceFromCanonical() {
+    try {
+      const profileTheme = await window.electronAPI.settings.getThemePreference();
+      if (isThemePreference(profileTheme)) {
+        setThemeMode(profileTheme);
+      }
+    } catch {
+      // Keep the current theme if settings are temporarily unavailable.
+    } finally {
+      setThemePreferenceLoaded(true);
+    }
+  }
+
+  async function refreshNavigationPreferencesFromCanonical() {
+    try {
+      const preferences = await window.electronAPI.settings.getNavigationPreferences();
+      if (Array.isArray(preferences?.mainOrder)) {
+        setSidebarNavOrder(preferences.mainOrder as SidebarNavOrderItemKey[]);
+      }
+      if (Array.isArray(preferences?.webOrder)) {
+        setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
+      }
+    } catch {
+      // Keep the current navigation order if settings are temporarily unavailable.
+    } finally {
+      setNavigationPreferencesLoaded(true);
+    }
+  }
+
+  async function refreshKanbanSettingsFromCanonical() {
+    try {
+      const result = await window.electronAPI.taskBoard.getSettings();
+      setKanbanEnabled(result.settings.enabled);
+    } catch {
+      // Keep the current task board visibility if settings are temporarily unavailable.
+    } finally {
+      setKanbanSettingsLoaded(true);
+    }
+  }
+
+  function refreshDesktopShellConfigFromCanonical() {
+    void refreshThemePreferenceFromCanonical();
+    void refreshNavigationPreferencesFromCanonical();
+    void refreshKanbanSettingsFromCanonical();
+    void refreshMarketSettingsVisibility();
+    void refreshAssistantSettingsFromCanonical();
+    void refreshDesktopSsoStatus();
+    void refreshServicesRef.current();
+    refreshWebItems().catch(() => undefined);
+    void refreshAssistantNavAgents();
+    void refreshCopilotAgentOptions();
+  }
+
   function openAssistantDock(request?: AssistantWorkerOpenRequest) {
     if (isAgentWebclientMainRoute) {
       return;
@@ -788,6 +850,12 @@ export function AppShell() {
       refreshWebItems().catch(() => undefined);
       void refreshAssistantNavAgents();
       void refreshCopilotAgentOptions();
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.electronAPI.settings.onDesktopConfigChanged(() => {
+      refreshDesktopShellConfigFromCanonical();
     });
   }, []);
 

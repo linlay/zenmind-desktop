@@ -179,10 +179,7 @@ import {
   getDataRoot,
   getElectronUserDataRoot
 } from "./user-paths";
-import {
-  applyDesktopInitBootstrap,
-  applyDesktopInitSsoDefaults
-} from "./desktop-init-bootstrap";
+import { applyDesktopInitBootstrap } from "./desktop-init-bootstrap";
 import {
   bundledEnvZipExists,
   generateBackupDirName,
@@ -527,14 +524,14 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
   runtimeRootExistedAtStartup
 });
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
+let startupEnvImportFailureMessage = "";
 function initializeUserDataRootsAndSettings() {
   ensureDataRoot(app);
+  applyDesktopInitBootstrap(app, mainProcessContext.platform);
   const webappTemplateResult = installBundledWebappTemplates(app);
   if (!webappTemplateResult.ok) {
     console.warn(`[main] ${webappTemplateResult.message}`);
   }
-  applyDesktopInitBootstrap(app, mainProcessContext.platform);
-  applyDesktopInitSsoDefaults(app, mainProcessContext.platform);
   const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
   if (isFirstDesktopInstall) {
     setMainLocale(app, initialLocaleSettings.locale);
@@ -1682,6 +1679,14 @@ function notifyServicesChanged() {
   }
 }
 
+function emitTaskBoardChanged() {
+  const targetWindow = appState.mainWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+  targetWindow.webContents.send("taskBoard.changed");
+}
+
 async function publishPluginBridgeServiceStates() {
   try {
     const services = await listServices(app);
@@ -1931,6 +1936,44 @@ function emitLocaleChanged(settings: ReturnType<typeof setMainLocale>) {
   }
 }
 
+function emitDesktopConfigChanged(reason: string) {
+  const event = {
+    reason,
+    changedAt: new Date().toISOString()
+  };
+  for (const targetWindow of [
+    appState.mainWindow,
+    appState.desktopPetWindow,
+    quickCopilotWindowController.getWindow(),
+    logViewerWindowController.getWindow()
+  ]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    targetWindow.webContents.send("settings.desktopConfigChanged", event);
+  }
+}
+
+function refreshDesktopRuntimeConfigFromCanonicalFiles(reason: string) {
+  const settings = initializeMainI18n(app);
+  buildApplicationMenu();
+  appTrayController.refreshContextMenu();
+  emitLocaleChanged(settings);
+
+  appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform);
+  refreshDesktopPetState();
+  if (isDesktopPetSupportedPlatform(mainProcessContext.platform) && appState.desktopPetSettings.enabled) {
+    void showDesktopPetWindow();
+  } else {
+    hideDesktopPetWindow(false);
+  }
+
+  desktopSsoController.broadcastStatus(getDesktopSsoStatus(app));
+  notifyServicesChanged();
+  emitTaskBoardChanged();
+  emitDesktopConfigChanged(reason);
+}
+
 async function handleStartupEnvRootConflict() {
   if (!envZipConflictNeedsDecision) {
     return true;
@@ -2126,11 +2169,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     callAgentPlatform,
     listLocalAgents: listTaskBoardLocalAgents,
     onChanged: () => {
-      const targetWindow = appState.mainWindow;
-      if (!targetWindow || targetWindow.isDestroyed()) {
-        return;
-      }
-      targetWindow.webContents.send("taskBoard.changed");
+      emitTaskBoardChanged();
     },
     onDebug: (message) => {
       console.warn(`[task-board] ${message}`);
@@ -2232,7 +2271,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     notifyServicesChanged,
     runStartupPreparation,
     applyDesktopInitBootstrap,
-    applyDesktopInitSsoDefaults,
+    refreshDesktopRuntimeConfigFromCanonicalFiles,
     oldRootDecisionRef,
     generateBackupDirName,
     migrateOldRootToBackup,
@@ -2437,6 +2476,12 @@ if (gotSingleInstanceLock) {
       return;
     }
 
+    const startupRuntimeReady = await prepareStartupRuntimeEnvironment();
+    if (!startupRuntimeReady.ok) {
+      startupEnvImportFailureMessage = startupRuntimeReady.message;
+      startupRestoreController.setEnvImportRequired(startupRuntimeReady.message);
+    }
+
     initializeUserDataRootsAndSettings();
     ensureDataRoot(app);
     configurePluginBridge({
@@ -2487,16 +2532,10 @@ if (gotSingleInstanceLock) {
 
 async function handleStartupPipeline() {
   try {
-    const shouldImportBundledEnvZip =
-      oldRootDecisionRef.current === "migrate" ||
-      (requireEnvZipImportAtStartup && oldRootDecisionRef.current !== "keep");
-    if (shouldImportBundledEnvZip) {
-      const bundledEnvImport = await tryImportBundledEnvZipAtStartup();
-      if (!bundledEnvImport.ok) {
-        startupRestoreController.setEnvImportRequired(bundledEnvImport.message);
-        notifyServicesChanged();
-        return;
-      }
+    if (startupEnvImportFailureMessage) {
+      startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);
+      notifyServicesChanged();
+      return;
     }
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
@@ -2530,6 +2569,16 @@ async function handleStartupPipeline() {
   }
 }
 
+async function prepareStartupRuntimeEnvironment(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const shouldImportBundledEnvZip =
+    oldRootDecisionRef.current === "migrate" ||
+    (requireEnvZipImportAtStartup && oldRootDecisionRef.current !== "keep");
+  if (!shouldImportBundledEnvZip) {
+    return { ok: true };
+  }
+  return tryImportBundledEnvZipAtStartup();
+}
+
 async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
     const importResult = await importBundledEnvZipToRuntime(app, mainProcessContext.platform);
@@ -2546,8 +2595,6 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
     console.info(
       `[main] imported bundled env.zip from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
     );
-    applyDesktopInitBootstrap(app, mainProcessContext.platform);
-    applyDesktopInitSsoDefaults(app, mainProcessContext.platform);
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

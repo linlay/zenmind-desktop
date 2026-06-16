@@ -116,6 +116,11 @@ export type DesktopAppPairingPayloadResult =
 export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
+export type DesktopConfigChangedEvent = {
+  reason: string;
+  changedAt: string;
+};
+export type DesktopConfigChangedListener = (event: DesktopConfigChangedEvent) => void;
 
 export interface RendererDiagnosticReport {
   source: "window-error" | "unhandledrejection" | "react-error-boundary";
@@ -309,6 +314,7 @@ export interface DesktopApi {
     setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;
     createAppPairingPayload: () => Promise<DesktopAppPairingPayloadResult>;
     onLocaleChanged: (listener: LocaleChangedListener) => () => void;
+    onDesktopConfigChanged: (listener: DesktopConfigChangedListener) => () => void;
   };
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;

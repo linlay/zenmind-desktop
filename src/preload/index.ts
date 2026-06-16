@@ -18,6 +18,7 @@ import type {
   DesktopSsoStatusListener,
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
+  DesktopConfigChangedListener,
   DesktopPetStateListener,
   DesktopApi,
   LocaleChangedListener,
@@ -326,6 +327,19 @@ const api: DesktopApi = {
       ipcRenderer.on("settings.localeChanged", handleLocaleChanged);
       return () => {
         ipcRenderer.off("settings.localeChanged", handleLocaleChanged);
+      };
+    },
+    onDesktopConfigChanged: (listener: DesktopConfigChangedListener) => {
+      const handleDesktopConfigChanged = (
+        _event: Electron.IpcRendererEvent,
+        event: Parameters<DesktopConfigChangedListener>[0]
+      ) => {
+        listener(event);
+      };
+
+      ipcRenderer.on("settings.desktopConfigChanged", handleDesktopConfigChanged);
+      return () => {
+        ipcRenderer.off("settings.desktopConfigChanged", handleDesktopConfigChanged);
       };
     }
   },

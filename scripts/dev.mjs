@@ -76,6 +76,8 @@ try {
   );
   shutdown(1);
 }
+// Keep dev bundled env resources explicit. Without ENV_ZIP this clears stale env.zip.
+await runAndWait("node", ["./scripts/sync-env-zip.mjs"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "build:main"], brandProcessOptions({ cwd: projectRoot }));
 
 track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"], brandProcessOptions({ cwd: projectRoot })));

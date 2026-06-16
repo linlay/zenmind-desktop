@@ -150,7 +150,7 @@ export interface ServicesIpcHandlerContextDependencies {
   startupRestoreController: unknown;
   importEnvZipToRuntime?: (...args: any[]) => unknown;
   applyDesktopInitBootstrap?: (...args: any[]) => unknown;
-  applyDesktopInitSsoDefaults?: (...args: any[]) => unknown;
+  refreshDesktopRuntimeConfigFromCanonicalFiles?: (...args: any[]) => unknown;
   loadBuiltinServices?: (...args: any[]) => unknown;
   loadInstalledPlugins?: (...args: any[]) => unknown;
   notifyServicesChanged?: (...args: any[]) => unknown;
@@ -209,7 +209,7 @@ export function createServicesIpcHandlerOptions(
     startupRestoreController: dependencies.startupRestoreController,
     importEnvZipToRuntime: dependencies.importEnvZipToRuntime,
     applyDesktopInitBootstrap: dependencies.applyDesktopInitBootstrap,
-    applyDesktopInitSsoDefaults: dependencies.applyDesktopInitSsoDefaults,
+    refreshDesktopRuntimeConfigFromCanonicalFiles: dependencies.refreshDesktopRuntimeConfigFromCanonicalFiles,
     loadBuiltinServices: dependencies.loadBuiltinServices,
     loadInstalledPlugins: dependencies.loadInstalledPlugins,
     notifyServicesChanged: dependencies.notifyServicesChanged,

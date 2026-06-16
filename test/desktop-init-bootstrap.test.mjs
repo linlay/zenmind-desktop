@@ -9,7 +9,6 @@ const require = createRequire(import.meta.url);
 
 const {
   applyDesktopInitBootstrap,
-  applyDesktopInitSsoDefaults,
   resolveDesktopInitPath
 } = require("../dist-electron/main/desktop-init-bootstrap.js");
 
@@ -121,6 +120,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
   const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
+  const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
 
   assert.equal(profile.appearance.theme, "dark");
   assert.equal(profile.appearance.locale, "en-US");
@@ -152,6 +152,17 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(website.id, "docs");
   assert.equal(website.kind, "website");
   assert.equal(website.agentKey, "desktopAssistant");
+  assert.equal(bootstrapState.schemaVersion, 1);
+  assert.equal(bootstrapState.sourcePath, initPath);
+  assert.equal(bootstrapState.consumed, true);
+  assert.equal(bootstrapState.appliedResult.profile, "applied");
+  assert.equal(bootstrapState.appliedResult.kanban, "applied");
+  assert.equal(bootstrapState.appliedResult.pet, "applied");
+  assert.equal(bootstrapState.appliedResult.market, "applied");
+  assert.equal(bootstrapState.appliedResult.sso, "applied");
+  assert.equal(bootstrapState.appliedResult.webs, "applied");
+  assert.equal(bootstrapState.appliedResult.assistant, "recorded");
+  assert.match(bootstrapState.appliedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(fs.existsSync(initPath), false);
 
   fs.writeFileSync(initPath, JSON.stringify({
@@ -196,6 +207,32 @@ test("desktop-init bootstrap ignores legacy desktop-default file names", (t) => 
   assert.equal(result.reason, "missing");
   assert.equal(fs.existsSync(profilePath), false);
   assert.equal(fs.existsSync(legacyPath), true);
+});
+
+test("desktop-init bootstrap does not block startup on invalid JSON", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-invalid-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args);
+  t.after(() => {
+    console.warn = originalWarn;
+  });
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const initPath = resolveDesktopInitPath(app, "darwin");
+  fs.mkdirSync(path.dirname(initPath), { recursive: true });
+  fs.writeFileSync(initPath, "{", "utf8");
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+
+  assert.equal(result.ok, false);
+  assert.equal(result.applied, false);
+  assert.equal(result.reason, "invalid");
+  assert.equal(warnings.length, 1);
+  assert.equal(fs.existsSync(initPath), true);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "state", "desktop", "bootstrap.json")), false);
 });
 
 test("desktop-init bootstrap migrates legacy navigation kanban fallback", (t) => {
@@ -363,7 +400,7 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");
 });
 
-test("desktop-init SSO helper writes canonical macOS config without bootstrap state", (t) => {
+test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -381,15 +418,18 @@ test("desktop-init SSO helper writes canonical macOS config without bootstrap st
     }
   });
 
-  const result = applyDesktopInitSsoDefaults(app, "darwin");
+  const result = applyDesktopInitBootstrap(app, "darwin");
   const ssoPath = canonicalSsoPath(homePath);
+  const bootstrapState = readJson(path.join(desktopRoot(homePath), "state", "desktop", "bootstrap.json"));
 
-  assert.equal(result, "applied");
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.sso, "applied");
   assert.equal(readJson(ssoPath).authMode, "server");
   assert.equal(fs.statSync(ssoPath).mode & 0o777, 0o600);
+  assert.equal(bootstrapState.appliedResult.sso, "applied");
 });
 
-test("desktop-init SSO helper uses explicit Windows path branches", () => {
+test("desktop-init bootstrap uses explicit Windows path branches", () => {
   const app = createApp("C:\\Users\\tester");
 
   assert.equal(
@@ -398,7 +438,7 @@ test("desktop-init SSO helper uses explicit Windows path branches", () => {
   );
 });
 
-test("desktop-init SSO helper writes canonical SSO even when old configs exist", (t) => {
+test("desktop-init bootstrap writes canonical SSO even when old configs exist", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-existing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -431,9 +471,9 @@ test("desktop-init SSO helper writes canonical SSO even when old configs exist",
     fs.mkdirSync(path.dirname(existingPath), { recursive: true });
     fs.writeFileSync(existingPath, `${JSON.stringify({ enabled: true, marker: item.name })}\n`, "utf8");
 
-    const result = applyDesktopInitSsoDefaults(app, "darwin");
+    const result = applyDesktopInitBootstrap(app, "darwin");
 
-    assert.equal(result, "applied", item.name);
+    assert.equal(result.appliedResult.sso, "applied", item.name);
     assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
     assert.equal(readJson(canonicalSsoPath(homePath)).authMode, "server");
     if (existingPath !== canonicalSsoPath(homePath)) {
@@ -466,19 +506,17 @@ test("desktop-init bootstrap reads profile market and SSO from one init", (t) =>
   });
 
   const fullBootstrap = applyDesktopInitBootstrap(app, "darwin");
-  const ssoResult = applyDesktopInitSsoDefaults(app, "darwin");
 
   assert.equal(fullBootstrap.applied, true);
   assert.equal(fullBootstrap.appliedResult.profile, "applied");
   assert.equal(fullBootstrap.appliedResult.market, "applied");
   assert.equal(fullBootstrap.appliedResult.sso, "applied");
-  assert.equal(ssoResult, "absent");
   assert.equal(readJson(path.join(homePath, RUNTIME_ROOT_DIR_NAME, ".desktop", "config", "desktop", "profile.json")).appearance.locale, "en-US");
   assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
   assert.equal(fs.existsSync(resolveDesktopInitPath(app, "darwin")), false);
 });
 
-test("manual env.zip import applies desktop-init bootstrap and SSO before startup preparation", async () => {
+test("manual env.zip import applies desktop-init bootstrap and refreshes config before startup preparation", async () => {
   const handlers = new Map();
   const calls = [];
   const app = createApp("/tmp/zenmind-services-home");
@@ -528,9 +566,8 @@ test("manual env.zip import applies desktop-init bootstrap and SSO before startu
       calls.push(["bootstrap", platform]);
       return { ok: true, applied: true };
     },
-    applyDesktopInitSsoDefaults: (_app, platform) => {
-      calls.push(["sso", platform]);
-      return "applied";
+    refreshDesktopRuntimeConfigFromCanonicalFiles: (reason) => {
+      calls.push(["refreshConfig", reason]);
     },
     loadBuiltinServices: () => calls.push(["loadBuiltin"]),
     loadInstalledPlugins: () => calls.push(["loadPlugins"]),
@@ -555,7 +592,7 @@ test("manual env.zip import applies desktop-init bootstrap and SSO before startu
   assert.deepEqual(calls.slice(0, 5), [
     ["import", "/tmp/env.zip", "darwin"],
     ["bootstrap", "darwin"],
-    ["sso", "darwin"],
+    ["refreshConfig", "manual-env-import"],
     ["loadBuiltin"],
     ["loadPlugins"]
   ]);

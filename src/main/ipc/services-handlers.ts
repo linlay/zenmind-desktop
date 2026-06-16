@@ -77,7 +77,7 @@ export interface ServicesIpcHandlerOptions {
   // Environment zip import operations (TDD index-ts-slimming)
   importEnvZipToRuntime?: (app: any, zipPath: string, platform: string) => Promise<{ copiedFiles: number; skippedFiles: number }>;
   applyDesktopInitBootstrap?: (app: any, platform: NodeJS.Platform) => unknown;
-  applyDesktopInitSsoDefaults?: (app: any, platform: NodeJS.Platform) => unknown;
+  refreshDesktopRuntimeConfigFromCanonicalFiles?: (reason: string) => unknown;
   loadBuiltinServices?: (app: any) => void;
   loadInstalledPlugins?: (app: any) => void;
   notifyServicesChanged?: () => void;
@@ -191,7 +191,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     clearSessionCache,
     importEnvZipToRuntime,
     applyDesktopInitBootstrap,
-    applyDesktopInitSsoDefaults,
+    refreshDesktopRuntimeConfigFromCanonicalFiles,
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged,
@@ -370,7 +370,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
         `[main] imported env.zip: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );
       applyDesktopInitBootstrap?.(app, platform);
-      applyDesktopInitSsoDefaults?.(app, platform);
+      refreshDesktopRuntimeConfigFromCanonicalFiles?.("manual-env-import");
 
       scheduleStartupPreparationAfterEnvDecision();
 
