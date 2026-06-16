@@ -1232,7 +1232,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /settings-appearance-panel/);
   assert.match(settingsPage, /settings-appearance-row/);
   assert.match(settingsPage, /settings-theme-segment/);
-  assert.match(settingsPage, /settings-language-select/);
+  assert.match(settingsPage, /<Select<SupportedLocale>[\s\S]*?aria-label=\{t\("settings\.language\.label"\)\}/);
   assert.match(settingsStyles, /\.settings-language-select\s*\{[\s\S]*?border-radius:\s*8px;/);
   assert.match(themeStyles, /--accent-border:\s*rgba\(var\(--accent-rgb\), 0\.46\)/);
   assert.match(themeStyles, /--control-focus-ring:\s*0 0 0 3px var\(--accent-glow\)/);
@@ -1341,6 +1341,7 @@ test("settings page scopes notices to the active section and keeps load failures
 
   assert.match(settingsPageCss, /\.settings-pet-appearance-panel[\s\S]*?border: none;/);
   assert.match(settingsPageCss, /\.settings-pet-appearance-panel[\s\S]*?border-top: 1px solid var\(--line\)/);
+  assert.match(settingsPageCss, /\.settings-appearance-pet-card \+ \.desktop-helper-settings-card\s*\{[\s\S]*?margin-top: 12px;/);
   assert.match(settingsPageCss, /\.settings-pet-appearance-row \.desktop-pet-appearance-copy small[\s\S]*?color: var\(--ink-muted\)/);
   assert.match(settingsPageCss, /\.desktop-pet-appearance-select\.is-selected\s*\{[\s\S]*?background: var\(--accent\)/);
   assert.match(settingsPageCss, /\.desktop-pet-appearance-select\.is-selected\s*\{[\s\S]*?cursor: not-allowed/);
@@ -1404,7 +1405,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /settings\.kanban\.enabled/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
-  assert.match(settingsPage, /import \{ Button, Card, Form, Input, QRCode, Select, Space, Switch, Typography \} from "antd"/);
+  assert.match(settingsPage, /import \{ Button, Card, Checkbox, Form, Input, InputNumber, QRCode, Segmented, Select, Space, Switch, Typography \} from "antd"/);
   assert.match(settingsPage, /<Card[\s\S]*className="settings-item-card settings-control-card settings-kanban-ant-card"/);
   assert.match(settingsPage, /<Switch[\s\S]*handleToggleControlRemoteControl/);
   assert.match(settingsPage, /<Form[\s\S]*className="settings-control-form settings-kanban-ant-form"[\s\S]*onFinish=\{\(\) => void saveControlCloudConfig\(controlCloudConfig\)\}/);
@@ -2646,9 +2647,9 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(storefront, /market-store-description/);
   assert.match(storefront, /market-store-tags/);
   assert.match(storefront, /market-store-card-footer/);
-  assert.match(storefront, /t\("market\.storefront\.detailsDemo"\)/);
+  assert.match(storefront, /t\("market\.action\.details"\)/);
   assert.match(storefront, /market-store-detail-link/);
-  assert.match(storefront, /market-store-detail-dialog/);
+  assert.match(storefront, /market-store-detail-modal/);
   assert.match(storefront, /storefrontDetailRows/);
   assert.match(storefront, /setSelectedDetailItem\(item\)/);
   assert.match(storefront, /ReloadOutlined/);
@@ -2664,19 +2665,18 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.doesNotMatch(storefront, /market-store-metric/);
   assert.doesNotMatch(storefront, /market-store-compatibility/);
   assert.match(storefrontStyles, /\.market-store-scroll\s*\{[\s\S]*?container-type:\s*inline-size;/);
-  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/);
-  assert.match(storefrontStyles, /@container\s*\(max-width:\s*1120px\)\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
-  assert.match(storefrontStyles, /@container\s*\(max-width:\s*720px\)\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(300px,\s*1fr\)\);/);
+  assert.match(storefrontStyles, /@container\s*\(max-width:\s*640px\)\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   assert.doesNotMatch(storefrontStyles, /620px/);
-  assert.match(storefrontStyles, /\.market-store-card\s*\{[\s\S]*?padding:\s*24px;[\s\S]*?border-radius:\s*8px;/);
+  assert.match(storefrontStyles, /\.market-store-card\s*\{[\s\S]*?border-radius:\s*16px;/);
   assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
   assert.match(storefrontStyles, /\.market-store-description\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
-  assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid #e5e5ea;/);
-  assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px,\s*1fr\)\s*168px\s*168px\s*auto;/);
+  assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid var\(--market-store-line\);/);
+  assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px,\s*1fr\)\s*160px\s*160px\s*auto;/);
   assert.match(storefrontStyles, /\.market-store-toolbar-actions\s*\{[\s\S]*?justify-content:\s*flex-end;/);
-  assert.match(storefrontStyles, /\.market-store-toolbar-button\s*\{[\s\S]*?border-radius:\s*8px;/);
-  assert.match(storefrontStyles, /\.market-store-action\.is-primary\s*\{[\s\S]*?background:\s*var\(--market-store-purple\);/);
-  assert.match(storefrontStyles, /\.market-store-detail-dialog\s*\{[\s\S]*?width:\s*min\(680px,\s*100%\);/);
+  assert.match(storefrontStyles, /\.market-store-toolbar-button\s*\{[\s\S]*?border-radius:\s*11px;/);
+  assert.match(storefrontStyles, /\.market-store-action\.is-primary\s*\{[\s\S]*?background:\s*var\(--market-store-purple-grad\);/);
+  assert.match(storefront, /width=\{680\}/);
   assert.match(storefrontStyles, /\.market-store-detail-category-pill/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-category-pill/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-readiness/);
@@ -2783,15 +2783,15 @@ test("sandbox image market is a local image management surface", () => {
   );
   assert.match(
     marketStyles,
-    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?grid-template-columns:\s*repeat\(7,\s*minmax\(88px,\s*1fr\)\)[\s\S]*?width:\s*100%/
+    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?width:\s*100%/
   );
   assert.match(
     marketStyles,
-    /\.market-tab\s*\{[\s\S]*?min-height:\s*40px[\s\S]*?font-size:\s*14px[\s\S]*?font-weight:\s*800/
+    /\.market-tabs \.market-tab-label\s*\{[\s\S]*?min-height:\s*38px/
   );
   assert.match(
     marketStyles,
-    /\.market-tab-icon\s*\{[\s\S]*?font-size:\s*16px;/
+    /\.market-tab-icon\s*\{[\s\S]*?font-size:\s*15px;/
   );
   assert.match(
     marketStyles,
@@ -2805,10 +2805,7 @@ test("sandbox image market is a local image management surface", () => {
     marketStyles,
     /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.045\)[\s\S]*?box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.04\)/
   );
-  assert.match(
-    marketStyles,
-    /:root\[data-theme="dark"\]\s+\.market-tab\.is-active\s*\{[\s\S]*?background:\s*rgba\(87,\s*144,\s*255,\s*0\.18\)[\s\S]*?inset 0 0 0 1px rgba\(158,\s*197,\s*255,\s*0\.24\)/
-  );
+  assert.doesNotMatch(marketStyles, /\.market-tab\.is-active/);
   assert.match(
     marketStyles,
     /\.market-empty-state\s*\{[\s\S]*?align-self:\s*center;/

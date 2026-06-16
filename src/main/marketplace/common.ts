@@ -479,9 +479,6 @@ export function normalizeMarketApiBaseUrl(value: unknown) {
     throw new Error(t("market.main.marketApiNoSearch"));
   }
   const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
-  if (pathname === "/") {
-    return parsed.origin;
-  }
   if (pathname === "/api/v1" || pathname.endsWith("/api/v1")) {
     return `${parsed.origin}${pathname}`;
   }

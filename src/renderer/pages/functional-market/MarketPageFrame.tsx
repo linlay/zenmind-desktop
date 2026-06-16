@@ -8,6 +8,7 @@ import {
   SafetyCertificateOutlined,
   SmileOutlined
 } from "@ant-design/icons";
+import { Badge, Segmented } from "antd";
 import type { MarketTab, MarketTabDefinition } from "./marketPageModel";
 import { useI18n } from "../../i18n/useI18n";
 import "./MarketPageFrame.css";
@@ -51,27 +52,33 @@ export function MarketPageFrame({
 }: MarketPageFrameProps) {
   const { t } = useI18n();
   const hasToolbar = Boolean(toolbar);
+  const tabOptions = tabs.map((tab) => ({
+    className: `tab-${tab.id}`,
+    label: (
+      <span className="market-tab-label">
+        <span className="market-tab-icon" aria-hidden="true">{marketTabIcon(tab.id)}</span>
+        <span className="market-tab-text">{tab.label}</span>
+        {typeof tab.count === "number" ? (
+          <Badge className="market-tab-count" count={tab.count} size="small" />
+        ) : null}
+      </span>
+    ),
+    value: tab.id
+  }));
 
   return (
     <section className="market-page">
       <div className="market-shell">
         <div className={hasToolbar ? "market-topbar has-toolbar" : "market-topbar"}>
-          <div className="market-tabs" role="tablist" aria-label={t("market.tabs.ariaLabel")}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={activeTab === tab.id ? "market-tab is-active" : "market-tab"}
-                onClick={() => onTabChange(tab.id)}
-              >
-                <span className="market-tab-label">
-                  <span className="market-tab-icon" aria-hidden="true">{marketTabIcon(tab.id)}</span>
-                  <span className="market-tab-text">{tab.label}</span>
-                  {typeof tab.count === "number" ? <span className="market-tab-count">{tab.count}</span> : null}
-                </span>
-              </button>
-            ))}
-          </div>
+          <Segmented
+            aria-label={t("market.tabs.ariaLabel")}
+            block
+            className="market-tabs"
+            onChange={(value) => onTabChange(value as MarketTab)}
+            options={tabOptions}
+            size="large"
+            value={activeTab}
+          />
 
           {hasToolbar ? (
             <div className="market-toolbar">

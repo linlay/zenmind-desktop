@@ -600,16 +600,8 @@
 }
 
 .desktop-pet-agent-select-wrap::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  right: 15px;
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid var(--ink-soft);
-  border-bottom: 2px solid var(--ink-soft);
-  transform: translateY(-60%) rotate(45deg);
-  pointer-events: none;
+  /* antd Select renders its own dropdown caret; suppress the legacy CSS arrow. */
+  display: none;
 }
 
 .desktop-pet-agent-select-wrap select {

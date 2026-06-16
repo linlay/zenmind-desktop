@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, QRCode, Select, Space, Switch, Typography } from "antd";
+import { Button, Card, Checkbox, Form, Input, InputNumber, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import "./SettingsPage.css";
@@ -552,14 +552,15 @@ function AboutAppCard({
           </div>
         ) : null}
         <div className="settings-reset-actions">
-          <button
-            type="button"
-            className="danger-text-button settings-reset-button"
+          <Button
+            type="link"
+            danger
+            className="settings-reset-button"
             disabled={runtimeResetPending}
             onClick={() => void onResetRuntimeEnv()}
           >
             {runtimeResetPending ? t("settings.reset.running") : t("settings.reset.action")}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -2141,17 +2142,12 @@ export function SettingsPage({
     onClick: () => void;
   }) {
     return (
-      <button
-        type="button"
-        className={enabled ? "settings-switch is-on" : "settings-switch"}
-        role="switch"
-        aria-checked={enabled}
+      <Switch
+        checked={enabled}
         aria-label={label}
         disabled={disabled}
-        onClick={onClick}
-      >
-        <span aria-hidden="true" />
-      </button>
+        onChange={() => onClick()}
+      />
     );
   }
 
@@ -2193,17 +2189,12 @@ export function SettingsPage({
                 <strong>{t("settings.general.preventSleepWhileRunning")}</strong>
                 <span>{t("settings.general.preventSleepWhileRunningDescription")}</span>
               </div>
-              <button
-                type="button"
-                className={generalSettings.preventSleepWhileRunning ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={generalSettings.preventSleepWhileRunning}
+              <Switch
+                checked={generalSettings.preventSleepWhileRunning}
                 aria-label={t("settings.general.preventSleepWhileRunning")}
                 disabled={generalSettingsSaving}
-                onClick={() => void handleTogglePreventSleepWhileRunning()}
-              >
-                <span aria-hidden="true" />
-              </button>
+                onChange={() => void handleTogglePreventSleepWhileRunning()}
+              />
             </div>
           </div>
         );
@@ -2216,44 +2207,42 @@ export function SettingsPage({
                   <strong>{t("settings.appearance.theme")}</strong>
                   <span>{t("settings.appearance.themeDescription")}</span>
                 </div>
-                <div className="settings-theme-segment" role="radiogroup" aria-label={t("settings.appearance.theme")}>
-                  {THEME_PREFERENCE_OPTIONS.map((option) => (
-                    <button
-                      type="button"
-                      key={option}
-                      className={themeMode === option ? "settings-theme-segment-option is-active" : "settings-theme-segment-option"}
-                      role="radio"
-                      aria-checked={themeMode === option}
-                      onClick={() => {
-                        if (themeMode !== option) {
-                          onThemeModeChange(option);
-                        }
-                      }}
-                    >
-                      <span className="settings-theme-segment-icon" aria-hidden="true">
-                        <ThemePreferenceIcon themeMode={option} />
+                <Segmented<ThemePreference>
+                  aria-label={t("settings.appearance.theme")}
+                  value={themeMode}
+                  onChange={(value) => {
+                    if (themeMode !== value) {
+                      onThemeModeChange(value);
+                    }
+                  }}
+                  options={THEME_PREFERENCE_OPTIONS.map((option) => ({
+                    value: option,
+                    label: (
+                      <span className="settings-theme-segment-label">
+                        <span className="settings-theme-segment-icon" aria-hidden="true">
+                          <ThemePreferenceIcon themeMode={option} />
+                        </span>
+                        <span>{getThemePreferenceLabel(option, t)}</span>
                       </span>
-                      <span>{getThemePreferenceLabel(option, t)}</span>
-                    </button>
-                  ))}
-                </div>
+                    )
+                  }))}
+                />
               </div>
               <div className="settings-appearance-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("settings.language.label")}</strong>
                   <span>{t("settings.language.uiDescription")}</span>
                 </div>
-                <label className="settings-language-select-wrap">
-                  <select
-                    className="settings-language-select"
-                    value={locale}
-                    aria-label={t("settings.language.label")}
-                    onChange={(event) => void handleLocaleChange(event.target.value as SupportedLocale)}
-                  >
-                    <option value="zh-CN">{t("settings.language.zhCN")}</option>
-                    <option value="en-US">{t("settings.language.enUS")}</option>
-                  </select>
-                </label>
+                <Select<SupportedLocale>
+                  style={{ minWidth: 148 }}
+                  value={locale}
+                  aria-label={t("settings.language.label")}
+                  onChange={(value) => void handleLocaleChange(value)}
+                  options={[
+                    { value: "zh-CN", label: t("settings.language.zhCN") },
+                    { value: "en-US", label: t("settings.language.enUS") }
+                  ]}
+                />
               </div>
             </div>
           </>
@@ -2291,15 +2280,15 @@ export function SettingsPage({
                           <strong>{appearanceLabel}</strong>
                           <small>{appearanceDescription}</small>
                         </span>
-                        <button
-                          type="button"
+                        <Button
+                          type={selected ? "default" : "primary"}
                           className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
                           aria-pressed={selected}
                           disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
                           onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
                         >
                           {actionLabel}
-                        </button>
+                        </Button>
                       </div>
                     );
                   })}
@@ -2319,41 +2308,38 @@ export function SettingsPage({
                     <em>{t("settings.quickAssistant.defaultUnavailable")}</em>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
-                  role="switch"
-                  aria-checked={quickAssistantEnabled}
+                <Switch
+                  checked={quickAssistantEnabled}
                   aria-label={t("settings.quickAssistant.label")}
                   disabled={quickAssistantPending}
-                  onClick={() => void handleToggleQuickAssistantEnabled()}
-                >
-                  <span aria-hidden="true" />
-                </button>
+                  onChange={() => void handleToggleQuickAssistantEnabled()}
+                />
               </div>
               <div className="settings-item-form desktop-pet-agent-form">
                 <label className="desktop-pet-agent-field">
                   <span>{t("settings.quickAssistant.defaultAgent")}</span>
                   <span className="desktop-pet-agent-select-wrap">
-                    <select
+                    <Select
+                      style={{ width: "100%" }}
                       value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
-                      onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
+                      onChange={(value) => void handleSelectQuickAssistantAgentKey(value)}
                       disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
                       aria-label={t("settings.quickAssistant.defaultAgent")}
-                    >
-                      <option value="">
-                        {assistantAgentOptions.length === 0
-                          ? t("settings.navigation.agentsLoading")
-                          : isKnownAssistantAgent(quickAssistantAgentKey)
-                            ? t("settings.navigation.selectAgent")
-                            : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })}
-                      </option>
-                      {assistantAgentOptions.map((agent) => (
-                        <option value={agent.agentKey} key={agent.agentKey}>
-                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        {
+                          value: "",
+                          label: assistantAgentOptions.length === 0
+                            ? t("settings.navigation.agentsLoading")
+                            : isKnownAssistantAgent(quickAssistantAgentKey)
+                              ? t("settings.navigation.selectAgent")
+                              : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })
+                        },
+                        ...assistantAgentOptions.map((agent) => ({
+                          value: agent.agentKey,
+                          label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
+                        }))
+                      ]}
+                    />
                   </span>
                 </label>
               </div>
@@ -2455,7 +2441,7 @@ export function SettingsPage({
             <form className="settings-control-form" onSubmit={(event) => void handleSaveMarketSettings(event)}>
               <label className="settings-control-field">
                 <span>{t("settings.market.apiBaseUrl")}</span>
-                <input
+                <Input
                   value={marketSettings.apiBaseUrl}
                   onChange={(event) => setMarketSettings((current) => ({ ...current, apiBaseUrl: event.target.value }))}
                   placeholder={t("settings.market.apiBaseUrlPlaceholder")}
@@ -2463,9 +2449,9 @@ export function SettingsPage({
                 <small>{t("settings.market.visibilityRule")}</small>
               </label>
               <div className="settings-control-actions">
-                <button type="submit" className="settings-control-primary-button" disabled={marketSettingsSaving}>
+                <Button type="primary" htmlType="submit" disabled={marketSettingsSaving} loading={marketSettingsSaving}>
                   {marketSettingsSaving ? t("settings.market.saving") : t("settings.market.save")}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -2481,14 +2467,14 @@ export function SettingsPage({
                   <strong>{t("settings.mobilePairing.title")}</strong>
                   <span>{t("settings.mobilePairing.description")}</span>
                 </div>
-                <button
-                  type="button"
-                  className="settings-control-primary-button"
+                <Button
+                  type="primary"
                   disabled={appPairingPending}
+                  loading={appPairingPending}
                   onClick={() => void handleCreateAppPairingPayload()}
                 >
                   {appPairingPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
-                </button>
+                </Button>
               </div>
               {pairingErrorMessage ? (
                 <div className="settings-item-empty settings-mobile-pairing-error" role="alert">
@@ -2516,16 +2502,15 @@ export function SettingsPage({
                     </div>
                     <label className="settings-mobile-pairing-payload">
                       <span>{t("settings.mobilePairing.payload")}</span>
-                      <textarea value={pairingPayloadResult.payloadText} readOnly spellCheck={false} />
+                      <Input.TextArea value={pairingPayloadResult.payloadText} readOnly spellCheck={false} autoSize={{ minRows: 3, maxRows: 8 }} />
                     </label>
                     <div className="settings-control-actions">
-                      <button
-                        type="button"
-                        className="settings-control-primary-button"
+                      <Button
+                        type="primary"
                         onClick={() => void handleCopyAppPairingPayload()}
                       >
                         {t("settings.mobilePairing.copy")}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -2542,7 +2527,7 @@ export function SettingsPage({
             <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
               <label className="settings-control-field">
                 <span>{t("settings.tunnelHub.relayUrl")}</span>
-                <input
+                <Input
                   value={tunnelHubSettings.relayUrl}
                   onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
                   placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
@@ -2550,7 +2535,7 @@ export function SettingsPage({
               </label>
               <label className="settings-control-field">
                 <span>{t("settings.tunnelHub.token")}</span>
-                <input
+                <Input.Password
                   value={tunnelHubAgentToken}
                   onChange={(event) => {
                     setTunnelHubAgentToken(event.target.value);
@@ -2559,7 +2544,6 @@ export function SettingsPage({
                     }
                   }}
                   placeholder={t("settings.tunnelHub.tokenPlaceholder")}
-                  type="password"
                 />
                 <small>
                   {tunnelHubSettings.hasAgentToken
@@ -2567,41 +2551,40 @@ export function SettingsPage({
                     : t("settings.tunnelHub.tokenMissing")}
                 </small>
               </label>
-              <label className="settings-control-field settings-checkbox-field">
-                <input
-                  checked={tunnelHubClearToken}
-                  disabled={Boolean(tunnelHubAgentToken.trim())}
-                  onChange={(event) => setTunnelHubClearToken(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{t("settings.tunnelHub.clearToken")}</span>
-              </label>
-              <label className="settings-control-field settings-checkbox-field">
-                <input
-                  checked={tunnelHubSettings.tlsInsecureSkipVerify}
-                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
-                  type="checkbox"
-                />
-                <span>{t("settings.tunnelHub.tlsInsecure")}</span>
-              </label>
+              <Checkbox
+                className="settings-control-field settings-checkbox-field"
+                checked={tunnelHubClearToken}
+                disabled={Boolean(tunnelHubAgentToken.trim())}
+                onChange={(event) => setTunnelHubClearToken(event.target.checked)}
+              >
+                {t("settings.tunnelHub.clearToken")}
+              </Checkbox>
+              <Checkbox
+                className="settings-control-field settings-checkbox-field"
+                checked={tunnelHubSettings.tlsInsecureSkipVerify}
+                onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
+              >
+                {t("settings.tunnelHub.tlsInsecure")}
+              </Checkbox>
               <label className="settings-control-field">
                 <span>{t("settings.tunnelHub.reconnectSeconds")}</span>
-                <input
-                  min={1}
-                  max={3600}
-                  type="number"
-                  value={tunnelHubSettings.reconnectSeconds}
-                  onChange={(event) => setTunnelHubSettings((current) => ({
-                    ...current,
-                    reconnectSeconds: Number.parseInt(event.target.value, 10) || 3
-                  }))}
-                />
-                <small>{t("settings.tunnelHub.reconnectUnit")}</small>
+                <div className="settings-control-inline">
+                  <InputNumber
+                    min={1}
+                    max={3600}
+                    value={tunnelHubSettings.reconnectSeconds}
+                    onChange={(value) => setTunnelHubSettings((current) => ({
+                      ...current,
+                      reconnectSeconds: typeof value === "number" ? value : 3
+                    }))}
+                  />
+                  <small>{t("settings.tunnelHub.reconnectUnit")}</small>
+                </div>
               </label>
               <div className="settings-control-actions">
-                <button type="submit" className="settings-control-primary-button" disabled={tunnelHubSaving}>
+                <Button type="primary" htmlType="submit" disabled={tunnelHubSaving} loading={tunnelHubSaving}>
                   {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -2635,33 +2618,31 @@ export function SettingsPage({
               </div>
               <label className="navigation-order-assistant-field">
                 <span className="desktop-pet-agent-select-wrap">
-                  <select
+                  <Select
+                    style={{ width: "100%" }}
                     value={assistantSelectValue}
-                    onChange={(event) => {
+                    onChange={(value) => {
                       if (copilotPageKey) {
-                        void handleSelectNavigationCopilotAgent(copilotPageKey, event.target.value);
+                        void handleSelectNavigationCopilotAgent(copilotPageKey, value);
                       }
                     }}
                     disabled={!copilotPageKey || assistantAgentOptions.length === 0 || copilotPending}
                     aria-label={t("settings.navigation.sideAssistantFor", { label: toolLabel })}
-                  >
-                    <option value="">{t("settings.navigation.noSideAssistant")}</option>
-                    {fixedAssistantLabel ? (
-                      <option value="__fixed__">{fixedAssistantLabel}</option>
-                    ) : null}
-                    {showUnavailableAgentOption ? (
-                      <option value={selectedCopilotAgentKey}>
-                        {assistantAgentOptions.length === 0
+                    options={[
+                      { value: "", label: t("settings.navigation.noSideAssistant") },
+                      ...(fixedAssistantLabel ? [{ value: "__fixed__", label: fixedAssistantLabel }] : []),
+                      ...(showUnavailableAgentOption ? [{
+                        value: selectedCopilotAgentKey,
+                        label: assistantAgentOptions.length === 0
                           ? t("settings.navigation.agentsLoading")
-                          : t("settings.navigation.unavailableAgent", { agentKey: selectedCopilotAgentKey })}
-                      </option>
-                    ) : null}
-                    {assistantAgentOptions.map((agent) => (
-                      <option value={agent.agentKey} key={agent.agentKey}>
-                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                          : t("settings.navigation.unavailableAgent", { agentKey: selectedCopilotAgentKey })
+                      }] : []),
+                      ...assistantAgentOptions.map((agent) => ({
+                        value: agent.agentKey,
+                        label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
+                      }))
+                    ]}
+                  />
                 </span>
               </label>
               <div className="navigation-order-fixed-label">{t("settings.navigation.fixed")}</div>
@@ -2678,21 +2659,23 @@ export function SettingsPage({
               </div>
               <div className="settings-item-form navigation-assistant-default">
                 <span className="desktop-pet-agent-select-wrap navigation-assistant-default-select">
-                  <select
+                  <Select
+                    style={{ width: "100%" }}
                     value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
-                    onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
+                    onChange={(value) => void handleSelectDesktopHelperAgentKey(value)}
                     disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
                     aria-label={t("settings.navigation.defaultAssistant")}
-                  >
-                    <option value="">
-                      {assistantAgentOptions.length === 0 ? t("settings.navigation.agentsLoading") : t("settings.navigation.selectAgent")}
-                    </option>
-                    {assistantAgentOptions.map((agent) => (
-                      <option value={agent.agentKey} key={agent.agentKey}>
-                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      {
+                        value: "",
+                        label: assistantAgentOptions.length === 0 ? t("settings.navigation.agentsLoading") : t("settings.navigation.selectAgent")
+                      },
+                      ...assistantAgentOptions.map((agent) => ({
+                        value: agent.agentKey,
+                        label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
+                      }))
+                    ]}
+                  />
                 </span>
               </div>
               <div className="settings-item-section-head website-list-head">
@@ -2738,33 +2721,31 @@ export function SettingsPage({
                         </div>
                         <label className="navigation-order-assistant-field">
                           <span className="desktop-pet-agent-select-wrap">
-                            <select
+                            <Select
+                              style={{ width: "100%" }}
                               value={assistantSelectValue}
-                              onChange={(event) => {
+                              onChange={(value) => {
                                 if (copilotPageKey) {
-                                  void handleSelectNavigationCopilotAgent(copilotPageKey, event.target.value);
+                                  void handleSelectNavigationCopilotAgent(copilotPageKey, value);
                                 }
                               }}
                               disabled={!copilotPageKey || assistantAgentOptions.length === 0 || copilotPending}
                               aria-label={t("settings.navigation.sideAssistantFor", { label: itemLabel })}
-                            >
-                              <option value="">{t("settings.navigation.noSideAssistant")}</option>
-                              {fixedAssistantLabel ? (
-                                <option value="__fixed__">{fixedAssistantLabel}</option>
-                              ) : null}
-                              {showUnavailableAgentOption ? (
-                                <option value={selectedCopilotAgentKey}>
-                                  {assistantAgentOptions.length === 0
+                              options={[
+                                { value: "", label: t("settings.navigation.noSideAssistant") },
+                                ...(fixedAssistantLabel ? [{ value: "__fixed__", label: fixedAssistantLabel }] : []),
+                                ...(showUnavailableAgentOption ? [{
+                                  value: selectedCopilotAgentKey,
+                                  label: assistantAgentOptions.length === 0
                                     ? t("settings.navigation.agentsLoading")
-                                    : t("settings.navigation.unavailableAgent", { agentKey: selectedCopilotAgentKey })}
-                                </option>
-                              ) : null}
-                              {assistantAgentOptions.map((agent) => (
-                                <option value={agent.agentKey} key={agent.agentKey}>
-                                  {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                                </option>
-                              ))}
-                            </select>
+                                    : t("settings.navigation.unavailableAgent", { agentKey: selectedCopilotAgentKey })
+                                }] : []),
+                                ...assistantAgentOptions.map((agent) => ({
+                                  value: agent.agentKey,
+                                  label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
+                                }))
+                              ]}
+                            />
                           </span>
                         </label>
                         <div className="navigation-order-actions">
@@ -2802,7 +2783,7 @@ export function SettingsPage({
                   <form className="website-form" onSubmit={(event) => void handleAddWebsiteItem(event)}>
                     <label>
                       <span>{t("settings.embeddedWebs.displayName")}</span>
-                      <input
+                      <Input
                         value={websiteLabel}
                         onChange={(event) => setWebsiteLabel(event.target.value)}
                         placeholder={t("settings.embeddedWebs.displayNamePlaceholder")}
@@ -2811,7 +2792,7 @@ export function SettingsPage({
                     </label>
                     <label>
                       <span>{t("settings.embeddedWebs.url")}</span>
-                      <input
+                      <Input
                         value={websiteUrl}
                         onChange={(event) => setWebsiteUrl(event.target.value)}
                         placeholder={t("settings.embeddedWebs.urlPlaceholder")}
@@ -2819,9 +2800,9 @@ export function SettingsPage({
                       />
                     </label>
                     <div className="website-submit-wrap">
-                      <button type="submit" className="text-button website-submit" disabled={websitePending}>
+                      <Button type="link" htmlType="submit" className="website-submit" disabled={websitePending} loading={websitePending}>
                         {websitePending ? t("settings.embeddedWebs.adding") : t("settings.embeddedWebs.add")}
-                      </button>
+                      </Button>
                     </div>
                   </form>
                 </div>
@@ -2834,22 +2815,20 @@ export function SettingsPage({
                 <span>{t("settings.embeddedWebs.addedDescription")}</span>
               </div>
               <div className="settings-item-section-actions">
-                <button
-                  type="button"
-                  className="text-button"
+                <Button
+                  type="link"
                   onClick={() => void handleImportWebsiteItems()}
                   disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
                 >
                   {websiteTransferPending === "import" ? t("settings.embeddedWebs.importing") : t("settings.embeddedWebs.import")}
-                </button>
-                <button
-                  type="button"
-                  className="text-button"
+                </Button>
+                <Button
+                  type="link"
                   onClick={() => void handleExportWebsiteItems()}
                   disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
                 >
                   {websiteTransferPending === "export" ? t("settings.embeddedWebs.exporting") : t("settings.embeddedWebs.export")}
-                </button>
+                </Button>
               </div>
             </div>
             {websiteItems.length === 0 ? (
@@ -2877,7 +2856,7 @@ export function SettingsPage({
                         >
                           <label>
                             <span>{t("settings.embeddedWebs.displayName")}</span>
-                            <input
+                            <Input
                               value={websiteLabel}
                               onChange={(event) => setWebsiteLabel(event.target.value)}
                               placeholder={t("settings.embeddedWebs.displayNamePlaceholder")}
@@ -2887,7 +2866,7 @@ export function SettingsPage({
                           </label>
                           <label>
                             <span>{t("settings.embeddedWebs.url")}</span>
-                            <input
+                            <Input
                               value={websiteUrl}
                               onChange={(event) => setWebsiteUrl(event.target.value)}
                               placeholder={t("settings.embeddedWebs.urlPlaceholder")}
@@ -2895,17 +2874,16 @@ export function SettingsPage({
                             />
                           </label>
                           <div className="website-row-actions">
-                            <button type="submit" className="text-button" disabled={websitePending}>
+                            <Button type="link" htmlType="submit" disabled={websitePending} loading={websitePending}>
                               {websitePending ? t("settings.embeddedWebs.updating") : t("settings.embeddedWebs.save")}
-                            </button>
-                            <button
-                              type="button"
-                              className="text-button"
+                            </Button>
+                            <Button
+                              type="link"
                               onClick={handleCancelEditWebsiteItem}
                               disabled={websitePending}
                             >
                               {t("settings.embeddedWebs.cancel")}
-                            </button>
+                            </Button>
                           </div>
                         </form>
                       ) : (
@@ -2918,41 +2896,42 @@ export function SettingsPage({
                           </div>
                           <label className="website-agent-field">
                             <span className="desktop-pet-agent-select-wrap">
-                              <select
+                              <Select
+                                style={{ width: "100%" }}
                                 value={itemAgentKey}
-                                onChange={(event) => void handleUpdateWebsiteAgent(item.id, event.target.value)}
+                                onChange={(value) => void handleUpdateWebsiteAgent(item.id, value)}
                                 disabled={assistantAgentOptions.length === 0 || itemAgentPending || Boolean(editingWebsiteId)}
                                 aria-label={t("settings.embeddedWebs.linkedAgentFor", { label: item.label })}
-                              >
-                                <option value="">{t("settings.defaultAssistant")}</option>
-                                {itemAgentKey && !itemAgentKnown ? (
-                                  <option value={itemAgentKey}>{t("settings.navigation.unavailableAgent", { agentKey: itemAgentKey })}</option>
-                                ) : null}
-                                {assistantAgentOptions.map((agent) => (
-                                  <option value={agent.agentKey} key={agent.agentKey}>
-                                    {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                                  </option>
-                                ))}
-                              </select>
+                                options={[
+                                  { value: "", label: t("settings.defaultAssistant") },
+                                  ...(itemAgentKey && !itemAgentKnown ? [{
+                                    value: itemAgentKey,
+                                    label: t("settings.navigation.unavailableAgent", { agentKey: itemAgentKey })
+                                  }] : []),
+                                  ...assistantAgentOptions.map((agent) => ({
+                                    value: agent.agentKey,
+                                    label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
+                                  }))
+                                ]}
+                              />
                             </span>
                           </label>
                           <div className="website-row-actions">
-                            <button
-                              type="button"
-                              className="text-button"
+                            <Button
+                              type="link"
                               onClick={() => handleStartEditWebsiteItem(item)}
                               disabled={websitePending || deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
                             >
                               {t("settings.embeddedWebs.edit")}
-                            </button>
-                            <button
-                              type="button"
-                              className="danger-text-button"
+                            </Button>
+                            <Button
+                              type="link"
+                              danger
                               onClick={() => void handleDeleteWebsiteItem(item)}
                               disabled={deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
                             >
                               {deletingWebsiteId === item.id ? t("settings.embeddedWebs.deleting") : t("settings.embeddedWebs.delete")}
-                            </button>
+                            </Button>
                           </div>
                         </>
                       )}
@@ -3003,34 +2982,24 @@ export function SettingsPage({
                       <span>{t("settings.memory.recall")}</span>
                       <small>{memoryRecallLabel}</small>
                     </span>
-                    <button
-                      type="button"
-                      className={memorySettings?.enabled ? "settings-switch is-on" : "settings-switch"}
-                      role="switch"
-                      aria-checked={Boolean(memorySettings?.enabled)}
+                    <Switch
+                      checked={Boolean(memorySettings?.enabled)}
                       aria-label={t("settings.memory.recall")}
                       disabled={!memorySettings || memoryPending === "settings"}
-                      onClick={() => void handleToggleMemoryEnabled()}
-                    >
-                      <span aria-hidden="true" />
-                    </button>
+                      onChange={() => void handleToggleMemoryEnabled()}
+                    />
                   </div>
                   <div className="settings-item-row assistant-memory-switch-row">
                     <span className="assistant-memory-switch-copy">
                       <span>{t("settings.memory.autoLearn")}</span>
                       <small>{memoryAutoLearnLabel}</small>
                     </span>
-                    <button
-                      type="button"
-                      className={memorySettings?.autoLearn ? "settings-switch is-on" : "settings-switch"}
-                      role="switch"
-                      aria-checked={Boolean(memorySettings?.autoLearn)}
+                    <Switch
+                      checked={Boolean(memorySettings?.autoLearn)}
                       aria-label={t("settings.memory.autoLearn")}
                       disabled={!memorySettings || memoryPending === "settings"}
-                      onClick={() => void handleToggleMemoryAutoLearn()}
-                    >
-                      <span aria-hidden="true" />
-                    </button>
+                      onChange={() => void handleToggleMemoryAutoLearn()}
+                    />
                   </div>
                 </div>
                 <div className="settings-item-section-head website-list-head assistant-memory-section-head">
@@ -3068,22 +3037,21 @@ export function SettingsPage({
                     <span>{t("settings.memory.storageDescription")}</span>
                   </div>
                   <span className="assistant-memory-storage-actions">
-                    <button
-                      type="button"
-                      className="text-button"
+                    <Button
+                      type="link"
                       onClick={() => void handleOpenMemoryDirectory()}
                       disabled={memoryPending === "open"}
                     >
                       {memoryPending === "open" ? t("settings.memory.openingDirectory") : t("settings.memory.openDirectory")}
-                    </button>
-                    <button
-                      type="button"
-                      className="danger-text-button"
+                    </Button>
+                    <Button
+                      type="link"
+                      danger
                       onClick={() => void handleClearMemoryItems()}
                       disabled={memoryTotal === 0 || memoryPending === "clear"}
                     >
                       {memoryPending === "clear" ? t("settings.memory.clearing") : t("common.clear")}
-                    </button>
+                    </Button>
                   </span>
                 </div>
                 <details className="assistant-memory-storage-details">

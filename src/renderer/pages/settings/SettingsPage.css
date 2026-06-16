@@ -29,6 +29,10 @@
   margin-top: 10px;
 }
 
+.settings-page .settings-appearance-pet-card + .desktop-helper-settings-card {
+  margin-top: 12px;
+}
+
 .settings-item-card,
 .settings-pet-card {
   display: flex;
@@ -290,10 +294,12 @@
 }
 
 .settings-page .settings-control-field small {
+  margin-top: 2px;
   color: var(--ink-muted);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.45;
+  letter-spacing: 0.2px;
 }
 
 .settings-page .settings-control-field input:focus,
@@ -302,9 +308,89 @@
   box-shadow: var(--control-focus-ring);
 }
 
+/* Ant 复合输入框（密码框 / 数字框）：让外层包裹元素承载唯一一层边框 */
+.settings-page .settings-control-field .ant-input-affix-wrapper,
+.settings-page .settings-control-field .ant-input-number {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.settings-page .settings-control-field .ant-input-number {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 内层原生 input 去掉自带边框/背景/高度，避免出现第二层边框 */
+.settings-page .settings-control-field .ant-input-affix-wrapper .ant-input,
+.settings-page .settings-control-field .ant-input-number .ant-input-number-input {
+  min-height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-page .settings-control-field .ant-input-affix-wrapper:focus-within,
+.settings-page .settings-control-field .ant-input-number-focused {
+  border-color: var(--accent-border);
+  box-shadow: var(--control-focus-ring);
+}
+
+/* 数字框 + 单位「秒」同行排列，单位不换行 */
+.settings-page .settings-control-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-page .settings-control-inline .ant-input-number {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.settings-page .settings-control-inline small {
+  margin-top: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 复选框字段：覆盖上面的 grid 布局，恢复为「勾选框 + 文字」的横向排列 */
+.settings-page .settings-checkbox-field.settings-checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+  padding: 4px 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-page .settings-checkbox-field.settings-checkbox-field > span:last-child {
+  padding-inline: 0;
+  line-height: 1.4;
+}
+
+.settings-page .settings-checkbox-field.ant-checkbox-wrapper-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .settings-page .settings-control-actions {
   display: flex;
   justify-content: flex-end;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .settings-page .settings-control-card + .settings-mobile-pairing-card {
@@ -999,6 +1085,12 @@
   background: var(--surface-soft);
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.settings-theme-segment-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .settings-theme-segment-icon {

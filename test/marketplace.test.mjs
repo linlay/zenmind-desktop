@@ -1745,6 +1745,17 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
   });
 });
 
+test("market settings reject a storefront origin without the API version path", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-origin-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  assert.throws(
+    () => saveMarketSettings(app, { enabled: true, apiBaseUrl: "https://market.example.test" }),
+    /(?:\/api\/v1|市场 API 地址请输入以 \/api\/v1 结尾的服务地址)/u
+  );
+});
+
 test("saved apiBaseUrl without enabled true does not request the market catalog", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-disabled-"));
   const app = createApp(root);
