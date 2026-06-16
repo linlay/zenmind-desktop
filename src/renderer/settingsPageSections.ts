@@ -3,6 +3,7 @@ import type { TranslationKey } from "../../shared/i18n";
 
 export type {
   SettingsSectionDefinition,
+  SettingsSectionGroupId,
   SettingsSectionId,
   SettingsSectionLayout
 } from "../../shared/settings-sections";
@@ -17,20 +18,15 @@ export function createSettingsSectionDefinitions({
   return [
     {
       id: "general",
+      group: "personal",
       label: "general",
       description: "",
       layout: "measure",
       visible: true
     },
     {
-      id: "kanban",
-      label: "kanban",
-      description: "",
-      layout: "measure",
-      visible: true
-    },
-    {
       id: "appearance",
+      group: "personal",
       label: "appearance",
       description: "",
       layout: "measure",
@@ -38,13 +34,31 @@ export function createSettingsSectionDefinitions({
     },
     {
       id: "assistant",
+      group: "personal",
       label: "assistant",
       description: "",
       layout: "measure",
       visible: true
     },
     {
+      id: "navigation",
+      group: "personal",
+      label: "navigation",
+      description: "",
+      layout: "wide",
+      visible: true
+    },
+    {
+      id: "kanban",
+      group: "integrations",
+      label: "kanban",
+      description: "",
+      layout: "measure",
+      visible: true
+    },
+    {
       id: "market",
+      group: "integrations",
       label: "market",
       description: "",
       layout: "measure",
@@ -52,6 +66,7 @@ export function createSettingsSectionDefinitions({
     },
     {
       id: "control",
+      group: "integrations",
       label: "control",
       description: "",
       layout: "measure",
@@ -59,20 +74,15 @@ export function createSettingsSectionDefinitions({
     },
     {
       id: "tunnelHub",
+      group: "integrations",
       label: "tunnelHub",
       description: "",
       layout: "measure",
       visible: true
     },
     {
-      id: "navigation",
-      label: "navigation",
-      description: "",
-      layout: "wide",
-      visible: true
-    },
-    {
       id: "embeddedWebs",
+      group: "integrations",
       label: "embeddedWebs",
       description: "",
       layout: "wide",
@@ -80,24 +90,27 @@ export function createSettingsSectionDefinitions({
     },
     {
       id: "dataRoot",
+      group: "system",
       label: "dataRoot",
       description: "",
       layout: "measure",
       visible: isWindows
     },
     {
-      id: "memory",
-      label: "memory",
-      description: "",
-      layout: "wide",
-      visible: false
-    },
-    {
       id: "about",
+      group: "system",
       label: "about",
       description: "",
       layout: "measure",
       visible: true
+    },
+    {
+      id: "memory",
+      group: "system",
+      label: "memory",
+      description: "",
+      layout: "wide",
+      visible: false
     }
   ];
 }

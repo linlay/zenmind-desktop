@@ -6,7 +6,12 @@ import {
   type FormEvent,
   type MouseEvent,
 } from "react";
-import { LeftOutlined, RightOutlined, SortAscendingOutlined } from "@ant-design/icons";
+import {
+  LeftOutlined,
+  RightOutlined,
+  SearchOutlined,
+  SortAscendingOutlined,
+} from "@ant-design/icons";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -40,7 +45,11 @@ import {
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
-import type { SettingsSectionId } from "../../../shared/settings-sections";
+import type { TranslationKey } from "../../../shared/i18n";
+import type {
+  SettingsSectionGroupId,
+  SettingsSectionId,
+} from "../../../shared/settings-sections";
 import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 
 type SidebarNavItem = {
@@ -62,6 +71,15 @@ type SidebarPrimaryEntry = SidebarNavItem & {
 type SidebarGroupId = "assistants" | "webs";
 
 type SidebarGroupState = Record<SidebarGroupId, boolean>;
+
+const SETTINGS_SECTION_GROUPS: Array<{
+  id: SettingsSectionGroupId;
+  labelKey: TranslationKey;
+}> = [
+  { id: "personal", labelKey: "settings.group.personal" },
+  { id: "integrations", labelKey: "settings.group.integrations" },
+  { id: "system", labelKey: "settings.group.system" },
+];
 
 type SidebarStatusSummary = {
   unreadCount: number;
@@ -679,7 +697,9 @@ function SidebarCollapseToggle({
 
 type SettingsSidebarSection = {
   id: SettingsSectionId;
+  group: SettingsSectionGroupId;
   label: string;
+  description: string;
 };
 
 type AppSidebarProps = {
@@ -771,6 +791,7 @@ export function AppSidebar({
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
   const [creatingCoderProject, setCreatingCoderProject] = useState(false);
@@ -818,6 +839,26 @@ export function AppSidebar({
     assistantNavSortMode === "byName"
       ? t("sidebar.assistants.sortByName")
       : t("sidebar.assistants.sortByTime");
+
+  const normalizedSettingsSearchQuery = settingsSearchQuery.trim().toLocaleLowerCase();
+  const groupedSettingsSections = useMemo(
+    () =>
+      SETTINGS_SECTION_GROUPS.map((group) => {
+        const sections = settingsSections.filter((section) => {
+          if (section.group !== group.id) {
+            return false;
+          }
+          if (!normalizedSettingsSearchQuery) {
+            return true;
+          }
+          return [section.label, section.description].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedSettingsSearchQuery),
+          );
+        });
+        return { ...group, sections };
+      }).filter((group) => group.sections.length > 0),
+    [normalizedSettingsSearchQuery, settingsSections],
+  );
 
   const webNavItems: SidebarNavItem[] = useMemo(() => {
     const orderIndex = new Map(
@@ -3099,6 +3140,8 @@ export function AppSidebar({
         return "market";
       case "control":
         return "control";
+      case "tunnelHub":
+        return "service";
       case "navigation":
         return "sidebar-assistant-closed";
       case "embeddedWebs":
@@ -3127,35 +3170,61 @@ export function AppSidebar({
           </span>
           <span className="sidebar-link-label">{t("settings.backToApp")}</span>
         </button>
+        <label className="sidebar-settings-search" aria-label={t("settings.searchAriaLabel")}>
+          <span className="sidebar-settings-search-icon" aria-hidden="true">
+            <SearchOutlined />
+          </span>
+          <input
+            type="search"
+            value={settingsSearchQuery}
+            placeholder={t("settings.searchPlaceholder")}
+            onChange={(event) => setSettingsSearchQuery(event.currentTarget.value)}
+          />
+        </label>
         <nav className="sidebar-settings-directory" aria-label={t("settings.directory")}>
-          {settingsSections.map((section) => {
-            const targetPath = buildSettingsSectionPath(section.id);
-            const isActive = activeSettingsSectionId === section.id;
-            return (
-              <NavLink
-                key={section.id}
-                to={targetPath}
-                className={({ isActive: routeActive }) =>
-                  [
-                    "sidebar-link",
-                    routeActive || isActive ? "sidebar-link-active" : "",
-                    pendingPath === targetPath ? "is-pending" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")
-                }
-                onClick={(event) => {
-                  event.preventDefault();
-                  onSelectSettingsSection?.(section.id);
-                }}
-              >
-                <span className="sidebar-link-icon" aria-hidden="true">
-                  <SidebarIllustration kind={getSettingsSectionIcon(section.id)} />
-                </span>
-                <span className="sidebar-link-label">{section.label}</span>
-              </NavLink>
-            );
-          })}
+          {groupedSettingsSections.length > 0 ? (
+            groupedSettingsSections.map((group) => (
+              <div className="settings-section-group" key={group.id}>
+                <div className="settings-section-group-heading">
+                  {t(group.labelKey)}
+                </div>
+                <div className="settings-section-group-items">
+                  {group.sections.map((section) => {
+                    const targetPath = buildSettingsSectionPath(section.id);
+                    const isActive = activeSettingsSectionId === section.id;
+                    return (
+                      <NavLink
+                        key={section.id}
+                        to={targetPath}
+                        className={({ isActive: routeActive }) =>
+                          [
+                            "sidebar-link",
+                            routeActive || isActive ? "sidebar-link-active" : "",
+                            pendingPath === targetPath ? "is-pending" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")
+                        }
+                        onClick={(event) => {
+                          event.preventDefault();
+                          onSelectSettingsSection?.(section.id);
+                        }}
+                      >
+                        <span className="sidebar-link-icon" aria-hidden="true">
+                          <SidebarIllustration kind={getSettingsSectionIcon(section.id)} />
+                        </span>
+                        <span className="sidebar-link-label">{section.label}</span>
+                      </NavLink>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="sidebar-settings-empty" role="status">
+              {t("settings.searchNoResults")}
+            </div>
+          )}
         </nav>
       </div>
     );
