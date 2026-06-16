@@ -7,7 +7,6 @@ import {
   CloudDownloadOutlined,
   CodeOutlined,
   CopyOutlined,
-  CloseOutlined,
   DownloadOutlined,
   GlobalOutlined,
   HeartFilled,
@@ -19,6 +18,7 @@ import {
   SmileOutlined,
   UserOutlined
 } from "@ant-design/icons";
+import { Alert, Button, Card, Empty, Input, Modal, Select, Tag } from "antd";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
 import { getServiceDisplayName } from "../../service-display";
@@ -485,6 +485,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   );
   const marketStatusMessage = feedback || marketMessageForTab(marketResult, activeTab);
   const marketOffline = marketOfflineForTab(marketResult, activeTab);
+  const shouldShowMarketStatus = marketOffline && marketStatusMessage;
 
   async function loadMarket(force = false) {
     setIsLoadingMarket(true);
@@ -630,14 +631,13 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     const busy = busyItemId === item.id;
     if (isListOnlyMarketItem(item)) {
       return (
-        <button
-          type="button"
+        <Button
           className="market-store-action"
+          icon={<InfoCircleOutlined />}
           onClick={() => void openDetail(item)}
         >
-          <InfoCircleOutlined />
-          <span>{t("market.action.details")}</span>
-        </button>
+          {t("market.action.details")}
+        </Button>
       );
     }
     if (item.type === "cli") {
@@ -645,73 +645,75 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       const copyLabel = installed ? t("market.cli.uninstallScript") : t("market.cli.installScript");
       const copyValue = installed ? item.cliUninstallCommand : item.cliInstallCommand;
       return (
-        <button
-          type="button"
+        <Button
           className="market-store-action is-primary"
+          icon={<CopyOutlined />}
+          loading={busy}
           disabled={busy || !copyValue}
           onClick={() => void copyText(copyValue ?? "", copyLabel)}
+          type="primary"
         >
-          <CopyOutlined />
-          <span>{copyLabel}</span>
-        </button>
+          {copyLabel}
+        </Button>
       );
     }
     if (item.state === "failed" || item.state === "incompatible") {
       return (
-        <button type="button" className="market-store-action" disabled>
-          <InfoCircleOutlined />
-          <span>{marketItemStateLabel(item, t)}</span>
-        </button>
+        <Button className="market-store-action" disabled icon={<InfoCircleOutlined />}>
+          {marketItemStateLabel(item, t)}
+        </Button>
       );
     }
     if (item.state === "not-installed") {
       const depsCount = marketItemDepsCount(item);
       return (
-        <button
-          type="button"
+        <Button
           className="market-store-action is-primary"
           disabled={busy || item.state === "incompatible"}
+          loading={busy}
           onClick={() => void runMarketAction(item, "install")}
+          type="primary"
         >
-          <span>{busy ? t("market.action.installing") : depsCount > 0 ? t("market.action.installDeps", { count: depsCount }) : t("market.action.install")}</span>
-        </button>
+          {busy ? t("market.action.installing") : depsCount > 0 ? t("market.action.installDeps", { count: depsCount }) : t("market.action.install")}
+        </Button>
       );
     }
     if (item.state === "update-available") {
       return (
-        <button
-          type="button"
+        <Button
           className="market-store-action is-primary"
           disabled={busy}
+          loading={busy}
           onClick={() => void runMarketAction(item, "update")}
+          type="primary"
         >
-          <span>{busy ? t("market.action.installing") : t("market.action.update")}</span>
-        </button>
+          {busy ? t("market.action.installing") : t("market.action.update")}
+        </Button>
       );
     }
     if (item.type === "plugin") {
       return (
-        <button type="button" className="market-store-action" onClick={() => openPlugin(item)}>
-          <span>{t("market.action.manage")}</span>
-        </button>
+        <Button className="market-store-action" onClick={() => openPlugin(item)}>
+          {t("market.action.manage")}
+        </Button>
       );
     }
     if (item.type === "skill" || item.type === "pet") {
       return (
-        <button
-          type="button"
+        <Button
           className="market-store-action"
           disabled={busy}
+          loading={busy}
           onClick={() => void runMarketAction(item, "uninstall")}
         >
-          <span>{busy ? t("market.action.installing") : t("market.action.uninstall")}</span>
-        </button>
+          {busy ? t("market.action.installing") : t("market.action.uninstall")}
+        </Button>
       );
     }
     return (
-      <button type="button" className="market-store-action" onClick={() => void openDetail(item)}>
-        <span>{t("market.action.manage")}</span>
-      </button>
+      <Button className="market-store-action" onClick={() => void openDetail(item)}>
+        {t("market.action.manage")}
+      </Button>
     );
   }
 
@@ -733,75 +735,68 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     const favoriteIcon = selectedDetailItem.favorited ? <HeartFilled /> : <HeartOutlined />;
 
     return (
-      <div className="market-store-detail-backdrop" onClick={() => setSelectedDetailItem(null)}>
-        <section
-          className="market-store-detail-dialog"
-          aria-label={t("market.storefront.detail.dialogLabel")}
-          aria-modal="true"
-          role="dialog"
-          onClick={(event) => event.stopPropagation()}
-        >
+      <Modal
+        centered
+        className="market-store-detail-modal"
+        destroyOnHidden
+        footer={null}
+        onCancel={() => setSelectedDetailItem(null)}
+        open={Boolean(selectedDetailItem)}
+        title={
           <div className="market-store-detail-head">
             <div className="market-store-detail-title-row">
               <span className={`market-store-item-icon is-${selectedDetailItem.type}`} aria-hidden="true">
                 {marketTypeIcon(selectedDetailItem.type)}
               </span>
               <div className="market-store-detail-title">
-                <span className="market-store-detail-category-pill">{marketTypeLabel(selectedDetailItem.type, t)}</span>
+                <Tag className="market-store-detail-category-pill" color="blue">{marketTypeLabel(selectedDetailItem.type, t)}</Tag>
                 <h2>{displayName}</h2>
                 <span className="market-store-detail-version">{marketVersionLabel(selectedDetailItem)}</span>
               </div>
             </div>
-            <button
-              type="button"
-              className="market-store-detail-close"
-              aria-label={t("common.close")}
-              title={t("common.close")}
-              onClick={() => setSelectedDetailItem(null)}
-            >
-              <CloseOutlined />
-            </button>
           </div>
-          {description ? <p className="market-store-detail-description">{description}</p> : null}
-          <div className="market-store-detail-meta">
-            <span className="market-store-detail-meta-pill">
-              <UserOutlined />
-              <span>{t("market.storefront.detail.author")}</span>
-              <strong>{itemAuthor(selectedDetailItem)}</strong>
-            </span>
-            <span className="market-store-detail-meta-pill">
-              <CalendarOutlined />
-              <span>{t("market.storefront.detail.createdAt")}</span>
-              <strong>{itemCreatedAt(selectedDetailItem, locale, t("common.none"))}</strong>
-            </span>
-            <span className="market-store-detail-meta-pill">
-              <DownloadOutlined />
-              <span>{t("market.stats.downloads")}</span>
-              <strong>{formatCount(itemDownloadCount(selectedDetailItem))}</strong>
-            </span>
-            <button
-              type="button"
-              className={selectedDetailItem.favorited ? "market-store-detail-meta-pill market-store-favorite is-active" : "market-store-detail-meta-pill market-store-favorite"}
-              onClick={() => void toggleFavorite(selectedDetailItem)}
-              disabled={isFavoriting}
-              aria-label={`${favoriteLabel}: ${formatCount(itemFavoriteCount(selectedDetailItem))}`}
-              title={favoriteLabel}
-            >
-              {favoriteIcon}
-              <span>{t("market.stats.favorites")}</span>
-              <strong>{formatCount(itemFavoriteCount(selectedDetailItem))}</strong>
-            </button>
-          </div>
-          <dl className="market-store-detail-grid">
-            {rows.map((row) => (
-              <div key={row.label}>
-                <dt>{row.label}</dt>
-                <dd>{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      </div>
+        }
+        width={680}
+      >
+        {description ? <p className="market-store-detail-description">{description}</p> : null}
+        <div className="market-store-detail-meta">
+          <span className="market-store-detail-meta-pill">
+            <UserOutlined />
+            <span>{t("market.storefront.detail.author")}</span>
+            <strong>{itemAuthor(selectedDetailItem)}</strong>
+          </span>
+          <span className="market-store-detail-meta-pill">
+            <CalendarOutlined />
+            <span>{t("market.storefront.detail.createdAt")}</span>
+            <strong>{itemCreatedAt(selectedDetailItem, locale, t("common.none"))}</strong>
+          </span>
+          <span className="market-store-detail-meta-pill">
+            <DownloadOutlined />
+            <span>{t("market.stats.downloads")}</span>
+            <strong>{formatCount(itemDownloadCount(selectedDetailItem))}</strong>
+          </span>
+          <button
+            type="button"
+            className={selectedDetailItem.favorited ? "market-store-detail-meta-pill market-store-favorite is-active" : "market-store-detail-meta-pill market-store-favorite"}
+            onClick={() => void toggleFavorite(selectedDetailItem)}
+            disabled={isFavoriting}
+            aria-label={`${favoriteLabel}: ${formatCount(itemFavoriteCount(selectedDetailItem))}`}
+            title={favoriteLabel}
+          >
+            {favoriteIcon}
+            <span>{t("market.stats.favorites")}</span>
+            <strong>{formatCount(itemFavoriteCount(selectedDetailItem))}</strong>
+          </button>
+        </div>
+        <dl className="market-store-detail-grid">
+          {rows.map((row) => (
+            <div key={row.label}>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Modal>
     );
   }
 
@@ -820,7 +815,13 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       item.type === "pet" ? t("market.detail.desktopPet") : ""
     ].filter(Boolean))).slice(0, 3);
     return (
-      <article key={`${item.type}:${item.id}`} className={`market-store-card is-${item.type}`}>
+      <Card
+        key={`${item.type}:${item.id}`}
+        className={`market-store-card is-${item.type}`}
+        classNames={{ body: "market-store-card-body" }}
+        hoverable
+        variant="outlined"
+      >
         <div className="market-store-card-head">
           <span className={`market-store-item-icon is-${item.type}`} aria-hidden="true">
             {marketTypeIcon(item.type)}
@@ -835,8 +836,8 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
         </div>
         {chips.length > 0 || platformChip ? (
           <div className="market-store-tags" aria-label={t("market.tags.aria", { name: displayName })}>
-            {chips.map((chip) => <span key={chip}>{tagLabel(chip)}</span>)}
-            {platformChip ? <span className="market-store-platform-chip">{platformChip}</span> : null}
+            {chips.map((chip) => <Tag className="market-store-tag" key={chip}>{tagLabel(chip)}</Tag>)}
+            {platformChip ? <Tag className="market-store-tag market-store-platform-chip">{platformChip}</Tag> : null}
           </div>
         ) : null}
         <div className="market-store-card-footer">
@@ -871,7 +872,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
             {renderPrimaryAction(item)}
           </div>
         </div>
-      </article>
+      </Card>
     );
   }
 
@@ -893,58 +894,66 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
         {renderDetailDialog()}
 
         <div className="market-filter-bar market-store-toolbar" aria-label={t("market.toolbar.filters")}>
-          <label className="market-search">
-            <AppstoreOutlined />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("market.search.storefront")}
-            />
-          </label>
-          <label className="market-select">
-            <span>{t("market.toolbar.sort")}</span>
-            <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
-              <option value="popular">{t("market.sort.popular")}</option>
-              <option value="latest">{t("market.sort.latest")}</option>
-              <option value="rating">{t("market.sort.rating")}</option>
-            </select>
-          </label>
-          <label className="market-select">
-            <span>{t("market.toolbar.scope")}</span>
-            <select value={rangeMode} onChange={(event) => setRangeMode(event.target.value as RangeMode)}>
-              <option value="all">{t("market.scope.all")}</option>
-              <option value="installed">{t("market.scope.installed")}</option>
-              <option value="updates">{t("market.scope.updates")}</option>
-            </select>
-          </label>
+          <Input
+            allowClear
+            className="market-store-search"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("market.search.storefront")}
+            prefix={<AppstoreOutlined />}
+            value={query}
+          />
+          <Select
+            className="market-store-select"
+            onChange={(value) => setSortMode(value as SortMode)}
+            options={[
+              { label: t("market.sort.popular"), value: "popular" },
+              { label: t("market.sort.latest"), value: "latest" },
+              { label: t("market.sort.rating"), value: "rating" }
+            ]}
+            prefix={<span className="market-store-select-prefix">{t("market.toolbar.sort")}</span>}
+            value={sortMode}
+          />
+          <Select
+            className="market-store-select"
+            onChange={(value) => setRangeMode(value as RangeMode)}
+            options={[
+              { label: t("market.scope.all"), value: "all" },
+              { label: t("market.scope.installed"), value: "installed" },
+              { label: t("market.scope.updates"), value: "updates" }
+            ]}
+            prefix={<span className="market-store-select-prefix">{t("market.toolbar.scope")}</span>}
+            value={rangeMode}
+          />
           <div className="market-store-toolbar-actions">
-            <button
-              type="button"
+            <Button
               className="market-store-toolbar-button"
+              icon={<ReloadOutlined />}
+              loading={isLoadingMarket}
               onClick={() => void refreshEverything(true)}
-              disabled={isLoadingMarket}
             >
-              <ReloadOutlined />
-              <span>{isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}</span>
-            </button>
+              {isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
+            </Button>
             {toolbarImportLabel ? (
-              <button
-                type="button"
+              <Button
                 className="market-store-toolbar-button is-primary"
+                icon={<CloudDownloadOutlined />}
+                loading={isImporting}
                 onClick={() => void handleToolbarImport()}
-                disabled={isImporting}
+                type="primary"
               >
-                <CloudDownloadOutlined />
-                <span>{isImporting ? t("market.toolbar.importing") : toolbarImportLabel}</span>
-              </button>
+                {isImporting ? t("market.toolbar.importing") : toolbarImportLabel}
+              </Button>
             ) : null}
           </div>
         </div>
 
-        {marketStatusMessage ? (
-          <div className={marketOffline ? "market-status is-warning" : "market-status"} aria-live="polite">
-            {marketStatusMessage}
-          </div>
+        {shouldShowMarketStatus ? (
+          <Alert
+            className="market-status"
+            message={marketStatusMessage}
+            showIcon
+            type={marketOffline ? "warning" : "info"}
+          />
         ) : null}
 
         <div className="market-store-scroll">
@@ -953,10 +962,13 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
               {visibleItems.map((item) => renderCard(item))}
             </div>
           ) : (
-            <div className="market-store-empty">
+            <Empty
+              className="market-store-empty"
+              description={<span>{t("market.storefront.emptyDescription")}</span>}
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
               <strong>{isLoadingMarket ? t("market.storefront.loading") : t("market.storefront.emptyTitle")}</strong>
-              <span>{t("market.storefront.emptyDescription")}</span>
-            </div>
+            </Empty>
           )}
         </div>
       </div>
