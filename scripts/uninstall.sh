@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-APP_NAME="ZenMind"
+APP_NAME="CuteJ"
 APP_PATH="/Applications/${APP_NAME}.app"
-DATA_PATH="${HOME}/.zenmind/.desktop"
-PROGRAM_DATA_PATH="${HOME}/Library/Application Support/ZenMind"
+DATA_PATH="${HOME}/.cutej/.desktop"
+PROGRAM_DATA_PATH="${HOME}/Library/Application Support/CuteJ"
 
 show_dialog() {
   local message="$1"

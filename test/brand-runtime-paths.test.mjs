@@ -25,6 +25,18 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function readBrandDesktopPetManifest(root, brandId) {
+  const manifest = readJson(path.join(root, "brands", brandId, "desktop-pet", "pet.json"));
+  return {
+    id: manifest.id,
+    displayName: manifest.displayName,
+    description: manifest.description,
+    preview: manifest.preview,
+    states: manifest.states,
+    ...(manifest.signature ? { signature: manifest.signature } : {})
+  };
+}
+
 function createBrandFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-brand-runtime-"));
   fs.cpSync(path.join(projectRoot, "brands"), path.join(root, "brands"), { recursive: true });
@@ -78,6 +90,8 @@ async function writeZip(zipPath, entries) {
 test("brand runtime root directory is derived from brand id", () => {
   const zenmind = loadBrandConfig(projectRoot, "zenmind");
   const cutej = loadBrandConfig(projectRoot, "cutej");
+  const zenmindPet = readBrandDesktopPetManifest(projectRoot, "zenmind");
+  const cutejPet = readBrandDesktopPetManifest(projectRoot, "cutej");
 
   assert.equal(zenmind.paths.runtimeRootDirName, ".zenmind");
   assert.equal(cutej.paths.runtimeRootDirName, ".cutej");
@@ -85,6 +99,10 @@ test("brand runtime root directory is derived from brand id", () => {
   assert.equal(cutej.storageNamespace, "cutej-desktop");
   assert.equal(zenmind.paths.programDataDirName, "ZenMind");
   assert.equal(cutej.paths.programDataDirName, "CuteJ");
+  assert.deepEqual(zenmind.desktopPet, zenmindPet);
+  assert.deepEqual(cutej.desktopPet, cutejPet);
+  assert.equal(zenmind.source.desktopPetRoot, "brands/zenmind/desktop-pet");
+  assert.equal(cutej.source.desktopPetRoot, "brands/cutej/desktop-pet");
   assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "zenmind", "brand.json")).paths, false);
   assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "cutej", "brand.json")).paths, false);
 });
@@ -93,18 +111,25 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   const root = createBrandFixture(t);
 
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const expectedPet = readBrandDesktopPetManifest(root, "cutej");
   const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
   const electronBuilderConfig = readJson(path.join(root, "build", "electron-builder.cutej.json"));
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
   const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
   const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const syncedPet = readJson(path.join(root, "public", "desktop-pet", "pet.json"));
 
   assert.equal(brand.paths.runtimeRootDirName, ".cutej");
   assert.equal(brand.storageNamespace, "cutej-desktop");
   assert.equal(brand.paths.programDataDirName, "CuteJ");
+  assert.deepEqual(brand.desktopPet, expectedPet);
   assert.equal(generatedBrand.paths.runtimeRootDirName, ".cutej");
   assert.equal(generatedBrand.storageNamespace, "cutej-desktop");
   assert.equal(generatedBrand.paths.programDataDirName, "CuteJ");
+  assert.deepEqual(generatedBrand.desktopPet, expectedPet);
+  assert.equal(syncedPet.id, "cutej");
+  assert.equal(syncedPet.displayName, expectedPet.displayName);
+  assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet", expectedPet.preview)), true);
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === "build/resources/demo" && item.to === "demo"),
     true
@@ -122,21 +147,40 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   const root = createBrandFixture(t);
 
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
+  const expectedPet = readBrandDesktopPetManifest(root, "zenmind");
   const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
   const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
   const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const syncedPet = readJson(path.join(root, "public", "desktop-pet", "pet.json"));
 
   assert.equal(brand.paths.runtimeRootDirName, ".zenmind");
   assert.equal(brand.storageNamespace, "zenmind-desktop");
   assert.equal(brand.paths.programDataDirName, "ZenMind");
+  assert.deepEqual(brand.desktopPet, expectedPet);
   assert.equal(generatedBrand.storageNamespace, "zenmind-desktop");
   assert.equal(generatedBrand.paths.programDataDirName, "ZenMind");
+  assert.deepEqual(generatedBrand.desktopPet, expectedPet);
+  assert.equal(syncedPet.id, "zenmi");
+  assert.equal(syncedPet.displayName, expectedPet.displayName);
+  assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet", expectedPet.preview)), true);
   assert.match(installerInclude, /%APPDATA%\\ZenMind/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*zenmind-pet:/u);
   assert.doesNotMatch(rendererIndex, /cutej-pet:/u);
+});
+
+test("default desktop pet assets are brand-owned, not script-owned", () => {
+  const generator = fs.readFileSync(path.join(projectRoot, "scripts", "generate-desktop-pet-assets.mjs"), "utf8");
+
+  assert.equal(fs.existsSync(path.join(projectRoot, "brands", "zenmind", "desktop-pet", "pet.json")), true);
+  assert.equal(fs.existsSync(path.join(projectRoot, "brands", "cutej", "desktop-pet", "pet.json")), true);
+  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "assets", "desktop-pet", "zenmi")), false);
+  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "assets", "desktop-pet", "cutej")), false);
+  assert.match(generator, /brand\.source\.desktopPetRoot/u);
+  assert.doesNotMatch(generator, /defaultBuiltInPetId/u);
+  assert.doesNotMatch(generator, /brand\.id === "cutej"/u);
 });
 
 test("brand manifest rejects mismatched explicit runtimeRootDirName", (t) => {

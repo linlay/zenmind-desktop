@@ -3,19 +3,17 @@ import type {
   DesktopPetStateAsset,
   DesktopPetStateAssets
 } from "./contracts/pet-copilot";
-import { BRAND_ID } from "./generated/brand";
+import { APP_BRAND, BRAND_ID } from "./generated/brand";
 
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
 export const DESKTOP_PET_USER_ASSET_PROTOCOL = `${BRAND_ID}-pet`;
 export const DEFAULT_DESKTOP_PET_APPEARANCE_ID = "classic";
-const IS_CUTEJ_BRAND = String(BRAND_ID) === "cutej";
-export const DEFAULT_DESKTOP_PET_BUILTIN_ID = IS_CUTEJ_BRAND ? "cutej" : "zenmi";
+const BRAND_DESKTOP_PET = APP_BRAND.desktopPet;
+export const DEFAULT_DESKTOP_PET_BUILTIN_ID = BRAND_DESKTOP_PET.id;
 export const DEFAULT_DESKTOP_PET_SELECTED_ID = `builtin:${DEFAULT_DESKTOP_PET_BUILTIN_ID}`;
-export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = IS_CUTEJ_BRAND ? "cutej" : "zenmi";
-export const DEFAULT_DESKTOP_PET_DISPLAY_NAME = IS_CUTEJ_BRAND ? "小君" : "小禅";
-export const DEFAULT_DESKTOP_PET_DESCRIPTION = IS_CUTEJ_BRAND
-  ? "蓝发耳机、白蓝制服的 CuteJ 3D 玩具风桌面宠物。"
-  : "戴圆眼镜、灰袍念珠的小和尚桌面宠物。";
+export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = DEFAULT_DESKTOP_PET_BUILTIN_ID;
+export const DEFAULT_DESKTOP_PET_DISPLAY_NAME = BRAND_DESKTOP_PET.displayName;
+export const DEFAULT_DESKTOP_PET_DESCRIPTION = BRAND_DESKTOP_PET.description;
 export const DESKTOP_PET_DONE_FALLBACK_TEXT = "暂无回复预览";
 export const DESKTOP_PET_REPLY_PREVIEW_MAX_LENGTH = 30;
 export const DESKTOP_PET_GENERIC_PREVIEW_TEXTS = [
@@ -48,148 +46,9 @@ export const DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES = 8;
 
 const DESKTOP_PET_STATE_ASSET_KEY_SET: ReadonlySet<string> = new Set(DESKTOP_PET_REQUIRED_STATE_KEYS);
 
-const ZENMI_DESKTOP_PET_STATES: DesktopPetStateAssets = {
-  awaiting: {
-    path: "awaiting.webp",
-    frameCount: 4,
-    durationMs: 1200,
-    loop: true
-  },
-  done: {
-    path: "done.webp",
-    frameCount: 6,
-    durationMs: 1200,
-    loop: false,
-    holdMs: 2500
-  },
-  dragging: {
-    path: "dragging.webp",
-    frameCount: 4,
-    durationMs: 900,
-    loop: true
-  },
-  failed: {
-    path: "failed.webp",
-    frameCount: 4,
-    durationMs: 1000,
-    loop: false,
-    holdMs: 3000
-  },
-  idle: {
-    path: "idle.webp",
-    frameCount: 4,
-    durationMs: 6000,
-    loop: true
-  },
-  jumping: {
-    path: "jumping.webp",
-    frameCount: 4,
-    durationMs: 1000,
-    loop: false
-  },
-  "moving-left": {
-    path: "moving-left.webp",
-    frameCount: 8,
-    durationMs: 900,
-    loop: true,
-    mirror: true
-  },
-  review: {
-    path: "review.webp",
-    frameCount: 4,
-    durationMs: 1400,
-    loop: true
-  },
-  running: {
-    path: "running.webp",
-    frameCount: 8,
-    durationMs: 1600,
-    loop: true
-  }
-};
-
-const CUTEJ_DESKTOP_PET_STATES: DesktopPetStateAssets = {
-  awaiting: {
-    path: "awaiting.webp",
-    frameCount: 6,
-    durationMs: 1200,
-    loop: true
-  },
-  done: {
-    path: "done.webp",
-    frameCount: 5,
-    durationMs: 1200,
-    loop: false,
-    holdMs: 2500
-  },
-  dragging: {
-    path: "dragging.webp",
-    frameCount: 8,
-    durationMs: 900,
-    loop: true
-  },
-  failed: {
-    path: "failed.webp",
-    frameCount: 8,
-    durationMs: 1000,
-    loop: false,
-    holdMs: 3000
-  },
-  idle: {
-    path: "idle.webp",
-    frameCount: 6,
-    durationMs: 6000,
-    loop: true
-  },
-  jumping: {
-    path: "jumping.webp",
-    frameCount: 5,
-    durationMs: 1000,
-    loop: false
-  },
-  "moving-left": {
-    path: "moving-left.webp",
-    frameCount: 8,
-    durationMs: 900,
-    loop: true,
-    mirror: true
-  },
-  review: {
-    path: "review.webp",
-    frameCount: 6,
-    durationMs: 1400,
-    loop: true
-  },
-  running: {
-    path: "running.webp",
-    frameCount: 6,
-    durationMs: 1600,
-    loop: true
-  }
-};
-
-const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = IS_CUTEJ_BRAND
-  ? CUTEJ_DESKTOP_PET_STATES
-  : ZENMI_DESKTOP_PET_STATES;
-
-const ZENMI_DESKTOP_PET_SIGNATURE_ACTIONS: DesktopPetSignatureAction[] = [
-  {
-    id: "chant",
-    label: "念经",
-    trigger: ["manual", "idle-random"],
-    variants: [
-      {
-        path: "signature/chant.webp",
-        frameCount: 30,
-        durationMs: 5200,
-        weight: 1
-      }
-    ]
-  }
-];
-const DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS: DesktopPetSignatureAction[] = IS_CUTEJ_BRAND
-  ? []
-  : ZENMI_DESKTOP_PET_SIGNATURE_ACTIONS;
+const DEFAULT_DESKTOP_PET_STATES = BRAND_DESKTOP_PET.states as unknown as DesktopPetStateAssets;
+const DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS =
+  ((BRAND_DESKTOP_PET as unknown as { signature?: DesktopPetSignatureAction[] }).signature ?? []);
 
 export const DESKTOP_PET_APPEARANCE_OPTIONS = [
   {
@@ -197,8 +56,8 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
     displayName: DEFAULT_DESKTOP_PET_DISPLAY_NAME,
     description: DEFAULT_DESKTOP_PET_DESCRIPTION,
     assetBasePath: "./desktop-pet",
-    preview: "idle.webp",
-    previewUrl: "./desktop-pet/idle.webp",
+    preview: BRAND_DESKTOP_PET.preview,
+    previewUrl: `./desktop-pet/${BRAND_DESKTOP_PET.preview}`,
     states: DEFAULT_DESKTOP_PET_STATES,
     ...(DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS.length > 0 ? { signature: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS } : {})
   }

@@ -20,8 +20,7 @@ const marketPetSourceDirectory = configuredMarketPetsRoot
   ? marketPetRootDirectory
   : path.join(marketPetRootDirectory, "expanded");
 const sourceAssetDirectory = path.resolve(__dirname, "assets", "desktop-pet");
-const defaultBuiltInPetId = brand.id === "cutej" ? "cutej" : "zenmi";
-const defaultSourceAssetDirectory = path.join(sourceAssetDirectory, defaultBuiltInPetId);
+const defaultSourceAssetDirectory = path.join(projectRoot, brand.source.desktopPetRoot);
 
 const size = {
   width: 320,

@@ -14,8 +14,12 @@ const {
   listUserDesktopPetAppearanceOptions
 } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
+const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 const {
   DEFAULT_DESKTOP_PET_BUILTIN_ID,
+  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DEFAULT_DESKTOP_PET_DESCRIPTION,
+  DEFAULT_DESKTOP_PET_DISPLAY_NAME,
   DESKTOP_PET_APPEARANCE_OPTIONS,
   DESKTOP_PET_USER_ASSET_PROTOCOL,
   resolveDesktopPetSignatureActions
@@ -327,83 +331,21 @@ test("desktop pet context menu exposes manual signature actions", () => {
 });
 
 test("desktop pet exposes brand-specific built-in appearance defaults", () => {
-  const isCuteJ = DEFAULT_DESKTOP_PET_BUILTIN_ID === "cutej";
+  const brandPet = APP_BRAND.desktopPet;
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id), ["classic"]);
-  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].displayName, isCuteJ ? "小君" : "小禅");
-  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].preview, "idle.webp");
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.idle, {
-    path: "idle.webp",
-    frameCount: isCuteJ ? 6 : 4,
-    durationMs: 6000,
-    loop: true
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.jumping, {
-    path: "jumping.webp",
-    frameCount: isCuteJ ? 5 : 4,
-    durationMs: 1000,
-    loop: false
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states["moving-left"], {
-    path: "moving-left.webp",
-    frameCount: 8,
-    durationMs: 900,
-    loop: true,
-    mirror: true
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.dragging, {
-    path: "dragging.webp",
-    frameCount: isCuteJ ? 8 : 4,
-    durationMs: 900,
-    loop: true
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.done, {
-    path: "done.webp",
-    frameCount: isCuteJ ? 5 : 6,
-    durationMs: 1200,
-    loop: false,
-    holdMs: 2500
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.failed, {
-    path: "failed.webp",
-    frameCount: isCuteJ ? 8 : 4,
-    durationMs: 1000,
-    loop: false,
-    holdMs: 3000
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.running, {
-    path: "running.webp",
-    frameCount: isCuteJ ? 6 : 8,
-    durationMs: 1600,
-    loop: true
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.awaiting, {
-    path: "awaiting.webp",
-    frameCount: isCuteJ ? 6 : 4,
-    durationMs: 1200,
-    loop: true
-  });
-  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states.review, {
-    path: "review.webp",
-    frameCount: isCuteJ ? 6 : 4,
-    durationMs: 1400,
-    loop: true
-  });
-  if (isCuteJ) {
+  assert.equal(DEFAULT_DESKTOP_PET_BUILTIN_ID, brandPet.id);
+  assert.equal(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY, brandPet.id);
+  assert.equal(DEFAULT_DESKTOP_PET_DISPLAY_NAME, brandPet.displayName);
+  assert.equal(DEFAULT_DESKTOP_PET_DESCRIPTION, brandPet.description);
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].displayName, brandPet.displayName);
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].description, brandPet.description);
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].preview, brandPet.preview);
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].previewUrl, `./desktop-pet/${brandPet.preview}`);
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states, brandPet.states);
+  if (!brandPet.signature) {
     assert.deepEqual(resolveDesktopPetSignatureActions("classic", []), []);
   } else {
-    assert.deepEqual(resolveDesktopPetSignatureActions("classic", [])[0], {
-      id: "chant",
-      label: "念经",
-      trigger: ["manual", "idle-random"],
-      variants: [
-        {
-          path: "signature/chant.webp",
-          frameCount: 30,
-          durationMs: 5200,
-          weight: 1
-        }
-      ]
-    });
+    assert.deepEqual(resolveDesktopPetSignatureActions("classic", []), brandPet.signature);
   }
 
   assert.deepEqual(resolveDesktopPetSignatureActions("user:pony", []), []);
