@@ -5,7 +5,12 @@ import {
   buildElectronSpawnErrorMessage,
   resolveValidatedElectronBinaryPath
 } from "./lib/electron-installation.mjs";
-import { syncBrandArtifacts, resolveBrandId } from "./lib/brand-config.mjs";
+import {
+  assertBrandArtifactsConsistent,
+  removeStaleRendererBuild,
+  syncBrandArtifacts,
+  resolveBrandId
+} from "./lib/brand-config.mjs";
 import { hostArch, hostPlatform, isWindows, syncOsLabel } from "./platform/detect.mjs";
 import { npmCmd, run, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 
@@ -14,6 +19,10 @@ const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
 process.env.BRAND = brand.id;
 const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 await runAndWait("node", ["./scripts/generate-app-icons.mjs"], brandProcessOptions({ cwd: projectRoot }));
+if (removeStaleRendererBuild({ rootDir: projectRoot, brand })) {
+  console.warn(`[dev] removed stale dist-renderer output for BRAND=${brand.id}; Vite dev server will serve fresh assets.`);
+}
+assertBrandArtifactsConsistent({ rootDir: projectRoot, brand });
 const electronBinary = resolveValidatedElectronBinaryPath();
 
 // 把当前 Node 的目录顶到 PATH 最前，并显式声明 NODE_BIN，

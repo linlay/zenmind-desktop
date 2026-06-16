@@ -7,7 +7,9 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
+  assertBrandArtifactsConsistent,
   loadBrandConfig,
+  removeStaleRendererBuild,
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
@@ -68,6 +70,13 @@ function createBrandFixture(t) {
   fs.copyFileSync(path.join(projectRoot, "index.html"), path.join(root, "index.html"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
+}
+
+function writeMinimalPublicIconArtifacts(root, brand) {
+  fs.mkdirSync(path.join(root, "public"), { recursive: true });
+  fs.copyFileSync(path.join(root, brand.icons.trayIconSvg), path.join(root, "public", "tray-icon.svg"));
+  fs.writeFileSync(path.join(root, "public", "brand-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  fs.writeFileSync(path.join(root, "public", "tray-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 }
 
 function writeBrandManifest(root, brandId, update) {
@@ -134,8 +143,55 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
     await renderSvgFileHash(path.join(projectRoot, cutej.icons.appIconSvg))
   );
   assert.match(generator, /writeFileIfChanged\(publicTrayIconSvgPath,\s*Buffer\.from\(trayIconSvg\)\)/u);
+  assert.match(generator, /renderTransparentAppIconToPng\(appIconSvg,\s*size\)/u);
   assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"tray-icon\.png"\),\s*trayPng\)/u);
   assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-icon\.png"\),\s*renderedAppPngs\.get\(256\)\)/u);
+});
+
+test("brand consistency guard catches and clears stale dist-renderer output", (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
+  writeMinimalPublicIconArtifacts(root, brand);
+
+  const staleRendererRoot = path.join(root, "dist-renderer");
+  fs.mkdirSync(staleRendererRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(staleRendererRoot, "index.html"),
+    [
+      "<!doctype html>",
+      "<html>",
+      "<head>",
+      "  <meta http-equiv=\"Content-Security-Policy\" content=\"img-src 'self' cutej-pet:;\">",
+      "  <title>CuteJ</title>",
+      "</head>",
+      "<body></body>",
+      "</html>",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  assert.throws(
+    () => assertBrandArtifactsConsistent({ rootDir: root, brand }),
+    /dist-renderer\/index\.html/u
+  );
+  assert.equal(removeStaleRendererBuild({ rootDir: root, brand }), true);
+  assert.equal(fs.existsSync(staleRendererRoot), false);
+  assert.doesNotThrow(() => assertBrandArtifactsConsistent({ rootDir: root, brand }));
+
+  fs.mkdirSync(staleRendererRoot, { recursive: true });
+  fs.copyFileSync(path.join(root, "index.html"), path.join(staleRendererRoot, "index.html"));
+  fs.copyFileSync(
+    path.join(root, "brands", "cutej", "icons", "tray-icon.svg"),
+    path.join(staleRendererRoot, "tray-icon.svg")
+  );
+
+  assert.throws(
+    () => assertBrandArtifactsConsistent({ rootDir: root, brand }),
+    /dist-renderer\/tray-icon\.svg/u
+  );
+  assert.equal(removeStaleRendererBuild({ rootDir: root, brand }), true);
+  assert.equal(fs.existsSync(staleRendererRoot), false);
 });
 
 test("brand sync writes CuteJ isolated runtime paths into generated artifacts", (t) => {

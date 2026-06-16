@@ -398,7 +398,6 @@ function generateMacIconsetAndIcnsFromPng(sourcePngPath) {
   const tempParent = process.platform === "darwin" ? "/private/tmp" : os.tmpdir();
   const tempRoot = fs.mkdtempSync(path.join(tempParent, "zenmind-app-icons-"));
   const tempIconsetDir = path.join(tempRoot, "icon.iconset");
-  const tempIcnsPath = path.join(tempRoot, "icon.icns");
   fs.mkdirSync(tempIconsetDir, { recursive: true });
 
   for (const [filename, size] of iconsetEntries) {
@@ -411,34 +410,21 @@ function generateMacIconsetAndIcnsFromPng(sourcePngPath) {
       path.join(tempIconsetDir, filename)
     ]);
   }
-  const iconutilResult = spawnSync(
-    "/usr/bin/iconutil",
-    ["-c", "icns", tempIconsetDir, "-o", tempIcnsPath],
-    {
-      cwd: projectRoot,
-      encoding: "utf8"
-    }
-  );
 
   fs.rmSync(iconsetDir, { recursive: true, force: true });
   fs.mkdirSync(iconsetDir, { recursive: true });
   for (const [filename] of iconsetEntries) {
     fs.copyFileSync(path.join(tempIconsetDir, filename), path.join(iconsetDir, filename));
   }
-  if (iconutilResult.status === 0) {
-    fs.copyFileSync(tempIcnsPath, path.join(buildIconsDir, "icon.icns"));
-  } else {
-    console.warn(`iconutil failed; falling back to PNG-backed ICNS: ${iconutilResult.stderr || iconutilResult.stdout}`);
-    writeFileIfChanged(
-      path.join(buildIconsDir, "icon.icns"),
-      createIcns(
-        icnsEntries.map(([filename, type]) => ({
-          type,
-          png: fs.readFileSync(path.join(tempIconsetDir, filename))
-        }))
-      )
-    );
-  }
+  writeFileIfChanged(
+    path.join(buildIconsDir, "icon.icns"),
+    createIcns(
+      icnsEntries.map(([filename, type]) => ({
+        type,
+        png: fs.readFileSync(path.join(tempIconsetDir, filename))
+      }))
+    )
+  );
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
@@ -453,7 +439,7 @@ async function main() {
 
   const renderedAppPngs = new Map();
   for (const size of pngSizes) {
-    const png = await renderSvgToPng(appIconSvg, size);
+    const png = await renderTransparentAppIconToPng(appIconSvg, size);
     renderedAppPngs.set(size, png);
     writeFileIfChanged(path.join(buildIconsDir, `icon-${size}.png`), png);
   }
@@ -477,7 +463,9 @@ async function main() {
   const renderedTransparentAppPngs = new Map();
   const icoPngEntries = [];
   for (const size of icoSizes) {
-    const png = renderedTransparentAppPngs.get(size) ?? (await renderTransparentAppIconToPng(appIconSvg, size));
+    const png = renderedAppPngs.get(size) ??
+      renderedTransparentAppPngs.get(size) ??
+      (await renderTransparentAppIconToPng(appIconSvg, size));
     renderedTransparentAppPngs.set(size, png);
     icoPngEntries.push({ size, png });
   }

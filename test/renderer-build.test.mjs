@@ -13,6 +13,10 @@ function readJsonFile(...segments) {
   return JSON.parse(fs.readFileSync(path.join(projectRoot, ...segments), "utf8"));
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+}
+
 function readCssWithImports(filePath, visited = new Set()) {
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
   if (visited.has(absolutePath)) {
@@ -2589,12 +2593,20 @@ test("built index uses relative asset paths", () => {
   const sourceIndex = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
   const brand = readJsonFile("build", "generated", "brand.json");
   const petProtocol = `${brand.id}-pet:`;
+  const exactPetProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(petProtocol)}`, "u");
 
   assert.doesNotMatch(builtIndex, /src="\/assets\//);
   assert.doesNotMatch(builtIndex, /href="\/assets\//);
   assert.match(builtIndex, /(src|href)="\.?\/?assets\//);
-  assert.match(sourceIndex, new RegExp(`img-src[^"]*${petProtocol}`, "u"));
-  assert.match(builtIndex, /img-src[^"]*[a-z0-9_-]+-pet:/u);
+  assert.match(sourceIndex, exactPetProtocolPattern);
+  assert.match(builtIndex, exactPetProtocolPattern);
+
+  for (const entry of fs.readdirSync(path.join(projectRoot, "brands"), { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === brand.id) {
+      continue;
+    }
+    assert.doesNotMatch(builtIndex, new RegExp(`${escapeRegExp(entry.name)}-pet:`, "u"));
+  }
 });
 
 test("plugin market guards stale preload market api before skill import", () => {
@@ -2988,6 +3000,15 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /ensureDockIdentity:\s*ensureDarwinDockIdentity/);
   assert.match(mainProcess, /showMainWindow\(\);/);
   assert.match(readSourceFile("src", "main", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
+});
+
+test("mac dev app uses a content-addressed icon filename to avoid stale Dock cache", () => {
+  const darwinDev = readSourceFile("scripts", "platform", "dev-darwin.mjs");
+
+  assert.match(darwinDev, /createHash\("sha256"\)/);
+  assert.match(darwinDev, /const targetIconFileName = `icon-\$\{fileHashPrefix\(sourceIconPath\)\}\.icns`;/);
+  assert.match(darwinDev, /setPlistString\(plist,\s*"CFBundleIconFile",\s*targetIconFileName\)/);
+  assert.doesNotMatch(darwinDev, /const targetIconFileName = "icon\.icns";/);
 });
 
 test("external webview tabs use repeatable pointer reordering", () => {

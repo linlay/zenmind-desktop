@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { loadBrandConfig, resolveBrandId } from "../lib/brand-config.mjs";
@@ -10,6 +11,10 @@ function setPlistString(plist, key, value) {
     return plist.replace(pattern, `$1${value}$3`);
   }
   return plist.replace("</dict>", `<key>${key}</key><string>${value}</string></dict>`);
+}
+
+function fileHashPrefix(filePath) {
+  return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex").slice(0, 12);
 }
 
 export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
@@ -30,7 +35,6 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
   const targetBinary = path.join(targetContentsDir, "MacOS", devAppName);
   const targetPlistPath = path.join(targetContentsDir, "Info.plist");
   const sourceIconPath = path.join(projectRoot, "build", "icons", "icon.icns");
-  const targetIconFileName = "icon.icns";
 
   fs.rmSync(targetAppRoot, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetAppRoot), { recursive: true });
@@ -39,6 +43,7 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
   if (!fs.existsSync(sourceIconPath)) {
     throw new Error(`missing macOS app icon: ${sourceIconPath}`);
   }
+  const targetIconFileName = `icon-${fileHashPrefix(sourceIconPath)}.icns`;
   fs.mkdirSync(targetResourcesDir, { recursive: true });
   fs.copyFileSync(sourceIconPath, path.join(targetResourcesDir, targetIconFileName));
 

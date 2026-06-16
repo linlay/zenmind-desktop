@@ -77,6 +77,47 @@ export function syncBrandArtifacts({
   return brand;
 }
 
+export function removeStaleRendererBuild({
+  rootDir = process.cwd(),
+  brandId = resolveBrandId(),
+  brand = loadBrandConfig(rootDir, brandId)
+} = {}) {
+  const rendererRoot = path.join(rootDir, "dist-renderer");
+  if (!fs.existsSync(rendererRoot)) {
+    return false;
+  }
+
+  const rendererIndexPath = path.join(rendererRoot, "index.html");
+  const shouldRemove = !fs.existsSync(rendererIndexPath) || distRendererProblems(rootDir, brand).length > 0;
+  if (!shouldRemove) {
+    return false;
+  }
+
+  fs.rmSync(rendererRoot, { recursive: true, force: true });
+  return true;
+}
+
+export function assertBrandArtifactsConsistent({
+  rootDir = process.cwd(),
+  brandId = resolveBrandId(),
+  brand = loadBrandConfig(rootDir, brandId),
+  checkDistRenderer = true
+} = {}) {
+  const problems = [
+    ...generatedBrandProblems(rootDir, brand),
+    ...rendererIndexProblems(rootDir, brand),
+    ...publicIconProblems(rootDir, brand)
+  ];
+
+  if (checkDistRenderer) {
+    problems.push(...distRendererProblems(rootDir, brand));
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`Brand artifact drift for ${brand.id}:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
+  }
+}
+
 export function electronBuilderConfigPath(rootDir = process.cwd(), brandId = resolveBrandId()) {
   return path.join(rootDir, "build", `electron-builder.${normalizeBrandId(brandId)}.json`);
 }
@@ -109,6 +150,179 @@ function writeFileIfChanged(filePath, content) {
   }
   fs.writeFileSync(filePath, content, "utf8");
   return true;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+}
+
+function assertFileExists(filePath, label) {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return [`${label} is missing`];
+  }
+  return [];
+}
+
+function assertNonEmptyFile(filePath, label) {
+  const existsProblems = assertFileExists(filePath, label);
+  if (existsProblems.length > 0) {
+    return existsProblems;
+  }
+  if (fs.statSync(filePath).size === 0) {
+    return [`${label} is empty`];
+  }
+  return [];
+}
+
+function listForeignBrandMarkers(rootDir, activeBrandId) {
+  const brandsRoot = path.join(rootDir, "brands");
+  if (!fs.existsSync(brandsRoot)) {
+    return [];
+  }
+
+  return fs.readdirSync(brandsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== activeBrandId)
+    .flatMap((entry) => {
+      const manifestPath = path.join(brandsRoot, entry.name, "brand.json");
+      if (!fs.existsSync(manifestPath)) {
+        return [];
+      }
+      const manifest = readJson(manifestPath);
+      const productName = typeof manifest.productName === "string" ? manifest.productName.trim() : "";
+      return [
+        `${entry.name}-pet:`,
+        ...(productName ? [`<title>${escapeHtmlText(productName)}</title>`] : [])
+      ];
+    });
+}
+
+function htmlBrandProblems(content, label, brand, rootDir) {
+  const problems = [];
+  const expectedTitle = `<title>${escapeHtmlText(brand.productName)}</title>`;
+  if (!content.includes(expectedTitle)) {
+    problems.push(`${label} does not contain ${expectedTitle}`);
+  }
+
+  const expectedPetProtocol = `${brand.id}-pet:`;
+  const petProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(expectedPetProtocol)}`, "u");
+  if (!petProtocolPattern.test(content)) {
+    problems.push(`${label} does not contain ${expectedPetProtocol} in img-src`);
+  }
+
+  for (const marker of listForeignBrandMarkers(rootDir, brand.id)) {
+    if (content.includes(marker)) {
+      problems.push(`${label} still contains foreign brand marker ${marker}`);
+    }
+  }
+
+  return problems;
+}
+
+function generatedBrandProblems(rootDir, brand) {
+  const problems = [];
+  const generatedJsonPath = path.join(rootDir, "build", "generated", "brand.json");
+  const generatedTsPath = path.join(rootDir, "src", "shared", "generated", "brand.ts");
+
+  const jsonExistsProblems = assertFileExists(generatedJsonPath, "build/generated/brand.json");
+  problems.push(...jsonExistsProblems);
+  if (jsonExistsProblems.length === 0) {
+    const generatedJson = readJson(generatedJsonPath);
+    if (generatedJson.id !== brand.id) {
+      problems.push(`build/generated/brand.json id is ${generatedJson.id}, expected ${brand.id}`);
+    }
+    if (generatedJson.productName !== brand.productName) {
+      problems.push(
+        `build/generated/brand.json productName is ${generatedJson.productName}, expected ${brand.productName}`
+      );
+    }
+  }
+
+  const tsExistsProblems = assertFileExists(generatedTsPath, "src/shared/generated/brand.ts");
+  problems.push(...tsExistsProblems);
+  if (tsExistsProblems.length === 0) {
+    const generatedTs = fs.readFileSync(generatedTsPath, "utf8");
+    if (!generatedTs.includes(`"id": "${brand.id}"`)) {
+      problems.push(`src/shared/generated/brand.ts does not contain id ${brand.id}`);
+    }
+    if (!generatedTs.includes(`"productName": "${brand.productName}"`)) {
+      problems.push(`src/shared/generated/brand.ts does not contain productName ${brand.productName}`);
+    }
+  }
+
+  return problems;
+}
+
+function rendererIndexProblems(rootDir, brand) {
+  const indexPath = path.join(rootDir, "index.html");
+  const existsProblems = assertFileExists(indexPath, "index.html");
+  if (existsProblems.length > 0) {
+    return existsProblems;
+  }
+  return htmlBrandProblems(fs.readFileSync(indexPath, "utf8"), "index.html", brand, rootDir);
+}
+
+function filesHaveSameBytes(leftPath, rightPath) {
+  return Buffer.compare(fs.readFileSync(leftPath), fs.readFileSync(rightPath)) === 0;
+}
+
+function distRendererProblems(rootDir, brand) {
+  const rendererRoot = path.join(rootDir, "dist-renderer");
+  if (!fs.existsSync(rendererRoot)) {
+    return [];
+  }
+
+  const problems = [];
+  const distRendererIndexPath = path.join(rendererRoot, "index.html");
+  const indexExistsProblems = assertFileExists(distRendererIndexPath, "dist-renderer/index.html");
+  problems.push(...indexExistsProblems);
+  if (indexExistsProblems.length === 0) {
+    problems.push(
+      ...htmlBrandProblems(
+        fs.readFileSync(distRendererIndexPath, "utf8"),
+        "dist-renderer/index.html",
+        brand,
+        rootDir
+      )
+    );
+  }
+
+  const distTrayIconSvgPath = path.join(rendererRoot, "tray-icon.svg");
+  const brandTrayIconSvgPath = path.join(rootDir, brand.icons.trayIconSvg);
+  if (fs.existsSync(distTrayIconSvgPath) && !filesHaveSameBytes(distTrayIconSvgPath, brandTrayIconSvgPath)) {
+    problems.push(`dist-renderer/tray-icon.svg does not match ${brand.icons.trayIconSvg}`);
+  }
+
+  for (const fileName of ["brand-icon.png", "tray-icon.png"]) {
+    const publicPath = path.join(rootDir, "public", fileName);
+    const distPath = path.join(rendererRoot, fileName);
+    if (fs.existsSync(publicPath) && fs.existsSync(distPath) && !filesHaveSameBytes(publicPath, distPath)) {
+      problems.push(`dist-renderer/${fileName} does not match public/${fileName}`);
+    }
+  }
+
+  return problems;
+}
+
+function publicIconProblems(rootDir, brand) {
+  const problems = [];
+  const publicTrayIconSvgPath = path.join(rootDir, "public", "tray-icon.svg");
+  const brandTrayIconSvgPath = path.join(rootDir, brand.icons.trayIconSvg);
+
+  problems.push(
+    ...assertNonEmptyFile(path.join(rootDir, "public", "brand-icon.png"), "public/brand-icon.png"),
+    ...assertNonEmptyFile(path.join(rootDir, "public", "tray-icon.png"), "public/tray-icon.png"),
+    ...assertFileExists(publicTrayIconSvgPath, "public/tray-icon.svg")
+  );
+
+  if (fs.existsSync(publicTrayIconSvgPath)) {
+    const publicTrayIconSvg = fs.readFileSync(publicTrayIconSvgPath, "utf8");
+    const brandTrayIconSvg = fs.readFileSync(brandTrayIconSvgPath, "utf8");
+    if (publicTrayIconSvg !== brandTrayIconSvg) {
+      problems.push(`public/tray-icon.svg does not match ${brand.icons.trayIconSvg}`);
+    }
+  }
+
+  return problems;
 }
 
 function isRecord(value) {
