@@ -69,6 +69,9 @@ const api: DesktopApi = {
   desktopDownloads: {
     saveFile: (input) => ipcRenderer.invoke("desktopDownloads.saveFile", input)
   },
+  desktopScreenshot: {
+    capture: () => ipcRenderer.invoke("desktopScreenshot.capture")
+  },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
   },

@@ -1172,7 +1172,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
   assert.doesNotMatch(settingsSections, /kanbanEnabled\?:\s*boolean/);
-  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?label:\s*"general"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /group:\s*"personal"/);
+  assert.match(settingsSections, /group:\s*"integrations"/);
+  assert.match(settingsSections, /group:\s*"system"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
@@ -1190,6 +1193,13 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /\{!isSettingsMode \? \([\s\S]*?sidebar-collapsed-toggle-button/);
   assert.match(sidebarSource, /settingsSections\?: SettingsSidebarSection\[\];/);
   assert.match(sidebarSource, /sidebar-settings-nav/);
+  assert.match(sidebarSource, /SETTINGS_SECTION_GROUPS/);
+  assert.match(sidebarSource, /settingsSearchQuery/);
+  assert.match(sidebarSource, /settings\.searchPlaceholder/);
+  assert.match(sidebarSource, /settings\.searchAriaLabel/);
+  assert.match(sidebarSource, /settings\.searchNoResults/);
+  assert.match(sidebarSource, /settings-section-group-heading/);
+  assert.match(sidebarSource, /section\.description/);
   assert.match(sidebarSource, /settings\.backToApp/);
   assert.match(sidebarSource, /onExitSettingsMode/);
   assert.match(sidebarSource, /case "general"[\s\S]*?return "settings"/);
@@ -1197,6 +1207,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /case "kanban"[\s\S]*?return "futures"/);
   assert.match(sidebarSource, /case "assistant"[\s\S]*?return "assistant"/);
   assert.match(sidebarSource, /case "market"[\s\S]*?return "market"/);
+  assert.match(sidebarSource, /case "tunnelHub"[\s\S]*?return "service"/);
   assert.doesNotMatch(sidebarSource, /case "runtimeReset"/);
   assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
   assert.match(brandMarkSource, /about:\s*aboutIcon/);
@@ -1259,6 +1270,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.doesNotMatch(settingsPage, /settings-directory-nav/);
   assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
   assert.match(settingsStyles, /\.settings-content-panel/);
+  assert.match(sidebarSource, /settings\.group\.personal/);
+  assert.match(sidebarSource, /settings\.group\.integrations/);
+  assert.match(sidebarSource, /settings\.group\.system/);
 });
 
 test("startup env import overlay uses packaged-relative brand icon", () => {
@@ -1385,7 +1399,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /<Switch[\s\S]*handleToggleControlRemoteControl/);
   assert.match(settingsPage, /<Form[\s\S]*className="settings-control-form settings-kanban-ant-form"[\s\S]*onFinish=\{\(\) => void saveControlCloudConfig\(controlCloudConfig\)\}/);
   assert.match(settingsPage, /<Input[\s\S]*taskBoard\.cloud\.deviceAliasPlaceholder/);
-  assert.match(settingsPage, /<Input\.Password[\s\S]*taskBoard\.cloud\.tokenPlaceholder/);
+  assert.doesNotMatch(settingsPage, /<Input\.Password[\s\S]*taskBoard\.cloud\.tokenPlaceholder/);
   assert.match(settingsPage, /<Select[\s\S]*options=\{controlProjectSelectOptions\}/);
   assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.kanban\.save/);
   assert.match(settingsPage, /case "assistant"/);
@@ -3120,12 +3134,16 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeReserved, /media\.microphone/);
   assert.match(serviceWebviewBridgeReserved, /media\.camera/);
-  assert.match(serviceWebviewBridgeReserved, /screen\.capture/);
+  assert.doesNotMatch(serviceWebviewBridgeReserved, /screen\.capture/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewPreload, /sendToHost/);
   assert.doesNotMatch(serviceWebviewPreload, /contextBridge\.exposeInMainWorld/);
   assert.doesNotMatch(serviceWebviewPreload, /sendToMain/);
@@ -3150,15 +3168,20 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /preload-installed/);
   assert.match(serviceWebviewPreload, /auth-response-seeded/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES/);
+  assert.match(serviceWebviewPreload, /recentForwardedBridgeRequestKeys/);
+  assert.match(serviceWebviewPreload, /function forwardDesktopBridgeRequest\(/);
+  assert.match(serviceWebviewPreload, /const requestKey = `\$\{value\.type\}:\$\{value\.requestId\}`/);
   assert.match(serviceWebviewPreload, /DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE/);
   assert.match(mainProcess, /getServiceWebviewPreloadUrl\(\)[\s\S]{0,120}pathToFileURL\(getServiceWebviewPreloadPath\(\)\)\.toString\(\)/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopDialog\.selectDirectory"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.openPath"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopDownloads\.saveFile"/);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopScreenshot\.capture"/);
   assert.match(windowManager, /webPreferences\.preload = input\.servicePreloadPath/);
   assert.match(servicesHandlers, /ipcMain\.handle\("plugins\.getServiceWebviewPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
   assert.match(preload, /getServiceWebviewPreloadUrl:\s*\(\) => ipcRenderer\.invoke\("plugins\.getServiceWebviewPreloadUrl"\)/);
   assert.match(preload, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => ipcRenderer\.invoke\("desktopDialog\.selectDirectory"\)/);
+  assert.match(preload, /desktopScreenshot:[\s\S]{0,120}capture:\s*\(\) => ipcRenderer\.invoke\("desktopScreenshot\.capture"\)/);
   assert.match(preload, /desktopShell:[\s\S]{0,140}openPath:\s*\(targetPath: string\) => ipcRenderer\.invoke\("desktopShell\.openPath", targetPath\)/);
   assert.match(preload, /desktopDownloads:[\s\S]{0,140}saveFile:\s*\(input\) => ipcRenderer\.invoke\("desktopDownloads\.saveFile", input\)/);
   assert.match(contracts, /getServiceWebviewPreloadUrl:\s*\(\) => Promise<string>/);

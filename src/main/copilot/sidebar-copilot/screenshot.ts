@@ -13,6 +13,17 @@ import { createAssistantAttachmentFromImageBuffer } from "../attachments/attachm
 
 export type ScreenshotCaptureSource = "sidebar" | "quick-assistant";
 
+export type BridgeScreenshotCaptureResult = {
+  ok: boolean;
+  message: string;
+  dataBase64?: string;
+  mimeType?: "image/png";
+  width?: number;
+  height?: number;
+  sizeBytes?: number;
+  cancelled?: boolean;
+};
+
 type ScreenshotSelectionRect = {
   x: number;
   y: number;
@@ -31,6 +42,10 @@ type CaptureAssistantScreenshotOptions = {
   showQuickCopilotDismissWindow: () => void;
   delay: (ms: number) => Promise<void>;
 };
+
+type CaptureBridgeScreenshotOptions = Omit<CaptureAssistantScreenshotOptions, "app" | "chatId">;
+
+const MAX_BRIDGE_SCREENSHOT_BYTES = 32 * 1024 * 1024;
 
 function createScreenshotSelectionHtml(selectionId: string) {
   const doneUrl = `zenmind://screenshot-selection/${selectionId}`;
@@ -439,5 +454,54 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
         quickAssistantWindow.focus();
       }
     }
+  }
+}
+
+export async function captureScreenshotForBridge(
+  options: CaptureBridgeScreenshotOptions
+): Promise<BridgeScreenshotCaptureResult> {
+  const permissionMessage = getScreenshotPermissionMessage(options.platform);
+  if (permissionMessage) {
+    return {
+      ok: false,
+      message: permissionMessage
+    };
+  }
+
+  try {
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const selection = await selectScreenshotRegion(display, options.platform);
+    if (!selection) {
+      return {
+        ok: false,
+        cancelled: true,
+        message: "已取消截屏。"
+      };
+    }
+
+    await options.delay(80);
+    const cropped = await captureScreenshotImage(display, selection, options.source, options);
+    const buffer = cropped.toPNG();
+    if (buffer.length > MAX_BRIDGE_SCREENSHOT_BYTES) {
+      return {
+        ok: false,
+        message: "截屏图片超过 32MB，未发送给网页端。"
+      };
+    }
+    const size = cropped.getSize();
+    return {
+      ok: true,
+      message: "已截取 1 张屏幕图片。",
+      dataBase64: buffer.toString("base64"),
+      mimeType: "image/png",
+      width: size.width,
+      height: size.height,
+      sizeBytes: buffer.length
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error)
+    };
   }
 }

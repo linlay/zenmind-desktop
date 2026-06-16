@@ -18,11 +18,6 @@ export const RESERVED_SERVICE_WEBVIEW_BRIDGE_CAPABILITIES: ReservedServiceWebvie
     description: "Reserved for future desktop-mediated camera permission flow."
   },
   {
-    key: "screen.capture",
-    enabled: false,
-    description: "Reserved for future desktop screen capture selection."
-  },
-  {
     key: "notification",
     enabled: false,
     description: "Reserved for future desktop notification capability."
