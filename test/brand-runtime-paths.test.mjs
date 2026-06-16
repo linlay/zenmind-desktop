@@ -107,6 +107,51 @@ async function renderSvgFileHash(filePath, size = 64) {
   return createHash("sha256").update(canvas.toBuffer("image/png")).digest("hex");
 }
 
+async function inspectPngPixels(filePath) {
+  const image = await loadImage(fs.readFileSync(filePath));
+  const canvas = createCanvas(image.width, image.height);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, image.width, image.height);
+  context.drawImage(image, 0, 0);
+  const pixels = context.getImageData(0, 0, image.width, image.height).data;
+  const sampleAlpha = (x, y) => pixels[(y * image.width + x) * 4 + 3];
+  let opaquePixels = 0;
+  let opaqueNeutralGrayPixels = 0;
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const alpha = pixels[index + 3];
+    if (alpha > 0) {
+      opaquePixels += 1;
+    }
+    if (
+      alpha > 250 &&
+      Math.abs(red - green) < 3 &&
+      Math.abs(green - blue) < 3 &&
+      red > 120 &&
+      red < 245
+    ) {
+      opaqueNeutralGrayPixels += 1;
+    }
+  }
+
+  return {
+    width: image.width,
+    height: image.height,
+    opaquePixels,
+    opaqueNeutralGrayPixels,
+    cornerAlphas: [
+      sampleAlpha(0, 0),
+      sampleAlpha(image.width - 1, 0),
+      sampleAlpha(0, image.height - 1),
+      sampleAlpha(image.width - 1, image.height - 1)
+    ],
+    nearCornerAlpha: sampleAlpha(Math.floor(image.width * 0.08), Math.floor(image.height * 0.08))
+  };
+}
+
 test("brand runtime root directory is derived from brand id", () => {
   const zenmind = loadBrandConfig(projectRoot, "zenmind");
   const cutej = loadBrandConfig(projectRoot, "cutej");
@@ -146,6 +191,27 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
   assert.match(generator, /renderTransparentAppIconToPng\(appIconSvg,\s*size\)/u);
   assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"tray-icon\.png"\),\s*trayPng\)/u);
   assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-icon\.png"\),\s*renderedAppPngs\.get\(256\)\)/u);
+});
+
+test("generated active brand app icon PNGs keep a transparent backdrop", async (t) => {
+  const generatedBrandPath = path.join(projectRoot, "build", "generated", "brand.json");
+  if (!fs.existsSync(generatedBrandPath)) {
+    t.skip("generated brand icon artifacts are not active");
+    return;
+  }
+  const activeBrandId = readJson(generatedBrandPath).id;
+
+  for (const iconPath of [
+    path.join(projectRoot, "public", "brand-icon.png"),
+    path.join(projectRoot, "build", "icons", "icon-256.png"),
+    path.join(projectRoot, "build", "icons", "icon.png")
+  ]) {
+    const stats = await inspectPngPixels(iconPath);
+    assert.deepEqual(stats.cornerAlphas, [0, 0, 0, 0], `${iconPath} should have transparent corners for ${activeBrandId}`);
+    assert.equal(stats.nearCornerAlpha, 0, `${iconPath} should not have a rounded gray tile behind ${activeBrandId}`);
+    assert.equal(stats.opaqueNeutralGrayPixels, 0, `${iconPath} should not contain an opaque neutral gray backdrop for ${activeBrandId}`);
+    assert(stats.opaquePixels > stats.width * stats.height * 0.1, `${iconPath} should contain non-empty ${activeBrandId} icon art`);
+  }
 });
 
 test("brand consistency guard catches and clears stale dist-renderer output", (t) => {
@@ -219,6 +285,10 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet", expectedPet.preview)), true);
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === "build/resources/demo" && item.to === "demo"),
+    true
+  );
+  assert.equal(
+    electronBuilderConfig.extraResources.some((item) => item.from === "public/brand-icon.png" && item.to === "brand-icon.png"),
     true
   );
   assert.match(installerInclude, /%APPDATA%\\CuteJ/u);

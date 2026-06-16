@@ -9,6 +9,7 @@ import {
   ipcMain,
   Menu,
   net,
+  nativeImage,
   nativeTheme,
   powerSaveBlocker,
   protocol,
@@ -172,6 +173,7 @@ import {
   LEGACY_INSTALLER_SHUTDOWN_ARGS,
   PRODUCT_NAME
 } from "../shared/generated/brand";
+import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../shared/app-icon-assets";
 import {
   desktopDataRootExists,
   ensureDataRoot,
@@ -1647,6 +1649,60 @@ function showMainWindow(targetPath?: string) {
   mainWindowActivation.showMainWindow(targetPath);
 }
 
+function projectRootFromMainDir(mainDir: string) {
+  return path.join(mainDir, "..", "..");
+}
+
+function getDarwinDockIconCandidatePaths() {
+  const projectRoot = projectRootFromMainDir(__dirname);
+  const packagedBrandIconPath = path.join(process.resourcesPath, APP_ICON_ASSET_FILENAMES.brandIcon);
+  const buildAppIconPath = path.join(
+    projectRoot,
+    APP_ICON_ASSET_DIRECTORIES.buildIcons,
+    APP_ICON_ASSET_FILENAMES.macDockIcon
+  );
+  const publicBrandIconPath = path.join(
+    projectRoot,
+    APP_ICON_ASSET_DIRECTORIES.public,
+    APP_ICON_ASSET_FILENAMES.brandIcon
+  );
+  const rendererBrandIconPath = path.join(
+    projectRoot,
+    APP_ICON_ASSET_DIRECTORIES.distRenderer,
+    APP_ICON_ASSET_FILENAMES.brandIcon
+  );
+
+  if (app.isPackaged) {
+    return [
+      packagedBrandIconPath,
+      rendererBrandIconPath,
+      buildAppIconPath,
+      publicBrandIconPath
+    ];
+  }
+
+  return [
+    buildAppIconPath,
+    publicBrandIconPath,
+    rendererBrandIconPath
+  ];
+}
+
+function applyDarwinDockIcon(dock: NonNullable<typeof app.dock>) {
+  for (const iconPath of getDarwinDockIconCandidatePaths()) {
+    const icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+      continue;
+    }
+    dock.setIcon(icon);
+    return;
+  }
+
+  safeConsoleError("failed to load macOS dock icon", {
+    candidates: getDarwinDockIconCandidatePaths()
+  });
+}
+
 function ensureDarwinDockIdentity() {
   if (mainProcessContext.platform !== "darwin") {
     return;
@@ -1658,11 +1714,16 @@ function ensureDarwinDockIdentity() {
     return;
   }
 
-  void dock.show().catch((error) => {
-    safeConsoleError("failed to show macOS dock icon", {
-      error: error instanceof Error ? error.message : String(error)
+  applyDarwinDockIcon(dock);
+  void dock.show()
+    .then(() => {
+      applyDarwinDockIcon(dock);
+    })
+    .catch((error) => {
+      safeConsoleError("failed to show macOS dock icon", {
+        error: error instanceof Error ? error.message : String(error)
+      });
     });
-  });
 }
 
 function notifyServicesChanged() {

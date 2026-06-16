@@ -2992,8 +2992,14 @@ test("main process keeps app identity visible in platform program bars", () => {
     mainProcess,
     /if \((?:process|mainProcessContext)\.platform !== "darwin"\)\s*\{[\s\S]*?return;[\s\S]*?\}/
   );
+  assert.match(mainProcess, /function getDarwinDockIconCandidatePaths\(\)/);
+  assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.brandIcon/);
+  assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.macDockIcon/);
+  assert.match(mainProcess, /nativeImage\.createFromPath\(iconPath\)/);
+  assert.match(mainProcess, /dock\.setIcon\(icon\);/);
   assert.match(mainProcess, /app\.setActivationPolicy\("regular"\);/);
-  assert.match(mainProcess, /dock\.show\(\)\.catch/);
+  assert.match(mainProcess, /dock\.show\(\)/);
+  assert.match(mainProcess, /then\(\(\) => \{[\s\S]*?applyDarwinDockIcon\(dock\);[\s\S]*?\}\)/);
   assert.match(mainProcess, /ensureDockIdentity:\s*ensureDarwinDockIdentity/);
   assert.match(mainProcess, /showMainWindow\(\);/);
   assert.match(readSourceFile("src", "main", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);

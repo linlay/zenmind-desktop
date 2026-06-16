@@ -1,6 +1,7 @@
 export const APP_ICON_ASSET_FILENAMES = {
   brandIcon: "brand-icon.png",
   trayIcon: "tray-icon.png",
+  macDockIcon: "icon.png",
   windowsAppIcon: "icon.ico",
   fallbackSmallIcon: "icon-16.png"
 } as const;

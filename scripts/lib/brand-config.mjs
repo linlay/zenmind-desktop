@@ -788,6 +788,10 @@ function electronBuilderConfig(brand) {
         to: "demo"
       },
       {
+        from: "public/brand-icon.png",
+        to: "brand-icon.png"
+      },
+      {
         from: "public/tray-icon.png",
         to: "tray-icon.png"
       },
