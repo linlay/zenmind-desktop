@@ -108,12 +108,17 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
     await desktopSsoController.clearBrowserCookies();
     await desktopSsoController.clearWebSessionCookies();
     if (result.ok && result.logoutUrl) {
-      const browserOpenResult = await desktopSsoController.openBrowserUrl({
-        url: result.browserUrl || result.logoutUrl,
-        label: "IAM 登出",
-        browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
-        resolveRedirect: false
-      });
+      const browserOpenResult = result.openMode === "system"
+        ? await desktopSsoController.openSystemBrowserUrl({
+          url: result.logoutUrl,
+          label: "IAM 登出"
+        })
+        : await desktopSsoController.openBrowserUrl({
+          url: result.browserUrl || result.logoutUrl,
+          label: "IAM 登出",
+          browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
+          resolveRedirect: false
+        });
       if (!browserOpenResult.ok) {
         const message = browserOpenResult.message || "Desktop SSO browser open failed";
         const status = failDesktopSsoFlow(message);

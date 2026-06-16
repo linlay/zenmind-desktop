@@ -24,6 +24,7 @@ import { resolveRuntimeRoot } from "./env-bootstrap";
 type OidcConfig = {
   provider?: string;
   authMode?: "server" | "oidc";
+  browserMode?: "system" | "embedded";
   issuer: string;
   authorizeUrl: string;
   serverAuthorizeUrl?: string;
@@ -263,7 +264,6 @@ export const DEFAULT_OIDC_CONFIG: OidcConfig = {
   authorizeUrl: "https://iam.example.com/auth/oauth2/authorize",
   tokenUrl: "https://iam.example.com/auth/oauth2/token",
   clientId: "desktop-test-client",
-  clientSecret: "desktop-test-secret",
   redirectUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${CALLBACK_PATH}`,
   wellKnownUrl: "https://iam.example.com/auth/oidc/example-app/.well-known/openid-configuration",
   logoutUrl: "https://iam.example.com/auth/ssoLogout",
@@ -464,6 +464,22 @@ function getRecordBoolean(record: Record<string, unknown>, key: string, defaultV
   return defaultValue;
 }
 
+function getRecordOptionalBoolean(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    if (/^(?:true|1|on|yes)$/iu.test(value.trim())) {
+      return true;
+    }
+    if (/^(?:false|0|off|no)$/iu.test(value.trim())) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
 function normalizeProviderName(value: string | undefined) {
   return (value || "").trim().toLowerCase();
 }
@@ -471,6 +487,17 @@ function normalizeProviderName(value: string | undefined) {
 function normalizeAuthMode(value: string) {
   const normalizedValue = value.trim().toLowerCase();
   return normalizedValue === "server" ? "server" : "oidc";
+}
+
+function normalizeBrowserMode(value: string) {
+  const normalizedValue = value.trim().toLowerCase();
+  if (normalizedValue === "system" || normalizedValue === "external") {
+    return "system";
+  }
+  if (normalizedValue === "embedded" || normalizedValue === "internal") {
+    return "embedded";
+  }
+  return undefined;
 }
 
 function isServerBrokerAuthMode(config: OidcConfig) {
@@ -528,12 +555,26 @@ function shouldUsePkce(config: OidcConfig) {
   return config.usePkce === true || isGoogleOidcConfig(config);
 }
 
+function shouldUsePkceByDefault(config: OidcConfig) {
+  return isGoogleOidcConfig(config) || !config.clientSecret?.trim();
+}
+
 function isPublicPkceOidcConfig(config: OidcConfig) {
   return shouldUsePkce(config) && !config.clientSecret?.trim();
 }
 
 function shouldUseSystemBrowser(config: OidcConfig) {
+  if (config.browserMode === "system") {
+    return true;
+  }
+  if (config.browserMode === "embedded") {
+    return false;
+  }
   return isServerBrokerAuthMode(config) || isGoogleOidcConfig(config);
+}
+
+function shouldUseEphemeralSystemCallback(config: OidcConfig) {
+  return !config.browserMode && shouldUseSystemBrowser(config);
 }
 
 function parseDesktopSsoConfigContent(content: string) {
@@ -911,14 +952,16 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
       config[field] = value;
     }
   }
-  config.provider = useGoogleDesktopFlow ? "google" : normalizeProviderName(config.provider);
+  const normalizedProvider = normalizeProviderName(config.provider);
+  config.provider = useGoogleDesktopFlow ? "google" : (normalizedProvider || undefined);
   config.authMode = normalizeAuthMode(getRecordString(record, "authMode"));
+  config.browserMode = normalizeBrowserMode(getRecordString(record, "browserMode"));
   const browserOrigin = useGoogleDesktopFlow ? "" : normalizeIdentityProviderOrigin(record);
   if (!useGoogleDesktopFlow && browserOrigin) {
     config.browserOrigin = browserOrigin;
   }
   config.appendLoginState = getRecordBoolean(record, "appendLoginState", true);
-  config.usePkce = getRecordBoolean(record, "usePkce", shouldUsePkce(config));
+  config.usePkce = getRecordOptionalBoolean(record, "usePkce") ?? shouldUsePkceByDefault(config);
   if (useGoogleDesktopFlow) {
     config.usePkce = true;
   }
@@ -957,9 +1000,6 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     }
   }
   if (isServerBrokerAuthMode(config)) {
-    if (config.provider !== "google") {
-      throw new Error("server authMode 目前只支持 Google Desktop SSO。");
-    }
     if (!config.serverAuthorizeUrl?.trim()) {
       throw new Error("serverAuthorizeUrl 不能为空。");
     }
@@ -2112,11 +2152,7 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
 
 function buildLogoutUrl(config: OidcConfig = DEFAULT_OIDC_CONFIG) {
   const url = new URL(config.logoutUrl);
-  if (config.provider && config.provider !== "google") {
-    url.searchParams.set("post_logout_redirect_uri", config.logoutCallbackUri);
-  } else {
-    url.searchParams.set("callback", config.logoutCallbackUri);
-  }
+  url.searchParams.set("post_logout_redirect_uri", config.logoutCallbackUri);
   return url.toString();
 }
 
@@ -2204,6 +2240,50 @@ function buildCallbackServerInfo(host: string, port: number, closeAfterCallback:
     redirectUri: `${origin}${CALLBACK_PATH}`,
     logoutCallbackUri: `${origin}${LOGOUT_CALLBACK_PATH}`,
     closeAfterCallback
+  };
+}
+
+function resolveCallbackServerOptionsFromUrl(
+  value: string,
+  closeAfterCallback: boolean
+): CallbackServerOptions {
+  const url = new URL(value);
+  if (url.protocol !== "http:") {
+    throw new Error("Desktop SSO 回调地址只支持 http。");
+  }
+  return {
+    host: url.hostname || CALLBACK_HOST,
+    port: Number.parseInt(url.port || "80", 10),
+    closeAfterCallback
+  };
+}
+
+function resolveLoginCallbackServerOptions(config: OidcConfig, useSystemBrowser: boolean): CallbackServerOptions {
+  if (useSystemBrowser) {
+    if (shouldUseEphemeralSystemCallback(config)) {
+      return {
+        host: GOOGLE_LOOPBACK_HOST,
+        port: 0,
+        closeAfterCallback: true
+      };
+    }
+    return resolveCallbackServerOptionsFromUrl(config.redirectUri, true);
+  }
+  return {
+    host: CALLBACK_HOST,
+    port: CALLBACK_PORT,
+    closeAfterCallback: false
+  };
+}
+
+function resolveLogoutCallbackServerOptions(config: OidcConfig, useSystemBrowser: boolean): CallbackServerOptions {
+  if (useSystemBrowser) {
+    return resolveCallbackServerOptionsFromUrl(config.logoutCallbackUri, true);
+  }
+  return {
+    host: CALLBACK_HOST,
+    port: CALLBACK_PORT,
+    closeAfterCallback: false
   };
 }
 
@@ -2330,17 +2410,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
     const callbackInfo = await ensureCallbackServer(
       app,
       hooks,
-      useSystemBrowser
-        ? {
-          host: GOOGLE_LOOPBACK_HOST,
-          port: 0,
-          closeAfterCallback: true
-        }
-        : {
-          host: CALLBACK_HOST,
-          port: CALLBACK_PORT,
-          closeAfterCallback: false
-        }
+      resolveLoginCallbackServerOptions(oidcConfig, useSystemBrowser)
     );
     if (!useSystemBrowser) {
       activateDesktopSsoProxy(oidcConfig, { resetCookies: true });
@@ -2568,7 +2638,8 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
       message: failedStatus.message
     };
   }
-  if (shouldUseSystemBrowser(oidcConfig)) {
+  const useSystemBrowser = shouldUseSystemBrowser(oidcConfig);
+  if (useSystemBrowser && !oidcConfig.logoutUrl.trim()) {
     closeCallbackServer();
     return {
       ok: true,
@@ -2577,8 +2648,14 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
     };
   }
   try {
-    const callbackInfo = await ensureCallbackServer(app, hooks);
-    activateDesktopSsoProxy(oidcConfig);
+    const callbackInfo = await ensureCallbackServer(
+      app,
+      hooks,
+      resolveLogoutCallbackServerOptions(oidcConfig, useSystemBrowser)
+    );
+    if (!useSystemBrowser) {
+      activateDesktopSsoProxy(oidcConfig);
+    }
     const logoutConfig = {
       ...oidcConfig,
       logoutCallbackUri: callbackInfo.logoutCallbackUri
@@ -2587,7 +2664,9 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
     return {
       ok: true,
       logoutUrl,
-      browserUrl: buildDesktopSsoProxyUrl(logoutUrl),
+      ...(useSystemBrowser
+        ? { openMode: "system" as const }
+        : { browserUrl: buildDesktopSsoProxyUrl(logoutUrl) }),
       browserOrigin: oidcConfig.browserOrigin,
       status: cloneStatus(status),
       message: "已清除 Desktop 登录状态。"
@@ -2625,6 +2704,7 @@ export const __testInternals = {
   buildConfiguredLoginUrl,
   buildTokenExchangeRequest,
   buildCookieAccessTokenExchangeRequest,
+  shouldUseSystemBrowser,
   buildDesktopSsoAccessTokenCookieDetails,
   completeDesktopSsoBrowserLogin,
   completeDesktopSsoCookieLogin,

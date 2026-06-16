@@ -65,6 +65,7 @@ export interface DesktopSsoLogoutResult {
   logoutUrl?: string;
   browserUrl?: string;
   browserOrigin?: string;
+  openMode?: "embedded" | "system";
   status: DesktopSsoStatus;
   message: string;
 }
