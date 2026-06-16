@@ -145,6 +145,18 @@ export interface DesktopApi {
       dataBase64?: string;
     }) => Promise<{ ok: boolean; path?: string; message?: string }>;
   };
+  desktopScreenshot: {
+    capture: () => Promise<{
+      ok: boolean;
+      message?: string;
+      dataBase64?: string;
+      mimeType?: string;
+      width?: number;
+      height?: number;
+      sizeBytes?: number;
+      cancelled?: boolean;
+    }>;
+  };
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
   };

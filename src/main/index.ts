@@ -271,6 +271,7 @@ import {
 } from "./copilot/quick-copilot/shortcut";
 import {
   captureAssistantScreenshot as captureCopilotScreenshot,
+  captureScreenshotForBridge,
   type ScreenshotCaptureSource
 } from "./copilot/sidebar-copilot/screenshot";
 import { getMainLocaleSettings, initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
@@ -1503,6 +1504,18 @@ async function captureAssistantScreenshot(
   });
 }
 
+async function captureDesktopScreenshotForWebview() {
+  return captureScreenshotForBridge({
+    source: "sidebar",
+    platform: mainProcessContext.platform,
+    getMainWindow: () => appState.mainWindow,
+    getQuickCopilotWindow: () => quickCopilotWindowController.getWindow(),
+    hideQuickCopilotDismissWindow: hideQuickAssistantDismissWindow,
+    showQuickCopilotDismissWindow: showQuickAssistantDismissWindow,
+    delay
+  });
+}
+
 function registerQuickAssistantShortcut() {
   registerQuickCopilotShortcut({
     platform: mainProcessContext.platform,
@@ -2152,6 +2165,7 @@ function registerIpcHandlers(context: MainProcessContext) {
   registerShellIpcHandlers(ipcMain, createShellIpcHandlerOptions(context, {
     showFileDialog,
     revealPathInFileManager,
+    captureDesktopScreenshot: captureDesktopScreenshotForWebview,
     reportRendererDiagnostic
   }));
   registerWebviewDevToolsIpcHandlers(ipcMain, { webContents });

@@ -2421,14 +2421,6 @@ export function SettingsPage({
                   placeholder="http://127.0.0.1:8080"
                 />
               </Form.Item>
-              <Form.Item label={t("taskBoard.cloud.token")}>
-                <Input.Password
-                  value={controlCloudConfig.token}
-                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, token: event.target.value }))}
-                  placeholder={t("taskBoard.cloud.tokenPlaceholder")}
-                  visibilityToggle
-                />
-              </Form.Item>
               <Form.Item
                 label={t("taskBoard.cloud.projectId")}
                 extra={controlProjectOptions.length > 0
