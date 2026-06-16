@@ -47,6 +47,7 @@ export function syncBrandArtifacts({
   const brand = loadBrandConfig(rootDir, brandId);
 
   writeGeneratedBrandFiles(rootDir, brand);
+  writeRendererIndexHtml(rootDir, brand);
   writeElectronBuilderConfig(rootDir, brand);
   writeInstallerInclude(rootDir, brand);
   writeMacUninstallScript(rootDir, brand);
@@ -261,6 +262,66 @@ function writeGeneratedBrandFiles(rootDir, brand) {
       ""
     ].join("\n")
   );
+}
+
+function rendererPetProtocol(brand) {
+  return `${brand.id}-pet`;
+}
+
+function escapeHtmlText(value) {
+  return String(value)
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;");
+}
+
+function defaultRendererIndexHtml(brand) {
+  return [
+    "<!doctype html>",
+    "<html lang=\"zh-CN\">",
+    "  <head>",
+    "    <meta charset=\"UTF-8\" />",
+    "    <meta",
+    "      http-equiv=\"Content-Security-Policy\"",
+    `      content="default-src 'self'; img-src 'self' data: ${rendererPetProtocol(brand)}:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src 'self' http://127.0.0.1:*;"`,
+    "    />",
+    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />",
+    `    <title>${escapeHtmlText(brand.productName)}</title>`,
+    "  </head>",
+    "  <body>",
+    "    <div id=\"root\"></div>",
+    "    <script type=\"module\" src=\"/src/renderer/main.tsx\"></script>",
+    "  </body>",
+    "</html>",
+    ""
+  ].join("\n");
+}
+
+function updateRendererIndexHtmlContent(content, brand) {
+  const petProtocol = `${rendererPetProtocol(brand)}:`;
+  let next = content.replace(/<title>[\s\S]*?<\/title>/u, () =>
+    `<title>${escapeHtmlText(brand.productName)}</title>`
+  );
+
+  next = next.replace(/(img-src\s+)([^";]*)(;)/u, (_match, prefix, sources, suffix) => {
+    const sourceList = String(sources)
+      .trim()
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter((source) => !/^[a-z0-9][a-z0-9_-]*-pet:$/iu.test(source));
+    sourceList.push(petProtocol);
+    return `${prefix}${sourceList.join(" ")}${suffix}`;
+  });
+
+  return next;
+}
+
+function writeRendererIndexHtml(rootDir, brand) {
+  const indexPath = path.join(rootDir, "index.html");
+  const content = fs.existsSync(indexPath)
+    ? updateRendererIndexHtmlContent(fs.readFileSync(indexPath, "utf8"), brand)
+    : defaultRendererIndexHtml(brand);
+  writeFileIfChanged(indexPath, content);
 }
 
 function electronBuilderConfig(brand) {

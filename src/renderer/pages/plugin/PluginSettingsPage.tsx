@@ -9,6 +9,7 @@ import {
   type ServiceWebviewBridgeMessage
 } from "../../../shared/service-webview-bridge";
 import { handleServiceWebviewBridgeMessage } from "../../services/serviceWebviewBridgeHost";
+import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 
 type PluginSettingsPageProps = {
   hostTheme: "light" | "dark";
@@ -171,7 +172,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
           title: t("pluginSettingsPage.titleSuffix", { name: serviceDisplayName }),
           className: "pan-frame",
           preload: preloadUrl,
-          partition: `persist:zenmind-plugin-settings-${pluginId}`,
+          partition: `persist:${STORAGE_NAMESPACE}-plugin-settings-${pluginId}`,
           allowpopups: "true",
           style: { width: "100%", height: "100%", border: "none" },
         })}

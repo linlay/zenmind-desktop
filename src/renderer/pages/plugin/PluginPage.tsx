@@ -52,6 +52,7 @@ import {
   readAllowedValues,
   readFormFields,
 } from "../../copilot/page-context/embeddedWebActions";
+import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";
@@ -1475,7 +1476,7 @@ export function PluginPage({
               title: serviceDisplayName,
               className: "pan-frame",
               preload: serviceWebviewPreloadUrl,
-              partition: `persist:zenmind-service-${pluginId || "plugin"}`,
+              partition: `persist:${STORAGE_NAMESPACE}-service-${pluginId || "plugin"}`,
               allowpopups: "true",
               style: { width: "100%", height: "100%", border: "none" },
             })}

@@ -10,10 +10,12 @@ CuteJ 品牌对应：
 - macOS：`~/.cutej/.desktop/`
 - Windows：`%USERPROFILE%\.cutej\.desktop\`
 
-服务和插件的程序文件不存放在这个目录中，而是安装到平台应用支持目录：
+服务和插件的程序文件不存放在这个目录中，而是安装到品牌隔离的平台应用支持目录：
 
-- macOS：`~/Library/Application Support/ZenMind/`
-- Windows：`%APPDATA%\ZenMind\`
+- ZenMind macOS：`~/Library/Application Support/ZenMind/`
+- ZenMind Windows：`%APPDATA%\ZenMind\`
+- CuteJ macOS：`~/Library/Application Support/CuteJ/`
+- CuteJ Windows：`%APPDATA%\CuteJ\`
 
 ## 目录结构
 
@@ -251,10 +253,10 @@ Manifest 中的路径必须是项目目录内的相对路径。Desktop 会拒绝
 
 ## 程序安装目录
 
-桌面端数据根目录不存放服务或插件程序包。程序文件位于 Application Support：
+桌面端数据根目录不存放服务或插件程序包。程序文件位于品牌对应的 Application Support 根目录：
 
 ```text
-~/Library/Application Support/ZenMind/
+~/Library/Application Support/<ProductName>/
 ├── services/
 │   └── <service-id>/<version>/
 └── plugins/
@@ -264,7 +266,7 @@ Manifest 中的路径必须是项目目录内的相对路径。Desktop 会拒绝
 Windows 使用相同分层，根目录为：
 
 ```text
-%APPDATA%\ZenMind\
+%APPDATA%\<ProductName>\
 ├── services\
 │   └── <service-id>\<version>\
 └── plugins\

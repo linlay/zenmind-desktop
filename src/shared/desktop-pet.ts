@@ -3,9 +3,10 @@ import type {
   DesktopPetStateAsset,
   DesktopPetStateAssets
 } from "./contracts/pet-copilot";
+import { BRAND_ID } from "./generated/brand";
 
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
-export const DESKTOP_PET_USER_ASSET_PROTOCOL = "zenmind-pet";
+export const DESKTOP_PET_USER_ASSET_PROTOCOL = `${BRAND_ID}-pet`;
 export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = "zenmi";
 export const DEFAULT_DESKTOP_PET_APPEARANCE_ID = "classic";
 export const DESKTOP_PET_DONE_FALLBACK_TEXT = "暂无回复预览";

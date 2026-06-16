@@ -51,6 +51,7 @@ function createBrandFixture(t) {
     }, null, 2)}\n`,
     "utf8"
   );
+  fs.copyFileSync(path.join(projectRoot, "index.html"), path.join(root, "index.html"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 }
@@ -80,11 +81,15 @@ test("brand runtime root directory is derived from brand id", () => {
 
   assert.equal(zenmind.paths.runtimeRootDirName, ".zenmind");
   assert.equal(cutej.paths.runtimeRootDirName, ".cutej");
+  assert.equal(zenmind.storageNamespace, "zenmind-desktop");
+  assert.equal(cutej.storageNamespace, "cutej-desktop");
+  assert.equal(zenmind.paths.programDataDirName, "ZenMind");
+  assert.equal(cutej.paths.programDataDirName, "CuteJ");
   assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "zenmind", "brand.json")).paths, false);
   assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "cutej", "brand.json")).paths, false);
 });
 
-test("brand sync writes CuteJ runtime paths into generated artifacts", (t) => {
+test("brand sync writes CuteJ isolated runtime paths into generated artifacts", (t) => {
   const root = createBrandFixture(t);
 
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
@@ -92,15 +97,46 @@ test("brand sync writes CuteJ runtime paths into generated artifacts", (t) => {
   const electronBuilderConfig = readJson(path.join(root, "build", "electron-builder.cutej.json"));
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
   const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
+  const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
   assert.equal(brand.paths.runtimeRootDirName, ".cutej");
+  assert.equal(brand.storageNamespace, "cutej-desktop");
+  assert.equal(brand.paths.programDataDirName, "CuteJ");
   assert.equal(generatedBrand.paths.runtimeRootDirName, ".cutej");
+  assert.equal(generatedBrand.storageNamespace, "cutej-desktop");
+  assert.equal(generatedBrand.paths.programDataDirName, "CuteJ");
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === "build/resources/demo" && item.to === "demo"),
     true
   );
+  assert.match(installerInclude, /%APPDATA%\\CuteJ/u);
   assert.match(installerInclude, /%USERPROFILE%\\\.cutej\\\.desktop\\state/u);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
+  assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/CuteJ"/u);
+  assert.match(rendererIndex, /<title>CuteJ<\/title>/u);
+  assert.match(rendererIndex, /img-src[^"]*cutej-pet:/u);
+  assert.doesNotMatch(rendererIndex, /zenmind-pet:/u);
+});
+
+test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) => {
+  const root = createBrandFixture(t);
+
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
+  const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
+  const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
+  const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
+  const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+  assert.equal(brand.paths.runtimeRootDirName, ".zenmind");
+  assert.equal(brand.storageNamespace, "zenmind-desktop");
+  assert.equal(brand.paths.programDataDirName, "ZenMind");
+  assert.equal(generatedBrand.storageNamespace, "zenmind-desktop");
+  assert.equal(generatedBrand.paths.programDataDirName, "ZenMind");
+  assert.match(installerInclude, /%APPDATA%\\ZenMind/u);
+  assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
+  assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
+  assert.match(rendererIndex, /img-src[^"]*zenmind-pet:/u);
+  assert.doesNotMatch(rendererIndex, /cutej-pet:/u);
 });
 
 test("brand manifest rejects mismatched explicit runtimeRootDirName", (t) => {

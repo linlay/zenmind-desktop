@@ -5,7 +5,7 @@
 
 当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
 - 内置服务从按平台生成的 `.tar.gz` / `.zip` 资源包里的 `manifest.json` 自动发现。
-- 插件从平台程序数据目录自动扫描注册，统一使用 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/`，Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`。
+- 插件从平台程序数据目录自动扫描注册；程序数据根目录按品牌隔离，例如 ZenMind 使用 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/`、Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，CuteJ 使用 macOS `~/Library/Application Support/CuteJ/plugins/<plugin-id>/<version>/`、Windows `%APPDATA%\CuteJ\plugins\<plugin-id>\<version>\`。
 - Desktop 不再随安装包内置任何插件，插件统一通过导入 `.zip` archive 的方式接入。
 - 插件导入后需要在控制中心执行一次初始化；Desktop 会补齐模板配置并执行 `scripts.deploy`。
 - Desktop 不再在 `service-registry.ts` 中硬编码任何内置服务结构。
@@ -83,9 +83,9 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 ### 服务配置文件
 - 新安装的 Desktop 配置与运行数据根目录按品牌 id 派生：`BRAND=zenmind` 为 macOS `~/.zenmind/.desktop`、Windows `%USERPROFILE%\.zenmind\.desktop`；`BRAND=cutej` 为 macOS `~/.cutej/.desktop`、Windows `%USERPROFILE%\.cutej\.desktop`。目录按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
 - 首次启动导入 `env.zip` 时，解压生成的环境目录为品牌运行根目录，例如 `~/.zenmind` 或 `~/.cutej`，不放在 AppData 下。
-- 服务程序安装到 macOS `~/Library/Application Support/ZenMind/services/<service-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\services\<service-id>\<version>\`，服务配置保存到 Desktop 配置根目录的 `config/services/<service-id>/`，运行数据保存到 `data/services/<service-id>/`。
+- 服务程序安装到品牌对应的平台程序数据目录：ZenMind 使用 macOS `~/Library/Application Support/ZenMind/services/<service-id>/<version>/`、Windows `%APPDATA%\ZenMind\services\<service-id>\<version>\`；CuteJ 使用 macOS `~/Library/Application Support/CuteJ/services/<service-id>/<version>/`、Windows `%APPDATA%\CuteJ\services\<service-id>\<version>\`。服务配置保存到 Desktop 配置根目录的 `config/services/<service-id>/`，运行数据保存到 `data/services/<service-id>/`。
 - 每个内置服务会在安装时自动完成初始化；缺失的 `.env` 会从 `.env.example` 复制生成，随后由桌面端进行读写。
-- 插件程序安装到 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，插件配置保存到 Desktop 配置根目录的 `config/plugins/<plugin-id>/`。
+- 插件程序安装到同一品牌程序数据目录的 `plugins/<plugin-id>/<version>/` 下，插件配置保存到 Desktop 配置根目录的 `config/plugins/<plugin-id>/`。
 - 插件导入只负责解包和注册；点击控制中心中的“初始化”后，Desktop 才会补齐缺失配置、修复脚本权限并执行 `scripts.deploy`。
 
 ### 敏感信息管理
@@ -152,8 +152,8 @@ npm run dist:win-docker
 如果机器上已经残留旧的 per-user/per-machine 双安装记录，建议先手动清理旧版本，再验证新包的安装和卸载。
 
 ### 卸载
-- macOS：运行 `/Applications/ZenMind.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind.app`，并弹窗询问是否清理当前品牌数据目录（例如 `~/.zenmind/.desktop` 或 `~/.cutej/.desktop`）和 `~/Library/Application Support/ZenMind`；默认保留数据。
-- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会删除安装目录，并询问是否清理 `%APPDATA%\ZenMind`；默认保留数据。
+- macOS：运行 `/Applications/<ProductName>.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除当前品牌应用包，并弹窗询问是否清理当前品牌数据目录（例如 `~/.zenmind/.desktop` 或 `~/.cutej/.desktop`）和品牌程序数据目录（例如 `~/Library/Application Support/ZenMind` 或 `~/Library/Application Support/CuteJ`）；默认保留数据。
+- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会删除安装目录，并询问是否清理当前品牌的 `%APPDATA%\<ProductName>`；默认保留数据。
 
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
@@ -184,7 +184,7 @@ npm run dist:win-docker
 ### 日志与运行状态
 - 桌面端通过主进程统一管理服务运行状态。
 - 每个服务都会维护 PID 文件和日志文件路径，并在控制中心中展示。
-- 服务实际程序目录位于 Application Support 的 `ZenMind/services/<service-id>/<version>/` 下；配置、状态和日志分别位于 Desktop 配置根目录的 `config/services/`、`state/services/`、`logs/services/`。
+- 服务实际程序目录位于品牌程序数据根目录的 `services/<service-id>/<version>/` 下，例如 ZenMind 为 Application Support 的 `ZenMind/services/<service-id>/<version>/`，CuteJ 为 `CuteJ/services/<service-id>/<version>/`；配置、状态和日志分别位于 Desktop 配置根目录的 `config/services/`、`state/services/`、`logs/services/`。
 
 ### 常见排查
 - 启动失败时，先检查控制中心展示的状态文案、日志文件路径和 PID 文件路径。
