@@ -5,12 +5,17 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
-import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
+import {
+  BRAND_RUNTIME_ASSET_DIR,
+  cleanupPublicBrandIconArtifacts,
+  loadBrandConfig,
+  resolveBrandId
+} from "./lib/brand-config.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const buildIconsDir = path.join(projectRoot, "build", "icons");
 const iconsetDir = path.join(buildIconsDir, "icon.iconset");
-const publicDir = path.join(projectRoot, "public");
+const brandRuntimeAssetsDir = path.join(projectRoot, BRAND_RUNTIME_ASSET_DIR);
 const brand = loadBrandConfig(projectRoot, resolveBrandId());
 const svgParser = new XMLParser({
   ignoreAttributes: false,
@@ -26,7 +31,7 @@ const svgBuilder = new XMLBuilder({
 
 const appIconSvgPath = path.join(projectRoot, brand.icons.appIconSvg);
 const trayIconSourceSvgPath = path.join(projectRoot, brand.icons.trayIconSvg);
-const publicTrayIconSvgPath = path.join(publicDir, "tray-icon.svg");
+const generatedTrayIconSvgPath = path.join(brandRuntimeAssetsDir, "tray-icon.svg");
 
 const APP_ICON_BASE_SIZE = 1024;
 const APP_ICON_TILE_SIZE = 840;
@@ -403,11 +408,12 @@ function generateMacIconsetAndIcnsFromPng(sourcePngPath) {
 async function main() {
   fs.mkdirSync(buildIconsDir, { recursive: true });
   fs.mkdirSync(iconsetDir, { recursive: true });
-  fs.mkdirSync(publicDir, { recursive: true });
+  fs.mkdirSync(brandRuntimeAssetsDir, { recursive: true });
+  cleanupPublicBrandIconArtifacts(projectRoot);
 
   const appIconSvg = fs.readFileSync(appIconSvgPath, "utf8");
   const trayIconSvg = fs.readFileSync(trayIconSourceSvgPath, "utf8");
-  writeFileIfChanged(publicTrayIconSvgPath, Buffer.from(trayIconSvg));
+  writeFileIfChanged(generatedTrayIconSvgPath, Buffer.from(trayIconSvg));
 
   const renderedAppPngs = new Map();
   for (const size of pngSizes) {
@@ -416,12 +422,12 @@ async function main() {
     writeFileIfChanged(path.join(buildIconsDir, `icon-${size}.png`), png);
   }
   writeFileIfChanged(path.join(buildIconsDir, "icon.png"), renderedAppPngs.get(1024));
-  writeFileIfChanged(path.join(publicDir, "brand-icon.png"), renderedAppPngs.get(256));
+  writeFileIfChanged(path.join(brandRuntimeAssetsDir, "brand-icon.png"), renderedAppPngs.get(256));
   const brandMarkPng = await renderBrandMarkToPng(appIconSvg, 256);
-  writeFileIfChanged(path.join(publicDir, "brand-mark.png"), brandMarkPng);
+  writeFileIfChanged(path.join(brandRuntimeAssetsDir, "brand-mark.png"), brandMarkPng);
   await assertNonTransparentPng("build/icons/icon-1024.png", renderedAppPngs.get(1024));
-  await assertNonTransparentPng("public/brand-icon.png", renderedAppPngs.get(256));
-  await assertNonTransparentPng("public/brand-mark.png", brandMarkPng);
+  await assertNonTransparentPng(`${BRAND_RUNTIME_ASSET_DIR}/brand-icon.png`, renderedAppPngs.get(256));
+  await assertNonTransparentPng(`${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png`, brandMarkPng);
 
   if (process.platform === "darwin") {
     generateMacIconsetAndIcnsFromPng(path.join(buildIconsDir, "icon.png"));
@@ -443,8 +449,8 @@ async function main() {
   writeFileIfChanged(path.join(buildIconsDir, "icon.ico"), createIco(icoPngEntries));
 
   const trayPng = await renderSvgToPng(trayIconSvg, 256);
-  writeFileIfChanged(path.join(publicDir, "tray-icon.png"), trayPng);
-  await assertNonTransparentPng("public/tray-icon.png", trayPng);
+  writeFileIfChanged(path.join(brandRuntimeAssetsDir, "tray-icon.png"), trayPng);
+  await assertNonTransparentPng(`${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png`, trayPng);
 
   console.log(`generated ${brand.productName} app icons`);
 }

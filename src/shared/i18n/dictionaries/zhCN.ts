@@ -73,6 +73,7 @@ export const zhCNMessages = {
   "sidebar.sso.signingIn": "登录中",
   "sidebar.sso.signedOut": "未登录",
   "sidebar.sso.signIn": "登录",
+  "sidebar.sso.cancelLogin": "取消登录",
   "sidebar.sso.signOut": "退出登录",
   "sidebar.sso.reopen": "重新打开",
   "sidebar.sso.busy": "处理中",

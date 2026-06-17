@@ -79,6 +79,92 @@
   z-index: 1;
 }
 
+.desktop-sso-login-modal-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.desktop-sso-login-modal {
+  width: min(1040px, 100%);
+  height: min(760px, 100%);
+  min-height: 420px;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 8px;
+  background: var(--embedded-surface-frame-bg);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.desktop-sso-login-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  background: var(--embedded-surface-shell-bg);
+  color: var(--ink);
+}
+
+.desktop-sso-login-modal-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.desktop-sso-login-modal-close {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.desktop-sso-login-modal-close:hover,
+.desktop-sso-login-modal-close:focus-visible {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--ink);
+  outline: none;
+}
+
+.desktop-sso-login-modal-frame,
+.desktop-sso-login-webview {
+  min-width: 0;
+  min-height: 0;
+  background: var(--embedded-surface-frame-bg);
+}
+
+@media (max-width: 720px) {
+  .desktop-sso-login-modal-layer {
+    padding: 0;
+  }
+
+  .desktop-sso-login-modal {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border-radius: 0;
+    border: 0;
+  }
+}
+
 .app-shell.is-sidebar-resizing {
   user-select: none;
   -webkit-user-select: none;

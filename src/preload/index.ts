@@ -15,6 +15,7 @@ import type {
   DesktopActionCallListener,
   DesktopActionRendererResponse,
   DesktopPetSignatureRequestedListener,
+  DesktopSsoEmbeddedLoginListener,
   DesktopSsoStatusListener,
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
@@ -284,6 +285,7 @@ const api: DesktopApi = {
   sso: {
     getStatus: () => ipcRenderer.invoke("sso.getStatus"),
     startLogin: () => ipcRenderer.invoke("sso.startLogin"),
+    cancelLogin: () => ipcRenderer.invoke("sso.cancelLogin"),
     logout: () => ipcRenderer.invoke("sso.logout"),
     onStatusChanged: (listener: DesktopSsoStatusListener) => {
       const handleSsoStatusChanged = (
@@ -296,6 +298,19 @@ const api: DesktopApi = {
       ipcRenderer.on("sso.statusChanged", handleSsoStatusChanged);
       return () => {
         ipcRenderer.off("sso.statusChanged", handleSsoStatusChanged);
+      };
+    },
+    onEmbeddedLoginOpen: (listener: DesktopSsoEmbeddedLoginListener) => {
+      const handleEmbeddedLoginOpen = (
+        _event: Electron.IpcRendererEvent,
+        request: Parameters<DesktopSsoEmbeddedLoginListener>[0]
+      ) => {
+        listener(request);
+      };
+
+      ipcRenderer.on("sso.embeddedLogin.open", handleEmbeddedLoginOpen);
+      return () => {
+        ipcRenderer.off("sso.embeddedLogin.open", handleEmbeddedLoginOpen);
       };
     }
   },

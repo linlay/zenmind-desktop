@@ -51,6 +51,13 @@ type BrowserOpenResult = {
   data?: unknown;
 };
 
+type EmbeddedLoginDialogOpenInput = {
+  url: string;
+  label?: string;
+  browserOrigin?: string;
+  resolveRedirect?: boolean;
+};
+
 type ElectronSessionAccess = {
   defaultSession: Session;
   fromPartition(partition: string): Session;
@@ -395,6 +402,38 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         partition: DESKTOP_SSO_WEBVIEW_PARTITION,
         userAgent
       });
+    },
+    async openEmbeddedLoginDialog(input: EmbeddedLoginDialogOpenInput): Promise<BrowserOpenResult> {
+      const targetWindow = options.getMainWindow();
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        return {
+          ok: false,
+          action: "open_embedded_sso_login",
+          target: input.url,
+          url: input.url,
+          error: "main_window_unavailable",
+          message: "Desktop SSO login window is unavailable."
+        };
+      }
+      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const userAgent = getDesktopSsoBrowserUserAgent(options.platform);
+      await ssoSession.setProxy({ proxyRules: "direct://" });
+      const url = input.resolveRedirect === false
+        ? rewriteDesktopSsoUrlOrigin(input.url, input.browserOrigin)
+        : await resolveDesktopSsoNavigationUrl(ssoSession, input.url, userAgent, input.browserOrigin);
+      targetWindow.webContents.send("sso.embeddedLogin.open", {
+        url,
+        label: input.label || "IAM 登录",
+        partition: DESKTOP_SSO_WEBVIEW_PARTITION,
+        userAgent
+      });
+      return {
+        ok: true,
+        action: "open_embedded_sso_login",
+        target: input.url,
+        url,
+        message: `已打开「${input.label || "IAM 登录"}」登录窗口。`
+      };
     },
     async openSystemBrowserUrl(input: {
       url: string;

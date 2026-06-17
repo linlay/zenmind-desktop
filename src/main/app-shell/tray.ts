@@ -65,37 +65,68 @@ function platformFallbackIconPath(options: AppTrayIconPathOptions) {
 }
 
 export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
-  const publicTrayIconPath = projectAssetPath(
+  const generatedTrayIconPath = projectAssetPath(
     options,
-    APP_ICON_ASSET_DIRECTORIES.public,
+    APP_ICON_ASSET_DIRECTORIES.brandAssets,
     APP_ICON_ASSET_FILENAMES.trayIcon
   );
-  const publicBrandIconPath = projectAssetPath(
+  const generatedBrandIconPath = projectAssetPath(
     options,
-    APP_ICON_ASSET_DIRECTORIES.public,
+    APP_ICON_ASSET_DIRECTORIES.brandAssets,
     APP_ICON_ASSET_FILENAMES.brandIcon
+  );
+  const generatedBrandMarkPath = projectAssetPath(
+    options,
+    APP_ICON_ASSET_DIRECTORIES.brandAssets,
+    APP_ICON_ASSET_FILENAMES.brandMark
   );
   const rendererTrayIconPath = projectAssetPath(
     options,
     APP_ICON_ASSET_DIRECTORIES.distRenderer,
     APP_ICON_ASSET_FILENAMES.trayIcon
   );
+  const rendererBrandIconPath = projectAssetPath(
+    options,
+    APP_ICON_ASSET_DIRECTORIES.distRenderer,
+    APP_ICON_ASSET_FILENAMES.brandIcon
+  );
+  const rendererBrandMarkPath = projectAssetPath(
+    options,
+    APP_ICON_ASSET_DIRECTORIES.distRenderer,
+    APP_ICON_ASSET_FILENAMES.brandMark
+  );
   const fallbackIconPath = platformFallbackIconPath(options);
 
   if (options.isPackaged) {
+    if (options.platform === "darwin") {
+      return [
+        packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandMark),
+        packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandIcon),
+        rendererBrandMarkPath,
+        rendererBrandIconPath,
+        fallbackIconPath,
+        packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon),
+        rendererTrayIconPath,
+        generatedBrandMarkPath,
+        generatedBrandIconPath
+      ];
+    }
+
     return [
       packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon),
       rendererTrayIconPath,
       fallbackIconPath,
-      publicTrayIconPath,
-      publicBrandIconPath
+      packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandIcon),
+      rendererBrandIconPath,
+      generatedTrayIconPath,
+      generatedBrandIconPath
     ];
   }
 
   if (options.platform === "darwin") {
     return [
-      publicTrayIconPath,
-      publicBrandIconPath,
+      generatedBrandMarkPath,
+      generatedBrandIconPath,
       fallbackIconPath
     ];
   }
@@ -103,15 +134,15 @@ export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
   if (options.platform === "win32") {
     return [
       fallbackIconPath,
-      publicTrayIconPath,
-      publicBrandIconPath
+      generatedTrayIconPath,
+      generatedBrandIconPath
     ];
   }
 
   return [
-    publicTrayIconPath,
+    generatedTrayIconPath,
     fallbackIconPath,
-    publicBrandIconPath
+    generatedBrandIconPath
   ];
 }
 
@@ -164,9 +195,6 @@ export class AppTrayController {
         .map((iconPath) => nativeImage.createFromPath(iconPath))
         .find((candidate) => !candidate.isEmpty()) ?? nativeImage.createEmpty();
     const resizedIcon = icon.resize({ width: 20, height: 20 });
-    if (this.options.platform === "darwin") {
-      resizedIcon.setTemplateImage(true);
-    }
     return resizedIcon;
   }
 

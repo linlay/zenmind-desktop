@@ -26,6 +26,7 @@ import { issueAgentAccessToken } from "./agent-auth";
 import { createAppPairingPayload } from "./app-pairing";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
+  cancelDesktopSsoLogin,
   completeDesktopSsoBrowserLogin,
   completeDesktopSsoCookieLogin,
   failDesktopSsoFlow,
@@ -1662,9 +1663,9 @@ function getDarwinDockIconCandidatePaths() {
     APP_ICON_ASSET_DIRECTORIES.buildIcons,
     APP_ICON_ASSET_FILENAMES.macDockIcon
   );
-  const publicBrandIconPath = path.join(
+  const generatedBrandIconPath = path.join(
     projectRoot,
-    APP_ICON_ASSET_DIRECTORIES.public,
+    APP_ICON_ASSET_DIRECTORIES.brandAssets,
     APP_ICON_ASSET_FILENAMES.brandIcon
   );
   const rendererBrandIconPath = path.join(
@@ -1678,13 +1679,13 @@ function getDarwinDockIconCandidatePaths() {
       packagedBrandIconPath,
       rendererBrandIconPath,
       buildAppIconPath,
-      publicBrandIconPath
+      generatedBrandIconPath
     ];
   }
 
   return [
     buildAppIconPath,
-    publicBrandIconPath,
+    generatedBrandIconPath,
     rendererBrandIconPath
   ];
 }
@@ -2400,6 +2401,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     startDesktopSsoLogin,
     logoutDesktopSso,
     failDesktopSsoFlow,
+    cancelDesktopSsoLogin,
     issueAgentAccessToken
   }));
   registerTaskBoardIpcHandlers(ipcMain, createTaskBoardIpcHandlerOptions(context, {

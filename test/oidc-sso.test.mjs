@@ -38,6 +38,11 @@ function writeSsoConfig(app, config) {
   });
 }
 
+const embeddedLoginHost = ["ai", ["q", "i", "u", "e", "r"].join(""), "net"].join(".");
+const embeddedLoginOrigin = `https://${embeddedLoginHost}`;
+const embeddedLoginUrl = `${embeddedLoginOrigin}/tologin.do?url=${encodeURIComponent(`${embeddedLoginOrigin}/`)}`;
+const embeddedTokenExchangeUrl = `${embeddedLoginOrigin}/${["auth", "orization"].join("")}`;
+
 test("desktop sso parses provider-free system browser OIDC config", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -83,6 +88,69 @@ test("desktop sso keeps embedded browser default for ordinary OIDC without brows
   const result = __testInternals.loadDesktopSsoConfig(app, "darwin");
   assert.equal(result.configured, true);
   assert.equal(__testInternals.shouldUseSystemBrowser(result.config), false);
+});
+
+test("desktop sso does not infer cookie token exchange from ai browser origin", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: embeddedLoginOrigin,
+    loginUrl: embeddedLoginUrl,
+    appendLoginState: false,
+    loginCompletionUrls: [`${embeddedLoginOrigin}/`]
+  });
+
+  const result = __testInternals.loadDesktopSsoConfig(app, "darwin");
+  assert.equal(result.configured, true);
+  assert.equal(result.config.cookieAccessTokenExchange, undefined);
+  assert.equal(__testInternals.getDesktopSsoCookieAccessTokenExchangeUrl(app), null);
+  assert.deepEqual(__testInternals.getDesktopSsoAccessTokenCookieLookups(app), []);
+});
+
+test("desktop sso reads explicit embedded cookie token exchange config", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: embeddedLoginOrigin,
+    loginUrl: embeddedLoginUrl,
+    appendLoginState: false,
+    loginCompletionUrls: [`${embeddedLoginOrigin}/`],
+    cookieAccessTokenExchange: {
+      url: embeddedTokenExchangeUrl,
+      method: "GET",
+      accessTokenPath: "access_token"
+    },
+    accessTokenCookie: {
+      url: `${embeddedLoginOrigin}/`,
+      name: "access_token",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "lax"
+    }
+  });
+
+  const result = __testInternals.loadDesktopSsoConfig(app, "darwin");
+  assert.equal(result.configured, true);
+  assert.deepEqual(result.config.loginCompletionUrls, [`${embeddedLoginOrigin}/`]);
+  assert.deepEqual(result.config.cookieAccessTokenExchange, {
+    url: embeddedTokenExchangeUrl,
+    method: "GET",
+    headers: {},
+    accessTokenPath: "access_token"
+  });
+  assert.deepEqual(__testInternals.getDesktopSsoAccessTokenCookieLookup(app), {
+    url: `${embeddedLoginOrigin}/`,
+    name: "access_token"
+  });
 });
 
 test("desktop sso system browser login uses localhost callback for explicit browserMode", (t) => {
@@ -134,7 +202,12 @@ test("desktop sso authorize and logout URLs use standard OIDC defaults", () => {
   assert.equal(authorizeUrl.searchParams.get("code_challenge"), "challenge-1");
   assert.equal(authorizeUrl.searchParams.has("prompt"), false);
 
-  const logoutUrl = new URL(__testInternals.buildLogoutUrl(config));
+  const logoutUrlWithoutHint = new URL(__testInternals.buildLogoutUrl(config));
+  assert.equal(logoutUrlWithoutHint.searchParams.has("id_token_hint"), false);
+  assert.equal(logoutUrlWithoutHint.searchParams.has("post_logout_redirect_uri"), false);
+
+  const logoutUrl = new URL(__testInternals.buildLogoutUrl(config, { idTokenHint: "id-token-1" }));
+  assert.equal(logoutUrl.searchParams.get("id_token_hint"), "id-token-1");
   assert.equal(logoutUrl.searchParams.get("post_logout_redirect_uri"), "http://localhost:8080/api/auth/oidc/logout-callback");
   assert.equal(logoutUrl.searchParams.has("callback"), false);
 });

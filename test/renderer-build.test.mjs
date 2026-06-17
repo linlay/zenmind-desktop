@@ -3345,43 +3345,48 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
   const mainProcess = readSourceFile("src", "main", "index.ts");
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
   const helper = trayController.match(/export function getAppTrayIconCandidatePaths[\s\S]*?\n\}\n\nexport class/u)?.[0] ?? "";
-  const packagedBranch = helper.match(/if \(options\.isPackaged\) \{[\s\S]*?  \}/u)?.[0] ?? "";
-  const macDevBranch = helper.match(/if \(options\.platform === "darwin"\) \{[\s\S]*?  \}/u)?.[0] ?? "";
-  const windowsDevBranch = helper.match(/if \(options\.platform === "win32"\) \{[\s\S]*?  \}/u)?.[0] ?? "";
+  const packagedBranch = helper.match(/^  if \(options\.isPackaged\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
+  const packagedDarwinBranch = packagedBranch.match(/if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu)?.[0] ?? "";
+  const macDevBranch = helper.match(/^  if \(options\.platform === "darwin"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
+  const windowsDevBranch = helper.match(/^  if \(options\.platform === "win32"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
   assert.match(trayController, /function platformFallbackIconPath/);
+  assert.match(trayController, /APP_ICON_ASSET_DIRECTORIES\.brandAssets/);
+  assert.doesNotMatch(trayController, /APP_ICON_ASSET_DIRECTORIES\.public/);
   assert.match(trayController, /if \(options\.platform === "darwin"\)/);
   assert.match(trayController, /if \(options\.platform === "win32"\)/);
+  assert.doesNotMatch(trayController, /setTemplateImage\(true\)/);
 
+  assert(
+    indexOfRequired(packagedDarwinBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandMark)") <
+      indexOfRequired(packagedDarwinBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandIcon)"),
+    "macOS packaged tray lookup should prefer the active brand mark before the app tile"
+  );
   assert(
     indexOfRequired(packagedBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon)") <
       indexOfRequired(packagedBranch, "rendererTrayIconPath"),
-    "packaged tray lookup should prefer packaged resources before renderer assets"
-  );
-  assert(
-    indexOfRequired(packagedBranch, "rendererTrayIconPath") <
-      indexOfRequired(packagedBranch, "fallbackIconPath"),
-    "packaged tray lookup should keep renderer assets before fallback icons"
+    "non-mac packaged tray lookup should prefer packaged tray resources before renderer assets"
   );
 
   assert(
-    indexOfRequired(macDevBranch, "publicTrayIconPath") <
-      indexOfRequired(macDevBranch, "publicBrandIconPath"),
-    "macOS dev tray lookup should prefer the active brand tray icon"
+    indexOfRequired(macDevBranch, "generatedBrandMarkPath") <
+      indexOfRequired(macDevBranch, "generatedBrandIconPath"),
+    "macOS dev tray lookup should prefer the active generated brand mark"
   );
   assert(
-    indexOfRequired(macDevBranch, "publicBrandIconPath") <
+    indexOfRequired(macDevBranch, "generatedBrandIconPath") <
       indexOfRequired(macDevBranch, "fallbackIconPath"),
     "macOS dev tray lookup should use generated brand icon before build fallback"
   );
   assert.doesNotMatch(macDevBranch, /rendererTrayIconPath/);
+  assert.doesNotMatch(macDevBranch, /generatedTrayIconPath/);
 
   assert(
     indexOfRequired(windowsDevBranch, "fallbackIconPath") <
-      indexOfRequired(windowsDevBranch, "publicTrayIconPath"),
-    "Windows dev tray lookup should prefer the active build ico before public tray fallback"
+      indexOfRequired(windowsDevBranch, "generatedTrayIconPath"),
+    "Windows dev tray lookup should prefer the active build ico before generated tray fallback"
   );
   assert.doesNotMatch(windowsDevBranch, /rendererTrayIconPath/);
 });
@@ -3995,11 +4000,17 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(viteConfig, /name:\s*"brand-renderer-index"/);
   assert.match(viteConfig, /transformIndexHtml\(html\)/);
   assert.match(viteConfig, /renderRendererIndexHtml\(html,\s*brand\)/);
+  assert.match(viteConfig, /name:\s*"brand-runtime-icon-assets"/);
+  assert.match(viteConfig, /BRAND_RUNTIME_ASSET_URL_PATHS/);
+  assert.match(viteConfig, /server\.middlewares\.use\(serveBrandRuntimeIconAsset\)/);
+  assert.match(viteConfig, /copyBrandRuntimeIconAssets\(\{[\s\S]{0,180}dist-renderer"/);
   assert.match(viteConfig, /name:\s*"brand-desktop-pet-assets"/);
   assert.match(viteConfig, /BRAND_DESKTOP_PET_URL_PREFIX = "\/desktop-pet\/"/);
   assert.match(viteConfig, /server\.middlewares\.use\(serveBrandDesktopPetAsset\)/);
   assert.match(viteConfig, /copyBrandDesktopPetAssets\(\{[\s\S]{0,220}dist-renderer"[\s\S]{0,120}"desktop-pet"/);
   assert.match(viteConfig, /brand\.source\.desktopPetRoot/);
+  assert.doesNotMatch(viteConfig, /public["'],\s*["']brand-icon/);
+  assert.doesNotMatch(viteConfig, /public["'],\s*["']tray-icon/);
   assert.doesNotMatch(viteConfig, /public["'],\s*["']desktop-pet/);
 });
 
@@ -4018,15 +4029,28 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
   assert.match(contracts, /avatarUrl\?: string;/);
+  assert.match(contracts, /DesktopSsoEmbeddedLoginRequest/);
+  assert.match(contracts, /cancelLogin: \(\) => Promise<DesktopSsoCancelResult>;/);
+  assert.match(contracts, /onEmbeddedLoginOpen: \(listener: DesktopSsoEmbeddedLoginListener\) => \(\) => void;/);
   assert.match(oidcSso, /DESKTOP_SSO_AVATAR_CLAIM_KEYS = \["avatarUrl",\s*"picture",\s*"avatar_url",\s*"avatar"\] as const;/);
   assert.match(oidcSso, /function normalizeDesktopSsoAvatarUrlClaim\(payload: Record<string, unknown>\)/);
   assert.match(oidcSso, /\.\.\.\(avatarUrl \? \{ avatarUrl \} : \{\}\)/);
+  assert.doesNotMatch(oidcSso, new RegExp(textFromCodes(113, 105, 117, 101, 114), "u"));
+  assert.doesNotMatch(oidcSso, /DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE/u);
   assert.match(ssoController, /function getRecordAvatarUrl\(value: unknown\)/);
   assert.match(ssoController, /\.\.\.\(avatarUrl \? \{ avatarUrl \} : \{\}\)/);
+  assert.match(ssoController, /openEmbeddedLoginDialog/);
+  assert.match(ssoController, /sso\.embeddedLogin\.open/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
   assert.match(appShell, /desktopSsoStatus=\{desktopSsoStatus\}/);
   assert.match(appShell, /desktopSsoBusy=\{desktopSsoBusy\}/);
+  assert.match(appShell, /onEmbeddedLoginOpen/);
+  assert.match(appShell, /desktop-sso-login-modal/);
+  assert.match(appShell, /role="dialog"/);
+  assert.match(appShell, /partition: desktopSsoLoginDialog\.partition/);
+  assert.match(appShell, /useragent: desktopSsoLoginDialog\.userAgent/);
+  assert.doesNotMatch(appShell, /desktop-sso-login-webview[\s\S]{0,220}allowpopups/);
   assert.match(appShell, /onDesktopSsoLogin=\{handleDesktopSsoLogin\}/);
   assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
   assert.match(appShell, /async function refreshDesktopSsoStatus\(\)[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
@@ -4149,6 +4173,10 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   const ssoHandlers = readSourceFile("src", "main", "ipc", "sso-handlers.ts");
   const ssoController = readSourceFile("src", "main", "sso-controller.ts");
   const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
+  const ssoStartLoginHandler = ssoHandlers.slice(
+    indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.startLogin"'),
+    indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.cancelLogin"')
+  );
 
   assert.match(copilotContracts, /partition\?: string;/);
   assert.match(copilotContracts, /userAgent\?: string;/);
@@ -4170,7 +4198,10 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(oidcSso, /openMode: "system" as const/u);
   assert.match(ssoController, /async openSystemBrowserUrl/u);
   assert.match(ssoController, /options\.openExternal\(targetUrl\)/u);
-  assert.match(ssoHandlers, /result\.openMode === "system"[\s\S]{0,120}openSystemBrowserUrl/u);
+  assert.match(ssoStartLoginHandler, /result\.openMode === "system"[\s\S]{0,120}openSystemBrowserUrl/u);
+  assert.match(ssoHandlers, /openEmbeddedLoginDialog/u);
+  assert.match(ssoStartLoginHandler, /openEmbeddedLoginDialog/u);
+  assert.doesNotMatch(ssoStartLoginHandler, /openBrowserUrl/u);
   assert.doesNotMatch(mainProcess, /openInternalAuthBrowserWindow/u);
   assert.doesNotMatch(mainProcess, /shouldOpenAuthUrlInInternalBrowser/u);
   assert.doesNotMatch(windowManager, /openInternalAuthFromWebview/u);

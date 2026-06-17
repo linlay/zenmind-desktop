@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createElement, lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
@@ -12,7 +12,7 @@ import {
   registerDesktopActionProviderForScope,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebEntry, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebEntry, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -339,6 +339,7 @@ export function AppShell() {
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
+  const [desktopSsoLoginDialog, setDesktopSsoLoginDialog] = useState<DesktopSsoEmbeddedLoginRequest | null>(null);
   const [webItems, setWebItems] = useState<WebEntry[]>([]);
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
@@ -710,6 +711,21 @@ export function AppShell() {
     }
   }
 
+  async function handleDesktopSsoLoginDialogClose() {
+    setDesktopSsoLoginDialog(null);
+    const ssoApi = getDesktopSsoApi();
+    if (!ssoApi) {
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
+      return;
+    }
+    try {
+      const result = await ssoApi.cancelLogin();
+      setDesktopSsoStatus(result.status);
+    } catch {
+      await refreshDesktopSsoStatus().catch(() => undefined);
+    }
+  }
+
   async function refreshDesktopSsoStatus() {
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
@@ -811,11 +827,18 @@ export function AppShell() {
       .catch(() => undefined);
     const dispose = ssoApi.onStatusChanged((status) => {
       setDesktopSsoStatus(status);
+      if (!status.pending) {
+        setDesktopSsoLoginDialog(null);
+      }
+    });
+    const disposeEmbeddedLoginOpen = ssoApi.onEmbeddedLoginOpen((request) => {
+      setDesktopSsoLoginDialog(request);
     });
 
     return () => {
       cancelled = true;
       dispose();
+      disposeEmbeddedLoginOpen();
     };
   }, []);
 
@@ -1956,6 +1979,40 @@ export function AppShell() {
         }}
         onRunningRunIdChange={setAssistantRunningRunId}
       />
+      {desktopSsoLoginDialog ? (
+        <div className="desktop-sso-login-modal-layer" role="presentation">
+          <section
+            className="desktop-sso-login-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={desktopSsoLoginDialog.label}
+          >
+            <header className="desktop-sso-login-modal-head">
+              <strong>{desktopSsoLoginDialog.label}</strong>
+              <button
+                type="button"
+                className="desktop-sso-login-modal-close"
+                aria-label={t("sidebar.sso.cancelLogin")}
+                title={t("sidebar.sso.cancelLogin")}
+                onClick={() => void handleDesktopSsoLoginDialogClose()}
+              >
+                <span aria-hidden="true">x</span>
+              </button>
+            </header>
+            <div className="desktop-sso-login-modal-frame">
+              {createElement("webview", {
+                key: `${desktopSsoLoginDialog.partition}:${desktopSsoLoginDialog.url}`,
+                src: desktopSsoLoginDialog.url,
+                title: desktopSsoLoginDialog.label,
+                className: "desktop-sso-login-webview",
+                partition: desktopSsoLoginDialog.partition,
+                useragent: desktopSsoLoginDialog.userAgent,
+                style: { width: "100%", height: "100%", border: "none" }
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
       {showStartupCard ? (
         <StartupLoadingScreen
           servicesLoading={servicesLoading}

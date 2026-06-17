@@ -8,7 +8,10 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
   assertBrandArtifactsConsistent,
+  BRAND_RUNTIME_ASSET_DIR,
+  BRAND_RUNTIME_ASSET_FILENAMES,
   copyBrandDesktopPetAssets,
+  copyBrandRuntimeIconAssets,
   loadBrandConfig,
   removeStaleRendererBuild,
   renderRendererIndexHtml,
@@ -77,12 +80,13 @@ function createBrandFixture(t) {
   return root;
 }
 
-function writeMinimalPublicIconArtifacts(root, brand) {
-  fs.mkdirSync(path.join(root, "public"), { recursive: true });
-  fs.copyFileSync(path.join(root, brand.icons.trayIconSvg), path.join(root, "public", "tray-icon.svg"));
-  fs.writeFileSync(path.join(root, "public", "brand-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  fs.writeFileSync(path.join(root, "public", "brand-mark.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  fs.writeFileSync(path.join(root, "public", "tray-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+function writeMinimalGeneratedIconArtifacts(root, brand) {
+  const outputRoot = path.join(root, BRAND_RUNTIME_ASSET_DIR);
+  fs.mkdirSync(outputRoot, { recursive: true });
+  fs.copyFileSync(path.join(root, brand.icons.trayIconSvg), path.join(outputRoot, "tray-icon.svg"));
+  fs.writeFileSync(path.join(outputRoot, "brand-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  fs.writeFileSync(path.join(outputRoot, "brand-mark.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  fs.writeFileSync(path.join(outputRoot, "tray-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 }
 
 function writeBrandManifest(root, brandId, update) {
@@ -137,7 +141,7 @@ function writeMinimalDistRenderer(root, brand) {
     renderRendererIndexHtml(fs.readFileSync(path.join(root, "index.html"), "utf8"), brand),
     "utf8"
   );
-  fs.copyFileSync(path.join(root, brand.icons.trayIconSvg), path.join(rendererRoot, "tray-icon.svg"));
+  copyBrandRuntimeIconAssets({ rootDir: root, outputDir: rendererRoot });
   return rendererRoot;
 }
 
@@ -352,7 +356,9 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
     await renderSvgFileHash(path.join(projectRoot, zenmind.icons.appIconSvg)),
     await renderSvgFileHash(path.join(projectRoot, cutej.icons.appIconSvg))
   );
-  assert.match(generator, /writeFileIfChanged\(publicTrayIconSvgPath,\s*Buffer\.from\(trayIconSvg\)\)/u);
+  assert.match(generator, /cleanupPublicBrandIconArtifacts\(projectRoot\)/u);
+  assert.match(generator, /writeFileIfChanged\(generatedTrayIconSvgPath,\s*Buffer\.from\(trayIconSvg\)\)/u);
+  assert.match(generator, /BRAND_RUNTIME_ASSET_DIR/u);
   assert.match(generator, /APP_ICON_BASE_SIZE\s*=\s*1024/u);
   assert.match(generator, /APP_ICON_TILE_SIZE\s*=\s*840/u);
   assert.match(generator, /APP_ICON_CORNER_RADIUS\s*=\s*232/u);
@@ -362,9 +368,12 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
   assert.match(generator, /renderBrandMarkToPng\(appIconSvg,\s*256\)/u);
   assert.doesNotMatch(generator, /renderTransparentAppIconToPng/u);
   assert.doesNotMatch(generator, /removeRootWhiteBackground/u);
-  assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"tray-icon\.png"\),\s*trayPng\)/u);
-  assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-icon\.png"\),\s*renderedAppPngs\.get\(256\)\)/u);
-  assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-mark\.png"\),\s*brandMarkPng\)/u);
+  assert.match(generator, /writeFileIfChanged\(path\.join\(brandRuntimeAssetsDir,\s*"tray-icon\.png"\),\s*trayPng\)/u);
+  assert.match(generator, /writeFileIfChanged\(path\.join\(brandRuntimeAssetsDir,\s*"brand-icon\.png"\),\s*renderedAppPngs\.get\(256\)\)/u);
+  assert.match(generator, /writeFileIfChanged\(path\.join\(brandRuntimeAssetsDir,\s*"brand-mark\.png"\),\s*brandMarkPng\)/u);
+  assert.doesNotMatch(generator, /path\.join\(publicDir,\s*"brand-icon\.png"\)/u);
+  assert.doesNotMatch(generator, /path\.join\(publicDir,\s*"brand-mark\.png"\)/u);
+  assert.doesNotMatch(generator, /path\.join\(publicDir,\s*"tray-icon\.png"\)/u);
 });
 
 test("brand app icon generation rounds the white backdrop for every brand", async () => {
@@ -398,7 +407,7 @@ test("generated active brand app icon PNGs keep the rounded brand backdrop", asy
   const activeBrandId = readJson(generatedBrandPath).id;
 
   for (const iconPath of [
-    path.join(projectRoot, "public", "brand-icon.png"),
+    path.join(projectRoot, BRAND_RUNTIME_ASSET_DIR, "brand-icon.png"),
     path.join(projectRoot, "build", "icons", "icon-256.png"),
     path.join(projectRoot, "build", "icons", "icon.png")
   ]) {
@@ -422,19 +431,19 @@ test("generated active brand mark PNG keeps transparent header foreground", asyn
     return;
   }
   const activeBrandId = readJson(generatedBrandPath).id;
-  const brandMarkPath = path.join(projectRoot, "public", "brand-mark.png");
+  const brandMarkPath = path.join(projectRoot, BRAND_RUNTIME_ASSET_DIR, "brand-mark.png");
   if (!fs.existsSync(brandMarkPath)) {
-    t.skip("generated public/brand-mark.png is not active");
+    t.skip(`generated ${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png is not active`);
     return;
   }
   const stats = await inspectPngPixels(brandMarkPath);
-  assertTransparentBrandMark(stats, `public/brand-mark.png for ${activeBrandId}`);
+  assertTransparentBrandMark(stats, `${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png for ${activeBrandId}`);
 });
 
 test("brand consistency guard catches and clears stale dist-renderer output", (t) => {
   const root = createBrandFixture(t);
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
-  writeMinimalPublicIconArtifacts(root, brand);
+  writeMinimalGeneratedIconArtifacts(root, brand);
 
   const staleRendererRoot = path.join(root, "dist-renderer");
   fs.mkdirSync(staleRendererRoot, { recursive: true });
@@ -495,7 +504,7 @@ test("brand desktop pet copy helper writes the active brand and clears stale fil
 test("brand consistency guard catches stale dist-renderer desktop pet output", (t) => {
   const root = createBrandFixture(t);
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
-  writeMinimalPublicIconArtifacts(root, brand);
+  writeMinimalGeneratedIconArtifacts(root, brand);
   writeMinimalDistRenderer(root, brand);
   copyBrandDesktopPetAssets({
     rootDir: root,
@@ -514,7 +523,7 @@ test("brand consistency guard catches stale dist-renderer desktop pet output", (
 test("brand consistency guard accepts active dist-renderer desktop pet output", (t) => {
   const root = createBrandFixture(t);
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
-  writeMinimalPublicIconArtifacts(root, brand);
+  writeMinimalGeneratedIconArtifacts(root, brand);
   writeMinimalDistRenderer(root, brand);
   copyBrandDesktopPetAssets({
     rootDir: root,
@@ -548,6 +557,9 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(generatedBrand.paths.programDataDirName, "CuteJ");
   assert.deepEqual(generatedBrand.desktopPet, expectedPet);
   assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet")), false);
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    assert.equal(fs.existsSync(path.join(root, "public", fileName)), false, `public/${fileName} should not be generated`);
+  }
   assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), sourcePackageBefore);
   assert.equal(fs.readFileSync(path.join(root, "index.html"), "utf8"), sourceIndexBefore);
   assert.equal(fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8"), sourceUninstallBefore);
@@ -556,11 +568,15 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
     true
   );
   assert.equal(
-    electronBuilderConfig.extraResources.some((item) => item.from === "public/brand-icon.png" && item.to === "brand-icon.png"),
+    electronBuilderConfig.extraResources.some((item) => item.from === `${BRAND_RUNTIME_ASSET_DIR}/brand-icon.png` && item.to === "brand-icon.png"),
     true
   );
   assert.equal(
-    electronBuilderConfig.extraResources.some((item) => item.from === "public/brand-mark.png" && item.to === "brand-mark.png"),
+    electronBuilderConfig.extraResources.some((item) => item.from === `${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png` && item.to === "brand-mark.png"),
+    true
+  );
+  assert.equal(
+    electronBuilderConfig.extraResources.some((item) => item.from === `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png` && item.to === "tray-icon.png"),
     true
   );
   assert.equal(
@@ -597,6 +613,9 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.equal(generatedBrand.paths.programDataDirName, "ZenMind");
   assert.deepEqual(generatedBrand.desktopPet, expectedPet);
   assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet")), false);
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    assert.equal(fs.existsSync(path.join(root, "public", fileName)), false, `public/${fileName} should not be generated`);
+  }
   assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), sourcePackageBefore);
   assert.equal(fs.readFileSync(path.join(root, "index.html"), "utf8"), sourceIndexBefore);
   assert.equal(fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8"), sourceUninstallBefore);
@@ -617,12 +636,28 @@ test("default desktop pet assets are brand-owned after generator removal", () =>
   assert.equal(fs.existsSync(removedPetAssetRoot), false);
 });
 
-test("brand mark is an ignored generated runtime asset", () => {
+test("brand runtime icons are generated outside public and stale public copies are cleaned", (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
   const gitignore = fs.readFileSync(path.join(projectRoot, ".gitignore"), "utf8");
   const iconGenerator = fs.readFileSync(path.join(projectRoot, "scripts", "generate-app-icons.mjs"), "utf8");
 
   assert.match(gitignore, /^public\/brand-mark\.png$/mu);
-  assert.match(iconGenerator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-mark\.png"\),\s*brandMarkPng\)/u);
+  assert.match(gitignore, /^public\/brand-icon\.png$/mu);
+  assert.match(gitignore, /^public\/tray-icon\.png$/mu);
+  assert.match(gitignore, /^public\/tray-icon\.svg$/mu);
+  assert.match(iconGenerator, /writeFileIfChanged\(path\.join\(brandRuntimeAssetsDir,\s*"brand-mark\.png"\),\s*brandMarkPng\)/u);
+  assert.doesNotMatch(iconGenerator, /writeFileIfChanged\(path\.join\(publicDir/u);
+
+  fs.mkdirSync(path.join(root, "public"), { recursive: true });
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    fs.writeFileSync(path.join(root, "public", fileName), "stale", "utf8");
+  }
+
+  syncBrandArtifacts({ rootDir: root, brandId: brand.id });
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    assert.equal(fs.existsSync(path.join(root, "public", fileName)), false, `public/${fileName} should be cleaned`);
+  }
 });
 
 test("brand manifest rejects mismatched explicit runtimeRootDirName", (t) => {

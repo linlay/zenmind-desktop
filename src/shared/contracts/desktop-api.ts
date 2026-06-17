@@ -70,7 +70,21 @@ export interface DesktopSsoLogoutResult {
   message: string;
 }
 
+export interface DesktopSsoCancelResult {
+  ok: boolean;
+  status: DesktopSsoStatus;
+  message: string;
+}
+
+export interface DesktopSsoEmbeddedLoginRequest {
+  url: string;
+  label: string;
+  partition: string;
+  userAgent: string;
+}
+
 export type DesktopSsoStatusListener = (status: DesktopSsoStatus) => void;
+export type DesktopSsoEmbeddedLoginListener = (request: DesktopSsoEmbeddedLoginRequest) => void;
 
 export interface DesktopAppInfo {
   productName: string;
@@ -293,8 +307,10 @@ export interface DesktopApi {
   sso: {
     getStatus: () => Promise<DesktopSsoStatus>;
     startLogin: () => Promise<DesktopSsoStartResult>;
+    cancelLogin: () => Promise<DesktopSsoCancelResult>;
     logout: () => Promise<DesktopSsoLogoutResult>;
     onStatusChanged: (listener: DesktopSsoStatusListener) => () => void;
+    onEmbeddedLoginOpen: (listener: DesktopSsoEmbeddedLoginListener) => () => void;
   };
   settings: {
     getDataRoot: () => Promise<string>;

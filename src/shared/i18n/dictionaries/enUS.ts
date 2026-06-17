@@ -73,6 +73,7 @@ export const enUSMessages = {
   "sidebar.sso.signingIn": "Log in",
   "sidebar.sso.signedOut": "Log in",
   "sidebar.sso.signIn": "Log in",
+  "sidebar.sso.cancelLogin": "Cancel login",
   "sidebar.sso.signOut": "Log out",
   "sidebar.sso.reopen": "Reopen",
   "sidebar.sso.busy": "Working",

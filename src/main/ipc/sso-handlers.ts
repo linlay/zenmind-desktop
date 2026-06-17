@@ -18,6 +18,12 @@ export interface SsoIpcHandlerOptions {
       browserOrigin?: string;
       resolveRedirect: boolean;
     }) => Promise<{ ok: boolean; message?: string }>;
+    openEmbeddedLoginDialog: (input: {
+      url: string;
+      label: string;
+      browserOrigin?: string;
+      resolveRedirect: boolean;
+    }) => Promise<{ ok: boolean; message?: string }>;
     openSystemBrowserUrl: (input: {
       url: string;
       label: string;
@@ -33,6 +39,7 @@ export interface SsoIpcHandlerOptions {
     onStatusChanged: (status: any) => void;
   }) => Promise<any>;
   failDesktopSsoFlow: (message: string) => any;
+  cancelDesktopSsoLogin: (app: any) => any;
   issueAgentAccessToken: (app: any, reason: any) => Promise<any> | any;
 }
 
@@ -44,6 +51,7 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
     startDesktopSsoLogin,
     logoutDesktopSso,
     failDesktopSsoFlow,
+    cancelDesktopSsoLogin,
     issueAgentAccessToken
   } = options;
 
@@ -75,7 +83,7 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
           url: result.authorizeUrl,
           label: "Google 登录"
         })
-        : await desktopSsoController.openBrowserUrl({
+        : await desktopSsoController.openEmbeddedLoginDialog({
           url: result.browserUrl || result.authorizeUrl,
           label: "IAM 登录",
           browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
@@ -94,6 +102,16 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       }
     }
     return result;
+  });
+
+  ipcMain.handle("sso.cancelLogin", async () => {
+    const status = cancelDesktopSsoLogin(app);
+    desktopSsoController.broadcastStatus(status);
+    return {
+      ok: true,
+      status,
+      message: status.message
+    };
   });
 
   ipcMain.handle("sso.logout", async () => {

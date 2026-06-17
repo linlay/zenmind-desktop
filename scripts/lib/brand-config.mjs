@@ -10,6 +10,13 @@ const PACKAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const BRAND_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
 const APP_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]+$/u;
 const REQUIRED_ICON_FILES = ["app-icon.svg", "tray-icon.svg"];
+export const BRAND_RUNTIME_ASSET_DIR = "build/generated/brand-assets";
+export const BRAND_RUNTIME_ASSET_FILENAMES = [
+  "brand-icon.png",
+  "brand-mark.png",
+  "tray-icon.png",
+  "tray-icon.svg"
+];
 const DESKTOP_PET_REQUIRED_STATE_KEYS = [
   "idle",
   "jumping",
@@ -66,6 +73,7 @@ export function syncBrandArtifacts({
   writeElectronBuilderConfig(rootDir, brand);
   writeInstallerInclude(rootDir, brand);
   writeMacUninstallScript(rootDir, brand);
+  cleanupPublicBrandIconArtifacts(rootDir);
 
   return brand;
 }
@@ -99,7 +107,8 @@ export function assertBrandArtifactsConsistent({
   const problems = [
     ...generatedBrandProblems(rootDir, brand),
     ...rendererIndexProblems(rootDir, brand),
-    ...publicIconProblems(rootDir, brand)
+    ...brandRuntimeIconProblems(rootDir, brand),
+    ...stalePublicBrandIconProblems(rootDir)
   ];
 
   if (checkDistRenderer) {
@@ -348,16 +357,20 @@ function distRendererProblems(rootDir, brand) {
   }
 
   const distTrayIconSvgPath = path.join(rendererRoot, "tray-icon.svg");
-  const brandTrayIconSvgPath = path.join(rootDir, brand.icons.trayIconSvg);
-  if (fs.existsSync(distTrayIconSvgPath) && !filesHaveSameBytes(distTrayIconSvgPath, brandTrayIconSvgPath)) {
-    problems.push(`dist-renderer/tray-icon.svg does not match ${brand.icons.trayIconSvg}`);
+  const generatedTrayIconSvgPath = path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "tray-icon.svg");
+  if (
+    fs.existsSync(distTrayIconSvgPath) &&
+    fs.existsSync(generatedTrayIconSvgPath) &&
+    !filesHaveSameBytes(distTrayIconSvgPath, generatedTrayIconSvgPath)
+  ) {
+    problems.push(`dist-renderer/tray-icon.svg does not match ${BRAND_RUNTIME_ASSET_DIR}/tray-icon.svg`);
   }
 
-  for (const fileName of ["brand-icon.png", "brand-mark.png", "tray-icon.png"]) {
-    const publicPath = path.join(rootDir, "public", fileName);
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    const generatedPath = path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, fileName);
     const distPath = path.join(rendererRoot, fileName);
-    if (fs.existsSync(publicPath) && fs.existsSync(distPath) && !filesHaveSameBytes(publicPath, distPath)) {
-      problems.push(`dist-renderer/${fileName} does not match public/${fileName}`);
+    if (fs.existsSync(generatedPath) && fs.existsSync(distPath) && !filesHaveSameBytes(generatedPath, distPath)) {
+      problems.push(`dist-renderer/${fileName} does not match ${BRAND_RUNTIME_ASSET_DIR}/${fileName}`);
     }
   }
 
@@ -366,27 +379,43 @@ function distRendererProblems(rootDir, brand) {
   return problems;
 }
 
-function publicIconProblems(rootDir, brand) {
+function brandRuntimeIconProblems(rootDir, brand) {
   const problems = [];
-  const publicTrayIconSvgPath = path.join(rootDir, "public", "tray-icon.svg");
+  const generatedTrayIconSvgPath = path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "tray-icon.svg");
   const brandTrayIconSvgPath = path.join(rootDir, brand.icons.trayIconSvg);
 
   problems.push(
-    ...assertNonEmptyFile(path.join(rootDir, "public", "brand-icon.png"), "public/brand-icon.png"),
-    ...assertNonEmptyFile(path.join(rootDir, "public", "brand-mark.png"), "public/brand-mark.png"),
-    ...assertNonEmptyFile(path.join(rootDir, "public", "tray-icon.png"), "public/tray-icon.png"),
-    ...assertFileExists(publicTrayIconSvgPath, "public/tray-icon.svg")
+    ...assertNonEmptyFile(
+      path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "brand-icon.png"),
+      `${BRAND_RUNTIME_ASSET_DIR}/brand-icon.png`
+    ),
+    ...assertNonEmptyFile(
+      path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "brand-mark.png"),
+      `${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png`
+    ),
+    ...assertNonEmptyFile(
+      path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "tray-icon.png"),
+      `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png`
+    ),
+    ...assertFileExists(generatedTrayIconSvgPath, `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.svg`)
   );
 
-  if (fs.existsSync(publicTrayIconSvgPath)) {
-    const publicTrayIconSvg = fs.readFileSync(publicTrayIconSvgPath, "utf8");
+  if (fs.existsSync(generatedTrayIconSvgPath)) {
+    const generatedTrayIconSvg = fs.readFileSync(generatedTrayIconSvgPath, "utf8");
     const brandTrayIconSvg = fs.readFileSync(brandTrayIconSvgPath, "utf8");
-    if (publicTrayIconSvg !== brandTrayIconSvg) {
-      problems.push(`public/tray-icon.svg does not match ${brand.icons.trayIconSvg}`);
+    if (generatedTrayIconSvg !== brandTrayIconSvg) {
+      problems.push(`${BRAND_RUNTIME_ASSET_DIR}/tray-icon.svg does not match ${brand.icons.trayIconSvg}`);
     }
   }
 
   return problems;
+}
+
+function stalePublicBrandIconProblems(rootDir) {
+  return BRAND_RUNTIME_ASSET_FILENAMES
+    .map((fileName) => path.join(rootDir, "public", fileName))
+    .filter((filePath) => fs.existsSync(filePath))
+    .map((filePath) => `${path.relative(rootDir, filePath)} is stale; active brand icons live in ${BRAND_RUNTIME_ASSET_DIR}`);
 }
 
 function isRecord(value) {
@@ -757,6 +786,40 @@ export function copyBrandDesktopPetAssets({
   return targetRoot;
 }
 
+export function cleanupPublicBrandIconArtifacts(rootDir = process.cwd()) {
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    fs.rmSync(path.join(rootDir, "public", fileName), { force: true });
+  }
+}
+
+export function copyBrandRuntimeIconAssets({
+  rootDir = process.cwd(),
+  outputDir
+} = {}) {
+  if (typeof outputDir !== "string" || !outputDir.trim()) {
+    throw new Error("copyBrandRuntimeIconAssets requires outputDir");
+  }
+
+  const sourceRoot = path.resolve(rootDir, BRAND_RUNTIME_ASSET_DIR);
+  const targetRoot = path.resolve(outputDir);
+  if (containsPath(sourceRoot, targetRoot) || containsPath(targetRoot, sourceRoot)) {
+    throw new Error(
+      `Refusing to copy brand runtime icon assets between overlapping paths: ${sourceRoot} -> ${targetRoot}`
+    );
+  }
+
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    const sourcePath = path.join(sourceRoot, fileName);
+    const targetPath = path.join(targetRoot, fileName);
+    if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+      throw new Error(`Missing generated brand runtime asset: ${path.relative(rootDir, sourcePath)}`);
+    }
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+  }
+  return targetRoot;
+}
+
 function writeGeneratedBrandFiles(rootDir, brand) {
   const payload = runtimeBrandPayload(brand);
   writeJson(path.join(rootDir, "build", "generated", "brand.json"), payload);
@@ -865,15 +928,15 @@ function electronBuilderConfig(brand) {
         to: "demo"
       },
       {
-        from: "public/brand-icon.png",
+        from: `${BRAND_RUNTIME_ASSET_DIR}/brand-icon.png`,
         to: "brand-icon.png"
       },
       {
-        from: "public/brand-mark.png",
+        from: `${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png`,
         to: "brand-mark.png"
       },
       {
-        from: "public/tray-icon.png",
+        from: `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png`,
         to: "tray-icon.png"
       },
       {

@@ -6,7 +6,10 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 import process from "node:process";
 import {
+  BRAND_RUNTIME_ASSET_DIR,
+  BRAND_RUNTIME_ASSET_FILENAMES,
   copyBrandDesktopPetAssets,
+  copyBrandRuntimeIconAssets,
   loadBrandConfig,
   renderRendererIndexHtml,
   resolveBrandId
@@ -15,8 +18,12 @@ import {
 const projectRoot = path.resolve(__dirname);
 const brand = loadBrandConfig(projectRoot, resolveBrandId([], process.env));
 const brandDesktopPetRoot = path.resolve(projectRoot, brand.source.desktopPetRoot);
+const brandRuntimeAssetsRoot = path.resolve(projectRoot, BRAND_RUNTIME_ASSET_DIR);
 
 const BRAND_DESKTOP_PET_URL_PREFIX = "/desktop-pet/";
+const BRAND_RUNTIME_ASSET_URL_PATHS = new Set(
+  BRAND_RUNTIME_ASSET_FILENAMES.map((fileName: string) => `/${fileName}`)
+);
 const CONTENT_TYPES: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
@@ -59,12 +66,35 @@ function resolveBrandDesktopPetRequestPath(requestUrl: string | undefined) {
   return resolvedPath;
 }
 
-function serveBrandDesktopPetAsset(
-  req: IncomingMessage,
+function resolveBrandRuntimeAssetRequestPath(requestUrl: string | undefined) {
+  if (!requestUrl) {
+    return null;
+  }
+
+  let requestPath = "";
+  try {
+    requestPath = new URL(requestUrl, "http://localhost").pathname;
+  } catch {
+    return null;
+  }
+
+  if (!BRAND_RUNTIME_ASSET_URL_PATHS.has(requestPath)) {
+    return null;
+  }
+
+  const resolvedPath = path.resolve(brandRuntimeAssetsRoot, requestPath.slice(1));
+  if (!containsPath(brandRuntimeAssetsRoot, resolvedPath)) {
+    return false;
+  }
+
+  return resolvedPath;
+}
+
+function serveStaticFile(
+  assetPath: string | false | null,
   res: ServerResponse,
   next: (error?: unknown) => void
 ) {
-  const assetPath = resolveBrandDesktopPetRequestPath(req.url);
   if (assetPath === null) {
     next();
     return;
@@ -88,6 +118,38 @@ function serveBrandDesktopPetAsset(
     stream.on("error", next);
     stream.pipe(res);
   });
+}
+
+function serveBrandRuntimeIconAsset(
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: (error?: unknown) => void
+) {
+  serveStaticFile(resolveBrandRuntimeAssetRequestPath(req.url), res, next);
+}
+
+function serveBrandDesktopPetAsset(
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: (error?: unknown) => void
+) {
+  serveStaticFile(resolveBrandDesktopPetRequestPath(req.url), res, next);
+}
+
+function brandRuntimeIconPlugin(): Plugin {
+  return {
+    name: "brand-runtime-icon-assets",
+    configureServer(server) {
+      server.watcher.add(brandRuntimeAssetsRoot);
+      server.middlewares.use(serveBrandRuntimeIconAsset);
+    },
+    closeBundle() {
+      copyBrandRuntimeIconAssets({
+        rootDir: projectRoot,
+        outputDir: path.join(projectRoot, "dist-renderer")
+      });
+    }
+  };
 }
 
 function brandDesktopPetPlugin(): Plugin {
@@ -118,7 +180,7 @@ function brandRendererIndexPlugin(): Plugin {
 
 export default defineConfig({
   base: "./",
-  plugins: [brandRendererIndexPlugin(), brandDesktopPetPlugin(), react()],
+  plugins: [brandRendererIndexPlugin(), brandRuntimeIconPlugin(), brandDesktopPetPlugin(), react()],
   resolve: {
     alias: {
       "@renderer": path.resolve(projectRoot, "src/renderer"),

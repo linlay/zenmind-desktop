@@ -256,9 +256,6 @@ const OIDC_CONFIG_URL_FIELDS = [
 const DEFAULT_COOKIE_ACCESS_TOKEN_PATH = "access_token";
 const DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT = "text/plain,application/json,*/*";
 const DEFAULT_ACCESS_TOKEN_COOKIE_NAME = "access_token";
-const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST = ["ai", "qi" + "uer", "net"].join(".");
-const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN = `https://${DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST}`;
-const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_URL = `${DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN}/authorization`;
 const DEFAULT_GOOGLE_SCOPE = "openid email profile";
 
 export const DEFAULT_OIDC_CONFIG: OidcConfig = {
@@ -297,6 +294,7 @@ let callbackHooks: CallbackHooks = {};
 let pendingLogin: PendingLogin | null = null;
 let desktopSsoProxyState: DesktopSsoProxyState | null = null;
 let currentAccessToken = "";
+let currentIdToken = "";
 const usedAuthorizationCodes = new Set<string>();
 const usedDesktopSsoTickets = new Set<string>();
 
@@ -708,35 +706,6 @@ function normalizeCookieAccessTokenExchangeConfig(
   };
 }
 
-function shouldUseDefaultAiCookieAccessTokenExchange(config: OidcConfig) {
-  const origins = new Set<string>();
-  if (config.browserOrigin) {
-    origins.add(config.browserOrigin);
-  }
-  if (config.loginUrl) {
-    try {
-      origins.add(new URL(config.loginUrl).origin);
-    } catch {
-      // URL validation below reports the configured field name.
-    }
-  }
-  return origins.has(DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN);
-}
-
-function buildDefaultCookieAccessTokenExchangeConfig(
-  config: OidcConfig
-): CookieAccessTokenExchangeConfig | undefined {
-  if (!shouldUseDefaultAiCookieAccessTokenExchange(config)) {
-    return undefined;
-  }
-  return {
-    url: DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_URL,
-    method: "GET",
-    headers: {},
-    accessTokenPath: DEFAULT_COOKIE_ACCESS_TOKEN_PATH
-  };
-}
-
 function normalizeAccessTokenCookieSameSite(value: string) {
   const normalizedValue = value.trim().toLowerCase();
   if (normalizedValue === "strict") {
@@ -970,8 +939,7 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   const cookieAccessTokenExchange =
     useGoogleDesktopFlow
       ? null
-      : normalizeCookieAccessTokenExchangeConfig(record, config) ||
-        buildDefaultCookieAccessTokenExchangeConfig(config);
+      : normalizeCookieAccessTokenExchangeConfig(record, config);
   if (cookieAccessTokenExchange) {
     config.cookieAccessTokenExchange = cookieAccessTokenExchange;
   }
@@ -1072,13 +1040,14 @@ export function loadDesktopSsoConfig(app: Pick<App, "getPath">, platform: NodeJS
   }
 }
 
-function saveSession(app: App, status: DesktopSsoStatus) {
+function saveSession(app: App, status: DesktopSsoStatus, idToken = "") {
   fs.mkdirSync(path.dirname(getSessionPath(app)), { recursive: true });
   fs.writeFileSync(getSessionPath(app), JSON.stringify({
     authenticated: status.authenticated,
     user: status.user,
     message: status.message,
-    updatedAt: status.updatedAt
+    updatedAt: status.updatedAt,
+    ...(idToken.trim() ? { idToken: idToken.trim() } : {})
   }, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
@@ -1106,6 +1075,7 @@ function removeAccessTokenFile(app: Pick<App, "getPath">) {
 }
 
 function loadSession(app: App) {
+  currentIdToken = "";
   const filePath = fs.existsSync(getSessionPath(app))
     ? getSessionPath(app)
     : getLegacySessionPath(app);
@@ -1123,6 +1093,9 @@ function loadSession(app: App) {
         message: typeof parsed.message === "string" ? parsed.message : "单点登录已完成。",
         updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString()
       };
+      currentIdToken = typeof (parsed as Record<string, unknown>).idToken === "string"
+        ? ((parsed as Record<string, unknown>).idToken as string).trim()
+        : "";
     }
   } catch {
     currentStatus = createSignedOutStatus("尚未登录。");
@@ -1132,6 +1105,7 @@ function loadSession(app: App) {
 function clearSession(app: App) {
   pendingLogin = null;
   currentAccessToken = "";
+  currentIdToken = "";
   removeAccessTokenFile(app);
   const filePath = getSessionPath(app);
   try {
@@ -2149,13 +2123,21 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
     status = createAuthenticatedStatus(hookClaims);
   }
   setCurrentStatus(status);
-  saveSession(app, status);
+  currentIdToken = tokenClaims.idToken;
+  saveSession(app, status, tokenClaims.idToken);
   return status;
 }
 
-function buildLogoutUrl(config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+function buildLogoutUrl(
+  config: OidcConfig = DEFAULT_OIDC_CONFIG,
+  options: { idTokenHint?: string } = {}
+) {
   const url = new URL(config.logoutUrl);
-  url.searchParams.set("post_logout_redirect_uri", config.logoutCallbackUri);
+  const idTokenHint = options.idTokenHint?.trim();
+  if (idTokenHint) {
+    url.searchParams.set("id_token_hint", idTokenHint);
+    url.searchParams.set("post_logout_redirect_uri", config.logoutCallbackUri);
+  }
   return url.toString();
 }
 
@@ -2369,12 +2351,28 @@ export function getDesktopSsoStatus(app?: App): DesktopSsoStatus {
 export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
   pendingLogin = null;
   currentAccessToken = "";
+  currentIdToken = "";
   const status = createFailedStatus(message);
   setCurrentStatus(status);
   return cloneStatus(status);
 }
 
 export const failDesktopSsoLogin = failDesktopSsoFlow;
+
+export function cancelDesktopSsoLogin(app: App, message = "已取消 Desktop 单点登录。"): DesktopSsoStatus {
+  pendingLogin = null;
+  currentAccessToken = "";
+  loadSession(app);
+  const status = currentStatus.authenticated && !currentStatus.pending
+    ? {
+      ...cloneStatus(currentStatus),
+      message,
+      updatedAt: new Date().toISOString()
+    }
+    : createSignedOutStatus(message);
+  setCurrentStatus(status);
+  return cloneStatus(status);
+}
 
 export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}): Promise<DesktopSsoStartResult> {
   const configResult = loadDesktopSsoConfig(app);
@@ -2408,6 +2406,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
   }
   try {
     currentAccessToken = "";
+    currentIdToken = "";
     removeAccessTokenFile(app);
     const useSystemBrowser = shouldUseSystemBrowser(oidcConfig);
     const callbackInfo = await ensureCallbackServer(
@@ -2575,6 +2574,7 @@ export function completeDesktopSsoBrowserLogin(app: App, completionUrl: string):
     return createFailedStatus(configResult.error || "Desktop 单点登录配置缺少 OIDC 参数。");
   }
   pendingLogin = null;
+  currentIdToken = "";
   const parsedUrl = new URL(completionUrl);
   const status = createAuthenticatedStatus({
     sub: parsedUrl.hostname || "desktop-sso-browser",
@@ -2599,6 +2599,7 @@ export function completeDesktopSsoCookieLogin(app: App, accessToken: string): De
     return createFailedStatus("Cookie access_token 为空。");
   }
   pendingLogin = null;
+  currentIdToken = "";
   currentAccessToken = token;
   saveAccessTokenFile(app, token);
   const status = createAuthenticatedStatus(createCookieAccessTokenClaims(token, configResult.config));
@@ -2610,6 +2611,10 @@ export function completeDesktopSsoCookieLogin(app: App, accessToken: string): De
 export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Promise<DesktopSsoLogoutResult> {
   callbackHooks = hooks;
   const configResult = loadDesktopSsoConfig(app);
+  if (!currentStatus.authenticated && !currentStatus.pending) {
+    loadSession(app);
+  }
+  const logoutIdToken = currentIdToken;
   clearSession(app);
   const status = configResult.configured
     ? createSignedOutStatus("已退出 Desktop 单点登录。")
@@ -2663,7 +2668,7 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
       ...oidcConfig,
       logoutCallbackUri: callbackInfo.logoutCallbackUri
     };
-    const logoutUrl = buildLogoutUrl(logoutConfig);
+    const logoutUrl = buildLogoutUrl(logoutConfig, { idTokenHint: logoutIdToken });
     return {
       ok: true,
       logoutUrl,
@@ -2709,6 +2714,7 @@ export const __testInternals = {
   buildCookieAccessTokenExchangeRequest,
   shouldUseSystemBrowser,
   buildDesktopSsoAccessTokenCookieDetails,
+  cancelDesktopSsoLogin,
   completeDesktopSsoBrowserLogin,
   completeDesktopSsoCookieLogin,
   getDesktopSsoAccessTokenFilePath,
