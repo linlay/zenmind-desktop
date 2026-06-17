@@ -3,6 +3,15 @@ export const DESKTOP_WS_PORT = 7082;
 export const DESKTOP_WS_PATH = "/ws";
 export const DESKTOP_WS_URL = `ws://${DESKTOP_WS_HOST}:${DESKTOP_WS_PORT}${DESKTOP_WS_PATH}`;
 
+export const DESKTOP_WS_NAMESPACE_FIELD = "ns";
+export const DESKTOP_WS_NAMESPACE_DESKTOP = "d";
+export const DESKTOP_WS_NAMESPACE_AGENT_PLATFORM = "ap";
+export const DESKTOP_WS_NAMESPACES = {
+  [DESKTOP_WS_NAMESPACE_DESKTOP]: "desktop",
+  [DESKTOP_WS_NAMESPACE_AGENT_PLATFORM]: "agent-platform"
+} as const;
+export type DesktopWsNamespace = keyof typeof DESKTOP_WS_NAMESPACES;
+
 export const DESKTOP_WS_FRAMES = ["request", "response", "push", "stream", "error"] as const;
 export type DesktopWsFrame = typeof DESKTOP_WS_FRAMES[number];
 

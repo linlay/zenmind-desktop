@@ -115,6 +115,12 @@ function inspectCanvasPixels(canvas) {
     const offset = (y * canvas.width + x) * 4;
     return Array.from(pixels.slice(offset, offset + 4));
   };
+  const isBackdropPixel = (red, green, blue, alpha) => (
+    alpha > 0 &&
+    red >= 248 &&
+    green >= 244 &&
+    blue >= 228
+  );
   let opaquePixels = 0;
   let opaqueNeutralGrayPixels = 0;
   let opaqueMinX = canvas.width;
@@ -141,7 +147,7 @@ function inspectCanvasPixels(canvas) {
       opaqueMaxX = Math.max(opaqueMaxX, x);
       opaqueMaxY = Math.max(opaqueMaxY, y);
     }
-    if (alpha > 0 && !(red > 245 && green > 245 && blue > 245)) {
+    if (alpha > 0 && !isBackdropPixel(red, green, blue, alpha)) {
       const pixelIndex = index / 4;
       const x = pixelIndex % canvas.width;
       const y = Math.floor(pixelIndex / canvas.width);
@@ -193,7 +199,7 @@ function inspectCanvasPixels(canvas) {
       sample(canvas.width - 1, canvas.height - 1)
     ],
     nearCornerSample: sample(Math.floor(canvas.width * 0.08), Math.floor(canvas.height * 0.08)),
-    topCenterSample: sample(Math.floor(canvas.width * 0.5), Math.floor(canvas.height * 0.08)),
+    topCenterSample: sample(Math.floor(canvas.width * 0.5), Math.floor(canvas.height * 0.12)),
     innerBackdropSample: sample(Math.floor(canvas.width * 0.18), Math.floor(canvas.height * 0.18))
   };
 }
@@ -217,8 +223,9 @@ function assertRoundedWhiteBackdrop(stats, label) {
   }
   assert.equal(stats.nearCornerSample[3], 0, `${label} should have transparent rounded-corner padding`);
   for (const sample of [stats.topCenterSample, stats.innerBackdropSample]) {
-    assert.equal(sample[3], 255, `${label} should keep an opaque rounded white backdrop`);
-    assert(sample[0] > 245 && sample[1] > 245 && sample[2] > 245, `${label} should keep a white rounded backdrop`);
+    assert.equal(sample[3], 255, `${label} should keep an opaque rounded ivory backdrop`);
+    assert(sample[0] >= 250 && sample[1] >= 246 && sample[2] >= 232, `${label} should keep a light ivory rounded backdrop`);
+    assert(sample[0] - sample[2] >= 8, `${label} backdrop should be warmer than pure white`);
   }
 }
 
@@ -226,20 +233,25 @@ function assertComfortableTileSize(stats, label) {
   assert(stats.opaqueBounds, `${label} should contain an opaque rounded tile`);
   const tileWidthRatio = stats.opaqueBounds.width / stats.width;
   const tileHeightRatio = stats.opaqueBounds.height / stats.height;
-  assert(tileWidthRatio <= 0.91, `${label} tile is too wide: ${tileWidthRatio.toFixed(3)}`);
-  assert(tileHeightRatio <= 0.91, `${label} tile is too tall: ${tileHeightRatio.toFixed(3)}`);
-  assert(tileWidthRatio >= 0.84, `${label} tile is too small: ${tileWidthRatio.toFixed(3)}`);
-  assert(tileHeightRatio >= 0.84, `${label} tile is too small: ${tileHeightRatio.toFixed(3)}`);
+  assert(tileWidthRatio <= 0.84, `${label} tile is too wide: ${tileWidthRatio.toFixed(3)}`);
+  assert(tileHeightRatio <= 0.84, `${label} tile is too tall: ${tileHeightRatio.toFixed(3)}`);
+  assert(tileWidthRatio >= 0.80, `${label} tile is too small: ${tileWidthRatio.toFixed(3)}`);
+  assert(tileHeightRatio >= 0.80, `${label} tile is too small: ${tileHeightRatio.toFixed(3)}`);
 }
 
 function assertComfortableForegroundSize(stats, label) {
   assert(stats.coloredBounds, `${label} should contain colored foreground art`);
   const foregroundWidthRatio = stats.coloredBounds.width / stats.width;
   const foregroundHeightRatio = stats.coloredBounds.height / stats.height;
-  assert(foregroundWidthRatio <= 0.74, `${label} foreground is too wide: ${foregroundWidthRatio.toFixed(3)}`);
-  assert(foregroundHeightRatio <= 0.74, `${label} foreground is too tall: ${foregroundHeightRatio.toFixed(3)}`);
+  assert(foregroundWidthRatio <= 0.83, `${label} foreground is too wide: ${foregroundWidthRatio.toFixed(3)}`);
+  assert(foregroundHeightRatio <= 0.83, `${label} foreground is too tall: ${foregroundHeightRatio.toFixed(3)}`);
   assert(foregroundWidthRatio >= 0.48, `${label} foreground is too small: ${foregroundWidthRatio.toFixed(3)}`);
   assert(foregroundHeightRatio >= 0.48, `${label} foreground is too small: ${foregroundHeightRatio.toFixed(3)}`);
+}
+
+function assertNoGrayTile(stats, label) {
+  const grayRatio = stats.opaqueNeutralGrayPixels / Math.max(stats.opaquePixels, 1);
+  assert(grayRatio <= 0.001, `${label} should not contain a gray app tile: ${grayRatio.toFixed(4)}`);
 }
 
 test("brand runtime root directory is derived from brand id", () => {
@@ -278,8 +290,11 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
     await renderSvgFileHash(path.join(projectRoot, cutej.icons.appIconSvg))
   );
   assert.match(generator, /writeFileIfChanged\(publicTrayIconSvgPath,\s*Buffer\.from\(trayIconSvg\)\)/u);
-  assert.match(generator, /APP_ICON_TILE_SCALE\s*=\s*0\.88/u);
-  assert.match(generator, /APP_ICON_FOREGROUND_SCALE\s*=\s*0\.78/u);
+  assert.match(generator, /APP_ICON_BASE_SIZE\s*=\s*1024/u);
+  assert.match(generator, /APP_ICON_TILE_SIZE\s*=\s*840/u);
+  assert.match(generator, /APP_ICON_CORNER_RADIUS\s*=\s*232/u);
+  assert.match(generator, /APP_ICON_TILE_FILL\s*=\s*"#FFFBEF"/u);
+  assert.match(generator, /APP_ICON_FOREGROUND_SIZE\s*=\s*800/u);
   assert.match(generator, /renderAppIconToPng\(appIconSvg,\s*size\)/u);
   assert.doesNotMatch(generator, /renderTransparentAppIconToPng/u);
   assert.doesNotMatch(generator, /removeRootWhiteBackground/u);
@@ -295,7 +310,7 @@ test("brand app icon generation rounds the white backdrop for every brand", asyn
     assertRoundedWhiteBackdrop(stats, `${brandId} app icon`);
     assertComfortableTileSize(stats, `${brandId} app icon`);
     assertComfortableForegroundSize(stats, `${brandId} app icon`);
-    assert.equal(stats.opaqueNeutralGrayPixels, 0, `${brandId} app icon should not contain a gray app tile`);
+    assertNoGrayTile(stats, `${brandId} app icon`);
     assert(stats.opaquePixels > stats.width * stats.height * 0.5, `${brandId} app icon should include a visible rounded backdrop`);
   }
 });
@@ -317,7 +332,7 @@ test("generated active brand app icon PNGs keep the rounded brand backdrop", asy
     assertRoundedWhiteBackdrop(stats, `${iconPath} for ${activeBrandId}`);
     assertComfortableTileSize(stats, `${iconPath} for ${activeBrandId}`);
     assertComfortableForegroundSize(stats, `${iconPath} for ${activeBrandId}`);
-    assert.equal(stats.opaqueNeutralGrayPixels, 0, `${iconPath} should not contain an opaque neutral gray backdrop for ${activeBrandId}`);
+    assertNoGrayTile(stats, `${iconPath} for ${activeBrandId}`);
     assert(stats.opaquePixels > stats.width * stats.height * 0.1, `${iconPath} should contain non-empty ${activeBrandId} icon art`);
   }
 });

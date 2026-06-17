@@ -4,6 +4,10 @@ import type { Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import type { App } from "electron";
 import {
+  DESKTOP_WS_NAMESPACE_AGENT_PLATFORM,
+  DESKTOP_WS_NAMESPACE_DESKTOP,
+  DESKTOP_WS_NAMESPACE_FIELD,
+  DESKTOP_WS_NAMESPACES,
   DESKTOP_WS_HOST,
   DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
   DESKTOP_WS_PATH,
@@ -22,6 +26,8 @@ import {
 import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
+  AgentAuthIssueResult,
+  ServiceState,
   TaskBoardIssueInput,
   TaskBoardIssueMoveInput,
   TaskBoardIssueUpdateInput
@@ -41,6 +47,7 @@ type DesktopWsAuthSession = {
 };
 
 type DesktopWsRequestFrame = {
+  ns?: string;
   frame?: string;
   type?: string;
   id?: string;
@@ -48,6 +55,7 @@ type DesktopWsRequestFrame = {
 };
 
 type DesktopWsResponseFrame = {
+  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM;
   frame: "response";
   type: string;
   id: string;
@@ -57,6 +65,7 @@ type DesktopWsResponseFrame = {
 };
 
 type DesktopWsErrorFrame = {
+  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM;
   frame: "error";
   type: string;
   id?: string;
@@ -66,9 +75,42 @@ type DesktopWsErrorFrame = {
 };
 
 type DesktopWsPushFrame = {
+  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM;
   frame: "push";
   type: DesktopWsPushType | string;
   data?: unknown;
+};
+
+type DesktopWsStreamFrame = {
+  ns: typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM;
+  frame: "stream";
+  id?: string;
+  streamId?: string;
+  event?: unknown;
+  reason?: string;
+  lastSeq?: number;
+  [key: string]: unknown;
+};
+
+type DesktopWsOutboundFrame = DesktopWsResponseFrame | DesktopWsErrorFrame | DesktopWsPushFrame | DesktopWsStreamFrame;
+
+type MinimalWebSocket = {
+  onopen: (() => void) | null;
+  onmessage: ((event: { data?: unknown }) => void) | null;
+  onclose: ((event?: unknown) => void) | null;
+  onerror: ((event?: unknown) => void) | null;
+  addEventListener?: (type: string, listener: (event?: unknown) => void) => void;
+  readyState?: number;
+  send: (data: string) => void;
+  close: (code?: number, reason?: string) => void;
+};
+
+type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
+
+type AgentPlatformBridgeOptions = {
+  getServiceState: (app: App, serviceId: string) => Promise<ServiceState>;
+  issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
+  WebSocketConstructor?: MinimalWebSocketConstructor;
 };
 
 type DesktopWsServerOptions = {
@@ -81,6 +123,7 @@ type DesktopWsServerOptions = {
     startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   };
   getTaskBoardRuntime: () => TaskBoardRuntime | null;
+  agentPlatformBridge?: AgentPlatformBridgeOptions;
   verifyToken?: (token: string, subprotocol?: string) => Promise<DesktopWsAuthSession>;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
@@ -95,6 +138,7 @@ type DesktopWsConnection = {
   subscriptions: Set<string>;
   closed: boolean;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
+  agentPlatformBridge: AgentPlatformWsBridge | null;
 };
 
 type DesktopWsServerRecord = {
@@ -116,6 +160,12 @@ const MAX_FRAME_BYTES = 1024 * 1024;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const AUTH_EXPIRING_WINDOW_MS = 5 * 60_000;
 const AUTH_EXPIRING_THROTTLE_MS = 60_000;
+const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
+const AGENT_PLATFORM_WS_SOURCE = "desktop-ws-bridge";
+const WS_OPEN_STATE = 1;
+const WS_CONNECTING_STATE = 0;
+const AGENT_PLATFORM_CONTROL_PUSH_TYPES = new Set(["connected", "heartbeat", "auth.expiring"]);
+const AGENT_PLATFORM_CONNECT_TIMEOUT_MS = 8_000;
 
 let activeServer: DesktopWsServerRecord | null = null;
 
@@ -211,8 +261,57 @@ function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function readNamespace(value: unknown) {
+  const record = asRecord(value);
+  return readText(record[DESKTOP_WS_NAMESPACE_FIELD]) || DESKTOP_WS_NAMESPACE_DESKTOP;
+}
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getWebSocketConstructor(options: AgentPlatformBridgeOptions): MinimalWebSocketConstructor | null {
+  if (options.WebSocketConstructor) {
+    return options.WebSocketConstructor;
+  }
+  const candidate = (globalThis as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
+  return typeof candidate === "function" ? candidate : null;
+}
+
+function createAgentPlatformWsUrl(app: App, baseUrl: string, token: string) {
+  const url = new URL("/ws", baseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("token", token);
+  url.searchParams.set("source", AGENT_PLATFORM_WS_SOURCE);
+  url.searchParams.set("deviceId", getDesktopDeviceId(app));
+  return url.toString();
+}
+
+async function decodeMessageData(data: unknown) {
+  if (typeof data === "string") {
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data).toString("utf8");
+  }
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
+  }
+  if (asRecord(data).text && typeof asRecord(data).text === "function") {
+    const text = await (data as { text: () => Promise<unknown> }).text();
+    return typeof text === "string" ? text : String(text ?? "");
+  }
+  if (asRecord(data).arrayBuffer && typeof asRecord(data).arrayBuffer === "function") {
+    const buffer = await (data as { arrayBuffer: () => Promise<unknown> }).arrayBuffer();
+    if (buffer instanceof ArrayBuffer) {
+      return Buffer.from(buffer).toString("utf8");
+    }
+  }
+  return String(data ?? "");
 }
 
 function createSessionId() {
@@ -393,7 +492,7 @@ function encodeWebSocketFrame(opcode: number, payload: Buffer) {
   return Buffer.concat([header, payload]);
 }
 
-function sendJson(connection: DesktopWsConnection, payload: DesktopWsResponseFrame | DesktopWsErrorFrame | DesktopWsPushFrame) {
+function sendJson(connection: DesktopWsConnection, payload: DesktopWsOutboundFrame) {
   if (connection.closed || connection.socket.destroyed) {
     return;
   }
@@ -401,15 +500,259 @@ function sendJson(connection: DesktopWsConnection, payload: DesktopWsResponseFra
 }
 
 function sendResponse(connection: DesktopWsConnection, type: string, id: string, data: unknown, msg = "success") {
-  sendJson(connection, { frame: "response", type, id, code: 0, msg, data });
+  sendJson(connection, { ns: DESKTOP_WS_NAMESPACE_DESKTOP, frame: "response", type, id, code: 0, msg, data });
 }
 
 function sendError(connection: DesktopWsConnection, id: string | undefined, type: string, code: number, msg: string, data?: unknown) {
-  sendJson(connection, { frame: "error", type, id, code, msg, data });
+  sendJson(connection, { ns: DESKTOP_WS_NAMESPACE_DESKTOP, frame: "error", type, id, code, msg, data });
 }
 
 function sendPush(connection: DesktopWsConnection, type: DesktopWsPushType | string, data?: unknown) {
-  sendJson(connection, { frame: "push", type, data });
+  sendJson(connection, { ns: DESKTOP_WS_NAMESPACE_DESKTOP, frame: "push", type, data });
+}
+
+function sendAgentPlatformError(connection: DesktopWsConnection, id: string | undefined, type: string, code: number, msg: string, data?: unknown) {
+  sendJson(connection, { ns: DESKTOP_WS_NAMESPACE_AGENT_PLATFORM, frame: "error", type, id, code, msg, data });
+}
+
+function withAgentPlatformNamespace(frame: Record<string, unknown>): DesktopWsOutboundFrame | null {
+  const outboundFrame = readText(frame.frame);
+  if (!outboundFrame || !["response", "push", "stream", "error"].includes(outboundFrame)) {
+    return null;
+  }
+  const { ns: _ns, ...rest } = frame;
+  return {
+    ns: DESKTOP_WS_NAMESPACE_AGENT_PLATFORM,
+    ...rest,
+    frame: outboundFrame
+  } as DesktopWsOutboundFrame;
+}
+
+class AgentPlatformWsBridge {
+  private ws: MinimalWebSocket | null = null;
+  private opening: Promise<void> | null = null;
+  private readonly pendingRequests = new Map<string, string>();
+
+  constructor(
+    private readonly options: DesktopWsServerOptions,
+    private readonly connection: DesktopWsConnection,
+    private readonly logger: Pick<typeof console, "log" | "warn" | "error">
+  ) {}
+
+  async forwardRequest(req: DesktopWsRequestFrame) {
+    const id = readText(req.id);
+    const type = readText(req.type);
+    if (!id || !type) {
+      sendAgentPlatformError(this.connection, id || undefined, "invalid_request", 400, "request type and id are required");
+      return;
+    }
+    if (req.frame !== "request") {
+      sendAgentPlatformError(this.connection, id || undefined, "invalid_request", 400, "only request frames are accepted");
+      return;
+    }
+    if (!this.options.agentPlatformBridge) {
+      sendAgentPlatformError(this.connection, id, "agent_platform_unavailable", 503, "agent-platform bridge is not configured");
+      return;
+    }
+
+    try {
+      await this.ensureConnected(this.options.agentPlatformBridge);
+      const socket = this.ws;
+      if (!socket || !this.isSocketOpen(socket)) {
+        throw new Error("agent-platform websocket is not open");
+      }
+      const { ns: _ns, ...forwarded } = req;
+      this.pendingRequests.set(id, type);
+      socket.send(JSON.stringify(forwarded));
+    } catch (error) {
+      this.pendingRequests.delete(id);
+      sendAgentPlatformError(
+        this.connection,
+        id,
+        "agent_platform_unavailable",
+        503,
+        errorMessage(error)
+      );
+    }
+  }
+
+  close() {
+    this.rejectPending("agent-platform bridge closed");
+    this.closeSocket(1000, "desktop ws closed");
+  }
+
+  private async ensureConnected(bridgeOptions: AgentPlatformBridgeOptions) {
+    if (this.ws && this.isSocketOpen(this.ws)) {
+      return;
+    }
+    if (this.ws && this.ws.readyState === WS_CONNECTING_STATE && this.opening) {
+      return this.opening;
+    }
+    if (this.opening) {
+      return this.opening;
+    }
+    this.opening = this.open(bridgeOptions).finally(() => {
+      this.opening = null;
+    });
+    return this.opening;
+  }
+
+  private async open(bridgeOptions: AgentPlatformBridgeOptions) {
+    const WebSocketConstructor = getWebSocketConstructor(bridgeOptions);
+    if (!WebSocketConstructor) {
+      throw new Error("current runtime does not provide WebSocket");
+    }
+
+    const serviceState = await bridgeOptions.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID);
+    const baseUrl = serviceState.status === "running"
+      ? serviceState.healthMeta.webUrl.trim() || (serviceState.healthMeta.port ? `http://127.0.0.1:${serviceState.healthMeta.port}` : "")
+      : "";
+    if (!baseUrl) {
+      throw new Error(serviceState.message || "agent-platform is not running");
+    }
+
+    const tokenResult = await bridgeOptions.issueAccessToken(this.options.app, "missing");
+    if (!tokenResult.ok || !tokenResult.token.trim()) {
+      throw new Error(tokenResult.message || "agent-platform token unavailable");
+    }
+
+    this.closeSocket(1000, "agent-platform reconnect");
+    const wsUrl = createAgentPlatformWsUrl(this.options.app, baseUrl, tokenResult.token.trim());
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const socket = new WebSocketConstructor(wsUrl);
+      this.ws = socket;
+      const timer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.closeSocket(1002, "agent-platform connect timeout");
+        reject(new Error("agent-platform websocket connect timeout"));
+      }, AGENT_PLATFORM_CONNECT_TIMEOUT_MS);
+
+      const finishOpen = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      const failOpen = (event?: unknown) => {
+        if (settled) {
+          this.handleSocketClosed(event);
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        this.closeSocket(1002, "agent-platform connect failed");
+        reject(new Error(`agent-platform websocket connect failed${this.eventDetail(event) ? `: ${this.eventDetail(event)}` : ""}`));
+      };
+      const handleMessage = (event?: unknown) => {
+        const data = asRecord(event).data;
+        void this.handleMessage(data);
+      };
+      if (typeof socket.addEventListener === "function") {
+        socket.addEventListener("open", finishOpen);
+        socket.addEventListener("message", handleMessage);
+        socket.addEventListener("close", failOpen);
+        socket.addEventListener("error", failOpen);
+      } else {
+        socket.onopen = finishOpen;
+        socket.onmessage = (event) => {
+          void this.handleMessage(event.data);
+        };
+        socket.onclose = failOpen;
+        socket.onerror = failOpen;
+      }
+    });
+  }
+
+  private async handleMessage(data: unknown) {
+    let raw = "";
+    try {
+      raw = await decodeMessageData(data);
+    } catch (error) {
+      this.logger.warn?.(`[desktop-ws] failed to read agent-platform frame: ${errorMessage(error)}`);
+      return;
+    }
+
+    let frame: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      frame = asRecord(parsed);
+    } catch (error) {
+      this.logger.warn?.(`[desktop-ws] failed to parse agent-platform frame: ${errorMessage(error)}`);
+      return;
+    }
+
+    const frameKind = readText(frame.frame);
+    const frameType = readText(frame.type);
+    if (frameKind === "push" && AGENT_PLATFORM_CONTROL_PUSH_TYPES.has(frameType)) {
+      return;
+    }
+    if ((frameKind === "response" || frameKind === "error") && readText(frame.id)) {
+      this.pendingRequests.delete(readText(frame.id));
+    }
+    const namespaced = withAgentPlatformNamespace(frame);
+    if (!namespaced) {
+      this.logger.warn?.(`[desktop-ws] dropped unknown agent-platform frame: ${frameKind || "unknown"}`);
+      return;
+    }
+    sendJson(this.connection, namespaced);
+  }
+
+  private handleSocketClosed(event?: unknown) {
+    this.rejectPending(`agent-platform websocket closed${this.eventDetail(event) ? `: ${this.eventDetail(event)}` : ""}`);
+    this.ws = null;
+  }
+
+  private rejectPending(message: string) {
+    for (const [id] of this.pendingRequests) {
+      sendAgentPlatformError(this.connection, id, "agent_platform_disconnected", 503, message);
+    }
+    this.pendingRequests.clear();
+  }
+
+  private closeSocket(code: number, reason: string) {
+    const socket = this.ws;
+    this.ws = null;
+    if (!socket) {
+      return;
+    }
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onclose = null;
+    socket.onerror = null;
+    try {
+      socket.close(code, reason);
+    } catch {
+      // Ignore close failures for sockets that are already closed.
+    }
+  }
+
+  private isSocketOpen(socket: MinimalWebSocket) {
+    return typeof socket.readyState !== "number" || socket.readyState === WS_OPEN_STATE;
+  }
+
+  private eventDetail(event: unknown) {
+    const record = asRecord(event);
+    const parts: string[] = [];
+    if (typeof record.type === "string" && record.type) {
+      parts.push(`type=${record.type}`);
+    }
+    if (typeof record.code === "number") {
+      parts.push(`code=${record.code}`);
+    }
+    if (typeof record.reason === "string" && record.reason) {
+      parts.push(`reason=${record.reason}`);
+    }
+    if (typeof record.message === "string" && record.message) {
+      parts.push(`message=${record.message}`);
+    }
+    return parts.join(" ");
+  }
 }
 
 function closeConnection(record: DesktopWsServerRecord, connection: DesktopWsConnection, code = 1000, reason = "closed") {
@@ -417,6 +760,8 @@ function closeConnection(record: DesktopWsServerRecord, connection: DesktopWsCon
     return;
   }
   connection.closed = true;
+  connection.agentPlatformBridge?.close();
+  connection.agentPlatformBridge = null;
   if (connection.heartbeatTimer) {
     clearInterval(connection.heartbeatTimer);
     connection.heartbeatTimer = null;
@@ -692,8 +1037,30 @@ function handleTextMessage(options: DesktopWsServerOptions, connection: DesktopW
     sendError(connection, undefined, "invalid_request", 400, "invalid JSON frame");
     return;
   }
+  const namespace = readNamespace(parsed);
+  if (namespace !== DESKTOP_WS_NAMESPACE_DESKTOP && namespace !== DESKTOP_WS_NAMESPACE_AGENT_PLATFORM) {
+    sendError(
+      connection,
+      readText(parsed.id) || undefined,
+      "invalid_namespace",
+      400,
+      `unknown namespace: ${namespace}`,
+      {
+        namespaceField: DESKTOP_WS_NAMESPACE_FIELD,
+        namespaces: DESKTOP_WS_NAMESPACES
+      }
+    );
+    return;
+  }
   if (parsed.frame !== "request") {
     sendError(connection, readText(parsed.id) || undefined, "invalid_request", 400, "only request frames are accepted");
+    return;
+  }
+  if (namespace === DESKTOP_WS_NAMESPACE_AGENT_PLATFORM) {
+    if (!connection.agentPlatformBridge) {
+      connection.agentPlatformBridge = new AgentPlatformWsBridge(options, connection, activeServer?.logger ?? console);
+    }
+    void connection.agentPlatformBridge.forwardRequest(parsed);
     return;
   }
   void handleRequest(options, connection, parsed).catch((error) => {
@@ -718,7 +1085,8 @@ function bindConnection(record: DesktopWsServerRecord, options: DesktopWsServerO
     buffer: Buffer.alloc(0),
     subscriptions: new Set(),
     closed: false,
-    heartbeatTimer: null
+    heartbeatTimer: null,
+    agentPlatformBridge: null
   };
   record.connections.add(connection);
   sendPush(connection, "connected", { sessionId: connection.id });
