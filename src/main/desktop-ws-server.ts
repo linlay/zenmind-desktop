@@ -906,6 +906,9 @@ async function handleRequest(options: DesktopWsServerOptions, connection: Deskto
         sessionId: connection.id,
         protocolVersion: 1,
         server: "desktop-ws",
+        namespaceField: DESKTOP_WS_NAMESPACE_FIELD,
+        defaultNamespace: DESKTOP_WS_NAMESPACE_DESKTOP,
+        namespaces: DESKTOP_WS_NAMESPACES,
         deviceId: getDesktopDeviceId(options.app),
         auth: {
           subject: connection.auth.subject,
@@ -934,6 +937,9 @@ async function handleRequest(options: DesktopWsServerOptions, connection: Deskto
     }
     case "capability.list":
       sendResponse(connection, type, id, {
+        namespaceField: DESKTOP_WS_NAMESPACE_FIELD,
+        defaultNamespace: DESKTOP_WS_NAMESPACE_DESKTOP,
+        namespaces: DESKTOP_WS_NAMESPACES,
         requestTypes: DESKTOP_WS_REQUEST_TYPES,
         implementedRequestTypes: DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
         pushTypes: DESKTOP_WS_PUSH_TYPES,

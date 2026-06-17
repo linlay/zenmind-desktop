@@ -2273,6 +2273,10 @@ function registerIpcHandlers(context: MainProcessContext) {
     desktopActionOptions,
     assistantBridge,
     getTaskBoardRuntime: () => state.taskBoardRuntime,
+    agentPlatformBridge: {
+      getServiceState: getResponsiveServiceState,
+      issueAccessToken: issueAgentAccessToken
+    },
     logger: console
   }).catch((error) => {
     safeConsoleError("failed to start Desktop WS server", {
