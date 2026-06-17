@@ -1,0 +1,34 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+const projectRoot = process.cwd();
+
+function readPluginPageSource() {
+  return fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+    "utf8",
+  );
+}
+
+test("plugin page does not sync API resource navigations back into the embedded app router", () => {
+  const pluginPage = readPluginPageSource();
+  const routeSyncBlock = pluginPage.slice(
+    pluginPage.indexOf("function isPluginRouteSyncTarget"),
+    pluginPage.indexOf("function resolvePluginCurrentUrl"),
+  );
+  const navigationHandlerBlock = pluginPage.slice(
+    pluginPage.indexOf("const syncNavigationRoute = (event: Event) =>"),
+    pluginPage.indexOf("const handleDidFailLoad = () =>"),
+  );
+
+  assert.match(pluginPage, /function isPluginRouteSyncTarget/);
+  assert.match(routeSyncBlock, /pathname === "\/api"/);
+  assert.match(routeSyncBlock, /pathname\.startsWith\("\/api\/"\)/);
+  assert.match(routeSyncBlock, /pathname === "\/ws"/);
+  assert.match(routeSyncBlock, /pathname === "\/runtime-config\.js"/);
+  assert.match(navigationHandlerBlock, /readEventBoolean\(event, "isMainFrame"\) !== false/);
+  assert.match(navigationHandlerBlock, /isPluginRouteSyncTarget\(nextUrl, webviewSrcUrl\)/);
+  assert.match(navigationHandlerBlock, /sendPluginRouteToWebview\(resolvedUrl, "navigation"\)/);
+});
