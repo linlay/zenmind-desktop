@@ -2598,9 +2598,13 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(marketPage, /skillDownloadCommand/);
 });
 
-test("built index uses relative asset paths", () => {
-  const builtIndex = fs.readFileSync(path.join(projectRoot, "dist-renderer", "index.html"), "utf8");
-  const sourceIndex = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
+test("built index uses relative asset paths", (t) => {
+  const builtIndexPath = path.join(projectRoot, "dist-renderer", "index.html");
+  if (!fs.existsSync(builtIndexPath)) {
+    t.skip("dist-renderer output is not built");
+    return;
+  }
+  const builtIndex = fs.readFileSync(builtIndexPath, "utf8");
   const brand = readJsonFile("build", "generated", "brand.json");
   const petProtocol = `${brand.id}-pet:`;
   const exactPetProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(petProtocol)}`, "u");
@@ -2608,8 +2612,8 @@ test("built index uses relative asset paths", () => {
   assert.doesNotMatch(builtIndex, /src="\/assets\//);
   assert.doesNotMatch(builtIndex, /href="\/assets\//);
   assert.match(builtIndex, /(src|href)="\.?\/?assets\//);
-  assert.match(sourceIndex, exactPetProtocolPattern);
   assert.match(builtIndex, exactPetProtocolPattern);
+  assert.match(builtIndex, new RegExp(`<title>${escapeRegExp(brand.productName)}</title>`, "u"));
 
   for (const entry of fs.readdirSync(path.join(projectRoot, "brands"), { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === brand.id) {
@@ -3850,10 +3854,6 @@ test("desktop pet visual states stay local to renderer priority", () => {
   const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
-  const petAssetScript = fs.readFileSync(
-    path.join(projectRoot, "scripts", "generate-desktop-pet-assets.mjs"),
-    "utf8"
-  );
   const viteConfig = readSourceFile("vite.config.ts");
 
   assert.match(desktopPetVisual, /"moving-left"/);
@@ -3986,59 +3986,16 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(contracts, /DesktopPetDanceRequestedListener/);
   assert.match(contracts, /setMouseInteractive: \(interactive: boolean\) => Promise<\{ ok: boolean \}>/);
   assert.match(contracts, /onSignatureRequested: \(listener: DesktopPetSignatureRequestedListener\) => \(\) => void/);
-  assert.doesNotMatch(petAssetScript, /"dragging-moving"/);
-  assert.doesNotMatch(petAssetScript, /"drag-moving"/);
-  assert.match(petAssetScript, /"moving-left"/);
-  assert.match(petAssetScript, /ZENMIND_PETS_ROOT/);
-  assert.match(petAssetScript, /marketPetPackageDirectory/);
-  assert.match(petAssetScript, /marketPetSourceDirectory/);
-  assert.match(petAssetScript, /path\.join\(marketPetRootDirectory,\s*"dist"\)/);
-  assert.match(petAssetScript, /new JSZip\(\)/);
-  assert.match(petAssetScript, /"dario"/);
-  assert.match(petAssetScript, /"sama"/);
-  assert.match(petAssetScript, /"xiao"/);
-  assert.match(petAssetScript, /"pony"/);
-  assert.doesNotMatch(petAssetScript, /signatureActions/);
-  assert.match(petAssetScript, /signature:\s*\[/);
-  assert.match(petAssetScript, /id:\s*"xiao"/);
-  assert.match(petAssetScript, /spritesheet-source\.png/);
-  assert.match(petAssetScript, /drag-moving-source\.png/);
-  assert.doesNotMatch(petAssetScript, /task-run-left-source\.png/);
-  assert.match(petAssetScript, /verifyDefaultBrandPetAssets/);
-  assert.doesNotMatch(petAssetScript, /copyDefaultBrandPetAssets/);
-  assert.doesNotMatch(petAssetScript, /public["'],\s*["']desktop-pet/);
+  assert.doesNotMatch(sharedDesktopPet, /displayName:\s*"小凌"/);
+  assert.match(viteConfig, /name:\s*"brand-renderer-index"/);
+  assert.match(viteConfig, /transformIndexHtml\(html\)/);
+  assert.match(viteConfig, /renderRendererIndexHtml\(html,\s*brand\)/);
   assert.match(viteConfig, /name:\s*"brand-desktop-pet-assets"/);
   assert.match(viteConfig, /BRAND_DESKTOP_PET_URL_PREFIX = "\/desktop-pet\/"/);
   assert.match(viteConfig, /server\.middlewares\.use\(serveBrandDesktopPetAsset\)/);
   assert.match(viteConfig, /copyBrandDesktopPetAssets\(\{[\s\S]{0,220}dist-renderer"[\s\S]{0,120}"desktop-pet"/);
   assert.match(viteConfig, /brand\.source\.desktopPetRoot/);
   assert.doesNotMatch(viteConfig, /public["'],\s*["']desktop-pet/);
-  assert.doesNotMatch(sharedDesktopPet, /displayName:\s*"小凌"/);
-  assert.match(petAssetScript, /displayName:\s*"小凌"/);
-  assert.match(petAssetScript, /"moving-left":\s*\{\s*row:\s*2,\s*column:\s*2\s*\}/);
-  assert.match(petAssetScript, /ctx\.scale\(-1,\s*1\)/);
-  assert.match(petAssetScript, /dario-a7bdc389/);
-  assert.match(petAssetScript, /mini-sama-3ee267a2/);
-  assert.doesNotMatch(petAssetScript, /task-run-left\.webp/);
-  assert.match(petAssetScript, /moving-left\.webp/);
-  assert.match(petAssetScript, /signature\/dance\.webp/);
-  assert.match(petAssetScript, /function renderXiaoMovingLeftSprite/);
-  assert.match(petAssetScript, /function renderXiaoSpritesheet/);
-  assert.match(
-    petAssetScript,
-    /const defaultSourceAssetDirectory = path\.join\(\s*projectRoot,\s*brand\.source\.desktopPetRoot\s*\);/
-  );
-  assert.doesNotMatch(petAssetScript, /defaultBuiltInPetId/);
-  assert.doesNotMatch(petAssetScript, /brand\.id === "cutej"/);
-  assert.match(petAssetScript, /"awaiting"/);
-  assert.match(petAssetScript, /"running"/);
-  assert.match(petAssetScript, /"jumping"/);
-  assert.match(petAssetScript, /"review"/);
-  assert.match(petAssetScript, /"failed"/);
-  assert.doesNotMatch(petAssetScript, /"idle-alts"/);
-  assert.doesNotMatch(petAssetScript, /"thinking"/);
-  assert.doesNotMatch(petAssetScript, /"message"/);
-  assert.match(petAssetScript, /function drawHoverArm/);
 });
 
 test("desktop sso waits for a user click and keeps pending login recoverable", () => {

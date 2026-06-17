@@ -58,20 +58,14 @@ export function loadBrandConfig(rootDir = process.cwd(), brandId = resolveBrandI
 
 export function syncBrandArtifacts({
   rootDir = process.cwd(),
-  brandId = resolveBrandId(),
-  writePackageMetadata = true
+  brandId = resolveBrandId()
 } = {}) {
   const brand = loadBrandConfig(rootDir, brandId);
 
   writeGeneratedBrandFiles(rootDir, brand);
-  writeRendererIndexHtml(rootDir, brand);
   writeElectronBuilderConfig(rootDir, brand);
   writeInstallerInclude(rootDir, brand);
   writeMacUninstallScript(rootDir, brand);
-
-  if (writePackageMetadata) {
-    syncPackageMetadata(rootDir, brand);
-  }
 
   return brand;
 }
@@ -257,7 +251,12 @@ function rendererIndexProblems(rootDir, brand) {
   if (existsProblems.length > 0) {
     return existsProblems;
   }
-  return htmlBrandProblems(fs.readFileSync(indexPath, "utf8"), "index.html", brand, rootDir);
+  return htmlBrandProblems(
+    renderRendererIndexHtml(fs.readFileSync(indexPath, "utf8"), brand),
+    "rendered index.html",
+    brand,
+    rootDir
+  );
 }
 
 function filesHaveSameBytes(leftPath, rightPath) {
@@ -812,7 +811,7 @@ function defaultRendererIndexHtml(brand) {
   ].join("\n");
 }
 
-function updateRendererIndexHtmlContent(content, brand) {
+export function renderRendererIndexHtml(content, brand) {
   const petProtocol = `${rendererPetProtocol(brand)}:`;
   let next = content.replace(/<title>[\s\S]*?<\/title>/u, () =>
     `<title>${escapeHtmlText(brand.productName)}</title>`
@@ -829,14 +828,6 @@ function updateRendererIndexHtmlContent(content, brand) {
   });
 
   return next;
-}
-
-function writeRendererIndexHtml(rootDir, brand) {
-  const indexPath = path.join(rootDir, "index.html");
-  const content = fs.existsSync(indexPath)
-    ? updateRendererIndexHtmlContent(fs.readFileSync(indexPath, "utf8"), brand)
-    : defaultRendererIndexHtml(brand);
-  writeFileIfChanged(indexPath, content);
 }
 
 function electronBuilderConfig(brand) {
@@ -886,9 +877,8 @@ function electronBuilderConfig(brand) {
         to: "tray-icon.png"
       },
       {
-        from: "scripts",
-        to: ".",
-        filter: ["uninstall.sh"]
+        from: "build/generated/uninstall.sh",
+        to: "uninstall.sh"
       }
     ],
     mac: {
@@ -918,26 +908,6 @@ function electronBuilderConfig(brand) {
 
 function writeElectronBuilderConfig(rootDir, brand) {
   writeJson(electronBuilderConfigPath(rootDir, brand.id), electronBuilderConfig(brand));
-}
-
-function syncPackageMetadata(rootDir, brand) {
-  const packagePath = path.join(rootDir, "package.json");
-  const packageJson = readJson(packagePath);
-  packageJson.name = brand.packageName;
-  packageJson.description = brand.description;
-  delete packageJson.build;
-  writeJson(packagePath, packageJson);
-
-  const lockPath = path.join(rootDir, "package-lock.json");
-  if (!fs.existsSync(lockPath)) {
-    return;
-  }
-  const packageLock = readJson(lockPath);
-  packageLock.name = brand.packageName;
-  if (packageLock.packages?.[""]) {
-    packageLock.packages[""].name = brand.packageName;
-  }
-  writeJson(lockPath, packageLock);
 }
 
 function escapeNsisText(value) {
@@ -1070,7 +1040,7 @@ fi
 
 printf '%s\\n' "$APP_NAME uninstall finished."
 `;
-  const scriptPath = path.join(rootDir, "scripts", "uninstall.sh");
+  const scriptPath = path.join(rootDir, "build", "generated", "uninstall.sh");
   writeFileIfChanged(scriptPath, content);
   fs.chmodSync(scriptPath, 0o755);
 }

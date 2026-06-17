@@ -8,6 +8,7 @@ import process from "node:process";
 import {
   copyBrandDesktopPetAssets,
   loadBrandConfig,
+  renderRendererIndexHtml,
   resolveBrandId
 } from "./scripts/lib/brand-config.mjs";
 
@@ -106,9 +107,18 @@ function brandDesktopPetPlugin(): Plugin {
   };
 }
 
+function brandRendererIndexPlugin(): Plugin {
+  return {
+    name: "brand-renderer-index",
+    transformIndexHtml(html) {
+      return renderRendererIndexHtml(html, brand);
+    }
+  };
+}
+
 export default defineConfig({
   base: "./",
-  plugins: [brandDesktopPetPlugin(), react()],
+  plugins: [brandRendererIndexPlugin(), brandDesktopPetPlugin(), react()],
   resolve: {
     alias: {
       "@renderer": path.resolve(projectRoot, "src/renderer"),

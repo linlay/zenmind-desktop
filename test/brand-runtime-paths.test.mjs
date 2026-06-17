@@ -11,6 +11,7 @@ import {
   copyBrandDesktopPetAssets,
   loadBrandConfig,
   removeStaleRendererBuild,
+  renderRendererIndexHtml,
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
 import { renderAppIconToPng, renderBrandMarkToPng } from "../scripts/generate-app-icons.mjs";
@@ -70,6 +71,8 @@ function createBrandFixture(t) {
     "utf8"
   );
   fs.copyFileSync(path.join(projectRoot, "index.html"), path.join(root, "index.html"));
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  fs.copyFileSync(path.join(projectRoot, "scripts", "uninstall.sh"), path.join(root, "scripts", "uninstall.sh"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 }
@@ -129,7 +132,11 @@ function assertDirectoryBytesEqual(actualRoot, expectedRoot) {
 function writeMinimalDistRenderer(root, brand) {
   const rendererRoot = path.join(root, "dist-renderer");
   fs.mkdirSync(rendererRoot, { recursive: true });
-  fs.copyFileSync(path.join(root, "index.html"), path.join(rendererRoot, "index.html"));
+  fs.writeFileSync(
+    path.join(rendererRoot, "index.html"),
+    renderRendererIndexHtml(fs.readFileSync(path.join(root, "index.html"), "utf8"), brand),
+    "utf8"
+  );
   fs.copyFileSync(path.join(root, brand.icons.trayIconSvg), path.join(rendererRoot, "tray-icon.svg"));
   return rendererRoot;
 }
@@ -395,6 +402,10 @@ test("generated active brand app icon PNGs keep the rounded brand backdrop", asy
     path.join(projectRoot, "build", "icons", "icon-256.png"),
     path.join(projectRoot, "build", "icons", "icon.png")
   ]) {
+    if (!fs.existsSync(iconPath)) {
+      t.skip(`${path.relative(projectRoot, iconPath)} is not generated`);
+      return;
+    }
     const stats = await inspectPngPixels(iconPath);
     assertRoundedWhiteBackdrop(stats, `${iconPath} for ${activeBrandId}`);
     assertComfortableTileSize(stats, `${iconPath} for ${activeBrandId}`);
@@ -411,7 +422,12 @@ test("generated active brand mark PNG keeps transparent header foreground", asyn
     return;
   }
   const activeBrandId = readJson(generatedBrandPath).id;
-  const stats = await inspectPngPixels(path.join(projectRoot, "public", "brand-mark.png"));
+  const brandMarkPath = path.join(projectRoot, "public", "brand-mark.png");
+  if (!fs.existsSync(brandMarkPath)) {
+    t.skip("generated public/brand-mark.png is not active");
+    return;
+  }
+  const stats = await inspectPngPixels(brandMarkPath);
   assertTransparentBrandMark(stats, `public/brand-mark.png for ${activeBrandId}`);
 });
 
@@ -511,14 +527,17 @@ test("brand consistency guard accepts active dist-renderer desktop pet output", 
 
 test("brand sync writes CuteJ isolated runtime paths into generated artifacts", (t) => {
   const root = createBrandFixture(t);
+  const sourcePackageBefore = fs.readFileSync(path.join(root, "package.json"), "utf8");
+  const sourceIndexBefore = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const sourceUninstallBefore = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
 
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
   const expectedPet = readBrandDesktopPetManifest(root, "cutej");
   const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
   const electronBuilderConfig = readJson(path.join(root, "build", "electron-builder.cutej.json"));
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
-  const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
-  const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const uninstallScript = fs.readFileSync(path.join(root, "build", "generated", "uninstall.sh"), "utf8");
+  const rendererIndex = renderRendererIndexHtml(fs.readFileSync(path.join(root, "index.html"), "utf8"), brand);
 
   assert.equal(brand.paths.runtimeRootDirName, ".cutej");
   assert.equal(brand.storageNamespace, "cutej-desktop");
@@ -529,6 +548,9 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(generatedBrand.paths.programDataDirName, "CuteJ");
   assert.deepEqual(generatedBrand.desktopPet, expectedPet);
   assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet")), false);
+  assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), sourcePackageBefore);
+  assert.equal(fs.readFileSync(path.join(root, "index.html"), "utf8"), sourceIndexBefore);
+  assert.equal(fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8"), sourceUninstallBefore);
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === "build/resources/demo" && item.to === "demo"),
     true
@@ -539,6 +561,10 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   );
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === "public/brand-mark.png" && item.to === "brand-mark.png"),
+    true
+  );
+  assert.equal(
+    electronBuilderConfig.extraResources.some((item) => item.from === "build/generated/uninstall.sh" && item.to === "uninstall.sh"),
     true
   );
   assert.match(installerInclude, /%APPDATA%\\CuteJ/u);
@@ -552,13 +578,16 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
 
 test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) => {
   const root = createBrandFixture(t);
+  const sourcePackageBefore = fs.readFileSync(path.join(root, "package.json"), "utf8");
+  const sourceIndexBefore = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const sourceUninstallBefore = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
 
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
   const expectedPet = readBrandDesktopPetManifest(root, "zenmind");
   const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
-  const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
-  const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const uninstallScript = fs.readFileSync(path.join(root, "build", "generated", "uninstall.sh"), "utf8");
+  const rendererIndex = renderRendererIndexHtml(fs.readFileSync(path.join(root, "index.html"), "utf8"), brand);
 
   assert.equal(brand.paths.runtimeRootDirName, ".zenmind");
   assert.equal(brand.storageNamespace, "zenmind-desktop");
@@ -568,6 +597,9 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.equal(generatedBrand.paths.programDataDirName, "ZenMind");
   assert.deepEqual(generatedBrand.desktopPet, expectedPet);
   assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet")), false);
+  assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), sourcePackageBefore);
+  assert.equal(fs.readFileSync(path.join(root, "index.html"), "utf8"), sourceIndexBefore);
+  assert.equal(fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8"), sourceUninstallBefore);
   assert.match(installerInclude, /%APPDATA%\\ZenMind/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
@@ -575,19 +607,22 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.doesNotMatch(rendererIndex, /cutej-pet:/u);
 });
 
-test("default desktop pet assets are brand-owned, not script-owned", () => {
-  const generator = fs.readFileSync(path.join(projectRoot, "scripts", "generate-desktop-pet-assets.mjs"), "utf8");
+test("default desktop pet assets are brand-owned after generator removal", () => {
+  const removedPetGenerator = path.join(projectRoot, "scripts", `generate-${["desktop", "pet", "assets"].join("-")}.mjs`);
+  const removedPetAssetRoot = path.join(projectRoot, "scripts", "assets", "desktop-pet");
 
   assert.equal(fs.existsSync(path.join(projectRoot, "brands", "zenmind", "desktop-pet", "pet.json")), true);
   assert.equal(fs.existsSync(path.join(projectRoot, "brands", "cutej", "desktop-pet", "pet.json")), true);
-  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "assets", "desktop-pet", "zenmi")), false);
-  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "assets", "desktop-pet", "cutej")), false);
-  assert.match(generator, /brand\.source\.desktopPetRoot/u);
-  assert.match(generator, /verifyDefaultBrandPetAssets/u);
-  assert.doesNotMatch(generator, /public["'],\s*["']desktop-pet/u);
-  assert.doesNotMatch(generator, /copyDefaultBrandPetAssets/u);
-  assert.doesNotMatch(generator, /defaultBuiltInPetId/u);
-  assert.doesNotMatch(generator, /brand\.id === "cutej"/u);
+  assert.equal(fs.existsSync(removedPetGenerator), false);
+  assert.equal(fs.existsSync(removedPetAssetRoot), false);
+});
+
+test("brand mark is an ignored generated runtime asset", () => {
+  const gitignore = fs.readFileSync(path.join(projectRoot, ".gitignore"), "utf8");
+  const iconGenerator = fs.readFileSync(path.join(projectRoot, "scripts", "generate-app-icons.mjs"), "utf8");
+
+  assert.match(gitignore, /^public\/brand-mark\.png$/mu);
+  assert.match(iconGenerator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-mark\.png"\),\s*brandMarkPng\)/u);
 });
 
 test("brand manifest rejects mismatched explicit runtimeRootDirName", (t) => {
