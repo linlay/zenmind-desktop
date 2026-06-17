@@ -37,6 +37,7 @@ type OidcConfig = {
   clientSecret?: string;
   redirectUri: string;
   scope?: string;
+  prompt?: string;
   wellKnownUrl: string;
   logoutUrl: string;
   logoutCallbackUri: string;
@@ -235,6 +236,7 @@ const OIDC_CONFIG_STRING_FIELDS = [
   "clientSecret",
   "redirectUri",
   "scope",
+  "prompt",
   "wellKnownUrl",
   "logoutUrl",
   "logoutCallbackUri"
@@ -1313,8 +1315,9 @@ function buildAuthorizeUrl(
     url.searchParams.set("code_challenge", options.codeChallenge);
     url.searchParams.set("code_challenge_method", "S256");
   }
-  if (!isGoogleOidcConfig(config)) {
-    url.searchParams.set("prompt", "login");
+  const prompt = config.prompt?.trim();
+  if (prompt) {
+    url.searchParams.set("prompt", prompt);
   }
   return url.toString();
 }

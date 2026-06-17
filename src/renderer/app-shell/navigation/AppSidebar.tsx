@@ -646,12 +646,17 @@ function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
         className="app-sidebar-collapse-button-icon-chevron"
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
         aria-hidden="true"
         focusable="false"
       >
-        <rect x="4" y="5" width="16" height="14" rx="3.5" />
-        <path d="M9 5v14" />
-        <path d={arrowPath} />
+        <rect x="4" y="5" width="16" height="14" rx="3.5" fill="none" />
+        <path d="M9 5v14" fill="none" />
+        <path d={arrowPath} fill="none" />
       </svg>
     );
   }
@@ -661,12 +666,17 @@ function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
       className="app-sidebar-collapse-button-icon-panel"
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
     >
-      <rect x="4" y="5" width="16" height="14" rx="3.5" />
-      <path d="M9 5v14" />
-      <path d={arrowPath} />
+      <rect x="4" y="5" width="16" height="14" rx="3.5" fill="none" />
+      <path d="M9 5v14" fill="none" />
+      <path d={arrowPath} fill="none" />
     </svg>
   );
 }

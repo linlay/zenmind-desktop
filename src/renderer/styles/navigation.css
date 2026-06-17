@@ -2284,6 +2284,14 @@
   stroke-linejoin: round;
 }
 
+.app-sidebar-collapse-button-icon-panel rect,
+.app-sidebar-collapse-button-icon-panel path,
+.app-sidebar-collapse-button-icon-chevron rect,
+.app-sidebar-collapse-button-icon-chevron path {
+  fill: none;
+  stroke: currentColor;
+}
+
 .app-sidebar-collapse-button-icon-chevron::before {
   content: "";
 }

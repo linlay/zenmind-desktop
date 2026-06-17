@@ -597,6 +597,10 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(sidebarSource, /app-sidebar-collapse-button-icon-panel/);
   assert.match(sidebarSource, /app-sidebar-collapse-button-icon-chevron/);
   assert.match(collapseToggleIconSource, /viewBox="0 0 24 24"/);
+  assert.match(collapseToggleIconSource, /fill="none"/);
+  assert.match(collapseToggleIconSource, /stroke="currentColor"/);
+  assert.match(collapseToggleIconSource, /<rect[^>]*fill="none"/);
+  assert.match(collapseToggleIconSource, /<path[^>]*fill="none"/);
   assert.doesNotMatch(collapseToggleIconSource, /viewBox="0 -960 960 960"/);
   assert.doesNotMatch(collapseToggleIconSource, /fill="currentColor"/);
   assert.match(sidebarSource, /<SidebarCollapseToggleIcon isCollapsed=\{isCollapsed\} \/>/);
@@ -646,6 +650,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron::before/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel rect,[\s\S]*?\.app-sidebar-collapse-button-icon-chevron path\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;/);
   assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar button[\s\S]*?\{[\s\S]*?app-region:\s*no-drag;/);
 });

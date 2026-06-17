@@ -132,8 +132,18 @@ test("desktop sso authorize and logout URLs use standard OIDC defaults", () => {
   assert.equal(authorizeUrl.searchParams.get("redirect_uri"), "http://localhost:8080/api/auth/oidc/callback");
   assert.equal(authorizeUrl.searchParams.get("scope"), "openid email profile");
   assert.equal(authorizeUrl.searchParams.get("code_challenge"), "challenge-1");
+  assert.equal(authorizeUrl.searchParams.has("prompt"), false);
 
   const logoutUrl = new URL(__testInternals.buildLogoutUrl(config));
   assert.equal(logoutUrl.searchParams.get("post_logout_redirect_uri"), "http://localhost:8080/api/auth/oidc/logout-callback");
   assert.equal(logoutUrl.searchParams.has("callback"), false);
+});
+
+test("desktop sso authorize URL keeps explicit OIDC prompt", () => {
+  const config = {
+    ...__testInternals.DEFAULT_OIDC_CONFIG,
+    prompt: "login"
+  };
+  const authorizeUrl = new URL(__testInternals.buildAuthorizeUrl("state-1", config));
+  assert.equal(authorizeUrl.searchParams.get("prompt"), "login");
 });
