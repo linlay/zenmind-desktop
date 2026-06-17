@@ -1303,6 +1303,8 @@ test("startup env import overlay uses packaged-relative brand icon", () => {
   assert.match(envImportOverlay, /<BrandMark className="brand-logo-image"/);
   assert.doesNotMatch(envImportOverlay, /src=["']\/brand-icon\.png["']/);
   assert.match(brandMark, /src=\{`\.\//);
+  assert.match(brandMark, /APP_ICON_ASSET_FILENAMES\.brandMark/);
+  assert.doesNotMatch(brandMark, /APP_ICON_ASSET_FILENAMES\.brandIcon/);
 });
 
 test("settings page scopes notices to the active section and keeps load failures in-section", () => {

@@ -69,7 +69,7 @@ const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
 export function BrandMark({ className, ariaLabel }: BrandMarkProps) {
   return (
     <img
-      src={`./${APP_ICON_ASSET_FILENAMES.brandIcon}`}
+      src={`./${APP_ICON_ASSET_FILENAMES.brandMark}`}
       alt={ariaLabel ?? "品牌标识"}
       className={className}
       style={{

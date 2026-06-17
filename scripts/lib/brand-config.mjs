@@ -292,7 +292,7 @@ function distRendererProblems(rootDir, brand) {
     problems.push(`dist-renderer/tray-icon.svg does not match ${brand.icons.trayIconSvg}`);
   }
 
-  for (const fileName of ["brand-icon.png", "tray-icon.png"]) {
+  for (const fileName of ["brand-icon.png", "brand-mark.png", "tray-icon.png"]) {
     const publicPath = path.join(rootDir, "public", fileName);
     const distPath = path.join(rendererRoot, fileName);
     if (fs.existsSync(publicPath) && fs.existsSync(distPath) && !filesHaveSameBytes(publicPath, distPath)) {
@@ -310,6 +310,7 @@ function publicIconProblems(rootDir, brand) {
 
   problems.push(
     ...assertNonEmptyFile(path.join(rootDir, "public", "brand-icon.png"), "public/brand-icon.png"),
+    ...assertNonEmptyFile(path.join(rootDir, "public", "brand-mark.png"), "public/brand-mark.png"),
     ...assertNonEmptyFile(path.join(rootDir, "public", "tray-icon.png"), "public/tray-icon.png"),
     ...assertFileExists(publicTrayIconSvgPath, "public/tray-icon.svg")
   );
@@ -790,6 +791,10 @@ function electronBuilderConfig(brand) {
       {
         from: "public/brand-icon.png",
         to: "brand-icon.png"
+      },
+      {
+        from: "public/brand-mark.png",
+        to: "brand-mark.png"
       },
       {
         from: "public/tray-icon.png",

@@ -12,7 +12,7 @@ import {
   removeStaleRendererBuild,
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
-import { renderAppIconToPng } from "../scripts/generate-app-icons.mjs";
+import { renderAppIconToPng, renderBrandMarkToPng } from "../scripts/generate-app-icons.mjs";
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
 import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
 import { removeRendererWebappTemplatesFromStage } from "../scripts/stage-app.mjs";
@@ -77,6 +77,7 @@ function writeMinimalPublicIconArtifacts(root, brand) {
   fs.mkdirSync(path.join(root, "public"), { recursive: true });
   fs.copyFileSync(path.join(root, brand.icons.trayIconSvg), path.join(root, "public", "tray-icon.svg"));
   fs.writeFileSync(path.join(root, "public", "brand-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  fs.writeFileSync(path.join(root, "public", "brand-mark.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   fs.writeFileSync(path.join(root, "public", "tray-icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 }
 
@@ -118,8 +119,8 @@ function inspectCanvasPixels(canvas) {
   const isBackdropPixel = (red, green, blue, alpha) => (
     alpha > 0 &&
     red >= 248 &&
-    green >= 244 &&
-    blue >= 228
+    green >= 248 &&
+    blue >= 248
   );
   let opaquePixels = 0;
   let opaqueNeutralGrayPixels = 0;
@@ -223,9 +224,9 @@ function assertRoundedWhiteBackdrop(stats, label) {
   }
   assert.equal(stats.nearCornerSample[3], 0, `${label} should have transparent rounded-corner padding`);
   for (const sample of [stats.topCenterSample, stats.innerBackdropSample]) {
-    assert.equal(sample[3], 255, `${label} should keep an opaque rounded ivory backdrop`);
-    assert(sample[0] >= 250 && sample[1] >= 246 && sample[2] >= 232, `${label} should keep a light ivory rounded backdrop`);
-    assert(sample[0] - sample[2] >= 8, `${label} backdrop should be warmer than pure white`);
+    assert.equal(sample[3], 255, `${label} should keep an opaque rounded light backdrop`);
+    assert(sample[0] >= 248 && sample[1] >= 248 && sample[2] >= 248, `${label} should keep a light rounded backdrop`);
+    assert(sample[0] <= 253 && sample[1] <= 253 && sample[2] <= 253, `${label} backdrop should use #FCFCFC instead of pure white`);
   }
 }
 
@@ -252,6 +253,18 @@ function assertComfortableForegroundSize(stats, label) {
 function assertNoGrayTile(stats, label) {
   const grayRatio = stats.opaqueNeutralGrayPixels / Math.max(stats.opaquePixels, 1);
   assert(grayRatio <= 0.001, `${label} should not contain a gray app tile: ${grayRatio.toFixed(4)}`);
+}
+
+function assertTransparentBrandMark(stats, label) {
+  for (const cornerSample of stats.cornerSamples) {
+    assert.equal(cornerSample[3], 0, `${label} should keep transparent outer corners`);
+  }
+  assert(stats.opaqueBounds, `${label} should contain visible brand foreground art`);
+  const opaqueRatio = stats.opaquePixels / (stats.width * stats.height);
+  assert(opaqueRatio >= 0.06, `${label} brand mark is too sparse: ${opaqueRatio.toFixed(3)}`);
+  assert(opaqueRatio <= 0.55, `${label} should not include an app-icon tile backdrop: ${opaqueRatio.toFixed(3)}`);
+  assert(stats.opaqueBounds.width / stats.width <= 0.96, `${label} should not fill the full app-icon canvas width`);
+  assert(stats.opaqueBounds.height / stats.height <= 0.9, `${label} should not fill the full app-icon canvas height`);
 }
 
 test("brand runtime root directory is derived from brand id", () => {
@@ -293,13 +306,15 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
   assert.match(generator, /APP_ICON_BASE_SIZE\s*=\s*1024/u);
   assert.match(generator, /APP_ICON_TILE_SIZE\s*=\s*840/u);
   assert.match(generator, /APP_ICON_CORNER_RADIUS\s*=\s*232/u);
-  assert.match(generator, /APP_ICON_TILE_FILL\s*=\s*"#FFFBEF"/u);
+  assert.match(generator, /APP_ICON_TILE_FILL\s*=\s*"#FCFCFC"/u);
   assert.match(generator, /APP_ICON_FOREGROUND_SIZE\s*=\s*800/u);
   assert.match(generator, /renderAppIconToPng\(appIconSvg,\s*size\)/u);
+  assert.match(generator, /renderBrandMarkToPng\(appIconSvg,\s*256\)/u);
   assert.doesNotMatch(generator, /renderTransparentAppIconToPng/u);
   assert.doesNotMatch(generator, /removeRootWhiteBackground/u);
   assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"tray-icon\.png"\),\s*trayPng\)/u);
   assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-icon\.png"\),\s*renderedAppPngs\.get\(256\)\)/u);
+  assert.match(generator, /writeFileIfChanged\(path\.join\(publicDir,\s*"brand-mark\.png"\),\s*brandMarkPng\)/u);
 });
 
 test("brand app icon generation rounds the white backdrop for every brand", async () => {
@@ -312,6 +327,15 @@ test("brand app icon generation rounds the white backdrop for every brand", asyn
     assertComfortableForegroundSize(stats, `${brandId} app icon`);
     assertNoGrayTile(stats, `${brandId} app icon`);
     assert(stats.opaquePixels > stats.width * stats.height * 0.5, `${brandId} app icon should include a visible rounded backdrop`);
+  }
+});
+
+test("brand mark generation keeps header art transparent and brand-owned", async () => {
+  for (const brandId of ["zenmind", "cutej"]) {
+    const brand = loadBrandConfig(projectRoot, brandId);
+    const iconPath = path.join(projectRoot, brand.icons.appIconSvg);
+    const stats = await inspectPngBuffer(await renderBrandMarkToPng(fs.readFileSync(iconPath, "utf8"), 256));
+    assertTransparentBrandMark(stats, `${brandId} brand mark`);
   }
 });
 
@@ -335,6 +359,17 @@ test("generated active brand app icon PNGs keep the rounded brand backdrop", asy
     assertNoGrayTile(stats, `${iconPath} for ${activeBrandId}`);
     assert(stats.opaquePixels > stats.width * stats.height * 0.1, `${iconPath} should contain non-empty ${activeBrandId} icon art`);
   }
+});
+
+test("generated active brand mark PNG keeps transparent header foreground", async (t) => {
+  const generatedBrandPath = path.join(projectRoot, "build", "generated", "brand.json");
+  if (!fs.existsSync(generatedBrandPath)) {
+    t.skip("generated brand mark artifact is not active");
+    return;
+  }
+  const activeBrandId = readJson(generatedBrandPath).id;
+  const stats = await inspectPngPixels(path.join(projectRoot, "public", "brand-mark.png"));
+  assertTransparentBrandMark(stats, `public/brand-mark.png for ${activeBrandId}`);
 });
 
 test("brand consistency guard catches and clears stale dist-renderer output", (t) => {
@@ -412,6 +447,10 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   );
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === "public/brand-icon.png" && item.to === "brand-icon.png"),
+    true
+  );
+  assert.equal(
+    electronBuilderConfig.extraResources.some((item) => item.from === "public/brand-mark.png" && item.to === "brand-mark.png"),
     true
   );
   assert.match(installerInclude, /%APPDATA%\\CuteJ/u);

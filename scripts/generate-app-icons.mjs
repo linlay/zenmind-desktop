@@ -31,7 +31,7 @@ const publicTrayIconSvgPath = path.join(publicDir, "tray-icon.svg");
 const APP_ICON_BASE_SIZE = 1024;
 const APP_ICON_TILE_SIZE = 840;
 const APP_ICON_CORNER_RADIUS = 232;
-const APP_ICON_TILE_FILL = "#FFFBEF";
+const APP_ICON_TILE_FILL = "#FCFCFC";
 const APP_ICON_FOREGROUND_SIZE = 800;
 const pngSizes = [16, 32, 64, 128, 256, 512, 1024];
 const icoSizes = [16, 32, 48, 64, 128, 256];
@@ -223,6 +223,18 @@ async function renderSvgToPng(svg, size) {
   return canvas.toBuffer("image/png");
 }
 
+export async function renderBrandMarkToPng(svg, size) {
+  const canvas = createCanvas(size, size);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, size, size);
+
+  const foregroundSvg = extractAppIconForegroundSvg(svg);
+  const foregroundImage = await loadImage(Buffer.from(foregroundSvg));
+  context.drawImage(foregroundImage, 0, 0, size, size);
+
+  return canvas.toBuffer("image/png");
+}
+
 function drawRoundedRect(context, x, y, width, height, radius) {
   const boundedRadius = Math.min(radius, width / 2, height / 2);
   context.beginPath();
@@ -405,8 +417,11 @@ async function main() {
   }
   writeFileIfChanged(path.join(buildIconsDir, "icon.png"), renderedAppPngs.get(1024));
   writeFileIfChanged(path.join(publicDir, "brand-icon.png"), renderedAppPngs.get(256));
+  const brandMarkPng = await renderBrandMarkToPng(appIconSvg, 256);
+  writeFileIfChanged(path.join(publicDir, "brand-mark.png"), brandMarkPng);
   await assertNonTransparentPng("build/icons/icon-1024.png", renderedAppPngs.get(1024));
   await assertNonTransparentPng("public/brand-icon.png", renderedAppPngs.get(256));
+  await assertNonTransparentPng("public/brand-mark.png", brandMarkPng);
 
   if (process.platform === "darwin") {
     generateMacIconsetAndIcnsFromPng(path.join(buildIconsDir, "icon.png"));
