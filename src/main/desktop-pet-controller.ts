@@ -224,6 +224,15 @@ function resolveDesktopPetTaskTitle(chat: AssistantNavChatItem) {
     DESKTOP_PET_TASK_TITLE_FALLBACK;
 }
 
+// 同一个会话（chatId）可能出现在多个 agent 分组的 recentChats 中，按 chatId 去重时
+// 优先保留更需要用户处理的任务：awaiting 优先于 running，同状态下保留更新时间更晚的。
+function shouldReplaceDesktopPetTask(existing: DesktopPetTaskItem, next: DesktopPetTaskItem) {
+  if (existing.status !== next.status) {
+    return next.status === "awaiting";
+  }
+  return getDesktopPetTaskTimestamp(next.updatedAt) > getDesktopPetTaskTimestamp(existing.updatedAt);
+}
+
 export function createDesktopPetActiveTasksFromNavigationSnapshot(
   snapshot: { ok?: unknown; items?: unknown } | null | undefined
 ): DesktopPetTaskItem[] {
@@ -231,7 +240,7 @@ export function createDesktopPetActiveTasksFromNavigationSnapshot(
     return [];
   }
 
-  const tasks: DesktopPetTaskItem[] = [];
+  const tasksByChatId = new Map<string, DesktopPetTaskItem>();
   for (const agent of snapshot.items as AssistantNavAgentItem[]) {
     const agentKey = toDesktopPetTaskText(agent?.agentKey);
     if (!agentKey || !Array.isArray(agent?.recentChats)) {
@@ -249,7 +258,7 @@ export function createDesktopPetActiveTasksFromNavigationSnapshot(
       const taskAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
       const status = chat.hasPendingAwaiting ? "awaiting" : "running";
       const updatedAt = toDesktopPetTaskText(chat.updatedAt) || toDesktopPetTaskText(agent.updatedAt);
-      tasks.push({
+      const task: DesktopPetTaskItem = {
         id: `${taskAgentKey}:${chatId}`,
         agentKey: taskAgentKey,
         agentDisplayName,
@@ -260,11 +269,15 @@ export function createDesktopPetActiveTasksFromNavigationSnapshot(
         status,
         ...(chat.awaitingMode ? { awaitingMode: chat.awaitingMode } : {}),
         updatedAt
-      });
+      };
+      const existingTask = tasksByChatId.get(chatId);
+      if (!existingTask || shouldReplaceDesktopPetTask(existingTask, task)) {
+        tasksByChatId.set(chatId, task);
+      }
     }
   }
 
-  return tasks.sort((left, right) => {
+  return [...tasksByChatId.values()].sort((left, right) => {
     if (left.status !== right.status) {
       return left.status === "awaiting" ? -1 : 1;
     }
@@ -330,7 +343,7 @@ export function resolveDesktopPetWindowMode(input: {
   }
   const activeTasks = Array.isArray(input.state.activeTasks) ? input.state.activeTasks : [];
   if (activeTasks.length > 0) {
-    return "task-list";
+    return activeTasks.length <= 2 ? "task-list-compact" : "task-list";
   }
   const panel = input.previewPanel;
   if (panel?.visible) {

@@ -586,6 +586,7 @@ export function DesktopPet() {
   const hiddenTaskCount = Math.max(0, activeTasks.length - visibleTasks.length);
   const previewPanel = petState.previewPanel?.visible ? petState.previewPanel : null;
   const showTaskPanel = !isDragging && activeTasks.length > 0;
+  const useCompactTaskPanel = showTaskPanel && activeTasks.length <= 2;
   const showPreviewPanel = !isDragging && !showTaskPanel && Boolean(previewPanel);
   const hasMessageReaction = displayStatus === "idle" && !isDragging && (messagePreview.length > 0 || unreadCount > 0);
   const canShowHoverReaction = displayStatus === "idle" && !isDragging && !hasMessageReaction && !activeStandardAction;
@@ -866,6 +867,7 @@ export function DesktopPet() {
         shouldShowSignatureSpriteAnimation ? "has-signature-animation" : "",
         shouldShowStateSpriteAnimation ? "has-state-animation" : "",
         showTaskPanel ? "has-tasks" : "",
+        useCompactTaskPanel ? "has-compact-tasks" : "",
         showPreviewPanel ? "has-preview" : "",
         showPreviewPanel && previewPanel?.expanded ? "has-preview-expanded" : "",
         showPreviewPanel && !previewPanel?.expanded ? "has-preview-collapsed" : "",
