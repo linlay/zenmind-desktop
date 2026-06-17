@@ -47,13 +47,26 @@ export function run(cmd, args, options = {}) {
 export function runAndWait(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = run(cmd, args, options);
-    child.once("exit", (code) => {
+    let settled = false;
+    const finish = (code) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       if (code === 0) {
         resolve(undefined);
         return;
       }
       reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code ?? -1}`));
+    };
+    child.once("exit", finish);
+    child.once("close", finish);
+    child.once("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
     });
-    child.once("error", reject);
   });
 }

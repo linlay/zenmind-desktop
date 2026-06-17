@@ -192,6 +192,11 @@ function readEventString(event: Event, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function readEventBoolean(event: Event, key: string) {
+  const value = (event as Event & Record<string, unknown>)[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function readWebviewContentsId(webview: Electron.WebviewTag | null) {
   try {
     const webContentsId = webview?.getWebContentsId();
@@ -215,14 +220,29 @@ function buildPluginWebviewSrcUrl(embeddedUrl: string) {
   return parsed ? `${parsed.origin}/` : embeddedUrl;
 }
 
-function samePluginWebviewOrigin(left: string, right: string) {
-  const leftUrl = parseHttpUrl(left);
-  const rightUrl = parseHttpUrl(right);
-  return Boolean(leftUrl && rightUrl && leftUrl.origin === rightUrl.origin);
-}
-
 function hasPluginRoute(url: URL) {
   return Boolean(url.pathname !== "/" || url.search || url.hash);
+}
+
+function isPluginRouteSyncTarget(value: string, webviewSrcUrl: string) {
+  const parsed = parseHttpUrl(value);
+  const src = parseHttpUrl(webviewSrcUrl);
+  if (!parsed || !src || parsed.origin !== src.origin) {
+    return false;
+  }
+
+  const pathname = parsed.pathname;
+  if (
+    pathname === "/api" ||
+    pathname.startsWith("/api/") ||
+    pathname === "/ws" ||
+    pathname === "/runtime-config.js" ||
+    pathname === "/__webpack_hmr"
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function resolvePluginCurrentUrl(
@@ -999,35 +1019,26 @@ export function PluginPage({
       sendPluginRouteToWebview(embeddedUrl, "route-sync");
       seedAgentWebclientAccessToken();
     };
-    const handleDidNavigate = (event: Event) => {
+    const syncNavigationRoute = (event: Event) => {
       const nextUrl = readEventString(event, "url");
-      setWebviewCurrentUrl(
-        nextUrl
-          ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
-          : readCurrentWebviewUrl(),
-      );
-      if (nextUrl && samePluginWebviewOrigin(nextUrl, webviewSrcUrl)) {
-        sendPluginRouteToWebview(
-          resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl),
-          "navigation",
-        );
+      const resolvedUrl = nextUrl
+        ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
+        : readCurrentWebviewUrl();
+      setWebviewCurrentUrl(resolvedUrl);
+      if (
+        nextUrl &&
+        readEventBoolean(event, "isMainFrame") !== false &&
+        isPluginRouteSyncTarget(nextUrl, webviewSrcUrl)
+      ) {
+        sendPluginRouteToWebview(resolvedUrl, "navigation");
       }
       seedAgentWebclientAccessToken();
     };
+    const handleDidNavigate = (event: Event) => {
+      syncNavigationRoute(event);
+    };
     const handleDidNavigateInPage = (event: Event) => {
-      const nextUrl = readEventString(event, "url");
-      setWebviewCurrentUrl(
-        nextUrl
-          ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
-          : readCurrentWebviewUrl(),
-      );
-      if (nextUrl && samePluginWebviewOrigin(nextUrl, webviewSrcUrl)) {
-        sendPluginRouteToWebview(
-          resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl),
-          "navigation",
-        );
-      }
-      seedAgentWebclientAccessToken();
+      syncNavigationRoute(event);
     };
     const handleDidFailLoad = () => syncWebviewState();
 

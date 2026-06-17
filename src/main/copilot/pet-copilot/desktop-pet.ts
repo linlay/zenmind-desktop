@@ -68,7 +68,13 @@ export const DESKTOP_PET_VISIBLE_FOOTPRINT = {
   height: 108
 } as const;
 
-export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "preview-expanded" | "task-list";
+export type DesktopPetWindowMode =
+  | "base"
+  | "bubble"
+  | "preview-collapsed"
+  | "preview-expanded"
+  | "task-list-compact"
+  | "task-list";
 
 export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: number; height: number }> = {
   base: DESKTOP_PET_WINDOW_SIZE,
@@ -83,6 +89,10 @@ export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: num
   "preview-expanded": {
     width: 420,
     height: 412
+  },
+  "task-list-compact": {
+    width: 340,
+    height: 282
   },
   "task-list": {
     width: 392,
@@ -114,6 +124,12 @@ export const DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS: Record<DesktopPetWindowMode,
   "preview-expanded": {
     x: 162,
     y: 294,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  },
+  "task-list-compact": {
+    x: 116,
+    y: 156,
     width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
     height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
   },
