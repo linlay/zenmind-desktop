@@ -188,7 +188,7 @@
   top: 0;
   left: var(--app-sidebar-width, 160px);
   right: 0;
-  height: 56px;
+  height: 24px;
   z-index: 4;
   app-region: drag;
   -webkit-app-region: drag;
@@ -198,7 +198,7 @@
 }
 
 .app-shell.has-embedded-surface .app-window-drag-region {
-  display: none;
+  height: 6px;
 }
 
 .app-shell.has-market-controls .app-window-drag-region {

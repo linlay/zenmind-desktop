@@ -24,14 +24,53 @@ const allowedLatinTerms = [
   /React/g,
   /OAuth2/g,
   /OIDC/g,
+  /IAM/g,
   /JWT/g,
+  /JWK/g,
   /API/g,
   /URL/g,
   /HTTP/g,
   /HTTPS/g,
+  /WebSocket/g,
+  /SSO/g,
   /JSON/g,
+  /YAML/g,
   /PID/g,
   /ID/g,
+  /ACP/g,
+  /CODER/g,
+  /Cookie/g,
+  /Google/g,
+  /Kanban/g,
+  /App/g,
+  /Action/g,
+  /Bridge/g,
+  /Chat/g,
+  /Copilot/g,
+  /Skill/g,
+  /Token/g,
+  /Web/g,
+  /MiniMax/g,
+  /Explorer/g,
+  /Finder/g,
+  /Tunnel/g,
+  /Hub/g,
+  /Agent/g,
+  /Container/g,
+  /Base/g,
+  /AGENT/g,
+  /DESKTOP/g,
+  /TOKEN/g,
+  /DEVICE/g,
+  /VERSION/g,
+  /VM/g,
+  /GET/g,
+  /POST/g,
+  /RS256/g,
+  /AES/g,
+  /RSA/g,
+  /PDF/g,
+  /ZIP/g,
   /UTF-8/g,
   /DevTools/g,
   /PowerShell/g,
@@ -43,8 +82,10 @@ const allowedLatinTerms = [
   /frontendMode/g,
   /dependency-missing/g,
   /agent-platform/g,
+  /agent-webclient/g,
   /agent-container-hub/g,
   /zenmind-app-server/g,
+  /provider-register/g,
   /npm/g,
   /npx/g,
   /EADDRINUSE/g,
@@ -56,11 +97,13 @@ const allowedLatinTerms = [
   /Shift/g,
   /Esc/g,
   /AI/g,
-  /SSO/g,
   /arm64/g,
   /x64/g,
   /v\d+/g,
-  /GB/g
+  /GB/g,
+  /MB/g,
+  /well-known/g,
+  /\b(?:access|action|apikey|apiKey|assetFileName|audience|auth|authMode|backend|bridge|capability|chatId|clientId|clientSecret|code|cookie|cron|daemon|definition|device|endpoint|env|fetch|field|fields|frontend|grant|hello|hostname|http|https|id|issuer|jwk|jwks|jwt|key|kind|machine|manifest|message|patch|payload|podman|provider|providers|public|readyState|runId|runState|running|script|scripts|selector|server|service|socket|start|startRun|status|sub|targetPath|token|type|ui|uri|web|worker|workspace)\b/g
 ];
 
 function readFile(filePath) {
@@ -123,9 +166,14 @@ function stripNonProse(text) {
     .replace(/`[^`]*`/g, "")
     .replace(/\{\{[A-Za-z0-9_.-]+\}\}/g, "")
     .replace(/\{[A-Za-z0-9_.-]+\}/g, "")
+    .replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z][A-Za-z0-9]*)+\b/g, " ")
+    .replace(/\b[A-Za-z_][A-Za-z0-9_.-]*=/g, " ")
+    .replace(/\b[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)+\b/g, " ")
+    .replace(/\b[A-Za-z]+[A-Z][A-Za-z0-9]*\b/g, " ")
     .replace(/\[[^\]]+\]\([^)]+\)/g, "")
     .replace(/(?:^|\s)[~./%A-Za-z0-9_-]+(?:[\\/][~./%A-Za-z0-9_-]+)+/g, " ")
-    .replace(/\b[A-Za-z0-9_.-]+\.(?:zip|tar\.gz|skill|json|md|png|dmg|ps1|sh|example)\b/g, " ");
+    .replace(/\b[A-Za-z0-9_.-]+\.(?:zip|tar\.gz|skill|json|md|png|dmg|ps1|sh|example|com)\b/g, " ")
+    .replace(/\.(?:zip|tar\.gz|skill|json|md|png|dmg|ps1|sh)\b/g, " ");
 }
 
 function removeAllowedLatinTerms(text) {

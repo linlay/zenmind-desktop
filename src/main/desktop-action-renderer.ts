@@ -3,6 +3,7 @@ import type {
   DesktopActionRendererRequest,
   DesktopActionRendererResponse
 } from "../shared/contracts/copilot";
+import { t } from "./i18n/main-i18n";
 
 const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
 
@@ -27,7 +28,7 @@ export function callDesktopActionRenderer(
       ok: false,
       error: {
         code: "renderer_unavailable",
-        message: "Desktop 主窗口不可用。"
+        message: t("desktopAction.mainWindowUnavailable")
       }
     });
   }
@@ -41,7 +42,7 @@ export function callDesktopActionRenderer(
         ok: false,
         error: {
           code: "renderer_timeout",
-          message: "当前页面未及时响应 Desktop 动作请求。"
+          message: t("desktopAction.rendererTimeout")
         }
       });
     }, options.timeoutMs ?? DESKTOP_ACTION_RENDERER_TIMEOUT_MS);

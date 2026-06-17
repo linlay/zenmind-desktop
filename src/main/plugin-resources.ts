@@ -5,6 +5,7 @@ import type { ServiceDefinition } from "./manifest-utils";
 import { getAllServices } from "./services/service-registry";
 import { getDesktopWebappsDataRoot, getServiceStateRoot } from "./user-paths";
 import { webappRuntime } from "./webs/webapp-runtime";
+import { t } from "./i18n/main-i18n";
 
 type AgentPlatformCaller = (app: App, path: string, options?: { method?: string; body?: unknown }) => Promise<unknown>;
 export type PluginResourceDesiredStatus = "running" | "stopped";
@@ -125,7 +126,7 @@ function copyWebappResource(app: App, service: ServiceDefinition, pluginDir: str
 async function removeWebappResources(app: App, service: ServiceDefinition, ownership: PluginResourceOwnership) {
   const webappsRoot = getDesktopWebappsDataRoot(app);
   for (const webappId of Object.keys(ownership.webapps ?? {})) {
-    await webappRuntime.stop(app, webappId, "插件已停止，网站小应用已卸载。").catch(() => undefined);
+    await webappRuntime.stop(app, webappId, t("pluginResources.webappRemoved")).catch(() => undefined);
     fs.rmSync(path.join(webappsRoot, webappId), { recursive: true, force: true });
   }
 }
@@ -270,24 +271,24 @@ export function readPluginResourceDesiredStatus(app: App, service: ServiceDefini
 
 export async function syncPluginResources(app: App, service: ServiceDefinition, pluginDir: string) {
   if (service.kind !== "plugin" || !hasResources(service)) {
-    return { ok: true, message: "插件未声明资源。" };
+    return { ok: true, message: t("pluginResources.noneDeclared") };
   }
   updateDesiredStatus(app, service, "running");
   copyWebappResource(app, service, pluginDir);
   await syncAgentPlatformResources(app, service);
-  return { ok: true, message: "插件资源已同步。" };
+  return { ok: true, message: t("pluginResources.synced") };
 }
 
 export async function stopPluginResources(app: App, service: ServiceDefinition) {
   if (service.kind !== "plugin" || !hasResources(service)) {
-    return { ok: true, message: "插件未声明资源。" };
+    return { ok: true, message: t("pluginResources.noneDeclared") };
   }
   const ownership = updateDesiredStatus(app, service, "stopped", {
     pendingAgentPlatformSync: false
   });
   await removeWebappResources(app, service, ownership);
   await removeAgentPlatformResources(app, service);
-  return { ok: true, message: "插件资源已卸载。" };
+  return { ok: true, message: t("pluginResources.uninstalled") };
 }
 
 export async function retryPendingPluginResourceSync(app: App) {

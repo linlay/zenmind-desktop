@@ -18,6 +18,7 @@ import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
 import { saveDesktopPetSettings } from "./copilot/pet-copilot/desktop-pet";
 import { saveMarketSettings } from "./marketplace/common";
 import { saveTaskBoardSettings } from "./task-board-runtime";
+import { saveTunnelHubAgentSettings } from "./tunnel-hub-agent-settings";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -31,6 +32,7 @@ type BootstrapApplyResult = {
   pet: "applied" | "absent";
   market: "applied" | "absent";
   sso: "applied" | "absent";
+  tunnelHub: "applied" | "absent";
   webs: "applied" | "absent";
   assistant: "recorded" | "absent";
 };
@@ -339,6 +341,22 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
   return "applied";
 }
 
+function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): BootstrapApplyResult["tunnelHub"] {
+  if (!isRecord(tunnelHubDefaults)) {
+    return "absent";
+  }
+  saveTunnelHubAgentSettings(app, {
+    enabled: tunnelHubDefaults.enabled === true,
+    relayUrl: readText(tunnelHubDefaults.relayUrl),
+    agentToken: readText(tunnelHubDefaults.agentToken),
+    tlsInsecureSkipVerify: tunnelHubDefaults.tlsInsecureSkipVerify === true,
+    reconnectSeconds: typeof tunnelHubDefaults.reconnectSeconds === "number"
+      ? tunnelHubDefaults.reconnectSeconds
+      : 3
+  });
+  return "applied";
+}
+
 function hasWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
   return (isRecord(webs) && Array.isArray(webs.websites)) ||
     Array.isArray(webs) ||
@@ -402,6 +420,7 @@ export function applyDesktopInitBootstrap(
       pet: applyPetDefaults(app, defaults.pet, platform),
       market: applyMarketDefaults(app, defaults.market),
       sso: applySsoDefaults(app, defaults.sso, platform),
+      tunnelHub: applyTunnelHubDefaults(app, defaults.tunnelHub),
       webs: applyWebsiteDefaults(app, defaults.webs, defaults.websites),
       assistant: writeAssistantDefaults(app, assistant)
     };
@@ -435,5 +454,6 @@ export const __testInternals = {
   applyPetDefaults,
   applyMarketDefaults,
   applySsoDefaults,
+  applyTunnelHubDefaults,
   applyWebsiteDefaults
 };

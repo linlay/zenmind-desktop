@@ -1,5 +1,6 @@
 import { parentPort, workerData } from "node:worker_threads";
 import type { AssistantAttachmentTaskProgress } from "../../../shared/contracts";
+import { setMainLocaleForCurrentProcess } from "../../i18n/main-i18n";
 import { createAssistantAttachmentsFromFilesInProcess } from "./attachment-store";
 
 type AttachmentWorkerData = {
@@ -7,9 +8,11 @@ type AttachmentWorkerData = {
   chatId?: string | null;
   filePaths: string[];
   taskId: string;
+  locale?: string;
 };
 
 const data = workerData as AttachmentWorkerData;
+setMainLocaleForCurrentProcess(data.locale);
 
 function postProgress(progress: AssistantAttachmentTaskProgress) {
   parentPort?.postMessage({
@@ -24,7 +27,7 @@ async function run() {
       assistantTempRoot: data.assistantTempRoot,
       getPath(name: string) {
         if (name !== "temp") {
-          throw new Error(`附件 worker 不支持读取 ${name} 路径。`);
+          throw new Error(`attachment worker cannot read ${name} paths.`);
         }
         return data.assistantTempRoot;
       }

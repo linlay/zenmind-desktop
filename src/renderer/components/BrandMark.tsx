@@ -1,4 +1,5 @@
 import { APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
+import { useI18n } from "../i18n/useI18n";
 import aboutIcon from "../assets/sidebar-icons/about.svg";
 import agentIcon from "../assets/sidebar-icons/agent.svg";
 import appearanceIcon from "../assets/sidebar-icons/appearance.svg";
@@ -67,10 +68,11 @@ const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
 };
 
 export function BrandMark({ className, ariaLabel }: BrandMarkProps) {
+  const { t } = useI18n();
   return (
     <img
       src={`./${APP_ICON_ASSET_FILENAMES.brandMark}`}
-      alt={ariaLabel ?? "品牌标识"}
+      alt={ariaLabel ?? t("brandMark.alt")}
       className={className}
       style={{
         width: "var(--brand-mark-size, 100%)",

@@ -2,6 +2,7 @@ import type { globalShortcut as ElectronGlobalShortcut, App } from "electron";
 import type { PluginGlobalShortcutStatus } from "../shared/contracts";
 import { readPluginSettingsSnapshot } from "./plugin-settings";
 import { getAllServices } from "./services/service-registry";
+import { t } from "./i18n/main-i18n";
 
 type GlobalShortcutRegistry = typeof ElectronGlobalShortcut;
 
@@ -103,7 +104,7 @@ export function refreshPluginGlobalShortcuts(options: RefreshPluginGlobalShortcu
           {
             enabled: false,
             reason: "missing",
-            message: "快捷键未设置。"
+            message: t("plugin.shortcutMissing")
           }
         ));
         continue;
@@ -123,7 +124,7 @@ export function refreshPluginGlobalShortcuts(options: RefreshPluginGlobalShortcu
             ...previous,
             enabled: false,
             reason: "conflict",
-            message: `快捷键与 ${service.name} / ${action.label} 冲突。`
+            message: t("plugin.shortcutConflictWith", { serviceName: service.name, actionLabel: action.label })
           });
         }
         shortcutStatuses.set(statusKey(service.id, action.id), statusFor(
@@ -134,7 +135,7 @@ export function refreshPluginGlobalShortcuts(options: RefreshPluginGlobalShortcu
           {
             enabled: false,
             reason: "conflict",
-            message: "快捷键与其他插件动作冲突。"
+            message: t("plugin.shortcutConflictOther")
           }
         ));
         continue;
@@ -154,7 +155,7 @@ export function refreshPluginGlobalShortcuts(options: RefreshPluginGlobalShortcu
             {
               enabled: false,
               reason: "registration-failed",
-              message: "系统拒绝注册该全局快捷键，可能已被系统或其他应用占用。"
+              message: t("plugin.shortcutRegistrationFailed")
             }
           ));
           continue;
@@ -167,7 +168,7 @@ export function refreshPluginGlobalShortcuts(options: RefreshPluginGlobalShortcu
           accelerator,
           {
             enabled: true,
-            message: "全局快捷键已启用。"
+            message: t("plugin.shortcutEnabled")
           }
         ));
       } catch (error) {

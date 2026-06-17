@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { Button, Card, Checkbox, Form, Input, InputNumber, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
 import { useLocation, useParams } from "react-router-dom";
@@ -2402,6 +2402,16 @@ export function SettingsPage({
                     const pending = desktopPetAppearancePending === appearance.id;
                     const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
                     const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
+                    const idlePreviewAsset = appearance.states.idle;
+                    const idlePreviewFrameCount = Math.max(1, Math.round(Number(idlePreviewAsset?.frameCount) || 1));
+                    const shouldRenderSpritePreview =
+                      idlePreviewAsset?.path === appearance.preview && idlePreviewFrameCount > 1;
+                    const previewSpriteStyle = shouldRenderSpritePreview
+                      ? ({
+                          "--desktop-pet-appearance-preview-frames": String(idlePreviewFrameCount),
+                          backgroundImage: `url("${appearance.previewUrl}")`
+                        } as CSSProperties)
+                      : undefined;
                     let actionLabel = t("settings.desktopPet.select");
                     if (selected) {
                       actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
@@ -2412,7 +2422,11 @@ export function SettingsPage({
                     return (
                       <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
                         <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                          <img src={appearance.previewUrl} alt="" />
+                          {shouldRenderSpritePreview ? (
+                            <span className="desktop-pet-appearance-sprite" style={previewSpriteStyle} />
+                          ) : (
+                            <img src={appearance.previewUrl} alt="" />
+                          )}
                         </span>
                         <span className="desktop-pet-appearance-copy">
                           <strong>{appearanceLabel}</strong>

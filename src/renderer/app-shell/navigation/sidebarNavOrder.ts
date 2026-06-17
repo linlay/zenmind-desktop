@@ -26,10 +26,10 @@ type SidebarNavOrderInput = {
 };
 
 export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
-  { key: "kanban", label: "看板" },
-  { key: "schedules", label: "自动化" },
-  { key: "group:assistants", label: "助理 / 项目" },
-  { key: "group:webs", label: "网站 / 应用" },
+  { key: "kanban", label: "nav.taskBoard" },
+  { key: "schedules", label: "nav.schedules" },
+  { key: "group:assistants", label: "nav.assistants" },
+  { key: "group:webs", label: "nav.embeddedWebs" },
 ];
 
 export function createServiceSidebarNavOrderKey(serviceId: string): SidebarNavOrderItemKey {

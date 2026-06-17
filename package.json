@@ -11,7 +11,7 @@
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
     "sync:env": "node ./scripts/sync-env-zip.mjs",
     "sync:demo": "node ./scripts/sync-demo-assets.mjs",
-    "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs",
+    "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs --strict",
     "build:main:types": "tsc -p tsconfig.main.json",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",
     "build:main": "npm run brand:sync && npm run build:main:types && npm run build:main:bundle",

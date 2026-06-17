@@ -1,12 +1,12 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, AssistantNavAgentIcon, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
 import {
-  DESKTOP_PET_DONE_FALLBACK_TEXT,
   DESKTOP_PET_STATUS_HINT_TEXTS,
   sanitizeDesktopPetUnreadCount,
   toDesktopPetText as toText
 } from "../../../shared/desktop-pet";
 import { getDesktopDeviceId } from "../../device-identity";
+import { t } from "../../i18n/main-i18n";
 import { createApiUrl } from "./agent-platform-api";
 import type { DesktopPetBoundAgentStatus } from "./desktop-pet";
 import {
@@ -337,7 +337,7 @@ function readCompletionPreview(data: Record<string, unknown>, fallback = "") {
   const fallbackPreview = toText(fallback);
   return fallbackPreview && !DESKTOP_PET_STATUS_HINT_TEXTS.has(fallbackPreview)
     ? fallbackPreview
-    : DESKTOP_PET_DONE_FALLBACK_TEXT;
+    : t("desktopPet.doneFallback");
 }
 
 function getFrameChatId(frame: AgentPlatformPetPushFrame) {
@@ -393,7 +393,7 @@ export function buildAgentPlatformPetStatus(input: {
       role: "",
       presence: "offline",
       unreadCount: 0,
-      latestPreview: "目标智能体未在线",
+      latestPreview: t("desktopPet.status.agentOffline"),
       chatId: null,
       hasPendingAwaiting: false,
       stale: false,
@@ -501,7 +501,7 @@ export function applyAgentPlatformPetPush(
       chatId: toText(data.chatId) || current?.chatId || null,
       presence: "busy",
       unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
-      latestPreview: "思考中",
+      latestPreview: t("desktopPet.status.thinking"),
       stale: false,
       updatedAt: new Date().toISOString()
     };

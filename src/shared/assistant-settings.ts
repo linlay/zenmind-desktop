@@ -21,15 +21,6 @@ export interface DesktopCopilotPagePreference {
 export type DesktopCopilotPagePreferences = Record<DesktopCopilotPageKey, DesktopCopilotPagePreference>;
 export type DesktopCopilotPagePreferencesInput = Partial<Record<DesktopCopilotPageKey, Partial<DesktopCopilotPagePreference>>>;
 
-export const DESKTOP_COPILOT_PAGE_LABELS: Record<DesktopCopilotPageKey, string> = {
-  controlCenter: "控制中心",
-  market: "功能市场",
-  help: "帮助",
-  agents: "智能体",
-  schedules: "自动化",
-  memory: "记忆管理"
-};
-
 export function createDefaultDesktopCopilotPagePreferences(): DesktopCopilotPagePreferences {
   return DESKTOP_COPILOT_PAGE_KEYS.reduce((preferences, pageKey) => {
     preferences[pageKey] = {

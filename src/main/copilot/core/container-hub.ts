@@ -1,4 +1,5 @@
 import type { App } from "electron";
+import { t } from "../../i18n/main-i18n";
 
 export type ContainerHubConfig = {
   baseURL: string;
@@ -195,7 +196,7 @@ export class ContainerHubClient {
 
   private async requestRaw(method: string, apiPath: string, body?: unknown) {
     if (!this.baseURL) {
-      throw new Error("Container Hub Base URL 未配置。");
+      throw new Error(t("containerHub.baseUrlMissing"));
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -219,7 +220,7 @@ export class ContainerHubClient {
       };
     } catch (error) {
       if ((error as Error).name === "AbortError") {
-        throw new Error(`Container Hub 请求超时：${apiPath}`);
+        throw new Error(t("containerHub.requestTimeout", { path: apiPath }));
       }
       throw error;
     } finally {
@@ -308,18 +309,18 @@ function numberValue(value: unknown, fallback: number) {
 function readContainerHubError(apiPath: string, status: number, body: string) {
   const trimmed = body.trim();
   if (!trimmed) {
-    return `Container Hub ${apiPath} 返回 HTTP ${status}`;
+    return t("containerHub.httpError", { path: apiPath, status });
   }
   try {
     const parsed = parseJSONRecord(trimmed);
     const message = stringValue(parsed.error) || stringValue(parsed.message) || stringValue(parsed.detail);
     if (message) {
-      return `Container Hub ${apiPath} 返回 HTTP ${status}: ${message}`;
+      return t("containerHub.httpErrorWithMessage", { path: apiPath, status, message });
     }
   } catch {
     // Fall through to compact plain text below.
   }
-  return `Container Hub ${apiPath} 返回 HTTP ${status}: ${trimmed.slice(0, 1000)}`;
+  return t("containerHub.httpErrorWithMessage", { path: apiPath, status, message: trimmed.slice(0, 1000) });
 }
 
 export const __testInternals = {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AssistantAttachment } from "../../shared/contracts";
+import { useI18n } from "../i18n/useI18n";
 
 type AttachmentImagePreviewProps = {
   attachment: AssistantAttachment | null;
@@ -71,6 +72,7 @@ function CloseIcon() {
 }
 
 export function AttachmentImagePreview({ attachment, onClose }: AttachmentImagePreviewProps) {
+  const { t } = useI18n();
   const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
@@ -127,17 +129,17 @@ export function AttachmentImagePreview({ attachment, onClose }: AttachmentImageP
       className="attachment-image-preview-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={`预览图片 ${attachment.name}`}
+      aria-label={t("imagePreview.preview", { name: attachment.name })}
       onMouseDown={onClose}
     >
       <div className="attachment-image-preview-topbar" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="attachment-image-preview-toolbar" aria-label="图片预览工具">
+        <div className="attachment-image-preview-toolbar" aria-label={t("imagePreview.toolbar")}>
           <button
             type="button"
             onClick={() => setZoom((current) => clampZoom(current - ZOOM_STEP))}
             disabled={zoom <= MIN_ZOOM}
-            aria-label="缩小图片"
-            title="缩小"
+            aria-label={t("imagePreview.zoomOut")}
+            title={t("imagePreview.zoomOut")}
           >
             <ZoomOutIcon />
           </button>
@@ -145,13 +147,13 @@ export function AttachmentImagePreview({ attachment, onClose }: AttachmentImageP
             type="button"
             onClick={() => setZoom((current) => clampZoom(current + ZOOM_STEP))}
             disabled={zoom >= MAX_ZOOM}
-            aria-label="放大图片"
-            title="放大"
+            aria-label={t("imagePreview.zoomIn")}
+            title={t("imagePreview.zoomIn")}
           >
             <ZoomInIcon />
           </button>
           <span className="attachment-image-preview-toolbar-divider" aria-hidden="true" />
-          <button type="button" onClick={handleDownload} aria-label="下载图片" title="下载">
+          <button type="button" onClick={handleDownload} aria-label={t("imagePreview.download")} title={t("imagePreview.download")}>
             <DownloadIcon />
           </button>
         </div>
@@ -159,8 +161,8 @@ export function AttachmentImagePreview({ attachment, onClose }: AttachmentImageP
           type="button"
           className="attachment-image-preview-close"
           onClick={onClose}
-          aria-label="关闭图片预览"
-          title="关闭"
+          aria-label={t("imagePreview.close")}
+          title={t("common.close")}
         >
           <CloseIcon />
         </button>
@@ -177,7 +179,7 @@ export function AttachmentImagePreview({ attachment, onClose }: AttachmentImageP
         <button
           type="button"
           className="is-active"
-          aria-label={`当前预览：${attachment.name}`}
+          aria-label={t("imagePreview.current", { name: attachment.name })}
           title={formattedSize ? `${attachment.name} · ${formattedSize}` : attachment.name}
         >
           <img src={attachment.dataUrl} alt="" draggable={false} />

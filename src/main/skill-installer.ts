@@ -10,6 +10,7 @@ import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import { getService } from "./services/service-registry";
 import { getInstallDir, getServiceState } from "./services/manager";
 import { getServiceConfigRoot } from "./user-paths";
+import { t } from "./i18n/main-i18n";
 
 type SkillMetadata = {
   id: string;
@@ -202,7 +203,7 @@ function ensureSafeArchiveEntries(archivePath: string) {
       normalized === ".." ||
       /^[a-zA-Z]:\//u.test(normalized)
     ) {
-      throw new Error(`Skill 包包含不安全路径：${entry}`);
+      throw new Error(t("skillInstaller.unsafePath", { entry }));
     }
   }
 }
@@ -210,7 +211,7 @@ function ensureSafeArchiveEntries(archivePath: string) {
 function getSingleTopLevelDir(root: string) {
   const entries = fs.readdirSync(root, { withFileTypes: true }).filter((entry) => !entry.name.startsWith("__MACOSX"));
   if (entries.length !== 1 || !entries[0].isDirectory()) {
-    throw new Error("Skill 包应包含单个顶层目录");
+    throw new Error(t("skillInstaller.singleTopLevelRequired"));
   }
   return path.join(root, entries[0].name);
 }
@@ -310,7 +311,7 @@ function splitCommandLine(input: string) {
     current += "\\";
   }
   if (quote) {
-    throw new Error("下载指令中的引号未闭合。");
+    throw new Error(t("skillInstaller.unclosedQuote"));
   }
   if (tokenStarted) {
     tokens.push(current);
@@ -326,7 +327,7 @@ function normalizedPackageCommandName(command: string) {
 function ensureSupportedPackageCommand(command: string) {
   const name = normalizedPackageCommandName(command);
   if (name !== "npm" && name !== "npx") {
-    throw new Error("云端技能下载指令仅支持 npm 或 npx。");
+    throw new Error(t("skillInstaller.unsupportedCommand"));
   }
   return name;
 }
@@ -580,7 +581,7 @@ function findDownloadedSkillSource(root: string) {
   const sortedSkillFiles = skillFiles.sort((left, right) => relativeDepth(root, left) - relativeDepth(root, right) || left.localeCompare(right));
   const candidates = [...sortedArchives, ...sortedSkillDirs, ...sortedSkillFiles];
   if (candidates.length === 0) {
-    throw new Error("下载指令执行完成，但没有找到 .zip 或包含 SKILL.md 的技能目录。");
+    throw new Error(t("skillInstaller.downloadNoPackage"));
   }
   return candidates[0];
 }
@@ -589,11 +590,11 @@ async function buildMessage(app: App, skillName: string) {
   try {
     const state = await getServiceState(app, "agent-platform");
     if (state.status === "running") {
-      return `技能 ${skillName} 已安装，请重启智能体平台后生效。`;
+      return t("skillInstaller.installedRestartRequired", { name: skillName });
     }
-    return `技能 ${skillName} 已安装，下次启动智能体平台后生效。`;
+    return t("skillInstaller.installedNextStart", { name: skillName });
   } catch {
-    return `技能 ${skillName} 已安装，下次启动智能体平台后生效。`;
+    return t("skillInstaller.installedNextStart", { name: skillName });
   }
 }
 
@@ -609,7 +610,7 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
       preparedDir = path.join(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
       fs.cpSync(sourcePath, preparedDir, { recursive: true });
       if (!fs.existsSync(path.join(preparedDir, "SKILL.md"))) {
-        throw new Error("Skill 目录缺少 SKILL.md");
+        throw new Error(t("skillInstaller.dirMissingSkillMd"));
       }
       writeSkillMetadataIfMissing(preparedDir, {
         id: options.metadata?.id ?? options.expectedId,
@@ -629,7 +630,7 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
           id: skillId,
           name: path.basename(sourcePath).replace(/\.[^.]+$/u, ""),
           version: options.expectedVersion ?? "0.0.0",
-          description: `本地导入，来源文件：${path.basename(sourcePath)}`,
+          description: t("skillInstaller.localImportDescription", { file: path.basename(sourcePath) }),
           tags: []
         }, null, 2)}\n`,
         "utf8"
@@ -639,7 +640,7 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
       await extractArchiveToDir(sourcePath, tempRoot);
       preparedDir = getPreparedSkillDir(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
       if (!fs.existsSync(path.join(preparedDir, "SKILL.md"))) {
-        throw new Error("Skill 包缺少 SKILL.md");
+        throw new Error(t("skillInstaller.packageMissingSkillMd"));
       }
       writeSkillMetadataIfMissing(preparedDir, {
         id: options.metadata?.id ?? options.expectedId,
@@ -649,15 +650,15 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
         tags: options.metadata?.tags
       });
     } else {
-      throw new Error("Skill 包仅支持 .zip 或 SKILL.md 文件。");
+      throw new Error(t("skillInstaller.unsupportedPackageType"));
     }
 
     const metadata = readSkillMetadata(preparedDir);
     if (options.expectedId && metadata.id !== options.expectedId) {
-      throw new Error(`Skill 包 id 不匹配：期望 ${options.expectedId}，实际 ${metadata.id}`);
+      throw new Error(t("skillInstaller.idMismatch", { expected: options.expectedId, actual: metadata.id }));
     }
     if (options.expectedVersion && metadata.version !== options.expectedVersion) {
-      throw new Error(`Skill 包版本不匹配：期望 ${options.expectedVersion}，实际 ${metadata.version}`);
+      throw new Error(t("skillInstaller.versionMismatch", { expected: options.expectedVersion, actual: metadata.version }));
     }
     const targetDir = getSkillInstallDir(app, metadata.id);
     fs.mkdirSync(path.dirname(targetDir), { recursive: true });
@@ -686,7 +687,7 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
 export async function installSkillFromCommand(app: App, commandText: string): Promise<MarketCommandResult> {
   const tokens = splitCommandLine(commandText);
   if (tokens.length === 0) {
-    throw new Error("请输入 npm 或 npx 下载指令。");
+    throw new Error(t("skillInstaller.commandRequired"));
   }
   const [rawCommand, ...rawArgs] = tokens;
   const { command, args } = normalizeSkillDownloadCommand(rawCommand, rawArgs);
@@ -708,7 +709,7 @@ export async function installSkillFromCommand(app: App, commandText: string): Pr
     return await installSkillFromPath(app, sourcePath, { source: "cloud" });
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`云端技能下载失败：${error.message}`);
+      throw new Error(t("skillInstaller.downloadFailed", { message: error.message }));
     }
     throw error;
   } finally {
@@ -749,6 +750,6 @@ export async function uninstallSkill(app: App, skillId: string): Promise<MarketC
     itemId: skillId,
     type: "skill",
     state: "not-installed",
-    message: `技能 ${skillId} 已卸载。`
+    message: t("skillInstaller.uninstalled", { id: skillId })
   };
 }

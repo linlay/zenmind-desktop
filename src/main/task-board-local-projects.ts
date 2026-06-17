@@ -12,6 +12,7 @@ import {
   markDesktopKanbanIssueSyncError,
   withDesktopKanbanDatabase
 } from "./task-board-local-store";
+import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
   getPath: (name: "userData") => string;
@@ -55,7 +56,7 @@ export function createLocalDesktopProject(
 ): TaskBoardCreateLocalProjectResult {
   const name = trimText(input.name);
   if (!name) {
-    return { ok: false, message: "本地项目名称不能为空。" };
+    return { ok: false, message: t("taskBoard.localProject.nameRequired") };
   }
   const id = trimText(input.id) || createLocalProjectId();
   const slug = trimText(input.slug) || slugify(name);
@@ -67,7 +68,7 @@ export function createLocalDesktopProject(
     if (existing?.id) {
       return {
         ok: true,
-        message: "本地项目已存在。",
+        message: t("taskBoard.localProject.exists"),
         project: {
           id: existing.id,
           name: existing.name ?? name,
@@ -109,7 +110,7 @@ export function createLocalDesktopProject(
     );
     return {
       ok: true,
-      message: "本地项目已创建。",
+      message: t("taskBoard.localProject.created"),
       project: { id, name, slug, path }
     };
   });
@@ -211,13 +212,13 @@ export function applyDesktopIssueSyncResults(
       if (item.issue) {
         linkDesktopKanbanIssueToRemote(app, currentUser, localIssueId, item.issue, revision);
       } else {
-        markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || "云端版本冲突。");
+        markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("taskBoard.localProject.remoteConflict"));
       }
       continue;
     }
     if (item.status === "error") {
       errors += 1;
-      markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || "云端同步失败。");
+      markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("taskBoard.localProject.syncFailed"));
       continue;
     }
     if (item.status === "deleted") {

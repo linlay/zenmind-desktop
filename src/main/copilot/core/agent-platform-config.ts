@@ -6,6 +6,7 @@ import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../../shared/contracts";
 import { APP_BRAND } from "../../../shared/generated/brand";
 import { getServiceConfigRoot, getServicesRoot } from "../../user-paths";
+import { t } from "../../i18n/main-i18n";
 import type { AssistantSettingsPrivate } from "./settings-store";
 import { readAssistantSettings, toPublicAssistantSettings } from "./settings-store";
 
@@ -157,13 +158,13 @@ function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string
   try {
     payload = Buffer.from(match[1], "base64url");
   } catch {
-    throw new Error(`agent-platform provider ${providerKey} apiKey 解密失败：AES payload 格式不正确。`);
+    throw new Error(t("agentPlatform.providerApiKeyPayloadInvalid", { providerKey }));
   }
 
   const nonceSize = 12;
   const tagSize = 16;
   if (payload.length <= nonceSize + tagSize) {
-    throw new Error(`agent-platform provider ${providerKey} apiKey 解密失败：AES payload 长度不正确。`);
+    throw new Error(t("agentPlatform.providerApiKeyPayloadLengthInvalid", { providerKey }));
   }
 
   try {
@@ -183,7 +184,7 @@ function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string
     }
     return plaintext;
   } catch {
-    throw new Error(`agent-platform provider ${providerKey} apiKey 解密失败：密钥片段不匹配或密文已损坏。`);
+    throw new Error(t("agentPlatform.providerApiKeyDecryptFailed", { providerKey }));
   }
 }
 

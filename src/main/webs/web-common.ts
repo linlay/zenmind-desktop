@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { WebEntryKey, WebsiteEntry } from "../../shared/contracts";
+import { t } from "../i18n/main-i18n";
 
 const MAX_LABEL_LENGTH = 24;
 const MAX_WEB_ID_LENGTH = 80;
@@ -74,7 +75,7 @@ export function normalizeWebEntryKey(value: unknown): WebEntryKey | null {
 export function normalizeWebsiteUrl(inputUrl: string) {
   const raw = inputUrl.trim();
   if (!raw) {
-    throw new Error("网站地址不能为空。");
+    throw new Error(t("website.urlRequired"));
   }
 
   const withProtocol = /^[a-z][a-z\d+.-]*:\/\//iu.test(raw) ? raw : `https://${raw}`;
@@ -82,14 +83,14 @@ export function normalizeWebsiteUrl(inputUrl: string) {
   try {
     parsed = new URL(withProtocol);
   } catch {
-    throw new Error("请输入有效的网站地址，例如 www.baidu.com。");
+    throw new Error(t("website.urlInvalid"));
   }
 
   if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("仅支持 http 或 https 网站地址。");
+    throw new Error(t("website.urlUnsupportedProtocol"));
   }
   if (!parsed.hostname) {
-    throw new Error("请输入有效的网站地址，例如 www.baidu.com。");
+    throw new Error(t("website.urlInvalid"));
   }
   return parsed.toString();
 }
@@ -103,15 +104,15 @@ export function normalizeWebsiteLabel(inputLabel: string | undefined, urlOrFallb
   try {
     const hostname = new URL(urlOrFallback).hostname.replace(/^www\./iu, "");
     const knownLabels: Record<string, string> = {
-      "baidu.com": "百度"
+      "baidu.com": "\u767e\u5ea6"
     };
     if (knownLabels[hostname]) {
       return knownLabels[hostname];
     }
     const firstPart = hostname.split(".")[0];
-    return firstPart ? firstPart.slice(0, MAX_LABEL_LENGTH) : "自定义网站";
+    return firstPart ? firstPart.slice(0, MAX_LABEL_LENGTH) : t("website.defaultLabel");
   } catch {
-    return urlOrFallback ? urlOrFallback.slice(0, MAX_LABEL_LENGTH) : "自定义网站";
+    return urlOrFallback ? urlOrFallback.slice(0, MAX_LABEL_LENGTH) : t("website.defaultLabel");
   }
 }
 

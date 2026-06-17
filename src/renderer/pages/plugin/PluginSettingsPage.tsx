@@ -27,7 +27,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
   const pluginId = routePluginId ?? "";
   const { services } = useServices();
   const service = services.find((item) => item.id === pluginId);
-  const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name) : pluginId;
+  const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name, t) : pluginId;
   const [settingsUrl, setSettingsUrl] = useState("");
   const [preloadUrl, setPreloadUrl] = useState("");
   const [error, setError] = useState("");
@@ -156,8 +156,8 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
       <button
         className="embedded-back-button"
         onClick={() => navigate(-1)}
-        title="返回上一页"
-        aria-label="返回"
+        title={t("pluginPage.back")}
+        aria-label={t("common.back")}
       >
         <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
           <path d="m313-440 224 224-57 57-320-320 320-320 57 57-224 224h487v80H313Z"/>

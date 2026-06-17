@@ -12,6 +12,7 @@ import {
 import { applyWebOrder } from "../webs/web-order-store";
 import { readWebItems } from "../webs/web-store";
 import { webappRuntime } from "../webs/webapp-runtime";
+import { t } from "../i18n/main-i18n";
 
 export interface WebIpcHandlerOptions {
   app: App;
@@ -30,7 +31,7 @@ export function listWebEntries(app: App) {
   return {
     ok: true,
     items: applyWebOrder(app, readWebItems(app)),
-    message: "已读取网站 / 应用。"
+    message: t("website.configRead")
   };
 }
 
@@ -64,7 +65,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   );
   ipcMain.handle("webs.websites.import", async () => {
     const result = await showFileDialog({
-      title: "导入内嵌网站配置",
+      title: t("dialog.importEmbeddedWebsites.title"),
       properties: ["openFile"],
       filters: [{ name: "JSON", extensions: ["json"] }]
     });
@@ -74,7 +75,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
         ok: false,
         items: listWebsiteItems(app).items,
         path: "",
-        message: "已取消导入内嵌网站配置。"
+        message: t("website.importCancelled")
       };
     }
 
@@ -88,7 +89,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   });
   ipcMain.handle("webs.websites.export", async () => {
     const saveResult = await showSaveDialog({
-      title: "导出内嵌网站配置",
+      title: t("dialog.exportEmbeddedWebsites.title"),
       defaultPath: path.join(getDataRoot(app), "websites.json"),
       filters: [{ name: "JSON", extensions: ["json"] }]
     });
@@ -98,7 +99,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
         ok: false,
         items: listWebsiteItems(app).items,
         path: "",
-        message: "已取消导出内嵌网站配置。"
+        message: t("website.exportCancelled")
       };
     }
 
@@ -108,7 +109,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       ok: true,
       items: listWebsiteItems(app).items,
       path: filePath,
-      message: "已导出内嵌网站配置。"
+      message: t("website.exported")
     };
   });
 
@@ -126,7 +127,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     return {
       ok: Boolean(state),
       state,
-      message: state ? "已读取网站小应用状态。" : "未找到这个本地网站小应用。"
+      message: state ? t("webapp.stateRead") : t("webapp.notFound")
     };
   });
   ipcMain.handle("webs.webapps.readLog", async (_event: any, id: string, target: unknown, options?: WebappLogReadOptions) =>

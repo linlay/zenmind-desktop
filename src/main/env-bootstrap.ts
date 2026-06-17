@@ -5,6 +5,7 @@ import path from "node:path";
 import type { App } from "electron";
 import JSZip from "jszip";
 import { APP_BRAND } from "../shared/generated/brand";
+import { t } from "./i18n/main-i18n";
 
 export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
 
@@ -250,12 +251,12 @@ export async function resetBundledRuntimeEnv(
   } else if (platform === "win32") {
     sourceZipPath = resolveBundledEnvZipPath(app, "win32", options.resourcesRoot);
   } else {
-    throw createRuntimeEnvResetFailure("当前平台不支持从内置 env.zip 重置运行环境。", {});
+    throw createRuntimeEnvResetFailure(t("envBootstrap.resetUnsupportedPlatform"), {});
   }
 
   const runtimeRoot = resolveRuntimeRoot(app, platform);
   if (!sourceZipPath || !fileExists(sourceZipPath)) {
-    throw createRuntimeEnvResetFailure("安装包内置 env.zip 不存在，无法重置运行环境。", {
+    throw createRuntimeEnvResetFailure(t("envBootstrap.bundledEnvZipMissing"), {
       runtimeRoot,
       sourceZipPath: sourceZipPath ?? undefined
     });
@@ -265,7 +266,7 @@ export async function resetBundledRuntimeEnv(
   try {
     if (fs.existsSync(runtimeRoot)) {
       if (!fs.statSync(runtimeRoot).isDirectory()) {
-        throw new Error(`运行环境路径不是目录：${runtimeRoot}`);
+        throw new Error(t("envBootstrap.runtimeRootNotDirectory", { path: runtimeRoot }));
       }
       backupPath = generateBackupDirName(runtimeRoot, platform, options.nowSeconds);
       migrateOldRootToBackup(platform, runtimeRoot, backupPath);
@@ -285,7 +286,7 @@ export async function resetBundledRuntimeEnv(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw createRuntimeEnvResetFailure(`运行环境重置失败：${message}`, {
+    throw createRuntimeEnvResetFailure(t("envBootstrap.resetFailed", { message }), {
       runtimeRoot,
       backupPath,
       sourceZipPath
@@ -322,7 +323,7 @@ function normalizeSafeRelativePath(relativePath: string) {
     normalized === ".." ||
     normalized.startsWith("../")
   ) {
-    throw new Error(`env.zip 包含不安全路径：${relativePath}`);
+    throw new Error(t("envBootstrap.unsafePath", { path: relativePath }));
   }
   return normalized;
 }
@@ -348,13 +349,13 @@ function normalizeEnvZipEntryRelativePath(entryName: string) {
     return null;
   }
   if (segments[0] !== ENV_ZIP_ROOT_DIR_NAME) {
-    throw new Error(`env.zip 必须解压为唯一顶层 env/ 目录，发现路径：${entryName}`);
+    throw new Error(t("envBootstrap.rootDirRequired", { path: entryName }));
   }
   if (segments.length === 1) {
     return null;
   }
   if (isNestedEnvWrapperSegment(segments[1] ?? "")) {
-    throw new Error(`env.zip 只能剥离一层 env/，发现嵌套环境目录：${entryName}`);
+    throw new Error(t("envBootstrap.nestedRoot", { path: entryName }));
   }
   return normalizeSafeRelativePath(segments.slice(1).join("/"));
 }
@@ -367,7 +368,7 @@ function resolveSafeTargetPath(targetRoot: string, relativePath: string) {
     : `${targetRootResolved}${path.sep}`;
 
   if (targetPath !== targetRootResolved && !targetPath.startsWith(rootWithSeparator)) {
-    throw new Error(`env.zip 包含越界路径：${relativePath}`);
+    throw new Error(t("envBootstrap.outsidePath", { path: relativePath }));
   }
 
   return targetPath;
@@ -461,7 +462,7 @@ export function resolveDesktopVersion(app: AppVersionReader = {}) {
     }
   }
 
-  throw new Error("无法读取 Desktop VERSION。");
+  throw new Error(t("envBootstrap.versionReadFailed"));
 }
 
 function normalizeZipEntries(zip: JSZip) {
@@ -487,22 +488,22 @@ function normalizeZipEntries(zip: JSZip) {
 async function validateEnvZipVersion(entries: EnvZipEntry[], expectedDesktopVersion: string) {
   const normalizedExpectedVersion = normalizeVersion(expectedDesktopVersion);
   if (!normalizedExpectedVersion) {
-    throw new Error("Desktop VERSION 为空，无法校验 env.zip。");
+    throw new Error(t("envBootstrap.desktopVersionEmpty"));
   }
 
   const versionEntry = entries.find(
     (entry) => !entry.directory && entry.relativePath === VERSION_FILE_NAME
   );
   if (!versionEntry) {
-    throw new Error("env.zip 缺少 VERSION 文件。");
+    throw new Error(t("envBootstrap.versionFileMissing"));
   }
 
   const envVersion = normalizeVersion(await versionEntry.entry.async("string"));
   if (!envVersion) {
-    throw new Error("env.zip VERSION 为空。");
+    throw new Error(t("envBootstrap.envVersionEmpty"));
   }
   if (envVersion !== normalizedExpectedVersion) {
-    throw new Error(`env.zip VERSION 不匹配：期望 ${normalizedExpectedVersion}，实际 ${envVersion}。`);
+    throw new Error(t("envBootstrap.versionMismatch", { expected: normalizedExpectedVersion, actual: envVersion }));
   }
 }
 
@@ -536,7 +537,7 @@ export async function importEnvZipToRuntime(
   } = {}
 ): Promise<EnvZipImportResult> {
   if (path.extname(zipPath).toLowerCase() !== ".zip") {
-    throw new Error("首次安装只能导入 env.zip。");
+    throw new Error(t("envBootstrap.firstInstallZipOnly"));
   }
 
   const zipBuffer = await fs.promises.readFile(zipPath);
@@ -572,7 +573,7 @@ export async function importEnvZipToRuntime(
   }
 
   if (copiedFiles + skippedFiles === 0) {
-    throw new Error("env.zip 内没有可导入的文件。");
+    throw new Error(t("envBootstrap.emptyImport"));
   }
 
   const initialEnvPackage = await persistInitialEnvPackage({
@@ -624,7 +625,7 @@ export function migrateOldRootToBackup(
   backupPath = generateBackupDirName(rootPath, platform)
 ): string {
   if (fs.existsSync(backupPath)) {
-    throw new Error(`旧环境备份目录已存在：${backupPath}`);
+    throw new Error(t("envBootstrap.backupExists", { path: backupPath }));
   }
   fs.renameSync(rootPath, backupPath);
   return backupPath;

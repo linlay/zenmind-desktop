@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import { getDesktopWebappsDataRoot } from "../user-paths";
+import { t } from "../i18n/main-i18n";
 
 const DEMO_RESOURCES_ROOT_NAME = "demo";
 const DEMO_MANIFEST_FILE_NAME = "manifest.json";
@@ -104,7 +105,7 @@ export function installBundledWebappTemplates(
       installed: false,
       sourceDir: "",
       targetDir,
-      message: "安装包未包含网站小应用示例。"
+      message: t("webapp.demoMissingInPackage")
     };
   }
 
@@ -115,7 +116,7 @@ export function installBundledWebappTemplates(
       installed: false,
       sourceDir: "",
       targetDir,
-      message: "未找到内置网站小应用示例模板。"
+      message: t("webapp.demoTemplateMissing")
     };
   }
 
@@ -129,7 +130,7 @@ export function installBundledWebappTemplates(
     installed: true,
     sourceDir,
     targetDir,
-    message: "已安装内置网站小应用示例。"
+    message: t("webapp.demoInstalled")
   };
 }
 

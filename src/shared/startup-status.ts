@@ -1,8 +1,10 @@
-const DEFAULT_STARTUP_ACTION_MESSAGE = "启动中...";
-
-export function formatStartupStatusText(serviceName: string, message?: string | null) {
+export function formatStartupStatusText(
+  serviceName: string,
+  message?: string | null,
+  fallbackMessage = "Starting..."
+) {
   const normalizedServiceName = serviceName.trim();
-  const normalizedMessage = (message ?? "").trim() || DEFAULT_STARTUP_ACTION_MESSAGE;
+  const normalizedMessage = (message ?? "").trim() || fallbackMessage;
 
   if (!normalizedServiceName) {
     return normalizedMessage;

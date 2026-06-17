@@ -1,5 +1,6 @@
 import { webContents as electronWebContents } from "electron";
 import type { IpcMain } from "electron";
+import { t } from "../i18n/main-i18n";
 
 function readWebContentsId(value: unknown) {
   const webContentsId = Number(value);
@@ -14,16 +15,16 @@ export function openWebviewDevToolsById(
 ) {
   const webContentsId = readWebContentsId(rawWebContentsId);
   if (!webContentsId) {
-    return { ok: false, message: "内嵌网页不可用。" };
+    return { ok: false, message: t("webviewDevTools.unavailable") };
   }
 
   const webContents = options.webContents || electronWebContents;
   const targetContents = webContents.fromId(webContentsId);
   if (!targetContents || targetContents.isDestroyed()) {
-    return { ok: false, message: "内嵌网页已关闭。" };
+    return { ok: false, message: t("webviewDevTools.closed") };
   }
   if (targetContents.getType() !== "webview") {
-    return { ok: false, message: "目标不是内嵌网页。" };
+    return { ok: false, message: t("webviewDevTools.notWebview") };
   }
 
   targetContents.openDevTools({ mode: "detach" });

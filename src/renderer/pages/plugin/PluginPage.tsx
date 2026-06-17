@@ -22,6 +22,7 @@ import type {
   AssistantPageContext,
   DesktopPageContextSnapshot,
 } from "../../../shared/contracts";
+import type { TranslateFunction } from "../../../shared/i18n";
 import {
   EXTRACT_STRUCTURED_SCRIPT,
   READ_PAGE_DATA_SCRIPT,
@@ -161,18 +162,20 @@ function buildPluginWebviewFallbackContext(
   surfaceLabel: string,
   surfaceRoute?: string,
   embedPath?: string,
+  t: TranslateFunction,
 ): AssistantPageContext {
-  const normalizedName = normalizeWhitespace(serviceDisplayName || "内嵌应用");
+  const fallbackName = t("pluginPage.embeddedAppFallback");
+  const normalizedName = normalizeWhitespace(serviceDisplayName || fallbackName);
   const fallbackUrl = embeddedUrl || webUrl || window.location.href;
   return {
     url: fallbackUrl,
-    title: normalizedName || "内嵌应用",
+    title: normalizedName || fallbackName,
     selectedText: "",
     metaDescription: "",
     headings: [],
     bodyText: [
-      `当前左侧区域是内嵌应用「${normalizedName || "内嵌应用"}」。`,
-      "需要实时读取或操作时，优先使用 desktop.page.readCurrent、desktop.page.extractStructured、desktop.page.interact、desktop.page.fillForm、desktop.page.submitForm。",
+      t("pluginPage.contextCurrentEmbeddedApp", { name: normalizedName || fallbackName }),
+      t("pluginPage.contextUseDesktopPage"),
     ].join(" "),
     browserTarget: fallbackUrl
       ? {
@@ -338,7 +341,7 @@ async function tryReadPluginWebviewPageContext(
       title:
         typeof pageContext?.title === "string" && pageContext.title
           ? pageContext.title
-          : serviceDisplayName || "内嵌应用",
+          : serviceDisplayName || t("pluginPage.embeddedAppFallback"),
       selectedText:
         typeof pageContext?.selectedText === "string"
           ? pageContext.selectedText
@@ -385,7 +388,7 @@ export function PluginPage({
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
   const surfaceId = surfaceIdProp?.trim() || pluginId;
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
   const service = services.find((s) => s.id === pluginId);
   const agentPlatformService =
@@ -394,7 +397,7 @@ export function PluginPage({
       : null;
   const serviceDisplayName =
     surfaceLabel ||
-    (service ? getServiceDisplayName(service.id, service.name) : "");
+    (service ? getServiceDisplayName(service.id, service.name, t) : "");
   const surfaceRoute = location.pathname;
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -555,6 +558,7 @@ export function PluginPage({
         serviceDisplayName,
         surfaceRoute,
         effectiveEmbedPath,
+        t,
       )
     );
   }
@@ -566,12 +570,12 @@ export function PluginPage({
     if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
       return embeddedError(
         "script_too_large",
-        "脚本超过内嵌网页执行大小限制。",
+        t("externalWebview.error.scriptTooLarge"),
       );
     }
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
-      return embeddedError("webview_unavailable", "目标内嵌网页不可用。");
+      return embeddedError("webview_unavailable", t("pluginPage.error.webviewUnavailable"));
     }
     try {
       const result = await targetWebview.executeJavaScript(script, true);
@@ -671,7 +675,7 @@ export function PluginPage({
     ) {
       return embeddedError(
         "invalid_args",
-        "selector 和有效的 action 是必填项。",
+        t("desktopAction.selectorActionRequired"),
         args,
       );
     }
@@ -706,7 +710,7 @@ export function PluginPage({
     if (fields.length === 0) {
       return embeddedError(
         "invalid_args",
-        "fields 是必填项，且每个字段都需要 selector。",
+        t("desktopAction.fieldsSelectorRequired"),
         args,
       );
     }
@@ -1341,7 +1345,7 @@ export function PluginPage({
           case "desktop.embeddedWeb.executeScript": {
             const script = typeof args.script === "string" ? args.script : "";
             if (!script.trim()) {
-              return embeddedError("invalid_script", "script 是必填项。");
+              return embeddedError("invalid_script", t("externalWebview.error.invalidScript"));
             }
             return executeWebviewScript(args, script);
           }
@@ -1358,6 +1362,7 @@ export function PluginPage({
     service?.status,
     serviceDisplayName,
     skipContextRegistration,
+    t,
     webviewCurrentUrl,
     webUrl,
   ]);
@@ -1366,13 +1371,10 @@ export function PluginPage({
     if (pluginId === "agent-webclient") {
       return (
         <section className="empty-state" {...surfaceVisibilityProps}>
-          <h1>智能助理服务未注册</h1>
-          <p>
-            未找到 agent-webclient 内置服务。请确认 Desktop
-            已同步完整内置资源，或在控制中心安装 agent-webclient 发布包。
-          </p>
+          <h1>{t("pluginPage.agentServiceMissingTitle")}</h1>
+          <p>{t("pluginPage.agentServiceMissingDescription")}</p>
           <Link className="primary-link" to="/control-center">
-            前往控制中心
+            {t("pluginPage.openControlCenter")}
           </Link>
         </section>
       );
@@ -1380,10 +1382,10 @@ export function PluginPage({
 
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
-        <h1>服务未注册</h1>
-        <p>未找到 ID 为 {pluginId} 的服务。</p>
+        <h1>{t("pluginPage.serviceMissingTitle")}</h1>
+        <p>{t("pluginPage.serviceMissingDescription", { pluginId })}</p>
         <Link className="primary-link" to="/control-center">
-          返回控制中心
+          {t("pluginPage.backToControlCenter")}
         </Link>
       </section>
     );
@@ -1393,10 +1395,10 @@ export function PluginPage({
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
         <p className="eyebrow">PLUGIN</p>
-        <h1>{serviceDisplayName} 暂未就绪</h1>
+        <h1>{t("pluginPage.notReadyTitle", { name: serviceDisplayName })}</h1>
         <p>{service.message}</p>
         <Link className="primary-link" to="/control-center">
-          前往控制中心
+          {t("pluginPage.openControlCenter")}
         </Link>
       </section>
     );
@@ -1410,9 +1412,9 @@ export function PluginPage({
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>{serviceDisplayName}</h1>
-        <p>该服务没有前端页面。</p>
+        <p>{t("pluginPage.noFrontend")}</p>
         <Link className="primary-link" to="/control-center">
-          返回控制中心
+          {t("pluginPage.backToControlCenter")}
         </Link>
       </section>
     );
@@ -1423,9 +1425,9 @@ export function PluginPage({
       <section className="empty-state" {...surfaceVisibilityProps}>
         <p className="eyebrow">PLUGIN</p>
         <h1>{serviceDisplayName}</h1>
-        <p>认证桥接失败：{bridgeError}</p>
+        <p>{t("pluginPage.authBridgeFailed", { message: bridgeError })}</p>
         <Link className="primary-link" to="/control-center">
-          返回控制中心
+          {t("pluginPage.backToControlCenter")}
         </Link>
       </section>
     );
@@ -1457,8 +1459,8 @@ export function PluginPage({
           onClick={() => {
             navigate(-1);
           }}
-          title="返回上一页"
-          aria-label="返回"
+          title={t("pluginPage.back")}
+          aria-label={t("common.back")}
         >
           <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
             <path d="m313-440 224 224-57 57-320-320 320-320 57 57-224 224h487v80H313Z"/>
@@ -1475,7 +1477,7 @@ export function PluginPage({
               >
                 <p className="eyebrow">PLUGIN</p>
                 <h1>{serviceDisplayName}</h1>
-                <p>智能助理服务正在恢复，页面会自动重新加载。</p>
+                <p>{t("pluginPage.agentRecovering")}</p>
               </section>
             ) : null}
             {createElement("webview", {
@@ -1496,13 +1498,13 @@ export function PluginPage({
           <section
             className="empty-state"
             aria-busy="true"
-            aria-label={`${serviceDisplayName} 正在加载`}
+            aria-label={t("pluginPage.loading", { name: serviceDisplayName })}
           />
         ) : (
           <section className="empty-state">
             <p className="eyebrow">PLUGIN</p>
             <h1>{serviceDisplayName}</h1>
-            <p>正在准备认证上下文…</p>
+            <p>{t("pluginPage.preparingAuth")}</p>
           </section>
         )}
       </div>

@@ -5,12 +5,15 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const dictionariesRoot = path.join(projectRoot, "src", "shared", "i18n", "dictionaries");
 
-function extractMessages(filePath) {
+function extractMessages(filePath, failures) {
   const source = fs.readFileSync(filePath, "utf8");
   const entries = new Map();
   const entryPattern = /^\s*"([^"]+)":\s*"((?:\\"|[^"])*)"/gm;
   let match;
   while ((match = entryPattern.exec(source))) {
+    if (entries.has(match[1])) {
+      failures.push(`${path.relative(projectRoot, filePath)} contains duplicate key ${match[1]}`);
+    }
     entries.set(match[1], match[2]);
   }
   return entries;
@@ -22,9 +25,9 @@ function placeholders(value) {
 
 const basePath = path.join(dictionariesRoot, "zhCN.ts");
 const enPath = path.join(dictionariesRoot, "enUS.ts");
-const zh = extractMessages(basePath);
-const en = extractMessages(enPath);
 const failures = [];
+const zh = extractMessages(basePath, failures);
+const en = extractMessages(enPath, failures);
 
 for (const [key, value] of zh) {
   if (!value.trim()) {

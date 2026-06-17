@@ -1,5 +1,6 @@
 import http from "node:http";
 import https from "node:https";
+import { t } from "../../i18n/main-i18n";
 
 export function delay(ms: number) {
   return new Promise<void>((resolve) => {
@@ -44,7 +45,7 @@ export function probeHttpUrl(target: string, optionsOrTimeoutMs: HttpProbeOption
     try {
       parsed = new URL(target);
     } catch {
-      resolve({ target, ok: false, message: "URL 无效" });
+      resolve({ target, ok: false, message: t("service.urlInvalid") });
       return;
     }
 
@@ -74,7 +75,9 @@ export function probeHttpUrl(target: string, optionsOrTimeoutMs: HttpProbeOption
           statusCode,
           contentType,
           bodyPreview,
-          message: statusCode >= 200 && statusCode < 400 ? undefined : `HTTP ${statusCode || "无响应"}`
+          message: statusCode >= 200 && statusCode < 400
+            ? undefined
+            : `HTTP ${statusCode || t("service.probeNoResponse")}`
         });
       });
     });

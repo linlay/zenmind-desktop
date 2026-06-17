@@ -26,6 +26,7 @@ import {
   DESKTOP_PET_WINDOW_SIZE
 } from "./copilot/pet-copilot/desktop-pet";
 import { normalizeDesktopPetAgentEvent } from "./copilot/pet-copilot/desktop-pet-preview";
+import { t } from "./i18n/main-i18n";
 
 type DesktopPetPreviewPanelLike = {
   status?: string;
@@ -183,7 +184,6 @@ export function createDesktopPetActiveRunTracker() {
   };
 }
 
-const DESKTOP_PET_TASK_TITLE_FALLBACK = "未命名任务";
 const DESKTOP_PET_GENERIC_TASK_PREVIEWS = new Set([
   "",
   "思考中",
@@ -221,7 +221,7 @@ function getUsableDesktopPetTaskPreview(value: unknown) {
 function resolveDesktopPetTaskTitle(chat: AssistantNavChatItem) {
   return toDesktopPetTaskText(chat.chatName) ||
     getUsableDesktopPetTaskPreview(chat.lastRunContent) ||
-    DESKTOP_PET_TASK_TITLE_FALLBACK;
+    t("desktopPet.task.untitled");
 }
 
 // 同一个会话（chatId）可能出现在多个 agent 分组的 recentChats 中，按 chatId 去重时
@@ -1018,7 +1018,7 @@ function getDesktopPetStatusPatchFromPreview(panel: DesktopPetPreviewPanel | nul
   if (panel.status === "waiting") {
     return {
       status: "awaiting" as const,
-      hint: "思考中",
+      hint: t("desktopPet.status.thinking"),
       chatId: panel.chatId,
       unreadCount: 0
     };
@@ -1034,7 +1034,7 @@ function getDesktopPetStatusPatchFromPreview(panel: DesktopPetPreviewPanel | nul
   if (panel.status === "error") {
     return {
       status: "error" as const,
-      hint: "出错了",
+      hint: t("desktopPet.status.error"),
       chatId: panel.chatId,
       unreadCount: 0
     };
@@ -1049,7 +1049,7 @@ function getDesktopPetStatusPatchFromPreview(panel: DesktopPetPreviewPanel | nul
   }
   return {
     status: "running" as const,
-    hint: "思考中",
+    hint: t("desktopPet.status.thinking"),
     chatId: panel.chatId,
     unreadCount: 0
   };

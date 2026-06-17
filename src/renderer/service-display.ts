@@ -1,11 +1,15 @@
-export const AGENT_WEBCLIENT_DISPLAY_NAME = "智能助理";
+import type { TranslateFunction } from "../shared/i18n";
 
-export function getServiceDisplayName(serviceId: string, serviceName: string) {
+export function getAgentWebclientDisplayName(t: TranslateFunction) {
+  return t("service.display.agentWebclient");
+}
+
+export function getServiceDisplayName(serviceId: string, serviceName: string, t: TranslateFunction) {
   if (serviceId === "agent-container-hub") {
-    return "容器仓库";
+    return t("service.display.containerHub");
   }
   if (serviceId === "agent-webclient") {
-    return AGENT_WEBCLIENT_DISPLAY_NAME;
+    return getAgentWebclientDisplayName(t);
   }
   return serviceName;
 }

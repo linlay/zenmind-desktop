@@ -2,6 +2,7 @@ import type { App } from "electron";
 import type { ServiceCommandResult, ServiceState } from "../shared/contracts";
 import { emitPluginBridgeHook } from "./plugin-bridge";
 import { getService } from "./services/service-registry";
+import { t } from "./i18n/main-i18n";
 
 export async function invokePluginDesktopAction({
   app,
@@ -38,7 +39,7 @@ export async function invokePluginDesktopAction({
   });
   return {
     ok: true,
-    message: `${service.name} 已执行 ${action.label}。`,
+    message: t("pluginActions.executed", { serviceName: service.name, actionLabel: action.label }),
     service: current
   };
 }

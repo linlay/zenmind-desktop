@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from "electron";
 import type { ServiceDefinition } from "../manifest-utils";
+import { t } from "../i18n/main-i18n";
 
 type ShowMessageBox = typeof import("electron").dialog.showMessageBox;
 
@@ -86,10 +87,10 @@ function buildWindowsPowerShellPath() {
 
 function getProcessLabel(processInfo: PortProcessInfo | null) {
   if (!processInfo) {
-    return "其他进程";
+    return t("portConflict.otherProcess");
   }
-  const processName = processInfo.name.trim() || "未知进程";
-  return `进程 ${processName} (PID ${processInfo.pid})`;
+  const processName = processInfo.name.trim() || t("portConflict.unknownProcess");
+  return t("portConflict.processLabel", { name: processName, pid: processInfo.pid });
 }
 
 export function isPortConflictError(errorMessage: string) {
@@ -129,7 +130,7 @@ async function findUnixProcessOnPort(port: number): Promise<PortProcessInfo | nu
   const rawName = psResult.stdout.trim();
   return {
     pid,
-    name: rawName ? path.basename(rawName) : "未知进程"
+    name: rawName ? path.basename(rawName) : t("portConflict.unknownProcess")
   };
 }
 
@@ -160,7 +161,7 @@ async function findWindowsProcessOnPort(port: number): Promise<PortProcessInfo |
   const rawName = nameParts.join("\t").trim();
   return {
     pid,
-    name: rawName || "未知进程"
+    name: rawName || t("portConflict.unknownProcess")
   };
 }
 
@@ -201,12 +202,12 @@ export async function detectPortConflict(
 export function buildPortConflictDialogOptions(port: number, processInfo: PortProcessInfo | null): MessageBoxOptions {
   return {
     type: "warning",
-    buttons: ["取消", "终止进程并重启"],
+    buttons: [t("portConflict.cancel"), t("portConflict.killAndRestart")],
     defaultId: 0,
     cancelId: 0,
-    title: "端口被占用",
-    message: `端口 ${port} 已被${getProcessLabel(processInfo)}占用。是否终止该进程并重新启动？`,
-    detail: "确认后会先终止占用进程，再自动重试启动服务。"
+    title: t("portConflict.title"),
+    message: t("portConflict.message", { port, processLabel: getProcessLabel(processInfo) }),
+    detail: t("portConflict.detail")
   };
 }
 

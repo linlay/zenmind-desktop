@@ -69,11 +69,11 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
 
   ipcMain.handle("plugins.install", async () => runServiceMutation(async () => {
     const result = await showArchiveDialog(
-      "选择插件包 (.zip)",
+      t("dialog.installPlugin.title"),
       ["zip"]
     );
     if (result.canceled || result.filePaths.length === 0) {
-      return { ok: false, message: "已取消导入。" };
+      return { ok: false, message: t("market.importCancelled") };
     }
     const installResult = await installPluginFromArchive(app, result.filePaths[0]);
     if (installResult.ok) {
@@ -126,9 +126,9 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
   ipcMain.handle("market.exportSandboxImage", async (_event: any, itemId: string) => runServiceMutation(async () => {
     const imageRef = String(itemId ?? "").trim();
     const saveResult = await showSaveDialog({
-      title: "导出沙箱镜像",
+      title: t("dialog.exportSandboxImage.title"),
       defaultPath: getSandboxImageExportDefaultPath(app, platform, imageRef),
-      filters: [{ name: "Docker / Podman 镜像归档", extensions: ["tar"] }]
+      filters: [{ name: t("dialog.exportSandboxImage.filter"), extensions: ["tar"] }]
     });
     if (saveResult.canceled || !saveResult.filePath) {
       return {
@@ -136,7 +136,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
         itemId: imageRef,
         type: "sandbox-image",
         state: "failed",
-        message: "已取消导出。",
+        message: t("market.exportCancelled"),
         imageRef
       };
     }
@@ -152,11 +152,11 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
       });
     };
     const result = await showFileDialog({
-      title: "选择沙箱镜像压缩包",
+      title: t("dialog.importSandboxImage.title"),
       properties: ["openFile"],
       filters: [
         {
-          name: "镜像压缩包",
+          name: t("dialog.importSandboxImage.filter"),
           extensions: platform === "win32" ? ["tar", "gz", "tgz", "zip"] : ["tar", "gz", "tgz"]
         }
       ]
@@ -167,7 +167,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
         itemId: "",
         type: "sandbox-image",
         state: "failed",
-        message: "已取消导入。"
+        message: t("market.importCancelled")
       };
     }
     return importSandboxImageFromPath(app, result.filePaths[0], {
@@ -178,7 +178,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
 
   ipcMain.handle("market.importSkill", async () => runServiceMutation(async () => {
     const result = await showFileDialog({
-      title: "选择 Skill 包或 SKILL.md",
+      title: t("dialog.importSkill.title"),
       properties: ["openFile"],
       filters: [
         {
@@ -193,7 +193,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
         itemId: "",
         type: "skill",
         state: "failed",
-        message: "已取消导入。"
+        message: t("market.importCancelled")
       };
     }
     return importSkillFromPath(app, result.filePaths[0]);
@@ -209,14 +209,14 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
 
   ipcMain.handle("panAuth.importPrivateKey", async () => {
     const result = await showFileDialog({
-      title: "选择要导入的 App 私钥",
+      title: t("dialog.importPrivateKey.title"),
       properties: ["openFile"]
     });
     if (result.canceled || result.filePaths.length === 0) {
       const status = getPanAuthStatus(app);
       return {
         ok: false,
-        message: "已取消导入 Desktop App 私钥。",
+        message: t("panAuth.privateKeyImportCancelled"),
         status
       };
     }

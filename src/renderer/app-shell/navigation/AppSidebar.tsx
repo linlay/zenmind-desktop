@@ -45,7 +45,7 @@ import {
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
-import type { TranslationKey } from "../../../shared/i18n";
+import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
   SettingsSectionGroupId,
   SettingsSectionId,
@@ -350,6 +350,7 @@ function readInitialAssistantNavSortMode(): AssistantNavSortMode {
 
 function getRunningCoderAcpProxyOptions(
   services: ServiceState[],
+  t: TranslateFunction,
 ): RunningCoderAcpProxyOption[] {
   const servicesById = new Map(services.map((service) => [service.id, service]));
   return CODER_ACP_PROXY_SERVICE_OPTIONS.flatMap((option) => {
@@ -360,7 +361,7 @@ function getRunningCoderAcpProxyOptions(
     return [
       {
         ...option,
-        statusLabel: service.statusLabel || "运行中",
+        statusLabel: service.statusLabel || t("controlCenter.status.running"),
       },
     ];
   });
@@ -533,23 +534,23 @@ function formatAssistantChatTime(updatedAt: string) {
     return formatYearMonth(updatedDate);
   }
 
-  // 今天：显示 HH:mm
+  // Today: HH:mm.
   if (toLocalDateKey(updatedDate) === toLocalDateKey(now)) {
     return formatLocalTime(updatedDate);
   }
 
-  // 今年但不是今天：显示 MM-dd
+  // Same year but not today: MM-dd.
   if (updatedDate.getFullYear() === now.getFullYear()) {
     return formatMonthDay(updatedDate);
   }
 
-  // 跨年：显示 YYYY-MM
+  // Different year: YYYY-MM.
   return formatYearMonth(updatedDate);
 }
 
 function isAssistantRunningPreview(value: string) {
   const normalized = value.trim();
-  return normalized === "思考中" || normalized === "思考中...";
+  return normalized === "\u601d\u8003\u4e2d" || normalized === "\u601d\u8003\u4e2d...";
 }
 
 function toAssistantSortTimestamp(value: string | undefined) {
@@ -685,8 +686,8 @@ function SidebarCollapseToggle({
       ]
         .filter(Boolean)
         .join(" ")}
-      aria-label={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
-      title={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
+      aria-label={isCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+      title={isCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
       aria-expanded={!isCollapsed}
       onClick={onToggleCollapsed}
     >
@@ -1218,6 +1219,7 @@ export function AppSidebar({
       try {
         runningAcpProxies = getRunningCoderAcpProxyOptions(
           await window.electronAPI.services.list(),
+          t,
         );
       } catch (error) {
         console.warn("[assistant] failed to list CODER ACP proxy services", error);
@@ -1248,7 +1250,7 @@ export function AppSidebar({
     if (!name) {
       setCoderAcpProjectDialog({
         ...dialog,
-        error: "请输入项目名称。",
+        error: t("sidebar.project.nameRequired"),
       });
       return;
     }
@@ -1261,7 +1263,7 @@ export function AppSidebar({
     if (dialog.programmingMode === "acp" && !selectedAcpProxy) {
       setCoderAcpProjectDialog({
         ...dialog,
-        error: "请选择一个正在运行的 ACP 工具，或切换为内置编程。",
+        error: t("sidebar.project.acpRequired"),
       });
       return;
     }
@@ -1280,7 +1282,7 @@ export function AppSidebar({
         setCoderAcpProjectDialog({
           ...dialog,
           pending: false,
-          error: result.message || "创建 CODER 智能体失败。",
+          error: result.message || t("sidebar.project.createCoderFailed"),
         });
         return;
       }
@@ -1325,7 +1327,7 @@ export function AppSidebar({
         agentKey: websiteAgentKey,
       });
       if (!result.ok || !result.item) {
-        setWebsiteCreateError(result.message || "添加内嵌网站失败。");
+        setWebsiteCreateError(result.message || t("sidebar.website.addFailed"));
         return;
       }
       setWebsiteDialogOpen(false);
@@ -1405,14 +1407,14 @@ export function AppSidebar({
     try {
       const result = await window.electronAPI.assistant.exportChat(chat.chatId);
       if (!result.ok) {
-        window.alert(result.message || "导出会话失败。");
+        window.alert(result.message || t("sidebar.chat.exportFailed"));
         return;
       }
       if (result.filePath) {
-        window.alert(`已导出到：\n${result.filePath}`);
+        window.alert(t("sidebar.chat.exportedTo", { path: result.filePath }));
       }
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "导出会话失败。");
+      window.alert(error instanceof Error ? error.message : t("sidebar.chat.exportFailed"));
     }
   }
 
@@ -1434,7 +1436,7 @@ export function AppSidebar({
     const nextName = assistantChatRenameDialog.value.trim();
     if (!nextName) {
       setAssistantChatRenameDialog((current) =>
-        current ? { ...current, error: "请输入会话名称。" } : current,
+        current ? { ...current, error: t("sidebar.chat.nameRequired") } : current,
       );
       return;
     }
@@ -1447,7 +1449,7 @@ export function AppSidebar({
         nextName,
       );
       if (!result.ok) {
-        throw new Error(result.message || "重命名会话失败。");
+        throw new Error(result.message || t("sidebar.chat.renameFailed"));
       }
       setAssistantChatRenameDialog(null);
       await onRefreshAssistantNavAgents?.();
@@ -1457,7 +1459,7 @@ export function AppSidebar({
           ? {
               ...current,
               pending: false,
-              error: error instanceof Error ? error.message : "重命名会话失败。",
+              error: error instanceof Error ? error.message : t("sidebar.chat.renameFailed"),
             }
           : current,
       );
@@ -1472,7 +1474,7 @@ export function AppSidebar({
   async function handleAssistantDeleteChat(chat: AssistantNavChatItem) {
     setAssistantChatMenu(null);
     const chatLabel = chat.chatName?.trim() || chat.chatId;
-    if (!window.confirm(`确定要删除会话“${chatLabel}”吗？`)) {
+    if (!window.confirm(t("sidebar.chat.deleteConfirm", { name: chatLabel }))) {
       return;
     }
     await window.electronAPI.assistant.deleteChat(chat.chatId);
@@ -1636,7 +1638,7 @@ export function AppSidebar({
       >
         {summary.pendingCount > 0 ? (
           <span className="sidebar-status-badge is-pending">
-            待{summary.pendingCount > 1 ? summary.pendingCount : ""}
+            {t("sidebar.assistants.awaitingStatus.question")}{summary.pendingCount > 1 ? summary.pendingCount : ""}
           </span>
         ) : null}
         {unreadLabel ? (
@@ -1717,8 +1719,8 @@ export function AppSidebar({
       : "time";
     const previewText =
       chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
-        ? chat.chatName || "暂无预览"
-        : chat.lastRunContent || chat.chatName || "暂无预览";
+        ? chat.chatName || t("sidebar.chat.noPreview")
+        : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
     return (
       <button
         type="button"
@@ -1743,7 +1745,7 @@ export function AppSidebar({
             ]
               .filter(Boolean)
               .join(" ")}
-            aria-label={!chat.isRead ? "未读" : undefined}
+            aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
             aria-hidden={chat.isRead ? "true" : undefined}
           />
           <span className="worker-chat-name">{previewText}</span>
@@ -1764,8 +1766,8 @@ export function AppSidebar({
           <button
             type="button"
             className="assistant-worker-chat-menu-button"
-            aria-label="会话更多操作"
-            title="更多"
+            aria-label={t("sidebar.chat.moreActions")}
+            title={t("common.more")}
             onClick={(event) => handleAssistantOpenChatMenu(event, chat)}
           >
             <span
@@ -1802,9 +1804,9 @@ export function AppSidebar({
     const previewText = previewChat
       ? previewChat.hasActiveRun &&
         isAssistantRunningPreview(previewChat.lastRunContent)
-        ? previewChat.chatName || "暂无预览"
-        : previewChat.lastRunContent || previewChat.chatName || "暂无预览"
-      : agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
+        ? previewChat.chatName || t("sidebar.chat.noPreview")
+        : previewChat.lastRunContent || previewChat.chatName || t("sidebar.chat.noPreview")
+      : agent.latestPreview || (chatCount > 0 ? "" : t("sidebar.agent.noChats"));
     const previewStatus =
       awaitingChat || agent.hasPendingAwaiting
         ? "awaiting"
@@ -1853,11 +1855,11 @@ export function AppSidebar({
                     ) : null}
                     <span className="assistant-worker-actions">
                       {unreadCount > 0 ? (
-                        <Tooltip content="全部已读">
+                        <Tooltip content={t("sidebar.agent.markAllRead")}>
                           <button
                             type="button"
                             className="assistant-worker-icon-button"
-                            aria-label={`全部已读 ${agent.displayName}`}
+                            aria-label={t("sidebar.agent.markAllReadFor", { name: agent.displayName })}
                             onClick={(event) =>
                               void handleAssistantMarkAllRead(event, agent)
                             }
@@ -1869,11 +1871,11 @@ export function AppSidebar({
                           </button>
                         </Tooltip>
                       ) : null}
-                      <Tooltip content="新建对话">
+                      <Tooltip content={t("sidebar.agent.newChat")}>
                         <button
                           type="button"
                           className="assistant-worker-icon-button"
-                          aria-label={`新建对话 ${agent.displayName}`}
+                          aria-label={t("sidebar.agent.newChatFor", { name: agent.displayName })}
                           onClick={(event) =>
                             handleAssistantNewChat(event, agent)
                           }
@@ -1881,11 +1883,11 @@ export function AppSidebar({
                           <EditSquareIcon width={16} />
                         </button>
                       </Tooltip>
-                      <Tooltip content="更多操作">
+                      <Tooltip content={t("sidebar.agent.moreActions")}>
                         <button
                           type="button"
                           className="assistant-worker-icon-button"
-                          aria-label={`更多操作 ${agent.displayName}`}
+                          aria-label={t("sidebar.agent.moreActionsFor", { name: agent.displayName })}
                           onClick={(event) => handleOpenAgentMenu(event, agent)}
                         >
                           <span
@@ -1913,7 +1915,7 @@ export function AppSidebar({
                       <span
                         className="assistant-material-icon is-loading sidebar-assistant-preview-loading"
                         aria-label={
-                          previewStatus === "awaiting" ? "等待中" : "运行中"
+                          previewStatus === "awaiting" ? t("sidebar.agent.awaiting") : t("sidebar.agent.running")
                         }
                       />
                     ) : null}
@@ -1936,7 +1938,7 @@ export function AppSidebar({
               renderAssistantChatRow(chat, activeChatId),
             )
           ) : chatCount === 0 ? (
-            <div className="status-line">暂无会话</div>
+            <div className="status-line">{t("sidebar.agent.noChats")}</div>
           ) : null}
           {chatCount > recentChats.length ? (
             <button
@@ -1949,8 +1951,10 @@ export function AppSidebar({
                 });
               }}
             >
-              查看更多（共 {chatCount} 条
-              {unreadCount > 0 ? `，未读 ${unreadCount} 条` : ""}）
+              {t("sidebar.chat.viewMore", {
+                count: chatCount,
+                unread: unreadCount > 0 ? t("sidebar.chat.unreadSuffix", { count: unreadCount }) : ""
+              })}
             </button>
           ) : null}
         </div>
@@ -2063,12 +2067,12 @@ export function AppSidebar({
               renderAssistantSortButton()
             ) : null}
             {args.groupId === "assistants" ? (
-              <Tooltip content="新增项目">
+              <Tooltip content={t("sidebar.project.new")}>
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-assistant-project-button"
-                  aria-label="新增项目"
-                  title="新增项目"
+                  aria-label={t("sidebar.project.new")}
+                  title={t("sidebar.project.new")}
                   disabled={creatingCoderProject || Boolean(coderAcpProjectDialog)}
                   onClick={handleCreateCoderProject}
                 >
@@ -2084,12 +2088,12 @@ export function AppSidebar({
               </Tooltip>
             ) : null}
             {args.groupId === "webs" ? (
-              <Tooltip content="新增内嵌网站">
+              <Tooltip content={t("sidebar.website.new")}>
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-website-add-button"
-                  aria-label="新增内嵌网站"
-                  title="新增内嵌网站"
+                  aria-label={t("sidebar.website.new")}
+                  title={t("sidebar.website.new")}
                   onClick={openWebsiteDialog}
                 >
                   <AddIcon width={16} />
@@ -2374,13 +2378,13 @@ export function AppSidebar({
   function getOpenWorkspaceDisabledReason(agent: AssistantNavAgentItem) {
     const workspaceDir = agent.workspaceDir?.trim() ?? "";
     if (!workspaceDir) {
-      return "工作目录不可用";
+      return t("sidebar.agent.workspaceUnavailable");
     }
     if (workspaceDir === "@chat") {
-      return "当前智能体没有本地工作目录";
+      return t("sidebar.agent.workspaceMissing");
     }
     if (agent.workspaceDirExists === false) {
-      return "工作目录不存在";
+      return t("sidebar.agent.workspaceNotFound");
     }
     return "";
   }
@@ -2523,7 +2527,7 @@ export function AppSidebar({
     const nextName = agentDialog.value.trim();
     if (!nextName) {
       setAgentDialog((current) =>
-        current ? { ...current, error: "请输入智能体名称。" } : current,
+        current ? { ...current, error: t("sidebar.agent.nameRequired") } : current,
       );
       return;
     }
@@ -2538,7 +2542,7 @@ export function AppSidebar({
       });
       if (!detailResponse.ok) {
         throw new Error(
-          detailResponse.error?.message || "读取智能体详情失败。",
+          detailResponse.error?.message || t("sidebar.agent.detailFailed"),
         );
       }
       const definition = buildAgentDefinitionForRename(
@@ -2547,7 +2551,7 @@ export function AppSidebar({
         nextName,
       );
       if (!definition) {
-        throw new Error("智能体详情不完整，无法安全修改名称。");
+        throw new Error(t("sidebar.agent.incomplete"));
       }
       const updateResponse = await window.electronAPI.desktopActions.call({
         action: "desktop.agents.updateAgent",
@@ -2558,7 +2562,7 @@ export function AppSidebar({
       });
       if (!updateResponse.ok) {
         throw new Error(
-          updateResponse.error?.message || "修改智能体名称失败。",
+          updateResponse.error?.message || t("sidebar.agent.renameFailed"),
         );
       }
       setAgentDialog(null);
@@ -2590,7 +2594,7 @@ export function AppSidebar({
         args: { key: targetAgent.agentKey },
       });
       if (!response.ok) {
-        throw new Error(response.error?.message || "删除智能体失败。");
+        throw new Error(response.error?.message || t("sidebar.agent.deleteFailed"));
       }
       setAgentDialog(null);
       await onRefreshAssistantNavAgents?.();
@@ -2618,7 +2622,7 @@ export function AppSidebar({
         className="assistant-chat-actions-menu"
         style={{ left: assistantChatMenu.x, top: assistantChatMenu.y }}
         role="menu"
-        aria-label="会话操作"
+        aria-label={t("sidebar.chat.actions")}
       >
         <button
           type="button"
@@ -2626,7 +2630,7 @@ export function AppSidebar({
           onClick={() => void handleAssistantExportChat(chat)}
         >
           <span aria-hidden="true">↓</span>
-          <span>导出</span>
+          <span>{t("sidebar.chat.export")}</span>
         </button>
         <button
           type="button"
@@ -2634,7 +2638,7 @@ export function AppSidebar({
           onClick={() => void handleAssistantRenameChat(chat)}
         >
           <span aria-hidden="true">✎</span>
-          <span>重命名</span>
+          <span>{t("sidebar.chat.rename")}</span>
         </button>
         <button
           type="button"
@@ -2642,7 +2646,7 @@ export function AppSidebar({
           onClick={() => void handleAssistantArchiveChat(chat)}
         >
           <span aria-hidden="true">□</span>
-          <span>归档</span>
+          <span>{t("sidebar.chat.archive")}</span>
         </button>
         <button
           type="button"
@@ -2650,7 +2654,7 @@ export function AppSidebar({
           onClick={() => void handleAssistantDeleteChat(chat)}
         >
           <span aria-hidden="true">×</span>
-          <span>删除</span>
+          <span>{t("sidebar.chat.delete")}</span>
         </button>
       </div>,
       document.body,
@@ -2680,11 +2684,11 @@ export function AppSidebar({
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="sidebar-agent-dialog-head">
-            <strong id="sidebar-chat-rename-dialog-title">重命名会话</strong>
+            <strong id="sidebar-chat-rename-dialog-title">{t("sidebar.chat.renameTitle")}</strong>
             <button
               type="button"
               className="sidebar-agent-dialog-close"
-              aria-label="关闭"
+              aria-label={t("common.close")}
               disabled={assistantChatRenameDialog.pending}
               onClick={() => setAssistantChatRenameDialog(null)}
             >
@@ -2692,7 +2696,7 @@ export function AppSidebar({
             </button>
           </div>
           <label className="sidebar-agent-dialog-field">
-            <span>名称</span>
+            <span>{t("externalWebview.name")}</span>
             <input
               value={assistantChatRenameDialog.value}
               onChange={(event) =>
@@ -2719,14 +2723,14 @@ export function AppSidebar({
               disabled={assistantChatRenameDialog.pending}
               onClick={() => setAssistantChatRenameDialog(null)}
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="sidebar-agent-primary-button"
               disabled={assistantChatRenameDialog.pending}
             >
-              {assistantChatRenameDialog.pending ? "处理中..." : "保存"}
+              {assistantChatRenameDialog.pending ? t("sidebar.common.processing") : t("common.save")}
             </button>
           </div>
         </form>
@@ -2748,7 +2752,7 @@ export function AppSidebar({
         className="assistant-chat-actions-menu"
         style={{ left: agentMenu.x, top: agentMenu.y }}
         role="menu"
-        aria-label="智能体操作"
+        aria-label={t("sidebar.agent.actions")}
       >
         <button
           type="button"
@@ -2758,21 +2762,21 @@ export function AppSidebar({
           title={openWorkspaceDisabledReason || agent.workspaceDir}
           onClick={() => void handleOpenWorkspace(agent)}
         >
-          <span>打开工作目录</span>
+          <span>{t("sidebar.agent.openWorkspace")}</span>
         </button>
         <button
           type="button"
           role="menuitem"
           onClick={() => void handleRenameAgent(agent)}
         >
-          <span>修改名称</span>
+          <span>{t("sidebar.agent.rename")}</span>
         </button>
         <button
           type="button"
           role="menuitem"
           onClick={() => handleEditAgent(agent)}
         >
-          <span>编辑智能体</span>
+          <span>{t("sidebar.agent.edit")}</span>
         </button>
         {coderAgent ? (
           <button
@@ -2781,7 +2785,7 @@ export function AppSidebar({
             role="menuitem"
             onClick={() => handleDeleteAgent(agent)}
           >
-            <span>删除智能体</span>
+            <span>{t("sidebar.agent.delete")}</span>
           </button>
         ) : null}
       </div>,
@@ -2794,7 +2798,7 @@ export function AppSidebar({
       return null;
     }
     const isRename = agentDialog.kind === "rename";
-    const title = isRename ? "修改名称" : "删除智能体";
+    const title = isRename ? t("sidebar.agent.rename") : t("sidebar.agent.delete");
     return createPortal(
       <div
         className="sidebar-agent-dialog-layer"
@@ -2825,7 +2829,7 @@ export function AppSidebar({
             <button
               type="button"
               className="sidebar-agent-dialog-close"
-              aria-label="关闭"
+              aria-label={t("common.close")}
               disabled={agentDialog.pending}
               onClick={() => setAgentDialog(null)}
             >
@@ -2834,7 +2838,7 @@ export function AppSidebar({
           </div>
           {isRename ? (
             <label className="sidebar-agent-dialog-field">
-              <span>名称</span>
+              <span>{t("externalWebview.name")}</span>
               <input
                 value={agentDialog.value}
                 onChange={(event) =>
@@ -2851,7 +2855,7 @@ export function AppSidebar({
             </label>
           ) : (
             <p className="sidebar-agent-dialog-copy">
-              确定要删除“{agentDialog.agent.displayName}”吗？此操作无法撤销。
+              {t("sidebar.agent.deleteConfirm", { name: agentDialog.agent.displayName })}
             </p>
           )}
           {agentDialog.error ? (
@@ -2866,7 +2870,7 @@ export function AppSidebar({
               disabled={agentDialog.pending}
               onClick={() => setAgentDialog(null)}
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
@@ -2877,7 +2881,7 @@ export function AppSidebar({
               }
               disabled={agentDialog.pending}
             >
-              {agentDialog.pending ? "处理中..." : isRename ? "保存" : "删除"}
+              {agentDialog.pending ? t("sidebar.common.processing") : isRename ? t("common.save") : t("common.delete")}
             </button>
           </div>
         </form>
@@ -2910,11 +2914,11 @@ export function AppSidebar({
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="sidebar-website-dialog-head">
-            <strong id="sidebar-coder-acp-dialog-title">创建 CODER 项目</strong>
+            <strong id="sidebar-coder-acp-dialog-title">{t("sidebar.project.createTitle")}</strong>
             <button
               type="button"
               className="sidebar-website-dialog-close"
-              aria-label="关闭"
+              aria-label={t("common.close")}
               disabled={coderAcpProjectDialog.pending}
               onClick={() => setCoderAcpProjectDialog(null)}
             >
@@ -2922,7 +2926,7 @@ export function AppSidebar({
             </button>
           </div>
           <label className="sidebar-website-dialog-field">
-            <span>项目名称</span>
+            <span>{t("sidebar.project.name")}</span>
             <input
               value={coderAcpProjectDialog.name}
               onChange={(event) =>
@@ -2941,15 +2945,15 @@ export function AppSidebar({
             />
           </label>
           <label className="sidebar-website-dialog-field">
-            <span>项目目录</span>
+            <span>{t("sidebar.project.directory")}</span>
             <input value={coderAcpProjectDialog.workspaceDir} readOnly />
           </label>
           <div className="sidebar-website-dialog-field">
-            <span>编程方式</span>
+            <span>{t("sidebar.project.codingMode")}</span>
             <div
               className="sidebar-coder-programming-mode"
               role="radiogroup"
-              aria-label="编程方式"
+              aria-label={t("sidebar.project.codingMode")}
             >
               <label>
                 <input
@@ -2970,7 +2974,7 @@ export function AppSidebar({
                   }
                   disabled={coderAcpProjectDialog.pending}
                 />
-                <span>内置编程</span>
+                <span>{t("sidebar.project.builtinCoding")}</span>
               </label>
               <label>
                 <input
@@ -2995,13 +2999,13 @@ export function AppSidebar({
                   }
                   disabled={coderAcpProjectDialog.pending}
                 />
-                <span>ACP 代理编程</span>
+                <span>{t("sidebar.project.acpCoding")}</span>
               </label>
             </div>
           </div>
           {coderAcpProjectDialog.programmingMode === "acp" ? (
             <label className="sidebar-website-dialog-field">
-              <span>ACP 工具</span>
+              <span>{t("sidebar.project.acpTool")}</span>
               <select
                 value={coderAcpProjectDialog.selectedAcpProxyId}
                 onChange={(event) =>
@@ -3021,7 +3025,7 @@ export function AppSidebar({
                 }
               >
                 {coderAcpProjectDialog.options.length === 0 ? (
-                  <option value="">暂无正在运行的 ACP 工具</option>
+                  <option value="">{t("sidebar.project.noRunningAcp")}</option>
                 ) : null}
                 {coderAcpProjectDialog.options.map((option) => (
                   <option value={option.acpProxyId} key={option.serviceId}>
@@ -3043,14 +3047,14 @@ export function AppSidebar({
               disabled={coderAcpProjectDialog.pending}
               onClick={() => setCoderAcpProjectDialog(null)}
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="sidebar-website-primary-button"
               disabled={coderAcpProjectDialog.pending}
             >
-              {coderAcpProjectDialog.pending ? "创建中..." : "创建"}
+              {coderAcpProjectDialog.pending ? t("sidebar.project.creating") : t("sidebar.project.create")}
             </button>
           </div>
         </form>
@@ -3083,11 +3087,11 @@ export function AppSidebar({
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="sidebar-website-dialog-head">
-            <strong id="sidebar-website-dialog-title">新增内嵌网站</strong>
+            <strong id="sidebar-website-dialog-title">{t("sidebar.website.title")}</strong>
             <button
               type="button"
               className="sidebar-website-dialog-close"
-              aria-label="关闭"
+              aria-label={t("common.close")}
               disabled={websiteCreatePending}
               onClick={() => setWebsiteDialogOpen(false)}
             >
@@ -3095,17 +3099,17 @@ export function AppSidebar({
             </button>
           </div>
           <label className="sidebar-website-dialog-field">
-            <span>网站名</span>
+            <span>{t("sidebar.website.name")}</span>
             <input
               value={websiteLabel}
               onChange={(event) => setWebsiteLabel(event.target.value)}
-              placeholder="例如：知识库"
+              placeholder={t("sidebar.website.namePlaceholder")}
               maxLength={24}
               autoFocus
             />
           </label>
           <label className="sidebar-website-dialog-field">
-            <span>网页地址</span>
+            <span>{t("sidebar.website.url")}</span>
             <input
               value={websiteUrl}
               onChange={(event) => setWebsiteUrl(event.target.value)}
@@ -3114,13 +3118,13 @@ export function AppSidebar({
             />
           </label>
           <label className="sidebar-website-dialog-field">
-            <span>侧边智能助手</span>
+            <span>{t("sidebar.website.sideAssistant")}</span>
             <select
               value={websiteAgentKey}
               onChange={(event) => setWebsiteAgentKey(event.target.value)}
               disabled={websiteCreatePending}
             >
-              <option value="">默认助手</option>
+              <option value="">{t("sidebar.website.defaultAssistant")}</option>
               {copilotAgentOptions.map((agent) => (
                 <option value={agent.agentKey} key={agent.agentKey}>
                   {agent.displayName}
@@ -3141,14 +3145,14 @@ export function AppSidebar({
               disabled={websiteCreatePending}
               onClick={() => setWebsiteDialogOpen(false)}
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="sidebar-website-primary-button"
               disabled={websiteCreatePending}
             >
-              {websiteCreatePending ? "添加中..." : "添加"}
+              {websiteCreatePending ? t("sidebar.website.adding") : t("sidebar.website.add")}
             </button>
           </div>
         </form>
@@ -3286,8 +3290,8 @@ export function AppSidebar({
               <button
                 type="button"
                 className="sidebar-history-button"
-                aria-label="后退"
-                title="后退"
+                aria-label={t("sidebar.navigation.back")}
+                title={t("sidebar.navigation.back")}
                 disabled={!sidebarNavigationCanGoBack}
                 onClick={onSidebarNavigateBack}
               >
@@ -3296,8 +3300,8 @@ export function AppSidebar({
               <button
                 type="button"
                 className="sidebar-history-button"
-                aria-label="前进"
-                title="前进"
+                aria-label={t("sidebar.navigation.forward")}
+                title={t("sidebar.navigation.forward")}
                 disabled={!sidebarNavigationCanGoForward}
                 onClick={onSidebarNavigateForward}
               >
@@ -3321,15 +3325,15 @@ export function AppSidebar({
                 onClick={handleAssistantDockClick}
                 aria-label={
                   assistantLauncherDisabled
-                    ? `当前页面不可开启 ${PRODUCT_NAME} 助手`
+                    ? t("sidebar.copilot.unavailableForPage", { appName: PRODUCT_NAME })
                     : assistantDockOpen
-                      ? `关闭 ${PRODUCT_NAME} 助手`
-                      : `打开 ${PRODUCT_NAME} 助手`
+                      ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
+                      : t("sidebar.copilot.open", { appName: PRODUCT_NAME })
                 }
                 aria-disabled={assistantLauncherDisabled}
                 aria-pressed={assistantDockOpen}
                 disabled={assistantLauncherDisabled}
-                title="侧边助手"
+                title={t("sidebar.copilot.title")}
               >
                 <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
                   <SidebarIllustration

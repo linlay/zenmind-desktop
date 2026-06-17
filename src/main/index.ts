@@ -533,8 +533,11 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
   runtimeRootExistedAtStartup
 });
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
-const DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE = "首次安装需要导入 env.zip";
 let startupEnvImportFailureMessage: string | null = null;
+
+function getDefaultEnvImportRequiredMessage() {
+  return t("startup.envImport.requiredTitle");
+}
 let desktopWsServerLastError = "";
 function initializeUserDataRootsAndSettings() {
   ensureDataRoot(app);
@@ -900,7 +903,7 @@ const appTrayController = new AppTrayController({
   openAssistantChat: () => {
     void openAssistantWorker({
       displayName: PRODUCT_NAME,
-      role: "确认对话示例",
+      role: t("main.confirmationExampleRole"),
       focusComposerOnComplete: true
     });
   },
@@ -930,13 +933,13 @@ async function handleDesktopSsoWebviewNavigation(url: string) {
     appState.desktopSsoWebviewCompletionInFlight = true;
     const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(app);
     if (!exchangeUrl) {
-      failDesktopSsoFlow("Desktop SSO 配置缺少 cookieAccessTokenExchange，无法从完成页捕捉用户信息。");
+      failDesktopSsoFlow(t("main.ssoCookieExchangeMissing"));
       return;
     }
     await desktopSsoController.syncBrowserCookies();
     const accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
     if (!accessToken) {
-      failDesktopSsoFlow("Desktop SSO cookieAccessTokenExchange 未返回 access_token，无法捕捉用户信息。");
+      failDesktopSsoFlow(t("main.ssoCookieExchangeNoAccessToken"));
       return;
     }
     completeDesktopSsoCookieLogin(app, accessToken);
@@ -1040,8 +1043,8 @@ function listTaskBoardLocalAgents(): DesktopPetAgentOption[] {
   if (agents.size === 0) {
     agents.set(fallbackTaskBoardAgentKey, {
       agentKey: fallbackTaskBoardAgentKey,
-      displayName: "小君",
-      role: "桌面智能体",
+      displayName: t("main.fallbackAgentName"),
+      role: t("main.fallbackAgentRole"),
       unreadCount: 0
     });
   }
@@ -1310,14 +1313,14 @@ async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_
     showMainWindow("/control-center");
     return {
       ok: false,
-      message: `智能助理服务恢复失败：${failures.join("，")}`,
+      message: t("main.assistantServicesRecoveryFailed", { failures: failures.join(t("common.nameSeparator")) }),
       window: appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null
     };
   }
 
   return {
     ok: true,
-    message: "智能助理已打开。",
+    message: t("main.assistantOpened"),
     window: appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null
   };
 }
@@ -1382,7 +1385,7 @@ async function openAssistantFromDesktopPet() {
   const targetWindow = appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null;
   return {
     ok: Boolean(targetWindow),
-    message: targetWindow ? `${PRODUCT_NAME} 已打开。` : `${PRODUCT_NAME} 主窗口不可用。`
+    message: targetWindow ? t("main.appOpened", { appName: PRODUCT_NAME }) : t("main.mainWindowUnavailable", { appName: PRODUCT_NAME })
   };
 }
 
@@ -1392,7 +1395,7 @@ async function openDesktopPetTaskChat(input: { agentKey?: unknown; chatId?: unkn
   if (!agentKey || !chatId) {
     return {
       ok: false,
-      message: "任务缺少智能体或聊天标识。"
+      message: t("main.taskMissingAgentOrChat")
     };
   }
   await openAssistantWorker({
@@ -1402,7 +1405,7 @@ async function openDesktopPetTaskChat(input: { agentKey?: unknown; chatId?: unkn
   });
   return {
     ok: true,
-    message: "已打开任务聊天。"
+    message: t("main.taskChatOpened")
   };
 }
 
@@ -1838,7 +1841,7 @@ async function openBrowserUrl(input: {
       action: "open_url",
       target: targetUrl,
       url: targetUrl,
-      message: `已将「${input.label || targetUrl}」发送到内置浏览器。`
+      message: t("main.sentToBuiltinBrowser", { label: input.label || targetUrl })
     };
   }
   for (let attempt = 0; attempt < 32; attempt += 1) {
@@ -1852,7 +1855,7 @@ async function openBrowserUrl(input: {
         target: targetUrl,
         url: contents.getURL(),
         title: contents.getTitle(),
-        message: `Opened ${input.label || BUILTIN_BROWSER_SURFACE_LABEL}.`,
+        message: t("main.builtinBrowserOpened", { label: input.label || BUILTIN_BROWSER_SURFACE_LABEL }),
         data: {
           surface
         }
@@ -1865,7 +1868,7 @@ async function openBrowserUrl(input: {
     target: targetUrl,
     url: targetUrl,
     error: "browser_webview_not_ready",
-    message: `Tried to open ${input.label || targetUrl}, but no operable web target was available.`
+    message: t("main.builtinBrowserNotReady", { label: input.label || targetUrl })
   };
 }
 
@@ -1881,7 +1884,7 @@ async function activateBrowserSurface(target: string) {
       action: "activate_surface",
       target,
       error: "surface_not_found",
-      message: `No matching embedded site found: ${target}`,
+      message: t("main.embeddedSurfaceNotFound", { target }),
       data: {
         surfaces
       }
@@ -1906,7 +1909,7 @@ async function activateBrowserSurface(target: string) {
         target,
         url: activatedSurface.currentUrl,
         title: activatedSurface.title,
-        message: `Opened ${activatedSurface.label}.`,
+        message: t("main.embeddedSurfaceOpened", { label: activatedSurface.label }),
         data: {
           surface: activatedSurface
         }
@@ -1920,7 +1923,7 @@ async function activateBrowserSurface(target: string) {
     target,
     url: surface.url,
     error: "surface_load_timeout",
-    message: `Switched to ${surface.label}, but no operable web instance is available yet.`,
+    message: t("main.embeddedSurfaceNotReady", { label: surface.label }),
     data: {
       surface
     }
@@ -2059,10 +2062,10 @@ async function handleStartupEnvRootConflict() {
   const backupPath = generateBackupDirName(runtimeRootAtProcessStart, mainProcessContext.platform);
   const choice = await nativeDialogController.showMessageBox({
     type: "warning",
-    title: "检测到旧环境目录",
-    message: `目录 ${runtimeRootAtProcessStart} 已存在，是否迁移旧数据？`,
-    detail: `迁移后旧目录将重命名为 ${backupPath}，然后导入全新环境。\n选择“使用旧数据”将跳过环境导入，直接使用现有目录。`,
-    buttons: ["迁移旧数据并初始化", "使用旧数据", `退出 ${PRODUCT_NAME}`],
+    title: t("startup.envConflict.title"),
+    message: t("startup.envConflict.message", { path: runtimeRootAtProcessStart }),
+    detail: t("startup.envConflict.detail", { backupPath }),
+    buttons: [t("startup.envConflict.migrate"), t("startup.envConflict.keep"), t("menu.quit", { appName: PRODUCT_NAME })],
     defaultId: 0,
     cancelId: 2,
     noLink: true
@@ -2085,10 +2088,10 @@ async function handleStartupEnvRootConflict() {
     const message = error instanceof Error ? error.message : String(error);
     const retryChoice = await nativeDialogController.showMessageBox({
       type: "error",
-      title: "旧环境迁移失败",
+      title: t("startup.envConflict.migrationFailedTitle"),
       message,
-      detail: `旧目录：${runtimeRootAtProcessStart}\n目标备份：${backupPath}`,
-      buttons: [`退出 ${PRODUCT_NAME}`, "使用旧数据"],
+      detail: t("startup.envConflict.migrationFailedDetail", { path: runtimeRootAtProcessStart, backupPath }),
+      buttons: [t("menu.quit", { appName: PRODUCT_NAME }), t("startup.envConflict.keep")],
       defaultId: 0,
       cancelId: 0,
       noLink: true
@@ -2104,11 +2107,11 @@ async function handleStartupEnvRootConflict() {
 
 async function pickAssistantAttachments(chatId: string | null | undefined, ownerWindow: BrowserWindow | null) {
   const result = await showFileDialog({
-    title: `选择要给 ${PRODUCT_NAME} 读取的附件`,
+    title: t("dialog.chooseAttachment.title", { appName: PRODUCT_NAME }),
     properties: ["openFile", "multiSelections"],
     filters: [
       {
-        name: "可读取文本或常见文档",
+        name: t("dialog.chooseAttachment.readableFilter"),
         extensions: [
           "txt",
           "md",
@@ -2131,14 +2134,14 @@ async function pickAssistantAttachments(chatId: string | null | undefined, owner
           "pptx"
         ]
       },
-      { name: "所有文件", extensions: ["*"] }
+      { name: t("dialog.chooseAttachment.allFiles"), extensions: ["*"] }
     ]
   }, ownerWindow);
   if (result.canceled || result.filePaths.length === 0) {
     return {
       ok: false,
       chatId: chatId ?? "",
-      message: "已取消选择附件。",
+      message: t("attachment.cancelled"),
       attachments: []
     };
   }
@@ -2439,7 +2442,7 @@ function registerIpcHandlers(context: MainProcessContext) {
   registerTaskBoardIpcHandlers(ipcMain, createTaskBoardIpcHandlerOptions(context, {
     listTaskBoardIssues: () => state.taskBoardRuntime?.listIssues() ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       issues: []
     },
     listTaskBoardOnlineDevices: () => state.taskBoardRuntime?.listOnlineDevices() ?? {
@@ -2449,11 +2452,11 @@ function registerIpcHandlers(context: MainProcessContext) {
       sessionCount: 0,
       agentCount: 0,
       devices: [],
-      message: "任务看板尚未初始化。"
+      message: t("taskBoard.runtime.uninitialized")
     },
     getTaskBoardSettings: () => state.taskBoardRuntime?.getSettings() ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       settings: {
         enabled: false,
         cloud: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" }
@@ -2462,7 +2465,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     },
     saveTaskBoardSettings: (_app: any, input: any) => state.taskBoardRuntime?.saveSettings(input) ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       settings: {
         enabled: false,
         cloud: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" }
@@ -2471,41 +2474,41 @@ function registerIpcHandlers(context: MainProcessContext) {
     },
     getTaskBoardCloudConfig: () => state.taskBoardRuntime?.getCloudConfig() ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     saveTaskBoardCloudConfig: (_app: any, input: any) => state.taskBoardRuntime?.saveCloudConfig(input) ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     createTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.createIssue(input) ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       issues: []
     },
     updateTaskBoardIssue: (_app: any, issueId: string, input: any) => state.taskBoardRuntime?.updateIssue(issueId, input) ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       issues: []
     },
     deleteTaskBoardIssueWithAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
       state.taskBoardRuntime?.deleteIssueWithAutomation(issueId, agentPlatformCaller) ?? {
         ok: false,
-        message: "任务看板尚未初始化。",
+        message: t("taskBoard.runtime.uninitialized"),
         issues: []
       },
     moveTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.moveIssue(input) ?? {
       ok: false,
-      message: "任务看板尚未初始化。",
+      message: t("taskBoard.runtime.uninitialized"),
       issues: []
     },
     syncTaskBoardIssueAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
       state.taskBoardRuntime?.syncIssueAutomation(issueId, agentPlatformCaller) ?? {
         ok: false,
-        message: "任务看板尚未初始化。",
+        message: t("taskBoard.runtime.uninitialized"),
         issues: []
       },
     callAgentPlatform
@@ -2596,7 +2599,7 @@ if (gotSingleInstanceLock) {
 
     const startupRuntimeReady = await prepareStartupRuntimeEnvironment();
     if (!startupRuntimeReady.ok) {
-      startupEnvImportFailureMessage = startupRuntimeReady.message || DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE;
+      startupEnvImportFailureMessage = startupRuntimeReady.message || getDefaultEnvImportRequiredMessage();
       startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);
     }
 
@@ -2664,7 +2667,7 @@ async function handleStartupPipeline() {
         startupRestoreController.beginSession(mode);
       },
       onStarting: (serviceId) => {
-        startupRestoreController.updateService(serviceId, "starting", "启动中...");
+        startupRestoreController.updateService(serviceId, "starting", t("startup.phase.starting"));
       },
       onProgress: (serviceId, phase, message) => {
         startupRestoreController.updateService(serviceId, phase, message);
@@ -2703,12 +2706,16 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
     if (!importResult) {
       return {
         ok: false,
-        message: DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE
+        message: getDefaultEnvImportRequiredMessage()
       };
     }
 
     startupRestoreController.beginSession("bootstrap");
-    startupRestoreController.updateService("zenmind-app-server", "installing", "正在导入内置 env.zip...");
+    startupRestoreController.updateService(
+      "zenmind-app-server",
+      "installing",
+      t("startup.envImport.importingBundled")
+    );
     notifyServicesChanged();
     console.info(
       `[main] imported bundled env.zip from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
@@ -2719,7 +2726,7 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
     console.error("failed to import bundled env.zip", error);
     return {
       ok: false,
-      message: `内置 env.zip 导入失败：${message}`
+      message: t("startup.envImport.bundledFailed", { message })
     };
   }
 }

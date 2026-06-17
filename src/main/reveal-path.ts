@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { ServiceRevealPathOptions, ServiceRevealPathResult } from "../shared/contracts";
+import { t } from "./i18n/main-i18n";
 
 type RevealPlatform = NodeJS.Platform;
 type RevealTargetType = NonNullable<ServiceRevealPathOptions["targetType"]>;
@@ -51,7 +52,7 @@ async function openDirectory(
   return {
     ok: true,
     path: targetPath,
-    message: "已打开目录。"
+    message: t("revealPath.openedDirectory")
   };
 }
 
@@ -68,14 +69,14 @@ export async function revealPathInFileManager(
     return {
       ok: false,
       path: "",
-      message: "缺少要打开的路径。"
+      message: t("revealPath.pathRequired")
     };
   }
   if (!isAbsoluteForPlatform(normalizedPath, platform)) {
     return {
       ok: false,
       path: normalizedPath,
-      message: "只能打开绝对路径。"
+      message: t("revealPath.absolutePathRequired")
     };
   }
 
@@ -97,10 +98,15 @@ export async function revealPathInFileManager(
     }
 
     deps.showItemInFolder(normalizedPath);
+    const message = isWindows
+      ? t("revealPath.shownInExplorer")
+      : isMac
+        ? t("revealPath.shownInFinder")
+        : t("revealPath.shownInFileManager");
     return {
       ok: true,
       path: normalizedPath,
-      message: isWindows ? "已在 Explorer 中显示。" : isMac ? "已在 Finder 中显示。" : "已在文件管理器中显示。"
+      message
     };
   }
 
@@ -114,19 +120,19 @@ export async function revealPathInFileManager(
       return {
         ok: true,
         path: parentDir,
-        message: "目标文件尚未创建，已打开所在目录。"
+        message: t("revealPath.openedParentDirectory")
       };
     }
     return {
       ok: false,
       path: normalizedPath,
-      message: "目标文件尚未创建，所在目录也不存在。"
+      message: t("revealPath.parentDirectoryMissing")
     };
   }
 
   return {
     ok: false,
     path: normalizedPath,
-    message: requestedTargetType === "directory" ? "目录不存在。" : "路径不存在。"
+    message: requestedTargetType === "directory" ? t("revealPath.directoryMissing") : t("revealPath.pathMissing")
   };
 }

@@ -28,6 +28,7 @@ import {
   TASK_BOARD_STATUSES
 } from "../shared/contracts";
 import { getRuntimeDataRoot } from "./user-paths";
+import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
   getPath(name: Parameters<App["getPath"]>[0]): string;
@@ -438,15 +439,15 @@ function seedDesktopKanban(db: DatabaseSync, currentUser: TaskBoardCurrentUser) 
   `).run(PROJECT_ID, WORKFLOW_ID, timestamp, timestamp);
   db.prepare(`
     INSERT INTO workflow (ID_, KEY_, NAME_, DESCRIPTION_, IS_DEFAULT_, CREATED_AT_, UPDATED_AT_)
-    VALUES (?, 'standard_requirement', '标准需求', '', 1, ?, ?)
-    ON CONFLICT(ID_) DO NOTHING
-  `).run(WORKFLOW_ID, timestamp, timestamp);
+    VALUES (?, 'standard_requirement', ?, '', 1, ?, ?)
+    ON CONFLICT(ID_) DO UPDATE SET NAME_ = excluded.NAME_
+  `).run(WORKFLOW_ID, t("taskBoard.workflow.standardRequirement"), timestamp, timestamp);
   const statuses: Array<{ id: string; key: TaskBoardStatus; name: string; position: number; terminal: number; review: number }> = [
-    { id: "workflow-status-backlog", key: "backlog", name: "新建", position: 1, terminal: 0, review: 0 },
-    { id: "workflow-status-todo", key: "todo", name: "待办", position: 2, terminal: 0, review: 0 },
-    { id: "workflow-status-in-progress", key: "in_progress", name: "处理中", position: 3, terminal: 0, review: 0 },
-    { id: "workflow-status-in-review", key: "in_review", name: "待审查", position: 4, terminal: 0, review: 1 },
-    { id: "workflow-status-completed", key: "completed", name: "已完成", position: 5, terminal: 1, review: 0 }
+    { id: "workflow-status-backlog", key: "backlog", name: t("taskBoard.status.backlog"), position: 1, terminal: 0, review: 0 },
+    { id: "workflow-status-todo", key: "todo", name: t("taskBoard.status.todo"), position: 2, terminal: 0, review: 0 },
+    { id: "workflow-status-in-progress", key: "in_progress", name: t("taskBoard.status.inProgress"), position: 3, terminal: 0, review: 0 },
+    { id: "workflow-status-in-review", key: "in_review", name: t("taskBoard.status.inReview"), position: 4, terminal: 0, review: 1 },
+    { id: "workflow-status-completed", key: "completed", name: t("taskBoard.status.completed"), position: 5, terminal: 1, review: 0 }
   ];
   const insertStatus = db.prepare(`
     INSERT INTO workflow_status (
@@ -1066,7 +1067,7 @@ export function listDesktopKanbanIssues(
 ): TaskBoardListResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => ({
     ok: true,
-    message: connectionState === "open" ? "任务看板已同步。" : "任务看板已从本地缓存加载。",
+    message: connectionState === "open" ? t("taskBoard.runtime.synced") : t("taskBoard.runtime.loadedFromCache"),
     issues: selectIssues(db, currentUser),
     projects: selectProjects(db),
     projectBindings: selectProjectBindings(db),
@@ -1087,7 +1088,7 @@ export function createPrivateDesktopKanbanIssue(
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = buildLocalIssue(db, input, currentUser);
     if (!issue) {
-      return { ok: false, message: "任务标题不能为空。", issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
     }
     issue.localIssueId = issue.id;
     insertOrReplaceIssue(db, issue, {
@@ -1098,7 +1099,7 @@ export function createPrivateDesktopKanbanIssue(
     });
     return {
       ok: true,
-      message: "私有任务已创建。",
+      message: t("taskBoard.runtime.privateCreated"),
       issue,
       issues: selectIssues(db, currentUser)
     };
@@ -1114,11 +1115,11 @@ export function updateDesktopKanbanIssue(
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
-      return { ok: false, message: "任务不存在。", issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     const nextIssue = applyIssueUpdate(issue, input);
     if (!nextIssue) {
-      return { ok: false, message: "任务标题不能为空。", issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
     }
     insertOrReplaceIssue(db, nextIssue, {
       syncMode: nextIssue.syncMode ?? "private",
@@ -1129,7 +1130,7 @@ export function updateDesktopKanbanIssue(
       lastSyncedAt: nextIssue.lastSyncedAt,
       syncError: null
     });
-    return { ok: true, message: "任务已更新。", issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("taskBoard.runtime.updated"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
@@ -1148,7 +1149,7 @@ function updateDesktopKanbanIssueByPredicate(
     }
     const nextIssue = applyIssueUpdate(issue, input);
     if (!nextIssue) {
-      return { ok: false, message: "任务标题不能为空。", issues };
+      return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues };
     }
     insertOrReplaceIssue(db, nextIssue, {
       syncMode: nextIssue.syncMode ?? "private",
@@ -1159,7 +1160,7 @@ function updateDesktopKanbanIssueByPredicate(
       lastSyncedAt: nextIssue.lastSyncedAt,
       syncError: null
     });
-    return { ok: true, message: "任务已更新。", issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("taskBoard.runtime.updated"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
@@ -1175,7 +1176,7 @@ export function updateDesktopKanbanIssueByRunId(
     currentUser,
     (issue) => issue.runId === targetRunId || issue.activeRunId === targetRunId,
     input,
-    "任务运行不存在。"
+    t("taskBoard.runtime.runMissing")
   );
 }
 
@@ -1191,7 +1192,7 @@ export function updateDesktopKanbanIssueByChatId(
     currentUser,
     (issue) => issue.chatId === targetChatId || issue.attachmentChatId === targetChatId,
     input,
-    "任务会话不存在。"
+    t("taskBoard.runtime.chatMissing")
   );
 }
 
@@ -1213,7 +1214,7 @@ export function setDesktopKanbanIssuePosition(
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
-      return { ok: false, message: "任务不存在。", issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     const nextIssue = {
       ...issue,
@@ -1231,7 +1232,7 @@ export function setDesktopKanbanIssuePosition(
       lastSyncedAt: nextIssue.lastSyncedAt,
       syncError: null
     });
-    return { ok: true, message: "任务已移动。", issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("taskBoard.runtime.moved"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
@@ -1243,12 +1244,12 @@ export function deleteDesktopKanbanIssue(
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
-      return { ok: false, message: "任务不存在。", issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(nowIso(), nowIso(), issueId);
     return {
       ok: true,
-      message: "任务已删除。",
+      message: t("taskBoard.runtime.deleted"),
       deletedIssueId: issueId,
       issues: selectIssues(db, currentUser)
     };
@@ -1351,7 +1352,7 @@ export function markDesktopKanbanIssueSyncing(
     const issue = markIssueSyncState(db, currentUser, issueId, "syncing", null);
     return {
       ok: Boolean(issue),
-      message: issue ? "云同步任务正在同步。" : "任务不存在。",
+      message: issue ? t("taskBoard.runtime.cloudSyncing") : t("taskBoard.runtime.missing"),
       issue: issue ?? undefined,
       issues: selectIssues(db, currentUser)
     };
@@ -1447,7 +1448,7 @@ export function applyDesktopKanbanCloudSnapshot(
     }
     return {
       ok: true,
-      message: "云端任务快照已同步。",
+      message: t("taskBoard.runtime.snapshotSynced"),
       issues: selectIssues(db, currentUser),
       projects: selectProjects(db),
       projectBindings: selectProjectBindings(db),
@@ -1472,14 +1473,14 @@ export function upsertDispatchedDesktopKanbanIssue(
   if (!cloudIssue) {
     return {
       ok: false,
-      message: "派发任务格式无效。",
+      message: t("taskBoard.runtime.dispatchInvalid"),
       issues: listDesktopKanbanIssues(app, currentUser).issues
     };
   }
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const localIssue = cloudIssueToLocalIssue(cloudIssue, currentUser, revision);
     if (!localIssue?.remoteIssueId) {
-      return { ok: false, message: "派发任务缺少 ID。", issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("taskBoard.runtime.dispatchMissingId"), issues: selectIssues(db, currentUser) };
     }
     localIssue.id = findLocalSyncForRemote(db, localIssue.remoteIssueId).localIssueId || createLocalIssueId("cloud");
     localIssue.localIssueId = localIssue.id;
@@ -1493,7 +1494,7 @@ export function upsertDispatchedDesktopKanbanIssue(
       syncError: null
     });
     writeDesktopKanbanRevision(db, Math.max(readDesktopKanbanRevision(db), revision));
-    return { ok: true, message: "云端任务已派发到 Desktop。", issue: localIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("taskBoard.runtime.dispatched"), issue: localIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
@@ -1506,13 +1507,13 @@ export function linkDesktopKanbanIssueToRemote(
 ): TaskBoardIssueResult {
   const cloudIssue = parseCloudIssue(remoteIssue);
   if (!cloudIssue) {
-    return { ok: false, message: "云端任务格式无效。", issues: listDesktopKanbanIssues(app, currentUser).issues };
+    return { ok: false, message: t("taskBoard.runtime.cloudIssueInvalid"), issues: listDesktopKanbanIssues(app, currentUser).issues };
   }
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const currentIssue = selectIssues(db, currentUser).find((candidate) => candidate.id === localIssueId);
     const nextIssue = cloudIssueToLocalIssue(cloudIssue, currentUser, revision);
     if (!currentIssue || !nextIssue?.remoteIssueId) {
-      return { ok: false, message: "任务不存在。", issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     nextIssue.id = currentIssue.id;
     nextIssue.localIssueId = currentIssue.id;
@@ -1525,7 +1526,7 @@ export function linkDesktopKanbanIssueToRemote(
       lastSyncedAt: nowIso(),
       syncError: null
     });
-    return { ok: true, message: "任务已同步到云端看板。", issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("taskBoard.runtime.syncedToCloud"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 

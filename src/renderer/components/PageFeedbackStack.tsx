@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/useI18n";
+
 export type PageFeedbackItem = {
   id: number | string;
   tone: "success" | "error";
@@ -10,6 +12,7 @@ type PageFeedbackStackProps = {
 };
 
 export function PageFeedbackStack({ items }: PageFeedbackStackProps) {
+  const { t } = useI18n();
   if (items.length === 0) {
     return null;
   }
@@ -28,10 +31,10 @@ export function PageFeedbackStack({ items }: PageFeedbackStackProps) {
               <button
                 type="button"
                 className="page-feedback-dismiss"
-                aria-label="关闭提示"
+                aria-label={t("pageFeedback.close")}
                 onClick={item.onDismiss}
               >
-                知道了
+                {t("pageFeedback.dismiss")}
               </button>
             ) : null}
           </div>

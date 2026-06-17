@@ -5,6 +5,7 @@ import type { App } from "electron";
 import type { ServiceDefinition } from "../../manifest-utils";
 import { getBuiltinAssetsRoot } from "../../builtin-loader";
 import { listArchiveEntries } from "../../archive-utils";
+import { t } from "../../i18n/main-i18n";
 
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
 const syncedAssetManifestCache = new Map<string, { key: string; services: SyncedAssetManifestService[] }>();
@@ -18,7 +19,7 @@ type SyncedAssetManifestService = {
 
 function getAssetPath(app: App, service: ServiceDefinition) {
   if (!service.desktop.assetFileName) {
-    throw new Error(`桌面端内置资源缺少 assetFileName：${service.id}`);
+    throw new Error(t("service.assetFileNameMissing", { serviceId: service.id }));
   }
   return path.join(getBuiltinAssetsRoot(app), service.id, service.desktop.assetFileName);
 }
@@ -151,19 +152,19 @@ export function listMissingBundleEntries(service: ServiceDefinition, archivePath
 
 export function ensureArchiveHealthy(service: ServiceDefinition, archivePath: string, sourceLabel: string) {
   if (!fs.existsSync(archivePath)) {
-    throw new Error(`${sourceLabel}缺失：${archivePath}`);
+    throw new Error(t("service.archiveMissing", { sourceLabel, path: archivePath }));
   }
 
   const missingEntries = listMissingBundleEntries(service, archivePath);
   if (missingEntries.length > 0) {
-    throw new Error(`${sourceLabel}不完整，缺少：${missingEntries.join(", ")}`);
+    throw new Error(t("service.archiveIncomplete", { sourceLabel, entries: missingEntries.join(", ") }));
   }
 
   return archivePath;
 }
 
 export function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
-  return ensureArchiveHealthy(service, getAssetPath(app, service), "桌面端内置资源");
+  return ensureArchiveHealthy(service, getAssetPath(app, service), t("service.builtinAssetLabel"));
 }
 
 export function getOptionalBundleAssetPath(app: App, service: ServiceDefinition) {

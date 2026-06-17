@@ -26,6 +26,7 @@ import {
   getWebappDir,
   readWebappItems
 } from "./webapp-store";
+import { t } from "../i18n/main-i18n";
 
 const HOST = "127.0.0.1";
 const STATE_FILE = "runtime.json";
@@ -95,7 +96,7 @@ function readStoredState(app: App, webappId: string): WebappRuntimeState | null 
   }
 }
 
-function createStoppedState(item: WebappEntry, message = "网站小应用未运行。"): WebappRuntimeState {
+function createStoppedState(item: WebappEntry, message = t("service.currentlyNotRunning", { name: t("settings.embeddedWebs.label") })): WebappRuntimeState {
   return {
     id: item.id,
     entryKey: item.entryKey,
@@ -372,7 +373,7 @@ async function waitForBackendHealth(target: string, child: ChildProcess) {
   let lastMessage = "";
   while (Date.now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`后端进程已退出：${child.exitCode ?? child.signalCode ?? "unknown"}`);
+      throw new Error(t("service.processExited", { reason: child.exitCode ?? child.signalCode ?? "unknown" }));
     }
     const probe = await probeHttpUrl(target, { timeoutMs: 1000 });
     if (probe.ok) {
@@ -381,7 +382,7 @@ async function waitForBackendHealth(target: string, child: ChildProcess) {
     lastMessage = probe.message ?? "";
     await delay(HEALTH_INTERVAL_MS);
   }
-  throw new Error(`后端健康检查超时：${lastMessage || target}`);
+  throw new Error(t("service.healthTimeout", { message: lastMessage || target }));
 }
 
 function closeServer(record: RuntimeRecord) {
@@ -423,7 +424,7 @@ export class WebappRuntime {
         ...stored,
         status: "error",
         webUrl: "",
-        message: "发现旧的网站小应用进程，但当前 Desktop 未管理它。",
+        message: t("service.runningUnmanagedProcess"),
         updatedAt: nowIso()
       } satisfies WebappRuntimeState;
     }
@@ -434,12 +435,12 @@ export class WebappRuntime {
     const id = webappId.trim();
     const item = findWebapp(app, id);
     if (!item) {
-      return { ok: false, item: null, state: null, message: "未找到这个本地网站小应用。" };
+      return { ok: false, item: null, state: null, message: t("webapp.notFound") };
     }
 
     const existing = this.records.get(id);
     if (existing?.state.status === "running") {
-      return { ok: true, item, state: existing.state, message: `「${item.label}」已在运行。` };
+      return { ok: true, item, state: existing.state, message: t("webapp.alreadyRunning", { label: item.label }) };
     }
     if (existing) {
       await this.stop(app, id);
@@ -467,7 +468,7 @@ export class WebappRuntime {
         frontendPort: null,
         backendPort,
         pid: null,
-        message: "正在启动网站小应用。",
+        message: t("webapp.starting"),
         startedAt: nowIso(),
         updatedAt: nowIso()
       };
@@ -519,7 +520,7 @@ export class WebappRuntime {
           ...current.state,
           status: "error",
           webUrl: "",
-          message: `后端进程已退出：${code ?? signal ?? "unknown"}`,
+          message: t("service.processExited", { reason: code ?? signal ?? "unknown" }),
           updatedAt: nowIso()
         };
         writeState(app, current.state);
@@ -550,7 +551,7 @@ export class WebappRuntime {
         status: "running",
         webUrl: `http://${HOST}:${frontendPort}/`,
         frontendPort,
-        message: `「${item.label}」已启动。`,
+        message: t("webapp.started", { label: item.label }),
         updatedAt: nowIso()
       };
       writeState(app, runningRecord.state);
@@ -559,7 +560,7 @@ export class WebappRuntime {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (record) {
-        await this.stop(app, id, `启动失败：${message}`);
+        await this.stop(app, id, `${t("webapp.startFailed")}: ${message}`);
       }
       const state = {
         ...(record?.state ?? createStoppedState(item)),
@@ -574,7 +575,7 @@ export class WebappRuntime {
     }
   }
 
-  async stop(app: App, webappId: string, message = "网站小应用已停止。"): Promise<WebappCommandResult> {
+  async stop(app: App, webappId: string, message = t("service.stopped", { name: t("settings.embeddedWebs.label") })): Promise<WebappCommandResult> {
     const id = webappId.trim();
     const item = findWebapp(app, id);
     const record = this.records.get(id);
@@ -597,7 +598,7 @@ export class WebappRuntime {
     }
 
     if (!item) {
-      return { ok: false, item: null, state: null, message: "未找到这个本地网站小应用。" };
+      return { ok: false, item: null, state: null, message: t("webapp.notFound") };
     }
     const stored = readStoredState(app, id);
     if (stored?.pid && isProcessRunning(stored.pid) && pidMatchesInstallDir(stored.pid, getWebappDir(app, id))) {
@@ -630,7 +631,7 @@ export class WebappRuntime {
         ...record.state,
         status: "error",
         webUrl: "",
-        message: "网站小应用后端进程未运行。",
+        message: t("service.backendNotRunning"),
         updatedAt: nowIso()
       };
       writeState(app, record.state);

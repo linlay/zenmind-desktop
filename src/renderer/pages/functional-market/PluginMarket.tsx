@@ -258,7 +258,7 @@ export function PluginMarketSection({
         <div className="market-plugin-panel">
           {items.map((plugin) => {
             const service = serviceById.get(plugin.id) ?? null;
-            const displayName = getServiceDisplayName(plugin.id, plugin.name);
+            const displayName = getServiceDisplayName(plugin.id, plugin.name, t);
             const description = marketCardDescription(plugin);
             const detailChips = pluginDetailChips(plugin, service, t);
             return (

@@ -17,6 +17,7 @@ import {
   getServiceLayout,
   type ServiceLayout
 } from "./layout";
+import { t } from "../../i18n/main-i18n";
 
 const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
 const SQLITE_BUSY_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
@@ -212,7 +213,7 @@ function isSqliteBusyError(reason: unknown) {
 
 function isUnsupportedDeviceIdArgumentError(reason: unknown) {
   const message = reason instanceof Error ? reason.message : String(reason);
-  return /unknown argument:\s*(?:--device-id|-DeviceId)|unrecognized (?:option|argument).*?(?:--device-id|-DeviceId)|(?:parameter cannot be found|找不到与参数名称).*?(?:--device-id|-DeviceId|DeviceId)/iu.test(message);
+  return /unknown argument:\s*(?:--device-id|-DeviceId)|unrecognized (?:option|argument).*?(?:--device-id|-DeviceId)|(?:parameter cannot be found|\u627e\u4e0d\u5230\u4e0e\u53c2\u6570\u540d\u79f0).*?(?:--device-id|-DeviceId|DeviceId)/iu.test(message);
 }
 
 function removeDeviceIdArgs(command: string[]) {
@@ -271,10 +272,10 @@ function validateJwtDeviceId(token: string, desktopDeviceId: string, exact: bool
   const payload = readJwtPayload(token);
   const tokenDeviceId = typeof payload.device_id === "string" ? payload.device_id.trim() : "";
   if (exact && tokenDeviceId !== desktopDeviceId) {
-    throw new Error("zenmind-app-server access token 的 device_id 与 DESKTOP_DEVICE_ID 不一致。");
+    throw new Error(t("service.capabilityDeviceMismatch"));
   }
   if (!exact && !tokenDeviceId) {
-    throw new Error("zenmind-app-server access token 缺少 device_id。");
+    throw new Error(t("service.capabilityDeviceMissing"));
   }
 }
 
@@ -303,7 +304,7 @@ async function resolveDesktopCapabilityInternal(
   await options.ensureProviderInstall?.(service);
   const layout = getServiceLayout(app, service);
   if (!fs.existsSync(layout.programDir)) {
-    throw new Error(`${service.id} 未安装，无法提供 Desktop capability: ${capabilityId}`);
+    throw new Error(t("service.capabilityProviderNotInstalled", { serviceId: service.id, capabilityId }));
   }
 
   for (const dependency of provider.dependsOn ?? []) {
@@ -315,7 +316,7 @@ async function resolveDesktopCapabilityInternal(
 
   const command = commandForCurrentPlatform(provider);
   if (!command) {
-    throw new Error(`${service.id} capability ${capabilityId} 缺少当前平台命令。`);
+    throw new Error(t("service.capabilityPlatformCommandMissing", { serviceId: service.id, capabilityId }));
   }
 
   const values = buildTemplateValues(app, service, layout, provider);

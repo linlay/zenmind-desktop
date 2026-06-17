@@ -5,6 +5,7 @@ import type { App } from "electron";
 import yaml from "js-yaml";
 import { getDesktopDeviceId } from "./device-identity";
 import { APP_BRAND } from "../shared/generated/brand";
+import { t } from "./i18n/main-i18n";
 
 const PROVIDER_REGISTER_FILE = "provider-register.json";
 const DEFAULT_ENDPOINT = "";
@@ -110,7 +111,7 @@ function readRegisterConfig(registerPath: string) {
     return { content, config: parsed };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`${PROVIDER_REGISTER_FILE} 格式不正确：${message}`);
+    throw new Error(t("providerRegister.invalidFormat", { file: PROVIDER_REGISTER_FILE, message }));
   }
 }
 
@@ -120,26 +121,26 @@ function normalizeEndpoint(value: unknown) {
   try {
     parsed = new URL(endpoint);
   } catch {
-    throw new Error(`${PROVIDER_REGISTER_FILE} endpoint 不是有效 URL。`);
+    throw new Error(t("providerRegister.endpointInvalid", { file: PROVIDER_REGISTER_FILE }));
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error(`${PROVIDER_REGISTER_FILE} endpoint 只支持 http/https。`);
+    throw new Error(t("providerRegister.endpointProtocol", { file: PROVIDER_REGISTER_FILE }));
   }
   return endpoint;
 }
 
 function normalizeGrant(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${PROVIDER_REGISTER_FILE} grant 不能为空。`);
+    throw new Error(t("providerRegister.grantRequired", { file: PROVIDER_REGISTER_FILE }));
   }
   const grant = value as ProviderRegisterGrant;
   const grantType = typeof grant.type === "string" ? grant.type.trim().toLowerCase() : "jwt";
   if (grantType !== "jwt") {
-    throw new Error(`${PROVIDER_REGISTER_FILE} grant.type 仅支持 jwt。`);
+    throw new Error(t("providerRegister.grantTypeUnsupported", { file: PROVIDER_REGISTER_FILE }));
   }
   const token = typeof grant.token === "string" ? grant.token.trim() : "";
   if (!token) {
-    throw new Error(`${PROVIDER_REGISTER_FILE} grant.token 不能为空。`);
+    throw new Error(t("providerRegister.grantTokenRequired", { file: PROVIDER_REGISTER_FILE }));
   }
   return token;
 }
@@ -149,23 +150,23 @@ function normalizeProviders(value: unknown) {
     return [...DEFAULT_PROVIDERS];
   }
   if (!Array.isArray(value)) {
-    throw new Error(`${PROVIDER_REGISTER_FILE} providers 必须是字符串数组。`);
+    throw new Error(t("providerRegister.providersMustBeArray", { file: PROVIDER_REGISTER_FILE }));
   }
   const providers: string[] = [];
   for (const entry of value) {
     if (typeof entry !== "string") {
-      throw new Error(`${PROVIDER_REGISTER_FILE} providers 只能包含字符串。`);
+      throw new Error(t("providerRegister.providersStringOnly", { file: PROVIDER_REGISTER_FILE }));
     }
     const provider = entry.trim();
     if (!provider || !PROVIDER_KEY_PATTERN.test(provider)) {
-      throw new Error(`${PROVIDER_REGISTER_FILE} providers 包含无效 provider key。`);
+      throw new Error(t("providerRegister.providerKeyInvalid", { file: PROVIDER_REGISTER_FILE }));
     }
     if (!providers.includes(provider)) {
       providers.push(provider);
     }
   }
   if (providers.length === 0) {
-    throw new Error(`${PROVIDER_REGISTER_FILE} providers 不能为空。`);
+    throw new Error(t("providerRegister.providersRequired", { file: PROVIDER_REGISTER_FILE }));
   }
   return providers;
 }
@@ -205,14 +206,18 @@ async function requestApiKey(input: {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`provider-register 申请 apikey 失败：${redactSensitiveText(message)}`);
+    throw new Error(t("providerRegister.requestFailed", { message: redactSensitiveText(message) }));
   }
 
   const responseText = await response.text();
   if (!response.ok) {
     const suffix = summarizeResponseBody(responseText);
     throw new Error(
-      `provider-register 申请 apikey 失败：HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}${suffix ? `：${suffix}` : ""}`
+      t("providerRegister.httpFailed", {
+        status: response.status,
+        statusText: response.statusText ? ` ${response.statusText}` : "",
+        suffix: suffix ? `: ${suffix}` : ""
+      })
     );
   }
 
@@ -220,14 +225,14 @@ async function requestApiKey(input: {
   try {
     parsed = JSON.parse(responseText);
   } catch {
-    throw new Error("provider-register 申请 apikey 失败：响应不是 JSON。");
+    throw new Error(t("providerRegister.responseNotJson"));
   }
 
   const key = typeof (parsed as { key?: unknown })?.key === "string"
     ? (parsed as { key: string }).key.trim()
     : "";
   if (!key) {
-    throw new Error("provider-register 申请 apikey 失败：响应缺少 key。");
+    throw new Error(t("providerRegister.responseMissingKey"));
   }
   return key;
 }
@@ -249,10 +254,10 @@ function parseProviderYaml(content: string, providerKey: string) {
     parsed = yaml.load(content);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`provider ${providerKey} YAML 格式不正确：${message}`);
+    throw new Error(t("providerRegister.providerYamlInvalid", { providerKey, message }));
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`provider ${providerKey} YAML 必须是对象。`);
+    throw new Error(t("providerRegister.providerYamlObject", { providerKey }));
   }
   return parsed as ProviderYaml;
 }
@@ -303,7 +308,7 @@ function readProviderTargets(input: {
   return input.providers.map((providerKey) => {
     const providerPath = pathApi.join(runtimeRoot, "registries", "providers", `${providerKey}.yml`);
     if (!fs.existsSync(providerPath)) {
-      throw new Error(`provider-register provider 文件不存在：${providerKey}`);
+      throw new Error(t("providerRegister.providerFileMissing", { providerKey }));
     }
     const content = fs.readFileSync(providerPath, "utf8");
     return {
@@ -359,13 +364,13 @@ function safetyCleanRegister(registerPath: string, config: ProviderRegisterConfi
     fs.rmSync(registerPath, { force: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`provider-register 清理失败：${message}`);
+    throw new Error(t("providerRegister.cleanupFailed", { message }));
   }
 }
 
 function defaultFetchImpl(): ProviderRegisterFetch {
   if (typeof globalThis.fetch !== "function") {
-    throw new Error("provider-register 申请 apikey 失败：当前运行时不支持 fetch。");
+    throw new Error(t("providerRegister.fetchUnsupported"));
   }
   return globalThis.fetch as unknown as ProviderRegisterFetch;
 }

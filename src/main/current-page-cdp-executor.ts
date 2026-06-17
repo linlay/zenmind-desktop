@@ -12,6 +12,7 @@ import {
   type EmbeddedWebReadInclude,
   type EmbeddedWebStructuredTarget
 } from "../shared/embedded-web-scripts";
+import { t } from "./i18n/main-i18n";
 
 type CdpTraceEntry = {
   method: string;
@@ -297,7 +298,7 @@ export async function executeCurrentPageCdpAction(
       const selector = readActionSelector(args);
       const interactAction = typeof args.action === "string" ? args.action.trim() : "";
       if (!selector || !INTERACT_ACTIONS.has(interactAction as EmbeddedWebInteractAction)) {
-        return fail(action, "invalid_args", "selector 和有效的 action 是必填项。", args);
+        return fail(action, "invalid_args", t("desktopAction.selectorActionRequired"), args);
       }
       const outcome = await evaluate(snapshot, trace, buildInteractElementScript({
         selector,
@@ -319,7 +320,7 @@ export async function executeCurrentPageCdpAction(
     if (action === "desktop.page.fillForm") {
       const fields = readFields(args.fields);
       if (fields.length === 0) {
-        return fail(action, "invalid_args", "fields 是必填项，且每个字段都需要 selector。", args);
+        return fail(action, "invalid_args", t("desktopAction.fieldsSelectorRequired"), args);
       }
       const outcome = await evaluate(snapshot, trace, buildFillFormScript({
         formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,

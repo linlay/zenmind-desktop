@@ -6,6 +6,7 @@ import {
 } from "../download-paths";
 import { buildCoderProjectAgentCreateRequest } from "../copilot/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/generated/brand";
+import { t } from "../i18n/main-i18n";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -51,7 +52,7 @@ async function saveAssistantChatExport(
   });
   await fs.promises.mkdir(path.dirname(exportPath), { recursive: true });
   await fs.promises.writeFile(exportPath, result.bytes);
-  return { ok: true, message: "已下载会话导出。", filePath: exportPath };
+  return { ok: true, message: t("assistant.chatExportDownloaded"), filePath: exportPath };
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +146,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return {
         ok: false,
         items: [],
-        message: error instanceof Error ? error.message : "agent-platform 暂不可用。",
+        message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
         updatedAt: new Date().toISOString()
       };
     }
@@ -159,7 +160,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return {
         ok: false,
         items: [],
-        message: error instanceof Error ? error.message : "agent-platform 暂不可用。",
+        message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
         updatedAt: new Date().toISOString()
       };
     }
@@ -170,7 +171,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     const workspaceDir = String(input?.workspaceDir || "").trim();
     const acpProxyId = String(input?.acpProxyId || "").trim();
     if (!workspaceDir) {
-      return { ok: false, message: "缺少项目目录，无法创建 CODER 智能体。" };
+      return { ok: false, message: t("assistant.coderWorkspaceMissing") };
     }
     const request = buildCoderProjectAgentCreateRequest(workspaceDir, { name, acpProxyId });
     try {
@@ -180,7 +181,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       });
       const agentKey = String(response?.key || "").trim();
       assistantNavigationStatusClient?.scheduleRefresh(0);
-      return { ok: true, message: "已创建 CODER 智能体。", agentKey, workspaceDir };
+      return { ok: true, message: t("assistant.coderCreated"), agentKey, workspaceDir };
     } catch (error) {
       return {
         ok: false,
@@ -196,7 +197,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // ---------------------------------------------------------------------------
   ipcMain.handle("assistant.openMemoryDirectory", async () => ({
     ok: false,
-    message: "记忆现在由 agent-platform 管理，Desktop 不再维护本地记忆目录。",
+    message: t("assistant.memoryManagedByAgentPlatform"),
     path: ""
   }));
 
@@ -264,22 +265,22 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // ---------------------------------------------------------------------------
   ipcMain.handle("assistant.pickAttachments", async (_event: any, chatId?: string | null) => {
     const result = await showFileDialog?.({
-      title: `选择要给 ${PRODUCT_NAME} 读取的附件`,
+      title: t("dialog.chooseAttachment.title", { appName: PRODUCT_NAME }),
       properties: ["openFile", "multiSelections"],
       filters: [
         {
-          name: "可读取文本或常见文档",
+          name: t("assistant.attachmentFilter.readable"),
           extensions: [
             "txt", "md", "csv", "json", "jsonl", "log", "html", "xml",
             "yml", "yaml", "png", "jpg", "jpeg", "webp", "gif",
             "pdf", "docx", "xlsx", "pptx"
           ]
         },
-        { name: "所有文件", extensions: ["*"] }
+        { name: t("assistant.attachmentFilter.all"), extensions: ["*"] }
       ]
     }, mainWindow);
     if (!result || result.canceled || result.filePaths.length === 0) {
-      return { ok: false, chatId: chatId ?? "", message: "已取消选择附件。", attachments: [] };
+      return { ok: false, chatId: chatId ?? "", message: t("attachment.cancelled"), attachments: [] };
     }
     return createAssistantAttachmentsFromFiles?.(app, chatId, result.filePaths, {
       onProgress: emitAssistantAttachmentProgress
@@ -306,7 +307,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       const error = await shell?.openPath(attachmentPath) ?? "";
       return {
         ok: !error,
-        message: error ? `打开附件失败：${error}` : "已打开附件。",
+        message: error ? t("attachment.openFailed", { message: error }) : t("attachment.opened"),
         path: attachmentPath
       };
     } catch (error) {

@@ -5,6 +5,7 @@ import type {
   DesktopActionRendererRequest,
   DesktopActionRendererResponse
 } from "../../shared/contracts";
+import { createTranslator, DEFAULT_LOCALE, type TranslateFunction } from "../../shared/i18n";
 import { getAssistantPageContext } from "../copilot/page-context/assistantPageContext";
 import { getCurrentPageContextSnapshot } from "./currentPageContext";
 
@@ -41,6 +42,11 @@ const providers: Record<DesktopActionProviderScope, DesktopActionProvider[]> = {
 };
 let bridgeStarted = false;
 let currentPageExecutor: CurrentPageExecutor | null = null;
+let translate: TranslateFunction = createTranslator(DEFAULT_LOCALE);
+
+export function setDesktopActionTranslator(nextTranslator: TranslateFunction) {
+  translate = nextTranslator;
+}
 
 function actionError(code: string, message: string, details?: unknown) {
   return {
@@ -77,33 +83,33 @@ async function handleDefaultAction(request: DesktopActionRendererRequest) {
     if (currentPageExecutor?.extractStructured) {
       return currentPageExecutor.extractStructured(request);
     }
-    return actionError("page_extract_unavailable", "当前页面没有可执行的结构化提取能力。");
+    return actionError("page_extract_unavailable", translate("desktopAction.pageExtractUnavailable"));
   }
   if (request.action === "desktop.page.interact") {
     if (currentPageExecutor?.interact) {
       return currentPageExecutor.interact(request);
     }
-    return actionError("page_interact_unavailable", "当前页面没有可执行的交互能力。");
+    return actionError("page_interact_unavailable", translate("desktopAction.pageInteractUnavailable"));
   }
   if (request.action === "desktop.page.fillForm") {
     if (currentPageExecutor?.fillForm) {
       return currentPageExecutor.fillForm(request);
     }
-    return actionError("page_fill_unavailable", "当前页面没有可执行的表单填写能力。");
+    return actionError("page_fill_unavailable", translate("desktopAction.pageFillUnavailable"));
   }
   if (request.action === "desktop.page.submitForm") {
     if (currentPageExecutor?.submitForm) {
       return currentPageExecutor.submitForm(request);
     }
-    return actionError("page_submit_unavailable", "当前页面没有可执行的表单提交流程。");
+    return actionError("page_submit_unavailable", translate("desktopAction.pageSubmitUnavailable"));
   }
   if (request.action.startsWith("desktop.embeddedWeb.")) {
-    return actionError("embedded_web_action_unavailable", "当前没有可执行的内嵌网站 Desktop action。");
+    return actionError("embedded_web_action_unavailable", translate("desktopAction.embeddedWebUnavailable"));
   }
   if (request.action.startsWith("desktop.settings.")) {
-    return actionError("settings_action_unavailable", "当前没有可执行的 Desktop 设置 action。");
+    return actionError("settings_action_unavailable", translate("desktopAction.settingsUnavailable"));
   }
-  return actionError("page_action_unavailable", "当前页面没有注册可执行的 Desktop action。");
+  return actionError("page_action_unavailable", translate("desktopAction.pageActionUnavailable"));
 }
 
 function getFallbackRoute() {

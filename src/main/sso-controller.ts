@@ -13,6 +13,7 @@ import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-
 import { safeConsoleError } from "./safe-console";
 import { STORAGE_NAMESPACE } from "../shared/generated/brand";
 import type { DesktopSsoClaims } from "../shared/contracts";
+import { t } from "./i18n/main-i18n";
 
 export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:${STORAGE_NAMESPACE}-sso`;
 
@@ -423,16 +424,17 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         : await resolveDesktopSsoNavigationUrl(ssoSession, input.url, userAgent, input.browserOrigin);
       targetWindow.webContents.send("sso.embeddedLogin.open", {
         url,
-        label: input.label || "IAM 登录",
+        label: input.label || t("sso.iamLogin"),
         partition: DESKTOP_SSO_WEBVIEW_PARTITION,
         userAgent
       });
+      const label = input.label || t("sso.iamLogin");
       return {
         ok: true,
         action: "open_embedded_sso_login",
         target: input.url,
         url,
-        message: `已打开「${input.label || "IAM 登录"}」登录窗口。`
+        message: t("sso.embeddedLoginOpened", { label })
       };
     },
     async openSystemBrowserUrl(input: {
@@ -447,7 +449,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           action: "open_system_browser",
           target: targetUrl,
           url: targetUrl,
-          message: `已在系统默认浏览器打开「${input.label || targetUrl}」。`
+          message: t("sso.systemBrowserOpened", { label: input.label || targetUrl })
         };
       } catch (error) {
         return {
@@ -455,7 +457,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           action: "open_system_browser",
           target: targetUrl,
           url: targetUrl,
-          message: `无法在系统默认浏览器打开「${input.label || targetUrl}」。`,
+          message: t("sso.systemBrowserOpenFailed", { label: input.label || targetUrl }),
           error: error instanceof Error ? error.message : String(error)
         };
       }

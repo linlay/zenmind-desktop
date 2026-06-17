@@ -12,6 +12,7 @@ import {
   normalizeWebsiteLabel,
   normalizeWebsiteUrl
 } from "./web-common";
+import { t } from "../i18n/main-i18n";
 
 const MAX_WEBSITE_ITEMS = 14;
 
@@ -80,7 +81,7 @@ export function listWebsiteItems(app: App) {
   return {
     ok: true,
     items: readWebsiteItems(app),
-    message: "已读取内嵌网站。"
+    message: t("website.listRead")
   };
 }
 
@@ -91,7 +92,7 @@ export function addWebsiteItem(app: App, input: WebsiteInput) {
       ok: false,
       item: null,
       items,
-      message: `最多可添加 ${MAX_WEBSITE_ITEMS} 个内嵌网站。`
+      message: t("website.maxItems", { count: MAX_WEBSITE_ITEMS })
     };
   }
 
@@ -103,7 +104,7 @@ export function addWebsiteItem(app: App, input: WebsiteInput) {
         ok: false,
         item: existing,
         items,
-        message: "这个网站已经是内嵌网站了。"
+        message: t("website.alreadyExists")
       };
     }
 
@@ -118,7 +119,7 @@ export function addWebsiteItem(app: App, input: WebsiteInput) {
       ok: true,
       item,
       items: nextItems,
-      message: `已添加「${item.label}」。`
+      message: t("website.added", { label: item.label })
     };
   } catch (error) {
     return {
@@ -139,7 +140,7 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
       ok: false,
       item: null,
       items,
-      message: "未找到这个内嵌网站。"
+      message: t("website.notFound")
     };
   }
 
@@ -158,7 +159,7 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
           ok: false,
           item: target,
           items,
-          message: "这个网站已经是内嵌网站了。"
+          message: t("website.alreadyExists")
         };
       }
       updated.url = nextUrl;
@@ -183,7 +184,7 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
       ok: true,
       item: updated,
       items,
-      message: `已更新「${updated.label}」。`
+      message: t("website.updated", { label: updated.label })
     };
   } catch (error) {
     return {
@@ -203,7 +204,7 @@ export function removeWebsiteItem(app: App, id: string) {
     return {
       ok: false,
       items,
-      message: "未找到这个内嵌网站。"
+      message: t("website.notFound")
     };
   }
 
@@ -212,7 +213,7 @@ export function removeWebsiteItem(app: App, id: string) {
   return {
     ok: true,
     items: nextItems,
-    message: `已删除「${target.label}」。`
+    message: t("website.deleted", { label: target.label })
   };
 }
 
@@ -225,7 +226,7 @@ export function importWebsiteItems(app: App, fileContent: string) {
       return {
         ok: false,
         items: currentItems,
-        message: "导入文件中没有可用的内嵌网站。"
+        message: t("website.importEmpty")
       };
     }
 
@@ -241,7 +242,7 @@ export function importWebsiteItems(app: App, fileContent: string) {
       return {
         ok: false,
         items: currentItems,
-        message: "导入的入口已全部存在于当前侧边栏中。"
+        message: t("website.importAllExisting")
       };
     }
 
@@ -249,7 +250,7 @@ export function importWebsiteItems(app: App, fileContent: string) {
     return {
       ok: true,
       items: nextItems,
-      message: `已导入 ${addedCount} 个内嵌网站。`
+      message: t("website.importedCount", { count: addedCount })
     };
   } catch (error) {
     return {

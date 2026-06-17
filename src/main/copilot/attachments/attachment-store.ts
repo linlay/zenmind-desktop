@@ -15,6 +15,7 @@ import {
   renderPdfPagesForVision
 } from "./document-extract";
 import { getAssistantTempRoot } from "../../user-paths";
+import { getMainLocale, t } from "../../i18n/main-i18n";
 
 const MAX_ATTACHMENT_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BATCH_BYTES = 64 * 1024 * 1024;
@@ -143,7 +144,7 @@ function createCancelledAttachmentResult(chatId: string, taskId: string): Assist
   return {
     ok: false,
     chatId,
-    message: "已取消附件处理。",
+    message: t("attachment.cancelled"),
     attachments: [],
     taskId,
     cancelled: true
@@ -251,7 +252,9 @@ function createImageDataUrl(buffer: Buffer, mimeType: string) {
   if (buffer.length > MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES) {
     return {
       dataUrl: "",
-      error: `图片已保存，但超过 ${formatAttachmentSizeLimit(MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES)}，未发送给模型视觉接口。`
+      error: t("attachment.imageTooLargeForVision", {
+        limit: formatAttachmentSizeLimit(MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES)
+      })
     };
   }
 
@@ -522,12 +525,12 @@ function isInsideOrSame(parent: string, candidate: string) {
 function resolveArtifactSourcePath(app: App, _chatId: string, inputPath: string) {
   const trimmed = inputPath.trim();
   if (!trimmed) {
-    throw new Error("产物路径不能为空。");
+    throw new Error(t("attachment.artifactPathRequired"));
   }
 
   const workspaceMatch = /^[/\\]workspace(?:[/\\](.*))?$/iu.exec(trimmed);
   if (workspaceMatch) {
-    throw new Error("Desktop 不再解析本地 /workspace 路径；请通过 agent-platform 工作区发布。");
+    throw new Error(t("attachment.workspacePathDeprecated"));
   }
   const desktop = path.resolve(app.getPath("desktop"));
   const allowedRoots = [desktop];
@@ -536,7 +539,7 @@ function resolveArtifactSourcePath(app: App, _chatId: string, inputPath: string)
       : path.join(desktop, trimmed);
   const resolved = path.resolve(candidate);
   if (!allowedRoots.some((root) => isInsideOrSame(root, resolved))) {
-    throw new Error(`产物路径不在允许范围内：${resolved}`);
+    throw new Error(t("attachment.artifactPathOutsideAllowed", { path: resolved }));
   }
   return resolved;
 }
@@ -545,15 +548,15 @@ export function resolveAssistantAttachmentPath(app: App, chatId: string, attachm
   const attachmentsDir = path.join(getAttachmentChatDir(app, chatId), "attachments");
   const metadata = readAttachmentMetadata(attachmentsDir, path.basename(attachmentId));
   if (!metadata?.storedName) {
-    throw new Error("没有找到该附件的本地文件。");
+    throw new Error(t("attachment.localFileMissing"));
   }
   const resolved = path.resolve(path.join(attachmentsDir, path.basename(metadata.storedName)));
   if (!isInsideOrSame(attachmentsDir, resolved)) {
-    throw new Error("附件路径不在允许范围内。");
+    throw new Error(t("attachment.pathOutsideAllowed"));
   }
   const stat = fs.statSync(resolved);
   if (!stat.isFile()) {
-    throw new Error("该附件不是可打开的文件。");
+    throw new Error(t("attachment.notOpenableFile"));
   }
   return resolved;
 }
@@ -574,13 +577,15 @@ export async function createAssistantAttachmentsFromFiles(
     totalFiles: filePaths.length,
     processedBytes: 0,
     totalBytes: 0,
-    message: "正在准备附件处理。"
+    message: t("attachment.preparing")
   });
 
   if (filePaths.length > 0) {
     const stats = await getAttachmentBatchStats(filePaths);
     if (stats.totalBytes > MAX_ATTACHMENT_BATCH_BYTES) {
-      const message = `附件总大小超过 ${formatAttachmentSizeLimit(MAX_ATTACHMENT_BATCH_BYTES)}，未保存。`;
+      const message = t("attachment.batchTooLarge", {
+        limit: formatAttachmentSizeLimit(MAX_ATTACHMENT_BATCH_BYTES)
+      });
       emitAttachmentProgress(nextOptions, {
         chatId: initialChatId,
         phase: "error",
@@ -621,7 +626,8 @@ async function createAssistantAttachmentsFromFilesInWorker(
         assistantTempRoot: getAssistantTempRoot(app),
         chatId,
         filePaths,
-        taskId: options.taskId
+        taskId: options.taskId,
+        locale: getMainLocale()
       }
     });
     const activeTask: ActiveAttachmentTask = {
@@ -668,7 +674,7 @@ async function createAssistantAttachmentsFromFilesInWorker(
         resolve(createCancelledAttachmentResult(chatId ?? "", options.taskId));
         return;
       }
-      reject(new Error(`附件处理 worker 异常退出：${code}`));
+      reject(new Error(t("attachment.workerExited", { code })));
     });
   });
 }
@@ -678,7 +684,7 @@ export function cancelAssistantAttachmentTask(taskId: string) {
   if (!task) {
     return {
       ok: false,
-      message: "没有找到正在处理的附件任务。"
+      message: t("attachment.taskNotFound")
     };
   }
   task.settled = true;
@@ -687,7 +693,7 @@ export function cancelAssistantAttachmentTask(taskId: string) {
   task.resolve(createCancelledAttachmentResult(task.chatId, taskId));
   return {
     ok: true,
-    message: "已取消附件处理。"
+    message: t("attachment.cancelled")
   };
 }
 
@@ -701,7 +707,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
     return {
       ok: false,
       chatId: chatId ?? "",
-      message: "未选择附件。",
+      message: t("attachment.noneSelected"),
       attachments: [],
       ...(options.taskId ? { taskId: options.taskId } : {})
     };
@@ -732,7 +738,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
     totalFiles: filePaths.length,
     processedBytes,
     totalBytes,
-    message: "正在检查附件。"
+    message: t("attachment.checking")
   });
 
   for (const [index, filePath] of filePaths.entries()) {
@@ -748,7 +754,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         mimeType: "application/octet-stream",
         sizeBytes: 0,
         text: "",
-        error: error instanceof Error ? error.message : "附件读取失败。",
+        error: error instanceof Error ? error.message : t("attachment.readFileFailed"),
         document: {
           format: "binary",
           readStatus: "unreadable",
@@ -764,7 +770,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         totalFiles: filePaths.length,
         processedBytes,
         totalBytes,
-        message: `${name} 读取失败。`
+        message: t("attachment.readFailed", { name })
       });
       continue;
     }
@@ -775,7 +781,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         mimeType: "application/octet-stream",
         sizeBytes: 0,
         text: "",
-        error: "只能添加文件，暂不支持文件夹。",
+        error: t("attachment.onlyFilesSupported"),
         document: {
           format: "binary",
           readStatus: "unreadable",
@@ -791,7 +797,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         totalFiles: filePaths.length,
         processedBytes,
         totalBytes,
-        message: `${name} 不是文件。`
+        message: t("attachment.notFile", { name })
       });
       continue;
     }
@@ -803,7 +809,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         mimeType: guessMimeType(filePath),
         sizeBytes: stat.size,
         text: "",
-        error: "附件超过 32MB，未保存。",
+        error: t("attachment.fileTooLarge", { limit: formatAttachmentSizeLimit(MAX_ATTACHMENT_FILE_BYTES) }),
         document: {
           format: "binary",
           readStatus: "unreadable",
@@ -820,7 +826,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         totalFiles: filePaths.length,
         processedBytes,
         totalBytes,
-        message: `${name} 超过 ${formatAttachmentSizeLimit(MAX_ATTACHMENT_FILE_BYTES)}，已跳过。`
+        message: t("attachment.tooLarge", { name, limit: formatAttachmentSizeLimit(MAX_ATTACHMENT_FILE_BYTES) })
       });
       continue;
     }
@@ -834,7 +840,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
       totalFiles: filePaths.length,
       processedBytes,
       totalBytes,
-      message: `正在保存 ${name}。`
+      message: t("attachment.saving", { name })
     });
     fs.copyFileSync(filePath, storedPath);
     const storedBuffer = fs.readFileSync(storedPath);
@@ -850,7 +856,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
       totalFiles: filePaths.length,
       processedBytes,
       totalBytes,
-      message: `正在解析 ${name}。`
+      message: t("attachment.parsing", { name })
     });
     const extracted = imageContext.dataUrl || imageContext.error
       ? createImageDocumentMetadata({
@@ -884,12 +890,12 @@ export async function createAssistantAttachmentsFromFilesInProcess(
             totalFiles: filePaths.length,
             processedBytes,
             totalBytes,
-            message: `正在渲染 ${name} 的扫描页。`
+            message: t("attachment.renderingScanPages", { name })
           });
 	        const pageImages = await renderPdfPagesForVision(storedPath);
 	        if (pageImages.length > 0) {
-	          attachment.text = `该 PDF 没有可复制文字，已渲染前 ${pageImages.length} 页为视觉页图。`;
-	          attachment.error = "该 PDF 是扫描件或图片型 PDF，已转为页图等待 MiniMax 图片理解接口识别。";
+	          attachment.text = t("attachment.scannedPdfText", { count: pageImages.length });
+	          attachment.error = t("attachment.scannedPdfError");
 	          for (const pageImage of pageImages) {
 	            const pageId = createAttachmentId();
 	            const pageName = createPdfPageImageName(name, pageImage.pageNumber);
@@ -922,7 +928,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
 	        }
 	      } catch (error) {
 	        const message = error instanceof Error ? error.message : String(error);
-	        attachment.error = `${attachment.error || "扫描 PDF 页图渲染失败。"} ${message}`;
+	        attachment.error = `${attachment.error || t("attachment.scannedPdfRenderFailed")} ${message}`;
 	        attachment.document = {
 	          ...extracted.document,
 	          ...attachment.document,
@@ -940,7 +946,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
       totalFiles: filePaths.length,
       processedBytes,
       totalBytes,
-      message: `${name} 已处理。`
+      message: t("attachment.processed", { name })
     });
 	  }
 
@@ -949,14 +955,14 @@ export async function createAssistantAttachmentsFromFilesInProcess(
 	  const truncatedCount = visibleAttachments.filter((attachment) => attachment.document?.truncated).length;
 	  const imageCount = visibleAttachments.filter((attachment) => attachment.dataUrl).length;
 	  const hiddenScanPageCount = attachments.filter((attachment) => attachment.hidden && attachment.dataUrl).length;
-	  const unreadableCount = visibleAttachments.filter((attachment) => attachment.document?.readStatus === "unreadable").length;
+  const unreadableCount = visibleAttachments.filter((attachment) => attachment.document?.readStatus === "unreadable").length;
   const message = [
-    `已添加 ${visibleAttachments.length} 个附件，已解析 ${readableCount} 个`,
-    truncatedCount > 0 ? `${truncatedCount} 个已截断` : "",
-    imageCount > 0 ? `${imageCount} 张图片已进入视觉上下文` : "",
-    hiddenScanPageCount > 0 ? `${hiddenScanPageCount} 页扫描页图已进入视觉上下文` : "",
-    unreadableCount > 0 ? `${unreadableCount} 个无可读文本或暂不支持解析` : ""
-  ].filter(Boolean).join("，") + "。";
+    t("attachment.summaryBase", { count: visibleAttachments.length, readableCount }),
+    truncatedCount > 0 ? t("attachment.summaryTruncated", { count: truncatedCount }) : "",
+    imageCount > 0 ? t("attachment.summaryImages", { count: imageCount }) : "",
+    hiddenScanPageCount > 0 ? t("attachment.summaryScanPages", { count: hiddenScanPageCount }) : "",
+    unreadableCount > 0 ? t("attachment.summaryUnreadable", { count: unreadableCount }) : ""
+  ].filter(Boolean).join(t("common.listSeparator")) + t("common.sentenceEnd");
   emitAttachmentProgress(options, {
     chatId: chat.id,
     phase: "complete",
@@ -997,11 +1003,14 @@ export function createAssistantArtifactAttachmentsFromFiles(
       const sourcePath = resolveArtifactSourcePath(app, chat.id, input.path);
       const stat = fs.statSync(sourcePath);
       if (!stat.isFile()) {
-        errors.push(`${input.path} 不是文件。`);
+        errors.push(t("attachment.pathNotFile", { path: input.path }));
         continue;
       }
       if (stat.size > MAX_ATTACHMENT_FILE_BYTES) {
-        errors.push(`${input.path} 超过 32MB，未发布为聊天产物。`);
+        errors.push(t("attachment.publishTooLarge", {
+          path: input.path,
+          limit: formatAttachmentSizeLimit(MAX_ATTACHMENT_FILE_BYTES)
+        }));
         continue;
       }
 
@@ -1043,13 +1052,16 @@ export function createAssistantArtifactAttachmentsFromFiles(
     }
   }
 
-  const names = artifacts.map((artifact) => artifact.name).join("、");
+  const names = artifacts.map((artifact) => artifact.name).join(t("common.nameSeparator"));
   return {
     ok: attachments.length > 0,
     chatId: chat.id,
     message: attachments.length > 0
-      ? `已发布 ${attachments.length} 个产物${names ? `：${names}` : ""}。`
-      : errors[0] || "没有发布任何产物。",
+      ? t("attachment.published", {
+          count: attachments.length,
+          names: names ? t("attachment.publishedNames", { names }) : ""
+        })
+      : errors[0] || t("attachment.nonePublished"),
     attachments,
     artifacts,
     errors
@@ -1076,9 +1088,9 @@ export function createAssistantAttachmentFromPastedImage(
     mimeType: input.mimeType,
     buffer: pastedImageDataToBuffer(input.data),
     fallbackBaseName: "pasted-image",
-    unsupportedMessage: "剪贴板里不是当前支持的图片格式。",
-    readableMessage: "已粘贴 1 张图片，图片已进入视觉上下文。",
-    oversizedVisionMessage: "图片已保存，但过大，未发送给模型视觉接口。"
+    unsupportedMessage: t("attachment.pastedImageUnsupported"),
+    readableMessage: t("attachment.pastedImageReadable"),
+    oversizedVisionMessage: t("attachment.imageOversizedVision")
   });
 }
 
@@ -1109,7 +1121,7 @@ export function createAssistantAttachmentFromImageBuffer(
     return {
       ok: false,
       chatId: chat.id,
-      message: input.unsupportedMessage || "不是当前支持的图片格式。",
+      message: input.unsupportedMessage || t("attachment.imageUnsupported"),
       attachments: []
     };
   }
@@ -1118,7 +1130,7 @@ export function createAssistantAttachmentFromImageBuffer(
     return {
       ok: false,
       chatId: chat.id,
-      message: "图片超过 32MB，未保存。",
+      message: t("attachment.imageTooLarge"),
       attachments: []
     };
   }
@@ -1149,8 +1161,8 @@ export function createAssistantAttachmentFromImageBuffer(
     ok: true,
     chatId: chat.id,
     message: imageContext.dataUrl
-      ? input.readableMessage || "已添加 1 张图片，图片已进入视觉上下文。"
-      : input.oversizedVisionMessage || "图片已保存，但过大，未发送给模型视觉接口。",
+      ? input.readableMessage || t("attachment.imageReadable")
+      : input.oversizedVisionMessage || t("attachment.imageOversizedVision"),
     attachments: [attachment]
   };
 }

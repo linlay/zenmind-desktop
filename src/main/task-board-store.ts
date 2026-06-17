@@ -18,6 +18,7 @@ import {
   replaceTaskBoardIssues,
   withTaskBoardDatabase
 } from "./task-board-db";
+import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
   getPath(name: "home"): string;
@@ -27,10 +28,13 @@ type StoredTaskBoardIssues = {
   issues: TaskBoardIssue[];
 };
 
-const NON_DRAG_COMPLETED_TRANSITION_MESSAGE = "只有用户确认完成后才能拖拽到「已完成」。";
 const statusRank = new Map<TaskBoardStatus, number>(
   TASK_BOARD_STATUSES.map((status, index) => [status, index])
 );
+
+function nonDragCompletedTransitionMessage() {
+  return t("taskBoard.runtime.completedDragLocked");
+}
 
 const taskBoardStatusAliases: Record<string, TaskBoardStatus> = {
   complete: "completed",
@@ -227,7 +231,7 @@ export function listTaskBoardIssues(app: AppPathProvider): TaskBoardListResult {
   const store = readStore(app);
   return {
     ok: true,
-    message: "任务看板已加载。",
+    message: t("taskBoard.runtime.loaded"),
     issues: cloneIssues(store.issues),
     storagePath: getTaskBoardDatabasePath(app)
   };
@@ -237,11 +241,11 @@ export function createTaskBoardIssue(app: AppPathProvider, input: TaskBoardIssue
   const store = readStore(app);
   const issue = buildIssue(input, store.issues);
   if (!issue) {
-    return { ok: false, message: "任务标题不能为空。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: cloneIssues(store.issues) };
   }
   const nextIssues = [...store.issues, issue];
   writeStore(app, { issues: nextIssues });
-  return { ok: true, message: "任务已创建。", issue: cloneIssue(issue), issues: cloneIssues(nextIssues) };
+  return { ok: true, message: t("taskBoard.runtime.created"), issue: cloneIssue(issue), issues: cloneIssues(nextIssues) };
 }
 
 export function updateTaskBoardIssue(
@@ -252,28 +256,28 @@ export function updateTaskBoardIssue(
   const store = readStore(app);
   const issueIndex = store.issues.findIndex((issue) => issue.id === issueId);
   if (issueIndex < 0) {
-    return { ok: false, message: "任务不存在。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.missing"), issues: cloneIssues(store.issues) };
   }
 
   const currentIssue = store.issues[issueIndex]!;
   const requestedStatus = input.status !== undefined ? normalizeTaskBoardStatus(input.status) : null;
   const clearsActiveRun = input.runId === null;
   if (currentIssue.runId && requestedStatus && requestedStatus !== currentIssue.status && !clearsActiveRun) {
-    return { ok: false, message: "智能体正在回答，完成后才能切换状态。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.agentRunning"), issues: cloneIssues(store.issues) };
   }
   if (isNonDragCompletedTransition(currentIssue, requestedStatus, clearsActiveRun)) {
-    return { ok: false, message: NON_DRAG_COMPLETED_TRANSITION_MESSAGE, issues: cloneIssues(store.issues) };
+    return { ok: false, message: nonDragCompletedTransitionMessage(), issues: cloneIssues(store.issues) };
   }
 
   const nextIssue = applyIssueUpdate(currentIssue, input);
   if (!nextIssue) {
-    return { ok: false, message: "任务标题不能为空。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: cloneIssues(store.issues) };
   }
 
   const nextIssues = [...store.issues];
   nextIssues[issueIndex] = nextIssue;
   writeStore(app, { issues: nextIssues });
-  return { ok: true, message: "任务已更新。", issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
+  return { ok: true, message: t("taskBoard.runtime.updated"), issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
 }
 
 export function updateTaskBoardIssueByRunId(
@@ -285,9 +289,9 @@ export function updateTaskBoardIssueByRunId(
   const store = readStore(app);
   const issueIndex = store.issues.findIndex((issue) => issue.runId === trimmedRunId);
   if (!trimmedRunId || issueIndex < 0) {
-    return { ok: false, message: "任务运行不存在。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.runMissing"), issues: cloneIssues(store.issues) };
   }
-  return updateMatchedTaskBoardIssue(app, store, issueIndex, input, "任务运行状态已更新。");
+  return updateMatchedTaskBoardIssue(app, store, issueIndex, input, t("taskBoard.runtime.runUpdated"));
 }
 
 export function updateTaskBoardIssueByChatId(
@@ -301,9 +305,9 @@ export function updateTaskBoardIssueByChatId(
     issue.chatId === trimmedChatId && issue.status === "in_progress"
   );
   if (!trimmedChatId || issueIndex < 0) {
-    return { ok: false, message: "任务会话不存在。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.chatMissing"), issues: cloneIssues(store.issues) };
   }
-  return updateMatchedTaskBoardIssue(app, store, issueIndex, input, "任务会话状态已更新。");
+  return updateMatchedTaskBoardIssue(app, store, issueIndex, input, t("taskBoard.runtime.chatUpdated"));
 }
 
 function updateMatchedTaskBoardIssue(
@@ -317,11 +321,11 @@ function updateMatchedTaskBoardIssue(
   const requestedStatus = input.status !== undefined ? normalizeTaskBoardStatus(input.status) : null;
   const clearsActiveRun = input.runId === null;
   if (isNonDragCompletedTransition(currentIssue, requestedStatus, clearsActiveRun)) {
-    return { ok: false, message: NON_DRAG_COMPLETED_TRANSITION_MESSAGE, issues: cloneIssues(store.issues) };
+    return { ok: false, message: nonDragCompletedTransitionMessage(), issues: cloneIssues(store.issues) };
   }
   const nextIssue = applyIssueUpdate(currentIssue, input);
   if (!nextIssue) {
-    return { ok: false, message: "任务标题不能为空。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: cloneIssues(store.issues) };
   }
   const nextIssues = [...store.issues];
   nextIssues[issueIndex] = nextIssue;
@@ -333,15 +337,15 @@ export function moveTaskBoardIssue(app: AppPathProvider, input: TaskBoardIssueMo
   const store = readStore(app);
   const issueIndex = store.issues.findIndex((issue) => issue.id === input.id);
   if (issueIndex < 0) {
-    return { ok: false, message: "任务不存在。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.missing"), issues: cloneIssues(store.issues) };
   }
   const targetStatus = normalizeTaskBoardStatus(input.status);
   if (!targetStatus || !Number.isFinite(input.position)) {
-    return { ok: false, message: "任务移动参数无效。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.moveInvalid"), issues: cloneIssues(store.issues) };
   }
   const currentIssue = store.issues[issueIndex]!;
   if (currentIssue.runId) {
-    return { ok: false, message: "智能体正在回答，完成后才能切换状态。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.agentRunning"), issues: cloneIssues(store.issues) };
   }
 
   const nextIssue: TaskBoardIssue = {
@@ -354,19 +358,19 @@ export function moveTaskBoardIssue(app: AppPathProvider, input: TaskBoardIssueMo
   const nextIssues = [...store.issues];
   nextIssues[issueIndex] = nextIssue;
   writeStore(app, { issues: nextIssues });
-  return { ok: true, message: "任务已移动。", issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
+  return { ok: true, message: t("taskBoard.runtime.moved"), issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
 }
 
 export function deleteTaskBoardIssue(app: AppPathProvider, issueId: string): TaskBoardDeleteResult {
   const store = readStore(app);
   const nextIssues = store.issues.filter((issue) => issue.id !== issueId);
   if (nextIssues.length === store.issues.length) {
-    return { ok: false, message: "任务不存在。", issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("taskBoard.runtime.missing"), issues: cloneIssues(store.issues) };
   }
   writeStore(app, { issues: nextIssues });
   return {
     ok: true,
-    message: "任务已删除。",
+    message: t("taskBoard.runtime.deleted"),
     deletedIssueId: issueId,
     issues: cloneIssues(nextIssues)
   };

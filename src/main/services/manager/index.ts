@@ -76,6 +76,7 @@ import {
   runExecFile,
   SERVICE_COMMAND_TIMEOUT_MS
 } from "./command-runner";
+import { t } from "../../i18n/main-i18n";
 import {
   upsertEnvFileContent,
   writeEnvFileUpdates
@@ -365,20 +366,20 @@ function collectPrerequisites(
     configFile.required && path.normalize(configFile.relativePath) === ".env"
   );
   if (requiresEnvFile && !fs.existsSync(envPath)) {
-    prerequisites.push("缺少 .env 配置文件");
+    prerequisites.push(t("service.missingEnvFile"));
   }
 
   for (const target of service.importTargets) {
     const targetPath = resolveConfigPath(layout, target.relativePath);
     if (target.required && !fs.existsSync(targetPath)) {
-      prerequisites.push(`缺少 ${target.label}`);
+      prerequisites.push(t("service.missingImportTarget", { label: target.label }));
     }
   }
 
   if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
     const token = fs.existsSync(envPath) ? readEnvFile(envPath).get("AGENT_TOKEN")?.trim() ?? "" : "";
     if (!token) {
-      prerequisites.push("Tunnel Hub Agent 缺少 AGENT_TOKEN，请先在设置中配置 token");
+      prerequisites.push(t("service.tunnelHubTokenMissing"));
     }
   }
 
@@ -388,15 +389,15 @@ function collectPrerequisites(
       const installed = engineProbe.probes.filter((probe) => probe.installed);
       if (installed.length > 0) {
         const names = installed.map((probe) => probe.engine).join(" / ");
-        prerequisites.push(`${names} 已安装，但 daemon/VM 未连接，请先启动 Docker Desktop 或执行 podman machine start`);
+        prerequisites.push(t("service.containerEngineInstalledNotConnected", { names }));
       } else {
-        prerequisites.push("未检测到 Docker 或 Podman");
+        prerequisites.push(t("service.containerEngineMissing"));
       }
     }
   }
 
   if (false && service.id === "agent-container-hub" && !containerEngineAvailable()) {
-    prerequisites.push("未检测到 Docker 或 Podman");
+    prerequisites.push(t("service.containerEngineMissing"));
   }
 
   return prerequisites;
@@ -481,7 +482,7 @@ async function ensureMutableInstallDir(app: App, service: ServiceDefinition) {
     return getInstallDir(app, service);
   }
 
-  throw new Error(`${service.name} 尚未导入，请先导入插件。`);
+  throw new Error(t("service.pluginNotImported", { name: service.name }));
 }
 
 type InstallBuiltinServiceOptions = {
@@ -551,7 +552,7 @@ async function installBuiltinServiceInternal(
       throw new Error(`service ${serviceId} is not a builtin service`);
     }
     const assetPath = options.archivePath
-      ? ensureArchiveHealthy(service, options.archivePath, "安装包")
+      ? ensureArchiveHealthy(service, options.archivePath, t("service.archivePackageLabel"))
       : ensureBundleAssetHealthy(app, service);
     const initializationAssetSignature = options.archivePath ? computeAssetSignature(assetPath) : undefined;
 
@@ -647,7 +648,9 @@ async function initializeServiceInternal(
     if (!currentState.installed) {
       return {
         ok: false,
-        message: service.kind === "plugin" ? `${service.name} 尚未导入，请先导入插件。` : `${service.name} 尚未安装。`,
+        message: service.kind === "plugin"
+          ? t("service.pluginNotImported", { name: service.name })
+          : t("service.notInstalled", { name: service.name }),
         service: currentState
       };
     }
@@ -675,7 +678,7 @@ async function initializeServiceInternal(
       const nextState = await getServiceState(app, serviceId);
       return {
         ok: true,
-        message: `${service.name} 已重新安装并初始化。`,
+        message: t("service.reinstalledAndInitialized", { name: service.name }),
         service: nextState
       };
     }
@@ -729,7 +732,7 @@ async function initializeServiceInternal(
     const nextState = await getServiceState(app, serviceId);
     return {
       ok: true,
-      message: `${service.name} 已初始化。`,
+      message: t("service.initialized", { name: service.name }),
       service: nextState
     };
   } finally {
@@ -846,30 +849,32 @@ export async function getServiceState(
   }
 
   let status: ServiceState["status"] = "not-installed";
-  let statusLabel = "未安装";
-  let message = "尚未安装到本地运行目录。";
+  let statusLabel = t("service.status.notInstalled");
+  let message = t("service.notInstalledLocal");
 
   if (installed) {
     status = "stopped";
-    statusLabel = "已停止";
-    message = "服务已安装，可手动启动。";
+    statusLabel = t("service.status.stopped");
+    message = t("service.installedCanStart");
   }
 
   if (installed && missingRuntimeFiles.length > 0) {
     status = "error";
-    statusLabel = "安装损坏";
-    message = `安装目录缺少关键文件：${missingRuntimeFiles.join(", ")}`;
+    statusLabel = t("service.status.corrupted");
+    message = t("service.missingRuntimeFiles", { files: missingRuntimeFiles.join(", ") });
   }
 
   if (installed && missingRuntimeFiles.length === 0 && !initializationSucceeded) {
     if (initializationState?.status === "failed" && initializationState.version === service.version) {
       status = "error";
-      statusLabel = "初始化失败";
-      message = initializationState.lastError ? `初始化失败：${initializationState.lastError}` : "初始化失败，请重试。";
+      statusLabel = t("service.status.initializationFailed");
+      message = initializationState.lastError
+        ? t("service.initializationFailedWithMessage", { message: initializationState.lastError })
+        : t("service.initializationFailedRetry");
     } else {
       status = "initialization-required";
-      statusLabel = "待初始化";
-      message = service.kind === "plugin" ? "插件已导入，请先完成初始化。" : "服务已安装，请先完成初始化。";
+      statusLabel = t("service.status.initializationRequired");
+      message = service.kind === "plugin" ? t("service.pluginImportedNeedsInit") : t("service.serviceInstalledNeedsInit");
     }
   }
 
@@ -878,7 +883,7 @@ export async function getServiceState(
       ensureBundleAssetHealthy(app, service);
     } catch (error) {
       status = "error";
-      statusLabel = "资源损坏";
+      statusLabel = t("service.status.assetDamaged");
       message = error instanceof Error ? error.message : String(error);
     }
   }
@@ -886,8 +891,8 @@ export async function getServiceState(
   if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && prerequisites.length > 0) {
     const hasDependencyError = prerequisites.some((item) => item.includes("Docker") || item.includes("Podman"));
     status = hasDependencyError ? "dependency-missing" : "config-required";
-    statusLabel = hasDependencyError ? "依赖未满足" : "待配置";
-    message = prerequisites.join("；");
+    statusLabel = hasDependencyError ? t("service.status.dependencyMissing") : t("service.status.configRequired");
+    message = prerequisites.join(t("common.listSeparator"));
   }
 
   if (
@@ -900,25 +905,27 @@ export async function getServiceState(
   ) {
     if (readPluginResourceDesiredStatus(app, service) === "running") {
       status = "running";
-      statusLabel = "已加载";
-      message = "插件资源已加载。";
+      statusLabel = t("service.status.loaded");
+      message = t("service.pluginResourceLoaded");
     } else {
       status = "stopped";
-      statusLabel = "已停止";
-      message = "插件资源未加载，可手动启动。";
+      statusLabel = t("service.status.stopped");
+      message = t("service.pluginResourceNotLoaded");
     }
   }
 
   if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && conflictingPortPid) {
     status = "error";
-    statusLabel = "端口冲突";
-    message = `端口 ${port} 已被其他进程占用（PID ${conflictingPortPid}）。`;
+    statusLabel = t("service.status.portConflict");
+    message = t("service.portOccupied", { port, pid: conflictingPortPid });
   }
 
   if (running && initializationSucceeded) {
     status = "running";
-    statusLabel = "运行中";
-    message = `服务进程正在运行。${webUrl ? `入口：${webUrl}` : ""}`.trim();
+    statusLabel = t("service.status.running");
+    message = t("service.processRunning", {
+      entry: webUrl ? t("service.processEntry", { url: webUrl }) : ""
+    }).trim();
   }
 
   return {
@@ -998,42 +1005,48 @@ function buildVerificationResult(
 
   if (desired === "running") {
     if (state.status !== "running") {
-      issues.push(`复查后服务状态仍为 ${state.status}`);
+      issues.push(t("service.verify.statusStill", { status: state.status }));
     }
     if (pid && !isProcessRunning(pid)) {
-      issues.push(`PID ${pid} 已不存在`);
+      issues.push(t("service.verify.pidMissing", { pid }));
     }
     if (!pid) {
-      issues.push("没有读取到有效 PID");
+      issues.push(t("service.verify.noValidPid"));
     }
     if (service.id === "agent-container-hub") {
       if (port > 0 && !managedPortPid) {
-        issues.push(`端口 ${port} 无受管进程监听`);
+        issues.push(t("service.verify.portNoManagedProcess", { port }));
       }
       if (httpProbe && !httpProbe.ok) {
-        issues.push(`${httpProbe.target} 探测失败：${httpProbe.message || "HTTP 不可用"}`);
+        issues.push(t("service.verify.probeFailed", {
+          target: httpProbe.target,
+          message: httpProbe.message || t("service.probeHttpUnavailable")
+        }));
       }
       if (runtimeInfoProbe) {
         const looksJson = /application\/json/iu.test(runtimeInfoProbe.contentType || "")
           || /^\s*[{[]/u.test(runtimeInfoProbe.bodyPreview || "");
         if (!runtimeInfoProbe.ok || !looksJson) {
           issues.push(runtimeInfoProbe.ok
-            ? `HTTP ${runtimeInfoProbe.statusCode} 但 /api/runtime-info 返回的不是 JSON`
-            : `/api/runtime-info 探测失败：${runtimeInfoProbe.message || "HTTP 不可用"}`);
+            ? t("service.verify.runtimeInfoNotJson", { statusCode: runtimeInfoProbe.statusCode })
+            : t("service.verify.probeFailed", {
+                target: "/api/runtime-info",
+                message: runtimeInfoProbe.message || t("service.probeHttpUnavailable")
+              }));
         }
       } else {
-        issues.push("缺少 /api/runtime-info 验证结果");
+        issues.push(t("service.verify.runtimeInfoMissing"));
       }
     }
   } else {
     if (state.status === "running") {
-      issues.push("复查后服务仍处于 running");
+      issues.push(t("service.verify.stillRunning"));
     }
     if (pid && isProcessRunning(pid)) {
-      issues.push(`PID ${pid} 仍在运行`);
+      issues.push(t("service.verify.pidStillRunning", { pid }));
     }
     if (port > 0 && managedPortPid) {
-      issues.push(`端口 ${port} 仍被受管进程 PID ${managedPortPid} 监听`);
+      issues.push(t("service.verify.portStillManaged", { port, pid: managedPortPid }));
     }
   }
 
@@ -1176,8 +1189,10 @@ export async function verifyServiceState(
 }
 
 function serviceVerificationFailureMessage(actionMessage: string, verification: ServiceVerification) {
-  const issues = verification.issues.length > 0 ? verification.issues.join("；") : `状态为 ${verification.actualStatus}`;
-  return `${actionMessage}，但复查失败：${issues}`;
+  const issues = verification.issues.length > 0
+    ? verification.issues.join(t("common.listSeparator"))
+    : t("service.verify.actualStatus", { status: verification.actualStatus });
+  return t("service.verify.failed", { actionMessage, issues });
 }
 
 function shouldRetryServiceVerification(
@@ -1675,11 +1690,16 @@ async function ensureRequiredServiceHttpReachable(
         return;
       }
       throw new Error(
-        `${target} 探测失败：${probe.message || "HTTP 不可用"}；` +
-        `${fallbackTarget} 探测失败：${fallbackProbe.message || "HTTP 不可用"}`
+        [
+          t("service.verify.probeFailed", { target, message: probe.message || t("service.probeHttpUnavailable") }),
+          t("service.verify.probeFailed", { target: fallbackTarget, message: fallbackProbe.message || t("service.probeHttpUnavailable") })
+        ].join(t("common.listSeparator"))
       );
     }
-    throw new Error(`${target} 探测失败：${probe.message || "HTTP 不可用"}`);
+    throw new Error(t("service.verify.probeFailed", {
+      target,
+      message: probe.message || t("service.probeHttpUnavailable")
+    }));
   }
 }
 
@@ -1763,7 +1783,10 @@ async function collectDesktopCapabilityRequirementIssues(
       await applyDesktopCapabilityRequirement(app, service, layout, requirement, options);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      issues.push(`${describeCapabilityRequirement(requirement)} 未就绪：${message}`);
+      issues.push(t("service.verify.requirementNotReady", {
+        requirement: describeCapabilityRequirement(requirement),
+        message
+      }));
     }
   }
   return issues;
@@ -1977,28 +2000,28 @@ async function runServiceCommand(
       const assetPath = getOptionalBundleAssetPath(app, service);
       if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
         if (!assetPath) {
-          throw new Error(`${service.name} 未安装或安装已损坏。`);
+          throw new Error(t("service.notInstalledDamaged", { name: service.name }));
         }
         await installBuiltinService(app, service.id, { source: "runServiceCommand:missing-install" });
       } else if (assetPath && isAssetNewerThanInstall(assetPath, getServiceLayout(app, service), app, service)) {
         await installBuiltinService(app, service.id, { source: "runServiceCommand:asset-newer" });
       }
     } else if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
-      throw new Error(`${service.name} 未安装或安装已损坏。`);
+      throw new Error(t("service.notInstalledDamaged", { name: service.name }));
     }
 
     if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
       if (service.kind !== "builtin") {
-        throw new Error(`${service.name} 未安装或安装已损坏。`);
+        throw new Error(t("service.notInstalledDamaged", { name: service.name }));
       }
       if (!shouldRefreshBuiltinAsset) {
-        throw new Error(`${service.name} 未安装或安装已损坏。`);
+        throw new Error(t("service.notInstalledDamaged", { name: service.name }));
       }
       ensureBundleAssetHealthy(app, service);
       await installBuiltinService(app, service.id, { source: "runServiceCommand:repair-install" });
     }
     if (command.length === 0) {
-      throw new Error(`${service.name} 缺少可执行脚本定义。`);
+      throw new Error(t("service.missingExecutableScript", { name: service.name }));
     }
     const layout = getServiceLayout(app, service);
     prepareServiceExecutionLayout(service, layout);
@@ -2042,7 +2065,7 @@ async function startServiceInternal(
     const nextState = await getServiceState(app, serviceId, options.stateReadOptions);
     const result = {
       ok: true,
-      message: `${service.name} 已加载。`,
+      message: t("service.loaded", { name: service.name }),
       service: nextState
     } satisfies ServiceCommandResult;
     if (service.kind === "plugin") {
@@ -2122,7 +2145,7 @@ async function startServiceInternal(
   if (nextState.status === "running") {
     result = {
       ok: true,
-      message: `${nextState.name} 已在运行。`,
+      message: t("service.alreadyRunning", { name: nextState.name }),
       service: nextState
     };
   } else {
@@ -2144,7 +2167,7 @@ async function startServiceInternal(
     if (preStartState.status === "running") {
       result = {
         ok: true,
-        message: `${preStartState.name} 已在运行。`,
+        message: t("service.alreadyRunning", { name: preStartState.name }),
         service: preStartState
       };
     } else {
@@ -2161,7 +2184,7 @@ async function startServiceInternal(
         });
         result = {
           ok: true,
-          message: `${service.name} 已启动。`,
+          message: t("service.started", { name: service.name }),
           service: await getServiceState(app, service.id, options.commandStateReadOptions ?? options.stateReadOptions)
         };
       } else {
@@ -2169,7 +2192,7 @@ async function startServiceInternal(
           app,
           service,
           getDesktopStartCommand(service),
-          `${service.name} 已启动。`,
+          t("service.started", { name: service.name }),
           {
             ...getDesktopStartCommandOptions(app, service),
             stateReadOptions: options.commandStateReadOptions ?? options.stateReadOptions
@@ -2185,7 +2208,7 @@ async function startServiceInternal(
     serviceId,
     result,
     "running",
-    `${service.name} 启动命令已执行`,
+    t("service.startCommandExecuted", { name: service.name }),
     options.verificationOptions
   );
   if (service.kind === "plugin" && verifiedResult.ok) {
@@ -2205,7 +2228,7 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     if (!current.installed) {
       return {
         ok: true,
-        message: `${service.name} 尚未安装。`,
+        message: t("service.notInstalled", { name: service.name }),
         service: current
       };
     }
@@ -2219,14 +2242,14 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     if (current.status !== "running") {
       return {
         ok: true,
-        message: `${service.name} 当前未加载。`,
+        message: t("service.notLoaded", { name: service.name }),
         service: current
       };
     }
     await stopPluginResources(app, service);
     const result = {
       ok: true,
-      message: `${service.name} 已停止。`,
+      message: t("service.stopped", { name: service.name }),
       service: await getServiceState(app, serviceId)
     } satisfies ServiceCommandResult;
     if (service.kind === "plugin") {
@@ -2237,14 +2260,14 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   if (!current.installed) {
     return {
       ok: true,
-      message: `${service.name} 尚未安装。`,
+      message: t("service.notInstalled", { name: service.name }),
       service: current
     };
   }
   if (current.status !== "running") {
     return {
       ok: true,
-      message: `${service.name} 当前未运行。`,
+      message: t("service.currentlyNotRunning", { name: service.name }),
       service: current
     };
   }
@@ -2254,17 +2277,17 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     startedThisSession.delete(serviceId);
     const result = {
       ok: true,
-      message: `${service.name} 已停止。`,
+      message: t("service.stopped", { name: service.name }),
       service: await getServiceState(app, serviceId)
     } satisfies ServiceCommandResult;
-    const verified = await attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
+    const verified = await attachServiceVerification(app, serviceId, result, "stopped", t("service.stopCommandExecuted", { name: service.name }));
     if (service.kind === "plugin" && verified.ok) {
       emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: verified.service });
     }
     return verified;
   }
 
-  const result = await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
+  const result = await runServiceCommand(app, service, service.stopCommand, t("service.stopped", { name: service.name }), {
     refreshBuiltinAsset: false
   });
   const installDir = getInstallDir(app, service);
@@ -2277,7 +2300,7 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   }
   startedThisSession.delete(serviceId);
 
-  const verified = await attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
+  const verified = await attachServiceVerification(app, serviceId, result, "stopped", t("service.stopCommandExecuted", { name: service.name }));
   if (service.kind === "plugin" && verified.ok) {
     emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: verified.service });
   }
@@ -2372,8 +2395,8 @@ export async function writeServiceConfig(
 
   const message =
     key === "env" && CORE_SERVICE_IDS.has(service.id)
-      ? `${service.name} 配置已保存。端口修改需重启服务后生效。`
-      : `${service.name} 配置已保存。`;
+      ? t("service.configSavedRestartRequired", { name: service.name })
+      : t("service.configSaved", { name: service.name });
 
   const result = {
     ok: true,
@@ -2408,7 +2431,7 @@ export async function importServiceFile(
 
   const result = {
     ok: true,
-    message: `${target.label} 已导入。`,
+    message: t("service.imported", { label: target.label }),
     targetPath,
     service: await getServiceState(app, serviceId)
   };
@@ -2500,14 +2523,14 @@ export function watchServiceLog(
             endOffset: 0,
             hasPrevious: false,
             totalBytes: 0,
-            message: "日志路径已清空。"
+            message: t("service.logPathCleared")
           });
         }
         return;
       }
 
       if (currentPath && filePath !== currentPath) {
-        await sendReset("日志路径已变化，已刷新到最新内容。");
+        await sendReset(t("service.logPathChanged"));
         return;
       }
 
@@ -2521,7 +2544,7 @@ export function watchServiceLog(
       const stat = fs.statSync(filePath);
       const totalBytes = stat.size;
       if (totalBytes < currentOffset) {
-        await sendReset("日志已轮转，已刷新到最新内容。");
+        await sendReset(t("service.logRotated"));
         return;
       }
 
@@ -2533,7 +2556,7 @@ export function watchServiceLog(
 
       const deltaBytes = totalBytes - currentOffset;
       if (deltaBytes > LOG_READ_WINDOW_BYTES) {
-        await sendReset("日志增长较快，已刷新到最新内容。");
+        await sendReset(t("service.logGrowingFast"));
         return;
       }
 
@@ -2617,7 +2640,7 @@ export async function stopRunningServices(app: App) {
   }
 
   if (failures.length > 0) {
-    throw new Error(`停止运行中服务失败：${failures.join("；")}`);
+    throw new Error(t("service.stopRunningFailed", { message: failures.join(t("common.listSeparator")) }));
   }
 }
 
@@ -2653,7 +2676,7 @@ async function stopServiceForShutdown(
     if (isHostManagedService(service)) {
       await stopAgentWebclientHost(service.id);
     } else {
-      await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
+      await runServiceCommand(app, service, service.stopCommand, t("service.stopped", { name: service.name }), {
         refreshBuiltinAsset: false,
         timeoutMs
       });
@@ -2862,7 +2885,7 @@ async function restoreOptionalStartupServices(
       }
 
       options.onStarting?.(serviceId);
-      options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
+      options.onProgress?.(serviceId, "starting", t("service.starting", { name: current.name }));
       const startedAt = Date.now();
       const result = await startService(app, serviceId);
       const elapsedMs = Date.now() - startedAt;
@@ -2874,7 +2897,7 @@ async function restoreOptionalStartupServices(
       }
 
       const failureMessage = result.ok
-        ? `${result.service.name} 启动后未进入运行中状态。`
+        ? t("service.startedNotRunning", { name: result.service.name })
         : result.message;
       console.warn(`[service-manager] failed to restore optional startup service ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
       options.onProgress?.(serviceId, "failed", failureMessage);
@@ -2952,7 +2975,7 @@ async function prepareStartupService(
       bundledAssetNeedsRefresh ||
       installNeedsRepair
     ) {
-      options.onProgress?.(serviceId, "installing", `${current.name} 安装中...`);
+      options.onProgress?.(serviceId, "installing", t("service.installing", { name: current.name }));
       if (bundledAssetNeedsRefresh && current.status === "running") {
         await stopService(app, serviceId);
       }
@@ -2962,7 +2985,7 @@ async function prepareStartupService(
     }
 
     if (current.status === "initialization-required" || shouldReinitializeMissingCoreServiceConfig(service, current)) {
-      options.onProgress?.(serviceId, "initializing", `${current.name} 初始化中...`);
+      options.onProgress?.(serviceId, "initializing", t("service.initializing", { name: current.name }));
       changed = true;
       const initialization = await initializeService(app, serviceId);
       if (!initialization.ok) {
@@ -2994,7 +3017,7 @@ async function prepareStartupService(
       serviceId,
       ok: true,
       changed,
-      message: `${current.name} 已准备就绪。`,
+      message: t("service.preparedReady", { name: current.name }),
       service: current
     };
   } catch (error) {
@@ -3020,7 +3043,7 @@ async function startPreparedStartupService(
     options.onStarting?.(serviceId);
 
     if (current.status === "running" && service.serviceMode !== "resource") {
-      const message = `${current.name} 已在运行。`;
+      const message = t("service.alreadyRunning", { name: current.name });
       console.info(`[service-manager] reused running startup service ${serviceId}`);
       options.onProgress?.(serviceId, "succeeded", message);
       return {
@@ -3031,7 +3054,7 @@ async function startPreparedStartupService(
       };
     }
 
-    options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
+    options.onProgress?.(serviceId, "starting", t("service.starting", { name: current.name }));
     await yieldStartupScheduler();
     const startedAt = Date.now();
     const result = await startServiceInternal(app, serviceId, getPreparedStartupStartOptions());

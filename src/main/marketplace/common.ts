@@ -68,6 +68,17 @@ export type MarketplaceCatalogResult = {
   sourceUrl: string;
 };
 
+export class MarketCatalogItemNotFoundError extends Error {
+  readonly code = "market_catalog_item_not_found";
+  readonly itemId: string;
+
+  constructor(itemId: string) {
+    super(t("market.main.catalogItemNotFound", { itemId }));
+    this.name = "MarketCatalogItemNotFoundError";
+    this.itemId = itemId;
+  }
+}
+
 function ensureMarketplaceRoots(app: App) {
   const cacheRoot = getMarketplaceCacheRoot(app);
   const stateRoot = getMarketplaceStateRoot(app);
@@ -788,7 +799,7 @@ export function mergeCatalogItems(app: App, catalogItems: MarketCatalogItem[], l
 export function findCatalogItem(catalog: Catalog, itemId: string, type?: InstallableMarketType) {
   const item = catalog.items.find((entry) => entry.id === itemId && (!type || entry.type === type));
   if (!item) {
-    throw new Error(t("market.main.catalogItemNotFound", { itemId }));
+    throw new MarketCatalogItemNotFoundError(itemId);
   }
   return item;
 }

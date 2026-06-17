@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING
 } from "../shared/contracts";
+import { t } from "./i18n/main-i18n";
 import type {
   FrontendMode,
   Manifest,
@@ -144,10 +145,10 @@ function assertNoPluginManifestLegacyFields(raw: Record<string, unknown>, option
   }
 
   const legacyFields: Record<string, string> = {
-    kind: "插件身份由导入入口决定，请删除 kind。",
-    scripts: "请使用 lifecycle.start / lifecycle.stop / lifecycle.deploy。",
-    frontend: "请使用 service.ui；插件 manifest 不再支持 frontend。",
-    web: "请使用 service.web.healthPath / service.web.portEnvKey / service.web.defaultPort。"
+    kind: t("manifest.legacy.kind"),
+    scripts: t("manifest.legacy.scripts"),
+    frontend: t("manifest.legacy.frontend"),
+    web: t("manifest.legacy.web")
   };
 
   for (const [field, message] of Object.entries(legacyFields)) {

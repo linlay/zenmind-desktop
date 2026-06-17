@@ -9,6 +9,7 @@ import {
 import type { App } from "electron";
 import type { PanAuthStatus } from "../shared/contracts";
 import { getCredentialsRoot } from "./user-paths";
+import { t } from "./i18n/main-i18n";
 
 const PAN_PRIVATE_KEY_FILE_NAME = "pan-app-private-key.pem";
 const ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60;
@@ -32,7 +33,7 @@ export function getPanPrivateKeyPath(app: App) {
 function parseRsaPrivateKey(content: string): KeyObject {
   const key = createPrivateKey(content);
   if (key.asymmetricKeyType !== "rsa") {
-    throw new Error("导入的 App 私钥不是 RSA 私钥。");
+    throw new Error(t("panAuth.privateKeyNotRsa"));
   }
   return key;
 }
@@ -69,7 +70,7 @@ export function getPanAuthStatus(app: App): PanAuthStatus {
     return {
       configured: false,
       path: filePath,
-      message: "尚未导入 Desktop App 私钥。"
+      message: t("panAuth.privateKeyMissing")
     };
   }
 
@@ -78,7 +79,7 @@ export function getPanAuthStatus(app: App): PanAuthStatus {
     return {
       configured: true,
       path: filePath,
-      message: "Desktop App 私钥已就绪。"
+      message: t("panAuth.privateKeyReady")
     };
   } catch (reason) {
     return {
@@ -98,7 +99,7 @@ export function importPanPrivateKey(app: App, sourcePath: string): PanAuthStatus
   return {
     configured: true,
     path: targetPath,
-    message: "Desktop App 私钥已导入。"
+    message: t("panAuth.privateKeyImported")
   };
 }
 

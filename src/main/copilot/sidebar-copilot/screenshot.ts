@@ -9,6 +9,7 @@ import {
   type Rectangle
 } from "electron";
 import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { t } from "../../i18n/main-i18n";
 import { createAssistantAttachmentFromImageBuffer } from "../attachments/attachment-store";
 
 export type ScreenshotCaptureSource = "sidebar" | "quick-assistant";
@@ -46,9 +47,13 @@ type CaptureAssistantScreenshotOptions = {
 type CaptureBridgeScreenshotOptions = Omit<CaptureAssistantScreenshotOptions, "app" | "chatId">;
 
 const MAX_BRIDGE_SCREENSHOT_BYTES = 32 * 1024 * 1024;
+const SCREENSHOT_SOURCE_UNAVAILABLE = "screen_capture_source_unavailable";
 
 function createScreenshotSelectionHtml(selectionId: string) {
   const doneUrl = `zenmind://screenshot-selection/${selectionId}`;
+  const selectionHint = t("screenshot.selectionHint");
+  const selectionReleaseHint = t("screenshot.selectionReleaseHint");
+  const selectionTooSmall = t("screenshot.selectionTooSmall");
   return [
     "<!doctype html>",
     "<html>",
@@ -65,7 +70,7 @@ function createScreenshotSelectionHtml(selectionId: string) {
     "<body>",
     "<div id=\"shade\" aria-hidden=\"true\"></div>",
     "<div id=\"box\" aria-hidden=\"true\"></div>",
-    "<div id=\"hint\">拖拽选择截屏范围，Esc 取消</div>",
+    `<div id="hint">${selectionHint}</div>`,
     "<script>",
     `const doneUrl=${JSON.stringify(doneUrl)};`,
     "const box=document.getElementById('box');",
@@ -78,9 +83,9 @@ function createScreenshotSelectionHtml(selectionId: string) {
     "function clamp(value,min,max){return Math.max(min,Math.min(value,max));}",
     "function finish(action,rect){const params=new URLSearchParams({action});if(rect){params.set('rect',JSON.stringify(rect));}window.location.href=doneUrl+'?'+params.toString();}",
     "function updateBox(clientX,clientY){const endX=clamp(clientX,0,window.innerWidth);const endY=clamp(clientY,0,window.innerHeight);const x=Math.min(startX,endX);const y=Math.min(startY,endY);const width=Math.abs(endX-startX);const height=Math.abs(endY-startY);currentRect={x,y,width,height};box.style.display='block';box.style.left=x+'px';box.style.top=y+'px';box.style.width=width+'px';box.style.height=height+'px';}",
-    "window.addEventListener('pointerdown',(event)=>{if(event.button!==0){return;}dragging=true;startX=clamp(event.clientX,0,window.innerWidth);startY=clamp(event.clientY,0,window.innerHeight);currentRect={x:startX,y:startY,width:0,height:0};hint.textContent='松开鼠标完成截屏，Esc 取消';box.style.display='block';updateBox(event.clientX,event.clientY);try{document.body.setPointerCapture(event.pointerId);}catch{}});",
+    `window.addEventListener('pointerdown',(event)=>{if(event.button!==0){return;}dragging=true;startX=clamp(event.clientX,0,window.innerWidth);startY=clamp(event.clientY,0,window.innerHeight);currentRect={x:startX,y:startY,width:0,height:0};hint.textContent=${JSON.stringify(selectionReleaseHint)};box.style.display='block';updateBox(event.clientX,event.clientY);try{document.body.setPointerCapture(event.pointerId);}catch{}});`,
     "window.addEventListener('pointermove',(event)=>{if(!dragging){return;}updateBox(event.clientX,event.clientY);});",
-    "window.addEventListener('pointerup',(event)=>{if(!dragging){return;}dragging=false;try{document.body.releasePointerCapture(event.pointerId);}catch{}updateBox(event.clientX,event.clientY);if(!currentRect||currentRect.width<minSize||currentRect.height<minSize){box.style.display='none';hint.textContent='范围太小，请拖拽选择更大的区域，Esc 取消';return;}finish('select',currentRect);});",
+    `window.addEventListener('pointerup',(event)=>{if(!dragging){return;}dragging=false;try{document.body.releasePointerCapture(event.pointerId);}catch{}updateBox(event.clientX,event.clientY);if(!currentRect||currentRect.width<minSize||currentRect.height<minSize){box.style.display='none';hint.textContent=${JSON.stringify(selectionTooSmall)};return;}finish('select',currentRect);});`,
     "window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){finish('cancel');}});",
     "</script>",
     "</body>",
@@ -199,14 +204,14 @@ function getScreenshotPermissionMessage(platform: NodeJS.Platform) {
   if (platform === "darwin") {
     const status = systemPreferences.getMediaAccessStatus("screen");
     if (status === "denied" || status === "restricted") {
-      return `${PRODUCT_NAME} 没有屏幕录制权限。请在系统设置 > 隐私与安全性 > 屏幕录制中允许 ${PRODUCT_NAME} 后重试。`;
+      return t("screenshot.permissionDeniedMac", { appName: PRODUCT_NAME });
     }
     return "";
   }
   if (platform === "win32") {
     return "";
   }
-  return "当前平台暂不支持截屏提问。";
+  return t("screenshot.unsupportedPlatform");
 }
 
 function getDisplayThumbnailSize(display: Display) {
@@ -244,7 +249,7 @@ async function captureDisplayImage(display: Display) {
   });
   const source = chooseDisplaySource(sources, display, thumbnailSize);
   if (!source || source.thumbnail.isEmpty()) {
-    throw new Error("没有获取到可用的屏幕截图，请检查系统截屏权限后重试。");
+    throw new Error(SCREENSHOT_SOURCE_UNAVAILABLE);
   }
   return source.thumbnail;
 }
@@ -361,7 +366,7 @@ async function captureScreenshotImage(
     const image = await captureDisplayImage(display);
     const cropped = cropScreenshotImage(image, display.bounds, selection);
     if (cropped.isEmpty()) {
-      throw new Error("截屏区域为空，请重新选择更大的范围。");
+      throw new Error(t("screenshot.emptySelection"));
     }
     return cropped;
   } catch (error) {
@@ -373,14 +378,12 @@ async function captureScreenshotImage(
     return fallback;
   }
 
-  if (options.platform === "darwin" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
-    throw new Error(
-      `没有获取到系统屏幕截图源，也无法从当前 ${PRODUCT_NAME} 窗口截取该区域。请确认选择范围在 ${PRODUCT_NAME} 窗口内，或在系统设置 > 隐私与安全性 > 屏幕录制中允许 ${PRODUCT_NAME}。`
-    );
+  if (options.platform === "darwin" && screenCaptureFailure.message === SCREENSHOT_SOURCE_UNAVAILABLE) {
+    throw new Error(t("screenshot.noSourceMac", { appName: PRODUCT_NAME }));
   }
 
-  if (options.platform === "win32" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
-    throw new Error(`没有获取到系统屏幕截图源，也无法从当前 ${PRODUCT_NAME} 窗口截取该区域，请重新选择窗口内区域后重试。`);
+  if (options.platform === "win32" && screenCaptureFailure.message === SCREENSHOT_SOURCE_UNAVAILABLE) {
+    throw new Error(t("screenshot.noSourceWindows", { appName: PRODUCT_NAME }));
   }
 
   throw screenCaptureFailure;
@@ -423,7 +426,7 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
       return {
         ok: false,
         chatId: options.chatId ?? "",
-        message: "已取消截屏。",
+        message: t("screenshot.cancelled"),
         attachments: []
       };
     }
@@ -435,9 +438,9 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
       mimeType: "image/png",
       buffer: cropped.toPNG(),
       fallbackBaseName: "screenshot",
-      unsupportedMessage: "截屏图片格式暂不支持。",
-      readableMessage: "已截取 1 张屏幕图片，图片已进入视觉上下文。",
-      oversizedVisionMessage: "截屏已保存，但过大，未发送给模型视觉接口。"
+      unsupportedMessage: t("screenshot.imageUnsupported"),
+      readableMessage: t("screenshot.readable"),
+      oversizedVisionMessage: t("screenshot.oversizedVision")
     });
   } catch (error) {
     return {
@@ -475,7 +478,7 @@ export async function captureScreenshotForBridge(
       return {
         ok: false,
         cancelled: true,
-        message: "已取消截屏。"
+        message: t("screenshot.cancelled")
       };
     }
 
@@ -485,13 +488,13 @@ export async function captureScreenshotForBridge(
     if (buffer.length > MAX_BRIDGE_SCREENSHOT_BYTES) {
       return {
         ok: false,
-        message: "截屏图片超过 32MB，未发送给网页端。"
+        message: t("screenshot.oversizedBridge")
       };
     }
     const size = cropped.getSize();
     return {
       ok: true,
-      message: "已截取 1 张屏幕图片。",
+      message: t("screenshot.capturedOne"),
       dataBase64: buffer.toString("base64"),
       mimeType: "image/png",
       width: size.width,

@@ -1,4 +1,5 @@
 import { safeConsoleError } from "../safe-console";
+import { t } from "../i18n/main-i18n";
 
 export interface SsoIpcHandlerOptions {
   app: any;
@@ -81,11 +82,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       const browserOpenResult = result.openMode === "system"
         ? await desktopSsoController.openSystemBrowserUrl({
           url: result.authorizeUrl,
-          label: "Google 登录"
+          label: t("sso.googleLogin")
         })
         : await desktopSsoController.openEmbeddedLoginDialog({
           url: result.browserUrl || result.authorizeUrl,
-          label: "IAM 登录",
+          label: t("sso.iamLogin"),
           browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
           resolveRedirect: Boolean(result.browserUrl)
         });
@@ -129,11 +130,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       const browserOpenResult = result.openMode === "system"
         ? await desktopSsoController.openSystemBrowserUrl({
           url: result.logoutUrl,
-          label: "IAM 登出"
+          label: t("sso.iamLogout")
         })
         : await desktopSsoController.openBrowserUrl({
           url: result.browserUrl || result.logoutUrl,
-          label: "IAM 登出",
+          label: t("sso.iamLogout"),
           browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
           resolveRedirect: false
         });

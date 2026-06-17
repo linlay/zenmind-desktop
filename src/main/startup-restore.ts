@@ -4,6 +4,7 @@ import type {
   StartupRestoreServiceState,
   StartupRestoreState
 } from "../shared/contracts";
+import { t } from "./i18n/main-i18n";
 
 export const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 
@@ -106,7 +107,7 @@ export function createStartupRestoreController(
         phase: allCompleted ? "succeeded" : "running",
         currentServiceId: null,
         failedServiceId: phase === "failed" ? serviceId : state.failedServiceId,
-        message: allCompleted ? "鏍稿績鏈嶅姟宸插叏閮ㄥ氨缁€?" : message,
+        message: allCompleted ? t("startup.summary.ready") : message,
         services: nextServices
       });
     },
@@ -121,7 +122,7 @@ export function createStartupRestoreController(
         phase: failures.length > 0 ? "failed" : "succeeded",
         currentServiceId: null,
         failedServiceId,
-        message: failures.length > 0 ? failures.join("锛?") : "鏍稿績鏈嶅姟宸插叏閮ㄥ氨缁€?"
+        message: failures.length > 0 ? failures.join(t("common.listSeparator")) : t("startup.summary.ready")
       });
     },
     failCurrentSession(message) {
@@ -137,7 +138,7 @@ export function createStartupRestoreController(
         message
       });
     },
-    setEnvImportRequired(message = "首次安装需要导入 env.zip") {
+    setEnvImportRequired(message = t("dialog.envZipRequired.title")) {
       const state = cloneStartupRestoreState(currentState);
       return commitState({
         ...state,

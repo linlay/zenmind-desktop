@@ -946,14 +946,13 @@ function electronBuilderConfig(brand) {
     ],
     mac: {
       icon: "build/icons/icon.icns",
-      identity: null,
       extendInfo: {
         NSMicrophoneUsageDescription: brand.mac.microphoneUsageDescription,
         NSSpeechRecognitionUsageDescription: brand.mac.speechRecognitionUsageDescription
       },
       target: ["dmg"],
       category: "public.app-category.developer-tools",
-      signIgnore: [".*"]
+      hardenedRuntime: true
     },
     electronLanguages: ["zh-CN", "en-US"],
     afterPack: "./scripts/fix-mac-sign.js",

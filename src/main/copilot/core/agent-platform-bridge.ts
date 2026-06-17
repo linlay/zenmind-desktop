@@ -40,6 +40,7 @@ import {
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform
 } from "./assistant-navigation-status-client";
+import { t } from "../../i18n/main-i18n";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
@@ -567,7 +568,7 @@ function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary {
   const id = readString(summary.chatId);
   return {
     id,
-    title: readString(summary.chatName) || "新的对话",
+    title: readString(summary.chatName) || t("assistant.newChat"),
     createdAt: timestampToIso(summary.createdAt),
     updatedAt: timestampToIso(summary.updatedAt || summary.createdAt),
     lastMessage: readString(summary.lastRunContent),
@@ -675,7 +676,7 @@ function mapMemoryRecord(record: PlatformMemoryRecord): AssistantMemoryItem {
   return {
     id: readString(record.id),
     kind,
-    title: readString(record.title) || readString(record.summary).slice(0, 48) || "记忆",
+    title: readString(record.title) || readString(record.summary).slice(0, 48) || t("assistant.memory"),
     summary: readString(record.summary || record.title),
     category: readString(record.category),
     scopeType: record.scopeType === "chat" ? "chat" : "user",
@@ -704,7 +705,7 @@ function createUnsupportedVoiceCorrectionResult(rawText: string): AssistantVoice
     confidence: 0,
     glossaryHits: [],
     uncertainTerms: [],
-    message: "agent-platform 当前未提供语音文本纠错接口。"
+    message: t("agentPlatform.voiceCorrectionUnsupported")
   };
 }
 
@@ -748,7 +749,7 @@ export class AgentPlatformAssistantBridge {
         ok: false,
         runId: "",
         chatId,
-        message: "请输入要询问的内容。"
+        message: t("assistant.messageRequired")
       };
     }
     const availability = await this.resolvePlatform();
@@ -768,7 +769,7 @@ export class AgentPlatformAssistantBridge {
       ok: true,
       runId,
       chatId,
-      message: "已交给 agent-platform 处理。",
+      message: t("agentPlatform.runSubmitted"),
       permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
       fullAccessExpiresAt: null,
       fullAccessRemainingMs: 0
@@ -793,13 +794,13 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    return { ok: true, message: "已请求 agent-platform 中断运行。" };
+    return { ok: true, message: t("agentPlatform.stopRequested") };
   }
 
   async submitAwaiting(request: AssistantSubmitAwaitingRequest): Promise<AssistantSubmitAwaitingResult> {
     const runId = request.runId?.trim() || "";
     if (!runId) {
-      return { ok: false, message: "缺少 runId，无法提交给 agent-platform。" };
+      return { ok: false, message: t("agentPlatform.runIdRequired") };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -820,7 +821,7 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    return { ok: true, message: "已提交给 agent-platform。" };
+    return { ok: true, message: t("agentPlatform.submitted") };
   }
 
   async listAgents(): Promise<DesktopPetAgentOption[]> {
@@ -843,7 +844,7 @@ export class AgentPlatformAssistantBridge {
     return {
       ok: true,
       items: await readAssistantNavigationAgentsFromPlatform(availability.baseUrl, availability.token),
-      message: "已读取智能助手导航状态。",
+      message: t("assistant.navigationStatusRead"),
       updatedAt: nowIso()
     };
   }
@@ -861,7 +862,7 @@ export class AgentPlatformAssistantBridge {
     return {
       ok: true,
       items: await readAssistantCopilotAgentsFromPlatform(availability.baseUrl, availability.token),
-      message: "已读取侧边助手智能体列表。",
+      message: t("assistant.copilotAgentsRead"),
       updatedAt: nowIso()
     };
   }
@@ -891,7 +892,7 @@ export class AgentPlatformAssistantBridge {
     return {
       summary: {
         id: readString(data.chatId) || trimmedChatId,
-        title: readString(data.chatName) || "新的对话",
+        title: readString(data.chatName) || t("assistant.newChat"),
         createdAt: messages[0]?.createdAt ?? nowIso(),
         updatedAt: messages[messages.length - 1]?.createdAt ?? nowIso(),
         lastMessage: messages[messages.length - 1]?.content ?? "",
@@ -905,7 +906,7 @@ export class AgentPlatformAssistantBridge {
   async deleteChat(chatId: string) {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
-      return { ok: false, message: "缺少会话 ID。" };
+      return { ok: false, message: t("assistant.chatIdRequired") };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -923,13 +924,13 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    return { ok: true, message: "已删除对话。" };
+    return { ok: true, message: t("assistant.chatDeleted") };
   }
 
   async markAgentChatsRead(agentKey: string) {
     const trimmedAgentKey = agentKey.trim();
     if (!trimmedAgentKey) {
-      return { ok: false, message: "缺少 agentKey。" };
+      return { ok: false, message: t("assistant.agentKeyRequired") };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -943,14 +944,14 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    return { ok: true, message: "已将智能体会话全部标记为已读。" };
+    return { ok: true, message: t("assistant.agentChatsMarkedRead") };
   }
 
   async renameChat(chatId: string, chatName: string) {
     const trimmedChatId = chatId.trim();
     const trimmedChatName = chatName.trim();
     if (!trimmedChatId || !trimmedChatName) {
-      return { ok: false, message: "缺少会话 ID 或名称。" };
+      return { ok: false, message: t("assistant.chatIdOrNameRequired") };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -968,13 +969,13 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    return { ok: true, message: "已重命名会话。" };
+    return { ok: true, message: t("assistant.chatRenamed") };
   }
 
   async archiveChat(chatId: string) {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
-      return { ok: false, message: "缺少会话 ID。" };
+      return { ok: false, message: t("assistant.chatIdRequired") };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -988,13 +989,13 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    return { ok: true, message: "已归档会话。" };
+    return { ok: true, message: t("assistant.chatArchived") };
   }
 
   async downloadChatExport(chatId: string): Promise<AgentPlatformChatExportResult> {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
-      return { ok: false, message: "缺少会话 ID。", filename: "" };
+      return { ok: false, message: t("assistant.chatIdRequired"), filename: "" };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -1016,7 +1017,7 @@ export class AgentPlatformAssistantBridge {
     }
     const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.md`;
     const bytes = Buffer.from(await response.arrayBuffer());
-    return { ok: true, message: "已下载会话导出。", filename, bytes };
+    return { ok: true, message: t("assistant.chatExportDownloaded"), filename, bytes };
   }
 
   async getMemorySettings(): Promise<AssistantMemorySettings> {
@@ -1069,14 +1070,14 @@ export class AgentPlatformAssistantBridge {
   async deleteMemoryItem(_memoryId: string) {
     return {
       ok: false,
-      message: "agent-platform 当前未提供删除单条记忆的 HTTP 接口。"
+      message: t("agentPlatform.deleteMemoryUnsupported")
     };
   }
 
   async clearMemoryItems() {
     return {
       ok: false,
-      message: "agent-platform 当前未提供清空记忆的 HTTP 接口。"
+      message: t("agentPlatform.clearMemoryUnsupported")
     };
   }
 
@@ -1087,7 +1088,7 @@ export class AgentPlatformAssistantBridge {
   async transcribeVoiceAudio(_request: AssistantVoiceTranscriptionRequest): Promise<AssistantVoiceTranscriptionResult> {
     return {
       ...createUnsupportedVoiceCorrectionResult(""),
-      message: "agent-platform 当前未提供语音转写接口。"
+      message: t("agentPlatform.voiceTranscriptionUnsupported")
     };
   }
 
@@ -1162,7 +1163,7 @@ export class AgentPlatformAssistantBridge {
           chatId: run.chatId,
           type: "stopped",
           createdAt: nowIso(),
-          message: "已停止。"
+          message: t("assistant.stopped")
         });
         return;
       }
@@ -1343,14 +1344,14 @@ export class AgentPlatformAssistantBridge {
     if (!baseUrl) {
       return {
         ok: false,
-        message: serviceState.message || "agent-platform 未运行，请先在控制中心启动平台服务。"
+        message: serviceState.message || t("agentPlatform.notRunningStartInControlCenter")
       };
     }
     const tokenResult = await this.options.issueAccessToken(this.options.app, "missing");
     if (!tokenResult.ok || !tokenResult.token.trim()) {
       return {
         ok: false,
-        message: tokenResult.message || "agent-platform token 不可用。"
+        message: tokenResult.message || t("agentPlatform.tokenUnavailable")
       };
     }
     return {

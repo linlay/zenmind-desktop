@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { buildServiceEnv } from "./command-env";
+import { t } from "../../i18n/main-i18n";
 
 export const IS_WINDOWS = process.platform === "win32";
 export const SERVICE_COMMAND_TIMEOUT_MS = 60_000;
@@ -272,7 +273,7 @@ export function runExecFile(command: string, args: string[], cwd: string, option
 
   return new Promise<ExecResult>((resolve, reject) => {
     if (!fs.existsSync(cwd)) {
-      reject(new Error(`工作目录不存在：${cwd}`));
+      reject(new Error(t("service.commandCwdMissing", { cwd })));
       return;
     }
 

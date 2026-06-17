@@ -5,19 +5,19 @@ export const BUILTIN_BROWSER_ROUTE = "/chrome";
 
 export const BUILTIN_BROWSER_SEARCH_ENGINES = [
   {
-    label: "谷歌",
+    label: "Google",
     url: "https://www.google.com/",
-    aliases: ["谷歌", "google", "google.com", "www.google.com"]
+    aliases: ["\u8c37\u6b4c", "google", "google.com", "www.google.com"]
   },
   {
-    label: "百度",
+    label: "Baidu",
     url: "https://www.baidu.com/",
-    aliases: ["百度", "baidu", "baidu.com", "www.baidu.com"]
+    aliases: ["\u767e\u5ea6", "baidu", "baidu.com", "www.baidu.com"]
   },
   {
-    label: "必应",
+    label: "Bing",
     url: "https://www.bing.com/",
-    aliases: ["必应", "bing", "bing.com", "www.bing.com"]
+    aliases: ["\u5fc5\u5e94", "bing", "bing.com", "www.bing.com"]
   }
 ] as const;
 

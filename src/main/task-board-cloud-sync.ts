@@ -11,6 +11,7 @@ import {
   listPendingUpstreamIssues
 } from "./task-board-local-projects";
 import { listDesktopKanbanIssues } from "./task-board-local-store";
+import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
   getPath: (name: "userData") => string;
@@ -107,10 +108,10 @@ export class DesktopCloudSyncEngine {
   // 触发一轮上行同步;并发调用时只保留一轮。
   async run(): Promise<DesktopCloudSyncRunResult> {
     if (this.running) {
-      return { ok: true, message: "上行同步已在进行中。", attempted: 0, synced: 0, conflicts: 0, errors: 0 };
+      return { ok: true, message: t("taskBoard.cloudSync.running"), attempted: 0, synced: 0, conflicts: 0, errors: 0 };
     }
     if (!this.options.wsClient.isOpen()) {
-      return { ok: false, message: "云端看板服务未连接。", attempted: 0, synced: 0, conflicts: 0, errors: 0 };
+      return { ok: false, message: t("taskBoard.cloudSync.notConnected"), attempted: 0, synced: 0, conflicts: 0, errors: 0 };
     }
     this.running = true;
     try {
@@ -124,7 +125,7 @@ export class DesktopCloudSyncEngine {
     const currentUser = this.options.getCurrentUser();
     const bindings = this.activeBindings();
     if (bindings.length === 0) {
-      return { ok: true, message: "没有需要上行同步的绑定。", attempted: 0, synced: 0, conflicts: 0, errors: 0 };
+      return { ok: true, message: t("taskBoard.cloudSync.noBindings"), attempted: 0, synced: 0, conflicts: 0, errors: 0 };
     }
     let attempted = 0;
     let synced = 0;
@@ -162,13 +163,22 @@ export class DesktopCloudSyncEngine {
         conflicts += applied.conflicts;
         errors += applied.errors;
         this.options.onDebug?.(
-          `云端看板上行同步完成：绑定 ${binding.id} 提交 ${upserts.length} 条，成功 ${applied.synced}，冲突 ${applied.conflicts}，失败 ${applied.errors}。`
+          t("taskBoard.cloudSync.debugComplete", {
+            bindingId: binding.id,
+            count: upserts.length,
+            synced: applied.synced,
+            conflicts: applied.conflicts,
+            errors: applied.errors
+          })
         );
       } catch (error) {
         hadFailure = true;
         errors += pending.length;
         this.options.onDebug?.(
-          `云端看板上行同步失败：绑定 ${binding.id}，${error instanceof Error ? error.message : String(error)}`
+          t("taskBoard.cloudSync.debugFailed", {
+            bindingId: binding.id,
+            message: error instanceof Error ? error.message : String(error)
+          })
         );
       }
     }
@@ -183,8 +193,8 @@ export class DesktopCloudSyncEngine {
     return {
       ok: !hadFailure,
       message: attempted === 0
-        ? "没有待上行的任务。"
-        : `上行同步完成：${synced} 成功，${conflicts} 冲突，${errors} 失败。`,
+        ? t("taskBoard.cloudSync.noPending")
+        : t("taskBoard.cloudSync.complete", { synced, conflicts, errors }),
       attempted,
       synced,
       conflicts,

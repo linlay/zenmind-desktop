@@ -20,6 +20,7 @@ import type {
 import { PRODUCT_NAME } from "../shared/generated/brand";
 import { getDesktopStateRoot } from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
+import { t } from "./i18n/main-i18n";
 
 type OidcConfig = {
   provider?: string;
@@ -286,7 +287,7 @@ export const DEFAULT_GOOGLE_OIDC_CONFIG: OidcConfig = {
   usePkce: true
 };
 
-let currentStatus: DesktopSsoStatus = createSignedOutStatus("尚未登录。");
+let currentStatus: DesktopSsoStatus = createSignedOutStatus(t("sso.notSignedIn"));
 let callbackServer: http.Server | null = null;
 let callbackServerReady: Promise<void> | null = null;
 let callbackServerInfo: CallbackServerInfo | null = null;
@@ -326,7 +327,7 @@ function createAuthenticatedStatus(claims: DesktopSsoClaims): DesktopSsoStatus {
     authenticated: true,
     pending: false,
     user: claims,
-    message: "单点登录已完成。",
+    message: t("sso.completed"),
     updatedAt: new Date().toISOString()
   };
 }
@@ -422,12 +423,12 @@ function getRecordStringArray(record: Record<string, unknown>, key: string) {
     return value.trim() ? [value.trim()] : [];
   }
   if (!Array.isArray(value)) {
-    throw new Error(`${key} 必须是字符串或字符串数组。`);
+    throw new Error(t("sso.config.stringOrArray", { key }));
   }
   const values: string[] = [];
   for (const item of value) {
     if (typeof item !== "string") {
-      throw new Error(`${key} 只能包含字符串。`);
+      throw new Error(t("sso.config.stringOnly", { key }));
     }
     const normalizedItem = item.trim();
     if (normalizedItem) {
@@ -587,7 +588,7 @@ function parseDesktopSsoConfigContent(content: string) {
   }
   const parsed = JSON.parse(trimmed) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("配置文件必须是 JSON 对象或单行 IAM 域名。");
+    throw new Error(t("sso.config.fileObjectOrIamHost"));
   }
   return parsed as Record<string, unknown>;
 }
@@ -605,10 +606,10 @@ function normalizeIdentityProviderOrigin(record: Record<string, unknown>) {
   const withProtocol = /^[a-z][a-z\d+.-]*:\/\//iu.test(rawValue) ? rawValue : `https://${rawValue}`;
   const url = new URL(withProtocol);
   if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error("IAM 域名只支持 http 或 https。");
+    throw new Error(t("sso.config.iamProtocol"));
   }
   if (!url.hostname) {
-    throw new Error("IAM 域名缺少 hostname。");
+    throw new Error(t("sso.config.iamHostnameMissing"));
   }
   url.username = "";
   url.password = "";
@@ -629,7 +630,7 @@ function normalizeCookieAccessTokenExchangeHeaders(record: Record<string, unknow
   }
   const rawHeaders = getRecordObject(record, "headers");
   if (!rawHeaders) {
-    throw new Error("cookieAccessTokenExchange.headers 必须是 JSON 对象。");
+    throw new Error(t("sso.config.cookieHeadersObject"));
   }
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(rawHeaders)) {
@@ -638,7 +639,7 @@ function normalizeCookieAccessTokenExchangeHeaders(record: Record<string, unknow
       continue;
     }
     if (typeof value !== "string") {
-      throw new Error("cookieAccessTokenExchange.headers 只能包含字符串值。");
+      throw new Error(t("sso.config.cookieHeadersStringValues"));
     }
     headers[normalizedName] = value;
   }
@@ -648,7 +649,7 @@ function normalizeCookieAccessTokenExchangeHeaders(record: Record<string, unknow
 function normalizeCookieAccessTokenExchangeMethod(record: Record<string, unknown>) {
   const method = (getRecordString(record, "method") || "GET").toUpperCase();
   if (method !== "GET" && method !== "POST") {
-    throw new Error("cookieAccessTokenExchange.method 只支持 GET 或 POST。");
+    throw new Error(t("sso.config.cookieMethod"));
   }
   return method;
 }
@@ -662,7 +663,7 @@ function normalizeCookieAccessTokenExchangeBody(
     return undefined;
   }
   if (method === "GET") {
-    throw new Error("cookieAccessTokenExchange.body 只能和 POST 一起使用。");
+    throw new Error(t("sso.config.cookieBodyPostOnly"));
   }
   const body = record.body;
   if (typeof body === "string") {
@@ -674,7 +675,7 @@ function normalizeCookieAccessTokenExchangeBody(
     }
     return JSON.stringify(body);
   }
-  throw new Error("cookieAccessTokenExchange.body 必须是字符串或 JSON 对象。");
+  throw new Error(t("sso.config.cookieBodyType"));
 }
 
 function normalizeCookieAccessTokenExchangeConfig(
@@ -686,11 +687,11 @@ function normalizeCookieAccessTokenExchangeConfig(
   }
   const exchangeRecord = getRecordObject(record, "cookieAccessTokenExchange");
   if (!exchangeRecord) {
-    throw new Error("cookieAccessTokenExchange 必须是 JSON 对象。");
+    throw new Error(t("sso.config.cookieExchangeObject"));
   }
   const rawUrl = getRecordString(exchangeRecord, "url");
   if (!rawUrl) {
-    throw new Error("cookieAccessTokenExchange.url 不能为空。");
+    throw new Error(t("sso.config.cookieExchangeUrlRequired"));
   }
   const baseOrigin = config.browserOrigin || getDesktopSsoProxyTargetOrigin(config);
   const method = normalizeCookieAccessTokenExchangeMethod(exchangeRecord);
@@ -738,7 +739,7 @@ function normalizeAccessTokenCookieConfig(
   }
   const cookieRecord = getRecordObject(record, "accessTokenCookie");
   if (!cookieRecord) {
-    throw new Error("accessTokenCookie 必须是 JSON 对象。");
+    throw new Error(t("sso.config.accessTokenCookieObject"));
   }
   return normalizeAccessTokenCookieRecord(cookieRecord, config);
 }
@@ -753,7 +754,7 @@ function normalizeAccessTokenCookieRecord(
     new URL(config.loginUrl || config.authorizeUrl).origin;
   const url = new URL(rawUrl);
   if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error("accessTokenCookie.url 只支持 http 或 https。");
+    throw new Error(t("sso.config.accessTokenCookieUrlProtocol"));
   }
   const name = getRecordString(cookieRecord, "name") || DEFAULT_ACCESS_TOKEN_COOKIE_NAME;
   const pathValue = getRecordString(cookieRecord, "path") || "/";
@@ -782,12 +783,12 @@ function normalizeAccessTokenCookieConfigs(
   }
   const rawValue = record.accessTokenCookies;
   if (!Array.isArray(rawValue)) {
-    throw new Error("accessTokenCookies 必须是 JSON 对象数组。");
+    throw new Error(t("sso.config.accessTokenCookiesArray"));
   }
   const cookieConfigs: AccessTokenCookieConfig[] = [];
   for (const item of rawValue) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new Error("accessTokenCookies 只能包含 JSON 对象。");
+      throw new Error(t("sso.config.accessTokenCookiesObjectOnly"));
     }
     cookieConfigs.push(normalizeAccessTokenCookieRecord(item as Record<string, unknown>, config));
   }
@@ -807,7 +808,7 @@ function normalizeLoginCompletionUrls(record: Record<string, unknown>, config: O
 function normalizeHttpUrl(value: string, baseUrl: string, field: string) {
   const url = new URL(value, baseUrl);
   if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error(`${field} 只支持 http 或 https。`);
+    throw new Error(t("sso.config.fieldHttpOnly", { field }));
   }
   return url.toString();
 }
@@ -815,7 +816,7 @@ function normalizeHttpUrl(value: string, baseUrl: string, field: string) {
 function normalizeHttpOrigin(value: string, field: string) {
   const url = new URL(value);
   if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error(`${field} 只支持 http 或 https。`);
+    throw new Error(t("sso.config.fieldHttpOnly", { field }));
   }
   url.username = "";
   url.password = "";
@@ -847,21 +848,21 @@ function normalizeWebSessionClearCookies(
     return [];
   }
   if (!Array.isArray(rawValue)) {
-    throw new Error("webSessionExchange.clearCookies 必须是 JSON 对象数组。");
+    throw new Error(t("sso.config.clearCookiesArray"));
   }
   const cookies: DesktopSsoWebSessionClearCookieConfig[] = [];
   for (const item of rawValue) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new Error("webSessionExchange.clearCookies 只能包含 JSON 对象。");
+      throw new Error(t("sso.config.clearCookiesObjectOnly"));
     }
     const cookieRecord = item as Record<string, unknown>;
     const rawUrl = getRecordString(cookieRecord, "url");
     const name = getRecordString(cookieRecord, "name");
     if (!rawUrl) {
-      throw new Error("webSessionExchange.clearCookies.url 不能为空。");
+      throw new Error(t("sso.config.clearCookiesUrlRequired"));
     }
     if (!name) {
-      throw new Error("webSessionExchange.clearCookies.name 不能为空。");
+      throw new Error(t("sso.config.clearCookiesNameRequired"));
     }
     cookies.push({
       url: normalizeHttpUrl(rawUrl, exchangeUrl, "webSessionExchange.clearCookies.url"),
@@ -880,11 +881,11 @@ function normalizeWebSessionExchangeConfig(
   }
   const exchangeRecord = getRecordObject(record, "webSessionExchange");
   if (!exchangeRecord) {
-    throw new Error("webSessionExchange 必须是 JSON 对象。");
+    throw new Error(t("sso.config.webSessionExchangeObject"));
   }
   const rawUrl = getRecordString(exchangeRecord, "url");
   if (!rawUrl) {
-    throw new Error("webSessionExchange.url 不能为空。");
+    throw new Error(t("sso.config.webSessionExchangeUrlRequired"));
   }
   const rawCookieOrigins = getRecordStringArray(exchangeRecord, "cookieOrigins");
   const baseUrl = rawCookieOrigins[0] ||
@@ -966,29 +967,29 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     try {
       new URL(config[field]);
     } catch {
-      throw new Error(`${field} 不是有效 URL。`);
+      throw new Error(t("sso.config.fieldInvalidUrl", { field }));
     }
   }
   if (isServerBrokerAuthMode(config)) {
     if (!config.serverAuthorizeUrl?.trim()) {
-      throw new Error("serverAuthorizeUrl 不能为空。");
+      throw new Error(t("sso.config.serverAuthorizeRequired"));
     }
     if (!config.webSessionExchange) {
-      throw new Error("server authMode 需要配置 webSessionExchange。");
+      throw new Error(t("sso.config.serverAuthNeedsWebSession"));
     }
     return config;
   }
   if (!config.clientId.trim()) {
-    throw new Error("clientId 不能为空。");
+    throw new Error(t("sso.config.clientIdRequired"));
   }
   if (!config.clientSecret?.trim()) {
     if (isPublicPkceOidcConfig(config)) {
       return config;
     }
     if (isGoogleOidcConfig(config)) {
-      throw new Error("Google Desktop SSO 需要配置 clientSecret。");
+      throw new Error(t("sso.config.googleClientSecretRequired"));
     }
-    throw new Error("clientSecret 不能为空。");
+    throw new Error(t("sso.config.clientSecretRequired"));
   }
   return config;
 }
@@ -1008,7 +1009,7 @@ export function loadDesktopSsoConfig(app: Pick<App, "getPath">, platform: NodeJS
     return {
       configured: false,
       configPath,
-      message: "未配置 Desktop 单点登录。"
+      message: t("sso.notConfigured")
     };
   }
   try {
@@ -1022,7 +1023,7 @@ export function loadDesktopSsoConfig(app: Pick<App, "getPath">, platform: NodeJS
       return {
         configured: false,
         configPath,
-        message: "未配置 Desktop 单点登录。"
+        message: t("sso.notConfigured")
       };
     }
     return {
@@ -1035,7 +1036,7 @@ export function loadDesktopSsoConfig(app: Pick<App, "getPath">, platform: NodeJS
     return {
       configured: true,
       configPath,
-      error: `Desktop 单点登录配置无效：${message}`
+      error: t("sso.invalidConfig", { message })
     };
   }
 }
@@ -1090,7 +1091,7 @@ function loadSession(app: App) {
         authenticated: true,
         pending: false,
         user: parsed.user,
-        message: typeof parsed.message === "string" ? parsed.message : "单点登录已完成。",
+        message: typeof parsed.message === "string" ? parsed.message : t("sso.completed"),
         updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString()
       };
       currentIdToken = typeof (parsed as Record<string, unknown>).idToken === "string"
@@ -1098,7 +1099,7 @@ function loadSession(app: App) {
         : "";
     }
   } catch {
-    currentStatus = createSignedOutStatus("尚未登录。");
+    currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
   }
 }
 
@@ -1177,7 +1178,7 @@ function includesAudience(value: unknown, expected: string) {
 function createClaims(payload: Record<string, unknown>): DesktopSsoClaims {
   const sub = normalizeStringClaim(payload.sub);
   if (!sub) {
-    throw new Error("id_token 缺少 sub。");
+    throw new Error(t("sso.token.idTokenMissingSub"));
   }
   const claims: DesktopSsoClaims = {
     sub,
@@ -1298,7 +1299,7 @@ function buildAuthorizeUrl(
 
 function buildServerBrokerAuthorizeUrl(state: string, callbackUrl: string, config: OidcConfig) {
   if (!config.serverAuthorizeUrl) {
-    throw new Error("serverAuthorizeUrl 不能为空。");
+    throw new Error(t("sso.config.serverAuthorizeRequired"));
   }
   const url = new URL(config.serverAuthorizeUrl);
   url.searchParams.set("callback", callbackUrl);
@@ -1785,7 +1786,7 @@ function readCookieAccessTokenFromResponse(value: unknown, config: OidcConfig = 
   const pathValue = config.cookieAccessTokenExchange?.accessTokenPath || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
   const accessToken = normalizeStringClaim(readJsonPathValue(value, pathValue));
   if (!accessToken) {
-    throw new Error(`Cookie access_token 响应缺少 ${pathValue}。`);
+    throw new Error(t("sso.token.cookieAccessTokenMissingPath", { path: pathValue }));
   }
   return accessToken;
 }
@@ -1997,22 +1998,22 @@ async function validateIdToken(
 ): Promise<DesktopSsoClaims> {
   const [headerPart, payloadPart, signaturePart] = idToken.split(".");
   if (!headerPart || !payloadPart || !signaturePart) {
-    throw new Error("id_token 格式不正确。");
+    throw new Error(t("sso.token.idTokenInvalidFormat"));
   }
   const header = decodeJsonPart(headerPart);
   const payload = decodeJsonPart(payloadPart);
   if (header.alg !== "RS256") {
-    throw new Error("id_token 只支持 RS256。");
+    throw new Error(t("sso.token.idTokenRs256Only"));
   }
   if (payload.iss !== config.issuer) {
-    throw new Error("id_token issuer 不匹配。");
+    throw new Error(t("sso.token.issuerMismatch"));
   }
   if (!includesAudience(payload.aud, config.clientId)) {
-    throw new Error("id_token audience 不匹配。");
+    throw new Error(t("sso.token.audienceMismatch"));
   }
   const exp = Number(payload.exp);
   if (!Number.isFinite(exp) || exp <= Math.floor(Date.now() / 1000)) {
-    throw new Error("id_token 已过期。");
+    throw new Error(t("sso.token.expired"));
   }
 
   const discovery = await fetchJson(
@@ -2023,7 +2024,7 @@ async function validateIdToken(
   ) as { jwks_uri?: unknown };
   const jwksUri = normalizeStringClaim(discovery.jwks_uri);
   if (!jwksUri) {
-    throw new Error("OIDC well-known 配置缺少 jwks_uri。");
+    throw new Error(t("sso.token.wellKnownMissingJwks"));
   }
   const jwks = await fetchJson(
     fetchImpl,
@@ -2038,14 +2039,14 @@ async function validateIdToken(
     return record.kty === "RSA" && (!kid || record.kid === kid);
   }) as Record<string, unknown> | undefined;
   if (!key) {
-    throw new Error("没有找到可用于验证 id_token 的 JWK。");
+    throw new Error(t("sso.token.noJwk"));
   }
 
   const verifier = createVerify("RSA-SHA256");
   verifier.update(`${headerPart}.${payloadPart}`);
   verifier.end();
   if (!verifier.verify(keyObjectFromJwk(key), Buffer.from(signaturePart, "base64url"))) {
-    throw new Error("id_token 签名校验失败。");
+    throw new Error(t("sso.token.signatureFailed"));
   }
   return createClaims(payload);
 }
@@ -2067,7 +2068,7 @@ async function exchangeCodeForTokenClaims(
   }, buildOidcFetchStage("token exchange", config)) as { id_token?: unknown };
   const idToken = normalizeStringClaim(tokenResponse.id_token);
   if (!idToken) {
-    throw new Error("Token 响应缺少 id_token。");
+    throw new Error(t("sso.token.responseMissingIdToken"));
   }
   const claims = await validateIdToken(idToken, fetchImpl, config);
   return { claims, idToken };
@@ -2087,7 +2088,7 @@ async function exchangeCodeForClaims(
 
 async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchLike) {
   if (!pendingLogin) {
-    throw new Error("没有正在进行的单点登录。");
+    throw new Error(t("sso.noPendingLogin"));
   }
   if (isServerBrokerAuthMode(pendingLogin.config)) {
     const { ticket } = normalizeDesktopTicketCallbackRequest(requestUrl, pendingLogin.state);
@@ -2154,7 +2155,7 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
     if (closeAfterCallback) {
       closeCallbackServerAfterResponse(response);
     }
-    writeHtmlResponse(response, 200, renderCallbackHtml("已回到 Desktop", "可以关闭此浏览器页面。"));
+    writeHtmlResponse(response, 200, renderCallbackHtml(t("sso.returnedToDesktopTitle"), t("sso.closeBrowserPage")));
     return;
   }
   if (requestUrl.pathname === LOGOUT_CALLBACK_PATH) {
@@ -2162,7 +2163,7 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
     if (closeAfterCallback) {
       closeCallbackServerAfterResponse(response);
     }
-    writeHtmlResponse(response, 200, renderCallbackHtml("已退出登录", "IAM 会话登出已返回 Desktop。"));
+    writeHtmlResponse(response, 200, renderCallbackHtml(t("sso.logoutReturnedTitle"), t("sso.logoutReturnedMessage")));
     return;
   }
   if (requestUrl.pathname !== CALLBACK_PATH) {
@@ -2187,11 +2188,11 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
   try {
     const status = await handleLoginCallback(app, requestUrl);
     writeHtmlResponse(response, 200, renderCallbackHtml(
-      "登录成功",
-      `${status.user?.sub ?? "用户"} 已完成单点登录，可以回到 Desktop 继续使用。`,
+      t("sso.loginSuccessTitle"),
+      t("sso.loginSuccessMessage", { user: status.user?.sub ?? t("sso.userFallback") }),
       {
         actionHref: buildReturnToAppUrl(fallbackOrigin),
-        actionLabel: `回到 ${PRODUCT_NAME}`
+        actionLabel: t("sso.returnToApp", { appName: PRODUCT_NAME })
       }
     ));
   } catch (error) {
@@ -2200,7 +2201,7 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
     if (closeAfterCallback) {
       closeCallbackServerAfterResponse(response);
     }
-    writeHtmlResponse(response, 400, renderCallbackHtml("登录失败", message));
+    writeHtmlResponse(response, 400, renderCallbackHtml(t("sso.loginFailedTitle"), message));
   }
 }
 
@@ -2234,7 +2235,7 @@ function resolveCallbackServerOptionsFromUrl(
 ): CallbackServerOptions {
   const url = new URL(value);
   if (url.protocol !== "http:") {
-    throw new Error("Desktop SSO 回调地址只支持 http。");
+    throw new Error(t("sso.callbackHttpOnly"));
   }
   return {
     host: url.hostname || CALLBACK_HOST,
@@ -2308,7 +2309,7 @@ async function ensureCallbackServer(
       callbackServerReady = null;
       callbackServerInfo = null;
       if (error.code === "EADDRINUSE") {
-        reject(new Error(`OIDC 回调端口 ${options.port} 已被占用。`));
+        reject(new Error(t("sso.callbackPortInUse", { port: options.port })));
         return;
       }
       reject(error);
@@ -2359,7 +2360,7 @@ export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
 
 export const failDesktopSsoLogin = failDesktopSsoFlow;
 
-export function cancelDesktopSsoLogin(app: App, message = "已取消 Desktop 单点登录。"): DesktopSsoStatus {
+export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): DesktopSsoStatus {
   pendingLogin = null;
   currentAccessToken = "";
   loadSession(app);
@@ -2396,7 +2397,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
   }
   const oidcConfig = configResult.config;
   if (!oidcConfig) {
-    const status = createFailedStatus("Desktop 单点登录配置缺少 OIDC 参数。");
+    const status = createFailedStatus(t("sso.missingOidcConfig"));
     setCurrentStatus(status);
     return {
       ok: false,
@@ -2438,7 +2439,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
         redirectUri,
         ...(codeVerifier ? { codeChallenge: createPkceCodeChallenge(codeVerifier) } : {})
       });
-    const status = createPendingStatus("正在等待 IAM 单点登录完成。");
+    const status = createPendingStatus(t("sso.waitingForIam"));
     setCurrentStatus(status);
     return {
       ok: true,
@@ -2448,7 +2449,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
         : { browserUrl: oidcConfig.loginUrl ? undefined : buildDesktopSsoProxyUrl(authorizeUrl) }),
       browserOrigin: oidcConfig.browserOrigin,
       status: cloneStatus(status),
-      message: "已打开 IAM 单点登录。"
+      message: t("sso.iamLoginOpened")
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -2571,7 +2572,7 @@ export function completeDesktopSsoBrowserLogin(app: App, completionUrl: string):
     return createUnconfiguredStatus(configResult.message);
   }
   if (configResult.error || !configResult.config) {
-    return createFailedStatus(configResult.error || "Desktop 单点登录配置缺少 OIDC 参数。");
+    return createFailedStatus(configResult.error || t("sso.missingOidcConfig"));
   }
   pendingLogin = null;
   currentIdToken = "";
@@ -2592,11 +2593,11 @@ export function completeDesktopSsoCookieLogin(app: App, accessToken: string): De
     return createUnconfiguredStatus(configResult.message);
   }
   if (configResult.error || !configResult.config) {
-    return createFailedStatus(configResult.error || "Desktop 单点登录配置缺少 OIDC 参数。");
+    return createFailedStatus(configResult.error || t("sso.missingOidcConfig"));
   }
   const token = accessToken.trim();
   if (!token) {
-    return createFailedStatus("Cookie access_token 为空。");
+    return createFailedStatus(t("sso.cookieAccessTokenEmpty"));
   }
   pendingLogin = null;
   currentIdToken = "";
@@ -2617,14 +2618,14 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
   const logoutIdToken = currentIdToken;
   clearSession(app);
   const status = configResult.configured
-    ? createSignedOutStatus("已退出 Desktop 单点登录。")
+    ? createSignedOutStatus(t("sso.signedOut"))
     : createUnconfiguredStatus(configResult.message);
   setCurrentStatus(status);
   if (!configResult.configured) {
     return {
       ok: true,
       status: cloneStatus(status),
-      message: "已清除 Desktop 登录状态。"
+      message: t("sso.loginStateCleared")
     };
   }
   if (configResult.error) {
@@ -2638,7 +2639,7 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
   }
   const oidcConfig = configResult.config;
   if (!oidcConfig) {
-    const failedStatus = createFailedStatus("Desktop 单点登录配置缺少 OIDC 参数。");
+    const failedStatus = createFailedStatus(t("sso.missingOidcConfig"));
     setCurrentStatus(failedStatus);
     return {
       ok: false,
@@ -2652,7 +2653,7 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
     return {
       ok: true,
       status: cloneStatus(status),
-      message: "已清除 Desktop 登录状态。"
+      message: t("sso.loginStateCleared")
     };
   }
   try {
@@ -2677,7 +2678,7 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
         : { browserUrl: buildDesktopSsoProxyUrl(logoutUrl) }),
       browserOrigin: oidcConfig.browserOrigin,
       status: cloneStatus(status),
-      message: "已清除 Desktop 登录状态。"
+      message: t("sso.loginStateCleared")
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

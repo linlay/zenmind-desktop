@@ -56,6 +56,10 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function readText(filePath) {
+  return fs.readFileSync(filePath, "utf8").trim();
+}
+
 test("archive import filters follow internal service package platform formats", () => {
   assert.deepEqual(getArchiveExtensions("darwin"), ["gz", "tgz"]);
   assert.deepEqual(getArchiveExtensions("linux"), ["gz", "tgz"]);
@@ -160,6 +164,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.pet, "applied");
   assert.equal(bootstrapState.appliedResult.market, "applied");
   assert.equal(bootstrapState.appliedResult.sso, "applied");
+  assert.equal(bootstrapState.appliedResult.tunnelHub, "absent");
   assert.equal(bootstrapState.appliedResult.webs, "applied");
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
   assert.match(bootstrapState.appliedAt, /^\d{4}-\d{2}-\d{2}T/);
@@ -286,6 +291,46 @@ test("desktop-init bootstrap leaves market absent without a market API", (t) => 
   assert.equal(result.appliedResult.market, "absent");
   assert.equal(fs.existsSync(marketPath), false);
   assert.equal(fs.existsSync(legacyMarketPath), false);
+});
+
+test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-tunnel-hub-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    tunnelHub: {
+      relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+      agentToken: "init-agent-token",
+      tlsInsecureSkipVerify: false
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  const desktop = desktopRoot(homePath);
+  const tunnelSettingsPath = path.join(desktop, "config", "desktop", "tunnel-hub-agent.json");
+  const tokenPath = path.join(desktop, "secrets", "tunnel-hub-agent-token");
+  const envPath = path.join(desktop, "config", "services", "tunnel-hub-agent", ".env");
+  const tunnelSettings = readJson(tunnelSettingsPath);
+  const envContent = fs.readFileSync(envPath, "utf8");
+  const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.tunnelHub, "applied");
+  assert.deepEqual(tunnelSettings, {
+    enabled: false,
+    relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+    tlsInsecureSkipVerify: false,
+    reconnectSeconds: 3
+  });
+  assert.equal("agentToken" in tunnelSettings, false);
+  assert.equal(readText(tokenPath), "init-agent-token");
+  assert.match(envContent, /^AGENT_TOKEN=init-agent-token$/m);
+  assert.match(envContent, /^AGENT_RELAY_URL=wss:\/\/tunnel-hub\.zenmind\.cc\/tunnel$/m);
+  assert.match(envContent, /^AGENT_TLS_INSECURE_SKIP_VERIFY=false$/m);
+  assert.match(envContent, /^AGENT_RECONNECT_SECONDS=3$/m);
+  assert.equal(bootstrapState.appliedResult.tunnelHub, "applied");
 });
 
 test("desktop-init bootstrap applies defaults over pre-created desktop config files", (t) => {

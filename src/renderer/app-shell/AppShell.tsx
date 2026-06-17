@@ -10,13 +10,14 @@ import { getAssistantPageContext } from "../copilot/page-context/assistantPageCo
 import { publishCurrentPageContextSnapshot } from "../services/currentPageContext";
 import {
   registerDesktopActionProviderForScope,
+  setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebEntry, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
-  DESKTOP_COPILOT_PAGE_LABELS
+  type DesktopCopilotPageKey
 } from "../../shared/assistant-settings";
 import {
   resolveDesktopCopilotPreference,
@@ -288,6 +289,23 @@ function createFallbackStartupRestoreState(): StartupRestoreState {
       phase: "pending"
     }))
   };
+}
+
+function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: ReturnType<typeof useI18n>["t"]) {
+  switch (pageKey) {
+    case "controlCenter":
+      return t("nav.controlCenter");
+    case "market":
+      return t("nav.market");
+    case "help":
+      return t("nav.help");
+    case "agents":
+      return t("nav.agents");
+    case "schedules":
+      return t("nav.schedules");
+    case "memory":
+      return t("nav.memory");
+  }
 }
 
 export function AppShell() {
@@ -739,6 +757,10 @@ export function AppShell() {
   useEffect(() => {
     startDesktopActionRendererBridge();
   }, []);
+
+  useEffect(() => {
+    setDesktopActionTranslator(t);
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1299,7 +1321,7 @@ export function AppShell() {
       [item.id]: {
         status: "starting",
         webUrl: current[item.id]?.webUrl ?? "",
-        message: "正在启动网站小应用...",
+        message: t("webapp.starting"),
         state: current[item.id]?.state ?? null
       }
     }));
@@ -1520,7 +1542,7 @@ export function AppShell() {
         .filter((service) => service.status === "running" && service.frontendMode !== "none" && service.healthMeta.webUrl)
         .map((service) => ({
           id: service.id,
-          label: getServiceDisplayName(service.id, service.name),
+          label: getServiceDisplayName(service.id, service.name, t),
           url: service.healthMeta.webUrl,
           route: service.id === "agent-webclient"
             ? activeAgentWebclientRoute?.routePath ?? ASSISTANT_TARGET_PATH
@@ -1603,13 +1625,13 @@ export function AppShell() {
       if ("appearanceId" in desktopPetPatch) {
         const appearanceId = typeof desktopPetPatch.appearanceId === "string" ? desktopPetPatch.appearanceId.trim() : "";
         if (!state.desktopPet.appearanceOptions.some((appearance) => appearance.id === appearanceId)) {
-          issues.push({ field: "desktopPet.appearanceId", value: desktopPetPatch.appearanceId, message: "请选择可用的桌面宠物形象。" });
+          issues.push({ field: "desktopPet.appearanceId", value: desktopPetPatch.appearanceId, message: t("settings.desktopPet.enableUnavailable") });
         }
       }
       if ("desktopHelperAgentKey" in patch) {
         const agentKey = typeof patch.desktopHelperAgentKey === "string" ? patch.desktopHelperAgentKey.trim() : "";
         if (!state.assistantAgents.some((agent) => agent.agentKey === agentKey)) {
-          issues.push({ field: "desktopHelperAgentKey", value: patch.desktopHelperAgentKey, message: "请选择可用的侧边栏默认智能体。" });
+          issues.push({ field: "desktopHelperAgentKey", value: patch.desktopHelperAgentKey, message: t("settings.navigation.helperAgentInvalid") });
         }
       }
       if ("desktopCopilotPages" in patch) {
@@ -1623,7 +1645,7 @@ export function AppShell() {
             issues.push({
               field: `desktopCopilotPages.${pageKey}.agentKey`,
               value: preference.agentKey,
-              message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的侧边助手智能体不可用。`
+              message: t("settings.navigation.copilotAgentUnavailable", { page: getDesktopCopilotPageLabel(pageKey, t) })
             });
           }
         }
@@ -1697,7 +1719,7 @@ export function AppShell() {
               ok: false,
               error: {
                 code: "invalid_settings_patch",
-                message: "Desktop 设置 patch 校验失败。",
+                message: t("desktopAction.invalidSettingsPatch"),
                 details: validation.issues
               }
             };
@@ -1741,7 +1763,7 @@ export function AppShell() {
               ok: false,
               error: {
                 code: "surface_not_found",
-                message: "没有找到匹配的内嵌网站。",
+                message: t("desktopAction.surfaceNotFound"),
                 details: { target, surfaces: createSurfaceList() }
               }
             };
@@ -1844,7 +1866,7 @@ export function AppShell() {
           isSidebarResizing ? "is-active" : ""
         ].filter(Boolean).join(" ")}
         role="separator"
-        aria-label="调整侧边栏宽度"
+        aria-label={t("nav.sidebar.resize")}
         aria-orientation="vertical"
         aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
         aria-valuemax={SIDEBAR_EXPANDED_MAX_WIDTH}
@@ -2199,7 +2221,7 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
     key: "agent-chat",
     routePath: `${pathname}${search}`,
     embedPath: `/agent/${encodeURIComponent(agentKey)}${embedQuery ? `?${embedQuery}` : ""}`,
-    label: "智能助理",
+    label: t("service.display.agentWebclient"),
     kind: "chat",
     mode: "embedded"
   };

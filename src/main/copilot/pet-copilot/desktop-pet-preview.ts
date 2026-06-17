@@ -6,6 +6,7 @@ import type {
   DesktopPetPreviewItemStatus,
   DesktopPetPreviewPanel
 } from "../../../shared/contracts";
+import { t } from "../../i18n/main-i18n";
 
 type PreviewStatus = DesktopPetPreviewPanel["status"];
 
@@ -181,11 +182,11 @@ export function sanitizeDesktopPetPreviewText(value: unknown, maxLength = ITEM_T
       return "";
     }
     if (normalized.startsWith("data:")) {
-      return "[已隐藏数据]";
+      return t("desktopPet.preview.hiddenData");
     }
     if (SENSITIVE_KEY_PATTERN.test(normalized)) {
       return truncateText(
-        normalized.replace(/([A-Za-z0-9_.-]*(?:password|passwd|token|secret|api[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*)(\s*[:=]\s*)\S+/giu, "$1$2[已隐藏]"),
+        normalized.replace(/([A-Za-z0-9_.-]*(?:password|passwd|token|secret|api[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*)(\s*[:=]\s*)\S+/giu, `$1$2${t("desktopPet.preview.hiddenValue")}`),
         maxLength
       );
     }
@@ -356,8 +357,8 @@ function createDefaultPanel(event: DesktopPetPreviewEvent, expanded: boolean): D
     chatId: event.chatId,
     visible: true,
     expanded,
-    title: "思考中...",
-    summary: "开始处理请求",
+    title: t("desktopPet.status.thinking"),
+    summary: t("desktopPet.preview.startSummary"),
     status: "running",
     items: [],
     artifactCount: 0,
@@ -398,15 +399,15 @@ function terminalStatus(event: DesktopPetPreviewEvent): {
   holdMs: number;
 } {
   if (event.type === "run.error" || event.status === "error") {
-    return { title: "出错了", status: "error", itemStatus: "error", holdMs: ERROR_HOLD_MS };
+    return { title: t("desktopPet.status.error"), status: "error", itemStatus: "error", holdMs: ERROR_HOLD_MS };
   }
   if (event.type === "run.expired") {
-    return { title: "已过期", status: "stopped", itemStatus: "cancelled", holdMs: STOPPED_HOLD_MS };
+    return { title: t("desktopPet.status.expired"), status: "stopped", itemStatus: "cancelled", holdMs: STOPPED_HOLD_MS };
   }
   if (event.type === "run.cancel" || event.type === "run.stopped" || event.type === "run.interrupt" || event.status === "stopped") {
-    return { title: "已停止", status: "stopped", itemStatus: "cancelled", holdMs: STOPPED_HOLD_MS };
+    return { title: t("desktopPet.status.stopped"), status: "stopped", itemStatus: "cancelled", holdMs: STOPPED_HOLD_MS };
   }
-  return { title: DONE_FALLBACK_SUMMARY, status: "done", itemStatus: "success", holdMs: DONE_HOLD_MS };
+  return { title: t("desktopPet.doneFallback"), status: "done", itemStatus: "success", holdMs: DONE_HOLD_MS };
 }
 
 function isGenericDoneSummary(value: string) {
@@ -504,11 +505,11 @@ function readActionDetail(event: DesktopPetPreviewEvent, fallback: string) {
 }
 
 function readToolLabel(event: DesktopPetPreviewEvent) {
-  return sanitizeDesktopPetPreviewText(event.toolName || event.action || event.target || event.message, 32) || "工具";
+  return sanitizeDesktopPetPreviewText(event.toolName || event.action || event.target || event.message, 32) || t("desktopPet.preview.tool");
 }
 
 function readActionLabel(event: DesktopPetPreviewEvent) {
-  return sanitizeDesktopPetPreviewText(event.action || event.toolName || event.target || event.message, 32) || "操作";
+  return sanitizeDesktopPetPreviewText(event.action || event.toolName || event.target || event.message, 32) || t("desktopPet.preview.action");
 }
 
 function readAwaitingMode(event: DesktopPetPreviewEvent): AssistantAwaitingMode | "" {
@@ -547,13 +548,14 @@ function buildAwaitingPreview(event: DesktopPetPreviewEvent): {
     const count = Math.max(questions.length, 1);
     const text = firstRecordText(questions, ["title", "label", "question", "prompt", "description"]) ||
       sanitizeDesktopPetPreviewText(event.message, ITEM_TEXT_MAX_LENGTH) ||
-      "等待你回答问题";
+      t("desktopPet.preview.questionFallback");
     const detailText = firstRecordText(questions, ["question", "prompt", "description", "title", "label"], DETAIL_TEXT_MAX_LENGTH) ||
       sanitizeDesktopPetPreviewText(event.message, DETAIL_TEXT_MAX_LENGTH) ||
       text;
+    const title = t("desktopPet.preview.awaitingQuestions", { count });
     return {
-      awaiting: { awaitingId, mode, count, title: `等待回答 ${count} 个问题`, timeoutMs },
-      title: `等待回答 ${count} 个问题`,
+      awaiting: { awaitingId, mode, count, title, timeoutMs },
+      title,
       text,
       detailText
     };
@@ -562,13 +564,14 @@ function buildAwaitingPreview(event: DesktopPetPreviewEvent): {
     const count = Math.max(forms.length, 1);
     const text = firstRecordText(forms, ["title", "action", "description", "id"]) ||
       sanitizeDesktopPetPreviewText(event.message, ITEM_TEXT_MAX_LENGTH) ||
-      "等待你填写表单";
+      t("desktopPet.preview.formFallback");
     const detailText = firstRecordText(forms, ["description", "title", "action", "id"], DETAIL_TEXT_MAX_LENGTH) ||
       sanitizeDesktopPetPreviewText(event.message, DETAIL_TEXT_MAX_LENGTH) ||
       text;
+    const title = t("desktopPet.preview.awaitingForms", { count });
     return {
-      awaiting: { awaitingId, mode, count, title: `等待填写 ${count} 个表单`, timeoutMs },
-      title: `等待填写 ${count} 个表单`,
+      awaiting: { awaitingId, mode, count, title, timeoutMs },
+      title,
       text,
       detailText
     };
@@ -577,37 +580,41 @@ function buildAwaitingPreview(event: DesktopPetPreviewEvent): {
   const count = Math.max(approvals.length, 1);
   const text = firstRecordText(approvals, ["summary", "description", "risk", "command"]) ||
     sanitizeDesktopPetPreviewText(event.message, ITEM_TEXT_MAX_LENGTH) ||
-    "等待你审批操作";
+    t("desktopPet.preview.approvalFallback");
   const detailText = firstRecordText(approvals, ["command", "summary", "description", "risk"], DETAIL_TEXT_MAX_LENGTH) ||
     sanitizeDesktopPetPreviewText(event.message, DETAIL_TEXT_MAX_LENGTH) ||
     text;
+  const title = t("desktopPet.preview.awaitingApprovals", { count });
   return {
-    awaiting: { awaitingId, mode: mode || "approval", count, title: `等待审批 ${count} 项操作`, timeoutMs },
-    title: `等待审批 ${count} 项操作`,
+    awaiting: { awaitingId, mode: mode || "approval", count, title, timeoutMs },
+    title,
     text,
     detailText
   };
 }
 
-function buildAwaitingAnswerTitle(event: DesktopPetPreviewEvent) {
+function buildAwaitingAnswerResult(event: DesktopPetPreviewEvent): {
+  title: string;
+  status: DesktopPetPreviewItemStatus;
+} {
   const data = isObjectRecord(event.data) ? event.data : {};
   const dataStatus = toText(data.status);
   const error = isObjectRecord(data.error) ? data.error : null;
   const errorCode = toText(error?.code);
   const status = event.status || dataStatus || errorCode;
   if (status === "timeout" || errorCode === "timeout") {
-    return "确认超时";
+    return { title: t("desktopPet.preview.confirmTimedOut"), status: "error" };
   }
   if (status === "rejected") {
-    return "已拒绝确认";
+    return { title: t("desktopPet.preview.confirmRejected"), status: "cancelled" };
   }
   if (status === "cancelled" || status === "canceled" || errorCode === "user_dismissed") {
-    return "已取消确认";
+    return { title: t("desktopPet.preview.confirmCancelled"), status: "cancelled" };
   }
   if (status === "error" || errorCode === "invalid_submit") {
-    return "确认提交失败";
+    return { title: t("desktopPet.preview.confirmFailed"), status: "error" };
   }
-  return "已收到确认";
+  return { title: t("desktopPet.preview.confirmReceived"), status: "success" };
 }
 
 function artifactNames(event: DesktopPetPreviewEvent) {
@@ -697,31 +704,31 @@ export class DesktopPetPreviewProjector {
     };
 
     if (event.type === "request.query" || event.type === "run.start") {
-      this.panel.title = "思考中...";
+      this.panel.title = t("desktopPet.status.thinking");
       this.panel.status = "running";
-      this.panel.summary = sanitizeDesktopPetPreviewText(event.message, SUMMARY_MAX_LENGTH) || "开始处理请求";
+      this.panel.summary = sanitizeDesktopPetPreviewText(event.message, SUMMARY_MAX_LENGTH) || t("desktopPet.preview.startSummary");
       const detailText = readEventDetailField(event, "message", "query", "prompt", "input", "content", "text") ||
         this.panel.summary;
-      this.upsertItem("run:start", "status", "开始处理请求", this.panel.summary, "running", event.createdAt, detailText);
+      this.upsertItem("run:start", "status", t("desktopPet.preview.startSummary"), this.panel.summary, "running", event.createdAt, detailText);
       return undefined;
     }
 
     if (event.type.startsWith("reasoning.")) {
-      const text = readContentText(event) || "正在整理思路";
+      const text = readContentText(event) || t("desktopPet.preview.reasoningFallback");
       const done = event.type === "reasoning.end" || event.type === "reasoning.snapshot";
       const detailText = readContentDetail(event) || text;
       this.panel.summary = text;
-      this.upsertItem("reasoning", "thinking", done ? "思考过程" : "思考中", text, done ? "success" : "running", event.createdAt, detailText);
+      this.upsertItem("reasoning", "thinking", done ? t("desktopPet.preview.reasoningProcess") : t("desktopPet.status.thinking"), text, done ? "success" : "running", event.createdAt, detailText);
       return undefined;
     }
 
     if (event.type.startsWith("content.")) {
       const responsePreview = this.rememberResponsePreview(event);
-      const text = responsePreview ? truncateReplyPreview(responsePreview) : "正在生成回复";
+      const text = responsePreview ? truncateReplyPreview(responsePreview) : t("desktopPet.preview.generatingReply");
       const done = event.type === "content.end" || event.type === "content.snapshot";
       const detailText = sanitizeDesktopPetPreviewText(responsePreview, DETAIL_TEXT_MAX_LENGTH) || readContentDetail(event) || text;
       this.panel.summary = text;
-      this.upsertItem("content", "content", done ? "回复已生成" : "回复生成中", text, done ? "success" : "running", event.createdAt, detailText);
+      this.upsertItem("content", "content", done ? t("desktopPet.status.replyGenerated") : t("desktopPet.preview.replyGenerating"), text, done ? "success" : "running", event.createdAt, detailText);
       return undefined;
     }
 
@@ -730,11 +737,23 @@ export class DesktopPetPreviewProjector {
       const id = `tool:${event.toolCallId || label}`;
       const status = statusForTool(event);
       const text = event.type === "tool.args"
-        ? "参数已准备"
-        : sanitizeDesktopPetPreviewText(event.error || event.message || event.target, ITEM_TEXT_MAX_LENGTH) || (status === "running" ? "正在执行" : "工具返回结果");
+        ? t("desktopPet.preview.argsReady")
+        : sanitizeDesktopPetPreviewText(event.error || event.message || event.target, ITEM_TEXT_MAX_LENGTH) || (status === "running" ? t("desktopPet.preview.executing") : t("desktopPet.preview.toolResult"));
       const detailText = readToolDetail(event, text);
-      this.panel.summary = status === "error" ? `${label} 失败` : status === "running" ? `正在使用 ${label}` : `${label} 完成`;
-      this.upsertItem(id, "tool", status === "running" ? `正在使用 ${label}` : `工具 ${label}`, text, status, event.createdAt, detailText);
+      this.panel.summary = status === "error"
+        ? t("desktopPet.preview.failedWithLabel", { label })
+        : status === "running"
+          ? t("desktopPet.preview.toolUsingSummary", { label })
+          : t("desktopPet.preview.completedWithLabel", { label });
+      this.upsertItem(
+        id,
+        "tool",
+        status === "running" ? t("desktopPet.preview.toolRunningTitle", { label }) : t("desktopPet.preview.toolTitle", { label }),
+        text,
+        status,
+        event.createdAt,
+        detailText
+      );
       return undefined;
     }
 
@@ -743,11 +762,23 @@ export class DesktopPetPreviewProjector {
       const id = `action:${event.actionId || event.toolCallId || label}`;
       const status = statusForTool(event);
       const text = event.type === "action.args"
-        ? "参数已准备"
-        : sanitizeDesktopPetPreviewText(event.error || event.message || event.target, ITEM_TEXT_MAX_LENGTH) || (status === "running" ? "正在执行" : "操作返回结果");
+        ? t("desktopPet.preview.argsReady")
+        : sanitizeDesktopPetPreviewText(event.error || event.message || event.target, ITEM_TEXT_MAX_LENGTH) || (status === "running" ? t("desktopPet.preview.executing") : t("desktopPet.preview.actionResult"));
       const detailText = readActionDetail(event, text);
-      this.panel.summary = status === "error" ? `${label} 失败` : status === "running" ? `正在执行 ${label}` : `${label} 完成`;
-      this.upsertItem(id, "action", status === "running" ? `正在执行 ${label}` : `操作 ${label}`, text, status, event.createdAt, detailText);
+      this.panel.summary = status === "error"
+        ? t("desktopPet.preview.failedWithLabel", { label })
+        : status === "running"
+          ? t("desktopPet.preview.actionRunningTitle", { label })
+          : t("desktopPet.preview.completedWithLabel", { label });
+      this.upsertItem(
+        id,
+        "action",
+        status === "running" ? t("desktopPet.preview.actionRunningTitle", { label }) : t("desktopPet.preview.actionTitle", { label }),
+        text,
+        status,
+        event.createdAt,
+        detailText
+      );
       return undefined;
     }
 
@@ -758,7 +789,7 @@ export class DesktopPetPreviewProjector {
     ) {
       const preview = buildAwaitingPreview(event);
       this.panel.status = "waiting";
-      this.panel.title = "等待你确认";
+      this.panel.title = t("desktopPet.status.awaitingConfirm");
       this.panel.summary = preview.title;
       this.panel.awaiting = preview.awaiting;
       this.upsertItem(`awaiting:${preview.awaiting.awaitingId}`, "awaiting", preview.title, preview.text, "waiting", event.createdAt, preview.detailText);
@@ -766,50 +797,72 @@ export class DesktopPetPreviewProjector {
     }
 
     if (event.type === "request.submit") {
-      this.panel.summary = "已提交确认";
-      this.upsertItem(`submit:${event.awaitingId || event.seq || event.createdAt}`, "awaiting-answer", "已提交确认", "等待运行继续", "success", event.createdAt, "已提交确认，等待运行继续");
+      this.panel.summary = t("desktopPet.preview.confirmSubmitted");
+      this.upsertItem(
+        `submit:${event.awaitingId || event.seq || event.createdAt}`,
+        "awaiting-answer",
+        t("desktopPet.preview.confirmSubmitted"),
+        t("desktopPet.preview.waitingRunContinue"),
+        "success",
+        event.createdAt,
+        t("desktopPet.preview.confirmSubmittedDetail")
+      );
       return undefined;
     }
 
     if (event.type === "awaiting.answer" || event.type === "awaiting.answered") {
-      const title = buildAwaitingAnswerTitle(event);
-      const status: DesktopPetPreviewItemStatus = title.includes("失败") || title.includes("超时") ? "error" : title.includes("取消") || title.includes("拒绝") ? "cancelled" : "success";
+      const result = buildAwaitingAnswerResult(event);
       this.panel.status = "running";
-      this.panel.title = "思考中...";
-      this.panel.summary = title;
+      this.panel.title = t("desktopPet.status.thinking");
+      this.panel.summary = result.title;
       this.panel.awaiting = undefined;
-      this.upsertItem(`answer:${event.awaitingId || event.seq || event.createdAt}`, "awaiting-answer", title, "确认流程已返回", status, event.createdAt, "确认流程已返回，继续处理请求");
+      this.upsertItem(
+        `answer:${event.awaitingId || event.seq || event.createdAt}`,
+        "awaiting-answer",
+        result.title,
+        t("desktopPet.preview.confirmReturned"),
+        result.status,
+        event.createdAt,
+        t("desktopPet.preview.confirmReturnedDetail")
+      );
       return undefined;
     }
 
     if (event.type === "artifact.publish") {
       const count = event.artifactCount || (event.artifacts ?? []).length || 1;
       const names = artifactNames(event);
-      const text = names.length > 0 ? names.join(" · ") : sanitizeDesktopPetPreviewText(event.message, ITEM_TEXT_MAX_LENGTH) || "产物已生成";
+      const filesGenerated = t("desktopPet.preview.filesGenerated", { count });
+      const text = names.length > 0 ? names.join(" · ") : sanitizeDesktopPetPreviewText(event.message, ITEM_TEXT_MAX_LENGTH) || t("desktopPet.preview.artifactGenerated");
       const detailText = names.length > 0
         ? names.join(" · ")
-        : sanitizeDesktopPetPreviewText(event.message || event.data, DETAIL_TEXT_MAX_LENGTH) || `生成 ${count} 个文件`;
+        : sanitizeDesktopPetPreviewText(event.message || event.data, DETAIL_TEXT_MAX_LENGTH) || filesGenerated;
       this.panel.artifactCount += count;
-      this.panel.summary = names[0] || `生成 ${count} 个文件`;
-      this.upsertItem(`artifact:${event.seq || event.createdAt}`, "artifact", "生成产物", text || `生成 ${count} 个文件`, event.status === "error" ? "error" : "success", event.createdAt, detailText);
+      this.panel.summary = names[0] || filesGenerated;
+      this.upsertItem(`artifact:${event.seq || event.createdAt}`, "artifact", t("desktopPet.preview.generatedArtifact"), text || filesGenerated, event.status === "error" ? "error" : "success", event.createdAt, detailText);
       return undefined;
     }
 
     if (event.type.startsWith("plan.")) {
-      const text = sanitizeDesktopPetPreviewText(event.message || event.data, ITEM_TEXT_MAX_LENGTH) || "计划已更新";
+      const text = sanitizeDesktopPetPreviewText(event.message || event.data, ITEM_TEXT_MAX_LENGTH) || t("desktopPet.preview.planUpdated");
       const detailText = readEventDetailField(event, "message", "summary", "description", "content", "text") || text;
       this.panel.summary = text;
-      this.upsertItem("plan", "plan", "更新计划", text, "success", event.createdAt, detailText);
+      this.upsertItem("plan", "plan", t("desktopPet.preview.updatePlan"), text, "success", event.createdAt, detailText);
       return undefined;
     }
 
     if (event.type.startsWith("task.")) {
       const taskId = event.taskId || event.groupId || event.taskName || String(event.seq || event.createdAt);
-      const text = sanitizeDesktopPetPreviewText(event.taskName || event.message || event.subAgentKey || event.data, ITEM_TEXT_MAX_LENGTH) || "子任务";
+      const text = sanitizeDesktopPetPreviewText(event.taskName || event.message || event.subAgentKey || event.data, ITEM_TEXT_MAX_LENGTH) || t("desktopPet.preview.subtask");
       const status: DesktopPetPreviewItemStatus = event.type === "task.fail" ? "error" : event.type === "task.cancel" ? "cancelled" : event.type === "task.complete" ? "success" : "running";
       const detailText = readEventDetailField(event, "taskName", "message", "summary", "description", "subAgentKey") || text;
-      this.panel.summary = status === "running" ? `子任务开始：${text}` : `子任务${status === "success" ? "完成" : status === "error" ? "失败" : "取消"}`;
-      this.upsertItem(`task:${taskId}`, "task", status === "running" ? "子任务开始" : "子任务更新", text, status, event.createdAt, detailText);
+      this.panel.summary = status === "running"
+        ? t("desktopPet.preview.subtaskStartedSummary", { name: text })
+        : status === "success"
+          ? t("desktopPet.preview.subtaskDone")
+          : status === "error"
+            ? t("desktopPet.preview.subtaskFailed")
+            : t("desktopPet.preview.subtaskCancelled");
+      this.upsertItem(`task:${taskId}`, "task", status === "running" ? t("desktopPet.preview.subtaskStartedTitle") : t("desktopPet.preview.subtaskUpdatedTitle"), text, status, event.createdAt, detailText);
       return undefined;
     }
 

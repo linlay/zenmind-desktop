@@ -59,6 +59,7 @@ import {
   type KanbanDesktopConnectionState,
   type KanbanDesktopWsConfig
 } from "./kanban-desktop-ws-client";
+import { t } from "./i18n/main-i18n";
 
 type AgentPlatformCaller<TApp> = <T = unknown>(
   app: TApp,
@@ -163,7 +164,7 @@ function buildDeviceName(input: { deviceAlias?: string; hostname?: string; usern
     return deviceAlias;
   }
   const systemName = [readText(input.hostname), readText(input.username)].filter(Boolean).join(" · ");
-  return systemName || shortDeviceId(readText(input.deviceId)) || "桌面端设备";
+  return systemName || shortDeviceId(readText(input.deviceId)) || t("taskBoard.runtime.deviceNameFallback");
 }
 
 function getTaskBoardConfigPath(app: App) {
@@ -593,7 +594,7 @@ export class TaskBoardRuntime {
     this.refreshConnection();
     return {
       ok: true,
-      message: "云端看板配置已加载。",
+      message: t("taskBoard.runtime.cloudConfigLoaded"),
       config: readTaskBoardCloudConfig(this.options.app),
       configPath: getTaskBoardConfigPath(this.options.app),
       connectionState: this.connectionState
@@ -604,7 +605,7 @@ export class TaskBoardRuntime {
     this.refreshConnection();
     return {
       ok: true,
-      message: "看板设置已加载。",
+      message: t("taskBoard.runtime.settingsLoaded"),
       settings: readTaskBoardSettings(this.options.app),
       configPath: getTaskBoardConfigPath(this.options.app),
       connectionState: this.connectionState
@@ -621,7 +622,7 @@ export class TaskBoardRuntime {
         sessionCount: 0,
         agentCount: 0,
         devices: [],
-        message: "云端看板服务未连接。"
+        message: t("taskBoard.cloudSync.notConnected")
       };
     }
     try {
@@ -636,7 +637,7 @@ export class TaskBoardRuntime {
         sessionCount: 0,
         agentCount: 0,
         devices: [],
-        message: error instanceof Error ? error.message : "在线设备列表读取失败。"
+        message: error instanceof Error ? error.message : t("taskBoard.runtime.onlineDevicesFailed")
       };
     }
   }
@@ -646,7 +647,7 @@ export class TaskBoardRuntime {
     return {
       ok: true,
       projects: result.projects ?? [],
-      message: "本地项目列表已读取。"
+      message: t("taskBoard.runtime.localProjectsLoaded")
     };
   }
 
@@ -655,7 +656,7 @@ export class TaskBoardRuntime {
     this.refreshConnection({ forceReconnect: true });
     return {
       ok: true,
-      message: config.serverUrl ? "云端看板配置已保存，正在重新连接。" : "云端看板配置已保存，连接已关闭。",
+      message: config.serverUrl ? t("taskBoard.runtime.cloudConfigSavedReconnect") : t("taskBoard.runtime.cloudConfigSavedClosed"),
       config,
       configPath: getTaskBoardConfigPath(this.options.app),
       connectionState: this.connectionState
@@ -669,10 +670,10 @@ export class TaskBoardRuntime {
     return {
       ok: true,
       message: requestedEnable && !settings.enabled
-        ? "请先配置看板云端 API 地址和 token。"
+        ? t("taskBoard.runtime.settingsNeedsCloudConfig")
         : settings.enabled
-          ? "看板设置已保存。"
-          : "看板已关闭。",
+          ? t("taskBoard.runtime.settingsSaved")
+          : t("taskBoard.runtime.disabled"),
       settings,
       configPath: getTaskBoardConfigPath(this.options.app),
       connectionState: this.connectionState
@@ -693,13 +694,13 @@ export class TaskBoardRuntime {
     if (!this.wsClient.isOpen()) {
       return {
         ok: false,
-        message: "连接云端看板服务后才能创建云同步任务。",
+        message: t("taskBoard.runtime.createCloudRequiresConnection"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
     try {
       const response = await this.wsClient.request("issue.create", toCloudIssueInput(input));
-      return this.applyCloudIssueResponse(response, "任务已同步到云端看板。", "desktop");
+      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.syncedToCloud"), "desktop");
     } catch (error) {
       return {
         ok: false,
@@ -716,7 +717,7 @@ export class TaskBoardRuntime {
     if (!issue) {
       return {
         ok: false,
-        message: "任务不存在。",
+        message: t("taskBoard.runtime.missing"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -726,7 +727,7 @@ export class TaskBoardRuntime {
         if (!this.wsClient.isOpen()) {
           return {
             ok: false,
-            message: "连接云端看板服务后才能同步私有任务。",
+            message: t("taskBoard.runtime.syncPrivateRequiresConnection"),
             issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
           };
         }
@@ -739,7 +740,7 @@ export class TaskBoardRuntime {
           const response = await this.wsClient.request("issue.create", toCloudIssueInput(localResult.issue));
           const remoteIssue = resultIssuePayload(response);
           if (!remoteIssue) {
-            return this.applyCloudIssueResponse(response, "任务已同步到云端看板。", "desktop");
+            return this.applyCloudIssueResponse(response, t("taskBoard.runtime.syncedToCloud"), "desktop");
           }
           return linkDesktopKanbanIssueToRemote(
             this.options.app,
@@ -769,7 +770,7 @@ export class TaskBoardRuntime {
     if (!this.wsClient.isOpen()) {
       return {
         ok: false,
-        message: "云同步任务需要连接云端看板服务后才能修改。",
+        message: t("taskBoard.runtime.cloudUpdateRequiresConnection"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -782,7 +783,7 @@ export class TaskBoardRuntime {
           baseIssueRevision: baseIssueRevision(issue)
         }
       });
-      return this.applyCloudIssueResponse(response, "云同步任务已更新。", issue.origin ?? "cloud_dispatch");
+      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.cloudUpdated"), issue.origin ?? "cloud_dispatch");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
@@ -801,7 +802,7 @@ export class TaskBoardRuntime {
     if (!issue) {
       return {
         ok: false,
-        message: "任务不存在。",
+        message: t("taskBoard.runtime.missing"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -811,7 +812,7 @@ export class TaskBoardRuntime {
     if (!this.wsClient.isOpen()) {
       return {
         ok: false,
-        message: "云同步任务需要连接云端看板服务后才能移动。",
+        message: t("taskBoard.runtime.cloudMoveRequiresConnection"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -823,7 +824,7 @@ export class TaskBoardRuntime {
         position: input.position,
         baseIssueRevision: baseIssueRevision(issue)
       });
-      return this.applyCloudIssueResponse(response, "云同步任务已移动。", issue.origin ?? "cloud_dispatch");
+      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.cloudMoved"), issue.origin ?? "cloud_dispatch");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
@@ -844,12 +845,12 @@ export class TaskBoardRuntime {
     const issue = getDesktopKanbanIssue(this.options.app, currentUser, issueId);
     const currentIssues = listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues;
     if (!issue) {
-      return { ok: false, message: "任务不存在。", issues: currentIssues };
+      return { ok: false, message: t("taskBoard.runtime.missing"), issues: currentIssues };
     }
     if (issueSyncMode(issue) === "cloud" && !this.wsClient.isOpen()) {
       return {
         ok: false,
-        message: "云同步任务需要连接云端看板服务后才能删除。",
+        message: t("taskBoard.runtime.cloudDeleteRequiresConnection"),
         issues: currentIssues
       };
     }
@@ -862,7 +863,7 @@ export class TaskBoardRuntime {
       } catch (error) {
         return {
           ok: false,
-          message: `自动化删除失败：${error instanceof Error ? error.message : String(error)}`,
+          message: t("taskBoard.automation.deleteFailed", { message: error instanceof Error ? error.message : String(error) }),
           issues: currentIssues
         };
       }
@@ -888,7 +889,7 @@ export class TaskBoardRuntime {
         });
         return {
           ok: resultOk(response),
-          message: resultMessage(response, "云同步任务已删除。"),
+          message: resultMessage(response, t("taskBoard.runtime.cloudDeleted")),
           deletedIssueId: issue.id,
           issues: list.issues
         };
@@ -915,14 +916,14 @@ export class TaskBoardRuntime {
     if (!issue) {
       return {
         ok: false,
-        message: "任务不存在。",
+        message: t("taskBoard.runtime.missing"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
     if (issueSyncMode(issue) === "cloud" && !this.wsClient.isOpen()) {
       return {
         ok: false,
-        message: "云同步任务需要连接云端看板服务后才能同步自动化。",
+        message: t("taskBoard.runtime.cloudAutomationRequiresConnection"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -945,7 +946,7 @@ export class TaskBoardRuntime {
           baseIssueRevision: baseIssueRevision(localResult.issue)
         }
       });
-      return this.applyCloudIssueResponse(response, "云同步任务自动化已同步。", localResult.issue.origin ?? "cloud_dispatch");
+      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.cloudAutomationSynced"), localResult.issue.origin ?? "cloud_dispatch");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       markDesktopKanbanIssueSyncError(this.options.app, currentUser, localResult.issue.id, message);
@@ -965,7 +966,14 @@ export class TaskBoardRuntime {
       return;
     }
     this.options.onDebug?.(
-      `云端看板同步智能体终态事件：type=${event.type || ""} status=${event.status || ""} runState=${runState || ""} runId=${event.runId || ""} chatId=${event.chatId || ""} message=${event.message || event.error || ""}`
+      t("taskBoard.runtime.debugAssistantTerminal", {
+        type: event.type || "",
+        status: event.status || "",
+        runState: runState || "",
+        runId: event.runId || "",
+        chatId: event.chatId || "",
+        message: event.message || event.error || ""
+      })
     );
     const currentUser = this.currentUser();
     const input: TaskBoardIssueUpdateInput = {
@@ -1053,15 +1061,15 @@ export class TaskBoardRuntime {
     const record = isRecord(payload) ? payload : {};
     const localProjectId = readText(record.localProjectId);
     if (!localProjectId) {
-      return { ok: false, message: "缺少本地项目 ID。" };
+      return { ok: false, message: t("taskBoard.localProject.idRequired") };
     }
     const project = findLocalDesktopProject(this.options.app, this.currentUser(), localProjectId);
     if (!project) {
-      return { ok: false, message: "本地项目不存在，请先在桌面端创建。" };
+      return { ok: false, message: t("taskBoard.localProject.notFound") };
     }
     return {
       ok: true,
-      message: "本地项目绑定已确认。",
+      message: t("taskBoard.localProject.bindConfirmed"),
       project: { id: project.id, name: project.name, slug: project.slug, path: project.path }
     };
   }
@@ -1079,13 +1087,13 @@ export class TaskBoardRuntime {
     return {
       ok: true,
       message: converted > 0
-        ? `本地项目已解绑，${converted} 个云端任务已转为本地私有任务。`
-        : "本地项目解绑已确认。"
+        ? t("taskBoard.localProject.unboundWithConverted", { count: converted })
+        : t("taskBoard.localProject.unboundConfirmed")
     };
   }
 
   private async listAgents(): Promise<DesktopPetAgentOption[]> {
-    this.options.onDebug?.("云端看板正在读取本地智能体列表。");
+    this.options.onDebug?.(t("taskBoard.runtime.debugReadingAgents"));
     const installedAgents = readInstalledAgentOptions(this.options.app);
     const localAgents = normalizeDesktopPetAgentOptions(this.options.listLocalAgents?.() ?? []);
     let platformAgents: DesktopPetAgentOption[] = [];
@@ -1093,17 +1101,24 @@ export class TaskBoardRuntime {
       platformAgents = normalizeDesktopPetAgentOptions(await withTimeout(
         () => this.options.assistantBridge.listAgents(),
         ASSISTANT_AGENT_LIST_TIMEOUT_MS,
-        "agent-platform 智能体列表读取超时。"
+        t("taskBoard.runtime.agentListTimeout")
       ));
     } catch (error) {
-      this.options.onDebug?.(`agent-platform 智能体列表读取失败，改用本地安装目录/缓存：${error instanceof Error ? error.message : String(error)}`);
+      this.options.onDebug?.(t("taskBoard.runtime.debugAgentListFallback", {
+        message: error instanceof Error ? error.message : String(error)
+      }));
     }
     const agents = normalizeDesktopPetAgentOptions([
       ...installedAgents,
       ...platformAgents,
       ...localAgents
     ]);
-    this.options.onDebug?.(`云端看板返回智能体：${agents.length} 个（安装目录 ${installedAgents.length}，平台 ${platformAgents.length}，缓存 ${localAgents.length}）。`);
+    this.options.onDebug?.(t("taskBoard.runtime.debugAgentsReturned", {
+      total: agents.length,
+      installed: installedAgents.length,
+      platform: platformAgents.length,
+      cached: localAgents.length
+    }));
     return agents;
   }
 
@@ -1186,14 +1201,16 @@ export class TaskBoardRuntime {
         this.notifyChanged();
       }
       this.sendAssistantEvent({ type: "error", status: "failed", chatId, runId: fallbackRunId });
-      this.options.onDebug?.(`云端看板后台启动智能体失败：${error instanceof Error ? error.message : String(error)}`);
+      this.options.onDebug?.(t("taskBoard.runtime.debugBackgroundStartFailed", {
+        message: error instanceof Error ? error.message : String(error)
+      }));
     });
-    this.options.onDebug?.("云端看板远程 startRun 启动较慢，已先返回运行中状态。");
+    this.options.onDebug?.(t("taskBoard.runtime.debugSlowStartRun"));
     return {
       ok: true,
       runId: fallbackRunId,
       chatId,
-      message: "已派发到桌面端，智能体正在启动。"
+      message: t("taskBoard.runtime.dispatchedStarting")
     };
   }
 
@@ -1228,7 +1245,7 @@ export class TaskBoardRuntime {
     }
     return {
       ok: false,
-      message: "云端看板服务未返回任务数据。",
+      message: t("taskBoard.runtime.noTaskData"),
       issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
     };
   }
@@ -1253,21 +1270,21 @@ export class TaskBoardRuntime {
     if (!issue.assigneeAgentKey?.trim()) {
       return {
         ok: false,
-        message: "请选择智能体后再启用定时任务。",
+        message: t("taskBoard.automation.assigneeRequired"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
     if (!issue.automationCron?.trim()) {
       return {
         ok: false,
-        message: "请设置自动化 cron。",
+        message: t("taskBoard.automation.cronRequired"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
     if (!issue.automationMessage?.trim()) {
       return {
         ok: false,
-        message: "请填写自动化要执行的内容。",
+        message: t("taskBoard.automation.messageRequired"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -1285,7 +1302,7 @@ export class TaskBoardRuntime {
     if (!automationId) {
       return {
         ok: false,
-        message: "agent-platform 未返回自动化 ID。",
+        message: t("taskBoard.automation.platformIdMissing"),
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -1298,7 +1315,7 @@ export class TaskBoardRuntime {
   private async syncRemoteAutomationPayload(payload: unknown) {
     const issue = taskBoardIssueFromAutomationPayload(payload);
     if (!issue) {
-      return { ok: false, message: "自动化同步缺少任务数据。" };
+      return { ok: false, message: t("taskBoard.automation.payloadMissing") };
     }
     if (!issue.automationEnabled) {
       if (issue.automationId) {
@@ -1309,7 +1326,7 @@ export class TaskBoardRuntime {
       }
       return {
         ok: true,
-        message: "自动化已关闭。",
+        message: t("taskBoard.automation.disabled"),
         issue: {
           ...issue,
           automationId: null,
@@ -1318,13 +1335,13 @@ export class TaskBoardRuntime {
       };
     }
     if (!issue.assigneeAgentKey?.trim()) {
-      return { ok: false, message: "请选择智能体后再启用定时任务。" };
+      return { ok: false, message: t("taskBoard.automation.assigneeRequired") };
     }
     if (!issue.automationCron?.trim()) {
-      return { ok: false, message: "请设置自动化 cron。" };
+      return { ok: false, message: t("taskBoard.automation.cronRequired") };
     }
     if (!issue.automationMessage?.trim()) {
-      return { ok: false, message: "请填写自动化要执行的内容。" };
+      return { ok: false, message: t("taskBoard.automation.messageRequired") };
     }
     const automationPayload = buildTaskBoardAutomationPayload(issue);
     const detail = issue.automationId
@@ -1338,11 +1355,11 @@ export class TaskBoardRuntime {
       });
     const automationId = readText(detail?.id) || readText(detail?.scheduleId) || issue.automationId;
     if (!automationId) {
-      return { ok: false, message: "agent-platform 未返回自动化 ID。" };
+      return { ok: false, message: t("taskBoard.automation.platformIdMissing") };
     }
     const result = {
       ok: true,
-      message: "自动化已同步。",
+      message: t("taskBoard.automation.synced"),
       issue: {
         ...issue,
         automationId,

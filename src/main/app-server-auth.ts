@@ -13,6 +13,7 @@ import {
 } from "./user-paths";
 import { PRODUCT_NAME } from "../shared/generated/brand";
 import { resolveDesktopCapability } from "./services/manager/capabilities";
+import { t } from "./i18n/main-i18n";
 
 const APP_SERVER_SERVICE_ID = "zenmind-app-server";
 const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
@@ -140,14 +141,14 @@ function resolveAppServerCommand(layout: AppServerAuthLayout, subcommand: string
   }
 
   if (process.platform === "win32") {
-    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 Windows 脚本：scripts/${subcommand}.ps1`);
+    throw new Error(t("appServerAuth.missingBinaryAndWindowsScript", { binaryName, subcommand }));
   }
 
   if (process.platform === "darwin" || process.platform === "linux") {
-    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 Unix 脚本：scripts/${subcommand}.sh`);
+    throw new Error(t("appServerAuth.missingBinaryAndUnixScript", { binaryName, subcommand }));
   }
 
-  throw new Error(`不支持的平台：${process.platform}`);
+  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
 function resolveAppServerScript(layout: AppServerAuthLayout, baseName: string) {
@@ -156,7 +157,7 @@ function resolveAppServerScript(layout: AppServerAuthLayout, baseName: string) {
     if (fs.existsSync(windowsScript)) {
       return windowsScript;
     }
-    throw new Error(`zenmind-app-server 缺少 Windows 脚本：scripts/${baseName}.ps1`);
+    throw new Error(t("appServerAuth.missingWindowsScript", { baseName }));
   }
 
   if (process.platform === "darwin" || process.platform === "linux") {
@@ -165,10 +166,10 @@ function resolveAppServerScript(layout: AppServerAuthLayout, baseName: string) {
       fs.chmodSync(unixScript, 0o755);
       return unixScript;
     }
-    throw new Error(`zenmind-app-server 缺少 Unix 脚本：scripts/${baseName}.sh`);
+    throw new Error(t("appServerAuth.missingUnixScript", { baseName }));
   }
 
-  throw new Error(`不支持的平台：${process.platform}`);
+  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
 function runAppServerScript(
@@ -284,7 +285,7 @@ function buildSetupPublicKeyArgs(settings: ReturnType<typeof readAppServerAuthSe
     ];
   }
 
-  throw new Error(`不支持的平台：${process.platform}`);
+  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
 function buildIssueAccessTokenArgsWithDeviceId(
@@ -321,7 +322,7 @@ function buildIssueAccessTokenArgsWithDeviceId(
     ];
   }
 
-  throw new Error(`不支持的平台：${process.platform}`);
+  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
 function buildLegacyIssueAccessTokenArgs(settings: ReturnType<typeof readAppServerAuthSettings>) {
@@ -351,18 +352,18 @@ function buildLegacyIssueAccessTokenArgs(settings: ReturnType<typeof readAppServ
     ];
   }
 
-  throw new Error(`不支持的平台：${process.platform}`);
+  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
 function readJwtPayload(token: string) {
   const [, payloadPart] = token.split(".");
   if (!payloadPart) {
-    throw new Error("zenmind-app-server 返回的 access token 不是有效 JWT。");
+    throw new Error(t("appServerAuth.invalidJwt"));
   }
   try {
     return JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as Record<string, unknown>;
   } catch {
-    throw new Error("zenmind-app-server 返回的 access token payload 无法解析。");
+    throw new Error(t("appServerAuth.jwtPayloadParseFailed"));
   }
 }
 
@@ -370,7 +371,7 @@ function validateAccessTokenHasDeviceId(token: string) {
   const payload = readJwtPayload(token);
   const tokenDeviceId = typeof payload.device_id === "string" ? payload.device_id.trim() : "";
   if (!tokenDeviceId) {
-    throw new Error("zenmind-app-server access token 缺少 device_id。");
+    throw new Error(t("appServerAuth.tokenMissingDeviceId"));
   }
 }
 
@@ -378,7 +379,7 @@ function validateAccessTokenDeviceId(token: string, desktopDeviceId: string) {
   const payload = readJwtPayload(token);
   const tokenDeviceId = typeof payload.device_id === "string" ? payload.device_id.trim() : "";
   if (tokenDeviceId !== desktopDeviceId) {
-    throw new Error("zenmind-app-server access token 的 device_id 与 DESKTOP_DEVICE_ID 不一致。");
+    throw new Error(t("appServerAuth.tokenDeviceIdMismatch"));
   }
 }
 
@@ -391,7 +392,7 @@ export async function ensureAppServerJwk(app: App) {
   const capability = await resolveDesktopCapability(app, "auth.publicKey");
   const publicKeyPath = capability.filePath || getAppServerPublicKeyExportPath(app);
   if (!fs.existsSync(publicKeyPath)) {
-    throw new Error(`zenmind-app-server 未导出 public key：${publicKeyPath}`);
+    throw new Error(t("appServerAuth.publicKeyMissing", { path: publicKeyPath }));
   }
   return {
     publicKeyPath,
@@ -403,7 +404,7 @@ export async function issueAppServerAccessToken(app: App) {
   const capability = await resolveDesktopCapability(app, "auth.accessToken");
   const token = capability.token || capability.text || "";
   if (!token) {
-    throw new Error("zenmind-app-server 未返回 access token。");
+    throw new Error(t("appServerAuth.tokenMissing"));
   }
   return token;
 }

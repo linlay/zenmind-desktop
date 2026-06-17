@@ -10,6 +10,7 @@ import {
   listUserDesktopPets,
   readDesktopPetStoredState
 } from "./copilot/pet-copilot/desktop-pet";
+import { t } from "./i18n/main-i18n";
 import { getRendererEntry } from "./renderer-route";
 
 type DesktopPetBannerInput = {
@@ -166,7 +167,7 @@ function normalizeActivityIslandTask(value: ActivityIslandTaskInput) {
   const preview = String(value.preview || "").replace(/\s+/gu, " ").trim();
   const status = value.status === "awaiting" ? "awaiting" : "running";
   return {
-    title: title || preview || "未命名任务",
+    title: title || preview || t("desktopPet.task.untitled"),
     agentDisplayName: agentDisplayName || "Agent",
     preview,
     status
@@ -191,8 +192,9 @@ function getActivityIslandHtml(input: ActivityIslandInput) {
   );
   const visibleTasks = tasks.slice(0, 3);
   const hiddenCount = Math.max(0, runningTaskCount - visibleTasks.length);
-  const title = String(input.title || "运行中的 Chat").trim() || "运行中的 Chat";
-  const statusText = runningTaskCount > 0 ? `${runningTaskCount} 个运行中` : "空闲";
+  const defaultTitle = t("desktopPet.activity.defaultTitle");
+  const title = String(input.title || defaultTitle).trim() || defaultTitle;
+  const statusText = runningTaskCount > 0 ? t("desktopPet.activity.runningCount", { count: runningTaskCount }) : t("desktopPet.activity.idle");
   const rows = visibleTasks.map((task) => `
     <li class="task is-${task.status}">
       <span class="dot"></span>
@@ -228,7 +230,7 @@ em{font-style:normal;font-size:11px;line-height:1.2;color:#aeb9c8}
 <main class="island">
   <div class="head"><div class="title">${escapeHtml(title)}</div><div class="status">${escapeHtml(statusText)}</div></div>
   <ul>${rows}</ul>
-  ${hiddenCount > 0 ? `<div class="more">还有 ${hiddenCount} 个任务</div>` : ""}
+  ${hiddenCount > 0 ? `<div class="more">${escapeHtml(t("desktopPet.activity.moreTasks", { count: hiddenCount }))}</div>` : ""}
 </main>
 </body>
 </html>`;
@@ -431,7 +433,8 @@ export function hideDesktopClipboardPalette(pluginId?: string) {
 }
 
 export function showDesktopPetBanner(app: App, input: DesktopPetBannerInput = {}) {
-  const message = String(input.message || "该休息一下啦").trim() || "该休息一下啦";
+  const defaultMessage = t("desktopPet.banner.defaultMessage");
+  const message = String(input.message || defaultMessage).trim() || defaultMessage;
   const durationMs = clampDurationMs(input.durationMs, 9000, 30000);
   if (input.motion && input.motion !== "center-cross") {
     throw new Error("desktopPet.runBanner only supports center-cross motion");
@@ -506,8 +509,10 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
 }
 
 export function showSystemUpdateOverlay(input: SystemUpdateOverlayInput = {}) {
-  const title = String(input.title || "系统正在升级").trim() || "系统正在升级";
-  const message = String(input.message || "请保持电源连接，系统正在应用更新。").trim() || "请保持电源连接，系统正在应用更新。";
+  const defaultTitle = t("desktopPet.systemUpdate.title");
+  const defaultMessage = t("desktopPet.systemUpdate.message");
+  const title = String(input.title || defaultTitle).trim() || defaultTitle;
+  const message = String(input.message || defaultMessage).trim() || defaultMessage;
   const durationMs = clampDurationMs(input.durationMs, 60000, 300000);
   const allowEscape = input.allowEscape !== false;
   const display = screen.getPrimaryDisplay();

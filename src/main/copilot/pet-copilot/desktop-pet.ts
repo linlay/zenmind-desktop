@@ -20,7 +20,6 @@ import {
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DEFAULT_DESKTOP_PET_SELECTED_ID,
   DESKTOP_PET_USER_ASSET_PROTOCOL,
-  DESKTOP_PET_DONE_FALLBACK_TEXT,
   DESKTOP_PET_APPEARANCE_OPTIONS,
   DESKTOP_PET_REQUIRED_STATE_KEYS,
   DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES,
@@ -37,6 +36,7 @@ import {
   sanitizeDesktopPetUnreadCount,
   truncateDesktopPetReplyPreview
 } from "../../../shared/desktop-pet";
+import { t } from "../../i18n/main-i18n";
 import {
   getDesktopPetSettingsPath as resolveDesktopPetSettingsPath,
   getDesktopPetsDataRoot,
@@ -254,7 +254,7 @@ export function getDesktopPetContextMenuItems(
       })),
     {
       action: "hide",
-      label: "关闭宠物"
+      label: t("desktopPet.context.close")
     }
   ];
 }
@@ -757,10 +757,10 @@ function getAgentStatusHint(agentStatus: DesktopPetBoundAgentStatus | null) {
     return "";
   }
   if (agentStatus.hasPendingAwaiting || agentStatus.presence === "busy") {
-    return "思考中";
+    return t("desktopPet.status.thinking");
   }
   if (agentStatus.presence === "away") {
-    return sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || DESKTOP_PET_DONE_FALLBACK_TEXT;
+    return sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || t("desktopPet.doneFallback");
   }
   return "";
 }
@@ -771,7 +771,7 @@ function normalizeLocalDesktopPetStatus(
   if (localStatus.status === "done") {
     return {
       status: "done",
-      hint: localStatus.hint.trim() || DESKTOP_PET_DONE_FALLBACK_TEXT,
+      hint: localStatus.hint.trim() || t("desktopPet.doneFallback"),
       messagePreview: "",
       unreadCount: sanitizeDesktopPetUnreadCount(localStatus.unreadCount),
       chatId: localStatus.chatId
@@ -780,7 +780,7 @@ function normalizeLocalDesktopPetStatus(
   if (localStatus.status === "error") {
     return {
       status: "error",
-      hint: localStatus.hint.trim() || "出错了",
+      hint: localStatus.hint.trim() || t("desktopPet.status.error"),
       messagePreview: "",
       unreadCount: sanitizeDesktopPetUnreadCount(localStatus.unreadCount),
       chatId: localStatus.chatId
@@ -789,7 +789,7 @@ function normalizeLocalDesktopPetStatus(
   if (localStatus.status === "awaiting") {
     return {
       status: "awaiting",
-      hint: localStatus.hint.trim() || "等待你确认",
+      hint: localStatus.hint.trim() || t("desktopPet.status.awaitingConfirm"),
       messagePreview: "",
       unreadCount: sanitizeDesktopPetUnreadCount(localStatus.unreadCount),
       chatId: localStatus.chatId
@@ -798,7 +798,7 @@ function normalizeLocalDesktopPetStatus(
   if (localStatus.status === "running") {
     return {
       status: "running",
-      hint: "思考中",
+      hint: t("desktopPet.status.thinking"),
       messagePreview: "",
       unreadCount: sanitizeDesktopPetUnreadCount(localStatus.unreadCount),
       chatId: localStatus.chatId
@@ -856,7 +856,7 @@ function resolveMergedDesktopPetStatus(
           ? "running"
         : "idle";
     const awaitingHint = status === "awaiting"
-      ? sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || "等待你确认"
+      ? sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || t("desktopPet.status.awaitingConfirm")
       : hint;
     return {
       status,

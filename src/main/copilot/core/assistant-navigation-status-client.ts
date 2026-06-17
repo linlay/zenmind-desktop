@@ -11,6 +11,7 @@ import type {
   ServiceState
 } from "../../../shared/contracts";
 import { getDesktopDeviceId } from "../../device-identity";
+import { t } from "../../i18n/main-i18n";
 
 type AgentPlatformApiResponse<T> = {
   code?: number;
@@ -502,7 +503,7 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
     return null;
   }
   const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
-  const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || "新的对话";
+  const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || t("assistant.newChat");
   return {
     chatId,
     chatName,
@@ -743,7 +744,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   }
   const preview = readPushPreview(event);
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
-  const chatName = toText(event.chatName) || current?.chatName || preview || "新的对话";
+  const chatName = toText(event.chatName) || current?.chatName || preview || t("assistant.newChat");
   const updatedAt = readPushUpdatedAt(event, current?.updatedAt || nowIso());
   let isRead = current?.isRead ?? true;
   if (event.type === "chat.read") {
@@ -764,7 +765,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     agentKey,
     updatedAt,
     lastRunId: toText(event.lastRunId) || toText(event.runId) || current?.lastRunId || "",
-    lastRunContent: preview || current?.lastRunContent || (event.type === "run.start" ? "思考中" : ""),
+    lastRunContent: preview || current?.lastRunContent || (event.type === "run.start" ? t("desktopPet.status.thinking") : ""),
     isRead,
     hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
     hasPendingAwaiting,
@@ -946,7 +947,7 @@ export class AssistantNavigationStatusClient {
   private latestResult: AssistantNavAgentItemsResult = {
     ok: false,
     items: [],
-    message: "智能助理导航状态尚未初始化。",
+    message: t("assistant.navigationStatusUninitialized"),
     updatedAt: nowIso()
   };
   private lastBaseUrl = "";
@@ -1000,7 +1001,7 @@ export class AssistantNavigationStatusClient {
         this.setSnapshot({
           ok: false,
           items: [],
-          message: "agent-platform 暂未运行。",
+          message: t("agentPlatform.notRunning"),
           updatedAt: nowIso()
         });
         this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
@@ -1013,7 +1014,7 @@ export class AssistantNavigationStatusClient {
         this.setSnapshot({
           ok: false,
           items: [],
-          message: tokenResult.message || "缺少 agent-platform access token。",
+          message: tokenResult.message || t("agentPlatform.accessTokenMissing"),
           updatedAt: nowIso()
         });
         this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
@@ -1024,7 +1025,7 @@ export class AssistantNavigationStatusClient {
       this.setSnapshot({
         ok: true,
         items,
-        message: "已读取智能助手导航状态。",
+        message: t("assistant.navigationStatusRead"),
         updatedAt: nowIso()
       });
       this.connectWebSocket(baseUrl, token);
@@ -1101,7 +1102,7 @@ export class AssistantNavigationStatusClient {
       this.setSnapshot({
         ok: true,
         items: next.items,
-        message: "已同步智能助手导航通知。",
+        message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowIso()
       });
     }

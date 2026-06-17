@@ -70,6 +70,7 @@ import {
   readCurrentPageCdpLocation,
   type CurrentPageCdpElementSnapshot
 } from "./current-page-cdp-executor";
+import { t } from "./i18n/main-i18n";
 
 type DesktopActionBridgeOptions = {
   app: App;
@@ -125,21 +126,24 @@ const MAX_BODY_BYTES = 256 * 1024;
 const PAGE_CONTROL_GRANT_TTL_MS = 10 * 60 * 1000;
 const PAGE_CONTROL_LOW_RISK_INTERACTIONS = new Set(["fill", "scroll", "focus", "select"]);
 const PAGE_CONTROL_HIGH_RISK_PATTERN =
-  /(提交|删除|移除|清空|支付|付款|购买|下单|订单|确认订单|退款|转账|授权|确认授权|同意授权|安装|卸载|启动|停止|重启|发布|发送|保存|登录|注册|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
-const AGENT_PLATFORM_AUTH_FAILURE_MESSAGE = "agent-platform 鉴权失败，请重启智能体平台后重试。";
+  /(\u63d0\u4ea4|\u5220\u9664|\u79fb\u9664|\u6e05\u7a7a|\u652f\u4ed8|\u4ed8\u6b3e|\u8d2d\u4e70|\u4e0b\u5355|\u8ba2\u5355|\u786e\u8ba4\u8ba2\u5355|\u9000\u6b3e|\u8f6c\u8d26|\u6388\u6743|\u786e\u8ba4\u6388\u6743|\u540c\u610f\u6388\u6743|\u5b89\u88c5|\u5378\u8f7d|\u542f\u52a8|\u505c\u6b62|\u91cd\u542f|\u53d1\u5e03|\u53d1\u9001|\u4fdd\u5b58|\u767b\u5f55|\u6ce8\u518c|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
 let activeServer: http.Server | null = null;
 
+function agentPlatformAuthFailureMessage() {
+  return t("desktopAction.agentPlatformAuthFailed");
+}
+
 const agentWebclientHelpTopicTitles = new Map([
-  ["agents", "智能体"],
-  ["schedules", "自动化"],
-  ["memory", "记忆管理"],
-  ["copilot", "智能助理"]
+  ["agents", "nav.agents"],
+  ["schedules", "nav.schedules"],
+  ["memory", "nav.memory"],
+  ["copilot", "service.display.agentWebclient"]
 ]);
 
 function createAgentWebclientHelpTopics() {
   return AGENT_WEBCLIENT_ROUTE_DEFINITIONS.map((route) => ({
     id: route.key,
-    title: agentWebclientHelpTopicTitles.get(route.key) ?? route.key,
+    title: t((agentWebclientHelpTopicTitles.get(route.key) ?? route.key) as any),
     route: route.routePath
   }));
 }
@@ -498,7 +502,7 @@ async function fetchAgentPlatformWithAuth<T>(
       if (reason === "missing") {
         continue;
       }
-      throw new Error(AGENT_PLATFORM_AUTH_FAILURE_MESSAGE);
+      throw new Error(agentPlatformAuthFailureMessage());
     }
     if (!response.ok) {
       throw new Error(text || `agent-platform returned HTTP ${response.status}`);
@@ -506,7 +510,7 @@ async function fetchAgentPlatformWithAuth<T>(
     return unwrapPlatformResponse<T>(payload);
   }
 
-  throw new Error(AGENT_PLATFORM_AUTH_FAILURE_MESSAGE);
+  throw new Error(agentPlatformAuthFailureMessage());
 }
 
 export async function callAgentPlatform<T>(
@@ -535,15 +539,15 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
   const providedSummary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
     : "";
-  const summary = providedSummary || buildStaticServerConfirmationSummary(action, args) || `允许智能体执行 ${action}？`;
+  const summary = providedSummary || buildStaticServerConfirmationSummary(action, args) || t("desktopAction.confirmSummary", { action });
   const dialogOptions = {
     type: "question" as const,
-    buttons: ["执行", "取消"],
+    buttons: [t("desktopAction.confirmExecute"), t("common.cancel")],
     defaultId: 1,
     cancelId: 1,
-    title: "确认 Desktop 动作",
+    title: t("desktopAction.confirmActionTitle"),
     message: summary,
-    detail: "该动作由本地 Desktop Action Bridge 发起。请确认目标和影响后再执行。"
+    detail: t("desktopAction.confirmActionDetail")
   };
   const result = owner && !owner.isDestroyed()
     ? await dialog.showMessageBox(owner, dialogOptions)
@@ -553,18 +557,23 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
 
 function buildStaticServerConfirmationSummary(action: string, args: Record<string, unknown>) {
   if (action === "desktop.staticServer.start") {
-    const rootDir = readString(args, "rootDir") || "(未提供)";
+    const rootDir = readString(args, "rootDir") || t("desktopAction.missingValue");
     const rawPort = args.port === undefined || args.port === null || args.port === "" ? "" : String(args.port);
     const target = rawPort ? `http://127.0.0.1:${rawPort}/` : "http://127.0.0.1:<auto>/";
-    return `启动 Desktop 静态服务器？\n目录：${rootDir}\n目标：${target}`;
+    return t("desktopAction.staticServerStartSummary", { rootDir, target });
   }
   if (action === "desktop.staticServer.stop" || action === "desktop.staticServer.restart") {
     const siteId = readString(args, "siteId");
     const state = staticSiteHostManager.list().find((item) => item.siteId === siteId);
-    const verb = action.endsWith(".restart") ? "重启" : "停止";
-    const rootDir = state?.rootDir || "(未知)";
-    const target = state?.webUrl || (state?.requestedPort ? `http://127.0.0.1:${state.requestedPort}/` : "(未运行)");
-    return `${verb} Desktop 静态服务器？\n站点：${siteId || "(未提供)"}\n目录：${rootDir}\n目标：${target}`;
+    const verb = action.endsWith(".restart") ? t("desktopAction.staticServerRestart") : t("desktopAction.staticServerStop");
+    const rootDir = state?.rootDir || t("desktopAction.unknownValue");
+    const target = state?.webUrl || (state?.requestedPort ? `http://127.0.0.1:${state.requestedPort}/` : t("desktopAction.notRunningValue"));
+    return t("desktopAction.staticServerControlSummary", {
+      verb,
+      siteId: siteId || t("desktopAction.missingValue"),
+      rootDir,
+      target
+    });
   }
   return "";
 }
@@ -576,19 +585,19 @@ async function confirmPageControlAction(
 ): Promise<PageControlConfirmationDecision> {
   const summary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
-    : `允许桌面助理操作 ${scope.origin} 页面？`;
+    : t("desktopAction.pageControlSummary", { origin: scope.origin });
   const targetLabel = [scope.surfaceLabel, scope.pageTitle].filter(Boolean).join(" · ") || scope.origin;
   const dialogOptions = {
     type: "question" as const,
-    buttons: ["允许本次页面操作", "仅执行这一步", "取消"],
+    buttons: [t("desktopAction.pageControlGrant"), t("desktopAction.pageControlOnce"), t("common.cancel")],
     defaultId: 1,
     cancelId: 2,
-    title: "允许页面操作",
+    title: t("desktopAction.pageControlTitle"),
     message: summary,
     detail: [
-      `目标：${targetLabel}`,
-      "允许后，当前聊天和智能体可在 10 分钟内继续填写、滚动、聚焦、选择和低风险点击这个 webview 页面。",
-      "提交、删除、支付、安装、服务启停等高风险动作仍会单独确认。"
+      t("desktopAction.pageControlTarget", { target: targetLabel }),
+      t("desktopAction.pageControlGrantDetail"),
+      t("desktopAction.pageControlHighRiskDetail")
     ].join("\n")
   };
   const result = owner && !owner.isDestroyed()
@@ -762,7 +771,7 @@ async function confirmDesktopActionIfNeeded(
         ok: false,
         action,
         requiresConfirmation: true,
-        error: actionError("user_cancelled", "用户取消了页面操作授权。")
+        error: actionError("user_cancelled", t("desktopAction.userCancelledAuth"))
       };
     }
   }
@@ -774,7 +783,7 @@ async function confirmDesktopActionIfNeeded(
     ok: false,
     action,
     requiresConfirmation: true,
-    error: actionError("user_cancelled", "用户取消了 Desktop 动作。")
+    error: actionError("user_cancelled", t("desktopAction.userCancelled"))
   };
 }
 
@@ -953,7 +962,7 @@ async function executeAction(
       return ok(action, await options.openLogViewer({
         serviceId: readServiceId(args),
         target: readString(args, "target") === "error" ? "error" : "main",
-        title: readString(args, "title") || "日志文件"
+        title: readString(args, "title") || t("service.logFile")
       }));
     case "desktop.controlCenter.installService": {
       await installBuiltinService(options.app, readServiceId(args));
@@ -1020,13 +1029,13 @@ async function executeAction(
     case "desktop.market.uninstallItem":
       return ok(action, await uninstallMarketItem(options.app, readItemId(args)));
     case "desktop.market.importSkill":
-      return fail(action, "interactive_file_picker_required", "本地导入需要用户在 Desktop 文件选择器中操作，暂不通过 HTTP bridge 执行。");
+      return fail(action, "interactive_file_picker_required", t("desktopAction.marketImportRequiresPicker"));
     case "desktop.market.importSandboxImage":
-      return fail(action, "interactive_file_picker_required", "沙箱镜像导入需要用户在 Desktop 文件选择器中操作，暂不通过 HTTP bridge 执行。");
+      return fail(action, "interactive_file_picker_required", t("desktopAction.sandboxImportRequiresPicker"));
     case "desktop.market.exportSandboxImage": {
       const targetPath = readString(args, "targetPath");
       if (!targetPath) {
-        return fail(action, "target_path_required", "沙箱镜像导出需要提供 targetPath。");
+        return fail(action, "target_path_required", t("desktopAction.sandboxExportTargetRequired"));
       }
       return ok(action, await exportSandboxImageToPath(options.app, readItemId(args), targetPath));
     }
@@ -1043,11 +1052,11 @@ async function executeAction(
       return ok(action, {
         query: readString(args, "query"),
         topics: [
-          { id: "control-center", title: "控制中心", route: "/control-center" },
-          { id: "market", title: "功能市场", route: "/market" },
+          { id: "control-center", title: t("desktopAction.helpControlCenter"), route: "/control-center" },
+          { id: "market", title: t("desktopAction.helpMarket"), route: "/market" },
           ...createAgentWebclientHelpTopics(),
-          { id: "settings", title: "设置", route: "/settings" },
-          { id: "help", title: "帮助", route: "/help" }
+          { id: "settings", title: t("desktopAction.helpSettings"), route: "/settings" },
+          { id: "help", title: t("desktopAction.helpHelp"), route: "/help" }
         ]
       });
     case "desktop.help.openTopic":
@@ -1060,7 +1069,13 @@ async function executeAction(
       return ok(action, { route });
     }
     case "desktop.help.suggestNextAction":
-      return ok(action, { suggestions: ["查看当前页面上下文", "检查设置项", "打开相关页面"] });
+      return ok(action, {
+        suggestions: [
+          t("desktopAction.suggestionCurrentPage"),
+          t("desktopAction.suggestionSettings"),
+          t("desktopAction.suggestionRelatedPage")
+        ]
+      });
     case "desktop.agents.listAgents":
       return ok(action, await options.assistantBridge.listAgents());
     case "desktop.agents.getAgentDetail":
@@ -1068,9 +1083,9 @@ async function executeAction(
     case "desktop.agents.validateAgentConfig":
       return ok(action, validateAgentConfig(args));
     case "desktop.agents.previewAgentConfigPatch":
-      return preview(action, { key: readAgentKey(args), patch: asRecord(args.patch), warning: "预览仅展示请求 patch，不在 Desktop 端合并任意字段。" });
+      return preview(action, { key: readAgentKey(args), patch: asRecord(args.patch), warning: t("desktopAction.previewPatchWarning") });
     case "desktop.agents.applyAgentConfigPatch":
-      return fail(action, "unsupported_action", "请使用 desktop.agents.updateAgent 提交完整 definition。");
+      return fail(action, "unsupported_action", t("desktopAction.updateAgentRequired"));
     case "desktop.agents.createAgentDraft":
       return preview(action, {
         key: readString(args, "key"),
@@ -1135,7 +1150,7 @@ async function handleActionCall(
       snapshot?.pageKey &&
       request.expectedPageKey !== snapshot.pageKey
     ) {
-      return fail(action, "stale_page_target", "当前页面已切换，请刷新调试目标后重试。", {
+      return fail(action, "stale_page_target", t("desktopAction.stalePageTarget"), {
         expectedPageKey: request.expectedPageKey,
         currentPageKey: snapshot.pageKey
       });

@@ -14,6 +14,7 @@ import {
   updateTaskBoardIssueByRunId
 } from "./task-board-store";
 import { PRODUCT_NAME } from "../shared/generated/brand";
+import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
   getPath(name: "home"): string;
@@ -161,7 +162,11 @@ export function syncTaskBoardIssueFromAssistantEvent(
   }
 
   const result = chatResult ?? runResult;
-  if (result && result.message !== "任务运行不存在。" && result.message !== "任务会话不存在。") {
+  if (
+    result &&
+    result.message !== t("taskBoard.runtime.runMissing") &&
+    result.message !== t("taskBoard.runtime.chatMissing")
+  ) {
     console.warn(`[task-board] failed to sync assistant run ${event.runId ?? event.chatId}: ${result.message}`);
   }
 }
@@ -183,16 +188,16 @@ function buildTaskBoardAutomationMessage(issue: TaskBoardIssue) {
   return [
     message,
     "",
-    `关联 ${PRODUCT_NAME} 任务看板任务：`,
-    `任务编号：${issue.id}`,
-    `标题：${issue.title}`
+    t("taskBoard.automation.messageIntro", { productName: PRODUCT_NAME }),
+    t("taskBoard.automation.issueId", { id: issue.id }),
+    t("taskBoard.automation.issueTitle", { title: issue.title })
   ].join("\n");
 }
 
 export function buildTaskBoardAutomationPayload(issue: TaskBoardIssue) {
   return {
-    name: `任务看板 ${issue.id}: ${issue.title}`.slice(0, 120),
-    description: `来自 ${PRODUCT_NAME} Desktop 任务看板：${issue.id}`,
+    name: t("taskBoard.automation.name", { id: issue.id, title: issue.title }).slice(0, 120),
+    description: t("taskBoard.automation.description", { productName: PRODUCT_NAME, id: issue.id }),
     cron: issue.automationCron?.trim() ?? "",
     agentKey: issue.assigneeAgentKey?.trim() ?? "",
     enabled: true,
@@ -221,7 +226,7 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
   if (!issue) {
     return {
       ok: false,
-      message: "任务不存在。",
+      message: t("taskBoard.runtime.missing"),
       issues: currentTaskBoardIssues(app)
     };
   }
@@ -242,21 +247,21 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
   if (!issue.assigneeAgentKey?.trim()) {
     return {
       ok: false,
-      message: "请选择智能体后再启用定时任务。",
+      message: t("taskBoard.automation.assigneeRequired"),
       issues: currentTaskBoardIssues(app)
     };
   }
   if (!issue.automationCron?.trim()) {
     return {
       ok: false,
-      message: "请设置自动化 cron。",
+      message: t("taskBoard.automation.cronRequired"),
       issues: currentTaskBoardIssues(app)
     };
   }
   if (!issue.automationMessage?.trim()) {
     return {
       ok: false,
-      message: "请填写自动化要执行的内容。",
+      message: t("taskBoard.automation.messageRequired"),
       issues: currentTaskBoardIssues(app)
     };
   }
@@ -275,7 +280,7 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
   if (!automationId) {
     return {
       ok: false,
-      message: "agent-platform 未返回自动化 ID。",
+      message: t("taskBoard.automation.platformIdMissing"),
       issues: currentTaskBoardIssues(app)
     };
   }
@@ -301,7 +306,9 @@ export async function deleteTaskBoardIssueWithAutomation<TApp extends AppPathPro
     } catch (error) {
       return {
         ok: false,
-        message: `自动化删除失败：${error instanceof Error ? error.message : String(error)}`,
+        message: t("taskBoard.automation.deleteFailed", {
+          message: error instanceof Error ? error.message : String(error)
+        }),
         issues: currentIssues
       };
     }

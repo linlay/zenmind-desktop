@@ -31,6 +31,14 @@ export function setMainLocale(app: App, locale: unknown): LocaleSettings {
   return settings;
 }
 
+export function setMainLocaleForCurrentProcess(locale: unknown): LocaleSettings {
+  const normalized = normalizeLocale(locale) ?? DEFAULT_LOCALE;
+  currentLocale = normalized;
+  currentSettings = { locale: normalized, source: "default" };
+  currentTranslator = createTranslator(currentLocale);
+  return currentSettings;
+}
+
 export function t(...args: Parameters<typeof currentTranslator>) {
   return currentTranslator(...args);
 }

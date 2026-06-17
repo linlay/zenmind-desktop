@@ -723,7 +723,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     }
     const service = selectedDetailItem.type === "plugin" ? serviceById.get(selectedDetailItem.id) ?? null : null;
     const displayName = selectedDetailItem.type === "plugin"
-      ? getServiceDisplayName(selectedDetailItem.id, selectedDetailItem.name)
+      ? getServiceDisplayName(selectedDetailItem.id, selectedDetailItem.name, t)
       : selectedDetailItem.name;
     const description = marketCardDescription(selectedDetailItem);
     const rows = storefrontDetailRows(selectedDetailItem, service, t);
@@ -802,7 +802,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
 
   function renderCard(item: MarketItem) {
     const service = item.type === "plugin" ? serviceById.get(item.id) ?? null : null;
-    const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name) : item.name;
+    const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name, t) : item.name;
     const description = marketCardDescription(item);
     const platformChip = platformSummary(item);
     const favoriteKey = `${item.type}:${item.id}`;

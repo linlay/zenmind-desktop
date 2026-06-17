@@ -2964,13 +2964,19 @@ test("market route disables the global drag overlay above toolbar controls", () 
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
 });
 
-test("embedded H5 routes do not restore a mac window drag lane over page controls", () => {
+test("embedded H5 routes keep a thin global window drag lane", () => {
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
 
+  assert.match(appShell, /usesEmbeddedSurface/);
+  assert.match(appShell, /has-embedded-surface/);
   assert.match(appShell, /usesPluginSurface/);
   assert.match(appShell, /has-plugin-surface/);
-  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*height:\s*6px;/);
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
+  );
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{/
@@ -2996,6 +3002,7 @@ test("window drag uses css-only app-region approach", () => {
     globalStyles,
     /\.app-window-drag-region\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
   );
+  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*height:\s*24px;/);
   assert.match(
     globalStyles,
     /\.sidebar-chrome-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
@@ -3728,6 +3735,10 @@ test("desktop pet appearance picker confirms persistence before success feedback
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),
     "utf8"
   );
+  const settingsPageCss = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.css"),
+    "utf8"
+  );
 
   assert.match(settingsPage, /const desktopPetSupported = isMac \|\| isWindows;/);
   assert.match(settingsPage, /if \(!desktopPetSupported\) \{[\s\S]{0,120}return;/);
@@ -3744,6 +3755,14 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.match(settingsPage, /disabled=\{!desktopPetEnabled \|\| selected \|\| Boolean\(desktopPetAppearancePending\)\}/);
   assert.match(settingsPage, /let actionLabel = t\("settings\.desktopPet\.select"\)/);
   assert.match(settingsPage, /actionLabel = desktopPetEnabled \? t\("settings\.desktopPet\.selected"\) : t\("settings\.desktopPet\.saved"\)/);
+  assert.match(settingsPage, /const idlePreviewAsset = appearance\.states\.idle;/);
+  assert.match(settingsPage, /const idlePreviewFrameCount = Math\.max\(1,\s*Math\.round\(Number\(idlePreviewAsset\?\.frameCount\) \|\| 1\)\);/);
+  assert.match(settingsPage, /idlePreviewAsset\?\.path === appearance\.preview && idlePreviewFrameCount > 1/);
+  assert.match(settingsPage, /className="desktop-pet-appearance-sprite"/);
+  assert.match(settingsPage, /backgroundImage:\s*`url\("\$\{appearance\.previewUrl\}"\)`/);
+  assert.match(settingsPageCss, /\.desktop-pet-appearance-sprite\s*\{[\s\S]{0,120}width:\s*40px;[\s\S]{0,80}height:\s*43px;/);
+  assert.match(settingsPageCss, /background-size:\s*calc\(40px \* var\(--desktop-pet-appearance-preview-frames,\s*1\)\) 43px;/);
+  assert.match(settingsPageCss, /background-position:\s*0 0;/);
   assert.doesNotMatch(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
   assert.doesNotMatch(settingsPage, /\?\?\s*"小宅"/);
 });

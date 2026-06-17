@@ -8,6 +8,7 @@ import type {
   AssistantDocumentFormat,
   AssistantDocumentReadStatus
 } from "../../../shared/contracts";
+import { t } from "../../i18n/main-i18n";
 
 const DEFAULT_MAX_CHARS = 20000;
 const TEXT_PREVIEW_BYTES = 512 * 1024;
@@ -229,7 +230,7 @@ function readUtf8Text(filePath: string) {
     const bytesRead = fs.readSync(descriptor, buffer, 0, bytesToRead, 0);
     const slice = buffer.subarray(0, bytesRead);
     if (!TEXT_EXTENSIONS.has(path.extname(filePath).toLowerCase()) && !looksLikeText(slice)) {
-      throw Object.assign(new Error("该文件看起来不是可直接读取的 UTF-8 文本。"), {
+      throw Object.assign(new Error(t("attachment.document.notUtf8Text")), {
         code: "unsupported_binary"
       });
     }
@@ -614,7 +615,9 @@ async function readZip(filePath: string): Promise<ExtractedText> {
     }
   }
   const intro = textFileCount > 0
-    ? `ZIP 文本文件清单：${sections.map((section) => section.split("\n", 1)[0].replace(/^File: /u, "")).join("、")}`
+    ? t("attachment.document.zipTextList", {
+      files: sections.map((section) => section.split("\n", 1)[0].replace(/^File: /u, "")).join(t("common.nameSeparator"))
+    })
     : "";
   return {
     text: [intro, ...sections].filter(Boolean).join("\n\n"),
@@ -642,7 +645,7 @@ async function extractReadableText(filePath: string, format: AssistantDocumentFo
     case "image":
     case "binary":
     default:
-      throw Object.assign(new Error("暂不支持解析该二进制格式。"), {
+      throw Object.assign(new Error(t("attachment.document.unsupportedBinary")), {
         code: "unsupported_binary"
       });
   }
@@ -651,13 +654,13 @@ async function extractReadableText(filePath: string, format: AssistantDocumentFo
 function unreadableMessage(errorCode: string) {
   switch (errorCode) {
     case "scanned_pdf_no_text":
-      return "该 PDF 没有可复制文字，可能是扫描件；将尝试渲染页图并交给 MiniMax 图片理解接口识别。";
+      return t("attachment.document.scannedPdfNoText");
     case "unsupported_binary":
-      return "该附件已保存，但当前版本暂不支持解析这种二进制格式。";
+      return t("attachment.document.savedUnsupportedBinary");
     case "empty_document":
-      return "该附件已保存，但没有提取到可读文本。";
+      return t("attachment.document.savedEmpty");
     default:
-      return "该附件已保存，但解析时未能提取到可读文本。";
+      return t("attachment.document.savedUnreadable");
   }
 }
 

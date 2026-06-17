@@ -14,6 +14,7 @@ import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunne
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot } from "../user-paths";
 import { readWebOrderKeys, writeWebOrderKeys } from "../webs/web-order-store";
+import { t } from "../i18n/main-i18n";
 
 export interface SettingsIpcHandlerOptions {
   app: any;
@@ -125,7 +126,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     const nextEnabled = enabled === true;
     if (nextEnabled) {
       if (!startDesktopWsServer) {
-        return desktopWsServerState(false, getDesktopWsServerRuntimeState?.(), "Desktop WS Server 调试功能不可用。");
+        return desktopWsServerState(false, getDesktopWsServerRuntimeState?.(), t("settings.about.desktopWs.unavailable"));
       }
       try {
         const runtimeState = await startDesktopWsServer();
@@ -184,7 +185,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     if (!resetRuntimeEnv) {
       return {
         ok: false,
-        message: "运行环境重置功能不可用。",
+        message: t("settings.reset.unavailable"),
         runtimeRoot: "",
         copiedFiles: 0,
         skippedFiles: 0
@@ -196,8 +197,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
       return {
         ok: true,
         message: result.backupPath
-          ? `运行环境已重置。旧目录已备份到：${result.backupPath}。请重启应用。`
-          : "运行环境已重置。请重启应用。",
+          ? t("settings.reset.successWithBackup", { path: result.backupPath })
+          : t("settings.reset.success"),
         runtimeRoot: result.targetRoot,
         backupPath: result.backupPath,
         copiedFiles: result.copiedFiles,
@@ -271,7 +272,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
   });
   ipcMain.handle("settings.createAppPairingPayload", async () => {
     if (!createAppPairingPayload) {
-      return { ok: false, message: "App 配对功能不可用。" };
+      return { ok: false, message: t("settings.mobilePairing.unavailable") };
     }
     return createAppPairingPayload(app);
   });

@@ -702,6 +702,17 @@
   transform: translateY(4px);
 }
 
+.settings-page .settings-pet-appearance-row .desktop-pet-appearance-sprite,
+.settings-page .desktop-pet-appearance-row .desktop-pet-appearance-sprite {
+  display: block;
+  width: 40px;
+  height: 43px;
+  background-repeat: no-repeat;
+  background-size: calc(40px * var(--desktop-pet-appearance-preview-frames, 1)) 43px;
+  background-position: 0 0;
+  transform: translateY(4px);
+}
+
 .settings-page .settings-pet-appearance-row .desktop-pet-appearance-copy,
 .settings-page .desktop-pet-appearance-row .desktop-pet-appearance-copy {
   display: flex;

@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { RendererI18nContext, type RendererI18nContextValue } from "./i18n/i18n-context";
 
 type AppErrorBoundaryProps = {
   resetKey: string;
@@ -10,6 +11,9 @@ type AppErrorBoundaryState = {
 };
 
 export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
+  static contextType = RendererI18nContext;
+  declare context: RendererI18nContextValue;
+
   state: AppErrorBoundaryState = {
     error: null
   };
@@ -46,19 +50,20 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     if (!this.state.error) {
       return this.props.children;
     }
+    const { t } = this.context;
 
     return (
       <div className="app-error-screen">
         <div className="app-error-panel">
-          <h1>页面遇到错误</h1>
-          <p>Desktop 已捕获这次异常，日志会写到主进程控制台。你可以重新加载，或先进入控制中心处理服务状态。</p>
+          <h1>{t("appError.title")}</h1>
+          <p>{t("appError.description")}</p>
           <div className="app-error-detail">{this.state.error.message}</div>
           <div className="app-error-actions">
             <button type="button" className="action-button" onClick={this.reloadWindow}>
-              重新加载
+              {t("appError.reload")}
             </button>
             <button type="button" className="text-button" onClick={this.openControlCenter}>
-              进入控制中心
+              {t("appError.openControlCenter")}
             </button>
           </div>
         </div>

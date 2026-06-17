@@ -14,6 +14,7 @@ import type { ServiceDefinition } from "./manifest-utils";
 import { getService } from "./services/service-registry";
 import { getInstallDir, getServiceLayout } from "./services/manager/layout";
 import { staticSiteHostManager } from "./static-site-host-manager";
+import { t } from "./i18n/main-i18n";
 
 const PLUGIN_SETTINGS_FILE = "settings.json";
 
@@ -233,8 +234,8 @@ export function writePluginSettingsValues(
   return {
     ...nextSnapshot,
     message: restartRequired
-      ? `${service.name} 设置已保存，部分设置需重启插件后生效。`
-      : `${service.name} 设置已保存。`,
+      ? t("pluginSettings.savedRestartRequired", { name: service.name })
+      : t("pluginSettings.saved", { name: service.name }),
     restartRequired,
     changedKeys
   };
@@ -259,7 +260,7 @@ export async function openPluginSettingsPage(app: App, serviceId: ServiceId) {
   if (!customHtmlPath) {
     return {
       ok: false,
-      message: `${service.name} 未声明自定义设置页。`,
+      message: t("pluginSettings.customPageMissing", { name: service.name }),
       serviceId: service.id
     };
   }
@@ -271,14 +272,14 @@ export async function openPluginSettingsPage(app: App, serviceId: ServiceId) {
   } catch {
     return {
       ok: false,
-      message: `自定义设置页不存在：${customHtmlPath}`,
+      message: t("pluginSettings.customPageNotFound", { path: customHtmlPath }),
       serviceId: service.id
     };
   }
   if (!stat.isFile()) {
     return {
       ok: false,
-      message: `自定义设置页不是文件：${customHtmlPath}`,
+      message: t("pluginSettings.customPageNotFile", { path: customHtmlPath }),
       serviceId: service.id
     };
   }
@@ -291,7 +292,7 @@ export async function openPluginSettingsPage(app: App, serviceId: ServiceId) {
   });
   return {
     ok: true,
-    message: `${service.name} 设置页已准备好。`,
+    message: t("pluginSettings.customPageReady", { name: service.name }),
     serviceId: service.id,
     url: state.webUrl
   };

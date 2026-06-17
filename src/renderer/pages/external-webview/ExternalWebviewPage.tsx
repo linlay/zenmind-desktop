@@ -46,6 +46,7 @@ import {
   registerCurrentPageExecutor,
   registerDesktopActionProviderForScope
 } from "../../services/desktopActionRegistry";
+import { useI18n } from "../../i18n/useI18n";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
   EMBEDDED_WEB_READ_INCLUDES,
@@ -487,6 +488,7 @@ function ExternalWebviewPane({
 }
 
 export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabel, chrome = "browser" }: ExternalWebviewPageProps) {
+  const { t } = useI18n();
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
   const appChrome = chrome === "app";
@@ -1008,13 +1010,13 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
 
   async function executeActiveWebviewScript(args: Record<string, unknown>, script: string) {
     if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
-      return embeddedError("script_too_large", "脚本超过内嵌网站执行大小限制。");
+      return embeddedError("script_too_large", t("externalWebview.error.scriptTooLarge"));
     }
 
     const tabId = readTargetTabId(args);
     const targetWebview = webviewRefs.current.get(tabId);
     if (!targetWebview) {
-      return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+      return embeddedError("tab_unavailable", t("externalWebview.error.tabUnavailable"), { tabId });
     }
 
     const result = await targetWebview.executeJavaScript(script, true);
@@ -1179,7 +1181,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     const selector = readActionSelector(args);
     const action = typeof args.action === "string" ? args.action.trim() : "";
     if (!selector || !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)) {
-      return embeddedError("invalid_args", "selector 和有效的 action 是必填项。", args);
+      return embeddedError("invalid_args", t("desktopAction.selectorActionRequired"), args);
     }
     const response = await executeActiveWebviewScript(args, buildInteractElementScript({
       selector,
@@ -1202,7 +1204,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   async function executeCurrentPageFillForm(args: Record<string, unknown>) {
     const fields = readFormFields(args);
     if (fields.length === 0) {
-      return embeddedError("invalid_args", "fields 是必填项，且每个字段都需要 selector。", args);
+      return embeddedError("invalid_args", t("desktopAction.fieldsSelectorRequired"), args);
     }
     const response = await executeActiveWebviewScript(args, buildFillFormScript({
       formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,
@@ -1341,19 +1343,19 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         case "desktop.embeddedWeb.executeScript": {
           const script = typeof args.script === "string" ? args.script : "";
           if (!script.trim()) {
-            return embeddedError("invalid_script", "script 是必填项。");
+            return embeddedError("invalid_script", t("externalWebview.error.invalidScript"));
           }
           return executeActiveWebviewScript(args, script);
         }
         case "desktop.embeddedWeb.navigate": {
           const nextUrl = readActionUrl(args);
           if (!nextUrl) {
-            return embeddedError("invalid_url", "内嵌网站地址必须是 http 或 https URL。", args);
+            return embeddedError("invalid_url", t("externalWebview.error.invalidUrl"), args);
           }
           const tabId = readTargetTabId(args);
           const targetWebview = webviewRefs.current.get(tabId);
           if (!targetWebview) {
-            return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+            return embeddedError("tab_unavailable", t("externalWebview.error.tabUnavailable"), { tabId });
           }
           await targetWebview.loadURL(nextUrl);
           setAddressInputValue(nextUrl);
@@ -1363,7 +1365,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           const tabId = readTargetTabId(args);
           const targetWebview = webviewRefs.current.get(tabId);
           if (!targetWebview) {
-            return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+            return embeddedError("tab_unavailable", t("externalWebview.error.tabUnavailable"), { tabId });
           }
           targetWebview.reload();
           return { ok: true, result: getEmbeddedWebSurfaceState() };
@@ -1372,10 +1374,10 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           const tabId = readTargetTabId(args);
           const targetWebview = webviewRefs.current.get(tabId);
           if (!targetWebview) {
-            return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+            return embeddedError("tab_unavailable", t("externalWebview.error.tabUnavailable"), { tabId });
           }
           if (!targetWebview.canGoBack()) {
-            return embeddedError("cannot_go_back", "当前内嵌网站标签页没有可后退的历史记录。", { tabId });
+            return embeddedError("cannot_go_back", t("externalWebview.error.cannotGoBack"), { tabId });
           }
           targetWebview.goBack();
           return { ok: true, result: getEmbeddedWebSurfaceState() };
@@ -1383,7 +1385,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         case "desktop.embeddedWeb.openTab": {
           const nextUrl = readActionUrl(args);
           if (!nextUrl) {
-            return embeddedError("invalid_url", "内嵌网站地址必须是 http 或 https URL。", args);
+            return embeddedError("invalid_url", t("externalWebview.error.invalidUrl"), args);
           }
           const preferredTitle = typeof args.title === "string" ? args.title : "";
           const nextTab = openTab(nextUrl, preferredTitle);
@@ -1393,10 +1395,10 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           const tabId = readTargetTabId(args);
           const currentState = browserStateRef.current;
           if (currentState.tabs.length <= 1) {
-            return embeddedError("last_tab", "不能关闭最后一个内嵌网站标签页。", { tabId });
+            return embeddedError("last_tab", t("externalWebview.error.lastTab"), { tabId });
           }
           if (!currentState.tabs.some((tab) => tab.id === tabId)) {
-            return embeddedError("tab_not_found", "未找到目标内嵌网站标签页。", { tabId });
+            return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });
           }
           setBrowserState((state) => {
             const targetIndex = state.tabs.findIndex((tab) => tab.id === tabId);
@@ -1418,7 +1420,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         case "desktop.embeddedWeb.switchTab": {
           const tabId = readTargetTabId(args);
           if (!browserStateRef.current.tabs.some((tab) => tab.id === tabId)) {
-            return embeddedError("tab_not_found", "未找到目标内嵌网站标签页。", { tabId });
+            return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });
           }
           setActiveTab(tabId);
           return { ok: true, result: { ...getEmbeddedWebSurfaceState(), activeTabId: tabId } };
@@ -1427,7 +1429,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           return null;
       }
     });
-  }, [active, activeTab?.id, surfaceId, surfaceLabel, title, url]);
+  }, [active, activeTab?.id, surfaceId, surfaceLabel, t, title, url]);
 
   useEffect(() => {
     setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
@@ -1984,7 +1986,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       className={`external-webview-bookmark-menu is-${bookmarkMenu.kind}`}
       style={{ left: bookmarkMenu.x, top: bookmarkMenu.y }}
       role="menu"
-      aria-label={bookmarkMenu.kind === "overflow" ? "更多收藏" : "收藏操作"}
+      aria-label={bookmarkMenu.kind === "overflow" ? t("externalWebview.moreBookmarks") : t("externalWebview.bookmarkActions")}
     >
       {bookmarkMenu.kind === "overflow" ? (
         overflowBookmarks.map((bookmark) => (
@@ -2016,27 +2018,27 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
               className="external-webview-bookmark-menu-action"
               onClick={() => handleOpenBookmark(bookmark, { newTab: true })}
               role="menuitem"
-              aria-label={`在新标签页打开 ${bookmark.title}`}
+              aria-label={t("externalWebview.openInNewTab", { title: bookmark.title })}
             >
-              新
+              {t("externalWebview.openShort")}
             </button>
             <button
               type="button"
               className="external-webview-bookmark-menu-action"
               onClick={() => handleStartRenameBookmark(bookmark)}
               role="menuitem"
-              aria-label={`重命名 ${bookmark.title}`}
+              aria-label={t("externalWebview.renameBookmark", { title: bookmark.title })}
             >
-              改
+              {t("externalWebview.renameShort")}
             </button>
             <button
               type="button"
               className="external-webview-bookmark-menu-action is-danger"
               onClick={() => handleDeleteBookmark(bookmark)}
               role="menuitem"
-              aria-label={`删除 ${bookmark.title}`}
+              aria-label={t("externalWebview.deleteBookmark", { title: bookmark.title })}
             >
-              删
+              {t("externalWebview.deleteShort")}
             </button>
           </div>
         ))
@@ -2048,7 +2050,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             onClick={() => handleOpenBookmark(contextMenuBookmark)}
             role="menuitem"
           >
-            打开
+            {t("externalWebview.open")}
           </button>
           <button
             type="button"
@@ -2056,7 +2058,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             onClick={() => handleOpenBookmark(contextMenuBookmark, { newTab: true })}
             role="menuitem"
           >
-            在新标签页打开
+            {t("externalWebview.openInNewTabAction")}
           </button>
           <span className="external-webview-bookmark-menu-separator" role="separator" />
           <button
@@ -2065,7 +2067,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             onClick={() => handleStartRenameBookmark(contextMenuBookmark)}
             role="menuitem"
           >
-            重命名
+            {t("externalWebview.rename")}
           </button>
           <button
             type="button"
@@ -2073,7 +2075,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             onClick={() => handleDeleteBookmark(contextMenuBookmark)}
             role="menuitem"
           >
-            删除
+            {t("externalWebview.delete")}
           </button>
         </>
       ) : null}
@@ -2087,9 +2089,9 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         onSubmit={handleSaveBookmarkRename}
         role="dialog"
         aria-modal="true"
-        aria-label="重命名收藏"
+        aria-label={t("externalWebview.renameBookmarkDialog")}
       >
-        <label htmlFor="external-webview-bookmark-editor-input">名称</label>
+        <label htmlFor="external-webview-bookmark-editor-input">{t("externalWebview.name")}</label>
         <input
           id="external-webview-bookmark-editor-input"
           value={bookmarkEditor.value}
@@ -2102,17 +2104,17 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         <p>{getUrlDisplayLabel(editingBookmark.url)}</p>
         <div className="external-webview-bookmark-editor-actions">
           <button type="button" onClick={() => setBookmarkEditor(null)}>
-            取消
+            {t("common.cancel")}
           </button>
           <button type="submit">
-            保存
+            {t("common.save")}
           </button>
         </div>
       </form>
     </div>
   ) : null;
   const debugSidebarNode = debugSidebarOpen ? (
-    <aside className="external-webview-debug-sidebar" aria-label="Desktop page 调试">
+    <aside className="external-webview-debug-sidebar" aria-label={t("externalWebview.debugSidebar")}>
       <div className="external-webview-debug-header">
         <div>
           <strong>desktop.page</strong>
@@ -2122,8 +2124,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           type="button"
           className="external-webview-debug-icon-button"
           onClick={() => setDebugSidebarOpen(false)}
-          aria-label="关闭调试侧边栏"
-          title="关闭"
+          aria-label={t("externalWebview.closeDebugSidebar")}
+          title={t("common.close")}
         >
           <CloseIcon />
         </button>
@@ -2131,15 +2133,15 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       <dl className="external-webview-debug-target">
         <div>
           <dt>pageKey</dt>
-          <dd>{debugSnapshot?.pageKey ?? "未同步"}</dd>
+          <dd>{debugSnapshot?.pageKey ?? t("externalWebview.notSynced")}</dd>
         </div>
         <div>
           <dt>surface</dt>
-          <dd>{debugSnapshot?.surfaceId ?? "默认"} {debugSnapshot?.surfaceLabel ?? ""}</dd>
+          <dd>{debugSnapshot?.surfaceId ?? t("externalWebview.defaultSurface")} {debugSnapshot?.surfaceLabel ?? ""}</dd>
         </div>
       </dl>
       <label className="external-webview-debug-field">
-        <span>动作</span>
+        <span>{t("externalWebview.action")}</span>
         <select value={debugAction} onChange={(event) => handleSelectDebugAction(event.target.value)}>
           {(debugActions.length > 0 ? debugActions : ["desktop.page.readCurrent"]).map((action) => (
             <option key={action} value={action}>{action}</option>
@@ -2147,27 +2149,27 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         </select>
       </label>
       <label className="external-webview-debug-field">
-        <span>参数 JSON</span>
+        <span>{t("externalWebview.argsJson")}</span>
         <textarea value={debugArgsJson} onChange={(event) => setDebugArgsJson(event.target.value)} spellCheck={false} />
       </label>
       <div className="external-webview-debug-actions">
         <button type="button" onClick={() => void executeDebugAction()} disabled={debugPending}>
-          {debugPending ? "执行中" : "执行"}
+          {debugPending ? t("externalWebview.executing") : t("externalWebview.execute")}
         </button>
         <button type="button" onClick={() => setDebugResultJson("")} disabled={!debugResultJson}>
-          清空
+          {t("externalWebview.clear")}
         </button>
         <button
           type="button"
           onClick={() => void window.electronAPI.clipboard.writeText(debugResultJson)}
           disabled={!debugResultJson}
         >
-          复制
+          {t("externalWebview.copy")}
         </button>
       </div>
       <label className="external-webview-debug-field is-result">
-        <span>结果</span>
-        <textarea value={debugResultJson} readOnly spellCheck={false} placeholder="执行结果会显示在这里" />
+        <span>{t("externalWebview.result")}</span>
+        <textarea value={debugResultJson} readOnly spellCheck={false} placeholder={t("externalWebview.resultPlaceholder")} />
       </label>
     </aside>
   ) : null;
@@ -2183,7 +2185,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             className={`external-webview-tab-strip${tabsOverflowing ? " is-overflowing" : ""}`}
             ref={tabsStripRef}
             role="tablist"
-            aria-label="嵌入网页标签页"
+            aria-label={t("externalWebview.tabs")}
             onWheel={handleTabStripWheel}
             onPointerMove={handleTabPointerMove}
             onPointerUp={finishTabPointerDrag}
@@ -2238,7 +2240,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
                         event.stopPropagation();
                         closeTab(tab.id);
                       }}
-                      aria-label={`关闭 ${tab.title}`}
+                      aria-label={t("externalWebview.closeTab", { title: tab.title })}
                     >
                       <CloseIcon />
                     </button>
@@ -2251,8 +2253,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
               type="button"
               className="external-webview-tab-add"
               onClick={() => openTab(BLANK_EXTERNAL_WEBVIEW_URL, "")}
-              aria-label="新建标签页"
-              title="新建标签页"
+              aria-label={t("externalWebview.newTab")}
+              title={t("externalWebview.newTab")}
             >
             <PlusIcon />
           </button>
@@ -2264,8 +2266,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
               className="external-webview-toolbar-button"
               onClick={handleGoBack}
               disabled={!activeTab?.canGoBack}
-              aria-label="后退"
-              title="后退"
+              aria-label={t("externalWebview.back")}
+              title={t("externalWebview.back")}
             >
               <ArrowLeftIcon />
             </button>
@@ -2273,8 +2275,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
               type="button"
               className="external-webview-toolbar-button"
               onClick={handleReload}
-              aria-label="刷新"
-              title="刷新"
+              aria-label={t("externalWebview.refresh")}
+              title={t("externalWebview.refresh")}
             >
               <RefreshIcon />
             </button>
@@ -2303,8 +2305,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="none"
-              placeholder="搜索或输入网址"
-              aria-label="网页地址"
+              placeholder={t("externalWebview.addressPlaceholder")}
+              aria-label={t("externalWebview.address")}
             />
           </div>
           <button
@@ -2312,8 +2314,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             className={`external-webview-bookmark-toggle${activeBookmark ? " is-active" : ""}`}
             onClick={handleToggleBookmark}
             disabled={!activeBookmarkUrl}
-            aria-label={activeBookmark ? "取消收藏当前页" : "收藏当前页"}
-            title={activeBookmark ? "取消收藏当前页" : "收藏当前页"}
+            aria-label={activeBookmark ? t("externalWebview.unbookmarkCurrent") : t("externalWebview.bookmarkCurrent")}
+            title={activeBookmark ? t("externalWebview.unbookmarkCurrent") : t("externalWebview.bookmarkCurrent")}
           >
             <StarIcon />
           </button>
@@ -2322,8 +2324,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             className="external-webview-devtools-toggle"
             onClick={handleOpenDevTools}
             disabled={!activeTab}
-            aria-label="打开当前网页 DevTools"
-            title="打开当前网页 DevTools"
+            aria-label={t("externalWebview.openDevTools")}
+            title={t("externalWebview.openDevTools")}
           >
             <DevToolsIcon />
           </button>
@@ -2331,13 +2333,13 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             type="button"
             className={`external-webview-debug-toggle${debugSidebarOpen ? " is-active" : ""}`}
             onClick={() => setDebugSidebarOpen((value) => !value)}
-            aria-label="打开 desktop.page 调试"
-            title="desktop.page 调试"
+            aria-label={t("externalWebview.openDesktopDebug")}
+            title={t("externalWebview.desktopDebugTitle")}
           >
             pg
           </button>
         </div>
-        <div className="external-webview-bookmarks-bar" aria-label="收藏栏">
+        <div className="external-webview-bookmarks-bar" aria-label={t("externalWebview.bookmarksBar")}>
           <div
             className="external-webview-bookmarks-list"
             ref={bookmarksListRef}
@@ -2346,7 +2348,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             onPointerCancel={finishBookmarkPointerDrag}
           >
               {bookmarks.length === 0 ? (
-                <span className="external-webview-bookmark-empty">收藏会显示在这里</span>
+                <span className="external-webview-bookmark-empty">{t("externalWebview.bookmarkEmpty")}</span>
               ) : (
                 bookmarks.map((bookmark) => (
                   <button
@@ -2381,8 +2383,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
                 type="button"
                 className="external-webview-bookmark-overflow"
                 onClick={handleOpenOverflowMenu}
-                aria-label="显示更多收藏"
-                title="显示更多收藏"
+                aria-label={t("externalWebview.showMoreBookmarks")}
+                title={t("externalWebview.showMoreBookmarks")}
               >
                 <BookmarkOverflowIcon />
               </button>

@@ -1,6 +1,7 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, AgentAuthRefreshReason } from "../shared/contracts";
 import { resolveDesktopCapability } from "./services/manager/capabilities";
+import { t } from "./i18n/main-i18n";
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 const TOKEN_FALLBACK_CACHE_TTL_MS = 5 * 60_000;
@@ -44,7 +45,7 @@ function createSuccessResult(token: string): AgentAuthIssueResult {
   return {
     ok: true,
     token,
-    message: "已由 zenmind-app-server 签发 Desktop AGENT access token。"
+    message: t("agentAuth.accessTokenIssued")
   };
 }
 

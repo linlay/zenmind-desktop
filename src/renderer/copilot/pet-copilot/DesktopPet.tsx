@@ -36,6 +36,7 @@ import {
   type DesktopPetVisualStatus
 } from "../../../shared/desktop-pet-visual";
 import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { useI18n } from "../../i18n/useI18n";
 
 function createFallbackDesktopPetState(): DesktopPetState {
   return {
@@ -80,55 +81,55 @@ function normalizePetStatus(status: DesktopPetStatus): DesktopPetStatus {
   return "idle";
 }
 
-function formatPetHint(status: DesktopPetStatus) {
+function formatPetHint(status: DesktopPetStatus, t: ReturnType<typeof useI18n>["t"]) {
   if (status === "awaiting") {
-    return "等待你确认";
+    return t("desktopPet.status.awaitingConfirm");
   }
   if (status === "running") {
-    return "思考中";
+    return t("desktopPet.status.thinking");
   }
   if (status === "done") {
-    return "暂无回复预览";
+    return t("desktopPet.doneFallback");
   }
   if (status === "error") {
-    return "出错了";
+    return t("desktopPet.status.error");
   }
   return "";
 }
 
-function formatPreviewStatus(status: DesktopPetPreviewItemStatus) {
+function formatPreviewStatus(status: DesktopPetPreviewItemStatus, t: ReturnType<typeof useI18n>["t"]) {
   switch (status) {
     case "running":
-      return "运行中";
+      return t("desktopPet.preview.running");
     case "waiting":
-      return "等待中";
+      return t("desktopPet.preview.waiting");
     case "error":
-      return "失败";
+      return t("desktopPet.preview.failed");
     case "cancelled":
-      return "已取消";
+      return t("desktopPet.preview.cancelled");
     case "success":
     case "done":
-      return "完成";
+      return t("desktopPet.preview.done");
     default:
-      return "待处理";
+      return t("desktopPet.preview.pending");
   }
 }
 
-function formatTaskStatus(task: DesktopPetTaskItem) {
+function formatTaskStatus(task: DesktopPetTaskItem, t: ReturnType<typeof useI18n>["t"]) {
   if (task.status !== "awaiting") {
-    return "运行中";
+    return t("desktopPet.task.running");
   }
   switch (task.awaitingMode) {
     case "plan":
-      return "待确认计划";
+      return t("desktopPet.task.awaitingPlan");
     case "question":
-      return "待回答";
+      return t("desktopPet.task.awaitingQuestion");
     case "approval":
-      return "待审批";
+      return t("desktopPet.task.awaitingApproval");
     case "form":
-      return "待填写";
+      return t("desktopPet.task.awaitingForm");
     default:
-      return "待确认";
+      return t("desktopPet.task.awaitingConfirm");
   }
 }
 
@@ -285,6 +286,7 @@ function chooseDesktopPetSignatureVariant(action: DesktopPetSignatureAction): De
 }
 
 export function DesktopPet() {
+  const { t } = useI18n();
   const [petState, setPetState] = useState<DesktopPetState>(createFallbackDesktopPetState);
   const [isHovering, setIsHovering] = useState(false);
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
@@ -691,9 +693,9 @@ export function DesktopPet() {
   const assetPath = visualAsset.assetPath;
   const statusBubbleText = displayStatus === "idle"
     ? ""
-    : petState.hint.trim() || formatPetHint(displayStatus);
+    : petState.hint.trim() || formatPetHint(displayStatus, t);
   const bubbleText = hasMessageReaction
-    ? messagePreview || "有新消息"
+    ? messagePreview || t("desktopPet.newMessage")
     : statusBubbleText;
   const inlineBubbleText = formatInlinePetPreview(bubbleText);
   const previewTitle = previewPanel ? formatInlinePetPreview(previewPanel.title) : "";
@@ -877,7 +879,7 @@ export function DesktopPet() {
         visualStatus === "moving-left" && dragDirection === "right" && (visualAsset.asset?.mirror ?? true) ? "is-drag-mirror" : ""
       ].filter(Boolean).join(" ")}
       style={rootStyle}
-      aria-label={`${PRODUCT_NAME} 桌面宠物`}
+      aria-label={t("desktopPet.ariaLabel", { appName: PRODUCT_NAME })}
     >
       <div
         className="desktop-pet-hitbox"
@@ -895,7 +897,7 @@ export function DesktopPet() {
           >
             <div className="desktop-pet-task-head">
               <span className="desktop-pet-task-head-dot" aria-hidden="true" />
-              <strong>进行中 {activeTasks.length}</strong>
+              <strong>{t("desktopPet.runningCount", { count: activeTasks.length })}</strong>
             </div>
             <div className="desktop-pet-task-list">
               {visibleTasks.map((task) => (
@@ -910,7 +912,7 @@ export function DesktopPet() {
                     <strong>{task.title}</strong>
                     <span>{task.agentDisplayName}</span>
                   </span>
-                  <small>{formatTaskStatus(task)}</small>
+                  <small>{formatTaskStatus(task, t)}</small>
                 </button>
               ))}
             </div>
@@ -941,7 +943,7 @@ export function DesktopPet() {
                   "desktop-pet-preview-toggle",
                   previewPanel.expanded ? "is-expanded" : ""
                 ].filter(Boolean).join(" ")}
-                aria-label={previewPanel.expanded ? "收起运行预览" : "展开运行预览"}
+                aria-label={previewPanel.expanded ? t("desktopPet.collapsePreview") : t("desktopPet.expandPreview")}
                 aria-expanded={previewPanel.expanded}
                 onClick={togglePreviewExpanded}
               >
@@ -962,7 +964,7 @@ export function DesktopPet() {
                         <strong>{itemTitle}</strong>
                         {showItemDetail ? <span>{itemDetailPreview}</span> : null}
                       </div>
-                      <small>{formatPreviewStatus(item.status)}</small>
+                      <small>{formatPreviewStatus(item.status, t)}</small>
                     </li>
                   );
                 })}
@@ -980,7 +982,7 @@ export function DesktopPet() {
         <button
           type="button"
           className="desktop-pet-button"
-          aria-label={`打开 ${PRODUCT_NAME}`}
+          aria-label={t("desktopPet.openApp", { appName: PRODUCT_NAME })}
           onFocus={handleButtonFocus}
           onBlur={handleButtonBlur}
           onKeyDown={(event) => {
@@ -1006,7 +1008,7 @@ export function DesktopPet() {
             <img src={assetPath} alt="" aria-hidden="true" className="desktop-pet-image" />
           )}
           {showUnreadBadge ? (
-            <span className="desktop-pet-unread-badge" aria-label={`${unreadCount} 条未读消息`}>
+            <span className="desktop-pet-unread-badge" aria-label={t("desktopPet.unread", { count: unreadCount })}>
               {unreadText}
             </span>
           ) : null}

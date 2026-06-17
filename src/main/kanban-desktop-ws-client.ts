@@ -10,6 +10,7 @@ import type {
   TaskBoardProject
 } from "../shared/contracts";
 import type { TaskBoardCloudSnapshot } from "./task-board-local-store";
+import { t } from "./i18n/main-i18n";
 
 type MinimalWebSocket = {
   onopen: (() => void) | null;
@@ -213,13 +214,13 @@ function normalizeAccessLevel(value: unknown): AssistantStartRunRequest["accessL
 function normalizeMessageType(messageType: string) {
   const trimmed = messageType.trim();
   if (!trimmed) {
-    throw new Error("WebSocket 业务类型不能为空。");
+    throw new Error(t("taskBoard.ws.messageTypeRequired"));
   }
   const blockedKanbanPrefix = `kanban${"."}`;
   const blockedDesktopHello = `desktop${"."}hello`;
   const blockedDesktopKanbanPrefix = `desktop${"."}kanban${"."}`;
   if (trimmed.startsWith(blockedKanbanPrefix) || trimmed === blockedDesktopHello || trimmed.startsWith(blockedDesktopKanbanPrefix)) {
-    throw new Error(`旧 Kanban 协议业务类型已禁用：${trimmed}`);
+    throw new Error(t("taskBoard.ws.legacyDisabled", { type: trimmed }));
   }
   return trimmed;
 }
@@ -299,9 +300,9 @@ export class KanbanDesktopWsClient {
   private async selectProject(selectedProjectId: string) {
     try {
       await this.request("desktop.project.select", { selectedProjectId });
-      this.options.onDebug?.(`云端看板已切换项目：${selectedProjectId}`);
+      this.options.onDebug?.(t("taskBoard.ws.projectSelected", { projectId: selectedProjectId }));
     } catch (error) {
-      this.options.onDebug?.(`云端看板项目切换失败，回落重连：${errorMessage(error)}`);
+      this.options.onDebug?.(t("taskBoard.ws.projectSelectFailed", { message: errorMessage(error) }));
       this.connect();
     }
   }
@@ -324,13 +325,13 @@ export class KanbanDesktopWsClient {
 
   async request<TPayload = unknown>(messageType: string, payload: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TPayload> {
     if (!this.ws || this.state !== "open") {
-      throw new Error("云端看板服务未连接。");
+      throw new Error(t("taskBoard.cloudSync.notConnected"));
     }
     const id = createRequestId();
     const response = await new Promise<KanbanEnvelope>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this.pending.delete(id)) {
-          reject(new Error(`${messageType} 请求超时。`));
+          reject(new Error(t("taskBoard.ws.requestTimeout", { type: messageType })));
           this.handleClosed("error");
         }
       }, timeoutMs);
@@ -348,11 +349,11 @@ export class KanbanDesktopWsClient {
       if (!sent) {
         clearTimeout(timeout);
         this.pending.delete(id);
-        reject(new Error("云端看板服务未连接。"));
+        reject(new Error(t("taskBoard.cloudSync.notConnected")));
       }
     });
     if (response.ok === false) {
-      throw new Error(response.error?.message || `${messageType} 操作失败。`);
+      throw new Error(response.error?.message || t("taskBoard.ws.operationFailed", { type: messageType }));
     }
     return response.payload as TPayload;
   }
@@ -364,7 +365,7 @@ export class KanbanDesktopWsClient {
     }
     const WebSocketConstructor = getWebSocketConstructor();
     if (!WebSocketConstructor) {
-      this.options.onDebug?.("当前运行时不支持 WebSocket。");
+      this.options.onDebug?.(t("taskBoard.ws.unsupportedRuntime"));
       this.setState("error");
       this.scheduleReconnect();
       return;
@@ -374,7 +375,7 @@ export class KanbanDesktopWsClient {
     this.setState("connecting");
     try {
       const wsUrl = createWsUrl(config);
-      this.options.onDebug?.(`云端看板 WebSocket 正在连接：${createWsLogUrl(config)}`);
+      this.options.onDebug?.(t("taskBoard.ws.connecting", { url: createWsLogUrl(config) }));
       const socket = new WebSocketConstructor(wsUrl);
       this.ws = socket;
       const onOpen = () => {
@@ -387,7 +388,7 @@ export class KanbanDesktopWsClient {
       const onClose = (event?: unknown) => this.handleClosed("closed", wsEventDetail(event));
       const onError = (event?: unknown) => {
         const detail = wsEventDetail(event);
-        this.options.onDebug?.(`云端看板 WebSocket 错误${detail ? `：${detail}` : ""}`);
+        this.options.onDebug?.(detail ? t("taskBoard.ws.errorWithDetail", { detail }) : t("taskBoard.ws.error"));
         this.handleClosed("error", detail);
       };
       if (typeof socket.addEventListener === "function") {
@@ -414,11 +415,11 @@ export class KanbanDesktopWsClient {
     if (this.stopped) {
       return;
     }
-    this.options.onDebug?.("云端看板 WebSocket 已打开。");
+    this.options.onDebug?.(t("taskBoard.ws.opened"));
     this.setState("open");
     try {
       const agents = await this.options.onListAgents().catch((error) => {
-        this.options.onDebug?.(`云端看板 hello 智能体列表读取失败：${errorMessage(error)}`);
+        this.options.onDebug?.(t("taskBoard.ws.helloAgentsFailed", { message: errorMessage(error) }));
         return [];
       });
       await this.request("session.hello", {
@@ -448,14 +449,14 @@ export class KanbanDesktopWsClient {
     try {
       raw = await decodeMessageData(data);
     } catch (error) {
-      this.options.onDebug?.(`云端看板消息读取失败：${errorMessage(error)}`);
+      this.options.onDebug?.(t("taskBoard.ws.messageReadFailed", { message: errorMessage(error) }));
       return;
     }
     let env: KanbanEnvelope;
     try {
       env = JSON.parse(raw) as KanbanEnvelope;
     } catch (error) {
-      this.options.onDebug?.(`云端看板消息解析失败：${errorMessage(error)}`);
+      this.options.onDebug?.(t("taskBoard.ws.messageParseFailed", { message: errorMessage(error) }));
       return;
     }
     if (!isV2Envelope(env) || !["request", "response", "push"].includes(readText(env.frame))) {
@@ -463,12 +464,12 @@ export class KanbanDesktopWsClient {
       return;
     }
     if (isResponseEnvelope(env) && env.id) {
-      this.options.onDebug?.(`云端看板 WebSocket 收到响应：${envelopeBusinessType(env) || "unknown"} ${env.id}`);
+      this.options.onDebug?.(t("taskBoard.ws.receivedResponse", { type: envelopeBusinessType(env) || "unknown", id: env.id }));
       this.resolvePending(env);
       return;
     }
     if (isRequestEnvelope(env)) {
-      this.options.onDebug?.(`云端看板 WebSocket 收到请求：${envelopeBusinessType(env) || "unknown"} ${env.id || ""}`);
+      this.options.onDebug?.(t("taskBoard.ws.receivedRequest", { type: envelopeBusinessType(env) || "unknown", id: env.id || "" }));
       void this.handleServerRequest(env);
       return;
     }
@@ -501,9 +502,9 @@ export class KanbanDesktopWsClient {
       } else if (businessType === "desktop.project.unbind") {
         payload = await this.options.onUnbindProject(env.payload);
       } else {
-        throw new Error(`Desktop 不支持 ${businessType || "unknown"}。`);
+        throw new Error(t("taskBoard.ws.unsupportedBusiness", { type: businessType || "unknown" }));
       }
-      this.options.onDebug?.(`云端看板 WebSocket 回复请求：${businessType || "unknown"} ${env.id || ""}`);
+      this.options.onDebug?.(t("taskBoard.ws.repliedRequest", { type: businessType || "unknown", id: env.id || "" }));
       this.respond(env, true, payload);
     } catch (error) {
       this.respond(env, false, {
@@ -521,7 +522,7 @@ export class KanbanDesktopWsClient {
     clearTimeout(pending.timeout);
     this.pending.delete(env.id);
     if (env.ok === false) {
-      pending.reject(new Error(env.error?.message || `${pending.messageType} 操作失败。`));
+      pending.reject(new Error(env.error?.message || t("taskBoard.ws.operationFailed", { type: pending.messageType })));
       return;
     }
     pending.resolve(env);
@@ -538,13 +539,13 @@ export class KanbanDesktopWsClient {
       projectId: env.projectId ?? this.config?.selectedProjectId ?? "default",
       revision: env.revision,
       ok,
-      error: ok ? undefined : { code: "desktop_error", message: message || "Desktop 操作失败。" },
+      error: ok ? undefined : { code: "desktop_error", message: message || t("taskBoard.ws.desktopFailed") },
       payload
     });
   }
 
   private closeProtocolError(reason: string) {
-    this.options.onDebug?.(`云端看板协议错误：${reason}`);
+    this.options.onDebug?.(t("taskBoard.ws.protocolError", { reason }));
     this.rejectAllPending(new Error(reason));
     this.closeWebSocket(reason, 1002);
     this.setState("error");
@@ -554,14 +555,14 @@ export class KanbanDesktopWsClient {
   private sendEnvelope(env: KanbanEnvelope) {
     const socket = this.ws;
     if (!socket || !this.isSocketReady(socket)) {
-      this.options.onDebug?.(`云端看板 WebSocket 发送失败：socket 未就绪 readyState=${socket?.readyState ?? "none"}`);
+      this.options.onDebug?.(t("taskBoard.ws.sendNotReady", { readyState: socket?.readyState ?? "none" }));
       this.handleClosed("error");
       return false;
     }
     try {
       socket.send(JSON.stringify(env));
       if (isResponseEnvelope(env)) {
-        this.options.onDebug?.(`云端看板 WebSocket 已发送响应：${envelopeBusinessType(env) || "unknown"} ${env.id || ""}`);
+        this.options.onDebug?.(t("taskBoard.ws.sentResponse", { type: envelopeBusinessType(env) || "unknown", id: env.id || "" }));
       }
       return true;
     } catch (error) {
@@ -579,8 +580,8 @@ export class KanbanDesktopWsClient {
     if (this.stopped) {
       return;
     }
-    this.options.onDebug?.(`云端看板 WebSocket 已断开${detail ? `：${detail}` : ""}`);
-    this.rejectAllPending(new Error("云端看板连接已断开。"));
+    this.options.onDebug?.(detail ? t("taskBoard.ws.closedWithDetail", { detail }) : t("taskBoard.ws.closed"));
+    this.rejectAllPending(new Error(t("taskBoard.ws.disconnected")));
     this.closeWebSocket(`kanban desktop ws ${nextState}`);
     this.setState(nextState);
     this.scheduleReconnect();

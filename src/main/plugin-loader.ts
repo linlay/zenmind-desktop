@@ -8,6 +8,7 @@ import { extractArchiveToDir } from "./archive-utils";
 import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
 import { STORAGE_NAMESPACE } from "../shared/generated/brand";
 import { removePluginResources } from "./plugin-resources";
+import { t } from "./i18n/main-i18n";
 
 function readManifest(pluginDir: string) {
   const manifestPath = path.join(pluginDir, "manifest.json");
@@ -117,7 +118,7 @@ export function getPluginInstallDir(app: App, pluginId: string, version?: string
 
 function ensurePluginArchivePath(archivePath: string) {
   if (!archivePath.toLowerCase().endsWith(".zip")) {
-    throw new Error("插件包仅支持 .zip 格式。");
+    throw new Error(t("plugin.archiveZipOnly"));
   }
 }
 
@@ -133,15 +134,15 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     await extractArchiveToDir(archivePath, tmpDir);
     const entries = fs.readdirSync(tmpDir);
     if (entries.length !== 1) {
-      throw new Error("插件包应包含单个顶层目录");
+      throw new Error(t("plugin.archiveSingleRootRequired"));
     }
     const extractedDir = path.join(tmpDir, entries[0]);
     const manifest = readManifest(extractedDir);
     if (!manifest) {
-      throw new Error("插件包缺少 manifest.json");
+      throw new Error(t("plugin.manifestMissing"));
     }
     if (readManifestKind(manifest) === "builtin") {
-      throw new Error("插件导入入口不接受内置服务 manifest");
+      throw new Error(t("plugin.builtinManifestRejected"));
     }
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
 
@@ -166,11 +167,11 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
       const initialization = await initializeService(app, manifest.id);
       return {
         ok: initialization.ok,
-        message: initialization.ok ? `插件 ${manifest.name} 已导入并初始化，可手动启动。` : initialization.message,
+        message: initialization.ok ? t("plugin.importedInitialized", { name: manifest.name }) : initialization.message,
         serviceId: manifest.id
       };
     }
-    return { ok: true, message: `插件 ${manifest.name} 已导入，请完成初始化。`, serviceId: manifest.id };
+    return { ok: true, message: t("plugin.importedNeedsInit", { name: manifest.name }), serviceId: manifest.id };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -180,7 +181,7 @@ export async function uninstallPlugin(app: App, serviceId: string) {
   // Verify it's a plugin, not builtin
   const def = getService(serviceId);
   if (def.kind !== "plugin") {
-    return { ok: false, message: "内置服务不可卸载。" };
+    return { ok: false, message: t("service.builtinNotUninstallable") };
   }
   const { getServiceState, stopService } = await import("./services/manager");
   const currentState = await getServiceState(app, serviceId);
@@ -191,5 +192,5 @@ export async function uninstallPlugin(app: App, serviceId: string) {
   const dir = getPluginInstallDir(app, serviceId, def.version);
   fs.rmSync(dir, { recursive: true, force: true });
   unregisterService(serviceId);
-  return { ok: true, message: `插件 ${def.name} 已卸载。` };
+  return { ok: true, message: t("plugin.uninstall.done", { name: def.name }) };
 }

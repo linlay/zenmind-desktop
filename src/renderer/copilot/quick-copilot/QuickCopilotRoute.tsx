@@ -4,6 +4,7 @@ import { DEFAULT_QUICK_ASSISTANT_AGENT_KEY } from "../../../shared/assistant-set
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 import { useServices } from "../../services/ServicesContext";
 import { PluginPage } from "../../pages/plugin/PluginPage";
+import { useI18n } from "../../i18n/useI18n";
 
 type ThemeMode = "light" | "dark";
 
@@ -24,6 +25,7 @@ function readStoredThemeMode() {
 }
 
 export function QuickCopilotRoute() {
+  const { t } = useI18n();
   const { services, loading, error, refresh } = useServices();
   const [hostTheme, setHostTheme] = useState<ThemeMode>(() => readStoredThemeMode());
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
@@ -70,18 +72,18 @@ export function QuickCopilotRoute() {
     return (
       <main className="quick-web-copilot-status" aria-live="polite">
         <div className="quick-web-copilot-status-panel">
-          <strong>{error || failedService ? "智能助理暂未就绪" : "正在启动智能助理"}</strong>
+          <strong>{error || failedService ? t("quickCopilot.notReady") : t("quickCopilot.starting")}</strong>
           <span>
             {error ||
               failedService?.message ||
-              `${PRODUCT_NAME} 正在恢复认证、智能体平台和 Web Copilot 服务。`}
+              t("quickCopilot.restoring", { appName: PRODUCT_NAME })}
           </span>
           <div className="quick-web-copilot-status-actions">
             <button type="button" onClick={() => void refresh()}>
-              重新检查
+              {t("quickCopilot.recheck")}
             </button>
             <button type="button" onClick={() => void window.electronAPI.quickAssistant.openControlCenter()}>
-              控制中心
+              {t("nav.controlCenter")}
             </button>
           </div>
         </div>
@@ -97,7 +99,7 @@ export function QuickCopilotRoute() {
         hostTheme={hostTheme}
         pluginId="agent-webclient"
         surfaceId={AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID}
-        surfaceLabel="助手"
+        surfaceLabel={t("copilotDock.surfaceLabel")}
       />
       <span className="quick-web-copilot-agent-marker" data-open-agent-key={quickAssistantAgentKey} aria-hidden="true" />
     </main>

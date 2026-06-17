@@ -12,6 +12,7 @@ import {
   type AgentWebclientRouteKind,
   type AgentWebclientResolvedRoute
 } from "../../../shared/agent-webclient-routes";
+import { useI18n } from "../../i18n/useI18n";
 
 type ThemeMode = "light" | "dark";
 
@@ -199,6 +200,7 @@ export function WebSurfaceHost({
   itemMap: Map<string, EmbeddedSidebarItem>;
   mountedEntryKeys: string[];
 }) {
+  const { t } = useI18n();
   const visibleEntryKeys =
     activeEntryKey && itemMap.has(activeEntryKey) && !mountedEntryKeys.includes(activeEntryKey)
       ? [...mountedEntryKeys, activeEntryKey]
@@ -223,8 +225,8 @@ export function WebSurfaceHost({
           return (
             <PlaceholderPage
               key={entryKey}
-              title={starting ? "正在启动" : "启动失败"}
-              description={item.runtimeMessage || (starting ? "本地网站小应用正在启动。" : "本地网站小应用启动失败，请检查日志。")}
+              title={starting ? t("startup.title.starting") : t("webapp.startFailed")}
+              description={item.runtimeMessage || (starting ? t("webapp.starting") : t("webapp.startFailed"))}
             />
           );
         }
@@ -250,14 +252,15 @@ export function ExternalItemRoute({
 }: {
   itemMap: Map<string, EmbeddedSidebarItem>;
 }) {
+  const { t } = useI18n();
   const { itemId = "" } = useParams<{ itemId: string }>();
   const item = itemMap.get(itemId);
 
   if (!item) {
     return (
       <PlaceholderPage
-        title="入口不存在"
-        description="该内嵌网站不存在或已被删除，请在设置中检查。"
+        title={t("webapp.entryMissingTitle")}
+        description={t("webapp.entryMissingDescription")}
       />
     );
   }
@@ -265,8 +268,8 @@ export function ExternalItemRoute({
     const starting = item.runtimeStatus === "starting" || item.runtimeStatus === "idle";
     return (
       <PlaceholderPage
-        title={starting ? "正在启动" : "启动失败"}
-        description={item.runtimeMessage || (starting ? "本地网站小应用正在启动。" : "本地网站小应用启动失败，请检查日志。")}
+        title={starting ? t("startup.title.starting") : t("webapp.startFailed")}
+        description={item.runtimeMessage || (starting ? t("webapp.starting") : t("webapp.startFailed"))}
       />
     );
   }
@@ -283,6 +286,7 @@ export function WebRouteFallback({
 }: {
   itemMap: Map<string, EmbeddedSidebarItem>;
 }) {
+  const { t } = useI18n();
   const { entryKey = "" } = useParams<{ entryKey: string }>();
   if (itemMap.has(entryKey)) {
     return null;
@@ -290,8 +294,8 @@ export function WebRouteFallback({
 
   return (
     <PlaceholderPage
-      title="入口不存在"
-      description="该内嵌网站不存在或已被删除，请在设置中检查。"
+      title={t("webapp.entryMissingTitle")}
+      description={t("webapp.entryMissingDescription")}
     />
   );
 }

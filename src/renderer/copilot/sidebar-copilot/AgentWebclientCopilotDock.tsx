@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
+import { useI18n } from "../../i18n/useI18n";
 
 const PluginPage = lazy(() =>
   import("../../pages/plugin/PluginPage").then((module) => ({ default: module.PluginPage }))
@@ -55,6 +56,7 @@ export function AgentWebclientCopilotDock({
   onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
 }) {
+  const { t } = useI18n();
   const [mounted, setMounted] = useState(open);
   const targetAgentKey = resolveTargetAgentKey(openRequest, resolvedAgentKey);
   const targetEmbedPath = buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey);
@@ -91,7 +93,7 @@ export function AgentWebclientCopilotDock({
             hostTheme={hostTheme}
             pluginId="agent-webclient"
             surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
-            surfaceLabel="助手"
+            surfaceLabel={t("copilotDock.surfaceLabel")}
             skipContextRegistration
             loadInitialEmbeddedUrlDirectly
             suppressInitialLoadingCopy
@@ -102,8 +104,8 @@ export function AgentWebclientCopilotDock({
         type="button"
         className="agent-webclient-copilot-close"
         onClick={onClose}
-        aria-label="关闭助手"
-        title="关闭"
+        aria-label={t("copilotDock.closeAssistant")}
+        title={t("common.close")}
       >
         <span aria-hidden="true" />
       </button>

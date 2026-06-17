@@ -1,6 +1,7 @@
 import type { App, BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from "electron";
 import type { PluginInstallResult, ServiceId } from "../shared/contracts";
-import type { TranslateFunction } from "../shared/i18n";
+import { DEFAULT_LOCALE, translate, type TranslateFunction } from "../shared/i18n";
+import { t as mainT } from "./i18n/main-i18n";
 import { uninstallPlugin } from "./plugin-loader";
 import { getService } from "./services/service-registry";
 
@@ -14,22 +15,7 @@ interface HandlePluginUninstallDeps {
 }
 
 function fallbackT(key: Parameters<TranslateFunction>[0], params?: Parameters<TranslateFunction>[1]) {
-  switch (key) {
-    case "plugin.uninstall.cancel":
-      return "取消";
-    case "plugin.uninstall.confirm":
-      return "卸载";
-    case "plugin.uninstall.title":
-      return "卸载插件";
-    case "plugin.uninstall.message":
-      return `确定要卸载插件 ${params?.name ?? ""} 吗？`;
-    case "plugin.uninstall.detail":
-      return "插件目录将被删除，此操作不可撤销。";
-    case "plugin.uninstall.cancelled":
-      return "已取消卸载。";
-    default:
-      return key;
-  }
+  return translate(DEFAULT_LOCALE, key, params);
 }
 
 export function buildPluginUninstallDialogOptions(
@@ -76,7 +62,7 @@ export async function handlePluginUninstall(
   const service = getServiceById(serviceId);
 
   if (service.kind !== "plugin") {
-    return { ok: false, message: "内置服务不可卸载。" };
+    return { ok: false, message: mainT("service.builtinNotUninstallable") };
   }
 
   const result = await showPluginUninstallDialog(

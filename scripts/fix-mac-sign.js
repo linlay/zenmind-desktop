@@ -228,9 +228,15 @@ exports.default = async function (context) {
   if (context.electronPlatformName !== "darwin") return;
 
   pruneUnusedElectronLocales(appPath);
+
+  if (process.env.ZENMIND_MAC_AD_HOC_SIGN !== "1") {
+    console.log("[fix-mac-sign] Skipping ad-hoc signing; electron-builder will handle macOS code signing.");
+    return;
+  }
+
   console.log(`[fix-mac-sign] Re-signing ${appPath} with ad-hoc identity...`);
 
-  // Deep sign all nested frameworks/helpers first, then the app itself
+  // Only use ad-hoc signing for local unsigned diagnostics; release builds use Developer ID.
   execSync(
     `codesign --force --deep --sign - "${appPath}"`,
     { stdio: "inherit" }

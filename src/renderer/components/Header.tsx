@@ -2,15 +2,7 @@ import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import { getServiceDisplayName, shouldShowServiceNavigationTab } from "../service-display";
 import { PRODUCT_NAME } from "../../shared/generated/brand";
-
-const staticNavItems = [
-  { to: "/control-center", label: "控制中心" }
-];
-
-const tailNavItems = [
-  { to: "/market", label: "功能市场" },
-  { to: "/help", label: "帮助" }
-];
+import { useI18n } from "../i18n/useI18n";
 
 type HeaderProps = {
   themeMode: "light" | "dark";
@@ -18,11 +10,19 @@ type HeaderProps = {
 };
 
 export function Header({ themeMode, onToggleTheme }: HeaderProps) {
+  const { t } = useI18n();
   const { services } = useServices();
   const serviceNavItems = services
     .filter(shouldShowServiceNavigationTab)
-    .map((s) => ({ to: `/service/${s.id}`, label: getServiceDisplayName(s.id, s.name) }));
+    .map((s) => ({ to: `/service/${s.id}`, label: getServiceDisplayName(s.id, s.name, t) }));
 
+  const staticNavItems = [
+    { to: "/control-center", label: t("nav.controlCenter") }
+  ];
+  const tailNavItems = [
+    { to: "/market", label: t("nav.market") },
+    { to: "/help", label: t("nav.help") }
+  ];
   const navItems = [...staticNavItems, ...serviceNavItems, ...tailNavItems];
 
   return (
@@ -31,7 +31,7 @@ export function Header({ themeMode, onToggleTheme }: HeaderProps) {
         <span className="brand-kicker">{PRODUCT_NAME}</span>
         {/* <span className="brand-title">Desktop Control Shell</span> */}
       </div>
-      <nav className="app-nav" aria-label="Main Navigation">
+      <nav className="app-nav" aria-label={t("nav.main")}>
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -45,12 +45,12 @@ export function Header({ themeMode, onToggleTheme }: HeaderProps) {
           type="button"
           className="theme-toggle"
           onClick={onToggleTheme}
-          aria-label={themeMode === "light" ? "切换到黑版" : "切换到白版"}
+          aria-label={themeMode === "light" ? t("settings.appearance.switchToDark") : t("settings.appearance.switchToLight")}
         >
           <span className="theme-toggle-icon" aria-hidden="true">
             {themeMode === "light" ? "◐" : "◑"}
           </span>
-          <span>{themeMode === "light" ? "黑版" : "白版"}</span>
+          <span>{themeMode === "light" ? t("settings.appearance.dark") : t("settings.appearance.light")}</span>
         </button>
       </nav>
     </header>

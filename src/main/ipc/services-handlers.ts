@@ -1,6 +1,7 @@
 import { emitPluginBridgeHook } from "../plugin-bridge";
 import { getPluginGlobalShortcutStatuses } from "../plugin-global-shortcuts";
 import { invokePluginDesktopAction } from "../plugin-actions";
+import { t } from "../i18n/main-i18n";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 
@@ -132,18 +133,18 @@ async function resolveAgentPlatformMonitorUrl(options: {
   if (!baseUrl) {
     return {
       ok: false,
-      message: serviceState.message || "agent-platform 未运行，请先在控制中心启动智能体平台。"
+      message: serviceState.message || t("service.agentPlatformNotRunning")
     };
   }
   if (!options.issueAgentPlatformAccessToken) {
-    return { ok: false, message: "agent-platform token 签发器不可用。" };
+    return { ok: false, message: t("service.agentPlatformTokenIssuerUnavailable") };
   }
   const tokenResult = await options.issueAgentPlatformAccessToken(options.app, "missing");
   const token = typeof tokenResult?.token === "string" ? tokenResult.token.trim() : "";
   if (!tokenResult?.ok || !token) {
     return {
       ok: false,
-      message: tokenResult?.message || "agent-platform token 不可用。"
+      message: tokenResult?.message || t("service.agentPlatformTokenUnavailable")
     };
   }
   return { ok: true, monitorUrl: createAgentPlatformMonitorUrl(baseUrl, token) };
@@ -236,7 +237,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
         startupRestoreController?.beginSession(mode);
       },
       onStarting: (serviceId: string) => {
-        startupRestoreController?.updateService(serviceId, "starting", "启动中...");
+        startupRestoreController?.updateService(serviceId, "starting", t("service.startingStatus"));
       },
       onProgress: (serviceId: string, phase: any, message: string) => {
         startupRestoreController?.updateService(serviceId, phase, message);
@@ -257,10 +258,10 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
 
   function continueStartupWithExistingEnv() {
     if (!runStartupPreparation) {
-      return { ok: false, message: "环境初始化配置不可用。" };
+      return { ok: false, message: t("startup.envImport.configUnavailable") };
     }
 
-    beginBootstrapStatus("跳过 env.zip 导入，使用现有环境目录...");
+    beginBootstrapStatus(t("startup.envImport.skipExisting"));
     scheduleStartupPreparationAfterEnvDecision();
     return { ok: true };
   }
@@ -292,10 +293,14 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     const backupPath = generateBackupDirName(runtimeRootAtProcessStart, platform || process.platform);
     const choice = await showMessageBox({
       type: "warning",
-      title: "检测到旧环境目录",
-      message: `目录 ${runtimeRootAtProcessStart} 已存在，是否迁移旧数据？`,
-      detail: `迁移后旧目录将重命名为 ${backupPath}，然后导入全新环境。\n选择“使用旧数据”将跳过环境导入，直接使用现有目录。`,
-      buttons: ["迁移旧数据并初始化", "使用旧数据", "取消导入"],
+      title: t("startup.envConflict.title"),
+      message: t("startup.envConflict.message", { path: runtimeRootAtProcessStart }),
+      detail: t("startup.envConflict.detail", { backupPath }),
+      buttons: [
+        t("startup.envConflict.migrate"),
+        t("startup.envConflict.keep"),
+        t("startup.envConflict.cancel")
+      ],
       defaultId: 0,
       cancelId: 2,
       noLink: true
@@ -320,10 +325,10 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     } catch (error) {
       const retryChoice = await showMessageBox({
         type: "error",
-        title: "旧环境迁移失败",
+        title: t("startup.envConflict.migrationFailedTitle"),
         message: error instanceof Error ? error.message : String(error),
-        detail: `旧目录：${runtimeRootAtProcessStart}\n目标备份：${backupPath}`,
-        buttons: ["取消导入", "使用旧数据"],
+        detail: t("startup.envConflict.migrationFailedDetail", { path: runtimeRootAtProcessStart, backupPath }),
+        buttons: [t("startup.envConflict.cancel"), t("startup.envConflict.keep")],
         defaultId: 0,
         cancelId: 0,
         noLink: true
@@ -344,26 +349,26 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       return continueStartupWithExistingEnv();
     }
     if (effectiveDecision === "cancel") {
-      return { ok: false, message: "已取消导入。" };
+      return { ok: false, message: t("startup.envImport.cancelled") };
     }
 
     const result = await showFileDialog({
-      title: "选择 env.zip",
+      title: t("startup.envImport.chooseTitle"),
       defaultPath: app.getPath("home"),
       properties: ["openFile"],
       filters: [{ name: "env.zip", extensions: ["zip"] }]
     });
 
     if (result.canceled || result.filePaths.length === 0) {
-      return { ok: false, message: "已取消导入。" };
+      return { ok: false, message: t("startup.envImport.cancelled") };
     }
 
     if (!importEnvZipToRuntime || !runStartupPreparation) {
-      return { ok: false, message: "环境初始化配置不可用。" };
+      return { ok: false, message: t("startup.envImport.configUnavailable") };
     }
 
     try {
-      beginBootstrapStatus("正在导入 env.zip...");
+      beginBootstrapStatus(t("startup.envImport.importingZip"));
 
       const importResult = await importEnvZipToRuntime(app, result.filePaths[0], platform);
       console.info(
@@ -457,13 +462,13 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
   ipcMain.handle("services.importFile", async (_event: any, serviceId: string, targetKey: string) =>
     runServiceMutation(async () => {
       const result = await showFileDialog({
-        title: "选择要导入的文件",
+        title: t("dialog.chooseFile.title"),
         properties: ["openFile"]
       });
       if (result.canceled || result.filePaths.length === 0) {
         return {
           ok: false,
-          message: "已取消导入。",
+          message: t("service.importCancelled"),
           targetPath: "",
           service: await getServiceState(app, serviceId)
         };
@@ -484,7 +489,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       if (current.status === "running") {
         return {
           ok: false,
-          message: "服务正在运行中，请先停止后再安装。",
+          message: t("service.installStopFirst"),
           service: current
         };
       }
@@ -492,7 +497,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       await clearSessionCache?.();
       return {
         ok: true,
-        message: "内置服务已安装。",
+        message: t("service.builtinInstalled"),
         service: await getServiceState(app, serviceId)
       };
     })
@@ -507,19 +512,19 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       if (current.status === "running") {
         return {
           ok: false,
-          message: "服务正在运行中，请先停止后再安装。",
+          message: t("service.installStopFirst"),
           service: current
         };
       }
       const archiveTitle = platform === "win32"
-        ? "选择内置服务安装包 (.zip)"
-        : "选择内置服务安装包 (.tar.gz)";
+        ? t("service.installArchiveTitleWindows")
+        : t("service.installArchiveTitleUnix");
       const archiveExtensions = getArchiveExtensions?.(platform) ?? (platform === "win32" ? ["zip"] : ["gz", "tgz"]);
       const result = await showArchiveDialog(archiveTitle, archiveExtensions);
       if (result.canceled || result.filePaths.length === 0) {
         return {
           ok: false,
-          message: "已取消安装。",
+          message: t("service.installCancelled"),
           service: await getServiceState(app, serviceId)
         };
       }
@@ -530,7 +535,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       await clearSessionCache?.();
       return {
         ok: true,
-        message: "内置服务已安装。",
+        message: t("service.builtinInstalled"),
         service: await getServiceState(app, serviceId)
       };
     })
@@ -548,9 +553,9 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     const target: "error" | "main" = request?.target === "error" ? "error" : "main";
     const title = typeof request?.title === "string" && request.title.trim()
       ? request.title.trim()
-      : "日志文件";
+      : t("service.logFile");
     if (!serviceId) {
-      throw new Error("缺少日志服务标识。");
+      throw new Error(t("service.logServiceIdMissing"));
     }
     return openLogViewerWindow({ serviceId, target, title });
   });

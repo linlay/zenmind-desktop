@@ -21,8 +21,9 @@ const LogViewerPage = lazy(() =>
 export function App() {
   const location = useLocation();
   const resetKey = `${location.pathname}${location.search}${location.hash}`;
+  let content;
   if (location.pathname === "/quick-assistant") {
-    return (
+    content = (
       <AppErrorBoundary resetKey={resetKey}>
         <ServicesProvider>
           <Suspense fallback={null}>
@@ -31,18 +32,16 @@ export function App() {
         </ServicesProvider>
       </AppErrorBoundary>
     );
-  }
-  if (location.pathname === DESKTOP_PET_ROUTE) {
-    return (
+  } else if (location.pathname === DESKTOP_PET_ROUTE) {
+    content = (
       <AppErrorBoundary resetKey={resetKey}>
         <Suspense fallback={null}>
           <DesktopPet />
         </Suspense>
       </AppErrorBoundary>
     );
-  }
-  if (location.pathname === "/log-viewer") {
-    return (
+  } else if (location.pathname === "/log-viewer") {
+    content = (
       <AppErrorBoundary resetKey={resetKey}>
         <ServicesProvider>
           <Suspense fallback={null}>
@@ -51,14 +50,19 @@ export function App() {
         </ServicesProvider>
       </AppErrorBoundary>
     );
-  }
-  return (
-    <AppErrorBoundary resetKey={resetKey}>
-      <I18nProvider>
+  } else {
+    content = (
+      <AppErrorBoundary resetKey={resetKey}>
         <ServicesProvider>
           <AppShell />
         </ServicesProvider>
-      </I18nProvider>
-    </AppErrorBoundary>
+      </AppErrorBoundary>
+    );
+  }
+
+  return (
+    <I18nProvider>
+      {content}
+    </I18nProvider>
   );
 }

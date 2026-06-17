@@ -10,6 +10,7 @@ import {
   getDesktopDownloadDefaultPath,
   getPlatformPath
 } from "../download-paths";
+import { t } from "../i18n/main-i18n";
 
 type ShellIpcResult = {
   ok: boolean;
@@ -91,20 +92,20 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     try {
       const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? options.mainWindow;
       const result = await options.showFileDialog?.({
-        title: "选择项目目录",
+        title: t("shell.chooseProjectDirectory"),
         properties: ["openDirectory", "createDirectory"]
       }, ownerWindow);
       if (!result || result.canceled || result.filePaths.length === 0) {
         return {
           ok: false as const,
           path: "",
-          message: "已取消选择目录。"
+          message: t("shell.chooseDirectoryCancelled")
         };
       }
       return {
         ok: true as const,
         path: result.filePaths[0],
-        message: "已选择目录。"
+        message: t("shell.directorySelected")
       };
     } catch (error) {
       return {
@@ -137,11 +138,11 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       const x = Number(input.x);
       const y = Number(input.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        return { ok: false as const, message: "invalid_delta" };
+        return { ok: false as const, message: t("shell.invalidDelta") };
       }
       const ownerWindow = BrowserWindow.fromWebContents(event.sender);
       if (!ownerWindow || ownerWindow.isDestroyed() || ownerWindow.isFullScreen()) {
-        return { ok: false as const, message: "window_unavailable" };
+        return { ok: false as const, message: t("shell.windowUnavailable") };
       }
       const [currentX, currentY] = ownerWindow.getPosition();
       ownerWindow.setPosition(currentX + Math.round(x), currentY + Math.round(y));
@@ -172,7 +173,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
         return {
           ok: false as const,
           path: "",
-          message: "下载请求无效。"
+          message: t("shell.downloadInvalid")
         };
       }
       const filename = typeof input.filename === "string" ? input.filename : "";
@@ -194,7 +195,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       return {
         ok: true as const,
         path: downloadPath,
-        message: "已下载文件。"
+        message: t("shell.downloaded")
       };
     } catch (error) {
       return {
@@ -210,7 +211,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       if (!options.captureDesktopScreenshot) {
         return {
           ok: false as const,
-          message: "截屏能力暂不可用。"
+          message: t("shell.screenshotUnavailable")
         };
       }
       return await options.captureDesktopScreenshot();
