@@ -321,6 +321,7 @@ async function tryReadPluginWebviewPageContext(
   surfaceRoute: string,
   embedPath: string | undefined,
   currentUrl: string,
+  t: TranslateFunction,
 ): Promise<AssistantPageContext | null> {
   if (!webview) {
     return null;
@@ -549,6 +550,7 @@ export function PluginPage({
         surfaceRoute,
         effectiveEmbedPath,
         readCurrentWebviewUrl(),
+        t,
       )) ??
       buildPluginWebviewFallbackContext(
         serviceDisplayName,

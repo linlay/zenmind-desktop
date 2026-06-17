@@ -2221,7 +2221,7 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
     key: "agent-chat",
     routePath: `${pathname}${search}`,
     embedPath: `/agent/${encodeURIComponent(agentKey)}${embedQuery ? `?${embedQuery}` : ""}`,
-    label: t("service.display.agentWebclient"),
+    labelKey: "service.display.agentWebclient",
     kind: "chat",
     mode: "embedded"
   };

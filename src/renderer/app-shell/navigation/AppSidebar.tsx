@@ -637,6 +637,7 @@ type SidebarCollapseToggleProps = {
   variant: SidebarCollapseToggleVariant;
   className?: string;
   onToggleCollapsed?: () => void;
+  t: TranslateFunction;
 };
 
 function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
@@ -674,6 +675,7 @@ function SidebarCollapseToggle({
   variant,
   onToggleCollapsed,
   className,
+  t,
 }: SidebarCollapseToggleProps) {
   return (
     <button
@@ -3283,6 +3285,7 @@ export function AppSidebar({
               isCollapsed={isCollapsed}
               variant="compact"
               onToggleCollapsed={onToggleCollapsed}
+              t={t}
             />
             ) : null}
             {!isSettingsMode ? (
