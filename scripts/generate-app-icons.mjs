@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
@@ -28,6 +28,8 @@ const appIconSvgPath = path.join(projectRoot, brand.icons.appIconSvg);
 const trayIconSourceSvgPath = path.join(projectRoot, brand.icons.trayIconSvg);
 const publicTrayIconSvgPath = path.join(publicDir, "tray-icon.svg");
 
+const APP_ICON_CORNER_RADIUS_RATIO = 0.223;
+const APP_ICON_FOREGROUND_SCALE = 0.78;
 const pngSizes = [16, 32, 64, 128, 256, 512, 1024];
 const icoSizes = [16, 32, 48, 64, 128, 256];
 const iconsetEntries = [
@@ -173,12 +175,12 @@ function isFullCanvasWhiteRect(node, viewport) {
   );
 }
 
-function removeRootWhiteBackground(svg) {
+function extractAppIconForegroundSvg(svg) {
   let parsed;
   try {
     parsed = svgParser.parse(svg);
   } catch {
-    return { svg, removed: false };
+    return svg;
   }
 
   let removed = false;
@@ -201,10 +203,7 @@ function removeRootWhiteBackground(svg) {
     });
   }
 
-  return {
-    svg: removed ? svgBuilder.build(parsed) : svg,
-    removed
-  };
+  return removed ? svgBuilder.build(parsed) : svg;
 }
 
 async function renderSvgToCanvas(svg, size) {
@@ -221,89 +220,37 @@ async function renderSvgToPng(svg, size) {
   return canvas.toBuffer("image/png");
 }
 
-function connectedTransparentPixels(imageData, width, height) {
-  const alpha = imageData.data;
-  const totalPixels = width * height;
-  const connected = new Uint8Array(totalPixels);
-  const queue = new Uint32Array(totalPixels);
-  let head = 0;
-  let tail = 0;
-
-  const enqueue = (pixelIndex) => {
-    if (connected[pixelIndex] || alpha[pixelIndex * 4 + 3] === 255) {
-      return;
-    }
-    connected[pixelIndex] = 1;
-    queue[tail] = pixelIndex;
-    tail += 1;
-  };
-
-  for (let x = 0; x < width; x += 1) {
-    enqueue(x);
-    enqueue((height - 1) * width + x);
-  }
-  for (let y = 1; y < height - 1; y += 1) {
-    enqueue(y * width);
-    enqueue(y * width + width - 1);
-  }
-
-  while (head < tail) {
-    const pixelIndex = queue[head];
-    head += 1;
-
-    const x = pixelIndex % width;
-    const y = Math.floor(pixelIndex / width);
-    if (x > 0) {
-      enqueue(pixelIndex - 1);
-    }
-    if (x < width - 1) {
-      enqueue(pixelIndex + 1);
-    }
-    if (y > 0) {
-      enqueue(pixelIndex - width);
-    }
-    if (y < height - 1) {
-      enqueue(pixelIndex + width);
-    }
-  }
-
-  return connected;
+function drawRoundedRect(context, x, y, width, height, radius) {
+  const boundedRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + boundedRadius, y);
+  context.lineTo(x + width - boundedRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + boundedRadius);
+  context.lineTo(x + width, y + height - boundedRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - boundedRadius, y + height);
+  context.lineTo(x + boundedRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - boundedRadius);
+  context.lineTo(x, y + boundedRadius);
+  context.quadraticCurveTo(x, y, x + boundedRadius, y);
+  context.closePath();
 }
 
-function composeTransparentAppIcon(originalCanvas, backgroundlessCanvas) {
-  const width = originalCanvas.width;
-  const height = originalCanvas.height;
-  const originalContext = originalCanvas.getContext("2d");
-  const backgroundlessContext = backgroundlessCanvas.getContext("2d");
-  const originalImage = originalContext.getImageData(0, 0, width, height);
-  const backgroundlessImage = backgroundlessContext.getImageData(0, 0, width, height);
-  const backgroundPixels = connectedTransparentPixels(backgroundlessImage, width, height);
+export async function renderAppIconToPng(svg, size) {
+  const canvas = createCanvas(size, size);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, size, size);
 
-  for (let pixelIndex = 0; pixelIndex < backgroundPixels.length; pixelIndex += 1) {
-    if (!backgroundPixels[pixelIndex]) {
-      continue;
-    }
-    const offset = pixelIndex * 4;
-    originalImage.data[offset] = backgroundlessImage.data[offset];
-    originalImage.data[offset + 1] = backgroundlessImage.data[offset + 1];
-    originalImage.data[offset + 2] = backgroundlessImage.data[offset + 2];
-    originalImage.data[offset + 3] = backgroundlessImage.data[offset + 3];
-  }
+  drawRoundedRect(context, 0, 0, size, size, size * APP_ICON_CORNER_RADIUS_RATIO);
+  context.fillStyle = "#FFFFFF";
+  context.fill();
 
-  originalContext.putImageData(originalImage, 0, 0);
-  return originalCanvas.toBuffer("image/png");
-}
+  const foregroundSvg = extractAppIconForegroundSvg(svg);
+  const foregroundImage = await loadImage(Buffer.from(foregroundSvg));
+  const foregroundSize = size * APP_ICON_FOREGROUND_SCALE;
+  const foregroundOffset = (size - foregroundSize) / 2;
+  context.drawImage(foregroundImage, foregroundOffset, foregroundOffset, foregroundSize, foregroundSize);
 
-async function renderTransparentAppIconToPng(svg, size) {
-  const backgroundless = removeRootWhiteBackground(svg);
-  if (!backgroundless.removed) {
-    return renderSvgToPng(svg, size);
-  }
-
-  // Preserve internal white marks from the supplied SVG while clearing only the outer canvas.
-  const originalCanvas = await renderSvgToCanvas(svg, size);
-  const backgroundlessCanvas = await renderSvgToCanvas(backgroundless.svg, size);
-  return composeTransparentAppIcon(originalCanvas, backgroundlessCanvas);
+  return canvas.toBuffer("image/png");
 }
 
 async function countOpaquePixels(png) {
@@ -439,7 +386,7 @@ async function main() {
 
   const renderedAppPngs = new Map();
   for (const size of pngSizes) {
-    const png = await renderTransparentAppIconToPng(appIconSvg, size);
+    const png = await renderAppIconToPng(appIconSvg, size);
     renderedAppPngs.set(size, png);
     writeFileIfChanged(path.join(buildIconsDir, `icon-${size}.png`), png);
   }
@@ -454,19 +401,15 @@ async function main() {
     fs.rmSync(iconsetDir, { recursive: true, force: true });
     fs.mkdirSync(iconsetDir, { recursive: true });
     for (const [filename, size] of iconsetEntries) {
-      const png = renderedAppPngs.get(size) ?? (await renderSvgToPng(appIconSvg, size));
+      const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
       writeFileIfChanged(path.join(iconsetDir, filename), png);
     }
     warnSkippedMacIcns();
   }
 
-  const renderedTransparentAppPngs = new Map();
   const icoPngEntries = [];
   for (const size of icoSizes) {
-    const png = renderedAppPngs.get(size) ??
-      renderedTransparentAppPngs.get(size) ??
-      (await renderTransparentAppIconToPng(appIconSvg, size));
-    renderedTransparentAppPngs.set(size, png);
+    const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
     icoPngEntries.push({ size, png });
   }
   writeFileIfChanged(path.join(buildIconsDir, "icon.ico"), createIco(icoPngEntries));
@@ -478,7 +421,9 @@ async function main() {
   console.log(`generated ${brand.productName} app icons`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
