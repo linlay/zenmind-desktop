@@ -410,6 +410,9 @@ export interface SettingsIpcHandlerContextDependencies {
   emitLocaleChanged: (...args: any[]) => unknown;
   createAppPairingPayload?: (...args: any[]) => unknown;
   onGeneralSettingsChanged?: (...args: any[]) => unknown;
+  getDesktopWsServerRuntimeState?: (...args: any[]) => unknown;
+  startDesktopWsServer?: (...args: any[]) => unknown;
+  stopDesktopWsServer?: (...args: any[]) => unknown;
 }
 
 export function createSettingsIpcHandlerOptions(
@@ -434,6 +437,9 @@ export function createSettingsIpcHandlerOptions(
     refreshTrayContextMenu: dependencies.refreshTrayContextMenu,
     emitLocaleChanged: dependencies.emitLocaleChanged,
     createAppPairingPayload: dependencies.createAppPairingPayload,
-    onGeneralSettingsChanged: dependencies.onGeneralSettingsChanged
+    onGeneralSettingsChanged: dependencies.onGeneralSettingsChanged,
+    getDesktopWsServerRuntimeState: dependencies.getDesktopWsServerRuntimeState,
+    startDesktopWsServer: dependencies.startDesktopWsServer,
+    stopDesktopWsServer: dependencies.stopDesktopWsServer
   };
 }

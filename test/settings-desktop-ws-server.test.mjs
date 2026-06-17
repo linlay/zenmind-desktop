@@ -1,0 +1,162 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+const { registerSettingsIpcHandlers } = require("../dist-electron/main/ipc/settings-handlers.js");
+const { readDesktopProfileFromRoot } = require("../dist-electron/main/desktop-profile-store.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
+const {
+  DESKTOP_WS_HOST,
+  DESKTOP_WS_PATH,
+  DESKTOP_WS_PORT,
+  DESKTOP_WS_URL
+} = require("../dist-electron/shared/desktop-ws.js");
+
+function createApp(homePath) {
+  return {
+    name: "ZenMind Test",
+    getPath(name) {
+      if (name === "home") {
+        return homePath;
+      }
+      if (name === "appData") {
+        return path.join(homePath, "app-data");
+      }
+      assert.fail(`unexpected app.getPath(${name})`);
+    },
+    getVersion() {
+      return "0.0.0-test";
+    }
+  };
+}
+
+function createIpcMain() {
+  const handlers = new Map();
+  return {
+    handle(channel, handler) {
+      handlers.set(channel, handler);
+    },
+    invoke(channel, ...args) {
+      const handler = handlers.get(channel);
+      assert.equal(typeof handler, "function", `missing ipc handler ${channel}`);
+      return handler({}, ...args);
+    }
+  };
+}
+
+function runtimeState(running) {
+  return {
+    running,
+    host: DESKTOP_WS_HOST,
+    port: DESKTOP_WS_PORT,
+    path: DESKTOP_WS_PATH,
+    url: DESKTOP_WS_URL
+  };
+}
+
+function registerSettingsHandlers(app, overrides = {}) {
+  const ipcMain = createIpcMain();
+  registerSettingsIpcHandlers(ipcMain, {
+    app,
+    platform: "darwin",
+    nativeTheme: { themeSource: "system" },
+    getDataRoot: () => "",
+    initializeMainI18n: () => ({ locale: "zh-CN", source: "system" }),
+    isSupportedLocale: () => true,
+    setMainLocale: () => ({ locale: "zh-CN", source: "user" }),
+    buildApplicationMenu() {},
+    refreshTrayContextMenu() {},
+    emitLocaleChanged() {},
+    ...overrides
+  });
+  return ipcMain;
+}
+
+test("desktop ws server setting defaults to disabled and does not start by reading state", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-setting-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  let startCalls = 0;
+  const ipcMain = registerSettingsHandlers(app, {
+    getDesktopWsServerRuntimeState: () => runtimeState(false),
+    startDesktopWsServer: async () => {
+      startCalls += 1;
+      return runtimeState(true);
+    }
+  });
+
+  const state = await ipcMain.invoke("settings.getDesktopWsServerState");
+  assert.deepEqual(state, {
+    enabled: false,
+    ...runtimeState(false)
+  });
+  assert.equal(startCalls, 0);
+  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, false);
+});
+
+test("desktop ws server setting persists successful open and close", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-setting-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  let running = false;
+  let startCalls = 0;
+  let stopCalls = 0;
+  const ipcMain = registerSettingsHandlers(app, {
+    getDesktopWsServerRuntimeState: () => runtimeState(running),
+    startDesktopWsServer: async () => {
+      startCalls += 1;
+      running = true;
+      return runtimeState(running);
+    },
+    stopDesktopWsServer: async () => {
+      stopCalls += 1;
+      running = false;
+      return runtimeState(running);
+    }
+  });
+
+  const openState = await ipcMain.invoke("settings.setDesktopWsServerEnabled", true);
+  assert.equal(openState.enabled, true);
+  assert.equal(openState.running, true);
+  assert.equal(openState.url, DESKTOP_WS_URL);
+  assert.equal(startCalls, 1);
+  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, true);
+
+  await ipcMain.invoke("settings.saveGeneralSettings", {
+    preventSleepWhileRunning: false,
+    desktopWsServerEnabled: false
+  });
+  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, true);
+
+  const closeState = await ipcMain.invoke("settings.setDesktopWsServerEnabled", false);
+  assert.equal(closeState.enabled, false);
+  assert.equal(closeState.running, false);
+  assert.equal(stopCalls, 1);
+  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, false);
+});
+
+test("desktop ws server setting does not persist enable when start fails", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-setting-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  const ipcMain = registerSettingsHandlers(app, {
+    getDesktopWsServerRuntimeState: () => runtimeState(false),
+    startDesktopWsServer: async () => {
+      throw new Error("EADDRINUSE: address already in use 127.0.0.1:7082");
+    }
+  });
+
+  const state = await ipcMain.invoke("settings.setDesktopWsServerEnabled", true);
+  assert.equal(state.enabled, false);
+  assert.equal(state.running, false);
+  assert.match(state.message, /EADDRINUSE/);
+  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, false);
+});

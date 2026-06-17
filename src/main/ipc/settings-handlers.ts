@@ -1,4 +1,15 @@
-import type { DesktopGeneralSettings, DesktopGeneralSettingsInput, TunnelHubAgentSettingsInput } from "../../shared/contracts";
+import type {
+  DesktopGeneralSettings,
+  DesktopGeneralSettingsInput,
+  DesktopWsServerState,
+  TunnelHubAgentSettingsInput
+} from "../../shared/contracts";
+import {
+  DESKTOP_WS_HOST,
+  DESKTOP_WS_PATH,
+  DESKTOP_WS_PORT,
+  DESKTOP_WS_URL
+} from "../../shared/desktop-ws";
 import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunnel-hub-agent-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot } from "../user-paths";
@@ -25,6 +36,9 @@ export interface SettingsIpcHandlerOptions {
   emitLocaleChanged: (settings: any) => void;
   createAppPairingPayload?: (app: any) => Promise<any>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
+  getDesktopWsServerRuntimeState?: () => Omit<DesktopWsServerState, "enabled">;
+  startDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
+  stopDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
 }
 
 export function setNativeThemeSource(nativeTheme: { themeSource: string }, themeMode: string) {
@@ -48,6 +62,29 @@ function normalizeStringArray(value: unknown) {
     .filter(Boolean);
 }
 
+function defaultDesktopWsServerRuntimeState(): Omit<DesktopWsServerState, "enabled"> {
+  return {
+    running: false,
+    host: DESKTOP_WS_HOST,
+    port: DESKTOP_WS_PORT,
+    path: DESKTOP_WS_PATH,
+    url: DESKTOP_WS_URL
+  };
+}
+
+function desktopWsServerState(
+  enabled: boolean,
+  runtimeState: Omit<DesktopWsServerState, "enabled"> | undefined,
+  message?: string
+): DesktopWsServerState {
+  return {
+    ...defaultDesktopWsServerRuntimeState(),
+    ...runtimeState,
+    enabled,
+    ...(message ? { message } : {})
+  };
+}
+
 export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHandlerOptions) {
   const {
     app,
@@ -63,7 +100,10 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     refreshTrayContextMenu,
     emitLocaleChanged,
     createAppPairingPayload,
-    onGeneralSettingsChanged
+    onGeneralSettingsChanged,
+    getDesktopWsServerRuntimeState,
+    startDesktopWsServer,
+    stopDesktopWsServer
   } = options;
 
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
@@ -76,13 +116,61 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
   ipcMain.handle("settings.getGeneralSettings", async () =>
     readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general
   );
+  ipcMain.handle("settings.getDesktopWsServerState", async () => {
+    const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+    return desktopWsServerState(profile.general.desktopWsServerEnabled, getDesktopWsServerRuntimeState?.());
+  });
+  ipcMain.handle("settings.setDesktopWsServerEnabled", async (_event: any, enabled: boolean) => {
+    const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+    const nextEnabled = enabled === true;
+    if (nextEnabled) {
+      if (!startDesktopWsServer) {
+        return desktopWsServerState(false, getDesktopWsServerRuntimeState?.(), "Desktop WS Server 调试功能不可用。");
+      }
+      try {
+        const runtimeState = await startDesktopWsServer();
+        const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+          general: {
+            preventSleepWhileRunning: current.general.preventSleepWhileRunning,
+            desktopWsServerEnabled: true
+          }
+        });
+        onGeneralSettingsChanged?.(profile.general);
+        return desktopWsServerState(true, runtimeState);
+      } catch (error) {
+        return desktopWsServerState(
+          current.general.desktopWsServerEnabled,
+          getDesktopWsServerRuntimeState?.(),
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    }
+
+    let runtimeState: Omit<DesktopWsServerState, "enabled"> | undefined;
+    let message = "";
+    try {
+      runtimeState = stopDesktopWsServer ? await stopDesktopWsServer() : getDesktopWsServerRuntimeState?.();
+    } catch (error) {
+      runtimeState = getDesktopWsServerRuntimeState?.();
+      message = error instanceof Error ? error.message : String(error);
+    }
+    const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+      general: {
+        preventSleepWhileRunning: current.general.preventSleepWhileRunning,
+        desktopWsServerEnabled: false
+      }
+    });
+    onGeneralSettingsChanged?.(profile.general);
+    return desktopWsServerState(false, runtimeState, message);
+  });
   ipcMain.handle("settings.saveGeneralSettings", async (_event: any, input: DesktopGeneralSettingsInput) => {
     const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
     const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
       general: {
         preventSleepWhileRunning: typeof input?.preventSleepWhileRunning === "boolean"
           ? input.preventSleepWhileRunning
-          : current.general.preventSleepWhileRunning
+          : current.general.preventSleepWhileRunning,
+        desktopWsServerEnabled: current.general.desktopWsServerEnabled
       }
     });
     onGeneralSettingsChanged?.(profile.general);

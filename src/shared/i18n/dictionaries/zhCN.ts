@@ -2,7 +2,9 @@ import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
 
 const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["zh-CN"];
 const runtimeRootDisplay = `~/${APP_BRAND.paths.runtimeRootDirName}`;
-const isCuteJBrand = String(APP_BRAND.id) === "cutej";
+const desktopPetClassicName = brandMessages["desktopPet.appearance.classic.name"] ?? APP_BRAND.desktopPet.displayName;
+const desktopPetClassicDescription =
+  brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const zhCNMessages = {
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
@@ -223,6 +225,17 @@ export const zhCNMessages = {
   "settings.about.versionDescription": "当前安装的桌面端版本。",
   "settings.about.buildTime": "构建时间",
   "settings.about.buildTimeDescription": "当前安装包的构建时间。",
+  "settings.about.desktopWs.title": "本地 WS Server 调试",
+  "settings.about.desktopWs.description": "打开后会在本机监听 7082，用于外部客户端调试 Desktop 能力。",
+  "settings.about.desktopWs.open": "已打开",
+  "settings.about.desktopWs.closed": "未打开",
+  "settings.about.desktopWs.failed": "启动失败",
+  "settings.about.desktopWs.opening": "打开中",
+  "settings.about.desktopWs.closing": "关闭中",
+  "settings.about.desktopWs.openAction": "打开本地 WS Server",
+  "settings.about.desktopWs.closeAction": "关闭本地 WS Server",
+  "settings.about.desktopWs.retryAction": "重试打开",
+  "settings.about.desktopWs.disableAction": "关闭开关",
   "settings.memory.sectionDescription": "侧边助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。",
   "settings.memory.statsLabel": "记忆统计",
   "settings.memory.statsTotal": "全部",
@@ -329,10 +342,8 @@ export const zhCNMessages = {
   "settings.desktopPet.noticeAppearanceChanged": "桌面宠物形象已切换为 {name}。",
   "settings.desktopPet.noticeAppearanceFailed": "桌面宠物形象切换未生效，请重启应用后再试。",
   "settings.desktopPet.noticeBoundAgentChanged": "桌面宠物已绑定到 {name}。",
-  "settings.desktopPet.appearance.classic.label": isCuteJBrand ? "小君" : "小禅",
-  "settings.desktopPet.appearance.classic.description": isCuteJBrand
-    ? "蓝发耳机、白蓝制服的 CuteJ 3D 玩具风桌面宠物。"
-    : "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
+  "settings.desktopPet.appearance.classic.label": desktopPetClassicName,
+  "settings.desktopPet.appearance.classic.description": desktopPetClassicDescription,
   "settings.desktopPet.appearance.dario.label": "达里奥",
   "settings.desktopPet.appearance.dario.description": "皱眉卷发形象，适合高压专注时刻。",
   "settings.desktopPet.appearance.sama.label": "迷你萨玛",
@@ -1029,10 +1040,8 @@ export const zhCNMessages = {
   "desktopPet.status.stopped": "已停止",
   "desktopPet.context.dance": "跳舞",
   "desktopPet.context.close": "关闭宠物",
-  "desktopPet.appearance.classic.name": isCuteJBrand ? "小君" : "小禅",
-  "desktopPet.appearance.classic.description": isCuteJBrand
-    ? "蓝发耳机、白蓝制服的 CuteJ 3D 玩具风桌面宠物。"
-    : "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
+  "desktopPet.appearance.classic.name": desktopPetClassicName,
+  "desktopPet.appearance.classic.description": desktopPetClassicDescription,
   "desktopPet.appearance.dario.description": "适合高压专注时刻的卷发皱眉宠物。",
   "desktopPet.appearance.sama.description": "带一点会议室混乱气质、焦虑又机灵的宠物。",
   "desktopPet.appearance.xiao.name": "小萧",

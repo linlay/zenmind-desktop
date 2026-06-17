@@ -128,6 +128,32 @@ test("renderer entry uses HashRouter for Electron routing", () => {
   assert.doesNotMatch(rendererEntry, /BrowserRouter/);
 });
 
+test("brand i18n owns built-in desktop pet appearance copy", () => {
+  const zhDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const cutejZh = readJsonFile("brands", "cutej", "i18n", "zh-CN.json");
+  const cutejEn = readJsonFile("brands", "cutej", "i18n", "en-US.json");
+  const zenmindZh = readJsonFile("brands", "zenmind", "i18n", "zh-CN.json");
+  const zenmindEn = readJsonFile("brands", "zenmind", "i18n", "en-US.json");
+
+  for (const dictionary of [zhDictionary, enDictionary]) {
+    assert.doesNotMatch(dictionary, /isCuteJBrand/);
+    assert.match(
+      dictionary,
+      /brandMessages\["desktopPet\.appearance\.classic\.name"\]\s*\?\?\s*APP_BRAND\.desktopPet\.displayName/
+    );
+    assert.match(
+      dictionary,
+      /brandMessages\["desktopPet\.appearance\.classic\.description"\]\s*\?\?\s*APP_BRAND\.desktopPet\.description/
+    );
+  }
+
+  assert.equal(cutejZh["desktopPet.appearance.classic.name"], "小君");
+  assert.equal(cutejEn["desktopPet.appearance.classic.name"], "CuteJ");
+  assert.equal(zenmindZh["desktopPet.appearance.classic.name"], "小禅");
+  assert.equal(zenmindEn["desktopPet.appearance.classic.name"], "Zenmi");
+});
+
 test("desktop renderer API no longer exposes native agent-platform request bridge", () => {
   const preloadSource = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
@@ -1285,11 +1311,18 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "about"/);
   assert.match(settingsPage, /<AboutAppCard[\s\S]*?runtimeResetPending=\{runtimeResetPending\}[\s\S]*?runtimeResetResult=\{runtimeResetResult\}[\s\S]*?onResetRuntimeEnv=\{handleResetRuntimeEnv\}/);
   assert.match(settingsPage, /settings-item-card settings-about-card/);
+  assert.match(settingsPage, /settings-desktop-ws-card/);
+  assert.match(settingsPage, /window\.electronAPI\.settings[\s\S]*?\.getDesktopWsServerState\(\)/);
+  assert.match(settingsPage, /window\.electronAPI\.settings[\s\S]*?\.setDesktopWsServerEnabled/);
+  assert.match(settingsPage, /settings\.about\.desktopWs\.title/);
+  assert.match(settingsPage, /settings\.about\.desktopWs\.openAction/);
+  assert.match(settingsPage, /settings\.about\.desktopWs\.closeAction/);
   assert.doesNotMatch(settingsPage, /settings-debug-card/);
   assert.match(settingsPage, /settings-about-version/);
   assert.match(settingsPage, /settings\.about\.versionDescription/);
   assert.doesNotMatch(settingsPage, /settings-about-meta/);
   assert.match(settingsStyles, /\.settings-about-version\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(settingsStyles, /\.settings-desktop-ws-status/);
   assert.match(settingsStyles, /\.settings-page \.settings-reset-card/);
   assert.match(settingsPage, /settings-page-single/);
   assert.match(settingsPage, /settings-content-panel/);
@@ -1695,6 +1728,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /nativeTheme/);
   assert.match(settingsHandlers, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : themeMode === "system" \? "system" : "light"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?getAppInfo\?\.\(\)/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopWsServerState"/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setDesktopWsServerEnabled"/);
   assert.match(settingsPage, /settings\.about\.buildTime/);
   assert.match(settingsPage, /settings-about-build-time/);
   assert.match(mainProcess, /const desktopAppInfo = resolveDesktopAppInfo\(app\);/);
@@ -1707,6 +1742,9 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
   assert.match(mainProcess, /registerSettingsIpcHandlers\(/);
+  assert.match(mainProcess, /general\.desktopWsServerEnabled/);
+  assert.match(mainProcess, /startDesktopWsServerForSettings/);
+  assert.doesNotMatch(mainProcess, /void startDesktopWsServer\(\{\s*app,/);
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
   assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
   assert.match(mainProcess, /function refreshDesktopRuntimeConfigFromCanonicalFiles\(reason: string\)/);
@@ -2579,8 +2617,13 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(assistantHandlers, /desktopActions\.respond/);
   assert.match(assistantHandlers, /desktopActions\.call/);
   assert.match(preload, /desktopActions:\s*\{/);
+  assert.match(preload, /getDesktopWsServerState: \(\) => ipcRenderer\.invoke\("settings\.getDesktopWsServerState"\)/);
+  assert.match(preload, /setDesktopWsServerEnabled: \(enabled\) => ipcRenderer\.invoke\("settings\.setDesktopWsServerEnabled", enabled\)/);
   assert.match(preload, /ipcRenderer\.invoke\("desktopActions\.respond"/);
   assert.match(preload, /ipcRenderer\.on\("desktopActions\.call"/);
+  assert.match(contracts, /export interface DesktopWsServerState/);
+  assert.match(contracts, /getDesktopWsServerState: \(\) => Promise<DesktopWsServerState>/);
+  assert.match(contracts, /setDesktopWsServerEnabled: \(enabled: boolean\) => Promise<DesktopWsServerState>/);
   assert.match(contracts, /DesktopActionRendererRequest/);
   assert.match(contracts, /DesktopActionCallListener/);
   assert.match(registry, /DesktopActionProviderScope = "global" \| "page" \| "embeddedWeb"/);
@@ -3349,20 +3392,32 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
   const packagedDarwinBranch = packagedBranch.match(/if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu)?.[0] ?? "";
   const macDevBranch = helper.match(/^  if \(options\.platform === "darwin"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const windowsDevBranch = helper.match(/^  if \(options\.platform === "win32"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
+  const createIconMethod = trayController.match(/private createIcon\(\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
   assert.match(trayController, /function platformFallbackIconPath/);
   assert.match(trayController, /APP_ICON_ASSET_DIRECTORIES\.brandAssets/);
   assert.doesNotMatch(trayController, /APP_ICON_ASSET_DIRECTORIES\.public/);
+  assert.doesNotMatch(trayController, /APP_ICON_ASSET_FILENAMES\.brandMark/);
   assert.match(trayController, /if \(options\.platform === "darwin"\)/);
   assert.match(trayController, /if \(options\.platform === "win32"\)/);
-  assert.doesNotMatch(trayController, /setTemplateImage\(true\)/);
+  assert.match(createIconMethod, /if \(this\.options\.platform === "darwin"\)\s*\{[\s\S]*?resizedIcon\.setTemplateImage\(true\);[\s\S]*?\}/);
 
   assert(
-    indexOfRequired(packagedDarwinBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandMark)") <
+    indexOfRequired(packagedDarwinBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon)") <
+      indexOfRequired(packagedDarwinBranch, "rendererTrayIconPath"),
+    "macOS packaged tray lookup should prefer the packaged tray template before renderer assets"
+  );
+  assert(
+    indexOfRequired(packagedDarwinBranch, "rendererTrayIconPath") <
+      indexOfRequired(packagedDarwinBranch, "generatedTrayIconPath"),
+    "macOS packaged tray lookup should keep generated tray template before app tile fallback"
+  );
+  assert(
+    indexOfRequired(packagedDarwinBranch, "generatedTrayIconPath") <
       indexOfRequired(packagedDarwinBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandIcon)"),
-    "macOS packaged tray lookup should prefer the active brand mark before the app tile"
+    "macOS packaged tray lookup should keep template tray art before the app tile"
   );
   assert(
     indexOfRequired(packagedBranch, "packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon)") <
@@ -3371,17 +3426,18 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
   );
 
   assert(
-    indexOfRequired(macDevBranch, "generatedBrandMarkPath") <
-      indexOfRequired(macDevBranch, "generatedBrandIconPath"),
-    "macOS dev tray lookup should prefer the active generated brand mark"
+    indexOfRequired(macDevBranch, "generatedTrayIconPath") <
+      indexOfRequired(macDevBranch, "fallbackIconPath"),
+    "macOS dev tray lookup should prefer the active generated tray template"
   );
   assert(
-    indexOfRequired(macDevBranch, "generatedBrandIconPath") <
-      indexOfRequired(macDevBranch, "fallbackIconPath"),
-    "macOS dev tray lookup should use generated brand icon before build fallback"
+    indexOfRequired(macDevBranch, "fallbackIconPath") <
+      indexOfRequired(macDevBranch, "generatedBrandIconPath"),
+    "macOS dev tray lookup should use the app tile only after tray fallbacks"
   );
+  assert.doesNotMatch(macDevBranch, /generatedBrandMarkPath/);
   assert.doesNotMatch(macDevBranch, /rendererTrayIconPath/);
-  assert.doesNotMatch(macDevBranch, /generatedTrayIconPath/);
+  assert.doesNotMatch(windowsDevBranch, /setTemplateImage/);
 
   assert(
     indexOfRequired(windowsDevBranch, "fallbackIconPath") <
@@ -4021,10 +4077,15 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
     "utf8"
   );
   const contracts = readSharedContractsSource();
+  const mainProcess = readSourceFile("src", "main", "index.ts");
   const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
   const ssoController = readSourceFile("src", "main", "sso-controller.ts");
   const globalStyles = readRendererStyles();
   const accountMenuRule = globalStyles.match(/\.sidebar-tool-menu\.sidebar-account-menu\s*\{(?<body>[\s\S]*?)^\}/m);
+  const ssoWebviewCompletionHandler = mainProcess.slice(
+    indexOfRequired(mainProcess, "async function handleDesktopSsoWebviewNavigation"),
+    indexOfRequired(mainProcess, "function clearDesktopPetIdleResetTimer")
+  );
 
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
@@ -4041,6 +4102,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(ssoController, /\.\.\.\(avatarUrl \? \{ avatarUrl \} : \{\}\)/);
   assert.match(ssoController, /openEmbeddedLoginDialog/);
   assert.match(ssoController, /sso\.embeddedLogin\.open/);
+  assert.match(ssoWebviewCompletionHandler, /getDesktopSsoCookieAccessTokenExchangeUrl\(app\)/);
+  assert.match(ssoWebviewCompletionHandler, /cookieAccessTokenExchange 未返回 access_token/);
+  assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
   assert.match(appShell, /desktopSsoStatus=\{desktopSsoStatus\}/);

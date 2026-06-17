@@ -440,6 +440,32 @@ test("generated active brand mark PNG keeps transparent header foreground", asyn
   assertTransparentBrandMark(stats, `${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png for ${activeBrandId}`);
 });
 
+test("generated active tray icon stays outside public for the current brand", async (t) => {
+  const generatedBrandPath = path.join(projectRoot, "build", "generated", "brand.json");
+  if (!fs.existsSync(generatedBrandPath)) {
+    t.skip("generated tray icon artifact is not active");
+    return;
+  }
+  const activeBrandId = readJson(generatedBrandPath).id;
+  const brand = loadBrandConfig(projectRoot, activeBrandId);
+  const generatedTrayPngPath = path.join(projectRoot, BRAND_RUNTIME_ASSET_DIR, "tray-icon.png");
+  const generatedTraySvgPath = path.join(projectRoot, BRAND_RUNTIME_ASSET_DIR, "tray-icon.svg");
+  if (!fs.existsSync(generatedTrayPngPath) || !fs.existsSync(generatedTraySvgPath)) {
+    t.skip(`generated ${BRAND_RUNTIME_ASSET_DIR}/tray-icon assets are not active`);
+    return;
+  }
+
+  assert.equal(
+    fs.readFileSync(generatedTraySvgPath, "utf8"),
+    fs.readFileSync(path.join(projectRoot, brand.icons.trayIconSvg), "utf8")
+  );
+  const stats = await inspectPngPixels(generatedTrayPngPath);
+  assert(stats.opaquePixels > 0, `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png should contain ${activeBrandId} tray art`);
+  for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
+    assert.equal(fs.existsSync(path.join(projectRoot, "public", fileName)), false, `public/${fileName} should stay absent`);
+  }
+});
+
 test("brand consistency guard catches and clears stale dist-renderer output", (t) => {
   const root = createBrandFixture(t);
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });

@@ -2,5 +2,7 @@
   "app.name": "CuteJ",
   "app.productName": "CuteJ",
   "startup.envImport.title": "Initialize CuteJ Environment",
-  "taskBoard.prompt.intro": "Please handle this CuteJ task board task and summarize the result when finished."
+  "taskBoard.prompt.intro": "Please handle this CuteJ task board task and summarize the result when finished.",
+  "desktopPet.appearance.classic.name": "CuteJ",
+  "desktopPet.appearance.classic.description": "A blue-haired CuteJ 3D toy desktop pet with a headset and blue-white uniform."
 }

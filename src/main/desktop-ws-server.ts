@@ -27,6 +27,7 @@ import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
   AgentAuthIssueResult,
+  DesktopWsServerState,
   ServiceState,
   TaskBoardIssueInput,
   TaskBoardIssueMoveInput,
@@ -150,6 +151,8 @@ type DesktopWsServerRecord = {
   startedAt: string;
 };
 
+export type DesktopWsServerRuntimeState = Omit<DesktopWsServerState, "enabled" | "message">;
+
 type PublicActionDefinition = DesktopActionDefinition & {
   action: string;
   internalAction: string;
@@ -168,6 +171,18 @@ const AGENT_PLATFORM_CONTROL_PUSH_TYPES = new Set(["connected", "heartbeat", "au
 const AGENT_PLATFORM_CONNECT_TIMEOUT_MS = 8_000;
 
 let activeServer: DesktopWsServerRecord | null = null;
+
+function createDesktopWsServerRuntimeState(record: DesktopWsServerRecord | null = activeServer): DesktopWsServerRuntimeState {
+  const host = record?.host ?? DESKTOP_WS_HOST;
+  const port = record?.port ?? DESKTOP_WS_PORT;
+  return {
+    running: Boolean(record),
+    host,
+    port,
+    path: DESKTOP_WS_PATH,
+    url: `ws://${host}:${port}${DESKTOP_WS_PATH}`
+  };
+}
 
 const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "navigation.toRoute": "desktop.navigate.toRoute",
@@ -1152,9 +1167,7 @@ async function handleUpgrade(record: DesktopWsServerRecord, options: DesktopWsSe
 export async function startDesktopWsServer(options: DesktopWsServerOptions) {
   if (activeServer) {
     return {
-      running: true,
-      host: activeServer.host,
-      port: activeServer.port,
+      ...createDesktopWsServerRuntimeState(activeServer),
       webSocketUrl: `ws://${activeServer.host}:${activeServer.port}${DESKTOP_WS_PATH}`
     };
   }
@@ -1201,12 +1214,15 @@ export async function startDesktopWsServer(options: DesktopWsServerOptions) {
   record.port = address?.port ?? port;
   activeServer = record;
   logger.log?.(`[desktop-ws] listening on ${host}:${record.port}`);
+  const runtimeState = createDesktopWsServerRuntimeState(record);
   return {
-    running: true,
-    host,
-    port: record.port,
-    webSocketUrl: `ws://${host}:${record.port}${DESKTOP_WS_PATH}`
+    ...runtimeState,
+    webSocketUrl: runtimeState.url
   };
+}
+
+export function getDesktopWsServerRuntimeState() {
+  return createDesktopWsServerRuntimeState();
 }
 
 export function emitDesktopWsPush(type: DesktopWsPushType | string, data?: unknown) {

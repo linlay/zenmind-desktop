@@ -2,7 +2,9 @@ import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
 
 const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["en-US"];
 const runtimeRootDisplay = `~/${APP_BRAND.paths.runtimeRootDirName}`;
-const isCuteJBrand = String(APP_BRAND.id) === "cutej";
+const desktopPetClassicName = brandMessages["desktopPet.appearance.classic.name"] ?? APP_BRAND.desktopPet.displayName;
+const desktopPetClassicDescription =
+  brandMessages["desktopPet.appearance.classic.description"] ?? APP_BRAND.desktopPet.description;
 
 export const enUSMessages = {
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
@@ -223,6 +225,17 @@ export const enUSMessages = {
   "settings.about.versionDescription": "Installed desktop app version.",
   "settings.about.buildTime": "Build time",
   "settings.about.buildTimeDescription": "Build time for the installed desktop app.",
+  "settings.about.desktopWs.title": "Local WS Server Debugging",
+  "settings.about.desktopWs.description": "When enabled, Desktop listens on local port 7082 for external clients that debug Desktop capabilities.",
+  "settings.about.desktopWs.open": "Open",
+  "settings.about.desktopWs.closed": "Closed",
+  "settings.about.desktopWs.failed": "Failed",
+  "settings.about.desktopWs.opening": "Opening",
+  "settings.about.desktopWs.closing": "Closing",
+  "settings.about.desktopWs.openAction": "Open local WS Server",
+  "settings.about.desktopWs.closeAction": "Close local WS Server",
+  "settings.about.desktopWs.retryAction": "Retry opening",
+  "settings.about.desktopWs.disableAction": "Turn off",
   "settings.memory.sectionDescription": "The side assistant quietly learns durable preferences and reusable conclusions on this device, then cites them when useful.",
   "settings.memory.statsLabel": "Memory statistics",
   "settings.memory.statsTotal": "Total",
@@ -329,10 +342,8 @@ export const enUSMessages = {
   "settings.desktopPet.noticeAppearanceChanged": "Desktop pet appearance changed to {name}.",
   "settings.desktopPet.noticeAppearanceFailed": "Desktop pet appearance change did not take effect. Restart the app and try again.",
   "settings.desktopPet.noticeBoundAgentChanged": "Desktop pet bound to {name}.",
-  "settings.desktopPet.appearance.classic.label": isCuteJBrand ? "CuteJ" : "Zenmi",
-  "settings.desktopPet.appearance.classic.description": isCuteJBrand
-    ? "A blue-haired CuteJ 3D toy desktop pet with a headset and blue-white uniform."
-    : "A small monk desktop pet with round glasses, gray robe, and prayer beads.",
+  "settings.desktopPet.appearance.classic.label": desktopPetClassicName,
+  "settings.desktopPet.appearance.classic.description": desktopPetClassicDescription,
   "settings.desktopPet.appearance.dario.label": "Dario",
   "settings.desktopPet.appearance.dario.description": "A frowning curly-haired pet for high-pressure focus.",
   "settings.desktopPet.appearance.sama.label": "Mini Sama",
@@ -1029,10 +1040,8 @@ export const enUSMessages = {
   "desktopPet.status.stopped": "Stopped",
   "desktopPet.context.dance": "Dance",
   "desktopPet.context.close": "Close pet",
-  "desktopPet.appearance.classic.name": isCuteJBrand ? "CuteJ" : "Zenmi",
-  "desktopPet.appearance.classic.description": isCuteJBrand
-    ? "A blue-haired CuteJ 3D toy desktop pet with a headset and blue-white uniform."
-    : "A small monk desktop pet with round glasses, gray robe, and prayer beads.",
+  "desktopPet.appearance.classic.name": desktopPetClassicName,
+  "desktopPet.appearance.classic.description": desktopPetClassicDescription,
   "desktopPet.appearance.dario.description": "A frowning curly-haired pet for high-pressure focus moments.",
   "desktopPet.appearance.sama.description": "An anxious, clever pet with boardroom-chaos energy.",
   "desktopPet.appearance.xiao.name": "Xiao",

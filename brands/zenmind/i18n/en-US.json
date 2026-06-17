@@ -2,5 +2,7 @@
   "app.name": "ZenMind",
   "app.productName": "ZenMind",
   "startup.envImport.title": "Initialize ZenMind Environment",
-  "taskBoard.prompt.intro": "Please handle this ZenMind task board task and summarize the result when finished."
+  "taskBoard.prompt.intro": "Please handle this ZenMind task board task and summarize the result when finished.",
+  "desktopPet.appearance.classic.name": "Zenmi",
+  "desktopPet.appearance.classic.description": "A small monk desktop pet with round glasses, gray robe, and prayer beads."
 }

@@ -104,10 +104,21 @@ export interface DesktopRuntimeEnvResetResult {
 
 export interface DesktopGeneralSettings {
   preventSleepWhileRunning: boolean;
+  desktopWsServerEnabled: boolean;
 }
 
 export interface DesktopGeneralSettingsInput {
   preventSleepWhileRunning?: boolean;
+}
+
+export interface DesktopWsServerState {
+  enabled: boolean;
+  running: boolean;
+  host: string;
+  port: number;
+  path: string;
+  url: string;
+  message?: string;
 }
 
 export interface DesktopAppPairingPayload {
@@ -316,6 +327,8 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;
+    getDesktopWsServerState: () => Promise<DesktopWsServerState>;
+    setDesktopWsServerEnabled: (enabled: boolean) => Promise<DesktopWsServerState>;
     getGeneralSettings: () => Promise<DesktopGeneralSettings>;
     saveGeneralSettings: (input: DesktopGeneralSettingsInput) => Promise<DesktopGeneralSettings>;
     getTunnelHubAgentSettings: () => Promise<TunnelHubAgentSettings>;

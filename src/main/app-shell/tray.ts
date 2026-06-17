@@ -75,11 +75,6 @@ export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
     APP_ICON_ASSET_DIRECTORIES.brandAssets,
     APP_ICON_ASSET_FILENAMES.brandIcon
   );
-  const generatedBrandMarkPath = projectAssetPath(
-    options,
-    APP_ICON_ASSET_DIRECTORIES.brandAssets,
-    APP_ICON_ASSET_FILENAMES.brandMark
-  );
   const rendererTrayIconPath = projectAssetPath(
     options,
     APP_ICON_ASSET_DIRECTORIES.distRenderer,
@@ -90,24 +85,17 @@ export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
     APP_ICON_ASSET_DIRECTORIES.distRenderer,
     APP_ICON_ASSET_FILENAMES.brandIcon
   );
-  const rendererBrandMarkPath = projectAssetPath(
-    options,
-    APP_ICON_ASSET_DIRECTORIES.distRenderer,
-    APP_ICON_ASSET_FILENAMES.brandMark
-  );
   const fallbackIconPath = platformFallbackIconPath(options);
 
   if (options.isPackaged) {
     if (options.platform === "darwin") {
       return [
-        packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandMark),
-        packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandIcon),
-        rendererBrandMarkPath,
-        rendererBrandIconPath,
-        fallbackIconPath,
         packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.trayIcon),
         rendererTrayIconPath,
-        generatedBrandMarkPath,
+        generatedTrayIconPath,
+        fallbackIconPath,
+        packagedResourcePath(options, APP_ICON_ASSET_FILENAMES.brandIcon),
+        rendererBrandIconPath,
         generatedBrandIconPath
       ];
     }
@@ -125,9 +113,9 @@ export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
 
   if (options.platform === "darwin") {
     return [
-      generatedBrandMarkPath,
-      generatedBrandIconPath,
-      fallbackIconPath
+      generatedTrayIconPath,
+      fallbackIconPath,
+      generatedBrandIconPath
     ];
   }
 
@@ -195,6 +183,9 @@ export class AppTrayController {
         .map((iconPath) => nativeImage.createFromPath(iconPath))
         .find((candidate) => !candidate.isEmpty()) ?? nativeImage.createEmpty();
     const resizedIcon = icon.resize({ width: 20, height: 20 });
+    if (this.options.platform === "darwin") {
+      resizedIcon.setTemplateImage(true);
+    }
     return resizedIcon;
   }
 

@@ -639,24 +639,16 @@ type SidebarCollapseToggleProps = {
 };
 
 function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
-  const arrowPath = isCollapsed ? "M10 8.5 13.5 12 10 15.5" : "M14 8.5 10.5 12 14 15.5";
   if (isCollapsed) {
     return (
       <svg
         className="app-sidebar-collapse-button-icon-chevron"
         xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        focusable="false"
+        viewBox="0 -960 960 960"
+        width="16px"
+        height="16px"
       >
-        <rect x="4" y="5" width="16" height="14" rx="3.5" fill="none" />
-        <path d="M9 5v14" fill="none" />
-        <path d={arrowPath} fill="none" />
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm200-80h360v-560H400v560Z" />
       </svg>
     );
   }
@@ -664,19 +656,14 @@ function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
   return (
     <svg
       className="app-sidebar-collapse-button-icon-panel"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      viewBox="0 -960 960 960"
       aria-hidden="true"
       focusable="false"
     >
-      <rect x="4" y="5" width="16" height="14" rx="3.5" fill="none" />
-      <path d="M9 5v14" fill="none" />
-      <path d={arrowPath} fill="none" />
+      <path
+        d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z"
+        fill="currentColor"
+      />
     </svg>
   );
 }

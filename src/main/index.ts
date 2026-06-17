@@ -27,9 +27,9 @@ import { createAppPairingPayload } from "./app-pairing";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
   cancelDesktopSsoLogin,
-  completeDesktopSsoBrowserLogin,
   completeDesktopSsoCookieLogin,
   failDesktopSsoFlow,
+  getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoStatus,
   isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
@@ -200,7 +200,12 @@ import {
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
 import { callAgentPlatform, handleDesktopActionRequest, startDesktopActionBridge } from "./desktop-action-bridge";
-import { emitDesktopWsPush, startDesktopWsServer, stopDesktopWsServer } from "./desktop-ws-server";
+import {
+  emitDesktopWsPush,
+  getDesktopWsServerRuntimeState,
+  startDesktopWsServer,
+  stopDesktopWsServer
+} from "./desktop-ws-server";
 import { callDesktopActionRenderer } from "./desktop-action-renderer";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../shared/agent-webclient-routes";
@@ -530,6 +535,7 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
 const DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE = "首次安装需要导入 env.zip";
 let startupEnvImportFailureMessage: string | null = null;
+let desktopWsServerLastError = "";
 function initializeUserDataRootsAndSettings() {
   ensureDataRoot(app);
   applyDesktopInitBootstrap(app, mainProcessContext.platform);
@@ -922,13 +928,18 @@ async function handleDesktopSsoWebviewNavigation(url: string) {
       return;
     }
     appState.desktopSsoWebviewCompletionInFlight = true;
-    await desktopSsoController.syncBrowserCookies();
-    const accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
-    if (accessToken) {
-      completeDesktopSsoCookieLogin(app, accessToken);
+    const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(app);
+    if (!exchangeUrl) {
+      failDesktopSsoFlow("Desktop SSO 配置缺少 cookieAccessTokenExchange，无法从完成页捕捉用户信息。");
       return;
     }
-    completeDesktopSsoBrowserLogin(app, url);
+    await desktopSsoController.syncBrowserCookies();
+    const accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
+    if (!accessToken) {
+      failDesktopSsoFlow("Desktop SSO cookieAccessTokenExchange 未返回 access_token，无法捕捉用户信息。");
+      return;
+    }
+    completeDesktopSsoCookieLogin(app, accessToken);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     failDesktopSsoFlow(message);
@@ -2269,7 +2280,7 @@ function registerIpcHandlers(context: MainProcessContext) {
   startDesktopActionBridge({
     ...desktopActionOptions
   });
-  void startDesktopWsServer({
+  const desktopWsServerOptions = {
     app,
     desktopActionOptions,
     assistantBridge,
@@ -2279,11 +2290,32 @@ function registerIpcHandlers(context: MainProcessContext) {
       issueAccessToken: issueAgentAccessToken
     },
     logger: console
-  }).catch((error) => {
-    safeConsoleError("failed to start Desktop WS server", {
-      error: error instanceof Error ? error.message : String(error)
+  };
+  const getDesktopWsServerRuntimeStateForSettings = () => {
+    const state = getDesktopWsServerRuntimeState();
+    return desktopWsServerLastError ? { ...state, message: desktopWsServerLastError } : state;
+  };
+  const startDesktopWsServerForSettings = async () => {
+    desktopWsServerLastError = "";
+    try {
+      return await startDesktopWsServer(desktopWsServerOptions);
+    } catch (error) {
+      desktopWsServerLastError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  };
+  const stopDesktopWsServerForSettings = async () => {
+    desktopWsServerLastError = "";
+    await stopDesktopWsServer();
+    return getDesktopWsServerRuntimeState();
+  };
+  if (readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled) {
+    void startDesktopWsServerForSettings().catch((error) => {
+      safeConsoleError("failed to start Desktop WS server", {
+        error: error instanceof Error ? error.message : String(error)
+      });
     });
-  });
+  }
 
   registerShellIpcHandlers(ipcMain, createShellIpcHandlerOptions(context, {
     showFileDialog,
@@ -2536,7 +2568,10 @@ function registerIpcHandlers(context: MainProcessContext) {
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),
     emitLocaleChanged,
     createAppPairingPayload,
-    onGeneralSettingsChanged: () => assistantRunWakeLock.sync()
+    onGeneralSettingsChanged: () => assistantRunWakeLock.sync(),
+    getDesktopWsServerRuntimeState: getDesktopWsServerRuntimeStateForSettings,
+    startDesktopWsServer: startDesktopWsServerForSettings,
+    stopDesktopWsServer: stopDesktopWsServerForSettings
   }));
 }
 

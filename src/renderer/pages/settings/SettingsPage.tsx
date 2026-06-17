@@ -20,6 +20,7 @@ import type {
   DesktopPetAgentOption,
   DesktopPetState,
   DesktopRuntimeEnvResetResult,
+  DesktopWsServerState,
   MarketSettings,
   TaskBoardCloudConfig,
   TaskBoardDesktopOnlineResult,
@@ -43,6 +44,12 @@ import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DESKTOP_PET_APPEARANCE_OPTIONS
 } from "../../../shared/desktop-pet";
+import {
+  DESKTOP_WS_HOST,
+  DESKTOP_WS_PATH,
+  DESKTOP_WS_PORT,
+  DESKTOP_WS_URL
+} from "../../../shared/desktop-ws";
 import {
   buildLocalizedSettingsSections,
   getVisibleSettingsSections,
@@ -176,8 +183,21 @@ const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
 };
 
 const defaultGeneralSettings: DesktopGeneralSettings = {
-  preventSleepWhileRunning: true
+  preventSleepWhileRunning: true,
+  desktopWsServerEnabled: false
 };
+
+function createFallbackDesktopWsServerState(message?: string): DesktopWsServerState {
+  return {
+    enabled: false,
+    running: false,
+    host: DESKTOP_WS_HOST,
+    port: DESKTOP_WS_PORT,
+    path: DESKTOP_WS_PATH,
+    url: DESKTOP_WS_URL,
+    ...(message ? { message } : {})
+  };
+}
 
 const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
   enabled: false,
@@ -467,6 +487,8 @@ function AboutAppCard({
 }: AboutAppCardProps) {
   const { t } = useI18n();
   const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
+  const [desktopWsServerState, setDesktopWsServerState] = useState<DesktopWsServerState | null>(null);
+  const [desktopWsServerPending, setDesktopWsServerPending] = useState<"open" | "close" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -481,6 +503,27 @@ function AboutAppCard({
       .catch(() => {
         if (!cancelled) {
           setAppInfo({ productName: "", version: "", buildTime: "" });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    window.electronAPI.settings
+      .getDesktopWsServerState()
+      .then((state) => {
+        if (!cancelled) {
+          setDesktopWsServerState(state);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setDesktopWsServerState(createFallbackDesktopWsServerState(error instanceof Error ? error.message : String(error)));
         }
       });
 
@@ -507,6 +550,49 @@ function AboutAppCard({
     }
     return appInfo.buildTime;
   }, [appInfo, t]);
+  const desktopWsServerStatus = useMemo(() => {
+    if (desktopWsServerPending === "open") {
+      return t("settings.about.desktopWs.opening");
+    }
+    if (desktopWsServerPending === "close") {
+      return t("settings.about.desktopWs.closing");
+    }
+    if (desktopWsServerState === null) {
+      return t("common.loading");
+    }
+    if (desktopWsServerState.running) {
+      return t("settings.about.desktopWs.open");
+    }
+    if (desktopWsServerState.enabled && desktopWsServerState.message) {
+      return t("settings.about.desktopWs.failed");
+    }
+    return t("settings.about.desktopWs.closed");
+  }, [desktopWsServerPending, desktopWsServerState, t]);
+  const desktopWsServerStatusClass = desktopWsServerPending
+    ? "is-pending"
+    : desktopWsServerState?.running
+      ? "is-running"
+      : desktopWsServerState?.enabled && desktopWsServerState.message
+        ? "is-error"
+        : "is-closed";
+  const desktopWsServerUrl = desktopWsServerState?.url || DESKTOP_WS_URL;
+
+  async function handleSetDesktopWsServerEnabled(enabled: boolean) {
+    setDesktopWsServerPending(enabled ? "open" : "close");
+    try {
+      const nextState = await window.electronAPI.settings.setDesktopWsServerEnabled(enabled);
+      setDesktopWsServerState(nextState);
+    } catch (error) {
+      setDesktopWsServerState((current) => ({
+        ...createFallbackDesktopWsServerState(error instanceof Error ? error.message : String(error)),
+        ...current,
+        running: false,
+        message: error instanceof Error ? error.message : String(error)
+      }));
+    } finally {
+      setDesktopWsServerPending(null);
+    }
+  }
 
   return (
     <div className="settings-about-stack" aria-label={t("settings.about.label")}>
@@ -529,6 +615,58 @@ function AboutAppCard({
             {buildTime}
           </div>
         </div>
+      </div>
+      <div className="data-root-card settings-desktop-ws-card">
+        <div className="settings-desktop-ws-copy">
+          <h2>{t("settings.about.desktopWs.title")}</h2>
+          <p className="page-copy">{t("settings.about.desktopWs.description")}</p>
+        </div>
+        <div className="settings-desktop-ws-panel">
+          <div className="settings-desktop-ws-meta">
+            <span className={`settings-desktop-ws-status ${desktopWsServerStatusClass}`}>
+              {desktopWsServerStatus}
+            </span>
+            <code>{desktopWsServerUrl}</code>
+          </div>
+          <div className="settings-desktop-ws-actions">
+            {desktopWsServerState?.running ? (
+              <Button
+                danger
+                disabled={desktopWsServerPending !== null}
+                onClick={() => void handleSetDesktopWsServerEnabled(false)}
+              >
+                {desktopWsServerPending === "close"
+                  ? t("settings.about.desktopWs.closing")
+                  : t("settings.about.desktopWs.closeAction")}
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                disabled={desktopWsServerPending !== null}
+                onClick={() => void handleSetDesktopWsServerEnabled(true)}
+              >
+                {desktopWsServerPending === "open"
+                  ? t("settings.about.desktopWs.opening")
+                  : desktopWsServerState?.enabled
+                    ? t("settings.about.desktopWs.retryAction")
+                    : t("settings.about.desktopWs.openAction")}
+              </Button>
+            )}
+            {desktopWsServerState?.enabled && !desktopWsServerState.running ? (
+              <Button
+                disabled={desktopWsServerPending !== null}
+                onClick={() => void handleSetDesktopWsServerEnabled(false)}
+              >
+                {t("settings.about.desktopWs.disableAction")}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        {desktopWsServerState?.message ? (
+          <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
+            {desktopWsServerState.message}
+          </div>
+        ) : null}
       </div>
       <div className="data-root-card settings-reset-card">
         <div className="settings-reset-copy">

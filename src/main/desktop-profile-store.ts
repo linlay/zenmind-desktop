@@ -19,6 +19,7 @@ export type DesktopThemePreference = "system" | "light" | "dark";
 
 export type DesktopGeneralSettings = {
   preventSleepWhileRunning: boolean;
+  desktopWsServerEnabled: boolean;
 };
 
 export type DesktopProfile = {
@@ -159,7 +160,10 @@ function normalizeDesktopProfile(
     general: {
       preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
         ? general.preventSleepWhileRunning
-        : true
+        : true,
+      desktopWsServerEnabled: typeof general.desktopWsServerEnabled === "boolean"
+        ? general.desktopWsServerEnabled
+        : false
     },
     appearance: {
       theme: normalizeTheme(appearance.theme),

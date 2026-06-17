@@ -43,6 +43,18 @@ const embeddedLoginOrigin = `https://${embeddedLoginHost}`;
 const embeddedLoginUrl = `${embeddedLoginOrigin}/tologin.do?url=${encodeURIComponent(`${embeddedLoginOrigin}/`)}`;
 const embeddedTokenExchangeUrl = `${embeddedLoginOrigin}/${["auth", "orization"].join("")}`;
 
+function encodeJwtPart(value) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function createUnsignedJwt(payload) {
+  return [
+    encodeJwtPart({ alg: "none", typ: "JWT" }),
+    encodeJwtPart(payload),
+    "signature"
+  ].join(".");
+}
+
 test("desktop sso parses provider-free system browser OIDC config", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -151,6 +163,40 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     url: `${embeddedLoginOrigin}/`,
     name: "access_token"
   });
+});
+
+test("desktop sso cookie completion preserves jwt user name and email claims", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: embeddedLoginOrigin,
+    loginUrl: embeddedLoginUrl,
+    appendLoginState: false,
+    loginCompletionUrls: [`${embeddedLoginOrigin}/`],
+    cookieAccessTokenExchange: {
+      url: embeddedTokenExchangeUrl,
+      method: "GET",
+      accessTokenPath: "access_token"
+    }
+  });
+
+  const status = __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "user-1",
+    iss: embeddedLoginOrigin,
+    aud: "desktop",
+    name: "张倩",
+    email: "zhangqian@example.test",
+    picture: "https://assets.example.test/avatar.png"
+  }));
+
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user.name, "张倩");
+  assert.equal(status.user.email, "zhangqian@example.test");
+  assert.equal(status.user.avatarUrl, "https://assets.example.test/avatar.png");
 });
 
 test("desktop sso system browser login uses localhost callback for explicit browserMode", (t) => {
