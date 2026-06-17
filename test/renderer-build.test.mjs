@@ -569,6 +569,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   const collapsedAssistantTopButtonRule = globalStyles.match(
     /^\.app-sidebar\.is-collapsed \.sidebar-top-actions \.sidebar-assistant-top-button\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body;
+  const collapseToggleIconSource =
+    sidebarSource.match(/function SidebarCollapseToggleIcon[\s\S]*?function SidebarCollapseToggle/u)?.[0] ?? "";
 
   assert.match(appShell, /onToggleCollapsed=\{toggleSidebarCollapsed\}/);
   assert.match(appShell, /isMac=\{isMac\}/);
@@ -594,6 +596,9 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(sidebarSource, /aria-expanded=\{!isCollapsed\}/);
   assert.match(sidebarSource, /app-sidebar-collapse-button-icon-panel/);
   assert.match(sidebarSource, /app-sidebar-collapse-button-icon-chevron/);
+  assert.match(collapseToggleIconSource, /viewBox="0 0 24 24"/);
+  assert.doesNotMatch(collapseToggleIconSource, /viewBox="0 -960 960 960"/);
+  assert.doesNotMatch(collapseToggleIconSource, /fill="currentColor"/);
   assert.match(sidebarSource, /<SidebarCollapseToggleIcon isCollapsed=\{isCollapsed\} \/>/);
   assert.match(sidebarSource, /<div className="sidebar-chrome">/);
   assert.match(sidebarSource, /<div className="sidebar-chrome-drag-region" aria-hidden="true" \/>/);
@@ -639,6 +644,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-compact\s*\{[\s\S]*?width:\s*24px;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-nav\s*\{[\s\S]*?width:\s*var\(--sidebar-collapse-toggle-nav-width, 48px\);/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron::before/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;/);
   assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar button[\s\S]*?\{[\s\S]*?app-region:\s*no-drag;/);
 });
@@ -3847,6 +3854,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
     path.join(projectRoot, "scripts", "generate-desktop-pet-assets.mjs"),
     "utf8"
   );
+  const viteConfig = readSourceFile("vite.config.ts");
 
   assert.match(desktopPetVisual, /"moving-left"/);
   assert.match(desktopPetVisual, /"jumping"/);
@@ -3996,7 +4004,15 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /spritesheet-source\.png/);
   assert.match(petAssetScript, /drag-moving-source\.png/);
   assert.doesNotMatch(petAssetScript, /task-run-left-source\.png/);
-  assert.match(petAssetScript, /copyDefaultBrandPetAssets/);
+  assert.match(petAssetScript, /verifyDefaultBrandPetAssets/);
+  assert.doesNotMatch(petAssetScript, /copyDefaultBrandPetAssets/);
+  assert.doesNotMatch(petAssetScript, /public["'],\s*["']desktop-pet/);
+  assert.match(viteConfig, /name:\s*"brand-desktop-pet-assets"/);
+  assert.match(viteConfig, /BRAND_DESKTOP_PET_URL_PREFIX = "\/desktop-pet\/"/);
+  assert.match(viteConfig, /server\.middlewares\.use\(serveBrandDesktopPetAsset\)/);
+  assert.match(viteConfig, /copyBrandDesktopPetAssets\(\{[\s\S]{0,220}dist-renderer"[\s\S]{0,120}"desktop-pet"/);
+  assert.match(viteConfig, /brand\.source\.desktopPetRoot/);
+  assert.doesNotMatch(viteConfig, /public["'],\s*["']desktop-pet/);
   assert.doesNotMatch(sharedDesktopPet, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /"moving-left":\s*\{\s*row:\s*2,\s*column:\s*2\s*\}/);

@@ -14,6 +14,7 @@ build-all.sh
 public/brand-icon.png
 public/tray-icon.png
 public/tray-icon.svg
+public/desktop-pet/
 
 src/shared/generated/
 

@@ -8,7 +8,6 @@ import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const brand = loadBrandConfig(projectRoot, resolveBrandId());
-const outputDirectory = path.join(projectRoot, "public", "desktop-pet");
 const configuredMarketPetsRoot = process.env.ZENMIND_PETS_ROOT
   ? path.resolve(process.env.ZENMIND_PETS_ROOT)
   : null;
@@ -1212,9 +1211,7 @@ function collectDefaultPetAssetNames(manifest) {
   return assetNames;
 }
 
-async function copyDefaultBrandPetAssets() {
-  await fs.rm(outputDirectory, { recursive: true, force: true });
-  await fs.mkdir(outputDirectory, { recursive: true });
+async function verifyDefaultBrandPetAssets() {
   const manifest = JSON.parse(await fs.readFile(path.join(defaultSourceAssetDirectory, "pet.json"), "utf8"));
   const assetNames = collectDefaultPetAssetNames(manifest);
   try {
@@ -1226,19 +1223,7 @@ async function copyDefaultBrandPetAssets() {
     }
   }
   for (const assetName of assetNames) {
-    await fs.mkdir(path.dirname(path.join(outputDirectory, assetName)), { recursive: true });
-    await fs.copyFile(
-      path.join(defaultSourceAssetDirectory, assetName),
-      path.join(outputDirectory, assetName)
-    );
-  }
-  try {
-    await fs.access(path.join(outputDirectory, "spritesheet.webp"));
-  } catch (error) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-    await fs.writeFile(path.join(outputDirectory, "spritesheet.webp"), await renderZenmiSpritesheet(outputDirectory));
+    await fs.access(path.join(defaultSourceAssetDirectory, assetName));
   }
 }
 
@@ -1321,12 +1306,10 @@ async function resetMarketPetOutput() {
   await fs.rm(marketPetPackageDirectory, { recursive: true, force: true });
 }
 
-await fs.rm(outputDirectory, { recursive: true, force: true });
 await resetMarketPetOutput();
-await fs.mkdir(outputDirectory, { recursive: true });
 await fs.mkdir(marketPetSourceDirectory, { recursive: true });
 await fs.mkdir(marketPetPackageDirectory, { recursive: true });
-await copyDefaultBrandPetAssets();
+await verifyDefaultBrandPetAssets();
 
 for (const appearance of scriptedAppearances) {
   const renderedAppearance = await renderScriptedAppearance(appearance);

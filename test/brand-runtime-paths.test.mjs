@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
   assertBrandArtifactsConsistent,
+  copyBrandDesktopPetAssets,
   loadBrandConfig,
   removeStaleRendererBuild,
   syncBrandArtifacts
@@ -89,6 +90,48 @@ function writeBrandManifest(root, brandId, update) {
     `${JSON.stringify(update(manifest), null, 2)}\n`,
     "utf8"
   );
+}
+
+function listRelativeFiles(root) {
+  const result = [];
+  const visit = (current, relativeDir) => {
+    const entries = fs.readdirSync(current, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        visit(entryPath, relativePath);
+        continue;
+      }
+      if (entry.isFile()) {
+        result.push(relativePath);
+      }
+    }
+  };
+  visit(root, "");
+  return result;
+}
+
+function assertDirectoryBytesEqual(actualRoot, expectedRoot) {
+  const actualFiles = listRelativeFiles(actualRoot);
+  const expectedFiles = listRelativeFiles(expectedRoot);
+  assert.deepEqual(actualFiles, expectedFiles);
+  for (const fileName of expectedFiles) {
+    assert.equal(
+      Buffer.compare(fs.readFileSync(path.join(actualRoot, fileName)), fs.readFileSync(path.join(expectedRoot, fileName))),
+      0,
+      `${actualRoot}/${fileName} should match ${expectedRoot}/${fileName}`
+    );
+  }
+}
+
+function writeMinimalDistRenderer(root, brand) {
+  const rendererRoot = path.join(root, "dist-renderer");
+  fs.mkdirSync(rendererRoot, { recursive: true });
+  fs.copyFileSync(path.join(root, "index.html"), path.join(rendererRoot, "index.html"));
+  fs.copyFileSync(path.join(root, brand.icons.trayIconSvg), path.join(rendererRoot, "tray-icon.svg"));
+  return rendererRoot;
 }
 
 async function writeZip(zipPath, entries) {
@@ -418,6 +461,54 @@ test("brand consistency guard catches and clears stale dist-renderer output", (t
   assert.equal(fs.existsSync(staleRendererRoot), false);
 });
 
+test("brand desktop pet copy helper writes the active brand and clears stale files", (t) => {
+  const root = createBrandFixture(t);
+  const outputDir = path.join(root, "dist-renderer", "desktop-pet");
+  const cutej = loadBrandConfig(root, "cutej");
+  const zenmind = loadBrandConfig(root, "zenmind");
+
+  copyBrandDesktopPetAssets({ rootDir: root, brand: cutej, outputDir });
+  assertDirectoryBytesEqual(outputDir, path.join(root, cutej.source.desktopPetRoot));
+
+  fs.writeFileSync(path.join(outputDir, "stale-cutej-only.webp"), "stale", "utf8");
+  copyBrandDesktopPetAssets({ rootDir: root, brand: zenmind, outputDir });
+  assertDirectoryBytesEqual(outputDir, path.join(root, zenmind.source.desktopPetRoot));
+  assert.equal(fs.existsSync(path.join(outputDir, "stale-cutej-only.webp")), false);
+});
+
+test("brand consistency guard catches stale dist-renderer desktop pet output", (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
+  writeMinimalPublicIconArtifacts(root, brand);
+  writeMinimalDistRenderer(root, brand);
+  copyBrandDesktopPetAssets({
+    rootDir: root,
+    brand: loadBrandConfig(root, "cutej"),
+    outputDir: path.join(root, "dist-renderer", "desktop-pet")
+  });
+
+  assert.throws(
+    () => assertBrandArtifactsConsistent({ rootDir: root, brand }),
+    /dist-renderer\/desktop-pet/u
+  );
+  assert.equal(removeStaleRendererBuild({ rootDir: root, brand }), true);
+  assert.equal(fs.existsSync(path.join(root, "dist-renderer")), false);
+});
+
+test("brand consistency guard accepts active dist-renderer desktop pet output", (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  writeMinimalPublicIconArtifacts(root, brand);
+  writeMinimalDistRenderer(root, brand);
+  copyBrandDesktopPetAssets({
+    rootDir: root,
+    brand,
+    outputDir: path.join(root, "dist-renderer", "desktop-pet")
+  });
+
+  assert.doesNotThrow(() => assertBrandArtifactsConsistent({ rootDir: root, brand }));
+});
+
 test("brand sync writes CuteJ isolated runtime paths into generated artifacts", (t) => {
   const root = createBrandFixture(t);
 
@@ -428,7 +519,6 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
   const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
   const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const syncedPet = readJson(path.join(root, "public", "desktop-pet", "pet.json"));
 
   assert.equal(brand.paths.runtimeRootDirName, ".cutej");
   assert.equal(brand.storageNamespace, "cutej-desktop");
@@ -438,9 +528,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(generatedBrand.storageNamespace, "cutej-desktop");
   assert.equal(generatedBrand.paths.programDataDirName, "CuteJ");
   assert.deepEqual(generatedBrand.desktopPet, expectedPet);
-  assert.equal(syncedPet.id, "cutej");
-  assert.equal(syncedPet.displayName, expectedPet.displayName);
-  assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet", expectedPet.preview)), true);
+  assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet")), false);
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === "build/resources/demo" && item.to === "demo"),
     true
@@ -471,7 +559,6 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
   const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
   const rendererIndex = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const syncedPet = readJson(path.join(root, "public", "desktop-pet", "pet.json"));
 
   assert.equal(brand.paths.runtimeRootDirName, ".zenmind");
   assert.equal(brand.storageNamespace, "zenmind-desktop");
@@ -480,9 +567,7 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.equal(generatedBrand.storageNamespace, "zenmind-desktop");
   assert.equal(generatedBrand.paths.programDataDirName, "ZenMind");
   assert.deepEqual(generatedBrand.desktopPet, expectedPet);
-  assert.equal(syncedPet.id, "zenmi");
-  assert.equal(syncedPet.displayName, expectedPet.displayName);
-  assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet", expectedPet.preview)), true);
+  assert.equal(fs.existsSync(path.join(root, "public", "desktop-pet")), false);
   assert.match(installerInclude, /%APPDATA%\\ZenMind/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
@@ -498,6 +583,9 @@ test("default desktop pet assets are brand-owned, not script-owned", () => {
   assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "assets", "desktop-pet", "zenmi")), false);
   assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "assets", "desktop-pet", "cutej")), false);
   assert.match(generator, /brand\.source\.desktopPetRoot/u);
+  assert.match(generator, /verifyDefaultBrandPetAssets/u);
+  assert.doesNotMatch(generator, /public["'],\s*["']desktop-pet/u);
+  assert.doesNotMatch(generator, /copyDefaultBrandPetAssets/u);
   assert.doesNotMatch(generator, /defaultBuiltInPetId/u);
   assert.doesNotMatch(generator, /brand\.id === "cutej"/u);
 });

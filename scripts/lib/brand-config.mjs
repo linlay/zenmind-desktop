@@ -65,7 +65,6 @@ export function syncBrandArtifacts({
 
   writeGeneratedBrandFiles(rootDir, brand);
   writeRendererIndexHtml(rootDir, brand);
-  syncBrandDesktopPetAssets(rootDir, brand);
   writeElectronBuilderConfig(rootDir, brand);
   writeInstallerInclude(rootDir, brand);
   writeMacUninstallScript(rootDir, brand);
@@ -265,6 +264,69 @@ function filesHaveSameBytes(leftPath, rightPath) {
   return Buffer.compare(fs.readFileSync(leftPath), fs.readFileSync(rightPath)) === 0;
 }
 
+function listRelativeFiles(rootDir) {
+  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
+    return [];
+  }
+
+  const result = [];
+  const visit = (currentDir, relativeDir) => {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name));
+
+    for (const entry of entries) {
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      const filePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        visit(filePath, relativePath);
+        continue;
+      }
+      if (entry.isFile()) {
+        result.push(relativePath);
+      }
+    }
+  };
+
+  visit(rootDir, "");
+  return result;
+}
+
+function desktopPetDistProblems(rootDir, brand) {
+  const sourceRoot = path.join(rootDir, brand.source.desktopPetRoot);
+  const distRoot = path.join(rootDir, "dist-renderer", "desktop-pet");
+  if (!fs.existsSync(distRoot) || !fs.statSync(distRoot).isDirectory()) {
+    return [`dist-renderer/desktop-pet is missing for ${brand.id}`];
+  }
+
+  const problems = [];
+  const sourceFiles = listRelativeFiles(sourceRoot);
+  const distFiles = listRelativeFiles(distRoot);
+  const sourceFileSet = new Set(sourceFiles);
+  const distFileSet = new Set(distFiles);
+  const missingFiles = sourceFiles.filter((fileName) => !distFileSet.has(fileName));
+  const unexpectedFiles = distFiles.filter((fileName) => !sourceFileSet.has(fileName));
+
+  if (missingFiles.length > 0) {
+    problems.push(`dist-renderer/desktop-pet is missing ${missingFiles.join(", ")} from ${brand.source.desktopPetRoot}`);
+  }
+  if (unexpectedFiles.length > 0) {
+    problems.push(`dist-renderer/desktop-pet has stale files for ${brand.id}: ${unexpectedFiles.join(", ")}`);
+  }
+
+  for (const fileName of sourceFiles) {
+    if (!distFileSet.has(fileName)) {
+      continue;
+    }
+    const sourcePath = path.join(sourceRoot, fileName);
+    const distPath = path.join(distRoot, fileName);
+    if (!filesHaveSameBytes(sourcePath, distPath)) {
+      problems.push(`dist-renderer/desktop-pet/${fileName} does not match ${brand.source.desktopPetRoot}/${fileName}`);
+    }
+  }
+
+  return problems;
+}
+
 function distRendererProblems(rootDir, brand) {
   const rendererRoot = path.join(rootDir, "dist-renderer");
   if (!fs.existsSync(rendererRoot)) {
@@ -299,6 +361,8 @@ function distRendererProblems(rootDir, brand) {
       problems.push(`dist-renderer/${fileName} does not match public/${fileName}`);
     }
   }
+
+  problems.push(...desktopPetDistProblems(rootDir, brand));
 
   return problems;
 }
@@ -662,15 +726,36 @@ function runtimeBrandPayload(brand) {
   };
 }
 
-function syncBrandDesktopPetAssets(rootDir, brand) {
-  const sourceRoot = path.join(rootDir, brand.source.desktopPetRoot);
-  const targetRoot = path.join(rootDir, "public", "desktop-pet");
+function containsPath(parentPath, childPath) {
+  const relative = path.relative(parentPath, childPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+export function copyBrandDesktopPetAssets({
+  rootDir = process.cwd(),
+  brandId = resolveBrandId(),
+  brand = loadBrandConfig(rootDir, brandId),
+  outputDir
+} = {}) {
+  if (typeof outputDir !== "string" || !outputDir.trim()) {
+    throw new Error("copyBrandDesktopPetAssets requires outputDir");
+  }
+
+  const sourceRoot = path.resolve(rootDir, brand.source.desktopPetRoot);
+  const targetRoot = path.resolve(outputDir);
+  if (containsPath(sourceRoot, targetRoot) || containsPath(targetRoot, sourceRoot)) {
+    throw new Error(
+      `Refusing to copy desktop pet assets between overlapping paths: ${sourceRoot} -> ${targetRoot}`
+    );
+  }
+
   fs.rmSync(targetRoot, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetRoot), { recursive: true });
   fs.cpSync(sourceRoot, targetRoot, {
     recursive: true,
     force: true
   });
+  return targetRoot;
 }
 
 function writeGeneratedBrandFiles(rootDir, brand) {
