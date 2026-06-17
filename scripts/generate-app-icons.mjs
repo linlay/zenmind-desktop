@@ -28,6 +28,7 @@ const appIconSvgPath = path.join(projectRoot, brand.icons.appIconSvg);
 const trayIconSourceSvgPath = path.join(projectRoot, brand.icons.trayIconSvg);
 const publicTrayIconSvgPath = path.join(publicDir, "tray-icon.svg");
 
+const APP_ICON_TILE_SCALE = 0.88;
 const APP_ICON_CORNER_RADIUS_RATIO = 0.223;
 const APP_ICON_FOREGROUND_SCALE = 0.78;
 const pngSizes = [16, 32, 64, 128, 256, 512, 1024];
@@ -240,7 +241,16 @@ export async function renderAppIconToPng(svg, size) {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, size, size);
 
-  drawRoundedRect(context, 0, 0, size, size, size * APP_ICON_CORNER_RADIUS_RATIO);
+  const tileSize = size * APP_ICON_TILE_SCALE;
+  const tileOffset = (size - tileSize) / 2;
+  drawRoundedRect(
+    context,
+    tileOffset,
+    tileOffset,
+    tileSize,
+    tileSize,
+    tileSize * APP_ICON_CORNER_RADIUS_RATIO
+  );
   context.fillStyle = "#FFFFFF";
   context.fill();
 

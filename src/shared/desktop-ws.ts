@@ -1,0 +1,138 @@
+export const DESKTOP_WS_HOST = "127.0.0.1";
+export const DESKTOP_WS_PORT = 7082;
+export const DESKTOP_WS_PATH = "/ws";
+export const DESKTOP_WS_URL = `ws://${DESKTOP_WS_HOST}:${DESKTOP_WS_PORT}${DESKTOP_WS_PATH}`;
+
+export const DESKTOP_WS_FRAMES = ["request", "response", "push", "stream", "error"] as const;
+export type DesktopWsFrame = typeof DESKTOP_WS_FRAMES[number];
+
+export const DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES = [
+  "session.hello",
+  "auth.refresh",
+  "capability.list",
+  "event.subscribe",
+  "event.unsubscribe",
+  "action.list",
+  "action.call",
+  "snapshot.get",
+  "issue.create",
+  "issue.update",
+  "issue.delete",
+  "issue.move",
+  "device.status",
+  "runtime.info",
+  "service.list",
+  "service.get",
+  "service.status",
+  "assistant.startRun",
+  "agent.list",
+  "automation.list"
+] as const;
+
+export const DESKTOP_WS_RESERVED_REQUEST_TYPES = [
+  "issue.claim",
+  "issue.transition",
+  "issue.assignRun",
+  "issue.dispatchDesktop",
+  "issue.label.set",
+  "issue.dependency.create",
+  "issue.dependency.delete",
+  "service.logs.meta",
+  "service.logs.read",
+  "service.start",
+  "service.stop",
+  "service.restart",
+  "assistant.agents",
+  "assistant.chats",
+  "assistant.chat",
+  "assistant.stopRun",
+  "assistant.submitAwaiting",
+  "agent.get",
+  "agent.create",
+  "agent.update",
+  "agent.delete",
+  "automation.get",
+  "automation.create",
+  "automation.update",
+  "automation.toggle",
+  "automation.delete",
+  "automation.executions",
+  "page.context",
+  "page.read",
+  "page.interact",
+  "page.fillForm",
+  "page.submitForm",
+  "embeddedWeb.surfaces",
+  "embeddedWeb.active",
+  "embeddedWeb.activate",
+  "embeddedWeb.context",
+  "embeddedWeb.navigate",
+  "embeddedWeb.reload",
+  "embeddedWeb.back",
+  "embeddedWeb.tab.open",
+  "embeddedWeb.tab.close",
+  "embeddedWeb.tab.switch",
+  "embeddedWeb.read",
+  "embeddedWeb.executeScript",
+  "web.list",
+  "webapp.status",
+  "webapp.start",
+  "webapp.stop",
+  "webapp.restart",
+  "staticServer.list",
+  "staticServer.start",
+  "staticServer.stop",
+  "staticServer.restart",
+  "setting.get",
+  "setting.validatePatch",
+  "setting.previewPatch",
+  "setting.applyPatch",
+  "market.settings",
+  "market.list",
+  "market.refresh",
+  "market.get",
+  "market.install",
+  "market.update",
+  "market.uninstall",
+  "help.current",
+  "help.search",
+  "help.open",
+  "help.explain",
+  "help.suggest",
+  "diagnostic.report",
+  "diagnostic.status"
+] as const;
+
+export const DESKTOP_WS_REQUEST_TYPES = [
+  ...DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
+  ...DESKTOP_WS_RESERVED_REQUEST_TYPES
+] as const;
+
+export const DESKTOP_WS_PUSH_TYPES = [
+  "connected",
+  "heartbeat",
+  "auth.expiring",
+  "snapshot.updated",
+  "issue.created",
+  "issue.updated",
+  "issue.deleted",
+  "issue.moved",
+  "device.status",
+  "service.changed",
+  "service.log.appended",
+  "assistant.event",
+  "assistant.run.started",
+  "assistant.run.finished",
+  "agent.catalog.updated",
+  "automation.changed",
+  "page.changed",
+  "embeddedWeb.changed",
+  "webapp.changed",
+  "staticServer.changed",
+  "setting.changed",
+  "market.changed",
+  "diagnostic.reported"
+] as const;
+
+export type DesktopWsRequestType = typeof DESKTOP_WS_REQUEST_TYPES[number];
+export type DesktopWsPushType = typeof DESKTOP_WS_PUSH_TYPES[number];

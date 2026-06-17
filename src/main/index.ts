@@ -199,6 +199,7 @@ import {
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
 import { callAgentPlatform, handleDesktopActionRequest, startDesktopActionBridge } from "./desktop-action-bridge";
+import { emitDesktopWsPush, startDesktopWsServer, stopDesktopWsServer } from "./desktop-ws-server";
 import { callDesktopActionRenderer } from "./desktop-action-renderer";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../shared/agent-webclient-routes";
@@ -1731,6 +1732,7 @@ function notifyServicesChanged() {
     refreshPluginDesktopGlobalShortcuts();
   }
   void publishPluginBridgeServiceStates();
+  emitDesktopWsPush("service.changed", { changedAt: new Date().toISOString() });
   scheduleAgentPlatformPetStatusRefresh(1000);
   appState.assistantNavigationStatusClient?.scheduleRefresh(1000);
   for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
@@ -1742,6 +1744,7 @@ function notifyServicesChanged() {
 }
 
 function emitTaskBoardChanged() {
+  emitDesktopWsPush("snapshot.updated", { changedAt: new Date().toISOString() });
   const targetWindow = appState.mainWindow;
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
@@ -2216,6 +2219,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     wakeLock: assistantRunWakeLock,
     onEvent: (event) => {
       state.taskBoardRuntime?.sendAssistantEvent(event);
+      emitDesktopWsPush("assistant.event", event);
       for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
         if (!targetWindow || targetWindow.isDestroyed()) {
           continue;
@@ -2263,6 +2267,17 @@ function registerIpcHandlers(context: MainProcessContext) {
   });
   startDesktopActionBridge({
     ...desktopActionOptions
+  });
+  void startDesktopWsServer({
+    app,
+    desktopActionOptions,
+    assistantBridge,
+    getTaskBoardRuntime: () => state.taskBoardRuntime,
+    logger: console
+  }).catch((error) => {
+    safeConsoleError("failed to start Desktop WS server", {
+      error: error instanceof Error ? error.message : String(error)
+    });
   });
 
   registerShellIpcHandlers(ipcMain, createShellIpcHandlerOptions(context, {
@@ -2749,6 +2764,7 @@ app.on("will-quit", () => {
   assistantRunWakeLock.release();
   clearDesktopPetIdleResetTimer();
   void cdpIntegration.stop();
+  void stopDesktopWsServer();
   appState.taskBoardRuntime?.stop();
   appState.taskBoardRuntime = null;
   appState.assistantNavigationStatusClient?.stop();
