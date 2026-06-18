@@ -4609,6 +4609,14 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
     path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
     "utf8"
   );
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+  const sharedSso = readSourceFile("src", "shared", "sso.ts");
   const mainProcess = readSourceFile("src", "main", "index.ts");
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
   const ssoHandlers = readSourceFile("src", "main", "ipc", "sso-handlers.ts");
@@ -4619,13 +4627,22 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
     indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.cancelLogin"')
   );
 
+  assert.match(sharedSso, /export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:\$\{STORAGE_NAMESPACE\}-sso`;/);
+  assert.match(ssoController, /from "\.\.\/shared\/sso"/);
+  assert.match(embeddedSurfaceHosts, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/);
+  assert.match(embeddedSurfaceHosts, /function resolveWebsiteSsoPartition\(item: EmbeddedSidebarItem\)[\s\S]{0,140}item\.kind === "website" \? DESKTOP_SSO_WEBVIEW_PARTITION : undefined/);
+  assert.match(embeddedSurfaceHosts, /partition=\{resolveWebsiteSsoPartition\(item\)\}/);
   assert.match(copilotContracts, /partition\?: string;/);
   assert.match(copilotContracts, /userAgent\?: string;/);
   assert.match(externalWebviewPage, /partition\?: string;/);
   assert.match(externalWebviewPage, /userAgent\?: string;/);
   assert.match(externalWebviewPage, /partition: tab\.partition,/);
+  assert.match(externalWebviewPage, /partition: options\.partition \?\? partition/);
+  assert.match(externalWebviewPage, /const nextSurfaceKey = `\$\{title\}\\u0000\$\{url\}\\u0000\$\{partition \|\| ""\}`;/);
   assert.doesNotMatch(externalWebviewPage, /getRendererEmbeddedBrowserUserAgent/u);
   assert.doesNotMatch(pluginPage, /embedded-browser-user-agent/u);
+  assert.match(pluginPage, /partition: `persist:\$\{STORAGE_NAMESPACE\}-service-\$\{pluginId \|\| "plugin"\}`/);
+  assert.doesNotMatch(pluginPage, /DESKTOP_SSO_WEBVIEW_PARTITION/u);
   assert.match(oidcSso, /provider: "google"/u);
   assert.match(oidcSso, /https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth/u);
   assert.match(oidcSso, /https:\/\/oauth2\.googleapis\.com\/token/u);
@@ -4653,6 +4670,8 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /webview\.reload\(\)/u);
   assert.match(externalWebviewPage, /const isHostOpenRequest = sourceGuestId < 0;/);
   assert.match(externalWebviewPage, /if \(isHostOpenRequest\) \{[\s\S]{0,220}if \(!activeRef\.current\) \{[\s\S]{0,80}return;[\s\S]{0,180}openTab\(nextUrl, "", \{[\s\S]{0,160}partition,[\s\S]{0,80}userAgent/);
+  assert.match(externalWebviewPage, /partition: activeTab\?\.partition,[\s\S]{0,80}userAgent: activeTab\?\.userAgent/);
+  assert.match(externalWebviewPage, /afterTabId: sourceTab\.id,[\s\S]{0,120}partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
 });
 
 test("embedded browser plus button opens a blank tab for manual address entry", () => {

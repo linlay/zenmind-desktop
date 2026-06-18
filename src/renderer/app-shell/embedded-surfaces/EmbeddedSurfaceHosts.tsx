@@ -12,6 +12,7 @@ import {
   type AgentWebclientRouteKind,
   type AgentWebclientResolvedRoute
 } from "../../../shared/agent-webclient-routes";
+import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import { useI18n } from "../../i18n/useI18n";
 
 type ThemeMode = "light" | "dark";
@@ -26,6 +27,7 @@ const PluginPage = lazy(() =>
 );
 
 type EmbeddedSidebarItem = {
+  kind?: "website" | "webapp";
   label: string;
   url: string;
   chrome?: "browser" | "app";
@@ -49,6 +51,10 @@ function resolveAgentWebclientRouteKind(
 
 function shouldLoadInitialServiceUrlDirectly(pluginId: string) {
   return pluginId === "identity-center" || pluginId === "agent-platform";
+}
+
+function resolveWebsiteSsoPartition(item: EmbeddedSidebarItem) {
+  return item.kind === "website" ? DESKTOP_SSO_WEBVIEW_PARTITION : undefined;
 }
 
 export function PluginSurfaceHost({
@@ -240,6 +246,7 @@ export function WebSurfaceHost({
             title={item.label}
             url={item.url}
             chrome={item.chrome}
+            partition={resolveWebsiteSsoPartition(item)}
           />
         );
       })}
@@ -276,7 +283,14 @@ export function ExternalItemRoute({
 
   return (
     <EmbeddedSurfaceSuspense>
-      <ExternalWebviewPage surfaceId={itemId} surfaceLabel={item.label} title={item.label} url={item.url} chrome={item.chrome} />
+      <ExternalWebviewPage
+        surfaceId={itemId}
+        surfaceLabel={item.label}
+        title={item.label}
+        url={item.url}
+        chrome={item.chrome}
+        partition={resolveWebsiteSsoPartition(item)}
+      />
     </EmbeddedSurfaceSuspense>
   );
 }

@@ -47,6 +47,7 @@ type ExternalWebviewPageProps = {
   surfaceId?: string;
   surfaceLabel?: string;
   chrome?: "browser" | "app";
+  partition?: string;
 };
 
 type ExternalWebviewTabState = {
@@ -473,14 +474,22 @@ function ExternalWebviewPane({
   );
 }
 
-export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabel, chrome = "browser" }: ExternalWebviewPageProps) {
+export function ExternalWebviewPage({
+  title,
+  url,
+  active,
+  surfaceId,
+  surfaceLabel,
+  chrome = "browser",
+  partition
+}: ExternalWebviewPageProps) {
   const { t } = useI18n();
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
   const appChrome = chrome === "app";
   const tabSequenceRef = useRef(0);
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
-  const surfaceKeyRef = useRef(`${title}\u0000${url}`);
+  const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
   const surfaceClassName = [
     "pan-page external-webview-page",
@@ -504,7 +513,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       title: getFallbackTabTitle(preferredTitle, initialUrl),
       currentUrl: initialUrl,
       faviconUrl: undefined,
-      partition: options.partition,
+      partition: options.partition ?? partition,
       userAgent: options.userAgent,
       guestId: null,
       canGoBack: false,
@@ -553,7 +562,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   }, [active]);
 
   useEffect(() => {
-    const nextSurfaceKey = `${title}\u0000${url}`;
+    const nextSurfaceKey = `${title}\u0000${url}\u0000${partition || ""}`;
     if (surfaceKeyRef.current === nextSurfaceKey) {
       return;
     }
@@ -561,7 +570,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     webviewRefs.current.clear();
     setBrowserState(createInitialBrowserState());
     setAddressInputValue(url);
-  }, [title, url]);
+  }, [title, url, partition]);
 
   const openTab = (
     nextUrl: string,
@@ -834,11 +843,20 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         if (!allowFallback) {
           return;
         }
+        openTab(nextUrl, "", {
+          partition: activeTab?.partition,
+          userAgent: activeTab?.userAgent
+        });
+        return;
       }
 
-      openTab(nextUrl, "", { afterTabId: sourceTab?.id });
+      openTab(nextUrl, "", {
+        afterTabId: sourceTab.id,
+        partition: sourceTab.partition,
+        userAgent: sourceTab.userAgent
+      });
     });
-  }, [appChrome]);
+  }, [appChrome, partition]);
 
   useEffect(() => {
     if (!window.electronAPI.sso?.onStatusChanged) {

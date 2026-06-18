@@ -11,11 +11,11 @@ import {
 } from "./oidc-sso";
 import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-adapter";
 import { safeConsoleError } from "./safe-console";
-import { STORAGE_NAMESPACE } from "../shared/generated/brand";
+import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../shared/sso";
 import type { DesktopSsoClaims } from "../shared/contracts";
 import { t } from "./i18n/main-i18n";
 
-export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:${STORAGE_NAMESPACE}-sso`;
+export { DESKTOP_SSO_WEBVIEW_PARTITION };
 
 type DesktopSsoStatus = ReturnType<typeof getDesktopSsoStatus>;
 type CookieAccessTokenFetch = Parameters<typeof exchangeConfiguredDesktopSsoCookieForAccessToken>[2];
