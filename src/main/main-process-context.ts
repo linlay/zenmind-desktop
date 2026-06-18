@@ -367,8 +367,11 @@ export interface DesktopPetIpcHandlerContextDependencies {
   setPreviewExpanded: (...args: any[]) => unknown;
   dismissPreview: (...args: any[]) => unknown;
   setMouseInteractive: (...args: any[]) => unknown;
+  setWindowMode: (...args: any[]) => unknown;
   scheduleStatusRefresh: (...args: any[]) => unknown;
   refreshState: (...args: any[]) => unknown;
+  replyMessage: (...args: any[]) => unknown;
+  dismissMessage: (...args: any[]) => unknown;
 }
 
 export function createDesktopPetIpcHandlerOptions(
@@ -396,8 +399,11 @@ export function createDesktopPetIpcHandlerOptions(
     setPreviewExpanded: dependencies.setPreviewExpanded,
     dismissPreview: dependencies.dismissPreview,
     setMouseInteractive: dependencies.setMouseInteractive,
+    setWindowMode: dependencies.setWindowMode,
     scheduleStatusRefresh: dependencies.scheduleStatusRefresh,
     refreshState: dependencies.refreshState,
+    replyMessage: dependencies.replyMessage,
+    dismissMessage: dependencies.dismissMessage,
     getWindow: () => context.state.desktopPetWindow
   };
 }

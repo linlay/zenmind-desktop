@@ -146,6 +146,7 @@ import type {
   AssistantVoiceCorrectionRequest,
   AssistantVoiceTranscriptionRequest,
   DesktopPetAgentOption,
+  DesktopPetMessageItem,
   DesktopPetSettingsInput,
   DesktopPetTaskItem,
   RendererDiagnosticReport,
@@ -253,6 +254,8 @@ import {
   computeDesktopPetStateRefresh,
   createDesktopPetActiveRunTracker,
   createDesktopPetActiveTasksFromNavigationSnapshot,
+  createDesktopPetMessagesFromAgentStatus,
+  createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetDonePreviewDismissalTracker,
   createDesktopPetIdleResetAction,
   resolveDesktopPetWindowMode,
@@ -1017,6 +1020,57 @@ function getDesktopPetActiveTasksForState() {
   );
 }
 
+const desktopPetDismissedMessages = new Map<string, string>();
+const desktopPetMessageCache = new Map<string, DesktopPetMessageItem>();
+
+function getDesktopPetMessageCacheKey(message: DesktopPetMessageItem) {
+  return message.chatId || message.id;
+}
+
+function rememberDesktopPetMessages(messages: DesktopPetMessageItem[]) {
+  for (const message of messages) {
+    const key = getDesktopPetMessageCacheKey(message);
+    if (key) {
+      desktopPetMessageCache.set(key, message);
+    }
+  }
+}
+
+function mergeDesktopPetMessages(
+  primaryMessages: DesktopPetMessageItem[],
+  fallbackMessages: DesktopPetMessageItem[]
+) {
+  const merged: DesktopPetMessageItem[] = [];
+  const seenKeys = new Set<string>();
+  for (const message of [...primaryMessages, ...fallbackMessages]) {
+    const key = getDesktopPetMessageCacheKey(message);
+    if (!key || seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    merged.push(message);
+  }
+  return merged;
+}
+
+function isDesktopPetMessageVisible(message: DesktopPetMessageItem) {
+  const dismissedAt = desktopPetDismissedMessages.get(message.chatId);
+  return !dismissedAt || message.updatedAt > dismissedAt;
+}
+
+function getDesktopPetMessagesForState() {
+  const navigationMessages = createDesktopPetMessagesFromNavigationSnapshot(
+    appState.assistantNavigationStatusClient?.getSnapshot()
+  );
+  const liveMessages = navigationMessages.length > 0
+    ? navigationMessages
+    : createDesktopPetMessagesFromAgentStatus(getDesktopPetAgentStatusForState());
+  rememberDesktopPetMessages(liveMessages);
+  const messages = mergeDesktopPetMessages(liveMessages, [...desktopPetMessageCache.values()]);
+  // 关闭单条 = 记下该会话被关闭时的 updatedAt；有更新的回复（updatedAt 更晚）时自动恢复显示。
+  return messages.filter(isDesktopPetMessageVisible);
+}
+
 function getDesktopPetAgentStatusForState() {
   return desktopPetDonePreviewDismissalTracker.filterAgentStatus(appState.desktopPetAgentStatus);
 }
@@ -1062,9 +1116,35 @@ function listTaskBoardLocalAgents(): DesktopPetAgentOption[] {
 function getDesktopPetWindowMode(): DesktopPetWindowMode {
   return resolveDesktopPetWindowMode({
     dragging: desktopPetDragController.isDragging(),
+    layoutMode: appState.desktopPetRendererWindowMode,
     state: appState.desktopPetState,
     previewPanel: desktopPetPreviewController.getPanel()
   });
+}
+
+const DESKTOP_PET_RENDERER_WINDOW_MODES: readonly DesktopPetWindowMode[] = [
+  "base",
+  "bubble",
+  "preview-collapsed",
+  "preview-expanded",
+  "task-list-compact",
+  "task-list"
+];
+
+function normalizeDesktopPetRendererWindowMode(mode: unknown): DesktopPetWindowMode {
+  return typeof mode === "string" &&
+    DESKTOP_PET_RENDERER_WINDOW_MODES.includes(mode as DesktopPetWindowMode)
+    ? mode as DesktopPetWindowMode
+    : "base";
+}
+
+function setDesktopPetRendererWindowMode(mode: unknown) {
+  const nextMode = normalizeDesktopPetRendererWindowMode(mode);
+  if (appState.desktopPetRendererWindowMode !== nextMode) {
+    appState.desktopPetRendererWindowMode = nextMode;
+    applyDesktopPetWindowBounds();
+  }
+  return { ok: true };
 }
 
 function getDesktopPetVisible() {
@@ -1094,6 +1174,7 @@ function scheduleAgentPlatformPetStatusRefresh(delayMs = 0, force = false) {
 function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
   const visible = getDesktopPetVisible();
   const activeTasks = getDesktopPetActiveTasksForState();
+  const messages = getDesktopPetMessagesForState();
   const runningTaskCount = Math.max(getDesktopPetRunningTaskCountForState(), activeTasks.length);
   const refresh = computeDesktopPetStateRefresh({
     settings: appState.desktopPetSettings,
@@ -1105,6 +1186,7 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     agentOptions: appState.desktopPetAgentOptions,
     appearanceOptions: listUserDesktopPetAppearanceOptions(app),
     activeTasks,
+    messages,
     previewPanel: desktopPetPreviewController.getPanel(),
     runningTaskCount,
     edgeDock: resolveDesktopPetEdgeDock(
@@ -1222,9 +1304,14 @@ function persistDesktopPetPosition(mode: DesktopPetWindowMode = getDesktopPetWin
     return;
   }
   const bounds = appState.desktopPetWindow.getBounds();
+  const displayArea = getDesktopPetPointDisplayBounds({
+    x: bounds.x + Math.round(bounds.width / 2),
+    y: bounds.y + Math.round(bounds.height / 2)
+  });
   const persistence = computeDesktopPetPositionPersistence({
     bounds,
     mode,
+    displayArea,
     pendingSignature: appState.desktopPetPendingProgrammaticBoundsSignature,
     currentPosition: appState.desktopPetSettings.position
   });
@@ -2575,11 +2662,40 @@ function registerIpcHandlers(context: MainProcessContext) {
     setMouseInteractive: (interactive: boolean) => {
       return setDesktopPetWindowMouseInteractive(Boolean(interactive));
     },
+    setWindowMode: (mode: unknown) => {
+      return setDesktopPetRendererWindowMode(mode);
+    },
     scheduleStatusRefresh: (delayMs: number) => {
       scheduleAgentPlatformPetStatusRefresh(delayMs);
     },
     refreshState: () => {
       return refreshDesktopPetState();
+    },
+    replyMessage: async (input: any) => {
+      const chatId = typeof input?.chatId === "string" ? input.chatId.trim() : "";
+      const message = typeof input?.message === "string" ? input.message.trim() : "";
+      const agentKey = typeof input?.agentKey === "string" ? input.agentKey.trim() : "";
+      if (!chatId || !message) {
+        return { ok: false, message: "缺少会话或内容。" };
+      }
+      const result = await assistantBridge.startRun({
+        chatId,
+        agentKey: agentKey || undefined,
+        message
+      });
+      desktopPetDismissedMessages.delete(chatId);
+      scheduleAgentPlatformPetStatusRefresh(200);
+      return result;
+    },
+    dismissMessage: (input: any) => {
+      const chatId = typeof input?.chatId === "string" ? input.chatId.trim() : "";
+      if (!chatId) {
+        return { ok: false };
+      }
+      const updatedAt = typeof input?.updatedAt === "string" ? input.updatedAt : new Date().toISOString();
+      desktopPetDismissedMessages.set(chatId, updatedAt);
+      refreshDesktopPetState();
+      return { ok: true };
     }
   }));
   registerSettingsIpcHandlers(ipcMain, createSettingsIpcHandlerOptions(context, {

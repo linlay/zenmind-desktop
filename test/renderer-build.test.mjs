@@ -3477,6 +3477,18 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
 });
 
+test("desktop screenshot uses real capture result after macOS denied preflight status", () => {
+  const screenshot = readSourceFile("src", "main", "copilot", "sidebar-copilot", "screenshot.ts");
+  const permissionBlock =
+    screenshot.match(/function getScreenshotPermissionMessage[\s\S]*?\n\}\n\nfunction getDisplayThumbnailSize/u)?.[0] ?? "";
+
+  assert.match(permissionBlock, /getMediaAccessStatus\("screen"\)/);
+  assert.match(permissionBlock, /status === "restricted"/);
+  assert.doesNotMatch(permissionBlock, /status === "denied"/);
+  assert.match(screenshot, /captureDisplayImage/);
+  assert.match(screenshot, /captureWindowSelectionFallback/);
+});
+
 test("embedded cdp exposes service frontends as webview surfaces", () => {
   const cdpIntegration = readSourceFile("src", "main", "cdp-integration.ts");
 
@@ -3936,20 +3948,21 @@ test("desktop pet legacy agent aliases avoid inline display-name literals", () =
   assert.doesNotMatch(petStatusClient, /requestedKey === "小宅"/);
 });
 
-test("desktop pet drag ends on lost pointer signals", () => {
+test("desktop pet drag ignores transient capture loss while the pointer is still down", () => {
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
   const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
 
-  assert.match(desktopPet, /lostpointercapture/);
+  assert.match(desktopPet, /const handleLostPointerCapture = \(pointerEvent: globalThis\.PointerEvent\) => \{[\s\S]{0,120}pointerEvent\.buttons !== 0[\s\S]{0,80}return;/);
   assert.match(desktopPet, /window\.addEventListener\("pointerup"/);
   assert.match(desktopPet, /window\.addEventListener\("mouseup"/);
   assert.match(desktopPet, /window\.addEventListener\("blur"/);
   assert.match(desktopPet, /window\.addEventListener\("contextmenu"/);
   assert.match(desktopPet, /document\.addEventListener\("visibilitychange"/);
   assert.match(desktopPetController, /clearTimer\(\);/);
+  assert.match(desktopPetController, /forceEndMs = typeof options\.forceEndMs === "number" \? options\.forceEndMs : 30000;/);
   assert.match(desktopPetController, /webContents\.on\("context-menu"[\s\S]{0,120}options\.endDrag\(\)/);
 });
 
@@ -3960,7 +3973,7 @@ test("desktop pet click opens the branded app without assistant sidebar copy", (
   );
 
   assert.match(desktopPet, /desktopPet\.openAssistant/);
-  assert.match(desktopPet, /aria-label=\{`打开 \$\{PRODUCT_NAME\}`\}/);
+  assert.match(desktopPet, /aria-label=\{t\("desktopPet\.openApp", \{ appName: PRODUCT_NAME \}\)\}/);
   assert.doesNotMatch(desktopPet, /打开侧边栏助手/);
 });
 
@@ -3979,28 +3992,162 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.doesNotMatch(mainProcess, /syncDesktopPetWindowVisibility/);
   assert.match(petGeometry, /width:\s*176,/);
   assert.match(petGeometry, /height:\s*198/);
-  assert.match(petGeometry, /bubble:\s*\{\s*width:\s*224,\s*height:\s*228/s);
+  assert.match(petGeometry, /bubble:\s*\{\s*width:\s*368,\s*height:\s*442/s);
   assert.match(petGeometry, /DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS:[\s\S]{0,80}Record<DesktopPetWindowMode/);
   assert.match(petGeometry, /"preview-expanded":\s*\{\s*x:\s*162,\s*y:\s*294,/s);
-  assert.match(petGeometry, /"task-list-compact":\s*\{\s*x:\s*116,\s*y:\s*156,/s);
-  assert.match(petGeometry, /"task-list":\s*\{\s*x:\s*148,\s*y:\s*236,/s);
+  assert.match(petGeometry, /"task-list-compact":\s*\{\s*x:\s*132,\s*y:\s*228,/s);
+  assert.match(petGeometry, /"task-list":\s*\{\s*x:\s*162,\s*y:\s*308,/s);
   assert.match(petGeometry, /baseBounds\.x \+ DESKTOP_PET_VISIBLE_FOOTPRINT\.x - footprint\.x/);
-  assert.match(petGeometry, /"task-list-compact":\s*\{\s*width:\s*340,\s*height:\s*282/s);
-  assert.match(petGeometry, /"task-list":\s*\{\s*width:\s*392,\s*height:\s*360/s);
+  assert.match(petGeometry, /"task-list-compact":\s*\{\s*width:\s*368,\s*height:\s*352/s);
+  assert.match(petGeometry, /"task-list":\s*\{\s*width:\s*420,\s*height:\s*432/s);
   assert.match(desktopPetController, /activeTasks\.length > 0[\s\S]{0,120}return activeTasks\.length <= 2 \? "task-list-compact" : "task-list";/);
-  assert.match(desktopPet, /showPreviewPanel && previewPanel\?\.expanded \? "has-preview-expanded" : ""/);
-  assert.match(desktopPet, /showPreviewPanel && !previewPanel\?\.expanded \? "has-preview-collapsed" : ""/);
+  assert.match(desktopPetController, /panel\.status === "done" \? "bubble" : panel\.expanded \? "preview-expanded" : "base"/);
+  assert.match(desktopPetController, /const hasHistoryMessages = Array\.isArray\(input\.state\.messages\) && input\.state\.messages\.length > 0;/);
+  assert.match(desktopPetController, /const hasMessageReaction = input\.state\.status === "idle"[\s\S]{0,180}unreadCount > 0/);
+  assert.match(desktopPetController, /if \(hasHistoryMessages\) \{[\s\S]{0,80}return "bubble";/);
+  assert.match(desktopPetController, /const shouldShowBubble = hasHistoryMessages \|\| input\.state\.status !== "idle"/);
+  assert.match(desktopPet, /const isDonePreviewPanel = previewPanel\?\.status === "done";/);
+  assert.match(desktopPet, /const hasCollapsedPreviewPanel = Boolean\(previewPanel && !previewPanel\.expanded && !isDonePreviewPanel && !hasHistoryMessages\);/);
+  assert.match(desktopPet, /const showPreviewPanel = !isDragging && isWidgetExpanded && !hasHistoryMessages && !showTaskPanel && Boolean\(previewPanel && previewPanel\.expanded && !isDonePreviewPanel\);/);
+  assert.match(desktopPet, /hasPreviewExpandedAnchor \? "has-preview-expanded" : ""/);
+  assert.doesNotMatch(desktopPet, /has-preview-done/);
+  assert.doesNotMatch(desktopPet, /has-preview-collapsed/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.has-preview-done/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.has-preview-collapsed/);
   assert.match(globalStyles, /\.desktop-pet-hitbox\s*\{[\s\S]{0,160}position:\s*absolute;[\s\S]{0,80}inset:\s*0;/);
   assert.match(globalStyles, /\.desktop-pet-button\s*\{[\s\S]{0,160}position:\s*absolute;[\s\S]{0,120}left:\s*var\(--desktop-pet-button-left\);/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-tasks\s*\{[\s\S]{0,220}--desktop-pet-button-left:\s*130px;[\s\S]{0,80}--desktop-pet-button-top:\s*220px;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-compact-tasks\s*\{[\s\S]{0,180}--desktop-pet-button-left:\s*98px;[\s\S]{0,80}--desktop-pet-button-top:\s*140px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-tasks\s*\{[\s\S]{0,260}--desktop-pet-button-left:\s*144px;[\s\S]{0,100}--desktop-pet-button-top:\s*292px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-compact-tasks\s*\{[\s\S]{0,240}--desktop-pet-button-left:\s*114px;[\s\S]{0,100}--desktop-pet-button-top:\s*212px;/);
   assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,120}position:\s*absolute;[\s\S]{0,80}width:\s*216px;/);
   assert.match(globalStyles, /\.desktop-pet-task-panel\s*\{[\s\S]{0,160}position:\s*absolute;[\s\S]{0,180}width:\s*var\(--desktop-pet-task-panel-width,\s*320px\);/);
+  assert.match(globalStyles, /\.desktop-pet-task-panel\s*\{[\s\S]{0,160}top:\s*var\(--desktop-pet-task-panel-top,\s*auto\);/);
+  assert.match(globalStyles, /\.desktop-pet-task-panel\s*\{[\s\S]*?backdrop-filter:\s*blur\(24px\) saturate\(145%\);/);
+  assert.match(globalStyles, /\.desktop-pet-task-panel\s*\{[\s\S]*?rgba\(226,\s*246,\s*244,\s*0\.54\)/);
   assert.match(globalStyles, /\.desktop-pet-preview\s*\{[\s\S]{0,120}position:\s*absolute;[\s\S]{0,120}width:\s*336px;/);
   assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,700}box-shadow:\s*[\s\S]{0,120}0 14px 30px rgba\(30,\s*54,\s*105,\s*0\.16\)/);
   assert.match(globalStyles, /\.desktop-pet-image\s*\{[\s\S]{0,120}width:\s*96px;/);
+  assert.match(globalStyles, /\.desktop-pet-image\s*\{[\s\S]{0,160}filter:\s*none;/);
+  assert.doesNotMatch(globalStyles, /\n\.desktop-pet-image\s*\{[^}]*drop-shadow/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-signature \.desktop-pet-image\s*\{[\s\S]{0,220}drop-shadow/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
 });
+
+test("desktop pet message reaction collapses to an unread badge without an expand button", () => {
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+  const desktopPetVisual = readSourceFile("src", "shared", "desktop-pet-visual.ts");
+  const globalStyles = readRendererStyles();
+
+  assert.match(desktopPet, /const showMessageBadgeOnly = hasMessageReaction && !hasHistoryMessages && !showTaskPanel && !showPreviewPanel && !isDonePreviewPanel;/);
+  assert.match(desktopPet, /const canShowStatusPanel =[\s\S]{0,220}\(hasHistoryMessages \|\| displayStatus !== "idle"\);/);
+  assert.match(desktopPet, /const showStatusPanel = canShowStatusPanel && isWidgetExpanded;/);
+  assert.match(desktopPet, /const desiredWindowMode: DesktopPetWindowMode = isDragging[\s\S]{0,320}showStatusPanel[\s\S]{0,80}"bubble"[\s\S]{0,80}"base";/);
+  assert.match(desktopPet, /desktopPet\.setWindowMode\(desiredWindowMode\)/);
+  assert.match(desktopPet, /hasBubbleAnchor \? "has-bubble" : ""/);
+  assert.match(desktopPet, /const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts\(\{[\s\S]{0,180}visibleMessages,[\s\S]{0,80}activeTasks[\s\S]{0,40}\}\);/);
+  assert.match(desktopPet, /unreadBadgeCounts\.awaitingCount > 0/);
+  assert.match(desktopPet, /unreadBadgeCounts\.completedCount > 0/);
+  assert.match(desktopPet, /const showUnreadBadges = unreadBadgeItems\.length > 0 && !showTaskPanel && !showPreviewPanel && !showStatusPanel;/);
+  assert.doesNotMatch(desktopPet, /latestVisibleMessageSummary/);
+  assert.doesNotMatch(desktopPet, /statusPanelSummary/);
+  assert.match(desktopPet, /resolveDesktopPetUnreadBadgeCounts/);
+  assert.match(desktopPet, /className=\{`desktop-pet-unread-badges \$\{unreadBadgeItems\.length > 1 \? "has-multiple" : "has-single"\}`\}/);
+  assert.match(desktopPet, /unreadBadgeItems\.map\(\(badge\) =>/);
+  assert.doesNotMatch(desktopPet, /hasAwaitingHumanLoop/);
+  assert.match(desktopPetVisual, /export function resolveDesktopPetUnreadBadgeTone/);
+  assert.match(desktopPetVisual, /export function resolveDesktopPetUnreadBadgeCounts/);
+  assert.match(desktopPetVisual, /const awaitingCountsByKey = new Map<string, number>\(\);/);
+  assert.match(desktopPetVisual, /setAwaitingBadgeCount\(/);
+  assert.match(desktopPetVisual, /\[\.\.\.awaitingCountsByKey\.values\(\)\]\.reduce/);
+  assert.match(desktopPetVisual, /completedCount:\s*completedMessageCount/);
+  assert.match(desktopPet, /function handleUnreadBadgeClick[\s\S]{0,220}setIsWidgetExpanded\(true\);/);
+  assert.match(desktopPet, /className=\{`desktop-pet-unread-badge is-\$\{badge\.tone\} is-\$\{badge\.key\}`\}/);
+  assert.match(desktopPet, /onPointerDown=\{handleUnreadBadgePointerDown\}/);
+  assert.match(desktopPet, /onClick=\{handleUnreadBadgeClick\}/);
+  assert.match(desktopPet, /const \[messageCache, setMessageCache\] = useState<readonly DesktopPetMessageItem\[\]>\(\[\]\);/);
+  assert.match(desktopPet, /const visibleMessages = getVisibleDesktopPetMessages\(\{/);
+  assert.doesNotMatch(desktopPet, /DESKTOP_PET_MESSAGE_VISIBLE_LIMIT/);
+  assert.doesNotMatch(desktopPet, /desktop-pet-message-latest/);
+  assert.doesNotMatch(desktopPet, /展开全部/);
+  assert.doesNotMatch(desktopPet, /desktop-pet-task-expand/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-task-expand/);
+  assert.match(desktopPet, /className="desktop-pet-stage"/);
+  assert.doesNotMatch(desktopPet, /desktop-pet-status-fab/);
+  assert.match(globalStyles, /\.desktop-pet-unread-badges\s*\{[\s\S]{0,220}display:\s*inline-flex;[\s\S]{0,120}gap:\s*4px;/);
+  assert.match(globalStyles, /\.desktop-pet-unread-badges\.has-multiple\s*\{[\s\S]{0,160}left:\s*calc\(var\(--desktop-pet-button-left\) \+ 78px\);/);
+  assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-message\s*\{[\s\S]{0,220}#09a84f[\s\S]{0,220}rgba\(9,\s*168,\s*79,\s*0\.34\)/);
+  assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-awaiting\s*\{[\s\S]{0,220}#f59e0b[\s\S]{0,220}rgba\(245,\s*158,\s*11,\s*0\.34\)/);
+  assert.match(globalStyles, /\.desktop-pet-unread-badge\s*\{[\s\S]*?pointer-events:\s*auto;/);
+  assert.match(globalStyles, /\.desktop-pet-task-status-badge\.is-awaiting\s*\{[\s\S]{0,120}#fff2c2[\s\S]{0,120}#b45309/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-copy strong\s*\{[\s\S]{0,120}font-size:\s*13px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-copy strong\s*\{[\s\S]{0,120}font-size:\s*12px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*155px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-edge-dock-top\.has-bubble,[\s\S]{0,160}--desktop-pet-task-panel-top:\s*168px;[\s\S]{0,120}--desktop-pet-task-panel-bottom:\s*auto;/);
+  assert.doesNotMatch(globalStyles, /0 18px 40px rgba\(30,\s*32,\s*38,\s*0\.12\)/);
+  assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/);
+  assert.match(globalStyles, /\.desktop-pet-message-card \.desktop-pet-task-copy span\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::before\s*\{[\s\S]{0,140}left:\s*5px;[\s\S]{0,80}top:\s*5px;[\s\S]{0,80}width:\s*8px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::after\s*\{[\s\S]{0,140}left:\s*10px;[\s\S]{0,80}top:\s*7px;[\s\S]{0,80}height:\s*5px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-running::after\s*\{[\s\S]{0,100}inset:\s*6px;[\s\S]{0,80}border-width:\s*2px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-reply[\s\S]*?opacity:\s*1;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-main \.desktop-pet-task-status-badge[\s\S]*?opacity:\s*0;/);
+  assert.match(desktopPet, /className=\{`desktop-pet-message-stack\$\{replyingChatId \? " is-replying" : ""\}`\}/);
+  assert.match(desktopPet, /const isReplying = replyingChatId === message\.chatId;/);
+  assert.match(desktopPet, /className=\{`desktop-pet-message-card is-\$\{cardStatus\}\$\{message\.unread \? " is-unread" : ""\}\$\{isReplying \? " is-replying" : ""\}`\}/);
+  assert.match(globalStyles, /\.desktop-pet-message-stack\.is-replying\s*\{[\s\S]{0,180}max-height:\s*176px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card\.is-replying\s*\{[\s\S]{0,180}min-height:\s*92px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-card\.is-replying\s*\{[\s\S]{0,180}padding:\s*10px 12px 8px 14px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-reply-box\s*\{[\s\S]{0,180}margin-top:\s*4px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-reply-input\s*\{[\s\S]{0,100}grid-column:\s*1;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-reply-box\s*\{[\s\S]{0,180}margin-right:\s*-/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-latest/);
+  assert.match(globalStyles, /--desktop-pet-stage-shadow:\s*none;/);
+  assert.doesNotMatch(globalStyles, /--desktop-pet-stage-shadow:\s*radial-gradient/);
+  assert.match(globalStyles, /\.desktop-pet-stage\s*\{[\s\S]{0,120}display:\s*none;/);
+  assert.match(globalStyles, /\.desktop-pet-stage::before,\s*\.desktop-pet-stage::after\s*\{[\s\S]{0,80}content:\s*none;/);
+  assert.doesNotMatch(globalStyles, /desktop-pet-stage-glow/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-status-fab/);
+  assert.doesNotMatch(desktopPet, /desktop-pet-status-pill/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-status-pill/);
+  assert.doesNotMatch(globalStyles, /--desktop-pet-status-pill-/);
+  assert.match(globalStyles, /\.desktop-pet-message-stack\s*\{[\s\S]{0,180}display:\s*flex;[\s\S]{0,120}flex-direction:\s*column;/);
+});
+
+test("desktop pet panels do not render the header avatar icon in any state", () => {
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+  const globalStyles = readRendererStyles();
+
+  assert.doesNotMatch(desktopPet, /desktop-pet-task-avatar/);
+  assert.doesNotMatch(desktopPet, /desktop-pet-task-avatar-mark/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-task-avatar/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-task-avatar-mark/);
+  assert.match(globalStyles, /\.desktop-pet-task-head\s*\{[\s\S]{0,160}grid-template-columns:\s*minmax\(0,\s*1fr\) 32px;/);
+  assert.match(globalStyles, /\.desktop-pet-status-panel \.desktop-pet-task-head\s*\{[\s\S]{0,120}grid-template-columns:\s*minmax\(0,\s*1fr\) 32px;/);
+});
+
+test("desktop pet keeps the press-time window anchor while dragging", () => {
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+
+  assert.match(desktopPet, /type DesktopPetDragAnchorMode =/);
+  assert.match(desktopPet, /const \[dragAnchorMode, setDragAnchorMode\] = useState<DesktopPetDragAnchorMode>\(null\)/);
+  assert.match(desktopPet, /function resolveCurrentDragAnchorMode\(\)[\s\S]{0,360}return "bubble";/);
+  assert.match(desktopPet, /setDragAnchorMode\(resolveCurrentDragAnchorMode\(\)\)/);
+  assert.match(desktopPet, /const activeDragAnchorMode = isDragging \? dragAnchorMode : null;/);
+  assert.match(desktopPet, /showTaskPanel \|\|[\s\S]{0,80}activeDragAnchorMode === "task-list" \|\|[\s\S]{0,80}activeDragAnchorMode === "task-list-compact"/);
+  assert.match(desktopPet, /showStatusPanel \|\| activeDragAnchorMode === "bubble"/);
+}
+);
 
 test("desktop pet active task panel lists all agent tasks and opens chat rows", () => {
   const desktopPet = fs.readFileSync(
@@ -4019,20 +4166,24 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
   assert.match(contracts, /openTaskChat:\s*\(input:\s*\{ agentKey: string; chatId: string \}\)/);
   assert.match(desktopPetController, /createDesktopPetActiveTasksFromNavigationSnapshot/);
   assert.match(desktopPetController, /chat\.hasPendingAwaiting \? "awaiting" : "running"/);
-  assert.match(desktopPetController, /DESKTOP_PET_TASK_TITLE_FALLBACK = "未命名任务"/);
+  assert.match(desktopPetController, /t\("desktopPet\.task\.untitled"\)/);
   assert.match(desktopPetController, /left\.status === "awaiting" \? -1 : 1/);
   assert.match(mainProcess, /appState\.assistantNavigationStatusClient\?\.getSnapshot\(\)/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?refreshDesktopPetState\(\);/);
   assert.match(mainProcess, /openDesktopPetTaskChat/);
   assert.match(desktopPetHandlers, /desktopPet\.openTaskChat/);
   assert.match(preload, /openTaskChat: \(input\) => ipcRenderer\.invoke\("desktopPet\.openTaskChat", input\)/);
-  assert.match(desktopPet, /DESKTOP_PET_TASK_VISIBLE_LIMIT = 3/);
-  assert.match(desktopPet, /const showTaskPanel = !isDragging && activeTasks\.length > 0/);
-  assert.match(desktopPet, /const showPreviewPanel = !isDragging && !showTaskPanel && Boolean\(previewPanel\)/);
+  assert.match(desktopPet, /DESKTOP_PET_TASK_VISIBLE_LIMIT = 2/);
+  assert.match(desktopPet, /const hasTaskPanelContent = activeTasks\.length > 0 && !hasHistoryMessages;/);
+  assert.match(desktopPet, /const showTaskPanel = !isDragging && isWidgetExpanded && hasTaskPanelContent;/);
+  assert.match(desktopPet, /const showPreviewPanel = !isDragging && isWidgetExpanded && !hasHistoryMessages && !showTaskPanel && Boolean\(previewPanel && previewPanel\.expanded && !isDonePreviewPanel\);/);
+  assert.match(desktopPet, /const canShowStatusPanel =[\s\S]{0,220}\(hasHistoryMessages \|\| displayStatus !== "idle"\);/);
+  assert.match(desktopPet, /if \(!isWidgetExpanded && \(hasTaskPanelContent \|\| canShowStatusPanel \|\| hasHistoryMessages\)\) \{[\s\S]{0,80}setIsWidgetExpanded\(true\);/);
+  assert.match(desktopPet, /aria-label="收起聊天内容"/);
   assert.match(desktopPet, /desktop-pet-task-panel/);
   assert.match(desktopPet, /desktopPet\.openTaskChat\(\{/);
   assert.match(globalStyles, /\.desktop-pet-task-panel/);
-  assert.match(globalStyles, /\.desktop-pet-task-row/);
+  assert.match(globalStyles, /\.desktop-pet-task-card/);
   assert.match(globalStyles, /\.desktop-pet-task-more/);
 });
 
@@ -4047,6 +4198,9 @@ test("desktop pet moving-left state uses the smooth high-frame strip", () => {
   assert.match(desktopPetSource, /desktop-pet-state-sprite/);
   assert.match(globalStyles, /\.desktop-pet-state-sprite\s*\{[\s\S]{0,160}background-size:\s*calc\(96px \* var\(--desktop-pet-state-frames,\s*1\)\) 104px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-state-animation\s+\.desktop-pet-state-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-state-frames var\(--desktop-pet-state-duration,\s*900ms\) steps\(var\(--desktop-pet-state-frames,\s*1\),\s*end\) var\(--desktop-pet-state-loop-count,\s*infinite\);/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-state-animation\.is-drag-mirror \.desktop-pet-state-sprite\s*\{[\s\S]{0,120}transform:\s*scaleX\(-1\);/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-moving-left\.is-drag-mirror:not\(\.has-state-animation\) \.desktop-pet-image\s*\{[\s\S]{0,120}animation-name:\s*desktop-pet-dragging-mirror;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-moving-left\.is-drag-mirror \.desktop-pet-image\s*\{[\s\S]{0,120}animation-name:\s*desktop-pet-dragging-mirror;/);
   assert.match(globalStyles, /@keyframes desktop-pet-state-frames\s*\{[\s\S]{0,120}background-position:\s*calc\(-96px \* var\(--desktop-pet-state-frames,\s*1\)\) 0;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*0\s+-200%;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*-800%\s+-200%;/);
@@ -4089,6 +4243,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   );
   const sharedDesktopPet = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-pet.ts"), "utf8");
   const desktopPetVisual = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-pet-visual.ts"), "utf8");
+  const cutejPetManifest = readSourceFile("brands", "cutej", "desktop-pet", "pet.json");
   const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const desktopPetWindow = fs.readFileSync(
@@ -4105,8 +4260,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPetVisual, /"failed"/);
   assert.match(desktopPetVisual, /"review"/);
   assert.match(desktopPet, /DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3/);
-  assert.match(desktopPet, /const \[isHovering, setIsHovering\] = useState\(false\)/);
-  assert.match(desktopPet, /const \[isKeyboardFocused, setIsKeyboardFocused\] = useState\(false\)/);
+  assert.doesNotMatch(desktopPet, /const \[isHovering, setIsHovering\] = useState\(false\)/);
+  assert.doesNotMatch(desktopPet, /const \[isKeyboardFocused, setIsKeyboardFocused\] = useState\(false\)/);
   assert.match(desktopPet, /const \[activeSignature, setActiveSignature\] = useState<ActiveDesktopPetSignature \| null>\(null\)/);
   assert.match(desktopPet, /pointIntersectsVisiblePetArea/);
   assert.match(desktopPet, /pointIntersectsElement\("\.desktop-pet-image"/);
@@ -4114,7 +4269,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /desktopPet\.setMouseInteractive\(interactive\)/);
   assert.match(desktopPet, /typeof window\.electronAPI\.desktopPet\.onSignatureRequested === "function"/);
   assert.match(desktopPet, /desktopPet\.onSignatureRequested\(\(signatureId\) => \{[\s\S]{0,120}startSignature\(signatureId,\s*"manual"\);/);
-  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,80}return input\.dragDirection \? "moving-left" : "dragging"/);
+  assert.match(desktopPet, /if \(trigger !== "manual" && currentStatus !== "idle"\) \{[\s\S]{0,80}return;/);
+  assert.match(desktopPet, /function shouldInterruptSignature\(nextState: DesktopPetState\)[\s\S]{0,360}currentSignature\?\.trigger === "manual"[\s\S]{0,80}return false;/);
+  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,80}return input\.dragDirection \? "moving-left" : "idle"/);
   assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
   assert.match(desktopPet, /shouldShowSignatureSpriteAnimation[\s\S]{0,220}activeSignature\.assetPath/);
   assert.match(sharedDesktopPet, /export function resolveDesktopPetSignatureActions/);
@@ -4122,39 +4279,77 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /getDesktopPetSpriteAssetBasePath\(appearanceId\)/);
   assert.match(desktopPet, /deriveDesktopPetVisualStatus\(\{/);
   assert.match(desktopPetVisual, /input\.displayStatus === "awaiting"[\s\S]{0,80}return "awaiting"/);
+  assert.match(desktopPetVisual, /input\.hasActiveSignature && input\.activeSignatureTrigger === "manual"[\s\S]{0,80}return "signature"/);
   assert.match(desktopPetVisual, /input\.displayStatus === "running" && input\.isReviewing[\s\S]{0,80}return "review"/);
   assert.match(desktopPetVisual, /input\.displayStatus === "running"[\s\S]{0,80}return "running"/);
   assert.match(desktopPetVisual, /input\.displayStatus === "error"[\s\S]{0,80}return "failed"/);
   assert.match(desktopPetVisual, /input\.activeStandardAction === "jumping"[\s\S]{0,80}return "jumping"/);
+  assert.doesNotMatch(desktopPetVisual, /isHovering/);
+  assert.doesNotMatch(desktopPetVisual, /isKeyboardFocused/);
+  assert.doesNotMatch(desktopPetVisual, /return "hover"/);
   assert.doesNotMatch(desktopPetVisual, /return "thinking"/);
   assert.doesNotMatch(desktopPetVisual, /return "message"/);
   assert.doesNotMatch(desktopPetVisual, /hasMessageReaction/);
   assert.match(desktopPetVisual, /input\.hasActiveSignature[\s\S]{0,80}return "signature"/);
-  assert.match(desktopPet, /displayStatus === "idle" && !isDragging && !hasMessageReaction/);
-  assert.match(desktopPetVisual, /input\.isHovering \|\| input\.isKeyboardFocused/);
+  assert.doesNotMatch(desktopPet, /canShowHoverReaction/);
+  assert.match(desktopPet, /hasMessageReaction \|\|[\s\S]{0,80}hasHistoryMessages[\s\S]{0,80}showTaskPanel/);
+  assert.match(desktopPet, /function formatMessageCardPreview\(message: DesktopPetMessageItem, isThinking: boolean, draftText = ""\)/);
+  assert.match(desktopPet, /return `回复：\$\{draftPreview\}`;/);
+  assert.match(desktopPet, /return "正在思考";/);
   assert.match(desktopPet, /function resolveDesktopPetVisualAsset/);
   assert.match(desktopPet, /getDesktopPetStateAsset\(customAppearance\?\.states, status\)/);
   assert.doesNotMatch(desktopPet, /getDesktopPetLegacyStatusAssetName/);
   assert.doesNotMatch(desktopPet, /task-run-left\.webp/);
   assert.match(desktopPet, /const visualAsset = useMemo\(\s*\(\) => resolveDesktopPetVisualAsset\(petState, appearanceId, visualStatus\)/);
   assert.match(desktopPet, /DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30/);
-  assert.match(desktopPet, /formatInlinePetPreview\(bubbleText\)/);
-  assert.match(desktopPet, /const statusBubbleText = displayStatus === "idle"[\s\S]{0,120}: petState\.hint\.trim\(\) \|\| formatPetHint\(displayStatus\);/);
-  assert.match(desktopPet, /const previewSummary = previewPanel && previewPanel\.expanded/);
+  assert.match(desktopPet, /formatStatusPanelPreview\(displayStatus,\s*hasMessageReaction,\s*bubbleText/);
+  assert.match(desktopPet, /const statusBubbleText = displayStatus === "idle"[\s\S]{0,140}: petState\.hint\.trim\(\) \|\| formatPetHint\(displayStatus,\s*t\);/);
+  assert.match(desktopPet, /const showPreviewPanel = !isDragging && isWidgetExpanded && !hasHistoryMessages && !showTaskPanel && Boolean\(previewPanel && previewPanel\.expanded && !isDonePreviewPanel\);/);
+  assert.match(desktopPet, /const statusPanelTitle = hasHistoryMessages[\s\S]{0,80}\? "运行概览"/);
+  assert.match(desktopPet, /preview:\s*formatPreviewPanelSummary\(previewPanel\)/);
+  assert.doesNotMatch(desktopPet, /<strong>\{previewTitle \|\| "运行中"\}<\/strong>/);
+  assert.doesNotMatch(desktopPet, /<span>\{showPreviewSummary \? previewSummary : "运行预览"\}<\/span>/);
   assert.match(desktopPet, /const showItemDetail = shouldShowSecondaryPreview\(itemTitle, itemDetailPreview\);/);
-  assert.match(desktopPet, /handlePreviewClick[\s\S]{0,180}previewPanel\.status === "done"[\s\S]{0,120}desktopPet\.dismissPreview/);
+  assert.match(desktopPet, /handlePreviewClick[\s\S]{0,180}previewPanel\.status === "done"[\s\S]{0,80}return;/);
+  assert.match(desktopPet, /function handleDismissMessage\(message: DesktopPetMessageItem\)[\s\S]{0,960}desktopPet\.dismissPreview\(\)/);
   assert.match(desktopPet, /handlePreviewClick[\s\S]{0,360}desktopPet\.setPreviewExpanded\(!previewPanel\.expanded\)/);
-  assert.match(desktopPet, /messagePreview \|\| "有新消息"/);
+  assert.match(desktopPet, /aria-label=\{previewPanel\.expanded \? t\("desktopPet\.collapsePreview"\) : t\("desktopPet\.expandPreview"\)\}/);
+  assert.match(desktopPet, /messagePreview \|\| t\("desktopPet\.newMessage"\)/);
   assert.match(desktopPet, /const previewPanel = petState\.previewPanel\?\.visible \? petState\.previewPanel : null/);
-  assert.match(desktopPet, /const showPreviewPanel = !isDragging && !showTaskPanel && Boolean\(previewPanel\)/);
-  assert.match(desktopPet, /const showBubble = !isDragging && !showTaskPanel && !showPreviewPanel && bubbleText\.length > 0/);
-  assert.match(desktopPet, /desktop-pet-preview-toggle/);
-  assert.match(desktopPet, /desktopPet\.setPreviewExpanded/);
-  assert.match(desktopPet, /onPointerEnter=\{handlePointerEnter\}/);
-  assert.match(desktopPet, /onPointerLeave=\{handlePointerLeave\}/);
-  assert.match(desktopPet, /onFocus=\{handleButtonFocus\}/);
-  assert.match(desktopPet, /onBlur=\{handleButtonBlur\}/);
-  assert.match(desktopPet, /matches\(":focus-visible"\)/);
+  assert.match(desktopPet, /const previewHistoryMessage: DesktopPetMessageItem \| null =/);
+  assert.match(desktopPet, /function getVisibleDesktopPetMessages\(input: \{/);
+  assert.match(desktopPet, /messages: petMessages,[\s\S]{0,80}cachedMessages: messageCache,[\s\S]{0,80}previewHistoryMessage/);
+  assert.match(desktopPet, /const hasHistoryMessages = visibleMessages\.length > 0;/);
+  assert.match(desktopPet, /setMessageCache\(\(current\) => mergeDesktopPetMessageLists\(\[previewHistoryMessage\], current\)\)/);
+  assert.match(desktopPet, /const hasCollapsedPreviewPanel = Boolean\(previewPanel && !previewPanel\.expanded && !isDonePreviewPanel && !hasHistoryMessages\);/);
+  assert.match(desktopPet, /const showPreviewPanel = !isDragging && isWidgetExpanded && !hasHistoryMessages && !showTaskPanel && Boolean\(previewPanel && previewPanel\.expanded && !isDonePreviewPanel\);/);
+  assert.match(desktopPet, /const showMessageBadgeOnly = hasMessageReaction && !hasHistoryMessages && !showTaskPanel && !showPreviewPanel && !isDonePreviewPanel;/);
+  assert.match(desktopPet, /const canShowStatusPanel =[\s\S]{0,220}\(hasHistoryMessages \|\| displayStatus !== "idle"\);/);
+  assert.match(desktopPet, /const showStatusPanel = canShowStatusPanel && isWidgetExpanded;/);
+  assert.match(desktopPet, /function handleReplySubmit\(message: DesktopPetMessageItem\)/);
+  assert.match(desktopPet, /desktopPet\s*\.\s*replyMessage\(\{\s*chatId:\s*message\.chatId,\s*agentKey:\s*message\.agentKey,\s*message:\s*text\s*\}\)/);
+  assert.match(desktopPet, /function handleReplySubmitClick\(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem\)/);
+  assert.match(desktopPet, /function handleOpenMessageClick\(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem\)/);
+  assert.match(desktopPet, /formatMessageCardPreview\(message, isThinking, replyDraftPreview\)/);
+  assert.match(desktopPet, /visibleMessages\.map\(\(message\) =>/);
+  assert.match(desktopPet, /className="desktop-pet-message-meta"/);
+  assert.doesNotMatch(desktopPet, /className="desktop-pet-message-latest">最新<\/span>/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-latest\s*\{/);
+  assert.match(globalStyles, /\.desktop-pet-message-meta\s*\{[\s\S]{0,120}position:\s*absolute;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-dismiss\s*\{[\s\S]{0,120}top:\s*-/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-dismiss\s*\{[\s\S]{0,160}left:\s*-/);
+  assert.match(desktopPet, /handleDismissMessage\(message\)/);
+  assert.match(desktopPet, /handleReplyToggleClick\(event, message\.chatId\)/);
+  assert.doesNotMatch(desktopPet, /handlePreviewReplySubmit/);
+  assert.doesNotMatch(desktopPet, /desktop-pet-preview-reply-row/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.has-preview-done/);
+  assert.doesNotMatch(globalStyles, /desktop-pet-preview-reply-row/);
+  assert.match(desktopPet, /desktop-pet-task-head-action/);
+  assert.doesNotMatch(desktopPet, /onPointerEnter=\{handlePointerEnter\}/);
+  assert.doesNotMatch(desktopPet, /onPointerLeave=\{handlePointerLeave\}/);
+  assert.doesNotMatch(desktopPet, /onFocus=\{handleButtonFocus\}/);
+  assert.doesNotMatch(desktopPet, /onBlur=\{handleButtonBlur\}/);
+  assert.doesNotMatch(desktopPet, /matches\(":focus-visible"\)/);
   assert.doesNotMatch(sharedDesktopPet, /id:\s*"dario"/);
   assert.doesNotMatch(sharedDesktopPet, /id:\s*"sama"/);
   assert.doesNotMatch(sharedDesktopPet, /id:\s*"pony"/);
@@ -4166,6 +4361,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(sharedDesktopPet, /const BRAND_DESKTOP_PET = APP_BRAND\.desktopPet/);
   assert.match(sharedDesktopPet, /DEFAULT_DESKTOP_PET_STATES = BRAND_DESKTOP_PET\.states/);
   assert.match(sharedDesktopPet, /DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS[\s\S]*?BRAND_DESKTOP_PET[\s\S]*?signature/);
+  assert.match(cutejPetManifest, /"id":\s*"work-hard"/);
+  assert.match(cutejPetManifest, /"label":\s*"努力工作"/);
+  assert.match(cutejPetManifest, /"path":\s*"signature\/work-hard-v3\.webp"/);
   assert.match(sharedDesktopPet, /preview:\s*BRAND_DESKTOP_PET\.preview/);
   assert.match(sharedDesktopPet, /previewUrl:\s*`\.\/desktop-pet\/\$\{BRAND_DESKTOP_PET\.preview\}`/);
   assert.doesNotMatch(sharedDesktopPet, /\n\s*message:\s*\{\s*path:/);
@@ -4180,13 +4378,14 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(sharedDesktopPet, /id:\s*"chant"/);
   assert.doesNotMatch(sharedDesktopPet, /path:\s*"signature\/chant\.webp"/);
   assert.doesNotMatch(sharedDesktopPet, /"pony"/);
-  assert.match(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-signature-sprite\s*\{[\s\S]{0,260}background-size:\s*calc\(96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 104px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-signature-animation\s+\.desktop-pet-signature-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-signature-frames var\(--desktop-pet-signature-duration,\s*5200ms\) steps\(var\(--desktop-pet-signature-frames,\s*30\),\s*end\) 1 both;/);
   assert.match(globalStyles, /@keyframes desktop-pet-signature-frames\s*\{[\s\S]*?background-position:\s*calc\(-96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-awaiting\s+\.desktop-pet-image[\s\S]{0,120}desktop-pet-awaiting/);
-  assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image\s*\{[\s\S]{0,120}animation:\s*none;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-idle\.is-dragging\.has-state-animation\s+\.desktop-pet-state-sprite\s*\{[\s\S]{0,160}background-position:\s*0 0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-jumping\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-running\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-review\s+\.desktop-pet-image/);
@@ -4197,7 +4396,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-preview/);
   assert.match(globalStyles, /\.desktop-pet-preview-toggle/);
-  assert.match(globalStyles, /@keyframes desktop-pet-hover-reaction/);
+  assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-hover-reaction/);
   assert.match(globalStyles, /@keyframes desktop-pet-signature-bounce/);
   assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-dance/);
   assert.match(globalStyles, /@keyframes desktop-pet-dragging/);

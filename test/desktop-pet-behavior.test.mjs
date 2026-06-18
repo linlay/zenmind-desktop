@@ -14,6 +14,13 @@ const {
   listUserDesktopPetAppearanceOptions,
   __testInternals
 } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
+const {
+  createDesktopPetMessagesFromAgentStatus,
+  createDesktopPetMessagesFromNavigationSnapshot,
+  createDesktopPetActiveTasksFromNavigationSnapshot,
+  createDesktopPetDragController,
+  resolveDesktopPetWindowMode
+} = require("../dist-electron/main/desktop-pet-controller.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 const {
@@ -79,6 +86,35 @@ function visibleFootprintCenter(bounds, footprint) {
     x: bounds.x + footprint.x + Math.round(footprint.width / 2),
     y: bounds.y + footprint.y + Math.round(footprint.height / 2)
   };
+}
+
+function edgeAdjustedFootprint(mode, position, displayArea, internals) {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
+    DESKTOP_PET_WINDOW_SIZES
+  } = internals;
+  const footprint = {
+    ...DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode]
+  };
+  if (mode === "base") {
+    return footprint;
+  }
+  const visibleLeft = position.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x;
+  const visibleTop = position.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y;
+  const visibleRight = visibleLeft + DESKTOP_PET_VISIBLE_FOOTPRINT.width;
+  const visibleBottom = visibleTop + DESKTOP_PET_VISIBLE_FOOTPRINT.height;
+  if (visibleLeft <= displayArea.x) {
+    footprint.x = DESKTOP_PET_VISIBLE_FOOTPRINT.x;
+  } else if (visibleRight >= displayArea.x + displayArea.width) {
+    footprint.x = DESKTOP_PET_WINDOW_SIZES[mode].width - DESKTOP_PET_VISIBLE_FOOTPRINT.width;
+  }
+  if (visibleTop <= displayArea.y) {
+    footprint.y = DESKTOP_PET_VISIBLE_FOOTPRINT.y;
+  } else if (visibleBottom >= displayArea.y + displayArea.height) {
+    footprint.y = DESKTOP_PET_WINDOW_SIZES[mode].height - DESKTOP_PET_VISIBLE_FOOTPRINT.height;
+  }
+  return footprint;
 }
 
 function writeStrictUserPet(petRoot, overrides = {}) {
@@ -155,6 +191,30 @@ test("desktop pet state exposes awaiting when the bound agent has a pending awai
   assert.equal(state.hint, "需要你确认计划");
 });
 
+test("desktop pet builds a message history item from bound agent status when navigation messages are empty", () => {
+  const messages = createDesktopPetMessagesFromAgentStatus(createAgentStatus({
+    presence: "available",
+    unreadCount: 1,
+    latestPreview: "这是上一条历史回复",
+    chatId: "chat-history",
+    updatedAt: "2026-06-17T00:00:00.000Z"
+  }));
+
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0], {
+    id: "zenmi:chat-history",
+    chatId: "chat-history",
+    runId: null,
+    agentKey: "zenmi",
+    agentDisplayName: "小宅",
+    title: "小宅",
+    preview: "这是上一条历史回复",
+    status: "done",
+    unread: true,
+    updatedAt: "2026-06-17T00:00:00.000Z"
+  });
+});
+
 test("desktop pet window modes keep the visible pet footprint anchored", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
@@ -187,13 +247,14 @@ test("desktop pet window modes keep the visible pet footprint anchored", () => {
 });
 
 test("desktop pet window modes allow panels to overflow edges instead of moving the pet", () => {
-  const {
-    DESKTOP_PET_VISIBLE_FOOTPRINT,
-    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
-    getAnchoredDesktopPetBounds,
-    getDesktopPetLogicalPositionFromBounds
-  } = __testInternals;
-  const displayArea = { x: 100, y: 80, width: 500, height: 400 };
+	  const {
+	    DESKTOP_PET_VISIBLE_FOOTPRINT,
+	    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
+	    DESKTOP_PET_WINDOW_SIZES,
+	    getAnchoredDesktopPetBounds,
+	    getDesktopPetLogicalPositionFromBounds
+	  } = __testInternals;
+	  const displayArea = { x: 100, y: 80, width: 500, height: 400 };
   const edgePositions = [
     {
       x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
@@ -209,29 +270,376 @@ test("desktop pet window modes allow panels to overflow edges instead of moving 
       x: displayArea.x + 180,
       y: displayArea.y
     },
-    {
-      x: displayArea.x + 180,
-      y: displayArea.y + displayArea.height -
-        DESKTOP_PET_VISIBLE_FOOTPRINT.y -
-        DESKTOP_PET_VISIBLE_FOOTPRINT.height
-    }
-  ];
+	    {
+	      x: displayArea.x + 180,
+	      y: displayArea.y + displayArea.height -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.y -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.height
+	    },
+	    {
+	      x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
+	      y: displayArea.y + displayArea.height -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.y -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.height
+	    },
+	    {
+	      x: displayArea.x + displayArea.width -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.x -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+	      y: displayArea.y + displayArea.height -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.y -
+	        DESKTOP_PET_VISIBLE_FOOTPRINT.height
+	    }
+	  ];
 
   for (const position of edgePositions) {
-    const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
-    const baseFootprint = visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT);
-    for (const mode of Object.keys(DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS)) {
-      const modeBounds = getAnchoredDesktopPetBounds(position, displayArea, mode);
-      assert.deepEqual(
-        visibleFootprintRect(modeBounds, DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode]),
-        baseFootprint
+	    const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
+	    const baseFootprint = visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT);
+	    for (const mode of Object.keys(DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS)) {
+	      const modeBounds = getAnchoredDesktopPetBounds(position, displayArea, mode);
+	      const modeFootprint = edgeAdjustedFootprint(mode, baseBounds, displayArea, {
+	        DESKTOP_PET_VISIBLE_FOOTPRINT,
+	        DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
+	        DESKTOP_PET_WINDOW_SIZES
+	      });
+	      assert.deepEqual(
+	        visibleFootprintRect(modeBounds, modeFootprint),
+	        baseFootprint
       );
-      assert.deepEqual(getDesktopPetLogicalPositionFromBounds(modeBounds, mode), {
+      assert.deepEqual(getDesktopPetLogicalPositionFromBounds(modeBounds, mode, displayArea, baseBounds), {
         x: baseBounds.x,
         y: baseBounds.y
       });
     }
   }
+});
+
+test("desktop pet top-edge panels anchor below the pet instead of pushing the pet down", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
+    getAnchoredDesktopPetBounds,
+    getDesktopPetLogicalPositionFromBounds
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 500, height: 400 };
+  const position = { x: 180, y: displayArea.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y };
+  const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
+  const taskBounds = getAnchoredDesktopPetBounds(position, displayArea, "task-list");
+  const topEdgeFootprint = {
+    ...DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS["task-list"],
+    y: DESKTOP_PET_VISIBLE_FOOTPRINT.y
+  };
+
+  assert.equal(taskBounds.y, displayArea.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y);
+  assert.deepEqual(
+    visibleFootprintRect(taskBounds, topEdgeFootprint),
+    visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
+  );
+  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(taskBounds, "task-list", displayArea, position), position);
+});
+
+test("desktop pet drag keeps the press-time window mode instead of jumping to base bounds", () => {
+  const {
+    DESKTOP_PET_WINDOW_SIZES,
+    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
+    getAnchoredDesktopPetBounds
+  } = __testInternals;
+  const displayArea = { x: 1920, y: 0, width: 1440, height: 900 };
+  const initialPosition = { x: 2420, y: 300 };
+  let bounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "bubble");
+  let cursorPoint = {
+    x: bounds.x + DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS.bubble.x +
+      Math.round(DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS.bubble.width / 2),
+    y: bounds.y + DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS.bubble.y +
+      Math.round(DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS.bubble.height / 2)
+  };
+  const startPoint = { ...cursorPoint };
+  const setBoundsCalls = [];
+  const persistedModes = [];
+  let intervalCallback = null;
+  let getModeCalls = 0;
+  const fakeWindow = {
+    isDestroyed: () => false,
+    getBounds: () => ({ ...bounds }),
+    setBounds: (nextBounds) => {
+      bounds = { ...nextBounds };
+      setBoundsCalls.push({ ...nextBounds });
+    },
+    moveTop: () => {}
+  };
+
+  const controller = createDesktopPetDragController({
+    platform: "darwin",
+    getWindow: () => fakeWindow,
+    getSettings: () => ({}),
+    saveSettings: () => {},
+    getMode: () => {
+      getModeCalls += 1;
+      return getModeCalls === 1 ? "bubble" : "base";
+    },
+    getCursorScreenPoint: () => ({ ...cursorPoint }),
+    getDisplayBounds: () => displayArea,
+    getPointDisplayBounds: () => displayArea,
+    persistPosition: (mode) => {
+      persistedModes.push(mode);
+    },
+    refreshState: () => {},
+    setInterval: (callback) => {
+      intervalCallback = callback;
+      return 1;
+    },
+    clearInterval: () => {},
+    forceEndMs: 100000
+  });
+
+  assert.deepEqual(controller.beginDrag(startPoint), { ok: true });
+  assert.equal(setBoundsCalls.length, 0);
+
+  cursorPoint = {
+    x: startPoint.x + 24,
+    y: startPoint.y + 10
+  };
+  intervalCallback();
+
+  assert.equal(bounds.width, DESKTOP_PET_WINDOW_SIZES.bubble.width);
+  assert.equal(bounds.height, DESKTOP_PET_WINDOW_SIZES.bubble.height);
+  assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
+  assert.deepEqual(persistedModes, ["bubble"]);
+});
+
+test("desktop pet drag starts from the main-process cursor point instead of renderer screen coordinates", () => {
+  const displayArea = { x: 0, y: 0, width: 1440, height: 900 };
+  let bounds = { x: 320, y: 240, width: 176, height: 198 };
+  const cursorPoint = { x: 402, y: 346 };
+  const setBoundsCalls = [];
+  let intervalCallback = null;
+  const fakeWindow = {
+    isDestroyed: () => false,
+    getBounds: () => ({ ...bounds }),
+    setBounds: (nextBounds) => {
+      bounds = { ...nextBounds };
+      setBoundsCalls.push({ ...nextBounds });
+    },
+    moveTop: () => {}
+  };
+
+  const controller = createDesktopPetDragController({
+    platform: "darwin",
+    getWindow: () => fakeWindow,
+    getSettings: () => ({}),
+    saveSettings: () => {},
+    getMode: () => "base",
+    getCursorScreenPoint: () => ({ ...cursorPoint }),
+    getDisplayBounds: () => displayArea,
+    getPointDisplayBounds: () => displayArea,
+    persistPosition: () => {},
+    refreshState: () => {},
+    setInterval: (callback) => {
+      intervalCallback = callback;
+      return 1;
+    },
+    clearInterval: () => {},
+    forceEndMs: 100000
+  });
+
+  assert.deepEqual(controller.beginDrag({ x: 9999, y: 9999 }), { ok: true });
+  intervalCallback();
+
+  assert.deepEqual(setBoundsCalls, []);
+  assert.deepEqual(controller.endDrag(), { ok: true, moved: false });
+});
+
+test("desktop pet drag clamps the pet body instead of the expanded panel window", () => {
+  const {
+    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
+    getAnchoredDesktopPetBounds
+  } = __testInternals;
+  const displayArea = { x: 0, y: 0, width: 500, height: 400 };
+  const initialPosition = { x: 360, y: 180 };
+  let bounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "bubble");
+  const currentPetLeft = bounds.x + DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS.bubble.x;
+  const setBoundsCalls = [];
+  const cursorPoint = {
+    x: currentPetLeft + 48,
+    y: bounds.y + DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS.bubble.y + 54
+  };
+  const fakeWindow = {
+    isDestroyed: () => false,
+    getBounds: () => ({ ...bounds }),
+    setBounds: (nextBounds) => {
+      bounds = { ...nextBounds };
+      setBoundsCalls.push({ ...nextBounds });
+    },
+    moveTop: () => {}
+  };
+
+  const controller = createDesktopPetDragController({
+    platform: "darwin",
+    getWindow: () => fakeWindow,
+    getSettings: () => ({}),
+    saveSettings: () => {},
+    getMode: () => "bubble",
+    getCursorScreenPoint: () => ({ ...cursorPoint }),
+    getDisplayBounds: () => displayArea,
+    getPointDisplayBounds: () => displayArea,
+    persistPosition: () => {},
+    refreshState: () => {}
+  });
+
+  assert.deepEqual(controller.moveWindowBy({ x: -8, y: 0 }), { ok: true });
+
+  assert.equal(setBoundsCalls.length, 1);
+  assert.deepEqual(bounds, getAnchoredDesktopPetBounds({ x: initialPosition.x - 8, y: initialPosition.y }, displayArea, "bubble"));
+});
+
+test("desktop pet idle and unread states keep base window bounds for stable dragging", () => {
+  const idleState = {
+    status: "idle",
+    hint: "",
+    messagePreview: "",
+    unreadCount: 0,
+    activeTasks: []
+  };
+
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: idleState,
+    previewPanel: null
+  }), "base");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: {
+      ...idleState,
+      unreadCount: 7
+    },
+    previewPanel: null
+  }), "base");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: {
+      ...idleState,
+      messagePreview: "有新消息"
+    },
+    previewPanel: null
+  }), "base");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: {
+      status: "running",
+      hint: "",
+      messagePreview: "",
+      unreadCount: 0,
+      activeTasks: [
+        {
+          id: "cutej:chat-running",
+          chatId: "chat-running",
+          status: "running",
+          updatedAt: "2026-06-17T00:01:00.000Z"
+        }
+      ],
+      messages: [
+        {
+          id: "cutej:chat-running",
+          chatId: "chat-running",
+          status: "running",
+          updatedAt: "2026-06-17T00:01:00.000Z"
+        },
+        {
+          id: "cutej:chat-history",
+          chatId: "chat-history",
+          status: "done",
+          updatedAt: "2026-06-17T00:00:00.000Z"
+        }
+      ]
+    },
+    previewPanel: null
+  }), "bubble");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: idleState,
+    previewPanel: {
+      visible: true,
+      expanded: false,
+      status: "running"
+    }
+  }), "base");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: idleState,
+    previewPanel: {
+      visible: true,
+      expanded: false,
+      status: "done"
+    }
+  }), "bubble");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: {
+      ...idleState,
+      messages: [
+        {
+          id: "cutej:chat-read",
+          chatId: "chat-read",
+          updatedAt: "2026-06-17T00:00:00.000Z"
+        }
+      ]
+    },
+    previewPanel: null
+  }), "bubble");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: {
+      ...idleState,
+      unreadCount: 1,
+      messages: [
+        {
+          id: "cutej:chat-unread",
+          chatId: "chat-unread",
+          updatedAt: "2026-06-17T00:00:00.000Z"
+        }
+      ]
+    },
+    previewPanel: null
+  }), "bubble");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    layoutMode: "base",
+    state: {
+      ...idleState,
+      messages: [
+        {
+          id: "cutej:chat-collapsed",
+          chatId: "chat-collapsed",
+          updatedAt: "2026-06-17T00:00:00.000Z"
+        }
+      ]
+    },
+    previewPanel: null
+  }), "base");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    layoutMode: "task-list-compact",
+    state: {
+      ...idleState,
+      activeTasks: [
+        {
+          id: "cutej:chat-running",
+          chatId: "chat-running",
+          status: "running",
+          updatedAt: "2026-06-17T00:01:00.000Z"
+        }
+      ]
+    },
+    previewPanel: null
+  }), "task-list-compact");
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: idleState,
+    previewPanel: {
+      visible: true,
+      expanded: true
+    }
+  }), "preview-expanded");
 });
 
 test("desktop pet state exposes awaiting when any active task is awaiting", () => {
@@ -298,7 +706,7 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     isReviewing: false,
     isHovering: true,
     isKeyboardFocused: false
-  }), "hover");
+  }), "signature");
 
   assert.equal(deriveDesktopPetVisualStatus({
     displayStatus: "idle",
@@ -311,7 +719,7 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     isReviewing: false,
     isHovering: true,
     isKeyboardFocused: false
-  }), "hover");
+  }), "signature");
 
   assert.equal(deriveDesktopPetVisualStatus({
     displayStatus: "idle",
@@ -325,6 +733,38 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     isHovering: false,
     isKeyboardFocused: false
   }), "signature");
+});
+
+test("desktop pet hover does not switch visual state", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "idle",
+    isDragging: false,
+    dragDirection: null,
+    activeStandardAction: null,
+    hasActiveSignature: false,
+    activeSignatureTrigger: null,
+    canShowHoverReaction: true,
+    isReviewing: false,
+    isHovering: true,
+    isKeyboardFocused: false
+  }), "idle");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "idle",
+    isDragging: false,
+    dragDirection: null,
+    activeStandardAction: null,
+    hasActiveSignature: false,
+    activeSignatureTrigger: null,
+    canShowHoverReaction: true,
+    isReviewing: false,
+    isHovering: false,
+    isKeyboardFocused: true
+  }), "idle");
 });
 
 test("desktop pet visual arbitration does not emit thinking or message states", () => {
@@ -354,6 +794,130 @@ test("desktop pet visual arbitration does not emit thinking or message states", 
   }), "idle");
 });
 
+test("desktop pet unread badge tone separates awaiting from completed unread messages", () => {
+  const {
+    resolveDesktopPetUnreadBadgeTone
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  assert.equal(resolveDesktopPetUnreadBadgeTone({
+    displayStatus: "awaiting",
+    unreadCount: 2,
+    visibleMessages: [
+      { status: "done", unread: true },
+      { status: "done", unread: true }
+    ]
+  }), "message");
+
+  assert.equal(resolveDesktopPetUnreadBadgeTone({
+    displayStatus: "idle",
+    unreadCount: 1,
+    visibleMessages: [
+      { status: "awaiting", unread: true }
+    ]
+  }), "awaiting");
+
+  assert.equal(resolveDesktopPetUnreadBadgeTone({
+    displayStatus: "awaiting",
+    unreadCount: 1,
+    visibleMessages: []
+  }), "awaiting");
+});
+
+test("desktop pet unread badge counts render awaiting and completed badges separately", () => {
+  const {
+    resolveDesktopPetUnreadBadgeCounts
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
+    displayStatus: "awaiting",
+    unreadCount: 2,
+    visibleMessages: [
+      { status: "awaiting", unread: true, awaitingCount: 2 }
+    ]
+  }), {
+    awaitingCount: 2,
+    completedCount: 0
+  });
+
+  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
+    displayStatus: "awaiting",
+    unreadCount: 2,
+    activeTasks: [
+      { status: "awaiting", awaitingCount: 2 }
+    ],
+    visibleMessages: []
+  }), {
+    awaitingCount: 2,
+    completedCount: 0
+  });
+
+  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
+    displayStatus: "awaiting",
+    unreadCount: 3,
+    activeTasks: [
+      { status: "awaiting" }
+    ],
+    visibleMessages: [
+      { status: "done", unread: true },
+      { status: "done", unread: true }
+    ]
+  }), {
+    awaitingCount: 1,
+    completedCount: 2
+  });
+
+  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
+    displayStatus: "awaiting",
+    unreadCount: 2,
+    visibleMessages: []
+  }), {
+    awaitingCount: 2,
+    completedCount: 0
+  });
+
+  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
+    displayStatus: "idle",
+    unreadCount: 4,
+    visibleMessages: []
+  }), {
+    awaitingCount: 0,
+    completedCount: 4
+  });
+});
+
+test("desktop pet preserves per-chat awaiting counts from navigation snapshots", () => {
+  const snapshot = {
+    ok: true,
+    items: [{
+      agentKey: "cutej",
+      displayName: "小君",
+      role: "",
+      unreadCount: 0,
+      unreadChatCount: 0,
+      chatCount: 1,
+      hasPendingAwaiting: true,
+      latestChatId: "chat-awaiting",
+      latestPreview: "等待确认",
+      updatedAt: "2026-06-17T12:00:00.000Z",
+      recentChats: [{
+        chatId: "chat-awaiting",
+        chatName: "审批发布",
+        agentKey: "cutej",
+        updatedAt: "2026-06-17T12:00:00.000Z",
+        lastRunId: "run-awaiting",
+        lastRunContent: "需要你确认两项操作",
+        isRead: true,
+        hasActiveRun: true,
+        hasPendingAwaiting: true,
+        awaitingCount: 2
+      }]
+    }]
+  };
+
+  assert.equal(createDesktopPetActiveTasksFromNavigationSnapshot(snapshot)[0]?.awaitingCount, 2);
+  assert.equal(createDesktopPetMessagesFromNavigationSnapshot(snapshot)[0]?.awaitingCount, 2);
+});
+
 test("desktop pet visual arbitration lets manual signature surface over hover", () => {
   const {
     deriveDesktopPetVisualStatus
@@ -373,17 +937,44 @@ test("desktop pet visual arbitration lets manual signature surface over hover", 
   }), "signature");
 });
 
+test("desktop pet visual arbitration lets manual signature surface while running or awaiting", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "running",
+    isDragging: false,
+    dragDirection: null,
+    activeStandardAction: null,
+    hasActiveSignature: true,
+    activeSignatureTrigger: "manual",
+    isReviewing: false
+  }), "signature");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "awaiting",
+    isDragging: false,
+    dragDirection: null,
+    activeStandardAction: null,
+    hasActiveSignature: true,
+    activeSignatureTrigger: "manual",
+    isReviewing: false
+  }), "signature");
+});
+
 test("desktop pet context menu exposes manual signature actions", () => {
-  if (DEFAULT_DESKTOP_PET_BUILTIN_ID === "cutej") {
+  if (APP_BRAND.desktopPet.signature?.length) {
+    const [firstAction] = APP_BRAND.desktopPet.signature;
     assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
-      action: "hide",
-      label: "关闭宠物"
+      action: "signature",
+      signatureId: firstAction.id,
+      label: firstAction.label
     });
   } else {
     assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
-      action: "signature",
-      signatureId: "chant",
-      label: "念经"
+      action: "hide",
+      label: "关闭宠物"
     });
   }
 
@@ -442,6 +1033,21 @@ test("desktop pet exposes brand-specific built-in appearance defaults", () => {
     assert.deepEqual(resolveDesktopPetSignatureActions("classic", []), []);
   } else {
     assert.deepEqual(resolveDesktopPetSignatureActions("classic", []), brandPet.signature);
+    if (DEFAULT_DESKTOP_PET_BUILTIN_ID === "cutej") {
+      assert.deepEqual(brandPet.signature[0], {
+        id: "work-hard",
+        label: "努力工作",
+        trigger: ["manual"],
+        variants: [
+          {
+            path: "signature/work-hard-v3.webp",
+            frameCount: 14,
+            durationMs: 5200,
+            weight: 1
+          }
+        ]
+      });
+    }
   }
 
   assert.deepEqual(resolveDesktopPetSignatureActions("user:pony", []), []);
@@ -527,7 +1133,7 @@ test("user desktop pet appearances reject legacy manifest fields and state names
   }
 });
 
-test("desktop pet visual maps dragging hold and movement onto standard states", () => {
+test("desktop pet visual keeps drag hold stable and maps movement onto the walking state", () => {
   const {
     deriveDesktopPetVisualStatus
   } = require("../dist-electron/shared/desktop-pet-visual.js");
@@ -544,7 +1150,7 @@ test("desktop pet visual maps dragging hold and movement onto standard states", 
     isKeyboardFocused: false
   };
 
-  assert.equal(deriveDesktopPetVisualStatus(base), "dragging");
+  assert.equal(deriveDesktopPetVisualStatus(base), "idle");
   assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "left" }), "moving-left");
   assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "right" }), "moving-left");
 });

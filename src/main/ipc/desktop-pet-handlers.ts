@@ -16,6 +16,22 @@ export interface DesktopPetOpenTaskChatInput {
   chatId?: unknown;
 }
 
+export interface DesktopPetReplyMessageInput {
+  chatId?: unknown;
+  agentKey?: unknown;
+  message?: unknown;
+}
+
+export interface DesktopPetDismissMessageInput {
+  chatId?: unknown;
+  runId?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface DesktopPetWindowModeInput {
+  mode?: unknown;
+}
+
 export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   ipcMain.handle("desktopPet.getSettings", async () => {
     return toDesktopPetSettings(options.getSettings());
@@ -110,5 +126,29 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
       return { ok: false };
     }
     return options.setMouseInteractive(interactive);
+  });
+
+  ipcMain.handle("desktopPet.setWindowMode", async (event: any, mode: unknown) => {
+    const win = options.getWindow();
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+      return { ok: false };
+    }
+    return options.setWindowMode(mode);
+  });
+
+  ipcMain.handle("desktopPet.replyMessage", async (event: any, input: DesktopPetReplyMessageInput) => {
+    const win = options.getWindow();
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+      return { ok: false, message: "桌宠窗口不可用。" };
+    }
+    return options.replyMessage(input);
+  });
+
+  ipcMain.handle("desktopPet.dismissMessage", async (event: any, input: DesktopPetDismissMessageInput) => {
+    const win = options.getWindow();
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+      return { ok: false };
+    }
+    return options.dismissMessage(input);
   });
 }

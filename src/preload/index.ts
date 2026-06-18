@@ -438,7 +438,10 @@ const api: DesktopApi = {
     endDrag: () => ipcRenderer.invoke("desktopPet.endDrag"),
     setPreviewExpanded: (expanded) => ipcRenderer.invoke("desktopPet.setPreviewExpanded", expanded),
     dismissPreview: () => ipcRenderer.invoke("desktopPet.dismissPreview"),
+    replyMessage: (input) => ipcRenderer.invoke("desktopPet.replyMessage", input),
+    dismissMessage: (input) => ipcRenderer.invoke("desktopPet.dismissMessage", input),
     setMouseInteractive: (interactive) => ipcRenderer.invoke("desktopPet.setMouseInteractive", interactive),
+    setWindowMode: (mode) => ipcRenderer.invoke("desktopPet.setWindowMode", mode),
     onStateChanged: (listener: DesktopPetStateListener) => {
       const handleDesktopPetStateChanged = (
         _event: Electron.IpcRendererEvent,

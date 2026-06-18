@@ -125,6 +125,7 @@ export interface AssistantNavChatItem {
   isRead: boolean;
   hasActiveRun: boolean;
   hasPendingAwaiting: boolean;
+  awaitingCount?: number;
   awaitingMode?: AssistantAwaitingMode;
 }
 

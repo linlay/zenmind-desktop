@@ -66,5 +66,22 @@
       "durationMs": 1400,
       "loop": true
     }
-  }
+  },
+  "signature": [
+    {
+      "id": "work-hard",
+      "label": "努力工作",
+      "trigger": [
+        "manual"
+      ],
+      "variants": [
+        {
+          "path": "signature/work-hard-v3.webp",
+          "frameCount": 14,
+          "durationMs": 5200,
+          "weight": 1
+        }
+      ]
+    }
+  ]
 }

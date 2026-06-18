@@ -7,13 +7,15 @@ import type {
   DesktopPetStateAsset,
   DesktopPetStateAssets,
   DesktopPetTaskItem,
+  DesktopPetMessageItem,
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
   DesktopPetEdgeDock,
   DesktopPetPreviewPanel,
   DesktopPetSettings,
   DesktopPetState,
-  DesktopPetStatus
+  DesktopPetStatus,
+  DesktopPetWindowMode
 } from "../../../shared/contracts";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
@@ -55,6 +57,7 @@ export {
 
 export const sanitizeDesktopPetAppearanceId = normalizeDesktopPetAppearanceId;
 export const sanitizeDesktopPetBoundAgentKey = normalizeDesktopPetBoundAgentKey;
+export type { DesktopPetWindowMode } from "../../../shared/contracts";
 
 export const DESKTOP_PET_WINDOW_SIZE = {
   width: 176,
@@ -68,19 +71,11 @@ export const DESKTOP_PET_VISIBLE_FOOTPRINT = {
   height: 108
 } as const;
 
-export type DesktopPetWindowMode =
-  | "base"
-  | "bubble"
-  | "preview-collapsed"
-  | "preview-expanded"
-  | "task-list-compact"
-  | "task-list";
-
 export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: number; height: number }> = {
   base: DESKTOP_PET_WINDOW_SIZE,
   bubble: {
-    width: 224,
-    height: 228
+    width: 368,
+    height: 442
   },
   "preview-collapsed": {
     width: 380,
@@ -91,12 +86,12 @@ export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: num
     height: 412
   },
   "task-list-compact": {
-    width: 340,
-    height: 282
+    width: 368,
+    height: 352
   },
   "task-list": {
-    width: 392,
-    height: 360
+    width: 420,
+    height: 432
   }
 } as const;
 
@@ -110,8 +105,8 @@ type DesktopPetVisibleFootprint = {
 export const DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS: Record<DesktopPetWindowMode, DesktopPetVisibleFootprint> = {
   base: DESKTOP_PET_VISIBLE_FOOTPRINT,
   bubble: {
-    x: 64,
-    y: 82,
+    x: 132,
+    y: 316,
     width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
     height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
   },
@@ -128,14 +123,14 @@ export const DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS: Record<DesktopPetWindowMode,
     height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
   },
   "task-list-compact": {
-    x: 116,
-    y: 156,
+    x: 132,
+    y: 228,
     width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
     height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
   },
   "task-list": {
-    x: 148,
-    y: 236,
+    x: 162,
+    y: 308,
     width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
     height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
   }
@@ -887,6 +882,7 @@ export function createDesktopPetState(
     agentStatus?: DesktopPetBoundAgentStatus | null;
     agentOptions?: DesktopPetAgentOption[];
     activeTasks?: DesktopPetTaskItem[];
+    messages?: DesktopPetMessageItem[];
     appearanceOptions?: DesktopPetAppearanceOption[];
     previewPanel?: DesktopPetPreviewPanel | null;
     runningTaskCount?: unknown;
@@ -930,6 +926,7 @@ export function createDesktopPetState(
     agentStatusStale: agentStatus?.stale ?? agentDefaults.stale,
     agentOptions: options.agentOptions ?? [],
     activeTasks,
+    messages: options.messages ?? [],
     previewPanel: options.previewPanel ?? null,
     runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
     edgeDock: options.edgeDock ?? null,
@@ -942,8 +939,30 @@ export function getDesktopPetWindowSize(mode: DesktopPetWindowMode = "base") {
   return DESKTOP_PET_WINDOW_SIZES[mode] ?? DESKTOP_PET_WINDOW_SIZES.base;
 }
 
-function getDesktopPetVisibleFootprintForMode(mode: DesktopPetWindowMode) {
-  return DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode] ?? DESKTOP_PET_VISIBLE_FOOTPRINT;
+function desktopPetEdgeDockIncludes(edgeDock: DesktopPetEdgeDock, side: "top" | "right" | "bottom" | "left") {
+  return edgeDock === side || Boolean(edgeDock?.includes(`${side}-`) || edgeDock?.includes(`-${side}`));
+}
+
+function getDesktopPetVisibleFootprintForMode(mode: DesktopPetWindowMode, edgeDock: DesktopPetEdgeDock = null) {
+  const footprint = DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS[mode] ?? DESKTOP_PET_VISIBLE_FOOTPRINT;
+  if (mode === "base") {
+    return footprint;
+  }
+  const size = getDesktopPetWindowSize(mode);
+  const adjustedFootprint = {
+    ...footprint
+  };
+  if (desktopPetEdgeDockIncludes(edgeDock, "left")) {
+    adjustedFootprint.x = DESKTOP_PET_VISIBLE_FOOTPRINT.x;
+  } else if (desktopPetEdgeDockIncludes(edgeDock, "right")) {
+    adjustedFootprint.x = size.width - DESKTOP_PET_VISIBLE_FOOTPRINT.width;
+  }
+  if (desktopPetEdgeDockIncludes(edgeDock, "top")) {
+    adjustedFootprint.y = DESKTOP_PET_VISIBLE_FOOTPRINT.y;
+  } else if (desktopPetEdgeDockIncludes(edgeDock, "bottom")) {
+    adjustedFootprint.y = size.height - DESKTOP_PET_VISIBLE_FOOTPRINT.height;
+  }
+  return adjustedFootprint;
 }
 
 export function clampDesktopPetPosition(
@@ -960,7 +979,9 @@ export function clampDesktopPetPosition(
   const minX = allowVisibleEdgeDock
     ? displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x
     : displayArea.x;
-  const minY = displayArea.y;
+  const minY = allowVisibleEdgeDock
+    ? displayArea.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y
+    : displayArea.y;
   const maxX = allowVisibleEdgeDock
     ? displayArea.x + Math.max(
       0,
@@ -1011,7 +1032,26 @@ export function resolveDesktopPetEdgeDock(
   if (!position) {
     return null;
   }
-  return position.y <= displayArea.y + DESKTOP_PET_EDGE_STICK_DISTANCE_PX ? "top" : null;
+  const rightEdge = displayArea.x + displayArea.width;
+  const bottomEdge = displayArea.y + displayArea.height;
+  const visibleLeft = position.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x;
+  const visibleTop = position.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y;
+  const visibleRight = visibleLeft + DESKTOP_PET_VISIBLE_FOOTPRINT.width;
+  const visibleBottom = visibleTop + DESKTOP_PET_VISIBLE_FOOTPRINT.height;
+  const vertical = visibleTop <= displayArea.y + DESKTOP_PET_EDGE_STICK_DISTANCE_PX
+    ? "top"
+    : visibleBottom >= bottomEdge - DESKTOP_PET_EDGE_STICK_DISTANCE_PX
+      ? "bottom"
+      : "";
+  const horizontal = visibleLeft <= displayArea.x + DESKTOP_PET_EDGE_STICK_DISTANCE_PX
+    ? "left"
+    : visibleRight >= rightEdge - DESKTOP_PET_EDGE_STICK_DISTANCE_PX
+      ? "right"
+      : "";
+  if (vertical && horizontal) {
+    return `${vertical}-${horizontal}` as DesktopPetEdgeDock;
+  }
+  return (vertical || horizontal || null) as DesktopPetEdgeDock;
 }
 
 export function getAnchoredDesktopPetBounds(
@@ -1026,7 +1066,8 @@ export function getAnchoredDesktopPetBounds(
   if (mode === "base") {
     return baseBounds;
   }
-  const footprint = getDesktopPetVisibleFootprintForMode(mode);
+  const edgeDock = resolveDesktopPetEdgeDock(baseBounds, displayArea);
+  const footprint = getDesktopPetVisibleFootprintForMode(mode, edgeDock);
   return {
     x: baseBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x - footprint.x,
     y: baseBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y - footprint.y,
@@ -1037,8 +1078,52 @@ export function getAnchoredDesktopPetBounds(
 
 export function getDesktopPetLogicalPositionFromBounds(
   bounds: { x: number; y: number },
-  mode: DesktopPetWindowMode = "base"
+  mode: DesktopPetWindowMode = "base",
+  displayArea?: DisplayArea,
+  preferredPosition?: { x: number; y: number }
 ) {
+  if (displayArea && mode !== "base") {
+    const edgeCandidates: DesktopPetEdgeDock[] = [
+      "top",
+      "right",
+      "bottom",
+      "left",
+      "top-right",
+      "top-left",
+      "bottom-right",
+      "bottom-left",
+      null
+    ];
+    const matches: Array<{
+      logicalPosition: { x: number; y: number };
+      distance: number;
+    }> = [];
+    for (const edgeDock of edgeCandidates) {
+      const footprint = getDesktopPetVisibleFootprintForMode(mode, edgeDock);
+      const logicalPosition = {
+        x: Math.round(bounds.x + footprint.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x),
+        y: Math.round(bounds.y + footprint.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y)
+      };
+      const reanchoredBounds = getAnchoredDesktopPetBounds(logicalPosition, displayArea, mode);
+      if (
+        resolveDesktopPetEdgeDock(logicalPosition, displayArea) === edgeDock &&
+        reanchoredBounds.x === bounds.x &&
+        reanchoredBounds.y === bounds.y
+      ) {
+        const distance = preferredPosition
+          ? Math.hypot(logicalPosition.x - preferredPosition.x, logicalPosition.y - preferredPosition.y)
+          : matches.length;
+        matches.push({
+          logicalPosition,
+          distance
+        });
+      }
+    }
+    if (matches.length > 0) {
+      matches.sort((left, right) => left.distance - right.distance);
+      return matches[0].logicalPosition;
+    }
+  }
   const footprint = getDesktopPetVisibleFootprintForMode(mode);
   return {
     x: Math.round(bounds.x + footprint.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x),

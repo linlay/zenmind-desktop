@@ -277,6 +277,28 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
   return hasPendingAwaitingPayload(value.awaiting);
 }
 
+function countPendingAwaitingPayload(value: unknown): number {
+  if (Array.isArray(value)) {
+    return value.reduce((total, item) => total + countPendingAwaitingPayload(item), 0);
+  }
+  if (!isObjectRecord(value) || !hasPendingAwaitingPayload(value)) {
+    return 0;
+  }
+
+  const explicitCount = toNonNegativeInteger(value.awaitingCount);
+  if (explicitCount > 0) {
+    return explicitCount;
+  }
+  if (toText(value.mode).toLowerCase() === "approval") {
+    const approvalCount = countPendingAwaitingPayload(value.approvals);
+    if (approvalCount > 0) {
+      return approvalCount;
+    }
+  }
+  const nestedCount = countPendingAwaitingPayload(value.awaiting);
+  return nestedCount > 0 ? nestedCount : 1;
+}
+
 function toTimestampMs(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -406,6 +428,18 @@ function readChatPendingAwaiting(chat: PlatformChatSummary) {
   return toText(chat.status).toLowerCase() === "awaiting";
 }
 
+function readChatAwaitingCount(chat: PlatformChatSummary) {
+  const explicitCount = toNonNegativeInteger(chat.awaitingCount);
+  if (explicitCount > 0) {
+    return explicitCount;
+  }
+  const payloadCount = countPendingAwaitingPayload(chat.awaiting);
+  if (payloadCount > 0) {
+    return payloadCount;
+  }
+  return readChatPendingAwaiting(chat) ? 1 : 0;
+}
+
 function readAwaitingPayloadMode(value: unknown): AssistantAwaitingMode | undefined {
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -514,6 +548,7 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
     isRead: readChatIsRead(chat),
     hasActiveRun: readChatActiveRun(chat),
     hasPendingAwaiting: readChatPendingAwaiting(chat),
+    awaitingCount: readChatAwaitingCount(chat),
     awaitingMode: readChatAwaitingMode(chat)
   };
 }
@@ -692,6 +727,21 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
   return fallback;
 }
 
+function readPushAwaitingCount(event: NavigationPushEvent, hasPendingAwaiting: boolean, fallback = 0) {
+  if (!hasPendingAwaiting) {
+    return 0;
+  }
+  const explicitCount = toNonNegativeInteger(event.awaitingCount);
+  if (explicitCount > 0) {
+    return explicitCount;
+  }
+  const payloadCount = countPendingAwaitingPayload(event.awaiting);
+  if (payloadCount > 0) {
+    return payloadCount;
+  }
+  return Math.max(1, toNonNegativeInteger(fallback));
+}
+
 function readPushAwaitingMode(
   event: NavigationPushEvent,
   hasPendingAwaiting: boolean,
@@ -769,6 +819,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     isRead,
     hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
     hasPendingAwaiting,
+    awaitingCount: readPushAwaitingCount(event, hasPendingAwaiting, current?.awaitingCount),
     awaitingMode: readPushAwaitingMode(event, hasPendingAwaiting, current?.awaitingMode)
   };
 }

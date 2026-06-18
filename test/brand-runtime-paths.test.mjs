@@ -15,6 +15,7 @@ import {
   loadBrandConfig,
   removeStaleRendererBuild,
   renderRendererIndexHtml,
+  resolveBrandId,
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
 import { renderAppIconToPng, renderBrandMarkToPng } from "../scripts/generate-app-icons.mjs";
@@ -46,6 +47,12 @@ function readBrandDesktopPetManifest(root, brandId) {
     ...(manifest.signature ? { signature: manifest.signature } : {})
   };
 }
+
+test("default dev brand resolves to CuteJ when no brand is provided", () => {
+  assert.equal(resolveBrandId([], {}), "cutej");
+  assert.equal(resolveBrandId(["--brand", "zenmind"], {}), "zenmind");
+  assert.equal(resolveBrandId([], { BRAND: "zenmind" }), "zenmind");
+});
 
 function createBrandFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-brand-runtime-"));

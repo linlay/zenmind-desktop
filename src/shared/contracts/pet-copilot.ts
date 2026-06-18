@@ -2,7 +2,24 @@ import type { AssistantAwaitingMode, AssistantNavAgentIcon } from "./copilot";
 
 export type DesktopPetStatus = "idle" | "running" | "awaiting" | "done" | "error";
 export type DesktopPetAgentPresence = "available" | "busy" | "away" | "offline";
-export type DesktopPetEdgeDock = "top" | null;
+export type DesktopPetEdgeDock =
+  | "top"
+  | "right"
+  | "bottom"
+  | "left"
+  | "top-right"
+  | "top-left"
+  | "bottom-right"
+  | "bottom-left"
+  | null;
+
+export type DesktopPetWindowMode =
+  | "base"
+  | "bubble"
+  | "preview-collapsed"
+  | "preview-expanded"
+  | "task-list-compact"
+  | "task-list";
 
 export interface DesktopPetSettings {
   enabled: boolean;
@@ -35,7 +52,7 @@ export interface DesktopPetAgentOption {
   unreadCount: number;
 }
 
-export type DesktopPetTaskStatus = "running" | "awaiting";
+export type DesktopPetTaskStatus = "running" | "awaiting" | "done";
 
 export interface DesktopPetTaskItem {
   id: string;
@@ -46,6 +63,24 @@ export interface DesktopPetTaskItem {
   title: string;
   preview: string;
   status: DesktopPetTaskStatus;
+  awaitingCount?: number;
+  awaitingMode?: AssistantAwaitingMode;
+  updatedAt: string;
+}
+
+export type DesktopPetMessageStatus = "running" | "awaiting" | "done" | "error";
+
+export interface DesktopPetMessageItem {
+  id: string;
+  chatId: string;
+  runId: string | null;
+  agentKey: string;
+  agentDisplayName: string;
+  title: string;
+  preview: string;
+  status: DesktopPetMessageStatus;
+  unread: boolean;
+  awaitingCount?: number;
   awaitingMode?: AssistantAwaitingMode;
   updatedAt: string;
 }
@@ -149,6 +184,7 @@ export interface DesktopPetState {
   agentStatusStale: boolean;
   agentOptions: DesktopPetAgentOption[];
   activeTasks: DesktopPetTaskItem[];
+  messages: DesktopPetMessageItem[];
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
