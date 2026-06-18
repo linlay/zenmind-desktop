@@ -362,6 +362,19 @@
   white-space: nowrap;
 }
 
+.settings-page .settings-readonly-stack {
+  gap: 6px;
+}
+
+.settings-page .settings-readonly-stack code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 /* 复选框字段：覆盖上面的 grid 布局，恢复为「勾选框 + 文字」的横向排列 */
 .settings-page .settings-checkbox-field.settings-checkbox-field {
   display: inline-flex;

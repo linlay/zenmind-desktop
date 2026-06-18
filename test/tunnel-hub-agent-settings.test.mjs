@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const {
+  recordTunnelHubRegistrationResult,
   readTunnelHubAgentSettings,
   saveTunnelHubAgentSettings
 } = await import("../dist-electron/main/tunnel-hub-agent-settings.js");
@@ -38,6 +39,14 @@ function tunnelTokenPath(app) {
   return path.join(desktopRoot(app), "secrets", "tunnel-hub-agent-token");
 }
 
+function tunnelRegistrationTokenPath(app) {
+  return path.join(desktopRoot(app), "secrets", "tunnel-hub-registration-token");
+}
+
+function tunnelEnvPath(app) {
+  return path.join(desktopRoot(app), "config", "services", "tunnel-hub-agent", ".env");
+}
+
 test("Tunnel Hub settings persist enabled when relay URL and token are configured", (t) => {
   const app = createTempApp(t);
 
@@ -52,11 +61,80 @@ test("Tunnel Hub settings persist enabled when relay URL and token are configure
   assert.equal(result.ok, true);
   assert.equal(result.settings.enabled, true);
   assert.equal(result.settings.relayUrl, "wss://relay.example.test/ws");
+  assert.match(result.settings.deviceId, /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u);
   assert.equal(result.settings.hasAgentToken, true);
   assert.equal(result.settings.agentTokenPreview, "****cret");
   assert.equal(result.settings.tlsInsecureSkipVerify, true);
   assert.equal(result.settings.reconnectSeconds, 9);
   assert.equal(readTunnelHubAgentSettings(app).enabled, true);
+});
+
+test("Tunnel Hub settings persist device ID and mask registration token", (t) => {
+  const app = createTempApp(t);
+
+  const result = saveTunnelHubAgentSettings(app, {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    registrationToken: "desktop-registration-secret",
+    tlsInsecureSkipVerify: false,
+    reconnectSeconds: 5
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.enabled, true);
+  assert.equal(result.settings.deviceId, "mac-mini-office");
+  assert.equal(result.settings.hasRegistrationToken, true);
+  assert.equal(result.settings.registrationTokenPreview, "****cret");
+  assert.equal(result.settings.hasAgentToken, false);
+  assert.equal(fs.readFileSync(tunnelRegistrationTokenPath(app), "utf8").trim(), "desktop-registration-secret");
+  const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
+  assert.equal(stored.deviceId, "mac-mini-office");
+  assert.equal("registrationToken" in stored, false);
+  assert.equal("deviceSecret" in stored, false);
+});
+
+test("Tunnel Hub settings validate DNS-label device IDs", (t) => {
+  const app = createTempApp(t);
+
+  const result = saveTunnelHubAgentSettings(app, {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "Bad_Device",
+    registrationToken: "desktop-registration-secret"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.settings.enabled, false);
+  assert.match(result.message, /Device ID/u);
+});
+
+test("Tunnel Hub registration result stores returned agent token and syncs env", (t) => {
+  const app = createTempApp(t);
+  const saved = saveTunnelHubAgentSettings(app, {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    registrationToken: "desktop-registration-secret"
+  });
+  assert.equal(saved.ok, true);
+
+  const settings = recordTunnelHubRegistrationResult(app, {
+    deviceId: "mac-mini-office",
+    relayUrl: "wss://relay.example.test/tunnel",
+    publicHost: "mac-mini-office.tunnel-hub.zenmind.cc",
+    publicUrl: "https://mac-mini-office.tunnel-hub.zenmind.cc",
+    webSocketUrl: "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws",
+    targetUrl: "http://127.0.0.1:7083",
+    agentToken: "returned-agent-token"
+  });
+
+  assert.equal(settings.webSocketUrl, "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws");
+  assert.equal(settings.targetUrl, "http://127.0.0.1:7083");
+  assert.equal(settings.hasAgentToken, true);
+  assert.equal(fs.readFileSync(tunnelTokenPath(app), "utf8").trim(), "returned-agent-token");
+  const envContent = fs.readFileSync(tunnelEnvPath(app), "utf8");
+  assert.match(envContent, /^AGENT_TOKEN=returned-agent-token$/m);
 });
 
 test("Tunnel Hub enable saves drafts but falls back to disabled when config is incomplete", (t) => {

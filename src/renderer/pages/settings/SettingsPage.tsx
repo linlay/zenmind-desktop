@@ -202,8 +202,15 @@ function createFallbackDesktopWsServerState(message?: string): DesktopWsServerSt
 const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
   enabled: false,
   relayUrl: "",
+  deviceId: "",
   hasAgentToken: false,
   agentTokenPreview: "",
+  hasRegistrationToken: false,
+  registrationTokenPreview: "",
+  publicHost: "",
+  publicUrl: "",
+  webSocketUrl: "",
+  targetUrl: "",
   tlsInsecureSkipVerify: false,
   reconnectSeconds: 3
 };
@@ -766,6 +773,9 @@ export function SettingsPage({
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubAgentSettings>(defaultTunnelHubAgentSettings);
   const [tunnelHubAgentToken, setTunnelHubAgentToken] = useState("");
   const [tunnelHubClearToken, setTunnelHubClearToken] = useState(false);
+  const [tunnelHubRegistrationToken, setTunnelHubRegistrationToken] = useState("");
+  const [tunnelHubClearRegistrationToken, setTunnelHubClearRegistrationToken] = useState(false);
+  const [tunnelHubRotateAgentToken, setTunnelHubRotateAgentToken] = useState(false);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
   const [appPairingPending, setAppPairingPending] = useState(false);
   const [appPairingResult, setAppPairingResult] = useState<DesktopAppPairingPayloadResult | null>(null);
@@ -992,6 +1002,9 @@ export function SettingsPage({
         });
         setTunnelHubAgentToken("");
         setTunnelHubClearToken(false);
+        setTunnelHubRegistrationToken("");
+        setTunnelHubClearRegistrationToken(false);
+        setTunnelHubRotateAgentToken(false);
         setReadErrorSections(["tunnelHub"], "");
       })
       .catch((reason) => {
@@ -2131,8 +2144,12 @@ export function SettingsPage({
       const result = await window.electronAPI.settings.saveTunnelHubAgentSettings({
         enabled: tunnelHubSettings.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
+        deviceId: tunnelHubSettings.deviceId,
         agentToken: tunnelHubAgentToken,
         clearAgentToken: tunnelHubClearToken,
+        registrationToken: tunnelHubRegistrationToken,
+        clearRegistrationToken: tunnelHubClearRegistrationToken,
+        rotateAgentToken: tunnelHubRotateAgentToken,
         tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
       });
@@ -2142,6 +2159,9 @@ export function SettingsPage({
       });
       setTunnelHubAgentToken("");
       setTunnelHubClearToken(false);
+      setTunnelHubRegistrationToken("");
+      setTunnelHubClearRegistrationToken(false);
+      setTunnelHubRotateAgentToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
       }
@@ -2161,8 +2181,12 @@ export function SettingsPage({
       const result = await window.electronAPI.settings.saveTunnelHubAgentSettings({
         enabled: nextEnabled,
         relayUrl: tunnelHubSettings.relayUrl,
+        deviceId: tunnelHubSettings.deviceId,
         agentToken: tunnelHubAgentToken,
         clearAgentToken: tunnelHubClearToken,
+        registrationToken: tunnelHubRegistrationToken,
+        clearRegistrationToken: tunnelHubClearRegistrationToken,
+        rotateAgentToken: tunnelHubRotateAgentToken,
         tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
       });
@@ -2172,6 +2196,9 @@ export function SettingsPage({
       });
       setTunnelHubAgentToken("");
       setTunnelHubClearToken(false);
+      setTunnelHubRegistrationToken("");
+      setTunnelHubClearRegistrationToken(false);
+      setTunnelHubRotateAgentToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
       }
@@ -2180,6 +2207,7 @@ export function SettingsPage({
         if (!startResult.ok) {
           const disabled = await window.electronAPI.settings.saveTunnelHubAgentSettings({
             enabled: false,
+            deviceId: result.settings.deviceId,
             relayUrl: result.settings.relayUrl,
             tlsInsecureSkipVerify: result.settings.tlsInsecureSkipVerify,
             reconnectSeconds: result.settings.reconnectSeconds
@@ -2678,6 +2706,14 @@ export function SettingsPage({
           <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
             <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
               <label className="settings-control-field">
+                <span>{t("settings.tunnelHub.deviceId")}</span>
+                <Input
+                  value={tunnelHubSettings.deviceId}
+                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, deviceId: event.target.value }))}
+                  placeholder={t("settings.tunnelHub.deviceIdPlaceholder")}
+                />
+              </label>
+              <label className="settings-control-field">
                 <span>{t("settings.tunnelHub.relayUrl")}</span>
                 <Input
                   value={tunnelHubSettings.relayUrl}
@@ -2685,6 +2721,32 @@ export function SettingsPage({
                   placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
                 />
               </label>
+              <label className="settings-control-field">
+                <span>{t("settings.tunnelHub.registrationToken")}</span>
+                <Input.Password
+                  value={tunnelHubRegistrationToken}
+                  onChange={(event) => {
+                    setTunnelHubRegistrationToken(event.target.value);
+                    if (event.target.value.trim()) {
+                      setTunnelHubClearRegistrationToken(false);
+                    }
+                  }}
+                  placeholder={t("settings.tunnelHub.registrationTokenPlaceholder")}
+                />
+                <small>
+                  {tunnelHubSettings.hasRegistrationToken
+                    ? t("settings.tunnelHub.registrationTokenConfigured", { preview: tunnelHubSettings.registrationTokenPreview })
+                    : t("settings.tunnelHub.registrationTokenMissing")}
+                </small>
+              </label>
+              <Checkbox
+                className="settings-control-field settings-checkbox-field"
+                checked={tunnelHubClearRegistrationToken}
+                disabled={Boolean(tunnelHubRegistrationToken.trim())}
+                onChange={(event) => setTunnelHubClearRegistrationToken(event.target.checked)}
+              >
+                {t("settings.tunnelHub.clearRegistrationToken")}
+              </Checkbox>
               <label className="settings-control-field">
                 <span>{t("settings.tunnelHub.token")}</span>
                 <Input.Password
@@ -2713,6 +2775,13 @@ export function SettingsPage({
               </Checkbox>
               <Checkbox
                 className="settings-control-field settings-checkbox-field"
+                checked={tunnelHubRotateAgentToken}
+                onChange={(event) => setTunnelHubRotateAgentToken(event.target.checked)}
+              >
+                {t("settings.tunnelHub.rotateAgentToken")}
+              </Checkbox>
+              <Checkbox
+                className="settings-control-field settings-checkbox-field"
                 checked={tunnelHubSettings.tlsInsecureSkipVerify}
                 onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
               >
@@ -2733,6 +2802,22 @@ export function SettingsPage({
                   <small>{t("settings.tunnelHub.reconnectUnit")}</small>
                 </div>
               </label>
+              {tunnelHubSettings.publicUrl || tunnelHubSettings.webSocketUrl || tunnelHubSettings.targetUrl ? (
+                <div className="settings-control-field settings-readonly-stack">
+                  {tunnelHubSettings.publicHost ? (
+                    <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
+                  ) : null}
+                  {tunnelHubSettings.publicUrl ? (
+                    <small>{t("settings.tunnelHub.publicUrl")}: <code>{tunnelHubSettings.publicUrl}</code></small>
+                  ) : null}
+                  {tunnelHubSettings.webSocketUrl ? (
+                    <small>{t("settings.tunnelHub.webSocketUrl")}: <code>{tunnelHubSettings.webSocketUrl}</code></small>
+                  ) : null}
+                  {tunnelHubSettings.targetUrl ? (
+                    <small>{t("settings.tunnelHub.targetUrl")}: <code>{tunnelHubSettings.targetUrl}</code></small>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="settings-control-actions">
                 <Button type="primary" htmlType="submit" disabled={tunnelHubSaving} loading={tunnelHubSaving}>
                   {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}

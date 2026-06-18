@@ -348,7 +348,10 @@ function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): Bootstrap
   saveTunnelHubAgentSettings(app, {
     enabled: tunnelHubDefaults.enabled === true,
     relayUrl: readText(tunnelHubDefaults.relayUrl),
+    deviceId: readText(tunnelHubDefaults.deviceId),
     agentToken: readText(tunnelHubDefaults.agentToken),
+    registrationToken: readText(tunnelHubDefaults.registrationToken),
+    rotateAgentToken: tunnelHubDefaults.rotateAgentToken === true,
     tlsInsecureSkipVerify: tunnelHubDefaults.tlsInsecureSkipVerify === true,
     reconnectSeconds: typeof tunnelHubDefaults.reconnectSeconds === "number"
       ? tunnelHubDefaults.reconnectSeconds

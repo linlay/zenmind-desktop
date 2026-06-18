@@ -204,8 +204,10 @@ import {
   emitDesktopWsPush,
   getDesktopWsServerRuntimeState,
   startDesktopWsServer,
+  stopDesktopRemoteWsServer,
   stopDesktopWsServer
 } from "./desktop-ws-server";
+import { configureTunnelHubRemoteWsController } from "./tunnel-hub-remote-ws";
 import { callDesktopActionRenderer } from "./desktop-action-renderer";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../shared/agent-webclient-routes";
@@ -2293,6 +2295,10 @@ function registerIpcHandlers(context: MainProcessContext) {
     },
     logger: console
   };
+  configureTunnelHubRemoteWsController({
+    desktopWsServerOptions,
+    logger: console
+  });
   const getDesktopWsServerRuntimeStateForSettings = () => {
     const state = getDesktopWsServerRuntimeState();
     return desktopWsServerLastError ? { ...state, message: desktopWsServerLastError } : state;
@@ -2814,6 +2820,7 @@ app.on("will-quit", () => {
   clearDesktopPetIdleResetTimer();
   void cdpIntegration.stop();
   void stopDesktopWsServer();
+  void stopDesktopRemoteWsServer();
   appState.taskBoardRuntime?.stop();
   appState.taskBoardRuntime = null;
   appState.assistantNavigationStatusClient?.stop();

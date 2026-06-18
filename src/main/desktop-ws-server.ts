@@ -12,6 +12,7 @@ import {
   DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
   DESKTOP_WS_PATH,
   DESKTOP_WS_PORT,
+  DESKTOP_REMOTE_WS_PORT,
   DESKTOP_WS_PUSH_TYPES,
   DESKTOP_WS_REQUEST_TYPES,
   type DesktopWsPushType
@@ -114,7 +115,7 @@ type AgentPlatformBridgeOptions = {
   WebSocketConstructor?: MinimalWebSocketConstructor;
 };
 
-type DesktopWsServerOptions = {
+export type DesktopWsServerOptions = {
   app: App;
   port?: number;
   host?: string;
@@ -129,9 +130,12 @@ type DesktopWsServerOptions = {
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
 
+type DesktopWsServerKind = "debug" | "remote";
+
 type DesktopWsConnection = {
   id: string;
   socket: Socket;
+  server: DesktopWsServerRecord;
   auth: DesktopWsAuthSession;
   source: string;
   clientDeviceId: string;
@@ -143,6 +147,7 @@ type DesktopWsConnection = {
 };
 
 type DesktopWsServerRecord = {
+  kind: DesktopWsServerKind;
   server: http.Server;
   host: string;
   port: number;
@@ -170,11 +175,14 @@ const WS_CONNECTING_STATE = 0;
 const AGENT_PLATFORM_CONTROL_PUSH_TYPES = new Set(["connected", "heartbeat", "auth.expiring"]);
 const AGENT_PLATFORM_CONNECT_TIMEOUT_MS = 8_000;
 
-let activeServer: DesktopWsServerRecord | null = null;
+const activeServers = new Map<DesktopWsServerKind, DesktopWsServerRecord>();
 
-function createDesktopWsServerRuntimeState(record: DesktopWsServerRecord | null = activeServer): DesktopWsServerRuntimeState {
+function createDesktopWsServerRuntimeState(
+  record: DesktopWsServerRecord | null,
+  defaultPort: number
+): DesktopWsServerRuntimeState {
   const host = record?.host ?? DESKTOP_WS_HOST;
-  const port = record?.port ?? DESKTOP_WS_PORT;
+  const port = record?.port ?? defaultPort;
   return {
     running: Boolean(record),
     host,
@@ -1018,7 +1026,7 @@ async function handleRequest(options: DesktopWsServerOptions, connection: Deskto
       sendResponse(connection, type, id, {
         deviceId: getDesktopDeviceId(options.app),
         serverTime: nowIso(),
-        connectionCount: activeServer?.connections.size ?? 0
+        connectionCount: connection.server.connections.size
       });
       return;
     case "runtime.info":
@@ -1079,7 +1087,7 @@ function handleTextMessage(options: DesktopWsServerOptions, connection: DesktopW
   }
   if (namespace === DESKTOP_WS_NAMESPACE_AGENT_PLATFORM) {
     if (!connection.agentPlatformBridge) {
-      connection.agentPlatformBridge = new AgentPlatformWsBridge(options, connection, activeServer?.logger ?? console);
+      connection.agentPlatformBridge = new AgentPlatformWsBridge(options, connection, connection.server.logger);
     }
     void connection.agentPlatformBridge.forwardRequest(parsed);
     return;
@@ -1100,6 +1108,7 @@ function bindConnection(record: DesktopWsServerRecord, options: DesktopWsServerO
   const connection: DesktopWsConnection = {
     id: createSessionId(),
     socket,
+    server: record,
     auth,
     source: readText(parsed.searchParams.get("source")),
     clientDeviceId: readText(parsed.searchParams.get("deviceId")) || readText(parsed.searchParams.get("device_id")),
@@ -1164,21 +1173,28 @@ async function handleUpgrade(record: DesktopWsServerRecord, options: DesktopWsSe
   }
 }
 
-export async function startDesktopWsServer(options: DesktopWsServerOptions) {
+async function startDesktopWsServerInstance(
+  kind: DesktopWsServerKind,
+  options: DesktopWsServerOptions,
+  defaultPort: number
+) {
+  const activeServer = activeServers.get(kind) ?? null;
   if (activeServer) {
+    const runtimeState = createDesktopWsServerRuntimeState(activeServer, defaultPort);
     return {
-      ...createDesktopWsServerRuntimeState(activeServer),
-      webSocketUrl: `ws://${activeServer.host}:${activeServer.port}${DESKTOP_WS_PATH}`
+      ...runtimeState,
+      webSocketUrl: runtimeState.url
     };
   }
   const host = options.host || DESKTOP_WS_HOST;
-  const port = options.port ?? DESKTOP_WS_PORT;
+  const port = options.port ?? defaultPort;
   const logger = options.logger || console;
   const server = http.createServer((_req, res) => {
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Desktop WS Server only accepts WebSocket upgrades on /ws.");
   });
   const record: DesktopWsServerRecord = {
+    kind,
     server,
     host,
     port,
@@ -1212,34 +1228,44 @@ export async function startDesktopWsServer(options: DesktopWsServerOptions) {
   });
   const address = server.address() as AddressInfo | null;
   record.port = address?.port ?? port;
-  activeServer = record;
-  logger.log?.(`[desktop-ws] listening on ${host}:${record.port}`);
-  const runtimeState = createDesktopWsServerRuntimeState(record);
+  activeServers.set(kind, record);
+  logger.log?.(`[desktop-ws:${kind}] listening on ${host}:${record.port}`);
+  const runtimeState = createDesktopWsServerRuntimeState(record, defaultPort);
   return {
     ...runtimeState,
     webSocketUrl: runtimeState.url
   };
 }
 
+export function startDesktopWsServer(options: DesktopWsServerOptions) {
+  return startDesktopWsServerInstance("debug", options, DESKTOP_WS_PORT);
+}
+
+export function startDesktopRemoteWsServer(options: DesktopWsServerOptions) {
+  return startDesktopWsServerInstance("remote", options, DESKTOP_REMOTE_WS_PORT);
+}
+
 export function getDesktopWsServerRuntimeState() {
-  return createDesktopWsServerRuntimeState();
+  return createDesktopWsServerRuntimeState(activeServers.get("debug") ?? null, DESKTOP_WS_PORT);
+}
+
+export function getDesktopRemoteWsServerRuntimeState() {
+  return createDesktopWsServerRuntimeState(activeServers.get("remote") ?? null, DESKTOP_REMOTE_WS_PORT);
 }
 
 export function emitDesktopWsPush(type: DesktopWsPushType | string, data?: unknown) {
-  const record = activeServer;
-  if (!record) {
-    return;
-  }
-  for (const connection of record.connections) {
-    if (connection.subscriptions.has(type)) {
-      sendPush(connection, type, data);
+  for (const record of activeServers.values()) {
+    for (const connection of record.connections) {
+      if (connection.subscriptions.has(type)) {
+        sendPush(connection, type, data);
+      }
     }
   }
 }
 
-export function stopDesktopWsServer() {
-  const record = activeServer;
-  activeServer = null;
+function stopDesktopWsServerInstance(kind: DesktopWsServerKind) {
+  const record = activeServers.get(kind) ?? null;
+  activeServers.delete(kind);
   if (!record) {
     return Promise.resolve();
   }
@@ -1251,10 +1277,20 @@ export function stopDesktopWsServer() {
   });
 }
 
+export function stopDesktopWsServer() {
+  return stopDesktopWsServerInstance("debug");
+}
+
+export function stopDesktopRemoteWsServer() {
+  return stopDesktopWsServerInstance("remote");
+}
+
 export const __testInternals = {
   encodeWebSocketFrame,
   parseFrames,
   normalizePublicActionName,
   verifyRs256Jwt,
-  listPublicActions
+  listPublicActions,
+  startDesktopWsServerInstance,
+  stopDesktopWsServerInstance
 };

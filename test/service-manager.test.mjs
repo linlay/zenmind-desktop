@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -38,6 +39,15 @@ const {
   configurePluginResources,
   __testInternals: pluginResourceInternals
 } = require("../dist-electron/main/plugin-resources.js");
+const {
+  configureTunnelHubRemoteWsController
+} = require("../dist-electron/main/tunnel-hub-remote-ws.js");
+const {
+  stopDesktopRemoteWsServer
+} = require("../dist-electron/main/desktop-ws-server.js");
+const {
+  saveTunnelHubAgentSettings
+} = require("../dist-electron/main/tunnel-hub-agent-settings.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_APP_SERVER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
@@ -6629,6 +6639,90 @@ test("startup restore skips install-only services that were running at shutdown"
   ]);
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("Tunnel Hub pre-start registers remote WS before service command start", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-hub-prestart-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const registrations = [];
+  const relay = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      registrations.push({
+        method: req.method,
+        url: req.url,
+        authorization: req.headers.authorization,
+        body: JSON.parse(Buffer.concat(chunks).toString("utf8"))
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        deviceId: "mac-mini-office",
+        publicHost: "mac-mini-office.tunnel-hub.zenmind.cc",
+        publicUrl: "https://mac-mini-office.tunnel-hub.zenmind.cc",
+        webSocketUrl: "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws",
+        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
+        targetUrl: "http://127.0.0.1:7083",
+        agentToken: "prestart-agent-token"
+      }));
+    });
+  });
+  await new Promise((resolve) => relay.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    await stopDesktopRemoteWsServer();
+    await new Promise((resolve) => relay.close(resolve));
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const relayUrl = `ws://127.0.0.1:${relay.address().port}/tunnel`;
+  const saved = saveTunnelHubAgentSettings(app, {
+    enabled: true,
+    relayUrl,
+    deviceId: "mac-mini-office",
+    registrationToken: "registration-secret"
+  });
+  assert.equal(saved.ok, true);
+  configureTunnelHubRemoteWsController({
+    desktopWsServerOptions: {
+      app,
+      port: 0,
+      desktopActionOptions: {},
+      assistantBridge: {
+        listAgents: async () => [],
+        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      },
+      getTaskBoardRuntime: () => null,
+      verifyToken: async () => ({
+        subject: "app",
+        deviceId: "device-1",
+        expiresAt: Date.now() + 600_000,
+        scope: "app"
+      }),
+      logger: { log() {}, warn() {}, error() {} }
+    },
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  await __testInternals.ensurePreStartRequirements(app, {
+    id: "tunnel-hub-agent",
+    kind: "builtin",
+    version: "0.0.0-test",
+    desktop: {
+      capabilities: {
+        requires: []
+      }
+    }
+  });
+
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].method, "POST");
+  assert.equal(registrations[0].url, "/api/desktop/devices/register");
+  assert.equal(registrations[0].authorization, "Bearer registration-secret");
+  assert.match(registrations[0].body.targetUrl, /^http:\/\/127\.0\.0\.1:\d+$/u);
+  assert.notEqual(registrations[0].body.targetUrl, "http://127.0.0.1:7082");
+  const envPath = path.join(getTestDesktopRoot(userDataRoot), "config", "services", "tunnel-hub-agent", ".env");
+  assert.match(fs.readFileSync(envPath, "utf8"), /^AGENT_TOKEN=prestart-agent-token$/m);
 });
 
 test("shutdown records running resource plugins without unloading their resources", async () => {

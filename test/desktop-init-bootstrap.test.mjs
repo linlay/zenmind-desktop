@@ -302,7 +302,9 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   writeDesktopInit(app, "darwin", {
     tunnelHub: {
       relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+      deviceId: "mac-mini-office",
       agentToken: "init-agent-token",
+      registrationToken: "init-registration-token",
       tlsInsecureSkipVerify: false
     }
   });
@@ -311,6 +313,7 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   const desktop = desktopRoot(homePath);
   const tunnelSettingsPath = path.join(desktop, "config", "desktop", "tunnel-hub-agent.json");
   const tokenPath = path.join(desktop, "secrets", "tunnel-hub-agent-token");
+  const registrationTokenPath = path.join(desktop, "secrets", "tunnel-hub-registration-token");
   const envPath = path.join(desktop, "config", "services", "tunnel-hub-agent", ".env");
   const tunnelSettings = readJson(tunnelSettingsPath);
   const envContent = fs.readFileSync(envPath, "utf8");
@@ -321,11 +324,21 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   assert.deepEqual(tunnelSettings, {
     enabled: false,
     relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+    deviceId: "mac-mini-office",
+    publicHost: "",
+    publicUrl: "",
+    webSocketUrl: "",
+    targetUrl: "",
+    lastRegisteredAt: "",
+    rotateAgentToken: false,
     tlsInsecureSkipVerify: false,
     reconnectSeconds: 3
   });
   assert.equal("agentToken" in tunnelSettings, false);
+  assert.equal("registrationToken" in tunnelSettings, false);
+  assert.equal("deviceSecret" in tunnelSettings, false);
   assert.equal(readText(tokenPath), "init-agent-token");
+  assert.equal(readText(registrationTokenPath), "init-registration-token");
   assert.match(envContent, /^AGENT_TOKEN=init-agent-token$/m);
   assert.match(envContent, /^AGENT_RELAY_URL=wss:\/\/tunnel-hub\.zenmind\.cc\/tunnel$/m);
   assert.match(envContent, /^AGENT_TLS_INSECURE_SKIP_VERIFY=false$/m);

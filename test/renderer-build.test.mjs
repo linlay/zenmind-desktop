@@ -2977,9 +2977,10 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
+  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*z-index:\s*1000;/);
   assert.match(
     globalStyles,
-    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*20;[^}]*app-region:\s*drag;[^}]*pointer-events:\s*auto;/
+    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*1000;[^}]*app-region:\s*drag;[^}]*pointer-events:\s*auto;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -2995,7 +2996,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(
     globalStyles,
-    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*20;[^}]*pointer-events:\s*auto;/
+    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*1000;[^}]*pointer-events:\s*auto;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -3039,7 +3040,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
 });
 
-test("window drag uses css-only app-region approach", () => {
+test("window drag uses app-region plus desktopShell drag fallback", () => {
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
   const sidebarSource = fs.readFileSync(
@@ -3048,6 +3049,7 @@ test("window drag uses css-only app-region approach", () => {
   );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const shellHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "shell-handlers.ts"), "utf8");
   const contracts = readSharedContractsSource();
 
   assert.match(
@@ -3070,6 +3072,23 @@ test("window drag uses css-only app-region approach", () => {
   assert.doesNotMatch(appShell, /SIDEBAR_WINDOW_DRAG_START_THRESHOLD_PX/);
   assert.doesNotMatch(appShell, /handleSidebarWindowPointerDownCapture/);
   assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleSidebarWindowPointerDownCapture\}/);
+  assert.match(appShell, /onPointerDownCapture=\{handleWindowDragPointerDownCapture\}/);
+  assert.match(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
+  assert.match(appShell, /event\.button !== 0/);
+  assert.match(appShell, /desktopShell\.beginWindowDrag\(\{ x: event\.screenX, y: event\.screenY \}\)/);
+  assert.match(appShell, /desktopShell\.endWindowDrag\(\)/);
+  assert.match(appShell, /window\.addEventListener\("pointerup", finishDrag, true\)/);
+  assert.match(appShell, /window\.addEventListener\("pointercancel", finishDrag, true\)/);
+  assert.match(appShell, /window\.addEventListener\("blur", finishDrag, true\)/);
+  assert.match(appShell, /dragRegion\.setPointerCapture\(pointerId\)/);
+  assert.match(preload, /beginWindowDrag:\s*\(point: \{ x: number; y: number \}\) => ipcRenderer\.invoke\("desktopShell\.beginWindowDrag", point\)/);
+  assert.match(preload, /endWindowDrag:\s*\(\) => ipcRenderer\.invoke\("desktopShell\.endWindowDrag"\)/);
+  assert.match(contracts, /beginWindowDrag:\s*\(point: \{ x: number; y: number \}\) => Promise<\{ ok: boolean; message\?: string \}>/);
+  assert.match(contracts, /endWindowDrag:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>/);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.beginWindowDrag"/);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.endWindowDrag"/);
+  assert.match(shellHandlers, /screen\.getCursorScreenPoint\(\)/);
+  assert.match(shellHandlers, /runSetInterval\(tickWindowDrag,\s*16\)/);
   assert.doesNotMatch(appShell, /window\.electronAPI\.windowDrag\.begin/);
   assert.doesNotMatch(contracts, /windowDrag:\s*\{/);
   assert.doesNotMatch(preload, /windowDrag:\s*\{/);

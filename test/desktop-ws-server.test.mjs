@@ -11,7 +11,9 @@ const require = createRequire(import.meta.url);
 
 const {
   emitDesktopWsPush,
+  startDesktopRemoteWsServer,
   startDesktopWsServer,
+  stopDesktopRemoteWsServer,
   stopDesktopWsServer
 } = require("../dist-electron/main/desktop-ws-server.js");
 
@@ -311,6 +313,57 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(streamError.frame, "error");
   assert.equal(streamError.type, "invalid_request");
   assert.equal(streamError.code, 400);
+});
+
+test("desktop remote ws server exposes desktop namespace protocol", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-remote-ws-"));
+  t.after(async () => {
+    await stopDesktopRemoteWsServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const started = await startDesktopRemoteWsServer({
+    app: createApp(path.join(root, "home")),
+    host: "127.0.0.1",
+    port: 0,
+    desktopActionOptions: {},
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({
+        ok: true,
+        runId: "run-1",
+        chatId: "chat-1",
+        message: "started"
+      })
+    },
+    getTaskBoardRuntime: () => null,
+    verifyToken: async () => ({
+      subject: "app",
+      deviceId: "device-1",
+      expiresAt: Date.now() + 600_000,
+      scope: "app"
+    }),
+    logger: {
+      log() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  const client = await connectRawWebSocket(started.webSocketUrl, "bearer.test-token").open();
+  t.after(() => client.close());
+  await client.waitFor((message) => message.ns === "d" && message.frame === "push" && message.type === "connected");
+
+  for (const type of ["session.hello", "action.list", "runtime.info"]) {
+    const id = `remote-${type}`;
+    client.send({ ns: "d", frame: "request", type, id, payload: {} });
+    const response = await client.waitFor((message) => message.id === id);
+    assert.equal(response.ns, "d");
+    assert.equal(response.frame, "response");
+    assert.equal(response.type, type);
+    assert.equal(response.code, 0);
+    assert.notEqual(response.msg, `unknown type: ${type}`);
+  }
 });
 
 test("desktop ws server routes agent-platform namespace frames", async (t) => {

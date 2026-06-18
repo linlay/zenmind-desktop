@@ -244,8 +244,12 @@ function readTunnelHubSettingsInput(args: Record<string, unknown>) {
   return {
     enabled: typeof source.enabled === "boolean" ? source.enabled : undefined,
     relayUrl: typeof source.relayUrl === "string" ? source.relayUrl : undefined,
+    deviceId: typeof source.deviceId === "string" ? source.deviceId : undefined,
     agentToken: typeof source.agentToken === "string" ? source.agentToken : undefined,
     clearAgentToken: source.clearAgentToken === true,
+    registrationToken: typeof source.registrationToken === "string" ? source.registrationToken : undefined,
+    clearRegistrationToken: source.clearRegistrationToken === true,
+    rotateAgentToken: source.rotateAgentToken === true,
     tlsInsecureSkipVerify: source.tlsInsecureSkipVerify === true,
     reconnectSeconds: typeof source.reconnectSeconds === "number"
       ? source.reconnectSeconds

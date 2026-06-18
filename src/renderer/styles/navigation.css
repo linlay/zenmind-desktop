@@ -3002,7 +3002,7 @@
   left: 0;
   right: 0;
   height: 8px;
-  z-index: 20;
+  z-index: 1000;
   app-region: drag;
   -webkit-app-region: drag;
   pointer-events: auto;

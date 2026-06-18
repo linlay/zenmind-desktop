@@ -1,4 +1,6 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type {
@@ -9,18 +11,54 @@ import type {
 import { readEnvFile } from "./env-file";
 import { getDesktopConfigRoot, getSecretsRoot, getServiceConfigRoot } from "./user-paths";
 import { writeEnvFileUpdates } from "./services/manager/env-content";
+import { getDesktopDeviceId } from "./device-identity";
 
 export const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
 export const DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL = "";
 const DEFAULT_RECONNECT_SECONDS = 3;
 const MIN_RECONNECT_SECONDS = 1;
 const MAX_RECONNECT_SECONDS = 3600;
+const DEVICE_ID_MAX_LENGTH = 63;
+const DEVICE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+const RESERVED_DEVICE_IDS = new Set(["admin", "api", "www", "tunnel", "relay"]);
 
 type StoredTunnelHubAgentSettings = {
   enabled?: unknown;
   relayUrl?: unknown;
+  deviceId?: unknown;
+  publicHost?: unknown;
+  publicUrl?: unknown;
+  webSocketUrl?: unknown;
+  targetUrl?: unknown;
+  lastRegisteredAt?: unknown;
+  rotateAgentToken?: unknown;
   tlsInsecureSkipVerify?: unknown;
   reconnectSeconds?: unknown;
+};
+
+type WritableTunnelHubAgentSettings = {
+  enabled: boolean;
+  relayUrl: string;
+  deviceId?: string;
+  publicHost?: string;
+  publicUrl?: string;
+  webSocketUrl?: string;
+  targetUrl?: string;
+  lastRegisteredAt?: string;
+  rotateAgentToken?: boolean;
+  tlsInsecureSkipVerify: boolean;
+  reconnectSeconds: number;
+};
+
+export type TunnelHubRegistrationRecord = {
+  deviceId: string;
+  relayUrl?: string;
+  publicHost?: string;
+  publicUrl?: string;
+  webSocketUrl?: string;
+  targetUrl: string;
+  agentToken?: string;
+  lastRegisteredAt?: string;
 };
 
 function ensureDir(targetPath: string) {
@@ -33,6 +71,14 @@ function getSettingsPath(app: App) {
 
 function getTokenPath(app: App) {
   return path.join(getSecretsRoot(app), "tunnel-hub-agent-token");
+}
+
+function getRegistrationTokenPath(app: App) {
+  return path.join(getSecretsRoot(app), "tunnel-hub-registration-token");
+}
+
+function getDeviceSecretPath(app: App) {
+  return path.join(getSecretsRoot(app), "tunnel-hub-device-secret");
 }
 
 function getEnvPath(app: App) {
@@ -57,6 +103,41 @@ function normalizeRelayUrl(value: unknown) {
   return raw || DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL;
 }
 
+function readStoredString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function normalizeTunnelHubDeviceId(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+export function isValidTunnelHubDeviceId(deviceId: string) {
+  return Boolean(deviceId) &&
+    deviceId.length <= DEVICE_ID_MAX_LENGTH &&
+    DEVICE_ID_PATTERN.test(deviceId) &&
+    !RESERVED_DEVICE_IDS.has(deviceId);
+}
+
+function slugifyDeviceId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/-+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, DEVICE_ID_MAX_LENGTH)
+    .replace(/-+$/gu, "");
+}
+
+function createDefaultDeviceId(app: App) {
+  const hostname = slugifyDeviceId(os.hostname());
+  if (isValidTunnelHubDeviceId(hostname)) {
+    return hostname;
+  }
+  const desktopId = getDesktopDeviceId(app).replace(/-/gu, "").slice(0, 12);
+  return `desktop-${desktopId || crypto.randomBytes(6).toString("hex")}`.slice(0, DEVICE_ID_MAX_LENGTH);
+}
+
 function isValidRelayUrl(relayUrl: string) {
   try {
     const parsed = new URL(relayUrl);
@@ -78,16 +159,19 @@ function normalizeReconnectSeconds(value: unknown) {
   return Math.max(MIN_RECONNECT_SECONDS, Math.min(MAX_RECONNECT_SECONDS, Math.trunc(parsed)));
 }
 
-function readTokenFile(app: App) {
-  const tokenPath = getTokenPath(app);
-  if (!fs.existsSync(tokenPath)) {
+function readSecretFile(secretPath: string) {
+  if (!fs.existsSync(secretPath)) {
     return "";
   }
   try {
-    return fs.readFileSync(tokenPath, "utf8").trim();
+    return fs.readFileSync(secretPath, "utf8").trim();
   } catch {
     return "";
   }
+}
+
+function readTokenFile(app: App) {
+  return readSecretFile(getTokenPath(app));
 }
 
 function readEnvAgentToken(app: App) {
@@ -106,6 +190,20 @@ export function readTunnelHubAgentToken(app: App) {
   return readTokenFile(app) || readEnvAgentToken(app);
 }
 
+export function readTunnelHubRegistrationToken(app: App) {
+  return readSecretFile(getRegistrationTokenPath(app));
+}
+
+export function ensureTunnelHubDeviceSecret(app: App) {
+  const current = readSecretFile(getDeviceSecretPath(app));
+  if (current) {
+    return current;
+  }
+  const deviceSecret = crypto.randomBytes(32).toString("base64url");
+  writeSecretFile(getDeviceSecretPath(app), deviceSecret);
+  return deviceSecret;
+}
+
 function previewToken(token: string) {
   if (!token) {
     return "";
@@ -119,16 +217,26 @@ function previewToken(token: string) {
 export function readTunnelHubAgentSettings(app: App): TunnelHubAgentSettings {
   const stored = readStoredSettings(app);
   const token = readTunnelHubAgentToken(app);
+  const registrationToken = readTunnelHubRegistrationToken(app);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
-  const complete = Boolean(token) && isValidRelayUrl(relayUrl);
+  const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
+  const complete = Boolean(token || registrationToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
     ? stored.enabled && complete
     : complete;
   return {
     enabled,
     relayUrl,
+    deviceId,
     hasAgentToken: Boolean(token),
     agentTokenPreview: previewToken(token),
+    hasRegistrationToken: Boolean(registrationToken),
+    registrationTokenPreview: previewToken(registrationToken),
+    publicHost: readStoredString(stored.publicHost),
+    publicUrl: readStoredString(stored.publicUrl),
+    webSocketUrl: readStoredString(stored.webSocketUrl),
+    targetUrl: readStoredString(stored.targetUrl),
+    lastRegisteredAt: readStoredString(stored.lastRegisteredAt) || undefined,
     tlsInsecureSkipVerify: stored.tlsInsecureSkipVerify === true,
     reconnectSeconds: normalizeReconnectSeconds(stored.reconnectSeconds)
   };
@@ -143,6 +251,12 @@ export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSetting
   if (input.enabled === true || relayUrl) {
     if (!isValidRelayUrl(relayUrl)) {
       issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
+    }
+  }
+  if (input.deviceId !== undefined) {
+    const deviceId = normalizeTunnelHubDeviceId(input.deviceId);
+    if (!isValidTunnelHubDeviceId(deviceId)) {
+      issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
     }
   }
 
@@ -162,6 +276,7 @@ export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSetting
     settings: {
       enabled: input.enabled === true,
       relayUrl,
+      deviceId: normalizeTunnelHubDeviceId(input.deviceId),
       tlsInsecureSkipVerify: input.tlsInsecureSkipVerify === true,
       reconnectSeconds
     }
@@ -170,30 +285,41 @@ export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSetting
 
 function writeStoredSettings(
   app: App,
-  settings: Pick<TunnelHubAgentSettings, "enabled" | "relayUrl" | "tlsInsecureSkipVerify" | "reconnectSeconds">
+  settings: WritableTunnelHubAgentSettings
 ) {
   const settingsPath = getSettingsPath(app);
   ensureDir(path.dirname(settingsPath));
   fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
-function writeToken(app: App, token: string) {
-  const tokenPath = getTokenPath(app);
+function writeSecretFile(secretPath: string, token: string) {
   if (!token) {
     try {
-      fs.rmSync(tokenPath, { force: true });
+      fs.rmSync(secretPath, { force: true });
     } catch {
       // Best effort cleanup only.
     }
     return;
   }
-  ensureDir(path.dirname(tokenPath));
-  fs.writeFileSync(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+  ensureDir(path.dirname(secretPath));
+  fs.writeFileSync(secretPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
   try {
-    fs.chmodSync(tokenPath, 0o600);
+    fs.chmodSync(secretPath, 0o600);
   } catch {
     // Windows does not honor POSIX file modes.
   }
+}
+
+function writeToken(app: App, token: string) {
+  writeSecretFile(getTokenPath(app), token);
+}
+
+function writeRegistrationToken(app: App, token: string) {
+  writeSecretFile(getRegistrationTokenPath(app), token);
+}
+
+export function writeTunnelHubAgentToken(app: App, token: string) {
+  writeToken(app, token.trim());
 }
 
 export function syncTunnelHubAgentSettingsToEnv(app: App) {
@@ -214,6 +340,9 @@ export function saveTunnelHubAgentSettings(
 ): TunnelHubAgentSettingsResult {
   const current = readTunnelHubAgentSettings(app);
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
+  const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
+    ? normalizeTunnelHubDeviceId(input.deviceId)
+    : current.deviceId || createDefaultDeviceId(app);
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
   const tlsInsecureSkipVerify = typeof input.tlsInsecureSkipVerify === "boolean"
     ? input.tlsInsecureSkipVerify
@@ -224,19 +353,35 @@ export function saveTunnelHubAgentSettings(
     : typeof input.agentToken === "string" && input.agentToken.trim()
       ? input.agentToken.trim()
       : readTunnelHubAgentToken(app);
+  const nextRegistrationToken = input.clearRegistrationToken === true
+    ? ""
+    : typeof input.registrationToken === "string" && input.registrationToken.trim()
+      ? input.registrationToken.trim()
+      : readTunnelHubRegistrationToken(app);
   const issues: string[] = [];
+  if (!isValidTunnelHubDeviceId(deviceId)) {
+    issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
+  }
   if (requestedEnabled) {
     if (!isValidRelayUrl(relayUrl)) {
       issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
     }
-    if (!nextToken) {
-      issues.push("Agent token is required.");
+    if (!nextToken && !nextRegistrationToken) {
+      issues.push("Registration token or agent token is required.");
     }
   }
 
+  const deviceIdChanged = deviceId !== current.deviceId;
   const nextSettings = {
     enabled: requestedEnabled && issues.length === 0,
     relayUrl,
+    deviceId,
+    publicHost: deviceIdChanged ? "" : current.publicHost,
+    publicUrl: deviceIdChanged ? "" : current.publicUrl,
+    webSocketUrl: deviceIdChanged ? "" : current.webSocketUrl,
+    targetUrl: deviceIdChanged ? "" : current.targetUrl,
+    lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
+    rotateAgentToken: input.rotateAgentToken === true,
     tlsInsecureSkipVerify,
     reconnectSeconds
   };
@@ -248,6 +393,14 @@ export function saveTunnelHubAgentSettings(
     const token = input.agentToken.trim();
     if (token) {
       writeToken(app, token);
+    }
+  }
+  if (input.clearRegistrationToken === true) {
+    writeRegistrationToken(app, "");
+  } else if (typeof input.registrationToken === "string") {
+    const token = input.registrationToken.trim();
+    if (token) {
+      writeRegistrationToken(app, token);
     }
   }
 
@@ -266,4 +419,56 @@ export function saveTunnelHubAgentSettings(
     settings: readTunnelHubAgentSettings(app),
     configPath: getSettingsPath(app)
   };
+}
+
+export function ensureTunnelHubDeviceId(app: App) {
+  const stored = readStoredSettings(app);
+  const current = normalizeTunnelHubDeviceId(stored.deviceId);
+  if (isValidTunnelHubDeviceId(current)) {
+    return current;
+  }
+  const currentSettings = readTunnelHubAgentSettings(app);
+  const deviceId = currentSettings.deviceId || createDefaultDeviceId(app);
+  writeStoredSettings(app, {
+    enabled: currentSettings.enabled,
+    relayUrl: currentSettings.relayUrl,
+    deviceId,
+    publicHost: currentSettings.publicHost,
+    publicUrl: currentSettings.publicUrl,
+    webSocketUrl: currentSettings.webSocketUrl,
+    targetUrl: currentSettings.targetUrl,
+    lastRegisteredAt: currentSettings.lastRegisteredAt,
+    rotateAgentToken: readStoredSettings(app).rotateAgentToken === true,
+    tlsInsecureSkipVerify: currentSettings.tlsInsecureSkipVerify,
+    reconnectSeconds: currentSettings.reconnectSeconds
+  });
+  return deviceId;
+}
+
+export function readTunnelHubAgentTokenRotationRequest(app: App) {
+  return readStoredSettings(app).rotateAgentToken === true;
+}
+
+export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubRegistrationRecord) {
+  const current = readTunnelHubAgentSettings(app);
+  const deviceId = normalizeTunnelHubDeviceId(record.deviceId) || current.deviceId || createDefaultDeviceId(app);
+  const nextSettings = {
+    enabled: current.enabled,
+    relayUrl: normalizeRelayUrl(record.relayUrl ?? current.relayUrl),
+    deviceId,
+    publicHost: record.publicHost?.trim() ?? current.publicHost,
+    publicUrl: record.publicUrl?.trim() ?? current.publicUrl,
+    webSocketUrl: record.webSocketUrl?.trim() ?? current.webSocketUrl,
+    targetUrl: record.targetUrl.trim(),
+    lastRegisteredAt: record.lastRegisteredAt?.trim() || new Date().toISOString(),
+    rotateAgentToken: false,
+    tlsInsecureSkipVerify: current.tlsInsecureSkipVerify,
+    reconnectSeconds: current.reconnectSeconds
+  };
+  writeStoredSettings(app, nextSettings);
+  if (record.agentToken?.trim()) {
+    writeToken(app, record.agentToken.trim());
+  }
+  syncTunnelHubAgentSettingsToEnv(app);
+  return readTunnelHubAgentSettings(app);
 }

@@ -178,6 +178,10 @@ import {
   syncTunnelHubAgentSettingsToEnv
 } from "../../tunnel-hub-agent-settings";
 import {
+  ensureTunnelHubRemoteWsReady,
+  stopTunnelHubRemoteWs
+} from "../../tunnel-hub-remote-ws";
+import {
   captureManagedProcessCleanupSnapshot,
   collectManagedRootPids,
   collectManagedServiceStopState,
@@ -356,6 +360,7 @@ function isHostManagedService(service: ServiceDefinition) {
 }
 
 function collectPrerequisites(
+  app: App,
   service: ServiceDefinition,
   layout: ServiceLayout,
   options: { cacheContainerEngineProbe?: boolean } = {}
@@ -378,7 +383,8 @@ function collectPrerequisites(
 
   if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
     const token = fs.existsSync(envPath) ? readEnvFile(envPath).get("AGENT_TOKEN")?.trim() ?? "" : "";
-    if (!token) {
+    const settings = readTunnelHubAgentSettings(app);
+    if (!token && !settings.hasRegistrationToken) {
       prerequisites.push(t("service.tunnelHubTokenMissing"));
     }
   }
@@ -812,7 +818,7 @@ export async function getServiceState(
     initializationState?.status === "succeeded" && initializationState.version === service.version;
   const prerequisites =
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !responsiveRead
-      ? collectPrerequisites(service, layout, {
+      ? collectPrerequisites(app, service, layout, {
         cacheContainerEngineProbe: options.cacheContainerEngineProbe
       })
       : [];
@@ -1835,6 +1841,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   }
 
   if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
+    await ensureTunnelHubRemoteWsReady(app);
     syncTunnelHubAgentSettingsToEnv(app);
   }
 
@@ -2265,6 +2272,9 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     };
   }
   if (current.status !== "running") {
+    if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID && !readTunnelHubAgentSettings(app).enabled) {
+      await stopTunnelHubRemoteWs();
+    }
     return {
       ok: true,
       message: t("service.currentlyNotRunning", { name: service.name }),
@@ -2301,6 +2311,9 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   startedThisSession.delete(serviceId);
 
   const verified = await attachServiceVerification(app, serviceId, result, "stopped", t("service.stopCommandExecuted", { name: service.name }));
+  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID && !readTunnelHubAgentSettings(app).enabled) {
+    await stopTunnelHubRemoteWs();
+  }
   if (service.kind === "plugin" && verified.ok) {
     emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: verified.service });
   }

@@ -2,7 +2,8 @@ import fs from "node:fs";
 import {
   shell as electronShell,
   clipboard as electronClipboard,
-  BrowserWindow as ElectronBrowserWindow
+  BrowserWindow as ElectronBrowserWindow,
+  screen as electronScreen
 } from "electron";
 import type { BrowserWindow, IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import {
@@ -33,6 +34,12 @@ type ShellIpcOptions = {
   shell?: typeof electronShell;
   clipboard?: typeof electronClipboard;
   BrowserWindow?: Pick<typeof ElectronBrowserWindow, "fromWebContents">;
+  screen?: {
+    getCursorScreenPoint: () => { x: number; y: number };
+  };
+  setInterval?: typeof setInterval;
+  clearInterval?: typeof clearInterval;
+  windowDragForceEndMs?: number;
   app?: {
     getPath: (name: string) => string;
   };
@@ -67,6 +74,18 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   const shell = options.shell || electronShell;
   const clipboard = options.clipboard || electronClipboard;
   const BrowserWindow = options.BrowserWindow || ElectronBrowserWindow;
+  const screen = options.screen || electronScreen;
+  const runSetInterval = options.setInterval || setInterval;
+  const runClearInterval = options.clearInterval || clearInterval;
+  const windowDragForceEndMs = typeof options.windowDragForceEndMs === "number"
+    ? options.windowDragForceEndMs
+    : 8000;
+  let windowDragTimer: ReturnType<typeof setInterval> | null = null;
+  let windowDragState: {
+    ownerWindow: BrowserWindow;
+    lastPoint: { x: number; y: number };
+    startedAt: number;
+  } | null = null;
 
   function isDesktopDownloadPayload(input: unknown): input is DesktopDownloadPayload {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -74,6 +93,63 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
     const payload = input as Record<string, unknown>;
     return typeof payload.dataBase64 === "string";
+  }
+
+  function resolveScreenPoint(input: unknown, fallbackPoint = screen.getCursorScreenPoint()) {
+    const payload = input && typeof input === "object" ? input as Record<string, unknown> : {};
+    const x = Number(payload.x);
+    const y = Number(payload.y);
+    return {
+      x: Number.isFinite(x) ? x : fallbackPoint.x,
+      y: Number.isFinite(y) ? y : fallbackPoint.y
+    };
+  }
+
+  function clearWindowDragTimer() {
+    if (!windowDragTimer) {
+      return;
+    }
+    runClearInterval(windowDragTimer);
+    windowDragTimer = null;
+  }
+
+  function endWindowDrag() {
+    windowDragState = null;
+    clearWindowDragTimer();
+    return { ok: true as const };
+  }
+
+  function moveOwnerWindowBy(ownerWindow: BrowserWindow, delta: { x: number; y: number }) {
+    if (ownerWindow.isDestroyed() || ownerWindow.isFullScreen()) {
+      endWindowDrag();
+      return false;
+    }
+    const deltaX = Math.round(delta.x);
+    const deltaY = Math.round(delta.y);
+    if (deltaX === 0 && deltaY === 0) {
+      return true;
+    }
+    const [currentX, currentY] = ownerWindow.getPosition();
+    ownerWindow.setPosition(currentX + deltaX, currentY + deltaY);
+    ownerWindow.moveTop();
+    return true;
+  }
+
+  function tickWindowDrag() {
+    if (!windowDragState) {
+      clearWindowDragTimer();
+      return;
+    }
+    if (Date.now() - windowDragState.startedAt > windowDragForceEndMs) {
+      endWindowDrag();
+      return;
+    }
+
+    const currentPoint = screen.getCursorScreenPoint();
+    const deltaX = currentPoint.x - windowDragState.lastPoint.x;
+    const deltaY = currentPoint.y - windowDragState.lastPoint.y;
+    windowDragState.lastPoint = currentPoint;
+    moveOwnerWindowBy(windowDragState.ownerWindow, { x: deltaX, y: deltaY });
   }
 
   ipcMain.handle("shell.openExternal", async (_event: IpcMainInvokeEvent, url: string) => {
@@ -144,8 +220,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       if (!ownerWindow || ownerWindow.isDestroyed() || ownerWindow.isFullScreen()) {
         return { ok: false as const, message: t("shell.windowUnavailable") };
       }
-      const [currentX, currentY] = ownerWindow.getPosition();
-      ownerWindow.setPosition(currentX + Math.round(x), currentY + Math.round(y));
+      moveOwnerWindowBy(ownerWindow, { x, y });
       return { ok: true as const };
     } catch (error) {
       return {
@@ -154,6 +229,31 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       };
     }
   });
+
+  ipcMain.handle("desktopShell.beginWindowDrag", async (event: IpcMainInvokeEvent, point: unknown) => {
+    try {
+      const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? options.mainWindow;
+      if (!ownerWindow || ownerWindow.isDestroyed() || ownerWindow.isFullScreen()) {
+        return { ok: false as const, message: t("shell.windowUnavailable") };
+      }
+      clearWindowDragTimer();
+      const startPoint = resolveScreenPoint(point);
+      windowDragState = {
+        ownerWindow,
+        lastPoint: startPoint,
+        startedAt: Date.now()
+      };
+      windowDragTimer = runSetInterval(tickWindowDrag, 16);
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
+  ipcMain.handle("desktopShell.endWindowDrag", async () => endWindowDrag());
 
   ipcMain.handle("clipboard.writeText", async (_event: IpcMainInvokeEvent, text: string) => {
     try {

@@ -167,6 +167,8 @@ export interface DesktopApi {
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
     moveWindowBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
+    beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
+    endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
   };
   desktopDownloads: {
     saveFile: (input: {

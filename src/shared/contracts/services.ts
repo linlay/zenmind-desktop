@@ -229,8 +229,16 @@ export interface ServiceImportResult {
 export interface TunnelHubAgentSettings {
   enabled: boolean;
   relayUrl: string;
+  deviceId: string;
   hasAgentToken: boolean;
   agentTokenPreview: string;
+  hasRegistrationToken: boolean;
+  registrationTokenPreview: string;
+  publicHost: string;
+  publicUrl: string;
+  webSocketUrl: string;
+  targetUrl: string;
+  lastRegisteredAt?: string;
   tlsInsecureSkipVerify: boolean;
   reconnectSeconds: number;
 }
@@ -238,8 +246,12 @@ export interface TunnelHubAgentSettings {
 export interface TunnelHubAgentSettingsInput {
   enabled?: boolean;
   relayUrl?: string;
+  deviceId?: string;
   agentToken?: string;
   clearAgentToken?: boolean;
+  registrationToken?: string;
+  clearRegistrationToken?: boolean;
+  rotateAgentToken?: boolean;
   tlsInsecureSkipVerify?: boolean;
   reconnectSeconds?: number;
 }

@@ -1,4 +1,4 @@
-import { createElement, lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
@@ -315,6 +315,7 @@ export function AppShell() {
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
+  const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const startupNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
@@ -1786,6 +1787,71 @@ export function AppShell() {
     themeMode
   ]);
 
+  const handleWindowDragPointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.defaultPrevented) {
+      return;
+    }
+
+    const target = event.target instanceof Element ? event.target : null;
+    const dragRegion = target?.closest(".app-window-drag-region, .pan-drag-region");
+    if (!dragRegion) {
+      return;
+    }
+
+    const desktopShell = window.electronAPI.desktopShell;
+    if (!desktopShell.beginWindowDrag || !desktopShell.endWindowDrag) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    windowDragEndRef.current?.();
+
+    const pointerId = event.pointerId;
+    let ended = false;
+    const finishDrag = () => {
+      if (ended) {
+        return;
+      }
+      ended = true;
+      window.removeEventListener("pointerup", finishDrag, true);
+      window.removeEventListener("pointercancel", finishDrag, true);
+      window.removeEventListener("blur", finishDrag, true);
+      dragRegion.removeEventListener("lostpointercapture", finishDrag, true);
+      try {
+        if (dragRegion.hasPointerCapture(pointerId)) {
+          dragRegion.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Pointer capture can already be gone when the pointer leaves an embedded surface.
+      }
+      windowDragEndRef.current = null;
+      void desktopShell.endWindowDrag().catch(() => undefined);
+    };
+
+    windowDragEndRef.current = finishDrag;
+    window.addEventListener("pointerup", finishDrag, true);
+    window.addEventListener("pointercancel", finishDrag, true);
+    window.addEventListener("blur", finishDrag, true);
+    dragRegion.addEventListener("lostpointercapture", finishDrag, true);
+    try {
+      dragRegion.setPointerCapture(pointerId);
+    } catch {
+      // The main-process cursor loop still keeps the drag alive across webview boundaries.
+    }
+
+    void desktopShell.beginWindowDrag({ x: event.screenX, y: event.screenY }).then((result) => {
+      if (!result?.ok) {
+        finishDrag();
+      }
+    }).catch(finishDrag);
+  }, []);
+
+  useEffect(() => () => {
+    windowDragEndRef.current?.();
+  }, []);
+
   const appShellStyle = {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`
   } as CSSProperties;
@@ -1793,6 +1859,7 @@ export function AppShell() {
   return (
     <div
       style={appShellStyle}
+      onPointerDownCapture={handleWindowDragPointerDownCapture}
       className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
