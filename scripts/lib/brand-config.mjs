@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const DEFAULT_BRAND_ID = "zenmind";
+export const DEFAULT_BRAND_ID = "cutej";
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
 export const INSTALLER_SHUTDOWN_ARG = "--desktop-shutdown-for-update";
 export const LEGACY_INSTALLER_SHUTDOWN_ARGS = ["--zenmind-shutdown-for-update"];

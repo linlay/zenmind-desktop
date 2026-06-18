@@ -9,7 +9,9 @@ import type {
   DesktopPetAppearanceOption,
   DesktopPetEdgeDock,
   DesktopPetPreviewPanel,
-  DesktopPetTaskItem
+  DesktopPetTaskItem,
+  DesktopPetMessageItem,
+  DesktopPetMessageStatus
 } from "../shared/contracts";
 import type {
   DesktopPetBoundAgentStatus,
@@ -66,6 +68,7 @@ type DesktopPetWindowModeStateLike = {
   messagePreview?: unknown;
   unreadCount?: unknown;
   activeTasks?: unknown;
+  messages?: unknown;
 };
 
 type DesktopPetBoundsLike = {
@@ -233,6 +236,13 @@ function shouldReplaceDesktopPetTask(existing: DesktopPetTaskItem, next: Desktop
   return getDesktopPetTaskTimestamp(next.updatedAt) > getDesktopPetTaskTimestamp(existing.updatedAt);
 }
 
+function readDesktopPetAwaitingCount(chat: { awaitingCount?: unknown; hasPendingAwaiting?: unknown }) {
+  if (!chat.hasPendingAwaiting) {
+    return 0;
+  }
+  return Math.max(1, Math.round(Number(chat.awaitingCount) || 0));
+}
+
 export function createDesktopPetActiveTasksFromNavigationSnapshot(
   snapshot: { ok?: unknown; items?: unknown } | null | undefined
 ): DesktopPetTaskItem[] {
@@ -258,6 +268,7 @@ export function createDesktopPetActiveTasksFromNavigationSnapshot(
       const taskAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
       const status = chat.hasPendingAwaiting ? "awaiting" : "running";
       const updatedAt = toDesktopPetTaskText(chat.updatedAt) || toDesktopPetTaskText(agent.updatedAt);
+      const awaitingCount = readDesktopPetAwaitingCount(chat);
       const task: DesktopPetTaskItem = {
         id: `${taskAgentKey}:${chatId}`,
         agentKey: taskAgentKey,
@@ -267,6 +278,7 @@ export function createDesktopPetActiveTasksFromNavigationSnapshot(
         title: resolveDesktopPetTaskTitle(chat),
         preview: getUsableDesktopPetTaskPreview(chat.lastRunContent),
         status,
+        ...(awaitingCount > 0 ? { awaitingCount } : {}),
         ...(chat.awaitingMode ? { awaitingMode: chat.awaitingMode } : {}),
         updatedAt
       };
@@ -289,6 +301,124 @@ export function createDesktopPetActiveTasksFromNavigationSnapshot(
   });
 }
 
+function resolveDesktopPetMessageStatus(chat: AssistantNavChatItem): DesktopPetMessageStatus {
+  if (chat.hasPendingAwaiting) {
+    return "awaiting";
+  }
+  if (chat.hasActiveRun) {
+    return "running";
+  }
+  return "done";
+}
+
+function resolveDesktopPetMessageStatusFromAgentStatus(
+  agentStatus: DesktopPetBoundAgentStatus
+): DesktopPetMessageStatus {
+  if (agentStatus.hasPendingAwaiting) {
+    return "awaiting";
+  }
+  if (agentStatus.presence === "busy") {
+    return "running";
+  }
+  return "done";
+}
+
+export function createDesktopPetMessagesFromAgentStatus(
+  agentStatus: DesktopPetBoundAgentStatus | null | undefined
+): DesktopPetMessageItem[] {
+  if (!agentStatus || agentStatus.stale) {
+    return [];
+  }
+  const agentKey = toDesktopPetTaskText(agentStatus.agentKey);
+  const chatId = toDesktopPetTaskText(agentStatus.chatId);
+  if (!agentKey || !chatId) {
+    return [];
+  }
+  const unreadCount = Math.max(0, Math.round(Number(agentStatus.unreadCount) || 0));
+  const status = resolveDesktopPetMessageStatusFromAgentStatus(agentStatus);
+  const preview = getUsableDesktopPetTaskPreview(agentStatus.latestPreview) ||
+    (unreadCount > 0 ? "有新消息" : "") ||
+    (status === "awaiting" ? "等待你确认" : "");
+  if (!preview && status === "done") {
+    return [];
+  }
+  const agentDisplayName = toDesktopPetTaskText(agentStatus.displayName) || agentKey;
+  return [
+    {
+      id: `${agentKey}:${chatId}`,
+      chatId,
+      runId: null,
+      agentKey,
+      agentDisplayName,
+      title: agentDisplayName,
+      preview: preview || "打开对话查看历史消息",
+      status,
+      unread: unreadCount > 0,
+      updatedAt: toDesktopPetTaskText(agentStatus.updatedAt) || new Date().toISOString()
+    }
+  ];
+}
+
+// 把 recentChats 映射成桌宠"消息列表"：保留未读、运行中、待确认的会话（含已完成但未读的回复），
+// 每条 = 一个会话的最新一条 agent 回复，可在桌宠内回复（续聊）或关闭（标记已读）。
+export function createDesktopPetMessagesFromNavigationSnapshot(
+  snapshot: { ok?: unknown; items?: unknown } | null | undefined
+): DesktopPetMessageItem[] {
+  if (!snapshot?.ok || !Array.isArray(snapshot.items)) {
+    return [];
+  }
+  const messagesByChatId = new Map<string, DesktopPetMessageItem>();
+  for (const agent of snapshot.items as AssistantNavAgentItem[]) {
+    const agentKey = toDesktopPetTaskText(agent?.agentKey);
+    if (!agentKey || !Array.isArray(agent?.recentChats)) {
+      continue;
+    }
+    const agentDisplayName = toDesktopPetTaskText(agent.displayName) || agentKey;
+    for (const chat of agent.recentChats) {
+      const chatId = toDesktopPetTaskText(chat.chatId);
+      if (!chatId) {
+        continue;
+      }
+      const unread = chat.isRead === false;
+      // 保留所有有回复内容的最近会话（含已读），让消息态始终可见、可回复
+      if (!toDesktopPetTaskText(chat.lastRunContent) && !chat.hasActiveRun && !chat.hasPendingAwaiting) {
+        continue;
+      }
+      const messageAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
+      const updatedAt = toDesktopPetTaskText(chat.updatedAt) || toDesktopPetTaskText(agent.updatedAt);
+      const awaitingCount = readDesktopPetAwaitingCount(chat);
+      const message: DesktopPetMessageItem = {
+        id: `${messageAgentKey}:${chatId}`,
+        chatId,
+        runId: toDesktopPetTaskText(chat.lastRunId) || null,
+        agentKey: messageAgentKey,
+        agentDisplayName,
+        title: resolveDesktopPetTaskTitle(chat),
+        preview: getUsableDesktopPetTaskPreview(chat.lastRunContent),
+        status: resolveDesktopPetMessageStatus(chat),
+        unread,
+        ...(awaitingCount > 0 ? { awaitingCount } : {}),
+        ...(chat.awaitingMode ? { awaitingMode: chat.awaitingMode } : {}),
+        updatedAt
+      };
+      const existing = messagesByChatId.get(chatId);
+      if (!existing || getDesktopPetTaskTimestamp(message.updatedAt) > getDesktopPetTaskTimestamp(existing.updatedAt)) {
+        messagesByChatId.set(chatId, message);
+      }
+    }
+  }
+  return [...messagesByChatId.values()].sort((left, right) => {
+    if (left.unread !== right.unread) {
+      return left.unread ? -1 : 1;
+    }
+    const timeDelta = getDesktopPetTaskTimestamp(right.updatedAt) - getDesktopPetTaskTimestamp(left.updatedAt);
+    if (timeDelta !== 0) {
+      return timeDelta;
+    }
+    return left.title.localeCompare(right.title, "zh-CN");
+  });
+}
+
 export function computeDesktopPetStateRefresh(input: {
   settings: DesktopPetSettingsLike;
   supported: boolean;
@@ -298,6 +428,7 @@ export function computeDesktopPetStateRefresh(input: {
   agentStatus: DesktopPetBoundAgentStatus | null;
   agentOptions: DesktopPetAgentOption[];
   activeTasks?: DesktopPetTaskItem[];
+  messages?: DesktopPetMessageItem[];
   appearanceOptions?: DesktopPetAppearanceOption[];
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
@@ -316,6 +447,7 @@ export function computeDesktopPetStateRefresh(input: {
     agentStatus: input.agentStatus,
     agentOptions: input.agentOptions,
     activeTasks: input.activeTasks,
+    messages: input.messages,
     appearanceOptions: input.appearanceOptions,
     previewPanel: input.previewPanel,
     runningTaskCount: input.runningTaskCount,
@@ -335,21 +467,16 @@ export function computeDesktopPetStateRefresh(input: {
 
 export function resolveDesktopPetWindowMode(input: {
   dragging?: boolean;
+  layoutMode?: DesktopPetWindowMode;
   state: DesktopPetWindowModeStateLike;
-  previewPanel?: { visible?: boolean; expanded?: boolean } | null;
+  previewPanel?: { visible?: boolean; expanded?: boolean; status?: string } | null;
 }): DesktopPetWindowMode {
   if (input.dragging) {
     return "base";
   }
-  const activeTasks = Array.isArray(input.state.activeTasks) ? input.state.activeTasks : [];
-  if (activeTasks.length > 0) {
-    return activeTasks.length <= 2 ? "task-list-compact" : "task-list";
+  if (input.layoutMode) {
+    return input.layoutMode;
   }
-  const panel = input.previewPanel;
-  if (panel?.visible) {
-    return panel.expanded ? "preview-expanded" : "preview-collapsed";
-  }
-
   const messagePreview = typeof input.state.messagePreview === "string"
     ? input.state.messagePreview.trim()
     : "";
@@ -357,13 +484,33 @@ export function resolveDesktopPetWindowMode(input: {
     ? input.state.hint.trim()
     : "";
   const unreadCount = Number(input.state.unreadCount);
-  const shouldShowBubble = input.state.status === "idle"
-    ? messagePreview.length > 0 || (Number.isFinite(unreadCount) && unreadCount > 0)
-    : hint.length > 0 ||
-      input.state.status === "running" ||
-      input.state.status === "awaiting" ||
-      input.state.status === "done" ||
-      input.state.status === "error";
+  const hasHistoryMessages = Array.isArray(input.state.messages) && input.state.messages.length > 0;
+  const hasMessageReaction = input.state.status === "idle" && (
+    messagePreview.length > 0 ||
+    (Number.isFinite(unreadCount) && unreadCount > 0)
+  );
+  if (hasHistoryMessages) {
+    return "bubble";
+  }
+
+  const activeTasks = Array.isArray(input.state.activeTasks) ? input.state.activeTasks : [];
+  if (activeTasks.length > 0) {
+    return activeTasks.length <= 2 ? "task-list-compact" : "task-list";
+  }
+  const panel = input.previewPanel;
+  if (panel?.visible) {
+    return panel.status === "done" ? "bubble" : panel.expanded ? "preview-expanded" : "base";
+  }
+
+  const shouldShowBubble = hasHistoryMessages || input.state.status !== "idle" && (
+    hint.length > 0 ||
+    messagePreview.length > 0 ||
+    (Number.isFinite(unreadCount) && unreadCount > 0) ||
+    input.state.status === "running" ||
+    input.state.status === "awaiting" ||
+    input.state.status === "done" ||
+    input.state.status === "error"
+  );
   return shouldShowBubble ? "bubble" : "base";
 }
 
@@ -412,6 +559,7 @@ export function computeDesktopPetPositionPersistence(input: {
   mode: DesktopPetWindowMode;
   pendingSignature?: string | null;
   currentPosition?: { x: number; y: number };
+  displayArea?: DesktopPetBoundsLike;
 }) {
   const boundsSignature = getDesktopPetBoundsSignature(input.bounds);
   if (input.pendingSignature) {
@@ -422,7 +570,12 @@ export function computeDesktopPetPositionPersistence(input: {
     };
   }
 
-  const logicalPosition = getDesktopPetLogicalPositionFromBounds(input.bounds, input.mode);
+  const logicalPosition = getDesktopPetLogicalPositionFromBounds(
+    input.bounds,
+    input.mode,
+    input.displayArea,
+    input.currentPosition
+  );
   if (
     input.currentPosition &&
     input.currentPosition.x === logicalPosition.x &&
@@ -486,15 +639,18 @@ export interface DesktopPetDragController {
 export function createDesktopPetDragController(options: DesktopPetDragControllerOptions): DesktopPetDragController {
   let dragState: {
     startPoint: { x: number; y: number };
+    startLogicalPosition: { x: number; y: number };
     lastPoint: { x: number; y: number };
     moved: boolean;
     startedAt: number;
+    lastMovedAt: number;
+    mode: DesktopPetWindowMode;
   } | null = null;
   let dragTimer: any = null;
 
   const runSetInterval = options.setInterval || setInterval;
   const runClearInterval = options.clearInterval || clearInterval;
-  const forceEndMs = typeof options.forceEndMs === "number" ? options.forceEndMs : 4000;
+  const forceEndMs = typeof options.forceEndMs === "number" ? options.forceEndMs : 30000;
 
   function isDragging() {
     return Boolean(dragState);
@@ -508,23 +664,31 @@ export function createDesktopPetDragController(options: DesktopPetDragController
   }
 
   function prepareWindowForDrag(mode: DesktopPetWindowMode) {
+    void mode;
+    // Do not resize/re-anchor the window while the pointer is already down.
+    // Switching from bubble/task bounds to base bounds here breaks the cursor offset on multi-display setups.
+  }
+
+  function moveWindowToLogicalPosition(
+    position: { x: number; y: number },
+    cursorPoint: { x: number; y: number },
+    mode: DesktopPetWindowMode
+  ) {
     const window = options.getWindow();
-    if (!window || window.isDestroyed() || mode === "base") {
-      return;
+    if (!isDesktopPetSupportedPlatform(options.platform) || !window || window.isDestroyed()) {
+      return { ok: false };
     }
-    const currentBounds = window.getBounds();
-    const logicalPosition = getDesktopPetLogicalPositionFromBounds(currentBounds, mode);
-    const displayBounds = options.getDisplayBounds(logicalPosition);
-    const nextBounds = getAnchoredDesktopPetBounds(logicalPosition, displayBounds, "base");
-    if (
-      currentBounds.x === nextBounds.x &&
-      currentBounds.y === nextBounds.y &&
-      currentBounds.width === nextBounds.width &&
-      currentBounds.height === nextBounds.height
-    ) {
-      return;
-    }
+    const displayBounds = options.getPointDisplayBounds(cursorPoint);
+    const nextLogicalBounds = clampDesktopPetPosition(position, displayBounds, DESKTOP_PET_WINDOW_SIZE, {
+      allowVisibleEdgeDock: true
+    });
+    const nextBounds = getAnchoredDesktopPetBounds({
+      x: nextLogicalBounds.x,
+      y: nextLogicalBounds.y
+    }, displayBounds, mode);
     window.setBounds(nextBounds, false);
+    window.moveTop();
+    return { ok: true };
   }
 
   function moveWindowBy(delta: { x?: unknown; y?: unknown }) {
@@ -543,17 +707,18 @@ export function createDesktopPetDragController(options: DesktopPetDragController
 
     const currentBounds = window.getBounds();
     const cursorPoint = options.getCursorScreenPoint();
-    const mode = options.getMode();
-    const size = getDesktopPetWindowSize(mode);
-    const nextBounds = clampDesktopPetPosition({
-      x: currentBounds.x + Math.round(deltaX),
-      y: currentBounds.y + Math.round(deltaY)
-    }, options.getPointDisplayBounds(cursorPoint), size, {
-      allowVisibleEdgeDock: mode === "base"
-    });
-    window.setBounds(nextBounds, false);
-    window.moveTop();
-    return { ok: true };
+    const displayBounds = options.getPointDisplayBounds(cursorPoint);
+    const mode = dragState?.mode ?? options.getMode();
+    const logicalPosition = getDesktopPetLogicalPositionFromBounds(
+      currentBounds,
+      mode,
+      displayBounds,
+      options.getSettings().position
+    );
+    return moveWindowToLogicalPosition({
+      x: logicalPosition.x + Math.round(deltaX),
+      y: logicalPosition.y + Math.round(deltaY)
+    }, cursorPoint, mode);
   }
 
   function stickToEdge(mode: DesktopPetWindowMode = options.getMode()) {
@@ -562,7 +727,12 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       return;
     }
     const currentBounds = window.getBounds();
-    const logicalPosition = getDesktopPetLogicalPositionFromBounds(currentBounds, mode);
+    const currentCenter = {
+      x: currentBounds.x + Math.round(currentBounds.width / 2),
+      y: currentBounds.y + Math.round(currentBounds.height / 2)
+    };
+    const currentDisplayBounds = options.getPointDisplayBounds(currentCenter);
+    const logicalPosition = getDesktopPetLogicalPositionFromBounds(currentBounds, mode, currentDisplayBounds);
     const displayBounds = options.getDisplayBounds(logicalPosition);
     const snappedBounds = clampDesktopPetPosition(logicalPosition, displayBounds, DESKTOP_PET_WINDOW_SIZE, {
       allowVisibleEdgeDock: true,
@@ -589,20 +759,26 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     if (!isDesktopPetSupportedPlatform(options.platform) || !window || window.isDestroyed()) {
       return { ok: false };
     }
-    const startX = Number(point.x);
-    const startY = Number(point.y);
-    const fallbackPoint = options.getCursorScreenPoint();
-    const startPoint = {
-      x: Number.isFinite(startX) ? startX : fallbackPoint.x,
-      y: Number.isFinite(startY) ? startY : fallbackPoint.y
-    };
+    void point;
+    const startPoint = options.getCursorScreenPoint();
     const initialMode = options.getMode();
+    const startDisplayBounds = options.getPointDisplayBounds(startPoint);
+    const startLogicalPosition = getDesktopPetLogicalPositionFromBounds(
+      window.getBounds(),
+      initialMode,
+      startDisplayBounds,
+      options.getSettings().position
+    );
     clearTimer();
+    const startedAt = Date.now();
     dragState = {
       startPoint,
+      startLogicalPosition,
       lastPoint: startPoint,
       moved: false,
-      startedAt: Date.now()
+      startedAt,
+      lastMovedAt: startedAt,
+      mode: initialMode
     };
     prepareWindowForDrag(initialMode);
     options.refreshState();
@@ -612,7 +788,7 @@ export function createDesktopPetDragController(options: DesktopPetDragController
         clearTimer();
         return;
       }
-      if (Date.now() - dragState.startedAt > forceEndMs) {
+      if (Date.now() - dragState.lastMovedAt > forceEndMs) {
         endDrag();
         return;
       }
@@ -629,7 +805,11 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       dragState.moved = true;
       dragState.lastPoint = cursorPoint;
       if (deltaX !== 0 || deltaY !== 0) {
-        moveWindowBy({ x: deltaX, y: deltaY });
+        dragState.lastMovedAt = Date.now();
+        moveWindowToLogicalPosition({
+          x: dragState.startLogicalPosition.x + Math.round(totalDeltaX),
+          y: dragState.startLogicalPosition.y + Math.round(totalDeltaY)
+        }, cursorPoint, dragState.mode);
       }
     }, 16);
 
@@ -641,11 +821,12 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       return { ok: true, moved: false };
     }
     const moved = dragState.moved;
+    const mode = dragState.mode;
     dragState = null;
     clearTimer();
     if (moved) {
-      stickToEdge("base");
-      options.persistPosition("base");
+      stickToEdge(mode);
+      options.persistPosition(mode);
     }
     options.refreshState();
     return {

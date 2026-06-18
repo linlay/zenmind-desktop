@@ -3,7 +3,8 @@ import type {
   DesktopPageContextSnapshot,
   DesktopActionRendererResponse,
   DesktopPetAgentOption,
-  DesktopPetState
+  DesktopPetState,
+  DesktopPetWindowMode
 } from "../shared/contracts";
 import type { AssistantNavigationStatusClient } from "./copilot/core/assistant-navigation-status-client";
 import type {
@@ -30,6 +31,7 @@ export interface MainAppState {
   desktopPetAgentStatus: DesktopPetBoundAgentStatus | null;
   desktopPetAgentOptions: DesktopPetAgentOption[];
   desktopPetState: DesktopPetState;
+  desktopPetRendererWindowMode: DesktopPetWindowMode;
   desktopPetIdleResetTimer: ReturnType<typeof setTimeout> | null;
   assistantNavigationStatusClient: AssistantNavigationStatusClient | null;
   desktopPetPendingProgrammaticBoundsSignature: string | null;
@@ -62,6 +64,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     desktopPetAgentStatus: initialState.desktopPetAgentStatus ?? null,
     desktopPetAgentOptions: initialState.desktopPetAgentOptions ?? [],
     desktopPetState: initialState.desktopPetState as DesktopPetState,
+    desktopPetRendererWindowMode: initialState.desktopPetRendererWindowMode ?? "base",
     desktopPetIdleResetTimer: initialState.desktopPetIdleResetTimer ?? null,
     assistantNavigationStatusClient: initialState.assistantNavigationStatusClient ?? null,
     desktopPetPendingProgrammaticBoundsSignature: initialState.desktopPetPendingProgrammaticBoundsSignature ?? null,

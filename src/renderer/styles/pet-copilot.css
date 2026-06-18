@@ -9,6 +9,13 @@ body.desktop-pet-body,
 .desktop-pet-root {
   --desktop-pet-button-left: 22px;
   --desktop-pet-button-top: 36px;
+  --desktop-pet-stage-left: 32px;
+  --desktop-pet-stage-top: 106px;
+  --desktop-pet-stage-width: 112px;
+  --desktop-pet-stage-height: 30px;
+  --desktop-pet-stage-shadow: none;
+  --desktop-pet-task-panel-top: auto;
+  --desktop-pet-task-panel-bottom: 118px;
   position: relative;
   width: 100%;
   height: 100%;
@@ -33,40 +40,109 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-root.has-bubble {
-  --desktop-pet-button-left: 46px;
-  --desktop-pet-button-top: 66px;
-}
-
-.desktop-pet-root.has-preview-collapsed {
-  --desktop-pet-button-left: 124px;
-  --desktop-pet-button-top: 126px;
+  --desktop-pet-task-panel-left: 16px;
+  --desktop-pet-task-panel-width: 336px;
+  --desktop-pet-task-panel-bottom: 138px;
+  --desktop-pet-task-list-max: 155px;
+  --desktop-pet-button-left: 114px;
+  --desktop-pet-button-top: 300px;
+  --desktop-pet-stage-left: 126px;
+  --desktop-pet-stage-top: 370px;
 }
 
 .desktop-pet-root.has-preview-expanded {
+  --desktop-pet-task-panel-left: 18px;
+  --desktop-pet-task-panel-width: 384px;
+  --desktop-pet-task-panel-bottom: 132px;
   --desktop-pet-button-left: 144px;
   --desktop-pet-button-top: 278px;
+  --desktop-pet-stage-left: 156px;
+  --desktop-pet-stage-top: 348px;
 }
 
 .desktop-pet-root.has-tasks {
-  --desktop-pet-task-panel-left: 22px;
-  --desktop-pet-task-panel-width: 320px;
-  --desktop-pet-task-arrow-left: 167px;
-  --desktop-pet-button-left: 130px;
-  --desktop-pet-button-top: 220px;
+  --desktop-pet-task-panel-left: 18px;
+  --desktop-pet-task-panel-width: 384px;
+  --desktop-pet-task-panel-bottom: 120px;
+  --desktop-pet-task-list-max: 142px;
+  --desktop-pet-button-left: 144px;
+  --desktop-pet-button-top: 292px;
+  --desktop-pet-stage-left: 156px;
+  --desktop-pet-stage-top: 362px;
 }
 
 .desktop-pet-root.has-compact-tasks {
-  --desktop-pet-task-panel-left: 14px;
-  --desktop-pet-task-panel-width: 304px;
-  --desktop-pet-task-arrow-left: 143px;
-  --desktop-pet-button-left: 98px;
-  --desktop-pet-button-top: 140px;
+  --desktop-pet-task-panel-left: 16px;
+  --desktop-pet-task-panel-width: 336px;
+  --desktop-pet-task-list-max: 66px;
+  --desktop-pet-button-left: 114px;
+  --desktop-pet-button-top: 212px;
+  --desktop-pet-stage-left: 126px;
+  --desktop-pet-stage-top: 282px;
+}
+
+.desktop-pet-root.is-edge-dock-top.has-bubble,
+.desktop-pet-root.is-edge-dock-top.has-preview-expanded,
+.desktop-pet-root.is-edge-dock-top.has-tasks {
+  --desktop-pet-task-panel-top: 168px;
+  --desktop-pet-task-panel-bottom: auto;
+  --desktop-pet-button-top: 36px;
+  --desktop-pet-stage-top: 106px;
+}
+
+.desktop-pet-root.is-edge-dock-left.has-bubble,
+.desktop-pet-root.is-edge-dock-left.has-preview-expanded,
+.desktop-pet-root.is-edge-dock-left.has-tasks {
+  --desktop-pet-button-left: 22px;
+  --desktop-pet-stage-left: 32px;
+}
+
+.desktop-pet-root.is-edge-dock-right.has-bubble,
+.desktop-pet-root.is-edge-dock-right.has-compact-tasks {
+  --desktop-pet-button-left: 254px;
+  --desktop-pet-stage-left: 266px;
+}
+
+.desktop-pet-root.is-edge-dock-right.has-preview-expanded,
+.desktop-pet-root.is-edge-dock-right.has-tasks:not(.has-compact-tasks) {
+  --desktop-pet-button-left: 306px;
+  --desktop-pet-stage-left: 318px;
+}
+
+.desktop-pet-root.is-edge-dock-bottom.has-bubble {
+  --desktop-pet-button-top: 318px;
+  --desktop-pet-stage-top: 388px;
+}
+
+.desktop-pet-root.is-edge-dock-bottom.has-preview-expanded {
+  --desktop-pet-button-top: 288px;
+  --desktop-pet-stage-top: 358px;
+}
+
+.desktop-pet-root.is-edge-dock-bottom.has-tasks:not(.has-compact-tasks) {
+  --desktop-pet-button-top: 308px;
+  --desktop-pet-stage-top: 378px;
+}
+
+.desktop-pet-root.is-edge-dock-bottom.has-compact-tasks {
+  --desktop-pet-button-top: 228px;
+  --desktop-pet-stage-top: 298px;
 }
 
 .desktop-pet-root.is-dragging,
 .desktop-pet-root.is-dragging .desktop-pet-hitbox,
 .desktop-pet-root.is-dragging .desktop-pet-button {
   cursor: grabbing;
+}
+
+.desktop-pet-stage {
+  display: none;
+  pointer-events: none;
+}
+
+.desktop-pet-stage::before,
+.desktop-pet-stage::after {
+  content: none;
 }
 
 .desktop-pet-button {
@@ -83,7 +159,7 @@ body.desktop-pet-body,
   border: 0;
   background: transparent;
   cursor: grab;
-  z-index: 2;
+  z-index: 3;
   -webkit-app-region: no-drag;
   pointer-events: auto;
   touch-action: none;
@@ -93,6 +169,7 @@ body.desktop-pet-body,
   outline: none;
   box-shadow: none;
   -webkit-tap-highlight-color: transparent;
+  isolation: isolate;
 }
 
 .desktop-pet-button:focus,
@@ -102,50 +179,81 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-image {
+  position: relative;
+  z-index: 2;
   width: 96px;
   height: auto;
   user-select: none;
   pointer-events: none;
-  filter: drop-shadow(0 18px 24px rgba(18, 44, 91, 0.24));
+  filter: none;
+}
+
+.desktop-pet-unread-badges {
+  position: absolute;
+  left: calc(var(--desktop-pet-button-left) + 88px);
+  top: calc(var(--desktop-pet-button-top) + 20px);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 4;
+  -webkit-app-region: no-drag;
+  pointer-events: none;
+}
+
+.desktop-pet-unread-badges.has-multiple {
+  left: calc(var(--desktop-pet-button-left) + 78px);
+  top: calc(var(--desktop-pet-button-top) + 18px);
 }
 
 .desktop-pet-unread-badge {
-  position: absolute;
-  top: 20px;
-  right: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 19px;
   height: 19px;
+  margin: 0;
   padding: 0 5px;
   border: 1.5px solid rgba(255, 255, 255, 0.96);
   border-radius: 999px;
-  background: linear-gradient(158deg, #ff7d6e 4%, #f5503f 52%, #ec3b2c 100%);
   color: #fff;
-  box-shadow:
-    0 4px 11px rgba(236, 59, 44, 0.34),
-    0 1px 3px rgba(150, 18, 40, 0.22);
+  font-family: inherit;
   font-size: 11px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 1;
   text-align: center;
   letter-spacing: 0.01em;
-  pointer-events: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  touch-action: manipulation;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.desktop-pet-unread-badge.is-message {
+  background: linear-gradient(158deg, #10c866 4%, #09a84f 54%, #07883f 100%);
+  box-shadow:
+    0 4px 11px rgba(9, 168, 79, 0.34),
+    0 1px 3px rgba(3, 107, 50, 0.22);
+}
+
+.desktop-pet-unread-badge.is-awaiting {
+  background: linear-gradient(158deg, #ffd45a 4%, #f59e0b 55%, #d97706 100%);
+  box-shadow:
+    0 4px 11px rgba(245, 158, 11, 0.34),
+    0 1px 3px rgba(146, 64, 14, 0.22);
 }
 
 .desktop-pet-root.is-idle .desktop-pet-image {
   animation: desktop-pet-breathe 3.6s ease-in-out infinite;
 }
 
-.desktop-pet-root.is-hover .desktop-pet-image {
-  animation: desktop-pet-hover-reaction 1.05s ease-in-out infinite;
-  transform-origin: 50% 86%;
-}
-
 .desktop-pet-root.is-signature .desktop-pet-image {
   animation: desktop-pet-signature-bounce 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
   transform-origin: 50% 88%;
   filter:
-    drop-shadow(0 18px 24px rgba(18, 44, 91, 0.24))
-    drop-shadow(0 0 16px rgba(83, 143, 255, 0.28));
+    drop-shadow(0 0 6px rgba(255, 229, 86, 0.78))
+    drop-shadow(0 0 18px rgba(255, 172, 28, 0.42));
 }
 
 .desktop-pet-root.is-signature .desktop-pet-button::before,
@@ -153,35 +261,44 @@ body.desktop-pet-body,
   content: "";
   position: absolute;
   z-index: 1;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0) 44%),
-    radial-gradient(circle, rgba(86, 142, 255, 0.62), rgba(86, 142, 255, 0) 72%);
   pointer-events: none;
 }
 
 .desktop-pet-root.is-signature .desktop-pet-button::before {
-  left: 24px;
-  top: 36px;
-  animation: desktop-pet-signature-spark-left 1.08s ease-in-out infinite;
+  left: 5px;
+  top: -4px;
+  width: 122px;
+  height: 136px;
+  border-radius: 52% 52% 45% 45%;
+  background:
+    radial-gradient(ellipse at 50% 72%, rgba(255, 255, 255, 0.72) 0 9%, rgba(255, 225, 62, 0.48) 18%, rgba(255, 180, 18, 0.2) 36%, rgba(255, 180, 18, 0) 62%),
+    conic-gradient(from 210deg at 50% 72%, rgba(255, 196, 22, 0) 0deg, rgba(255, 214, 48, 0.74) 34deg, rgba(255, 246, 138, 0.5) 56deg, rgba(255, 163, 12, 0.56) 84deg, rgba(255, 196, 22, 0) 112deg, rgba(255, 231, 92, 0.66) 145deg, rgba(255, 174, 18, 0.44) 180deg, rgba(255, 196, 22, 0) 222deg, rgba(255, 220, 58, 0.62) 258deg, rgba(255, 196, 22, 0) 312deg);
+  clip-path: polygon(50% 0%, 60% 22%, 72% 3%, 70% 30%, 92% 18%, 78% 44%, 100% 42%, 78% 61%, 91% 78%, 66% 76%, 55% 100%, 47% 78%, 24% 92%, 34% 67%, 3% 68%, 27% 52%, 7% 34%, 34% 38%, 28% 12%, 44% 28%);
+  filter: blur(1.2px) saturate(1.25);
+  opacity: 0.88;
+  animation: desktop-pet-power-aura 0.86s ease-in-out infinite;
 }
 
 .desktop-pet-root.is-signature .desktop-pet-button::after {
-  right: 22px;
-  top: 54px;
-  animation: desktop-pet-signature-spark-right 1.08s ease-in-out 0.18s infinite;
-}
-
-.desktop-pet-root.has-signature-animation .desktop-pet-button::before,
-.desktop-pet-root.has-signature-animation .desktop-pet-button::after {
-  content: none;
+  left: 0;
+  top: 0;
+  width: 132px;
+  height: 128px;
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 245, 138, 0.96) 0 2px, rgba(255, 245, 138, 0) 3px),
+    radial-gradient(circle at 76% 30%, rgba(255, 211, 56, 0.92) 0 2px, rgba(255, 211, 56, 0) 3px),
+    radial-gradient(circle at 18% 54%, rgba(255, 169, 21, 0.86) 0 2px, rgba(255, 169, 21, 0) 3px),
+    radial-gradient(circle at 88% 62%, rgba(255, 241, 112, 0.86) 0 1.5px, rgba(255, 241, 112, 0) 3px),
+    linear-gradient(90deg, rgba(255, 210, 42, 0) 0 14%, rgba(255, 235, 88, 0.4) 15% 17%, rgba(255, 210, 42, 0) 19% 42%, rgba(255, 245, 130, 0.34) 43% 45%, rgba(255, 210, 42, 0) 47% 72%, rgba(255, 178, 24, 0.32) 73% 75%, rgba(255, 210, 42, 0) 77% 100%);
+  filter: blur(0.2px);
+  opacity: 0.82;
+  animation: desktop-pet-power-particles 1.12s linear infinite;
 }
 
 .desktop-pet-root.is-dragging .desktop-pet-image {
-  animation: desktop-pet-dragging 0.82s ease-in-out infinite;
-  transform-origin: 50% 16%;
+  animation: none;
+  transform: none;
+  transform-origin: 50% 86%;
 }
 
 .desktop-pet-root.is-jumping .desktop-pet-image {
@@ -204,7 +321,7 @@ body.desktop-pet-body,
   transform-origin: 50% 16%;
 }
 
-.desktop-pet-root.is-moving-left.is-drag-mirror .desktop-pet-image {
+.desktop-pet-root.is-moving-left.is-drag-mirror:not(.has-state-animation) .desktop-pet-image {
   animation-name: desktop-pet-dragging-mirror;
 }
 
@@ -252,6 +369,13 @@ body.desktop-pet-body,
 
 .desktop-pet-root.has-state-animation .desktop-pet-state-sprite {
   animation: desktop-pet-state-frames var(--desktop-pet-state-duration, 900ms) steps(var(--desktop-pet-state-frames, 1), end) var(--desktop-pet-state-loop-count, infinite);
+}
+
+.desktop-pet-root.is-idle.is-dragging.has-state-animation .desktop-pet-state-sprite {
+  animation: none;
+  background-position: 0 0;
+  transform: none;
+  will-change: auto;
 }
 
 .desktop-pet-root.has-state-animation.is-drag-mirror .desktop-pet-state-sprite {
@@ -322,105 +446,161 @@ body.desktop-pet-body,
 
 .desktop-pet-task-panel {
   position: absolute;
-  top: 14px;
+  top: var(--desktop-pet-task-panel-top, auto);
+  bottom: var(--desktop-pet-task-panel-bottom, 118px);
   left: var(--desktop-pet-task-panel-left, 22px);
   width: var(--desktop-pet-task-panel-width, 320px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin: 0;
-  padding: 10px;
-  border: 1px solid rgba(112, 132, 178, 0.18);
-  border-radius: 16px;
+  padding: 11px 12px;
+  border: 0.5px solid rgba(126, 158, 164, 0.26);
+  border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 249, 255, 0.94));
+    linear-gradient(180deg, rgba(225, 244, 243, 0.68), rgba(212, 234, 237, 0.58)),
+    rgba(226, 246, 244, 0.54);
   box-shadow:
-    0 12px 28px rgba(30, 54, 105, 0.15),
-    0 2px 8px rgba(30, 54, 105, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
-  color: #1f2937;
+    0 14px 34px rgba(47, 88, 96, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    inset 0 -1px 0 rgba(126, 158, 164, 0.12);
+  color: #111;
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
   pointer-events: auto;
+  z-index: 4;
   -webkit-app-region: no-drag;
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
-.desktop-pet-task-panel::after {
-  content: "";
-  position: absolute;
-  left: var(--desktop-pet-task-arrow-left, 167px);
-  bottom: -7px;
-  width: 14px;
-  height: 14px;
-  border-right: 1px solid rgba(112, 132, 178, 0.16);
-  border-bottom: 1px solid rgba(112, 132, 178, 0.16);
-  border-bottom-right-radius: 4px;
-  background: rgba(244, 249, 255, 0.95);
-  box-shadow: 5px 5px 10px rgba(30, 54, 105, 0.05);
-  transform: rotate(45deg);
+.desktop-pet-status-panel {
+  gap: 7px;
+}
+
+.desktop-pet-status-panel .desktop-pet-task-head {
+  grid-template-columns: minmax(0, 1fr) 32px;
 }
 
 .desktop-pet-task-head {
-  position: relative;
-  z-index: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
   align-items: center;
-  gap: 7px;
-  min-height: 18px;
-  margin: 0 2px 7px;
+  gap: 8px;
+  min-height: 30px;
 }
 
-.desktop-pet-task-head strong {
+.desktop-pet-task-head-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.desktop-pet-task-head-copy strong,
+.desktop-pet-task-head-copy span {
+  display: block;
   overflow: hidden;
-  color: #1d2b50;
-  font-size: 11px;
-  font-weight: 740;
-  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.desktop-pet-task-head-dot,
-.desktop-pet-task-dot {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
+.desktop-pet-task-head-copy strong {
+  color: #050505;
+  font-size: 13px;
+  font-weight: 730;
+  line-height: 1.18;
+}
+
+.desktop-pet-task-head-copy span {
+  margin-top: 2px;
+  color: rgba(20, 20, 20, 0.72);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.2;
+}
+
+.desktop-pet-task-head-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0.5px solid rgba(22, 22, 22, 0.2);
   border-radius: 999px;
-  background: #2f80ed;
-  box-shadow: 0 0 0 4px rgba(47, 128, 237, 0.09);
+  background: rgba(255, 255, 255, 0.38);
+  color: #111;
+  cursor: pointer;
+  font: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-pet-task-head-action span {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.desktop-pet-task-panel.is-expanded .desktop-pet-task-head-action span {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.desktop-pet-task-panel.is-collapsed {
+  gap: 0;
 }
 
 .desktop-pet-task-list {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 10px;
+  max-height: var(--desktop-pet-task-list-max, 200px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.desktop-pet-task-row {
+.desktop-pet-message-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: var(--desktop-pet-task-list-max, 196px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.desktop-pet-message-stack.is-replying {
+  max-height: 176px;
+  padding-bottom: 2px;
+  scroll-padding-bottom: 12px;
+}
+
+.desktop-pet-task-card {
   display: grid;
-  grid-template-columns: 7px minmax(0, 1fr) minmax(44px, auto);
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 14px;
   align-items: center;
   width: 100%;
-  min-height: 42px;
-  padding: 6px 7px;
-  border: 1px solid rgba(120, 139, 176, 0.13);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.72);
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: 13px 14px 13px 16px;
+  border: 0.5px solid rgba(20, 20, 20, 0.13);
+  border-radius: 13px;
+  background: #fff;
   color: inherit;
   cursor: pointer;
   font: inherit;
   text-align: left;
+  box-shadow: 0 1px 1px rgba(20, 20, 20, 0.02);
   -webkit-app-region: no-drag;
 }
 
-.desktop-pet-task-row:hover {
-  background: rgba(247, 250, 255, 0.98);
-  border-color: rgba(83, 124, 196, 0.24);
+.desktop-pet-task-card:hover {
+  border-color: rgba(20, 20, 20, 0.22);
+  background: rgba(255, 255, 255, 0.96);
 }
 
-.desktop-pet-task-row.is-awaiting .desktop-pet-task-dot {
-  background: #f59f00;
-  box-shadow: 0 0 0 4px rgba(245, 159, 0, 0.12);
+.desktop-pet-task-card.is-error {
+  border-color: rgba(130, 38, 32, 0.18);
 }
 
 .desktop-pet-task-copy {
@@ -439,55 +619,236 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-task-copy strong {
-  color: #172033;
+  color: #070707;
   font-size: 12px;
-  font-weight: 740;
+  font-weight: 730;
   line-height: 1.25;
 }
 
 .desktop-pet-task-copy span {
-  margin-top: 2px;
-  color: rgba(31, 41, 55, 0.58);
-  font-size: 10px;
-  font-weight: 610;
-  line-height: 1.2;
+  margin-top: 4px;
+  color: rgba(20, 20, 20, 0.72);
+  font-size: 11px;
+  font-weight: 520;
+  line-height: 1.22;
 }
 
-.desktop-pet-task-row small {
+.desktop-pet-task-status-badge {
+  position: relative;
   justify-self: end;
-  min-width: 44px;
-  padding: 3px 7px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
-  background: rgba(47, 128, 237, 0.09);
-  color: #2d68bf;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
 }
 
-.desktop-pet-task-row.is-awaiting small {
-  background: rgba(245, 159, 0, 0.12);
-  color: #9a5b00;
+.desktop-pet-task-status-badge.is-idle {
+  background: #e7f0d8;
+  color: #2d7a2f;
+}
+
+.desktop-pet-task-status-badge.is-idle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.desktop-pet-task-status-badge.is-done {
+  background: #e7f0d8;
+  color: #246b24;
+}
+
+.desktop-pet-task-status-badge.is-done::after {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 9px;
+  width: 7px;
+  height: 13px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(43deg);
+}
+
+.desktop-pet-task-status-badge.is-running {
+  background: #d9e8fb;
+  color: #356db7;
+}
+
+.desktop-pet-task-status-badge.is-running::after {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border: 2.5px solid currentColor;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 999px;
+  animation: desktop-pet-task-spin 0.9s linear infinite;
+}
+
+.desktop-pet-task-status-badge.is-message {
+  background: #dcf0ea;
+  color: #176f62;
+}
+
+.desktop-pet-task-status-badge.is-message::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 10px;
+  width: 16px;
+  height: 11px;
+  border: 2.4px solid currentColor;
+  border-radius: 5px;
+}
+
+.desktop-pet-task-status-badge.is-message::after {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 20px;
+  width: 6px;
+  height: 6px;
+  border-left: 2.4px solid currentColor;
+  border-bottom: 2.4px solid currentColor;
+  transform: skewY(-28deg);
+}
+
+.desktop-pet-task-status-badge.is-awaiting {
+  background: #fff2c2;
+  color: #b45309;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
+}
+
+.desktop-pet-task-status-badge.is-awaiting::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  width: 14px;
+  height: 14px;
+  border: 2.4px solid currentColor;
+  border-radius: 999px;
+}
+
+.desktop-pet-task-status-badge.is-awaiting::after {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 12px;
+  width: 5px;
+  height: 8px;
+  border-left: 2.2px solid currentColor;
+  border-bottom: 2.2px solid currentColor;
+}
+
+.desktop-pet-task-status-badge.is-error {
+  background: #f5ded8;
+  color: #a33a2f;
+}
+
+.desktop-pet-task-status-badge.is-error::before,
+.desktop-pet-task-status-badge.is-error::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  width: 2.5px;
+  height: 14px;
+  margin-left: -1.25px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.desktop-pet-task-status-badge.is-error::before {
+  transform: rotate(45deg);
+}
+
+.desktop-pet-task-status-badge.is-error::after {
+  transform: rotate(-45deg);
+}
+
+.desktop-pet-task-status-badge.is-cancelled {
+  background: #e7e6e2;
+  color: #6f6f6a;
+}
+
+.desktop-pet-task-status-badge.is-cancelled::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 2.5px;
+  margin: -1.25px 0 0 -6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.desktop-pet-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
 }
 
 .desktop-pet-task-more {
-  position: relative;
-  z-index: 1;
-  width: fit-content;
-  min-width: 38px;
-  height: 20px;
-  margin: 6px auto 0;
-  padding: 0 9px;
-  border: 1px solid rgba(120, 139, 176, 0.14);
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 11px;
+  border: 0.5px solid rgba(20, 20, 20, 0.15);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
-  color: rgba(31, 41, 55, 0.58);
-  font-size: 10px;
-  font-weight: 720;
-  line-height: 18px;
-  text-align: center;
+  background: rgba(255, 255, 255, 0.72);
+  color: rgba(20, 20, 20, 0.78);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.desktop-pet-task-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 0.5px solid rgba(20, 20, 20, 0.13);
+  color: rgba(20, 20, 20, 0.78);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.desktop-pet-task-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.desktop-pet-task-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.desktop-pet-task-legend i.is-done {
+  background: #2d7a2f;
+}
+
+.desktop-pet-task-legend i.is-running {
+  background: #356db7;
+}
+
+.desktop-pet-task-legend i.is-awaiting {
+  background: #694f0c;
+}
+
+@keyframes desktop-pet-task-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .desktop-pet-preview {
@@ -530,6 +891,17 @@ body.desktop-pet-body,
   width: 380px;
   max-height: 274px;
   overflow: hidden;
+}
+
+.desktop-pet-root.is-edge-dock-top .desktop-pet-preview,
+.desktop-pet-root.is-edge-dock-top .desktop-pet-preview.is-expanded {
+  top: 168px;
+}
+
+.desktop-pet-root.is-edge-dock-top .desktop-pet-preview::after {
+  top: -9px;
+  bottom: auto;
+  transform: rotate(-146deg);
 }
 
 .desktop-pet-preview.is-waiting {
@@ -723,21 +1095,6 @@ body.desktop-pet-body,
   }
 }
 
-@keyframes desktop-pet-hover-reaction {
-  0%, 100% {
-    transform: translateY(-1px) scale(1.02) rotate(0deg);
-  }
-  24% {
-    transform: translateY(-7px) scale(1.055) rotate(-2.4deg);
-  }
-  52% {
-    transform: translateY(-4px) scale(1.035) rotate(2deg);
-  }
-  76% {
-    transform: translateY(-6px) scale(1.045) rotate(-1.2deg);
-  }
-}
-
 @keyframes desktop-pet-signature-bounce {
   0%, 100% {
     transform: translateY(0) translateX(0) rotate(0deg) scale(1);
@@ -898,4 +1255,303 @@ body.desktop-pet-body,
   75% {
     transform: translateX(4px);
   }
+}
+
+/* ── Desktop Pet · 消息卡片回复 ── */
+
+.desktop-pet-message-card {
+  position: relative;
+  box-sizing: border-box;
+  display: block;
+  min-height: 74px;
+  padding: 12px 62px 11px 14px;
+  border: 0.5px solid rgba(106, 157, 116, 0.18);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(235, 250, 230, 0.72), rgba(221, 244, 218, 0.58)),
+    rgba(232, 246, 226, 0.54);
+  box-shadow: none;
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  -webkit-app-region: no-drag;
+}
+
+.desktop-pet-message-card.is-replying {
+  min-height: 92px;
+  padding: 10px 12px 8px 14px;
+}
+
+.desktop-pet-message-meta {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  z-index: 3;
+}
+
+.desktop-pet-message-card.is-unread {
+  border-color: rgba(23, 111, 98, 0.24);
+  background:
+    linear-gradient(90deg, rgba(219, 244, 235, 0.66), rgba(235, 250, 230, 0.58) 42%),
+    rgba(232, 246, 226, 0.54);
+}
+
+.desktop-pet-message-card.is-running {
+  border-color: rgba(53, 109, 183, 0.2);
+}
+
+.desktop-pet-message-card.is-awaiting {
+  border-color: rgba(245, 158, 11, 0.26);
+  background:
+    linear-gradient(90deg, rgba(255, 242, 194, 0.62), rgba(235, 250, 230, 0.56) 42%),
+    rgba(232, 246, 226, 0.54);
+}
+
+.desktop-pet-message-card.is-error {
+  border-color: rgba(163, 58, 47, 0.22);
+}
+
+.desktop-pet-message-dismiss {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  border: 1px solid rgba(120, 139, 176, 0.2);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(30, 54, 105, 0.14);
+  cursor: pointer;
+  opacity: 0.72;
+  transition:
+    opacity 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+  z-index: 1;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-pet-message-card:hover .desktop-pet-message-dismiss,
+.desktop-pet-message-dismiss:focus-visible {
+  border-color: rgba(120, 139, 176, 0.34);
+  opacity: 1;
+}
+
+.desktop-pet-message-dismiss span {
+  position: relative;
+  width: 9px;
+  height: 9px;
+}
+
+.desktop-pet-message-dismiss span::before,
+.desktop-pet-message-dismiss span::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 9px;
+  height: 1.6px;
+  border-radius: 2px;
+  background: #6b7785;
+}
+
+.desktop-pet-message-dismiss span::before {
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.desktop-pet-message-dismiss span::after {
+  transform: translateY(-50%) rotate(-45deg);
+}
+
+.desktop-pet-message-main {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-pet-message-card .desktop-pet-task-copy {
+  padding-right: 4px;
+}
+
+.desktop-pet-message-card.is-replying .desktop-pet-task-copy {
+  padding-right: 28px;
+}
+
+.desktop-pet-message-card .desktop-pet-task-copy strong {
+  font-size: 12px;
+  line-height: 1.18;
+}
+
+.desktop-pet-message-card .desktop-pet-task-copy span {
+  display: -webkit-box;
+  margin-top: 3px;
+  overflow: hidden;
+  color: rgba(20, 20, 20, 0.78);
+  font-size: 11px;
+  line-height: 1.22;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.desktop-pet-message-card.is-replying .desktop-pet-task-copy span {
+  margin-top: 2px;
+  -webkit-line-clamp: 1;
+}
+
+.desktop-pet-message-main .desktop-pet-task-status-badge {
+  position: absolute;
+  top: calc(50% + 5px);
+  right: 15px;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.desktop-pet-message-card.is-replying .desktop-pet-message-main .desktop-pet-task-status-badge {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.desktop-pet-message-main .desktop-pet-task-status-badge.is-done::after {
+  left: 8px;
+  top: 5px;
+  width: 5px;
+  height: 9px;
+  border-right-width: 2.4px;
+  border-bottom-width: 2.4px;
+  transform: rotate(43deg);
+}
+
+.desktop-pet-message-main .desktop-pet-task-status-badge.is-awaiting::before {
+  left: 5px;
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  border-width: 2px;
+}
+
+.desktop-pet-message-main .desktop-pet-task-status-badge.is-awaiting::after {
+  left: 10px;
+  top: 7px;
+  width: 4px;
+  height: 5px;
+  border-left-width: 2px;
+  border-bottom-width: 2px;
+}
+
+.desktop-pet-message-main .desktop-pet-task-status-badge.is-running::after {
+  inset: 6px;
+  border-width: 2px;
+}
+
+.desktop-pet-message-reply {
+  position: absolute;
+  right: 8px;
+  top: calc(50% + 6px);
+  align-self: flex-end;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 0.5px solid rgba(20, 20, 20, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #1b4f73;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-pet-message-card:hover .desktop-pet-message-reply,
+.desktop-pet-message-reply:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+
+.desktop-pet-message-card:hover .desktop-pet-message-main .desktop-pet-task-status-badge {
+  opacity: 0;
+  transform: translateY(-50%) translateX(-4px);
+}
+
+.desktop-pet-message-reply:hover {
+  background: #fff;
+  color: #173a83;
+}
+
+.desktop-pet-message-reply-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.desktop-pet-message-reply-input {
+  grid-column: 1;
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 0.5px solid rgba(20, 20, 20, 0.2);
+  border-radius: 999px;
+  background: #fff;
+  color: #111;
+  font-size: 11px;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-pet-message-reply-input:focus {
+  border-color: rgba(63, 123, 240, 0.5);
+}
+
+.desktop-pet-message-reply-send {
+  flex: 0 0 auto;
+  grid-column: 3;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(158deg, #297c71, #1e6b99);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-pet-message-reply-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.desktop-pet-message-reply-cancel {
+  flex: 0 0 auto;
+  grid-column: 2;
+  height: 24px;
+  padding: 0 8px;
+  border: 0.5px solid rgba(20, 20, 20, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  color: rgba(20, 20, 20, 0.72);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  -webkit-app-region: no-drag;
 }

@@ -3,7 +3,7 @@ import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadRe
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
-import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
+import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConfigResult, TaskBoardDeleteResult, TaskBoardDesktopOnlineResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult, TaskBoardSettingsInput, TaskBoardSettingsResult } from "./task-board";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
@@ -380,7 +380,10 @@ export interface DesktopApi {
     endDrag: () => Promise<{ ok: boolean; moved: boolean }>;
     setPreviewExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
     dismissPreview: () => Promise<{ ok: boolean }>;
+    replyMessage: (input: { chatId: string; agentKey?: string; message: string }) => Promise<{ ok: boolean; message?: string; chatId?: string; runId?: string }>;
+    dismissMessage: (input: { chatId: string; runId?: string | null; updatedAt?: string }) => Promise<{ ok: boolean }>;
     setMouseInteractive: (interactive: boolean) => Promise<{ ok: boolean }>;
+    setWindowMode: (mode: DesktopPetWindowMode) => Promise<{ ok: boolean }>;
     onStateChanged: (listener: DesktopPetStateListener) => () => void;
     onSignatureRequested: (listener: DesktopPetSignatureRequestedListener) => () => void;
   };
