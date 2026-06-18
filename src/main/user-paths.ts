@@ -121,6 +121,7 @@ function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "state", "webs", "webapps"));
   ensureDirectory(path.join(dataRoot, "logs", "services"));
   ensureDirectory(path.join(dataRoot, "logs", "plugins"));
+  ensureDirectory(path.join(dataRoot, "logs", "desktop"));
   ensureDirectory(path.join(dataRoot, "logs", "webs"));
   ensureDirectory(path.join(dataRoot, "logs", "webs", "webapps"));
   ensureDirectory(path.join(dataRoot, "cache", "marketplace"));

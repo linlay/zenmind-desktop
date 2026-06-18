@@ -46,6 +46,8 @@ export interface ShellIpcHandlerContextDependencies {
   revealPathInFileManager: (...args: any[]) => unknown;
   captureDesktopScreenshot?: (...args: any[]) => unknown;
   reportRendererDiagnostic: (...args: any[]) => unknown;
+  openLogViewerWindow?: (...args: any[]) => unknown;
+  issueAgentPlatformAccessToken?: (...args: any[]) => unknown;
 }
 
 export function createShellIpcHandlerOptions(
@@ -59,7 +61,9 @@ export function createShellIpcHandlerOptions(
     showFileDialog: dependencies.showFileDialog,
     revealPathInFileManager: dependencies.revealPathInFileManager,
     captureDesktopScreenshot: dependencies.captureDesktopScreenshot,
-    reportRendererDiagnostic: dependencies.reportRendererDiagnostic
+    reportRendererDiagnostic: dependencies.reportRendererDiagnostic,
+    openLogViewerWindow: dependencies.openLogViewerWindow,
+    issueAgentPlatformAccessToken: dependencies.issueAgentPlatformAccessToken
   };
 }
 

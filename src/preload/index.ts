@@ -21,6 +21,7 @@ import type {
   AssistantWorkerOpenRequest,
   DesktopConfigChangedListener,
   DesktopPetStateListener,
+  DesktopLogTarget,
   DesktopApi,
   LocaleChangedListener,
   NavigateListener,
@@ -394,7 +395,35 @@ const api: DesktopApi = {
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => {
       ipcRenderer.send("diagnostics.rendererError", report);
-    }
+    },
+    openDesktopLogViewer: (target: DesktopLogTarget) =>
+      ipcRenderer.invoke("diagnostics.openDesktopLogViewer", target),
+    revealDesktopLogFolder: () => ipcRenderer.invoke("diagnostics.revealDesktopLogFolder"),
+    readDesktopLog: (target: DesktopLogTarget, options?: ServiceLogReadOptions) =>
+      ipcRenderer.invoke("diagnostics.readDesktopLog", target, options),
+    watchDesktopLog: (
+      target: DesktopLogTarget,
+      options: ServiceLogStreamOptions | undefined,
+      listener: ServiceLogStreamListener
+    ) => {
+      const subscriptionId = `desktop-log-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const handleDesktopLogStream = (_event: Electron.IpcRendererEvent, payload: ServiceLogStreamEvent) => {
+        if (payload.subscriptionId === subscriptionId) {
+          listener(payload);
+        }
+      };
+
+      ipcRenderer.on("diagnostics.desktopLogStream", handleDesktopLogStream);
+      void ipcRenderer.invoke("diagnostics.watchDesktopLog.start", subscriptionId, target, options);
+
+      return () => {
+        ipcRenderer.off("diagnostics.desktopLogStream", handleDesktopLogStream);
+        void ipcRenderer.invoke("diagnostics.watchDesktopLog.stop", subscriptionId);
+      };
+    },
+    inspectIdentityAccessToken: (input) => ipcRenderer.invoke("diagnostics.inspectIdentityAccessToken", input),
+    getTunnelDebugSnapshot: () => ipcRenderer.invoke("diagnostics.getTunnelDebugSnapshot"),
+    probeDesktopWs: (input) => ipcRenderer.invoke("diagnostics.probeDesktopWs", input)
   },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),

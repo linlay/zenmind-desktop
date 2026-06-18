@@ -5,13 +5,20 @@ import {
   BrowserWindow as ElectronBrowserWindow,
   screen as electronScreen
 } from "electron";
-import type { BrowserWindow, IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
+import type { App, BrowserWindow, IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
+import type { AgentAuthRefreshReason, DesktopLogTarget } from "../../shared/contracts";
 import {
   getAvailableFilePath,
   getDesktopDownloadDefaultPath,
   getPlatformPath
 } from "../download-paths";
 import { t } from "../i18n/main-i18n";
+import { getDesktopLogRoot, readDesktopLog, watchDesktopLog } from "../desktop-logs";
+import {
+  getTunnelDebugSnapshot,
+  inspectIdentityAccessToken,
+  probeDesktopWs
+} from "../desktop-diagnostics";
 
 type ShellIpcResult = {
   ok: boolean;
@@ -63,6 +70,17 @@ type ShellIpcOptions = {
   fsWriteFile?: (filePath: string, data: Buffer) => Promise<unknown>;
   captureDesktopScreenshot?: () => Promise<DesktopScreenshotCaptureResult> | DesktopScreenshotCaptureResult;
   reportRendererDiagnostic?: (source: string, data: Record<string, unknown>) => void;
+  openLogViewerWindow?: (request: {
+    source: "desktop";
+    serviceId: string;
+    target: DesktopLogTarget;
+    title: string;
+  }) => Promise<{ ok: boolean }> | { ok: boolean };
+  issueAgentPlatformAccessToken?: (app: App, reason: AgentAuthRefreshReason) => Promise<{
+    ok: boolean;
+    token: string;
+    message: string;
+  }>;
 };
 
 type DesktopDownloadPayload = {
@@ -86,6 +104,22 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     lastPoint: { x: number; y: number };
     startedAt: number;
   } | null = null;
+  const desktopLogStreamSubscriptions = new Map<string, {
+    webContentsId: number;
+    cleanup: () => void;
+  }>();
+
+  function normalizeDesktopLogTarget(value: unknown): DesktopLogTarget {
+    return value === "error" ? "error" : "main";
+  }
+
+  function getApp() {
+    return options.app as App | undefined;
+  }
+
+  function getDesktopLogTitle(target: DesktopLogTarget) {
+    return target === "error" ? "Desktop Error Log" : "Desktop Main Log";
+  }
 
   function isDesktopDownloadPayload(input: unknown): input is DesktopDownloadPayload {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -336,6 +370,128 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       filename: typeof rendererReport.filename === "string" ? rendererReport.filename : undefined,
       lineno: typeof rendererReport.lineno === "number" ? rendererReport.lineno : undefined,
       colno: typeof rendererReport.colno === "number" ? rendererReport.colno : undefined
+    });
+  });
+
+  ipcMain.handle("diagnostics.openDesktopLogViewer", async (_event: IpcMainInvokeEvent, targetValue: unknown) => {
+    const target = normalizeDesktopLogTarget(targetValue);
+    if (!options.openLogViewerWindow) {
+      return { ok: false as const };
+    }
+    return options.openLogViewerWindow({
+      source: "desktop",
+      serviceId: "desktop",
+      target,
+      title: getDesktopLogTitle(target)
+    });
+  });
+
+  ipcMain.handle("diagnostics.revealDesktopLogFolder", async () => {
+    const app = getApp();
+    if (!app) {
+      return {
+        ok: false as const,
+        path: "",
+        message: "Desktop app context is unavailable."
+      };
+    }
+    const logRoot = getDesktopLogRoot(app);
+    return options.revealPathInFileManager?.(logRoot, { targetType: "directory" }, {
+      showItemInFolder: (pathToReveal: string) => shell.showItemInFolder(pathToReveal),
+      openPath: (pathToOpen: string) => shell.openPath(pathToOpen),
+      platform: options.platform
+    });
+  });
+
+  ipcMain.handle("diagnostics.readDesktopLog", async (_event: IpcMainInvokeEvent, targetValue: unknown, opts?: any) => {
+    const app = getApp();
+    if (!app) {
+      throw new Error("Desktop app context is unavailable.");
+    }
+    return readDesktopLog(app, normalizeDesktopLogTarget(targetValue), opts);
+  });
+
+  ipcMain.handle(
+    "diagnostics.watchDesktopLog.start",
+    async (event: IpcMainInvokeEvent, subscriptionId: string, targetValue: unknown, opts?: any) => {
+      const app = getApp();
+      if (!app) {
+        throw new Error("Desktop app context is unavailable.");
+      }
+      desktopLogStreamSubscriptions.get(subscriptionId)?.cleanup();
+      const ownerContents = event.sender;
+      const cleanup = watchDesktopLog(app, subscriptionId, normalizeDesktopLogTarget(targetValue), opts, (payload) => {
+        if (ownerContents.isDestroyed()) {
+          desktopLogStreamSubscriptions.get(subscriptionId)?.cleanup();
+          desktopLogStreamSubscriptions.delete(subscriptionId);
+          return;
+        }
+        ownerContents.send("diagnostics.desktopLogStream", payload);
+      });
+      desktopLogStreamSubscriptions.set(subscriptionId, { webContentsId: ownerContents.id, cleanup });
+      ownerContents.once("destroyed", () => {
+        const current = desktopLogStreamSubscriptions.get(subscriptionId);
+        if (current != null && current.webContentsId === ownerContents.id) {
+          current.cleanup();
+          desktopLogStreamSubscriptions.delete(subscriptionId);
+        }
+      });
+      return { ok: true };
+    }
+  );
+
+  ipcMain.handle("diagnostics.watchDesktopLog.stop", async (event: IpcMainInvokeEvent, subscriptionId: string) => {
+    const current = desktopLogStreamSubscriptions.get(subscriptionId);
+    if (current && current.webContentsId === event.sender.id) {
+      current.cleanup();
+      desktopLogStreamSubscriptions.delete(subscriptionId);
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle("diagnostics.inspectIdentityAccessToken", async (_event: IpcMainInvokeEvent, input?: unknown) => {
+    const app = getApp();
+    if (!app || !options.issueAgentPlatformAccessToken) {
+      return {
+        ok: false as const,
+        message: "Identity Center access token issuer is unavailable.",
+        token: "",
+        header: null,
+        payload: null,
+        claims: {
+          subject: "",
+          issuer: "",
+          audience: "",
+          scope: "",
+          deviceId: "",
+          issuedAt: "",
+          expiresAt: "",
+          expired: false
+        }
+      };
+    }
+    const record = input && typeof input === "object" ? input as Record<string, unknown> : {};
+    return inspectIdentityAccessToken(app, options.issueAgentPlatformAccessToken, {
+      reason: record.reason === "unauthorized" ? "unauthorized" : "missing"
+    });
+  });
+
+  ipcMain.handle("diagnostics.getTunnelDebugSnapshot", async () => getTunnelDebugSnapshot());
+
+  ipcMain.handle("diagnostics.probeDesktopWs", async (_event: IpcMainInvokeEvent, input?: unknown) => {
+    const app = getApp();
+    if (!app || !options.issueAgentPlatformAccessToken) {
+      return {
+        ok: false as const,
+        target: "localDebug" as const,
+        url: "",
+        message: "Identity Center access token issuer is unavailable.",
+        frames: []
+      };
+    }
+    const record = input && typeof input === "object" ? input as Record<string, unknown> : {};
+    return probeDesktopWs(app, options.issueAgentPlatformAccessToken, {
+      target: record.target === "remoteUpstream" ? "remoteUpstream" : "localDebug"
     });
   });
 }

@@ -1,5 +1,5 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
+import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
@@ -29,6 +29,45 @@ export interface AgentAuthIssueResult {
   ok: boolean;
   token: string;
   message: string;
+}
+
+export interface IdentityAccessTokenInspection {
+  ok: boolean;
+  message: string;
+  token: string;
+  header: Record<string, unknown> | null;
+  payload: Record<string, unknown> | null;
+  claims: {
+    subject: string;
+    issuer: string;
+    audience: string;
+    scope: string;
+    deviceId: string;
+    issuedAt: string;
+    expiresAt: string;
+    expired: boolean;
+  };
+  parseError?: string;
+}
+
+export interface TunnelDebugSnapshot {
+  status: TunnelHubRuntimeStatus;
+  capturedAt: string;
+}
+
+export interface DesktopWsProbeFrame {
+  requestType: "session.hello" | "runtime.info";
+  ok: boolean;
+  frame: Record<string, unknown> | null;
+  message: string;
+}
+
+export interface DesktopWsProbeResult {
+  ok: boolean;
+  target: "localDebug" | "remoteUpstream";
+  url: string;
+  message: string;
+  frames: DesktopWsProbeFrame[];
 }
 
 export interface DesktopSsoClaims {
@@ -366,6 +405,22 @@ export interface DesktopApi {
   };
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;
+    openDesktopLogViewer: (target: DesktopLogTarget) => Promise<{ ok: boolean }>;
+    revealDesktopLogFolder: () => Promise<ServiceRevealPathResult>;
+    readDesktopLog: (
+      target: DesktopLogTarget,
+      options?: ServiceLogReadOptions
+    ) => Promise<ServiceLogReadResult>;
+    watchDesktopLog: (
+      target: DesktopLogTarget,
+      options: ServiceLogStreamOptions | undefined,
+      listener: ServiceLogStreamListener
+    ) => () => void;
+    inspectIdentityAccessToken: (input?: {
+      reason?: AgentAuthRefreshReason;
+    }) => Promise<IdentityAccessTokenInspection>;
+    getTunnelDebugSnapshot: () => Promise<TunnelDebugSnapshot>;
+    probeDesktopWs: (input: { target: "localDebug" | "remoteUpstream" }) => Promise<DesktopWsProbeResult>;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;

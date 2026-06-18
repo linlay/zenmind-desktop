@@ -976,6 +976,112 @@
   overflow-wrap: anywhere;
 }
 
+.settings-debug-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-debug-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-debug-panel-head h2 {
+  margin: 0;
+}
+
+.settings-debug-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-debug-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.settings-debug-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.settings-debug-facts div {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+}
+
+.settings-debug-facts dt {
+  margin: 0 0 3px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-debug-facts dd {
+  margin: 0;
+  color: var(--ink);
+  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.settings-debug-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-debug-field span {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-debug-field textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+  color: var(--ink);
+  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-debug-probe-targets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-debug-probe-targets code {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 720px) {
   .settings-desktop-ws-panel,
   .settings-desktop-ws-meta {
@@ -986,6 +1092,16 @@
   .settings-desktop-ws-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+
+  .settings-debug-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-debug-facts,
+  .settings-debug-probe-targets {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

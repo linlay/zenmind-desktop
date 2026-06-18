@@ -10,6 +10,8 @@ export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
 export type ServiceMode = "service" | "resource";
 export type ServiceLogTarget = "main" | "error";
+export type DesktopLogTarget = "main" | "error";
+export type LogViewerSource = "service" | "desktop";
 export type ServiceStatus =
   | "not-installed"
   | "initialization-required"
@@ -175,6 +177,7 @@ export interface ServiceOpenLogViewerRequest {
   serviceId: ServiceId;
   target: ServiceLogTarget;
   title: string;
+  source?: LogViewerSource;
 }
 
 export interface ServiceRevealPathOptions {
@@ -205,7 +208,8 @@ export type ServiceLogStreamEventType = "append" | "reset" | "error";
 export interface ServiceLogStreamEvent {
   subscriptionId: string;
   serviceId: ServiceId;
-  target: ServiceLogTarget;
+  target: ServiceLogTarget | DesktopLogTarget;
+  source?: LogViewerSource;
   type: ServiceLogStreamEventType;
   path: string;
   exists: boolean;

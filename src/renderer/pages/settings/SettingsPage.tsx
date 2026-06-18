@@ -17,14 +17,17 @@ import type {
   DesktopAppPairingPayloadResult,
   DesktopAppInfo,
   DesktopGeneralSettings,
+  DesktopWsProbeResult,
   DesktopPetAgentOption,
   DesktopPetState,
   DesktopRuntimeEnvResetResult,
   DesktopWsServerState,
+  IdentityAccessTokenInspection,
   MarketSettings,
   TaskBoardCloudConfig,
   TaskBoardDesktopOnlineResult,
   TaskBoardProject,
+  TunnelDebugSnapshot,
   TunnelHubAgentSettings
 } from "../../../shared/contracts";
 import {
@@ -48,6 +51,7 @@ import {
   DESKTOP_WS_HOST,
   DESKTOP_WS_PATH,
   DESKTOP_WS_PORT,
+  DESKTOP_REMOTE_WS_URL,
   DESKTOP_WS_URL
 } from "../../../shared/desktop-ws";
 import {
@@ -486,6 +490,306 @@ function WindowsDataRootCard() {
   );
 }
 
+function formatDebugJson(value: unknown) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatDebugValue(value: unknown, fallback: string) {
+  if (typeof value === "string") {
+    return value.trim() || fallback;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return fallback;
+}
+
+function DesktopLogsDebugCard() {
+  const { t } = useI18n();
+  const [pendingAction, setPendingAction] = useState<"main" | "error" | "folder" | null>(null);
+  const [message, setMessage] = useState("");
+
+  async function handleOpenDesktopLog(target: "main" | "error") {
+    setPendingAction(target);
+    setMessage("");
+    try {
+      const result = await window.electronAPI.diagnostics.openDesktopLogViewer(target);
+      setMessage(result.ok ? t("settings.debug.logs.opened") : t("settings.debug.logs.failed"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleRevealDesktopLogFolder() {
+    setPendingAction("folder");
+    setMessage("");
+    try {
+      const result = await window.electronAPI.diagnostics.revealDesktopLogFolder();
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  return (
+    <div className="data-root-card settings-debug-panel">
+      <div className="settings-debug-panel-head">
+        <h2>{t("settings.debug.logs.title")}</h2>
+      </div>
+      <div className="settings-debug-actions">
+        <Button disabled={pendingAction !== null} onClick={() => void handleOpenDesktopLog("main")}>
+          {pendingAction === "main" ? t("common.loading") : t("settings.debug.logs.openMain")}
+        </Button>
+        <Button disabled={pendingAction !== null} onClick={() => void handleOpenDesktopLog("error")}>
+          {pendingAction === "error" ? t("common.loading") : t("settings.debug.logs.openError")}
+        </Button>
+        <Button disabled={pendingAction !== null} onClick={() => void handleRevealDesktopLogFolder()}>
+          {pendingAction === "folder" ? t("common.loading") : t("settings.debug.logs.openFolder")}
+        </Button>
+      </div>
+      {message ? (
+        <div className="feedback-banner settings-desktop-ws-message" role="status">
+          {message}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function IdentityTokenDebugCard() {
+  const { t } = useI18n();
+  const [inspection, setInspection] = useState<IdentityAccessTokenInspection | null>(null);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function handleInspectToken(reason: "missing" | "unauthorized" = "missing") {
+    setPending(true);
+    setMessage("");
+    try {
+      const result = await window.electronAPI.diagnostics.inspectIdentityAccessToken({ reason });
+      setInspection(result);
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleCopy(text: string) {
+    if (!text) {
+      return;
+    }
+    await window.electronAPI.clipboard.writeText(text);
+  }
+
+  const payloadJson = inspection?.payload ? formatDebugJson(inspection.payload) : "";
+  const headerJson = inspection?.header ? formatDebugJson(inspection.header) : "";
+
+  return (
+    <div className="data-root-card settings-debug-panel">
+      <div className="settings-debug-panel-head">
+        <h2>{t("settings.debug.identity.title")}</h2>
+        <span className={`settings-desktop-ws-status ${inspection?.ok ? "is-running" : inspection ? "is-error" : "is-closed"}`}>
+          {inspection?.ok ? t("settings.debug.identity.valid") : inspection ? t("settings.debug.identity.invalid") : t("settings.debug.identity.idle")}
+        </span>
+      </div>
+      <div className="settings-debug-actions">
+        <Button type="primary" disabled={pending} onClick={() => void handleInspectToken("missing")}>
+          {pending ? t("common.loading") : t("settings.debug.identity.issue")}
+        </Button>
+        <Button disabled={pending} onClick={() => void handleInspectToken("unauthorized")}>
+          {t("settings.debug.identity.refresh")}
+        </Button>
+        <Button disabled={!inspection?.token} onClick={() => void handleCopy(inspection?.token || "")}>
+          {t("settings.debug.identity.copyToken")}
+        </Button>
+        <Button disabled={!payloadJson} onClick={() => void handleCopy(payloadJson)}>
+          {t("settings.debug.identity.copyPayload")}
+        </Button>
+      </div>
+      {message ? (
+        <div className={`feedback-banner settings-desktop-ws-message${inspection && !inspection.ok ? " warning-banner" : ""}`} role="status">
+          {message}
+        </div>
+      ) : null}
+      {inspection ? (
+        <div className="settings-debug-grid">
+          <dl className="settings-debug-facts">
+            <div>
+              <dt>{t("settings.debug.identity.deviceId")}</dt>
+              <dd>{formatDebugValue(inspection.claims.deviceId, t("settings.debug.empty"))}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.identity.scope")}</dt>
+              <dd>{formatDebugValue(inspection.claims.scope, t("settings.debug.empty"))}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.identity.subject")}</dt>
+              <dd>{formatDebugValue(inspection.claims.subject, t("settings.debug.empty"))}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.identity.issuer")}</dt>
+              <dd>{formatDebugValue(inspection.claims.issuer, t("settings.debug.empty"))}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.identity.audience")}</dt>
+              <dd>{formatDebugValue(inspection.claims.audience, t("settings.debug.empty"))}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.identity.expiresAt")}</dt>
+              <dd>{formatDebugValue(inspection.claims.expiresAt, t("settings.debug.empty"))}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.identity.issuedAt")}</dt>
+              <dd>{formatDebugValue(inspection.claims.issuedAt, t("settings.debug.empty"))}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.identity.expired")}</dt>
+              <dd>{inspection.claims.expired ? t("common.yes") : t("common.no")}</dd>
+            </div>
+          </dl>
+          <label className="settings-debug-field">
+            <span>{t("settings.debug.identity.token")}</span>
+            <textarea value={inspection.token} readOnly spellCheck={false} />
+          </label>
+          <label className="settings-debug-field">
+            <span>{t("settings.debug.identity.header")}</span>
+            <textarea value={headerJson} readOnly spellCheck={false} />
+          </label>
+          <label className="settings-debug-field">
+            <span>{t("settings.debug.identity.payload")}</span>
+            <textarea value={payloadJson} readOnly spellCheck={false} />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TunnelDebugCard() {
+  const { t } = useI18n();
+  const [snapshot, setSnapshot] = useState<TunnelDebugSnapshot | null>(null);
+  const [probeResult, setProbeResult] = useState<DesktopWsProbeResult | null>(null);
+  const [pending, setPending] = useState<"snapshot" | "localDebug" | "remoteUpstream" | null>(null);
+  const [message, setMessage] = useState("");
+
+  async function handleRefreshSnapshot() {
+    setPending("snapshot");
+    setMessage("");
+    try {
+      const result = await window.electronAPI.diagnostics.getTunnelDebugSnapshot();
+      setSnapshot(result);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function handleProbe(target: "localDebug" | "remoteUpstream") {
+    setPending(target);
+    setMessage("");
+    try {
+      const result = await window.electronAPI.diagnostics.probeDesktopWs({ target });
+      setProbeResult(result);
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  useEffect(() => {
+    void handleRefreshSnapshot();
+  }, []);
+
+  const status = snapshot?.status;
+
+  return (
+    <div className="data-root-card settings-debug-panel">
+      <div className="settings-debug-panel-head">
+        <h2>{t("settings.debug.tunnel.title")}</h2>
+        <span className={`settings-desktop-ws-status ${status?.connected ? "is-running" : status?.phase === "error" ? "is-error" : pending === "snapshot" ? "is-pending" : "is-closed"}`}>
+          {pending === "snapshot" ? t("common.loading") : status?.phase || t("settings.debug.tunnel.unknown")}
+        </span>
+      </div>
+      <dl className="settings-debug-facts">
+        <div>
+          <dt>{t("settings.debug.tunnel.deviceId")}</dt>
+          <dd>{formatDebugValue(status?.deviceId, t("settings.debug.empty"))}</dd>
+        </div>
+        <div>
+          <dt>{t("settings.debug.tunnel.connected")}</dt>
+          <dd>{status?.connected ? t("common.yes") : t("common.no")}</dd>
+        </div>
+        <div>
+          <dt>{t("settings.debug.tunnel.targetUrl")}</dt>
+          <dd>{formatDebugValue(status?.targetUrl, t("settings.debug.empty"))}</dd>
+        </div>
+        <div>
+          <dt>{t("settings.debug.tunnel.publicUrl")}</dt>
+          <dd>{formatDebugValue(status?.publicUrl, t("settings.debug.empty"))}</dd>
+        </div>
+        <div>
+          <dt>{t("settings.debug.tunnel.webSocketUrl")}</dt>
+          <dd>{formatDebugValue(status?.webSocketUrl, t("settings.debug.empty"))}</dd>
+        </div>
+        <div>
+          <dt>{t("settings.debug.tunnel.lastRegisteredAt")}</dt>
+          <dd>{formatDebugValue(status?.lastRegisteredAt, t("settings.debug.empty"))}</dd>
+        </div>
+        <div>
+          <dt>{t("settings.debug.tunnel.lastConnectedAt")}</dt>
+          <dd>{formatDebugValue(status?.lastConnectedAt, t("settings.debug.empty"))}</dd>
+        </div>
+        <div>
+          <dt>{t("settings.debug.tunnel.lastError")}</dt>
+          <dd>{formatDebugValue(status?.lastError, t("settings.debug.empty"))}</dd>
+        </div>
+      </dl>
+      <div className="settings-debug-actions">
+        <Button disabled={pending !== null} onClick={() => void handleRefreshSnapshot()}>
+          {t("settings.debug.tunnel.refresh")}
+        </Button>
+        <Button disabled={pending !== null} onClick={() => void handleProbe("localDebug")}>
+          {pending === "localDebug" ? t("common.loading") : t("settings.debug.tunnel.probeLocal")}
+        </Button>
+        <Button disabled={pending !== null} onClick={() => void handleProbe("remoteUpstream")}>
+          {pending === "remoteUpstream" ? t("common.loading") : t("settings.debug.tunnel.probeRemote")}
+        </Button>
+      </div>
+      <div className="settings-debug-probe-targets">
+        <code>{DESKTOP_WS_URL}</code>
+        <code>{DESKTOP_REMOTE_WS_URL}</code>
+      </div>
+      {message ? (
+        <div className={`feedback-banner settings-desktop-ws-message${probeResult && !probeResult.ok ? " warning-banner" : ""}`} role="status">
+          {message}
+        </div>
+      ) : null}
+      {probeResult ? (
+        <label className="settings-debug-field">
+          <span>{t("settings.debug.tunnel.probeResult")}</span>
+          <textarea value={formatDebugJson(probeResult)} readOnly spellCheck={false} />
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
 function LocalWsServerDebugCard() {
   const { t } = useI18n();
   const [desktopWsServerState, setDesktopWsServerState] = useState<DesktopWsServerState | null>(null);
@@ -557,59 +861,57 @@ function LocalWsServerDebugCard() {
   }
 
   return (
-    <div className="settings-about-stack" aria-label={t("settings.debug.label")}>
-      <div className="data-root-card settings-desktop-ws-card">
-        <div className="settings-desktop-ws-copy">
-          <h2>{t("settings.debug.desktopWs.title")}</h2>
-          <p className="page-copy">{t("settings.debug.desktopWs.description")}</p>
-        </div>
-        <div className="settings-desktop-ws-panel">
-          <div className="settings-desktop-ws-meta">
-            <span className={`settings-desktop-ws-status ${desktopWsServerStatusClass}`}>
-              {desktopWsServerStatus}
-            </span>
-            <code>{desktopWsServerUrl}</code>
-          </div>
-          <div className="settings-desktop-ws-actions">
-            {desktopWsServerState?.running ? (
-              <Button
-                danger
-                disabled={desktopWsServerPending !== null}
-                onClick={() => void handleSetDesktopWsServerEnabled(false)}
-              >
-                {desktopWsServerPending === "close"
-                  ? t("settings.debug.desktopWs.closing")
-                  : t("settings.debug.desktopWs.closeAction")}
-              </Button>
-            ) : (
-              <Button
-                type="primary"
-                disabled={desktopWsServerPending !== null}
-                onClick={() => void handleSetDesktopWsServerEnabled(true)}
-              >
-                {desktopWsServerPending === "open"
-                  ? t("settings.debug.desktopWs.opening")
-                  : desktopWsServerState?.enabled
-                    ? t("settings.debug.desktopWs.retryAction")
-                    : t("settings.debug.desktopWs.openAction")}
-              </Button>
-            )}
-            {desktopWsServerState?.enabled && !desktopWsServerState.running ? (
-              <Button
-                disabled={desktopWsServerPending !== null}
-                onClick={() => void handleSetDesktopWsServerEnabled(false)}
-              >
-                {t("settings.debug.desktopWs.disableAction")}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        {desktopWsServerState?.message ? (
-          <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
-            {desktopWsServerState.message}
-          </div>
-        ) : null}
+    <div className="data-root-card settings-desktop-ws-card">
+      <div className="settings-desktop-ws-copy">
+        <h2>{t("settings.debug.desktopWs.title")}</h2>
+        <p className="page-copy">{t("settings.debug.desktopWs.description")}</p>
       </div>
+      <div className="settings-desktop-ws-panel">
+        <div className="settings-desktop-ws-meta">
+          <span className={`settings-desktop-ws-status ${desktopWsServerStatusClass}`}>
+            {desktopWsServerStatus}
+          </span>
+          <code>{desktopWsServerUrl}</code>
+        </div>
+        <div className="settings-desktop-ws-actions">
+          {desktopWsServerState?.running ? (
+            <Button
+              danger
+              disabled={desktopWsServerPending !== null}
+              onClick={() => void handleSetDesktopWsServerEnabled(false)}
+            >
+              {desktopWsServerPending === "close"
+                ? t("settings.debug.desktopWs.closing")
+                : t("settings.debug.desktopWs.closeAction")}
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              disabled={desktopWsServerPending !== null}
+              onClick={() => void handleSetDesktopWsServerEnabled(true)}
+            >
+              {desktopWsServerPending === "open"
+                ? t("settings.debug.desktopWs.opening")
+                : desktopWsServerState?.enabled
+                  ? t("settings.debug.desktopWs.retryAction")
+                  : t("settings.debug.desktopWs.openAction")}
+            </Button>
+          )}
+          {desktopWsServerState?.enabled && !desktopWsServerState.running ? (
+            <Button
+              disabled={desktopWsServerPending !== null}
+              onClick={() => void handleSetDesktopWsServerEnabled(false)}
+            >
+              {t("settings.debug.desktopWs.disableAction")}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {desktopWsServerState?.message ? (
+        <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
+          {desktopWsServerState.message}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3317,7 +3619,14 @@ export function SettingsPage({
           />
         );
       case "debug":
-        return <LocalWsServerDebugCard />;
+        return (
+          <div className="settings-about-stack" aria-label={t("settings.debug.label")}>
+            <LocalWsServerDebugCard />
+            <DesktopLogsDebugCard />
+            <IdentityTokenDebugCard />
+            <TunnelDebugCard />
+          </div>
+        );
       default:
         return null;
     }

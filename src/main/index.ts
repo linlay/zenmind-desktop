@@ -182,6 +182,7 @@ import {
   getDataRoot,
   getElectronUserDataRoot
 } from "./user-paths";
+import { installDesktopConsoleLogTee } from "./desktop-logs";
 import { applyDesktopInitBootstrap } from "./desktop-init-bootstrap";
 import {
   bundledEnvZipExists,
@@ -2340,7 +2341,9 @@ function registerIpcHandlers(context: MainProcessContext) {
     showFileDialog,
     revealPathInFileManager,
     captureDesktopScreenshot: captureDesktopScreenshotForWebview,
-    reportRendererDiagnostic
+    reportRendererDiagnostic,
+    openLogViewerWindow,
+    issueAgentPlatformAccessToken: issueAgentAccessToken
   }));
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {
@@ -2625,6 +2628,7 @@ if (gotSingleInstanceLock) {
 
     initializeUserDataRootsAndSettings();
     ensureDataRoot(app);
+    installDesktopConsoleLogTee(app);
     configurePluginBridge({
       getServiceState: (serviceId) => getServiceState(app, serviceId),
       notifyAgentPlatformConfigChanged: () => notifyServicesChanged(),

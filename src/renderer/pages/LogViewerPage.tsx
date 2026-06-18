@@ -8,6 +8,8 @@ import {
 } from "react";
 import { useSearchParams } from "react-router-dom";
 import type {
+	DesktopLogTarget,
+	LogViewerSource,
 	ServiceId,
 	ServiceLogStreamEvent,
 	ServiceLogTarget,
@@ -29,8 +31,9 @@ type LogMatch = {
 type LogViewerState = {
 	loadingInitial: boolean;
 	loadingPrevious: boolean;
+	source: LogViewerSource;
 	serviceId: ServiceId | null;
-	target: ServiceLogTarget;
+	target: ServiceLogTarget | DesktopLogTarget;
 	title: string;
 	exists: boolean;
 	pages: LogPage[];
@@ -50,6 +53,7 @@ function createEmptyLogViewerState(): LogViewerState {
 	return {
 		loadingInitial: false,
 		loadingPrevious: false,
+		source: "service",
 		serviceId: null,
 		target: "main",
 		title: "",
@@ -152,6 +156,10 @@ function normalizeLogTarget(value: string | null): ServiceLogTarget {
 	return value === "error" ? "error" : "main";
 }
 
+function normalizeLogViewerSource(value: string | null): LogViewerSource {
+	return value === "desktop" ? "desktop" : "service";
+}
+
 function isMacFindShortcut(event: KeyboardEvent) {
 	return (
 		event.key.toLowerCase() === "f" &&
@@ -240,11 +248,12 @@ export function LogViewerPage() {
 	const [searchParams] = useSearchParams();
 	const { readLog, watchLog } = useServices();
 	const { t } = useI18n();
-	const serviceId = searchParams.get("serviceId")?.trim() || "";
+	const source = normalizeLogViewerSource(searchParams.get("source"));
+	const serviceId = source === "desktop" ? "desktop" : searchParams.get("serviceId")?.trim() || "";
 	const target = normalizeLogTarget(searchParams.get("target"));
 	const title = searchParams.get("title")?.trim() || t("logViewer.titleFallback");
 	const rotatedNotice = t("logViewer.notice.rotated");
-	const requestKey = `${serviceId}:${target}:${title}`;
+	const requestKey = `${source}:${serviceId}:${target}:${title}`;
 	const requestIdRef = useRef(0);
 	const watchCleanupRef = useRef<(() => void) | null>(null);
 	const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -288,7 +297,7 @@ export function LogViewerPage() {
 	}, [tailFollowEnabled]);
 
 	useEffect(() => {
-		if (!serviceId) {
+		if (source === "service" && !serviceId) {
 			requestIdRef.current += 1;
 			watchCleanupRef.current?.();
 			watchCleanupRef.current = null;
@@ -298,6 +307,7 @@ export function LogViewerPage() {
 			setVisibleScrollJumpTarget(null);
 			setState({
 				...createEmptyLogViewerState(),
+				source,
 				title,
 				target,
 				error: t("logViewer.error.missingServiceId"),
@@ -317,12 +327,17 @@ export function LogViewerPage() {
 		setState({
 			...createEmptyLogViewerState(),
 			loadingInitial: true,
+			source,
 			serviceId,
 			target,
 			title,
 		});
 
-		readLog(serviceId, target)
+		const readInitialLog = source === "desktop"
+			? window.electronAPI.diagnostics.readDesktopLog(target as DesktopLogTarget)
+			: readLog(serviceId, target);
+
+		readInitialLog
 			.then((result) => {
 				if (requestIdRef.current !== requestId) {
 					return;
@@ -331,6 +346,7 @@ export function LogViewerPage() {
 				setState({
 					...createEmptyLogViewerState(),
 					loadingInitial: false,
+					source,
 					serviceId,
 					target,
 					title,
@@ -340,17 +356,24 @@ export function LogViewerPage() {
 					totalBytes: result.totalBytes,
 				});
 
-				watchCleanupRef.current = watchLog(
-					serviceId,
-					target,
-					{ fromOffset: result.endOffset },
-					(event) => {
-						if (requestIdRef.current !== requestId) {
-							return;
-						}
-						applyLogStreamEvent(event);
-					},
-				);
+				const handleLogStreamEvent = (event: ServiceLogStreamEvent) => {
+					if (requestIdRef.current !== requestId) {
+						return;
+					}
+					applyLogStreamEvent(event);
+				};
+				watchCleanupRef.current = source === "desktop"
+					? window.electronAPI.diagnostics.watchDesktopLog(
+						target as DesktopLogTarget,
+						{ fromOffset: result.endOffset },
+						handleLogStreamEvent,
+					)
+					: watchLog(
+						serviceId,
+						target,
+						{ fromOffset: result.endOffset },
+						handleLogStreamEvent,
+					);
 				setState((current) => ({
 					...current,
 					streaming: true,
@@ -364,6 +387,7 @@ export function LogViewerPage() {
 				setState({
 					...createEmptyLogViewerState(),
 					loadingInitial: false,
+					source,
 					serviceId,
 					target,
 					title,
@@ -380,7 +404,7 @@ export function LogViewerPage() {
 				watchCleanupRef.current = null;
 			}
 		};
-	}, [readLog, requestKey, serviceId, target, title, watchLog, t]);
+	}, [readLog, requestKey, serviceId, source, target, title, watchLog, t]);
 
 	useEffect(() => {
 		return () => {
@@ -482,7 +506,9 @@ export function LogViewerPage() {
 
 	function applyLogStreamEvent(event: ServiceLogStreamEvent) {
 		setState((current) => {
+			const eventSource = event.source || "service";
 			if (
+				current.source !== eventSource ||
 				current.serviceId !== event.serviceId ||
 				current.target !== event.target
 			) {
@@ -577,13 +603,17 @@ export function LogViewerPage() {
 		}));
 
 		try {
-			const result = await readLog(
-				currentViewer.serviceId,
-				currentViewer.target,
-				{
+			const result = currentViewer.source === "desktop"
+				? await window.electronAPI.diagnostics.readDesktopLog(currentViewer.target as DesktopLogTarget, {
 					beforeOffset,
-				},
-			);
+				})
+				: await readLog(
+					currentViewer.serviceId,
+					currentViewer.target as ServiceLogTarget,
+					{
+						beforeOffset,
+					},
+				);
 			if (requestIdRef.current !== requestId) {
 				return null;
 			}
@@ -594,6 +624,7 @@ export function LogViewerPage() {
 					...createEmptyLogViewerState(),
 					loadingInitial: false,
 					loadingPrevious: false,
+					source: currentViewer.source,
 					serviceId: currentViewer.serviceId,
 					target: currentViewer.target,
 					title: currentViewer.title,

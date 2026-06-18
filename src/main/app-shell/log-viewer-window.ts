@@ -66,6 +66,7 @@ export class LogViewerWindowController {
 
   private buildRoute(request: ServiceOpenLogViewerRequest) {
     const params = new URLSearchParams({
+      source: request.source || "service",
       serviceId: request.serviceId,
       target: request.target,
       title: request.title
