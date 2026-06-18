@@ -2977,12 +2977,26 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
-  assert.match(globalStyles, /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*height:\s*8px;[^}]*app-region:\s*drag;[^}]*pointer-events:\s*auto;/);
+  assert.match(
+    globalStyles,
+    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*20;[^}]*app-region:\s*drag;[^}]*pointer-events:\s*auto;/
+  );
   assert.doesNotMatch(
     globalStyles,
     /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*display:\s*none;/
   );
-  assert.match(globalStyles, /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*height:\s*8px;[^}]*pointer-events:\s*auto;/);
+  assert.doesNotMatch(
+    globalStyles,
+    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*flex:\s*0\s+0\s+8px;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*min-height:\s*8px;/
+  );
+  assert.match(
+    globalStyles,
+    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*20;[^}]*pointer-events:\s*auto;/
+  );
   assert.doesNotMatch(
     globalStyles,
     /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*height:\s*0;/
@@ -2990,6 +3004,22 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.doesNotMatch(
     globalStyles,
     /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*pointer-events:\s*none;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*flex:\s*0\s+0\s+8px;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*min-height:\s*8px;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.pan-page-embedded\s+\.pan-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*8px;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.external-webview-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*8px;/
   );
   assert.doesNotMatch(
     globalStyles,

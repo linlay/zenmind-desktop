@@ -2997,9 +2997,12 @@
 
 .pan-page-embedded .pan-drag-region {
   display: block;
-  flex: 0 0 8px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 8px;
-  min-height: 8px;
+  z-index: 20;
   app-region: drag;
   -webkit-app-region: drag;
   pointer-events: auto;
