@@ -14,11 +14,12 @@ import type { App } from "electron";
 import type {
   DesktopSsoClaims,
   DesktopSsoLogoutResult,
+  DesktopSsoSiteTokenBridgeStartResult,
   DesktopSsoStartResult,
   DesktopSsoStatus
 } from "../shared/contracts";
 import { PRODUCT_NAME } from "../shared/generated/brand";
-import { getDesktopStateRoot } from "./user-paths";
+import { getDesktopStateRoot, getSecretsRoot } from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { t } from "./i18n/main-i18n";
 
@@ -52,6 +53,7 @@ type OidcConfig = {
   userInfo?: DesktopSsoUserInfoConfig;
   claims?: DesktopSsoClaimsConfig;
   webSessionExchange?: DesktopSsoWebSessionExchangeConfig;
+  siteTokenBridge?: DesktopSsoSiteTokenBridgeConfig;
 };
 
 type CookieAccessTokenExchangeConfig = {
@@ -103,6 +105,14 @@ export type DesktopSsoWebSessionExchangeConfig = {
   claims: DesktopSsoClaimsConfig;
   cookieOrigins: string[];
   clearCookies: DesktopSsoWebSessionClearCookieConfig[];
+};
+
+export type DesktopSsoSiteTokenBridgeConfig = {
+  startUrl: string;
+  exchangeUrl: string;
+  required: boolean;
+  claims: DesktopSsoClaimsConfig;
+  cookieOrigins: string[];
 };
 
 type DesktopSsoConfigLoadResult =
@@ -170,6 +180,10 @@ type CallbackHooks = {
     status: DesktopSsoStatus,
     context?: DesktopSsoStatusChangeContext
   ) => void | DesktopSsoClaims | Promise<void | DesktopSsoClaims>;
+  onSiteTokenBridgeTicket?: (
+    ticket: string,
+    context: DesktopSsoSiteTokenBridgeTicketContext
+  ) => void | Promise<void>;
   onStatusChanged?: (status: DesktopSsoStatus) => void;
   onReturnToAppRequested?: () => void | Promise<void>;
 };
@@ -180,12 +194,23 @@ type DesktopSsoStatusChangeContext = {
   ticket?: string;
 };
 
+type DesktopSsoSiteTokenBridgeTicketContext = {
+  exchangeUrl: string;
+  required: boolean;
+};
+
 type PendingLogin = {
   state: string;
   startedAt: string;
   config: OidcConfig;
   redirectUri: string;
   codeVerifier?: string;
+};
+
+type PendingSiteTokenBridge = {
+  state: string;
+  startedAt: string;
+  config: DesktopSsoSiteTokenBridgeConfig;
 };
 
 type DesktopSsoProxyState = {
@@ -238,8 +263,10 @@ const LOGOUT_CALLBACK_PATH = "/api/auth/oidc/logout-callback";
 const RETURN_TO_APP_PATH = "/api/auth/oidc/return-to-app";
 const SESSION_FILE_NAME = "sso-session.json";
 const LEGACY_SESSION_FILE_NAME = "oidc-sso-session.json";
+const USER_INFO_FILE_NAME = "sso-user-info.json";
 const ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
 const LEGACY_ACCESS_TOKEN_FILE_NAME = "desktop-sso-access-token.txt";
+const SITE_TOKEN_FILE_NAME = "sso-site-token.json";
 export const DESKTOP_SSO_CONFIG_FILE_NAME = "sso.json";
 export const LEGACY_DESKTOP_SSO_CONFIG_FILE_NAME = "desktop-sso.json";
 const IDENTITY_PROVIDER_URL_FIELDS = [
@@ -328,6 +355,7 @@ let callbackServerReady: Promise<void> | null = null;
 let callbackServerInfo: CallbackServerInfo | null = null;
 let callbackHooks: CallbackHooks = {};
 let pendingLogin: PendingLogin | null = null;
+let pendingSiteTokenBridge: PendingSiteTokenBridge | null = null;
 let desktopSsoProxyState: DesktopSsoProxyState | null = null;
 let currentAccessToken = "";
 let currentIdToken = "";
@@ -410,12 +438,20 @@ function getLegacySessionPath(app: App) {
   return path.join(getDesktopStateRoot(app), LEGACY_SESSION_FILE_NAME);
 }
 
+export function getDesktopSsoUserInfoFilePath(app: Pick<App, "getPath">) {
+  return path.join(getDesktopStateRoot(app as App), USER_INFO_FILE_NAME);
+}
+
 export function getDesktopSsoAccessTokenFilePath(app: Pick<App, "getPath">) {
   return path.join(getDesktopStateRoot(app as App), ACCESS_TOKEN_FILE_NAME);
 }
 
 function getLegacyDesktopSsoAccessTokenFilePath(app: Pick<App, "getPath">) {
   return path.join(getDesktopStateRoot(app as App), LEGACY_ACCESS_TOKEN_FILE_NAME);
+}
+
+export function getDesktopSsoSiteTokenFilePath(app: Pick<App, "getPath">) {
+  return path.join(getSecretsRoot(app as App), SITE_TOKEN_FILE_NAME);
 }
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
@@ -997,6 +1033,51 @@ function normalizeWebSessionExchangeConfig(
   };
 }
 
+function normalizeSiteTokenBridgeCookieOrigins(
+  bridgeRecord: Record<string, unknown>,
+  startUrl: string,
+  exchangeUrl: string
+) {
+  const origins = new Set<string>([
+    new URL(startUrl).origin,
+    new URL(exchangeUrl).origin
+  ]);
+  for (const origin of getRecordStringArray(bridgeRecord, "cookieOrigins")) {
+    origins.add(normalizeHttpOrigin(origin, "siteTokenBridge.cookieOrigins"));
+  }
+  return [...origins];
+}
+
+function normalizeSiteTokenBridgeConfig(
+  record: Record<string, unknown>,
+  config: OidcConfig
+): DesktopSsoSiteTokenBridgeConfig | undefined {
+  if (!("siteTokenBridge" in record)) {
+    return undefined;
+  }
+  const bridgeRecord = getRecordObject(record, "siteTokenBridge");
+  if (!bridgeRecord) {
+    throw new Error(t("sso.config.siteTokenBridgeObject"));
+  }
+  const rawStartUrl = getRecordString(bridgeRecord, "startUrl");
+  if (!rawStartUrl) {
+    throw new Error(t("sso.config.siteTokenBridgeStartUrlRequired"));
+  }
+  const rawExchangeUrl = getRecordString(bridgeRecord, "exchangeUrl");
+  if (!rawExchangeUrl) {
+    throw new Error(t("sso.config.siteTokenBridgeExchangeUrlRequired"));
+  }
+  const startUrl = normalizeHttpUrl(rawStartUrl, rawStartUrl, "siteTokenBridge.startUrl");
+  const exchangeUrl = normalizeHttpUrl(rawExchangeUrl, startUrl, "siteTokenBridge.exchangeUrl");
+  return {
+    startUrl,
+    exchangeUrl,
+    required: getRecordBoolean(bridgeRecord, "required", false),
+    claims: config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG,
+    cookieOrigins: normalizeSiteTokenBridgeCookieOrigins(bridgeRecord, startUrl, exchangeUrl)
+  };
+}
+
 function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   const provider = normalizeProviderName(getRecordString(record, "provider"));
   const useGoogleDesktopFlow = provider === "google" || recordLooksLikeGoogleOidcConfig(record);
@@ -1065,6 +1146,10 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   const webSessionExchange = normalizeWebSessionExchangeConfig(record, config);
   if (webSessionExchange) {
     config.webSessionExchange = webSessionExchange;
+  }
+  const siteTokenBridge = normalizeSiteTokenBridgeConfig(record, config);
+  if (siteTokenBridge) {
+    config.siteTokenBridge = siteTokenBridge;
   }
   for (const field of OIDC_CONFIG_URL_FIELDS) {
     if (!config[field]) {
@@ -1159,6 +1244,27 @@ function saveSession(app: App, status: DesktopSsoStatus, idToken = "") {
     updatedAt: status.updatedAt,
     ...(idToken.trim() ? { idToken: idToken.trim() } : {})
   }, null, 2), { encoding: "utf8", mode: 0o600 });
+  if (status.authenticated && status.user) {
+    saveUserInfoFile(app, status.user);
+  }
+}
+
+function saveUserInfoFile(app: Pick<App, "getPath">, user: DesktopSsoClaims) {
+  const filePath = getDesktopSsoUserInfoFilePath(app);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    ...user,
+    updatedAt: new Date().toISOString(),
+    source: "sso"
+  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function removeUserInfoFile(app: Pick<App, "getPath">) {
+  try {
+    fs.rmSync(getDesktopSsoUserInfoFilePath(app), { force: true });
+  } catch {
+    // Userinfo cleanup is best effort; local Desktop auth state is already cleared.
+  }
 }
 
 function saveAccessTokenFile(app: Pick<App, "getPath">, accessToken: string) {
@@ -1169,6 +1275,49 @@ function saveAccessTokenFile(app: Pick<App, "getPath">, accessToken: string) {
   const filePath = getDesktopSsoAccessTokenFilePath(app);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function normalizeTokenResponseString(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+export function saveDesktopSsoSiteTokenFile(app: Pick<App, "getPath">, responseBody: unknown) {
+  if (!responseBody || typeof responseBody !== "object" || Array.isArray(responseBody)) {
+    return false;
+  }
+  const record = responseBody as Record<string, unknown>;
+  const accessToken = normalizeTokenResponseString(record, "accessToken", "access_token");
+  if (!accessToken) {
+    return false;
+  }
+  const tokenType = normalizeTokenResponseString(record, "tokenType", "token_type") || "Bearer";
+  const expiresAt = normalizeTokenResponseString(record, "expiresAt", "expires_at");
+  const filePath = getDesktopSsoSiteTokenFilePath(app);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    tokenType,
+    accessToken,
+    ...(expiresAt ? { expiresAt } : {}),
+    scope: normalizeTokenResponseString(record, "scope"),
+    audience: normalizeTokenResponseString(record, "audience"),
+    issuer: normalizeTokenResponseString(record, "issuer"),
+    updatedAt: new Date().toISOString()
+  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  return true;
+}
+
+export function removeDesktopSsoSiteTokenFile(app: Pick<App, "getPath">) {
+  try {
+    fs.rmSync(getDesktopSsoSiteTokenFilePath(app), { force: true });
+  } catch {
+    // Site token cleanup is best effort; logout still clears in-memory state.
+  }
 }
 
 function removeAccessTokenFile(app: Pick<App, "getPath">) {
@@ -1214,9 +1363,12 @@ function loadSession(app: App) {
 
 function clearSession(app: App) {
   pendingLogin = null;
+  pendingSiteTokenBridge = null;
   currentAccessToken = "";
   currentIdToken = "";
   removeAccessTokenFile(app);
+  removeDesktopSsoSiteTokenFile(app);
+  removeUserInfoFile(app);
   const filePath = getSessionPath(app);
   try {
     fs.rmSync(filePath, { force: true });
@@ -2011,6 +2163,13 @@ function normalizeDesktopTicketCallbackRequest(
   return { ticket, state };
 }
 
+function buildSiteTokenBridgeStartUrl(startUrl: string, callbackUrl: string, state: string) {
+  const url = new URL(startUrl);
+  url.searchParams.set("callback", callbackUrl);
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
 function createDesktopTicketPlaceholderClaims(config: OidcConfig): DesktopSsoClaims {
   const claimsConfig = config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG;
   return {
@@ -2314,6 +2473,34 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
   return status;
 }
 
+function isSiteTokenBridgeCallbackRequest(requestUrl: URL) {
+  const state = requestUrl.searchParams.get("state")?.trim() ?? "";
+  return Boolean(pendingSiteTokenBridge && state === pendingSiteTokenBridge.state);
+}
+
+async function handleSiteTokenBridgeCallback(app: App, requestUrl: URL) {
+  if (!pendingSiteTokenBridge) {
+    throw new Error(t("sso.siteTokenBridgeNoPending"));
+  }
+  const pendingBridge = pendingSiteTokenBridge;
+  const { ticket } = normalizeDesktopTicketCallbackRequest(requestUrl, pendingBridge.state);
+  pendingSiteTokenBridge = null;
+  try {
+    if (!callbackHooks.onSiteTokenBridgeTicket) {
+      throw new Error(t("sso.siteTokenBridgeExchangeUnavailable"));
+    }
+    await callbackHooks.onSiteTokenBridgeTicket?.(ticket, {
+      exchangeUrl: pendingBridge.config.exchangeUrl,
+      required: pendingBridge.config.required
+    });
+  } catch (error) {
+    if (pendingBridge.config.required) {
+      clearSession(app);
+    }
+    throw error;
+  }
+}
+
 function buildLogoutUrl(
   config: OidcConfig = DEFAULT_OIDC_CONFIG,
   options: { idTokenHint?: string } = {}
@@ -2337,7 +2524,7 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
   const closeAfterCallback = callbackServerInfo?.closeAfterCallback === true;
   if (requestUrl.pathname === RETURN_TO_APP_PATH) {
     await callbackHooks.onReturnToAppRequested?.();
-    if (closeAfterCallback) {
+    if (closeAfterCallback && !pendingSiteTokenBridge) {
       closeCallbackServerAfterResponse(response);
     }
     writeHtmlResponse(response, 200, renderCallbackHtml(t("sso.returnedToDesktopTitle"), t("sso.closeBrowserPage")));
@@ -2370,6 +2557,34 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
     return;
   }
 
+  if (isSiteTokenBridgeCallbackRequest(requestUrl)) {
+    const required = pendingSiteTokenBridge?.config.required === true;
+    try {
+      await handleSiteTokenBridgeCallback(app, requestUrl);
+      if (closeAfterCallback) {
+        closeCallbackServerAfterResponse(response);
+      }
+      writeHtmlResponse(response, 200, renderCallbackHtml(
+        t("sso.siteTokenBridgeSuccessTitle"),
+        t("sso.siteTokenBridgeSuccessMessage"),
+        {
+          actionHref: buildReturnToAppUrl(fallbackOrigin),
+          actionLabel: t("sso.returnToApp", { appName: PRODUCT_NAME })
+        }
+      ));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (required) {
+        setCurrentStatus(createFailedStatus(message));
+      }
+      if (closeAfterCallback) {
+        closeCallbackServerAfterResponse(response);
+      }
+      writeHtmlResponse(response, 400, renderCallbackHtml(t("sso.siteTokenBridgeFailedTitle"), message));
+    }
+    return;
+  }
+
   try {
     const status = await handleLoginCallback(app, requestUrl);
     writeHtmlResponse(response, 200, renderCallbackHtml(
@@ -2396,6 +2611,7 @@ function closeCallbackServer() {
   callbackServerReady = null;
   callbackServerInfo = null;
   desktopSsoProxyState = null;
+  pendingSiteTokenBridge = null;
   if (!server) {
     return;
   }
@@ -2536,6 +2752,7 @@ export function getDesktopSsoStatus(app?: App): DesktopSsoStatus {
 
 export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
   pendingLogin = null;
+  pendingSiteTokenBridge = null;
   currentAccessToken = "";
   currentIdToken = "";
   const status = createFailedStatus(message);
@@ -2545,8 +2762,47 @@ export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
 
 export const failDesktopSsoLogin = failDesktopSsoFlow;
 
+export function startDesktopSsoSiteTokenBridge(app: App): DesktopSsoSiteTokenBridgeStartResult {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config?.siteTokenBridge) {
+    return {
+      ok: false,
+      configured: false,
+      required: false,
+      message: configResult.error || configResult.message || t("sso.notConfigured")
+    };
+  }
+  if (!callbackServerInfo) {
+    return {
+      ok: false,
+      configured: true,
+      required: configResult.config.siteTokenBridge.required,
+      message: t("sso.siteTokenBridgeCallbackUnavailable")
+    };
+  }
+  const state = randomUUID();
+  pendingSiteTokenBridge = {
+    state,
+    startedAt: new Date().toISOString(),
+    config: configResult.config.siteTokenBridge
+  };
+  return {
+    ok: true,
+    configured: true,
+    required: configResult.config.siteTokenBridge.required,
+    startUrl: buildSiteTokenBridgeStartUrl(
+      configResult.config.siteTokenBridge.startUrl,
+      callbackServerInfo.redirectUri,
+      state
+    ),
+    browserLabel: getDesktopSsoLoginLabel(configResult.config),
+    message: t("sso.siteTokenBridgeOpened")
+  };
+}
+
 export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): DesktopSsoStatus {
   pendingLogin = null;
+  pendingSiteTokenBridge = null;
   currentAccessToken = "";
   loadSession(app);
   const status = currentStatus.authenticated && !currentStatus.pending
@@ -2729,8 +2985,27 @@ export function getDesktopSsoWebSessionExchangeConfig(app: Pick<App, "getPath">)
   };
 }
 
+export function getDesktopSsoSiteTokenBridgeConfig(app: Pick<App, "getPath">) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config?.siteTokenBridge) {
+    return null;
+  }
+  const config = configResult.config.siteTokenBridge;
+  return {
+    startUrl: config.startUrl,
+    exchangeUrl: config.exchangeUrl,
+    required: config.required,
+    claims: { ...config.claims },
+    cookieOrigins: [...config.cookieOrigins]
+  };
+}
+
 export function getDesktopSsoWebSessionClearCookies(app: Pick<App, "getPath">) {
   return getDesktopSsoWebSessionExchangeConfig(app)?.clearCookies ?? [];
+}
+
+export function getDesktopSsoSiteTokenBridgeCookieOrigins(app: Pick<App, "getPath">) {
+  return getDesktopSsoSiteTokenBridgeConfig(app)?.cookieOrigins ?? [];
 }
 
 export async function exchangeConfiguredDesktopSsoCookieForAccessToken(
@@ -2905,17 +3180,23 @@ export const __testInternals = {
   buildCookieAccessTokenExchangeRequest,
   shouldUseSystemBrowser,
   buildDesktopSsoAccessTokenCookieDetails,
+  buildSiteTokenBridgeStartUrl,
   cancelDesktopSsoLogin,
   completeDesktopSsoBrowserLogin,
   completeDesktopSsoCookieLogin,
   getDesktopSsoAccessTokenFilePath,
+  getDesktopSsoUserInfoFilePath,
+  getDesktopSsoSiteTokenFilePath,
   getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoAccessTokenCookieLookup,
   getDesktopSsoAccessTokenCookieLookups,
   getDesktopSsoWebSessionExchangeConfig,
   getDesktopSsoWebSessionClearCookies,
+  getDesktopSsoSiteTokenBridgeConfig,
+  getDesktopSsoSiteTokenBridgeCookieOrigins,
   isDesktopSsoLoginCompletionUrl,
   readCookieAccessTokenFromResponse,
+  saveDesktopSsoSiteTokenFile,
   normalizeCallbackRequest,
   getDefaultOidcFetch,
   exchangeCodeForTokenClaims,

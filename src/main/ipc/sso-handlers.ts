@@ -10,9 +10,12 @@ export interface SsoIpcHandlerOptions {
     exchangeBrowserCookieAccessToken: () => Promise<string>;
     exchangeWebSession: (idToken: string) => Promise<boolean>;
     exchangeWebSessionTicket?: (ticket: string) => Promise<any>;
+    exchangeSiteTokenBridgeTicket?: (ticket: string) => Promise<any>;
     logoutWebSession?: () => Promise<boolean>;
+    logoutSiteTokenBridge?: () => Promise<boolean>;
     clearBrowserCookies: () => Promise<void>;
     clearWebSessionCookies: () => Promise<void>;
+    clearSiteTokenBridgeCookies?: () => Promise<void>;
     openBrowserUrl: (input: {
       url: string;
       label: string;
@@ -33,9 +36,11 @@ export interface SsoIpcHandlerOptions {
   getDesktopSsoStatus: (app: any) => any | Promise<any>;
   startDesktopSsoLogin: (app: any, options: {
     onBeforeStatusChanged: (status: any, context?: { idToken?: string; ticket?: string }) => Promise<any>;
+    onSiteTokenBridgeTicket?: (ticket: string, context?: { required?: boolean }) => Promise<void>;
     onStatusChanged: (status: any) => void;
     onReturnToAppRequested: () => void;
   }) => Promise<any>;
+  startDesktopSsoSiteTokenBridge?: (app: any) => any;
   logoutDesktopSso: (app: any, options: {
     onStatusChanged: (status: any) => void;
   }) => Promise<any>;
@@ -72,8 +77,26 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
           await desktopSsoController.syncBrowserCookies();
           await desktopSsoController.exchangeBrowserCookieAccessToken();
           await desktopSsoController.exchangeWebSession(context?.idToken || "");
+          const bridgeStart = options.startDesktopSsoSiteTokenBridge?.(app);
+          if (bridgeStart?.configured && bridgeStart.startUrl) {
+            const bridgeOpenResult = await desktopSsoController.openSystemBrowserUrl({
+              url: bridgeStart.startUrl,
+              label: bridgeStart.browserLabel || t("sso.iamLogin")
+            });
+            if (!bridgeOpenResult.ok && bridgeStart.required) {
+              throw new Error(bridgeOpenResult.message || bridgeStart.message || "Desktop SSO site token bridge open failed");
+            }
+          } else if (bridgeStart?.configured && bridgeStart.required) {
+            throw new Error(bridgeStart.message || "Desktop SSO site token bridge is unavailable");
+          }
         }
         return undefined;
+      },
+      onSiteTokenBridgeTicket: async (ticket: string) => {
+        const exchanged = await desktopSsoController.exchangeSiteTokenBridgeTicket?.(ticket);
+        if (!exchanged) {
+          throw new Error("Desktop SSO site token bridge exchange did not return a site token.");
+        }
       },
       onStatusChanged: desktopSsoController.broadcastStatus,
       onReturnToAppRequested: desktopSsoController.returnToApp
@@ -121,11 +144,17 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
     } catch (error) {
       safeConsoleError("failed to logout desktop sso web session", error);
     }
+    try {
+      await desktopSsoController.logoutSiteTokenBridge?.();
+    } catch (error) {
+      safeConsoleError("failed to logout desktop sso site token bridge", error);
+    }
     const result = await logoutDesktopSso(app, {
       onStatusChanged: desktopSsoController.broadcastStatus
     });
     await desktopSsoController.clearBrowserCookies();
     await desktopSsoController.clearWebSessionCookies();
+    await desktopSsoController.clearSiteTokenBridgeCookies?.();
     if (result.ok && result.logoutUrl) {
       const browserOpenResult = result.openMode === "system"
         ? await desktopSsoController.openSystemBrowserUrl({

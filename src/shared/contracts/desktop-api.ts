@@ -111,6 +111,15 @@ export interface DesktopSsoLogoutResult {
   message: string;
 }
 
+export interface DesktopSsoSiteTokenBridgeStartResult {
+  ok: boolean;
+  configured: boolean;
+  required: boolean;
+  startUrl?: string;
+  browserLabel?: string;
+  message: string;
+}
+
 export interface DesktopSsoCancelResult {
   ok: boolean;
   status: DesktopSsoStatus;

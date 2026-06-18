@@ -473,6 +473,10 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
       logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
       userInfo: {
         url: "https://auth.zenmind.cc/application/o/userinfo/"
+      },
+      siteTokenBridge: {
+        startUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+        exchangeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/session"
       }
     }
   });
@@ -496,9 +500,14 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
     logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
     userInfo: {
       url: "https://auth.zenmind.cc/application/o/userinfo/"
+    },
+    siteTokenBridge: {
+      startUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+      exchangeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/session"
     }
   });
   assert.equal(sso.userInfo.url, "https://auth.zenmind.cc/application/o/userinfo/");
+  assert.equal(sso.siteTokenBridge.startUrl, "https://www.zenmind.cc/api/auth/desktop-sso/start");
   assert.equal(fs.statSync(ssoPath).mode & 0o777, 0o600);
   assert.equal(bootstrapState.appliedResult.sso, "applied");
 });

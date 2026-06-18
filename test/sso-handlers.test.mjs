@@ -49,12 +49,13 @@ function createStatus(pending = true) {
   };
 }
 
-function createHarness(startResult) {
+function createHarness(startResult, options = {}) {
   const handlers = new Map();
   const calls = {
     openBrowserUrl: [],
     openEmbeddedLoginDialog: [],
     openSystemBrowserUrl: [],
+    siteTokenBridgeTickets: [],
     broadcasts: []
   };
   registerSsoIpcHandlers({
@@ -69,8 +70,13 @@ function createHarness(startResult) {
       syncBrowserCookies: async () => undefined,
       exchangeBrowserCookieAccessToken: async () => "",
       exchangeWebSession: async () => false,
+      exchangeSiteTokenBridgeTicket: async (ticket) => {
+        calls.siteTokenBridgeTickets.push(ticket);
+        return true;
+      },
       clearBrowserCookies: async () => undefined,
       clearWebSessionCookies: async () => undefined,
+      clearSiteTokenBridgeCookies: async () => undefined,
       openBrowserUrl: async (input) => {
         calls.openBrowserUrl.push(input);
         return { ok: true };
@@ -85,7 +91,16 @@ function createHarness(startResult) {
       }
     },
     getDesktopSsoStatus: () => createStatus(false),
-    startDesktopSsoLogin: async () => startResult,
+    startDesktopSsoLogin: async (_app, hooks) => {
+      if (options.invokeAuthenticatedHook) {
+        await hooks.onBeforeStatusChanged({ authenticated: true }, { idToken: "id-token-1" });
+      }
+      if (options.invokeSiteTokenBridgeTicket) {
+        await hooks.onSiteTokenBridgeTicket?.("site-ticket-1", { required: false });
+      }
+      return startResult;
+    },
+    startDesktopSsoSiteTokenBridge: options.startDesktopSsoSiteTokenBridge,
     logoutDesktopSso: async () => ({ ok: true, status: createStatus(false) }),
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
@@ -139,6 +154,49 @@ test("system desktop sso login still opens the system browser", async () => {
     url: "https://auth.example.test/login",
     label: "ZenMind 登录"
   }]);
+});
+
+test("desktop sso login opens configured site token bridge after oidc success", async () => {
+  const status = createStatus(false);
+  const { handlers, calls } = createHarness({
+    ok: true,
+    status,
+    message: "started"
+  }, {
+    invokeAuthenticatedHook: true,
+    startDesktopSsoSiteTokenBridge: () => ({
+      ok: true,
+      configured: true,
+      required: false,
+      startUrl: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
+      browserLabel: "ZenMind 登录",
+      message: "bridge opened"
+    })
+  });
+
+  const result = await handlers.get("sso.startLogin")();
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.openSystemBrowserUrl, [{
+    url: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
+    label: "ZenMind 登录"
+  }]);
+});
+
+test("desktop sso site token bridge ticket is exchanged by the controller", async () => {
+  const status = createStatus(false);
+  const { handlers, calls } = createHarness({
+    ok: true,
+    status,
+    message: "started"
+  }, {
+    invokeSiteTokenBridgeTicket: true
+  });
+
+  const result = await handlers.get("sso.startLogin")();
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.siteTokenBridgeTickets, ["site-ticket-1"]);
 });
 
 test("desktop sso web session exchange uses configured provider", async (t) => {
@@ -202,4 +260,73 @@ test("desktop sso web session exchange uses configured provider", async (t) => {
     id_token: "id-token-1"
   });
   assert.equal(setCookies.length, 4);
+});
+
+test("desktop sso site token bridge exchange stores returned token", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-site-token-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    providerLabel: "ZenMind",
+    browserMode: "system",
+    issuer: "https://auth.example.test/application/o/desktop/",
+    authorizeUrl: "https://auth.example.test/o/authorize/",
+    tokenUrl: "https://auth.example.test/application/o/token/",
+    clientId: "zenmind-desktop",
+    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
+    logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
+    siteTokenBridge: {
+      startUrl: "https://site.example.test/api/auth/desktop-sso/start",
+      exchangeUrl: "https://site.example.test/api/auth/desktop-sso/session"
+    }
+  });
+  const setCookies = [];
+  const fakeSession = {
+    cookies: {
+      set: async (details) => {
+        setCookies.push(details);
+      },
+      get: async () => [],
+      remove: async () => undefined
+    }
+  };
+  const controller = createDesktopSsoController({
+    app,
+    platform: "darwin",
+    session: {
+      defaultSession: fakeSession,
+      fromPartition: () => fakeSession
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
+    openExternal: async () => undefined
+  });
+  let requestBody = null;
+  const fetchImpl = async (_url, init) => {
+    requestBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({ "set-cookie": "sid=abc; Path=/; HttpOnly" }),
+      json: async () => ({
+        ok: true,
+        accessToken: "site-access-token-1",
+        tokenType: "Bearer",
+        expiresAt: "2026-06-18T12:00:00Z",
+        user: { id: 1, email: "desktop.user@example.test" }
+      })
+    };
+  };
+
+  const exchanged = await controller.exchangeSiteTokenBridgeTicket("site-ticket-1", fetchImpl);
+
+  assert.equal(exchanged, true);
+  assert.deepEqual(requestBody, { ticket: "site-ticket-1" });
+  assert.equal(setCookies.length, 4);
+  const tokenPath = __testInternals.getDesktopSsoSiteTokenFilePath(app);
+  const stored = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
+  assert.equal(stored.accessToken, "site-access-token-1");
 });

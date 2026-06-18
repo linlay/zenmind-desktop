@@ -7,8 +7,11 @@ import {
   getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoProxyBrowserCookieDetails,
   getDesktopSsoStatus,
+  getDesktopSsoSiteTokenBridgeConfig,
+  getDesktopSsoSiteTokenBridgeCookieOrigins,
   getDesktopSsoWebSessionClearCookies,
-  getDesktopSsoWebSessionExchangeConfig
+  getDesktopSsoWebSessionExchangeConfig,
+  saveDesktopSsoSiteTokenFile
 } from "./oidc-sso";
 import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-adapter";
 import { safeConsoleError } from "./safe-console";
@@ -595,6 +598,44 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       const responseBody = await response.json();
       return createWebSessionClaims(getRecordValue(responseBody, "user"), exchangeConfig.url, exchangeConfig.claims);
     },
+    async exchangeSiteTokenBridgeTicket(ticket: string, fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
+      const bridgeConfig = getDesktopSsoSiteTokenBridgeConfig(options.app);
+      const normalizedTicket = ticket.trim();
+      if (!bridgeConfig || !normalizedTicket) {
+        return false;
+      }
+      const response = await fetchImpl(bridgeConfig.exchangeUrl, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          ticket: normalizedTicket
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`Desktop SSO site token bridge exchange failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
+      }
+      const setCookieHeaders = getDesktopSsoSetCookieHeaders(response.headers);
+      if (setCookieHeaders.length > 0) {
+        const targetSessions = [
+          options.session.defaultSession,
+          options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
+        ];
+        await applyDesktopSsoSetCookieHeadersToSessions(
+          targetSessions,
+          [bridgeConfig.exchangeUrl, ...bridgeConfig.cookieOrigins],
+          setCookieHeaders
+        );
+      }
+      if (typeof response.json !== "function") {
+        return setCookieHeaders.length > 0;
+      }
+      const responseBody = await response.json();
+      saveDesktopSsoSiteTokenFile(options.app, responseBody);
+      return true;
+    },
     async logoutWebSession(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
       const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);
       if (!exchangeConfig) {
@@ -616,6 +657,30 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       });
       if (!response.ok) {
         throw new Error(`Desktop SSO web session logout failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
+      }
+      return true;
+    },
+    async logoutSiteTokenBridge(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
+      const bridgeConfig = getDesktopSsoSiteTokenBridgeConfig(options.app);
+      if (!bridgeConfig) {
+        return false;
+      }
+      const logoutUrl = new URL("/api/auth/logout", bridgeConfig.exchangeUrl).toString();
+      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, logoutUrl);
+      const headers: Record<string, string> = {
+        Accept: "application/json"
+      };
+      if (cookieHeader) {
+        headers.Cookie = cookieHeader;
+      }
+      const response = await fetchImpl(logoutUrl, {
+        method: "POST",
+        headers,
+        body: ""
+      });
+      if (!response.ok) {
+        throw new Error(`Desktop SSO site token bridge logout failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
       }
       return true;
     },
@@ -664,6 +729,28 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           } catch {
             // Cookie removal is best effort; local Desktop auth state is already cleared.
           }
+        })
+      ));
+    },
+    async clearSiteTokenBridgeCookies() {
+      const origins = getDesktopSsoSiteTokenBridgeCookieOrigins(options.app);
+      if (origins.length === 0) {
+        return;
+      }
+      const targetSessions = [
+        options.session.defaultSession,
+        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
+      ];
+      await Promise.all(targetSessions.flatMap((targetSession) =>
+        origins.map(async (origin) => {
+          const cookies = await targetSession.cookies.get({ url: origin });
+          await Promise.all(cookies.map(async (cookie) => {
+            try {
+              await targetSession.cookies.remove(origin, cookie.name);
+            } catch {
+              // Cookie removal is best effort; local Desktop auth state is already cleared.
+            }
+          }));
         })
       ));
     }

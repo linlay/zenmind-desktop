@@ -169,6 +169,93 @@ test("desktop sso keeps embedded browser default for ordinary OIDC without brows
   assert.equal(__testInternals.shouldUseSystemBrowser(result.config), false);
 });
 
+test("desktop sso reads explicit site token bridge config", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "system",
+    issuer: "https://auth.example.test/application/o/desktop/",
+    authorizeUrl: "https://auth.example.test/o/authorize/",
+    tokenUrl: "https://auth.example.test/application/o/token/",
+    clientId: "desktop-client",
+    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
+    logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
+    siteTokenBridge: {
+      startUrl: "https://site.example.test/api/auth/desktop-sso/start",
+      exchangeUrl: "/api/auth/desktop-sso/session"
+    }
+  });
+
+  const bridge = __testInternals.getDesktopSsoSiteTokenBridgeConfig(app);
+  assert.equal(bridge.startUrl, "https://site.example.test/api/auth/desktop-sso/start");
+  assert.equal(bridge.exchangeUrl, "https://site.example.test/api/auth/desktop-sso/session");
+  assert.equal(bridge.required, false);
+  assert.deepEqual(bridge.cookieOrigins, ["https://site.example.test"]);
+
+  const startUrl = new URL(__testInternals.buildSiteTokenBridgeStartUrl(
+    bridge.startUrl,
+    "http://localhost:8080/api/auth/oidc/callback",
+    "state-1"
+  ));
+  assert.equal(startUrl.searchParams.get("callback"), "http://localhost:8080/api/auth/oidc/callback");
+  assert.equal(startUrl.searchParams.get("state"), "state-1");
+});
+
+test("desktop sso writes user info state after local authentication completes", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: "https://app.example.test",
+    loginUrl: "https://app.example.test/login",
+    appendLoginState: false,
+    logoutUrl: "https://app.example.test/logout"
+  });
+
+  const token = createUnsignedJwt({
+    sub: "user-1",
+    iss: "https://app.example.test",
+    aud: "desktop-client",
+    name: "Desktop User",
+    email: "desktop.user@example.test"
+  });
+  const status = __testInternals.completeDesktopSsoCookieLogin(app, token);
+
+  assert.equal(status.authenticated, true);
+  const userInfoPath = __testInternals.getDesktopSsoUserInfoFilePath(app);
+  const stored = JSON.parse(fs.readFileSync(userInfoPath, "utf8"));
+  assert.equal(stored.sub, "user-1");
+  assert.equal(stored.name, "Desktop User");
+  assert.equal(stored.email, "desktop.user@example.test");
+  assert.equal(stored.source, "sso");
+});
+
+test("desktop sso stores site token bridge response in secrets", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  const saved = __testInternals.saveDesktopSsoSiteTokenFile(app, {
+    accessToken: "site-token-1",
+    tokenType: "Bearer",
+    expiresAt: "2026-06-18T12:00:00Z",
+    issuer: "https://site.example.test"
+  });
+
+  assert.equal(saved, true);
+  const tokenPath = __testInternals.getDesktopSsoSiteTokenFilePath(app);
+  const stored = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
+  assert.equal(stored.accessToken, "site-token-1");
+  assert.equal(stored.tokenType, "Bearer");
+  assert.equal(stored.issuer, "https://site.example.test");
+});
+
 test("desktop sso does not infer cookie token exchange from ai browser origin", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -33,7 +33,8 @@ import {
   getDesktopSsoStatus,
   isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
-  startDesktopSsoLogin
+  startDesktopSsoLogin,
+  startDesktopSsoSiteTokenBridge
 } from "./oidc-sso";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
@@ -2542,6 +2543,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     desktopSsoController,
     getDesktopSsoStatus,
     startDesktopSsoLogin,
+    startDesktopSsoSiteTokenBridge,
     logoutDesktopSso,
     failDesktopSsoFlow,
     cancelDesktopSsoLogin,
