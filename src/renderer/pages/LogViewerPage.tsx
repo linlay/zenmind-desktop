@@ -6,6 +6,7 @@ import {
 	useState,
 	type ReactNode,
 } from "react";
+import { SearchOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import type {
 	DesktopLogTarget,
@@ -879,6 +880,7 @@ export function LogViewerPage() {
 	const followToggleLabel = tailFollowEnabled
 		? t("logViewer.follow.disable")
 		: t("logViewer.follow.enable");
+	const searchLabel = t("logViewer.find.aria");
 
 	return (
 		<main className="log-viewer-page">
@@ -893,6 +895,37 @@ export function LogViewerPage() {
 				<header className="log-viewer-head">
 					<div className="log-viewer-copy">
 						<h1 id="log-viewer-title">{state.title || title}</h1>
+					</div>
+					<div className="log-viewer-head-actions">
+						{state.streaming ? (
+							<div className="log-viewer-tip is-live">
+								<span className="log-viewer-live-dot" aria-hidden="true" />
+								<span>{t("logViewer.live")}</span>
+							</div>
+						) : null}
+
+						<button
+							type="button"
+							className={`log-viewer-find-trigger${searchVisible ? " is-active" : ""}`}
+							onClick={handleOpenSearch}
+							disabled={state.loadingInitial || state.loadingPrevious}
+							aria-label={searchLabel}
+							aria-pressed={searchVisible}
+							title={searchLabel}
+						>
+							<SearchOutlined aria-hidden="true" />
+						</button>
+
+						<button
+							type="button"
+							className={`log-viewer-follow-toggle${tailFollowEnabled ? " is-active" : ""}`}
+							onClick={toggleTailFollow}
+							disabled={state.loadingInitial}
+							aria-label={followToggleLabel}
+							title={followToggleLabel}
+						>
+							<RotateAutoIcon />
+						</button>
 					</div>
 					{!isMac ? (
 						<div className="log-viewer-window-controls">
@@ -939,25 +972,6 @@ export function LogViewerPage() {
 					) : null}
 				</header>
 
-				<div className="log-viewer-tip-row">
-					{state.streaming ? (
-						<div className="log-viewer-tip is-live">
-							<span className="log-viewer-live-dot" aria-hidden="true" />
-							<span>{t("logViewer.live")}</span>
-						</div>
-					) : null}
-
-					<button
-						type="button"
-						className={`log-viewer-follow-toggle${tailFollowEnabled ? " is-active" : ""}`}
-						onClick={toggleTailFollow}
-						disabled={state.loadingInitial}
-						aria-label={followToggleLabel}
-						title={followToggleLabel}
-					>
-						<RotateAutoIcon />
-					</button>
-				</div>
 				{state.notice ? (
 					<div className="feedback-banner">{state.notice}</div>
 				) : null}

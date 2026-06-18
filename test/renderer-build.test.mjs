@@ -3713,14 +3713,16 @@ test("service log viewer lets users pause tail following and jump back to the la
   assert.match(logViewerPage, /log-viewer-window-drag-zone/);
   assert.match(globalStyles, /\.log-viewer-window-drag-zone\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*0;[\s\S]*?app-region:\s*drag;/);
   assert.doesNotMatch(globalStyles, /\.log-viewer-drag-region\s*\{/);
-  assert.match(globalStyles, /\.log-viewer-head\s*\{[\s\S]*?app-region:\s*no-drag;/);
+  assert.match(globalStyles, /\.log-viewer-head\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?app-region:\s*drag;/);
+  assert.match(globalStyles, /\.log-viewer-head-actions\s*\{[\s\S]*?app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.log-viewer-page\s*\{[\s\S]*?background:\s*var\(--desktop-ui-bg\);[\s\S]*?color:\s*var\(--desktop-ui-text\);/);
   assert.match(globalStyles, /\.log-viewer-head\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--desktop-ui-border\);[\s\S]*?background:\s*var\(--desktop-ui-card\);/);
-  assert.match(globalStyles, /\.log-viewer-tip-row\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--desktop-ui-border-soft\);[\s\S]*?background:\s*var\(--desktop-ui-card\);/);
+  assert.doesNotMatch(logViewerPage, /log-viewer-tip-row/);
+  assert.doesNotMatch(globalStyles, /\.log-viewer-tip-row\s*\{/);
   assert.match(globalStyles, /\.log-viewer-live-dot\s*\{[\s\S]*?animation:\s*log-viewer-live-dot-breathe\s*1\.6s\s*ease-in-out\s*infinite;/);
   assert.match(globalStyles, /@keyframes\s+log-viewer-live-dot-breathe\s*\{/);
-  assert.match(globalStyles, /\.log-viewer-follow-toggle\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*30px;/);
-  assert.match(globalStyles, /\.log-viewer-follow-toggle svg\s*\{[\s\S]*?width:\s*20px;[\s\S]*?height:\s*20px;/);
+  assert.match(globalStyles, /\.log-viewer-find-trigger,[\s\S]*?\.log-viewer-follow-toggle\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*28px;/);
+  assert.match(globalStyles, /\.log-viewer-follow-toggle svg\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;/);
   assert.match(globalStyles, /\.log-viewer-follow-toggle\.is-active\s*\{[\s\S]*?border-color:\s*rgba\(var\(--desktop-ui-success-rgb\),\s*0\.36\);[\s\S]*?background:\s*rgba\(var\(--desktop-ui-success-rgb\),\s*0\.12\);[\s\S]*?color:\s*var\(--desktop-ui-success\);/);
   assert.match(globalStyles, /\.log-viewer-scroll-top\s*\{/);
   assert.match(globalStyles, /\.log-viewer-scroll-bottom\s*\{/);
@@ -3739,6 +3741,9 @@ test("service log viewer keeps find controls inside the log area", () => {
   const globalStyles = readRendererStyles();
 
   assert.match(logViewerPage, /aria-label=\{t\("logViewer\.find\.aria"\)\}/);
+  assert.match(logViewerPage, /import \{ SearchOutlined \} from "@ant-design\/icons";/);
+  assert.match(logViewerPage, /className=\{`log-viewer-find-trigger\$\{searchVisible \? " is-active" : ""\}`\}/);
+  assert.match(logViewerPage, /onClick=\{handleOpenSearch\}[\s\S]*?<SearchOutlined aria-hidden="true" \/>/);
   assert.match(logViewerPage, /handleOpenSearch/);
   assert.match(logViewerPage, /handleCloseSearch/);
   assert.match(logViewerPage, /aria-label=\{t\("logViewer\.find\.close"\)\}/);
@@ -3747,7 +3752,7 @@ test("service log viewer keeps find controls inside the log area", () => {
   assert.match(logViewerPage, /renderLogContent\(\s*joinedContent,\s*matches,\s*activeMatchIndex,\s*\)/);
   assert.doesNotMatch(logViewerPage, /className="log-viewer-toolbar"/);
   assert.match(globalStyles, /\.log-viewer-body-shell\s*\{/);
-  assert.match(globalStyles, /\.log-viewer-find-panel\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?left:\s*20px;[\s\S]*?top:\s*12px;[\s\S]*?width:\s*min\(520px,\s*calc\(50%\s*-\s*20px\)\);/);
+  assert.match(globalStyles, /\.log-viewer-find-panel\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?left:\s*12px;[\s\S]*?top:\s*8px;[\s\S]*?width:\s*min\(520px,\s*calc\(100%\s*-\s*24px\)\);/);
   assert.match(globalStyles, /\.log-viewer-find-close\s*\{/);
   assert.match(globalStyles, /\.log-match\.is-active\s*\{/);
 });

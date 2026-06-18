@@ -13,8 +13,9 @@
 .log-viewer-window-drag-zone {
   position: absolute;
   top: 0;
-  z-index: 8;
+  z-index: 1;
   height: 38px;
+  pointer-events: none;
   app-region: drag;
   -webkit-app-region: drag;
 }
@@ -42,21 +43,34 @@
 }
 
 .log-viewer-head {
+  position: relative;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
-  gap: 16px;
   align-items: center;
-  padding: 18px 20px;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 14px 8px 20px;
   border-bottom: 1px solid var(--desktop-ui-border);
   background: var(--desktop-ui-card);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 .log-viewer-copy {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+}
+
+.log-viewer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .log-viewer-window-controls {
@@ -64,6 +78,8 @@
   align-items: center;
   gap: 4px;
   flex: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .log-viewer-control-button {
@@ -99,9 +115,12 @@
 
 .log-viewer-copy h1 {
   margin: 0;
+  overflow: hidden;
   color: var(--desktop-ui-text);
-  font-size: 18px;
-  line-height: 1.35;
+  font-size: 15px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .log-viewer-copy p {
@@ -128,8 +147,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   color: var(--desktop-ui-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .log-viewer-tip.is-live {
@@ -159,25 +180,14 @@
   }
 }
 
-.log-viewer-tip-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--desktop-ui-border-soft);
-  background: var(--desktop-ui-card);
-}
-
 .log-viewer-find-trigger,
 .log-viewer-follow-toggle {
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 34px;
-  height: 30px;
-  min-height: 30px;
+  width: 32px;
+  height: 28px;
+  min-height: 28px;
   padding: 0;
   border: 1px solid var(--desktop-ui-border);
   border-radius: 999px;
@@ -188,9 +198,13 @@
   -webkit-app-region: no-drag;
 }
 
+.log-viewer-find-trigger .anticon {
+  font-size: 15px;
+}
+
 .log-viewer-follow-toggle svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .log-viewer-find-trigger:hover:not(:disabled),
@@ -227,15 +241,15 @@
 
 .log-viewer-find-panel {
   position: absolute;
-  left: 20px;
-  top: 12px;
+  left: 12px;
+  top: 8px;
   z-index: 5;
   display: flex;
   align-items: center;
   gap: 6px;
   box-sizing: border-box;
-  width: min(520px, calc(50% - 20px));
-  max-width: calc(50% - 20px);
+  width: min(520px, calc(100% - 24px));
+  max-width: calc(100% - 24px);
   min-height: 36px;
   padding: 5px 6px;
   border: 1px solid var(--desktop-ui-border);
@@ -344,7 +358,7 @@
 }
 
 .log-viewer-scroll-top {
-  top: 142px;
+  top: 76px;
 }
 
 .log-viewer-scroll-bottom {
