@@ -14,7 +14,7 @@
 - `agent-container-hub`：宿主机容器服务，为后续智能体运行时提供沙箱能力。
 - `agent-platform`：智能体运行时服务。
 - `agent-webclient`：智能助理前端，作为内置服务随 Desktop 分发。
-- `zenmind-app-server`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
+- `identity-center`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
 - `pan-webclient`：网盘服务，通过插件系统导入。
 
 桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 webview 直接访问对应 `healthMeta.webUrl`。需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
@@ -90,7 +90,7 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 
 ### 敏感信息管理
 - 真实密钥、证书和本地环境差异配置不提交到仓库。
-- pan-webclient 使用的 RSA 密钥对由 Desktop 管理，存储在 `secrets/` 下；agent-platform 使用 `zenmind-app-server` 的 JWK。
+- pan-webclient 使用的 RSA 密钥对由 Desktop 管理，存储在 `secrets/` 下；agent-platform 使用 `identity-center` 的 JWK。
 - `.env.local`、编辑器配置和构建产物应由 `.gitignore` 管理。
 - 示例配置应保留在随服务分发的模板文件中，不要把真实值写入文档。
 
@@ -190,5 +190,5 @@ npm run dist:win-docker
 - 启动失败时，先检查控制中心展示的状态文案、日志文件路径和 PID 文件路径。
 - `agent-container-hub` 无法启动时，优先检查 Docker 或 Podman 是否可用。
 - `pan-webclient` 无法启动时，优先确认 `.env` 已生成且 RSA 公钥已自动写入。
-- `agent-platform` 认证使用 `zenmind-app-server` 的 JWK public key；Desktop 启动前会 bootstrap app-server JWK、同步 public key，并通过 app-server 签发 access token。
+- `agent-platform` 认证使用 `identity-center` 的 JWK public key；Desktop 启动前会 bootstrap identity-center JWK、同步 public key，并通过 identity-center 签发 access token。
 - 若测试失败，请先确认 `build/resources/services` 中的内置资源已同步完成。

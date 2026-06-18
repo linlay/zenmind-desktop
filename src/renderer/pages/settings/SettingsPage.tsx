@@ -76,6 +76,7 @@ type SettingsPageProps = {
   websiteItems: WebsiteEntry[];
   onWebsiteItemsChange: (items: WebsiteEntry[]) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
+  debugVisible: boolean;
 };
 
 type NoticeTone = "success" | "error";
@@ -214,8 +215,6 @@ const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
   tlsInsecureSkipVerify: false,
   reconnectSeconds: 3
 };
-const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
-
 function isMarketVisible(settings: MarketSettings) {
   return settings.enabled === true;
 }
@@ -487,36 +486,10 @@ function WindowsDataRootCard() {
   );
 }
 
-function AboutAppCard({
-  runtimeResetPending,
-  runtimeResetResult,
-  onResetRuntimeEnv
-}: AboutAppCardProps) {
+function LocalWsServerDebugCard() {
   const { t } = useI18n();
-  const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
   const [desktopWsServerState, setDesktopWsServerState] = useState<DesktopWsServerState | null>(null);
   const [desktopWsServerPending, setDesktopWsServerPending] = useState<"open" | "close" | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    window.electronAPI.settings
-      .getAppInfo()
-      .then((nextAppInfo) => {
-        if (!cancelled) {
-          setAppInfo(nextAppInfo);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAppInfo({ productName: "", version: "", buildTime: "" });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -539,41 +512,23 @@ function AboutAppCard({
     };
   }, []);
 
-  const version = useMemo(() => {
-    if (appInfo === null) {
-      return t("common.loading");
-    }
-    if (!appInfo.version) {
-      return t("common.error");
-    }
-    return appInfo.version.startsWith("v") ? appInfo.version : `v${appInfo.version}`;
-  }, [appInfo, t]);
-  const buildTime = useMemo(() => {
-    if (appInfo === null) {
-      return t("common.loading");
-    }
-    if (!appInfo.buildTime) {
-      return t("common.error");
-    }
-    return appInfo.buildTime;
-  }, [appInfo, t]);
   const desktopWsServerStatus = useMemo(() => {
     if (desktopWsServerPending === "open") {
-      return t("settings.about.desktopWs.opening");
+      return t("settings.debug.desktopWs.opening");
     }
     if (desktopWsServerPending === "close") {
-      return t("settings.about.desktopWs.closing");
+      return t("settings.debug.desktopWs.closing");
     }
     if (desktopWsServerState === null) {
       return t("common.loading");
     }
     if (desktopWsServerState.running) {
-      return t("settings.about.desktopWs.open");
+      return t("settings.debug.desktopWs.open");
     }
     if (desktopWsServerState.enabled && desktopWsServerState.message) {
-      return t("settings.about.desktopWs.failed");
+      return t("settings.debug.desktopWs.failed");
     }
-    return t("settings.about.desktopWs.closed");
+    return t("settings.debug.desktopWs.closed");
   }, [desktopWsServerPending, desktopWsServerState, t]);
   const desktopWsServerStatusClass = desktopWsServerPending
     ? "is-pending"
@@ -602,6 +557,112 @@ function AboutAppCard({
   }
 
   return (
+    <div className="settings-about-stack" aria-label={t("settings.debug.label")}>
+      <div className="data-root-card settings-desktop-ws-card">
+        <div className="settings-desktop-ws-copy">
+          <h2>{t("settings.debug.desktopWs.title")}</h2>
+          <p className="page-copy">{t("settings.debug.desktopWs.description")}</p>
+        </div>
+        <div className="settings-desktop-ws-panel">
+          <div className="settings-desktop-ws-meta">
+            <span className={`settings-desktop-ws-status ${desktopWsServerStatusClass}`}>
+              {desktopWsServerStatus}
+            </span>
+            <code>{desktopWsServerUrl}</code>
+          </div>
+          <div className="settings-desktop-ws-actions">
+            {desktopWsServerState?.running ? (
+              <Button
+                danger
+                disabled={desktopWsServerPending !== null}
+                onClick={() => void handleSetDesktopWsServerEnabled(false)}
+              >
+                {desktopWsServerPending === "close"
+                  ? t("settings.debug.desktopWs.closing")
+                  : t("settings.debug.desktopWs.closeAction")}
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                disabled={desktopWsServerPending !== null}
+                onClick={() => void handleSetDesktopWsServerEnabled(true)}
+              >
+                {desktopWsServerPending === "open"
+                  ? t("settings.debug.desktopWs.opening")
+                  : desktopWsServerState?.enabled
+                    ? t("settings.debug.desktopWs.retryAction")
+                    : t("settings.debug.desktopWs.openAction")}
+              </Button>
+            )}
+            {desktopWsServerState?.enabled && !desktopWsServerState.running ? (
+              <Button
+                disabled={desktopWsServerPending !== null}
+                onClick={() => void handleSetDesktopWsServerEnabled(false)}
+              >
+                {t("settings.debug.desktopWs.disableAction")}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        {desktopWsServerState?.message ? (
+          <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
+            {desktopWsServerState.message}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AboutAppCard({
+  runtimeResetPending,
+  runtimeResetResult,
+  onResetRuntimeEnv
+}: AboutAppCardProps) {
+  const { t } = useI18n();
+  const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    window.electronAPI.settings
+      .getAppInfo()
+      .then((nextAppInfo) => {
+        if (!cancelled) {
+          setAppInfo(nextAppInfo);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAppInfo({ productName: "", version: "", buildTime: "" });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const version = useMemo(() => {
+    if (appInfo === null) {
+      return t("common.loading");
+    }
+    if (!appInfo.version) {
+      return t("common.error");
+    }
+    return appInfo.version.startsWith("v") ? appInfo.version : `v${appInfo.version}`;
+  }, [appInfo, t]);
+  const buildTime = useMemo(() => {
+    if (appInfo === null) {
+      return t("common.loading");
+    }
+    if (!appInfo.buildTime) {
+      return t("common.error");
+    }
+    return appInfo.buildTime;
+  }, [appInfo, t]);
+
+  return (
     <div className="settings-about-stack" aria-label={t("settings.about.label")}>
       <div className="settings-item-card settings-about-card">
         <div className="settings-item-row settings-about-row">
@@ -622,58 +683,6 @@ function AboutAppCard({
             {buildTime}
           </div>
         </div>
-      </div>
-      <div className="data-root-card settings-desktop-ws-card">
-        <div className="settings-desktop-ws-copy">
-          <h2>{t("settings.about.desktopWs.title")}</h2>
-          <p className="page-copy">{t("settings.about.desktopWs.description")}</p>
-        </div>
-        <div className="settings-desktop-ws-panel">
-          <div className="settings-desktop-ws-meta">
-            <span className={`settings-desktop-ws-status ${desktopWsServerStatusClass}`}>
-              {desktopWsServerStatus}
-            </span>
-            <code>{desktopWsServerUrl}</code>
-          </div>
-          <div className="settings-desktop-ws-actions">
-            {desktopWsServerState?.running ? (
-              <Button
-                danger
-                disabled={desktopWsServerPending !== null}
-                onClick={() => void handleSetDesktopWsServerEnabled(false)}
-              >
-                {desktopWsServerPending === "close"
-                  ? t("settings.about.desktopWs.closing")
-                  : t("settings.about.desktopWs.closeAction")}
-              </Button>
-            ) : (
-              <Button
-                type="primary"
-                disabled={desktopWsServerPending !== null}
-                onClick={() => void handleSetDesktopWsServerEnabled(true)}
-              >
-                {desktopWsServerPending === "open"
-                  ? t("settings.about.desktopWs.opening")
-                  : desktopWsServerState?.enabled
-                    ? t("settings.about.desktopWs.retryAction")
-                    : t("settings.about.desktopWs.openAction")}
-              </Button>
-            )}
-            {desktopWsServerState?.enabled && !desktopWsServerState.running ? (
-              <Button
-                disabled={desktopWsServerPending !== null}
-                onClick={() => void handleSetDesktopWsServerEnabled(false)}
-              >
-                {t("settings.about.desktopWs.disableAction")}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        {desktopWsServerState?.message ? (
-          <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
-            {desktopWsServerState.message}
-          </div>
-        ) : null}
       </div>
       <div className="data-root-card settings-reset-card">
         <div className="settings-reset-copy">
@@ -724,7 +733,8 @@ export function SettingsPage({
   onMarketEnabledChange,
   websiteItems,
   onWebsiteItemsChange,
-  onAssistantSettingsChange
+  onAssistantSettingsChange,
+  debugVisible
 }: SettingsPageProps) {
   const { locale, setLocale, t } = useI18n();
   const location = useLocation();
@@ -787,8 +797,8 @@ export function SettingsPage({
   const assistantSettingsLoadedRef = useRef(false);
   const desktopPetStateLoadedRef = useRef(false);
   const sectionDefinitions = useMemo(
-    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported, t }),
-    [desktopPetSupported, isWindows, t]
+    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported, debugVisible, t }),
+    [debugVisible, desktopPetSupported, isWindows, t]
   );
   const visibleSections = useMemo(
     () => getVisibleSettingsSections(sectionDefinitions),
@@ -2202,28 +2212,6 @@ export function SettingsPage({
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
       }
-      if (nextEnabled) {
-        const startResult = await window.electronAPI.services.start(TUNNEL_HUB_AGENT_SERVICE_ID);
-        if (!startResult.ok) {
-          const disabled = await window.electronAPI.settings.saveTunnelHubAgentSettings({
-            enabled: false,
-            deviceId: result.settings.deviceId,
-            relayUrl: result.settings.relayUrl,
-            tlsInsecureSkipVerify: result.settings.tlsInsecureSkipVerify,
-            reconnectSeconds: result.settings.reconnectSeconds
-          });
-          setTunnelHubSettings({
-            ...defaultTunnelHubAgentSettings,
-            ...disabled.settings
-          });
-          throw new Error(startResult.message || t("settings.tunnelHub.saveFailed"));
-        }
-      } else {
-        const stopResult = await window.electronAPI.services.stop(TUNNEL_HUB_AGENT_SERVICE_ID);
-        if (!stopResult.ok) {
-          throw new Error(stopResult.message || t("settings.tunnelHub.saveFailed"));
-        }
-      }
       setReadErrorSections(["tunnelHub"], "");
       showSectionNotice(
         "tunnelHub",
@@ -3328,6 +3316,8 @@ export function SettingsPage({
             onResetRuntimeEnv={handleResetRuntimeEnv}
           />
         );
+      case "debug":
+        return <LocalWsServerDebugCard />;
       default:
         return null;
     }

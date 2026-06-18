@@ -204,10 +204,15 @@ import {
   emitDesktopWsPush,
   getDesktopWsServerRuntimeState,
   startDesktopWsServer,
-  stopDesktopRemoteWsServer,
   stopDesktopWsServer
 } from "./desktop-ws-server";
 import { configureTunnelHubRemoteWsController } from "./tunnel-hub-remote-ws";
+import {
+  applyTunnelHubSettings,
+  configureTunnelHubRuntime,
+  startTunnelHubRuntimeIfEnabled,
+  stopTunnelHubRuntime
+} from "./tunnel-hub-runtime";
 import { callDesktopActionRenderer } from "./desktop-action-renderer";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../shared/agent-webclient-routes";
@@ -262,6 +267,7 @@ import { registerServicesIpcHandlers } from "./ipc/services-handlers";
 import { registerTaskBoardIpcHandlers } from "./ipc/task-board-handlers";
 import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
 import { registerSettingsIpcHandlers } from "./ipc/settings-handlers";
+import { registerTunnelHubIpcHandlers } from "./ipc/tunnel-hub-handlers";
 import { registerMarketplaceIpcHandlers } from "./ipc/marketplace-handlers";
 import { listWebEntries, registerWebIpcHandlers } from "./ipc/web-handlers";
 import {
@@ -2299,6 +2305,11 @@ function registerIpcHandlers(context: MainProcessContext) {
     desktopWsServerOptions,
     logger: console
   });
+  configureTunnelHubRuntime({
+    app,
+    desktopWsServerOptions,
+    logger: console
+  });
   const getDesktopWsServerRuntimeStateForSettings = () => {
     const state = getDesktopWsServerRuntimeState();
     return desktopWsServerLastError ? { ...state, message: desktopWsServerLastError } : state;
@@ -2446,6 +2457,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     cancelDesktopSsoLogin,
     issueAgentAccessToken
   }));
+  registerTunnelHubIpcHandlers(ipcMain);
   registerTaskBoardIpcHandlers(ipcMain, createTaskBoardIpcHandlerOptions(context, {
     listTaskBoardIssues: () => state.taskBoardRuntime?.listIssues() ?? {
       ok: false,
@@ -2581,7 +2593,8 @@ function registerIpcHandlers(context: MainProcessContext) {
     onGeneralSettingsChanged: () => assistantRunWakeLock.sync(),
     getDesktopWsServerRuntimeState: getDesktopWsServerRuntimeStateForSettings,
     startDesktopWsServer: startDesktopWsServerForSettings,
-    stopDesktopWsServer: stopDesktopWsServerForSettings
+    stopDesktopWsServer: stopDesktopWsServerForSettings,
+    applyTunnelHubSettings
   }));
 }
 
@@ -2668,6 +2681,11 @@ async function handleStartupPipeline() {
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
     notifyServicesChanged();
+    void startTunnelHubRuntimeIfEnabled().catch((error) => {
+      safeConsoleError("failed to start Desktop Tunnel Hub", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
 
     void runServiceMutation(() => runStartupPreparation(app, {
       onModeResolved: (mode) => {
@@ -2719,7 +2737,7 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
 
     startupRestoreController.beginSession("bootstrap");
     startupRestoreController.updateService(
-      "zenmind-app-server",
+      "identity-center",
       "installing",
       t("startup.envImport.importingBundled")
     );
@@ -2756,6 +2774,10 @@ function runShutdownCleanup(): Promise<void> {
       .then(() => stopRunningServicesForShutdown(app))
       .catch((error) => {
         console.error("failed while shutting down desktop services", error);
+      })
+      .then(() => stopTunnelHubRuntime())
+      .catch((error) => {
+        console.error("failed while shutting down Desktop Tunnel Hub", error);
       })
       .then(async () => {
         const cleanupStartedAt = Date.now();
@@ -2820,7 +2842,7 @@ app.on("will-quit", () => {
   clearDesktopPetIdleResetTimer();
   void cdpIntegration.stop();
   void stopDesktopWsServer();
-  void stopDesktopRemoteWsServer();
+  void stopTunnelHubRuntime();
   appState.taskBoardRuntime?.stop();
   appState.taskBoardRuntime = null;
   appState.assistantNavigationStatusClient?.stop();

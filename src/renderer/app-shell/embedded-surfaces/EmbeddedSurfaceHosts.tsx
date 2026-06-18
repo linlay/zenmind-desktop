@@ -48,7 +48,7 @@ function resolveAgentWebclientRouteKind(
 }
 
 function shouldLoadInitialServiceUrlDirectly(pluginId: string) {
-  return pluginId === "zenmind-app-server" || pluginId === "agent-platform";
+  return pluginId === "identity-center" || pluginId === "agent-platform";
 }
 
 export function PluginSurfaceHost({

@@ -8,6 +8,10 @@ import { beginStartupTiming } from "./startup-timing";
 import { getServicesRoot } from "./user-paths";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
+const LEGACY_IDENTITY_SERVICE_ID = ["zenmind", "app", "server"].join("-");
+const LEGACY_BUILTIN_SERVICE_IDS = new Set<string>([
+  LEGACY_IDENTITY_SERVICE_ID
+]);
 
 type BuiltinAssetIndexEntry = {
   id: string;
@@ -182,7 +186,7 @@ function listInstalledBuiltinManifestPaths(app: App) {
   return manifestPaths.sort((left, right) => left.localeCompare(right));
 }
 
-function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> = new Set()) {
+function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> = LEGACY_BUILTIN_SERVICE_IDS) {
   const latestByServiceId = new Map<string, { manifestPath: string; manifest: Manifest }>();
 
   for (const manifestPath of listInstalledBuiltinManifestPaths(app)) {
@@ -242,6 +246,9 @@ export function loadBuiltinServices(app: App) {
       }
 
       const manifest = readCachedManifest(archivePath);
+      if (LEGACY_BUILTIN_SERVICE_IDS.has(manifest.id)) {
+        continue;
+      }
       if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
         continue;
       }

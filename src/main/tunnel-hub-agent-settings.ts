@@ -10,7 +10,6 @@ import type {
 } from "../shared/contracts";
 import { readEnvFile } from "./env-file";
 import { getDesktopConfigRoot, getSecretsRoot, getServiceConfigRoot } from "./user-paths";
-import { writeEnvFileUpdates } from "./services/manager/env-content";
 import { getDesktopDeviceId } from "./device-identity";
 
 export const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
@@ -323,15 +322,7 @@ export function writeTunnelHubAgentToken(app: App, token: string) {
 }
 
 export function syncTunnelHubAgentSettingsToEnv(app: App) {
-  const settings = readTunnelHubAgentSettings(app);
-  const token = readTunnelHubAgentToken(app);
-  const updates = new Map<string, string>([
-    ["AGENT_TOKEN", token],
-    ["AGENT_RELAY_URL", settings.relayUrl],
-    ["AGENT_TLS_INSECURE_SKIP_VERIFY", settings.tlsInsecureSkipVerify ? "true" : "false"],
-    ["AGENT_RECONNECT_SECONDS", String(settings.reconnectSeconds)]
-  ]);
-  writeEnvFileUpdates(getEnvPath(app), updates);
+  void app;
 }
 
 export function saveTunnelHubAgentSettings(
@@ -415,7 +406,7 @@ export function saveTunnelHubAgentSettings(
   }
   return {
     ok: true,
-    message: nextSettings.enabled ? "Tunnel Hub Agent settings saved and enabled." : "Tunnel Hub Agent settings saved.",
+    message: nextSettings.enabled ? "Tunnel Hub settings saved and enabled." : "Tunnel Hub settings saved.",
     settings: readTunnelHubAgentSettings(app),
     configPath: getSettingsPath(app)
   };

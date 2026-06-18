@@ -6,7 +6,7 @@ export function agentWebclientInstallNeedsRefresh(_installDir: string) {
   return false;
 }
 
-export function zenmindAppServerInstallNeedsRefresh(_installDir: string) {
+export function identityCenterInstallNeedsRefresh(_installDir: string) {
   return false;
 }
 

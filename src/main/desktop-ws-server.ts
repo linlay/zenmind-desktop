@@ -35,7 +35,7 @@ import type {
   TaskBoardIssueUpdateInput
 } from "../shared/contracts";
 import { resolveDesktopAppInfo } from "./app-metadata";
-import { ensureAppServerJwk } from "./app-server-auth";
+import { ensureIdentityCenterJwk } from "./identity-center-auth";
 import { getDesktopDeviceId } from "./device-identity";
 import { handleDesktopActionRequest } from "./desktop-action-bridge";
 import type { TaskBoardRuntime } from "./task-board-runtime";
@@ -442,7 +442,7 @@ function verifyRs256Jwt(token: string, publicKeyPem: string) {
 }
 
 async function verifyDesktopAccessToken(app: App, token: string, subprotocol?: string): Promise<DesktopWsAuthSession> {
-  const { publicKeyPem } = await ensureAppServerJwk(app);
+  const { publicKeyPem } = await ensureIdentityCenterJwk(app);
   const payload = verifyRs256Jwt(token, publicKeyPem);
   const exp = typeof payload.exp === "number" ? payload.exp : Number(payload.exp);
   if (!Number.isFinite(exp) || exp * 1000 <= Date.now()) {

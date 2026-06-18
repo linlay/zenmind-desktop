@@ -10,10 +10,12 @@ export type {
 
 export function createSettingsSectionDefinitions({
   isWindows,
-  desktopPetSupported = true
+  desktopPetSupported = true,
+  debugVisible = false
 }: {
   isWindows: boolean;
   desktopPetSupported?: boolean;
+  debugVisible?: boolean;
 }): SettingsSectionDefinition[] {
   return [
     {
@@ -105,6 +107,14 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "debug",
+      group: "system",
+      label: "debug",
+      description: "",
+      layout: "measure",
+      visible: debugVisible
+    },
+    {
       id: "memory",
       group: "system",
       label: "memory",
@@ -138,7 +148,8 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   embeddedWebs: { label: "settings.embeddedWebs.label", description: "settings.embeddedWebs.description" },
   dataRoot: { label: "settings.dataRoot.label", description: "settings.dataRoot.description" },
   memory: { label: "settings.memory.label", description: "settings.memory.description" },
-  about: { label: "settings.about.label", description: "settings.about.description" }
+  about: { label: "settings.about.label", description: "settings.about.description" },
+  debug: { label: "settings.debug.label", description: "settings.debug.description" }
 };
 
 export function localizeSettingsSectionDefinitions(
@@ -158,11 +169,16 @@ export function localizeSettingsSectionDefinitions(
 export function buildLocalizedSettingsSections({
   isWindows,
   desktopPetSupported,
+  debugVisible,
   t
 }: {
   isWindows: boolean;
   desktopPetSupported?: boolean;
+  debugVisible?: boolean;
   t: (key: TranslationKey) => string;
 }): SettingsSectionDefinition[] {
-  return localizeSettingsSectionDefinitions(createSettingsSectionDefinitions({ isWindows, desktopPetSupported }), t);
+  return localizeSettingsSectionDefinitions(
+    createSettingsSectionDefinitions({ isWindows, desktopPetSupported, debugVisible }),
+    t
+  );
 }

@@ -109,7 +109,7 @@ test("Tunnel Hub settings validate DNS-label device IDs", (t) => {
   assert.match(result.message, /Device ID/u);
 });
 
-test("Tunnel Hub registration result stores returned agent token and syncs env", (t) => {
+test("Tunnel Hub registration result stores returned relay token without writing service env", (t) => {
   const app = createTempApp(t);
   const saved = saveTunnelHubAgentSettings(app, {
     enabled: true,
@@ -133,8 +133,7 @@ test("Tunnel Hub registration result stores returned agent token and syncs env",
   assert.equal(settings.targetUrl, "http://127.0.0.1:7083");
   assert.equal(settings.hasAgentToken, true);
   assert.equal(fs.readFileSync(tunnelTokenPath(app), "utf8").trim(), "returned-agent-token");
-  const envContent = fs.readFileSync(tunnelEnvPath(app), "utf8");
-  assert.match(envContent, /^AGENT_TOKEN=returned-agent-token$/m);
+  assert.equal(fs.existsSync(tunnelEnvPath(app)), false);
 });
 
 test("Tunnel Hub enable saves drafts but falls back to disabled when config is incomplete", (t) => {

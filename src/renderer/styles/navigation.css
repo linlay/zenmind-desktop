@@ -190,8 +190,13 @@
   app-region: drag;
   -webkit-app-region: drag;
   pointer-events: auto;
+  cursor: grab;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.sidebar-chrome-drag-region:active {
+  cursor: grabbing;
 }
 
 .app-shell.is-mac-platform .sidebar-chrome-drag-region {
@@ -2327,8 +2332,13 @@
   -webkit-app-region: drag;
   z-index: 10;
   pointer-events: auto;
+  cursor: grab;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.app-main-drag-region:active {
+  cursor: grabbing;
 }
 
 .app-main-drag-region {
@@ -2366,6 +2376,11 @@
   border-bottom: 1px solid var(--line);
   app-region: drag;
   -webkit-app-region: drag;
+  cursor: grab;
+}
+
+.app-header:active {
+  cursor: grabbing;
 }
 
 :root[data-theme="dark"] .app-header {
@@ -2991,8 +3006,13 @@
   -webkit-app-region: drag;
   z-index: 10;
   pointer-events: auto;
+  cursor: grab;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.pan-drag-region:active {
+  cursor: grabbing;
 }
 
 .pan-page-embedded .pan-drag-region {

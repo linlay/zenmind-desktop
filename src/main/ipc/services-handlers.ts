@@ -219,7 +219,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
 
   function beginBootstrapStatus(message: string) {
     startupRestoreController?.beginSession("bootstrap");
-    startupRestoreController?.updateService("zenmind-app-server", "installing", message);
+    startupRestoreController?.updateService("identity-center", "installing", message);
     notifyServicesChanged?.();
   }
 

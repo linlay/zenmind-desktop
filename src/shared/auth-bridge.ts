@@ -109,7 +109,7 @@ export function buildPluginEmbeddedUrl(
     return "";
   }
 
-  if (serviceId === "zenmind-app-server") {
+  if (serviceId === "identity-center") {
     url.pathname = "/admin/";
     url.search = "";
     url.hash = "";

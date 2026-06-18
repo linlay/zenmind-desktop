@@ -2,13 +2,13 @@ import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
-import { issueAppServerAccessToken, ensureAppServerJwk } from "./app-server-auth";
+import { issueIdentityCenterAccessToken, ensureIdentityCenterJwk } from "./identity-center-auth";
 import { getDesktopDeviceIdentity } from "./device-identity";
 import { readEnvFile } from "./env-file";
 import { getService } from "./services/service-registry";
 import { getServiceConfigRoot } from "./user-paths";
 
-const APP_SERVER_SERVICE_ID = "zenmind-app-server";
+const IDENTITY_CENTER_SERVICE_ID = "identity-center";
 const MAX_TCP_PORT = 65535;
 
 export type AppPairingPayload = {
@@ -16,8 +16,8 @@ export type AppPairingPayload = {
   desktopIdentityCreatedAt: string;
   desktopUsername: string;
   desktopHostname: string;
-  appServerIssuer: string;
-  appServerPublicKeySha256: string;
+  identityCenterIssuer: string;
+  identityCenterPublicKeySha256: string;
   apiBaseUrl: string;
   pairingId: string;
   secret: string;
@@ -50,8 +50,8 @@ function parsePortValue(value: string) {
   return Number.isInteger(parsed) && parsed > 0 && parsed <= MAX_TCP_PORT ? parsed : 0;
 }
 
-export function resolveAppServerPort(app: App) {
-  const service = getService(APP_SERVER_SERVICE_ID);
+export function resolveIdentityCenterPort(app: App) {
+  const service = getService(IDENTITY_CENTER_SERVICE_ID);
   const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind), ".env");
   const env = readEnvFile(envPath);
   return parsePortValue(env.get(service.web.portEnvKey) ?? "") || service.web.defaultPort;
@@ -109,7 +109,7 @@ function normalizePairingPayload(raw: unknown, fallback: {
   desktopIdentityCreatedAt: string;
   desktopUsername: string;
   desktopHostname: string;
-  appServerPublicKeySha256: string;
+  identityCenterPublicKeySha256: string;
   apiBaseUrl: string;
 }): AppPairingPayload {
   const record = raw && typeof raw === "object" && !Array.isArray(raw)
@@ -120,8 +120,8 @@ function normalizePairingPayload(raw: unknown, fallback: {
     desktopIdentityCreatedAt: readString(record, "desktopIdentityCreatedAt") || fallback.desktopIdentityCreatedAt,
     desktopUsername: readString(record, "desktopUsername") || fallback.desktopUsername,
     desktopHostname: readString(record, "desktopHostname") || fallback.desktopHostname,
-    appServerIssuer: readString(record, "appServerIssuer"),
-    appServerPublicKeySha256: readString(record, "appServerPublicKeySha256") || fallback.appServerPublicKeySha256,
+    identityCenterIssuer: readString(record, "identityCenterIssuer"),
+    identityCenterPublicKeySha256: readString(record, "identityCenterPublicKeySha256") || fallback.identityCenterPublicKeySha256,
     apiBaseUrl: readString(record, "apiBaseUrl") || fallback.apiBaseUrl,
     pairingId: readString(record, "pairingId"),
     secret: readString(record, "secret"),
@@ -135,18 +135,18 @@ export async function createAppPairingPayload(
 ): Promise<AppPairingPayloadResult> {
   try {
     const identity = getDesktopDeviceIdentity(app);
-    const port = resolveAppServerPort(app);
+    const port = resolveIdentityCenterPort(app);
     const loopbackBaseUrl = `http://127.0.0.1:${port}`;
     const apiBaseUrl = `http://${selectPairingHost()}:${port}`;
-    const publicKey = await ensureAppServerJwk(app);
+    const publicKey = await ensureIdentityCenterJwk(app);
     const publicKeySha256 = crypto.createHash("sha256").update(publicKey.publicKeyPem).digest("hex");
-    const accessToken = await issueAppServerAccessToken(app);
+    const accessToken = await issueIdentityCenterAccessToken(app);
     const fallback = {
       desktopDeviceId: identity.deviceId,
       desktopIdentityCreatedAt: identity.createdAt,
       desktopUsername: getDesktopUsername(),
       desktopHostname: os.hostname() || "",
-      appServerPublicKeySha256: publicKeySha256,
+      identityCenterPublicKeySha256: publicKeySha256,
       apiBaseUrl
     };
     const response = await fetchImpl(`${loopbackBaseUrl}/api/auth/pairing/start`, {

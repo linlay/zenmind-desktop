@@ -316,7 +316,6 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   const registrationTokenPath = path.join(desktop, "secrets", "tunnel-hub-registration-token");
   const envPath = path.join(desktop, "config", "services", "tunnel-hub-agent", ".env");
   const tunnelSettings = readJson(tunnelSettingsPath);
-  const envContent = fs.readFileSync(envPath, "utf8");
   const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
 
   assert.equal(result.applied, true);
@@ -339,10 +338,7 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   assert.equal("deviceSecret" in tunnelSettings, false);
   assert.equal(readText(tokenPath), "init-agent-token");
   assert.equal(readText(registrationTokenPath), "init-registration-token");
-  assert.match(envContent, /^AGENT_TOKEN=init-agent-token$/m);
-  assert.match(envContent, /^AGENT_RELAY_URL=wss:\/\/tunnel-hub\.zenmind\.cc\/tunnel$/m);
-  assert.match(envContent, /^AGENT_TLS_INSECURE_SKIP_VERIFY=false$/m);
-  assert.match(envContent, /^AGENT_RECONNECT_SECONDS=3$/m);
+  assert.equal(fs.existsSync(envPath), false);
   assert.equal(bootstrapState.appliedResult.tunnelHub, "applied");
 });
 

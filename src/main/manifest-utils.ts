@@ -246,7 +246,7 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
       ]
     }
   },
-  "zenmind-app-server": {
+  "identity-center": {
     portEnvKey: "SERVER_PORT",
     defaultPort: 7076,
     portBindings: [
@@ -262,7 +262,7 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
 const testCoreServicePortOffsets: Record<string, number> = {
   "agent-webclient": 0,
   "agent-platform": 1,
-  "zenmind-app-server": 2,
+  "identity-center": 2,
   "agent-container-hub": 3
 };
 

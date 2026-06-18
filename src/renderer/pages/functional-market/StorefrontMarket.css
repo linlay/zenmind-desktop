@@ -221,9 +221,9 @@
 .market-store-card-head {
   position: relative;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
   align-items: start;
-  gap: 13px;
+  gap: 12px;
 }
 
 /* ---------- typed glyph ---------- */
@@ -234,76 +234,76 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--glyph-grad, linear-gradient(140deg, #3b82f6, #2563eb));
-  color: #ffffff;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--glyph-border, rgba(37, 99, 235, 0.16));
+  border-radius: 11px;
+  background: var(--glyph-bg, rgba(59, 130, 246, 0.1));
+  color: var(--glyph-color, #2563eb);
   overflow: hidden;
-  box-shadow:
-    0 6px 14px -5px var(--glyph-glow, rgba(37, 99, 235, 0.5)),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    inset 0 -3px 7px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.market-store-item-icon::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(157deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 52%);
-  pointer-events: none;
+  box-shadow: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .market-store-item-icon svg {
   position: relative;
   z-index: 1;
   display: block;
-  width: 23px;
-  height: 23px;
+  width: 18px;
+  height: 18px;
 }
 
 .market-store-card:hover .market-store-item-icon {
-  transform: scale(1.05);
-  box-shadow:
-    0 10px 20px -6px var(--glyph-glow, rgba(37, 99, 235, 0.55)),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    inset 0 -3px 7px rgba(0, 0, 0, 0.1);
+  border-color: var(--glyph-border-strong, rgba(37, 99, 235, 0.28));
 }
 
 .market-store-item-icon.is-plugin {
-  --glyph-grad: linear-gradient(140deg, #3b82f6, #2563eb);
-  --glyph-glow: rgba(37, 99, 235, 0.5);
+  --glyph-bg: rgba(59, 130, 246, 0.1);
+  --glyph-border: rgba(37, 99, 235, 0.16);
+  --glyph-border-strong: rgba(37, 99, 235, 0.28);
+  --glyph-color: #2563eb;
 }
 
 .market-store-item-icon.is-skill {
-  --glyph-grad: linear-gradient(140deg, #34d399, #059669);
-  --glyph-glow: rgba(5, 150, 105, 0.45);
+  --glyph-bg: rgba(16, 185, 129, 0.1);
+  --glyph-border: rgba(5, 150, 105, 0.16);
+  --glyph-border-strong: rgba(5, 150, 105, 0.28);
+  --glyph-color: #059669;
 }
 
 .market-store-item-icon.is-agent {
-  --glyph-grad: linear-gradient(140deg, #818cf8, #6366f1);
-  --glyph-glow: rgba(99, 102, 241, 0.45);
+  --glyph-bg: rgba(99, 102, 241, 0.1);
+  --glyph-border: rgba(79, 70, 229, 0.16);
+  --glyph-border-strong: rgba(79, 70, 229, 0.28);
+  --glyph-color: #4f46e5;
 }
 
 .market-store-item-icon.is-sandbox-image {
-  --glyph-grad: linear-gradient(140deg, #22d3ee, #0891b2);
-  --glyph-glow: rgba(8, 145, 178, 0.42);
+  --glyph-bg: rgba(6, 182, 212, 0.1);
+  --glyph-border: rgba(8, 145, 178, 0.16);
+  --glyph-border-strong: rgba(8, 145, 178, 0.28);
+  --glyph-color: #0891b2;
 }
 
 .market-store-item-icon.is-pet {
-  --glyph-grad: linear-gradient(140deg, #fbbf24, #d97706);
-  --glyph-glow: rgba(217, 119, 6, 0.42);
+  --glyph-bg: rgba(245, 158, 11, 0.12);
+  --glyph-border: rgba(217, 119, 6, 0.18);
+  --glyph-border-strong: rgba(217, 119, 6, 0.3);
+  --glyph-color: #b45309;
 }
 
 .market-store-item-icon.is-cli {
-  --glyph-grad: linear-gradient(140deg, #fb7185, #e11d48);
-  --glyph-glow: rgba(225, 29, 72, 0.42);
+  --glyph-bg: rgba(244, 63, 94, 0.1);
+  --glyph-border: rgba(225, 29, 72, 0.16);
+  --glyph-border-strong: rgba(225, 29, 72, 0.28);
+  --glyph-color: #e11d48;
 }
 
 .market-store-item-icon.is-website-app {
-  --glyph-grad: linear-gradient(140deg, #a78bfa, #7c3aed);
-  --glyph-glow: rgba(124, 58, 237, 0.45);
+  --glyph-bg: rgba(124, 58, 237, 0.1);
+  --glyph-border: rgba(109, 40, 217, 0.16);
+  --glyph-border-strong: rgba(109, 40, 217, 0.28);
+  --glyph-color: #6d28d9;
 }
 
 /* ---------- title / version / description ---------- */
@@ -385,15 +385,6 @@
   white-space: nowrap;
 }
 
-.market-store-tags .market-store-platform-chip {
-  color: var(--market-store-purple);
-  background: var(--market-store-purple-soft);
-  border-color: color-mix(in srgb, var(--market-store-purple) 26%, var(--market-store-line));
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
-  font-weight: 760;
-}
-
 /* ---------- footer ---------- */
 
 .market-store-card-footer {
@@ -442,16 +433,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.market-store-detail-link svg {
-  flex: none;
-  font-size: 14px;
-  transition: transform 0.15s ease;
-}
-
-.market-store-card:hover .market-store-detail-link svg {
-  transform: translateX(3px);
 }
 
 .market-store-detail-link:hover,
@@ -662,21 +643,21 @@
 
 .market-store-detail-title-row {
   display: grid;
-  grid-template-columns: 50px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: start;
   gap: 14px;
   min-width: 0;
 }
 
 .market-store-detail-title-row .market-store-item-icon {
-  width: 50px;
-  height: 50px;
-  border-radius: 15px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
 }
 
 .market-store-detail-title-row .market-store-item-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .market-store-detail-title {
@@ -893,17 +874,11 @@
 }
 
 :root[data-theme="dark"] .market-store-item-icon {
-  box-shadow:
-    0 6px 16px -5px var(--glyph-glow, rgba(37, 99, 235, 0.5)),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    inset 0 -3px 7px rgba(0, 0, 0, 0.16);
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .market-store-card:hover .market-store-item-icon {
-  box-shadow:
-    0 10px 22px -6px var(--glyph-glow, rgba(37, 99, 235, 0.55)),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    inset 0 -3px 7px rgba(0, 0, 0, 0.16);
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .market-store-toolbar-button,
@@ -935,7 +910,6 @@
 }
 
 :root[data-theme="dark"] .market-store-tags span,
-:root[data-theme="dark"] .market-store-item-icon,
 :root[data-theme="dark"] .market-store-stat-pill,
 :root[data-theme="dark"] .market-store-detail-meta-pill,
 :root[data-theme="dark"] .market-store-detail-category-pill,
@@ -945,26 +919,53 @@
   color: #c7c9d1;
 }
 
-:root[data-theme="dark"] .market-store-item-icon.is-plugin,
-:root[data-theme="dark"] .market-store-item-icon.is-skill {
-  color: #a5b4fc;
+:root[data-theme="dark"] .market-store-item-icon.is-plugin {
+  --glyph-bg: rgba(129, 140, 248, 0.12);
+  --glyph-border: rgba(165, 180, 252, 0.18);
+  --glyph-border-strong: rgba(165, 180, 252, 0.3);
+  --glyph-color: #a5b4fc;
 }
 
-:root[data-theme="dark"] .market-store-item-icon.is-agent,
-:root[data-theme="dark"] .market-store-item-icon.is-website-app {
-  color: #93c5fd;
+:root[data-theme="dark"] .market-store-item-icon.is-skill {
+  --glyph-bg: rgba(52, 211, 153, 0.12);
+  --glyph-border: rgba(110, 231, 183, 0.18);
+  --glyph-border-strong: rgba(110, 231, 183, 0.3);
+  --glyph-color: #6ee7b7;
+}
+
+:root[data-theme="dark"] .market-store-item-icon.is-agent {
+  --glyph-bg: rgba(96, 165, 250, 0.12);
+  --glyph-border: rgba(147, 197, 253, 0.18);
+  --glyph-border-strong: rgba(147, 197, 253, 0.3);
+  --glyph-color: #93c5fd;
 }
 
 :root[data-theme="dark"] .market-store-item-icon.is-sandbox-image {
-  color: #6ee7b7;
+  --glyph-bg: rgba(45, 212, 191, 0.12);
+  --glyph-border: rgba(94, 234, 212, 0.18);
+  --glyph-border-strong: rgba(94, 234, 212, 0.3);
+  --glyph-color: #5eead4;
 }
 
 :root[data-theme="dark"] .market-store-item-icon.is-pet {
-  color: #fbbf24;
+  --glyph-bg: rgba(251, 191, 36, 0.12);
+  --glyph-border: rgba(251, 191, 36, 0.18);
+  --glyph-border-strong: rgba(251, 191, 36, 0.3);
+  --glyph-color: #fbbf24;
 }
 
 :root[data-theme="dark"] .market-store-item-icon.is-cli {
-  color: #fb7185;
+  --glyph-bg: rgba(251, 113, 133, 0.12);
+  --glyph-border: rgba(251, 113, 133, 0.18);
+  --glyph-border-strong: rgba(251, 113, 133, 0.3);
+  --glyph-color: #fb7185;
+}
+
+:root[data-theme="dark"] .market-store-item-icon.is-website-app {
+  --glyph-bg: rgba(167, 139, 250, 0.12);
+  --glyph-border: rgba(196, 181, 253, 0.18);
+  --glyph-border-strong: rgba(196, 181, 253, 0.3);
+  --glyph-color: #c4b5fd;
 }
 
 :root[data-theme="dark"] .market-store-title-line h2,
@@ -1103,8 +1104,7 @@
   .market-store-card::before,
   .market-store-item-icon,
   .market-store-action,
-  .market-store-toolbar-button,
-  .market-store-detail-link svg {
+  .market-store-toolbar-button {
     transition: none;
   }
 
@@ -1116,7 +1116,4 @@
     transform: none;
   }
 
-  .market-store-card:hover .market-store-item-icon {
-    transform: none;
-  }
 }

@@ -8,6 +8,9 @@ export function getServiceDisplayName(serviceId: string, serviceName: string, t:
   if (serviceId === "agent-container-hub") {
     return t("service.display.containerHub");
   }
+  if (serviceId === "identity-center") {
+    return t("service.display.identityCenter");
+  }
   if (serviceId === "agent-webclient") {
     return getAgentWebclientDisplayName(t);
   }
@@ -16,7 +19,7 @@ export function getServiceDisplayName(serviceId: string, serviceName: string, t:
 
 const HIDDEN_NAVIGATION_SERVICE_IDS = new Set([
   "agent-platform",
-  "zenmind-app-server"
+  "identity-center"
 ]);
 
 export function shouldShowServiceNavigationTab(service: {

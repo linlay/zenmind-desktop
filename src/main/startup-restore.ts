@@ -6,7 +6,7 @@ import type {
 } from "../shared/contracts";
 import { t } from "./i18n/main-i18n";
 
-export const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+export const STARTUP_RESTORE_SERVICE_ORDER = ["identity-center", "agent-platform", "agent-webclient"] as const;
 
 export type StartupRestoreControllerOptions = {
   serviceOrder?: readonly ServiceId[];

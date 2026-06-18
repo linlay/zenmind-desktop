@@ -14,7 +14,7 @@ const allowedFiles = new Set([
 
 const allowedLinePatterns = [
   {
-    file: "src/main/app-server-auth.ts",
+    file: "src/main/identity-center-auth.ts",
     pattern: /找不到与参数名称/u,
     reason: "localized PowerShell stderr matcher"
   },

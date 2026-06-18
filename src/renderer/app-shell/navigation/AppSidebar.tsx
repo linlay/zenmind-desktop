@@ -3189,6 +3189,8 @@ export function AppSidebar({
         return "memory";
       case "about":
         return "about";
+      case "debug":
+        return "settings";
       default:
         return "settings";
     }

@@ -1,5 +1,5 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
+import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
@@ -126,8 +126,8 @@ export interface DesktopAppPairingPayload {
   desktopIdentityCreatedAt: string;
   desktopUsername: string;
   desktopHostname: string;
-  appServerIssuer: string;
-  appServerPublicKeySha256: string;
+  identityCenterIssuer: string;
+  identityCenterPublicKeySha256: string;
   apiBaseUrl: string;
   pairingId: string;
   secret: string;
@@ -316,6 +316,13 @@ export interface DesktopApi {
   };
   agentAuth: {
     issueAccessToken: (reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
+  };
+  tunnelHub: {
+    getStatus: () => Promise<TunnelHubRuntimeStatus>;
+    start: () => Promise<TunnelHubRuntimeCommandResult>;
+    stop: () => Promise<TunnelHubRuntimeCommandResult>;
+    restart: () => Promise<TunnelHubRuntimeCommandResult>;
+    readLog: (options?: ServiceLogReadOptions) => Promise<ServiceLogReadResult>;
   };
   sso: {
     getStatus: () => Promise<DesktopSsoStatus>;

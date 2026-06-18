@@ -172,8 +172,6 @@ test("Tunnel Hub remote WS registration posts 7083 target and stores Relay respo
   assert.equal(settings.webSocketUrl, "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws");
   assert.equal(settings.targetUrl, "http://127.0.0.1:7083");
   assert.equal(settings.hasAgentToken, true);
-  assert.match(
-    fs.readFileSync(path.join(desktopRoot(homePath), "config", "services", "tunnel-hub-agent", ".env"), "utf8"),
-    /^AGENT_TOKEN=returned-agent-token$/m
-  );
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-agent-token")), true);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "config", "services", "tunnel-hub-agent", ".env")), false);
 });

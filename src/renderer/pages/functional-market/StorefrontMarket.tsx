@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRightOutlined,
   ApiOutlined,
   AppstoreOutlined,
   CalendarOutlined,
@@ -804,7 +803,6 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     const service = item.type === "plugin" ? serviceById.get(item.id) ?? null : null;
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name, t) : item.name;
     const description = marketCardDescription(item);
-    const platformChip = platformSummary(item);
     const favoriteKey = `${item.type}:${item.id}`;
     const isFavoriting = favoritingItemKey === favoriteKey;
     const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
@@ -835,10 +833,9 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
             {description ? <p className="market-store-description">{description}</p> : null}
           </div>
         </div>
-        {chips.length > 0 || platformChip ? (
+        {chips.length > 0 ? (
           <div className="market-store-tags" aria-label={t("market.tags.aria", { name: displayName })}>
             {chips.map((chip) => <Tag className="market-store-tag" key={chip}>{tagLabel(chip)}</Tag>)}
-            {platformChip ? <Tag className="market-store-tag market-store-platform-chip">{platformChip}</Tag> : null}
           </div>
         ) : null}
         <div className="market-store-card-footer">
@@ -849,7 +846,6 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
               onClick={() => openDetail(item)}
             >
               <span>{t("market.action.details")}</span>
-              <ArrowRightOutlined />
             </button>
             <div className="market-store-stats">
               <span className="market-store-stat-pill" title={t("market.stats.downloads")} aria-label={`${t("market.stats.downloads")}: ${formatCount(itemDownloadCount(item))}`}>

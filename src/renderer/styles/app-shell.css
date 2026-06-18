@@ -193,8 +193,13 @@
   app-region: drag;
   -webkit-app-region: drag;
   pointer-events: auto;
+  cursor: grab;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.app-window-drag-region:active {
+  cursor: grabbing;
 }
 
 .app-shell.has-embedded-surface .app-window-drag-region {

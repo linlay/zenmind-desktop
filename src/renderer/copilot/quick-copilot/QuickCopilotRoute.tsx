@@ -9,7 +9,7 @@ import { useI18n } from "../../i18n/useI18n";
 type ThemeMode = "light" | "dark";
 
 const QUICK_COPILOT_THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
-const QUICK_COPILOT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const QUICK_COPILOT_STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclient"] as const;
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID = "agent-webclient-quick-copilot";
 

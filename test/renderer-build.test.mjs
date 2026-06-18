@@ -449,7 +449,7 @@ test("control center internal endpoint opens service frontend entrypoints", () =
   assert.match(controlCenter, /function shouldOpenControlCenterEndpointInternally\(/);
   assert.match(controlCenter, /service\.frontendMode !== "none" \|\| service\.id === "agent-platform"/);
   assert.match(controlCenter, /function resolveControlCenterEndpoint\(/);
-  assert.match(controlCenter, /service\.id === "zenmind-app-server"[\s\S]*?return appendEndpointPath\(baseUrl, "\/admin\/"\)/);
+  assert.match(controlCenter, /service\.id === "identity-center"[\s\S]*?return appendEndpointPath\(baseUrl, "\/admin\/"\)/);
   assert.match(controlCenter, /service\.id === "agent-platform"[\s\S]*?return appendEndpointPath\(baseUrl, "\/monitor"\)/);
   assert.match(controlCenter, /const detailEndpoint = activeDetailService\s*\?\s*resolveControlCenterEndpoint\(activeDetailService\)\s*:\s*"";/);
   assert.match(controlCenter, /if \(\s*!shouldOpenControlCenterEndpointInternally\(activeDetailService\)\s*\)/);
@@ -470,7 +470,7 @@ test("embedded service previews load auth and platform entrypoints directly", ()
   );
 
   assert.match(embeddedSurfaceHosts, /function shouldLoadInitialServiceUrlDirectly\(/);
-  assert.match(embeddedSurfaceHosts, /pluginId === "zenmind-app-server" \|\| pluginId === "agent-platform"/);
+  assert.match(embeddedSurfaceHosts, /pluginId === "identity-center" \|\| pluginId === "agent-platform"/);
   assert.match(embeddedSurfaceHosts, /loadInitialEmbeddedUrlDirectly=\{shouldLoadInitialServiceUrlDirectly\(pluginId\)\}/);
   assert.match(pluginPage, /service\.id !== "agent-platform"/);
   assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
@@ -1213,6 +1213,14 @@ test("settings route moves section navigation into the app sidebar and uses sect
     path.join(projectRoot, "src", "renderer", "components", "BrandMark.tsx"),
     "utf8"
   );
+  const enUS = fs.readFileSync(
+    path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "enUS.ts"),
+    "utf8"
+  );
+  const zhCN = fs.readFileSync(
+    path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "zhCN.ts"),
+    "utf8"
+  );
 
   assert.match(appShell, /<Route\s+path="\/settings"/);
   assert.match(appShell, /path="\/settings\/:sectionId"/);
@@ -1221,8 +1229,14 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /navigate\(normalizedSettingsPath, \{ replace: true \}\)/);
   assert.match(appShell, /onSelectSettingsSection=\{handleSelectSettingsSection\}/);
   assert.match(appShell, /is-settings-mode/);
+  assert.match(appShell, /aboutSettingsClickCountRef/);
+  assert.match(appShell, /debugSettingsUnlocked/);
+  assert.match(appShell, /debugVisible:\s*debugSettingsUnlocked/);
+  assert.match(appShell, /debugVisible=\{debugSettingsUnlocked\}/);
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
+  assert.match(settingsSections, /debugVisible = false/);
+  assert.match(settingsSections, /debugVisible\?:\s*boolean;/);
   assert.doesNotMatch(settingsSections, /kanbanEnabled\?:\s*boolean/);
   assert.match(settingsSections, /group:\s*"personal"/);
   assert.match(settingsSections, /group:\s*"integrations"/);
@@ -1237,7 +1251,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"embeddedWebs"[\s\S]*?label:\s*"embeddedWebs"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
-  assert.doesNotMatch(settingsSections, /id:\s*"debug"/);
+  assert.match(settingsSections, /id:\s*"about"[\s\S]*?visible:\s*true[\s\S]*?id:\s*"debug"[\s\S]*?visible:\s*debugVisible/);
+  assert.match(settingsSections, /debug:\s*\{\s*label:\s*"settings\.debug\.label",\s*description:\s*"settings\.debug\.description"\s*\}/);
   assert.doesNotMatch(settingsSections, /id:\s*"runtimeReset"/);
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
 
@@ -1262,13 +1277,14 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /case "tunnelHub"[\s\S]*?return "service"/);
   assert.doesNotMatch(sidebarSource, /case "runtimeReset"/);
   assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
+  assert.match(sidebarSource, /case "debug"[\s\S]*?return "settings"/);
   assert.match(brandMarkSource, /about:\s*aboutIcon/);
   assert.match(brandMarkSource, /appearance:\s*appearanceIcon/);
 
   assert.match(settingsPage, /useParams\(\)/);
   assert.match(settingsPage, /resolveSettingsSectionId/);
   assert.doesNotMatch(settingsPage, /kanbanEnabled:\s*boolean/);
-  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, t \}\)/);
+  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, debugVisible, t \}\)/);
   assert.match(settingsPage, /switch \(activeSection\)/);
   assert.match(settingsPage, /case "appearance"/);
   assert.match(settingsPage, /settings-appearance-panel/);
@@ -1301,8 +1317,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "assistant"/);
   assert.match(settingsPage, /case "memory"/);
   assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
-  assert.doesNotMatch(settingsPage, /case "debug"/);
-  assert.doesNotMatch(settingsPage, /settings\.debug/u);
+  assert.match(settingsPage, /case "debug"[\s\S]*?<LocalWsServerDebugCard \/>/);
+  assert.match(settingsPage, /function LocalWsServerDebugCard/);
+  assert.match(settingsPage, /settings\.debug\.desktopWs\.title/u);
   assert.doesNotMatch(settingsPage, /window\.electronAPI\.debug/u);
   assert.match(settingsPage, /window\.electronAPI\.settings\.resetRuntimeEnv\(\)/);
   assert.match(settingsPage, /settings-reset-card/);
@@ -1314,9 +1331,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /settings-desktop-ws-card/);
   assert.match(settingsPage, /window\.electronAPI\.settings[\s\S]*?\.getDesktopWsServerState\(\)/);
   assert.match(settingsPage, /window\.electronAPI\.settings[\s\S]*?\.setDesktopWsServerEnabled/);
-  assert.match(settingsPage, /settings\.about\.desktopWs\.title/);
-  assert.match(settingsPage, /settings\.about\.desktopWs\.openAction/);
-  assert.match(settingsPage, /settings\.about\.desktopWs\.closeAction/);
+  assert.match(settingsPage, /settings\.debug\.desktopWs\.openAction/);
+  assert.match(settingsPage, /settings\.debug\.desktopWs\.closeAction/);
+  assert.doesNotMatch(settingsPage, /settings\.about\.desktopWs/);
   assert.doesNotMatch(settingsPage, /settings-debug-card/);
   assert.match(settingsPage, /settings-about-version/);
   assert.match(settingsPage, /settings\.about\.versionDescription/);
@@ -1332,6 +1349,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /settings\.group\.personal/);
   assert.match(sidebarSource, /settings\.group\.integrations/);
   assert.match(sidebarSource, /settings\.group\.system/);
+  assert.match(enUS, /"settings\.debug\.label":\s*"Debug"/);
+  assert.match(enUS, /"settings\.debug\.desktopWs\.title":\s*"Local WS Server Debugging"/);
+  assert.match(zhCN, /"settings\.debug\.label":\s*"调试"/);
+  assert.match(zhCN, /"settings\.debug\.desktopWs\.title":\s*"本地 WebSocket 服务调试"/);
 });
 
 test("startup env import overlay uses packaged-relative brand icon", () => {
@@ -1528,8 +1549,9 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
   assert.match(settingsStyles, /\.settings-page-head-action\s*\{[\s\S]*justify-content:\s*flex-end;/);
-  assert.match(settingsPage, /window\.electronAPI\.services\.start\(TUNNEL_HUB_AGENT_SERVICE_ID\)/);
-  assert.match(settingsPage, /window\.electronAPI\.services\.stop\(TUNNEL_HUB_AGENT_SERVICE_ID\)/);
+  assert.doesNotMatch(settingsPage, /TUNNEL_HUB_AGENT_SERVICE_ID/);
+  assert.doesNotMatch(settingsPage, /window\.electronAPI\.services\.start\([^)]*tunnel/i);
+  assert.doesNotMatch(settingsPage, /window\.electronAPI\.services\.stop\([^)]*tunnel/i);
   assert.doesNotMatch(settingsPage, /onClick=\{\(\) => setMarketSettings/);
   assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.doesNotMatch(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.memory"/);
@@ -1603,20 +1625,22 @@ test("settings page exposes cloud board control as a global section", () => {
   assert.match(enUS, /"settings\.control\.label":\s*"Control"/);
   assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
-  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, t \}\)/);
+  assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, debugVisible, t \}\)/);
 });
 
-test("Tunnel Hub settings expose enabled state and gate optional startup", () => {
+test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const servicesContract = readSourceFile("src", "shared", "contracts", "services.ts");
   const tunnelSettings = readSourceFile("src", "main", "tunnel-hub-agent-settings.ts");
-  const serviceManager = readSourceFile("src", "main", "services", "manager", "index.ts");
+  const tunnelRuntime = readSourceFile("src", "main", "tunnel-hub-runtime.ts");
 
   assert.match(servicesContract, /interface TunnelHubAgentSettings[\s\S]*?enabled:\s*boolean;/);
   assert.match(servicesContract, /interface TunnelHubAgentSettingsInput[\s\S]*?enabled\?:\s*boolean;/);
+  assert.match(servicesContract, /interface TunnelHubRuntimeStatus[\s\S]*?phase:\s*TunnelHubRuntimePhase;/);
   assert.match(tunnelSettings, /readTunnelHubAgentSettings[\s\S]*?enabled/);
   assert.match(tunnelSettings, /requestedEnabled && issues\.length === 0/);
-  assert.match(serviceManager, /readTunnelHubAgentSettings\(app\)\.enabled/);
+  assert.match(tunnelRuntime, /startTunnelHubRuntimeIfEnabled/);
+  assert.doesNotMatch(tunnelRuntime, /startService|restartService|TUNNEL_HUB_AGENT_SERVICE_ID/);
   assert.match(settingsPage, /case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
 });
 
@@ -2736,6 +2760,7 @@ test("main marketplace user-facing text is routed through i18n", () => {
 test("storefront market uses compact responsive component item cards", () => {
   const storefront = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
   const storefrontStyles = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
+  const serviceDisplay = readSourceFile("src", "renderer", "service-display.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
@@ -2749,6 +2774,9 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(storefront, /market-store-card-footer/);
   assert.match(storefront, /t\("market\.action\.details"\)/);
   assert.match(storefront, /market-store-detail-link/);
+  assert.doesNotMatch(storefront, /ArrowRightOutlined/);
+  assert.doesNotMatch(storefront, /platformChip/);
+  assert.doesNotMatch(storefront, /market-store-platform-chip/);
   assert.match(storefront, /market-store-detail-modal/);
   assert.match(storefront, /storefrontDetailRows/);
   assert.match(storefront, /setSelectedDetailItem\(item\)/);
@@ -2769,6 +2797,12 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(storefrontStyles, /@container\s*\(max-width:\s*640px\)\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   assert.doesNotMatch(storefrontStyles, /620px/);
   assert.match(storefrontStyles, /\.market-store-card\s*\{[\s\S]*?border-radius:\s*16px;/);
+  assert.match(storefrontStyles, /\.market-store-card-head\s*\{[\s\S]*?grid-template-columns:\s*40px minmax\(0,\s*1fr\);/);
+  assert.match(storefrontStyles, /\.market-store-item-icon\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?background:\s*var\(--glyph-bg/);
+  assert.match(storefrontStyles, /\.market-store-item-icon svg\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;/);
+  assert.doesNotMatch(storefrontStyles, /--glyph-grad/);
+  assert.doesNotMatch(storefrontStyles, /\.market-store-item-icon::after/);
+  assert.doesNotMatch(storefrontStyles, /market-store-platform-chip/);
   assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
   assert.match(storefrontStyles, /\.market-store-description\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
   assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid var\(--market-store-line\);/);
@@ -2785,11 +2819,24 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(enUS, /"market\.action\.installDeps":\s*"Install \{count\} deps"/);
   assert.match(enUS, /"market\.storefront\.detailsDemo":\s*"Details & demo"/);
   assert.match(enUS, /"market\.tab\.sandboxImages\.label":\s*"Sandboxes"/);
+  assert.match(enUS, /"controlCenter\.service\.authentication\.name":\s*"Identity Center"/);
+  assert.match(enUS, /"startup\.service\.authentication":\s*"Identity Center"/);
+  assert.match(enUS, /"startup\.service\.agentWebclient":\s*"Agent Webclient"/);
+  assert.match(enUS, /"service\.agentWebclientDisplayName":\s*"Agent Webclient"/);
+  assert.match(enUS, /"service\.display\.identityCenter":\s*"Identity Center"/);
+  assert.match(enUS, /"service\.display\.agentWebclient":\s*"Agent Webclient"/);
   assert.doesNotMatch(enUS, /"market\.tab\.sandboxImages\.meta"/);
   assert.match(zhCN, /"market\.action\.installDeps":\s*"安装 \{count\} 个依赖"/);
   assert.match(zhCN, /"market\.storefront\.detailsDemo":\s*"详情与演示"/);
   assert.match(zhCN, /"market\.tab\.sandboxImages\.label":\s*"沙箱"/);
+  assert.match(zhCN, /"controlCenter\.service\.authentication\.name":\s*"Identity Center"/);
+  assert.match(zhCN, /"startup\.service\.authentication":\s*"Identity Center"/);
+  assert.match(zhCN, /"startup\.service\.agentWebclient":\s*"Agent Webclient"/);
+  assert.match(zhCN, /"service\.agentWebclientDisplayName":\s*"Agent Webclient"/);
+  assert.match(zhCN, /"service\.display\.identityCenter":\s*"Identity Center"/);
+  assert.match(zhCN, /"service\.display\.agentWebclient":\s*"Agent Webclient"/);
   assert.doesNotMatch(zhCN, /"market\.tab\.sandboxImages\.meta"/);
+  assert.match(serviceDisplay, /serviceId === "identity-center"[\s\S]*?t\("service\.display\.identityCenter"\)/);
 });
 
 test("sandbox image market is a local image management surface", () => {
@@ -2982,6 +3029,8 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*1000;[^}]*app-region:\s*drag;[^}]*pointer-events:\s*auto;/
   );
+  assert.match(globalStyles, /\.pan-drag-region\s*\{[^}]*cursor:\s*grab;/);
+  assert.match(globalStyles, /\.pan-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.doesNotMatch(
     globalStyles,
     /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*display:\s*none;/
@@ -2998,6 +3047,8 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*1000;[^}]*pointer-events:\s*auto;/
   );
+  assert.match(globalStyles, /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*cursor:\s*grab;/);
+  assert.match(globalStyles, /\.external-webview-page\s+\.pan-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.doesNotMatch(
     globalStyles,
     /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*height:\s*0;/
@@ -3057,15 +3108,23 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
     /\.app-window-drag-region\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
   );
   assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*height:\s*24px;/);
+  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*cursor:\s*grab;/);
+  assert.match(globalStyles, /\.app-window-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.match(
     globalStyles,
     /\.sidebar-chrome-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
   );
+  assert.match(globalStyles, /\.sidebar-chrome-drag-region\s*\{[^}]*cursor:\s*grab;/);
+  assert.match(globalStyles, /\.sidebar-chrome-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.match(
     globalStyles,
     /\.app-shell\.is-mac-platform\s+\.sidebar-chrome-drag-region\s*\{[\s\S]*?left:\s*var\(--mac-traffic-light-safe-area\);/
   );
   assert.match(globalStyles, /\.app-main-drag-region\s*\{\s*height:\s*20px;\s*\}/);
+  assert.match(globalStyles, /\.app-main-drag-region\s*\{[^}]*cursor:\s*grab;/);
+  assert.match(globalStyles, /\.app-main-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
+  assert.match(globalStyles, /\.app-header\s*\{[^}]*cursor:\s*grab;/);
+  assert.match(globalStyles, /\.app-header:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-drag-region/);
   assert.match(sidebarSource, /sidebar-chrome-drag-region/);
   assert.doesNotMatch(appShell, /app-sidebar-drag-region/);
@@ -3718,7 +3777,7 @@ test("agent-platform monitor opens inside the service preview surface", () => {
 
   assert.match(authBridge, /serviceId === "agent-platform"[\s\S]{0,180}url\.pathname = "\/monitor"/);
   assert.match(authBridge, /accessToken[\s\S]{0,180}searchParams\.set\("access_token"/);
-  assert.match(embeddedSurfaceHosts, /pluginId === "zenmind-app-server" \|\| pluginId === "agent-platform"/);
+  assert.match(embeddedSurfaceHosts, /pluginId === "identity-center" \|\| pluginId === "agent-platform"/);
   assert.match(pluginPage, /service\.id !== "agent-platform"/);
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.doesNotMatch(app, /location\.pathname === "\/agent-platform-monitor"/);

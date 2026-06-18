@@ -261,4 +261,40 @@ export interface TunnelHubAgentSettingsResult {
   message: string;
   settings: TunnelHubAgentSettings;
   configPath?: string;
+  runtimeStatus?: TunnelHubRuntimeStatus;
+}
+
+export type TunnelHubRuntimePhase =
+  | "disabled"
+  | "stopped"
+  | "starting"
+  | "registered"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "stopping"
+  | "error";
+
+export interface TunnelHubRuntimeStatus {
+  enabled: boolean;
+  running: boolean;
+  connected: boolean;
+  phase: TunnelHubRuntimePhase;
+  deviceId: string;
+  relayUrl: string;
+  targetUrl: string;
+  publicHost: string;
+  publicUrl: string;
+  webSocketUrl: string;
+  lastRegisteredAt?: string;
+  lastConnectedAt?: string;
+  lastError?: string;
+  reconnectSeconds: number;
+}
+
+export interface TunnelHubRuntimeCommandResult {
+  ok: boolean;
+  message: string;
+  status: TunnelHubRuntimeStatus;
+  settings: TunnelHubAgentSettings;
 }

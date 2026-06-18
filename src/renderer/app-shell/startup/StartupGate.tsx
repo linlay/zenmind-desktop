@@ -102,14 +102,14 @@ export function StartupLoadingScreen({
             const startupServiceState = startupRestoreState.services.find((item) => item.serviceId === fallbackId);
             const displayName = getStartupServiceDisplayName(fallbackId, service?.name ?? fallbackId, t);
             const startupPhase = startupServiceState?.phase ?? "pending";
-            const appServerStartupPhase = startupRestoreState.services.find((item) =>
-              item.serviceId === "zenmind-app-server"
+            const identityCenterStartupPhase = startupRestoreState.services.find((item) =>
+              item.serviceId === "identity-center"
             )?.phase;
             const waitingForStartupDependency =
               startupRestoreState.mode === "bootstrap" &&
               startupPhase === "pending" &&
-              fallbackId !== "zenmind-app-server" &&
-              appServerStartupPhase === "starting";
+              fallbackId !== "identity-center" &&
+              identityCenterStartupPhase === "starting";
             const isActiveStartupService =
               !timedOut && (
                 startupPhase === "installing" ||
@@ -168,7 +168,7 @@ export function StartupLoadingScreen({
 
 function getStartupServiceDisplayName(serviceId: ServiceId, serviceName: string, t: TranslateFunction) {
   switch (serviceId) {
-    case "zenmind-app-server":
+    case "identity-center":
       return t("startup.service.authentication");
     case "agent-platform":
       return t("startup.service.agentPlatform");

@@ -25,7 +25,7 @@ type CoreModuleDefinition = {
 
 const CORE_MODULES: readonly CoreModuleDefinition[] = [
   {
-    id: "zenmind-app-server",
+    id: "identity-center",
     nameKey: "controlCenter.service.authentication.name",
     descriptionKey: "controlCenter.service.authentication.description",
   },
@@ -47,7 +47,7 @@ const CORE_MODULES: readonly CoreModuleDefinition[] = [
 ];
 
 const QUICK_START_ORDER = [
-  "zenmind-app-server",
+  "identity-center",
   "agent-platform",
   "agent-webclient",
 ] as const;
@@ -216,7 +216,7 @@ function appendEndpointPath(baseUrl: string, endpointPath: string) {
 
 function resolveControlCenterEndpoint(service: ServiceState) {
   const baseUrl = service.healthMeta.webUrl;
-  if (service.id === "zenmind-app-server") {
+  if (service.id === "identity-center") {
     return appendEndpointPath(baseUrl, "/admin/");
   }
   if (service.id === "agent-platform") {

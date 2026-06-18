@@ -5,11 +5,11 @@ import {
   type ServiceLayout
 } from "./layout";
 
-const APP_SERVER_BCRYPT_KEYS = [
+const IDENTITY_CENTER_BCRYPT_KEYS = [
   "AUTH_ADMIN_PASSWORD_BCRYPT",
   "AUTH_APP_MASTER_PASSWORD_BCRYPT"
 ] as const;
-const APP_SERVER_FALLBACK_PASSWORD_BCRYPT =
+const IDENTITY_CENTER_FALLBACK_PASSWORD_BCRYPT =
   "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$/u;
 
@@ -68,22 +68,22 @@ function readTemplateBcryptEnvValue(layout: ServiceLayout, key: string) {
   return "";
 }
 
-function resolveDefaultAppServerBcryptEnvValue(layout: ServiceLayout, key: string) {
+function resolveDefaultIdentityCenterBcryptEnvValue(layout: ServiceLayout, key: string) {
   return readTemplateBcryptEnvValue(layout, key) ||
-    singleQuoteEnvValue(APP_SERVER_FALLBACK_PASSWORD_BCRYPT);
+    singleQuoteEnvValue(IDENTITY_CENTER_FALLBACK_PASSWORD_BCRYPT);
 }
 
-export function syncZenmindAppServerDesktopEnv(
+export function syncIdentityCenterDesktopEnv(
   layout: ServiceLayout,
   content: string,
   updates: Map<string, string>
 ) {
   updates.set("AUTH_DB_PATH", path.join(layout.dataDir, "auth.db"));
 
-  for (const key of APP_SERVER_BCRYPT_KEYS) {
+  for (const key of IDENTITY_CENTER_BCRYPT_KEYS) {
     const currentRawValue = readRawEnvValue(content, key);
     if (!isSingleQuotedBcryptEnvValue(currentRawValue)) {
-      updates.set(key, resolveDefaultAppServerBcryptEnvValue(layout, key));
+      updates.set(key, resolveDefaultIdentityCenterBcryptEnvValue(layout, key));
     }
   }
 }

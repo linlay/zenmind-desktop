@@ -39,18 +39,9 @@ const {
   configurePluginResources,
   __testInternals: pluginResourceInternals
 } = require("../dist-electron/main/plugin-resources.js");
-const {
-  configureTunnelHubRemoteWsController
-} = require("../dist-electron/main/tunnel-hub-remote-ws.js");
-const {
-  stopDesktopRemoteWsServer
-} = require("../dist-electron/main/desktop-ws-server.js");
-const {
-  saveTunnelHubAgentSettings
-} = require("../dist-electron/main/tunnel-hub-agent-settings.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
-const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
-const TEST_APP_SERVER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
+const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
+const TEST_IDENTITY_CENTER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
 
 function createAuthCapabilityProviders() {
   const publicKeyArgs = [
@@ -135,7 +126,7 @@ function createCoreDesktopManifest(serviceId, assetFileName) {
     assetFileName,
     bundleTopLevelDir: serviceId
   };
-  if (serviceId === "zenmind-app-server") {
+  if (serviceId === "identity-center") {
     return {
       ...desktop,
       envBindings: [
@@ -370,7 +361,7 @@ function createCurrentPlatformAssetsFixture() {
   fs.mkdirSync(containerHubAssetDir, { recursive: true });
   writeDirectoryArchive(tempRoot, containerHubArchivePath, "agent-container-hub");
 
-  for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+  for (const serviceId of ["identity-center", "agent-platform", "agent-webclient"]) {
     const archivePath = findCurrentPlatformReleaseArchive(serviceId);
     assert.ok(archivePath, `missing ${currentManifestOs()} release archive for ${serviceId}`);
 
@@ -575,20 +566,20 @@ function createStartupCoreAssetsFixture(options = {}) {
   const ports = {
     webclient: portBase,
     platform: portBase + 1,
-    appServer: portBase + 2,
+    identityCenter: portBase + 2,
     containerHub: portBase + 3
   };
   const services = [
     {
-      id: "zenmind-app-server",
+      id: "identity-center",
       name: "认证服务",
       frontend: { mode: "standalone", entry: "/admin/" },
-      web: { routePath: "/admin/", portEnvKey: "SERVER_PORT", defaultPort: ports.appServer },
+      web: { routePath: "/admin/", portEnvKey: "SERVER_PORT", defaultPort: ports.identityCenter },
       envExample: [
-        `SERVER_PORT=${ports.appServer}`,
+        `SERVER_PORT=${ports.identityCenter}`,
         "FRONTEND_DIST_DIR=./frontend/dist",
-        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_APP_SERVER_BCRYPT}'`,
-        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_APP_SERVER_BCRYPT}'`
+        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_BCRYPT}'`,
+        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_BCRYPT}'`
       ].join("\n") + "\n",
       extraPaths: [["frontend", "dist"], ["scripts"]]
     },
@@ -649,7 +640,7 @@ function createStartupCoreAssetsFixture(options = {}) {
     if (service.id === "agent-webclient") {
       fs.writeFileSync(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n", "utf8");
     }
-    if (service.id === "zenmind-app-server") {
+    if (service.id === "identity-center") {
       fs.writeFileSync(
         path.join(bundleRoot, "frontend", "dist", "index.html"),
         [
@@ -670,10 +661,10 @@ function createStartupCoreAssetsFixture(options = {}) {
           [
             "param([string]$mode, [string]$db, [string]$out, [string]$publicOut)",
             "New-Item -ItemType Directory -Path $out -Force | Out-Null",
-            "Set-Content -LiteralPath (Join-Path $out 'jwk-private.pem') -Value 'APP_SERVER_PRIVATE_KEY'",
-            "Set-Content -LiteralPath (Join-Path $out 'jwk-public.pem') -Value 'APP_SERVER_PUBLIC_KEY'",
+            "Set-Content -LiteralPath (Join-Path $out 'jwk-private.pem') -Value 'IDENTITY_CENTER_PRIVATE_KEY'",
+            "Set-Content -LiteralPath (Join-Path $out 'jwk-public.pem') -Value 'IDENTITY_CENTER_PUBLIC_KEY'",
             "New-Item -ItemType Directory -Path (Split-Path -Parent $publicOut) -Force | Out-Null",
-            "Set-Content -LiteralPath $publicOut -Value 'APP_SERVER_PUBLIC_KEY'"
+            "Set-Content -LiteralPath $publicOut -Value 'IDENTITY_CENTER_PUBLIC_KEY'"
           ].join("\r\n"),
           "utf8"
         );
@@ -706,9 +697,9 @@ function createStartupCoreAssetsFixture(options = {}) {
             "  esac",
             "done",
             "mkdir -p \"$(dirname \"$public_out\")\"",
-            "printf 'APP_SERVER_PRIVATE_KEY\\n' > \"$(dirname \"$public_out\")/jwk-private.pem\"",
-            "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$(dirname \"$public_out\")/jwk-public.pem\"",
-            "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$public_out\""
+            "printf 'IDENTITY_CENTER_PRIVATE_KEY\\n' > \"$(dirname \"$public_out\")/jwk-private.pem\"",
+            "printf 'IDENTITY_CENTER_PUBLIC_KEY\\n' > \"$(dirname \"$public_out\")/jwk-public.pem\"",
+            "printf 'IDENTITY_CENTER_PUBLIC_KEY\\n' > \"$public_out\""
           ].join("\n") + "\n",
           "utf8"
         );
@@ -846,7 +837,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         ].filter(Boolean).join("\r\n"),
         "utf8"
       );
-      const programCommonContent = service.id === "zenmind-app-server"
+      const programCommonContent = service.id === "identity-center"
         ? [
             "function Resolve-ProgramFrontendDistDir {",
             "  param([string]$Value)",
@@ -948,7 +939,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         ].filter(Boolean).join("\n") + "\n",
         "utf8"
       );
-      const programCommonContent = service.id === "zenmind-app-server"
+      const programCommonContent = service.id === "identity-center"
         ? [
             "#!/usr/bin/env bash",
             'FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"',
@@ -965,7 +956,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       fs.chmodSync(path.join(bundleRoot, stopFileName), 0o755);
       fs.chmodSync(path.join(bundleRoot, deployFileName), 0o755);
       fs.chmodSync(path.join(bundleRoot, "scripts", programCommonName), 0o755);
-      if (service.id === "zenmind-app-server") {
+      if (service.id === "identity-center") {
         const ext = isWindows ? "ps1" : "sh";
         fs.chmodSync(path.join(bundleRoot, "scripts", `setup-public-key.${ext}`), 0o755);
         fs.chmodSync(path.join(bundleRoot, "scripts", `issue-bridge-access-token.${ext}`), 0o755);
@@ -1032,7 +1023,7 @@ function createStartupCoreAssetsFixture(options = {}) {
             "manifest.json",
             ...(service.id === "agent-platform" ? ["configs", "runtime"] : []),
             ...(service.id === "agent-webclient" ? [path.join("frontend", "dist", "index.html")] : []),
-            ...(service.id === "zenmind-app-server" ? [
+            ...(service.id === "identity-center" ? [
               path.join("frontend", "dist", "index.html"),
               path.join("scripts", isWindows ? "setup-public-key.ps1" : "setup-public-key.sh"),
               path.join("scripts", isWindows ? "issue-bridge-access-token.ps1" : "issue-bridge-access-token.sh")
@@ -1060,7 +1051,7 @@ function createStartupCoreAssetsFixture(options = {}) {
 
 async function stopStartupCoreProcesses(app) {
   await __testInternals.waitForBackgroundStartupPreparations();
-  for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+  for (const serviceId of ["identity-center", "agent-platform", "agent-webclient"]) {
     try {
       const state = await getServiceState(app, serviceId);
       if (state.status === "running") {
@@ -1214,9 +1205,9 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function assertAppServerDefaultBcryptEnv(content) {
-  assert.match(content, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_BCRYPT)}'$`, "m"));
-  assert.match(content, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_BCRYPT)}'$`, "m"));
+function assertIdentityCenterDefaultBcryptEnv(content) {
+  assert.match(content, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_BCRYPT)}'$`, "m"));
+  assert.match(content, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_BCRYPT)}'$`, "m"));
 }
 
 function writeExecutableFile(filePath, content) {
@@ -2047,7 +2038,7 @@ test("parsePort reads Desktop core service ports from their config keys", () => 
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-port-"));
   const { restore } = loadBuiltinsForTest(userDataRoot);
   const authService = registerPlugin({
-    id: "zenmind-app-server",
+    id: "identity-center",
     name: "认证服务",
     kind: "builtin",
     version: "v0.1.0",
@@ -3057,13 +3048,13 @@ test("listServices uses lightweight Windows state reads for UI refreshes", async
 
 test("readManagedPidFile preserves live pid files when process ownership is temporarily unknown", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-unknown-pid-owner-"));
-  const pidPath = path.join(tempRoot, "zenmind-app-server.pid");
+  const pidPath = path.join(tempRoot, "identity-center.pid");
   const removedPidFiles = [];
 
   try {
     fs.writeFileSync(pidPath, "4321\n", "utf8");
 
-    const pid = __testInternals.readManagedPidFile([pidPath], "C:\\Program Files\\ZenMind\\services\\zenmind-app-server", {
+    const pid = __testInternals.readManagedPidFile([pidPath], "C:\\Program Files\\ZenMind\\services\\identity-center", {
       isProcessRunningImpl: (candidatePid) => candidatePid === 4321,
       matchProcessInstallDirImpl: () => "unknown",
       removePidFileImpl: (candidatePath) => {
@@ -4341,7 +4332,7 @@ test("initializeService recreates Desktop defaults for core services after confi
     homePath: homeRoot,
     desktopPath: path.join(homeRoot, "Desktop")
   });
-  const serviceIds = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"];
+  const serviceIds = ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"];
 
   try {
     for (const serviceId of serviceIds) {
@@ -4360,21 +4351,21 @@ test("initializeService recreates Desktop defaults for core services after confi
     }
 
     const hubEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
-    const appServerEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
+    const identityCenterEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
     const platformEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-platform"), "utf8");
     const webclientEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8");
-    const appServerPublicKey = fs.readFileSync(
-      path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "keys", "publicKey.pem"),
+    const identityCenterPublicKey = fs.readFileSync(
+      path.join(getTestDataDir(userDataRoot, "identity-center"), "keys", "publicKey.pem"),
       "utf8"
     );
 
     assert.match(hubEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
-    assert.match(appServerEnv, /^SERVER_PORT=7076$/m);
+    assert.match(identityCenterEnv, /^SERVER_PORT=7076$/m);
     assert.match(
-      appServerEnv,
-      new RegExp(`^AUTH_DB_PATH=${path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
+      identityCenterEnv,
+      new RegExp(`^AUTH_DB_PATH=${path.join(getTestDataDir(userDataRoot, "identity-center"), "auth.db").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
     );
-    assertAppServerDefaultBcryptEnv(appServerEnv);
+    assertIdentityCenterDefaultBcryptEnv(identityCenterEnv);
     assert.match(platformEnv, /^SERVER_PORT=7078$/m);
     assert.match(platformEnv, /^AUTH_ENABLED=true$/m);
     assert.doesNotMatch(platformEnv, /^PROVIDER_APIKEY_KEY_PART=/m);
@@ -4385,7 +4376,7 @@ test("initializeService recreates Desktop defaults for core services after confi
     assert.doesNotMatch(platformEnv, /^PAN_DIR=/m);
     assert.equal(
       fs.readFileSync(path.join(getTestConfigDir(userDataRoot, "agent-platform"), "configs", "local-public-key.pem"), "utf8"),
-      appServerPublicKey
+      identityCenterPublicKey
     );
     assert.match(webclientEnv, /^PORT=7080$/m);
     assert.match(webclientEnv, /^DESKTOP_APP=true$/m);
@@ -4409,16 +4400,16 @@ test("initializeService recreates Desktop defaults for core services after confi
   }
 });
 
-test("initializeService repairs partial zenmind-app-server env with bcrypt defaults", async () => {
+test("initializeService repairs partial identity-center env with bcrypt defaults", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
 
   try {
-    await installBuiltinService(app, "zenmind-app-server");
+    await installBuiltinService(app, "identity-center");
     writeTestEnv(
       userDataRoot,
-      "zenmind-app-server",
+      "identity-center",
       [
         "SERVER_PORT=18080",
         "AUTH_DB_PATH=./data/auth.db",
@@ -4426,16 +4417,16 @@ test("initializeService repairs partial zenmind-app-server env with bcrypt defau
       ].join("\n")
     );
 
-    const result = await initializeService(app, "zenmind-app-server");
+    const result = await initializeService(app, "identity-center");
     assert.equal(result.ok, true);
 
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
     assert.match(envContent, /^SERVER_PORT=7076$/m);
     assert.match(
       envContent,
-      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db"))}$`, "m")
+      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "identity-center"), "auth.db"))}$`, "m")
     );
-    assertAppServerDefaultBcryptEnv(envContent);
+    assertIdentityCenterDefaultBcryptEnv(envContent);
     assert.match(envContent, /^AP_UPSTREAM_BASE_URL=http:\/\/127\.0\.0\.1:\d+$/m);
     assert.match(envContent, /^CHAT_WS_UPSTREAM_URL=http:\/\/127\.0\.0\.1:\d+\/ws$/m);
     assert.doesNotMatch(envContent, /^AP_UPSTREAM_ACCESS_TOKEN=.+$/m);
@@ -4445,11 +4436,11 @@ test("initializeService repairs partial zenmind-app-server env with bcrypt defau
   }
 });
 
-test("ensurePreStartRequirements replaces unsafe zenmind-app-server bcrypt values", async () => {
+test("ensurePreStartRequirements replaces unsafe identity-center bcrypt values", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
-  const service = getBuiltinService("zenmind-app-server");
+  const service = getBuiltinService("identity-center");
 
   try {
     await installBuiltinService(app, service.id);
@@ -4458,7 +4449,7 @@ test("ensurePreStartRequirements replaces unsafe zenmind-app-server bcrypt value
       service.id,
       [
         "SERVER_PORT=18080",
-        `AUTH_ADMIN_PASSWORD_BCRYPT=${TEST_APP_SERVER_BCRYPT}`,
+        `AUTH_ADMIN_PASSWORD_BCRYPT=${TEST_IDENTITY_CENTER_BCRYPT}`,
         "AUTH_APP_MASTER_PASSWORD_BCRYPT=not-a-bcrypt-hash",
         ""
       ].join("\n")
@@ -4467,38 +4458,38 @@ test("ensurePreStartRequirements replaces unsafe zenmind-app-server bcrypt value
     await __testInternals.ensurePreStartRequirements(app, service);
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
-    assertAppServerDefaultBcryptEnv(envContent);
-    assert.doesNotMatch(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT=${escapeRegExp(TEST_APP_SERVER_BCRYPT)}$`, "m"));
+    assertIdentityCenterDefaultBcryptEnv(envContent);
+    assert.doesNotMatch(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT=${escapeRegExp(TEST_IDENTITY_CENTER_BCRYPT)}$`, "m"));
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 
-test("initializeService preserves custom valid zenmind-app-server bcrypt values", async () => {
+test("initializeService preserves custom valid identity-center bcrypt values", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
 
   try {
-    await installBuiltinService(app, "zenmind-app-server");
+    await installBuiltinService(app, "identity-center");
     writeTestEnv(
       userDataRoot,
-      "zenmind-app-server",
+      "identity-center",
       [
         "SERVER_PORT=18080",
-        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_APP_SERVER_CUSTOM_BCRYPT}'`,
-        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_APP_SERVER_CUSTOM_BCRYPT}'`,
+        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_CUSTOM_BCRYPT}'`,
+        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_CUSTOM_BCRYPT}'`,
         ""
       ].join("\n")
     );
 
-    const result = await initializeService(app, "zenmind-app-server");
+    const result = await initializeService(app, "identity-center");
     assert.equal(result.ok, true);
 
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
-    assert.match(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_CUSTOM_BCRYPT)}'$`, "m"));
-    assert.match(envContent, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_CUSTOM_BCRYPT)}'$`, "m"));
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
+    assert.match(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_CUSTOM_BCRYPT)}'$`, "m"));
+    assert.match(envContent, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_CUSTOM_BCRYPT)}'$`, "m"));
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -5393,7 +5384,7 @@ test("ensurePreStartRequirements applies manifest agent platform auth public key
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
   const customPublicKeyPath = path.join(fixture.tempRoot, "custom", "public-key.pem");
 
-  await installBuiltinService(app, "zenmind-app-server");
+  await installBuiltinService(app, "identity-center");
   await installBuiltinService(app, "agent-platform");
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
   writeTestEnv(
@@ -5415,7 +5406,7 @@ test("ensurePreStartRequirements applies manifest agent platform auth public key
   }
 });
 
-test("ensurePreStartRequirements syncs agent-platform public key from zenmind-app-server", async () => {
+test("ensurePreStartRequirements syncs agent-platform public key from identity-center", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const homeRoot = path.join(fixture.tempRoot, "home");
@@ -5427,10 +5418,10 @@ test("ensurePreStartRequirements syncs agent-platform public key from zenmind-ap
   const platformConfigDir = getTestConfigDir(userDataRoot, platformService.id);
   const platformDataDir = getTestDataDir(userDataRoot, platformService.id);
   const platformPublicKeyPath = path.join(platformConfigDir, "configs", "local-public-key.pem");
-  const appServerPublicKeyPath = path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "keys", "publicKey.pem");
+  const identityCenterPublicKeyPath = path.join(getTestDataDir(userDataRoot, "identity-center"), "keys", "publicKey.pem");
 
   try {
-    await installBuiltinService(app, "zenmind-app-server");
+    await installBuiltinService(app, "identity-center");
     await installBuiltinService(app, "agent-platform");
     fs.mkdirSync(path.dirname(platformPublicKeyPath), { recursive: true });
     fs.writeFileSync(platformPublicKeyPath, "STALE_PUBLIC_KEY\n", "utf8");
@@ -5439,12 +5430,8 @@ test("ensurePreStartRequirements syncs agent-platform public key from zenmind-ap
 
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
-    assert.equal(fs.readFileSync(appServerPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "APP_SERVER_PUBLIC_KEY\n");
-    assert.equal(fs.existsSync(path.join(path.dirname(appServerPublicKeyPath), "jwk-private.pem")), false);
-    assert.equal(fs.existsSync(path.join(path.dirname(appServerPublicKeyPath), "jwk-public.pem")), false);
-    assert.equal(fs.existsSync(path.join(platformDataDir, "tools")), false);
-    assert.equal(fs.existsSync(path.join(platformDataDir, "registries")), false);
-    assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "APP_SERVER_PUBLIC_KEY\n");
+    assert.equal(fs.readFileSync(identityCenterPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "IDENTITY_CENTER_PUBLIC_KEY\n");
+    assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "IDENTITY_CENTER_PUBLIC_KEY\n");
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
     assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
@@ -6352,12 +6339,12 @@ test("initializeService refreshes stale agent-webclient launcher before deploy",
   fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements refreshes stale zenmind-app-server install when admin frontend paths drift", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-app-server-prestart-"));
+test("ensurePreStartRequirements ignores identity-center frontend route and launcher drift", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "identity-center-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const fixture = createStartupCoreAssetsFixture();
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
-  const service = getBuiltinService("zenmind-app-server");
+  const service = getBuiltinService("identity-center");
   const installDir = getTestServiceProgramDir(userDataRoot, service.id, service.version);
 
   await installBuiltinService(app, service.id);
@@ -6394,7 +6381,7 @@ test("ensurePreStartRequirements refreshes stale zenmind-app-server install when
     "utf8"
   );
 
-  assert.equal(__testInternals.zenmindAppServerInstallNeedsRefresh(installDir), true);
+  assert.equal(__testInternals.identityCenterInstallNeedsRefresh(installDir), false);
 
   await __testInternals.ensurePreStartRequirements(app, service);
 
@@ -6402,28 +6389,28 @@ test("ensurePreStartRequirements refreshes stale zenmind-app-server install when
   const indexContent = fs.readFileSync(path.join(installDir, "frontend", "dist", "index.html"), "utf8");
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
   const programCommon = fs.readFileSync(path.join(installDir, "scripts", "program-common.sh"), "utf8");
-  assert.equal(manifest.frontend.entry, "/admin/");
-  assert.equal(manifest.web.routePath, "/admin/");
-  assert.match(indexContent, /\/admin\/assets\//);
+  assert.equal(manifest.frontend.entry, "/");
+  assert.equal(manifest.web.routePath, "/");
+  assert.match(indexContent, /src="\/assets\/index\.js"/);
   assert.doesNotMatch(envContent, /^FRONTEND_DIST_DIR=/m);
-  assert.match(programCommon, /nohup "\$BACKEND_BIN"/);
-  assert.equal(__testInternals.zenmindAppServerInstallNeedsRefresh(installDir), false);
+  assert.match(programCommon, /"\$BACKEND_BIN" >"\$BACKEND_LOG"/);
+  assert.equal(__testInternals.identityCenterInstallNeedsRefresh(installDir), false);
 
   restore();
   fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("startService refreshes a stale running zenmind-app-server install before reusing it", async () => {
+test("startService reuses a running identity-center despite frontend route and launcher drift", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
-  const service = getBuiltinService("zenmind-app-server");
+  const service = getBuiltinService("identity-center");
   const installDir = getTestServiceProgramDir(userDataRoot, service.id, service.version);
 
   try {
     await installBuiltinService(app, service.id);
-    const servicePort = fixture.ports.appServer;
+    const servicePort = fixture.ports.identityCenter;
     const envPath = getTestEnvPath(userDataRoot, service.id);
     fs.writeFileSync(
       envPath,
@@ -6472,15 +6459,14 @@ test("startService refreshes a stale running zenmind-app-server install before r
     const secondStart = await startService(app, service.id);
     assert.equal(secondStart.ok, true, secondStart.message);
     assert.equal(secondStart.service.status, "running");
-    assert.notEqual(secondStart.service.healthMeta.pid, oldPid);
-    assert.equal(await waitForPidExit(oldPid), true);
+    assert.equal(secondStart.service.healthMeta.pid, oldPid);
 
     const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
     const indexContent = fs.readFileSync(path.join(installDir, "frontend", "dist", "index.html"), "utf8");
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
-    assert.equal(manifest.frontend.entry, "/admin/");
-    assert.equal(manifest.web.routePath, "/admin/");
-    assert.match(indexContent, /\/admin\/assets\//);
+    assert.equal(manifest.frontend.entry, "/");
+    assert.equal(manifest.web.routePath, "/");
+    assert.match(indexContent, /src="\/assets\/index\.js"/);
     assert.doesNotMatch(envContent, /^FRONTEND_DIST_DIR=/m);
   } finally {
     await stopStartupCoreProcesses(app);
@@ -6561,13 +6547,13 @@ test("last running services state round-trips through disk", () => {
     "agent-platform",
     "agent-webclient",
     "agent-platform",
-    "zenmind-app-server"
+    "identity-center"
   ]);
 
   const statePath = __testInternals.getLastRunningServicesStatePath(app);
   assert.ok(fs.existsSync(statePath));
   assert.deepEqual(__testInternals.readLastRunningServices(app), [
-    "zenmind-app-server",
+    "identity-center",
     "agent-platform",
     "agent-webclient"
   ]);
@@ -6579,14 +6565,14 @@ test("restore order prioritizes service dependencies", () => {
   assert.deepEqual(
     __testInternals.orderServiceIdsForRestore([
       "agent-webclient",
-      "zenmind-app-server",
+      "identity-center",
       "agent-platform",
       "agent-container-hub",
       "custom-plugin"
     ]),
     [
       "agent-container-hub",
-      "zenmind-app-server",
+      "identity-center",
       "agent-platform",
       "agent-webclient",
       "custom-plugin"
@@ -6604,12 +6590,12 @@ test("startup restore always includes default quick-start services", () => {
   ]);
 
   assert.deepEqual(__testInternals.getDefaultStartupServiceIds(), [
-    "zenmind-app-server",
+    "identity-center",
     "agent-platform",
     "agent-webclient"
   ]);
   assert.deepEqual(__testInternals.getServiceIdsToRestore(app), [
-    "zenmind-app-server",
+    "identity-center",
     "agent-platform",
     "agent-webclient",
     "custom-plugin"
@@ -6629,7 +6615,7 @@ test("startup restore skips install-only services that were running at shutdown"
   ]);
 
   assert.deepEqual(__testInternals.getServiceIdsToRestore(app), [
-    "zenmind-app-server",
+    "identity-center",
     "agent-platform",
     "agent-webclient",
     "custom-plugin"
@@ -6639,90 +6625,6 @@ test("startup restore skips install-only services that were running at shutdown"
   ]);
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("Tunnel Hub pre-start registers remote WS before service command start", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-hub-prestart-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const app = createApp(userDataRoot);
-  const registrations = [];
-  const relay = http.createServer((req, res) => {
-    const chunks = [];
-    req.on("data", (chunk) => chunks.push(chunk));
-    req.on("end", () => {
-      registrations.push({
-        method: req.method,
-        url: req.url,
-        authorization: req.headers.authorization,
-        body: JSON.parse(Buffer.concat(chunks).toString("utf8"))
-      });
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        deviceId: "mac-mini-office",
-        publicHost: "mac-mini-office.tunnel-hub.zenmind.cc",
-        publicUrl: "https://mac-mini-office.tunnel-hub.zenmind.cc",
-        webSocketUrl: "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws",
-        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
-        targetUrl: "http://127.0.0.1:7083",
-        agentToken: "prestart-agent-token"
-      }));
-    });
-  });
-  await new Promise((resolve) => relay.listen(0, "127.0.0.1", resolve));
-  t.after(async () => {
-    await stopDesktopRemoteWsServer();
-    await new Promise((resolve) => relay.close(resolve));
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const relayUrl = `ws://127.0.0.1:${relay.address().port}/tunnel`;
-  const saved = saveTunnelHubAgentSettings(app, {
-    enabled: true,
-    relayUrl,
-    deviceId: "mac-mini-office",
-    registrationToken: "registration-secret"
-  });
-  assert.equal(saved.ok, true);
-  configureTunnelHubRemoteWsController({
-    desktopWsServerOptions: {
-      app,
-      port: 0,
-      desktopActionOptions: {},
-      assistantBridge: {
-        listAgents: async () => [],
-        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
-      },
-      getTaskBoardRuntime: () => null,
-      verifyToken: async () => ({
-        subject: "app",
-        deviceId: "device-1",
-        expiresAt: Date.now() + 600_000,
-        scope: "app"
-      }),
-      logger: { log() {}, warn() {}, error() {} }
-    },
-    logger: { log() {}, warn() {}, error() {} }
-  });
-
-  await __testInternals.ensurePreStartRequirements(app, {
-    id: "tunnel-hub-agent",
-    kind: "builtin",
-    version: "0.0.0-test",
-    desktop: {
-      capabilities: {
-        requires: []
-      }
-    }
-  });
-
-  assert.equal(registrations.length, 1);
-  assert.equal(registrations[0].method, "POST");
-  assert.equal(registrations[0].url, "/api/desktop/devices/register");
-  assert.equal(registrations[0].authorization, "Bearer registration-secret");
-  assert.match(registrations[0].body.targetUrl, /^http:\/\/127\.0\.0\.1:\d+$/u);
-  assert.notEqual(registrations[0].body.targetUrl, "http://127.0.0.1:7082");
-  const envPath = path.join(getTestDesktopRoot(userDataRoot), "config", "services", "tunnel-hub-agent", ".env");
-  assert.match(fs.readFileSync(envPath, "utf8"), /^AGENT_TOKEN=prestart-agent-token$/m);
 });
 
 test("shutdown records running resource plugins without unloading their resources", async () => {
@@ -7041,10 +6943,10 @@ test("restoreRunningServices skips unavailable install-only container hub", asyn
     });
 
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.restored, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(result.restored, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.equal(startupEvents.includes("start:agent-container-hub"), false);
     assert.equal(startupEvents.includes("progress:agent-container-hub:failed"), false);
-    for (const serviceId of ["zenmind-app-server", "agent-platform"]) {
+    for (const serviceId of ["identity-center", "agent-platform"]) {
       const service = getBuiltinService(serviceId);
       const installDir = getInstallDir(app, service);
       assert.equal(fs.existsSync(path.join(installDir, "run", "started.txt")), true);
@@ -7133,7 +7035,7 @@ test("runStartupPreparation applies provider-register before preparing builtin s
   );
 
   globalThis.fetch = async (_url, init = {}) => {
-    fetchSawBuiltinEnvBeforeRegistration = fs.existsSync(getTestEnvPath(userDataRoot, "zenmind-app-server")) ||
+    fetchSawBuiltinEnvBeforeRegistration = fs.existsSync(getTestEnvPath(userDataRoot, "identity-center")) ||
       fs.existsSync(getTestEnvPath(userDataRoot, "agent-platform")) ||
       fs.existsSync(getTestEnvPath(userDataRoot, "agent-webclient"));
     requestBody = JSON.parse(init.body);
@@ -7163,7 +7065,7 @@ test("runStartupPreparation applies provider-register before preparing builtin s
       fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
       /^apiKey: dk_RunStartupPreparationKey$/m
     );
-    assert.ok(result.started.includes("zenmind-app-server"));
+    assert.ok(result.started.includes("identity-center"));
   } finally {
     if (originalFetch === undefined) {
       delete globalThis.fetch;
@@ -7192,7 +7094,7 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.equal(fs.existsSync(hubInstallDir), true);
     assert.equal(readInitializationStatePath(getTestInitializationStatePath(userDataRoot, hubService.id))?.status, "succeeded");
     assert.match(hubEnv, new RegExp(`^BIND_ADDR=127\\.0\\.0\\.1:${fixture.ports.containerHub}$`, "mu"));
@@ -7216,7 +7118,7 @@ test("runStartupPreparation prepares packaged first-launch core services in para
     const result = await runStartupPreparation(app, {
       onProgress(serviceId, phase) {
         if (
-          ["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId) &&
+          ["identity-center", "agent-platform", "agent-webclient"].includes(serviceId) &&
           phase === "installing" &&
           !installingTimes.has(serviceId)
         ) {
@@ -7225,7 +7127,7 @@ test("runStartupPreparation prepares packaged first-launch core services in para
       }
     });
 
-    const installStartTimes = ["zenmind-app-server", "agent-platform", "agent-webclient"].map((serviceId) => {
+    const installStartTimes = ["identity-center", "agent-platform", "agent-webclient"].map((serviceId) => {
       assert.equal(installingTimes.has(serviceId), true, `${serviceId} should enter installing phase`);
       return installingTimes.get(serviceId);
     });
@@ -7234,7 +7136,7 @@ test("runStartupPreparation prepares packaged first-launch core services in para
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.ok(spreadMs < 400, `expected parallel install progress, got spread ${spreadMs}ms`);
   } finally {
     await stopStartupCoreProcesses(app);
@@ -7243,7 +7145,7 @@ test("runStartupPreparation prepares packaged first-launch core services in para
   }
 });
 
-test("runStartupPreparation repairs partial app-server env preserved before packaged bootstrap", async () => {
+test("runStartupPreparation repairs partial identity-center env preserved before packaged bootstrap", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -7251,7 +7153,7 @@ test("runStartupPreparation repairs partial app-server env preserved before pack
   try {
     writeTestEnv(
       userDataRoot,
-      "zenmind-app-server",
+      "identity-center",
       [
         "SERVER_PORT=18080",
         "AUTH_DB_PATH=./data/auth.db",
@@ -7260,18 +7162,18 @@ test("runStartupPreparation repairs partial app-server env preserved before pack
     );
 
     const result = await runStartupPreparation(app);
-    const appServerEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
+    const identityCenterEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
 
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.match(appServerEnv, new RegExp(`^SERVER_PORT=${fixture.ports.appServer}$`, "m"));
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
+    assert.match(identityCenterEnv, new RegExp(`^SERVER_PORT=${fixture.ports.identityCenter}$`, "m"));
     assert.match(
-      appServerEnv,
-      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db"))}$`, "m")
+      identityCenterEnv,
+      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "identity-center"), "auth.db"))}$`, "m")
     );
-    assertAppServerDefaultBcryptEnv(appServerEnv);
+    assertIdentityCenterDefaultBcryptEnv(identityCenterEnv);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
@@ -7285,7 +7187,7 @@ test("runStartupPreparation does not reinstall healthy packaged core services wh
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
 
   try {
-    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
@@ -7293,7 +7195,7 @@ test("runStartupPreparation does not reinstall healthy packaged core services wh
     fs.writeFileSync(markerPath, "keep", "utf8");
 
     const future = new Date(Date.now() + 10_000);
-    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
       const assetDir = path.join(fixture.assetsRoot, serviceId);
       for (const entry of fs.readdirSync(assetDir)) {
         fs.utimesSync(path.join(assetDir, entry), future, future);
@@ -7320,15 +7222,15 @@ test("runStartupPreparation does not reinstall a healthy packaged service with a
   let portServer;
 
   try {
-    const appServerPort = await getAvailableLocalPort();
+    const identityCenterPort = await getAvailableLocalPort();
     const platformPort = await getAvailableLocalPort();
     const webclientPort = await getAvailableLocalPort();
 
-    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
-    writeTestEnv(userDataRoot, "zenmind-app-server", `SERVER_PORT=${appServerPort}\n`);
+    writeTestEnv(userDataRoot, "identity-center", `SERVER_PORT=${identityCenterPort}\n`);
     writeTestEnv(userDataRoot, "agent-platform", `SERVER_PORT=${platformPort}\n`);
     writeTestEnv(
       userDataRoot,
@@ -7384,23 +7286,23 @@ test("runStartupPreparation restores second-launch core services in parallel", a
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
 
   try {
-    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
     const result = await runStartupPreparation(app, {
       onStarting(serviceId) {
-        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId)) {
+        if (["identity-center", "agent-platform", "agent-webclient"].includes(serviceId)) {
           startingTimes.set(serviceId, Date.now());
         }
       },
       onProgress(serviceId, phase) {
-        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId) && phase === "succeeded") {
+        if (["identity-center", "agent-platform", "agent-webclient"].includes(serviceId) && phase === "succeeded") {
           succeededTimes.set(serviceId, Date.now());
         }
       }
     });
-    for (const serviceId of ["zenmind-app-server", "agent-platform"]) {
+    for (const serviceId of ["identity-center", "agent-platform"]) {
       const filePath = path.join(getTestServiceProgramDir(userDataRoot, serviceId, "v1.0.0"), "run", "start-time.txt");
       assert.equal(fs.existsSync(filePath), true, `${serviceId} should record a start timestamp`);
       assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
@@ -7416,15 +7318,15 @@ test("runStartupPreparation restores second-launch core services in parallel", a
     assert.equal(result.mode, "restore");
     assert.equal(result.preparedChanged, false);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.equal(succeededTimes.has("zenmind-app-server"), true, "zenmind-app-server should reach succeeded phase");
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
+    assert.equal(succeededTimes.has("identity-center"), true, "identity-center should reach succeeded phase");
     assert.ok(
-      startingTimes.get("agent-platform") < succeededTimes.get("zenmind-app-server"),
-      "agent-platform should start without waiting for app-server during restore"
+      startingTimes.get("agent-platform") < succeededTimes.get("identity-center"),
+      "agent-platform should start without waiting for identity-center during restore"
     );
     assert.ok(
-      startingTimes.get("agent-webclient") < succeededTimes.get("zenmind-app-server"),
-      "agent-webclient should start without waiting for app-server during restore"
+      startingTimes.get("agent-webclient") < succeededTimes.get("identity-center"),
+      "agent-webclient should start without waiting for identity-center during restore"
     );
   } finally {
     if (previousVerifyDelay === undefined) {
@@ -7450,10 +7352,10 @@ test("runStartupPreparation prepares packaged first-launch core services in para
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
 
   try {
-    const appServerPort = await getAvailableLocalPort();
+    const identityCenterPort = await getAvailableLocalPort();
     const platformPort = await getAvailableLocalPort();
     const webclientPort = await getAvailableLocalPort();
-    writeTestEnv(userDataRoot, "zenmind-app-server", `SERVER_PORT=${appServerPort}\n`);
+    writeTestEnv(userDataRoot, "identity-center", `SERVER_PORT=${identityCenterPort}\n`);
     writeTestEnv(userDataRoot, "agent-platform", `SERVER_PORT=${platformPort}\n`);
     writeTestEnv(
       userDataRoot,
@@ -7469,12 +7371,12 @@ test("runStartupPreparation prepares packaged first-launch core services in para
 
     const result = await runStartupPreparation(app, {
       onStarting(serviceId) {
-        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId)) {
+        if (["identity-center", "agent-platform", "agent-webclient"].includes(serviceId)) {
           startingTimes.set(serviceId, Date.now());
         }
       },
       onProgress(serviceId, phase) {
-        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId)) {
+        if (["identity-center", "agent-platform", "agent-webclient"].includes(serviceId)) {
           if (phase === "installing") {
             installingTimes.set(serviceId, Date.now());
           }
@@ -7486,16 +7388,16 @@ test("runStartupPreparation prepares packaged first-launch core services in para
     });
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
-    const installTimes = ["zenmind-app-server", "agent-platform", "agent-webclient"].map((serviceId) => {
+    const installTimes = ["identity-center", "agent-platform", "agent-webclient"].map((serviceId) => {
       assert.equal(installingTimes.has(serviceId), true, `${serviceId} should reach installing phase`);
       return installingTimes.get(serviceId);
     });
     const installSpreadMs = Math.max(...installTimes) - Math.min(...installTimes);
     assert.ok(installSpreadMs < 250, `expected parallel bootstrap install callbacks, got spread ${installSpreadMs}ms`);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
 
-    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["identity-center", "agent-platform", "agent-webclient"]) {
       assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
       assert.equal(succeededTimes.has(serviceId), true, `${serviceId} should reach succeeded phase`);
     }
@@ -7548,7 +7450,7 @@ test("runStartupPreparation uses manifest auth capability for agent-platform run
     assert.equal(platformRuntimeProbe.statusCode, 401);
     assert.equal(authenticatedPlatformRuntimeProbe.ok, true);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.equal(webclientState.status, "running");
   } finally {
     if (previousVerifyDelay === undefined) {
@@ -7562,7 +7464,7 @@ test("runStartupPreparation uses manifest auth capability for agent-platform run
   }
 });
 
-test("runStartupPreparation reuses a running app-server during restore", async () => {
+test("runStartupPreparation reuses a running identity-center during restore", async () => {
   const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 100 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -7571,28 +7473,28 @@ test("runStartupPreparation reuses a running app-server during restore", async (
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
 
   try {
-    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
-    const firstStart = await startService(app, "zenmind-app-server");
+    const firstStart = await startService(app, "identity-center");
     const startTimePath = path.join(
-      getTestServiceProgramDir(userDataRoot, "zenmind-app-server", "v1.0.0"),
+      getTestServiceProgramDir(userDataRoot, "identity-center", "v1.0.0"),
       "run",
       "start-time.txt"
     );
     const firstStartTime = fs.readFileSync(startTimePath, "utf8");
 
     const result = await runStartupPreparation(app);
-    const appServerState = await getServiceState(app, "zenmind-app-server");
+    const identityCenterState = await getServiceState(app, "identity-center");
 
     assert.equal(firstStart.ok, true, firstStart.message);
     assert.equal(result.mode, "restore");
     assert.equal(result.preparedChanged, false);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.equal(appServerState.status, "running");
-    assert.equal(appServerState.healthMeta.pid, firstStart.service.healthMeta.pid);
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
+    assert.equal(identityCenterState.status, "running");
+    assert.equal(identityCenterState.healthMeta.pid, firstStart.service.healthMeta.pid);
     assert.equal(fs.readFileSync(startTimePath, "utf8"), firstStartTime);
   } finally {
     if (previousVerifyDelay === undefined) {
@@ -7617,7 +7519,7 @@ test("runStartupPreparation collects parallel restore failures without cancellin
   process.env.SERVICE_DEPENDENCY_VERIFY_TIMEOUT_MS = "500";
 
   try {
-    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
@@ -7629,8 +7531,8 @@ test("runStartupPreparation collects parallel restore failures without cancellin
     assert.match(result.failures.join("\n"), /agent-platform/u);
     assert.match(result.failures.join("\n"), /agent-webclient/u);
     assert.match(result.failures.join("\n"), /service agent-platform 未就绪/u);
-    assert.deepEqual(result.started, ["zenmind-app-server"]);
-    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "zenmind-app-server", "v1.0.0"), "run", "started.txt")), true);
+    assert.deepEqual(result.started, ["identity-center"]);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "identity-center", "v1.0.0"), "run", "started.txt")), true);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), false);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), false);
     assert.equal((await getServiceState(app, "agent-webclient")).status, "running");
@@ -7657,7 +7559,7 @@ test("runStartupPreparation prepares missing container hub in the background whe
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
 
   try {
-    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["identity-center", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
@@ -7673,7 +7575,7 @@ test("runStartupPreparation prepares missing container hub in the background whe
     assert.equal(result.mode, "restore");
     assert.equal(result.preparedChanged, false);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual([...result.started].sort(), ["agent-platform", "agent-webclient", "zenmind-app-server"]);
+    assert.deepEqual([...result.started].sort(), ["agent-platform", "agent-webclient", "identity-center"]);
     assert.equal(fs.existsSync(markerPath), true);
     assert.equal(fs.existsSync(hubInstallDir), true);
     assert.equal(readInitializationStatePath(getTestInitializationStatePath(userDataRoot, hubService.id))?.status, "succeeded");
@@ -7703,13 +7605,13 @@ test("runStartupPreparation does not block core services when optional container
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.ok(
       ["dependency-missing", "error"].includes(hubState.status),
       `expected optional hub to be unavailable, got ${hubState.status}`
     );
     assert.notEqual(hubState.status, "running");
-    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["identity-center", "agent-platform", "agent-webclient"]) {
       const state = await getServiceState(app, serviceId);
       assert.equal(state.status, "running", `${serviceId} should run when container hub init fails`);
     }
@@ -7726,7 +7628,7 @@ test("runStartupPreparation reinitializes packaged core services that are missin
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
 
   try {
-    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["identity-center", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
@@ -7746,7 +7648,7 @@ test("runStartupPreparation reinitializes packaged core services that are missin
 });
 
 test("runStartupPreparation reports one bootstrap failure without blocking independent dependents", async () => {
-  const fixture = createStartupCoreAssetsFixture({ failOnStartServiceId: "zenmind-app-server" });
+  const fixture = createStartupCoreAssetsFixture({ failOnStartServiceId: "identity-center" });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
 
@@ -7755,7 +7657,7 @@ test("runStartupPreparation reports one bootstrap failure without blocking indep
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
     assert.equal(result.failures.length, 1);
-    assert.match(result.failures[0], /zenmind-app-server/u);
+    assert.match(result.failures[0], /identity-center/u);
     assert.deepEqual(result.started, ["agent-platform", "agent-webclient"]);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), true);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), false);
@@ -7781,7 +7683,7 @@ test("runStartupPreparation bootstraps development first launch with core servic
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.equal(readInitializationStatePath(getTestInitializationStatePath(userDataRoot, hubService.id))?.status, "succeeded");
     assert.notEqual(hubState.status, "running");
   } finally {

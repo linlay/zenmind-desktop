@@ -23,7 +23,7 @@ Build latest dist/release packages for:
   container-hub   -> agent-container-hub
   agent-webclient -> agent-webclient
   platform        -> agent-platform
-  app-server      -> zenmind-app-server
+  identity-center -> identity-center
 
 After the selected builds finish, the script syncs Desktop builtin service
 assets into:
@@ -264,7 +264,7 @@ PROJECT_SPECS=(
   "container-hub|agent-container-hub|release"
   "agent-webclient|agent-webclient|release"
   "platform|agent-platform|release"
-  "app-server|zenmind-app-server|release"
+  "identity-center|identity-center|release"
 )
 
 for spec in "${PROJECT_SPECS[@]}"; do

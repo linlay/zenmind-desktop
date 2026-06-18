@@ -15,12 +15,12 @@ import { PRODUCT_NAME } from "../shared/generated/brand";
 import { resolveDesktopCapability } from "./services/manager/capabilities";
 import { t } from "./i18n/main-i18n";
 
-const APP_SERVER_SERVICE_ID = "zenmind-app-server";
+const IDENTITY_CENTER_SERVICE_ID = "identity-center";
 const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
-const APP_SERVER_AUTH_SCRIPT_TIMEOUT_MS = 30_000;
-const APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
+const IDENTITY_CENTER_AUTH_SCRIPT_TIMEOUT_MS = 30_000;
+const IDENTITY_CENTER_AUTH_SCRIPT_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
 
-type AppServerAuthLayout = {
+type IdentityCenterAuthLayout = {
   programDir: string;
   configDir: string;
   dataDir: string;
@@ -49,8 +49,8 @@ function windowsPowerShellPath() {
   return path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
-function getAppServerLayout(app: App): AppServerAuthLayout {
-  const service = getService(APP_SERVER_SERVICE_ID);
+function getIdentityCenterLayout(app: App): IdentityCenterAuthLayout {
+  const service = getService(IDENTITY_CENTER_SERVICE_ID);
   const programDir = path.join(getServicesRoot(app), service.id, service.version);
   const configDir = getServiceConfigRoot(app, service.id, service.kind);
   const dataDir = getServiceDataRoot(app, service.id, service.kind);
@@ -66,7 +66,7 @@ function getAppServerLayout(app: App): AppServerAuthLayout {
   };
 }
 
-function buildLayoutEnv(layout: AppServerAuthLayout): NodeJS.ProcessEnv {
+function buildLayoutEnv(layout: IdentityCenterAuthLayout): NodeJS.ProcessEnv {
   return {
     SERVICE_PROGRAM_DIR: layout.programDir,
     SERVICE_CONFIG_DIR: layout.configDir,
@@ -76,24 +76,24 @@ function buildLayoutEnv(layout: AppServerAuthLayout): NodeJS.ProcessEnv {
   };
 }
 
-function readAppServerEnv(layout: AppServerAuthLayout) {
+function readIdentityCenterEnv(layout: IdentityCenterAuthLayout) {
   const content = fs.existsSync(layout.envPath) ? fs.readFileSync(layout.envPath, "utf8") : "";
   return parseEnvFileContent(content);
 }
 
-function buildAppServerAuthScriptEnv(
-  layout: AppServerAuthLayout,
+function buildIdentityCenterAuthScriptEnv(
+  layout: IdentityCenterAuthLayout,
   overrides: NodeJS.ProcessEnv
 ) {
   return {
-    ...Object.fromEntries(readAppServerEnv(layout)),
+    ...Object.fromEntries(readIdentityCenterEnv(layout)),
     ...overrides
   };
 }
 
-function readAppServerAuthSettings(layout: AppServerAuthLayout) {
-  const env = readAppServerEnv(layout);
-  const service = getService(APP_SERVER_SERVICE_ID);
+function readIdentityCenterAuthSettings(layout: IdentityCenterAuthLayout) {
+  const env = readIdentityCenterEnv(layout);
+  const service = getService(IDENTITY_CENTER_SERVICE_ID);
   const port = env.get("SERVER_PORT")?.trim() || String(service.web.defaultPort);
   return {
     dbPath: env.get("AUTH_DB_PATH")?.trim() || path.join(layout.dataDir, "auth.db"),
@@ -107,8 +107,8 @@ type ResolvedCommand = {
   args: string[];
 };
 
-function resolveAppServerCommand(layout: AppServerAuthLayout, subcommand: string): ResolvedCommand {
-  const binaryName = process.platform === "win32" ? "zenmind-app-server.exe" : "zenmind-app-server";
+function resolveIdentityCenterCommand(layout: IdentityCenterAuthLayout, subcommand: string): ResolvedCommand {
+  const binaryName = process.platform === "win32" ? "identity-center.exe" : "identity-center";
   const binaryPath = path.join(layout.programDir, "backend", binaryName);
 
   // Auth helpers are bundled as scripts; the backend binary is the long-running server.
@@ -141,23 +141,23 @@ function resolveAppServerCommand(layout: AppServerAuthLayout, subcommand: string
   }
 
   if (process.platform === "win32") {
-    throw new Error(t("appServerAuth.missingBinaryAndWindowsScript", { binaryName, subcommand }));
+    throw new Error(t("identityCenterAuth.missingBinaryAndWindowsScript", { binaryName, subcommand }));
   }
 
   if (process.platform === "darwin" || process.platform === "linux") {
-    throw new Error(t("appServerAuth.missingBinaryAndUnixScript", { binaryName, subcommand }));
+    throw new Error(t("identityCenterAuth.missingBinaryAndUnixScript", { binaryName, subcommand }));
   }
 
-  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
+  throw new Error(t("identityCenterAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
-function resolveAppServerScript(layout: AppServerAuthLayout, baseName: string) {
+function resolveIdentityCenterScript(layout: IdentityCenterAuthLayout, baseName: string) {
   if (process.platform === "win32") {
     const windowsScript = path.join(layout.programDir, "scripts", `${baseName}.ps1`);
     if (fs.existsSync(windowsScript)) {
       return windowsScript;
     }
-    throw new Error(t("appServerAuth.missingWindowsScript", { baseName }));
+    throw new Error(t("identityCenterAuth.missingWindowsScript", { baseName }));
   }
 
   if (process.platform === "darwin" || process.platform === "linux") {
@@ -166,14 +166,14 @@ function resolveAppServerScript(layout: AppServerAuthLayout, baseName: string) {
       fs.chmodSync(unixScript, 0o755);
       return unixScript;
     }
-    throw new Error(t("appServerAuth.missingUnixScript", { baseName }));
+    throw new Error(t("identityCenterAuth.missingUnixScript", { baseName }));
   }
 
-  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
+  throw new Error(t("identityCenterAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
-function runAppServerScript(
-  layout: AppServerAuthLayout,
+function runIdentityCenterScript(
+  layout: IdentityCenterAuthLayout,
   resolved: ResolvedCommand,
   args: string[],
   env: NodeJS.ProcessEnv
@@ -210,7 +210,7 @@ function runAppServerScript(
     execFile(command, commandArgs, {
       cwd: layout.programDir,
       env: childEnv,
-      timeout: APP_SERVER_AUTH_SCRIPT_TIMEOUT_MS
+      timeout: IDENTITY_CENTER_AUTH_SCRIPT_TIMEOUT_MS
     }, (error, stdout, stderr) => {
       const result = {
         stdout: String(stdout ?? ""),
@@ -236,29 +236,29 @@ function isUnsupportedDeviceIdArgumentError(reason: unknown) {
   return /unknown argument:\s*(?:--device-id|-DeviceId)|unrecognized (?:option|argument).*?(?:--device-id|-DeviceId)|(?:parameter cannot be found|找不到与参数名称).*?(?:--device-id|-DeviceId|DeviceId)/iu.test(message);
 }
 
-async function runAppServerAuthScript(
-  layout: AppServerAuthLayout,
+async function runIdentityCenterAuthScript(
+  layout: IdentityCenterAuthLayout,
   resolved: ResolvedCommand,
   args: string[],
   env: NodeJS.ProcessEnv
 ): Promise<ExecResult> {
   let lastError: unknown;
-  for (let attempt = 0; attempt <= APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS.length; attempt += 1) {
+  for (let attempt = 0; attempt <= IDENTITY_CENTER_AUTH_SCRIPT_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      return await runAppServerScript(layout, resolved, args, env);
+      return await runIdentityCenterScript(layout, resolved, args, env);
     } catch (reason) {
       lastError = reason;
-      if (!isSqliteBusyError(reason) || attempt >= APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS.length) {
+      if (!isSqliteBusyError(reason) || attempt >= IDENTITY_CENTER_AUTH_SCRIPT_RETRY_DELAYS_MS.length) {
         throw reason;
       }
-      await delay(APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS[attempt]);
+      await delay(IDENTITY_CENTER_AUTH_SCRIPT_RETRY_DELAYS_MS[attempt]);
     }
   }
 
   throw lastError;
 }
 
-function buildSetupPublicKeyArgs(settings: ReturnType<typeof readAppServerAuthSettings>, keyDir: string, publicKeyPath: string) {
+function buildSetupPublicKeyArgs(settings: ReturnType<typeof readIdentityCenterAuthSettings>, keyDir: string, publicKeyPath: string) {
   if (process.platform === "win32") {
     return [
       "-Mode",
@@ -285,11 +285,11 @@ function buildSetupPublicKeyArgs(settings: ReturnType<typeof readAppServerAuthSe
     ];
   }
 
-  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
+  throw new Error(t("identityCenterAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
 function buildIssueAccessTokenArgsWithDeviceId(
-  settings: ReturnType<typeof readAppServerAuthSettings>,
+  settings: ReturnType<typeof readIdentityCenterAuthSettings>,
   desktopDeviceId: string
 ) {
   if (process.platform === "win32") {
@@ -322,10 +322,10 @@ function buildIssueAccessTokenArgsWithDeviceId(
     ];
   }
 
-  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
+  throw new Error(t("identityCenterAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
-function buildLegacyIssueAccessTokenArgs(settings: ReturnType<typeof readAppServerAuthSettings>) {
+function buildLegacyIssueAccessTokenArgs(settings: ReturnType<typeof readIdentityCenterAuthSettings>) {
   if (process.platform === "win32") {
     return [
       "-Db",
@@ -352,18 +352,18 @@ function buildLegacyIssueAccessTokenArgs(settings: ReturnType<typeof readAppServ
     ];
   }
 
-  throw new Error(t("appServerAuth.unsupportedPlatform", { platform: process.platform }));
+  throw new Error(t("identityCenterAuth.unsupportedPlatform", { platform: process.platform }));
 }
 
 function readJwtPayload(token: string) {
   const [, payloadPart] = token.split(".");
   if (!payloadPart) {
-    throw new Error(t("appServerAuth.invalidJwt"));
+    throw new Error(t("identityCenterAuth.invalidJwt"));
   }
   try {
     return JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as Record<string, unknown>;
   } catch {
-    throw new Error(t("appServerAuth.jwtPayloadParseFailed"));
+    throw new Error(t("identityCenterAuth.jwtPayloadParseFailed"));
   }
 }
 
@@ -371,7 +371,7 @@ function validateAccessTokenHasDeviceId(token: string) {
   const payload = readJwtPayload(token);
   const tokenDeviceId = typeof payload.device_id === "string" ? payload.device_id.trim() : "";
   if (!tokenDeviceId) {
-    throw new Error(t("appServerAuth.tokenMissingDeviceId"));
+    throw new Error(t("identityCenterAuth.tokenMissingDeviceId"));
   }
 }
 
@@ -379,20 +379,20 @@ function validateAccessTokenDeviceId(token: string, desktopDeviceId: string) {
   const payload = readJwtPayload(token);
   const tokenDeviceId = typeof payload.device_id === "string" ? payload.device_id.trim() : "";
   if (tokenDeviceId !== desktopDeviceId) {
-    throw new Error(t("appServerAuth.tokenDeviceIdMismatch"));
+    throw new Error(t("identityCenterAuth.tokenDeviceIdMismatch"));
   }
 }
 
-export function getAppServerPublicKeyExportPath(app: App) {
-  const layout = getAppServerLayout(app);
+export function getIdentityCenterPublicKeyExportPath(app: App) {
+  const layout = getIdentityCenterLayout(app);
   return path.join(layout.dataDir, "keys", "publicKey.pem");
 }
 
-export async function ensureAppServerJwk(app: App) {
+export async function ensureIdentityCenterJwk(app: App) {
   const capability = await resolveDesktopCapability(app, "auth.publicKey");
-  const publicKeyPath = capability.filePath || getAppServerPublicKeyExportPath(app);
+  const publicKeyPath = capability.filePath || getIdentityCenterPublicKeyExportPath(app);
   if (!fs.existsSync(publicKeyPath)) {
-    throw new Error(t("appServerAuth.publicKeyMissing", { path: publicKeyPath }));
+    throw new Error(t("identityCenterAuth.publicKeyMissing", { path: publicKeyPath }));
   }
   return {
     publicKeyPath,
@@ -400,25 +400,25 @@ export async function ensureAppServerJwk(app: App) {
   };
 }
 
-export async function issueAppServerAccessToken(app: App) {
+export async function issueIdentityCenterAccessToken(app: App) {
   const capability = await resolveDesktopCapability(app, "auth.accessToken");
   const token = capability.token || capability.text || "";
   if (!token) {
-    throw new Error(t("appServerAuth.tokenMissing"));
+    throw new Error(t("identityCenterAuth.tokenMissing"));
   }
   return token;
 }
 
 export const __testInternals = {
-  getAppServerLayout,
-  readAppServerAuthSettings,
-  resolveAppServerCommand,
-  resolveAppServerScript,
+  getIdentityCenterLayout,
+  readIdentityCenterAuthSettings,
+  resolveIdentityCenterCommand,
+  resolveIdentityCenterScript,
   buildIssueAccessTokenArgsWithDeviceId,
   buildLegacyIssueAccessTokenArgs,
   readJwtPayload,
   validateAccessTokenHasDeviceId,
   validateAccessTokenDeviceId,
-  runAppServerScript,
-  runAppServerAuthScript
+  runIdentityCenterScript,
+  runIdentityCenterAuthScript
 };

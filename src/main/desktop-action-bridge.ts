@@ -59,11 +59,17 @@ import {
 } from "./marketplace";
 import { normalizeMarketApiBaseUrl } from "./marketplace/common";
 import {
-  TUNNEL_HUB_AGENT_SERVICE_ID,
   readTunnelHubAgentSettings,
-  saveTunnelHubAgentSettings,
   validateTunnelHubAgentSettingsInput
 } from "./tunnel-hub-agent-settings";
+import {
+  applyTunnelHubSettings,
+  getTunnelHubRuntimeStatus,
+  readTunnelHubRuntimeLog,
+  restartTunnelHubRuntime,
+  startTunnelHubRuntime,
+  stopTunnelHubRuntime
+} from "./tunnel-hub-runtime";
 import {
   executeCurrentPageCdpAction,
   inspectCurrentPageCdpElement,
@@ -917,31 +923,18 @@ async function executeAction(
       });
     }
     case "desktop.tunnelHub.applySettings": {
-      const result = saveTunnelHubAgentSettings(options.app, readTunnelHubSettingsInput(args));
-      if (!result.ok) {
-        return ok(action, result);
-      }
-
-      const current = await getResponsiveServiceState(options.app, TUNNEL_HUB_AGENT_SERVICE_ID);
-      const restart = args.restartIfRunning !== false && current.status === "running"
-        ? await restartService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID)
-        : null;
-      return ok(action, {
-        ...result,
-        restart
-      });
+      return ok(action, await applyTunnelHubSettings(readTunnelHubSettingsInput(args)));
     }
     case "desktop.tunnelHub.getStatus":
-      return ok(action, await getResponsiveServiceState(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+      return ok(action, getTunnelHubRuntimeStatus());
     case "desktop.tunnelHub.start":
-      return ok(action, await startService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+      return ok(action, await startTunnelHubRuntime());
     case "desktop.tunnelHub.stop":
-      return ok(action, await stopService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+      return ok(action, await stopTunnelHubRuntime());
     case "desktop.tunnelHub.restart":
-      return ok(action, await restartService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+      return ok(action, await restartTunnelHubRuntime());
     case "desktop.tunnelHub.readLog": {
-      const target = readString(args, "target") === "error" ? "error" : "main";
-      return ok(action, await readServiceLog(options.app, TUNNEL_HUB_AGENT_SERVICE_ID, target as ServiceLogTarget, {
+      return ok(action, readTunnelHubRuntimeLog({
         limitBytes: typeof args.limitBytes === "number" ? args.limitBytes : undefined,
         beforeOffset: typeof args.beforeOffset === "number" ? args.beforeOffset : undefined
       }));

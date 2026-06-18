@@ -284,6 +284,13 @@ const api: DesktopApi = {
   agentAuth: {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
   },
+  tunnelHub: {
+    getStatus: () => ipcRenderer.invoke("tunnelHub.getStatus"),
+    start: () => ipcRenderer.invoke("tunnelHub.start"),
+    stop: () => ipcRenderer.invoke("tunnelHub.stop"),
+    restart: () => ipcRenderer.invoke("tunnelHub.restart"),
+    readLog: (options) => ipcRenderer.invoke("tunnelHub.readLog", options)
+  },
   sso: {
     getStatus: () => ipcRenderer.invoke("sso.getStatus"),
     startLogin: () => ipcRenderer.invoke("sso.startLogin"),

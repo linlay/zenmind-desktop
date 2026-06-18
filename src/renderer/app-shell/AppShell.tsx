@@ -146,7 +146,7 @@ const SETTINGS_SIDEBAR_WIDTH = 200;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
-const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
@@ -319,6 +319,7 @@ export function AppShell() {
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const startupNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
+  const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
   const assistantNavAgentsRefreshIdRef = useRef(0);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
@@ -346,6 +347,7 @@ export function AppShell() {
   const [kanbanSettingsLoaded, setKanbanSettingsLoaded] = useState(false);
   const [marketEnabled, setMarketEnabled] = useState(false);
   const [marketSettingsLoaded, setMarketSettingsLoaded] = useState(false);
+  const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
   const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
@@ -429,8 +431,13 @@ export function AppShell() {
   const isSettingsRoute = matchSettingsRoute(location.pathname);
   const currentRoute = `${location.pathname}${location.search}`;
   const settingsSectionDefinitions = useMemo(
-    () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported: isMac || isWindows, t }),
-    [isMac, isWindows, t]
+    () => buildLocalizedSettingsSections({
+      isWindows,
+      desktopPetSupported: isMac || isWindows,
+      debugVisible: debugSettingsUnlocked,
+      t
+    }),
+    [debugSettingsUnlocked, isMac, isWindows, t]
   );
   const visibleSettingsSections = useMemo(
     () => getVisibleSettingsSections(settingsSectionDefinitions),
@@ -1460,6 +1467,15 @@ export function AppShell() {
   }
 
   function handleSelectSettingsSection(sectionId: SettingsSectionId) {
+    if (sectionId === "about" && !debugSettingsUnlocked) {
+      aboutSettingsClickCountRef.current += 1;
+      if (aboutSettingsClickCountRef.current >= 5) {
+        setDebugSettingsUnlocked(true);
+      }
+    } else if (sectionId !== "about") {
+      aboutSettingsClickCountRef.current = 0;
+    }
+
     const targetPath = buildSettingsSectionPath(sectionId);
     if (targetPath === currentRoute) {
       return;
@@ -2006,6 +2022,7 @@ export function AppShell() {
                     websiteItems={externalWebItems}
                     onWebsiteItemsChange={handleExternalWebItemsChange}
                     onAssistantSettingsChange={setAssistantSettings}
+                    debugVisible={debugSettingsUnlocked}
                   />
                 </RouteSuspense>
               }

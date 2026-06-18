@@ -11,7 +11,7 @@ const {
   agentPlatformInstallNeedsRefresh,
   agentWebclientInstallNeedsRefresh,
   serviceInstallNeedsRefresh,
-  zenmindAppServerInstallNeedsRefresh
+  identityCenterInstallNeedsRefresh
 } = require("../dist-electron/main/services/manager/install-refresh.js");
 const {
   isInstallHealthy,
@@ -76,10 +76,10 @@ test("agent-webclient refresh ignores stale backend marker files", (t) => {
   assert.equal(serviceInstallNeedsRefresh({ id: "agent-webclient" }, installDir), false);
 });
 
-test("zenmind-app-server refresh ignores frontend route and launcher internals", (t) => {
-  const installDir = createTempDir(t, "zenmind-app-server-refresh-");
+test("identity-center refresh ignores frontend route and launcher internals", (t) => {
+  const installDir = createTempDir(t, "identity-center-refresh-");
   writeJson(path.join(installDir, "manifest.json"), {
-    id: "zenmind-app-server",
+    id: "identity-center",
     frontend: { entry: "/" },
     web: { routePath: "/" }
   });
@@ -88,8 +88,8 @@ test("zenmind-app-server refresh ignores frontend route and launcher internals",
   writeText(path.join(installDir, "frontend", "dist", "index.html"), "<script src=\"/assets/main.js\"></script>\n");
   writeText(path.join(installDir, "scripts", "program-common.sh"), "nohup \"$NODE_CMD\" server.js\n");
 
-  assert.equal(zenmindAppServerInstallNeedsRefresh(installDir), false);
-  assert.equal(serviceInstallNeedsRefresh({ id: "zenmind-app-server" }, installDir), false);
+  assert.equal(identityCenterInstallNeedsRefresh(installDir), false);
+  assert.equal(serviceInstallNeedsRefresh({ id: "identity-center" }, installDir), false);
 });
 
 test("runtime.requiredPaths still drives generic install health", (t) => {

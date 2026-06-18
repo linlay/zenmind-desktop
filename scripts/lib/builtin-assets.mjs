@@ -10,11 +10,13 @@ const BUILTIN_ASSETS_SOURCE_ENV = "DESKTOP_BUILTIN_ASSETS_SOURCE";
 const LEGACY_BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
 const BUILTIN_ASSETS_SOURCE_ENV_LABEL = `${BUILTIN_ASSETS_SOURCE_ENV} or ${LEGACY_BUILTIN_ASSETS_SOURCE_ENV}`;
 const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
-  "zenmind-app-server",
+  "identity-center",
   "agent-platform",
   "agent-webclient"
 ];
+const LEGACY_IDENTITY_SERVICE_ID = ["zenmind", "app", "server"].join("-");
 const EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS = new Set([
+  LEGACY_IDENTITY_SERVICE_ID,
   "tunnel-hub-agent"
 ]);
 
@@ -688,14 +690,14 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   }
 }
 
-function validateZenmindAppServerBundleArchive(service, archivePath) {
+function validateIdentityCenterBundleArchive(service, archivePath) {
   const manifest = readManifestFromArchive(archivePath);
   const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
   const envExample = readArchiveEntryText(archivePath, envExamplePath);
   if (!envExample || !envExample.includes("FRONTEND_DIST_DIR=./frontend/dist")) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a stale zenmind-app-server env template without FRONTEND_DIST_DIR=./frontend/dist.\n` +
+        `Detected a stale identity-center env template without FRONTEND_DIST_DIR=./frontend/dist.\n` +
         `Please rebuild or reselect the Desktop-ready program bundle.`
     );
   }
@@ -716,11 +718,11 @@ function validateZenmindAppServerBundleArchive(service, archivePath) {
     if (!programCommon.includes("Resolve-ProgramFrontendDistDir") || !programCommon.includes("$env:FRONTEND_DIST_DIR")) {
       throw new Error(
         `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-          `Detected a stale zenmind-app-server Windows launcher without FRONTEND_DIST_DIR handling.\n` +
+          `Detected a stale identity-center Windows launcher without FRONTEND_DIST_DIR handling.\n` +
           `Please rebuild or reselect the Desktop-ready program bundle.`
       );
     }
-    validateZenmindAppServerAuthCapabilities(service, archivePath, manifest, "windowsCommand");
+    validateIdentityCenterAuthCapabilities(service, archivePath, manifest, "windowsCommand");
     return;
   }
 
@@ -730,20 +732,20 @@ function validateZenmindAppServerBundleArchive(service, archivePath) {
   ) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a stale zenmind-app-server launcher without Desktop compatibility markers.\n` +
+        `Detected a stale identity-center launcher without Desktop compatibility markers.\n` +
         `Please rebuild or reselect the Desktop-ready program bundle.`
     );
   }
 
   const commandKey = manifest?.platform?.os === "linux" ? "linuxCommand" : "darwinCommand";
-  validateZenmindAppServerAuthCapabilities(service, archivePath, manifest, commandKey);
+  validateIdentityCenterAuthCapabilities(service, archivePath, manifest, commandKey);
 }
 
 function hasNonEmptyStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim());
 }
 
-function validateZenmindAppServerAuthCapabilities(service, archivePath, manifest, commandKey) {
+function validateIdentityCenterAuthCapabilities(service, archivePath, manifest, commandKey) {
   const providers = Array.isArray(manifest?.desktop?.capabilities?.provides)
     ? manifest.desktop.capabilities.provides
     : [];
@@ -758,7 +760,7 @@ function validateZenmindAppServerAuthCapabilities(service, archivePath, manifest
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Missing desktop capability provider auth.publicKey in manifest.json.\n` +
-        `Please rebuild the Desktop-ready zenmind-app-server bundle with manifest-declared auth providers.`
+        `Please rebuild the Desktop-ready identity-center bundle with manifest-declared auth providers.`
     );
   }
 
@@ -776,7 +778,7 @@ function validateZenmindAppServerAuthCapabilities(service, archivePath, manifest
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Missing desktop capability provider auth.accessToken in manifest.json.\n` +
-        `Please rebuild the Desktop-ready zenmind-app-server bundle with manifest-declared auth providers.`
+        `Please rebuild the Desktop-ready identity-center bundle with manifest-declared auth providers.`
     );
   }
 }
@@ -829,8 +831,8 @@ export function validateBundleArchive(service, archivePath) {
   if (service.id === "agent-webclient") {
     validateAgentWebclientBundleArchive(service, archivePath);
   }
-  if (service.id === "zenmind-app-server") {
-    validateZenmindAppServerBundleArchive(service, archivePath);
+  if (service.id === "identity-center") {
+    validateIdentityCenterBundleArchive(service, archivePath);
   }
 }
 

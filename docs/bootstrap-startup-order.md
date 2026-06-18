@@ -9,7 +9,7 @@
 首次 bootstrap 涉及 4 个内置核心服务：
 
 - `agent-container-hub`
-- `zenmind-app-server`
+- `identity-center`
 - `agent-platform`
 - `agent-webclient`
 
@@ -26,9 +26,9 @@ Prepare 阶段仍然串行执行，用来保证配置、密钥和端口等前置
 
 Start 阶段采用保守并行：
 
-1. 先启动并验证 `zenmind-app-server` 进入 running。
-2. `zenmind-app-server` running 后，再并行启动 `agent-platform` 和 `agent-webclient`。
-3. 如果 `zenmind-app-server` 未 running，则不启动后续依赖服务。
+1. 先启动并验证 `identity-center` 进入 running。
+2. `identity-center` running 后，再并行启动 `agent-platform` 和 `agent-webclient`。
+3. 如果 `identity-center` 未 running，则不启动后续依赖服务。
 
 ## DAG
 
@@ -36,11 +36,11 @@ Start 阶段采用保守并行：
 flowchart TD
   hub_prepare["agent-container-hub prepare\ninstall + initialize\nnot started"]
 
-  app_prepare["zenmind-app-server prepare\ninstall + initialize\nJWK/public key ready"]
-  platform_prepare["agent-platform prepare\ninstall + initialize\nensure app-server public key"]
+  app_prepare["identity-center prepare\ninstall + initialize\nJWK/public key ready"]
+  platform_prepare["agent-platform prepare\ninstall + initialize\nensure identity-center public key"]
   web_prepare["agent-webclient prepare\ninstall + initialize\nwrite platform URLs"]
 
-  app_start["zenmind-app-server start\nverify running"]
+  app_start["identity-center start\nverify running"]
   platform_start["agent-platform start\nverify running"]
   web_start["agent-webclient start\nverify running"]
 
@@ -62,7 +62,7 @@ Prepare 顺序：
 
 ```text
 agent-container-hub
--> zenmind-app-server
+-> identity-center
 -> agent-platform
 -> agent-webclient
 ```
@@ -70,7 +70,7 @@ agent-container-hub
 Start 顺序：
 
 ```text
-zenmind-app-server start + verify running
+identity-center start + verify running
 -> parallel(
      agent-platform start + verify running,
      agent-webclient start + verify running
@@ -79,11 +79,11 @@ zenmind-app-server start + verify running
 
 ## 依赖发生在哪个阶段
 
-### agent-platform 依赖 zenmind-app-server
+### agent-platform 依赖 identity-center
 
 发生在 `agent-platform prepare` 阶段。
 
-`agent-platform` 初始化时会调用 `ensureAgentPlatformAppServerPublicKey()`，确保 `zenmind-app-server` 的 JWK/public key 已存在，并写入 `agent-platform` 的认证配置。
+`agent-platform` 初始化时会调用 `ensureAgentPlatformIdentityCenterPublicKey()`，确保 `identity-center` 的 JWK/public key 已存在，并写入 `agent-platform` 的认证配置。
 
 因此该依赖是配置/密钥依赖，prepare 串行保证它不会乱序。
 
@@ -99,13 +99,13 @@ zenmind-app-server start + verify running
 
 因此该依赖是配置依赖，prepare 串行保证它发生在 `agent-platform prepare` 之后。
 
-### agent-platform 运行时依赖 zenmind-app-server running
+### agent-platform 运行时依赖 identity-center running
 
 发生在 Start 阶段。
 
-为了避免 `agent-platform` 在认证服务 HTTP 端口尚未 ready 时启动，Start 阶段先启动并复查 `zenmind-app-server`。
+为了避免 `agent-platform` 在认证服务 HTTP 端口尚未 ready 时启动，Start 阶段先启动并复查 `identity-center`。
 
-只有 `zenmind-app-server` 确认 running 后，才并行启动：
+只有 `identity-center` 确认 running 后，才并行启动：
 
 - `agent-platform`
 - `agent-webclient`
@@ -114,20 +114,20 @@ zenmind-app-server start + verify running
 
 - 首次初始化的配置和密钥依赖不并行化。
 - `agent-container-hub` 仍然只 prepare，不作为强启动依赖。
-- `agent-platform` 不会早于 `zenmind-app-server` running 进入 start。
-- `agent-webclient` 不会早于 `zenmind-app-server` running 进入 start。
+- `agent-platform` 不会早于 `identity-center` running 进入 start。
+- `agent-webclient` 不会早于 `identity-center` running 进入 start。
 - `agent-platform` 和 `agent-webclient` 在认证服务 ready 后并行启动。
 
 ## 失败行为
 
-如果 `zenmind-app-server` prepare 失败：
+如果 `identity-center` prepare 失败：
 
-- 记录 `zenmind-app-server` failure。
+- 记录 `identity-center` failure。
 - 不启动 `agent-platform` 和 `agent-webclient`。
 
-如果 `zenmind-app-server` start 或 verify running 失败：
+如果 `identity-center` start 或 verify running 失败：
 
-- 记录 `zenmind-app-server` failure。
+- 记录 `identity-center` failure。
 - 不启动 `agent-platform` 和 `agent-webclient`。
 
 如果 `agent-platform` 或 `agent-webclient` 启动失败：

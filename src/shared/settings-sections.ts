@@ -10,7 +10,8 @@ export type SettingsSectionId =
   | "embeddedWebs"
   | "dataRoot"
   | "memory"
-  | "about";
+  | "about"
+  | "debug";
 
 export type SettingsSectionLayout = "measure" | "wide";
 export type SettingsSectionGroupId = "personal" | "integrations" | "system";

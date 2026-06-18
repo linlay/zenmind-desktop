@@ -127,6 +127,11 @@
   app-region: drag;
   -webkit-app-region: drag;
   pointer-events: auto;
+  cursor: grab;
+}
+
+.external-webview-page .pan-drag-region:active {
+  cursor: grabbing;
 }
 
 .external-webview-browser-chrome {

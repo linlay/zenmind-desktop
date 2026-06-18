@@ -57,6 +57,7 @@ import {
   flushStartupTimingSummary
 } from "../../startup-timing";
 import {
+  identityCenterInstallNeedsRefresh,
   serviceInstallNeedsRefresh
 } from "./install-refresh";
 import {
@@ -170,17 +171,8 @@ import {
   writeManagedPidFiles
 } from "./pid-files";
 import {
-  syncZenmindAppServerDesktopEnv
-} from "./app-server-env";
-import {
-  TUNNEL_HUB_AGENT_SERVICE_ID,
-  readTunnelHubAgentSettings,
-  syncTunnelHubAgentSettingsToEnv
-} from "../../tunnel-hub-agent-settings";
-import {
-  ensureTunnelHubRemoteWsReady,
-  stopTunnelHubRemoteWs
-} from "../../tunnel-hub-remote-ws";
+  syncIdentityCenterDesktopEnv
+} from "./identity-center-env";
 import {
   captureManagedProcessCleanupSnapshot,
   collectManagedRootPids,
@@ -350,7 +342,7 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
   "agent-container-hub",
   "agent-platform",
   "agent-webclient",
-  "zenmind-app-server"
+  "identity-center"
 ]);
 const MAX_TCP_PORT = 65535;
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
@@ -378,14 +370,6 @@ function collectPrerequisites(
     const targetPath = resolveConfigPath(layout, target.relativePath);
     if (target.required && !fs.existsSync(targetPath)) {
       prerequisites.push(t("service.missingImportTarget", { label: target.label }));
-    }
-  }
-
-  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
-    const token = fs.existsSync(envPath) ? readEnvFile(envPath).get("AGENT_TOKEN")?.trim() ?? "" : "";
-    const settings = readTunnelHubAgentSettings(app);
-    if (!token && !settings.hasRegistrationToken) {
-      prerequisites.push(t("service.tunnelHubTokenMissing"));
     }
   }
 
@@ -461,10 +445,6 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
   if (CORE_SERVICE_IDS.has(service.id)) {
     await syncCoreServiceDesktopInitializationConfig(app, service, layout);
     return;
-  }
-
-  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
-    syncTunnelHubAgentSettingsToEnv(app);
   }
 
   const envPath = layout.envPath;
@@ -1480,7 +1460,7 @@ async function syncAgentWebclientPlatformUrls(
   syncAgentWebclientPlatformUrlsToPort(env, updates, platformPort, [], options);
 }
 
-async function syncZenmindAppServerAPUpstream(
+async function syncIdentityCenterAPUpstream(
   app: App,
   env: Map<string, string>,
   updates: Map<string, string>
@@ -1531,9 +1511,9 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
   await applyEnvBindings(app, service, env, updates);
   syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
 
-  if (service.id === "zenmind-app-server") {
-    syncZenmindAppServerDesktopEnv(layout, content, updates);
-    await syncZenmindAppServerAPUpstream(app, env, updates);
+  if (service.id === "identity-center") {
+    syncIdentityCenterDesktopEnv(layout, content, updates);
+    await syncIdentityCenterAPUpstream(app, env, updates);
   }
 
   if (service.id === "agent-platform") {
@@ -1840,19 +1820,14 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
-  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
-    await ensureTunnelHubRemoteWsReady(app);
-    syncTunnelHubAgentSettingsToEnv(app);
-  }
-
-  if (service.id === "zenmind-app-server") {
+  if (service.id === "identity-center") {
     const envPath = layout.envPath;
     const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
     const env = parseEnvFileContent(content);
     const updates = new Map<string, string>();
     syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
-    syncZenmindAppServerDesktopEnv(layout, content, updates);
-    await syncZenmindAppServerAPUpstream(app, env, updates);
+    syncIdentityCenterDesktopEnv(layout, content, updates);
+    await syncIdentityCenterAPUpstream(app, env, updates);
     if (updates.size > 0) {
       writeEnvFileUpdates(envPath, updates);
     }
@@ -2272,9 +2247,6 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     };
   }
   if (current.status !== "running") {
-    if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID && !readTunnelHubAgentSettings(app).enabled) {
-      await stopTunnelHubRemoteWs();
-    }
     return {
       ok: true,
       message: t("service.currentlyNotRunning", { name: service.name }),
@@ -2311,9 +2283,6 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   startedThisSession.delete(serviceId);
 
   const verified = await attachServiceVerification(app, serviceId, result, "stopped", t("service.stopCommandExecuted", { name: service.name }));
-  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID && !readTunnelHubAgentSettings(app).enabled) {
-    await stopTunnelHubRemoteWs();
-  }
   if (service.kind === "plugin" && verified.ok) {
     emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: verified.service });
   }
@@ -3139,10 +3108,6 @@ async function startOptionalAutoStartupServices(
     } catch {
       continue;
     }
-    if (serviceId === TUNNEL_HUB_AGENT_SERVICE_ID && !readTunnelHubAgentSettings(app).enabled) {
-      continue;
-    }
-
     try {
       const prepared = await prepareStartupService(app, serviceId, {
         onProgress: options.onProgress
@@ -3356,6 +3321,7 @@ export const __testInternals = {
   getResourcePluginServiceIdsToRestore,
   orderServiceIdsForRestore,
   needsBundledAssetRefresh,
+  identityCenterInstallNeedsRefresh,
   resolveStartupPreparationMode,
   prepareStartupService,
   startPreparedStartupService,
