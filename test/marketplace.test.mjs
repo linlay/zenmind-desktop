@@ -29,7 +29,8 @@ const {
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
-const { getDesktopConfigRoot, getDesktopPetsDataRoot, getMarketplaceCacheRoot } = require("../dist-electron/main/user-paths.js");
+const { readWebappItems } = require("../dist-electron/main/webs/webapp-store.js");
+const { getDesktopConfigRoot, getDesktopPetsDataRoot, getDesktopWebappsDataRoot, getMarketplaceCacheRoot } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
@@ -174,6 +175,41 @@ async function writePetArchive(root, options = {}) {
   ]) {
     zip.file(`${petId}/${asset}`, "fake webp");
   }
+  fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
+  return archivePath;
+}
+
+async function writeWebappArchive(root, options = {}) {
+  const webappId = options.id ?? "cloud-webapp";
+  const archivePath = path.join(root, `${webappId}.zip`);
+  const zip = new JSZip();
+  zip.file(
+    `${webappId}/webapp.json`,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      id: webappId,
+      kind: "webapp",
+      label: options.label ?? "Cloud WebApp",
+      frontend: {
+        root: "frontend",
+        index: "index.html",
+        spa: true,
+        apiPrefix: "/api"
+      },
+      backend: {
+        runtime: "node",
+        entry: "backend/server.mjs",
+        args: [],
+        env: {},
+        port: 0,
+        healthPath: "/api/health"
+      },
+      createdAt: "2026-06-18T00:00:00.000Z",
+      updatedAt: "2026-06-18T00:00:00.000Z"
+    }, null, 2)}\n`
+  );
+  zip.file(`${webappId}/frontend/index.html`, "<!doctype html><div id=\"app\">cloud webapp</div>");
+  zip.file(`${webappId}/backend/server.mjs`, "console.log('cloud webapp')\n");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
 }
@@ -469,6 +505,19 @@ test("normalizeCatalog keeps server assets for display while selectAsset only ch
       { id: "cli-tar", type: "cli", name: "CLI", version: "1.0.0", assets: { universal: legacyAsset } },
       { id: "webapp-tar", type: "website-app", name: "WebApp", version: "1.0.0", assets: { universal: legacyAsset } },
       {
+        id: "webapp-zip",
+        type: "website-app",
+        name: "WebApp Zip",
+        version: "1.0.0",
+        assets: {
+          universal: {
+            url: "https://example.test/webapp.zip",
+            sizeBytes: 1,
+            archiveType: "website-app"
+          }
+        }
+      },
+      {
         id: "template-tar",
         type: "sandbox-image",
         sandboxKind: "environment-template",
@@ -494,6 +543,7 @@ test("normalizeCatalog keeps server assets for display while selectAsset only ch
   }
   assert.equal(byId.get("container-tar")?.assets.universal?.archiveType, "tar.gz");
   assert.equal(__testInternals.selectAsset(byId.get("container-tar"))?.asset.archiveType, "tar.gz");
+  assert.equal(__testInternals.selectAsset(byId.get("webapp-zip"))?.asset.archiveType, "website-app");
 });
 
 test("installPluginFromArchive rejects non-zip plugin packages", async (t) => {
@@ -1619,6 +1669,58 @@ test("installMarketItem installs pet packages into desktop pet data", async (t) 
   });
 });
 
+test("installMarketItem installs and uninstalls website app packages into desktop webapps data", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-install-"));
+  const app = createApp(root);
+  const archivePath = await writeWebappArchive(root, { id: "reg-report", label: "监管报表" });
+  const archiveBytes = fs.readFileSync(archivePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/reg-report.zip", archiveBytes]
+  ]), async (baseUrl) => {
+    const options = {
+      catalog: {
+        schemaVersion: 1,
+        items: [{
+          id: "reg-report",
+          type: "website-app",
+          name: "监管报表",
+          version: "0.1.0",
+          description: "Local website app.",
+          tags: ["webapp"],
+          websiteKind: "local-app",
+          assets: {
+            universal: {
+              url: `${baseUrl}/reg-report.zip`,
+              sha256: sha256(archivePath),
+              sizeBytes: archiveBytes.length,
+              archiveType: "zip"
+            }
+          }
+        }]
+      }
+    };
+
+    const result = await installMarketItem(app, "reg-report", options);
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "website-app");
+    assert.equal(result.state, "installed");
+    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), "reg-report", "webapp.json")), true);
+    assert.equal(readWebappItems(app).find((item) => item.id === "reg-report")?.label, "监管报表");
+
+    const installedList = await listMarketItems(app, options);
+    assert.equal(installedList.items.find((item) => item.id === "reg-report")?.state, "installed");
+
+    const uninstallResult = await uninstallMarketItem(app, "reg-report", options);
+    assert.equal(uninstallResult.ok, true);
+    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), "reg-report")), false);
+
+    const uninstalledList = await listMarketItems(app, options);
+    assert.equal(uninstalledList.items.find((item) => item.id === "reg-report")?.state, "not-installed");
+  });
+});
+
 test("installMarketItem does not execute cli installs from Desktop", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-cli-install-"));
   const app = createApp(root);
@@ -2128,6 +2230,56 @@ test("importSkillFromCommand rejects non npm and npx commands", async (t) => {
     () => importSkillFromCommand(app, "curl https://example.test/skill.tar.gz"),
     /仅支持 npm 或 npx/
   );
+});
+
+test("installMarketItem downloads plugin archives into the program plugins root", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-plugin-install-"));
+  const app = createApp(root);
+  const archivePath = writePluginArchive(root, { id: "cloud-plugin" });
+  const archiveBytes = fs.readFileSync(archivePath);
+  registryInternals.clearServices();
+  t.after(() => {
+    registryInternals.clearServices();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await withFixtureServer(new Map([["/cloud-plugin.zip", archiveBytes]]), async (baseUrl) => {
+    const options = {
+      catalog: {
+        schemaVersion: 1,
+        items: [
+          {
+            id: "cloud-plugin",
+            type: "plugin",
+            name: "Cloud Plugin",
+            version: "1.0.0",
+            description: "Cloud plugin",
+            tags: [],
+            assets: {
+              universal: {
+                url: `${baseUrl}/cloud-plugin.zip`,
+                sha256: sha256(archivePath),
+                sizeBytes: archiveBytes.length,
+                archiveType: "zip"
+              }
+            }
+          }
+        ]
+      }
+    };
+
+    const result = await installMarketItem(app, "cloud-plugin", options);
+    const installPath = getPluginInstallDir(app, "cloud-plugin", "1.0.0");
+
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "plugin");
+    assert.equal(result.serviceId, "cloud-plugin");
+    assert.match(installPath, /[\\/]plugins[\\/]cloud-plugin[\\/]1\.0\.0$/u);
+    assert.equal(fs.existsSync(path.join(installPath, "manifest.json")), true);
+
+    const listed = await listMarketItems(app, options);
+    assert.equal(listed.items.find((item) => item.id === "cloud-plugin")?.state, "installed");
+  });
 });
 
 test("installMarketItem downloads plugin archives but rejects builtin manifests", async (t) => {

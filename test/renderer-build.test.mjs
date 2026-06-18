@@ -2361,7 +2361,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(externalWebviewPage, /const appChrome = chrome === "app"/);
   assert.match(externalWebviewPage, /\{appChrome \? null : \([\s\S]*?external-webview-browser-chrome/);
   assert.match(externalWebviewPage, /appChrome \? null : debugSidebarNode/);
-  assert.match(externalWebviewPage, /!appChrome && bookmarkMenuNode/);
+  assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
   assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?if \(appChrome\) \{[\s\S]*?return;[\s\S]*?\}/);
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
   assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
@@ -2972,10 +2972,32 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.match(appShell, /has-embedded-surface/);
   assert.match(appShell, /usesPluginSurface/);
   assert.match(appShell, /has-plugin-surface/);
-  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*height:\s*6px;/);
+  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*height:\s*8px;/);
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
+  );
+  assert.match(globalStyles, /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*height:\s*8px;[^}]*app-region:\s*drag;[^}]*pointer-events:\s*auto;/);
+  assert.doesNotMatch(
+    globalStyles,
+    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*display:\s*none;/
+  );
+  assert.match(globalStyles, /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*height:\s*8px;[^}]*pointer-events:\s*auto;/);
+  assert.doesNotMatch(
+    globalStyles,
+    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*height:\s*0;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*pointer-events:\s*none;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.is-windows-platform\s+\.pan-page-embedded\.pan-page-agent-webclient\s*\{[^}]*padding-top:\s*44px;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.is-windows-platform\s+\.pan-page-embedded\.pan-page-agent-webclient::before\s*\{[^}]*height:\s*44px;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -3099,17 +3121,30 @@ test("external webview tabs use repeatable pointer reordering", () => {
   assert.doesNotMatch(externalWebviewPage, /onDragStart=\{\(event\) => handleTabDragStart\(event, tab\.id\)\}/);
 });
 
-test("external webview bookmarks use document-level pointer reordering", () => {
+test("external webview browser chrome omits bookmarks and DevTools button entry", () => {
   const externalWebviewPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
     "utf8"
   );
+  const externalWebviewStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "styles", "external-webview.css"),
+    "utf8"
+  );
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts", "desktop-api.ts"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
 
-  assert.match(externalWebviewPage, /bookmarkPointerCleanupRef/);
-  assert.match(externalWebviewPage, /updateBookmarkPointerDrag/);
-  assert.match(externalWebviewPage, /document\.addEventListener\("pointermove", handleDocumentPointerMove/);
-  assert.match(externalWebviewPage, /moveItemByIdToIndex\(\s*currentBookmarks/);
-  assert.match(externalWebviewPage, /onPointerDown=\{\(event\) => handleBookmarkPointerDown\(event, bookmark\.id\)\}/);
+  assert.doesNotMatch(externalWebviewPage, /external-webview-bookmarks-bar/);
+  assert.doesNotMatch(externalWebviewPage, /external-webview-bookmark-toggle/);
+  assert.doesNotMatch(externalWebviewPage, /external-webview-devtools-toggle/);
+  assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
+  assert.doesNotMatch(externalWebviewPage, /window\.electronAPI\.webview\.openDevTools/);
+  assert.doesNotMatch(externalWebviewPage, /external-webview-bookmarks/);
+  assert.doesNotMatch(externalWebviewStyles, /external-webview-bookmark/);
+  assert.doesNotMatch(externalWebviewStyles, /external-webview-devtools-toggle/);
+  assert.doesNotMatch(preload, /webview\.openDevTools/);
+  assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
+  assert.doesNotMatch(mainProcess, /registerWebviewDevToolsIpcHandlers/);
 });
 
 test("web copilot dock yields to native dialogs while quick assistant keeps outside-dismiss handling", () => {

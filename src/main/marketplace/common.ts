@@ -52,7 +52,7 @@ export type MarketplaceOptions = MarketListOptions & {
   containerHubAuthToken?: string;
 };
 
-export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "sandbox-image" | "pet" | "cli">;
+export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "sandbox-image" | "pet" | "cli" | "website-app">;
 
 export type MarketSectionResult = {
   items: MarketItem[];
@@ -340,6 +340,9 @@ function isDesktopInstallableAsset(
   if (item.type === "cli") {
     return asset.archiveType === "zip" || asset.archiveType === "cli";
   }
+  if (item.type === "website-app") {
+    return asset.archiveType === "zip" || asset.archiveType === "website-app";
+  }
   if (item.type === "sandbox-image") {
     if (item.sandboxKind === "container-image" || asset.archiveType === "container-image") {
       return asset.archiveType === "container-image" || asset.archiveType === "tar.gz";
@@ -353,6 +356,7 @@ function shouldRequireInstallableAsset(item: MarketCatalogItem) {
   return item.type === "plugin" ||
     item.type === "skill" ||
     item.type === "pet" ||
+    item.type === "website-app" ||
     (item.type === "sandbox-image" && item.sandboxKind === "environment-template");
 }
 

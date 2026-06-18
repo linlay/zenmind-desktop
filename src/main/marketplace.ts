@@ -44,6 +44,11 @@ import {
   uninstallPluginMarketItem
 } from "./marketplace/plugin-market";
 import {
+  installWebsiteAppMarketItem,
+  listWebsiteAppMarketItems,
+  uninstallWebsiteAppMarketItem
+} from "./marketplace/website-app-market";
+import {
   buildSandboxImage,
   deleteSandboxImage,
   exportSandboxImageToPath,
@@ -273,7 +278,7 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
       ? listCliMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "websiteApps")
-      ? listCatalogOnlyMarketItems(app, "website-app", options)
+      ? listWebsiteAppMarketItems(app, options)
       : EMPTY_MARKET_SECTION
   ]);
   return { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, websiteAppMarket };
@@ -310,7 +315,7 @@ async function resolveInstalledItemType(
     listSandboxImageMarketItems(app, options),
     listPetMarketItems(app, options),
     listCliMarketItems(app, options),
-    listCatalogOnlyMarketItems(app, "website-app", options)
+    listWebsiteAppMarketItems(app, options)
   ]);
   if (pluginMarket.items.some((item) => item.id === itemId)) {
     return "plugin";
@@ -418,6 +423,13 @@ export async function installMarketItem(
       throw error;
     }
   }
+  try {
+    return await installWebsiteAppMarketItem(app, itemId, options);
+  } catch (error) {
+    if (!isMarketNotFoundError(error)) {
+      throw error;
+    }
+  }
   return installSkillMarketItem(app, itemId, options);
 }
 
@@ -455,9 +467,11 @@ export async function uninstallMarketItem(
     ? await uninstallPluginMarketItem(app, itemId)
     : type === "pet"
       ? await uninstallPetMarketItem(app, itemId)
-      : type === "cli"
-        ? await uninstallCliMarketItem(app, itemId, options)
-        : await uninstallSkillMarketItem(app, itemId);
+      : type === "website-app"
+        ? await uninstallWebsiteAppMarketItem(app, itemId)
+        : type === "cli"
+          ? await uninstallCliMarketItem(app, itemId, options)
+          : await uninstallSkillMarketItem(app, itemId);
   if (result.ok) {
     removeInstalledRecord(app, itemId, type);
   }

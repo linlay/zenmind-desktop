@@ -198,7 +198,7 @@
 }
 
 .app-shell.has-embedded-surface .app-window-drag-region {
-  height: 6px;
+  height: 8px;
 }
 
 .app-shell.has-market-controls .app-window-drag-region {
@@ -216,7 +216,7 @@
   background: transparent;
 }
 
-/* Embedded H5 surfaces keep the top drag lane disabled on every platform. */
+/* Embedded H5 surfaces keep the top drag lane thin on every platform. */
 
 .app-sidebar-toggle,
 .app-sidebar-backdrop {

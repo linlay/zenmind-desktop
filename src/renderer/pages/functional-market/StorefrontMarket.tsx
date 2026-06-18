@@ -57,7 +57,7 @@ function isInstalledMarketItem(item: MarketItem) {
 }
 
 function isListOnlyMarketItem(item: MarketItem) {
-  return item.type === "agent" || item.type === "website-app";
+  return item.type === "agent";
 }
 
 function marketMessageForTab(result: ReturnType<typeof createEmptyMarketResult>, tab: MarketTab) {
@@ -698,7 +698,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
         </Button>
       );
     }
-    if (item.type === "skill" || item.type === "pet") {
+    if (item.type === "skill" || item.type === "pet" || item.type === "website-app") {
       return (
         <Button
           className="market-store-action"
@@ -812,7 +812,8 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       ...item.tags,
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
       item.type === "cli" ? t("market.detail.scriptedInstall") : "",
-      item.type === "pet" ? t("market.detail.desktopPet") : ""
+      item.type === "pet" ? t("market.detail.desktopPet") : "",
+      item.type === "website-app" ? t("market.type.websiteApp") : ""
     ].filter(Boolean))).slice(0, 3);
     return (
       <Card

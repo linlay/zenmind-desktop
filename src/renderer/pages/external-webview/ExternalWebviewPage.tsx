@@ -1,31 +1,11 @@
 import { createElement, useEffect, useRef, useState } from "react";
 import type {
-  DragEvent as ReactDragEvent,
-  FormEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent
 } from "react";
-import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import type { AssistantPageContext } from "../../../shared/contracts";
-import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
-import {
-  createExternalWebviewBookmarkId,
-  getAnchoredBookmarkMenuCoordinates,
-  getFallbackBookmarkTitle,
-  getItemsHiddenByVisibleIds,
-  getUrlDisplayLabel,
-  MAX_EXTERNAL_WEBVIEW_BOOKMARKS,
-  moveItemByIdToIndex,
-  normalizeBookmarkUrl,
-  normalizeFaviconUrl,
-  normalizeStoredBookmarks,
-  pickFirstSafeFaviconUrl,
-  reorderItemsById,
-  shouldOpenBookmarkInNewTab
-} from "../../../shared/external-webview-bookmarks";
-import type { ExternalWebviewBookmark } from "../../../shared/external-webview-bookmarks";
 import {
   EXTRACT_STRUCTURED_SCRIPT,
   READ_PAGE_DATA_SCRIPT,
@@ -91,15 +71,6 @@ type ExternalWebviewTabPatch = Partial<Pick<
   "title" | "currentUrl" | "faviconUrl" | "guestId" | "canGoBack" | "isLoading"
 >>;
 
-type BookmarkMenuState =
-  | { kind: "context"; bookmarkId: string; x: number; y: number }
-  | { kind: "overflow"; x: number; y: number };
-
-type BookmarkEditorState = {
-  bookmarkId: string;
-  value: string;
-};
-
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
   const readMetaDescription = () => {
@@ -119,10 +90,8 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   };
 })()`;
 
-const BOOKMARKS_STORAGE_KEY = `${STORAGE_NAMESPACE}.external-webview.bookmarks`;
 const BLANK_EXTERNAL_WEBVIEW_URL = "about:blank";
-const BOOKMARK_MENU_WIDTH = 306;
-const BOOKMARK_MENU_MAX_HEIGHT = 340;
+const SAFE_DATA_IMAGE_PATTERN = /^data:image\/(?:png|jpe?g|gif|webp|bmp|x-icon|vnd\.microsoft\.icon);/iu;
 
 type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
@@ -216,12 +185,76 @@ function readEventString(event: Event, key: string) {
   return typeof candidate === "string" ? candidate : "";
 }
 
-function readStoredBookmarks() {
+function getUrlDisplayLabel(url: string) {
   try {
-    return normalizeStoredBookmarks(JSON.parse(window.localStorage.getItem(BOOKMARKS_STORAGE_KEY) ?? "[]"));
+    const parsedUrl = new URL(url);
+    const pathname = parsedUrl.pathname === "/" ? "" : parsedUrl.pathname;
+    return `${parsedUrl.hostname}${pathname}` || url;
   } catch {
-    return [];
+    return url;
   }
+}
+
+function normalizeFaviconUrl(inputUrl: unknown, baseUrl?: string | null) {
+  if (typeof inputUrl !== "string") {
+    return null;
+  }
+
+  const trimmedUrl = inputUrl.trim();
+  if (!trimmedUrl) {
+    return null;
+  }
+
+  if (SAFE_DATA_IMAGE_PATTERN.test(trimmedUrl)) {
+    return trimmedUrl;
+  }
+
+  try {
+    const parsedUrl = baseUrl ? new URL(trimmedUrl, baseUrl) : new URL(trimmedUrl);
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return null;
+    }
+    return parsedUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function pickFirstSafeFaviconUrl(favicons: unknown, baseUrl?: string | null) {
+  if (!Array.isArray(favicons)) {
+    return null;
+  }
+
+  for (const faviconUrl of favicons) {
+    const normalizedFaviconUrl = normalizeFaviconUrl(faviconUrl, baseUrl);
+    if (normalizedFaviconUrl) {
+      return normalizedFaviconUrl;
+    }
+  }
+
+  return null;
+}
+
+function moveItemByIdToIndex<T extends { id: string }>(items: T[], movedId: string, targetIndex: number) {
+  const movedIndex = items.findIndex((item) => item.id === movedId);
+  if (movedIndex === -1) {
+    return items;
+  }
+
+  const boundedTargetIndex = Math.max(0, Math.min(targetIndex, items.length));
+  const insertionIndex = movedIndex < boundedTargetIndex ? boundedTargetIndex - 1 : boundedTargetIndex;
+  if (insertionIndex === movedIndex) {
+    return items;
+  }
+
+  const nextItems = [...items];
+  const [movedItem] = nextItems.splice(movedIndex, 1);
+  if (!movedItem) {
+    return items;
+  }
+
+  nextItems.splice(insertionIndex, 0, movedItem);
+  return nextItems;
 }
 
 function ArrowLeftIcon() {
@@ -250,14 +283,6 @@ function SearchIcon() {
   );
 }
 
-function StarIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m10 2.75 2.23 4.52 4.99.72-3.61 3.52.85 4.97L10 14.14 5.54 16.48l.85-4.97L2.78 7.99l4.99-.72L10 2.75Z" />
-    </svg>
-  );
-}
-
 function PlusIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -270,25 +295,6 @@ function CloseIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <path d="m5.5 5.5 9 9m0-9-9 9" />
-    </svg>
-  );
-}
-
-function BookmarkOverflowIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m7.25 5.5 4.5 4.5-4.5 4.5" />
-      <path d="m11.25 5.5 4.5 4.5-4.5 4.5" />
-    </svg>
-  );
-}
-
-function DevToolsIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M4.5 5.75 2.75 10l1.75 4.25" />
-      <path d="m15.5 5.75 1.75 4.25-1.75 4.25" />
-      <path d="m8.25 15.25 3.5-10.5" />
     </svg>
   );
 }
@@ -327,26 +333,6 @@ function SiteIcon({ title, url, faviconUrl, className }: SiteIconProps) {
       {getTabMonogram(title, url)}
     </span>
   );
-}
-
-function getBookmarkMenuCoordinates(
-  anchor: { left: number; top: number; right: number; bottom: number },
-  options: { menuWidth?: number; menuMaxHeight?: number } = {}
-) {
-  const viewportWidth = window.innerWidth || BOOKMARK_MENU_WIDTH;
-  const viewportHeight = window.innerHeight || BOOKMARK_MENU_MAX_HEIGHT;
-  return getAnchoredBookmarkMenuCoordinates(
-    anchor,
-    { width: viewportWidth, height: viewportHeight },
-    {
-      menuWidth: options.menuWidth ?? BOOKMARK_MENU_WIDTH,
-      menuMaxHeight: options.menuMaxHeight ?? BOOKMARK_MENU_MAX_HEIGHT
-    }
-  );
-}
-
-function areStringArraysEqual(first: string[], second: string[]) {
-  return first.length === second.length && first.every((item, index) => item === second[index]);
 }
 
 function getEditableAddressInputValue(value: string) {
@@ -536,9 +522,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
 
   const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(() => createInitialBrowserState());
   const [addressInputValue, setAddressInputValue] = useState(() => url);
-  const [bookmarks, setBookmarks] = useState<ExternalWebviewBookmark[]>(() => readStoredBookmarks());
-  const [bookmarkMenu, setBookmarkMenu] = useState<BookmarkMenuState | null>(null);
-  const [bookmarkEditor, setBookmarkEditor] = useState<BookmarkEditorState | null>(null);
   const [debugSidebarOpen, setDebugSidebarOpen] = useState(false);
   const [debugActions, setDebugActions] = useState<string[]>([]);
   const [debugAction, setDebugAction] = useState("desktop.page.readCurrent");
@@ -546,19 +529,11 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   const [debugResultJson, setDebugResultJson] = useState("");
   const [debugPending, setDebugPending] = useState(false);
   const [debugSnapshot, setDebugSnapshot] = useState(getCurrentPageContextSnapshot());
-  const [bookmarksOverflowing, setBookmarksOverflowing] = useState(false);
-  const [visibleBookmarkIds, setVisibleBookmarkIds] = useState<string[]>([]);
   const [tabsOverflowing, setTabsOverflowing] = useState(false);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [tabDragOffsetX, setTabDragOffsetX] = useState(0);
-  const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
-  const [bookmarkDragOffsetX, setBookmarkDragOffsetX] = useState(0);
   const browserStateRef = useRef(browserState);
-  const bookmarksRef = useRef(bookmarks);
   const tabsStripRef = useRef<HTMLDivElement | null>(null);
-  const bookmarksListRef = useRef<HTMLDivElement | null>(null);
-  const bookmarkMenuRef = useRef<HTMLDivElement | null>(null);
-  const bookmarkEditorRef = useRef<HTMLFormElement | null>(null);
   const tabPointerDragRef = useRef<{
     id: string;
     pointerId: number;
@@ -567,24 +542,11 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     dragging: boolean;
   } | null>(null);
   const tabPointerCleanupRef = useRef<(() => void) | null>(null);
-  const bookmarkPointerDragRef = useRef<{
-    id: string;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    dragging: boolean;
-  } | null>(null);
-  const bookmarkPointerCleanupRef = useRef<(() => void) | null>(null);
   const suppressTabClickRef = useRef(false);
-  const suppressBookmarkClickRef = useRef(false);
 
   useEffect(() => {
     browserStateRef.current = browserState;
   }, [browserState]);
-
-  useEffect(() => {
-    bookmarksRef.current = bookmarks;
-  }, [bookmarks]);
 
   useEffect(() => {
     activeRef.current = active !== false;
@@ -1467,127 +1429,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     activeTabElement?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeTab?.id, browserState.tabs.length]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks));
-    } catch {
-      // Keep bookmark changes in memory when localStorage is not available.
-    }
-  }, [bookmarks]);
-
-  useEffect(() => {
-    const bookmarksList = bookmarksListRef.current;
-    if (!bookmarksList) {
-      setBookmarksOverflowing(false);
-      setVisibleBookmarkIds([]);
-      return undefined;
-    }
-
-    const measureOverflow = () => {
-      const listRect = bookmarksList.getBoundingClientRect();
-      const nextVisibleBookmarkIds = Array.from(
-        bookmarksList.querySelectorAll<HTMLButtonElement>("[data-bookmark-id]")
-      ).flatMap((button) => {
-        const bookmarkId = button.dataset.bookmarkId;
-        if (!bookmarkId) {
-          return [];
-        }
-
-        const itemRect = button.getBoundingClientRect();
-        return itemRect.left >= listRect.left - 1 && itemRect.right <= listRect.right + 1
-          ? [bookmarkId]
-          : [];
-      });
-
-      setVisibleBookmarkIds((currentVisibleIds) => areStringArraysEqual(currentVisibleIds, nextVisibleBookmarkIds)
-        ? currentVisibleIds
-        : nextVisibleBookmarkIds);
-      setBookmarksOverflowing(bookmarksList.scrollWidth > bookmarksList.clientWidth + 2);
-    };
-
-    measureOverflow();
-    const animationFrame = window.requestAnimationFrame(measureOverflow);
-    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureOverflow);
-    resizeObserver?.observe(bookmarksList);
-    window.addEventListener("resize", measureOverflow);
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", measureOverflow);
-    };
-  }, [bookmarks]);
-
-  useEffect(() => {
-    if (bookmarks.length === 0) {
-      return;
-    }
-
-    setBookmarks((currentBookmarks) => {
-      let changed = false;
-      const nextBookmarks = currentBookmarks.map((bookmark) => {
-        const matchingTab = browserState.tabs.find((tab) => normalizeBookmarkUrl(tab.currentUrl) === bookmark.url);
-        if (!matchingTab) {
-          return bookmark;
-        }
-
-        const nextFaviconUrl = normalizeFaviconUrl(matchingTab.faviconUrl, bookmark.url) ?? bookmark.faviconUrl;
-        const nextTitle = bookmark.customTitle
-          ? bookmark.title
-          : getFallbackBookmarkTitle(matchingTab.title, bookmark.url);
-        if (nextFaviconUrl === bookmark.faviconUrl && nextTitle === bookmark.title) {
-          return bookmark;
-        }
-
-        changed = true;
-        return {
-          ...bookmark,
-          title: nextTitle,
-          ...(nextFaviconUrl ? { faviconUrl: nextFaviconUrl } : {})
-        };
-      });
-
-      return changed ? nextBookmarks : currentBookmarks;
-    });
-  }, [bookmarks.length, browserState.tabs]);
-
-  useEffect(() => {
-    if (!bookmarkMenu && !bookmarkEditor) {
-      return undefined;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setBookmarkMenu(null);
-        setBookmarkEditor(null);
-      }
-    };
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target instanceof Node ? event.target : null;
-      if (
-        target &&
-        (bookmarkMenuRef.current?.contains(target) || bookmarkEditorRef.current?.contains(target))
-      ) {
-        return;
-      }
-
-      setBookmarkMenu(null);
-      setBookmarkEditor(null);
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [bookmarkEditor, bookmarkMenu]);
-
-  useEffect(() => {
-    if (bookmarkMenu?.kind === "context" && !bookmarks.some((bookmark) => bookmark.id === bookmarkMenu.bookmarkId)) {
-      setBookmarkMenu(null);
-    }
-  }, [bookmarkMenu, bookmarks]);
-
   const handleGoBack = () => {
     if (!activeTab?.canGoBack) {
       return;
@@ -1624,31 +1465,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     }
   };
 
-  const handleOpenDevTools = () => {
-    if (!activeTab) {
-      return;
-    }
-
-    const activeWebview = webviewRefs.current.get(activeTab.id);
-    let webContentsId = activeTab.guestId;
-    if (activeWebview) {
-      try {
-        const nextWebContentsId = activeWebview.getWebContentsId();
-        if (Number.isFinite(nextWebContentsId)) {
-          webContentsId = nextWebContentsId;
-        }
-      } catch {
-        // Keep the last synced guest id if Electron has not attached yet.
-      }
-    }
-
-    if (typeof webContentsId !== "number") {
-      return;
-    }
-
-    void window.electronAPI.webview.openDevTools(webContentsId);
-  };
-
   const handleNavigateToInputUrl = () => {
     if (!activeTab) {
       return;
@@ -1673,446 +1489,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     });
   };
 
-  const activeBookmarkUrl = activeTab ? normalizeBookmarkUrl(activeTab.currentUrl) : null;
-  const activeBookmark = activeBookmarkUrl
-    ? bookmarks.find((bookmark) => bookmark.url === activeBookmarkUrl) ?? null
-    : null;
-
-  const getRendererPlatform = () => window.navigator.platform || window.navigator.userAgent;
-
-  const openBookmarkInNewTab = (bookmark: ExternalWebviewBookmark) => {
-    openTab(bookmark.url, bookmark.title);
-  };
-
-  const handleToggleBookmark = () => {
-    if (!activeTab || !activeBookmarkUrl) {
-      return;
-    }
-
-    setBookmarks((currentBookmarks) => {
-      const existing = currentBookmarks.find((bookmark) => bookmark.url === activeBookmarkUrl);
-      if (existing) {
-        return currentBookmarks.filter((bookmark) => bookmark.url !== activeBookmarkUrl);
-      }
-
-      const nextBookmark: ExternalWebviewBookmark = {
-        id: createExternalWebviewBookmarkId(),
-        title: getFallbackBookmarkTitle(activeTab.title, activeBookmarkUrl),
-        url: activeBookmarkUrl,
-        ...(normalizeFaviconUrl(activeTab.faviconUrl, activeBookmarkUrl)
-          ? { faviconUrl: normalizeFaviconUrl(activeTab.faviconUrl, activeBookmarkUrl) ?? undefined }
-          : {}),
-        createdAt: Date.now()
-      };
-      return [nextBookmark, ...currentBookmarks].slice(0, MAX_EXTERNAL_WEBVIEW_BOOKMARKS);
-    });
-  };
-
-  const handleOpenBookmark = (bookmark: ExternalWebviewBookmark, options: { newTab?: boolean } = {}) => {
-    setBookmarkMenu(null);
-    if (options.newTab) {
-      openBookmarkInNewTab(bookmark);
-      return;
-    }
-
-    if (!activeTab) {
-      openBookmarkInNewTab(bookmark);
-      return;
-    }
-
-    const activeWebview = webviewRefs.current.get(activeTab.id);
-    if (!activeWebview) {
-      openBookmarkInNewTab(bookmark);
-      return;
-    }
-
-    void activeWebview.loadURL(bookmark.url).catch(() => {
-      openBookmarkInNewTab(bookmark);
-    });
-  };
-
-  const handleBookmarkClick = (event: ReactMouseEvent<HTMLButtonElement>, bookmark: ExternalWebviewBookmark) => {
-    if (suppressBookmarkClickRef.current) {
-      event.preventDefault();
-      return;
-    }
-
-    const newTab = shouldOpenBookmarkInNewTab(event, getRendererPlatform());
-    handleOpenBookmark(bookmark, { newTab });
-  };
-
-  const handleBookmarkAuxClick = (event: ReactMouseEvent<HTMLButtonElement>, bookmark: ExternalWebviewBookmark) => {
-    if (!shouldOpenBookmarkInNewTab(event, getRendererPlatform())) {
-      return;
-    }
-
-    event.preventDefault();
-    handleOpenBookmark(bookmark, { newTab: true });
-  };
-
-  const moveBookmarkBeforeOrAfterTarget = (movedBookmarkId: string, targetBookmarkId: string) => {
-    setBookmarks((currentBookmarks) => reorderItemsById(currentBookmarks, movedBookmarkId, targetBookmarkId));
-  };
-
-  const handleBookmarkDragStart = (event: ReactDragEvent<HTMLButtonElement>, bookmarkId: string) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", bookmarkId);
-    setDraggingBookmarkId(bookmarkId);
-    setBookmarkMenu(null);
-  };
-
-  const handleBookmarkDragOver = (event: ReactDragEvent<HTMLButtonElement>, targetBookmarkId: string) => {
-    const movedBookmarkId = draggingBookmarkId || event.dataTransfer.getData("text/plain");
-    if (!movedBookmarkId || movedBookmarkId === targetBookmarkId) {
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-  };
-
-  const handleBookmarkDrop = (event: ReactDragEvent<HTMLButtonElement>, targetBookmarkId: string) => {
-    const movedBookmarkId = draggingBookmarkId || event.dataTransfer.getData("text/plain");
-    if (movedBookmarkId && movedBookmarkId !== targetBookmarkId) {
-      event.preventDefault();
-      moveBookmarkBeforeOrAfterTarget(movedBookmarkId, targetBookmarkId);
-    }
-    setDraggingBookmarkId(null);
-  };
-
-  const clearBookmarkPointerListeners = () => {
-    bookmarkPointerCleanupRef.current?.();
-    bookmarkPointerCleanupRef.current = null;
-  };
-
-  const finishBookmarkPointerDrag = () => {
-    const pointerDragState = bookmarkPointerDragRef.current;
-    if (pointerDragState?.dragging) {
-      suppressBookmarkClickRef.current = true;
-      window.setTimeout(() => {
-        suppressBookmarkClickRef.current = false;
-      }, 0);
-    }
-    clearBookmarkPointerListeners();
-    bookmarkPointerDragRef.current = null;
-    setDraggingBookmarkId(null);
-    setBookmarkDragOffsetX(0);
-  };
-
-  const updateBookmarkPointerDrag = (clientX: number, clientY: number) => {
-    const pointerDragState = bookmarkPointerDragRef.current;
-    const bookmarksList = bookmarksListRef.current;
-    if (!pointerDragState || !bookmarksList) {
-      return false;
-    }
-
-    const movedDistance = Math.abs(clientX - pointerDragState.startX) +
-      Math.abs(clientY - pointerDragState.startY);
-    if (!pointerDragState.dragging && movedDistance < 6) {
-      return false;
-    }
-
-    pointerDragState.dragging = true;
-    setDraggingBookmarkId(pointerDragState.id);
-
-    const bookmarkButtons = Array.from(
-      bookmarksList.querySelectorAll<HTMLButtonElement>("[data-bookmark-id]")
-    ).filter((button) => button.dataset.bookmarkId !== pointerDragState.id);
-    const currentBookmarks = bookmarksRef.current;
-    let insertionIndex = currentBookmarks.length;
-    for (const button of bookmarkButtons) {
-      const buttonRect = button.getBoundingClientRect();
-      const targetBookmarkId = button.dataset.bookmarkId;
-
-      if (clientX < buttonRect.left + buttonRect.width / 2) {
-        const targetIndex = currentBookmarks.findIndex((bookmark) => bookmark.id === targetBookmarkId);
-        insertionIndex = targetIndex === -1 ? insertionIndex : targetIndex;
-        break;
-      }
-    }
-
-    const nextBookmarks = moveItemByIdToIndex(
-      currentBookmarks,
-      pointerDragState.id,
-      insertionIndex
-    );
-    if (nextBookmarks !== currentBookmarks) {
-      bookmarksRef.current = nextBookmarks;
-      setBookmarks(nextBookmarks);
-      pointerDragState.startX = clientX;
-      pointerDragState.startY = clientY;
-      setBookmarkDragOffsetX(0);
-    } else {
-      setBookmarkDragOffsetX(clientX - pointerDragState.startX);
-    }
-
-    return true;
-  };
-
-  const handleBookmarkPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (updateBookmarkPointerDrag(event.clientX, event.clientY)) {
-      event.preventDefault();
-    }
-  };
-
-  const handleBookmarkPointerDown = (
-    event: ReactPointerEvent<HTMLButtonElement>,
-    bookmarkId: string
-  ) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    clearBookmarkPointerListeners();
-    setBookmarkMenu(null);
-    bookmarkPointerDragRef.current = {
-      id: bookmarkId,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      dragging: false
-    };
-
-    const document = event.currentTarget.ownerDocument;
-    const handleDocumentPointerMove = (pointerEvent: PointerEvent) => {
-      const pointerDragState = bookmarkPointerDragRef.current;
-      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
-        return;
-      }
-
-      if (updateBookmarkPointerDrag(pointerEvent.clientX, pointerEvent.clientY)) {
-        pointerEvent.preventDefault();
-      }
-    };
-    const handleDocumentPointerEnd = (pointerEvent: PointerEvent) => {
-      const pointerDragState = bookmarkPointerDragRef.current;
-      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
-        return;
-      }
-
-      finishBookmarkPointerDrag();
-    };
-
-    document.addEventListener("pointermove", handleDocumentPointerMove, { passive: false });
-    document.addEventListener("pointerup", handleDocumentPointerEnd);
-    document.addEventListener("pointercancel", handleDocumentPointerEnd);
-    bookmarkPointerCleanupRef.current = () => {
-      document.removeEventListener("pointermove", handleDocumentPointerMove);
-      document.removeEventListener("pointerup", handleDocumentPointerEnd);
-      document.removeEventListener("pointercancel", handleDocumentPointerEnd);
-    };
-  };
-
-  useEffect(() => () => {
-    clearBookmarkPointerListeners();
-  }, []);
-
-  const handleBookmarkContextMenu = (
-    event: ReactMouseEvent<HTMLButtonElement>,
-    bookmark: ExternalWebviewBookmark
-  ) => {
-    event.preventDefault();
-    const coordinates = getBookmarkMenuCoordinates(
-      event.currentTarget.getBoundingClientRect(),
-      { menuWidth: 220 }
-    );
-    setBookmarkEditor(null);
-    setBookmarkMenu({
-      kind: "context",
-      bookmarkId: bookmark.id,
-      ...coordinates
-    });
-  };
-
-  const handleOpenOverflowMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const coordinates = getBookmarkMenuCoordinates({
-      left: rect.right - BOOKMARK_MENU_WIDTH,
-      right: rect.right,
-      top: rect.top,
-      bottom: rect.bottom
-    });
-    setBookmarkEditor(null);
-    setBookmarkMenu({
-      kind: "overflow",
-      ...coordinates
-    });
-  };
-
-  const handleStartRenameBookmark = (bookmark: ExternalWebviewBookmark) => {
-    setBookmarkMenu(null);
-    setBookmarkEditor({
-      bookmarkId: bookmark.id,
-      value: bookmark.title
-    });
-  };
-
-  const handleDeleteBookmark = (bookmark: ExternalWebviewBookmark) => {
-    setBookmarkMenu(null);
-    setBookmarks((currentBookmarks) => currentBookmarks.filter((item) => item.id !== bookmark.id));
-  };
-
-  const handleSaveBookmarkRename = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!bookmarkEditor) {
-      return;
-    }
-
-    setBookmarks((currentBookmarks) => currentBookmarks.map((bookmark) => {
-      if (bookmark.id !== bookmarkEditor.bookmarkId) {
-        return bookmark;
-      }
-
-      return {
-        ...bookmark,
-        title: getFallbackBookmarkTitle(bookmarkEditor.value, bookmark.url),
-        customTitle: true
-      };
-    }));
-    setBookmarkEditor(null);
-  };
-
-  const contextMenuBookmark = bookmarkMenu?.kind === "context"
-    ? bookmarks.find((bookmark) => bookmark.id === bookmarkMenu.bookmarkId) ?? null
-    : null;
-  const editingBookmark = bookmarkEditor
-    ? bookmarks.find((bookmark) => bookmark.id === bookmarkEditor.bookmarkId) ?? null
-    : null;
-  const overflowBookmarks = bookmarksOverflowing ? getItemsHiddenByVisibleIds(bookmarks, visibleBookmarkIds) : [];
-  const showBookmarkOverflow = overflowBookmarks.length > 0;
-  const bookmarkMenuNode = bookmarkMenu ? (
-    <div
-      ref={bookmarkMenuRef}
-      className={`external-webview-bookmark-menu is-${bookmarkMenu.kind}`}
-      style={{ left: bookmarkMenu.x, top: bookmarkMenu.y }}
-      role="menu"
-      aria-label={bookmarkMenu.kind === "overflow" ? t("externalWebview.moreBookmarks") : t("externalWebview.bookmarkActions")}
-    >
-      {bookmarkMenu.kind === "overflow" ? (
-        overflowBookmarks.map((bookmark) => (
-          <div className="external-webview-bookmark-menu-row" key={bookmark.id} role="none">
-            <button
-              type="button"
-              className={`external-webview-bookmark-menu-item is-bookmark${
-                draggingBookmarkId === bookmark.id ? " is-dragging" : ""
-              }`}
-              draggable
-              onClick={() => handleOpenBookmark(bookmark)}
-              onContextMenu={(event) => handleBookmarkContextMenu(event, bookmark)}
-              onDragStart={(event) => handleBookmarkDragStart(event, bookmark.id)}
-              onDragOver={(event) => handleBookmarkDragOver(event, bookmark.id)}
-              onDrop={(event) => handleBookmarkDrop(event, bookmark.id)}
-              onDragEnd={() => setDraggingBookmarkId(null)}
-              role="menuitem"
-            >
-              <SiteIcon
-                className="external-webview-bookmark-menu-icon"
-                title={bookmark.title}
-                url={bookmark.url}
-                faviconUrl={bookmark.faviconUrl}
-              />
-              <span>{bookmark.title}</span>
-            </button>
-            <button
-              type="button"
-              className="external-webview-bookmark-menu-action"
-              onClick={() => handleOpenBookmark(bookmark, { newTab: true })}
-              role="menuitem"
-              aria-label={t("externalWebview.openInNewTab", { title: bookmark.title })}
-            >
-              {t("externalWebview.openShort")}
-            </button>
-            <button
-              type="button"
-              className="external-webview-bookmark-menu-action"
-              onClick={() => handleStartRenameBookmark(bookmark)}
-              role="menuitem"
-              aria-label={t("externalWebview.renameBookmark", { title: bookmark.title })}
-            >
-              {t("externalWebview.renameShort")}
-            </button>
-            <button
-              type="button"
-              className="external-webview-bookmark-menu-action is-danger"
-              onClick={() => handleDeleteBookmark(bookmark)}
-              role="menuitem"
-              aria-label={t("externalWebview.deleteBookmark", { title: bookmark.title })}
-            >
-              {t("externalWebview.deleteShort")}
-            </button>
-          </div>
-        ))
-      ) : contextMenuBookmark ? (
-        <>
-          <button
-            type="button"
-            className="external-webview-bookmark-menu-item"
-            onClick={() => handleOpenBookmark(contextMenuBookmark)}
-            role="menuitem"
-          >
-            {t("externalWebview.open")}
-          </button>
-          <button
-            type="button"
-            className="external-webview-bookmark-menu-item"
-            onClick={() => handleOpenBookmark(contextMenuBookmark, { newTab: true })}
-            role="menuitem"
-          >
-            {t("externalWebview.openInNewTabAction")}
-          </button>
-          <span className="external-webview-bookmark-menu-separator" role="separator" />
-          <button
-            type="button"
-            className="external-webview-bookmark-menu-item"
-            onClick={() => handleStartRenameBookmark(contextMenuBookmark)}
-            role="menuitem"
-          >
-            {t("externalWebview.rename")}
-          </button>
-          <button
-            type="button"
-            className="external-webview-bookmark-menu-item is-danger"
-            onClick={() => handleDeleteBookmark(contextMenuBookmark)}
-            role="menuitem"
-          >
-            {t("externalWebview.delete")}
-          </button>
-        </>
-      ) : null}
-    </div>
-  ) : null;
-  const bookmarkEditorNode = bookmarkEditor && editingBookmark ? (
-    <div className="external-webview-bookmark-editor-backdrop" role="presentation">
-      <form
-        ref={bookmarkEditorRef}
-        className="external-webview-bookmark-editor"
-        onSubmit={handleSaveBookmarkRename}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("externalWebview.renameBookmarkDialog")}
-      >
-        <label htmlFor="external-webview-bookmark-editor-input">{t("externalWebview.name")}</label>
-        <input
-          id="external-webview-bookmark-editor-input"
-          value={bookmarkEditor.value}
-          autoFocus
-          onChange={(event) => setBookmarkEditor({
-            bookmarkId: bookmarkEditor.bookmarkId,
-            value: event.target.value
-          })}
-        />
-        <p>{getUrlDisplayLabel(editingBookmark.url)}</p>
-        <div className="external-webview-bookmark-editor-actions">
-          <button type="button" onClick={() => setBookmarkEditor(null)}>
-            {t("common.cancel")}
-          </button>
-          <button type="submit">
-            {t("common.save")}
-          </button>
-        </div>
-      </form>
-    </div>
-  ) : null;
   const debugSidebarNode = debugSidebarOpen ? (
     <aside className="external-webview-debug-sidebar" aria-label={t("externalWebview.debugSidebar")}>
       <div className="external-webview-debug-header">
@@ -2311,26 +1687,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           </div>
           <button
             type="button"
-            className={`external-webview-bookmark-toggle${activeBookmark ? " is-active" : ""}`}
-            onClick={handleToggleBookmark}
-            disabled={!activeBookmarkUrl}
-            aria-label={activeBookmark ? t("externalWebview.unbookmarkCurrent") : t("externalWebview.bookmarkCurrent")}
-            title={activeBookmark ? t("externalWebview.unbookmarkCurrent") : t("externalWebview.bookmarkCurrent")}
-          >
-            <StarIcon />
-          </button>
-          <button
-            type="button"
-            className="external-webview-devtools-toggle"
-            onClick={handleOpenDevTools}
-            disabled={!activeTab}
-            aria-label={t("externalWebview.openDevTools")}
-            title={t("externalWebview.openDevTools")}
-          >
-            <DevToolsIcon />
-          </button>
-          <button
-            type="button"
             className={`external-webview-debug-toggle${debugSidebarOpen ? " is-active" : ""}`}
             onClick={() => setDebugSidebarOpen((value) => !value)}
             aria-label={t("externalWebview.openDesktopDebug")}
@@ -2338,57 +1694,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           >
             pg
           </button>
-        </div>
-        <div className="external-webview-bookmarks-bar" aria-label={t("externalWebview.bookmarksBar")}>
-          <div
-            className="external-webview-bookmarks-list"
-            ref={bookmarksListRef}
-            onPointerMove={handleBookmarkPointerMove}
-            onPointerUp={finishBookmarkPointerDrag}
-            onPointerCancel={finishBookmarkPointerDrag}
-          >
-              {bookmarks.length === 0 ? (
-                <span className="external-webview-bookmark-empty">{t("externalWebview.bookmarkEmpty")}</span>
-              ) : (
-                bookmarks.map((bookmark) => (
-                  <button
-                    type="button"
-                    className={`external-webview-bookmark-item${
-                      draggingBookmarkId === bookmark.id ? " is-dragging" : ""
-                    }`}
-                    key={bookmark.id}
-                    data-bookmark-id={bookmark.id}
-                    style={draggingBookmarkId === bookmark.id
-                      ? { transform: `translateX(${bookmarkDragOffsetX}px)` }
-                      : undefined}
-                    onClick={(event) => handleBookmarkClick(event, bookmark)}
-                    onAuxClick={(event) => handleBookmarkAuxClick(event, bookmark)}
-                    onContextMenu={(event) => handleBookmarkContextMenu(event, bookmark)}
-                    onPointerDown={(event) => handleBookmarkPointerDown(event, bookmark.id)}
-                    title={bookmark.url}
-                  >
-                    <SiteIcon
-                      className="external-webview-bookmark-icon"
-                      title={bookmark.title}
-                      url={bookmark.url}
-                      faviconUrl={bookmark.faviconUrl}
-                    />
-                    <span className="external-webview-bookmark-label">{bookmark.title}</span>
-                  </button>
-                ))
-              )}
-          </div>
-            {showBookmarkOverflow ? (
-              <button
-                type="button"
-                className="external-webview-bookmark-overflow"
-                onClick={handleOpenOverflowMenu}
-                aria-label={t("externalWebview.showMoreBookmarks")}
-                title={t("externalWebview.showMoreBookmarks")}
-              >
-                <BookmarkOverflowIcon />
-              </button>
-            ) : null}
         </div>
         </div>
       )}
@@ -2413,8 +1718,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       </div>
       {appChrome ? null : debugSidebarNode}
     </section>
-    {!appChrome && bookmarkMenuNode ? createPortal(bookmarkMenuNode, document.body) : null}
-    {!appChrome && bookmarkEditorNode ? createPortal(bookmarkEditorNode, document.body) : null}
     </>
   );
 }

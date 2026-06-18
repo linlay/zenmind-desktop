@@ -117,11 +117,15 @@
 }
 
 .external-webview-page .pan-drag-region {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 0;
+  position: relative;
+  inset: auto;
+  flex: 0 0 8px;
+  height: 8px;
+  min-height: 8px;
   overflow: hidden;
-  pointer-events: none;
+  app-region: drag;
+  -webkit-app-region: drag;
+  pointer-events: auto;
 }
 
 .external-webview-browser-chrome {
@@ -192,9 +196,7 @@
   cursor: grabbing;
 }
 
-.external-webview-tab.is-dragging,
-.external-webview-bookmark-item.is-dragging,
-.external-webview-bookmark-menu-item.is-dragging {
+.external-webview-tab.is-dragging {
   opacity: 0.52;
 }
 
@@ -256,9 +258,7 @@
   background: transparent;
 }
 
-.external-webview-tab-favicon img,
-.external-webview-bookmark-icon img,
-.external-webview-bookmark-menu-icon img {
+.external-webview-tab-favicon img {
   display: block;
   width: 100%;
   height: 100%;
@@ -292,10 +292,7 @@
 .external-webview-tab-close,
 .external-webview-tab-add,
 .external-webview-toolbar-button,
-.external-webview-bookmark-toggle,
-.external-webview-devtools-toggle,
-.external-webview-debug-toggle,
-.external-webview-bookmark-overflow {
+.external-webview-debug-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -311,9 +308,6 @@
 .external-webview-tab-close svg,
 .external-webview-tab-add svg,
 .external-webview-toolbar-button svg,
-.external-webview-bookmark-toggle svg,
-.external-webview-devtools-toggle svg,
-.external-webview-bookmark-overflow svg,
 .external-webview-toolbar-location-icon svg {
   width: 16px;
   height: 16px;
@@ -337,10 +331,7 @@
 .external-webview-tab-close:hover,
 .external-webview-tab-add:hover,
 .external-webview-toolbar-button:hover:not(:disabled),
-.external-webview-bookmark-toggle:hover:not(:disabled),
-.external-webview-devtools-toggle:hover:not(:disabled),
-.external-webview-debug-toggle:hover,
-.external-webview-bookmark-overflow:hover {
+.external-webview-debug-toggle:hover {
   background: var(--browser-hover);
   color: var(--browser-ink);
 }
@@ -463,24 +454,6 @@
   color: #9aa0a6;
 }
 
-.external-webview-bookmark-toggle {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.external-webview-devtools-toggle {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
 .external-webview-debug-toggle {
   flex: none;
   width: 30px;
@@ -497,371 +470,6 @@
 .external-webview-debug-toggle.is-active {
   background: var(--browser-accent);
   color: #fff;
-}
-
-.external-webview-bookmark-toggle svg {
-  fill: none;
-}
-
-.external-webview-bookmark-toggle.is-active {
-  color: var(--browser-accent);
-}
-
-.external-webview-bookmark-toggle.is-active svg {
-  fill: currentColor;
-}
-
-.external-webview-bookmark-toggle:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-}
-
-.external-webview-devtools-toggle:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-}
-
-.external-webview-bookmarks-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 2px 10px 3px 52px;
-  overflow-x: hidden;
-  overflow-y: hidden;
-  background: var(--browser-surface);
-  border-top: 1px solid rgba(95, 99, 104, 0.12);
-  color: var(--browser-ink);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-  scrollbar-width: none;
-}
-
-.external-webview-bookmarks-bar::-webkit-scrollbar {
-  display: none;
-}
-
-.external-webview-bookmarks-list {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  scroll-behavior: smooth;
-}
-
-.external-webview-bookmark-item,
-.external-webview-bookmark-empty {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 0 0 auto;
-  max-width: 168px;
-  height: 24px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--browser-ink);
-  font-size: 12px;
-  line-height: 1.2;
-  white-space: nowrap;
-  cursor: grab;
-  transition:
-    background 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease,
-    transform 120ms ease;
-}
-
-.external-webview-bookmark-item:active {
-  cursor: grabbing;
-}
-
-.external-webview-bookmark-item.is-dragging {
-  z-index: 2;
-}
-
-.external-webview-bookmark-empty {
-  max-width: none;
-  padding: 0 2px;
-  color: var(--browser-muted);
-  cursor: default;
-}
-
-.external-webview-bookmark-empty:disabled {
-  cursor: default;
-  opacity: 0.56;
-}
-
-.external-webview-bookmark-item:hover,
-.external-webview-bookmark-empty:hover:not(:disabled) {
-  background: var(--browser-hover);
-}
-
-.external-webview-bookmark-icon {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  background: rgba(26, 115, 232, 0.12);
-  color: var(--browser-accent);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-  overflow: hidden;
-}
-
-.external-webview-bookmark-icon.has-image {
-  background: transparent;
-}
-
-.external-webview-bookmark-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.external-webview-bookmark-overflow {
-  flex: none;
-  width: 26px;
-  height: 24px;
-  border-radius: 6px;
-  background: rgba(232, 240, 254, 0.72);
-  color: var(--browser-accent);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.external-webview-bookmark-overflow svg {
-  width: 15px;
-  height: 15px;
-}
-
-.external-webview-bookmark-menu {
-  position: fixed;
-  z-index: 1200;
-  width: min(306px, calc(100vw - 16px));
-  max-height: 340px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 5px;
-  overflow-y: auto;
-  border: 1px solid rgba(95, 99, 104, 0.16);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow:
-    0 20px 48px rgba(32, 33, 36, 0.18),
-    0 2px 8px rgba(32, 33, 36, 0.1);
-  color: var(--browser-ink);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.external-webview-bookmark-menu.is-context {
-  width: min(220px, calc(100vw - 16px));
-}
-
-.external-webview-bookmark-menu-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px 30px 30px;
-  align-items: center;
-  gap: 1px;
-}
-
-.external-webview-bookmark-menu-item,
-.external-webview-bookmark-menu-action {
-  min-width: 0;
-  height: 30px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--browser-ink);
-  font-size: 12px;
-  line-height: 1.2;
-  cursor: pointer;
-}
-
-.external-webview-bookmark-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 9px;
-  text-align: left;
-}
-
-.external-webview-bookmark-menu-item.is-bookmark {
-  padding: 0 7px;
-}
-
-.external-webview-bookmark-menu-item span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.external-webview-bookmark-menu-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--browser-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.external-webview-bookmark-menu-item:hover,
-.external-webview-bookmark-menu-action:hover {
-  background: var(--browser-hover);
-}
-
-.external-webview-bookmark-menu-item.is-danger,
-.external-webview-bookmark-menu-action.is-danger {
-  color: #c5221f;
-}
-
-.external-webview-bookmark-menu-separator {
-  display: block;
-  height: 1px;
-  margin: 4px 6px;
-  background: rgba(95, 99, 104, 0.16);
-}
-
-.external-webview-bookmark-menu-icon {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  background: rgba(26, 115, 232, 0.12);
-  color: var(--browser-accent);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-  overflow: hidden;
-}
-
-.external-webview-bookmark-menu-icon.has-image {
-  background: transparent;
-}
-
-.external-webview-bookmark-editor-backdrop {
-  position: fixed;
-  z-index: 31;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(32, 33, 36, 0.16);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.external-webview-bookmark-editor {
-  width: min(360px, calc(100vw - 48px));
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  border: 1px solid rgba(95, 99, 104, 0.2);
-  border-radius: 8px;
-  background: var(--browser-surface-strong);
-  box-shadow: 0 20px 60px rgba(32, 33, 36, 0.22);
-  color: var(--browser-ink);
-}
-
-.external-webview-bookmark-editor label {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.external-webview-bookmark-editor input {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid rgba(95, 99, 104, 0.24);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--browser-ink);
-  font-size: 13px;
-  outline: none;
-}
-
-.external-webview-bookmark-editor input:focus {
-  border-color: var(--browser-accent);
-  box-shadow: 0 0 0 2px var(--browser-accent-glow);
-}
-
-.external-webview-bookmark-editor p {
-  margin: 0;
-  overflow: hidden;
-  color: var(--browser-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.external-webview-bookmark-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.external-webview-bookmark-editor-actions button {
-  height: 30px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--browser-accent);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.external-webview-bookmark-editor-actions button:hover {
-  background: var(--browser-hover);
-}
-
-.external-webview-bookmark-editor-actions button[type="submit"] {
-  background: var(--browser-accent);
-  color: #fff;
-}
-
-:root[data-theme="dark"] .external-webview-bookmark-menu {
-  background: rgba(45, 50, 58, 0.98);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 18px 50px rgba(0, 0, 0, 0.34),
-    0 2px 8px rgba(0, 0, 0, 0.22);
-}
-
-:root[data-theme="dark"] .external-webview-bookmark-menu-separator {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-:root[data-theme="dark"] .external-webview-bookmark-editor-backdrop {
-  background: rgba(0, 0, 0, 0.28);
-}
-
-:root[data-theme="dark"] .external-webview-bookmark-editor {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-:root[data-theme="dark"] .external-webview-bookmark-editor input {
-  background: #1f2329;
-  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .external-webview-frame-shell {
@@ -1102,10 +710,6 @@
 
   .external-webview-toolbar-location {
     min-width: 0;
-  }
-
-  .external-webview-bookmarks-bar {
-    padding-left: 8px;
   }
 
   .external-webview-frame-shell {

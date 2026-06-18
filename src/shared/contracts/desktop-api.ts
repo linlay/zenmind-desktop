@@ -358,9 +358,6 @@ export interface DesktopApi {
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;
   };
-  webview: {
-    openDevTools: (webContentsId: number) => Promise<{ ok: boolean; message?: string }>;
-  };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;
     getState: () => Promise<DesktopPetState>;

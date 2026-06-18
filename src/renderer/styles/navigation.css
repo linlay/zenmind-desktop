@@ -2909,27 +2909,14 @@
   overflow: hidden;
 }
 
-.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient {
+.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient,
+.app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient {
   padding-top: 0;
 }
 
-.app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient {
-  padding-top: 44px;
-}
-
-.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient::before {
-  display: none;
-}
-
+.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient::before,
 .app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 138px;
-  height: 44px;
-  app-region: drag;
-  -webkit-app-region: drag;
+  display: none;
 }
 
 /* ── 悬浮返回按钮样式 ── */
@@ -3009,7 +2996,13 @@
 }
 
 .pan-page-embedded .pan-drag-region {
-  display: none;
+  display: block;
+  flex: 0 0 8px;
+  height: 8px;
+  min-height: 8px;
+  app-region: drag;
+  -webkit-app-region: drag;
+  pointer-events: auto;
 }
 
 .pan-frame-shell {

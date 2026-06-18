@@ -387,9 +387,6 @@ const api: DesktopApi = {
       ipcRenderer.send("diagnostics.rendererError", report);
     }
   },
-  webview: {
-    openDevTools: (webContentsId: number) => ipcRenderer.invoke("webview.openDevTools", webContentsId)
-  },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
     getState: () => ipcRenderer.invoke("desktopPet.getState"),

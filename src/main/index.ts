@@ -261,7 +261,6 @@ import { registerTaskBoardIpcHandlers } from "./ipc/task-board-handlers";
 import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
 import { registerSettingsIpcHandlers } from "./ipc/settings-handlers";
 import { registerMarketplaceIpcHandlers } from "./ipc/marketplace-handlers";
-import { registerWebviewDevToolsIpcHandlers } from "./ipc/webview-devtools-handlers";
 import { listWebEntries, registerWebIpcHandlers } from "./ipc/web-handlers";
 import {
   isQuickAssistantMediaPermissionAllowed,
@@ -2326,7 +2325,6 @@ function registerIpcHandlers(context: MainProcessContext) {
     captureDesktopScreenshot: captureDesktopScreenshotForWebview,
     reportRendererDiagnostic
   }));
-  registerWebviewDevToolsIpcHandlers(ipcMain, { webContents });
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {
     assistantBridge,
@@ -2427,6 +2425,9 @@ function registerIpcHandlers(context: MainProcessContext) {
       if (result?.type === "pet") {
         appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform);
         refreshDesktopPetState();
+      }
+      if (result?.type === "website-app") {
+        notifyServicesChanged();
       }
     }
   }));

@@ -14,6 +14,9 @@ const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
   "agent-platform",
   "agent-webclient"
 ];
+const EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS = new Set([
+  "tunnel-hub-agent"
+]);
 
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
@@ -270,6 +273,9 @@ function listReleaseArchives() {
     }
 
     if (!manifest || manifest.kind !== "builtin") {
+      return;
+    }
+    if (EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS.has(manifest.id)) {
       return;
     }
 
