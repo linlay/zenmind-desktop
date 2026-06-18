@@ -24,6 +24,7 @@ import { t } from "./i18n/main-i18n";
 
 type OidcConfig = {
   provider?: string;
+  providerLabel?: string;
   authMode?: "server" | "oidc";
   browserMode?: "system" | "embedded";
   issuer: string;
@@ -39,7 +40,8 @@ type OidcConfig = {
   redirectUri: string;
   scope?: string;
   prompt?: string;
-  wellKnownUrl: string;
+  wellKnownUrl?: string;
+  jwksUrl?: string;
   logoutUrl: string;
   logoutCallbackUri: string;
   browserOrigin?: string;
@@ -47,6 +49,8 @@ type OidcConfig = {
   cookieAccessTokenExchange?: CookieAccessTokenExchangeConfig;
   accessTokenCookie?: AccessTokenCookieConfig;
   accessTokenCookies?: AccessTokenCookieConfig[];
+  userInfo?: DesktopSsoUserInfoConfig;
+  claims?: DesktopSsoClaimsConfig;
   webSessionExchange?: DesktopSsoWebSessionExchangeConfig;
 };
 
@@ -75,8 +79,28 @@ export type DesktopSsoWebSessionClearCookieConfig = {
   name: string;
 };
 
+export type DesktopSsoClaimsConfig = {
+  audience: string;
+  webSessionSubPrefix: string;
+  ticketPlaceholderSub: string;
+  cookieFallbackSub: string;
+  browserFallbackSub: string;
+};
+
+export type DesktopSsoUserInfoConfig = {
+  enabled: boolean;
+  required: boolean;
+  url: string;
+  subPath: string;
+  namePath: string;
+  emailPath: string;
+  avatarUrlPath: string;
+};
+
 export type DesktopSsoWebSessionExchangeConfig = {
   url: string;
+  provider: string;
+  claims: DesktopSsoClaimsConfig;
   cookieOrigins: string[];
   clearCookies: DesktopSsoWebSessionClearCookieConfig[];
 };
@@ -223,10 +247,12 @@ const IDENTITY_PROVIDER_URL_FIELDS = [
   "authorizeUrl",
   "tokenUrl",
   "wellKnownUrl",
+  "jwksUrl",
   "logoutUrl"
 ] as const;
 const OIDC_CONFIG_STRING_FIELDS = [
   "provider",
+  "providerLabel",
   "issuer",
   "authorizeUrl",
   "serverAuthorizeUrl",
@@ -239,6 +265,7 @@ const OIDC_CONFIG_STRING_FIELDS = [
   "scope",
   "prompt",
   "wellKnownUrl",
+  "jwksUrl",
   "logoutUrl",
   "logoutCallbackUri"
 ] as const;
@@ -251,6 +278,7 @@ const OIDC_CONFIG_URL_FIELDS = [
   "tokenUrl",
   "redirectUri",
   "wellKnownUrl",
+  "jwksUrl",
   "logoutUrl",
   "logoutCallbackUri"
 ] as const;
@@ -258,6 +286,13 @@ const DEFAULT_COOKIE_ACCESS_TOKEN_PATH = "access_token";
 const DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT = "text/plain,application/json,*/*";
 const DEFAULT_ACCESS_TOKEN_COOKIE_NAME = "access_token";
 const DEFAULT_GOOGLE_SCOPE = "openid email profile";
+const DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG: DesktopSsoClaimsConfig = {
+  audience: "zenmind-desktop",
+  webSessionSubPrefix: "zenmind-user:",
+  ticketPlaceholderSub: "desktop-sso-ticket",
+  cookieFallbackSub: "desktop-sso-cookie",
+  browserFallbackSub: "desktop-sso-browser"
+};
 
 export const DEFAULT_OIDC_CONFIG: OidcConfig = {
   issuer: "https://iam.example.com/auth/oidc/example-app",
@@ -495,7 +530,7 @@ function normalizeBrowserMode(value: string) {
   if (normalizedValue === "system" || normalizedValue === "external") {
     return "system";
   }
-  if (normalizedValue === "embedded" || normalizedValue === "internal") {
+  if (normalizedValue === "embedded" || normalizedValue === "internal" || normalizedValue === "embeded") {
     return "embedded";
   }
   return undefined;
@@ -576,6 +611,19 @@ function shouldUseSystemBrowser(config: OidcConfig) {
 
 function shouldUseEphemeralSystemCallback(config: OidcConfig) {
   return !config.browserMode && shouldUseSystemBrowser(config);
+}
+
+function getDesktopSsoProviderLabel(config: OidcConfig) {
+  return config.providerLabel?.trim() ||
+    (isGoogleOidcConfig(config) ? "Google" : PRODUCT_NAME);
+}
+
+function getDesktopSsoLoginLabel(config: OidcConfig) {
+  return t("sso.providerLogin", { provider: getDesktopSsoProviderLabel(config) });
+}
+
+function getDesktopSsoLogoutLabel(config: OidcConfig) {
+  return t("sso.providerLogout", { provider: getDesktopSsoProviderLabel(config) });
 }
 
 function parseDesktopSsoConfigContent(content: string) {
@@ -805,6 +853,21 @@ function normalizeLoginCompletionUrls(record: Record<string, unknown>, config: O
   return [...new Set(rawValues.map((value) => new URL(value, baseOrigin).toString()))];
 }
 
+function normalizeDesktopSsoClaimsConfig(record: Record<string, unknown>): DesktopSsoClaimsConfig {
+  const claimsRecord = getRecordObject(record, "claims") || {};
+  return {
+    audience: getRecordString(claimsRecord, "audience") || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG.audience,
+    webSessionSubPrefix: getRecordString(claimsRecord, "webSessionSubPrefix") ||
+      DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG.webSessionSubPrefix,
+    ticketPlaceholderSub: getRecordString(claimsRecord, "ticketPlaceholderSub") ||
+      DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG.ticketPlaceholderSub,
+    cookieFallbackSub: getRecordString(claimsRecord, "cookieFallbackSub") ||
+      DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG.cookieFallbackSub,
+    browserFallbackSub: getRecordString(claimsRecord, "browserFallbackSub") ||
+      DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG.browserFallbackSub
+  };
+}
+
 function normalizeHttpUrl(value: string, baseUrl: string, field: string) {
   const url = new URL(value, baseUrl);
   if (!["http:", "https:"].includes(url.protocol)) {
@@ -824,6 +887,38 @@ function normalizeHttpOrigin(value: string, field: string) {
   url.search = "";
   url.hash = "";
   return url.origin;
+}
+
+function normalizeUserInfoConfig(
+  record: Record<string, unknown>,
+  config: OidcConfig
+): DesktopSsoUserInfoConfig | undefined {
+  const rawUserInfo = "userInfo" in record ? getRecordObject(record, "userInfo") : null;
+  const rawUrl = rawUserInfo
+    ? getRecordString(rawUserInfo, "url")
+    : getRecordString(record, "userInfoUrl");
+  if (!rawUserInfo && !rawUrl) {
+    return undefined;
+  }
+  if ("userInfo" in record && !rawUserInfo) {
+    throw new Error(t("sso.config.userInfoObject"));
+  }
+  if (rawUserInfo && getRecordBoolean(rawUserInfo, "enabled", true) === false) {
+    return undefined;
+  }
+  if (!rawUrl) {
+    throw new Error(t("sso.config.userInfoUrlRequired"));
+  }
+  const source = rawUserInfo || {};
+  return {
+    enabled: true,
+    required: getRecordBoolean(source, "required", false),
+    url: normalizeHttpUrl(rawUrl, config.issuer, "userInfo.url"),
+    subPath: getRecordString(source, "subPath") || "sub",
+    namePath: getRecordString(source, "namePath") || "name",
+    emailPath: getRecordString(source, "emailPath") || "email",
+    avatarUrlPath: getRecordString(source, "avatarUrlPath") || "picture"
+  };
 }
 
 function normalizeWebSessionCookieOrigins(
@@ -895,6 +990,8 @@ function normalizeWebSessionExchangeConfig(
   const url = normalizeHttpUrl(rawUrl, baseUrl, "webSessionExchange.url");
   return {
     url,
+    provider: getRecordString(exchangeRecord, "provider") || config.provider || "oidc",
+    claims: config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG,
     cookieOrigins: normalizeWebSessionCookieOrigins(exchangeRecord, url),
     clearCookies: normalizeWebSessionClearCookies(exchangeRecord, url)
   };
@@ -924,10 +1021,14 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
       config[field] = value;
     }
   }
+  if (!useGoogleDesktopFlow) {
+    config.wellKnownUrl = getRecordString(record, "wellKnownUrl") || undefined;
+    config.jwksUrl = getRecordString(record, "jwksUrl") || undefined;
+  }
   const normalizedProvider = normalizeProviderName(config.provider);
   config.provider = useGoogleDesktopFlow ? "google" : (normalizedProvider || undefined);
   config.authMode = normalizeAuthMode(getRecordString(record, "authMode"));
-  config.browserMode = normalizeBrowserMode(getRecordString(record, "browserMode"));
+  config.browserMode = normalizeBrowserMode(getRecordString(record, "browserMode") || getRecordString(record, "mode"));
   const browserOrigin = useGoogleDesktopFlow ? "" : normalizeIdentityProviderOrigin(record);
   if (!useGoogleDesktopFlow && browserOrigin) {
     config.browserOrigin = browserOrigin;
@@ -956,6 +1057,11 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     config.accessTokenCookie = accessTokenCookies[0];
     config.accessTokenCookies = accessTokenCookies;
   }
+  config.claims = normalizeDesktopSsoClaimsConfig(record);
+  const userInfo = normalizeUserInfoConfig(record, config);
+  if (userInfo) {
+    config.userInfo = userInfo;
+  }
   const webSessionExchange = normalizeWebSessionExchangeConfig(record, config);
   if (webSessionExchange) {
     config.webSessionExchange = webSessionExchange;
@@ -978,6 +1084,9 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
       throw new Error(t("sso.config.serverAuthNeedsWebSession"));
     }
     return config;
+  }
+  if (!config.loginUrl && !config.wellKnownUrl?.trim() && !config.jwksUrl?.trim()) {
+    throw new Error(t("sso.config.jwksRequired"));
   }
   if (!config.clientId.trim()) {
     throw new Error(t("sso.config.clientIdRequired"));
@@ -1813,10 +1922,11 @@ function createCookieAccessTokenClaims(accessToken: string, config: OidcConfig):
   const name = normalizeStringClaim(payload.name);
   const email = normalizeStringClaim(payload.email);
   const avatarUrl = normalizeDesktopSsoAvatarUrlClaim(payload);
+  const claimsConfig = config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG;
   return {
-    sub: normalizeStringClaim(payload.sub) || "desktop-sso-cookie",
+    sub: normalizeStringClaim(payload.sub) || claimsConfig.cookieFallbackSub,
     issuer: normalizeStringClaim(payload.iss) || config.browserOrigin || new URL(config.loginUrl || config.authorizeUrl).origin,
-    audience: normalizeAudience(payload.aud) || config.cookieAccessTokenExchange?.url || config.clientId,
+    audience: normalizeAudience(payload.aud) || claimsConfig.audience,
     ...(name ? { name } : {}),
     ...(email ? { email } : {}),
     ...(avatarUrl ? { avatarUrl } : {})
@@ -1902,10 +2012,11 @@ function normalizeDesktopTicketCallbackRequest(
 }
 
 function createDesktopTicketPlaceholderClaims(config: OidcConfig): DesktopSsoClaims {
+  const claimsConfig = config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG;
   return {
-    sub: "desktop-sso-ticket",
+    sub: claimsConfig.ticketPlaceholderSub,
     issuer: config.webSessionExchange ? new URL(config.webSessionExchange.url).origin : config.serverAuthorizeUrl || "desktop-sso-server",
-    audience: "zenmind-desktop"
+    audience: claimsConfig.audience
   };
 }
 
@@ -2016,15 +2127,22 @@ async function validateIdToken(
     throw new Error(t("sso.token.expired"));
   }
 
-  const discovery = await fetchJson(
-    fetchImpl,
-    config.wellKnownUrl,
-    undefined,
-    buildOidcFetchStage("OIDC discovery", config)
-  ) as { jwks_uri?: unknown };
-  const jwksUri = normalizeStringClaim(discovery.jwks_uri);
+  let jwksUri = config.jwksUrl?.trim() || "";
+  const wellKnownUrl = config.wellKnownUrl?.trim() || "";
+  if (wellKnownUrl) {
+    const discovery = await fetchJson(
+      fetchImpl,
+      wellKnownUrl,
+      undefined,
+      buildOidcFetchStage("OIDC discovery", config)
+    ) as { jwks_uri?: unknown };
+    jwksUri = normalizeStringClaim(discovery.jwks_uri);
+    if (!jwksUri) {
+      throw new Error(t("sso.token.wellKnownMissingJwks"));
+    }
+  }
   if (!jwksUri) {
-    throw new Error(t("sso.token.wellKnownMissingJwks"));
+    throw new Error(t("sso.config.jwksRequired"));
   }
   const jwks = await fetchJson(
     fetchImpl,
@@ -2051,6 +2169,67 @@ async function validateIdToken(
   return createClaims(payload);
 }
 
+function mergeDesktopSsoUserInfoClaims(
+  claims: DesktopSsoClaims,
+  userInfo: unknown,
+  config: OidcConfig
+) {
+  const userInfoConfig = config.userInfo;
+  if (!userInfoConfig || !userInfo || typeof userInfo !== "object" || Array.isArray(userInfo)) {
+    return claims;
+  }
+  const userInfoRecord = userInfo as Record<string, unknown>;
+  const userInfoSub = normalizeStringClaim(readJsonPathValue(userInfoRecord, userInfoConfig.subPath));
+  if (userInfoSub && userInfoSub !== claims.sub) {
+    if (userInfoConfig.required) {
+      throw new Error(t("sso.token.userInfoSubMismatch"));
+    }
+    return claims;
+  }
+  const name = normalizeStringClaim(readJsonPathValue(userInfoRecord, userInfoConfig.namePath));
+  const email = normalizeStringClaim(readJsonPathValue(userInfoRecord, userInfoConfig.emailPath));
+  const avatarUrl = normalizeStringClaim(readJsonPathValue(userInfoRecord, userInfoConfig.avatarUrlPath));
+  return {
+    ...claims,
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(avatarUrl ? { avatarUrl } : {})
+  };
+}
+
+async function enrichClaimsWithUserInfo(
+  claims: DesktopSsoClaims,
+  accessToken: string,
+  fetchImpl: FetchLike,
+  config: OidcConfig
+) {
+  const userInfoConfig = config.userInfo;
+  if (!userInfoConfig?.enabled) {
+    return claims;
+  }
+  const token = accessToken.trim();
+  if (!token) {
+    if (userInfoConfig.required) {
+      throw new Error(t("sso.token.userInfoAccessTokenMissing"));
+    }
+    return claims;
+  }
+  try {
+    const userInfo = await fetchJson(fetchImpl, userInfoConfig.url, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`
+      }
+    }, buildOidcFetchStage("userinfo fetch", config));
+    return mergeDesktopSsoUserInfoClaims(claims, userInfo, config);
+  } catch (error) {
+    if (userInfoConfig.required) {
+      throw error;
+    }
+    return claims;
+  }
+}
+
 async function exchangeCodeForTokenClaims(
   code: string,
   fetchImpl: FetchLike = getDefaultOidcFetch(),
@@ -2065,13 +2244,19 @@ async function exchangeCodeForTokenClaims(
     method: request.method,
     headers: request.headers,
     body: request.body
-  }, buildOidcFetchStage("token exchange", config)) as { id_token?: unknown };
+  }, buildOidcFetchStage("token exchange", config)) as { id_token?: unknown; access_token?: unknown };
   const idToken = normalizeStringClaim(tokenResponse.id_token);
   if (!idToken) {
     throw new Error(t("sso.token.responseMissingIdToken"));
   }
-  const claims = await validateIdToken(idToken, fetchImpl, config);
-  return { claims, idToken };
+  const accessToken = normalizeStringClaim(tokenResponse.access_token);
+  const claims = await enrichClaimsWithUserInfo(
+    await validateIdToken(idToken, fetchImpl, config),
+    accessToken,
+    fetchImpl,
+    config
+  );
+  return { claims, idToken, accessToken };
 }
 
 async function exchangeCodeForClaims(
@@ -2447,6 +2632,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
       ...(useSystemBrowser
         ? { openMode: "system" as const }
         : { browserUrl: oidcConfig.loginUrl ? undefined : buildDesktopSsoProxyUrl(authorizeUrl) }),
+      browserLabel: getDesktopSsoLoginLabel(oidcConfig),
       browserOrigin: oidcConfig.browserOrigin,
       status: cloneStatus(status),
       message: t("sso.iamLoginOpened")
@@ -2536,6 +2722,8 @@ export function getDesktopSsoWebSessionExchangeConfig(app: Pick<App, "getPath">)
   const config = configResult.config.webSessionExchange;
   return {
     url: config.url,
+    provider: config.provider,
+    claims: { ...config.claims },
     cookieOrigins: [...config.cookieOrigins],
     clearCookies: config.clearCookies.map((cookie) => ({ ...cookie }))
   };
@@ -2577,10 +2765,11 @@ export function completeDesktopSsoBrowserLogin(app: App, completionUrl: string):
   pendingLogin = null;
   currentIdToken = "";
   const parsedUrl = new URL(completionUrl);
+  const claimsConfig = configResult.config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG;
   const status = createAuthenticatedStatus({
-    sub: parsedUrl.hostname || "desktop-sso-browser",
+    sub: parsedUrl.hostname || claimsConfig.browserFallbackSub,
     issuer: configResult.config.browserOrigin || parsedUrl.origin,
-    audience: configResult.config.browserOrigin || parsedUrl.origin
+    audience: claimsConfig.audience
   });
   setCurrentStatus(status);
   saveSession(app, status);
@@ -2676,6 +2865,7 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
       ...(useSystemBrowser
         ? { openMode: "system" as const }
         : { browserUrl: buildDesktopSsoProxyUrl(logoutUrl) }),
+      browserLabel: getDesktopSsoLogoutLabel(oidcConfig),
       browserOrigin: oidcConfig.browserOrigin,
       status: cloneStatus(status),
       message: t("sso.loginStateCleared")

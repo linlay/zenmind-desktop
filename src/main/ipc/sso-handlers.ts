@@ -82,11 +82,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       const browserOpenResult = result.openMode === "system"
         ? await desktopSsoController.openSystemBrowserUrl({
           url: result.authorizeUrl,
-          label: t("sso.googleLogin")
+          label: result.browserLabel || t("sso.iamLogin")
         })
         : await desktopSsoController.openEmbeddedLoginDialog({
           url: result.browserUrl || result.authorizeUrl,
-          label: t("sso.iamLogin"),
+          label: result.browserLabel || t("sso.iamLogin"),
           browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
           resolveRedirect: Boolean(result.browserUrl)
         });
@@ -130,11 +130,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       const browserOpenResult = result.openMode === "system"
         ? await desktopSsoController.openSystemBrowserUrl({
           url: result.logoutUrl,
-          label: t("sso.iamLogout")
+          label: result.browserLabel || t("sso.iamLogout")
         })
         : await desktopSsoController.openBrowserUrl({
           url: result.browserUrl || result.logoutUrl,
-          label: t("sso.iamLogout"),
+          label: result.browserLabel || t("sso.iamLogout"),
           browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
           resolveRedirect: false
         });

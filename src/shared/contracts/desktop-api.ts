@@ -94,6 +94,7 @@ export interface DesktopSsoStartResult {
   authorizeUrl?: string;
   browserUrl?: string;
   browserOrigin?: string;
+  browserLabel?: string;
   openMode?: "embedded" | "system";
   status: DesktopSsoStatus;
   message: string;
@@ -104,6 +105,7 @@ export interface DesktopSsoLogoutResult {
   logoutUrl?: string;
   browserUrl?: string;
   browserOrigin?: string;
+  browserLabel?: string;
   openMode?: "embedded" | "system";
   status: DesktopSsoStatus;
   message: string;

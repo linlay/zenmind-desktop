@@ -1,5 +1,6 @@
 import type { App, BrowserWindow, CookiesSetDetails, Session } from "electron";
 import {
+  type DesktopSsoClaimsConfig,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
   getDesktopSsoAccessTokenCookieDetails,
   getDesktopSsoCookieMirrorOrigins,
@@ -269,7 +270,11 @@ function getRecordAvatarUrl(value: unknown) {
   return "";
 }
 
-function createWebSessionClaims(user: unknown, exchangeUrl: string): DesktopSsoClaims | null {
+function createWebSessionClaims(
+  user: unknown,
+  exchangeUrl: string,
+  claimsConfig: DesktopSsoClaimsConfig
+): DesktopSsoClaims | null {
   const id = getRecordIdString(user, "id");
   if (!id) {
     return null;
@@ -278,9 +283,9 @@ function createWebSessionClaims(user: unknown, exchangeUrl: string): DesktopSsoC
   const displayName = getRecordString(user, "displayName") || getRecordString(user, "name");
   const avatarUrl = getRecordAvatarUrl(user);
   return {
-    sub: `zenmind-user:${id}`,
+    sub: `${claimsConfig.webSessionSubPrefix}${id}`,
     issuer: new URL(exchangeUrl).origin,
-    audience: "zenmind-desktop",
+    audience: claimsConfig.audience,
     ...(email ? { email } : {}),
     ...(displayName ? { name: displayName } : {}),
     ...(avatarUrl ? { avatarUrl } : {})
@@ -529,7 +534,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          provider: "google",
+          provider: exchangeConfig.provider,
           id_token: token
         })
       });
@@ -564,7 +569,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          provider: "google",
+          provider: exchangeConfig.provider,
           ticket: normalizedTicket
         })
       });
@@ -588,7 +593,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         return null;
       }
       const responseBody = await response.json();
-      return createWebSessionClaims(getRecordValue(responseBody, "user"), exchangeConfig.url);
+      return createWebSessionClaims(getRecordValue(responseBody, "user"), exchangeConfig.url, exchangeConfig.claims);
     },
     async logoutWebSession(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
       const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);

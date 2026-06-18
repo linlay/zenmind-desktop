@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createSign, generateKeyPairSync } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -53,6 +54,72 @@ function createUnsignedJwt(payload) {
     encodeJwtPart(payload),
     "signature"
   ].join(".");
+}
+
+function createSignedJwt(payload, privateKey) {
+  const data = [
+    encodeJwtPart({ alg: "RS256", kid: "test-key", typ: "JWT" }),
+    encodeJwtPart(payload)
+  ].join(".");
+  const signature = createSign("RSA-SHA256")
+    .update(data)
+    .end()
+    .sign(privateKey)
+    .toString("base64url");
+  return `${data}.${signature}`;
+}
+
+function createJsonResponse(value, options = {}) {
+  return {
+    ok: options.ok ?? true,
+    status: options.status,
+    statusText: options.statusText,
+    json: async () => value,
+    text: async () => typeof value === "string" ? value : JSON.stringify(value)
+  };
+}
+
+function createOidcTokenTestFixture() {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const issuer = "https://auth.example.test/application/o/desktop/";
+  const tokenUrl = "https://auth.example.test/application/o/token/";
+  const wellKnownUrl = "https://auth.example.test/application/o/desktop/.well-known/openid-configuration";
+  const jwksUrl = "https://auth.example.test/application/o/desktop/jwks/";
+  const userInfoUrl = "https://auth.example.test/application/o/userinfo/";
+  const clientId = "desktop-client";
+  const publicJwk = publicKey.export({ format: "jwk" });
+  publicJwk.kid = "test-key";
+  publicJwk.alg = "RS256";
+  publicJwk.use = "sig";
+  return {
+    privateKey,
+    publicJwk,
+    tokenUrl,
+    wellKnownUrl,
+    jwksUrl,
+    userInfoUrl,
+    config: {
+      ...__testInternals.DEFAULT_OIDC_CONFIG,
+      issuer,
+      authorizeUrl: "https://auth.example.test/o/authorize/",
+      tokenUrl,
+      clientId,
+      redirectUri: "http://127.0.0.1:0/api/auth/oidc/callback",
+      wellKnownUrl,
+      logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
+      logoutCallbackUri: "http://127.0.0.1:0/api/auth/oidc/logout-callback",
+      usePkce: true,
+      userInfo: {
+        enabled: true,
+        required: false,
+        url: userInfoUrl,
+        subPath: "sub",
+        namePath: "name",
+        emailPath: "email",
+        avatarUrlPath: "picture"
+      }
+    }
+  };
 }
 
 test("desktop sso parses provider-free system browser OIDC config", (t) => {
@@ -214,6 +281,7 @@ test("desktop sso system browser login uses localhost callback for explicit brow
     authorizeUrl: "https://auth.zenmind.cc/application/o/authorize/",
     tokenUrl: "https://auth.zenmind.cc/application/o/token/",
     clientId: "zenmind-desktop",
+    providerLabel: "ZenMind",
     redirectUri: "http://127.0.0.1:0/api/auth/oidc/callback",
     wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
     logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/"
@@ -222,6 +290,7 @@ test("desktop sso system browser login uses localhost callback for explicit brow
   return startDesktopSsoLogin(app).then((result) => {
     assert.equal(result.ok, true);
     assert.equal(result.openMode, "system");
+    assert.equal(result.browserLabel, "ZenMind 登录");
     assert.equal(result.browserUrl, undefined);
     const authorizeUrl = new URL(result.authorizeUrl);
     const redirectUri = new URL(authorizeUrl.searchParams.get("redirect_uri"));
@@ -265,4 +334,201 @@ test("desktop sso authorize URL keeps explicit OIDC prompt", () => {
   };
   const authorizeUrl = new URL(__testInternals.buildAuthorizeUrl("state-1", config));
   assert.equal(authorizeUrl.searchParams.get("prompt"), "login");
+});
+
+test("desktop sso enriches OIDC token claims from configured userinfo endpoint", async () => {
+  const fixture = createOidcTokenTestFixture();
+  const idToken = createSignedJwt({
+    sub: "user-1",
+    iss: fixture.config.issuer,
+    aud: fixture.config.clientId,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    name: "Token Name",
+    email: "token@example.test"
+  }, fixture.privateKey);
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url === fixture.tokenUrl) {
+      return createJsonResponse({ id_token: idToken, access_token: "access-token-1" });
+    }
+    if (url === fixture.wellKnownUrl) {
+      return createJsonResponse({ jwks_uri: fixture.jwksUrl });
+    }
+    if (url === fixture.jwksUrl) {
+      return createJsonResponse({ keys: [fixture.publicJwk] });
+    }
+    if (url === fixture.userInfoUrl) {
+      return createJsonResponse({
+        sub: "user-1",
+        name: "Userinfo Name",
+        email: "userinfo@example.test",
+        picture: "https://assets.example.test/avatar.png"
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const result = await __testInternals.exchangeCodeForTokenClaims("code-1", fetchImpl, fixture.config);
+
+  assert.equal(result.accessToken, "access-token-1");
+  assert.equal(result.claims.sub, "user-1");
+  assert.equal(result.claims.name, "Userinfo Name");
+  assert.equal(result.claims.email, "userinfo@example.test");
+  assert.equal(result.claims.avatarUrl, "https://assets.example.test/avatar.png");
+  const userInfoCall = calls.find((call) => call.url === fixture.userInfoUrl);
+  assert.equal(userInfoCall.init.headers.Authorization, "Bearer access-token-1");
+});
+
+test("desktop sso falls back to id_token claims when optional userinfo fails", async () => {
+  const fixture = createOidcTokenTestFixture();
+  const idToken = createSignedJwt({
+    sub: "user-1",
+    iss: fixture.config.issuer,
+    aud: fixture.config.clientId,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    name: "Token Name",
+    email: "token@example.test"
+  }, fixture.privateKey);
+  const fetchImpl = async (url) => {
+    if (url === fixture.tokenUrl) {
+      return createJsonResponse({ id_token: idToken, access_token: "access-token-1" });
+    }
+    if (url === fixture.wellKnownUrl) {
+      return createJsonResponse({ jwks_uri: fixture.jwksUrl });
+    }
+    if (url === fixture.jwksUrl) {
+      return createJsonResponse({ keys: [fixture.publicJwk] });
+    }
+    if (url === fixture.userInfoUrl) {
+      return createJsonResponse("temporarily unavailable", { ok: false, status: 503, statusText: "Unavailable" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const result = await __testInternals.exchangeCodeForTokenClaims("code-1", fetchImpl, fixture.config);
+
+  assert.equal(result.claims.sub, "user-1");
+  assert.equal(result.claims.name, "Token Name");
+  assert.equal(result.claims.email, "token@example.test");
+});
+
+test("desktop sso skips userinfo when userInfo is not configured", async () => {
+  const fixture = createOidcTokenTestFixture();
+  const config = {
+    ...fixture.config,
+    userInfo: undefined
+  };
+  const idToken = createSignedJwt({
+    sub: "user-1",
+    iss: config.issuer,
+    aud: config.clientId,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    name: "Token Name",
+    email: "token@example.test"
+  }, fixture.privateKey);
+  const fetchImpl = async (url) => {
+    if (url === fixture.tokenUrl) {
+      return createJsonResponse({ id_token: idToken, access_token: "access-token-1" });
+    }
+    if (url === fixture.wellKnownUrl) {
+      return createJsonResponse({ jwks_uri: fixture.jwksUrl });
+    }
+    if (url === fixture.jwksUrl) {
+      return createJsonResponse({ keys: [fixture.publicJwk] });
+    }
+    if (url === fixture.userInfoUrl) {
+      assert.fail("userinfo should not be fetched without userInfo config");
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const result = await __testInternals.exchangeCodeForTokenClaims("code-1", fetchImpl, config);
+
+  assert.equal(result.claims.name, "Token Name");
+  assert.equal(result.claims.email, "token@example.test");
+});
+
+test("desktop sso validates id_token with explicit jwksUrl without wellKnownUrl", async () => {
+  const fixture = createOidcTokenTestFixture();
+  const config = {
+    ...fixture.config,
+    wellKnownUrl: undefined,
+    jwksUrl: fixture.jwksUrl,
+    userInfo: undefined
+  };
+  const idToken = createSignedJwt({
+    sub: "user-1",
+    iss: config.issuer,
+    aud: config.clientId,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    name: "Token Name"
+  }, fixture.privateKey);
+  const fetchImpl = async (url) => {
+    if (url === fixture.tokenUrl) {
+      return createJsonResponse({ id_token: idToken, access_token: "access-token-1" });
+    }
+    if (url === fixture.wellKnownUrl) {
+      assert.fail("wellKnownUrl should not be fetched when only jwksUrl is configured");
+    }
+    if (url === fixture.jwksUrl) {
+      return createJsonResponse({ keys: [fixture.publicJwk] });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const result = await __testInternals.exchangeCodeForTokenClaims("code-1", fetchImpl, config);
+
+  assert.equal(result.claims.sub, "user-1");
+  assert.equal(result.claims.name, "Token Name");
+});
+
+test("desktop sso accepts mode alias and embeded spelling", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    mode: "embeded",
+    issuer: "https://auth.zenmind.cc/application/o/zenmind-desktop/",
+    authorizeUrl: "https://auth.zenmind.cc/application/o/authorize/",
+    tokenUrl: "https://auth.zenmind.cc/application/o/token/",
+    clientId: "zenmind-desktop",
+    wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
+    logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/"
+  });
+
+  const result = __testInternals.loadDesktopSsoConfig(app, "darwin");
+
+  assert.equal(result.configured, true);
+  assert.equal(result.config.browserMode, "embedded");
+});
+
+test("desktop sso uses configured claims fallback values", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: embeddedLoginOrigin,
+    loginUrl: embeddedLoginUrl,
+    appendLoginState: false,
+    claims: {
+      audience: "configured-desktop",
+      cookieFallbackSub: "configured-cookie"
+    }
+  });
+
+  const status = __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    iss: embeddedLoginOrigin,
+    name: "Cookie User"
+  }));
+
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user.sub, "configured-cookie");
+  assert.equal(status.user.audience, "configured-desktop");
+  assert.equal(status.user.name, "Cookie User");
 });

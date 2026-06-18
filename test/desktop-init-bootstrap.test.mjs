@@ -463,11 +463,16 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
   writeDesktopInit(app, "darwin", {
     sso: {
       enabled: true,
-      provider: "google",
-      authMode: "server",
-      serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/google/desktop/start",
-      webSessionExchange: {
-        url: "https://www.zenmind.cc/api/auth/desktop-sso/session"
+      providerLabel: "ZenMind",
+      browserMode: "system",
+      issuer: "https://auth.zenmind.cc/application/o/zenmind-desktop/",
+      authorizeUrl: "https://auth.zenmind.cc/o/authorize/",
+      tokenUrl: "https://auth.zenmind.cc/application/o/token/",
+      clientId: "zenmind-desktop",
+      wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
+      logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
+      userInfo: {
+        url: "https://auth.zenmind.cc/application/o/userinfo/"
       }
     }
   });
@@ -478,7 +483,22 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
 
   assert.equal(result.applied, true);
   assert.equal(result.appliedResult.sso, "applied");
-  assert.equal(readJson(ssoPath).authMode, "server");
+  const sso = readJson(ssoPath);
+  assert.deepEqual(sso, {
+    enabled: true,
+    providerLabel: "ZenMind",
+    browserMode: "system",
+    issuer: "https://auth.zenmind.cc/application/o/zenmind-desktop/",
+    authorizeUrl: "https://auth.zenmind.cc/o/authorize/",
+    tokenUrl: "https://auth.zenmind.cc/application/o/token/",
+    clientId: "zenmind-desktop",
+    wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
+    logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
+    userInfo: {
+      url: "https://auth.zenmind.cc/application/o/userinfo/"
+    }
+  });
+  assert.equal(sso.userInfo.url, "https://auth.zenmind.cc/application/o/userinfo/");
   assert.equal(fs.statSync(ssoPath).mode & 0o777, 0o600);
   assert.equal(bootstrapState.appliedResult.sso, "applied");
 });
