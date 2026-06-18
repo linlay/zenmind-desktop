@@ -2324,10 +2324,12 @@
 /* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
 
 .app-main-drag-region {
+  display: none;
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
+  height: 20px;
   app-region: drag;
   -webkit-app-region: drag;
   z-index: 10;
@@ -2341,8 +2343,12 @@
   cursor: grabbing;
 }
 
-.app-main-drag-region {
-  height: 20px;
+.app-shell.is-mac-platform:not(.has-embedded-surface):not(.has-task-board-controls):not(.is-mac-overlay-sidebar) .app-main-drag-region {
+  display: block;
+}
+
+.app-shell.is-windows-platform .app-main-drag-region {
+  display: none;
 }
 
 .app-shell.has-embedded-surface .app-main-drag-region {
@@ -2490,10 +2496,12 @@
   height: 100%;
   min-height: 0;
   overflow: auto;
-  padding: 20px 24px 28px;
+  padding: 28px 24px 28px;
   background: transparent;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  -webkit-user-select: text;
+  user-select: text;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }

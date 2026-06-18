@@ -3120,9 +3120,20 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
     globalStyles,
     /\.app-shell\.is-mac-platform\s+\.sidebar-chrome-drag-region\s*\{[\s\S]*?left:\s*var\(--mac-traffic-light-safe-area\);/
   );
-  assert.match(globalStyles, /\.app-main-drag-region\s*\{\s*height:\s*20px;\s*\}/);
+  const appMainRule = globalStyles.match(/(?:^|\n)\.app-main\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
+  assert.match(appMainRule, /padding:\s*28px 24px 28px;/);
+  assert.match(appMainRule, /-webkit-user-select:\s*text;/);
+  assert.match(appMainRule, /user-select:\s*text;/);
+  assert.match(appMainRule, /app-region:\s*no-drag;/);
+  assert.match(appMainRule, /-webkit-app-region:\s*no-drag;/);
+  assert.match(globalStyles, /\.app-main-drag-region\s*\{[\s\S]*?display:\s*none;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.app-main-drag-region\s*\{[^}]*cursor:\s*grab;/);
   assert.match(globalStyles, /\.app-main-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform:not\(\.has-embedded-surface\):not\(\.has-task-board-controls\):not\(\.is-mac-overlay-sidebar\)\s+\.app-main-drag-region\s*\{[^}]*display:\s*block;/
+  );
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform\s+\.app-main-drag-region\s*\{[^}]*display:\s*none;/);
   assert.match(globalStyles, /\.app-header\s*\{[^}]*cursor:\s*grab;/);
   assert.match(globalStyles, /\.app-header:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-drag-region/);
