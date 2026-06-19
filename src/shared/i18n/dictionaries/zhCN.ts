@@ -1730,11 +1730,6 @@ export const zhCNMessages = {
 
   "agentAuth.accessTokenIssued": "已由 identity-center 签发 Desktop AGENT access token。",
 
-  "panAuth.privateKeyNotRsa": "导入的 App 私钥不是 RSA 私钥。",
-  "panAuth.privateKeyMissing": "尚未导入 Desktop App 私钥。",
-  "panAuth.privateKeyReady": "Desktop App 私钥已就绪。",
-  "panAuth.privateKeyImported": "Desktop App 私钥已导入。",
-
   "appError.title": "页面遇到错误",
   "appError.description": "Desktop 已捕获这次异常，日志会写到主进程控制台。你可以重新加载，或先进入控制中心处理服务状态。",
   "appError.reload": "重新加载",
@@ -1762,6 +1757,7 @@ export const zhCNMessages = {
   "plugin.archiveSingleRootRequired": "插件包应包含单个顶层目录。",
   "plugin.manifestMissing": "插件包缺少 manifest.json。",
   "plugin.builtinManifestRejected": "插件导入入口不接受内置服务 manifest。",
+  "plugin.retired": "插件 {id} 已不再受 Desktop 支持。",
   "plugin.importedInitialized": "插件 {name} 已导入并初始化，可手动启动。",
   "plugin.importedNeedsInit": "插件 {name} 已导入，请完成初始化。",
   "plugin.shortcutMissing": "快捷键未设置。",
@@ -1832,10 +1828,8 @@ export const zhCNMessages = {
   "dialog.importSandboxImage.title": "选择沙箱镜像归档",
   "dialog.importSandboxImage.filter": "镜像归档",
   "dialog.importSkill.title": "选择技能包或 SKILL.md",
-  "dialog.importPrivateKey.title": "选择应用私钥",
   "dialog.importEmbeddedWebsites.title": "导入内嵌网站配置",
   "dialog.exportEmbeddedWebsites.title": "导出内嵌网站配置",
-  "panAuth.privateKeyImportCancelled": "已取消导入 Desktop App 私钥。",
 
   "copilotDock.surfaceLabel": "助手",
   "copilotDock.closeAssistant": "关闭助手",

@@ -24,7 +24,6 @@ import {
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
 import { createAppPairingPayload } from "./app-pairing";
-import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
   cancelDesktopSsoLogin,
   completeDesktopSsoCookieLogin,
@@ -348,6 +347,7 @@ import {
   unregisterPluginGlobalShortcuts
 } from "./plugin-global-shortcuts";
 import { invokePluginDesktopAction } from "./plugin-actions";
+import { cleanupRetiredPluginUserData } from "./retired-plugins";
 
 const appState = createMainAppState();
 const mainProcessContext = createMainProcessContext({
@@ -566,6 +566,7 @@ function initializeUserDataRootsAndSettings() {
   const electronUserDataRoot = getElectronUserDataRoot(app);
   fs.mkdirSync(electronUserDataRoot, { recursive: true });
   app.setPath("userData", electronUserDataRoot);
+  cleanupRetiredPluginUserData(app);
 
   appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform, { isFirstInstall: isFirstDesktopInstall });
   if (isFirstDesktopInstall) {
@@ -1767,6 +1768,10 @@ function projectRootFromMainDir(mainDir: string) {
 
 function getDarwinDockIconCandidatePaths() {
   const projectRoot = projectRootFromMainDir(__dirname);
+  const bundledMacDockIconPath = path.join(
+    process.resourcesPath,
+    APP_ICON_ASSET_FILENAMES.macDockIcon
+  );
   const packagedBrandIconPath = path.join(process.resourcesPath, APP_ICON_ASSET_FILENAMES.brandIcon);
   const buildAppIconPath = path.join(
     projectRoot,
@@ -1787,6 +1792,7 @@ function getDarwinDockIconCandidatePaths() {
   if (app.isPackaged) {
     return [
       packagedBrandIconPath,
+      bundledMacDockIconPath,
       rendererBrandIconPath,
       buildAppIconPath,
       generatedBrandIconPath
@@ -1794,6 +1800,7 @@ function getDarwinDockIconCandidatePaths() {
   }
 
   return [
+    bundledMacDockIconPath,
     buildAppIconPath,
     generatedBrandIconPath,
     rendererBrandIconPath
@@ -2527,8 +2534,6 @@ function registerIpcHandlers(context: MainProcessContext) {
     importSandboxImageFromPath,
     importSkillFromPath,
     importSkillFromCommand,
-    getPanAuthStatus,
-    importPanPrivateKey,
     onMarketCommandResult: (result) => {
       if (result?.type === "pet") {
         appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform);

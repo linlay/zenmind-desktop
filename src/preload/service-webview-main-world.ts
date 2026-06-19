@@ -26,13 +26,11 @@ export function buildServiceWebviewMainWorldScript() {
   const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = ${JSON.stringify(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY)};
   const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = ${JSON.stringify(AGENT_APP_AUTH_CONTEXT_STORAGE_KEY)};
   const AUTH_REQUEST_TYPES = new Set([
-    "zenmind:agent-app-auth:request",
-    "zenmind:pan-app-auth:request"
+    "zenmind:agent-app-auth:request"
   ]);
   const BRIDGE_REQUEST_TYPES = new Set(${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES)});
   const BRIDGE_RESPONSE_TYPES = new Set([
     "zenmind:agent-app-auth:response",
-    "zenmind:pan-app-auth:response",
     ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)}
   ]);
   const resolveServiceWebviewWsMonitorUrl = ${resolveServiceWebviewWsMonitorUrl.toString()};

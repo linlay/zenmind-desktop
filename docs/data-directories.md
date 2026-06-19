@@ -128,7 +128,6 @@ CuteJ 品牌对应：
 ├── cache/
 │   └── marketplace/
 ├── secrets/
-│   └── pan-private-key.pem
 └── profiles/
     └── electron/
 ```
@@ -171,7 +170,6 @@ CuteJ 品牌对应：
 - `state/webs/webapps/<webapp-id>/runtime.json`：保存本地网站应用最近一次运行状态、端口、URL 和 PID。
 - `logs/webs/webapps/<webapp-id>/main.log`：本地网站应用后端标准输出。
 - `logs/webs/webapps/<webapp-id>/error.log`：本地网站应用后端错误输出和启动/停止错误。
-- `secrets/pan-private-key.pem`：保存 Desktop 管理的 pan-webclient RSA 私钥。
 - `profiles/electron/`：保存 Electron `userData` profile，包括 Chromium cookie、localStorage、webview session 数据、浏览器缓存等。
 
 ## 内嵌网站与网站应用存储

@@ -1730,11 +1730,6 @@ export const enUSMessages = {
 
   "agentAuth.accessTokenIssued": "identity-center issued a Desktop AGENT access token.",
 
-  "panAuth.privateKeyNotRsa": "The imported App private key is not an RSA private key.",
-  "panAuth.privateKeyMissing": "Desktop App private key has not been imported.",
-  "panAuth.privateKeyReady": "Desktop App private key is ready.",
-  "panAuth.privateKeyImported": "Desktop App private key imported.",
-
   "appError.title": "Page error",
   "appError.description": "Desktop caught this exception and wrote details to the main process console. Reload, or open Control Center to check service status.",
   "appError.reload": "Reload",
@@ -1762,6 +1757,7 @@ export const enUSMessages = {
   "plugin.archiveSingleRootRequired": "Plugin packages must contain a single top-level directory.",
   "plugin.manifestMissing": "Plugin package is missing manifest.json.",
   "plugin.builtinManifestRejected": "The plugin import entry does not accept built-in service manifests.",
+  "plugin.retired": "Plugin {id} is no longer supported by Desktop.",
   "plugin.importedInitialized": "Plugin {name} imported and initialized. You can start it manually.",
   "plugin.importedNeedsInit": "Plugin {name} imported. Complete initialization.",
   "plugin.shortcutMissing": "Shortcut is not set.",
@@ -1832,10 +1828,8 @@ export const enUSMessages = {
   "dialog.importSandboxImage.title": "Choose sandbox image archive",
   "dialog.importSandboxImage.filter": "Image archive",
   "dialog.importSkill.title": "Choose Skill package or SKILL.md",
-  "dialog.importPrivateKey.title": "Choose App private key",
   "dialog.importEmbeddedWebsites.title": "Import embedded website config",
   "dialog.exportEmbeddedWebsites.title": "Export embedded website config",
-  "panAuth.privateKeyImportCancelled": "Desktop App private key import cancelled.",
 
   "copilotDock.surfaceLabel": "Assistant",
   "copilotDock.closeAssistant": "Close assistant",

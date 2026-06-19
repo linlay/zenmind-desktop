@@ -2281,23 +2281,6 @@
   color: var(--ink-muted);
 }
 
-.pan-auth-panel {
-  margin-bottom: 16px;
-}
-
-.pan-auth-copy,
-.pan-auth-status {
-  margin: 8px 0 0;
-}
-
-.pan-auth-status {
-  color: var(--warning);
-}
-
-.pan-auth-status.is-ready {
-  color: var(--success);
-}
-
 .config-editor {
   width: 100%;
   flex: 1;

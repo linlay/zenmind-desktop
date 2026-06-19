@@ -7,10 +7,6 @@ const AUTH_BRIDGE_PROTOCOLS: Record<string, PluginAuthBridgeProtocol> = {
   "agent-webclient": {
     requestType: "zenmind:agent-app-auth:request",
     responseType: "zenmind:agent-app-auth:response"
-  },
-  "pan-webclient": {
-    requestType: "zenmind:pan-app-auth:request",
-    responseType: "zenmind:pan-app-auth:response"
   }
 };
 
@@ -139,12 +135,6 @@ export function buildPluginEmbeddedUrl(
     }
     if (options.wsSource?.trim()) {
       url.searchParams.set("wsSource", options.wsSource.trim());
-    }
-  }
-  if (serviceId === "pan-webclient") {
-    url.searchParams.set("desktopApp", "1");
-    if (options.hostTheme) {
-      url.searchParams.set("hostTheme", options.hostTheme);
     }
   }
   return url.toString();

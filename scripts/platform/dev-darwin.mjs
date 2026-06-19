@@ -35,6 +35,7 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
   const targetBinary = path.join(targetContentsDir, "MacOS", devAppName);
   const targetPlistPath = path.join(targetContentsDir, "Info.plist");
   const sourceIconPath = path.join(projectRoot, "build", "icons", "icon.icns");
+  const sourceDockIconPath = path.join(projectRoot, "build", "icons", "icon.png");
 
   fs.rmSync(targetAppRoot, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetAppRoot), { recursive: true });
@@ -43,9 +44,13 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
   if (!fs.existsSync(sourceIconPath)) {
     throw new Error(`missing macOS app icon: ${sourceIconPath}`);
   }
+  if (!fs.existsSync(sourceDockIconPath)) {
+    throw new Error(`missing macOS dock icon: ${sourceDockIconPath}`);
+  }
   const targetIconFileName = `icon-${fileHashPrefix(sourceIconPath)}.icns`;
   fs.mkdirSync(targetResourcesDir, { recursive: true });
   fs.copyFileSync(sourceIconPath, path.join(targetResourcesDir, targetIconFileName));
+  fs.copyFileSync(sourceDockIconPath, path.join(targetResourcesDir, "icon.png"));
 
   let plist = fs.readFileSync(targetPlistPath, "utf8");
   plist = setPlistString(plist, "CFBundleName", devAppName);

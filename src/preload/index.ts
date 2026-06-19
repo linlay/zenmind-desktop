@@ -278,10 +278,6 @@ const api: DesktopApi = {
     deleteSandboxImage: (itemId: string) => ipcRenderer.invoke("market.deleteSandboxImage", itemId),
     buildSandboxImage: (itemId: string) => ipcRenderer.invoke("market.buildSandboxImage", itemId)
   },
-  panAuth: {
-    importPrivateKey: () => ipcRenderer.invoke("panAuth.importPrivateKey"),
-    getStatus: () => ipcRenderer.invoke("panAuth.getStatus")
-  },
   agentAuth: {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
   },

@@ -189,3 +189,21 @@ test("service webview main-world script dispatches desktop bridge requests from 
   assert.equal(originalPostMessageCalls[0].value, payload);
   assert.deepEqual(captured, [payload]);
 });
+
+test("service webview main-world script ignores retired pan auth requests", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  const payload = {
+    action: "getAccessToken",
+    type: "zenmind:pan-app-auth:request"
+  };
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+  window.postMessage(payload, "*");
+
+  assert.deepEqual(captured, []);
+  assert.doesNotMatch(buildServiceWebviewMainWorldScript(), /pan-app-auth/);
+});

@@ -3185,6 +3185,8 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /function getDarwinDockIconCandidatePaths\(\)/);
   assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.brandIcon/);
   assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.macDockIcon/);
+  assert.match(mainProcess, /const bundledMacDockIconPath = path\.join\([\s\S]*?process\.resourcesPath,[\s\S]*?APP_ICON_ASSET_FILENAMES\.macDockIcon[\s\S]*?\);/);
+  assert.match(mainProcess, /return \[[\s\S]*?bundledMacDockIconPath,[\s\S]*?buildAppIconPath,[\s\S]*?generatedBrandIconPath,[\s\S]*?rendererBrandIconPath[\s\S]*?\];/);
   assert.match(mainProcess, /nativeImage\.createFromPath\(iconPath\)/);
   assert.match(mainProcess, /dock\.setIcon\(icon\);/);
   assert.match(mainProcess, /app\.setActivationPolicy\("regular"\);/);
@@ -3200,6 +3202,8 @@ test("mac dev app uses a content-addressed icon filename to avoid stale Dock cac
 
   assert.match(darwinDev, /createHash\("sha256"\)/);
   assert.match(darwinDev, /const targetIconFileName = `icon-\$\{fileHashPrefix\(sourceIconPath\)\}\.icns`;/);
+  assert.match(darwinDev, /const sourceDockIconPath = path\.join\(projectRoot, "build", "icons", "icon\.png"\);/);
+  assert.match(darwinDev, /fs\.copyFileSync\(sourceDockIconPath, path\.join\(targetResourcesDir, "icon\.png"\)\);/);
   assert.match(darwinDev, /setPlistString\(plist,\s*"CFBundleIconFile",\s*targetIconFileName\)/);
   assert.doesNotMatch(darwinDev, /const targetIconFileName = "icon\.icns";/);
 });
@@ -3797,6 +3801,22 @@ test("agent-platform monitor opens inside the service preview surface", () => {
   assert.equal(fs.existsSync(monitorPagePath), false);
   assert.equal(fs.existsSync(monitorStylesPath), false);
   assert.doesNotMatch(globalStyles, /\.agent-monitor-page/);
+});
+
+test("retired pan webclient business APIs are removed", () => {
+  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const authBridge = readSourceFile("src", "shared", "auth-bridge.ts");
+  const serviceMainWorld = readSourceFile("src", "preload", "service-webview-main-world.ts");
+  const marketplaceHandlers = readSourceFile("src", "main", "ipc", "marketplace-handlers.ts");
+  const globalStyles = readRendererStyles();
+
+  assert.doesNotMatch(desktopApi, /panAuth|PanAuth/);
+  assert.doesNotMatch(preload, /panAuth|panAuth\./);
+  assert.doesNotMatch(authBridge, /pan-app-auth|desktopApp|serviceId === "pan-webclient"/);
+  assert.doesNotMatch(serviceMainWorld, /pan-app-auth/);
+  assert.doesNotMatch(marketplaceHandlers, /panAuth|importPrivateKey/);
+  assert.doesNotMatch(globalStyles, /\.pan-auth-/);
 });
 
 test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {

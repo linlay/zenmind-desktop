@@ -11,18 +11,6 @@ import type { AssistantChatDetail, AssistantChatSummary, AssistantCreateCoderPro
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 
-export interface PanAuthStatus {
-  configured: boolean;
-  path: string;
-  message: string;
-}
-
-export interface PanAuthImportResult {
-  ok: boolean;
-  message: string;
-  status: PanAuthStatus;
-}
-
 export type AgentAuthRefreshReason = "missing" | "unauthorized";
 
 export interface AgentAuthIssueResult {
@@ -359,10 +347,6 @@ export interface DesktopApi {
     exportSandboxImage: (itemId: string) => Promise<MarketCommandResult>;
     deleteSandboxImage: (itemId: string) => Promise<MarketCommandResult>;
     buildSandboxImage: (itemId: string) => Promise<MarketCommandResult>;
-  };
-  panAuth: {
-    importPrivateKey: () => Promise<PanAuthImportResult>;
-    getStatus: () => Promise<PanAuthStatus>;
   };
   agentAuth: {
     issueAccessToken: (reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;

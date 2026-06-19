@@ -26,12 +26,27 @@ const {
   uninstallMarketItem,
   __testInternals
 } = require("../dist-electron/main/marketplace.js");
-const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
+const { getPluginInstallDir, installPluginFromArchive, loadInstalledPlugins } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 const { readWebappItems } = require("../dist-electron/main/webs/webapp-store.js");
-const { getDesktopConfigRoot, getDesktopPetsDataRoot, getDesktopWebappsDataRoot, getMarketplaceCacheRoot } = require("../dist-electron/main/user-paths.js");
-const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
+const {
+  getDesktopConfigRoot,
+  getDesktopPetsDataRoot,
+  getDesktopWebappsDataRoot,
+  getElectronUserDataRoot,
+  getMarketplaceCacheRoot,
+  getMarketplaceStateRoot,
+  getPluginsRoot,
+  getSecretsRoot,
+  getServiceConfigRoot,
+  getServiceDataRoot,
+  getServiceLogsRoot,
+  getServiceStateRoot
+} = require("../dist-electron/main/user-paths.js");
+const { cleanupRetiredPluginUserData } = require("../dist-electron/main/retired-plugins.js");
+const { STORAGE_NAMESPACE } = require("../dist-electron/shared/generated/brand.js");
+const { getAllServices, __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
   return {
@@ -2322,6 +2337,157 @@ test("installMarketItem downloads plugin archives but rejects builtin manifests"
     );
     assert.equal(fs.existsSync(getPluginInstallDir(app, "cloud-builtin")), false);
   });
+});
+
+test("retired pan-webclient plugin is hidden and rejected by market installs", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-retired-pan-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const catalog = {
+    schemaVersion: 1,
+    items: [
+      {
+        id: "pan-webclient",
+        type: "plugin",
+        name: "Pan Webclient",
+        version: "1.0.0",
+        description: "Retired plugin",
+        tags: [],
+        assets: {
+          universal: {
+            url: "https://example.test/pan-webclient.zip",
+            sha256: "",
+            sizeBytes: 0,
+            archiveType: "zip"
+          }
+        }
+      }
+    ]
+  };
+
+  const listed = await listMarketItems(app, { catalog, sections: ["plugins"] });
+  assert.equal(listed.items.some((item) => item.id === "pan-webclient"), false);
+  await assert.rejects(
+    () => installMarketItem(app, "pan-webclient", { catalog }),
+    /不再受 Desktop 支持/
+  );
+});
+
+test("installPluginFromArchive rejects retired pan-webclient archives", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-retired-pan-"));
+  const app = createApp(root);
+  const archivePath = writePluginArchive(root, { id: "pan-webclient" });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    () => installPluginFromArchive(app, archivePath),
+    /不再受 Desktop 支持/
+  );
+  assert.equal(fs.existsSync(path.join(getPluginsRoot(app), "pan-webclient")), false);
+});
+
+test("loadInstalledPlugins skips retired pan-webclient installs", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-installed-retired-pan-"));
+  const app = createApp(root);
+  const installDir = path.join(getPluginsRoot(app), "pan-webclient", "1.0.0");
+  registryInternals.clearServices();
+  t.after(() => {
+    registryInternals.clearServices();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(installDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(installDir, "manifest.json"),
+    `${JSON.stringify({
+      id: "pan-webclient",
+      name: "Pan Webclient",
+      kind: "plugin",
+      version: "1.0.0",
+      service: {
+        ui: "none",
+        web: { healthPath: "", portEnvKey: "PORT", defaultPort: 9300 }
+      },
+      lifecycle: { start: "start.sh", stop: "stop.sh" }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  loadInstalledPlugins(app);
+  assert.equal(getAllServices().some((service) => service.id === "pan-webclient"), false);
+});
+
+test("cleanupRetiredPluginUserData removes pan-webclient user traces", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-retired-pan-cleanup-"));
+  const app = createApp(root);
+  const pluginRoot = path.join(getPluginsRoot(app), "pan-webclient", "1.0.0");
+  const pluginConfigRoot = getServiceConfigRoot(app, "pan-webclient", "plugin");
+  const pluginDataRoot = getServiceDataRoot(app, "pan-webclient", "plugin");
+  const pluginStateRoot = getServiceStateRoot(app, "pan-webclient", "plugin");
+  const pluginLogsRoot = getServiceLogsRoot(app, "pan-webclient", "plugin");
+  const secretsRoot = getSecretsRoot(app);
+  const partitionsRoot = path.join(getElectronUserDataRoot(app), "Partitions");
+  const servicePartition = path.join(partitionsRoot, `${STORAGE_NAMESPACE}-service-pan-webclient`);
+  const settingsPartition = path.join(partitionsRoot, `${STORAGE_NAMESPACE}-plugin-settings-pan-webclient`);
+  const marketplaceRecordsPath = path.join(getMarketplaceStateRoot(app), "marketplace-installed.json");
+  const warnings = [];
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  for (const targetPath of [
+    pluginRoot,
+    pluginConfigRoot,
+    pluginDataRoot,
+    pluginStateRoot,
+    pluginLogsRoot,
+    servicePartition,
+    settingsPartition
+  ]) {
+    fs.mkdirSync(targetPath, { recursive: true });
+    fs.writeFileSync(path.join(targetPath, "marker.txt"), "retired\n", "utf8");
+  }
+  fs.mkdirSync(secretsRoot, { recursive: true });
+  fs.writeFileSync(path.join(secretsRoot, "pan-app-private-key.pem"), "private\n", "utf8");
+  fs.writeFileSync(path.join(secretsRoot, "pan-private-key.pem"), "legacy\n", "utf8");
+  fs.mkdirSync(path.dirname(marketplaceRecordsPath), { recursive: true });
+  fs.writeFileSync(
+    marketplaceRecordsPath,
+    `${JSON.stringify({
+      records: [
+        {
+          id: "pan-webclient",
+          type: "plugin",
+          version: "1.0.0",
+          source: "cloud",
+          installedAt: "2026-01-01T00:00:00.000Z"
+        },
+        {
+          id: "keep-plugin",
+          type: "plugin",
+          version: "1.0.0",
+          source: "cloud",
+          installedAt: "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  cleanupRetiredPluginUserData(app, {
+    warn: (message, error) => warnings.push({ message, error })
+  });
+
+  assert.equal(warnings.length, 0);
+  assert.equal(fs.existsSync(path.join(getPluginsRoot(app), "pan-webclient")), false);
+  assert.equal(fs.existsSync(pluginConfigRoot), false);
+  assert.equal(fs.existsSync(pluginDataRoot), false);
+  assert.equal(fs.existsSync(pluginStateRoot), false);
+  assert.equal(fs.existsSync(pluginLogsRoot), false);
+  assert.equal(fs.existsSync(path.join(secretsRoot, "pan-app-private-key.pem")), false);
+  assert.equal(fs.existsSync(path.join(secretsRoot, "pan-private-key.pem")), false);
+  assert.equal(fs.existsSync(servicePartition), false);
+  assert.equal(fs.existsSync(settingsPartition), false);
+  assert.deepEqual(__testInternals.readInstalledRecords(app).map((record) => record.id), ["keep-plugin"]);
 });
 
 test("uninstallMarketItem removes skill installs and marketplace records", async (t) => {

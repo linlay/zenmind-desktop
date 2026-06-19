@@ -26,8 +26,6 @@ export interface MarketplaceIpcHandlerOptions {
   importSandboxImageFromPath: (app: any, archivePath: string, options: any) => Promise<any>;
   importSkillFromPath: (app: any, sourcePath: string) => Promise<any>;
   importSkillFromCommand: (app: any, commandText: string) => Promise<any>;
-  getPanAuthStatus: (app: any) => any;
-  importPanPrivateKey: (app: any, keyPath: string) => any;
   onMarketCommandResult?: (result: any) => void;
   now?: () => number;
   random?: () => number;
@@ -60,8 +58,6 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     importSandboxImageFromPath,
     importSkillFromPath,
     importSkillFromCommand,
-    getPanAuthStatus,
-    importPanPrivateKey,
     onMarketCommandResult,
     now = Date.now,
     random = Math.random
@@ -206,28 +202,4 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     }
     return result;
   }));
-
-  ipcMain.handle("panAuth.importPrivateKey", async () => {
-    const result = await showFileDialog({
-      title: t("dialog.importPrivateKey.title"),
-      properties: ["openFile"]
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      const status = getPanAuthStatus(app);
-      return {
-        ok: false,
-        message: t("panAuth.privateKeyImportCancelled"),
-        status
-      };
-    }
-
-    const status = importPanPrivateKey(app, result.filePaths[0]);
-    return {
-      ok: true,
-      message: status.message,
-      status
-    };
-  });
-
-  ipcMain.handle("panAuth.getStatus", async () => getPanAuthStatus(app));
 }
