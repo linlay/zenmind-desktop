@@ -210,8 +210,7 @@
   display: none;
 }
 
-.app-shell.has-task-board-controls .app-window-drag-region,
-.app-shell.has-task-board-controls .app-main-drag-region {
+.app-shell.has-task-board-controls .app-window-drag-region {
   display: none;
 }
 

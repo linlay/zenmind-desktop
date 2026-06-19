@@ -2281,7 +2281,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-automation-menu-list\s*\{[\s\S]*?top:\s*calc\(100% \+ 4px\);[\s\S]*?max-height:\s*164px;/);
   assert.match(globalStyles, /\.task-board-automation-menu-list\.is-time-list\s*\{[\s\S]*?max-height:\s*184px;/);
   assert.doesNotMatch(globalStyles, /\.task-board-automation-time-select/);
-  assert.match(globalStyles, /\.app-shell\.has-task-board-controls\s+\.app-window-drag-region,\s*\.app-shell\.has-task-board-controls\s+\.app-main-drag-region\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-shell\.has-task-board-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
   assert.match(globalStyles, /\.task-board-modal-actions \.task-board-secondary-button/);
   assert.doesNotMatch(globalStyles, /\.task-board-human-loop-hint\s*\{/);
   assert.doesNotMatch(globalStyles, /\.task-board-card-action\s*\{/);
@@ -3014,60 +3014,42 @@ test("market route disables the global drag overlay above toolbar controls", () 
 test("embedded H5 routes keep a thin global window drag lane", () => {
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
+  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const pluginSettingsPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginSettingsPage.tsx");
+  const externalWebviewPage = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
 
   assert.match(appShell, /usesEmbeddedSurface/);
   assert.match(appShell, /has-embedded-surface/);
   assert.match(appShell, /usesPluginSurface/);
   assert.match(appShell, /has-plugin-surface/);
+  assert.match(appShell, /const shouldRenderAppMainDragRegion = isMac && !usesEmbeddedSurface && !isTaskBoardRoute && !isMarketRoute;/);
+  assert.match(appShell, /shouldRenderAppMainDragRegion \? <div className="app-main-drag-region" aria-hidden="true" \/> : null/);
+  assert.match(
+    globalStyles,
+    /\.pan-page\.pan-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
+  );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*height:\s*8px;/);
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
   assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*z-index:\s*1000;/);
-  assert.match(
-    globalStyles,
-    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*1000;[^}]*app-region:\s*drag;[^}]*pointer-events:\s*auto;/
-  );
-  assert.match(globalStyles, /\.pan-drag-region\s*\{[^}]*cursor:\s*grab;/);
-  assert.match(globalStyles, /\.pan-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
+  assert.doesNotMatch(pluginPage, /className="pan-drag-region"/);
+  assert.doesNotMatch(pluginSettingsPage, /className="pan-drag-region"/);
+  assert.doesNotMatch(externalWebviewPage, /className="pan-drag-region"/);
+  assert.doesNotMatch(globalStyles, /\.pan-drag-region\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.pan-drag-region:active\s*\{/);
   assert.doesNotMatch(
     globalStyles,
-    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*display:\s*none;/
-  );
-  assert.doesNotMatch(
-    globalStyles,
-    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*flex:\s*0\s+0\s+8px;/
-  );
-  assert.doesNotMatch(
-    globalStyles,
-    /\.pan-page-embedded\s+\.pan-drag-region\s*\{[^}]*min-height:\s*8px;/
-  );
-  assert.match(
-    globalStyles,
-    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*right:\s*0;[^}]*height:\s*8px;[^}]*z-index:\s*1000;[^}]*pointer-events:\s*auto;/
-  );
-  assert.match(globalStyles, /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*cursor:\s*grab;/);
-  assert.match(globalStyles, /\.external-webview-page\s+\.pan-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
-  assert.doesNotMatch(
-    globalStyles,
-    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*height:\s*0;/
-  );
-  assert.doesNotMatch(
-    globalStyles,
-    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*pointer-events:\s*none;/
-  );
-  assert.doesNotMatch(
-    globalStyles,
-    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*flex:\s*0\s+0\s+8px;/
-  );
-  assert.doesNotMatch(
-    globalStyles,
-    /\.external-webview-page\s+\.pan-drag-region\s*\{[^}]*min-height:\s*8px;/
+    /\.pan-page-embedded\s+\.pan-drag-region/
   );
   assert.doesNotMatch(
     globalStyles,
     /\.pan-page-embedded\s+\.pan-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*8px;/
+  );
+  assert.match(
+    globalStyles,
+    /\.pan-page\.pan-page-embedded\s+\.pan-frame-shell,\s*\.pan-page\.pan-page-embedded\s+\.pan-frame\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -3126,14 +3108,12 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.match(appMainRule, /user-select:\s*text;/);
   assert.match(appMainRule, /app-region:\s*no-drag;/);
   assert.match(appMainRule, /-webkit-app-region:\s*no-drag;/);
-  assert.match(globalStyles, /\.app-main-drag-region\s*\{[\s\S]*?display:\s*none;[\s\S]*?height:\s*20px;/);
+  assert.match(globalStyles, /\.app-main-drag-region\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.app-main-drag-region\s*\{[^}]*cursor:\s*grab;/);
   assert.match(globalStyles, /\.app-main-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
-  assert.match(
-    globalStyles,
-    /\.app-shell\.is-mac-platform:not\(\.has-embedded-surface\):not\(\.has-task-board-controls\):not\(\.is-mac-overlay-sidebar\)\s+\.app-main-drag-region\s*\{[^}]*display:\s*block;/
-  );
-  assert.match(globalStyles, /\.app-shell\.is-windows-platform\s+\.app-main-drag-region\s*\{[^}]*display:\s*none;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-windows-platform\s+\.app-main-drag-region\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-main-drag-region\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\s+\.app-main-drag-region\s*\{/);
   assert.match(globalStyles, /\.app-header\s*\{[^}]*cursor:\s*grab;/);
   assert.match(globalStyles, /\.app-header:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-drag-region/);
@@ -3143,7 +3123,8 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.doesNotMatch(appShell, /handleSidebarWindowPointerDownCapture/);
   assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleSidebarWindowPointerDownCapture\}/);
   assert.match(appShell, /onPointerDownCapture=\{handleWindowDragPointerDownCapture\}/);
-  assert.match(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
+  assert.match(appShell, /target\?\.closest\("\.app-window-drag-region"\)/);
+  assert.doesNotMatch(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
   assert.match(appShell, /event\.button !== 0/);
   assert.match(appShell, /desktopShell\.beginWindowDrag\(\{ x: event\.screenX, y: event\.screenY \}\)/);
   assert.match(appShell, /desktopShell\.endWindowDrag\(\)/);

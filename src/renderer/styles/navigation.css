@@ -2207,10 +2207,6 @@
   pointer-events: auto;
 }
 
-.app-shell.is-mac-overlay-sidebar .app-main-drag-region {
-  display: none;
-}
-
 /* ── Sidebar Collapse Button ── */
 
 .app-sidebar-collapse-button {
@@ -2324,7 +2320,6 @@
 /* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
 
 .app-main-drag-region {
-  display: none;
   position: absolute;
   top: 0;
   left: 0;
@@ -2341,18 +2336,6 @@
 
 .app-main-drag-region:active {
   cursor: grabbing;
-}
-
-.app-shell.is-mac-platform:not(.has-embedded-surface):not(.has-task-board-controls):not(.is-mac-overlay-sidebar) .app-main-drag-region {
-  display: block;
-}
-
-.app-shell.is-windows-platform .app-main-drag-region {
-  display: none;
-}
-
-.app-shell.has-embedded-surface .app-main-drag-region {
-  display: none;
 }
 
 .app-sidebar a,
@@ -2923,7 +2906,7 @@
   background: var(--embedded-surface-page-bg);
 }
 
-.pan-page-embedded {
+.pan-page.pan-page-embedded {
   position: absolute;
   inset: 0;
   z-index: 1;
@@ -3006,36 +2989,6 @@
   flex: none;
 }
 
-.pan-drag-region {
-  position: relative;
-  flex: none;
-  height: 20px;
-  app-region: drag;
-  -webkit-app-region: drag;
-  z-index: 10;
-  pointer-events: auto;
-  cursor: grab;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.pan-drag-region:active {
-  cursor: grabbing;
-}
-
-.pan-page-embedded .pan-drag-region {
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 8px;
-  z-index: 1000;
-  app-region: drag;
-  -webkit-app-region: drag;
-  pointer-events: auto;
-}
-
 .pan-frame-shell {
   position: relative;
   display: flex;
@@ -3045,8 +2998,9 @@
   background: var(--embedded-surface-page-bg);
 }
 
-.pan-page-embedded .pan-frame-shell,
-.pan-page-embedded .pan-frame {
+.pan-page.pan-page-embedded .pan-frame-shell,
+.pan-page.pan-page-embedded .pan-frame {
+  height: 100%;
   min-height: 0;
 }
 

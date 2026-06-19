@@ -316,6 +316,9 @@ test("desktop sso site token bridge exchange stores returned token", async (t) =
         accessToken: "site-access-token-1",
         tokenType: "Bearer",
         expiresAt: "2026-06-18T12:00:00Z",
+        issuer: "https://official.example.test",
+        audience: ["zenmind-market-server", "zenmind-tunnel-hub-server"],
+        scope: "profile market tunnel",
         user: { id: 1, email: "desktop.user@example.test" }
       })
     };
@@ -329,4 +332,58 @@ test("desktop sso site token bridge exchange stores returned token", async (t) =
   const tokenPath = __testInternals.getDesktopSsoSiteTokenFilePath(app);
   const stored = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
   assert.equal(stored.accessToken, "site-access-token-1");
+  assert.deepEqual(stored.audience, ["zenmind-market-server", "zenmind-tunnel-hub-server"]);
+  assert.equal(stored.issuer, "https://official.example.test");
+  assert.equal(stored.scope, "profile market tunnel");
+});
+
+test("desktop sso site token bridge exchange fails without returned access token", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-site-token-missing-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    providerLabel: "ZenMind",
+    browserMode: "system",
+    issuer: "https://auth.example.test/application/o/desktop/",
+    authorizeUrl: "https://auth.example.test/o/authorize/",
+    tokenUrl: "https://auth.example.test/application/o/token/",
+    clientId: "zenmind-desktop",
+    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
+    logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
+    siteTokenBridge: {
+      startUrl: "https://site.example.test/api/auth/desktop-sso/start",
+      exchangeUrl: "https://site.example.test/api/auth/desktop-sso/session"
+    }
+  });
+  const fakeSession = {
+    cookies: {
+      set: async () => undefined,
+      get: async () => [],
+      remove: async () => undefined
+    }
+  };
+  const controller = createDesktopSsoController({
+    app,
+    platform: "darwin",
+    session: {
+      defaultSession: fakeSession,
+      fromPartition: () => fakeSession
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
+    openExternal: async () => undefined
+  });
+
+  const exchanged = await controller.exchangeSiteTokenBridgeTicket("site-ticket-1", async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers({ "set-cookie": "sid=abc; Path=/; HttpOnly" }),
+    json: async () => ({ ok: true, user: { id: 1 } })
+  }));
+
+  assert.equal(exchanged, false);
+  assert.equal(fs.existsSync(__testInternals.getDesktopSsoSiteTokenFilePath(app)), false);
 });

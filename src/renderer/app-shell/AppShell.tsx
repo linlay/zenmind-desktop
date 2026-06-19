@@ -428,6 +428,7 @@ export function AppShell() {
     matchSettingsRoute(location.pathname);
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
+  const shouldRenderAppMainDragRegion = isMac && !usesEmbeddedSurface && !isTaskBoardRoute && !isMarketRoute;
   const isSettingsRoute = matchSettingsRoute(location.pathname);
   const currentRoute = `${location.pathname}${location.search}`;
   const settingsSectionDefinitions = useMemo(
@@ -1809,7 +1810,7 @@ export function AppShell() {
     }
 
     const target = event.target instanceof Element ? event.target : null;
-    const dragRegion = target?.closest(".app-window-drag-region, .pan-drag-region");
+    const dragRegion = target?.closest(".app-window-drag-region");
     if (!dragRegion) {
       return;
     }
@@ -1962,7 +1963,7 @@ export function AppShell() {
       </div>
       <div className="app-content">
         <main className="app-main">
-          <div className="app-main-drag-region" aria-hidden="true" />
+          {shouldRenderAppMainDragRegion ? <div className="app-main-drag-region" aria-hidden="true" /> : null}
           <PluginSurfaceHost
             activePluginId={activePluginId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}

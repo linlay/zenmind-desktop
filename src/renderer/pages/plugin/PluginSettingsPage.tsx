@@ -152,7 +152,6 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
 
   return (
     <section className="pan-page pan-page-embedded">
-      <div className="pan-drag-region" aria-hidden="true" />
       <button
         className="embedded-back-button"
         onClick={() => navigate(-1)}

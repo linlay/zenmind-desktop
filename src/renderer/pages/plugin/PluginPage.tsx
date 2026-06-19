@@ -1454,7 +1454,6 @@ export function PluginPage({
       ].filter(Boolean).join(" ")}
       {...surfaceVisibilityProps}
     >
-      <div className="pan-drag-region" aria-hidden="true" />
       {active && pluginId !== "agent-webclient" && (
         <button
           className="embedded-back-button"

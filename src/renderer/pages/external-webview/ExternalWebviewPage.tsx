@@ -1571,7 +1571,6 @@ export function ExternalWebviewPage({
   return (
     <>
     <section className={surfaceClassName} {...surfaceVisibilityProps}>
-      <div className="pan-drag-region" aria-hidden="true" />
       {appChrome ? null : (
       <div className="external-webview-browser-chrome">
         <div className="external-webview-tabbar">

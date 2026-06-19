@@ -1287,6 +1287,25 @@ function normalizeTokenResponseString(record: Record<string, unknown>, ...keys: 
   return "";
 }
 
+function normalizeTokenResponseAudience(record: Record<string, unknown>) {
+  const value = record.audience;
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    const audiences = value
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => item.trim());
+    if (audiences.length === 1) {
+      return audiences[0];
+    }
+    if (audiences.length > 1) {
+      return audiences;
+    }
+  }
+  return "";
+}
+
 export function saveDesktopSsoSiteTokenFile(app: Pick<App, "getPath">, responseBody: unknown) {
   if (!responseBody || typeof responseBody !== "object" || Array.isArray(responseBody)) {
     return false;
@@ -1305,7 +1324,7 @@ export function saveDesktopSsoSiteTokenFile(app: Pick<App, "getPath">, responseB
     accessToken,
     ...(expiresAt ? { expiresAt } : {}),
     scope: normalizeTokenResponseString(record, "scope"),
-    audience: normalizeTokenResponseString(record, "audience"),
+    audience: normalizeTokenResponseAudience(record),
     issuer: normalizeTokenResponseString(record, "issuer"),
     updatedAt: new Date().toISOString()
   }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });

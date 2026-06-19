@@ -633,8 +633,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         return setCookieHeaders.length > 0;
       }
       const responseBody = await response.json();
-      saveDesktopSsoSiteTokenFile(options.app, responseBody);
-      return true;
+      return saveDesktopSsoSiteTokenFile(options.app, responseBody);
     },
     async logoutWebSession(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
       const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);

@@ -18,18 +18,6 @@
   margin: -20px -24px -28px;
 }
 
-.pan-drag-region {
-  position: relative;
-  flex: none;
-  height: 20px;
-  app-region: drag;
-  -webkit-app-region: drag;
-  z-index: 10;
-  pointer-events: auto;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
 .pan-frame-shell {
   display: flex;
   flex: 1;
@@ -114,24 +102,6 @@
   --browser-accent: #8ab4f8;
   --browser-accent-glow: rgba(138, 180, 248, 0.18);
   background: #1f2329;
-}
-
-.external-webview-page .pan-drag-region {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 8px;
-  z-index: 1000;
-  overflow: hidden;
-  app-region: drag;
-  -webkit-app-region: drag;
-  pointer-events: auto;
-  cursor: grab;
-}
-
-.external-webview-page .pan-drag-region:active {
-  cursor: grabbing;
 }
 
 .external-webview-browser-chrome {
