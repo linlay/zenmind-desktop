@@ -412,7 +412,7 @@
   white-space: nowrap;
   font-size: 13px;
   line-height: 1.35;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .sidebar-link-label-collapsed {
@@ -497,7 +497,7 @@
   cursor: pointer;
   font: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1.35;
   text-align: left;
 }
