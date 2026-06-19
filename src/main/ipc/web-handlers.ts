@@ -8,10 +8,10 @@ import {
   listWebsiteItems,
   removeWebsiteItem,
   updateWebsiteItem
-} from "../webs/website-actions";
-import { applyWebOrder } from "../webs/web-order-store";
-import { readWebItems } from "../webs/web-store";
-import { webappRuntime } from "../webs/webapp-runtime";
+} from "../webs/websites/actions";
+import { applyWebOrder } from "../webs/order-store";
+import { readWebItems } from "../webs/store";
+import { webappRuntime } from "../webs/webapps/runtime";
 import { t } from "../i18n/main-i18n";
 
 export interface WebIpcHandlerOptions {

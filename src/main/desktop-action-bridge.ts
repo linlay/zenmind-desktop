@@ -26,7 +26,7 @@ import {
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-routes";
 import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
-import type { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
+import type { AgentPlatformAssistantBridge } from "./assistant/core/agent-platform-bridge";
 import {
   getServiceLogsMeta,
   getResponsiveServiceState,
@@ -44,7 +44,7 @@ import {
   staticSiteHostManager
 } from "./static-site-host-manager";
 import { listWebEntries } from "./ipc/web-handlers";
-import { webappRuntime } from "./webs/webapp-runtime";
+import { webappRuntime } from "./webs/webapps/runtime";
 import {
   buildSandboxImage,
   deleteSandboxImage,

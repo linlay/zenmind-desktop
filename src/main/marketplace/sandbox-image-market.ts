@@ -15,7 +15,7 @@ import {
   buildContainerEngineInvocation,
   resolveContainerEngine
 } from "../container-engine";
-import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "../copilot/core/container-hub";
+import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "../assistant/core/container-hub";
 import { extractArchiveToDir, listArchiveEntries } from "../archive-utils";
 import { readEnvFile } from "../env-file";
 import { getResponsiveServiceState } from "../services/manager";

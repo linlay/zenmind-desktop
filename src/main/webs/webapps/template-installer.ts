@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import { getDesktopWebappsDataRoot } from "../user-paths";
-import { t } from "../i18n/main-i18n";
+import { getDesktopWebappsDataRoot } from "../../user-paths";
+import { t } from "../../i18n/main-i18n";
 
 const DEMO_RESOURCES_ROOT_NAME = "demo";
 const DEMO_MANIFEST_FILE_NAME = "manifest.json";

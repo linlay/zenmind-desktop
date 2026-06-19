@@ -11,11 +11,11 @@ import {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
 } from "./desktop-profile-store";
-import { importWebsiteItems } from "./webs/website-actions";
+import { importWebsiteItems } from "./webs/websites/actions";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { resolveDesktopSsoConfigPath } from "./oidc-sso";
 import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
-import { saveDesktopPetSettings } from "./copilot/pet-copilot/desktop-pet";
+import { saveDesktopPetSettings } from "./assistant/pet/desktop-pet";
 import { saveMarketSettings } from "./marketplace/common";
 import { saveTaskBoardSettings } from "./task-board-runtime";
 import { saveTunnelHubAgentSettings } from "./tunnel-hub-agent-settings";

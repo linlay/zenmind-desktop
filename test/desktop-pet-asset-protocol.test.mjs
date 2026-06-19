@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   isDesktopPetAssetPathInsideRoot,
   resolveDesktopPetAssetRequest
-} = require("../dist-electron/main/copilot/pet-copilot/pet-asset-protocol.js");
+} = require("../dist-electron/main/assistant/pet/pet-asset-protocol.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
 const { DESKTOP_PET_USER_ASSET_PROTOCOL } = require("../dist-electron/shared/desktop-pet.js");
 

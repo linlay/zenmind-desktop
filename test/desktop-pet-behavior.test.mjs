@@ -13,7 +13,7 @@ const {
   getDesktopPetContextMenuItems,
   listUserDesktopPetAppearanceOptions,
   __testInternals
-} = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
+} = require("../dist-electron/main/assistant/pet/desktop-pet.js");
 const {
   createDesktopPetMessagesFromAgentStatus,
   createDesktopPetMessagesFromNavigationSnapshot,

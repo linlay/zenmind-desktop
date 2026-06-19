@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import type { WebappBackendConfig, WebappEntry, WebappFrontendConfig } from "../../shared/contracts";
-import { getDesktopWebappsDataRoot } from "../user-paths";
+import type { WebappBackendConfig, WebappEntry, WebappFrontendConfig } from "../../../shared/contracts";
+import { getDesktopWebappsDataRoot } from "../../user-paths";
 import {
   createWebId,
   createWebappEntryKey,
@@ -17,8 +17,8 @@ import {
   resolveWebappRelativePath,
   sortWebEntries,
   toTimestamp
-} from "./web-common";
-import { ensureWebsMigration } from "./web-migration";
+} from "../common";
+import { ensureWebsMigration } from "../migration";
 
 export const WEBAPP_FILE = "webapp.json";
 

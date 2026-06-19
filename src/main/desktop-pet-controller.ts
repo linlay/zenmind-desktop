@@ -17,7 +17,7 @@ import type {
   DesktopPetBoundAgentStatus,
   DesktopPetLocalStatus,
   DesktopPetWindowMode
-} from "./copilot/pet-copilot/desktop-pet";
+} from "./assistant/pet/desktop-pet";
 import {
   createDesktopPetState,
   getDesktopPetLogicalPositionFromBounds,
@@ -26,8 +26,8 @@ import {
   getDesktopPetWindowSize,
   isDesktopPetSupportedPlatform,
   DESKTOP_PET_WINDOW_SIZE
-} from "./copilot/pet-copilot/desktop-pet";
-import { normalizeDesktopPetAgentEvent } from "./copilot/pet-copilot/desktop-pet-preview";
+} from "./assistant/pet/desktop-pet";
+import { normalizeDesktopPetAgentEvent } from "./assistant/pet/desktop-pet-preview";
 import { t } from "./i18n/main-i18n";
 
 type DesktopPetPreviewPanelLike = {

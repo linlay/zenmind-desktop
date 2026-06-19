@@ -12,28 +12,28 @@ const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 const {
   readWebsiteItems,
   writeWebsiteItems
-} = require("../dist-electron/main/webs/website-store.js");
+} = require("../dist-electron/main/webs/websites/store.js");
 const {
   readWebappItems
-} = require("../dist-electron/main/webs/webapp-store.js");
+} = require("../dist-electron/main/webs/webapps/store.js");
 const {
   readWebItems
-} = require("../dist-electron/main/webs/web-store.js");
+} = require("../dist-electron/main/webs/store.js");
 const {
   applyWebOrder,
   readWebOrderKeys,
   writeWebOrderKeys
-} = require("../dist-electron/main/webs/web-order-store.js");
+} = require("../dist-electron/main/webs/order-store.js");
 const {
   getWebsMigrationPath
-} = require("../dist-electron/main/webs/web-migration.js");
+} = require("../dist-electron/main/webs/migration.js");
 const {
   webappRuntime
-} = require("../dist-electron/main/webs/webapp-runtime.js");
+} = require("../dist-electron/main/webs/webapps/runtime.js");
 const {
   __testInternals: webappTemplateInstallerInternals,
   installBundledWebappTemplates
-} = require("../dist-electron/main/webs/webapp-template-installer.js");
+} = require("../dist-electron/main/webs/webapps/template-installer.js");
 
 function createApp(homePath, appPath = process.cwd()) {
   return {

@@ -14,7 +14,7 @@ import {
 import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunnel-hub-agent-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot } from "../user-paths";
-import { readWebOrderKeys, writeWebOrderKeys } from "../webs/web-order-store";
+import { readWebOrderKeys, writeWebOrderKeys } from "../webs/order-store";
 import { t } from "../i18n/main-i18n";
 
 export interface SettingsIpcHandlerOptions {

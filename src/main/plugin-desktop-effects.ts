@@ -9,7 +9,7 @@ import {
   DESKTOP_PET_APPEARANCE_OPTIONS,
   listUserDesktopPets,
   readDesktopPetStoredState
-} from "./copilot/pet-copilot/desktop-pet";
+} from "./assistant/pet/desktop-pet";
 import { t } from "./i18n/main-i18n";
 import { getRendererEntry } from "./renderer-route";
 

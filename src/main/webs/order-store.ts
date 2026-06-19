@@ -4,8 +4,8 @@ import type { App } from "electron";
 import type { WebEntry, WebEntryKey } from "../../shared/contracts";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot } from "../desktop-profile-store";
 import { getDesktopConfigRoot, getDesktopWebsConfigRoot } from "../user-paths";
-import { normalizeWebEntryKey } from "./web-common";
-import { ensureWebsMigration } from "./web-migration";
+import { normalizeWebEntryKey } from "./common";
+import { ensureWebsMigration } from "./migration";
 
 const ORDER_FILE = "order.json";
 

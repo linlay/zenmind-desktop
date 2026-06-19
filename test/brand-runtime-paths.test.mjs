@@ -832,8 +832,8 @@ test("critical runtime path modules read APP_BRAND runtimeRootDirName", () => {
   const files = [
     "src/main/task-board-db.ts",
     "src/main/task-board-runtime.ts",
-    "src/main/copilot/core/agent-platform-config.ts",
-    "src/main/copilot/core/agent-platform-bridge.ts"
+    "src/main/assistant/core/agent-platform-config.ts",
+    "src/main/assistant/core/agent-platform-bridge.ts"
   ];
 
   for (const relativePath of files) {

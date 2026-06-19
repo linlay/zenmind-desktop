@@ -6,8 +6,8 @@ import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
 import { extractArchiveToDir, listArchiveEntriesAsync } from "../archive-utils";
 import { t } from "../i18n/main-i18n";
 import { getDesktopWebappsDataRoot } from "../user-paths";
-import { getWebappDir, readWebappItemFromDir } from "../webs/webapp-store";
-import { webappRuntime } from "../webs/webapp-runtime";
+import { getWebappDir, readWebappItemFromDir } from "../webs/webapps/store";
+import { webappRuntime } from "../webs/webapps/runtime";
 import {
   downloadAsset,
   findCatalogItem,

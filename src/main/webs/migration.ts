@@ -27,7 +27,7 @@ import {
   readString,
   toIsoTimestamp,
   toTimestamp
-} from "./web-common";
+} from "./common";
 
 const MIGRATION_FILE = "migration.json";
 const WEBSITE_FILE = "website.json";

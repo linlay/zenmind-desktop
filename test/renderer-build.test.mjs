@@ -1448,7 +1448,7 @@ test("settings page configures desktop helper default agent separately from desk
     "utf8"
   );
   const settingsStore = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "core", "settings-store.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "core", "settings-store.ts"),
     "utf8"
   );
   const globalStyles = readRendererStyles();
@@ -2040,7 +2040,7 @@ test("task board route exposes native desktop api and page styles", () => {
   const globalStyles = readRendererStyles();
   const taskBoardStore = fs.readFileSync(path.join(projectRoot, "src", "main", "task-board-store.ts"), "utf8");
   const assistantNavigationStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "core", "assistant-navigation-status-client.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "core", "assistant-navigation-status-client.ts"),
     "utf8"
   );
   const taskBoardPage = fs.readFileSync(
@@ -2314,7 +2314,7 @@ test("task board status order places completed after in progress", () => {
 
 test("website agent association is exposed across webs desktop api layers", () => {
   const contracts = readSharedContractsSource();
-  const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "website-actions.ts"), "utf8");
+  const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "websites", "actions.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
@@ -2442,9 +2442,9 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "core", "agent-platform-bridge.ts"), "utf8");
+  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "core", "agent-platform-bridge.ts"), "utf8");
   const assistantNavigationStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "core", "assistant-navigation-status-client.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "core", "assistant-navigation-status-client.ts"),
     "utf8"
   );
   const appShell = readAppShellSource();
@@ -3266,11 +3266,11 @@ test("web copilot dock yields to native dialogs while quick assistant keeps outs
     "utf8"
   );
   const quickCopilotWindowController = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "window.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "quick", "window.ts"),
     "utf8"
   );
   const quickCopilotDismissLayer = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "dismiss-layer.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "quick", "dismiss-layer.ts"),
     "utf8"
   );
   const globalStyles = readRendererStyles();
@@ -3491,15 +3491,15 @@ test("assistant chat export writes directly to the download location", () => {
   assert.match(downloadPaths, /export async function getAvailableFilePath/u);
   assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\), \{/u);
   assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
-  assert.match(readSourceFile("src", "main", "copilot", "core", "agent-platform-bridge.ts"), /\/api\/chat\/export\?chatId=/u);
-  assert.doesNotMatch(readSourceFile("src", "main", "copilot", "core", "agent-platform-bridge.ts"), /\/api\/chat-export/u);
+  assert.match(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat\/export\?chatId=/u);
+  assert.doesNotMatch(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat-export/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const quickRouting = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "routing.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "quick", "routing.ts"),
     "utf8"
   );
   const trayController = fs.readFileSync(
@@ -3831,10 +3831,10 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const quickCopilotWindowController = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "window.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "quick", "window.ts"),
     "utf8"
   );
-  const quickAssistantWindow = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "quick-copilot.ts"), "utf8");
+  const quickAssistantWindow = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "quick", "quick-copilot.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const quickWebCopilotStyles = globalStyles.slice(
@@ -3925,7 +3925,7 @@ test("desktop pet appearance picker confirms persistence before success feedback
 
 test("desktop pet legacy agent aliases avoid inline display-name literals", () => {
   const petStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "pet-status-client.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "pet", "pet-status-client.ts"),
     "utf8"
   );
 
@@ -3969,7 +3969,7 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "desktop-pet.ts"), "utf8");
+  const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "pet", "desktop-pet.ts"), "utf8");
   const globalStyles = readRendererStyles();
 
   assert.match(desktopPetController, /return shouldShowBubble \? "bubble" : "base";/);
@@ -4232,7 +4232,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const desktopPetWindow = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "window.ts"),
+    path.join(projectRoot, "src", "main", "assistant", "pet", "window.ts"),
     "utf8"
   );
   const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");

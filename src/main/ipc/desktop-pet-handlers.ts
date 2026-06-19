@@ -3,7 +3,7 @@ import {
   sanitizeDesktopPetAppearanceId,
   saveDesktopPetSettings,
   toDesktopPetSettings
-} from "../copilot/pet-copilot/desktop-pet";
+} from "../assistant/pet/desktop-pet";
 
 export interface DesktopPetSettingsInput {
   boundAgentKey?: unknown;

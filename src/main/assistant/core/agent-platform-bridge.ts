@@ -33,8 +33,8 @@ import type {
   ServiceState
 } from "../../../shared/contracts";
 import { APP_BRAND } from "../../../shared/generated/brand";
-import { toDesktopPetAgentOptions } from "../pet-copilot/pet-status-client";
-import { DesktopPetSseParser } from "../pet-copilot/desktop-pet-preview";
+import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
+import { DesktopPetSseParser } from "../pet/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
 import {
   readAssistantCopilotAgentsFromPlatform,

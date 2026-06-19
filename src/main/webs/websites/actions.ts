@@ -1,18 +1,18 @@
 import type { App } from "electron";
-import type { WebsiteEntry, WebsiteInput, WebsiteUpdateInput } from "../../shared/contracts";
+import type { WebsiteEntry, WebsiteInput, WebsiteUpdateInput } from "../../../shared/contracts";
 import {
   createWebsiteItem,
   readWebsiteItems,
   writeWebsiteItems
-} from "./website-store";
+} from "./store";
 import {
   isRecord,
   normalizeAgentKey,
   normalizeWebId,
   normalizeWebsiteLabel,
   normalizeWebsiteUrl
-} from "./web-common";
-import { t } from "../i18n/main-i18n";
+} from "../common";
+import { t } from "../../i18n/main-i18n";
 
 const MAX_WEBSITE_ITEMS = 14;
 

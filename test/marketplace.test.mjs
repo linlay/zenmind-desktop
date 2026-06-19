@@ -28,8 +28,8 @@ const {
 } = require("../dist-electron/main/marketplace.js");
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
-const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
-const { readWebappItems } = require("../dist-electron/main/webs/webapp-store.js");
+const { readDesktopPetStoredState } = require("../dist-electron/main/assistant/pet/desktop-pet.js");
+const { readWebappItems } = require("../dist-electron/main/webs/webapps/store.js");
 const {
   getDesktopConfigRoot,
   getDesktopPetsDataRoot,

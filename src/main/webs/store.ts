@@ -1,7 +1,7 @@
 import type { App } from "electron";
 import type { WebEntry } from "../../shared/contracts";
-import { readWebappItems } from "./webapp-store";
-import { readWebsiteItems } from "./website-store";
+import { readWebappItems } from "./webapps/store";
+import { readWebsiteItems } from "./websites/store";
 
 export function readWebItems(app: App): WebEntry[] {
   return [

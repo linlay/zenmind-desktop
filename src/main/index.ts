@@ -63,8 +63,8 @@ import {
   prepareQuitUi as prepareQuitUiFromCleanup
 } from "./shutdown-cleanup";
 import { stopAllStaticSiteHosts } from "./static-site-host-manager";
-import { stopAllWebapps, webappRuntime } from "./webs/webapp-runtime";
-import { installBundledWebappTemplates } from "./webs/webapp-template-installer";
+import { stopAllWebapps, webappRuntime } from "./webs/webapps/runtime";
+import { installBundledWebappTemplates } from "./webs/webapps/template-installer";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
@@ -118,21 +118,21 @@ import { createTaskBoardRuntime } from "./task-board-runtime";
 import {
   getAgentPlatformMinimaxSettingsPublic,
   loadAgentPlatformMinimaxSettings
-} from "./copilot/core/agent-platform-config";
+} from "./assistant/core/agent-platform-config";
 import {
   getAssistantSettings,
   readAssistantSettings,
   saveAssistantSettings
-} from "./copilot/core/settings-store";
+} from "./assistant/core/settings-store";
 import { readDesktopProfileFromRoot } from "./desktop-profile-store";
-import { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
-import { AssistantNavigationStatusClient } from "./copilot/core/assistant-navigation-status-client";
+import { AgentPlatformAssistantBridge } from "./assistant/core/agent-platform-bridge";
+import { AssistantNavigationStatusClient } from "./assistant/core/assistant-navigation-status-client";
 import {
   cancelAssistantAttachmentTask,
   createAssistantAttachmentFromPastedImage,
   createAssistantAttachmentsFromFiles,
   resolveAssistantAttachmentPath
-} from "./copilot/attachments/attachment-store";
+} from "./assistant/attachments/attachment-store";
 import { getService } from "./services/service-registry";
 import type {
   AssistantEvent,
@@ -218,13 +218,13 @@ import {
 import { callDesktopActionRenderer } from "./desktop-action-renderer";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../shared/agent-webclient-routes";
-import { AgentPlatformPetStatusClient } from "./copilot/pet-copilot/pet-status-client";
-import { AgentPlatformPetStreamClient } from "./copilot/pet-copilot/pet-stream-client";
-import { createDesktopPetBrowserWindow } from "./copilot/pet-copilot/window";
+import { AgentPlatformPetStatusClient } from "./assistant/pet/pet-status-client";
+import { AgentPlatformPetStreamClient } from "./assistant/pet/pet-stream-client";
+import { createDesktopPetBrowserWindow } from "./assistant/pet/window";
 import {
   registerDesktopPetAssetProtocol,
   registerDesktopPetAssetProtocolScheme
-} from "./copilot/pet-copilot/pet-asset-protocol";
+} from "./assistant/pet/pet-asset-protocol";
 import {
   clampDesktopPetPosition,
   createDesktopPetState,
@@ -246,8 +246,8 @@ import {
   sanitizeDesktopPetAppearanceId,
   sanitizeDesktopPetBoundAgentKey,
   toDesktopPetSettings
-} from "./copilot/pet-copilot/desktop-pet";
-import { DesktopPetPreviewProjector, normalizeDesktopPetAgentEvent } from "./copilot/pet-copilot/desktop-pet-preview";
+} from "./assistant/pet/desktop-pet";
+import { DesktopPetPreviewProjector, normalizeDesktopPetAgentEvent } from "./assistant/pet/desktop-pet-preview";
 import {
   computeDesktopPetBoundsUpdate,
   computeDesktopPetPositionPersistence,
@@ -276,22 +276,22 @@ import { registerMarketplaceIpcHandlers } from "./ipc/marketplace-handlers";
 import { listWebEntries, registerWebIpcHandlers } from "./ipc/web-handlers";
 import {
   isQuickAssistantMediaPermissionAllowed,
-} from "./copilot/quick-copilot/quick-copilot";
-import { QuickCopilotWindowController } from "./copilot/quick-copilot/window";
-import { registerQuickCopilotIpcHandlers } from "./copilot/quick-copilot/ipc";
+} from "./assistant/quick/quick-copilot";
+import { QuickCopilotWindowController } from "./assistant/quick/window";
+import { registerQuickCopilotIpcHandlers } from "./assistant/quick/ipc";
 import {
   createAgentWebclientRoute,
   scheduleQuickAgentOpenRequest
-} from "./copilot/quick-copilot/routing";
+} from "./assistant/quick/routing";
 import {
   registerQuickCopilotShortcut,
   unregisterQuickCopilotShortcut
-} from "./copilot/quick-copilot/shortcut";
+} from "./assistant/quick/shortcut";
 import {
   captureAssistantScreenshot as captureCopilotScreenshot,
   captureScreenshotForBridge,
   type ScreenshotCaptureSource
-} from "./copilot/sidebar-copilot/screenshot";
+} from "./assistant/copilot/screenshot";
 import { getMainLocaleSettings, initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
 import { isSupportedLocale } from "../shared/i18n";
 import { createStartupRestoreController, STARTUP_RESTORE_SERVICE_ORDER } from "./startup-restore";

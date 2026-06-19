@@ -4,7 +4,7 @@ import type { App } from "electron";
 import type { ServiceDefinition } from "./manifest-utils";
 import { getAllServices } from "./services/service-registry";
 import { getDesktopWebappsDataRoot, getServiceStateRoot } from "./user-paths";
-import { webappRuntime } from "./webs/webapp-runtime";
+import { webappRuntime } from "./webs/webapps/runtime";
 import { t } from "./i18n/main-i18n";
 
 type AgentPlatformCaller = (app: App, path: string, options?: { method?: string; body?: unknown }) => Promise<unknown>;

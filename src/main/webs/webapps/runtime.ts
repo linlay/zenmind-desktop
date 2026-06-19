@@ -11,22 +11,22 @@ import type {
   WebappLogReadResult,
   WebappLogTarget,
   WebappRuntimeState
-} from "../../shared/contracts";
-import { buildServiceEnv, resolveNodeBin } from "../services/manager/command-env";
-import { readServiceLogFile } from "../services/manager/logs";
-import { isProcessRunning, terminateProcessTree } from "../services/manager/process-cleanup";
-import { pidMatchesInstallDir } from "../services/manager/process-identity";
-import { delay, probeHttpUrl } from "../services/manager/service-probes";
+} from "../../../shared/contracts";
+import { buildServiceEnv, resolveNodeBin } from "../../services/manager/command-env";
+import { readServiceLogFile } from "../../services/manager/logs";
+import { isProcessRunning, terminateProcessTree } from "../../services/manager/process-cleanup";
+import { pidMatchesInstallDir } from "../../services/manager/process-identity";
+import { delay, probeHttpUrl } from "../../services/manager/service-probes";
 import {
   getDesktopWebappLogsRoot,
   getDesktopWebappStateRoot
-} from "../user-paths";
-import { resolveWebappRelativePath } from "./web-common";
+} from "../../user-paths";
+import { resolveWebappRelativePath } from "../common";
 import {
   getWebappDir,
   readWebappItems
-} from "./webapp-store";
-import { t } from "../i18n/main-i18n";
+} from "./store";
+import { t } from "../../i18n/main-i18n";
 
 const HOST = "127.0.0.1";
 const STATE_FILE = "runtime.json";

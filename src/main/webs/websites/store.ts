@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import type { WebsiteEntry, WebsiteInput } from "../../shared/contracts";
-import { getDesktopWebsitesDataRoot } from "../user-paths";
+import type { WebsiteEntry, WebsiteInput } from "../../../shared/contracts";
+import { getDesktopWebsitesDataRoot } from "../../user-paths";
 import {
   createWebId,
   createWebsiteEntryKey,
@@ -16,8 +16,8 @@ import {
   sortWebEntries,
   toIsoTimestamp,
   toTimestamp
-} from "./web-common";
-import { ensureWebsMigration } from "./web-migration";
+} from "../common";
+import { ensureWebsMigration } from "../migration";
 
 export const WEBSITE_FILE = "website.json";
 

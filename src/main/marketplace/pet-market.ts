@@ -15,7 +15,7 @@ import {
   listUserDesktopPets,
   readDesktopPetStoredState,
   saveDesktopPetSettings
-} from "../copilot/pet-copilot/desktop-pet";
+} from "../assistant/pet/desktop-pet";
 import { t } from "../i18n/main-i18n";
 import { getDesktopPetsDataRoot } from "../user-paths";
 import {

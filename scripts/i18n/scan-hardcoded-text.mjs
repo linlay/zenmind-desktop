@@ -44,7 +44,7 @@ const allowedBlocks = [
     reason: "desktop pet generic preview matcher"
   },
   {
-    file: "src/main/copilot/pet-copilot/desktop-pet-preview.ts",
+    file: "src/main/assistant/pet/desktop-pet-preview.ts",
     start: /DONE_FALLBACK_SUMMARY|GENERIC_DONE_SUMMARIES/u,
     end: /\]\);|DONE_FALLBACK_SUMMARY/u,
     reason: "desktop pet done-summary matcher"

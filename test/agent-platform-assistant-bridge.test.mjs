@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { AgentPlatformAssistantBridge } = require("../dist-electron/main/copilot/core/agent-platform-bridge.js");
+const { AgentPlatformAssistantBridge } = require("../dist-electron/main/assistant/core/agent-platform-bridge.js");
 const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 
 function makeApp(homeDir = "/tmp") {

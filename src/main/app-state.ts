@@ -6,12 +6,12 @@ import type {
   DesktopPetState,
   DesktopPetWindowMode
 } from "../shared/contracts";
-import type { AssistantNavigationStatusClient } from "./copilot/core/assistant-navigation-status-client";
+import type { AssistantNavigationStatusClient } from "./assistant/core/assistant-navigation-status-client";
 import type {
   DesktopPetBoundAgentStatus,
   DesktopPetLocalStatus,
   readDesktopPetStoredState
-} from "./copilot/pet-copilot/desktop-pet";
+} from "./assistant/pet/desktop-pet";
 import type { TaskBoardRuntime } from "./task-board-runtime";
 
 type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
