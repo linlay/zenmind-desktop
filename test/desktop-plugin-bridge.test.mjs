@@ -52,7 +52,7 @@ const {
 const {
   DEFAULT_DESKTOP_PET_DISPLAY_NAME
 } = require("../dist-electron/shared/desktop-pet.js");
-const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
+const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 function createApp(root) {
   return {

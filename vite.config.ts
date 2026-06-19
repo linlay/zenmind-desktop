@@ -6,19 +6,22 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 import process from "node:process";
 import {
-  BRAND_RUNTIME_ASSET_DIR,
   BRAND_RUNTIME_ASSET_FILENAMES,
+  brandRendererDir,
+  brandRuntimeAssetDir,
   copyBrandDesktopPetAssets,
   copyBrandRuntimeIconAssets,
   loadBrandConfig,
   renderRendererIndexHtml,
-  resolveBrandId
+  resolveBrandId,
+  runtimeBrandPayload
 } from "./scripts/lib/brand-config.mjs";
 
 const projectRoot = path.resolve(__dirname);
 const brand = loadBrandConfig(projectRoot, resolveBrandId([], process.env));
 const brandDesktopPetRoot = path.resolve(projectRoot, brand.source.desktopPetRoot);
-const brandRuntimeAssetsRoot = path.resolve(projectRoot, BRAND_RUNTIME_ASSET_DIR);
+const brandRuntimeAssetsRoot = path.resolve(brandRuntimeAssetDir(projectRoot, brand));
+const rendererOutputRoot = path.resolve(brandRendererDir(projectRoot, brand));
 
 const BRAND_DESKTOP_PET_URL_PREFIX = "/desktop-pet/";
 const BRAND_RUNTIME_ASSET_URL_PATHS = new Set(
@@ -146,7 +149,8 @@ function brandRuntimeIconPlugin(): Plugin {
     closeBundle() {
       copyBrandRuntimeIconAssets({
         rootDir: projectRoot,
-        outputDir: path.join(projectRoot, "dist-renderer")
+        brand,
+        outputDir: rendererOutputRoot
       });
     }
   };
@@ -163,7 +167,7 @@ function brandDesktopPetPlugin(): Plugin {
       copyBrandDesktopPetAssets({
         rootDir: projectRoot,
         brand,
-        outputDir: path.join(projectRoot, "dist-renderer", "desktop-pet")
+        outputDir: path.join(rendererOutputRoot, "desktop-pet")
       });
     }
   };
@@ -181,6 +185,9 @@ function brandRendererIndexPlugin(): Plugin {
 export default defineConfig({
   base: "./",
   plugins: [brandRendererIndexPlugin(), brandRuntimeIconPlugin(), brandDesktopPetPlugin(), react()],
+  define: {
+    __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(brand))
+  },
   resolve: {
     alias: {
       "@renderer": path.resolve(projectRoot, "src/renderer"),
@@ -206,7 +213,7 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: "dist-renderer",
+    outDir: rendererOutputRoot,
     emptyOutDir: true
   }
 });

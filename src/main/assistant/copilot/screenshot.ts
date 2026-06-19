@@ -8,7 +8,7 @@ import {
   type NativeImage,
   type Rectangle
 } from "electron";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { t } from "../../i18n/main-i18n";
 import { createAssistantAttachmentFromImageBuffer } from "../attachments/attachment-store";
 

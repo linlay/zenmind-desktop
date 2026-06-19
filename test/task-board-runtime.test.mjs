@@ -6,7 +6,7 @@ import path from "node:path";
 
 process.env.ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS = "20";
 
-const { APP_BRAND } = await import("../dist-electron/shared/generated/brand.js");
+const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const { TaskBoardRuntime, readTaskBoardSettings, readTaskBoardWsConfig } = await import("../dist-electron/main/task-board-runtime.js");
 
 function createTempApp(t) {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
+import { brandResourcesDir, loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
@@ -31,8 +31,9 @@ function readDesktopVersion(rootDir) {
   return version;
 }
 
-function bundledEnvRoot(rootDir) {
-  return path.join(rootDir, "build", "resources", "env");
+function bundledEnvRoot(rootDir, env = process.env) {
+  const brandId = resolveBrandId([], env);
+  return path.join(brandResourcesDir(rootDir, brandId), "env");
 }
 
 function resolveBrandRuntimeRootDirName(rootDir, env) {
@@ -176,7 +177,7 @@ export async function prepareBundledEnvZip({
   env = process.env,
   logger = console
 } = {}) {
-  const envRoot = bundledEnvRoot(rootDir);
+  const envRoot = bundledEnvRoot(rootDir, env);
   const expectedVersion = readDesktopVersion(rootDir);
   const sourceZipPath = resolveEnvZipPath(rootDir, env);
   const runtimeRootDirName = resolveBrandRuntimeRootDirName(rootDir, env);

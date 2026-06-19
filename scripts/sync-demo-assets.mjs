@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { brandResourcesDir, resolveBrandId } from "./lib/brand-config.mjs";
 
 const projectRoot = process.cwd();
 
@@ -12,8 +13,8 @@ export const BUNDLED_DEMO_WEBAPP_TEMPLATES_DIR_NAME = "webapp-templates";
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["", "0", "false", "no", "off"]);
 
-function bundledDemoRoot(rootDir) {
-  return path.join(rootDir, "build", "resources", "demo");
+function bundledDemoRoot(rootDir, env = process.env) {
+  return path.join(brandResourcesDir(rootDir, resolveBrandId([], env)), "demo");
 }
 
 function webappTemplatesSourceRoot(rootDir) {
@@ -56,7 +57,7 @@ export async function prepareBundledDemoAssets({
   logger = console
 } = {}) {
   const includeDemo = parseDemoFlag(env);
-  const demoRoot = bundledDemoRoot(rootDir);
+  const demoRoot = bundledDemoRoot(rootDir, env);
 
   fs.rmSync(demoRoot, { recursive: true, force: true });
   fs.mkdirSync(demoRoot, { recursive: true });

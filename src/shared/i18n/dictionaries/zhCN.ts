@@ -1,4 +1,4 @@
-import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
+import { APP_BRAND, PRODUCT_NAME } from "../../brand";
 
 const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["zh-CN"];
 const runtimeRootDisplay = `~/${APP_BRAND.paths.runtimeRootDirName}`;

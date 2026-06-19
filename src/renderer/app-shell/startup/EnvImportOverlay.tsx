@@ -1,5 +1,5 @@
 import { useI18n } from "../../i18n/useI18n";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { BrandMark } from "../../components/BrandMark";
 
 export function EnvImportOverlay({

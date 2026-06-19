@@ -32,7 +32,7 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
-import { APP_BRAND } from "../../../shared/generated/brand";
+import { APP_BRAND } from "../../../shared/brand";
 import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
 import { DesktopPetSseParser } from "../pet/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";

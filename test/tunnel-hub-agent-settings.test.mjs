@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const { APP_BRAND } = await import("../dist-electron/shared/generated/brand.js");
+const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const {
   recordTunnelHubRegistrationResult,
   readTunnelHubAgentSettings,

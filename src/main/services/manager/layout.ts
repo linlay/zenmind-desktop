@@ -10,7 +10,7 @@ import {
   getServicesRoot,
   getServiceStateRoot
 } from "../../user-paths";
-import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
+import { STORAGE_NAMESPACE } from "../../../shared/brand";
 
 const INITIALIZATION_STATE_DIRNAME = `.${STORAGE_NAMESPACE}`;
 const INITIALIZATION_STATE_FILE = "init-state.json";

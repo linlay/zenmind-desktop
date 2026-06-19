@@ -6,7 +6,7 @@ import type {
   ManifestDesktopCapabilityProvider,
   ServiceId
 } from "../../../shared/contracts";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { getDesktopDeviceId } from "../../device-identity";
 import { readEnvFile } from "../../env-file";
 import type { ServiceDefinition } from "../../manifest-utils";

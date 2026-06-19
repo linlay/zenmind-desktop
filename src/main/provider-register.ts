@@ -4,7 +4,7 @@ import path from "node:path";
 import type { App } from "electron";
 import yaml from "js-yaml";
 import { getDesktopDeviceId } from "./device-identity";
-import { APP_BRAND } from "../shared/generated/brand";
+import { APP_BRAND } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
 
 const PROVIDER_REGISTER_FILE = "provider-register.json";

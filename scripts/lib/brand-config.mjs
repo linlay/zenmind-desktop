@@ -5,12 +5,14 @@ export const DEFAULT_BRAND_ID = "cutej";
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
 export const INSTALLER_SHUTDOWN_ARG = "--desktop-shutdown-for-update";
 export const LEGACY_INSTALLER_SHUTDOWN_ARGS = ["--zenmind-shutdown-for-update"];
+export const DESKTOP_PACKAGE_NAME = "desktop";
 
 const PACKAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const BRAND_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
 const APP_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]+$/u;
 const REQUIRED_ICON_FILES = ["app-icon.svg", "tray-icon.svg"];
-export const BRAND_RUNTIME_ASSET_DIR = "build/generated/brand-assets";
+export const BRAND_BUILD_ROOT_DIR = "build/brands";
+export const BRAND_RUNTIME_ASSET_DIR_NAME = "brand-assets";
 export const BRAND_RUNTIME_ASSET_FILENAMES = [
   "brand-icon.png",
   "brand-mark.png",
@@ -35,16 +37,28 @@ const DESKTOP_PET_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const DESKTOP_PET_SIGNATURE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 
 export function resolveBrandId(argv = process.argv.slice(2), env = process.env) {
+  return normalizeBrandId(resolveExplicitBrandId(argv, env) || DEFAULT_BRAND_ID);
+}
+
+export function resolveRequiredBrandId(argv = process.argv.slice(2), env = process.env, label = "build") {
+  const explicitBrandId = resolveExplicitBrandId(argv, env);
+  if (!explicitBrandId) {
+    throw new Error(`${label} requires an explicit brand. Set BRAND=<brand> or pass --brand=<brand>.`);
+  }
+  return normalizeBrandId(explicitBrandId);
+}
+
+function resolveExplicitBrandId(argv = process.argv.slice(2), env = process.env) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--brand" && argv[index + 1]) {
-      return normalizeBrandId(argv[index + 1]);
+      return argv[index + 1];
     }
     if (arg.startsWith("--brand=")) {
-      return normalizeBrandId(arg.slice("--brand=".length));
+      return arg.slice("--brand=".length);
     }
   }
-  return normalizeBrandId(env.BRAND || DEFAULT_BRAND_ID);
+  return env.BRAND;
 }
 
 export function loadBrandConfig(rootDir = process.cwd(), brandId = resolveBrandId()) {
@@ -65,12 +79,13 @@ export function loadBrandConfig(rootDir = process.cwd(), brandId = resolveBrandI
 
 export function syncBrandArtifacts({
   rootDir = process.cwd(),
-  brandId = resolveBrandId()
+  brandId = resolveBrandId(),
+  target = currentBrandBuildTarget()
 } = {}) {
   const brand = loadBrandConfig(rootDir, brandId);
 
   writeGeneratedBrandFiles(rootDir, brand);
-  writeElectronBuilderConfig(rootDir, brand);
+  writeElectronBuilderConfig(rootDir, brand, target);
   writeInstallerInclude(rootDir, brand);
   writeMacUninstallScript(rootDir, brand);
   cleanupPublicBrandIconArtifacts(rootDir);
@@ -83,7 +98,7 @@ export function removeStaleRendererBuild({
   brandId = resolveBrandId(),
   brand = loadBrandConfig(rootDir, brandId)
 } = {}) {
-  const rendererRoot = path.join(rootDir, "dist-renderer");
+  const rendererRoot = brandRendererDir(rootDir, brand);
   if (!fs.existsSync(rendererRoot)) {
     return false;
   }
@@ -121,7 +136,101 @@ export function assertBrandArtifactsConsistent({
 }
 
 export function electronBuilderConfigPath(rootDir = process.cwd(), brandId = resolveBrandId()) {
-  return path.join(rootDir, "build", `electron-builder.${normalizeBrandId(brandId)}.json`);
+  return path.join(rootDir, brandBuildRelativePath(brandId, "electron-builder.json"));
+}
+
+export function normalizeBrandBuildTarget(target = currentBrandBuildTarget()) {
+  return {
+    os: normalizeTargetOs(target.os ?? process.platform),
+    arch: normalizeTargetArch(target.arch ?? process.arch)
+  };
+}
+
+export function brandBuildTargetKey(target = currentBrandBuildTarget()) {
+  const normalized = normalizeBrandBuildTarget(target);
+  return `${normalized.os}-${normalized.arch}`;
+}
+
+export function currentBrandBuildTarget() {
+  return {
+    os: normalizeTargetOs(process.platform),
+    arch: normalizeTargetArch(process.arch)
+  };
+}
+
+export function brandBuildRelativePath(brandOrId, ...segments) {
+  return [BRAND_BUILD_ROOT_DIR, brandIdValue(brandOrId), ...segments].join("/");
+}
+
+export function brandBuildRoot(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId));
+}
+
+export function brandGeneratedDir(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, "generated"));
+}
+
+export function brandRuntimeAssetDir(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, BRAND_RUNTIME_ASSET_DIR_NAME));
+}
+
+export function brandIconDir(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, "icons"));
+}
+
+export function brandInstallerDir(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, "installer"));
+}
+
+export function brandResourcesDir(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, "resources"));
+}
+
+export function brandRendererDir(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, "renderer"));
+}
+
+export function brandBundleDir(rootDir, brandOrId) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, "bundle"));
+}
+
+export function brandBundleElectronDir(rootDir, brandOrId) {
+  return path.join(brandBundleDir(rootDir, brandOrId), "dist-electron");
+}
+
+export function brandStageAppDir(rootDir, brandOrId, target = currentBrandBuildTarget()) {
+  return path.join(rootDir, brandBuildRelativePath(brandOrId, "app", brandBuildTargetKey(target)));
+}
+
+function brandIdValue(brandOrId) {
+  return normalizeBrandId(typeof brandOrId === "string" ? brandOrId : brandOrId?.id);
+}
+
+function normalizeTargetOs(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  switch (normalized) {
+    case "darwin":
+    case "linux":
+    case "win32":
+      return normalized;
+    case "windows":
+      return "win32";
+    default:
+      throw new Error(`unsupported target os: ${value}`);
+  }
+}
+
+function normalizeTargetArch(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  switch (normalized) {
+    case "x64":
+    case "arm64":
+      return normalized;
+    case "amd64":
+      return "x64";
+    default:
+      throw new Error(`unsupported target arch: ${value}`);
+  }
 }
 
 function normalizeBrandId(value) {
@@ -222,32 +331,35 @@ function htmlBrandProblems(content, label, brand, rootDir) {
 
 function generatedBrandProblems(rootDir, brand) {
   const problems = [];
-  const generatedJsonPath = path.join(rootDir, "build", "generated", "brand.json");
-  const generatedTsPath = path.join(rootDir, "src", "shared", "generated", "brand.ts");
+  const generatedDir = brandGeneratedDir(rootDir, brand);
+  const generatedJsonPath = path.join(generatedDir, "brand.json");
+  const generatedTsPath = path.join(generatedDir, "brand.ts");
+  const generatedJsonLabel = path.relative(rootDir, generatedJsonPath).replace(/\\/gu, "/");
+  const generatedTsLabel = path.relative(rootDir, generatedTsPath).replace(/\\/gu, "/");
 
-  const jsonExistsProblems = assertFileExists(generatedJsonPath, "build/generated/brand.json");
+  const jsonExistsProblems = assertFileExists(generatedJsonPath, generatedJsonLabel);
   problems.push(...jsonExistsProblems);
   if (jsonExistsProblems.length === 0) {
     const generatedJson = readJson(generatedJsonPath);
     if (generatedJson.id !== brand.id) {
-      problems.push(`build/generated/brand.json id is ${generatedJson.id}, expected ${brand.id}`);
+      problems.push(`${generatedJsonLabel} id is ${generatedJson.id}, expected ${brand.id}`);
     }
     if (generatedJson.productName !== brand.productName) {
       problems.push(
-        `build/generated/brand.json productName is ${generatedJson.productName}, expected ${brand.productName}`
+        `${generatedJsonLabel} productName is ${generatedJson.productName}, expected ${brand.productName}`
       );
     }
   }
 
-  const tsExistsProblems = assertFileExists(generatedTsPath, "src/shared/generated/brand.ts");
+  const tsExistsProblems = assertFileExists(generatedTsPath, generatedTsLabel);
   problems.push(...tsExistsProblems);
   if (tsExistsProblems.length === 0) {
     const generatedTs = fs.readFileSync(generatedTsPath, "utf8");
     if (!generatedTs.includes(`"id": "${brand.id}"`)) {
-      problems.push(`src/shared/generated/brand.ts does not contain id ${brand.id}`);
+      problems.push(`${generatedTsLabel} does not contain id ${brand.id}`);
     }
     if (!generatedTs.includes(`"productName": "${brand.productName}"`)) {
-      problems.push(`src/shared/generated/brand.ts does not contain productName ${brand.productName}`);
+      problems.push(`${generatedTsLabel} does not contain productName ${brand.productName}`);
     }
   }
 
@@ -301,9 +413,10 @@ function listRelativeFiles(rootDir) {
 
 function desktopPetDistProblems(rootDir, brand) {
   const sourceRoot = path.join(rootDir, brand.source.desktopPetRoot);
-  const distRoot = path.join(rootDir, "dist-renderer", "desktop-pet");
+  const rendererRelativePath = brandBuildRelativePath(brand, "renderer");
+  const distRoot = path.join(rootDir, rendererRelativePath, "desktop-pet");
   if (!fs.existsSync(distRoot) || !fs.statSync(distRoot).isDirectory()) {
-    return [`dist-renderer/desktop-pet is missing for ${brand.id}`];
+    return [`${rendererRelativePath}/desktop-pet is missing for ${brand.id}`];
   }
 
   const problems = [];
@@ -315,10 +428,10 @@ function desktopPetDistProblems(rootDir, brand) {
   const unexpectedFiles = distFiles.filter((fileName) => !sourceFileSet.has(fileName));
 
   if (missingFiles.length > 0) {
-    problems.push(`dist-renderer/desktop-pet is missing ${missingFiles.join(", ")} from ${brand.source.desktopPetRoot}`);
+    problems.push(`${rendererRelativePath}/desktop-pet is missing ${missingFiles.join(", ")} from ${brand.source.desktopPetRoot}`);
   }
   if (unexpectedFiles.length > 0) {
-    problems.push(`dist-renderer/desktop-pet has stale files for ${brand.id}: ${unexpectedFiles.join(", ")}`);
+    problems.push(`${rendererRelativePath}/desktop-pet has stale files for ${brand.id}: ${unexpectedFiles.join(", ")}`);
   }
 
   for (const fileName of sourceFiles) {
@@ -328,7 +441,7 @@ function desktopPetDistProblems(rootDir, brand) {
     const sourcePath = path.join(sourceRoot, fileName);
     const distPath = path.join(distRoot, fileName);
     if (!filesHaveSameBytes(sourcePath, distPath)) {
-      problems.push(`dist-renderer/desktop-pet/${fileName} does not match ${brand.source.desktopPetRoot}/${fileName}`);
+      problems.push(`${rendererRelativePath}/desktop-pet/${fileName} does not match ${brand.source.desktopPetRoot}/${fileName}`);
     }
   }
 
@@ -336,20 +449,21 @@ function desktopPetDistProblems(rootDir, brand) {
 }
 
 function distRendererProblems(rootDir, brand) {
-  const rendererRoot = path.join(rootDir, "dist-renderer");
+  const rendererRoot = brandRendererDir(rootDir, brand);
+  const rendererRelativePath = brandBuildRelativePath(brand, "renderer");
   if (!fs.existsSync(rendererRoot)) {
     return [];
   }
 
   const problems = [];
   const distRendererIndexPath = path.join(rendererRoot, "index.html");
-  const indexExistsProblems = assertFileExists(distRendererIndexPath, "dist-renderer/index.html");
+  const indexExistsProblems = assertFileExists(distRendererIndexPath, `${rendererRelativePath}/index.html`);
   problems.push(...indexExistsProblems);
   if (indexExistsProblems.length === 0) {
     problems.push(
       ...htmlBrandProblems(
         fs.readFileSync(distRendererIndexPath, "utf8"),
-        "dist-renderer/index.html",
+        `${rendererRelativePath}/index.html`,
         brand,
         rootDir
       )
@@ -357,20 +471,20 @@ function distRendererProblems(rootDir, brand) {
   }
 
   const distTrayIconSvgPath = path.join(rendererRoot, "tray-icon.svg");
-  const generatedTrayIconSvgPath = path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "tray-icon.svg");
+  const generatedTrayIconSvgPath = path.join(brandRuntimeAssetDir(rootDir, brand), "tray-icon.svg");
   if (
     fs.existsSync(distTrayIconSvgPath) &&
     fs.existsSync(generatedTrayIconSvgPath) &&
     !filesHaveSameBytes(distTrayIconSvgPath, generatedTrayIconSvgPath)
   ) {
-    problems.push(`dist-renderer/tray-icon.svg does not match ${BRAND_RUNTIME_ASSET_DIR}/tray-icon.svg`);
+    problems.push(`${rendererRelativePath}/tray-icon.svg does not match ${brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "tray-icon.svg")}`);
   }
 
   for (const fileName of BRAND_RUNTIME_ASSET_FILENAMES) {
-    const generatedPath = path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, fileName);
+    const generatedPath = path.join(brandRuntimeAssetDir(rootDir, brand), fileName);
     const distPath = path.join(rendererRoot, fileName);
     if (fs.existsSync(generatedPath) && fs.existsSync(distPath) && !filesHaveSameBytes(generatedPath, distPath)) {
-      problems.push(`dist-renderer/${fileName} does not match ${BRAND_RUNTIME_ASSET_DIR}/${fileName}`);
+      problems.push(`${rendererRelativePath}/${fileName} does not match ${brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, fileName)}`);
     }
   }
 
@@ -381,30 +495,31 @@ function distRendererProblems(rootDir, brand) {
 
 function brandRuntimeIconProblems(rootDir, brand) {
   const problems = [];
-  const generatedTrayIconSvgPath = path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "tray-icon.svg");
+  const generatedAssetRoot = brandRuntimeAssetDir(rootDir, brand);
+  const generatedTrayIconSvgPath = path.join(generatedAssetRoot, "tray-icon.svg");
   const brandTrayIconSvgPath = path.join(rootDir, brand.icons.trayIconSvg);
 
   problems.push(
     ...assertNonEmptyFile(
-      path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "brand-icon.png"),
-      `${BRAND_RUNTIME_ASSET_DIR}/brand-icon.png`
+      path.join(generatedAssetRoot, "brand-icon.png"),
+      brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-icon.png")
     ),
     ...assertNonEmptyFile(
-      path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "brand-mark.png"),
-      `${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png`
+      path.join(generatedAssetRoot, "brand-mark.png"),
+      brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-mark.png")
     ),
     ...assertNonEmptyFile(
-      path.join(rootDir, BRAND_RUNTIME_ASSET_DIR, "tray-icon.png"),
-      `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png`
+      path.join(generatedAssetRoot, "tray-icon.png"),
+      brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "tray-icon.png")
     ),
-    ...assertFileExists(generatedTrayIconSvgPath, `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.svg`)
+    ...assertFileExists(generatedTrayIconSvgPath, brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "tray-icon.svg"))
   );
 
   if (fs.existsSync(generatedTrayIconSvgPath)) {
     const generatedTrayIconSvg = fs.readFileSync(generatedTrayIconSvgPath, "utf8");
     const brandTrayIconSvg = fs.readFileSync(brandTrayIconSvgPath, "utf8");
     if (generatedTrayIconSvg !== brandTrayIconSvg) {
-      problems.push(`${BRAND_RUNTIME_ASSET_DIR}/tray-icon.svg does not match ${brand.icons.trayIconSvg}`);
+      problems.push(`${brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "tray-icon.svg")} does not match ${brand.icons.trayIconSvg}`);
     }
   }
 
@@ -415,7 +530,7 @@ function stalePublicBrandIconProblems(rootDir) {
   return BRAND_RUNTIME_ASSET_FILENAMES
     .map((fileName) => path.join(rootDir, "public", fileName))
     .filter((filePath) => fs.existsSync(filePath))
-    .map((filePath) => `${path.relative(rootDir, filePath)} is stale; active brand icons live in ${BRAND_RUNTIME_ASSET_DIR}`);
+    .map((filePath) => `${path.relative(rootDir, filePath)} is stale; active brand icons live under ${BRAND_BUILD_ROOT_DIR}/<brand>/${BRAND_RUNTIME_ASSET_DIR_NAME}`);
 }
 
 function isRecord(value) {
@@ -739,7 +854,7 @@ function validateBrandIcons(rootDir, brandRoot) {
   };
 }
 
-function runtimeBrandPayload(brand) {
+export function runtimeBrandPayload(brand) {
   return {
     id: brand.id,
     packageName: brand.packageName,
@@ -794,13 +909,15 @@ export function cleanupPublicBrandIconArtifacts(rootDir = process.cwd()) {
 
 export function copyBrandRuntimeIconAssets({
   rootDir = process.cwd(),
+  brandId = resolveBrandId(),
+  brand = loadBrandConfig(rootDir, brandId),
   outputDir
 } = {}) {
   if (typeof outputDir !== "string" || !outputDir.trim()) {
     throw new Error("copyBrandRuntimeIconAssets requires outputDir");
   }
 
-  const sourceRoot = path.resolve(rootDir, BRAND_RUNTIME_ASSET_DIR);
+  const sourceRoot = path.resolve(brandRuntimeAssetDir(rootDir, brand));
   const targetRoot = path.resolve(outputDir);
   if (containsPath(sourceRoot, targetRoot) || containsPath(targetRoot, sourceRoot)) {
     throw new Error(
@@ -822,9 +939,10 @@ export function copyBrandRuntimeIconAssets({
 
 function writeGeneratedBrandFiles(rootDir, brand) {
   const payload = runtimeBrandPayload(brand);
-  writeJson(path.join(rootDir, "build", "generated", "brand.json"), payload);
+  const generatedRoot = brandGeneratedDir(rootDir, brand);
+  writeJson(path.join(generatedRoot, "brand.json"), payload);
   writeFileIfChanged(
-    path.join(rootDir, "src", "shared", "generated", "brand.ts"),
+    path.join(generatedRoot, "brand.ts"),
     [
       `export const APP_BRAND = ${JSON.stringify(payload, null, 2)} as const;`,
       "",
@@ -893,12 +1011,13 @@ export function renderRendererIndexHtml(content, brand) {
   return next;
 }
 
-function electronBuilderConfig(brand) {
+function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
   return {
     appId: brand.appId,
     productName: brand.productName,
     directories: {
-      app: "build/app"
+      app: brandBuildRelativePath(brand, "app", brandBuildTargetKey(target)),
+      output: path.posix.join("dist", brand.id)
     },
     files: [
       "dist-renderer/**/*",
@@ -916,36 +1035,36 @@ function electronBuilderConfig(brand) {
     npmRebuild: false,
     extraResources: [
       {
-        from: "build/resources/services",
+        from: brandBuildRelativePath(brand, "resources", "services"),
         to: "services"
       },
       {
-        from: "build/resources/env",
+        from: brandBuildRelativePath(brand, "resources", "env"),
         to: "env"
       },
       {
-        from: "build/resources/demo",
+        from: brandBuildRelativePath(brand, "resources", "demo"),
         to: "demo"
       },
       {
-        from: `${BRAND_RUNTIME_ASSET_DIR}/brand-icon.png`,
+        from: brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-icon.png"),
         to: "brand-icon.png"
       },
       {
-        from: `${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png`,
+        from: brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-mark.png"),
         to: "brand-mark.png"
       },
       {
-        from: `${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png`,
+        from: brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "tray-icon.png"),
         to: "tray-icon.png"
       },
       {
-        from: "build/generated/uninstall.sh",
+        from: brandBuildRelativePath(brand, "installer", "uninstall.sh"),
         to: "uninstall.sh"
       }
     ],
     mac: {
-      icon: "build/icons/icon.icns",
+      icon: brandBuildRelativePath(brand, "icons", "icon.icns"),
       extendInfo: {
         NSMicrophoneUsageDescription: brand.mac.microphoneUsageDescription,
         NSSpeechRecognitionUsageDescription: brand.mac.speechRecognitionUsageDescription
@@ -957,19 +1076,19 @@ function electronBuilderConfig(brand) {
     electronLanguages: ["zh-CN", "en-US"],
     afterPack: "./scripts/fix-mac-sign.js",
     win: {
-      icon: "build/icons/icon.ico",
+      icon: brandBuildRelativePath(brand, "icons", "icon.ico"),
       target: ["nsis"]
     },
     nsis: {
       oneClick: false,
       allowToChangeInstallationDirectory: true,
-      include: "build/installer.nsh"
+      include: brandBuildRelativePath(brand, "installer", "installer.nsh")
     }
   };
 }
 
-function writeElectronBuilderConfig(rootDir, brand) {
-  writeJson(electronBuilderConfigPath(rootDir, brand.id), electronBuilderConfig(brand));
+function writeElectronBuilderConfig(rootDir, brand, target) {
+  writeJson(electronBuilderConfigPath(rootDir, brand.id), electronBuilderConfig(brand, target));
 }
 
 function escapeNsisText(value) {
@@ -1035,7 +1154,7 @@ removeDesktopData:
 doneDataCleanup:
 !macroend
 `;
-  writeFileIfChanged(path.join(rootDir, "build", "installer.nsh"), content);
+  writeFileIfChanged(path.join(brandInstallerDir(rootDir, brand), "installer.nsh"), content);
 }
 
 function shellDoubleQuoted(value) {
@@ -1102,7 +1221,7 @@ fi
 
 printf '%s\\n' "$APP_NAME uninstall finished."
 `;
-  const scriptPath = path.join(rootDir, "build", "generated", "uninstall.sh");
+  const scriptPath = path.join(brandInstallerDir(rootDir, brand), "uninstall.sh");
   writeFileIfChanged(scriptPath, content);
   fs.chmodSync(scriptPath, 0o755);
 }

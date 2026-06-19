@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { DesktopAppInfo } from "../shared/contracts";
-import { PRODUCT_NAME } from "../shared/generated/brand";
+import { PRODUCT_NAME } from "../shared/brand";
 
 type DesktopBuildMetadata = {
   productName?: unknown;

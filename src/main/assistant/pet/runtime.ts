@@ -6,7 +6,7 @@ import type {
   DesktopPetMessageItem,
   DesktopPetTaskItem
 } from "../../../shared/contracts";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { issueAgentAccessToken as defaultIssueAgentAccessToken } from "../../agent-auth";
 import type { MainAppState } from "../../app-state";
 import {

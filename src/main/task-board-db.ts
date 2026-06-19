@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { TaskBoardIssue } from "../shared/contracts";
-import { APP_BRAND } from "../shared/generated/brand";
+import { APP_BRAND } from "../shared/brand";
 
 type AppPathProvider = {
   getPath(name: "home"): string;

@@ -1,5 +1,5 @@
 import type { AssistantPageContext } from "../../../shared/contracts";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 
 export type AssistantPageContextProvider = () => Promise<AssistantPageContext | null>;
 

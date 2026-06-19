@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import { App } from "./App";
-import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../shared/generated/brand";
+import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../shared/brand";
 import "./styles.css";
 
 document.title = PRODUCT_NAME;

@@ -1,6 +1,6 @@
 import { BrowserWindow } from "electron";
 import type { ServiceOpenLogViewerRequest } from "../../shared/contracts";
-import { PRODUCT_NAME } from "../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../shared/brand";
 
 type LogViewerWindowControllerOptions = {
   preloadPath: string;

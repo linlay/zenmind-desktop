@@ -6,7 +6,7 @@ import { clearServices, getService, registerService, unregisterService } from ".
 import { fixShellScriptPermissions, initializeService } from "./services/manager";
 import { extractArchiveToDir } from "./archive-utils";
 import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
-import { STORAGE_NAMESPACE } from "../shared/generated/brand";
+import { STORAGE_NAMESPACE } from "../shared/brand";
 import { removePluginResources } from "./plugin-resources";
 import { t } from "./i18n/main-i18n";
 import { assertPluginNotRetired, isRetiredPluginId } from "./retired-plugins";

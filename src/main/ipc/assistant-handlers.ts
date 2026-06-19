@@ -5,7 +5,7 @@ import {
   getAvailableFilePath
 } from "../download-paths";
 import { buildCoderProjectAgentCreateRequest } from "../assistant/core/coder-project";
-import { PRODUCT_NAME } from "../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../shared/brand";
 import { t } from "../i18n/main-i18n";
 
 export interface AssistantIpcHandlerOptions {

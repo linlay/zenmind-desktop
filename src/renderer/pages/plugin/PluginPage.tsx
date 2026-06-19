@@ -53,7 +53,7 @@ import {
   readAllowedValues,
   readFormFields,
 } from "../../copilot/page-context/embeddedWebActions";
-import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
+import { STORAGE_NAMESPACE } from "../../../shared/brand";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";

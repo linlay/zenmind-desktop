@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import JSZip from "jszip";
-import { APP_BRAND } from "../shared/generated/brand";
+import { APP_BRAND } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
 
 export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";

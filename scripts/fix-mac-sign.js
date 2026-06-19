@@ -129,7 +129,13 @@ function patchWindowsExecutableIcon(context) {
   }
 
   const exePath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`);
-  const iconPath = path.join(getProjectRoot(context), "build", "icons", "icon.ico");
+  const configuredIconPath = context.packager?.config?.win?.icon || context.packager?.platformSpecificBuildOptions?.icon || "";
+  if (!configuredIconPath) {
+    throw new Error("Windows app icon path is missing from electron-builder config.");
+  }
+  const iconPath = path.isAbsolute(configuredIconPath)
+    ? configuredIconPath
+    : path.join(getProjectRoot(context), configuredIconPath);
   if (!fs.existsSync(exePath)) {
     throw new Error(`Windows executable not found for icon patch: ${exePath}`);
   }

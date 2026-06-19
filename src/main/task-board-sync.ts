@@ -13,7 +13,7 @@ import {
   updateTaskBoardIssueByChatId,
   updateTaskBoardIssueByRunId
 } from "./task-board-store";
-import { PRODUCT_NAME } from "../shared/generated/brand";
+import { PRODUCT_NAME } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {

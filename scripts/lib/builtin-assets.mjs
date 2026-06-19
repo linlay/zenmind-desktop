@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { brandResourcesDir, resolveBrandId } from "./brand-config.mjs";
 
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -1022,8 +1023,8 @@ export function validateBundleArchive(service, archivePath) {
   }
 }
 
-export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch, signDarwin = false } = {}) {
-  const outputRoot = path.join(projectRoot, "build", "resources", "services");
+export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch, signDarwin = false, brandId = resolveBrandId() } = {}) {
+  const outputRoot = path.join(brandResourcesDir(projectRoot, brandId), "services");
   const platform = { os, arch };
   const services = discoverBuiltinServices(platform);
   const darwinSigningIdentity = signDarwin && services.some((service) => service.platform.os === "darwin")

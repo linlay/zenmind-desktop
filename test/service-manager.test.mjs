@@ -39,7 +39,7 @@ const {
   configurePluginResources,
   __testInternals: pluginResourceInternals
 } = require("../dist-electron/main/plugin-resources.js");
-const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
+const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_IDENTITY_CENTER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";

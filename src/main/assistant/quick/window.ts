@@ -1,6 +1,6 @@
 import type { App, BrowserWindow as BrowserWindowType } from "electron";
 import { BrowserWindow, screen } from "electron";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { readAssistantSettings } from "../core/settings-store";
 import {
   getQuickAssistantWebCopilotBounds,

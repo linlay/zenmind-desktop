@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import { STORAGE_NAMESPACE } from "../shared/generated/brand";
+import { STORAGE_NAMESPACE } from "../shared/brand";
 import { readInstalledRecords, removeInstalledRecord } from "./marketplace/common";
 import { t } from "./i18n/main-i18n";
 import {

@@ -3,10 +3,14 @@ import path from "node:path";
 import { builtinModules } from "node:module";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import {
+  brandBundleElectronDir,
+  loadBrandConfig,
+  resolveBrandId,
+  runtimeBrandPayload
+} from "./lib/brand-config.mjs";
 
 const projectRoot = process.cwd();
-const srcRoot = path.join(projectRoot, "src");
-const outputRoot = path.join(projectRoot, "build", "bundle", "dist-electron");
 
 function getExternalModules() {
   const builtins = new Set();
@@ -23,7 +27,8 @@ function getExternalModules() {
 }
 
 export async function buildMainBundle(rootDir = projectRoot) {
-  const outdir = path.join(rootDir, "build", "bundle", "dist-electron");
+  const activeBrand = loadBrandConfig(rootDir, resolveBrandId());
+  const outdir = brandBundleElectronDir(rootDir, activeBrand);
   const rootSrc = path.join(rootDir, "src");
 
   fs.rmSync(outdir, { recursive: true, force: true });
@@ -44,6 +49,9 @@ export async function buildMainBundle(rootDir = projectRoot) {
     minify: true,
     sourcemap: false,
     legalComments: "none",
+    define: {
+      __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(activeBrand))
+    },
     external: getExternalModules(),
     loader: {
       ".node": "file"

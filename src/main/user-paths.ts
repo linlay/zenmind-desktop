@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type { ServiceId, ServiceKind } from "../shared/contracts";
-import { APP_BRAND } from "../shared/generated/brand";
+import { APP_BRAND } from "../shared/brand";
 
 const DESKTOP_DIRS = [
   "config",

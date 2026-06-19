@@ -1,5 +1,5 @@
 import { BrowserWindow } from "electron";
-import { PRODUCT_NAME } from "../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../shared/brand";
 
 type AgentPlatformMonitorWindowControllerOptions = {
   platform: NodeJS.Platform;

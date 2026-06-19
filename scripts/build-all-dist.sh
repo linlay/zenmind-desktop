@@ -28,7 +28,7 @@ Build latest dist/release packages for:
 
 After the selected builds finish, the script syncs Desktop builtin service
 assets into:
-  build/resources/services
+  build/brands/${BRAND:-<brand>}/resources/services
 
 Options:
   --only a,b,c     Build only selected short names.
@@ -222,7 +222,7 @@ sync_desktop_assets() {
     sync_args+=("--sign-darwin")
   fi
 
-  log "sync builtin packages into $DESKTOP_ROOT/build/resources/services"
+  log "sync builtin packages into $DESKTOP_ROOT/build/brands/${BRAND:-cutej}/resources/services"
   run_cmd_in_dir "$DESKTOP_ROOT" node "${sync_args[@]}"
 }
 

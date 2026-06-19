@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveRequiredBrandId } from "./lib/brand-config.mjs";
 
 const projectRoot = process.cwd();
-const resourcesRoot = path.join(projectRoot, "dist", "win-unpacked", "resources");
+const brandId = resolveRequiredBrandId(process.argv.slice(2), process.env, "verify-win-package");
+const resourcesRoot = path.join(projectRoot, "dist", brandId, "win-unpacked", "resources");
 const requiredRuntimePackage = "@napi-rs/canvas-win32-x64-msvc";
 const canvasRuntimePackagePattern = /@napi-rs\/canvas-(?!win32-x64-msvc\b)[^/]+/u;
 
@@ -40,7 +42,7 @@ function main() {
 
   const requiredMatch = paths.find((filePath) => filePath.includes(requiredRuntimePackage));
   if (!requiredMatch) {
-    throw new Error(`missing ${requiredRuntimePackage} in dist/win-unpacked/resources`);
+    throw new Error(`missing ${requiredRuntimePackage} in dist/${brandId}/win-unpacked/resources`);
   }
 
   const forbiddenMatches = paths.filter((filePath) => canvasRuntimePackagePattern.test(filePath));

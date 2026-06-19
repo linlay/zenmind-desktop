@@ -1,5 +1,5 @@
 import { BrowserWindow, type Rectangle } from "electron";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 
 export function createDesktopPetBrowserWindow(options: {
   bounds: Rectangle;

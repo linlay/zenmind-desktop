@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import { getServiceDisplayName, shouldShowServiceNavigationTab } from "../service-display";
-import { PRODUCT_NAME } from "../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../shared/brand";
 import { useI18n } from "../i18n/useI18n";
 
 type HeaderProps = {

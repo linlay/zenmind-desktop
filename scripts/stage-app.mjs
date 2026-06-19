@@ -3,7 +3,16 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { npmCmd, runAndWait } from "./platform/spawn.mjs";
-import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
+import {
+  DESKTOP_PACKAGE_NAME,
+  brandBundleElectronDir,
+  brandRendererDir,
+  brandStageAppDir,
+  loadBrandConfig,
+  normalizeBrandBuildTarget,
+  resolveBrandId,
+  syncBrandArtifacts
+} from "./lib/brand-config.mjs";
 import {
   createDesktopBuildMetadata,
   normalizeDesktopVersion,
@@ -11,10 +20,6 @@ import {
 } from "./lib/build-metadata.mjs";
 
 const projectRoot = process.cwd();
-const bundleRoot = path.join(projectRoot, "build", "bundle", "dist-electron");
-const rendererRoot = path.join(projectRoot, "dist-renderer");
-const stageRoot = path.join(projectRoot, "build", "app");
-const brand = loadBrandConfig(projectRoot, resolveBrandId());
 
 function parseArgs(argv) {
   const target = {
@@ -98,7 +103,10 @@ function copyDir(sourceDir, targetDir) {
   });
 }
 
-export function removeRendererWebappTemplatesFromStage(rootDir = stageRoot) {
+export function removeRendererWebappTemplatesFromStage(rootDir) {
+  if (!rootDir) {
+    throw new Error("removeRendererWebappTemplatesFromStage requires a staged app root");
+  }
   fs.rmSync(path.join(rootDir, "dist-renderer", "webapp-templates"), {
     recursive: true,
     force: true
@@ -109,19 +117,19 @@ function readDesktopPackageJson(rootDir = projectRoot) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
 }
 
-function writeStagePackageJson(rootDir, target) {
+function writeStagePackageJson(rootDir, target, stageRoot, activeBrand) {
   const desktopPackage = readDesktopPackageJson(rootDir);
   const desktopVersion = readDesktopVersion(rootDir);
   const desktopBuildMetadata = createDesktopBuildMetadata({
-    productName: brand.productName,
+    productName: activeBrand.productName,
     version: desktopVersion
   });
   const stagePackage = {
-    name: brand.packageName,
+    name: DESKTOP_PACKAGE_NAME,
     version: normalizeDesktopVersion(desktopVersion).replace(/^v/iu, ""),
-    description: brand.description,
+    description: activeBrand.description,
     main: "dist-electron/main/index.js",
-    productName: brand.productName,
+    productName: activeBrand.productName,
     author: desktopPackage.author,
     dependencies: {
       "@napi-rs/canvas": desktopPackage.dependencies?.["@napi-rs/canvas"]
@@ -220,7 +228,7 @@ function nodeModulesRoots(rootDir) {
   return roots;
 }
 
-function copyRuntimePackage(packageName) {
+function copyRuntimePackage(packageName, stageRoot) {
   const packageDir = findInstalledPackageDir(projectRoot, packageName);
   if (!packageDir) {
     throw new Error(`missing installed runtime dependency ${packageName}`);
@@ -232,16 +240,16 @@ function copyRuntimePackage(packageName) {
   copyDir(packageDir, targetDir);
 }
 
-function copyRuntimeDependencies(target) {
-  copyRuntimePackage("@napi-rs/canvas");
+function copyRuntimeDependencies(target, stageRoot) {
+  copyRuntimePackage("@napi-rs/canvas", stageRoot);
   const expectedPackage = expectedCanvasRuntimePackage(target);
   if (expectedPackage) {
-    copyRuntimePackage(expectedPackage);
+    copyRuntimePackage(expectedPackage, stageRoot);
   }
-  verifyCanvasRuntime(target);
+  verifyCanvasRuntime(target, stageRoot);
 }
 
-function verifyCanvasRuntime(target) {
+function verifyCanvasRuntime(target, stageRoot) {
   const napiRoot = path.join(stageRoot, "node_modules", "@napi-rs");
   const expectedPackage = expectedCanvasRuntimePackage(target);
   const installed = fs.existsSync(napiRoot)
@@ -271,9 +279,9 @@ function hasInstalledRuntimeDependencies(target) {
   return requiredPackages.every((packageName) => Boolean(findInstalledPackageDir(projectRoot, packageName)));
 }
 
-async function installRuntimeDependencies(target) {
+async function installRuntimeDependencies(target, stageRoot) {
   if (hasInstalledRuntimeDependencies(target)) {
-    copyRuntimeDependencies(target);
+    copyRuntimeDependencies(target, stageRoot);
     return;
   }
 
@@ -292,10 +300,16 @@ async function installRuntimeDependencies(target) {
     ],
     { cwd: stageRoot }
   );
-  verifyCanvasRuntime(target);
+  verifyCanvasRuntime(target, stageRoot);
 }
 
 export async function stageApp(rootDir = projectRoot, target = parseArgs(process.argv)) {
+  const normalizedTarget = normalizeBrandBuildTarget(target);
+  const activeBrand = loadBrandConfig(rootDir, resolveBrandId());
+  const bundleRoot = brandBundleElectronDir(rootDir, activeBrand);
+  const rendererRoot = brandRendererDir(rootDir, activeBrand);
+  const stageRoot = brandStageAppDir(rootDir, activeBrand, normalizedTarget);
+
   ensureBuildArtifact(bundleRoot, "bundled dist-electron output");
   ensureBuildArtifact(rendererRoot, "dist-renderer output");
 
@@ -305,8 +319,9 @@ export async function stageApp(rootDir = projectRoot, target = parseArgs(process
   copyDir(rendererRoot, path.join(stageRoot, "dist-renderer"));
   removeRendererWebappTemplatesFromStage(stageRoot);
   copyDir(bundleRoot, path.join(stageRoot, "dist-electron"));
-  writeStagePackageJson(rootDir, target);
-  await installRuntimeDependencies(target);
+  writeStagePackageJson(rootDir, normalizedTarget, stageRoot, activeBrand);
+  await installRuntimeDependencies(normalizedTarget, stageRoot);
+  syncBrandArtifacts({ rootDir, brandId: activeBrand.id, target: normalizedTarget });
 
   return stageRoot;
 }

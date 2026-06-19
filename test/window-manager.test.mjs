@@ -13,7 +13,7 @@ const {
   prepareWebviewAttachPreferences,
   createMainWindowLifecycleController
 } = await import("../dist-electron/main/window-manager.js");
-const { PRODUCT_NAME } = await import("../dist-electron/shared/generated/brand.js");
+const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;

@@ -13,6 +13,19 @@ function readJsonFile(...segments) {
   return JSON.parse(fs.readFileSync(path.join(projectRoot, ...segments), "utf8"));
 }
 
+function newestGeneratedBrandPath() {
+  const brandsRoot = path.join(projectRoot, "build", "brands");
+  if (!fs.existsSync(brandsRoot) || !fs.statSync(brandsRoot).isDirectory()) {
+    return "";
+  }
+  return fs
+    .readdirSync(brandsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(brandsRoot, entry.name, "generated", "brand.json"))
+    .filter((filePath) => fs.existsSync(filePath))
+    .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs)[0] ?? "";
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
 }
@@ -2688,13 +2701,18 @@ test("desktop action bridge exposes localhost api and renderer action providers"
 });
 
 test("built index uses relative asset paths", (t) => {
-  const builtIndexPath = path.join(projectRoot, "dist-renderer", "index.html");
+  const generatedBrandPath = newestGeneratedBrandPath();
+  if (!generatedBrandPath) {
+    t.skip("brand output is not generated");
+    return;
+  }
+  const brand = JSON.parse(fs.readFileSync(generatedBrandPath, "utf8"));
+  const builtIndexPath = path.join(projectRoot, "build", "brands", brand.id, "renderer", "index.html");
   if (!fs.existsSync(builtIndexPath)) {
-    t.skip("dist-renderer output is not built");
+    t.skip("brand renderer output is not built");
     return;
   }
   const builtIndex = fs.readFileSync(builtIndexPath, "utf8");
-  const brand = readJsonFile("build", "generated", "brand.json");
   const petProtocol = `${brand.id}-pet:`;
   const exactPetProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(petProtocol)}`, "u");
 
@@ -3185,7 +3203,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
   const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
 
-  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/shared\/generated\/brand"/);
+  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/shared\/brand"/);
   assert.doesNotMatch(mainProcess, /ZENMIND_APP_ID|ZENMIND_PRODUCT_NAME/);
   assert.match(mainProcess, /app\.setName\(PRODUCT_NAME\);/);
   assert.match(mainProcess, /applyPlatformAppInit\((?:process|mainProcessContext)\.platform, app, APP_ID\);/);
@@ -3218,7 +3236,8 @@ test("mac dev app uses a content-addressed icon filename to avoid stale Dock cac
 
   assert.match(darwinDev, /createHash\("sha256"\)/);
   assert.match(darwinDev, /const targetIconFileName = `icon-\$\{fileHashPrefix\(sourceIconPath\)\}\.icns`;/);
-  assert.match(darwinDev, /const sourceDockIconPath = path\.join\(projectRoot, "build", "icons", "icon\.png"\);/);
+  assert.match(darwinDev, /const iconRoot = brandIconDir\(projectRoot,\s*brand\);/);
+  assert.match(darwinDev, /const sourceDockIconPath = path\.join\(iconRoot, "icon\.png"\);/);
   assert.match(darwinDev, /fs\.copyFileSync\(sourceDockIconPath, path\.join\(targetResourcesDir, "icon\.png"\)\);/);
   assert.match(darwinDev, /setPlistString\(plist,\s*"CFBundleIconFile",\s*targetIconFileName\)/);
   assert.doesNotMatch(darwinDev, /const targetIconFileName = "icon\.icns";/);
@@ -4436,11 +4455,11 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(viteConfig, /name:\s*"brand-runtime-icon-assets"/);
   assert.match(viteConfig, /BRAND_RUNTIME_ASSET_URL_PATHS/);
   assert.match(viteConfig, /server\.middlewares\.use\(serveBrandRuntimeIconAsset\)/);
-  assert.match(viteConfig, /copyBrandRuntimeIconAssets\(\{[\s\S]{0,180}dist-renderer"/);
+  assert.match(viteConfig, /copyBrandRuntimeIconAssets\(\{[\s\S]{0,220}rendererOutputRoot/);
   assert.match(viteConfig, /name:\s*"brand-desktop-pet-assets"/);
   assert.match(viteConfig, /BRAND_DESKTOP_PET_URL_PREFIX = "\/desktop-pet\/"/);
   assert.match(viteConfig, /server\.middlewares\.use\(serveBrandDesktopPetAsset\)/);
-  assert.match(viteConfig, /copyBrandDesktopPetAssets\(\{[\s\S]{0,220}dist-renderer"[\s\S]{0,120}"desktop-pet"/);
+  assert.match(viteConfig, /copyBrandDesktopPetAssets\(\{[\s\S]{0,260}rendererOutputRoot[\s\S]{0,120}"desktop-pet"/);
   assert.match(viteConfig, /brand\.source\.desktopPetRoot/);
   assert.doesNotMatch(viteConfig, /public["'],\s*["']brand-icon/);
   assert.doesNotMatch(viteConfig, /public["'],\s*["']tray-icon/);

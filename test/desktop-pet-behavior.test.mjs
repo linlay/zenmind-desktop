@@ -22,7 +22,7 @@ const {
   resolveDesktopPetWindowMode
 } = require("../dist-electron/main/desktop-pet-controller.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
-const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
+const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const {
   DEFAULT_DESKTOP_PET_BUILTIN_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,

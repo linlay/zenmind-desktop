@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AssistantSettingsPublic } from "../../../shared/contracts";
 import { DEFAULT_QUICK_ASSISTANT_AGENT_KEY } from "../../../shared/assistant-settings";
-import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
+import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import { useServices } from "../../services/ServicesContext";
 import { PluginPage } from "../../pages/plugin/PluginPage";
 import { useI18n } from "../../i18n/useI18n";

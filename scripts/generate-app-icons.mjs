@@ -6,17 +6,20 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import {
-  BRAND_RUNTIME_ASSET_DIR,
+  BRAND_RUNTIME_ASSET_DIR_NAME,
+  brandBuildRelativePath,
+  brandIconDir,
+  brandRuntimeAssetDir,
   cleanupPublicBrandIconArtifacts,
   loadBrandConfig,
   resolveBrandId
 } from "./lib/brand-config.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const buildIconsDir = path.join(projectRoot, "build", "icons");
-const iconsetDir = path.join(buildIconsDir, "icon.iconset");
-const brandRuntimeAssetsDir = path.join(projectRoot, BRAND_RUNTIME_ASSET_DIR);
 const brand = loadBrandConfig(projectRoot, resolveBrandId());
+const buildIconsDir = brandIconDir(projectRoot, brand);
+const iconsetDir = path.join(buildIconsDir, "icon.iconset");
+const brandRuntimeAssetsDir = brandRuntimeAssetDir(projectRoot, brand);
 const svgParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
@@ -373,7 +376,7 @@ function runMacIconTool(cmd, args) {
 
 function generateMacIconsetAndIcnsFromPng(sourcePngPath) {
   const tempParent = process.platform === "darwin" ? "/private/tmp" : os.tmpdir();
-  const tempRoot = fs.mkdtempSync(path.join(tempParent, "zenmind-app-icons-"));
+  const tempRoot = fs.mkdtempSync(path.join(tempParent, "desktop-app-icons-"));
   const tempIconsetDir = path.join(tempRoot, "icon.iconset");
   fs.mkdirSync(tempIconsetDir, { recursive: true });
 
@@ -425,9 +428,9 @@ async function main() {
   writeFileIfChanged(path.join(brandRuntimeAssetsDir, "brand-icon.png"), renderedAppPngs.get(256));
   const brandMarkPng = await renderBrandMarkToPng(appIconSvg, 256);
   writeFileIfChanged(path.join(brandRuntimeAssetsDir, "brand-mark.png"), brandMarkPng);
-  await assertNonTransparentPng("build/icons/icon-1024.png", renderedAppPngs.get(1024));
-  await assertNonTransparentPng(`${BRAND_RUNTIME_ASSET_DIR}/brand-icon.png`, renderedAppPngs.get(256));
-  await assertNonTransparentPng(`${BRAND_RUNTIME_ASSET_DIR}/brand-mark.png`, brandMarkPng);
+  await assertNonTransparentPng(brandBuildRelativePath(brand, "icons", "icon-1024.png"), renderedAppPngs.get(1024));
+  await assertNonTransparentPng(brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-icon.png"), renderedAppPngs.get(256));
+  await assertNonTransparentPng(brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-mark.png"), brandMarkPng);
 
   if (process.platform === "darwin") {
     generateMacIconsetAndIcnsFromPng(path.join(buildIconsDir, "icon.png"));
@@ -450,7 +453,7 @@ async function main() {
 
   const trayPng = await renderSvgToPng(trayIconSvg, 256);
   writeFileIfChanged(path.join(brandRuntimeAssetsDir, "tray-icon.png"), trayPng);
-  await assertNonTransparentPng(`${BRAND_RUNTIME_ASSET_DIR}/tray-icon.png`, trayPng);
+  await assertNonTransparentPng(brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "tray-icon.png"), trayPng);
 
   console.log(`generated ${brand.productName} app icons`);
 }

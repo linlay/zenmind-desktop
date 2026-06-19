@@ -11,7 +11,7 @@ import {
   getServicesRoot,
   getServiceStateRoot
 } from "./user-paths";
-import { PRODUCT_NAME } from "../shared/generated/brand";
+import { PRODUCT_NAME } from "../shared/brand";
 import { resolveDesktopCapability } from "./services/manager/capabilities";
 import { t } from "./i18n/main-i18n";
 

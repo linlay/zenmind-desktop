@@ -26,7 +26,7 @@ import type {
   TaskBoardSettingsResult,
   TaskBoardStatus
 } from "../shared/contracts";
-import { APP_BRAND } from "../shared/generated/brand";
+import { APP_BRAND } from "../shared/brand";
 import { getDesktopDeviceId } from "./device-identity";
 import { getDesktopSsoStatus } from "./oidc-sso";
 import { buildTaskBoardAutomationPayload, resolveTaskBoardRunStateFromAssistantEvent, resolveTaskBoardStatusFromAssistantEvent } from "./task-board-sync";

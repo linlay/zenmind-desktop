@@ -1,6 +1,6 @@
 {
   "id": "zenmind",
-  "packageName": "zenmind-desktop",
+  "packageName": "desktop",
   "storageNamespace": "zenmind-desktop",
   "productName": "ZenMind",
   "appId": "cc.zenmind.desktop",

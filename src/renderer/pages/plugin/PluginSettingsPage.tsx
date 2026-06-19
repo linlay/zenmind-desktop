@@ -9,7 +9,7 @@ import {
   type ServiceWebviewBridgeMessage
 } from "../../../shared/service-webview-bridge";
 import { handleServiceWebviewBridgeMessage } from "../../services/serviceWebviewBridgeHost";
-import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
+import { STORAGE_NAMESPACE } from "../../../shared/brand";
 
 type PluginSettingsPageProps = {
   hostTheme: "light" | "dark";

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { loadBrandConfig, resolveBrandId } from "../lib/brand-config.mjs";
+import { brandBuildRoot, brandIconDir, brandResourcesDir, loadBrandConfig, resolveBrandId } from "../lib/brand-config.mjs";
 import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-metadata.mjs";
 
 function setPlistString(plist, key, value) {
@@ -28,14 +28,15 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
   const macOsDir = path.dirname(electronBinary);
   const contentsDir = path.dirname(macOsDir);
   const sourceAppRoot = path.dirname(contentsDir);
-  const targetAppRoot = path.join(projectRoot, "build", "dev", `${devAppName}.app`);
+  const targetAppRoot = path.join(brandBuildRoot(projectRoot, brand), "dev", `${devAppName}.app`);
   const targetContentsDir = path.join(targetAppRoot, "Contents");
   const targetResourcesDir = path.join(targetContentsDir, "Resources");
   const targetOriginalBinary = path.join(targetContentsDir, "MacOS", path.basename(electronBinary));
   const targetBinary = path.join(targetContentsDir, "MacOS", devAppName);
   const targetPlistPath = path.join(targetContentsDir, "Info.plist");
-  const sourceIconPath = path.join(projectRoot, "build", "icons", "icon.icns");
-  const sourceDockIconPath = path.join(projectRoot, "build", "icons", "icon.png");
+  const iconRoot = brandIconDir(projectRoot, brand);
+  const sourceIconPath = path.join(iconRoot, "icon.icns");
+  const sourceDockIconPath = path.join(iconRoot, "icon.png");
 
   fs.rmSync(targetAppRoot, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetAppRoot), { recursive: true });
@@ -71,8 +72,8 @@ export function spawnElectron(electronBinary, projectRoot, brand = loadBrandConf
     stdio: "inherit",
     env: {
       ...process.env,
-      DESKTOP_BUILTIN_ASSETS_ROOT: path.join(projectRoot, "build", "resources", "services"),
-      ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT: path.join(projectRoot, "build", "resources", "services"),
+      DESKTOP_BUILTIN_ASSETS_ROOT: path.join(brandResourcesDir(projectRoot, brand), "services"),
+      ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT: path.join(brandResourcesDir(projectRoot, brand), "services"),
       VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
     }
   });

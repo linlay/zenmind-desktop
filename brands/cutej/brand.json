@@ -1,6 +1,6 @@
 {
   "id": "cutej",
-  "packageName": "cutej-desktop",
+  "packageName": "desktop",
   "storageNamespace": "cutej-desktop",
   "productName": "CuteJ",
   "appId": "cc.cutej.desktop",

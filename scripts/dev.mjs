@@ -20,7 +20,7 @@ process.env.BRAND = brand.id;
 const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 await runAndWait("node", ["./scripts/generate-app-icons.mjs"], brandProcessOptions({ cwd: projectRoot }));
 if (removeStaleRendererBuild({ rootDir: projectRoot, brand })) {
-  console.warn(`[dev] removed stale dist-renderer output for BRAND=${brand.id}; Vite dev server will serve fresh assets.`);
+  console.warn(`[dev] removed stale renderer output for BRAND=${brand.id}; Vite dev server will serve fresh assets.`);
 }
 assertBrandArtifactsConsistent({ rootDir: projectRoot, brand });
 const electronBinary = resolveValidatedElectronBinaryPath();

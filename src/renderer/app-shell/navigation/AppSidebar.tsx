@@ -43,7 +43,7 @@ import {
   getAssistantNavAgentRecentChats,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
-import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
+import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {

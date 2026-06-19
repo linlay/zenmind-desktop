@@ -34,7 +34,7 @@ import {
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../../shared/browser-surfaces";
-import { STORAGE_NAMESPACE } from "../../shared/generated/brand";
+import { STORAGE_NAMESPACE } from "../../shared/brand";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_MAX_WIDTH,

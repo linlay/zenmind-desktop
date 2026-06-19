@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../shared/contracts";
-import { APP_BRAND } from "../shared/generated/brand";
+import { APP_BRAND } from "../shared/brand";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import { getService } from "./services/service-registry";
 import { getInstallDir, getServiceState } from "./services/manager";

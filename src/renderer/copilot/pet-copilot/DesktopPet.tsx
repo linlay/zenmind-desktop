@@ -37,7 +37,7 @@ import {
   type DesktopPetDragDirection,
   type DesktopPetVisualStatus
 } from "../../../shared/desktop-pet-visual";
-import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { useI18n } from "../../i18n/useI18n";
 
 function createFallbackDesktopPetState(): DesktopPetState {

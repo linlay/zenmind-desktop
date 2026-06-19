@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
-import { APP_BRAND } from "../../../shared/generated/brand";
+import { APP_BRAND } from "../../../shared/brand";
 
 export const agentPlatformDesktopRuntimePaths = [
   ["REGISTRIES_DIR", "registries"],

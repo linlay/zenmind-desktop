@@ -26,12 +26,13 @@ async function syncWindowsBuiltinAssets(brand) {
 }
 
 export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: resolveBrandId() })) {
+  const target = { os: "win32", arch: "x64" };
   const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 
   await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
   await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
   await runAndWait(npmCmd, ["run", "sync:demo"], brandProcessOptions({ cwd: projectRoot }));
-  syncBrandArtifacts({ brandId: brand.id });
+  syncBrandArtifacts({ brandId: brand.id, target });
   await syncWindowsBuiltinAssets(brand);
   await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));
 
@@ -49,7 +50,7 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     "--volume",
     `${projectRoot}:/project`,
     "--volume",
-    `${brand.packageName}-node-modules:/project/node_modules`,
+    "desktop-node-modules:/project/node_modules",
     "--volume",
     `${npmCacheDir}:/root/.npm`,
     "--env",

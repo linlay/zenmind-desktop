@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import type { App } from "electron";
 import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../../shared/contracts";
-import { APP_BRAND } from "../../../shared/generated/brand";
+import { APP_BRAND } from "../../../shared/brand";
 import { getServiceConfigRoot, getServicesRoot } from "../../user-paths";
 import { t } from "../../i18n/main-i18n";
 import type { AssistantSettingsPrivate } from "./settings-store";

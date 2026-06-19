@@ -1,5 +1,5 @@
 import process from "node:process";
-import { syncBrandArtifacts, resolveBrandId, electronBuilderConfigPath } from "./lib/brand-config.mjs";
+import { syncBrandArtifacts, resolveRequiredBrandId, electronBuilderConfigPath } from "./lib/brand-config.mjs";
 import { npmCmd, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 
 const MAC_SIGNING_CERTIFICATE_PREFIX = "Developer ID Application:";
@@ -58,7 +58,8 @@ function shouldSignDarwinBuiltinAssets() {
 }
 
 const projectRoot = process.cwd();
-const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
+const target = { os: "darwin", arch: "arm64" };
+const brand = syncBrandArtifacts({ brandId: resolveRequiredBrandId(process.argv.slice(2), process.env, "dist:mac"), target });
 process.env.BRAND = brand.id;
 normalizeMacSigningEnvironment();
 const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
@@ -66,7 +67,7 @@ const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "sync:demo"], brandProcessOptions({ cwd: projectRoot }));
-syncBrandArtifacts({ brandId: brand.id });
+syncBrandArtifacts({ brandId: brand.id, target });
 const syncBuiltinAssetArgs = ["./scripts/sync-builtin-assets.mjs", "--os=darwin", "--arch=arm64"];
 if (shouldSignDarwinBuiltinAssets()) {
   syncBuiltinAssetArgs.push("--sign-darwin");

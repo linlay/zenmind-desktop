@@ -14,7 +14,7 @@ const {
 
 const { registerServicesIpcHandlers } = require("../dist-electron/main/ipc/services-handlers.js");
 const { getArchiveExtensions } = require("../dist-electron/main/platform-adapter.js");
-const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
+const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const { DEFAULT_DESKTOP_PET_SELECTED_ID } = require("../dist-electron/shared/desktop-pet.js");
 
 const RUNTIME_ROOT_DIR_NAME = APP_BRAND.paths.runtimeRootDirName;

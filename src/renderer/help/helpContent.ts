@@ -1,5 +1,5 @@
 import { DEFAULT_LOCALE, type SupportedLocale } from "../../shared/i18n";
-import { APP_BRAND, PRODUCT_NAME } from "../../shared/generated/brand";
+import { APP_BRAND, PRODUCT_NAME } from "../../shared/brand";
 
 export type HelpContentItem = {
   id: string;

@@ -81,7 +81,7 @@ import {
   INSTALLER_SHUTDOWN_ARG,
   LEGACY_INSTALLER_SHUTDOWN_ARGS,
   PRODUCT_NAME
-} from "../shared/generated/brand";
+} from "../shared/brand";
 import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../shared/app-icon-assets";
 import {
   desktopDataRootExists,

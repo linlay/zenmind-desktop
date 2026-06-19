@@ -1,5 +1,5 @@
 import type { BrowserWindow } from "electron";
-import { PRODUCT_NAME } from "../shared/generated/brand";
+import { PRODUCT_NAME } from "../shared/brand";
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
 import type { DesktopPlatform } from "./platform-adapter";

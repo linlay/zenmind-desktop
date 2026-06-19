@@ -18,7 +18,7 @@ import type {
   DesktopSsoStartResult,
   DesktopSsoStatus
 } from "../shared/contracts";
-import { PRODUCT_NAME } from "../shared/generated/brand";
+import { PRODUCT_NAME } from "../shared/brand";
 import { getDesktopStateRoot, getSecretsRoot } from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { t } from "./i18n/main-i18n";

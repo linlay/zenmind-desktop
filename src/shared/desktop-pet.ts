@@ -3,7 +3,7 @@ import type {
   DesktopPetStateAsset,
   DesktopPetStateAssets
 } from "./contracts/pet-copilot";
-import { APP_BRAND, BRAND_ID } from "./generated/brand";
+import { APP_BRAND, BRAND_ID } from "./brand";
 
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
 export const DESKTOP_PET_USER_ASSET_PROTOCOL = `${BRAND_ID}-pet`;
