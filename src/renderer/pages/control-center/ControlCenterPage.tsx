@@ -1790,7 +1790,6 @@ export function ControlCenterPage() {
                                         aria-expanded={
                                           isHelpTipOpen
                                         }
-                                        data-tooltip={t("controlCenter.help.viewDescription")}
                                       >
                                         <ServiceHelpIcon />
                                       </button>
