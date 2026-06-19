@@ -37,12 +37,12 @@
   transition: none;
 }
 
-.agent-webclient-copilot-dock .pan-page {
+.agent-webclient-copilot-dock .embedded-surface-page {
   height: 100%;
   margin: 0;
 }
 
-.agent-webclient-copilot-dock .pan-frame {
+.agent-webclient-copilot-dock .embedded-surface-frame {
   min-height: 0;
 }
 

@@ -18,12 +18,12 @@ body.quick-web-copilot-body,
   -webkit-app-region: no-drag;
 }
 
-.quick-web-copilot .pan-page {
+.quick-web-copilot .embedded-surface-page {
   height: 100%;
   margin: 0;
 }
 
-.quick-web-copilot .pan-frame {
+.quick-web-copilot .embedded-surface-frame {
   min-height: 0;
 }
 

@@ -3278,7 +3278,6 @@ export function AppSidebar({
   return (
     <aside className={shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
-        <div className="sidebar-chrome-drag-region" aria-hidden="true" />
         <div className={chromeToolbarClassName}>
           <div className="sidebar-top-actions">
             {!isSettingsMode ? (

@@ -464,7 +464,7 @@ function ExternalWebviewPane({
         },
         src: initialSrcRef.current,
         title: tab.title,
-        className: "pan-frame external-webview-frame",
+        className: "embedded-surface-frame external-webview-frame",
         allowpopups: "true",
         partition: tab.partition,
         useragent: tab.userAgent,
@@ -492,7 +492,7 @@ export function ExternalWebviewPage({
   const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
   const surfaceClassName = [
-    "pan-page external-webview-page",
+    "embedded-surface-page external-webview-page",
     appChrome ? "is-app-surface" : "",
     active === false ? "is-inactive-surface" : ""
   ].filter(Boolean).join(" ");
@@ -1714,7 +1714,7 @@ export function ExternalWebviewPage({
         </div>
         </div>
       )}
-      <div className={`pan-frame-shell external-webview-frame-shell${appChrome ? " is-app-surface" : ""}`}>
+      <div className={`embedded-surface-frame-shell external-webview-frame-shell${appChrome ? " is-app-surface" : ""}`}>
         {browserState.tabs.map((tab) => (
           <ExternalWebviewPane
             key={tab.id}

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+const { APP_BRAND } = await import("../dist-electron/shared/generated/brand.js");
 const {
   recordTunnelHubRegistrationResult,
   readTunnelHubAgentSettings,
@@ -28,7 +29,7 @@ function createTempApp(t) {
 }
 
 function desktopRoot(app) {
-  return path.join(app.getPath("home"), ".zenmind", ".desktop");
+  return path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
 }
 
 function tunnelSettingsPath(app) {

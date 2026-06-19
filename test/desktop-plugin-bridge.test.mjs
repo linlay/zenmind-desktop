@@ -52,6 +52,7 @@ const {
 const {
   DEFAULT_DESKTOP_PET_DISPLAY_NAME
 } = require("../dist-electron/shared/desktop-pet.js");
+const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 
 function createApp(root) {
   return {
@@ -66,6 +67,10 @@ function createApp(root) {
 
 function readYaml(filePath) {
   return yaml.load(fs.readFileSync(filePath, "utf8"));
+}
+
+function desktopRoot(root) {
+  return path.join(root, "home", APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
 }
 
 function writePluginManifest(targetDir, manifest) {
@@ -575,7 +580,7 @@ test("plugin custom settings page is served from loopback and rejects escaping p
         }
       }
     });
-    const installDir = path.join(root, "app-data", "ZenMind", "plugins", service.id, service.version);
+    const installDir = path.join(root, "app-data", APP_BRAND.paths.programDataDirName, "plugins", service.id, service.version);
     fs.mkdirSync(path.join(installDir, "settings"), { recursive: true });
     fs.writeFileSync(path.join(installDir, "settings", "index.html"), "<!doctype html><title>Settings</title>", "utf8");
 
@@ -735,7 +740,7 @@ test("plugin webapp resources do not overwrite unowned webapps", async () => {
     fs.writeFileSync(path.join(sourceDir, "frontend", "index.html"), "<!doctype html>\n", "utf8");
     fs.writeFileSync(path.join(sourceDir, "backend", "server.mjs"), "console.log('calendar')\n", "utf8");
 
-    const userWebappDir = path.join(root, "home", ".zenmind", ".desktop", "data", "webs", "webapps", "calendar");
+    const userWebappDir = path.join(desktopRoot(root), "data", "webs", "webapps", "calendar");
     fs.mkdirSync(userWebappDir, { recursive: true });
     fs.writeFileSync(path.join(userWebappDir, "webapp.json"), "{\"id\":\"calendar\",\"label\":\"User Calendar\"}\n", "utf8");
 
@@ -789,10 +794,7 @@ test("plugin agent and automation resources use current admin routes", async () 
       "/api/admin/automations/create"
     ]);
     const ownershipPath = path.join(
-      root,
-      "home",
-      ".zenmind",
-      ".desktop",
+      desktopRoot(root),
       "state",
       "plugins",
       "happy-agent",
@@ -930,10 +932,7 @@ test("plugin agent resources only update owned agent-platform records", async ()
     assert.deepEqual(calls.map((call) => call.endpoint), ["/api/admin/agents/create"]);
 
     const ownershipPath = path.join(
-      root,
-      "home",
-      ".zenmind",
-      ".desktop",
+      desktopRoot(root),
       "state",
       "plugins",
       "happy-agent",
@@ -988,10 +987,7 @@ test("agentPlatform ACP proxy bridge request preserves YAML and ownership", () =
   try {
     const app = createApp(root);
     const configPath = path.join(
-      root,
-      "home",
-      ".zenmind",
-      ".desktop",
+      desktopRoot(root),
       "config",
       "services",
       "agent-platform",

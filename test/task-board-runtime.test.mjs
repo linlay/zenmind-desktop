@@ -6,6 +6,7 @@ import path from "node:path";
 
 process.env.ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS = "20";
 
+const { APP_BRAND } = await import("../dist-electron/shared/generated/brand.js");
 const { TaskBoardRuntime, readTaskBoardSettings, readTaskBoardWsConfig } = await import("../dist-electron/main/task-board-runtime.js");
 
 function createTempApp(t) {
@@ -26,13 +27,13 @@ function createTempApp(t) {
 }
 
 function writeKanbanConfig(app, config) {
-  const configPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", "kanban.json");
+  const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", "kanban.json");
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 function writeDesktopConfig(app, fileName, value) {
-  const configPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", fileName);
+  const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", fileName);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   return configPath;
@@ -78,7 +79,7 @@ test("task board server URL preserves explicit disabled setting", (t) => {
   assert.equal(readTaskBoardSettings(app).enabled, false);
   assert.equal(readTaskBoardWsConfig(app), null);
 
-  const configPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", "kanban.json");
+  const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", "kanban.json");
   const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(migrated.enabled, false);
 });
@@ -743,7 +744,7 @@ test("task board runtime lists installed agents when platform listAgents times o
   });
 
   const app = createTempApp(t);
-  const agentsRoot = path.join(app.getPath("home"), ".zenmind", "agents");
+  const agentsRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, "agents");
   fs.mkdirSync(path.join(agentsRoot, "bootstrap"), { recursive: true });
   fs.writeFileSync(path.join(agentsRoot, "bootstrap", "agent.yml"), "key: bootstrap\nname: 初始化\nrole: 初次引导配置\n", "utf8");
   fs.mkdirSync(path.join(agentsRoot, "cutej"), { recursive: true });

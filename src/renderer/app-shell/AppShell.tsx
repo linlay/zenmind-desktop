@@ -409,6 +409,7 @@ export function AppShell() {
     Boolean(activeEmbeddedAgentWebclientRoute) ||
     (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
     location.pathname.startsWith("/plugin/") ||
+    location.pathname.startsWith("/plugin-settings/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
     location.pathname.startsWith("/webs/");
@@ -417,7 +418,8 @@ export function AppShell() {
   const usesPluginSurface =
     Boolean(activeEmbeddedAgentWebclientRoute) ||
     (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
-    location.pathname.startsWith("/plugin/");
+    location.pathname.startsWith("/plugin/") ||
+    location.pathname.startsWith("/plugin-settings/");
   const isTaskBoardRoute = location.pathname === "/kanban";
   const isMarketRoute = location.pathname === "/market";
   const usesStandardBaseSurface =
@@ -428,7 +430,6 @@ export function AppShell() {
     matchSettingsRoute(location.pathname);
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
-  const shouldRenderAppMainDragRegion = isMac && !usesEmbeddedSurface && !isTaskBoardRoute && !isMarketRoute;
   const isSettingsRoute = matchSettingsRoute(location.pathname);
   const currentRoute = `${location.pathname}${location.search}`;
   const settingsSectionDefinitions = useMemo(
@@ -1963,7 +1964,6 @@ export function AppShell() {
       </div>
       <div className="app-content">
         <main className="app-main">
-          {shouldRenderAppMainDragRegion ? <div className="app-main-drag-region" aria-hidden="true" /> : null}
           <PluginSurfaceHost
             activePluginId={activePluginId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}

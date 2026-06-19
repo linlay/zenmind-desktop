@@ -39,6 +39,7 @@ const {
   configurePluginResources,
   __testInternals: pluginResourceInternals
 } = require("../dist-electron/main/plugin-resources.js");
+const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_IDENTITY_CENTER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
@@ -997,7 +998,7 @@ function createStartupCoreAssetsFixture(options = {}) {
                 },
                 ...[
                   "runtime",
-                  "host-tools",
+                  "tools",
                   "ai-tools",
                   "channels",
                   "coder-settings",
@@ -1119,7 +1120,21 @@ async function waitForLogStreamEvent(events, predicate) {
 }
 
 function getTestDesktopRoot(userDataRoot) {
-  return path.join(getTestHomeRoot(userDataRoot), ".zenmind", ".desktop");
+  return path.join(
+    getTestHomeRoot(userDataRoot),
+    APP_BRAND.paths.runtimeRootDirName,
+    APP_BRAND.paths.desktopDataSubdir
+  );
+}
+
+function getTestRuntimeRootForHome(homeRoot) {
+  return path.join(homeRoot, APP_BRAND.paths.runtimeRootDirName);
+}
+
+function getExpectedDefaultRuntimeDir(homeRoot) {
+  return process.platform === "win32"
+    ? getTestRuntimeRootForHome(homeRoot)
+    : `~/${APP_BRAND.paths.runtimeRootDirName}`;
 }
 
 function getTestHomeRoot(userDataRoot) {
@@ -1129,7 +1144,7 @@ function getTestHomeRoot(userDataRoot) {
 }
 
 function getTestProgramsRoot(userDataRoot) {
-  return path.join(userDataRoot, "app-data", "ZenMind");
+  return path.join(userDataRoot, "app-data", APP_BRAND.paths.programDataDirName);
 }
 
 function getTestServiceProgramDir(userDataRoot, serviceId, version) {
@@ -1808,51 +1823,6 @@ test("normalizeAgentContainerHubEnvContentForDesktop preserves custom absolute d
   assert.match(next, /^ENGINE=podman$/m);
 });
 
-test("normalizeAgentPlatformBashConfigContent removes deprecated path policy keys", () => {
-  const next = __testInternals.normalizeAgentPlatformBashConfigContent(
-    [
-      "working-directory: .",
-      "allowed-paths:",
-      "  - .",
-      "  - /tmp",
-      "allowed-commands: ls,pwd,git",
-      "path-checked-commands: ls,cat",
-      "path-check-bypass-commands: git",
-      "shell-features-enabled: true"
-    ].join("\n") + "\n"
-  );
-
-  assert.match(next, /^working-directory: \.$/m);
-  assert.match(next, /^allowed-commands: ls,pwd,git$/m);
-  assert.match(next, /^shell-features-enabled: true$/m);
-  assert.doesNotMatch(next, /^allowed-paths:/m);
-  assert.doesNotMatch(next, /^\s+- \/tmp$/m);
-  assert.doesNotMatch(next, /^path-checked-commands:/m);
-  assert.doesNotMatch(next, /^path-check-bypass-commands:/m);
-});
-
-test("normalizeAgentPlatformFileToolsConfigContent removes deprecated path allowlists", () => {
-  const next = __testInternals.normalizeAgentPlatformFileToolsConfigContent(
-    [
-      "working-directory: .",
-      "allowed-read-paths:",
-      "  - .",
-      "  - /tmp",
-      "allowed-write-paths:",
-      "  - .",
-      "max-read-bytes: 1048576",
-      "require-write-approval: true"
-    ].join("\n") + "\n"
-  );
-
-  assert.match(next, /^working-directory: \.$/m);
-  assert.match(next, /^max-read-bytes: 1048576$/m);
-  assert.match(next, /^require-write-approval: true$/m);
-  assert.doesNotMatch(next, /^allowed-read-paths:/m);
-  assert.doesNotMatch(next, /^allowed-write-paths:/m);
-  assert.doesNotMatch(next, /^\s+- \/tmp$/m);
-});
-
 test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
   const updates = new Map();
   const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
@@ -1887,50 +1857,6 @@ test("applyAgentPlatformWindowsHostShellDefaults skips non-Windows platforms", (
 
   assert.equal(changed, false);
   assert.equal(updates.size, 0);
-});
-
-test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys without migrating old replacements", () => {
-  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
-    [
-      "AGENT_AUTH_ENABLED=false",
-      "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs/old.pem",
-      "AGENT_CONTAINER_HUB_BASE_URL=http://127.0.0.1:11960",
-      "RUNTIME_DIR=/tmp/legacy-runtime",
-      "GATEWAY_WS_URL=ws://127.0.0.1:17999/gw",
-      "CLAUDE_CODE_ACP_ARGS=-y @zed-industries/claude-code-acp",
-      "SERVER_PORT=11949"
-    ].join("\n")
-  );
-
-  assert.match(next, /^RUNTIME_DIR=\/tmp\/legacy-runtime$/m);
-  assert.match(next, /^SERVER_PORT=11949$/m);
-  assert.doesNotMatch(next, /^AUTH_ENABLED=/m);
-  assert.doesNotMatch(next, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
-  assert.doesNotMatch(next, /^CONTAINER_HUB_BASE_URL=/m);
-  assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_ARGS=/m);
-  assert.doesNotMatch(next, /^AGENT_AUTH_ENABLED=/m);
-  assert.doesNotMatch(next, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
-  assert.doesNotMatch(next, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
-  assert.doesNotMatch(next, /^GATEWAY_WS_URL=/m);
-});
-
-test("normalizeAgentPlatformEnvContentForRuntime removes the legacy provider key default only", () => {
-  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
-    [
-      "SERVER_PORT=11949",
-      "PROVIDER_APIKEY_KEY_PART=0.1.0"
-    ].join("\n")
-  );
-  const custom = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
-    [
-      "SERVER_PORT=11949",
-      "PROVIDER_APIKEY_KEY_PART=custom-key-part"
-    ].join("\n")
-  );
-
-  assert.match(next, /^SERVER_PORT=11949$/m);
-  assert.doesNotMatch(next, /^PROVIDER_APIKEY_KEY_PART=/m);
-  assert.match(custom, /^PROVIDER_APIKEY_KEY_PART=custom-key-part$/m);
 });
 
 test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dir keys when RUNTIME_DIR is set", () => {
@@ -1989,37 +1915,6 @@ test("normalizeAgentPlatformEnvContentForRuntime does not inject Desktop CDP env
   assert.match(withExistingCdp, /^CDP_HOST=localhost$/m);
   assert.match(withExistingCdp, /^CDP_PORT=9222$/m);
   assert.doesNotMatch(withExistingCdp, /^ZENMIND_DESKTOP_CDP_GATEWAY_URL=/m);
-});
-
-test("normalizeAgentPlatformEnvContentForRuntime removes legacy chat ticket gates and ignores placeholder image secrets", () => {
-  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
-    [
-      "SERVER_PORT=11949",
-      "CHAT_RESOURCE_TICKET_ENABLED=true",
-      "CHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret"
-    ].join("\n")
-  );
-
-  assert.match(next, /^SERVER_PORT=11949$/m);
-  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
-  assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_SECRET=/m);
-  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_SECRET=/m);
-});
-
-test("normalizeAgentPlatformEnvContentForRuntime removes real legacy image token secrets without migration", () => {
-  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
-    [
-      "SERVER_PORT=11949",
-      "CHAT_IMAGE_TOKEN_SECRET=my-secret",
-      "CHAT_IMAGE_TOKEN_TTL_SECONDS=300"
-    ].join("\n")
-  );
-
-  assert.match(next, /^SERVER_PORT=11949$/m);
-  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_SECRET=/m);
-  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_TTL_SECONDS=/m);
-  assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_SECRET=/m);
-  assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
 });
 
 test("service install dir follows Application Support services/<id>/<version>", () => {
@@ -2134,7 +2029,7 @@ test("plugin services without configFiles do not require .env", async () => {
     const installDir = getInstallDir(app, service);
     fs.mkdirSync(installDir, { recursive: true });
     fs.writeFileSync(path.join(installDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    const stateDir = path.join(userDataRoot, "home", ".zenmind", ".desktop", "state", "plugins", service.id);
+    const stateDir = path.join(getTestDesktopRoot(userDataRoot), "state", "plugins", service.id);
     fs.mkdirSync(stateDir, { recursive: true });
     fs.writeFileSync(
       path.join(stateDir, "init-state.json"),
@@ -2275,106 +2170,6 @@ test("prepared startup starts without repeating builtin asset refresh", () => {
       skipManagedPortProbe: true
     }
   });
-});
-
-test("agent-platform refresh check accepts pid subdirectory runtime scripts", () => {
-  const installDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-refresh-"));
-
-  try {
-    fs.mkdirSync(path.join(installDir, "configs"), { recursive: true });
-    fs.mkdirSync(path.join(installDir, "scripts"), { recursive: true });
-    fs.writeFileSync(
-      path.join(installDir, "manifest.json"),
-      `${JSON.stringify({
-        runtime: {
-          pidRelativePath: "run/agent-platform.pid",
-          logRelativePath: "run/agent-platform.log"
-        },
-        configFiles: [
-          "env",
-          "runtime",
-          "host-tools",
-          "ai-tools",
-          "channels",
-          "coder-settings",
-          "local-public-key",
-          "prompts"
-        ].map((key) => ({ key }))
-      }, null, 2)}\n`,
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(installDir, "configs", "desktop.example.yml"),
-      "bridges:\n  - path: /actions/call\n  - path: /cdp/call\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(installDir, "scripts", "program-common.sh"),
-      [
-        'PID_FILE="$RUN_DIR/pid/agent-platform.pid"',
-        'LOG_FILE="$LOG_DIR/agent-platform.log"'
-      ].join("\n"),
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(installDir, "scripts", "program-common.ps1"),
-      [
-        '$Script:PidFile = Join-Path (Join-Path $Script:RunDir "pid") "agent-platform.pid"',
-        '$Script:LogFile = Join-Path $Script:LogDir "agent-platform.log"'
-      ].join("\r\n"),
-      "utf8"
-    );
-
-    assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), false);
-  } finally {
-    fs.rmSync(installDir, { recursive: true, force: true });
-  }
-});
-
-test("agent-platform refresh check accepts PowerShell single-quoted runtime paths", () => {
-  const installDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-refresh-quotes-"));
-
-  try {
-    fs.mkdirSync(path.join(installDir, "configs"), { recursive: true });
-    fs.mkdirSync(path.join(installDir, "scripts"), { recursive: true });
-    fs.writeFileSync(
-      path.join(installDir, "manifest.json"),
-      `${JSON.stringify({
-        runtime: {
-          pidRelativePath: "run/agent-platform.pid",
-          logRelativePath: "run/agent-platform.log"
-        },
-        configFiles: [
-          "env",
-          "runtime",
-          "host-tools",
-          "ai-tools",
-          "channels",
-          "coder-settings",
-          "local-public-key",
-          "prompts"
-        ].map((key) => ({ key }))
-      }, null, 2)}\n`,
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(installDir, "configs", "desktop.example.yml"),
-      "bridges:\n  - path: /actions/call\n  - path: /cdp/call\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(installDir, "scripts", "program-common.ps1"),
-      [
-        "$Script:PidFile = Join-Path $Script:RunDir 'agent-platform.pid'",
-        "$Script:LogFile = Join-Path $Script:LogDir 'agent-platform.log'"
-      ].join("\r\n"),
-      "utf8"
-    );
-
-    assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), false);
-  } finally {
-    fs.rmSync(installDir, { recursive: true, force: true });
-  }
 });
 
 test("fixShellScriptPermissions marks shell scripts executable", () => {
@@ -3432,52 +3227,6 @@ test("installBuiltinService migrates env from sibling version directories and re
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("installBuiltinService drops legacy agent-platform chat token env from current and sibling installs", async () => {
-  for (const source of ["current-version", "sibling-version"]) {
-    const fixture = createStartupCoreAssetsFixture();
-    const userDataRoot = path.join(fixture.tempRoot, "user-data");
-    const homeRoot = path.join(fixture.tempRoot, "home");
-    const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
-      homePath: homeRoot,
-      desktopPath: path.join(homeRoot, "Desktop")
-    });
-    const service = getBuiltinService("agent-platform");
-    const installDir = getInstallDir(app, service);
-    const legacyEnv = [
-      "SERVER_PORT=11949",
-      "CHAT_RESOURCE_TICKET_ENABLED=true",
-      "CHAT_IMAGE_TOKEN_SECRET=my-secret",
-      "CHAT_IMAGE_TOKEN_TTL_SECONDS=300"
-    ].join("\n") + "\n";
-
-    if (source === "current-version") {
-      writeTestEnv(userDataRoot, service.id, legacyEnv);
-    } else {
-      const sourceDir = getTestServiceProgramDir(userDataRoot, service.id, "v0.9.0");
-      fs.mkdirSync(sourceDir, { recursive: true });
-      fs.writeFileSync(path.join(sourceDir, ".env"), legacyEnv, "utf8");
-    }
-
-    try {
-      await installBuiltinService(app, service.id);
-
-      const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
-      assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
-      assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
-      assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
-      assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_SECRET=/m);
-      assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_TTL_SECONDS=/m);
-      assert.equal(fs.existsSync(path.join(getTestConfigDir(userDataRoot, service.id), ".env.legacy-backup")), false);
-      if (source === "sibling-version") {
-        assert.equal(fs.existsSync(getTestServiceProgramDir(userDataRoot, service.id, "v0.9.0")), false);
-      }
-    } finally {
-      restore();
-      fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
-    }
-  }
-});
-
 test("getServiceState exposes runtime error log path when manifest defines it", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-error-log-state-"));
   const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
@@ -4211,119 +3960,6 @@ test("initializeService records failed state and surfaces initialization error",
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("installBuiltinService lets agent platform deploy initialize canonical config", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-first-init-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const installDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-
-  try {
-    await installBuiltinService(app, "agent-platform");
-
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    const configDir = getTestConfigDir(userDataRoot, platformService.id);
-    const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
-    assert.match(envContent, /^AUTH_ENABLED=true$/m);
-    assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
-    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
-    assert.match(envContent, /^SERVER_PORT=7078$/m);
-    assert.doesNotMatch(envContent, /^PROVIDER_APIKEY_KEY_PART=/m);
-    const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
-    assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
-    assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
-    assert.doesNotMatch(envContent, /^TOOLS_DIR=/m);
-    assert.doesNotMatch(envContent, /^OWNER_DIR=/m);
-    assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
-    assert.doesNotMatch(envContent, /^TEAMS_DIR=/m);
-    assert.doesNotMatch(envContent, /^ROOT_DIR=/m);
-    assert.doesNotMatch(envContent, /^SCHEDULES_DIR=/m);
-    assert.doesNotMatch(envContent, /^CHATS_DIR=/m);
-    assert.doesNotMatch(envContent, /^MEMORY_DIR=/m);
-    assert.doesNotMatch(envContent, /^SKILLS_MARKET_DIR=/m);
-    assert.doesNotMatch(envContent, /^PAN_DIR=/m);
-    assert.doesNotMatch(envContent, /^# RUNTIME_DIR=/m);
-    assert.match(envContent, /^# REGISTRIES_DIR=\.\/runtime\/registries$/m);
-    const runtimeSectionIndex = envContent.indexOf("# Runtime directories");
-    const runtimeDirIndex = envContent.indexOf(`RUNTIME_DIR=${expectedRuntimeRoot}`);
-    assert.ok(runtimeSectionIndex < runtimeDirIndex);
-    assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
-    assert.deepEqual(
-      platformService.configFiles.map((configFile) => configFile.key),
-      ["env", "runtime", "host-tools", "ai-tools", "channels", "coder-settings", "local-public-key", "prompts"]
-    );
-    assert.deepEqual(
-      platformService.configFiles
-        .map((configFile) => configFile.key)
-        .filter((key) => ["container-hub", "bash", "file-tools", "cors"].includes(key)),
-      []
-    );
-    for (const fileName of [
-      "runtime.yml",
-      "host-tools.yml",
-      "ai-tools.yml",
-      "channels.yml",
-      "coder-settings.yml",
-      "prompts.yml"
-    ]) {
-      assert.equal(
-        fs.existsSync(path.join(configDir, "configs", fileName)),
-        true,
-        `expected canonical config ${fileName} to be initialized`
-      );
-    }
-    for (const fileName of [
-      "container-hub.yml",
-      "bash.yml",
-      "file-tools.yml",
-      "cors.yml"
-    ]) {
-      assert.equal(
-        fs.existsSync(path.join(configDir, "configs", fileName)),
-        false,
-        `expected removed config ${fileName} to stay uninitialized`
-      );
-    }
-    assert.equal(fs.readFileSync(path.join(configDir, "configs", "channels.yml"), "utf8"), "");
-    assert.equal(fs.existsSync(path.join(installDir, ".env")), false);
-    assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), false);
-    assert.equal(fs.existsSync(path.join(installDir, ".zenmind-desktop-generated-config")), false);
-    assert.equal(manifest.runtime.pidRelativePath, "run/agent-platform.pid");
-    assert.equal(manifest.runtime.logRelativePath, "run/agent-platform.log");
-    const programCommonShPath = path.join(installDir, "scripts", "program-common.sh");
-    if (fs.existsSync(programCommonShPath)) {
-      const programCommon = fs.readFileSync(programCommonShPath, "utf8");
-      assert.doesNotMatch(programCommon, /agent-platform-runner\.pid/);
-      assert.doesNotMatch(programCommon, /agent-platform-runner\.log/);
-      assert.doesNotMatch(programCommon, /PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/);
-      if (/PID_FILE=/u.test(programCommon)) {
-        assert.match(programCommon, /PID_FILE="\$RUN_DIR\/agent-platform\.pid"/);
-      }
-    }
-    const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
-    if (fs.existsSync(programCommonPs1Path)) {
-      const programCommon = fs.readFileSync(programCommonPs1Path, "utf8");
-      assert.doesNotMatch(programCommon, /agent-platform-runner\.pid/);
-      assert.doesNotMatch(programCommon, /agent-platform-runner\.log/);
-      assert.doesNotMatch(programCommon, /\$Script:AppName\.pid/);
-      if (/\$Script:PidFile\s*=/u.test(programCommon)) {
-        assert.match(programCommon, /\$Script:PidFile = Join-Path \$Script:RunDir 'agent-platform\.pid'/);
-      }
-    }
-    assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), false);
-    manifest.configFiles = manifest.configFiles.filter((configFile) => configFile.key !== "coder-settings");
-    fs.writeFileSync(path.join(installDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), true);
-  } finally {
-    restore();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
 test("initializeService recreates Desktop defaults for core services after config deletion", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -4370,7 +4006,7 @@ test("initializeService recreates Desktop defaults for core services after confi
     assert.match(platformEnv, /^AUTH_ENABLED=true$/m);
     assert.doesNotMatch(platformEnv, /^PROVIDER_APIKEY_KEY_PART=/m);
     assert.match(platformEnv, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
-    assert.match(platformEnv, /^RUNTIME_DIR=~\/\.zenmind$/m);
+    assert.match(platformEnv, new RegExp(`^RUNTIME_DIR=${escapeRegExp(getExpectedDefaultRuntimeDir(homeRoot))}$`, "m"));
     assert.doesNotMatch(platformEnv, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(platformEnv, /^TOOLS_DIR=/m);
     assert.doesNotMatch(platformEnv, /^PAN_DIR=/m);
@@ -5109,70 +4745,6 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
   }
 });
 
-test("ensurePreStartRequirements does not rewrite agent platform desktop env bindings", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  addContainerHubAssetToFixture(fixture, { bindAddr: "127.0.0.1:12960" });
-  const tempRoot = fixture.tempRoot;
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const hubService = getBuiltinService("agent-container-hub");
-  const platformService = getBuiltinService("agent-platform");
-  const hubInstallDir = getTestServiceProgramDir(userDataRoot, hubService.id, hubService.version);
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-
-  fs.mkdirSync(hubInstallDir, { recursive: true });
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  writeTestEnv(userDataRoot, hubService.id, "BIND_ADDR=0.0.0.0:12960\n");
-  writeTestEnv(
-    userDataRoot,
-    platformService.id,
-    `SERVER_PORT=11949\nAGENT_WS_ENABLED=true\nAUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "local-public-key.pem")}\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n`,
-  );
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-  }
-
-  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960$/m);
-  assert.match(envContent, new RegExp(`^SERVER_PORT=${platformService.web.defaultPort}$`, "m"));
-  assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
-  assert.match(envContent, /^AUTH_ENABLED=true$/m);
-  assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
-  assert.doesNotMatch(envContent, /^PROVIDER_APIKEY_KEY_PART=/m);
-  assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
-  assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
-  assert.doesNotMatch(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
-  assert.doesNotMatch(envContent, /^AGENT_AUTH_ENABLED=/m);
-  assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
-  assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
-  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
-  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
-  const legacyBackupPath = path.join(getTestConfigDir(userDataRoot, platformService.id), ".env.legacy-backup");
-  assert.equal(fs.existsSync(legacyBackupPath), false);
-  assert.doesNotMatch(envContent, /^NODE_BIN=/m);
-  assert.doesNotMatch(envContent, /^CLOUDFLARED_BIN=/m);
-  assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_COMMAND=/m);
-  assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_ARGS=/m);
-  assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
-  assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
 test("ensurePreStartRequirements applies provider-register before agent-platform starts", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-provider-register-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -5183,8 +4755,8 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
   });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
-  const registerPath = path.join(homeRoot, ".zenmind", "provider-register.json");
+  const providersRoot = path.join(getTestRuntimeRootForHome(homeRoot), "registries", "providers");
+  const registerPath = path.join(getTestRuntimeRootForHome(homeRoot), "provider-register.json");
   const originalFetch = globalThis.fetch;
   const issuedKey = "dk_ProviderRegisterIntegrationKey";
   let requestBody = null;
@@ -5228,7 +4800,7 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
     const deviceIdentity = JSON.parse(fs.readFileSync(
-      path.join(homeRoot, ".zenmind", ".desktop", "config", "desktop", "device-identity.json"),
+      path.join(getTestDesktopRoot(userDataRoot), "config", "desktop", "device-identity.json"),
       "utf8"
     ));
     assert.deepEqual(requestBody, { name: deviceIdentity.deviceId });
@@ -5247,126 +4819,6 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
     } else {
       globalThis.fetch = originalFetch;
     }
-    restore();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("ensurePreStartRequirements removes deprecated agent platform config keys", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-config-migrate-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const platformConfigDir = getTestConfigDir(userDataRoot, platformService.id);
-  const configsDir = path.join(platformConfigDir, "configs");
-  const bashConfigPath = path.join(configsDir, "bash.yml");
-  const fileToolsConfigPath = path.join(configsDir, "file-tools.yml");
-  const runtimeConfigPath = path.join(configsDir, "runtime.yml");
-  const hostToolsConfigPath = path.join(configsDir, "host-tools.yml");
-  const aiToolsConfigPath = path.join(configsDir, "ai-tools.yml");
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(configsDir, { recursive: true });
-  fs.writeFileSync(
-    bashConfigPath,
-    [
-      "working-directory: .",
-      "allowed-paths:",
-      "  - .",
-      "  - /tmp",
-      "allowed-commands: ls,pwd,git",
-      "path-checked-commands: ls,cat",
-      "path-check-bypass-commands: git"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-  fs.writeFileSync(
-    fileToolsConfigPath,
-    [
-      "working-directory: .",
-      "allowed-read-paths:",
-      "  - .",
-      "allowed-write-paths:",
-      "  - .",
-      "max-read-bytes: 1048576"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-  fs.writeFileSync(
-    runtimeConfigPath,
-    [
-      "container-hub:",
-      "  request-timeout-ms: 300000",
-      "  agent-idle-timeout-ms: 600000",
-      "  destroy-queue-delay-ms: 5000",
-      "desktop:",
-      "  action:",
-      "    request-timeout-ms: 20000",
-      "  cdp:",
-      "    request-timeout-ms: 20000"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-  fs.writeFileSync(
-    hostToolsConfigPath,
-    [
-      "bash:",
-      "  working-directory: .",
-      "  shell-timeout-ms: 30000",
-      "  max-command-chars: 16000"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-  fs.writeFileSync(
-    aiToolsConfigPath,
-    [
-      "tools:",
-      "  image:",
-      "    timeout-ms: 60000",
-      "  web:",
-      "    timeout-ms: 90000"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-  writeTestEnv(
-    userDataRoot,
-    platformService.id,
-    `SERVER_PORT=11949\nAUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(tempRoot, "custom", "public-key.pem")}\n`
-  );
-
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-
-    const bashConfig = fs.readFileSync(bashConfigPath, "utf8");
-    const fileToolsConfig = fs.readFileSync(fileToolsConfigPath, "utf8");
-    const runtimeConfig = fs.readFileSync(runtimeConfigPath, "utf8");
-    const hostToolsConfig = fs.readFileSync(hostToolsConfigPath, "utf8");
-    const aiToolsConfig = fs.readFileSync(aiToolsConfigPath, "utf8");
-    assert.match(bashConfig, /^allowed-commands: ls,pwd,git$/m);
-    assert.doesNotMatch(bashConfig, /^allowed-paths:/m);
-    assert.doesNotMatch(bashConfig, /^path-checked-commands:/m);
-    assert.doesNotMatch(bashConfig, /^path-check-bypass-commands:/m);
-    assert.match(fileToolsConfig, /^max-read-bytes: 1048576$/m);
-    assert.doesNotMatch(fileToolsConfig, /^allowed-read-paths:/m);
-    assert.doesNotMatch(fileToolsConfig, /^allowed-write-paths:/m);
-    assert.match(runtimeConfig, /^  request-timeout: 300$/m);
-    assert.match(runtimeConfig, /^  agent-idle-timeout: 600$/m);
-    assert.match(runtimeConfig, /^  destroy-queue-delay: 5$/m);
-    assert.match(runtimeConfig, /^    request-timeout: 20$/m);
-    assert.doesNotMatch(runtimeConfig, /request-timeout-ms:/m);
-    assert.doesNotMatch(runtimeConfig, /agent-idle-timeout-ms:/m);
-    assert.doesNotMatch(runtimeConfig, /destroy-queue-delay-ms:/m);
-    assert.match(hostToolsConfig, /^  shell-timeout: 30$/m);
-    assert.doesNotMatch(hostToolsConfig, /shell-timeout-ms:/m);
-    assert.match(aiToolsConfig, /^    timeout: 60$/m);
-    assert.match(aiToolsConfig, /^    timeout: 90$/m);
-    assert.doesNotMatch(aiToolsConfig, /timeout-ms:/m);
-  } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -5608,49 +5060,6 @@ test("ensurePreStartRequirements preserves a custom provider api key env part", 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements restores the default provider key part for AES provider api keys", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-aes-provider-key-part-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(providersRoot, { recursive: true });
-  fs.writeFileSync(
-    path.join(providersRoot, "minimax.yml"),
-    "key: minimax\nbaseUrl: https://api.minimaxi.com\napiKey: AES(encrypted)\ndefaultModel: minimax-m2_7-openai\n",
-    "utf8"
-  );
-  writeTestEnv(
-    userDataRoot,
-    platformService.id,
-    "SERVER_PORT=11949\n"
-  );
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-    restore();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
 test("ensurePreStartRequirements fills default desktop ACP command for the local-cli-acp-relay plugin", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-local-cli-acp-relay-defaults-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -5835,7 +5244,7 @@ test("ensurePreStartRequirements ignores stale legacy desktop runtime paths and 
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+  const expectedRuntimeRoot = getExpectedDefaultRuntimeDir(homeRoot);
   assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
@@ -5898,7 +5307,7 @@ test("ensurePreStartRequirements ignores legacy resolved desktop runtime paths",
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+  const expectedRuntimeRoot = getExpectedDefaultRuntimeDir(homeRoot);
   assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
@@ -5961,74 +5370,10 @@ test("ensurePreStartRequirements ignores hidden desktop legacy runtime roots", a
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+  const expectedRuntimeRoot = getExpectedDefaultRuntimeDir(homeRoot);
   assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("ensurePreStartRequirements refreshes stale agent-webclient install and rewrites BASE_URL to local agent-platform", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-prestart-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot);
-  const platformService = getBuiltinService("agent-platform");
-  const webclientService = getBuiltinService("agent-webclient");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const webclientInstallDir = getTestServiceProgramDir(userDataRoot, webclientService.id, webclientService.version);
-
-  fs.mkdirSync(path.join(platformInstallDir, "run"), { recursive: true });
-  writeTestEnv(userDataRoot, platformService.id, "SERVER_PORT=12949\n");
-  await installBuiltinService(app, webclientService.id);
-  writeTestEnv(
-    userDataRoot,
-    webclientService.id,
-    [
-      "NODE_ENV=development",
-      "DEV_SERVER_ALLOWED_HOSTS=all",
-      "BASE_URL=http://localhost:11949",
-      "WS_BASE_URL=http://localhost:11949",
-      "VOICE_BASE_URL=http://127.0.0.1:117078",
-      "NODE_BIN=/tmp/stale-node"
-    ].join("\n") + "\n",
-  );
-  fs.mkdirSync(path.join(webclientInstallDir, "backend"), { recursive: true });
-  fs.writeFileSync(
-    path.join(webclientInstallDir, "backend", "server.cjs"),
-    [
-      "const http = require('http');",
-      "const https = require('https');",
-      "const server = http.createServer();",
-      "function createWebSocketProxy() {",
-      "  return (secure ? https : http).request;",
-      "}",
-      "server.on('upgrade', () => {});",
-      "module.exports = { createWebSocketProxy };"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), true);
-
-  await __testInternals.ensurePreStartRequirements(app, webclientService);
-
-  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, webclientService.id), "utf8");
-  const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
-  assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /^WS_BASE_URL=http:\/\/localhost:11949$/m);
-  assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:117078$/m);
-  assert.match(envContent, new RegExp(`^PORT=${webclientService.web.defaultPort}$`, "m"));
-  assert.match(envContent, /^NODE_BIN=\/tmp\/stale-node$/m);
-  assert.match(envContent, /^NODE_ENV=development$/m);
-  assert.match(envContent, /^DEV_SERVER_ALLOWED_HOSTS=all$/m);
-  assert.match(envContent, /^DESKTOP_APP=true$/m);
-  assert.equal(fs.existsSync(path.join(webclientInstallDir, "backend", "server.cjs")), false);
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
-  assert.equal(manifest.backend?.entry, undefined);
-  assert.equal(manifest.frontend.hostManaged, true);
-  assert.equal(manifest.frontend.embedParams?.desktopApp, undefined);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -6079,42 +5424,11 @@ test("startService hosts agent-webclient without executing bundle start script",
     assert.equal(webclientResult.service.healthMeta.webUrl, `http://127.0.0.1:${fixture.ports.webclient}/`);
     assert.equal(fs.existsSync(path.join(webclientInstallDir, "run", "started.txt")), false);
 
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, webclientService.id), "utf8");
-    assert.doesNotMatch(envContent, /^NODE_BIN=/m);
-  } finally {
-    await stopStartupCoreProcesses(app);
-    restore();
-    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("startService refreshes running agent-webclient BASE_URL when stale", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const userDataRoot = path.join(fixture.tempRoot, "user-data");
-  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
-  const webclientService = getBuiltinService("agent-webclient");
-  const webclientEnvPath = getTestEnvPath(userDataRoot, webclientService.id);
-
-  try {
-    const platformStart = await startService(app, "agent-platform");
-    assert.equal(platformStart.ok, true, platformStart.message);
-
-    const firstWebclientStart = await startService(app, "agent-webclient");
-    assert.equal(firstWebclientStart.ok, true, firstWebclientStart.message);
-    assert.equal(firstWebclientStart.service.status, "running");
-
-    const staleEnvContent = fs.readFileSync(webclientEnvPath, "utf8").replace(
-      /^BASE_URL=.*$/m,
-      "BASE_URL=http://127.0.0.1:11949"
-    );
-    fs.writeFileSync(webclientEnvPath, staleEnvContent, "utf8");
-
-    const secondWebclientStart = await startService(app, "agent-webclient");
-    assert.equal(secondWebclientStart.ok, true, secondWebclientStart.message);
-    assert.equal(secondWebclientStart.service.status, "running");
-
-    const envContent = fs.readFileSync(webclientEnvPath, "utf8");
-    assert.match(envContent, new RegExp(`^BASE_URL=http://127\\.0\\.0\\.1:${fixture.ports.platform}$`, "m"));
+    const envPath = getTestEnvPath(userDataRoot, webclientService.id);
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, "utf8");
+      assert.doesNotMatch(envContent, /^NODE_BIN=/m);
+    }
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
@@ -6212,195 +5526,6 @@ test("startService injects local-cli-acp-relay NODE_BIN without persisting it to
   }
 });
 
-test("agentWebclientInstallNeedsRefresh catches legacy backend-managed installs", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-stale-launcher-"));
-  const installDir = path.join(tempRoot, "agent-webclient");
-
-  fs.mkdirSync(path.join(installDir, "backend"), { recursive: true });
-  fs.mkdirSync(path.join(installDir, "scripts"), { recursive: true });
-  fs.writeFileSync(
-    path.join(installDir, "manifest.json"),
-    JSON.stringify({
-      backend: {
-        entry: "backend/server.cjs"
-      },
-      runtime: {
-        requiredPaths: [
-          "backend/server.cjs",
-          "start.sh",
-          "stop.sh",
-          "deploy.sh",
-          "scripts/program-common.sh",
-          ".env.example",
-          "manifest.json",
-          "frontend/dist/index.html"
-        ]
-      }
-    }, null, 2),
-    "utf8"
-  );
-  fs.writeFileSync(
-    path.join(installDir, "backend", "server.cjs"),
-    [
-      "const http = require('http');",
-      "const server = http.createServer();",
-      "function createWebSocketProxy() {",
-      "  return { upgrade(req, socket, head) { proxy.upgrade(req, socket, head); } };",
-      "}",
-      "const proxy = createWebSocketProxy();",
-      "server.on('upgrade', (req, socket, head) => proxy.upgrade(req, socket, head));"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-  fs.writeFileSync(
-    path.join(installDir, "scripts", "program-common.sh"),
-    [
-      "#!/usr/bin/env bash",
-      "BACKEND_ENTRY=\"$BUNDLE_ROOT/backend/server.cjs\"",
-      "BACKEND_PACKAGE_FILE=\"$BUNDLE_ROOT/backend/package.json\"",
-      "BACKEND_NODE_MODULES_DIR=\"$BUNDLE_ROOT/backend/node_modules\""
-    ].join("\n") + "\n",
-    "utf8"
-  );
-
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
-
-  fs.rmSync(path.join(installDir, "backend"), { recursive: true, force: true });
-  fs.writeFileSync(
-    path.join(installDir, "manifest.json"),
-    JSON.stringify({
-      frontend: {
-        mode: "standalone",
-        entry: "/",
-        hostManaged: true
-      },
-      runtime: {
-        requiredPaths: [
-          "start.sh",
-          "stop.sh",
-          "deploy.sh",
-          "scripts/program-common.sh",
-          ".env.example",
-          "manifest.json",
-          "frontend/dist/index.html"
-        ]
-      }
-    }, null, 2),
-    "utf8"
-  );
-  fs.writeFileSync(
-    path.join(installDir, "scripts", "program-common.sh"),
-    "#!/usr/bin/env bash\n# hosted by desktop\n",
-    "utf8"
-  );
-
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
-
-  fs.mkdirSync(path.join(installDir, "backend"), { recursive: true });
-  fs.writeFileSync(path.join(installDir, "backend", "server.cjs"), "legacy\n", "utf8");
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
-  fs.rmSync(path.join(installDir, "backend"), { recursive: true, force: true });
-
-  fs.writeFileSync(
-    path.join(installDir, "scripts", "program-common.sh"),
-    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
-    "utf8"
-  );
-
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("initializeService refreshes stale agent-webclient launcher before deploy", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const userDataRoot = path.join(fixture.tempRoot, "user-data");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
-  const service = getBuiltinService("agent-webclient");
-  const installDir = getTestServiceProgramDir(userDataRoot, service.id, service.version);
-  const programCommonPath = path.join(installDir, "scripts", "program-common.sh");
-
-  await installBuiltinService(app, service.id);
-  fs.writeFileSync(
-    programCommonPath,
-    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
-    "utf8"
-  );
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
-
-  const result = await initializeService(app, service.id);
-  assert.equal(result.ok, true);
-
-  const programCommon = fs.readFileSync(programCommonPath, "utf8");
-  assert.doesNotMatch(programCommon, /BACKEND_ENTRY/);
-  assert.doesNotMatch(programCommon, /BACKEND_ENTRY="\/backend\/server\.cjs"/);
-  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
-
-  restore();
-  fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
-});
-
-test("ensurePreStartRequirements ignores identity-center frontend route and launcher drift", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "identity-center-prestart-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const fixture = createStartupCoreAssetsFixture();
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
-  const service = getBuiltinService("identity-center");
-  const installDir = getTestServiceProgramDir(userDataRoot, service.id, service.version);
-
-  await installBuiltinService(app, service.id);
-  const installedManifestPath = path.join(installDir, "manifest.json");
-  const installedManifest = JSON.parse(fs.readFileSync(installedManifestPath, "utf8"));
-  fs.writeFileSync(
-    installedManifestPath,
-    JSON.stringify({
-      ...installedManifest,
-      frontend: {
-        ...installedManifest.frontend,
-        entry: "/"
-      },
-      web: {
-        ...installedManifest.web,
-        routePath: "/"
-      }
-    }, null, 2),
-    "utf8"
-  );
-  fs.writeFileSync(
-    path.join(installDir, "frontend", "dist", "index.html"),
-    "<!doctype html><html><head><script type=\"module\" src=\"/assets/index.js\"></script></head><body></body></html>\n",
-    "utf8"
-  );
-  fs.writeFileSync(
-    getTestEnvPath(userDataRoot, service.id),
-    `SERVER_PORT=${service.web.defaultPort}\n`,
-    "utf8"
-  );
-  fs.writeFileSync(
-    path.join(installDir, "scripts", "program-common.sh"),
-    "#!/usr/bin/env bash\n\"$BACKEND_BIN\" >\"$BACKEND_LOG\" 2>&1 &\n",
-    "utf8"
-  );
-
-  assert.equal(__testInternals.identityCenterInstallNeedsRefresh(installDir), false);
-
-  await __testInternals.ensurePreStartRequirements(app, service);
-
-  const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
-  const indexContent = fs.readFileSync(path.join(installDir, "frontend", "dist", "index.html"), "utf8");
-  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
-  const programCommon = fs.readFileSync(path.join(installDir, "scripts", "program-common.sh"), "utf8");
-  assert.equal(manifest.frontend.entry, "/");
-  assert.equal(manifest.web.routePath, "/");
-  assert.match(indexContent, /src="\/assets\/index\.js"/);
-  assert.doesNotMatch(envContent, /^FRONTEND_DIST_DIR=/m);
-  assert.match(programCommon, /"\$BACKEND_BIN" >"\$BACKEND_LOG"/);
-  assert.equal(__testInternals.identityCenterInstallNeedsRefresh(installDir), false);
-
-  restore();
-  fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
 test("startService reuses a running identity-center despite frontend route and launcher drift", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -6412,11 +5537,7 @@ test("startService reuses a running identity-center despite frontend route and l
     await installBuiltinService(app, service.id);
     const servicePort = fixture.ports.identityCenter;
     const envPath = getTestEnvPath(userDataRoot, service.id);
-    fs.writeFileSync(
-      envPath,
-      fs.readFileSync(envPath, "utf8").replace(/^SERVER_PORT=.*$/m, `SERVER_PORT=${servicePort}`),
-      "utf8"
-    );
+    writeTestEnv(userDataRoot, service.id, `SERVER_PORT=${servicePort}\n`);
     const firstStart = await startService(app, service.id);
     assert.equal(firstStart.ok, true, firstStart.message);
     assert.equal(firstStart.service.status, "running");
@@ -7004,8 +6125,8 @@ test("runStartupPreparation applies provider-register before preparing builtin s
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const homeRoot = getTestHomeRoot(userDataRoot);
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
-  const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
-  const registerPath = path.join(homeRoot, ".zenmind", "provider-register.json");
+  const providersRoot = path.join(getTestRuntimeRootForHome(homeRoot), "registries", "providers");
+  const registerPath = path.join(getTestRuntimeRootForHome(homeRoot), "provider-register.json");
   const originalFetch = globalThis.fetch;
   const issuedKey = "dk_RunStartupPreparationKey";
   let requestBody = null;
@@ -7051,7 +6172,7 @@ test("runStartupPreparation applies provider-register before preparing builtin s
     const result = await runStartupPreparation(app);
 
     const deviceIdentity = JSON.parse(fs.readFileSync(
-      path.join(homeRoot, ".zenmind", ".desktop", "config", "desktop", "device-identity.json"),
+      path.join(getTestDesktopRoot(userDataRoot), "config", "desktop", "device-identity.json"),
       "utf8"
     ));
     assert.deepEqual(requestBody, { name: deviceIdentity.deviceId });

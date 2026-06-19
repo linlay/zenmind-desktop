@@ -1448,9 +1448,8 @@ export function PluginPage({
   return (
     <section
       className={[
-        "pan-page",
-        "pan-page-embedded",
-        service.id === "agent-webclient" ? "pan-page-agent-webclient" : ""
+        "embedded-surface-page",
+        "embedded-surface-page-embedded"
       ].filter(Boolean).join(" ")}
       {...surfaceVisibilityProps}
     >
@@ -1468,7 +1467,7 @@ export function PluginPage({
           </svg>
         </button>
       )}
-      <div className="pan-frame-shell">
+      <div className="embedded-surface-frame-shell">
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>
             {webviewLoadError ? (
@@ -1488,7 +1487,7 @@ export function PluginPage({
               },
               src: webviewSrcUrl,
               title: serviceDisplayName,
-              className: "pan-frame",
+              className: "embedded-surface-frame",
               preload: serviceWebviewPreloadUrl,
               partition: `persist:${STORAGE_NAMESPACE}-service-${pluginId || "plugin"}`,
               allowpopups: "true",

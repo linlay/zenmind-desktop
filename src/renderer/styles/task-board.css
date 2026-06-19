@@ -35,33 +35,11 @@
 }
 
 .app-shell.is-windows-platform.has-task-board-controls .task-board-page {
-  padding-top: 44px;
+  padding-top: 24px;
 }
 
 .app-shell.is-mac-platform.has-task-board-controls .task-board-page {
-  padding-top: 36px;
-}
-
-.app-shell.is-mac-platform.has-task-board-controls .task-board-page::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 36px;
-  app-region: drag;
-  -webkit-app-region: drag;
-}
-
-.app-shell.is-windows-platform.has-task-board-controls .task-board-page::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 138px;
-  height: 44px;
-  app-region: drag;
-  -webkit-app-region: drag;
+  padding-top: 24px;
 }
 
 :root[data-theme="dark"] .task-board-page {
@@ -84,11 +62,6 @@
   padding: 0 16px;
   border-bottom: 1px solid var(--task-board-border);
   font-size: 13px;
-  -webkit-app-region: drag;
-}
-
-.task-board-breadcrumb > * {
-  -webkit-app-region: no-drag;
 }
 
 .task-board-toolbar {
@@ -1734,14 +1707,14 @@
   box-shadow: 0 24px 72px rgba(15, 23, 42, 0.28);
 }
 
-.task-board-chat-modal .pan-page {
+.task-board-chat-modal .embedded-surface-page {
   height: 100%;
   margin: 0;
   padding: 0;
   background: transparent;
 }
 
-.task-board-chat-modal .pan-frame {
+.task-board-chat-modal .embedded-surface-frame {
   height: 100%;
   min-height: 0;
   border: 0;

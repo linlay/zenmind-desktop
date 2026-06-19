@@ -183,27 +183,6 @@
   z-index: 12;
 }
 
-.sidebar-chrome-drag-region {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  app-region: drag;
-  -webkit-app-region: drag;
-  pointer-events: auto;
-  cursor: grab;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.sidebar-chrome-drag-region:active {
-  cursor: grabbing;
-}
-
-.app-shell.is-mac-platform .sidebar-chrome-drag-region {
-  /* Keep the native traffic lights clickable on macOS. */
-  left: var(--mac-traffic-light-safe-area);
-}
-
 .sidebar-chrome-toolbar {
   position: relative;
   z-index: 1;
@@ -1176,12 +1155,16 @@
 .chat-awaiting-status {
   flex: none;
   font-size: 10px;
-  color: var(--success);
+  color: #b45309;
   white-space: nowrap;
-  background: color-mix(in srgb, var(--success) 10%, transparent);
+  background: rgba(245, 158, 11, 0.12);
   border-radius: 20px;
   padding: 2px 6px;
   line-height: 1.4;
+}
+
+.chat-awaiting-status + .sidebar-assistant-preview-loading {
+  color: #b45309;
 }
 
 .assistant-worker-chat-item.has-awaiting .chat-awaiting-status {
@@ -1233,6 +1216,13 @@
 .assistant-worker-chat-action[data-action="awaiting"],
 .assistant-worker-chat-action[data-action="loading"] {
   width: 18px;
+}
+
+.assistant-worker-chat-action[data-action="awaiting"] {
+  color: #b45309;
+}
+
+.assistant-worker-chat-action[data-action="loading"] {
   color: var(--ink-muted);
 }
 
@@ -1249,6 +1239,13 @@
 .assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
   display: inline-flex;
   animation-name: assistant-worker-chat-spin;
+}
+
+.assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading {
+  color: #b45309;
+}
+
+.assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
   color: var(--ink-muted);
 }
 
@@ -1864,6 +1861,17 @@
   background: rgba(245, 158, 11, 0.24);
 }
 
+:root[data-theme="dark"] .chat-awaiting-status {
+  color: #facc15;
+  background: rgba(180, 83, 9, 0.24);
+}
+
+:root[data-theme="dark"] .chat-awaiting-status + .sidebar-assistant-preview-loading,
+:root[data-theme="dark"] .assistant-worker-chat-action[data-action="awaiting"],
+:root[data-theme="dark"] .assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading {
+  color: #facc15;
+}
+
 :root[data-theme="dark"] .sidebar-tool-menu {
   background: rgba(31, 35, 42, 0.94);
   border-color: rgba(255, 255, 255, 0.08);
@@ -2317,27 +2325,6 @@
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
 }
 
-/* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
-
-.app-main-drag-region {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 20px;
-  app-region: drag;
-  -webkit-app-region: drag;
-  z-index: 10;
-  pointer-events: auto;
-  cursor: grab;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.app-main-drag-region:active {
-  cursor: grabbing;
-}
-
 .app-sidebar a,
 .app-sidebar button,
 .app-sidebar input,
@@ -2363,13 +2350,6 @@
   padding: 0 24px 0 80px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
-  app-region: drag;
-  -webkit-app-region: drag;
-  cursor: grab;
-}
-
-.app-header:active {
-  cursor: grabbing;
 }
 
 :root[data-theme="dark"] .app-header {
@@ -2571,7 +2551,7 @@
   line-height: 1.7;
 }
 
-.pan-page,
+.embedded-surface-page,
 .empty-state {
   height: 100vh;
 }
@@ -2898,7 +2878,7 @@
   }
 }
 
-.pan-page {
+.embedded-surface-page {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -2906,23 +2886,13 @@
   background: var(--embedded-surface-page-bg);
 }
 
-.pan-page.pan-page-embedded {
+.embedded-surface-page.embedded-surface-page-embedded {
   position: absolute;
   inset: 0;
   z-index: 1;
   height: 100%;
   margin: 0;
   overflow: hidden;
-}
-
-.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient,
-.app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient {
-  padding-top: 0;
-}
-
-.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient::before,
-.app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient::before {
-  display: none;
 }
 
 /* ── 悬浮返回按钮样式 ── */
@@ -2989,7 +2959,7 @@
   flex: none;
 }
 
-.pan-frame-shell {
+.embedded-surface-frame-shell {
   position: relative;
   display: flex;
   flex: 1;
@@ -2998,13 +2968,13 @@
   background: var(--embedded-surface-page-bg);
 }
 
-.pan-page.pan-page-embedded .pan-frame-shell,
-.pan-page.pan-page-embedded .pan-frame {
+.embedded-surface-page.embedded-surface-page-embedded .embedded-surface-frame-shell,
+.embedded-surface-page.embedded-surface-page-embedded .embedded-surface-frame {
   height: 100%;
   min-height: 0;
 }
 
-.pan-frame {
+.embedded-surface-frame {
   width: 100%;
   flex: 1;
   min-height: calc(100vh - 160px);

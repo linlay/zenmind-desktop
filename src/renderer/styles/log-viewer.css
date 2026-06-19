@@ -14,7 +14,7 @@
   position: absolute;
   top: 0;
   z-index: 1;
-  height: 38px;
+  height: 24px;
   pointer-events: none;
   app-region: drag;
   -webkit-app-region: drag;
@@ -53,8 +53,6 @@
   padding: 8px 14px 8px 20px;
   border-bottom: 1px solid var(--desktop-ui-border);
   background: var(--desktop-ui-card);
-  app-region: drag;
-  -webkit-app-region: drag;
 }
 
 .log-viewer-copy {

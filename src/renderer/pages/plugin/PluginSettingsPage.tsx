@@ -151,7 +151,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
   }
 
   return (
-    <section className="pan-page pan-page-embedded">
+    <section className="embedded-surface-page embedded-surface-page-embedded">
       <button
         className="embedded-back-button"
         onClick={() => navigate(-1)}
@@ -162,14 +162,14 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
           <path d="m313-440 224 224-57 57-320-320 320-320 57 57-224 224h487v80H313Z"/>
         </svg>
       </button>
-      <div className="pan-frame-shell">
+      <div className="embedded-surface-frame-shell">
         {createElement("webview", {
           ref: (node: Electron.WebviewTag | null) => {
             webviewRef.current = node;
           },
           src: webviewUrl,
           title: t("pluginSettingsPage.titleSuffix", { name: serviceDisplayName }),
-          className: "pan-frame",
+          className: "embedded-surface-frame",
           preload: preloadUrl,
           partition: `persist:${STORAGE_NAMESPACE}-plugin-settings-${pluginId}`,
           allowpopups: "true",

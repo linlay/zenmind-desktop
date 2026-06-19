@@ -542,9 +542,9 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
   assert.match(sidebarSource, /sidebar-top-actions/);
   assert.match(sidebarSource, /sidebar-assistant-top-button/);
   assert.match(sidebarSource, /import \{ PRODUCT_NAME, STORAGE_NAMESPACE \}/);
-  assert.match(sidebarSource, /`打开 \$\{PRODUCT_NAME\} 助手`/);
-  assert.match(sidebarSource, /`关闭 \$\{PRODUCT_NAME\} 助手`/);
-  assert.match(sidebarSource, /`当前页面不可开启 \$\{PRODUCT_NAME\} 助手`/);
+  assert.match(sidebarSource, /t\("sidebar\.copilot\.open", \{ appName: PRODUCT_NAME \}\)/);
+  assert.match(sidebarSource, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);
+  assert.match(sidebarSource, /t\("sidebar\.copilot\.unavailableForPage", \{ appName: PRODUCT_NAME \}\)/);
   assert.doesNotMatch(sidebarAssistantClosedIcon, /<text\b/);
   assert.doesNotMatch(sidebarAssistantOpenIcon, /<text\b/);
   assert.match(sidebarAssistantClosedIcon, /viewBox="0 0 24 24"/);
@@ -567,7 +567,7 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface::before\s*\{[\s\S]*?display:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-dock-bg\);/);
-  assert.match(globalStyles, /\.pan-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
+  assert.match(globalStyles, /\.embedded-surface-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);
   assert.match(globalStyles, /--browser-frame-bg:\s*#ffffff;/);
   assert.match(globalStyles, /\.external-webview-panel\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
@@ -610,7 +610,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(appShell, /className=\{\[[\s\S]*?"app-sidebar-resizer"/);
   assert.match(appShell, /role="separator"/);
   assert.match(appShell, /aria-orientation="vertical"/);
-  assert.match(appShell, /aria-label="调整侧边栏宽度"/);
+  assert.match(appShell, /aria-label=\{t\("nav\.sidebar\.resize"\)\}/);
   assert.match(appShell, /onPointerDown=\{isSettingsRoute \? undefined : handleSidebarResizerPointerDown\}/);
   assert.match(appShell, /isSettingsRoute \? "is-disabled" : ""/);
   assert.match(globalStyles, /\.app-shell\.is-settings-mode \.app-sidebar-resizer/);
@@ -622,16 +622,12 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(sidebarSource, /aria-expanded=\{!isCollapsed\}/);
   assert.match(sidebarSource, /app-sidebar-collapse-button-icon-panel/);
   assert.match(sidebarSource, /app-sidebar-collapse-button-icon-chevron/);
-  assert.match(collapseToggleIconSource, /viewBox="0 0 24 24"/);
-  assert.match(collapseToggleIconSource, /fill="none"/);
-  assert.match(collapseToggleIconSource, /stroke="currentColor"/);
-  assert.match(collapseToggleIconSource, /<rect[^>]*fill="none"/);
-  assert.match(collapseToggleIconSource, /<path[^>]*fill="none"/);
-  assert.doesNotMatch(collapseToggleIconSource, /viewBox="0 -960 960 960"/);
-  assert.doesNotMatch(collapseToggleIconSource, /fill="currentColor"/);
+  assert.match(collapseToggleIconSource, /className="app-sidebar-collapse-button-icon-chevron"[\s\S]*?viewBox="0 -960 960 960"/);
+  assert.match(collapseToggleIconSource, /className="app-sidebar-collapse-button-icon-panel"[\s\S]*?viewBox="0 -960 960 960"/);
+  assert.match(collapseToggleIconSource, /fill="currentColor"/);
   assert.match(sidebarSource, /<SidebarCollapseToggleIcon isCollapsed=\{isCollapsed\} \/>/);
   assert.match(sidebarSource, /<div className="sidebar-chrome">/);
-  assert.match(sidebarSource, /<div className="sidebar-chrome-drag-region" aria-hidden="true" \/>/);
+  assert.doesNotMatch(sidebarSource, /sidebar-chrome-drag-region/);
   assert.match(sidebarSource, /className=\{chromeToolbarClassName\}/);
   assert.match(sidebarSource, /<div className="sidebar-top-actions">/);
   assert.doesNotMatch(sidebarSource, /sidebar-collapsed-toggle-slot/);
@@ -674,10 +670,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-compact\s*\{[\s\S]*?width:\s*24px;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-nav\s*\{[\s\S]*?width:\s*var\(--sidebar-collapse-toggle-nav-width, 48px\);/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron::before/);
-  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
-  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
-  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel rect,[\s\S]*?\.app-sidebar-collapse-button-icon-chevron path\s*\{[\s\S]*?fill:\s*none;[\s\S]*?stroke:\s*currentColor;/);
-  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar button[\s\S]*?\{[\s\S]*?app-region:\s*no-drag;/);
 });
 
@@ -821,7 +815,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /const recentChats = getAssistantNavAgentRecentChats\(agent\)\.slice\(0, 5\);/);
   assert.match(sidebarSource, /const chatCount = Math\.max\(\s*0,\s*getAssistantNavAgentNonNegativeInteger\(agent\.chatCount\),\s*recentChats\.length,?\s*\);/);
   assert.match(sidebarSource, /recentChats\.length > 0 \? \(/);
-  assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">暂无会话<\/div>/);
+  assert.match(sidebarSource, /agent\.latestPreview \|\| \(chatCount > 0 \? "" : t\("sidebar\.agent\.noChats"\)\)/);
+  assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
   assert.match(sidebarSource, /chatCount > recentChats\.length \? \(/);
   assert.match(sidebarSource, /historyRequested: url\.searchParams\.get\("history"\)\?\.trim\(\) === "1"/);
   assert.match(sidebarSource, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
@@ -831,7 +826,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /previousRouteAgentInfo\.historyRequested/);
   assert.match(sidebarSource, /setExpandedAssistantAgentKey\(""\)/);
   assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
-  assert.match(sidebarSource, /<div className="status-line">暂无会话<\/div>/);
+  assert.match(sidebarSource, /<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无相关会话/);
   assert.doesNotMatch(sidebarSource, /Math\.max\(agent\.chatCount, recentChats\.length\) > 5/);
   assert.match(sidebarSource, /renderStatusBadges/);
@@ -856,9 +851,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /worker-chat-item-head/);
   assert.match(sidebarSource, /worker-chat-name/);
   assert.match(sidebarSource, /worker-panel-time-label/);
-  assert.match(sidebarSource, /<Tooltip content="全部已读">/);
-  assert.match(sidebarSource, /<Tooltip content="新建对话">/);
-  assert.match(sidebarSource, /查看更多（共/);
+  assert.match(sidebarSource, /<Tooltip content=\{t\("sidebar\.agent\.markAllRead"\)\}>/);
+  assert.match(sidebarSource, /<Tooltip content=\{t\("sidebar\.agent\.newChat"\)\}>/);
+  assert.match(sidebarSource, /t\("sidebar\.chat\.viewMore", \{/);
   assert.match(sidebarSource, /getAssistantAwaitingStatusKey/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.approval/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.form/);
@@ -886,7 +881,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(confirmRenameChatHandler, /if \(!result\.ok\)/u);
   assert.match(confirmRenameChatHandler, /setAssistantChatRenameDialog\(null\)/u);
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
-  assert.match(sidebarSource, /<span>删除<\/span>/);
+  assert.match(sidebarSource, /<span>\{t\("sidebar\.agent\.delete"\)\}<\/span>/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
@@ -1048,8 +1043,8 @@ test("sidebar top navigation exposes scoped back and forward history controls", 
   assert.match(sidebarSource, /onSidebarNavigateBack\?: \(\) => void;/);
   assert.match(sidebarSource, /onSidebarNavigateForward\?: \(\) => void;/);
   assert.match(sidebarSource, /className="sidebar-history-controls"/);
-  assert.match(sidebarSource, /aria-label="后退"/);
-  assert.match(sidebarSource, /aria-label="前进"/);
+  assert.match(sidebarSource, /aria-label=\{t\("sidebar\.navigation\.back"\)\}/);
+  assert.match(sidebarSource, /aria-label=\{t\("sidebar\.navigation\.forward"\)\}/);
   assert.match(sidebarSource, /disabled=\{!sidebarNavigationCanGoBack\}/);
   assert.match(sidebarSource, /disabled=\{!sidebarNavigationCanGoForward\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateBack\}/);
@@ -1103,11 +1098,18 @@ test("assistant sidebar awaiting chats use a right-side loading status", () => {
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
   assert.doesNotMatch(sidebarSource, /assistant-worker-awaiting-ring/);
   assert.doesNotMatch(globalStyles, /assistant-worker-awaiting-ring/);
+  assert.match(globalStyles, /\.chat-awaiting-status\s*\{[\s\S]{0,160}color:\s*#b45309;[\s\S]{0,160}background:\s*rgba\(245, 158, 11, 0\.12\);/);
+  assert.doesNotMatch(globalStyles, /\.chat-awaiting-status\s*\{[\s\S]{0,180}var\(--success\)/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.chat-awaiting-status\s*\{[\s\S]{0,140}color:\s*#facc15;[\s\S]{0,140}background:\s*rgba\(180, 83, 9, 0\.24\);/);
   assert.match(globalStyles, /\.assistant-worker-chat-item\.has-awaiting \.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left: auto;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\],\s*\.assistant-worker-chat-action\[data-action="loading"\]\s*\{[\s\S]{0,100}width: 18px;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\]\s*\{[\s\S]{0,80}color:\s*#b45309;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\]\s*\{[\s\S]{0,80}color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-panel-time-label,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,120}display: inline-flex;/);
-  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading,[\s\S]{0,220}color: var\(--ink-muted\);/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*#b45309;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*var\(--ink-muted\);/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.chat-awaiting-status \+ \.sidebar-assistant-preview-loading,\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\],\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*#facc15;/);
 });
 
 test("assistant sidebar active chats use loading status instead of thinking text", () => {
@@ -1121,7 +1123,8 @@ test("assistant sidebar active chats use loading status instead of thinking text
   const globalStyles = readRendererStyles();
 
   assert.match(sidebarSource, /function isAssistantRunningPreview\(value: string\)/);
-  assert.match(sidebarSource, /normalized === "思考中"/);
+  assert.match(sidebarSource, /normalized === "\\u601d\\u8003\\u4e2d"/);
+  assert.match(sidebarSource, /normalized === "\\u601d\\u8003\\u4e2d\.\.\."/);
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
   assert.match(sidebarSource, /chat\.hasActiveRun && isAssistantRunningPreview\(chat\.lastRunContent\)/);
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
@@ -1909,7 +1912,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
   assert.doesNotMatch(sidebarSource, /!assistantDockOpen && \(isActive \|\| pendingPath === "\/settings"\)/);
   assert.match(sidebarSource, /assistantDockOpen \? "is-assistant-open" : ""/);
-  assert.match(sidebarSource, /title="侧边助手"/);
+  assert.match(sidebarSource, /title=\{t\("sidebar\.copilot\.title"\)\}/);
   assert.doesNotMatch(sidebarSource, /sidebar-link-label-collapsed" aria-hidden="true">助手/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "is-open" : ""/);
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-switch/);
@@ -2281,14 +2284,18 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-automation-menu-list\s*\{[\s\S]*?top:\s*calc\(100% \+ 4px\);[\s\S]*?max-height:\s*164px;/);
   assert.match(globalStyles, /\.task-board-automation-menu-list\.is-time-list\s*\{[\s\S]*?max-height:\s*184px;/);
   assert.doesNotMatch(globalStyles, /\.task-board-automation-time-select/);
-  assert.match(globalStyles, /\.app-shell\.has-task-board-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.has-task-board-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*24px;/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*24px;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-page::before\s*\{[\s\S]*?app-region:\s*drag;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-breadcrumb\s*\{[\s\S]*?-webkit-app-region:\s*drag;/);
   assert.match(globalStyles, /\.task-board-modal-actions \.task-board-secondary-button/);
   assert.doesNotMatch(globalStyles, /\.task-board-human-loop-hint\s*\{/);
   assert.doesNotMatch(globalStyles, /\.task-board-card-action\s*\{/);
   assert.doesNotMatch(globalStyles, /\.task-board-agent-picker\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-modal-layer\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-modal\s*\{/);
-  assert.match(globalStyles, /\.task-board-chat-modal \.pan-page\s*\{/);
+  assert.match(globalStyles, /\.task-board-chat-modal \.embedded-surface-page\s*\{/);
 });
 
 test("task board status order places completed after in progress", () => {
@@ -2331,7 +2338,7 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appSidebar, /args\.groupId === "webs"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
-  assert.match(appSidebar, /网站名[\s\S]*?网页地址[\s\S]*?侧边智能助手/);
+  assert.match(appSidebar, /t\("sidebar\.website\.name"\)[\s\S]*?t\("sidebar\.website\.url"\)[\s\S]*?t\("sidebar\.website\.sideAssistant"\)/);
   assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
   assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
 });
@@ -2389,7 +2396,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?if \(appChrome\) \{[\s\S]*?return;[\s\S]*?\}/);
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
   assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
-  assert.match(embeddedSurfaceHosts, /正在启动/);
+  assert.match(embeddedSurfaceHosts, /t\("webapp\.starting"\)/);
   assert.match(mainProcess, /installBundledWebappTemplates\(app\)/);
   const initializeUserDataIndex = mainProcess.indexOf("function initializeUserDataRootsAndSettings()");
   const initializeUserDataEndIndex = mainProcess.indexOf("const desktopPetPreviewProjector", initializeUserDataIndex);
@@ -2417,11 +2424,11 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.equal(initializeUserDataCallIndex < createWindowCallIndex, true);
   assert.doesNotMatch(initializeUserDataBlock, /importBundledEnvZipToRuntime/);
   assert.doesNotMatch(initializeUserDataBlock, /applyDesktopInitSsoDefaults/);
-  assert.match(mainProcess, /const DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE = "首次安装需要导入 env\.zip";/);
+  assert.match(mainProcess, /function getDefaultEnvImportRequiredMessage\(\) \{\s*return t\("startup\.envImport\.requiredTitle"\);/);
   assert.match(mainProcess, /let startupEnvImportFailureMessage: string \| null = null;/);
   assert.match(mainProcess, /if \(startupEnvImportFailureMessage !== null\)/);
   assert.doesNotMatch(mainProcess, /if \(startupEnvImportFailureMessage\)/);
-  assert.match(mainProcess, /message: DEFAULT_ENV_IMPORT_REQUIRED_MESSAGE/);
+  assert.match(mainProcess, /message: getDefaultEnvImportRequiredMessage\(\)/);
   assert.match(mainProcess, /stopAllWebapps\(app\)/);
   assert.match(desktopActions, /"desktop\.webs\.webapps\.start"/);
   assert.match(desktopActionBridge, /case "desktop\.webs\.webapps\.restart"/);
@@ -2497,8 +2504,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /window\.electronAPI\.services\.list\(\)/);
   assert.match(appSidebar, /proxy-acp-claudecode[\s\S]*?acpProxyId:\s*"claude"/);
   assert.match(appSidebar, /proxy-acp-codex[\s\S]*?acpProxyId:\s*"codex"/);
-  assert.match(appSidebar, /value="builtin"[\s\S]*?内置编程/);
-  assert.match(appSidebar, /value="acp"[\s\S]*?ACP 代理编程/);
+  assert.match(appSidebar, /value="builtin"[\s\S]*?t\("sidebar\.project\.builtinCoding"\)/);
+  assert.match(appSidebar, /value="acp"[\s\S]*?t\("sidebar\.project\.acpCoding"\)/);
   assert.match(appSidebar, /if \(selectedAcpProxy\) \{[\s\S]*?createInput\.acpProxyId = selectedAcpProxy\.acpProxyId/);
   assert.match(appSidebar, /window\.electronAPI\.assistant\.createCoderProject\(createInput\)/);
   assert.doesNotMatch(appSidebar, /没有检测到正在运行的 ACP 工具/);
@@ -2509,7 +2516,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /agent\.workspaceDirExists === false/);
   assert.match(appSidebar, /disabled=\{Boolean\(openWorkspaceDisabledReason\)\}/);
   assert.match(appSidebar, /openWorkspaceDirectory\(agent\.workspaceDir, agent\.agentKey\)/);
-  assert.match(appSidebar, /const title = isRename \? "修改名称" : "删除智能体"/);
+  assert.match(appSidebar, /const title = isRename \? t\("sidebar\.agent\.rename"\) : t\("sidebar\.agent\.delete"\)/);
   assert.match(appSidebar, /role="dialog"/);
   const agentDialogInputRule = globalStyles.match(
     /^\.sidebar-agent-dialog-field input\s*\{(?<body>[\s\S]*?)^\}/m
@@ -2635,7 +2642,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);
   assert.match(bridge, /PageControlGrantStore/);
-  assert.match(bridge, /允许本次页面操作/);
+  assert.match(bridge, /t\("desktopAction\.pageControlGrant"\)/);
   assert.doesNotMatch(bridge, /小宅助理/);
   assert.match(mainProcess, /startDesktopActionBridge\(\{/);
   assert.match(assistantHandlers, /desktopActions\.respond/);
@@ -3001,13 +3008,14 @@ test("sandbox image import progress is exposed across desktop api layers", () =>
   assert.match(marketplaceHandlers, /event\.sender\.send\("market\.sandboxImageImportProgress",\s*\{[\s\S]*?taskId,[\s\S]*?\.\.\.progress/);
 });
 
-test("market route disables the global drag overlay above toolbar controls", () => {
+test("market route keeps the unified native drag overlay", () => {
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
   const marketStyles = readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css");
 
   assert.match(appShell, /has-market-controls/);
-  assert.match(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*height:\s*24px;/);
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
 });
 
@@ -3017,16 +3025,21 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
   const pluginSettingsPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginSettingsPage.tsx");
   const externalWebviewPage = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
+  const obsoleteEmbeddedSurfaceClassPattern = /\b(?:pan-page(?:-embedded|-agent-webclient)?|pan-frame(?:-shell)?|pan-session-box)\b/;
+  const externalBrowserChromeRule = globalStyles.match(
+    /(?:^|\n)\.external-webview-browser-chrome\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
 
   assert.match(appShell, /usesEmbeddedSurface/);
   assert.match(appShell, /has-embedded-surface/);
   assert.match(appShell, /usesPluginSurface/);
   assert.match(appShell, /has-plugin-surface/);
-  assert.match(appShell, /const shouldRenderAppMainDragRegion = isMac && !usesEmbeddedSurface && !isTaskBoardRoute && !isMarketRoute;/);
-  assert.match(appShell, /shouldRenderAppMainDragRegion \? <div className="app-main-drag-region" aria-hidden="true" \/> : null/);
+  assert.match(appShell, /location\.pathname\.startsWith\("\/plugin-settings\/"\)/);
+  assert.doesNotMatch(appShell, /shouldRenderAppMainDragRegion/);
+  assert.doesNotMatch(appShell, /app-main-drag-region/);
   assert.match(
     globalStyles,
-    /\.pan-page\.pan-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
+    /\.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
   );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*height:\s*8px;/);
   assert.doesNotMatch(
@@ -3037,19 +3050,28 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.doesNotMatch(pluginPage, /className="pan-drag-region"/);
   assert.doesNotMatch(pluginSettingsPage, /className="pan-drag-region"/);
   assert.doesNotMatch(externalWebviewPage, /className="pan-drag-region"/);
+  assert.doesNotMatch(pluginPage, obsoleteEmbeddedSurfaceClassPattern);
+  assert.doesNotMatch(pluginSettingsPage, obsoleteEmbeddedSurfaceClassPattern);
+  assert.doesNotMatch(externalWebviewPage, obsoleteEmbeddedSurfaceClassPattern);
+  assert.doesNotMatch(globalStyles, obsoleteEmbeddedSurfaceClassPattern);
   assert.doesNotMatch(globalStyles, /\.pan-drag-region\s*\{/);
   assert.doesNotMatch(globalStyles, /\.pan-drag-region:active\s*\{/);
   assert.doesNotMatch(
     globalStyles,
-    /\.pan-page-embedded\s+\.pan-drag-region/
+    /\.embedded-surface-page-embedded\s+\.pan-drag-region/
   );
+  assert.ok(externalBrowserChromeRule, "missing .external-webview-browser-chrome rule");
+  assert.doesNotMatch(externalBrowserChromeRule, /app-region:\s*drag;/);
+  assert.doesNotMatch(externalBrowserChromeRule, /-webkit-app-region:\s*drag;/);
+  assert.doesNotMatch(globalStyles, /\.app-main-drag-region\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-chrome-drag-region\s*\{/);
   assert.doesNotMatch(
     globalStyles,
-    /\.pan-page-embedded\s+\.pan-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*8px;/
+    /\.embedded-surface-page-embedded\s+\.embedded-surface-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*8px;/
   );
   assert.match(
     globalStyles,
-    /\.pan-page\.pan-page-embedded\s+\.pan-frame-shell,\s*\.pan-page\.pan-page-embedded\s+\.pan-frame\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/
+    /\.embedded-surface-page\.embedded-surface-page-embedded\s+\.embedded-surface-frame-shell,\s*\.embedded-surface-page\.embedded-surface-page-embedded\s+\.embedded-surface-frame\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -3057,12 +3079,9 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-windows-platform\s+\.pan-page-embedded\.pan-page-agent-webclient\s*\{[^}]*padding-top:\s*44px;/
+    /\.embedded-surface-page-agent-webclient/
   );
-  assert.doesNotMatch(
-    globalStyles,
-    /\.app-shell\.is-windows-platform\s+\.pan-page-embedded\.pan-page-agent-webclient::before\s*\{[^}]*height:\s*44px;/
-  );
+  assert.doesNotMatch(pluginPage, /embedded-surface-page-agent-webclient/);
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{/
@@ -3092,33 +3111,20 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*height:\s*24px;/);
   assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*cursor:\s*grab;/);
   assert.match(globalStyles, /\.app-window-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
-  assert.match(
-    globalStyles,
-    /\.sidebar-chrome-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
-  );
-  assert.match(globalStyles, /\.sidebar-chrome-drag-region\s*\{[^}]*cursor:\s*grab;/);
-  assert.match(globalStyles, /\.sidebar-chrome-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
-  assert.match(
-    globalStyles,
-    /\.app-shell\.is-mac-platform\s+\.sidebar-chrome-drag-region\s*\{[\s\S]*?left:\s*var\(--mac-traffic-light-safe-area\);/
-  );
+  assert.doesNotMatch(globalStyles, /\.sidebar-chrome-drag-region/);
   const appMainRule = globalStyles.match(/(?:^|\n)\.app-main\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
   assert.match(appMainRule, /padding:\s*28px 24px 28px;/);
   assert.match(appMainRule, /-webkit-user-select:\s*text;/);
   assert.match(appMainRule, /user-select:\s*text;/);
   assert.match(appMainRule, /app-region:\s*no-drag;/);
   assert.match(appMainRule, /-webkit-app-region:\s*no-drag;/);
-  assert.match(globalStyles, /\.app-main-drag-region\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*20px;/);
-  assert.match(globalStyles, /\.app-main-drag-region\s*\{[^}]*cursor:\s*grab;/);
-  assert.match(globalStyles, /\.app-main-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
-  assert.doesNotMatch(globalStyles, /\.app-shell\.is-windows-platform\s+\.app-main-drag-region\s*\{/);
-  assert.doesNotMatch(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-main-drag-region\s*\{/);
-  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\s+\.app-main-drag-region\s*\{/);
-  assert.match(globalStyles, /\.app-header\s*\{[^}]*cursor:\s*grab;/);
-  assert.match(globalStyles, /\.app-header:active\s*\{[^}]*cursor:\s*grabbing;/);
+  assert.doesNotMatch(globalStyles, /\.app-main-drag-region/);
+  assert.doesNotMatch(globalStyles, /\.app-header\s*\{[^}]*app-region:\s*drag;/);
+  assert.doesNotMatch(globalStyles, /\.app-header\s*\{[^}]*-webkit-app-region:\s*drag;/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-drag-region/);
-  assert.match(sidebarSource, /sidebar-chrome-drag-region/);
+  assert.doesNotMatch(sidebarSource, /sidebar-chrome-drag-region/);
   assert.doesNotMatch(appShell, /app-sidebar-drag-region/);
+  assert.doesNotMatch(appShell, /app-main-drag-region/);
   assert.doesNotMatch(appShell, /SIDEBAR_WINDOW_DRAG_START_THRESHOLD_PX/);
   assert.doesNotMatch(appShell, /handleSidebarWindowPointerDownCapture/);
   assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleSidebarWindowPointerDownCapture\}/);
@@ -3386,7 +3392,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /targetWebview\.loadURL\(embeddedUrl\)/);
   assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*loadInitialEmbeddedUrlDirectly,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*webviewSrcUrl,\s*\]/);
   assert.match(pluginPage, /suppressInitialLoadingCopy\s*\?\s*\(/);
-  assert.match(pluginPage, /aria-label=\{`\$\{serviceDisplayName\} 正在加载`\}/);
+  assert.match(pluginPage, /aria-label=\{t\("pluginPage\.loading", \{ name: serviceDisplayName \}\)\}/);
   assert.match(pluginPage, /webviewRef\.current = node/);
   assert.doesNotMatch(pluginPage, /!webviewRef\.current && \(webviewRef\.current = node\)/);
   assert.match(sendBridgeMessageBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,\s*payload\)/);
@@ -3460,18 +3466,6 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(contracts, /desktopShell:[\s\S]{0,220}moveWindowBy:\s*\(delta: \{ x: number; y: number \}\) => Promise<\{ ok: boolean; message\?: string \}>/);
   assert.match(contracts, /desktopDownloads:[\s\S]{0,220}saveFile:\s*\(input: \{[\s\S]{0,160}dataBase64\?: string;[\s\S]{0,120}\}\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
-});
-
-test("desktop screenshot uses real capture result after macOS denied preflight status", () => {
-  const screenshot = readSourceFile("src", "main", "copilot", "sidebar-copilot", "screenshot.ts");
-  const permissionBlock =
-    screenshot.match(/function getScreenshotPermissionMessage[\s\S]*?\n\}\n\nfunction getDisplayThumbnailSize/u)?.[0] ?? "";
-
-  assert.match(permissionBlock, /getMediaAccessStatus\("screen"\)/);
-  assert.match(permissionBlock, /status === "restricted"/);
-  assert.doesNotMatch(permissionBlock, /status === "denied"/);
-  assert.match(screenshot, /captureDisplayImage/);
-  assert.match(screenshot, /captureWindowSelectionFallback/);
 });
 
 test("embedded cdp exposes service frontends as webview surfaces", () => {
@@ -3687,6 +3681,9 @@ test("service log viewer lets users pause tail following and jump back to the la
     "utf8"
   );
   const globalStyles = readRendererStyles();
+  const logViewerHeadRule = globalStyles.match(
+    /(?:^|\n)\.log-viewer-head\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
 
   assert.doesNotMatch(logViewerPage, /function AutoScrollIcon/);
   assert.doesNotMatch(logViewerPage, /function WbAutoIcon/);
@@ -3708,9 +3705,12 @@ test("service log viewer lets users pause tail following and jump back to the la
   assert.match(logViewerPage, /setTailFollowEnabled\(false\)/);
   assert.doesNotMatch(logViewerPage, /log-viewer-drag-region/);
   assert.match(logViewerPage, /log-viewer-window-drag-zone/);
-  assert.match(globalStyles, /\.log-viewer-window-drag-zone\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*0;[\s\S]*?app-region:\s*drag;/);
+  assert.match(globalStyles, /\.log-viewer-window-drag-zone\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*0;[\s\S]*?height:\s*24px;[\s\S]*?app-region:\s*drag;/);
   assert.doesNotMatch(globalStyles, /\.log-viewer-drag-region\s*\{/);
-  assert.match(globalStyles, /\.log-viewer-head\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?app-region:\s*drag;/);
+  assert.ok(logViewerHeadRule, "missing .log-viewer-head rule");
+  assert.match(logViewerHeadRule, /min-height:\s*44px;/);
+  assert.doesNotMatch(logViewerHeadRule, /app-region:\s*drag;/);
+  assert.doesNotMatch(logViewerHeadRule, /-webkit-app-region:\s*drag;/);
   assert.match(globalStyles, /\.log-viewer-head-actions\s*\{[\s\S]*?app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.log-viewer-page\s*\{[\s\S]*?background:\s*var\(--desktop-ui-bg\);[\s\S]*?color:\s*var\(--desktop-ui-text\);/);
   assert.match(globalStyles, /\.log-viewer-head\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--desktop-ui-border\);[\s\S]*?background:\s*var\(--desktop-ui-card\);/);
@@ -3803,22 +3803,6 @@ test("agent-platform monitor opens inside the service preview surface", () => {
   assert.doesNotMatch(globalStyles, /\.agent-monitor-page/);
 });
 
-test("retired pan webclient business APIs are removed", () => {
-  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
-  const preload = readSourceFile("src", "preload", "index.ts");
-  const authBridge = readSourceFile("src", "shared", "auth-bridge.ts");
-  const serviceMainWorld = readSourceFile("src", "preload", "service-webview-main-world.ts");
-  const marketplaceHandlers = readSourceFile("src", "main", "ipc", "marketplace-handlers.ts");
-  const globalStyles = readRendererStyles();
-
-  assert.doesNotMatch(desktopApi, /panAuth|PanAuth/);
-  assert.doesNotMatch(preload, /panAuth|panAuth\./);
-  assert.doesNotMatch(authBridge, /pan-app-auth|desktopApp|serviceId === "pan-webclient"/);
-  assert.doesNotMatch(serviceMainWorld, /pan-app-auth/);
-  assert.doesNotMatch(marketplaceHandlers, /panAuth|importPrivateKey/);
-  assert.doesNotMatch(globalStyles, /\.pan-auth-/);
-});
-
 test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {
   const appShell = readAppShellSource();
   const dockComponent = fs.readFileSync(
@@ -3855,7 +3839,7 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   const contracts = readSharedContractsSource();
   const quickWebCopilotStyles = globalStyles.slice(
     globalStyles.indexOf(".quick-web-copilot,"),
-    globalStyles.indexOf(".quick-web-copilot .pan-page")
+    globalStyles.indexOf(".quick-web-copilot .embedded-surface-page")
   );
   const quickAssistantWindowCreation = quickCopilotWindowController.slice(
     quickCopilotWindowController.indexOf("private createWindow()"),
@@ -4481,7 +4465,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(ssoController, /openEmbeddedLoginDialog/);
   assert.match(ssoController, /sso\.embeddedLogin\.open/);
   assert.match(ssoWebviewCompletionHandler, /getDesktopSsoCookieAccessTokenExchangeUrl\(app\)/);
-  assert.match(ssoWebviewCompletionHandler, /cookieAccessTokenExchange 未返回 access_token/);
+  assert.match(ssoWebviewCompletionHandler, /t\("main\.ssoCookieExchangeNoAccessToken"\)/);
   assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);

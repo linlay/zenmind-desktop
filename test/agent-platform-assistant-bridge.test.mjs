@@ -7,6 +7,7 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { AgentPlatformAssistantBridge } = require("../dist-electron/main/copilot/core/agent-platform-bridge.js");
+const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 
 function makeApp(homeDir = "/tmp") {
   return {
@@ -361,7 +362,7 @@ test("agent platform assistant bridge falls back to persisted chat jsonl for emp
     assert.equal(init.headers.Authorization, "Bearer desktop-token");
     if (String(url).endsWith("/api/query")) {
       const body = JSON.parse(String(init.body));
-      const chatDir = path.join(homeDir, ".zenmind", "chats");
+      const chatDir = path.join(homeDir, APP_BRAND.paths.runtimeRootDirName, "chats");
       fs.mkdirSync(chatDir, { recursive: true });
       fs.writeFileSync(
         path.join(chatDir, `${body.chatId}.jsonl`),
@@ -426,8 +427,8 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents");
     assert.deepEqual(agents, [
-      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "summit" }, unreadCount: 1 },
-      { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 }
+      { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 },
+      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "summit" }, unreadCount: 1 }
     ]);
   } finally {
     globalThis.fetch = originalFetch;

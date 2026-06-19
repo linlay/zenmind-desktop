@@ -206,14 +206,6 @@
   height: 8px;
 }
 
-.app-shell.has-market-controls .app-window-drag-region {
-  display: none;
-}
-
-.app-shell.has-task-board-controls .app-window-drag-region {
-  display: none;
-}
-
 .app-shell.has-task-board-controls .app-main {
   overflow: hidden;
   padding: 0;

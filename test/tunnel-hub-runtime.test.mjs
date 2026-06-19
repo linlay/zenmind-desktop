@@ -8,6 +8,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const { APP_BRAND } = require("../dist-electron/shared/generated/brand.js");
 
 const {
   startDesktopRemoteWsServer,
@@ -54,7 +55,7 @@ function createApp(homePath) {
 }
 
 function desktopRoot(homePath) {
-  return path.join(homePath, ".zenmind", ".desktop");
+  return path.join(homePath, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
 }
 
 function listen(server) {
