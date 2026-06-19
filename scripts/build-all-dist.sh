@@ -13,6 +13,7 @@ SKIP_PROJECTS=""
 SYNC_AFTER_BUILD=1
 SYNC_OS=""
 SYNC_ARCH=""
+SIGN_MAC_BUILTINS="${SIGN_MAC_BUILTINS:-0}"
 
 usage() {
   cat <<'EOF'
@@ -36,17 +37,24 @@ Options:
   --no-sync        Do not copy/sync built packages into this Desktop project.
   --sync-os os     Sync only one target OS (darwin, windows, linux).
   --sync-arch arch Sync only one target arch (arm64, amd64).
+  --sign-mac       Sign synced Darwin service binaries for macOS notarization.
+  --no-sign-mac    Disable macOS service binary signing.
   --dry-run        Print commands without running them.
   -h, --help       Show this help.
 
 Environment:
   ZENMIND_ROOT     Override the parent directory containing the four projects.
+  SIGN_MAC_BUILTINS=1
+                   Enable --sign-mac without putting signing details in git.
+  ZENMIND_DARWIN_CODESIGN_IDENTITY / MACOS_CODESIGN_IDENTITY / CSC_NAME
+                   Developer ID Application identity for --sign-mac.
   PROGRAM_TARGETS / PROGRAM_TARGET_MATRIX / ARCH / VERSION
                    Passed through to the underlying project release scripts.
 
 Examples:
   scripts/build-all-dist.sh
   scripts/build-all-dist.sh --only container-hub,platform
+  SIGN_MAC_BUILTINS=1 CSC_NAME="Your Name (TEAMID)" scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64
   ZENMIND_ROOT=/Users/me/Project/zenmind scripts/build-all-dist.sh
 EOF
 }
@@ -58,6 +66,22 @@ log() {
 die() {
   printf '[build-all-dist] %s\n' "$*" >&2
   exit 1
+}
+
+normalize_bool() {
+  local value="$1"
+  local label="$2"
+  case "$value" in
+    1|true|TRUE|yes|YES|on|ON)
+      printf '1\n'
+      ;;
+    0|false|FALSE|no|NO|off|OFF|"")
+      printf '0\n'
+      ;;
+    *)
+      die "$label must be a boolean value: $value"
+      ;;
+  esac
 }
 
 detect_host_os() {
@@ -144,6 +168,10 @@ normalize_sync_arch() {
   esac
 }
 
+should_sign_mac_builtins() {
+  [[ "$SYNC_AFTER_BUILD" == "1" && "$SIGN_MAC_BUILTINS" == "1" && ( -z "$SYNC_OS" || "$SYNC_OS" == "darwin" ) ]]
+}
+
 clean_dist_dir() {
   local project_dir="$1"
   local dist_dir="$project_dir/dist"
@@ -190,6 +218,9 @@ sync_desktop_assets() {
   if [[ -n "$SYNC_ARCH" ]]; then
     sync_args+=("--arch=$SYNC_ARCH")
   fi
+  if should_sign_mac_builtins; then
+    sync_args+=("--sign-darwin")
+  fi
 
   log "sync builtin packages into $DESKTOP_ROOT/build/resources/services"
   run_cmd_in_dir "$DESKTOP_ROOT" node "${sync_args[@]}"
@@ -225,6 +256,14 @@ while [[ $# -gt 0 ]]; do
       SYNC_ARCH="$(normalize_sync_arch "$2")"
       shift 2
       ;;
+    --sign-mac)
+      SIGN_MAC_BUILTINS=1
+      shift
+      ;;
+    --no-sign-mac)
+      SIGN_MAC_BUILTINS=0
+      shift
+      ;;
     --dry-run)
       DRY_RUN=1
       shift
@@ -239,6 +278,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+SIGN_MAC_BUILTINS="$(normalize_bool "$SIGN_MAC_BUILTINS" "SIGN_MAC_BUILTINS")"
 HOST_OS="$(detect_host_os)"
 case "$HOST_OS" in
   macos|linux)
@@ -246,11 +286,20 @@ case "$HOST_OS" in
     if [[ "$SYNC_AFTER_BUILD" == "1" ]]; then
       require_command node
     fi
+    if should_sign_mac_builtins; then
+      [[ "$HOST_OS" == "macos" ]] || die "--sign-mac requires a macOS host when syncing Darwin assets"
+      require_command codesign
+      require_command security
+      require_command tar
+    fi
     ;;
   windows)
     require_command make
     if [[ "$SYNC_AFTER_BUILD" == "1" ]]; then
       require_command node
+    fi
+    if should_sign_mac_builtins; then
+      die "--sign-mac requires a macOS host when syncing Darwin assets"
     fi
     ;;
 esac

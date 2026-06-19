@@ -1,6 +1,6 @@
 {
   "name": "cutej-desktop",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "private": true,
   "description": "CuteJ 应用壳",
   "main": "dist-electron/main/index.js",

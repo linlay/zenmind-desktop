@@ -19,6 +19,22 @@ const EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS = new Set([
   LEGACY_IDENTITY_SERVICE_ID,
   "tunnel-hub-agent"
 ]);
+const DEVELOPER_ID_APPLICATION_PREFIX = "Developer ID Application:";
+const DARWIN_CODESIGN_IDENTITY_ENV_KEYS = [
+  "ZENMIND_DARWIN_CODESIGN_IDENTITY",
+  "MACOS_CODESIGN_IDENTITY",
+  "CSC_NAME"
+];
+const MACHO_MAGICS = new Set([
+  0xfeedface,
+  0xcefaedfe,
+  0xfeedfacf,
+  0xcffaedfe,
+  0xcafebabe,
+  0xbebafeca,
+  0xcafed00d,
+  0x0dd0feca
+]);
 
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
@@ -45,6 +61,176 @@ function computeAssetSignature(assetPath) {
   const stat = fs.statSync(assetPath);
   const sha256 = createHash("sha256").update(fs.readFileSync(assetPath)).digest("hex");
   return `${stat.size}:${sha256}`;
+}
+
+function normalizeDeveloperIdApplicationName(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed.startsWith(DEVELOPER_ID_APPLICATION_PREFIX)) {
+    return trimmed;
+  }
+  return trimmed.slice(DEVELOPER_ID_APPLICATION_PREFIX.length).trim();
+}
+
+function parseCodesigningIdentity(line) {
+  const match = line.match(/^\s*\d+\)\s+([0-9A-F]{40})\s+"([^"]+)"$/iu);
+  if (!match) {
+    return null;
+  }
+  return {
+    hash: match[1].toUpperCase(),
+    name: match[2]
+  };
+}
+
+function isSha1Fingerprint(value) {
+  return /^[0-9A-F]{40}$/iu.test(value.trim());
+}
+
+function configuredDarwinSigningIdentityName() {
+  for (const envKey of DARWIN_CODESIGN_IDENTITY_ENV_KEYS) {
+    const value = process.env[envKey]?.trim();
+    if (value) {
+      return normalizeDeveloperIdApplicationName(value);
+    }
+  }
+  return "";
+}
+
+function assertDarwinSigningHost() {
+  if (process.platform !== "darwin") {
+    throw new Error("signing bundled Darwin service archives requires a macOS host with codesign available");
+  }
+}
+
+function resolveDarwinDeveloperIdApplicationIdentity() {
+  assertDarwinSigningHost();
+
+  const requestedIdentity = configuredDarwinSigningIdentityName();
+  if (requestedIdentity && isSha1Fingerprint(requestedIdentity)) {
+    return requestedIdentity.toUpperCase();
+  }
+
+  const output = execFileSync("security", ["find-identity", "-v", "-p", "codesigning"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const identities = output
+    .split(/\r?\n/u)
+    .map((line) => parseCodesigningIdentity(line))
+    .filter((identity) => identity && identity.name.startsWith(DEVELOPER_ID_APPLICATION_PREFIX));
+
+  if (requestedIdentity) {
+    const requestedWithPrefix = `${DEVELOPER_ID_APPLICATION_PREFIX} ${requestedIdentity}`;
+    const match = identities.find((identity) =>
+      identity.name === requestedIdentity ||
+      identity.name === requestedWithPrefix ||
+      normalizeDeveloperIdApplicationName(identity.name) === requestedIdentity ||
+      identity.name.includes(requestedIdentity)
+    );
+    if (match) {
+      return match.hash;
+    }
+    throw new Error(
+      `unable to find Developer ID Application signing identity matching ${DARWIN_CODESIGN_IDENTITY_ENV_KEYS.join("/")}=${JSON.stringify(requestedIdentity)}`
+    );
+  }
+
+  if (identities.length === 1) {
+    return identities[0].hash;
+  }
+  if (identities.length > 1) {
+    throw new Error(
+      `multiple Developer ID Application signing identities found; set CSC_NAME to one of: ${identities.map((identity) => normalizeDeveloperIdApplicationName(identity.name)).join(", ")}`
+    );
+  }
+  throw new Error("unable to find a valid Developer ID Application signing identity for bundled Darwin service archives");
+}
+
+function isMachOFile(filePath) {
+  const file = fs.openSync(filePath, "r");
+  try {
+    const header = Buffer.alloc(4);
+    if (fs.readSync(file, header, 0, header.length, 0) !== header.length) {
+      return false;
+    }
+    return MACHO_MAGICS.has(header.readUInt32BE(0));
+  } finally {
+    fs.closeSync(file);
+  }
+}
+
+function listMachOFiles(rootDir) {
+  const result = [];
+  const stack = [rootDir];
+
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    const stat = fs.lstatSync(currentPath);
+    if (stat.isSymbolicLink()) {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      for (const entry of readDirectoryEntries(currentPath)) {
+        stack.push(path.join(currentPath, entry.name));
+      }
+      continue;
+    }
+    if (stat.isFile() && isMachOFile(currentPath)) {
+      result.push(currentPath);
+    }
+  }
+
+  return result.sort((left, right) => {
+    const depthDelta = right.split(path.sep).length - left.split(path.sep).length;
+    return depthDelta || left.localeCompare(right);
+  });
+}
+
+function signMachOFile(filePath, identity) {
+  execFileSync("codesign", [
+    "--force",
+    "--timestamp",
+    "--options",
+    "runtime",
+    "--sign",
+    identity,
+    filePath
+  ], { stdio: "inherit" });
+  execFileSync("codesign", ["--verify", "--strict", "--verbose=2", filePath], { stdio: "inherit" });
+}
+
+function signDarwinServiceArchive(archivePath, service, identity) {
+  if (!archivePath.endsWith(".tar.gz")) {
+    throw new Error(`Darwin service archives must be .tar.gz files: ${archivePath}`);
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-darwin-service-sign-"));
+  const extractRoot = path.join(tempRoot, "extract");
+  fs.mkdirSync(extractRoot, { recursive: true });
+
+  try {
+    execFileSync("tar", ["-xzf", archivePath, "-C", extractRoot], { stdio: "inherit" });
+    const machOFiles = listMachOFiles(extractRoot);
+    if (machOFiles.length === 0) {
+      return;
+    }
+
+    console.log(`[mac-service-sign] Signing ${machOFiles.length} Mach-O file(s) in ${service.id}...`);
+    for (const filePath of machOFiles) {
+      signMachOFile(filePath, identity);
+    }
+
+    const archiveEntries = fs.readdirSync(extractRoot).sort();
+    if (archiveEntries.length === 0) {
+      throw new Error(`Darwin service archive is empty: ${archivePath}`);
+    }
+
+    const signedArchivePath = path.join(tempRoot, path.basename(archivePath));
+    execFileSync("tar", ["-czf", signedArchivePath, "-C", extractRoot, ...archiveEntries], { stdio: "inherit" });
+    fs.copyFileSync(signedArchivePath, archivePath);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 function scanArchiveDirectory(dirPath, tryAddArchive) {
@@ -836,10 +1022,13 @@ export function validateBundleArchive(service, archivePath) {
   }
 }
 
-export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch } = {}) {
+export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch, signDarwin = false } = {}) {
   const outputRoot = path.join(projectRoot, "build", "resources", "services");
   const platform = { os, arch };
   const services = discoverBuiltinServices(platform);
+  const darwinSigningIdentity = signDarwin && services.some((service) => service.platform.os === "darwin")
+    ? resolveDarwinDeveloperIdApplicationIdentity()
+    : "";
 
   assertRequiredDesktopCoreServices(services, platform);
 
@@ -854,6 +1043,9 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch } = {}
     fs.mkdirSync(serviceDir, { recursive: true });
     const outputArchivePath = path.join(serviceDir, service.assetFileName);
     fs.copyFileSync(sourcePath, outputArchivePath);
+    if (darwinSigningIdentity && service.platform.os === "darwin") {
+      signDarwinServiceArchive(outputArchivePath, service, darwinSigningIdentity);
+    }
     validateBundleArchive(service, outputArchivePath);
 
     return {

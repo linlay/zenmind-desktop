@@ -6,6 +6,10 @@ for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
   const [key, inlineValue] = arg.split("=");
   const nextValue = inlineValue ?? args[index + 1];
+  if (key === "--sign-darwin") {
+    platform.signDarwin = true;
+    continue;
+  }
   if (key === "--os") {
     platform.os = nextValue;
     if (inlineValue === undefined) {
