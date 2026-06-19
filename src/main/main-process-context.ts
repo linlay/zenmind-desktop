@@ -1,4 +1,5 @@
 import type { MainAppState } from "./app-state";
+import type { LogStreamSubscriptionRegistry } from "./logs/subscriptions";
 
 export interface MainProcessContext {
   state: MainAppState;
@@ -48,6 +49,7 @@ export interface ShellIpcHandlerContextDependencies {
   reportRendererDiagnostic: (...args: any[]) => unknown;
   openLogViewerWindow?: (...args: any[]) => unknown;
   issueAgentPlatformAccessToken?: (...args: any[]) => unknown;
+  desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
 }
 
 export function createShellIpcHandlerOptions(
@@ -63,7 +65,8 @@ export function createShellIpcHandlerOptions(
     captureDesktopScreenshot: dependencies.captureDesktopScreenshot,
     reportRendererDiagnostic: dependencies.reportRendererDiagnostic,
     openLogViewerWindow: dependencies.openLogViewerWindow,
-    issueAgentPlatformAccessToken: dependencies.issueAgentPlatformAccessToken
+    issueAgentPlatformAccessToken: dependencies.issueAgentPlatformAccessToken,
+    desktopLogStreamSubscriptions: dependencies.desktopLogStreamSubscriptions
   };
 }
 
@@ -159,6 +162,7 @@ export interface ServicesIpcHandlerContextDependencies {
   loadInstalledPlugins?: (...args: any[]) => unknown;
   notifyServicesChanged?: (...args: any[]) => unknown;
   runStartupPreparation?: (...args: any[]) => unknown;
+  logStreamSubscriptions: LogStreamSubscriptionRegistry;
   oldRootDecisionRef?: { current: "migrate" | "keep" | "cancel" | undefined };
   generateBackupDirName?: (...args: any[]) => unknown;
   migrateOldRootToBackup?: (...args: any[]) => unknown;
@@ -209,7 +213,7 @@ export function createServicesIpcHandlerOptions(
     revealPathInFileManager: dependencies.revealPathInFileManager,
     getServiceWebviewPreloadPath: dependencies.getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl: dependencies.getServiceWebviewPreloadUrl,
-    logStreamSubscriptions: context.state.logStreamSubscriptions,
+    logStreamSubscriptions: dependencies.logStreamSubscriptions,
     startupRestoreController: dependencies.startupRestoreController,
     importEnvZipToRuntime: dependencies.importEnvZipToRuntime,
     applyDesktopInitBootstrap: dependencies.applyDesktopInitBootstrap,

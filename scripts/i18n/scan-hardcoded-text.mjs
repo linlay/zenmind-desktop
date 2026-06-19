@@ -48,12 +48,6 @@ const allowedBlocks = [
     start: /DONE_FALLBACK_SUMMARY|GENERIC_DONE_SUMMARIES/u,
     end: /\]\);|DONE_FALLBACK_SUMMARY/u,
     reason: "desktop pet done-summary matcher"
-  },
-  {
-    file: "src/main/index.ts",
-    start: /DESKTOP_PET_DONE_PREVIEW_FALLBACK|DESKTOP_PET_GENERIC_DONE_PREVIEWS/u,
-    end: /\]\);|DESKTOP_PET_DONE_PREVIEW_FALLBACK/u,
-    reason: "desktop pet done-preview matcher"
   }
 ];
 

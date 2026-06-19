@@ -8,15 +8,15 @@ import type {
   ServiceLogReadResult,
   ServiceLogStreamEvent,
   ServiceLogStreamOptions
-} from "../shared/contracts";
-import { getLogsRoot } from "./user-paths";
+} from "../../shared/contracts";
+import { getLogsRoot } from "../user-paths";
 import {
   LOG_READ_WINDOW_BYTES,
   normalizeLogStreamOffset,
   normalizeLogStreamPollInterval,
   readLogRange,
   readServiceLogFile
-} from "./services/manager/logs";
+} from "../services/manager/logs";
 
 type ConsoleWriter = (...args: unknown[]) => void;
 type DesktopLogStreamCallback = (event: ServiceLogStreamEvent) => void;

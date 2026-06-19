@@ -42,10 +42,6 @@ export interface MainAppState {
     resolve: (response: DesktopActionRendererResponse) => void;
     timeout: ReturnType<typeof setTimeout>;
   }>;
-  logStreamSubscriptions: Map<string, {
-    webContentsId: number;
-    cleanup: () => void;
-  }>;
 }
 
 export function createMainAppState(initialState: Partial<MainAppState> = {}): MainAppState {
@@ -71,7 +67,6 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     desktopPetProgrammaticBoundsGuardTimer: initialState.desktopPetProgrammaticBoundsGuardTimer ?? null,
     desktopPetMouseInteractive: initialState.desktopPetMouseInteractive ?? true,
     taskBoardRuntime: initialState.taskBoardRuntime ?? null,
-    desktopActionRendererRequests: initialState.desktopActionRendererRequests ?? new Map(),
-    logStreamSubscriptions: initialState.logStreamSubscriptions ?? new Map()
+    desktopActionRendererRequests: initialState.desktopActionRendererRequests ?? new Map()
   };
 }

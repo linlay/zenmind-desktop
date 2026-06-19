@@ -8,7 +8,7 @@ const {
   getDesktopLogRoot,
   readDesktopLog,
   __testInternals
-} = await import("../dist-electron/main/desktop-logs.js");
+} = await import("../dist-electron/main/logs/desktop.js");
 
 function createApp(homePath) {
   return {

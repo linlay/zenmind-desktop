@@ -2,6 +2,7 @@ import { emitPluginBridgeHook } from "../plugin-bridge";
 import { getPluginGlobalShortcutStatuses } from "../plugin-global-shortcuts";
 import { invokePluginDesktopAction } from "../plugin-actions";
 import { t } from "../i18n/main-i18n";
+import type { LogStreamSubscriptionRegistry } from "../logs/subscriptions";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 
@@ -60,7 +61,7 @@ export interface ServicesIpcHandlerOptions {
   getServiceWebviewPreloadUrl: () => string;
 
   // Active log stream subscriptions
-  logStreamSubscriptions: Map<string, { webContentsId: number; cleanup: () => void }>;
+  logStreamSubscriptions: LogStreamSubscriptionRegistry;
 
   // Optional archive extension resolver (injected so tests don't need process.platform)
   getArchiveExtensions?: (platform: string) => string[];

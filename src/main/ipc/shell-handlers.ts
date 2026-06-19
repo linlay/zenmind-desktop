@@ -13,7 +13,11 @@ import {
   getPlatformPath
 } from "../download-paths";
 import { t } from "../i18n/main-i18n";
-import { getDesktopLogRoot, readDesktopLog, watchDesktopLog } from "../desktop-logs";
+import { getDesktopLogRoot, readDesktopLog, watchDesktopLog } from "../logs/desktop";
+import {
+  createLogStreamSubscriptionRegistry,
+  type LogStreamSubscriptionRegistry
+} from "../logs/subscriptions";
 import {
   getTunnelDebugSnapshot,
   inspectIdentityAccessToken,
@@ -81,6 +85,7 @@ type ShellIpcOptions = {
     token: string;
     message: string;
   }>;
+  desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
 };
 
 type DesktopDownloadPayload = {
@@ -104,10 +109,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     lastPoint: { x: number; y: number };
     startedAt: number;
   } | null = null;
-  const desktopLogStreamSubscriptions = new Map<string, {
-    webContentsId: number;
-    cleanup: () => void;
-  }>();
+  const desktopLogStreamSubscriptions = options.desktopLogStreamSubscriptions ?? createLogStreamSubscriptionRegistry();
 
   function normalizeDesktopLogTarget(value: unknown): DesktopLogTarget {
     return value === "error" ? "error" : "main";
