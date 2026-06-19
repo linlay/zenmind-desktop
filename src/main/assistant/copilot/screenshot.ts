@@ -203,7 +203,7 @@ function selectScreenshotRegion(display: Display, platform: NodeJS.Platform) {
 function getScreenshotPermissionMessage(platform: NodeJS.Platform) {
   if (platform === "darwin") {
     const status = systemPreferences.getMediaAccessStatus("screen");
-    if (status === "denied" || status === "restricted") {
+    if (status === "restricted") {
       return t("screenshot.permissionDeniedMac", { appName: PRODUCT_NAME });
     }
     return "";

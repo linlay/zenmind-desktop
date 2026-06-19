@@ -75,7 +75,7 @@ export const enUSMessages = {
   "nav.taskBoardCollapsed": "Kanban",
   "nav.assistants": "Assistants / Projects",
   "nav.assistantsCollapsed": "Agents",
-  "nav.embeddedWebs": "Websites / Apps",
+  "nav.embeddedWebs": "Websites / Webapps",
   "nav.embeddedWebsCollapsed": "Webs",
   "nav.agents": "Agents",
   "nav.registries": "Registries",
