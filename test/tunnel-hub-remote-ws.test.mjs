@@ -46,6 +46,16 @@ function desktopRoot(homePath) {
   return path.join(homePath, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
 }
 
+function writeSsoSiteToken(homePath, token = "official-site-jwt") {
+  const secretsRoot = path.join(desktopRoot(homePath), "secrets");
+  fs.mkdirSync(secretsRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(secretsRoot, "sso-site-token.json"),
+    JSON.stringify({ accessToken: token }),
+    "utf8"
+  );
+}
+
 function listen(server) {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => resolve(server.address()));
@@ -75,7 +85,7 @@ test("deriveTunnelHubRegistrationApiOrigin maps relay websocket URLs to HTTP API
   );
 });
 
-test("Tunnel Hub remote WS registration posts broker device and stores agent token", async (t) => {
+test("Tunnel Hub remote WS registration uses SSO site token and stores agent token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-remote-ws-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -135,11 +145,11 @@ test("Tunnel Hub remote WS registration posts broker device and stores agent tok
   );
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
+  writeSsoSiteToken(homePath, "site-registration-secret");
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
-    deviceId: "mac-mini-office",
-    registrationToken: "registration-secret"
+    deviceId: "mac-mini-office"
   });
   assert.equal(saved.ok, true);
 
@@ -184,7 +194,7 @@ test("Tunnel Hub remote WS registration posts broker device and stores agent tok
   assert.equal(registrations.length, 1);
   assert.equal(registrations[0].method, "POST");
   assert.equal(registrations[0].url, "/api/desktop/devices/register");
-  assert.equal(registrations[0].authorization, "Bearer registration-secret");
+  assert.equal(registrations[0].authorization, "Bearer site-registration-secret");
   assert.equal(registrations[0].body.deviceId, "mac-mini-office");
   assert.equal(registrations[0].body.deviceName, "Tunnel Studio");
   assert.equal("deviceSecret" in registrations[0].body, false);
@@ -197,7 +207,7 @@ test("Tunnel Hub remote WS registration posts broker device and stores agent tok
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), true);
 });
 
-test("Tunnel Hub remote WS registration uses SSO site token before legacy registration token", async (t) => {
+test("Tunnel Hub remote WS registration ignores legacy registration token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-site-token-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -241,18 +251,17 @@ test("Tunnel Hub remote WS registration uses SSO site token before legacy regist
   });
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
+  writeSsoSiteToken(homePath);
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
-    deviceId: "mac-mini-office",
-    registrationToken: "legacy-registration-secret"
+    deviceId: "mac-mini-office"
   });
   assert.equal(saved.ok, true);
   const secretsRoot = path.join(desktopRoot(homePath), "secrets");
-  fs.mkdirSync(secretsRoot, { recursive: true });
   fs.writeFileSync(
-    path.join(secretsRoot, "sso-site-token.json"),
-    JSON.stringify({ accessToken: "official-site-jwt" }),
+    path.join(secretsRoot, "tunnel-hub-registration-token"),
+    "legacy-registration-secret\n",
     "utf8"
   );
 

@@ -195,8 +195,8 @@ export function readTunnelHubRelayToken(app: App) {
   return readTokenFile(app);
 }
 
-export function readTunnelHubRegistrationToken(app: App) {
-  return readSecretFile(getRegistrationTokenPath(app));
+export function clearLegacyTunnelHubRegistrationToken(app: App) {
+  writeSecretFile(getRegistrationTokenPath(app), "");
 }
 
 function readJwtExpiresAtMs(token: string) {
@@ -240,7 +240,7 @@ function readSsoSiteToken(app: App) {
 }
 
 export function readTunnelHubRegistrationBearerToken(app: App) {
-  return readSsoSiteToken(app) || readTunnelHubRegistrationToken(app);
+  return readSsoSiteToken(app);
 }
 
 export function ensureTunnelHubDeviceSecret(app: App) {
@@ -266,10 +266,10 @@ function previewToken(token: string) {
 export function readTunnelHubSettings(app: App): TunnelHubSettings {
   const stored = readStoredSettings(app);
   const token = readTunnelHubRelayToken(app);
-  const registrationToken = readTunnelHubRegistrationBearerToken(app);
+  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
-  const complete = Boolean(token || registrationToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
+  const complete = Boolean(ssoSiteToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
     ? stored.enabled && complete
     : complete;
@@ -279,8 +279,6 @@ export function readTunnelHubSettings(app: App): TunnelHubSettings {
     deviceId,
     hasRelayToken: Boolean(token),
     relayTokenPreview: previewToken(token),
-    hasRegistrationToken: Boolean(registrationToken),
-    registrationTokenPreview: previewToken(registrationToken),
     publicHost: readStoredString(stored.publicHost),
     publicUrl: readStoredString(stored.publicUrl),
     webSocketUrl: readStoredString(stored.webSocketUrl),
@@ -363,10 +361,6 @@ function writeToken(app: App, token: string) {
   writeSecretFile(getTokenPath(app), token);
 }
 
-function writeRegistrationToken(app: App, token: string) {
-  writeSecretFile(getRegistrationTokenPath(app), token);
-}
-
 export function writeTunnelHubRelayToken(app: App, token: string) {
   writeToken(app, token.trim());
 }
@@ -375,6 +369,7 @@ export function saveTunnelHubSettings(
   app: App,
   input: TunnelHubSettingsInput
 ): TunnelHubSettingsResult {
+  clearLegacyTunnelHubRegistrationToken(app);
   const current = readTunnelHubSettings(app);
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
   const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
@@ -385,17 +380,7 @@ export function saveTunnelHubSettings(
     ? input.tlsInsecureSkipVerify
     : current.tlsInsecureSkipVerify;
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
-  const nextToken = input.clearRelayToken === true
-    ? ""
-    : typeof input.relayToken === "string" && input.relayToken.trim()
-      ? input.relayToken.trim()
-      : readTunnelHubRelayToken(app);
-  const nextRegistrationToken = input.clearRegistrationToken === true
-    ? ""
-    : typeof input.registrationToken === "string" && input.registrationToken.trim()
-      ? input.registrationToken.trim()
-      : readTunnelHubRegistrationToken(app);
-  const availableRegistrationToken = nextRegistrationToken || readSsoSiteToken(app);
+  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app);
   const issues: string[] = [];
   if (!isValidTunnelHubDeviceId(deviceId)) {
     issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
@@ -404,8 +389,8 @@ export function saveTunnelHubSettings(
     if (!isValidRelayUrl(relayUrl)) {
       issues.push("Relay URL is invalid.");
     }
-    if (!nextToken && !availableRegistrationToken) {
-      issues.push("Registration token is required.");
+    if (!ssoSiteToken) {
+      issues.push("Sign in before enabling Tunnel Hub.");
     }
   }
 
@@ -431,14 +416,6 @@ export function saveTunnelHubSettings(
     const token = input.relayToken.trim();
     if (token) {
       writeToken(app, token);
-    }
-  }
-  if (input.clearRegistrationToken === true) {
-    writeRegistrationToken(app, "");
-  } else if (typeof input.registrationToken === "string") {
-    const token = input.registrationToken.trim();
-    if (token) {
-      writeRegistrationToken(app, token);
     }
   }
   if (issues.length > 0) {

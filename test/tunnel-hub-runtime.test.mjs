@@ -58,6 +58,16 @@ function desktopRoot(homePath) {
   return path.join(homePath, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
 }
 
+function writeSsoSiteToken(homePath, token = "runtime-site-token") {
+  const secretsRoot = path.join(desktopRoot(homePath), "secrets");
+  fs.mkdirSync(secretsRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(secretsRoot, "sso-site-token.json"),
+    JSON.stringify({ accessToken: token }),
+    "utf8"
+  );
+}
+
 function listen(server) {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => resolve(server.address()));
@@ -332,6 +342,54 @@ function createFakeRelay({ targetUrl, kind = "websocket" }) {
   };
 }
 
+test("Tunnel Hub runtime requires SSO even when a relay token exists", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-runtime-sso-required-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeSsoSiteToken(homePath);
+  assert.equal(saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office"
+  }).ok, true);
+  const secretsRoot = path.join(desktopRoot(homePath), "secrets");
+  fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-token"), "cached-relay-token\n", "utf8");
+  fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-registration-token"), "legacy-registration-secret\n", "utf8");
+  fs.rmSync(path.join(secretsRoot, "sso-site-token.json"), { force: true });
+
+  const connectCalls = [];
+  const runtime = new TunnelHubRuntime({
+    app,
+    desktopWsServerOptions: {
+      app,
+      desktopActionOptions: {},
+      assistantBridge: {
+        listAgents: async () => [],
+        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      },
+      getTaskBoardRuntime: () => null
+    },
+    createTunnelClient(input) {
+      connectCalls.push(input);
+      return {
+        async connect() {},
+        close() {},
+        on() {}
+      };
+    },
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  const result = await runtime.start();
+  assert.equal(result.ok, false);
+  assert.match(result.message, /Sign in/u);
+  assert.equal(connectCalls.length, 0);
+  assert.equal(readTunnelHubSettings(app).enabled, false);
+  assert.equal(fs.existsSync(path.join(secretsRoot, "tunnel-hub-registration-token")), false);
+});
+
 test("Tunnel Hub runtime registers desktop broker before connecting integrated tunnel", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-runtime-"));
   const homePath = path.join(root, "home");
@@ -367,11 +425,11 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   });
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
+  writeSsoSiteToken(homePath, "runtime-registration-secret");
   assert.equal(saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
-    deviceId: "mac-mini-office",
-    registrationToken: "registration-secret"
+    deviceId: "mac-mini-office"
   }).ok, true);
 
   configureTunnelHubRemoteWsController({
@@ -432,7 +490,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(registrations.length, 1);
   assert.equal(registrations[0].method, "POST");
   assert.equal(registrations[0].url, "/api/desktop/devices/register");
-  assert.equal(registrations[0].authorization, "Bearer registration-secret");
+  assert.equal(registrations[0].authorization, "Bearer runtime-registration-secret");
   assert.equal("targetUrl" in registrations[0].body, false);
   assert.equal(connectCalls.length, 1);
   assert.equal(connectCalls[0].relayUrl, relayUrl);

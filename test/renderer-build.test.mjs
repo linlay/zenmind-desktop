@@ -1737,6 +1737,9 @@ test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () =
   assert.match(tunnelSettings, /readTunnelHubSettings[\s\S]*?enabled/);
   assert.match(tunnelSettings, /requestedEnabled && issues\.length === 0/);
   assert.match(tunnelSettings, /function normalizeRelayUrl\(value: unknown\)[\s\S]*?value\.trim\(\)/);
+  assert.doesNotMatch(servicesContract, /registrationToken|clearRegistrationToken|hasRegistrationToken|registrationTokenPreview/);
+  assert.doesNotMatch(settingsPage, /registrationToken|clearRegistrationToken|hasRegistrationToken|registrationTokenPreview|Input\.Password/);
+  assert.doesNotMatch(tunnelSettings, /readTunnelHubRegistrationToken|Registration token is required/);
   assert.doesNotMatch(tunnelSettings, removedTunnelHubPatterns);
   assert.match(tunnelRuntime, /startTunnelHubRuntimeIfEnabled/);
   assert.doesNotMatch(tunnelRuntime, new RegExp(`startService|restartService|${removedTunnelHubPatterns.source}`));

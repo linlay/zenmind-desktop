@@ -110,8 +110,8 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   const readRemoteWsState = controllerOptions.getRemoteWsServerRuntimeState ?? getDesktopRemoteWsServerRuntimeState;
   await startRemoteWsServer(controllerOptions.desktopWsServerOptions);
   const targetUrl = getRemoteWsTargetUrl(readRemoteWsState);
-  const registrationToken = readTunnelHubRegistrationBearerToken(app);
-  if (!registrationToken) {
+  const siteToken = readTunnelHubRegistrationBearerToken(app);
+  if (!siteToken) {
     return {
       ok: true,
       registered: false,
@@ -132,7 +132,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   const response = await fetchImpl(`${origin}/api/desktop/devices/register`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${registrationToken}`,
+      "Authorization": `Bearer ${siteToken}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({

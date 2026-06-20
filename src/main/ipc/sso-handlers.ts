@@ -48,6 +48,7 @@ export interface SsoIpcHandlerOptions {
   cancelDesktopSsoLogin: (app: any) => any;
   issueAgentAccessToken: (app: any, reason: any) => Promise<any> | any;
   refreshTaskBoardConnection?: () => void;
+  stopTunnelHubRuntime?: () => Promise<unknown> | unknown;
 }
 
 export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptions) {
@@ -154,6 +155,13 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
     const result = await logoutDesktopSso(app, {
       onStatusChanged: desktopSsoController.broadcastStatus
     });
+    if (result.ok) {
+      try {
+        await options.stopTunnelHubRuntime?.();
+      } catch (error) {
+        safeConsoleError("failed to stop Tunnel Hub after desktop sso logout", error);
+      }
+    }
     await desktopSsoController.clearBrowserCookies();
     await desktopSsoController.clearWebSessionCookies();
     await desktopSsoController.clearSiteTokenBridgeCookies?.();

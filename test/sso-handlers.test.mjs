@@ -57,7 +57,8 @@ function createHarness(startResult, options = {}) {
     openSystemBrowserUrl: [],
     siteTokenBridgeTickets: [],
     broadcasts: [],
-    taskBoardRefreshes: 0
+    taskBoardRefreshes: 0,
+    tunnelHubStops: 0
   };
   registerSsoIpcHandlers({
     handle(name, handler) {
@@ -106,7 +107,8 @@ function createHarness(startResult, options = {}) {
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
-    refreshTaskBoardConnection: () => { calls.taskBoardRefreshes += 1; }
+    refreshTaskBoardConnection: () => { calls.taskBoardRefreshes += 1; },
+    stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; }
   });
   return { handlers, calls };
 }
@@ -200,6 +202,19 @@ test("desktop sso site token bridge ticket is exchanged by the controller", asyn
   assert.equal(result.ok, true);
   assert.deepEqual(calls.siteTokenBridgeTickets, ["site-ticket-1"]);
   assert.equal(calls.taskBoardRefreshes, 1);
+});
+
+test("desktop sso logout stops Tunnel Hub runtime", async () => {
+  const { handlers, calls } = createHarness({
+    ok: true,
+    status: createStatus(false),
+    message: "started"
+  });
+
+  const result = await handlers.get("sso.logout")();
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.tunnelHubStops, 1);
 });
 
 test("desktop sso web session exchange uses configured provider", async (t) => {
