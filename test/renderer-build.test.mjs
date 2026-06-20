@@ -1151,8 +1151,10 @@ test("assistant sidebar active chats use loading status instead of thinking text
   const globalStyles = readRendererStyles();
 
   assert.match(sidebarSource, /function isAssistantRunningPreview\(value: string\)/);
-  assert.match(sidebarSource, /normalized === "\\u601d\\u8003\\u4e2d"/);
-  assert.match(sidebarSource, /normalized === "\\u601d\\u8003\\u4e2d\.\.\."/);
+  assert.match(sidebarSource, /"\\u601d\\u8003\\u4e2d"/);
+  assert.match(sidebarSource, /"\\u601d\\u8003\\u4e2d\.\.\."/);
+  assert.match(sidebarSource, /"thinking"/);
+  assert.match(sidebarSource, /"thinking\.\.\."/);
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
   assert.match(sidebarSource, /chat\.hasActiveRun && isAssistantRunningPreview\(chat\.lastRunContent\)/);
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);

@@ -815,7 +815,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     agentKey,
     updatedAt,
     lastRunId: toText(event.lastRunId) || toText(event.runId) || current?.lastRunId || "",
-    lastRunContent: preview || current?.lastRunContent || (event.type === "run.start" ? t("desktopPet.status.thinking") : ""),
+    lastRunContent: preview || current?.lastRunContent || "",
     isRead,
     hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
     hasPendingAwaiting,
