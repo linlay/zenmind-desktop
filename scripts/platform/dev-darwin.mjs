@@ -2,8 +2,9 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { brandBuildRoot, brandIconDir, brandResourcesDir, loadBrandConfig, resolveBrandId } from "../lib/brand-config.mjs";
+import { brandBuildRoot, brandIconDir, loadBrandConfig, resolveBrandId } from "../lib/brand-config.mjs";
 import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-metadata.mjs";
+import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
 
 function setPlistString(plist, key, value) {
   const pattern = new RegExp(`(<key>${key}</key>\\s*<string>)([^<]*)(</string>)`, "u");
@@ -67,13 +68,14 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
 }
 
 export function spawnElectron(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
+  const serviceAssetsRoot = desktopBuiltinServicesDir(projectRoot);
   return spawn(prepareDarwinDevElectronBinary(electronBinary, projectRoot, brand), ["."], {
     cwd: projectRoot,
     stdio: "inherit",
     env: {
       ...process.env,
-      DESKTOP_BUILTIN_ASSETS_ROOT: path.join(brandResourcesDir(projectRoot, brand), "services"),
-      ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT: path.join(brandResourcesDir(projectRoot, brand), "services"),
+      DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
+      ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
       VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
     }
   });

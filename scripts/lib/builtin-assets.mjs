@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { brandResourcesDir, resolveBrandId } from "./brand-config.mjs";
+import { desktopBuiltinServicesDir } from "./desktop-resources.mjs";
 
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -55,6 +55,23 @@ function readDirectoryEntries(directoryPath, { optional = false } = {}) {
       return [];
     }
     throw error;
+  }
+}
+
+function cleanupLegacyBrandScopedServiceAssets(projectRoot) {
+  const brandsRoot = path.join(projectRoot, "build", "brands");
+  if (!fs.existsSync(brandsRoot)) {
+    return;
+  }
+
+  for (const brandEntry of readDirectoryEntries(brandsRoot, { optional: true })) {
+    if (!brandEntry.isDirectory()) {
+      continue;
+    }
+    fs.rmSync(path.join(brandsRoot, brandEntry.name, "resources", "services"), {
+      recursive: true,
+      force: true
+    });
   }
 }
 
@@ -1023,8 +1040,9 @@ export function validateBundleArchive(service, archivePath) {
   }
 }
 
-export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch, signDarwin = false, brandId = resolveBrandId() } = {}) {
-  const outputRoot = path.join(brandResourcesDir(projectRoot, brandId), "services");
+export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
+  const { os, arch, signDarwin = false } = options;
+  const outputRoot = desktopBuiltinServicesDir(projectRoot);
   const platform = { os, arch };
   const services = discoverBuiltinServices(platform);
   const darwinSigningIdentity = signDarwin && services.some((service) => service.platform.os === "darwin")
@@ -1062,6 +1080,8 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch, signD
     `${JSON.stringify({ generatedAt: new Date().toISOString(), services: manifest }, null, 2)}\n`,
     "utf8"
   );
+
+  cleanupLegacyBrandScopedServiceAssets(projectRoot);
 
   return manifest;
 }

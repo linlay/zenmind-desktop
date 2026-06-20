@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
-import path from "node:path";
-import { brandResourcesDir } from "../lib/brand-config.mjs";
+import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
 
 export function spawnElectron(electronBinary, projectRoot, brand) {
-  const serviceAssetsRoot = path.join(brandResourcesDir(projectRoot, brand), "services");
+  const serviceAssetsRoot = desktopBuiltinServicesDir(projectRoot);
   return spawn(`chcp 65001 >NUL && "${electronBinary}" .`, {
     cwd: projectRoot,
     stdio: "inherit",

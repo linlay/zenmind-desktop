@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { desktopBuiltinServicesRelativePath } from "./desktop-resources.mjs";
 
 export const DEFAULT_BRAND_ID = "cutej";
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
@@ -1035,7 +1036,7 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
     npmRebuild: false,
     extraResources: [
       {
-        from: brandBuildRelativePath(brand, "resources", "services"),
+        from: desktopBuiltinServicesRelativePath(),
         to: "services"
       },
       {

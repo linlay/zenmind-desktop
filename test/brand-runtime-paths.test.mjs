@@ -26,6 +26,7 @@ import {
   resolveBrandId,
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
+import { desktopBuiltinServicesRelativePath } from "../scripts/lib/desktop-resources.mjs";
 import { renderAppIconToPng, renderBrandMarkToPng } from "../scripts/generate-app-icons.mjs";
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
 import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
@@ -629,6 +630,14 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(
     electronBuilderConfig.directories.output === "dist/cutej",
     true
+  );
+  assert.equal(
+    electronBuilderConfig.extraResources.some((item) => item.from === desktopBuiltinServicesRelativePath() && item.to === "services"),
+    true
+  );
+  assert.equal(
+    electronBuilderConfig.extraResources.some((item) => item.from === brandBuildRelativePath(brand, "resources", "services")),
+    false
   );
   assert.equal(
     electronBuilderConfig.extraResources.some((item) => item.from === brandBuildRelativePath(brand, "resources", "demo") && item.to === "demo"),
