@@ -125,6 +125,7 @@ import {
   createMainProcessContext,
   type MainProcessContext,
 } from "../main-process-context";
+import { getMainPreloadPath } from "../electron-bundle-paths";
 import {
   loadRendererRoute,
 } from "../renderer-route";
@@ -150,6 +151,10 @@ import {
   requestMainSingleInstanceLock,
 } from "../lifecycle/single-instance";
 import { createStartupPipeline } from "../lifecycle/startup";
+import {
+  isStartupPhaseAtLeast,
+  type StartupPhase,
+} from "../lifecycle/startup-phases";
 import { createShutdownCleanupRunner } from "../lifecycle/shutdown";
 import { registerMainAppEvents } from "./app-events";
 
@@ -167,6 +172,7 @@ export function createMainProcessRuntime() {
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
   const MAIN_PROCESS_DIR = path.join(__dirname, "..");
+  const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
   const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
   const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(
@@ -255,6 +261,15 @@ export function createMainProcessRuntime() {
   });
   const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
   let startupEnvImportFailureMessage: string | null = null;
+  let nonCoreDesktopRuntimeStarted = false;
+  function setStartupPhase(phase: StartupPhase) {
+    if (appState.startupPhase === phase) {
+      return;
+    }
+    appState.startupPhase = phase;
+    console.info(`[main] startup phase: ${phase}`);
+  }
+
   function initializeUserDataRootsAndSettings() {
     ensureDataRoot(app);
     applyDesktopInitBootstrap(app, mainProcessContext.platform);
@@ -290,7 +305,7 @@ export function createMainProcessRuntime() {
   const quickCopilotWindowController = new QuickCopilotWindowController({
     app,
     platform: () => mainProcessContext.platform,
-    preloadPath: path.join(MAIN_PROCESS_DIR, "..", "preload", "index.js"),
+    preloadPath: MAIN_PRELOAD_PATH,
     loadRendererRoute,
     prepareServices: () =>
       servicesRuntime.runServiceMutation(() => servicesRuntime.ensureAssistantTargetServicesRunning("quick-assistant")),
@@ -300,7 +315,7 @@ export function createMainProcessRuntime() {
   
   const logsRuntime = createLogsRuntime({
     app,
-    preloadPath: path.join(MAIN_PROCESS_DIR, "..", "preload", "index.js"),
+    preloadPath: MAIN_PRELOAD_PATH,
     routePath: LOG_VIEWER_ROUTE,
     platform: mainProcessContext.platform,
     getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
@@ -333,7 +348,7 @@ export function createMainProcessRuntime() {
     requestAppQuit,
     openAssistantWorker,
     showAssistantTargetWindow,
-    getDesktopPetEnabled: () => appState.desktopPetSettings.enabled,
+    getDesktopPetEnabled: () => appState.desktopPetSettings?.enabled === true,
     isDesktopPetSupported: () => isDesktopPetSupportedPlatform(mainProcessContext.platform),
     showDesktopPetWindow,
     hideDesktopPetWindow
@@ -348,7 +363,6 @@ export function createMainProcessRuntime() {
     oldRootDecisionRef,
     startupRestoreController,
     showMessageBox: (options) => appShellRuntime.showMessageBox(options),
-    notifyServicesChanged,
     t
   });
   petRuntime = createDesktopPetRuntime({
@@ -356,7 +370,7 @@ export function createMainProcessRuntime() {
     platform: mainProcessContext.platform,
     state: appState,
     screen,
-    preloadPath: path.join(MAIN_PROCESS_DIR, "..", "preload", "index.js"),
+    preloadPath: MAIN_PRELOAD_PATH,
     loadRendererRoute,
     showMainWindow,
     openAssistantWorker,
@@ -423,8 +437,9 @@ export function createMainProcessRuntime() {
     startupRestoreController,
     loadBuiltinServices,
     loadInstalledPlugins,
-    notifyServicesChanged,
-    startTunnelHubRuntimeIfEnabled,
+    notifyCoreServicesChanged,
+    startNonCoreRuntime: startNonCoreDesktopRuntime,
+    setStartupPhase,
     runServiceMutation: servicesRuntime.runServiceMutation,
     runStartupPreparation,
     t,
@@ -490,6 +505,9 @@ export function createMainProcessRuntime() {
   }
   
   function scheduleAgentPlatformPetStatusRefresh(delayMs = 0, force = false) {
+    if (!appState.desktopPetSettings) {
+      return;
+    }
     return petRuntime.scheduleStatusRefresh(delayMs, force);
   }
   
@@ -730,12 +748,17 @@ export function createMainProcessRuntime() {
   }
   
   function notifyServicesChanged() {
-    if (app.isReady()) {
-      refreshPluginDesktopGlobalShortcuts();
+    notifyCoreServicesChanged();
+    notifyDesktopDecorationsChanged();
+  }
+
+  function notifyCoreServicesChanged() {
+    if (!isStartupPhaseAtLeast(appState.startupPhase, "shell-ready")) {
+      console.info(`[main] skipped core service notification before shell-ready: ${appState.startupPhase}`);
+      return;
     }
     void pluginBridgeRuntime.publishServiceStates();
     emitDesktopWsPush("service.changed", { changedAt: new Date().toISOString() });
-    scheduleAgentPlatformPetStatusRefresh(1000);
     appState.assistantNavigationStatusClient?.scheduleRefresh(1000);
     for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
       if (!targetWindow || targetWindow.isDestroyed()) {
@@ -743,6 +766,16 @@ export function createMainProcessRuntime() {
       }
       targetWindow.webContents.send("services.changed");
     }
+  }
+
+  function notifyDesktopDecorationsChanged() {
+    if (appState.startupPhase !== "non-core-ready") {
+      return;
+    }
+    if (app.isReady()) {
+      refreshPluginDesktopGlobalShortcuts();
+    }
+    scheduleAgentPlatformPetStatusRefresh(1000);
   }
   
   function emitTaskBoardChanged() {
@@ -801,6 +834,49 @@ export function createMainProcessRuntime() {
   function createAppTray() {
     return appShellRuntime.createAppTray();
   }
+
+  function runNonCoreStartupTask(label: string, task: () => void) {
+    try {
+      task();
+    } catch (error) {
+      safeConsoleError(`failed to start non-core runtime: ${label}`, {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  function startNonCoreDesktopRuntime() {
+    if (nonCoreDesktopRuntimeStarted) {
+      return;
+    }
+    nonCoreDesktopRuntimeStarted = true;
+
+    runNonCoreStartupTask("desktop pet", () => {
+      if (isDesktopPetSupportedPlatform(mainProcessContext.platform) && appState.desktopPetSettings?.enabled === true) {
+        showDesktopPetWindow();
+      } else if (appState.desktopPetSettings) {
+        refreshDesktopPetState();
+      }
+    });
+    runNonCoreStartupTask("app tray", () => createAppTray());
+    runNonCoreStartupTask("application menu", () => buildApplicationMenu());
+    runNonCoreStartupTask("quick assistant shortcut", () => registerQuickAssistantShortcut());
+    runNonCoreStartupTask("focused webview devtools shortcut", () => registerFocusedWebviewDevToolsShortcut());
+    runNonCoreStartupTask("plugin desktop bridge", () => pluginBridgeRuntime.setDesktopReady());
+    runNonCoreStartupTask("desktop ws server", () => {
+      assistantBridgeRuntime.startDesktopWsServerIfEnabled(
+        readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled
+      );
+    });
+    void startTunnelHubRuntimeIfEnabled().catch((error) => {
+      safeConsoleError("failed to start Desktop Tunnel Hub", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+
+    setStartupPhase("non-core-ready");
+    notifyDesktopDecorationsChanged();
+  }
   
   async function showFileDialog(options: any, ownerWindow = appState.mainWindow) {
     return appShellRuntime.showFileDialog(options, ownerWindow);
@@ -832,9 +908,11 @@ export function createMainProcessRuntime() {
   }
   
   async function handleAppReady() {
+    setStartupPhase("platform-preflight");
     systemIdentityRuntime.ensureDockIdentity();
     registerDesktopPetAssetProtocol(app, protocol, net, mainProcessContext.platform);
   
+    setStartupPhase("runtime-env");
     const canContinueStartup = await startupEnvironmentRuntime.handleStartupEnvRootConflict();
     if (!canContinueStartup) {
       app.exit(0);
@@ -847,16 +925,14 @@ export function createMainProcessRuntime() {
         startupRuntimeReady.message || startupEnvironmentRuntime.getDefaultEnvImportRequiredMessage();
       startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);
     }
+    setStartupPhase("runtime-env-ready");
   
     initializeUserDataRootsAndSettings();
-    ensureDataRoot(app);
+    setStartupPhase("desktop-state-ready");
     logsRuntime.installConsoleTee();
     pluginBridgeRuntime.configure();
     configurePluginResources({ callAgentPlatform });
     assistantBridgeRuntime.start();
-    assistantBridgeRuntime.startDesktopWsServerIfEnabled(
-      readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled
-    );
     registerMainIpcHandlers({
       app,
       ipcMain,
@@ -901,16 +977,7 @@ export function createMainProcessRuntime() {
     });
     configureAppMediaPermissions();
     createWindow();
-    if (isDesktopPetSupportedPlatform(mainProcessContext.platform) && appState.desktopPetSettings.enabled) {
-      showDesktopPetWindow();
-    } else {
-      refreshDesktopPetState();
-    }
-    createAppTray();
-    buildApplicationMenu();
-    registerQuickAssistantShortcut();
-    registerFocusedWebviewDevToolsShortcut();
-    pluginBridgeRuntime.setDesktopReady();
+    setStartupPhase("shell-ready");
   
     void startupPipeline.run();
   }

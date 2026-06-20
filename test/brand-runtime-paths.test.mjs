@@ -660,6 +660,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
     true
   );
   assert.equal(electronBuilderConfig.mac.icon, brandBuildRelativePath(brand, "icons", "icon.icns"));
+  assert.equal(electronBuilderConfig.mac.timestamp, undefined);
   assert.equal(electronBuilderConfig.win.icon, brandBuildRelativePath(brand, "icons", "icon.ico"));
   assert.equal(electronBuilderConfig.nsis.include, brandBuildRelativePath(brand, "installer", "installer.nsh"));
   assert.match(installerInclude, /%APPDATA%\\CuteJ/u);
@@ -669,6 +670,24 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(rendererIndex, /<title>CuteJ<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*cutej-pet:/u);
   assert.doesNotMatch(rendererIndex, /zenmind-pet:/u);
+});
+
+test("brand sync disables macOS signing timestamp when notarization is skipped", (t) => {
+  const originalSkipNotarize = process.env.SKIP_NOTARIZE;
+  process.env.SKIP_NOTARIZE = "1";
+  t.after(() => {
+    if (originalSkipNotarize === undefined) {
+      delete process.env.SKIP_NOTARIZE;
+      return;
+    }
+    process.env.SKIP_NOTARIZE = originalSkipNotarize;
+  });
+
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
+  const electronBuilderConfig = readJson(electronBuilderConfigPath(root, brand.id));
+
+  assert.equal(electronBuilderConfig.mac.timestamp, "none");
 });
 
 test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) => {

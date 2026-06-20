@@ -37,6 +37,33 @@ const DESKTOP_PET_ACTION_TRIGGER_VALUES = new Set(["manual", "idle-random"]);
 const DESKTOP_PET_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const DESKTOP_PET_SIGNATURE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 
+function parseBooleanEnv(value, name) {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    case "0":
+    case "false":
+    case "no":
+    case "off":
+      return false;
+    default:
+      throw new Error(`${name} must be a boolean value`);
+  }
+}
+
+function shouldSkipMacTimestamp(env = process.env) {
+  return (
+    parseBooleanEnv(env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
+    parseBooleanEnv(env.ZENMIND_SKIP_MAC_TIMESTAMP, "ZENMIND_SKIP_MAC_TIMESTAMP") === true
+  );
+}
+
 export function resolveBrandId(argv = process.argv.slice(2), env = process.env) {
   return normalizeBrandId(resolveExplicitBrandId(argv, env) || DEFAULT_BRAND_ID);
 }
@@ -1072,7 +1099,8 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
       },
       target: ["dmg"],
       category: "public.app-category.developer-tools",
-      hardenedRuntime: true
+      hardenedRuntime: true,
+      timestamp: shouldSkipMacTimestamp() ? "none" : undefined
     },
     electronLanguages: ["zh-CN", "en-US"],
     afterPack: "./scripts/fix-mac-sign.js",

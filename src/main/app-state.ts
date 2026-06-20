@@ -12,6 +12,7 @@ import type {
   DesktopPetLocalStatus,
   readDesktopPetStoredState
 } from "./assistant/pet/desktop-pet";
+import type { StartupPhase } from "./lifecycle/startup-phases";
 import type { TaskBoardRuntime } from "./task-board-runtime";
 
 type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
@@ -42,6 +43,7 @@ export interface MainAppState {
     resolve: (response: DesktopActionRendererResponse) => void;
     timeout: ReturnType<typeof setTimeout>;
   }>;
+  startupPhase: StartupPhase;
 }
 
 export function createMainAppState(initialState: Partial<MainAppState> = {}): MainAppState {
@@ -67,6 +69,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     desktopPetProgrammaticBoundsGuardTimer: initialState.desktopPetProgrammaticBoundsGuardTimer ?? null,
     desktopPetMouseInteractive: initialState.desktopPetMouseInteractive ?? true,
     taskBoardRuntime: initialState.taskBoardRuntime ?? null,
-    desktopActionRendererRequests: initialState.desktopActionRendererRequests ?? new Map()
+    desktopActionRendererRequests: initialState.desktopActionRendererRequests ?? new Map(),
+    startupPhase: initialState.startupPhase ?? "booting"
   };
 }

@@ -15,6 +15,7 @@ const {
 } = require("../dist-electron/main/services/manager/install-refresh.js");
 const {
   isInstallHealthy,
+  listMissingBundleDirectoryEntries,
   listMissingRuntimeFiles
 } = require("../dist-electron/main/services/manager/bundle-assets.js");
 const envNormalization = require("../dist-electron/main/services/manager/env-normalization.js");
@@ -103,6 +104,42 @@ test("runtime.requiredPaths still drives generic install health", (t) => {
 
   assert.deepEqual(listMissingRuntimeFiles(service, installDir), ["backend/agent-platform"]);
   assert.equal(isInstallHealthy(service, installDir), false);
+});
+
+test("agent-platform runtime directory is repairable when app packaging drops empty dirs", (t) => {
+  const installDir = createTempDir(t, "zenmind-platform-runtime-dir-health-");
+  const service = {
+    id: "agent-platform",
+    runtime: {
+      requiredPaths: ["backend/agent-platform", "start.sh", "runtime"]
+    }
+  };
+  writeText(path.join(installDir, "backend", "agent-platform"), "binary\n");
+  writeText(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\n");
+
+  assert.equal(fs.existsSync(path.join(installDir, "runtime")), false);
+  assert.deepEqual(listMissingRuntimeFiles(service, installDir), []);
+  assert.equal(isInstallHealthy(service, installDir), true);
+});
+
+test("agent-platform bundled directory tolerates missing empty runtime dir only", (t) => {
+  const bundleDir = createTempDir(t, "zenmind-platform-bundle-dir-health-");
+  const service = {
+    id: "agent-platform",
+    desktop: {
+      bundleTopLevelDir: "agent-platform"
+    },
+    runtime: {
+      requiredPaths: ["backend/agent-platform", "configs", "runtime"]
+    }
+  };
+  writeText(path.join(bundleDir, "backend", "agent-platform"), "binary\n");
+  fs.mkdirSync(path.join(bundleDir, "configs"), { recursive: true });
+
+  assert.equal(fs.existsSync(path.join(bundleDir, "runtime")), false);
+  assert.deepEqual(listMissingBundleDirectoryEntries(service, bundleDir), []);
+  fs.rmSync(path.join(bundleDir, "backend"), { recursive: true, force: true });
+  assert.deepEqual(listMissingBundleDirectoryEntries(service, bundleDir), ["backend/agent-platform"]);
 });
 
 test("agent-platform env normalization keeps only Desktop-owned cleanup", () => {

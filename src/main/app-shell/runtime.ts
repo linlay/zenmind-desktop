@@ -1,4 +1,3 @@
-import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   BrowserWindow,
@@ -26,6 +25,10 @@ import {
 import { getRendererEntry } from "../renderer-route";
 import { getArchiveExtensions } from "../platform-adapter";
 import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "../webview-open-tab";
+import {
+  getMainPreloadPath,
+  getServiceWebviewPreloadPath as resolveServiceWebviewPreloadPath
+} from "../electron-bundle-paths";
 import { buildApplicationMenu as installApplicationMenu } from "./app-menu";
 import { AgentPlatformMonitorWindowController } from "./agent-platform-monitor-window";
 import { createQuitConfirmationController } from "./quit-confirmation";
@@ -131,7 +134,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   });
 
   function getServiceWebviewPreloadPath() {
-    return path.join(options.mainProcessDir, "..", "preload", "service-webview.js");
+    return resolveServiceWebviewPreloadPath(options.mainProcessDir, options.platform);
   }
 
   function getServiceWebviewPreloadUrl() {
@@ -174,7 +177,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   function createWindow() {
     options.state.mainWindow = new BrowserWindow(buildMainWindowOptions({
       platform: options.platform,
-      preloadPath: path.join(options.mainProcessDir, "..", "preload", "index.js"),
+      preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
       initialLocaleSettings: getMainLocaleSettings()
     }));
     const targetWindow = options.state.mainWindow;

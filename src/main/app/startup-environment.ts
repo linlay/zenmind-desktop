@@ -20,7 +20,6 @@ export type StartupEnvironmentRuntimeOptions = {
     setEnvImportRequired(message: string): void;
   };
   showMessageBox: (options: any) => Promise<{ response: number }>;
-  notifyServicesChanged: () => void;
   t: (key: any, values?: any) => string;
 };
 
@@ -113,7 +112,6 @@ export function createStartupEnvironmentRuntime(options: StartupEnvironmentRunti
         "installing",
         options.t("startup.envImport.importingBundled")
       );
-      options.notifyServicesChanged();
       console.info(
         `[main] imported bundled env.zip from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );

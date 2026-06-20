@@ -36,6 +36,33 @@ const MACHO_MAGICS = new Set([
   0x0dd0feca
 ]);
 
+function parseBooleanEnv(value, name) {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    case "0":
+    case "false":
+    case "no":
+    case "off":
+      return false;
+    default:
+      throw new Error(`${name} must be a boolean value`);
+  }
+}
+
+function shouldSkipMacTimestamp(env = process.env) {
+  return (
+    parseBooleanEnv(env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
+    parseBooleanEnv(env.ZENMIND_SKIP_MAC_TIMESTAMP, "ZENMIND_SKIP_MAC_TIMESTAMP") === true
+  );
+}
+
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
 }
@@ -278,7 +305,7 @@ function listMachOFiles(rootDir) {
 function signMachOFile(filePath, identity) {
   execFileSync("codesign", [
     "--force",
-    "--timestamp",
+    ...(shouldSkipMacTimestamp() ? [] : ["--timestamp"]),
     "--options",
     "runtime",
     "--sign",

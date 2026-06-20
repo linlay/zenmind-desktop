@@ -13,6 +13,34 @@ const MACHO_MAGICS = new Set([
   0x0dd0feca
 ]);
 
+function parseBooleanEnv(value, name) {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    case "0":
+    case "false":
+    case "no":
+    case "off":
+      return false;
+    default:
+      throw new Error(`${name} must be a boolean value`);
+  }
+}
+
+function shouldAllowMissingSecureTimestamp() {
+  return (
+    parseBooleanEnv(process.env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
+    parseBooleanEnv(process.env.ZENMIND_SKIP_MAC_TIMESTAMP, "ZENMIND_SKIP_MAC_TIMESTAMP") === true ||
+    parseBooleanEnv(process.env.ZENMIND_SKIP_MAC_TIMESTAMP_VERIFY, "ZENMIND_SKIP_MAC_TIMESTAMP_VERIFY") === true
+  );
+}
+
 function getAppPath(context) {
   if (context.electronPlatformName === "darwin") {
     return path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
@@ -86,7 +114,7 @@ function verifyMachOSignature(filePath) {
   if (!/^Authority=Developer ID Application:/mu.test(details)) {
     throw new Error(`[verify-mac-services-signing] ${filePath} is not signed with a Developer ID Application certificate`);
   }
-  if (!/^Timestamp=/mu.test(details)) {
+  if (!/^Timestamp=/mu.test(details) && !shouldAllowMissingSecureTimestamp()) {
     throw new Error(`[verify-mac-services-signing] ${filePath} is missing a secure timestamp`);
   }
   if (!(/^Runtime Version=/mu.test(details) || /^CodeDirectory .*\bflags=.*\bruntime\b/mu.test(details))) {

@@ -1,4 +1,5 @@
 import type { App } from "electron";
+import type { StartupPhase } from "./startup-phases";
 
 export type StartupPipelineOptions = {
   app: App;
@@ -6,8 +7,9 @@ export type StartupPipelineOptions = {
   startupRestoreController: any;
   loadBuiltinServices: (app: App) => void;
   loadInstalledPlugins: (app: App) => void;
-  notifyServicesChanged: () => void;
-  startTunnelHubRuntimeIfEnabled: () => Promise<unknown>;
+  notifyCoreServicesChanged: () => void;
+  startNonCoreRuntime: () => void;
+  setStartupPhase: (phase: StartupPhase) => void;
   runServiceMutation: <T>(task: () => Promise<T>) => Promise<T>;
   runStartupPreparation: (app: App, callbacks: {
     onModeResolved: (mode: string) => void;
@@ -24,17 +26,13 @@ export function createStartupPipeline(options: StartupPipelineOptions) {
       const startupEnvImportFailureMessage = options.getEnvImportFailureMessage();
       if (startupEnvImportFailureMessage !== null) {
         options.startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);
-        options.notifyServicesChanged();
+        options.setStartupPhase("degraded");
         return;
       }
+      options.setStartupPhase("core-services-starting");
       options.loadBuiltinServices(options.app);
       options.loadInstalledPlugins(options.app);
-      options.notifyServicesChanged();
-      void options.startTunnelHubRuntimeIfEnabled().catch((error) => {
-        options.onError("failed to start Desktop Tunnel Hub", {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
+      options.notifyCoreServicesChanged();
 
       void options.runServiceMutation(() => options.runStartupPreparation(options.app, {
         onModeResolved: (mode) => {
@@ -45,21 +43,28 @@ export function createStartupPipeline(options: StartupPipelineOptions) {
         },
         onProgress: (serviceId, phase, message) => {
           options.startupRestoreController.updateService(serviceId, phase, message);
-          options.notifyServicesChanged();
+          options.notifyCoreServicesChanged();
         }
       }))
         .then((result) => {
           options.startupRestoreController.finishSession(result.mode, result.failures);
-          options.notifyServicesChanged();
+          options.notifyCoreServicesChanged();
           if (result.failures.length > 0) {
+            options.setStartupPhase("degraded");
             console.error("failed to prepare startup services", result.failures);
+            return;
           }
+          options.setStartupPhase("core-ready");
+          options.startNonCoreRuntime();
         })
         .catch((error) => {
           options.startupRestoreController.failCurrentSession(error instanceof Error ? error.message : String(error));
+          options.notifyCoreServicesChanged();
+          options.setStartupPhase("degraded");
           console.error("failed to prepare startup services", error);
         });
     } catch (error) {
+      options.setStartupPhase("degraded");
       console.error("Failed in startup pipeline", error);
     }
   }

@@ -113,6 +113,12 @@ function indexOfRequired(content, value) {
   return index;
 }
 
+function indexOfRequiredAfter(content, value, startIndex) {
+  const index = content.indexOf(value, startIndex);
+  assert.notEqual(index, -1, `expected to find ${value} after ${startIndex}`);
+  return index;
+}
+
 test("source and tests do not contain internal endpoint or legacy icon literals", () => {
   const internalHostSuffix = textFromCodes(46, 110, 101, 116);
   const internalLoginHostPrefix = textFromCodes(101, 105, 97, 109, 46);
@@ -2478,6 +2484,8 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = readMainProcessRuntimeSource();
   const startupPipeline = readSourceFile("src", "main", "lifecycle", "startup.ts");
+  const startupPhases = readSourceFile("src", "main", "lifecycle", "startup-phases.ts");
+  const appState = readSourceFile("src", "main", "app-state.ts");
   const shutdownRunner = readSourceFile("src", "main", "lifecycle", "shutdown.ts");
   const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
@@ -2539,6 +2547,23 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const prepareStartupRuntimeIndex = mainProcess.indexOf("await startupEnvironmentRuntime.prepareStartupRuntimeEnvironment()");
   const initializeUserDataCallIndex = mainProcess.indexOf("initializeUserDataRootsAndSettings();", prepareStartupRuntimeIndex);
   const createWindowCallIndex = mainProcess.indexOf("createWindow();", initializeUserDataCallIndex);
+  const handleReadyIndex = indexOfRequired(mainProcess, "async function handleAppReady()");
+  const handleReadyEndIndex = indexOfRequiredAfter(mainProcess, "function start()", handleReadyIndex);
+  const handleReadyBlock = mainProcess.slice(handleReadyIndex, handleReadyEndIndex);
+  const nonCoreStartupIndex = indexOfRequired(mainProcess, "function startNonCoreDesktopRuntime()");
+  const nonCoreStartupEndIndex = indexOfRequiredAfter(mainProcess, "async function showFileDialog", nonCoreStartupIndex);
+  const nonCoreStartupBlock = mainProcess.slice(nonCoreStartupIndex, nonCoreStartupEndIndex);
+  const notifyCoreIndex = indexOfRequired(mainProcess, "function notifyCoreServicesChanged()");
+  const notifyCoreEndIndex = indexOfRequiredAfter(mainProcess, "function notifyDesktopDecorationsChanged()", notifyCoreIndex);
+  const notifyCoreBlock = mainProcess.slice(notifyCoreIndex, notifyCoreEndIndex);
+  const notifyDecorationsEndIndex = indexOfRequiredAfter(mainProcess, "function emitTaskBoardChanged()", notifyCoreEndIndex);
+  const notifyDecorationsBlock = mainProcess.slice(notifyCoreEndIndex, notifyDecorationsEndIndex);
+  const phasePlatformPreflightIndex = indexOfRequired(handleReadyBlock, 'setStartupPhase("platform-preflight")');
+  const phaseRuntimeEnvIndex = indexOfRequired(handleReadyBlock, 'setStartupPhase("runtime-env")');
+  const phaseRuntimeEnvReadyIndex = indexOfRequired(handleReadyBlock, 'setStartupPhase("runtime-env-ready")');
+  const phaseDesktopStateReadyIndex = indexOfRequired(handleReadyBlock, 'setStartupPhase("desktop-state-ready")');
+  const phaseShellReadyIndex = indexOfRequired(handleReadyBlock, 'setStartupPhase("shell-ready")');
+  const startupPipelineRunIndex = indexOfRequired(handleReadyBlock, "startupPipeline.run()");
   assert.notEqual(initializeUserDataIndex, -1);
   assert.notEqual(initializeUserDataEndIndex, -1);
   assert.notEqual(ensureDataRootIndex, -1);
@@ -2553,14 +2578,53 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.equal(applyDesktopInitIndex < initializeMainI18nIndex, true);
   assert.equal(prepareStartupRuntimeIndex < initializeUserDataCallIndex, true);
   assert.equal(initializeUserDataCallIndex < createWindowCallIndex, true);
+  assert.equal(phasePlatformPreflightIndex < phaseRuntimeEnvIndex, true);
+  assert.equal(phaseRuntimeEnvIndex < phaseRuntimeEnvReadyIndex, true);
+  assert.equal(phaseRuntimeEnvReadyIndex < phaseDesktopStateReadyIndex, true);
+  assert.equal(phaseDesktopStateReadyIndex < phaseShellReadyIndex, true);
+  assert.equal(phaseShellReadyIndex < startupPipelineRunIndex, true);
+  assert.doesNotMatch(handleReadyBlock, /createAppTray\(\);/);
+  assert.doesNotMatch(handleReadyBlock, /showDesktopPetWindow\(\);/);
+  assert.doesNotMatch(handleReadyBlock, /startDesktopWsServerIfEnabled/);
+  assert.match(startupPhases, /"platform-preflight"[\s\S]*"runtime-env"[\s\S]*"runtime-env-ready"[\s\S]*"desktop-state-ready"[\s\S]*"shell-ready"[\s\S]*"core-services-starting"[\s\S]*"core-ready"[\s\S]*"non-core-ready"[\s\S]*"degraded"/);
+  assert.match(appState, /startupPhase: StartupPhase;/);
+  assert.match(appState, /startupPhase: initialState\.startupPhase \?\? "booting"/);
+  assert.match(nonCoreStartupBlock, /appState\.desktopPetSettings\?\.enabled === true/);
+  assert.match(nonCoreStartupBlock, /createAppTray\(\)/);
+  assert.match(nonCoreStartupBlock, /registerQuickAssistantShortcut\(\)/);
+  assert.match(nonCoreStartupBlock, /pluginBridgeRuntime\.setDesktopReady\(\)/);
+  assert.match(nonCoreStartupBlock, /startDesktopWsServerIfEnabled/);
+  assert.match(nonCoreStartupBlock, /startTunnelHubRuntimeIfEnabled\(\)/);
+  assert.match(nonCoreStartupBlock, /setStartupPhase\("non-core-ready"\)/);
+  assert.match(notifyCoreBlock, /isStartupPhaseAtLeast\(appState\.startupPhase, "shell-ready"\)/);
+  assert.doesNotMatch(notifyCoreBlock, /scheduleAgentPlatformPetStatusRefresh/);
+  assert.match(notifyDecorationsBlock, /appState\.startupPhase !== "non-core-ready"/);
+  assert.match(notifyDecorationsBlock, /scheduleAgentPlatformPetStatusRefresh\(1000\)/);
   assert.doesNotMatch(initializeUserDataBlock, /importBundledEnvZipToRuntime/);
   assert.doesNotMatch(initializeUserDataBlock, /applyDesktopInitSsoDefaults/);
+  assert.doesNotMatch(
+    readSourceFile("src", "main", "app", "startup-environment.ts"),
+    /notifyServicesChanged/
+  );
   assert.match(mainProcess, /function getDefaultEnvImportRequiredMessage\(\) \{\s*return options\.t\("startup\.envImport\.requiredTitle"\);/);
   assert.match(mainProcess, /let startupEnvImportFailureMessage: string \| null = null;/);
   assert.match(startupPipeline, /if \(startupEnvImportFailureMessage !== null\)/);
   assert.doesNotMatch(startupPipeline, /if \(startupEnvImportFailureMessage\)/);
   assert.match(mainProcess, /message: getDefaultEnvImportRequiredMessage\(\)/);
   assert.match(shutdownRunner, /stopAllWebapps\(options\.app\)/);
+  assert.match(startupPipeline, /notifyCoreServicesChanged/);
+  assert.doesNotMatch(startupPipeline, /notifyServicesChanged/);
+  assert.doesNotMatch(startupPipeline, /startTunnelHubRuntimeIfEnabled/);
+  assert.match(startupPipeline, /if \(startupEnvImportFailureMessage !== null\)[\s\S]*?options\.setStartupPhase\("degraded"\);[\s\S]*?return;/);
+  assert.doesNotMatch(
+    startupPipeline.slice(
+      startupPipeline.indexOf("if (startupEnvImportFailureMessage !== null)"),
+      startupPipeline.indexOf('options.setStartupPhase("core-services-starting")')
+    ),
+    /notifyCoreServicesChanged|notifyServicesChanged/
+  );
+  assert.match(startupPipeline, /options\.setStartupPhase\("core-services-starting"\);[\s\S]*?options\.loadBuiltinServices\(options\.app\);[\s\S]*?options\.loadInstalledPlugins\(options\.app\);[\s\S]*?options\.notifyCoreServicesChanged\(\);/);
+  assert.match(startupPipeline, /options\.setStartupPhase\("core-ready"\);\s*options\.startNonCoreRuntime\(\);/);
   assert.match(desktopActions, /"desktop\.webs\.webapps\.start"/);
   assert.match(desktopActionBridge, /case "desktop\.webs\.webapps\.restart"/);
   assert.match(desktopActionBridge, /readWebappId\(args\)/);
@@ -3592,6 +3656,10 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /function forwardDesktopBridgeRequest\(/);
   assert.match(serviceWebviewPreload, /const requestKey = `\$\{value\.type\}:\$\{value\.requestId\}`/);
   assert.match(serviceWebviewPreload, /DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE/);
+  assert.match(mainProcess, /getMainPreloadPath\(MAIN_PROCESS_DIR, mainProcessContext\.platform\)/);
+  assert.match(mainProcess, /getMainPreloadPath\(options\.mainProcessDir, options\.platform\)/);
+  assert.match(mainProcess, /resolveServiceWebviewPreloadPath\(options\.mainProcessDir, options\.platform\)/);
+  assert.doesNotMatch(mainProcess, /path\.join\([^)]*"\.\."[^)]*"preload"/);
   assert.match(mainProcess, /getServiceWebviewPreloadUrl\(\)[\s\S]{0,120}pathToFileURL\(getServiceWebviewPreloadPath\(\)\)\.toString\(\)/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopDialog\.selectDirectory"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.openPath"/);
