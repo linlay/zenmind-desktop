@@ -44,34 +44,52 @@ function tunnelRegistrationTokenPath(app) {
   return path.join(desktopRoot(app), "secrets", "tunnel-hub-registration-token");
 }
 
-test("Tunnel Hub settings persist enabled when relay URL and token are configured", (t) => {
+test("Tunnel Hub settings normalize host-only relay URL and persist registration token", (t) => {
   const app = createTempApp(t);
 
   const result = saveTunnelHubSettings(app, {
     enabled: true,
-    relayUrl: "wss://relay.example.test/ws",
-    relayToken: "relay-secret",
+    relayUrl: "tunnel-hub.zenmind.cc",
+    registrationToken: "registration-secret",
     tlsInsecureSkipVerify: true,
     reconnectSeconds: 9
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.settings.enabled, true);
-  assert.equal(result.settings.relayUrl, "wss://relay.example.test/ws");
+  assert.equal(result.settings.relayUrl, "wss://tunnel-hub.zenmind.cc/tunnel");
   assert.match(result.settings.deviceId, /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u);
-  assert.equal(result.settings.hasRelayToken, true);
-  assert.equal(result.settings.relayTokenPreview, "****cret");
+  assert.equal(result.settings.hasRelayToken, false);
+  assert.equal(result.settings.hasRegistrationToken, true);
   assert.equal(result.settings.tlsInsecureSkipVerify, true);
   assert.equal(result.settings.reconnectSeconds, 9);
   assert.equal(readTunnelHubSettings(app).enabled, true);
+});
+
+test("Tunnel Hub settings normalize HTTP, HTTPS, WSS, and local WS relay URLs", (t) => {
+  const cases = [
+    ["https://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
+    ["wss://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
+    ["ws://127.0.0.1:8080/tunnel", "ws://127.0.0.1:8080/tunnel"]
+  ];
+
+  for (const [input, expected] of cases) {
+    const app = createTempApp(t);
+    const result = saveTunnelHubSettings(app, {
+      enabled: true,
+      relayUrl: input,
+      registrationToken: "registration-secret"
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.settings.relayUrl, expected);
+  }
 });
 
 test("Tunnel Hub settings keep relay URL empty until explicitly configured", (t) => {
   const app = createTempApp(t);
 
   const result = saveTunnelHubSettings(app, {
-    enabled: false,
-    relayToken: "relay-secret"
+    enabled: false
   });
 
   assert.equal(result.ok, true);
@@ -86,7 +104,7 @@ test("Tunnel Hub enable requires an explicit relay URL", (t) => {
 
   const result = saveTunnelHubSettings(app, {
     enabled: true,
-    relayToken: "relay-secret"
+    registrationToken: "registration-secret"
   });
 
   assert.equal(result.ok, false);
@@ -166,17 +184,16 @@ test("Tunnel Hub enable saves drafts but falls back to disabled when config is i
 
   const result = saveTunnelHubSettings(app, {
     enabled: true,
-    relayUrl: "https://relay.example.test/tunnel",
-    relayToken: "relay-secret"
+    relayUrl: "https://relay.example.test/tunnel"
   });
 
   assert.equal(result.ok, false);
   assert.equal(result.settings.enabled, false);
-  assert.match(result.message, /Relay URL/u);
+  assert.match(result.message, /Registration token/u);
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
   assert.equal(stored.enabled, false);
-  assert.equal(stored.relayUrl, "https://relay.example.test/tunnel");
-  assert.equal(fs.readFileSync(tunnelTokenPath(app), "utf8").trim(), "relay-secret");
+  assert.equal(stored.relayUrl, "wss://relay.example.test/tunnel");
+  assert.equal(fs.existsSync(tunnelTokenPath(app)), false);
 });
 
 test("Tunnel Hub legacy settings without enabled are treated as enabled only when complete", (t) => {

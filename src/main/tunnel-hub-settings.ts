@@ -95,8 +95,29 @@ function readStoredSettings(app: App): StoredTunnelHubSettings {
   }
 }
 
-function normalizeRelayUrl(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+export function normalizeRelayUrl(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const withProtocol = /^[a-z][a-z\d+.-]*:\/\//iu.test(trimmed) ? trimmed : `wss://${trimmed}`;
+  try {
+    const parsed = new URL(withProtocol);
+    if (parsed.protocol === "http:") {
+      parsed.protocol = "ws:";
+    } else if (parsed.protocol === "https:") {
+      parsed.protocol = "wss:";
+    }
+    if ((parsed.protocol === "ws:" || parsed.protocol === "wss:") && (!parsed.pathname || parsed.pathname === "/")) {
+      parsed.pathname = "/tunnel";
+    }
+    return parsed.toString();
+  } catch {
+    return trimmed;
+  }
 }
 
 function readStoredString(value: unknown) {
@@ -137,7 +158,7 @@ function createDefaultDeviceId(app: App) {
 function isValidRelayUrl(relayUrl: string) {
   try {
     const parsed = new URL(relayUrl);
-    return parsed.protocol === "ws:" || parsed.protocol === "wss:";
+    return Boolean(parsed.host) && (parsed.protocol === "ws:" || parsed.protocol === "wss:");
   } catch {
     return false;
   }
@@ -278,7 +299,7 @@ export function validateTunnelHubSettingsInput(input: TunnelHubSettingsInput) {
   }
   if (input.enabled === true || relayUrl) {
     if (!isValidRelayUrl(relayUrl)) {
-      issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
+      issues.push("Relay URL is invalid.");
     }
   }
   if (input.deviceId !== undefined) {
@@ -381,10 +402,10 @@ export function saveTunnelHubSettings(
   }
   if (requestedEnabled) {
     if (!isValidRelayUrl(relayUrl)) {
-      issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
+      issues.push("Relay URL is invalid.");
     }
     if (!nextToken && !availableRegistrationToken) {
-      issues.push("Registration token or relay token is required.");
+      issues.push("Registration token is required.");
     }
   }
 

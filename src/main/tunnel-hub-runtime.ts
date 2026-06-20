@@ -28,6 +28,7 @@ type Logger = Pick<typeof console, "log" | "warn" | "error">;
 type TunnelClientFactoryInput = {
   relayUrl: string;
   relayToken: string;
+  desktopWebSocketTargetUrl: string;
   tlsInsecureSkipVerify: boolean;
   logger: Logger;
 };
@@ -186,11 +187,11 @@ export class TunnelHubRuntime {
       const nextSettings = readTunnelHubSettings(this.options.app);
       const token = readTunnelHubRelayToken(this.options.app);
       if (!token) {
-        throw new Error("Tunnel Hub relay token is missing. Configure a registration token or relay token first.");
+        throw new Error("Tunnel Hub relay token is missing. Configure a registration token first.");
       }
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
-      await this.connectTunnel(relayUrl, token, nextSettings.tlsInsecureSkipVerify);
+      await this.connectTunnel(relayUrl, token, nextSettings.tlsInsecureSkipVerify, ready.targetUrl || nextSettings.targetUrl);
       this.lastConnectedAt = new Date().toISOString();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl} target=${ready.targetUrl || nextSettings.targetUrl}`);
@@ -204,10 +205,11 @@ export class TunnelHubRuntime {
     }
   }
 
-  private async connectTunnel(relayUrl: string, relayToken: string, tlsInsecureSkipVerify: boolean) {
+  private async connectTunnel(relayUrl: string, relayToken: string, tlsInsecureSkipVerify: boolean, desktopWebSocketTargetUrl: string) {
     const client = this.createTunnelClient({
       relayUrl,
       relayToken,
+      desktopWebSocketTargetUrl,
       tlsInsecureSkipVerify,
       logger: this.options.logger ?? console
     });

@@ -12,6 +12,7 @@ import {
 } from "./desktop-ws-server";
 import {
   ensureTunnelHubDeviceId,
+  normalizeRelayUrl,
   readTunnelHubRelayTokenRotationRequest,
   readTunnelHubSettings,
   readTunnelHubRegistrationBearerToken,
@@ -36,6 +37,7 @@ type TunnelHubRegistrationResponse = {
   publicUrl?: unknown;
   webSocketUrl?: unknown;
   targetUrl?: unknown;
+  agentToken?: unknown;
   relayToken?: unknown;
 };
 
@@ -63,13 +65,13 @@ function parseRegistrationResponse(raw: string): TunnelHubRegistrationResponse {
 }
 
 export function deriveTunnelHubRegistrationApiOrigin(relayUrl: string) {
-  const parsed = new URL(relayUrl);
+  const parsed = new URL(normalizeRelayUrl(relayUrl));
   if (parsed.protocol === "wss:") {
     parsed.protocol = "https:";
   } else if (parsed.protocol === "ws:") {
     parsed.protocol = "http:";
   } else {
-    throw new Error("Relay URL must use ws:// or wss://.");
+    throw new Error("Relay URL is invalid.");
   }
   parsed.username = "";
   parsed.password = "";
@@ -135,7 +137,6 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
     body: JSON.stringify({
       deviceId,
       deviceName: os.hostname() || deviceId,
-      targetUrl,
       rotateToken
     })
   });
@@ -148,7 +149,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
     deviceId: readText(data.deviceId) || deviceId,
     relayUrl: readText(data.relayUrl) || settings.relayUrl,
     targetUrl: readText(data.targetUrl) || targetUrl,
-    relayToken: readText(data.relayToken)
+    relayToken: readText(data.agentToken) || readText(data.relayToken)
   };
   const publicHost = readText(data.publicHost);
   const publicUrl = readText(data.publicUrl);

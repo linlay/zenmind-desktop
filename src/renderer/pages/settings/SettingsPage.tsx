@@ -1083,8 +1083,6 @@ export function SettingsPage({
   const [controlOnlineSummary, setControlOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultTaskBoardOnlineSummary);
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
-  const [tunnelHubRelayToken, setTunnelHubRelayToken] = useState("");
-  const [tunnelHubClearRelayToken, setTunnelHubClearRelayToken] = useState(false);
   const [tunnelHubRegistrationToken, setTunnelHubRegistrationToken] = useState("");
   const [tunnelHubClearRegistrationToken, setTunnelHubClearRegistrationToken] = useState(false);
   const [tunnelHubRotateRelayToken, setTunnelHubRotateRelayToken] = useState(false);
@@ -2457,8 +2455,6 @@ export function SettingsPage({
         enabled: tunnelHubSettings.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        relayToken: tunnelHubRelayToken,
-        clearRelayToken: tunnelHubClearRelayToken,
         registrationToken: tunnelHubRegistrationToken,
         clearRegistrationToken: tunnelHubClearRegistrationToken,
         rotateRelayToken: tunnelHubRotateRelayToken,
@@ -2469,8 +2465,6 @@ export function SettingsPage({
         ...defaultTunnelHubSettings,
         ...result.settings
       });
-      setTunnelHubRelayToken("");
-      setTunnelHubClearRelayToken(false);
       setTunnelHubRegistrationToken("");
       setTunnelHubClearRegistrationToken(false);
       setTunnelHubRotateRelayToken(false);
@@ -2494,8 +2488,6 @@ export function SettingsPage({
         enabled: nextEnabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        relayToken: tunnelHubRelayToken,
-        clearRelayToken: tunnelHubClearRelayToken,
         registrationToken: tunnelHubRegistrationToken,
         clearRegistrationToken: tunnelHubClearRegistrationToken,
         rotateRelayToken: tunnelHubRotateRelayToken,
@@ -2506,8 +2498,6 @@ export function SettingsPage({
         ...defaultTunnelHubSettings,
         ...result.settings
       });
-      setTunnelHubRelayToken("");
-      setTunnelHubClearRelayToken(false);
       setTunnelHubRegistrationToken("");
       setTunnelHubClearRegistrationToken(false);
       setTunnelHubRotateRelayToken(false);
@@ -3036,32 +3026,6 @@ export function SettingsPage({
                 onChange={(event) => setTunnelHubClearRegistrationToken(event.target.checked)}
               >
                 {t("settings.tunnelHub.clearRegistrationToken")}
-              </Checkbox>
-              <label className="settings-control-field">
-                <span>{t("settings.tunnelHub.token")}</span>
-                <Input.Password
-                  value={tunnelHubRelayToken}
-                  onChange={(event) => {
-                    setTunnelHubRelayToken(event.target.value);
-                    if (event.target.value.trim()) {
-                      setTunnelHubClearRelayToken(false);
-                    }
-                  }}
-                  placeholder={t("settings.tunnelHub.tokenPlaceholder")}
-                />
-                <small>
-                  {tunnelHubSettings.hasRelayToken
-                    ? t("settings.tunnelHub.tokenConfigured", { preview: tunnelHubSettings.relayTokenPreview })
-                    : t("settings.tunnelHub.tokenMissing")}
-                </small>
-              </label>
-              <Checkbox
-                className="settings-control-field settings-checkbox-field"
-                checked={tunnelHubClearRelayToken}
-                disabled={Boolean(tunnelHubRelayToken.trim())}
-                onChange={(event) => setTunnelHubClearRelayToken(event.target.checked)}
-              >
-                {t("settings.tunnelHub.clearToken")}
               </Checkbox>
               <Checkbox
                 className="settings-control-field settings-checkbox-field"

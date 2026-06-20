@@ -227,7 +227,7 @@ function createStreamReader() {
   };
 }
 
-function createFakeRelay({ targetUrl }) {
+function createFakeRelay({ targetUrl, kind = "websocket" }) {
   const streamId = 2;
   const streamReader = createStreamReader();
   let socket = null;
@@ -253,15 +253,18 @@ function createFakeRelay({ targetUrl }) {
 
   async function runScenario() {
     sendYamux(TYPE_WINDOW_UPDATE, FLAG_SYN, streamId, INITIAL_WINDOW);
-    sendStreamData(encodeTunnelJson({
-      kind: "websocket",
+    const request = {
+      kind,
       requestId: "req-remote-ws",
       method: "GET",
       path: "/ws?token=test-token",
       host: "mac-mini-office.relay.example.test",
-      target: targetUrl,
       header: {}
-    }));
+    };
+    if (targetUrl) {
+      request.target = targetUrl;
+    }
+    sendStreamData(encodeTunnelJson(request));
     const upgrade = await streamReader.readJson();
     assert.equal(upgrade.ok, true);
     assert.equal(upgrade.statusCode, 101);
@@ -329,7 +332,7 @@ function createFakeRelay({ targetUrl }) {
   };
 }
 
-test("Tunnel Hub runtime registers 7083 target before connecting integrated tunnel", async (t) => {
+test("Tunnel Hub runtime registers desktop broker before connecting integrated tunnel", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-runtime-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -352,8 +355,7 @@ test("Tunnel Hub runtime registers 7083 target before connecting integrated tunn
         publicUrl: "https://mac-mini-office.relay.example.test",
         webSocketUrl: "wss://mac-mini-office.relay.example.test/ws",
         relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
-        targetUrl: "http://127.0.0.1:7083",
-        relayToken: "returned-runtime-token"
+        agentToken: "returned-runtime-token"
       }));
     });
   });
@@ -431,16 +433,16 @@ test("Tunnel Hub runtime registers 7083 target before connecting integrated tunn
   assert.equal(registrations[0].method, "POST");
   assert.equal(registrations[0].url, "/api/desktop/devices/register");
   assert.equal(registrations[0].authorization, "Bearer registration-secret");
-  assert.equal(registrations[0].body.targetUrl, "http://127.0.0.1:7083");
-  assert.notEqual(registrations[0].body.targetUrl, "http://127.0.0.1:7082");
+  assert.equal("targetUrl" in registrations[0].body, false);
   assert.equal(connectCalls.length, 1);
   assert.equal(connectCalls[0].relayUrl, relayUrl);
   assert.equal(connectCalls[0].relayToken, "returned-runtime-token");
+  assert.equal(connectCalls[0].desktopWebSocketTargetUrl, "http://127.0.0.1:7083");
   assert.equal(readTunnelHubSettings(app).webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
   await runtime.stop();
 });
 
-test("Tunnel Hub integrated tunnel forwards remote ws stream to Desktop 7083 protocol", async (t) => {
+test("Tunnel Hub integrated tunnel forwards desktop.websocket stream to Desktop protocol", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-protocol-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -465,11 +467,12 @@ test("Tunnel Hub integrated tunnel forwards remote ws stream to Desktop 7083 pro
     },
     logger: { log() {}, warn() {}, error() {} }
   });
-  const fakeRelay = createFakeRelay({ targetUrl: `http://127.0.0.1:${remote.port}` });
+  const fakeRelay = createFakeRelay({ kind: "desktop.websocket" });
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelHubTunnelClient({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
     relayToken: "relay-token",
+    desktopWebSocketTargetUrl: `http://127.0.0.1:${remote.port}`,
     logger: { log() {}, warn() {}, error() {} }
   });
   t.after(async () => {

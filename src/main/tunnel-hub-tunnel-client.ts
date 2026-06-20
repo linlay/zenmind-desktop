@@ -29,12 +29,14 @@ type StreamResponse = {
 type TunnelHubTunnelClientOptions = {
   relayUrl: string;
   relayToken: string;
+  desktopWebSocketTargetUrl?: string;
   tlsInsecureSkipVerify?: boolean;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
 
 const KIND_HTTP = "http";
 const KIND_WEBSOCKET = "websocket";
+const KIND_DESKTOP_WEBSOCKET = "desktop.websocket";
 const MAX_JSON_FRAME_BYTES = 1 << 20;
 const MAX_WS_FRAME_BYTES = 64 << 20;
 
@@ -285,6 +287,9 @@ export class TunnelHubTunnelClient extends EventEmitter {
       case KIND_WEBSOCKET:
         await this.handleWebSocketStream(stream, request);
         return;
+      case KIND_DESKTOP_WEBSOCKET:
+        await this.handleWebSocketStream(stream, request, readText(this.options.desktopWebSocketTargetUrl));
+        return;
       default:
         await writeTunnelJson(stream, {
           ok: false,
@@ -321,10 +326,10 @@ export class TunnelHubTunnelClient extends EventEmitter {
     }
   }
 
-  private async handleWebSocketStream(stream: TunnelHubYamuxStream, request: StreamRequest) {
-    const targetUrl = buildTargetUrl(readText(request.target), readText(request.path) || "/", true);
+  private async handleWebSocketStream(stream: TunnelHubYamuxStream, request: StreamRequest, targetOverride = "") {
     let localWs: TunnelHubWebSocketClient | null = null;
     try {
+      const targetUrl = buildTargetUrl(targetOverride || readText(request.target), readText(request.path) || "/", true);
       const headers = stripWebSocketDialHeaders(normalizeHeader(request.header));
       const requestId = readText(request.requestId);
       headers["X-Forwarded-Host"] = readText(request.host);
