@@ -1,5 +1,5 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
+import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
@@ -374,8 +374,8 @@ export interface DesktopApi {
     setDesktopWsServerEnabled: (enabled: boolean) => Promise<DesktopWsServerState>;
     getGeneralSettings: () => Promise<DesktopGeneralSettings>;
     saveGeneralSettings: (input: DesktopGeneralSettingsInput) => Promise<DesktopGeneralSettings>;
-    getTunnelHubAgentSettings: () => Promise<TunnelHubAgentSettings>;
-    saveTunnelHubAgentSettings: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
+    getTunnelHubSettings: () => Promise<TunnelHubSettings>;
+    saveTunnelHubSettings: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
     getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;

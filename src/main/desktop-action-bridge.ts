@@ -59,9 +59,9 @@ import {
 } from "./marketplace";
 import { normalizeMarketApiBaseUrl } from "./marketplace/common";
 import {
-  readTunnelHubAgentSettings,
-  validateTunnelHubAgentSettingsInput
-} from "./tunnel-hub-agent-settings";
+  readTunnelHubSettings,
+  validateTunnelHubSettingsInput
+} from "./tunnel-hub-settings";
 import {
   applyTunnelHubSettings,
   getTunnelHubRuntimeStatus,
@@ -251,11 +251,11 @@ function readTunnelHubSettingsInput(args: Record<string, unknown>) {
     enabled: typeof source.enabled === "boolean" ? source.enabled : undefined,
     relayUrl: typeof source.relayUrl === "string" ? source.relayUrl : undefined,
     deviceId: typeof source.deviceId === "string" ? source.deviceId : undefined,
-    agentToken: typeof source.agentToken === "string" ? source.agentToken : undefined,
-    clearAgentToken: source.clearAgentToken === true,
+    relayToken: typeof source.relayToken === "string" ? source.relayToken : undefined,
+    clearRelayToken: source.clearRelayToken === true,
     registrationToken: typeof source.registrationToken === "string" ? source.registrationToken : undefined,
     clearRegistrationToken: source.clearRegistrationToken === true,
-    rotateAgentToken: source.rotateAgentToken === true,
+    rotateRelayToken: source.rotateRelayToken === true,
     tlsInsecureSkipVerify: source.tlsInsecureSkipVerify === true,
     reconnectSeconds: typeof source.reconnectSeconds === "number"
       ? source.reconnectSeconds
@@ -913,9 +913,9 @@ async function executeAction(
       return ok(action, { route });
     }
     case "desktop.tunnelHub.getSettings":
-      return ok(action, readTunnelHubAgentSettings(options.app));
+      return ok(action, readTunnelHubSettings(options.app));
     case "desktop.tunnelHub.validateSettings": {
-      const validation = validateTunnelHubAgentSettingsInput(readTunnelHubSettingsInput(args));
+      const validation = validateTunnelHubSettingsInput(readTunnelHubSettingsInput(args));
       return ok(action, {
         valid: validation.valid,
         issues: validation.issues,

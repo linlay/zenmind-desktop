@@ -301,9 +301,9 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   const app = createApp(homePath);
   writeDesktopInit(app, "darwin", {
     tunnelHub: {
-      relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+      relayUrl: "wss://relay.example.test/tunnel",
       deviceId: "mac-mini-office",
-      agentToken: "init-agent-token",
+      relayToken: "init-relay-token",
       registrationToken: "init-registration-token",
       tlsInsecureSkipVerify: false
     }
@@ -311,10 +311,9 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
 
   const result = applyDesktopInitBootstrap(app, "darwin");
   const desktop = desktopRoot(homePath);
-  const tunnelSettingsPath = path.join(desktop, "config", "desktop", "tunnel-hub-agent.json");
-  const tokenPath = path.join(desktop, "secrets", "tunnel-hub-agent-token");
+  const tunnelSettingsPath = path.join(desktop, "config", "desktop", "tunnel-hub.json");
+  const tokenPath = path.join(desktop, "secrets", "tunnel-hub-token");
   const registrationTokenPath = path.join(desktop, "secrets", "tunnel-hub-registration-token");
-  const envPath = path.join(desktop, "config", "services", "tunnel-hub-agent", ".env");
   const tunnelSettings = readJson(tunnelSettingsPath);
   const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
 
@@ -322,23 +321,22 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   assert.equal(result.appliedResult.tunnelHub, "applied");
   assert.deepEqual(tunnelSettings, {
     enabled: false,
-    relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+    relayUrl: "wss://relay.example.test/tunnel",
     deviceId: "mac-mini-office",
     publicHost: "",
     publicUrl: "",
     webSocketUrl: "",
     targetUrl: "",
     lastRegisteredAt: "",
-    rotateAgentToken: false,
+    rotateRelayToken: false,
     tlsInsecureSkipVerify: false,
     reconnectSeconds: 3
   });
-  assert.equal("agentToken" in tunnelSettings, false);
+  assert.equal("relayToken" in tunnelSettings, false);
   assert.equal("registrationToken" in tunnelSettings, false);
   assert.equal("deviceSecret" in tunnelSettings, false);
-  assert.equal(readText(tokenPath), "init-agent-token");
+  assert.equal(readText(tokenPath), "init-relay-token");
   assert.equal(readText(registrationTokenPath), "init-registration-token");
-  assert.equal(fs.existsSync(envPath), false);
   assert.equal(bootstrapState.appliedResult.tunnelHub, "applied");
 });
 

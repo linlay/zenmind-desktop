@@ -17,8 +17,7 @@ const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
 ];
 const LEGACY_IDENTITY_SERVICE_ID = ["zenmind", "app", "server"].join("-");
 const EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS = new Set([
-  LEGACY_IDENTITY_SERVICE_ID,
-  "tunnel-hub-agent"
+  LEGACY_IDENTITY_SERVICE_ID
 ]);
 const DEVELOPER_ID_APPLICATION_PREFIX = "Developer ID Application:";
 const DARWIN_CODESIGN_IDENTITY_ENV_KEYS = [

@@ -12,12 +12,11 @@ import {
 } from "./desktop-ws-server";
 import {
   ensureTunnelHubDeviceId,
-  readTunnelHubAgentTokenRotationRequest,
-  readTunnelHubAgentSettings,
+  readTunnelHubRelayTokenRotationRequest,
+  readTunnelHubSettings,
   readTunnelHubRegistrationBearerToken,
-  recordTunnelHubRegistrationResult,
-  syncTunnelHubAgentSettingsToEnv
-} from "./tunnel-hub-agent-settings";
+  recordTunnelHubRegistrationResult
+} from "./tunnel-hub-settings";
 
 type FetchLike = (url: string, init: {
   method: string;
@@ -37,7 +36,7 @@ type TunnelHubRegistrationResponse = {
   publicUrl?: unknown;
   webSocketUrl?: unknown;
   targetUrl?: unknown;
-  agentToken?: unknown;
+  relayToken?: unknown;
 };
 
 type TunnelHubRemoteWsControllerOptions = {
@@ -92,7 +91,7 @@ export function configureTunnelHubRemoteWsController(options: TunnelHubRemoteWsC
 }
 
 export async function ensureTunnelHubRemoteWsReady(app: App) {
-  const settings = readTunnelHubAgentSettings(app);
+  const settings = readTunnelHubSettings(app);
   if (!settings.enabled) {
     return {
       ok: true,
@@ -111,7 +110,6 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   const targetUrl = getRemoteWsTargetUrl(readRemoteWsState);
   const registrationToken = readTunnelHubRegistrationBearerToken(app);
   if (!registrationToken) {
-    syncTunnelHubAgentSettingsToEnv(app);
     return {
       ok: true,
       registered: false,
@@ -121,7 +119,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   }
 
   const deviceId = ensureTunnelHubDeviceId(app);
-  const rotateToken = readTunnelHubAgentTokenRotationRequest(app) || settings.hasAgentToken === false;
+  const rotateToken = readTunnelHubRelayTokenRotationRequest(app) || settings.hasRelayToken === false;
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
   const fetchImpl = controllerOptions.fetch ?? globalThis.fetch as unknown as FetchLike | undefined;
   if (typeof fetchImpl !== "function") {
@@ -150,7 +148,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
     deviceId: readText(data.deviceId) || deviceId,
     relayUrl: readText(data.relayUrl) || settings.relayUrl,
     targetUrl: readText(data.targetUrl) || targetUrl,
-    agentToken: readText(data.agentToken)
+    relayToken: readText(data.relayToken)
   };
   const publicHost = readText(data.publicHost);
   const publicUrl = readText(data.publicUrl);

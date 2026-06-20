@@ -24,9 +24,9 @@ const {
   TunnelHubTunnelClient
 } = require("../dist-electron/main/tunnel-hub-tunnel-client.js");
 const {
-  readTunnelHubAgentSettings,
-  saveTunnelHubAgentSettings
-} = require("../dist-electron/main/tunnel-hub-agent-settings.js");
+  readTunnelHubSettings,
+  saveTunnelHubSettings
+} = require("../dist-electron/main/tunnel-hub-settings.js");
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const TYPE_DATA = 0;
@@ -258,7 +258,7 @@ function createFakeRelay({ targetUrl }) {
       requestId: "req-remote-ws",
       method: "GET",
       path: "/ws?token=test-token",
-      host: "mac-mini-office.tunnel-hub.zenmind.cc",
+      host: "mac-mini-office.relay.example.test",
       target: targetUrl,
       header: {}
     }));
@@ -348,12 +348,12 @@ test("Tunnel Hub runtime registers 7083 target before connecting integrated tunn
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         deviceId: "mac-mini-office",
-        publicHost: "mac-mini-office.tunnel-hub.zenmind.cc",
-        publicUrl: "https://mac-mini-office.tunnel-hub.zenmind.cc",
-        webSocketUrl: "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws",
+        publicHost: "mac-mini-office.relay.example.test",
+        publicUrl: "https://mac-mini-office.relay.example.test",
+        webSocketUrl: "wss://mac-mini-office.relay.example.test/ws",
         relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
         targetUrl: "http://127.0.0.1:7083",
-        agentToken: "returned-runtime-token"
+        relayToken: "returned-runtime-token"
       }));
     });
   });
@@ -365,7 +365,7 @@ test("Tunnel Hub runtime registers 7083 target before connecting integrated tunn
   });
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
-  assert.equal(saveTunnelHubAgentSettings(app, {
+  assert.equal(saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
     deviceId: "mac-mini-office",
@@ -435,9 +435,8 @@ test("Tunnel Hub runtime registers 7083 target before connecting integrated tunn
   assert.notEqual(registrations[0].body.targetUrl, "http://127.0.0.1:7082");
   assert.equal(connectCalls.length, 1);
   assert.equal(connectCalls[0].relayUrl, relayUrl);
-  assert.equal(connectCalls[0].agentToken, "returned-runtime-token");
-  assert.equal(readTunnelHubAgentSettings(app).webSocketUrl, "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws");
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "config", "services", "tunnel-hub-agent", ".env")), false);
+  assert.equal(connectCalls[0].relayToken, "returned-runtime-token");
+  assert.equal(readTunnelHubSettings(app).webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
   await runtime.stop();
 });
 
@@ -470,7 +469,7 @@ test("Tunnel Hub integrated tunnel forwards remote ws stream to Desktop 7083 pro
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelHubTunnelClient({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    agentToken: "relay-token",
+    relayToken: "relay-token",
     logger: { log() {}, warn() {}, error() {} }
   });
   t.after(async () => {

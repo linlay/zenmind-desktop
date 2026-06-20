@@ -277,7 +277,7 @@ export const zhCNMessages = {
   "settings.tunnelHub.tokenConfigured": "已配置令牌：{preview}",
   "settings.tunnelHub.tokenMissing": "未配置令牌",
   "settings.tunnelHub.clearToken": "清除已保存令牌",
-  "settings.tunnelHub.rotateAgentToken": "下次注册时轮换中继令牌",
+  "settings.tunnelHub.rotateRelayToken": "下次注册时轮换中继令牌",
   "settings.tunnelHub.tlsInsecure": "跳过传输层安全校验",
   "settings.tunnelHub.reconnectSeconds": "重连间隔",
   "settings.tunnelHub.reconnectUnit": "秒",

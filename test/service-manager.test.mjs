@@ -5731,7 +5731,6 @@ test("startup restore skips install-only services that were running at shutdown"
 
   __testInternals.writeLastRunningServices(app, [
     "agent-container-hub",
-    "tunnel-hub-agent",
     "custom-plugin"
   ]);
 

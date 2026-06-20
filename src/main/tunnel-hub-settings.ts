@@ -4,16 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type {
-  TunnelHubAgentSettings,
-  TunnelHubAgentSettingsInput,
-  TunnelHubAgentSettingsResult
+  TunnelHubSettings,
+  TunnelHubSettingsInput,
+  TunnelHubSettingsResult
 } from "../shared/contracts";
-import { readEnvFile } from "./env-file";
-import { getDesktopConfigRoot, getSecretsRoot, getServiceConfigRoot } from "./user-paths";
+import { getDesktopConfigRoot, getSecretsRoot } from "./user-paths";
 import { getDesktopDeviceId } from "./device-identity";
 
-export const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
-export const DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL = "wss://tunnel-hub.zenmind.cc/tunnel";
 const SSO_SITE_TOKEN_FILE_NAME = "sso-site-token.json";
 const DEFAULT_RECONNECT_SECONDS = 3;
 const MIN_RECONNECT_SECONDS = 1;
@@ -22,7 +19,7 @@ const DEVICE_ID_MAX_LENGTH = 63;
 const DEVICE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const RESERVED_DEVICE_IDS = new Set(["admin", "api", "www", "tunnel", "relay"]);
 
-type StoredTunnelHubAgentSettings = {
+type StoredTunnelHubSettings = {
   enabled?: unknown;
   relayUrl?: unknown;
   deviceId?: unknown;
@@ -31,12 +28,12 @@ type StoredTunnelHubAgentSettings = {
   webSocketUrl?: unknown;
   targetUrl?: unknown;
   lastRegisteredAt?: unknown;
-  rotateAgentToken?: unknown;
+  rotateRelayToken?: unknown;
   tlsInsecureSkipVerify?: unknown;
   reconnectSeconds?: unknown;
 };
 
-type WritableTunnelHubAgentSettings = {
+type WritableTunnelHubSettings = {
   enabled: boolean;
   relayUrl: string;
   deviceId?: string;
@@ -45,7 +42,7 @@ type WritableTunnelHubAgentSettings = {
   webSocketUrl?: string;
   targetUrl?: string;
   lastRegisteredAt?: string;
-  rotateAgentToken?: boolean;
+  rotateRelayToken?: boolean;
   tlsInsecureSkipVerify: boolean;
   reconnectSeconds: number;
 };
@@ -57,7 +54,7 @@ export type TunnelHubRegistrationRecord = {
   publicUrl?: string;
   webSocketUrl?: string;
   targetUrl: string;
-  agentToken?: string;
+  relayToken?: string;
   lastRegisteredAt?: string;
 };
 
@@ -66,11 +63,11 @@ function ensureDir(targetPath: string) {
 }
 
 function getSettingsPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), "tunnel-hub-agent.json");
+  return path.join(getDesktopConfigRoot(app), "tunnel-hub.json");
 }
 
 function getTokenPath(app: App) {
-  return path.join(getSecretsRoot(app), "tunnel-hub-agent-token");
+  return path.join(getSecretsRoot(app), "tunnel-hub-token");
 }
 
 function getRegistrationTokenPath(app: App) {
@@ -85,26 +82,21 @@ function getDeviceSecretPath(app: App) {
   return path.join(getSecretsRoot(app), "tunnel-hub-device-secret");
 }
 
-function getEnvPath(app: App) {
-  return path.join(getServiceConfigRoot(app, TUNNEL_HUB_AGENT_SERVICE_ID, "builtin"), ".env");
-}
-
-function readStoredSettings(app: App): StoredTunnelHubAgentSettings {
+function readStoredSettings(app: App): StoredTunnelHubSettings {
   const settingsPath = getSettingsPath(app);
   if (!fs.existsSync(settingsPath)) {
     return {};
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as unknown;
-    return parsed && typeof parsed === "object" ? parsed as StoredTunnelHubAgentSettings : {};
+    return parsed && typeof parsed === "object" ? parsed as StoredTunnelHubSettings : {};
   } catch {
     return {};
   }
 }
 
 function normalizeRelayUrl(value: unknown) {
-  const raw = typeof value === "string" ? value.trim() : "";
-  return raw || DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL;
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function readStoredString(value: unknown) {
@@ -178,20 +170,8 @@ function readTokenFile(app: App) {
   return readSecretFile(getTokenPath(app));
 }
 
-function readEnvAgentToken(app: App) {
-  const envPath = getEnvPath(app);
-  if (!fs.existsSync(envPath)) {
-    return "";
-  }
-  try {
-    return readEnvFile(envPath).get("AGENT_TOKEN")?.trim() ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function readTunnelHubAgentToken(app: App) {
-  return readTokenFile(app) || readEnvAgentToken(app);
+export function readTunnelHubRelayToken(app: App) {
+  return readTokenFile(app);
 }
 
 export function readTunnelHubRegistrationToken(app: App) {
@@ -262,9 +242,9 @@ function previewToken(token: string) {
   return `****${token.slice(-4)}`;
 }
 
-export function readTunnelHubAgentSettings(app: App): TunnelHubAgentSettings {
+export function readTunnelHubSettings(app: App): TunnelHubSettings {
   const stored = readStoredSettings(app);
-  const token = readTunnelHubAgentToken(app);
+  const token = readTunnelHubRelayToken(app);
   const registrationToken = readTunnelHubRegistrationBearerToken(app);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
@@ -276,8 +256,8 @@ export function readTunnelHubAgentSettings(app: App): TunnelHubAgentSettings {
     enabled,
     relayUrl,
     deviceId,
-    hasAgentToken: Boolean(token),
-    agentTokenPreview: previewToken(token),
+    hasRelayToken: Boolean(token),
+    relayTokenPreview: previewToken(token),
     hasRegistrationToken: Boolean(registrationToken),
     registrationTokenPreview: previewToken(registrationToken),
     publicHost: readStoredString(stored.publicHost),
@@ -290,7 +270,7 @@ export function readTunnelHubAgentSettings(app: App): TunnelHubAgentSettings {
   };
 }
 
-export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSettingsInput) {
+export function validateTunnelHubSettingsInput(input: TunnelHubSettingsInput) {
   const issues: string[] = [];
   const relayUrl = normalizeRelayUrl(input.relayUrl);
   if ("enabled" in input && typeof input.enabled !== "boolean") {
@@ -333,7 +313,7 @@ export function validateTunnelHubAgentSettingsInput(input: TunnelHubAgentSetting
 
 function writeStoredSettings(
   app: App,
-  settings: WritableTunnelHubAgentSettings
+  settings: WritableTunnelHubSettings
 ) {
   const settingsPath = getSettingsPath(app);
   ensureDir(path.dirname(settingsPath));
@@ -366,19 +346,15 @@ function writeRegistrationToken(app: App, token: string) {
   writeSecretFile(getRegistrationTokenPath(app), token);
 }
 
-export function writeTunnelHubAgentToken(app: App, token: string) {
+export function writeTunnelHubRelayToken(app: App, token: string) {
   writeToken(app, token.trim());
 }
 
-export function syncTunnelHubAgentSettingsToEnv(app: App) {
-  void app;
-}
-
-export function saveTunnelHubAgentSettings(
+export function saveTunnelHubSettings(
   app: App,
-  input: TunnelHubAgentSettingsInput
-): TunnelHubAgentSettingsResult {
-  const current = readTunnelHubAgentSettings(app);
+  input: TunnelHubSettingsInput
+): TunnelHubSettingsResult {
+  const current = readTunnelHubSettings(app);
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
   const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
     ? normalizeTunnelHubDeviceId(input.deviceId)
@@ -388,11 +364,11 @@ export function saveTunnelHubAgentSettings(
     ? input.tlsInsecureSkipVerify
     : current.tlsInsecureSkipVerify;
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
-  const nextToken = input.clearAgentToken === true
+  const nextToken = input.clearRelayToken === true
     ? ""
-    : typeof input.agentToken === "string" && input.agentToken.trim()
-      ? input.agentToken.trim()
-      : readTunnelHubAgentToken(app);
+    : typeof input.relayToken === "string" && input.relayToken.trim()
+      ? input.relayToken.trim()
+      : readTunnelHubRelayToken(app);
   const nextRegistrationToken = input.clearRegistrationToken === true
     ? ""
     : typeof input.registrationToken === "string" && input.registrationToken.trim()
@@ -408,7 +384,7 @@ export function saveTunnelHubAgentSettings(
       issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
     }
     if (!nextToken && !availableRegistrationToken) {
-      issues.push("Registration token or agent token is required.");
+      issues.push("Registration token or relay token is required.");
     }
   }
 
@@ -422,16 +398,16 @@ export function saveTunnelHubAgentSettings(
     webSocketUrl: deviceIdChanged ? "" : current.webSocketUrl,
     targetUrl: deviceIdChanged ? "" : current.targetUrl,
     lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
-    rotateAgentToken: input.rotateAgentToken === true,
+    rotateRelayToken: input.rotateRelayToken === true,
     tlsInsecureSkipVerify,
     reconnectSeconds
   };
   writeStoredSettings(app, nextSettings);
 
-  if (input.clearAgentToken === true) {
+  if (input.clearRelayToken === true) {
     writeToken(app, "");
-  } else if (typeof input.agentToken === "string") {
-    const token = input.agentToken.trim();
+  } else if (typeof input.relayToken === "string") {
+    const token = input.relayToken.trim();
     if (token) {
       writeToken(app, token);
     }
@@ -444,20 +420,18 @@ export function saveTunnelHubAgentSettings(
       writeRegistrationToken(app, token);
     }
   }
-
-  syncTunnelHubAgentSettingsToEnv(app);
   if (issues.length > 0) {
     return {
       ok: false,
       message: issues.join(" "),
-      settings: readTunnelHubAgentSettings(app),
+      settings: readTunnelHubSettings(app),
       configPath: getSettingsPath(app)
     };
   }
   return {
     ok: true,
     message: nextSettings.enabled ? "Tunnel Hub settings saved and enabled." : "Tunnel Hub settings saved.",
-    settings: readTunnelHubAgentSettings(app),
+    settings: readTunnelHubSettings(app),
     configPath: getSettingsPath(app)
   };
 }
@@ -468,7 +442,7 @@ export function ensureTunnelHubDeviceId(app: App) {
   if (isValidTunnelHubDeviceId(current)) {
     return current;
   }
-  const currentSettings = readTunnelHubAgentSettings(app);
+  const currentSettings = readTunnelHubSettings(app);
   const deviceId = currentSettings.deviceId || createDefaultDeviceId(app);
   writeStoredSettings(app, {
     enabled: currentSettings.enabled,
@@ -479,19 +453,19 @@ export function ensureTunnelHubDeviceId(app: App) {
     webSocketUrl: currentSettings.webSocketUrl,
     targetUrl: currentSettings.targetUrl,
     lastRegisteredAt: currentSettings.lastRegisteredAt,
-    rotateAgentToken: readStoredSettings(app).rotateAgentToken === true,
+    rotateRelayToken: readStoredSettings(app).rotateRelayToken === true,
     tlsInsecureSkipVerify: currentSettings.tlsInsecureSkipVerify,
     reconnectSeconds: currentSettings.reconnectSeconds
   });
   return deviceId;
 }
 
-export function readTunnelHubAgentTokenRotationRequest(app: App) {
-  return readStoredSettings(app).rotateAgentToken === true;
+export function readTunnelHubRelayTokenRotationRequest(app: App) {
+  return readStoredSettings(app).rotateRelayToken === true;
 }
 
 export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubRegistrationRecord) {
-  const current = readTunnelHubAgentSettings(app);
+  const current = readTunnelHubSettings(app);
   const deviceId = normalizeTunnelHubDeviceId(record.deviceId) || current.deviceId || createDefaultDeviceId(app);
   const nextSettings = {
     enabled: current.enabled,
@@ -502,14 +476,13 @@ export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubReg
     webSocketUrl: record.webSocketUrl?.trim() ?? current.webSocketUrl,
     targetUrl: record.targetUrl.trim(),
     lastRegisteredAt: record.lastRegisteredAt?.trim() || new Date().toISOString(),
-    rotateAgentToken: false,
+    rotateRelayToken: false,
     tlsInsecureSkipVerify: current.tlsInsecureSkipVerify,
     reconnectSeconds: current.reconnectSeconds
   };
   writeStoredSettings(app, nextSettings);
-  if (record.agentToken?.trim()) {
-    writeToken(app, record.agentToken.trim());
+  if (record.relayToken?.trim()) {
+    writeToken(app, record.relayToken.trim());
   }
-  syncTunnelHubAgentSettingsToEnv(app);
-  return readTunnelHubAgentSettings(app);
+  return readTunnelHubSettings(app);
 }

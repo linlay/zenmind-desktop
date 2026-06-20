@@ -2,9 +2,9 @@ import type { App } from "electron";
 import type {
   ServiceLogReadOptions,
   ServiceLogReadResult,
-  TunnelHubAgentSettings,
-  TunnelHubAgentSettingsInput,
-  TunnelHubAgentSettingsResult,
+  TunnelHubSettings,
+  TunnelHubSettingsInput,
+  TunnelHubSettingsResult,
   TunnelHubRuntimeCommandResult,
   TunnelHubRuntimePhase,
   TunnelHubRuntimeStatus
@@ -17,17 +17,17 @@ import {
   ensureTunnelHubRemoteWsReady
 } from "./tunnel-hub-remote-ws";
 import {
-  readTunnelHubAgentSettings,
-  readTunnelHubAgentToken,
-  saveTunnelHubAgentSettings
-} from "./tunnel-hub-agent-settings";
+  readTunnelHubSettings,
+  readTunnelHubRelayToken,
+  saveTunnelHubSettings
+} from "./tunnel-hub-settings";
 import { TunnelHubTunnelClient } from "./tunnel-hub-tunnel-client";
 
 type Logger = Pick<typeof console, "log" | "warn" | "error">;
 
 type TunnelClientFactoryInput = {
   relayUrl: string;
-  agentToken: string;
+  relayToken: string;
   tlsInsecureSkipVerify: boolean;
   logger: Logger;
 };
@@ -50,7 +50,7 @@ function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function readSettingsStatus(settings: TunnelHubAgentSettings, phase: TunnelHubRuntimePhase, lastError = "", lastConnectedAt = ""): TunnelHubRuntimeStatus {
+function readSettingsStatus(settings: TunnelHubSettings, phase: TunnelHubRuntimePhase, lastError = "", lastConnectedAt = ""): TunnelHubRuntimeStatus {
   const connected = phase === "connected";
   return {
     enabled: settings.enabled,
@@ -83,11 +83,11 @@ export class TunnelHubRuntime {
   constructor(private readonly options: TunnelHubRuntimeOptions) {}
 
   getStatus() {
-    return readSettingsStatus(readTunnelHubAgentSettings(this.options.app), this.phase, this.lastError, this.lastConnectedAt);
+    return readSettingsStatus(readTunnelHubSettings(this.options.app), this.phase, this.lastError, this.lastConnectedAt);
   }
 
-  async applySettings(input: TunnelHubAgentSettingsInput): Promise<TunnelHubAgentSettingsResult> {
-    const result = saveTunnelHubAgentSettings(this.options.app, input);
+  async applySettings(input: TunnelHubSettingsInput): Promise<TunnelHubSettingsResult> {
+    const result = saveTunnelHubSettings(this.options.app, input);
     if (!result.ok) {
       return {
         ...result,
@@ -103,7 +103,7 @@ export class TunnelHubRuntime {
     return {
       ...result,
       ok: runtimeResult.ok,
-      settings: readTunnelHubAgentSettings(this.options.app),
+      settings: readTunnelHubSettings(this.options.app),
       runtimeStatus: runtimeResult.status,
       message: runtimeResult.ok ? result.message : runtimeResult.message
     };
@@ -128,7 +128,7 @@ export class TunnelHubRuntime {
     await stopDesktopRemoteWsServer();
     this.stopping = false;
     this.lastError = "";
-    const settings = readTunnelHubAgentSettings(this.options.app);
+    const settings = readTunnelHubSettings(this.options.app);
     this.phase = settings.enabled ? "stopped" : "disabled";
     this.log("stopped");
     return this.commandResult(true, "Tunnel Hub stopped.");
@@ -140,7 +140,7 @@ export class TunnelHubRuntime {
   }
 
   async startIfEnabled() {
-    if (!readTunnelHubAgentSettings(this.options.app).enabled) {
+    if (!readTunnelHubSettings(this.options.app).enabled) {
       return this.getStatus();
     }
     return (await this.start()).status;
@@ -169,7 +169,7 @@ export class TunnelHubRuntime {
   }
 
   private async startInternal(): Promise<TunnelHubRuntimeCommandResult> {
-    const settings = readTunnelHubAgentSettings(this.options.app);
+    const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled) {
       this.phase = "disabled";
       return this.commandResult(false, "Tunnel Hub is disabled or incomplete.");
@@ -183,10 +183,10 @@ export class TunnelHubRuntime {
     try {
       const ready = await ensureTunnelHubRemoteWsReady(this.options.app);
       this.setPhase(ready.registered ? "registered" : "connecting");
-      const nextSettings = readTunnelHubAgentSettings(this.options.app);
-      const token = readTunnelHubAgentToken(this.options.app);
+      const nextSettings = readTunnelHubSettings(this.options.app);
+      const token = readTunnelHubRelayToken(this.options.app);
       if (!token) {
-        throw new Error("Tunnel Hub relay token is missing. Configure a registration token or legacy relay token first.");
+        throw new Error("Tunnel Hub relay token is missing. Configure a registration token or relay token first.");
       }
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
@@ -204,10 +204,10 @@ export class TunnelHubRuntime {
     }
   }
 
-  private async connectTunnel(relayUrl: string, agentToken: string, tlsInsecureSkipVerify: boolean) {
+  private async connectTunnel(relayUrl: string, relayToken: string, tlsInsecureSkipVerify: boolean) {
     const client = this.createTunnelClient({
       relayUrl,
-      agentToken,
+      relayToken,
       tlsInsecureSkipVerify,
       logger: this.options.logger ?? console
     });
@@ -229,7 +229,7 @@ export class TunnelHubRuntime {
       return;
     }
     this.client = null;
-    if (!readTunnelHubAgentSettings(this.options.app).enabled) {
+    if (!readTunnelHubSettings(this.options.app).enabled) {
       this.phase = "disabled";
       return;
     }
@@ -240,7 +240,7 @@ export class TunnelHubRuntime {
 
   private scheduleReconnect() {
     this.clearReconnectTimer();
-    const settings = readTunnelHubAgentSettings(this.options.app);
+    const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled || this.stopping) {
       return;
     }
@@ -267,7 +267,7 @@ export class TunnelHubRuntime {
       ok,
       message,
       status: this.getStatus(),
-      settings: readTunnelHubAgentSettings(this.options.app)
+      settings: readTunnelHubSettings(this.options.app)
     };
   }
 
@@ -321,7 +321,7 @@ export function readTunnelHubRuntimeLog(options?: ServiceLogReadOptions) {
   return getTunnelHubRuntime().readLog(options);
 }
 
-export async function applyTunnelHubSettings(input: TunnelHubAgentSettingsInput) {
+export async function applyTunnelHubSettings(input: TunnelHubSettingsInput) {
   return getTunnelHubRuntime().applySettings(input);
 }
 

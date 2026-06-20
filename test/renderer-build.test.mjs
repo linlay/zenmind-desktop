@@ -1662,16 +1662,22 @@ test("settings page exposes cloud board control as a global section", () => {
 test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const servicesContract = readSourceFile("src", "shared", "contracts", "services.ts");
-  const tunnelSettings = readSourceFile("src", "main", "tunnel-hub-agent-settings.ts");
+  const tunnelSettings = readSourceFile("src", "main", "tunnel-hub-settings.ts");
   const tunnelRuntime = readSourceFile("src", "main", "tunnel-hub-runtime.ts");
+  const removedTunnelHubServiceId = ["tunnel", "hub", "agent"].join("-");
+  const removedDefaultRelayConstant = ["DEFAULT", "TUNNEL", "HUB", "AGENT"].join("_");
+  const removedRelayHost = ["tunnel-hub", "zenmind", "cc"].join("\\.");
+  const removedTunnelHubPatterns = new RegExp(`${removedDefaultRelayConstant}|${removedTunnelHubServiceId}|${removedRelayHost}`);
 
-  assert.match(servicesContract, /interface TunnelHubAgentSettings[\s\S]*?enabled:\s*boolean;/);
-  assert.match(servicesContract, /interface TunnelHubAgentSettingsInput[\s\S]*?enabled\?:\s*boolean;/);
+  assert.match(servicesContract, /interface TunnelHubSettings[\s\S]*?enabled:\s*boolean;/);
+  assert.match(servicesContract, /interface TunnelHubSettingsInput[\s\S]*?enabled\?:\s*boolean;/);
   assert.match(servicesContract, /interface TunnelHubRuntimeStatus[\s\S]*?phase:\s*TunnelHubRuntimePhase;/);
-  assert.match(tunnelSettings, /readTunnelHubAgentSettings[\s\S]*?enabled/);
+  assert.match(tunnelSettings, /readTunnelHubSettings[\s\S]*?enabled/);
   assert.match(tunnelSettings, /requestedEnabled && issues\.length === 0/);
+  assert.match(tunnelSettings, /function normalizeRelayUrl\(value: unknown\)[\s\S]*?value\.trim\(\)/);
+  assert.doesNotMatch(tunnelSettings, removedTunnelHubPatterns);
   assert.match(tunnelRuntime, /startTunnelHubRuntimeIfEnabled/);
-  assert.doesNotMatch(tunnelRuntime, /startService|restartService|TUNNEL_HUB_AGENT_SERVICE_ID/);
+  assert.doesNotMatch(tunnelRuntime, new RegExp(`startService|restartService|${removedTunnelHubPatterns.source}`));
   assert.match(settingsPage, /case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
 });
 

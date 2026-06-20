@@ -18,9 +18,9 @@ const {
   stopDesktopRemoteWsServer
 } = require("../dist-electron/main/desktop-ws-server.js");
 const {
-  readTunnelHubAgentSettings,
-  saveTunnelHubAgentSettings
-} = require("../dist-electron/main/tunnel-hub-agent-settings.js");
+  readTunnelHubSettings,
+  saveTunnelHubSettings
+} = require("../dist-electron/main/tunnel-hub-settings.js");
 
 function createApp(homePath) {
   return {
@@ -85,12 +85,12 @@ test("Tunnel Hub remote WS registration posts 7083 target and stores Relay respo
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         deviceId: "mac-mini-office",
-        publicHost: "mac-mini-office.tunnel-hub.zenmind.cc",
-        publicUrl: "https://mac-mini-office.tunnel-hub.zenmind.cc",
-        webSocketUrl: "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws",
+        publicHost: "mac-mini-office.relay.example.test",
+        publicUrl: "https://mac-mini-office.relay.example.test",
+        webSocketUrl: "wss://mac-mini-office.relay.example.test/ws",
         relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
         targetUrl: "http://127.0.0.1:7083",
-        agentToken: "returned-agent-token"
+        relayToken: "returned-relay-token"
       }));
     });
   });
@@ -114,7 +114,7 @@ test("Tunnel Hub remote WS registration posts 7083 target and stores Relay respo
   });
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
-  const saved = saveTunnelHubAgentSettings(app, {
+  const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
     deviceId: "mac-mini-office",
@@ -170,12 +170,11 @@ test("Tunnel Hub remote WS registration posts 7083 target and stores Relay respo
   assert.equal(registrations[0].body.targetUrl, "http://127.0.0.1:7083");
   assert.notEqual(registrations[0].body.targetUrl, "http://127.0.0.1:7082");
 
-  const settings = readTunnelHubAgentSettings(app);
-  assert.equal(settings.webSocketUrl, "wss://mac-mini-office.tunnel-hub.zenmind.cc/ws");
+  const settings = readTunnelHubSettings(app);
+  assert.equal(settings.webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
   assert.equal(settings.targetUrl, "http://127.0.0.1:7083");
-  assert.equal(settings.hasAgentToken, true);
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-agent-token")), true);
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "config", "services", "tunnel-hub-agent", ".env")), false);
+  assert.equal(settings.hasRelayToken, true);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), true);
 });
 
 test("Tunnel Hub remote WS registration uses SSO site token before legacy registration token", async (t) => {
@@ -199,7 +198,7 @@ test("Tunnel Hub remote WS registration uses SSO site token before legacy regist
         webSocketUrl: "wss://zm1234567890.m.zenmind.cc/ws",
         relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
         targetUrl: "http://127.0.0.1:7083",
-        agentToken: "returned-agent-token"
+        relayToken: "returned-relay-token"
       }));
     });
   });
@@ -223,7 +222,7 @@ test("Tunnel Hub remote WS registration uses SSO site token before legacy regist
   });
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
-  const saved = saveTunnelHubAgentSettings(app, {
+  const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
     deviceId: "mac-mini-office",

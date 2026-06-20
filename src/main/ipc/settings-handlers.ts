@@ -2,8 +2,8 @@ import type {
   DesktopGeneralSettings,
   DesktopGeneralSettingsInput,
   DesktopWsServerState,
-  TunnelHubAgentSettingsInput,
-  TunnelHubAgentSettingsResult
+  TunnelHubSettingsInput,
+  TunnelHubSettingsResult
 } from "../../shared/contracts";
 import {
   DESKTOP_WS_HOST,
@@ -11,7 +11,7 @@ import {
   DESKTOP_WS_PORT,
   DESKTOP_WS_URL
 } from "../../shared/desktop-ws";
-import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunnel-hub-agent-settings";
+import { readTunnelHubSettings, saveTunnelHubSettings } from "../tunnel-hub-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot } from "../user-paths";
 import { readWebOrderKeys, writeWebOrderKeys } from "../webs/order-store";
@@ -41,7 +41,7 @@ export interface SettingsIpcHandlerOptions {
   getDesktopWsServerRuntimeState?: () => Omit<DesktopWsServerState, "enabled">;
   startDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
   stopDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
-  applyTunnelHubSettings?: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
+  applyTunnelHubSettings?: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
 }
 
 export function setNativeThemeSource(nativeTheme: { themeSource: string }, themeMode: string) {
@@ -180,9 +180,9 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     onGeneralSettingsChanged?.(profile.general);
     return profile.general;
   });
-  ipcMain.handle("settings.getTunnelHubAgentSettings", async () => readTunnelHubAgentSettings(app));
-  ipcMain.handle("settings.saveTunnelHubAgentSettings", async (_event: any, input: TunnelHubAgentSettingsInput) =>
-    applyTunnelHubSettings ? applyTunnelHubSettings(input) : saveTunnelHubAgentSettings(app, input)
+  ipcMain.handle("settings.getTunnelHubSettings", async () => readTunnelHubSettings(app));
+  ipcMain.handle("settings.saveTunnelHubSettings", async (_event: any, input: TunnelHubSettingsInput) =>
+    applyTunnelHubSettings ? applyTunnelHubSettings(input) : saveTunnelHubSettings(app, input)
   );
   ipcMain.handle("settings.resetRuntimeEnv", async () => {
     if (!resetRuntimeEnv) {

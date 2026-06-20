@@ -18,7 +18,7 @@ import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
 import { saveDesktopPetSettings } from "./assistant/pet/desktop-pet";
 import { saveMarketSettings } from "./marketplace/common";
 import { saveTaskBoardSettings } from "./task-board-runtime";
-import { saveTunnelHubAgentSettings } from "./tunnel-hub-agent-settings";
+import { saveTunnelHubSettings } from "./tunnel-hub-settings";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -345,13 +345,13 @@ function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): Bootstrap
   if (!isRecord(tunnelHubDefaults)) {
     return "absent";
   }
-  saveTunnelHubAgentSettings(app, {
+  saveTunnelHubSettings(app, {
     enabled: tunnelHubDefaults.enabled === true,
     relayUrl: readText(tunnelHubDefaults.relayUrl),
     deviceId: readText(tunnelHubDefaults.deviceId),
-    agentToken: readText(tunnelHubDefaults.agentToken),
+    relayToken: readText(tunnelHubDefaults.relayToken),
     registrationToken: readText(tunnelHubDefaults.registrationToken),
-    rotateAgentToken: tunnelHubDefaults.rotateAgentToken === true,
+    rotateRelayToken: tunnelHubDefaults.rotateRelayToken === true,
     tlsInsecureSkipVerify: tunnelHubDefaults.tlsInsecureSkipVerify === true,
     reconnectSeconds: typeof tunnelHubDefaults.reconnectSeconds === "number"
       ? tunnelHubDefaults.reconnectSeconds

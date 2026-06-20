@@ -50,41 +50,6 @@ async function importBuiltinAssetsModule(cacheKey) {
   return import(moduleUrl.href);
 }
 
-test("desktop builtin asset discovery skips the external tunnel hub agent executable bundle", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-"));
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  const sourceRoot = path.join(tempRoot, "release");
-  writeBuiltinArchive(sourceRoot, "example-desktop-tool");
-  writeBuiltinArchive(sourceRoot, "tunnel-hub-agent");
-
-  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  const previousLegacySource = process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
-  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  delete process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
-  t.after(() => {
-    if (previousSource === undefined) {
-      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-    if (previousLegacySource === undefined) {
-      delete process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.ZENMIND_BUILTIN_ASSETS_SOURCE = previousLegacySource;
-    }
-  });
-
-  const { discoverBuiltinServices } = await importBuiltinAssetsModule(Date.now());
-  const services = discoverBuiltinServices({ os: "darwin", arch: "arm64" });
-  const serviceIds = new Set(services.map((service) => service.id));
-
-  assert.equal(serviceIds.has("example-desktop-tool"), true);
-  assert.equal(serviceIds.has("tunnel-hub-agent"), false);
-});
-
 test("syncBuiltinAssets writes brand-neutral service resources and removes legacy brand-scoped services", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-sync-"));
   t.after(() => {

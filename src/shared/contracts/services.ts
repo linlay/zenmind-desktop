@@ -230,12 +230,12 @@ export interface ServiceImportResult {
   service: ServiceState;
 }
 
-export interface TunnelHubAgentSettings {
+export interface TunnelHubSettings {
   enabled: boolean;
   relayUrl: string;
   deviceId: string;
-  hasAgentToken: boolean;
-  agentTokenPreview: string;
+  hasRelayToken: boolean;
+  relayTokenPreview: string;
   hasRegistrationToken: boolean;
   registrationTokenPreview: string;
   publicHost: string;
@@ -247,23 +247,23 @@ export interface TunnelHubAgentSettings {
   reconnectSeconds: number;
 }
 
-export interface TunnelHubAgentSettingsInput {
+export interface TunnelHubSettingsInput {
   enabled?: boolean;
   relayUrl?: string;
   deviceId?: string;
-  agentToken?: string;
-  clearAgentToken?: boolean;
+  relayToken?: string;
+  clearRelayToken?: boolean;
   registrationToken?: string;
   clearRegistrationToken?: boolean;
-  rotateAgentToken?: boolean;
+  rotateRelayToken?: boolean;
   tlsInsecureSkipVerify?: boolean;
   reconnectSeconds?: number;
 }
 
-export interface TunnelHubAgentSettingsResult {
+export interface TunnelHubSettingsResult {
   ok: boolean;
   message: string;
-  settings: TunnelHubAgentSettings;
+  settings: TunnelHubSettings;
   configPath?: string;
   runtimeStatus?: TunnelHubRuntimeStatus;
 }
@@ -300,5 +300,5 @@ export interface TunnelHubRuntimeCommandResult {
   ok: boolean;
   message: string;
   status: TunnelHubRuntimeStatus;
-  settings: TunnelHubAgentSettings;
+  settings: TunnelHubSettings;
 }

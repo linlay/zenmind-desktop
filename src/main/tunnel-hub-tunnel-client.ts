@@ -28,7 +28,7 @@ type StreamResponse = {
 
 type TunnelHubTunnelClientOptions = {
   relayUrl: string;
-  agentToken: string;
+  relayToken: string;
   tlsInsecureSkipVerify?: boolean;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
@@ -250,7 +250,7 @@ export class TunnelHubTunnelClient extends EventEmitter {
     }
     const ws = await connectTunnelHubWebSocket(this.options.relayUrl, {
       headers: {
-        Authorization: `Bearer ${this.options.agentToken}`
+        Authorization: `Bearer ${this.options.relayToken}`
       },
       tlsInsecureSkipVerify: this.options.tlsInsecureSkipVerify,
       timeoutMs: 10_000
