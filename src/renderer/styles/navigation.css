@@ -1537,6 +1537,24 @@
   width: calc(100% - 8px);
 }
 
+.sidebar-link.sidebar-tool-menu-trigger,
+.sidebar-link.sidebar-tool-menu-trigger:hover,
+.sidebar-link.sidebar-tool-menu-trigger:focus,
+.sidebar-link.sidebar-tool-menu-trigger.is-open,
+.sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active,
+.app-sidebar:not(.is-collapsed) .sidebar-link.sidebar-tool-menu-trigger,
+.app-sidebar.is-collapsed .sidebar-link.sidebar-tool-menu-trigger,
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger,
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:hover,
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:focus,
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger.is-open,
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .sidebar-tool-menu-trigger .sidebar-link-label {
   flex: 1;
 }

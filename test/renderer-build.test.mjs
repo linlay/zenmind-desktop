@@ -940,6 +940,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
+  assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?\.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active,[\s\S]*?\.app-sidebar\.is-collapsed \.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
   assert.match(globalStyles, /\.sidebar-link:not\(\.sidebar-link-active\) \.sidebar-link-icon svg,[\s\S]*?filter:\s*grayscale\(1\) saturate\(0\);/);
   assert.match(globalStyles, /\.sidebar-link-active \.sidebar-link-icon svg,[\s\S]*?filter:\s*none;/);
