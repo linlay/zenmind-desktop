@@ -29,10 +29,9 @@ const {
 } = require("../dist-electron/main/tunnel-hub-settings.js");
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-const TYPE_DATA = 0;
-const TYPE_WINDOW_UPDATE = 1;
-const FLAG_SYN = 0x1;
-const INITIAL_WINDOW = 256 * 1024;
+const FRAME_OPEN = 1;
+const FRAME_DATA = 2;
+const FRAME_CLOSE = 3;
 
 function createApp(homePath) {
   return {
@@ -136,36 +135,30 @@ function parseClientWsFrames(buffer) {
   return { frames, rest: buffer.subarray(offset) };
 }
 
-function encodeYamuxFrame(type, flags, streamId, length, payload = Buffer.alloc(0)) {
-  const header = Buffer.alloc(12);
-  header[0] = 0;
-  header[1] = type;
-  header.writeUInt16BE(flags, 2);
-  header.writeUInt32BE(streamId, 4);
-  header.writeUInt32BE(length, 8);
+function encodeTunnelFrame(type, streamId, payload = Buffer.alloc(0)) {
+  const header = Buffer.alloc(13);
+  header[0] = type;
+  header.writeBigUInt64BE(BigInt(streamId), 1);
+  header.writeUInt32BE(payload.byteLength, 9);
   return Buffer.concat([header, payload]);
 }
 
-function parseYamuxFrames(buffer) {
+function parseTunnelFrames(buffer) {
   const frames = [];
   let offset = 0;
-  while (offset + 12 <= buffer.byteLength) {
-    const type = buffer[offset + 1];
-    const flags = buffer.readUInt16BE(offset + 2);
-    const streamId = buffer.readUInt32BE(offset + 4);
-    const length = buffer.readUInt32BE(offset + 8);
-    const payloadLength = type === TYPE_DATA ? length : 0;
-    if (offset + 12 + payloadLength > buffer.byteLength) {
+  while (offset + 13 <= buffer.byteLength) {
+    const type = buffer[offset];
+    const streamId = Number(buffer.readBigUInt64BE(offset + 1));
+    const payloadLength = buffer.readUInt32BE(offset + 9);
+    if (offset + 13 + payloadLength > buffer.byteLength) {
       break;
     }
     frames.push({
       type,
-      flags,
       streamId,
-      length,
-      payload: payloadLength > 0 ? buffer.subarray(offset + 12, offset + 12 + payloadLength) : Buffer.alloc(0)
+      payload: payloadLength > 0 ? buffer.subarray(offset + 13, offset + 13 + payloadLength) : Buffer.alloc(0)
     });
-    offset += 12 + payloadLength;
+    offset += 13 + payloadLength;
   }
   return { frames, rest: buffer.subarray(offset) };
 }
@@ -242,7 +235,7 @@ function createFakeRelay({ targetUrl, kind = "websocket" }) {
   const streamReader = createStreamReader();
   let socket = null;
   let wsBuffer = Buffer.alloc(0);
-  let yamuxBuffer = Buffer.alloc(0);
+  let tunnelBuffer = Buffer.alloc(0);
   let authorization = "";
   let upgradedResolve;
   const upgraded = new Promise((resolve) => {
@@ -253,16 +246,16 @@ function createFakeRelay({ targetUrl, kind = "websocket" }) {
     socket.write(encodeServerWsFrame(0x2, payload));
   }
 
-  function sendYamux(type, flags, id, length, payload = Buffer.alloc(0)) {
-    sendWsBinary(encodeYamuxFrame(type, flags, id, length, payload));
+  function sendTunnelFrame(type, id, payload = Buffer.alloc(0)) {
+    sendWsBinary(encodeTunnelFrame(type, id, payload));
   }
 
   function sendStreamData(payload) {
-    sendYamux(TYPE_DATA, 0, streamId, payload.byteLength, payload);
+    sendTunnelFrame(FRAME_DATA, streamId, payload);
   }
 
   async function runScenario() {
-    sendYamux(TYPE_WINDOW_UPDATE, FLAG_SYN, streamId, INITIAL_WINDOW);
+    sendTunnelFrame(FRAME_OPEN, streamId);
     const request = {
       kind,
       requestId: "req-remote-ws",
@@ -314,12 +307,12 @@ function createFakeRelay({ targetUrl, kind = "websocket" }) {
         if (frame.opcode !== 0x2) {
           continue;
         }
-        yamuxBuffer = Buffer.concat([yamuxBuffer, frame.payload]);
-        const yamuxFrames = parseYamuxFrames(yamuxBuffer);
-        yamuxBuffer = yamuxFrames.rest;
-        for (const yamuxFrame of yamuxFrames.frames) {
-          if (yamuxFrame.type === TYPE_DATA && yamuxFrame.streamId === streamId) {
-            streamReader.append(yamuxFrame.payload);
+        tunnelBuffer = Buffer.concat([tunnelBuffer, frame.payload]);
+        const tunnelFrames = parseTunnelFrames(tunnelBuffer);
+        tunnelBuffer = tunnelFrames.rest;
+        for (const tunnelFrame of tunnelFrames.frames) {
+          if (tunnelFrame.type === FRAME_DATA && tunnelFrame.streamId === streamId) {
+            streamReader.append(tunnelFrame.payload);
           }
         }
       }
