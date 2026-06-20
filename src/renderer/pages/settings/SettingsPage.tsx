@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Form, Input, InputNumber, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
+import { Button, Card, Checkbox, Form, Input, InputNumber, Modal, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import "./SettingsPage.css";
@@ -16,11 +16,19 @@ import type {
   WebsiteEntry,
   DesktopAppPairingPayloadResult,
   DesktopAppInfo,
+  DesktopDeviceInfo,
+  DesktopDeviceIdentityInfo,
   DesktopGeneralSettings,
   DesktopWsProbeResult,
   DesktopPetAgentOption,
   DesktopPetState,
   DesktopRuntimeEnvResetResult,
+  DesktopSsoStatus,
+  DesktopUsageProfileLogEntry,
+  DesktopUsageProfileRateLimitStatus,
+  DesktopUsageProfileResult,
+  DesktopUsageProfileSession,
+  DesktopUsageProfileTrafficBucket,
   DesktopWsServerState,
   IdentityAccessTokenInspection,
   MarketSettings,
@@ -63,9 +71,19 @@ import { resolveSettingsSectionId } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
+import type { DesktopActionCallRequest, DesktopActionDefinition } from "../../../shared/desktop-actions";
 
 type ThemePreference = "light" | "dark" | "system";
 type TaskBoardConnectionState = "disabled" | "connecting" | "open" | "closed" | "error";
+type DebugCategoryId = "device" | "logs" | "wsServer" | "authTokens" | "other";
+type UsageHeatmapMode = "day" | "week" | "cumulative";
+type DebugLogDirection = "in" | "out" | "system";
+
+type DebugLogEntry = {
+  id: number;
+  direction: DebugLogDirection;
+  text: string;
+};
 
 type SettingsPageProps = {
   themeMode: ThemePreference;
@@ -101,6 +119,19 @@ type AboutAppCardProps = {
 };
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
+const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "logs", "wsServer", "authTokens", "other"];
+const DEFAULT_DESKTOP_ACTION_NAME = "desktop.settings.getState";
+const DEFAULT_WS_DEBUG_COMMAND = {
+  type: "runtime.info",
+  payload: {}
+};
+const DEFAULT_WS_ACTION_DEBUG_COMMAND = {
+  type: "action.call",
+  payload: {
+    action: DEFAULT_DESKTOP_ACTION_NAME,
+    args: {}
+  }
+};
 
 function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunction) {
   switch (themeMode) {
@@ -110,6 +141,21 @@ function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunctio
       return t("settings.appearance.dark");
     default:
       return t("settings.appearance.system");
+  }
+}
+
+function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction) {
+  switch (categoryId) {
+    case "device":
+      return t("settings.debug.categories.device");
+    case "logs":
+      return t("settings.debug.categories.logs");
+    case "wsServer":
+      return t("settings.debug.categories.wsServer");
+    case "authTokens":
+      return t("settings.debug.categories.authTokens");
+    default:
+      return t("settings.debug.categories.other");
   }
 }
 
@@ -142,6 +188,188 @@ function formatPairingExpiresAt(value: string, locale: SupportedLocale) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(timestamp);
+}
+
+function dateKeyUTC(date: Date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseUsageDate(value: string) {
+  const normalized = value.includes("T") ? value : `${value}T00:00:00.000Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addUTCDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function startOfUTCWeek(date: Date) {
+  const next = new Date(date);
+  const dayIndex = (next.getUTCDay() + 6) % 7;
+  next.setUTCDate(next.getUTCDate() - dayIndex);
+  next.setUTCHours(0, 0, 0, 0);
+  return next;
+}
+
+function formatUsageTokenCount(value: number, locale: SupportedLocale) {
+  const normalized = Number.isFinite(value) ? Math.max(0, value) : 0;
+  if (locale === "zh-CN") {
+    if (normalized >= 100_000_000) {
+      return `${Number((normalized / 100_000_000).toFixed(normalized >= 1_000_000_000 ? 0 : 1))}\u4ebf`;
+    }
+    if (normalized >= 10_000) {
+      return `${Number((normalized / 10_000).toFixed(normalized >= 1_000_000 ? 0 : 1))}\u4e07`;
+    }
+  }
+  return new Intl.NumberFormat(locale, {
+    notation: normalized >= 100_000 ? "compact" : "standard",
+    maximumFractionDigits: normalized >= 100_000 ? 1 : 0
+  }).format(normalized);
+}
+
+function formatUsageCount(value: number, locale: SupportedLocale) {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatUsageCostMicro(value: number, currency: string, locale: SupportedLocale) {
+  const normalizedCurrency = currency || "USD";
+  const amount = (Number.isFinite(value) ? value : 0) / 1_000_000;
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: normalizedCurrency,
+      maximumFractionDigits: amount >= 100 ? 0 : 2
+    }).format(amount);
+  } catch {
+    return `${normalizedCurrency} ${amount.toFixed(2)}`;
+  }
+}
+
+function formatUsageDateTime(value: string, locale: SupportedLocale, fallback: string) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return fallback;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(timestamp);
+}
+
+function buildUsageDailyMap(items: DesktopUsageProfileTrafficBucket[]) {
+  const dailyMap = new Map<string, DesktopUsageProfileTrafficBucket>();
+  for (const item of items) {
+    const date = parseUsageDate(item.bucket);
+    if (!date) {
+      continue;
+    }
+    const key = dateKeyUTC(date);
+    const current = dailyMap.get(key);
+    dailyMap.set(key, {
+      ...item,
+      bucket: key,
+      requests: (current?.requests ?? 0) + item.requests,
+      request_tokens: (current?.request_tokens ?? 0) + item.request_tokens,
+      response_tokens: (current?.response_tokens ?? 0) + item.response_tokens,
+      total_tokens: (current?.total_tokens ?? 0) + item.total_tokens,
+      cache_hit_tokens: (current?.cache_hit_tokens ?? 0) + item.cache_hit_tokens,
+      cache_miss_tokens: (current?.cache_miss_tokens ?? 0) + item.cache_miss_tokens,
+      cache_total_tokens: (current?.cache_total_tokens ?? 0) + item.cache_total_tokens,
+      cache_hit_rate: item.cache_hit_rate,
+      cost_micro: (current?.cost_micro ?? 0) + item.cost_micro,
+      error_requests: (current?.error_requests ?? 0) + item.error_requests,
+      average_latency_ms: item.average_latency_ms
+    });
+  }
+  return dailyMap;
+}
+
+function calculateUsageStreaks(items: DesktopUsageProfileTrafficBucket[], now: Date) {
+  const activeDays = new Set(
+    items
+      .filter((item) => item.total_tokens > 0)
+      .map((item) => parseUsageDate(item.bucket))
+      .filter((date): date is Date => date !== null)
+      .map(dateKeyUTC)
+  );
+  let currentStreak = 0;
+  let cursor = new Date(now);
+  cursor.setUTCHours(0, 0, 0, 0);
+  while (activeDays.has(dateKeyUTC(cursor))) {
+    currentStreak += 1;
+    cursor = addUTCDays(cursor, -1);
+  }
+
+  let longestStreak = 0;
+  let runningStreak = 0;
+  const sortedDays = [...activeDays].sort();
+  let previousDay = "";
+  for (const day of sortedDays) {
+    const date = parseUsageDate(day);
+    const previousDate = previousDay ? parseUsageDate(previousDay) : null;
+    const consecutive = date && previousDate
+      ? dateKeyUTC(addUTCDays(previousDate, 1)) === dateKeyUTC(date)
+      : false;
+    runningStreak = consecutive ? runningStreak + 1 : 1;
+    longestStreak = Math.max(longestStreak, runningStreak);
+    previousDay = day;
+  }
+
+  return { currentStreak, longestStreak };
+}
+
+function aggregateUsageModels(logs: DesktopUsageProfileLogEntry[]) {
+  const byModel = new Map<string, { model: string; requests: number; tokens: number; costMicro: number }>();
+  for (const log of logs) {
+    const model = log.public_model || log.upstream_model || log.provider || "unknown";
+    const current = byModel.get(model) ?? { model, requests: 0, tokens: 0, costMicro: 0 };
+    current.requests += 1;
+    current.tokens += log.total_tokens;
+    current.costMicro += log.cost_micro;
+    byModel.set(model, current);
+  }
+  return [...byModel.values()].sort((left, right) => right.requests - left.requests).slice(0, 6);
+}
+
+function limitUsageProgress(limit: DesktopUsageProfileRateLimitStatus) {
+  const quota = limit.cost_quota_micro > 0
+    ? limit.cost_quota_micro
+    : limit.token_quota > 0
+      ? limit.token_quota
+      : limit.request_quota;
+  const used = limit.cost_quota_micro > 0
+    ? limit.cost_micro
+    : limit.token_quota > 0
+      ? limit.tokens
+      : limit.requests;
+  const remaining = limit.cost_quota_micro > 0
+    ? limit.cost_remaining_micro
+    : limit.token_quota > 0
+      ? limit.token_remaining
+      : limit.request_remaining;
+  const usedPercent = quota > 0 ? Math.min(100, Math.max(0, Math.round((used / quota) * 100))) : 0;
+  const remainingPercent = quota > 0 ? Math.max(0, Math.min(100, Math.round((remaining / quota) * 100))) : 100;
+  return { quota, used, remaining, usedPercent, remainingPercent };
+}
+
+function usageAvatarInitials(name: string, email: string) {
+  const source = (name || email || "?").trim();
+  if (!source) {
+    return "?";
+  }
+  const words = source.split(/\s+/u).filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  }
+  return source.slice(0, 2).toUpperCase();
 }
 
 function ThemePreferenceIcon({ themeMode }: { themeMode: ThemePreference }) {
@@ -188,6 +416,7 @@ const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
 };
 
 const defaultGeneralSettings: DesktopGeneralSettings = {
+  deviceName: "",
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false
 };
@@ -437,6 +666,423 @@ function getDesktopPetAppearanceDescription(appearanceId: string, fallback: stri
   }
 }
 
+type UsageSettingsPanelProps = {
+  profile: DesktopUsageProfileResult | null;
+  ssoStatus: DesktopSsoStatus | null;
+  loading: boolean;
+  heatmapMode: UsageHeatmapMode;
+  onHeatmapModeChange: (mode: UsageHeatmapMode) => void;
+  onRefresh: () => void | Promise<void>;
+};
+
+function UsageSettingsPanel({
+  profile,
+  ssoStatus,
+  loading,
+  heatmapMode,
+  onHeatmapModeChange,
+  onRefresh
+}: UsageSettingsPanelProps) {
+  const { locale, t } = useI18n();
+  const user = ssoStatus?.user ?? null;
+  const displayName = user?.name || user?.email || t("settings.usage.profile.guestName");
+  const displayAccount = user?.email || user?.sub || t("settings.usage.profile.accountFallback");
+  const statusLabel = ssoStatus?.authenticated
+    ? t("settings.usage.profile.statusSignedIn")
+    : ssoStatus?.pending
+      ? t("sidebar.sso.signingIn")
+      : t("settings.usage.profile.statusSignedOut");
+  const successProfile = profile?.ok ? profile : null;
+  const failureProfile = profile && !profile.ok ? profile : null;
+
+  const dailyMap = useMemo(
+    () => buildUsageDailyMap(successProfile?.usage.items ?? []),
+    [successProfile]
+  );
+  const heatmap = useMemo(() => {
+    const end = successProfile ? new Date(successProfile.fetchedAt) : new Date();
+    if (Number.isNaN(end.getTime())) {
+      end.setTime(Date.now());
+    }
+    end.setUTCHours(0, 0, 0, 0);
+    const start = addUTCDays(end, -364);
+    const leadingEmptyCells = (start.getUTCDay() + 6) % 7;
+    const weekTotals = new Map<string, number>();
+    for (const [day, bucket] of dailyMap) {
+      const date = parseUsageDate(day);
+      if (!date) {
+        continue;
+      }
+      const weekKey = dateKeyUTC(startOfUTCWeek(date));
+      weekTotals.set(weekKey, (weekTotals.get(weekKey) ?? 0) + bucket.total_tokens);
+    }
+    let cumulative = 0;
+    const cells = Array.from({ length: 365 }, (_item, index) => {
+      const date = addUTCDays(start, index);
+      const key = dateKeyUTC(date);
+      const dailyTokens = dailyMap.get(key)?.total_tokens ?? 0;
+      cumulative += dailyTokens;
+      const weekKey = dateKeyUTC(startOfUTCWeek(date));
+      const value = heatmapMode === "week"
+        ? weekTotals.get(weekKey) ?? 0
+        : heatmapMode === "cumulative"
+          ? cumulative
+          : dailyTokens;
+      return {
+        key,
+        value,
+        dailyTokens,
+        label: new Intl.DateTimeFormat(locale, {
+          month: "2-digit",
+          day: "2-digit"
+        }).format(date)
+      };
+    });
+    const maxValue = cells.reduce((max, cell) => Math.max(max, cell.value), 0);
+    const months: Array<{ key: string; label: string }> = [];
+    let monthCursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const endMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+    while (monthCursor <= endMonth) {
+      months.push({
+        key: dateKeyUTC(monthCursor),
+        label: new Intl.DateTimeFormat(locale, { month: "short" }).format(monthCursor)
+      });
+      monthCursor = new Date(Date.UTC(monthCursor.getUTCFullYear(), monthCursor.getUTCMonth() + 1, 1));
+    }
+    return { leadingEmptyCells, cells, maxValue, months };
+  }, [dailyMap, heatmapMode, locale, successProfile]);
+
+  const overview = useMemo(() => {
+    if (!successProfile) {
+      return [];
+    }
+    const peakDailyTokens = successProfile.usage.items.reduce(
+      (max, item) => Math.max(max, item.total_tokens),
+      0
+    );
+    const streaks = calculateUsageStreaks(successProfile.usage.items, new Date(successProfile.fetchedAt));
+    return [{
+      label: t("settings.usage.overview.totalTokens"),
+      value: formatUsageTokenCount(successProfile.usage.summary.total_tokens, locale)
+    }, {
+      label: t("settings.usage.overview.peakDailyTokens"),
+      value: formatUsageTokenCount(peakDailyTokens, locale)
+    }, {
+      label: t("settings.usage.overview.currentStreak"),
+      value: t("settings.usage.overview.days", { count: streaks.currentStreak })
+    }, {
+      label: t("settings.usage.overview.longestStreak"),
+      value: t("settings.usage.overview.days", { count: streaks.longestStreak })
+    }, {
+      label: t("settings.usage.overview.sessions"),
+      value: formatUsageCount(successProfile.sessions.total, locale)
+    }];
+  }, [locale, successProfile, t]);
+
+  const modelUsage = useMemo(
+    () => aggregateUsageModels(successProfile?.logs.items ?? []),
+    [successProfile]
+  );
+  const priceByModel = useMemo(() => {
+    const prices = new Map<string, NonNullable<typeof successProfile>["prices"]["items"][number]>();
+    for (const price of successProfile?.prices.items ?? []) {
+      prices.set(price.public_model, price);
+    }
+    return prices;
+  }, [successProfile]);
+
+  function renderProfileAvatar() {
+    if (user?.avatarUrl) {
+      return <img src={user.avatarUrl} alt={t("settings.usage.profile.avatarAlt")} />;
+    }
+    return <span>{usageAvatarInitials(displayName, displayAccount)}</span>;
+  }
+
+  function renderHeatmap() {
+    if (!successProfile || successProfile.usage.items.length === 0) {
+      return (
+        <div className="settings-item-empty usage-heatmap-empty">
+          {t("settings.usage.heatmap.empty")}
+        </div>
+      );
+    }
+    return (
+      <div className="usage-heatmap-scroll" aria-label={t("settings.usage.heatmap.title")}>
+        <div className="usage-heatmap-months" aria-hidden="true">
+          {heatmap.months.map((month) => <span key={month.key}>{month.label}</span>)}
+        </div>
+        <div className="usage-heatmap-grid">
+          {Array.from({ length: heatmap.leadingEmptyCells }, (_item, index) => (
+            <span className="usage-heatmap-cell is-empty" key={`empty-${index}`} aria-hidden="true" />
+          ))}
+          {heatmap.cells.map((cell) => {
+            const level = heatmap.maxValue > 0
+              ? Math.min(4, Math.max(1, Math.ceil((cell.value / heatmap.maxValue) * 4)))
+              : 0;
+            const title = `${cell.label} · ${formatUsageTokenCount(cell.dailyTokens, locale)} ${t("settings.usage.tokens")}`;
+            return (
+              <span
+                className={`usage-heatmap-cell level-${level}`}
+                key={cell.key}
+                title={title}
+                aria-label={title}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderLimitRows(limits: DesktopUsageProfileRateLimitStatus[]) {
+    if (limits.length === 0) {
+      return <div className="settings-item-empty">{t("settings.usage.billing.noLimits")}</div>;
+    }
+    return (
+      <div className="usage-limit-list">
+        {limits.map((limit) => {
+          const progress = limitUsageProgress(limit);
+          return (
+            <div className="usage-limit-row" key={`${limit.window}-${limit.starts_at}-${limit.resets_at}`}>
+              <div>
+                <strong>{limit.window || t("settings.usage.billing.windowFallback")}</strong>
+                <span>{t("settings.usage.billing.resetAt", { time: formatUsageDateTime(limit.resets_at, locale, t("common.none")) })}</span>
+              </div>
+              <div className="usage-limit-meter" aria-label={t("settings.usage.billing.remainingPercent", { percent: progress.remainingPercent })}>
+                <span style={{ width: `${progress.usedPercent}%` }} />
+              </div>
+              <span className="usage-limit-percent">
+                {t("settings.usage.billing.remainingPercent", { percent: progress.remainingPercent })}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderAllowedModels() {
+    const allowedModels = successProfile?.currentKey.allowed_models ?? [];
+    if (allowedModels.length === 0) {
+      return <div className="settings-item-empty">{t("settings.usage.billing.allowedModelsEmpty")}</div>;
+    }
+    return (
+      <div className="usage-model-chip-list">
+        {allowedModels.slice(0, 12).map((model) => (
+          <span className="usage-model-chip" key={model}>{model}</span>
+        ))}
+      </div>
+    );
+  }
+
+  function renderCommonModels() {
+    if (!successProfile || modelUsage.length === 0) {
+      return <div className="settings-item-empty">{t("settings.usage.details.noModels")}</div>;
+    }
+    return (
+      <div className="usage-detail-list">
+        {modelUsage.map((item) => (
+          <div className="usage-detail-row" key={item.model}>
+            <div>
+              <strong>{item.model}</strong>
+              <span>
+                {t("settings.usage.details.modelMeta", {
+                  requests: formatUsageCount(item.requests, locale),
+                  tokens: formatUsageTokenCount(item.tokens, locale)
+                })}
+              </span>
+            </div>
+            <span>{formatUsageCostMicro(item.costMicro, successProfile.balance.currency, locale)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderDevices(sessions: DesktopUsageProfileSession[]) {
+    if (sessions.length === 0) {
+      return <div className="settings-item-empty">{t("settings.usage.details.noDevices")}</div>;
+    }
+    return (
+      <div className="usage-detail-list">
+        {sessions.slice(0, 6).map((session) => (
+          <div className="usage-detail-row" key={`${session.device_id}-${session.source}-${session.last_seen_at}`}>
+            <div>
+              <strong>{session.device_id || session.source || t("settings.usage.details.deviceFallback")}</strong>
+              <span>
+                {session.active ? t("settings.usage.details.active") : t("settings.usage.details.idle")}
+                {" · "}
+                {t("settings.usage.details.lastSeen", {
+                  time: formatUsageDateTime(session.last_seen_at, locale, t("common.none"))
+                })}
+              </span>
+            </div>
+            <span>{formatUsageTokenCount(session.token_count, locale)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderPrices() {
+    const allowedModels = successProfile?.currentKey.allowed_models ?? [];
+    const visiblePrices = allowedModels
+      .map((model) => priceByModel.get(model))
+      .filter((price): price is NonNullable<typeof price> => Boolean(price))
+      .slice(0, 6);
+    if (!successProfile || visiblePrices.length === 0) {
+      return null;
+    }
+    return (
+      <div className="usage-prices">
+        <h3>{t("settings.usage.details.pricesTitle")}</h3>
+        <div className="usage-detail-list">
+          {visiblePrices.map((price) => (
+            <div className="usage-detail-row" key={price.id || price.public_model}>
+              <div>
+                <strong>{price.public_model}</strong>
+                <span>{price.protocol}</span>
+              </div>
+              <span>
+                {t("settings.usage.details.priceMeta", {
+                  input: formatUsageCostMicro(price.input_cost_micro_per_1m_tokens, price.currency, locale),
+                  output: formatUsageCostMicro(price.output_cost_micro_per_1m_tokens, price.currency, locale)
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const balanceRemaining = successProfile?.balance.items.reduce((total, item) =>
+    total + Math.max(0, item.cost_remaining_micro), 0) ?? 0;
+
+  return (
+    <div className="usage-settings-stack">
+      <div className="data-root-card usage-profile-card">
+        <div className="usage-profile-avatar" aria-hidden="true">
+          {renderProfileAvatar()}
+        </div>
+        <div className="usage-profile-copy">
+          <h2>{displayName}</h2>
+          <p>{displayAccount}</p>
+          <span className={`usage-status-pill ${ssoStatus?.authenticated ? "is-active" : "is-muted"}`}>
+            {statusLabel}
+          </span>
+        </div>
+        <Button disabled={loading} loading={loading} onClick={() => void onRefresh()}>
+          {t("common.refresh")}
+        </Button>
+      </div>
+
+      {loading && !profile ? (
+        <div className="data-root-card">
+          <div className="settings-item-empty">{t("common.loading")}</div>
+        </div>
+      ) : null}
+
+      {failureProfile ? (
+        <div className="data-root-card usage-empty-card">
+          <h2>{t("settings.usage.empty.title")}</h2>
+          <p className="page-copy">{failureProfile.message}</p>
+        </div>
+      ) : null}
+
+      {successProfile ? (
+        <>
+          <div className="usage-summary-strip" aria-label={t("settings.usage.overview.title")}>
+            {overview.map((item) => (
+              <div className="usage-summary-item" key={item.label}>
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="data-root-card usage-heatmap-card">
+            <div className="usage-card-head">
+              <div>
+                <h2>{t("settings.usage.heatmap.title")}</h2>
+                <p className="page-copy">{t("settings.usage.heatmap.description")}</p>
+              </div>
+              <Segmented<UsageHeatmapMode>
+                value={heatmapMode}
+                onChange={onHeatmapModeChange}
+                options={[
+                  { value: "day", label: t("settings.usage.heatmap.day") },
+                  { value: "week", label: t("settings.usage.heatmap.week") },
+                  { value: "cumulative", label: t("settings.usage.heatmap.cumulative") }
+                ]}
+              />
+            </div>
+            {renderHeatmap()}
+          </div>
+
+          <div className="usage-main-grid">
+            <div className="data-root-card usage-billing-card">
+              <div className="usage-card-head">
+                <div>
+                  <h2>{t("settings.usage.billing.title")}</h2>
+                  <p className="page-copy">{t("settings.usage.billing.description")}</p>
+                </div>
+              </div>
+              <div className="usage-billing-panels">
+                <div className="usage-billing-panel">
+                  <strong>{successProfile.currentKey.name || successProfile.provider.providerName}</strong>
+                  <span>
+                    {t("settings.usage.billing.keyMeta", {
+                      status: successProfile.currentKey.status || t("common.none"),
+                      source: successProfile.currentKey.source || t("common.none")
+                    })}
+                  </span>
+                  <small>{successProfile.provider.baseURL}</small>
+                </div>
+                <div className="usage-billing-panel">
+                  <strong>{formatUsageCostMicro(successProfile.balance.cost_micro, successProfile.balance.currency, locale)}</strong>
+                  <span>{t("settings.usage.billing.balanceSpent")}</span>
+                  <small>
+                    {successProfile.balance.unlimited
+                      ? t("settings.usage.billing.unlimited")
+                      : t("settings.usage.billing.remainingCost", {
+                          amount: formatUsageCostMicro(balanceRemaining, successProfile.balance.currency, locale)
+                        })}
+                  </small>
+                </div>
+              </div>
+              <div className="usage-section-subhead">
+                <h3>{t("settings.usage.billing.limitsTitle")}</h3>
+              </div>
+              {renderLimitRows(successProfile.limits.rate_limit_usage)}
+              <div className="usage-section-subhead">
+                <h3>{t("settings.usage.billing.allowedModels")}</h3>
+              </div>
+              {renderAllowedModels()}
+            </div>
+
+            <div className="usage-side-stack">
+              <div className="data-root-card usage-detail-card">
+                <div className="usage-section-subhead">
+                  <h2>{t("settings.usage.details.modelsTitle")}</h2>
+                </div>
+                {renderCommonModels()}
+                {renderPrices()}
+              </div>
+              <div className="data-root-card usage-detail-card">
+                <div className="usage-section-subhead">
+                  <h2>{t("settings.usage.details.devicesTitle")}</h2>
+                </div>
+                {renderDevices(successProfile.sessions.items)}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function WindowsDataRootCard() {
   const { t } = useI18n();
   const [dataRoot, setDataRoot] = useState("");
@@ -509,6 +1155,496 @@ function formatDebugValue(value: unknown, fallback: string) {
     return String(value);
   }
   return fallback;
+}
+
+function createDebugRequestId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readDebugJsonObject(text: string, invalidJsonMessage: string, objectMessage: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(invalidJsonMessage);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(objectMessage);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function buildDesktopActionRequestText(action = DEFAULT_DESKTOP_ACTION_NAME) {
+  return formatDebugJson({
+    action,
+    args: {},
+    permissionMode: "full_access"
+  });
+}
+
+function normalizeDesktopActionDebugRequest(
+  input: Record<string, unknown>,
+  selectedAction: string,
+  requestId: string,
+  missingActionMessage: string
+): DesktopActionCallRequest {
+  const action = typeof input.action === "string" && input.action.trim()
+    ? input.action.trim()
+    : selectedAction.trim();
+  if (!action) {
+    throw new Error(missingActionMessage);
+  }
+  const request: DesktopActionCallRequest = {
+    requestId,
+    action,
+    args: asRecord(input.args)
+  };
+  const source = asRecord(input.source);
+  if (Object.keys(source).length > 0) {
+    request.source = source as DesktopActionCallRequest["source"];
+  }
+  if (
+    input.permissionMode === "default" ||
+    input.permissionMode === "page_control" ||
+    input.permissionMode === "full_access"
+  ) {
+    request.permissionMode = input.permissionMode;
+  }
+  if (typeof input.expectedPageKey === "string" && input.expectedPageKey.trim()) {
+    request.expectedPageKey = input.expectedPageKey.trim();
+  }
+  return request;
+}
+
+function buildWsDebugCommandText(command: Record<string, unknown> = DEFAULT_WS_DEBUG_COMMAND) {
+  return formatDebugJson(command);
+}
+
+function normalizeWsDebugFrame(input: Record<string, unknown>, missingTypeMessage: string) {
+  const type = typeof input.type === "string" ? input.type.trim() : "";
+  if (!type) {
+    throw new Error(missingTypeMessage);
+  }
+  return {
+    ns: typeof input.ns === "string" && input.ns.trim() ? input.ns.trim() : "d",
+    frame: typeof input.frame === "string" && input.frame.trim() ? input.frame.trim() : "request",
+    type,
+    id: typeof input.id === "string" && input.id.trim() ? input.id.trim() : createDebugRequestId("settings_debug_ws"),
+    payload: "payload" in input ? input.payload : {}
+  };
+}
+
+function appendDebugLogEntry(
+  setEntries: (updater: (entries: DebugLogEntry[]) => DebugLogEntry[]) => void,
+  direction: DebugLogDirection,
+  value: unknown
+) {
+  const text = typeof value === "string" ? value : formatDebugJson(value);
+  setEntries((entries) => [
+    ...entries.slice(-79),
+    {
+      id: Date.now() + Math.random(),
+      direction,
+      text
+    }
+  ]);
+}
+
+function DesktopActionDebugDialog({
+  open,
+  onClose
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const [actions, setActions] = useState<DesktopActionDefinition[]>([]);
+  const [selectedAction, setSelectedAction] = useState(DEFAULT_DESKTOP_ACTION_NAME);
+  const [requestText, setRequestText] = useState(buildDesktopActionRequestText());
+  const [responseText, setResponseText] = useState("");
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function handleLoadActions() {
+    setMessage("");
+    try {
+      const result = await window.electronAPI.desktopActions.list();
+      const nextActions = Array.isArray(result.actions) ? result.actions : [];
+      setActions(nextActions);
+      if (!nextActions.some((action) => action.name === selectedAction) && nextActions[0]?.name) {
+        setSelectedAction(nextActions[0].name);
+        setRequestText(buildDesktopActionRequestText(nextActions[0].name));
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleRunAction() {
+    setPending(true);
+    setMessage("");
+    try {
+      const record = readDebugJsonObject(
+        requestText,
+        t("settings.debug.console.invalidJson"),
+        t("settings.debug.console.jsonObjectRequired")
+      );
+      const request = normalizeDesktopActionDebugRequest(
+        record,
+        selectedAction,
+        createDebugRequestId("settings_debug_action"),
+        t("settings.debug.desktopActions.missingAction")
+      );
+      const response = await window.electronAPI.desktopActions.call(request);
+      setResponseText(formatDebugJson(response));
+      setMessage(response.ok ? t("settings.debug.desktopActions.completed") : response.error?.message || t("common.error"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleCopyResponse() {
+    if (!responseText) {
+      return;
+    }
+    await window.electronAPI.clipboard.writeText(responseText);
+  }
+
+  useEffect(() => {
+    if (open) {
+      void handleLoadActions();
+    }
+  }, [open]);
+
+  return (
+    <Modal
+      className="settings-debug-modal"
+      footer={null}
+      open={open}
+      title={t("settings.debug.desktopActions.dialogTitle")}
+      width={820}
+      onCancel={onClose}
+    >
+      <div className="settings-debug-dialog-body">
+        <div className="settings-debug-dialog-actions">
+          <Select
+            className="settings-debug-action-select"
+            showSearch
+            value={selectedAction}
+            optionFilterProp="label"
+            options={actions.map((action) => ({
+              value: action.name,
+              label: `${action.name} · ${action.kind}`
+            }))}
+            onChange={(value) => {
+              setSelectedAction(value);
+              setRequestText(buildDesktopActionRequestText(value));
+            }}
+          />
+          <Button onClick={() => void handleLoadActions()}>{t("common.refresh")}</Button>
+          <Button type="primary" disabled={pending} onClick={() => void handleRunAction()}>
+            {pending ? t("common.loading") : t("settings.debug.desktopActions.run")}
+          </Button>
+          <Button disabled={!responseText} onClick={() => void handleCopyResponse()}>
+            {t("settings.debug.desktopActions.copyResponse")}
+          </Button>
+        </div>
+        {message ? (
+          <div className={`feedback-banner settings-desktop-ws-message${responseText && !/"ok": true/u.test(responseText) ? " warning-banner" : ""}`} role="status">
+            {message}
+          </div>
+        ) : null}
+        <div className="settings-debug-dialog-grid">
+          <label className="settings-debug-field">
+            <span>{t("settings.debug.desktopActions.request")}</span>
+            <textarea value={requestText} onChange={(event) => setRequestText(event.target.value)} spellCheck={false} />
+          </label>
+          <label className="settings-debug-field">
+            <span>{t("settings.debug.desktopActions.response")}</span>
+            <textarea value={responseText} readOnly spellCheck={false} />
+          </label>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DesktopActionDebugCard() {
+  const { t } = useI18n();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  return (
+    <div className="data-root-card settings-debug-panel">
+      <div className="settings-debug-panel-head">
+        <div>
+          <h2>{t("settings.debug.desktopActions.title")}</h2>
+          <p className="page-copy">{t("settings.debug.desktopActions.description")}</p>
+        </div>
+      </div>
+      <div className="settings-debug-actions">
+        <Button type="primary" onClick={() => setDialogOpen(true)}>
+          {t("settings.debug.desktopActions.openDialog")}
+        </Button>
+      </div>
+      <DesktopActionDebugDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+    </div>
+  );
+}
+
+function WsServerDebugDialog({
+  open,
+  onClose,
+  url
+}: {
+  open: boolean;
+  onClose: () => void;
+  url: string;
+}) {
+  const { t } = useI18n();
+  const socketRef = useRef<WebSocket | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+  const [commandText, setCommandText] = useState(buildWsDebugCommandText());
+  const [entries, setEntries] = useState<DebugLogEntry[]>([]);
+
+  function closeSocket() {
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close();
+    }
+    setConnected(false);
+  }
+
+  async function handleConnect() {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      return;
+    }
+    setPending(true);
+    setMessage("");
+    try {
+      const tokenResult = await window.electronAPI.agentAuth.issueAccessToken("missing");
+      const token = tokenResult.token.trim();
+      if (!tokenResult.ok || !token) {
+        throw new Error(tokenResult.message || t("settings.debug.wsConsole.tokenUnavailable"));
+      }
+      const wsUrl = new URL(url || DESKTOP_WS_URL);
+      wsUrl.searchParams.set("token", token);
+      wsUrl.searchParams.set("source", "settings-debug-ws-console");
+      const socket = new WebSocket(wsUrl.toString());
+      socketRef.current = socket;
+      appendDebugLogEntry(setEntries, "system", wsUrl.toString().replace(token, "token-redacted"));
+      socket.onopen = () => {
+        setConnected(true);
+        setPending(false);
+        setMessage(t("settings.debug.wsConsole.connected"));
+      };
+      socket.onmessage = (event) => {
+        appendDebugLogEntry(setEntries, "in", typeof event.data === "string" ? event.data : String(event.data));
+      };
+      socket.onerror = () => {
+        setMessage(t("settings.debug.wsConsole.error"));
+        appendDebugLogEntry(setEntries, "system", t("settings.debug.wsConsole.error"));
+      };
+      socket.onclose = () => {
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+        setConnected(false);
+        setPending(false);
+        setMessage(t("settings.debug.wsConsole.closed"));
+      };
+    } catch (error) {
+      setPending(false);
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function handleDisconnect() {
+    closeSocket();
+    setMessage(t("settings.debug.wsConsole.closed"));
+  }
+
+  function handleSend() {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setMessage(t("settings.debug.wsConsole.notConnected"));
+      return;
+    }
+    try {
+      const record = readDebugJsonObject(
+        commandText,
+        t("settings.debug.console.invalidJson"),
+        t("settings.debug.console.jsonObjectRequired")
+      );
+      const frame = normalizeWsDebugFrame(record, t("settings.debug.wsConsole.missingType"));
+      const text = JSON.stringify(frame);
+      socket.send(text);
+      appendDebugLogEntry(setEntries, "out", frame);
+      setMessage("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  useEffect(() => {
+    if (!open) {
+      closeSocket();
+    }
+  }, [open]);
+
+  useEffect(() => () => closeSocket(), []);
+
+  return (
+    <Modal
+      className="settings-debug-modal"
+      footer={null}
+      open={open}
+      title={t("settings.debug.wsConsole.title")}
+      width={860}
+      onCancel={onClose}
+    >
+      <div className="settings-debug-dialog-body">
+        <div className="settings-debug-dialog-actions">
+          <span className={`settings-desktop-ws-status ${connected ? "is-running" : pending ? "is-pending" : "is-closed"}`}>
+            {connected ? t("settings.debug.wsConsole.connected") : pending ? t("common.loading") : t("settings.debug.wsConsole.closed")}
+          </span>
+          <Button type="primary" disabled={connected || pending} onClick={() => void handleConnect()}>
+            {pending ? t("common.loading") : t("settings.debug.wsConsole.connect")}
+          </Button>
+          <Button disabled={!connected} onClick={() => handleDisconnect()}>
+            {t("settings.debug.wsConsole.disconnect")}
+          </Button>
+          <Button onClick={() => setCommandText(buildWsDebugCommandText(DEFAULT_WS_DEBUG_COMMAND))}>
+            {t("settings.debug.wsConsole.runtimeInfo")}
+          </Button>
+          <Button onClick={() => setCommandText(buildWsDebugCommandText({ type: "action.list", payload: {} }))}>
+            {t("settings.debug.wsConsole.actionList")}
+          </Button>
+          <Button onClick={() => setCommandText(buildWsDebugCommandText(DEFAULT_WS_ACTION_DEBUG_COMMAND))}>
+            {t("settings.debug.wsConsole.actionCall")}
+          </Button>
+        </div>
+        {message ? (
+          <div className="feedback-banner settings-desktop-ws-message" role="status">
+            {message}
+          </div>
+        ) : null}
+        <label className="settings-debug-field">
+          <span>{t("settings.debug.wsConsole.command")}</span>
+          <textarea value={commandText} onChange={(event) => setCommandText(event.target.value)} spellCheck={false} />
+        </label>
+        <div className="settings-debug-dialog-actions">
+          <Button type="primary" disabled={!connected} onClick={() => handleSend()}>
+            {t("settings.debug.wsConsole.send")}
+          </Button>
+          <Button disabled={entries.length === 0} onClick={() => setEntries([])}>
+            {t("settings.debug.wsConsole.clear")}
+          </Button>
+        </div>
+        <div className="settings-debug-log" aria-label={t("settings.debug.wsConsole.messages")}>
+          {entries.length === 0 ? (
+            <div className="settings-debug-log-empty">{t("settings.debug.wsConsole.empty")}</div>
+          ) : entries.map((entry) => (
+            <pre key={entry.id} className={`settings-debug-log-entry is-${entry.direction}`}>
+              {entry.text}
+            </pre>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DeviceIdentityDebugCard() {
+  const { t } = useI18n();
+  const [identity, setIdentity] = useState<DesktopDeviceIdentityInfo | null>(null);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function handleRefresh() {
+    setPending(true);
+    setMessage("");
+    try {
+      const result = await window.electronAPI.settings.getDeviceIdentity();
+      setIdentity(result);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleCopy(text: string) {
+    if (!text) {
+      return;
+    }
+    await window.electronAPI.clipboard.writeText(text);
+  }
+
+  useEffect(() => {
+    void handleRefresh();
+  }, []);
+
+  const identityJson = identity ? formatDebugJson(identity) : "";
+  const rows: Array<{ label: TranslationKey; value: unknown }> = identity
+    ? [
+      { label: "settings.debug.device.identityPath", value: identity.identityPath },
+      { label: "settings.debug.device.version", value: identity.version },
+      { label: "settings.debug.device.installId", value: identity.installId },
+      { label: "settings.debug.device.deviceId", value: identity.deviceId },
+      { label: "settings.debug.device.machineHash", value: identity.machineHash },
+      { label: "settings.debug.device.machineSource", value: identity.machineSource },
+      { label: "settings.debug.device.createdAt", value: identity.createdAt },
+      { label: "settings.debug.device.updatedAt", value: identity.updatedAt },
+      { label: "settings.debug.device.lastMachineMismatchAt", value: identity.lastMachineMismatchAt }
+    ]
+    : [];
+
+  return (
+    <div className="data-root-card settings-debug-panel">
+      <div className="settings-debug-panel-head">
+        <h2>{t("settings.debug.device.title")}</h2>
+        <span className={`settings-desktop-ws-status ${message ? "is-error" : pending ? "is-pending" : identity ? "is-running" : "is-closed"}`}>
+          {pending ? t("common.loading") : message ? t("common.error") : identity ? t("settings.debug.device.loaded") : t("settings.debug.empty")}
+        </span>
+      </div>
+      <div className="settings-debug-actions">
+        <Button disabled={pending} onClick={() => void handleRefresh()}>
+          {pending ? t("common.loading") : t("common.refresh")}
+        </Button>
+        <Button disabled={!identity?.deviceId} onClick={() => void handleCopy(identity?.deviceId || "")}>
+          {t("settings.debug.device.copyDeviceId")}
+        </Button>
+        <Button disabled={!identityJson} onClick={() => void handleCopy(identityJson)}>
+          {t("settings.debug.device.copyJson")}
+        </Button>
+      </div>
+      {message ? (
+        <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
+          {message}
+        </div>
+      ) : null}
+      {identity ? (
+        <div className="settings-debug-grid">
+          <dl className="settings-debug-facts">
+            {rows.map((row) => (
+              <div key={row.label}>
+                <dt>{t(row.label)}</dt>
+                <dd>{formatDebugValue(row.value, t("settings.debug.empty"))}</dd>
+              </div>
+            ))}
+          </dl>
+          <label className="settings-debug-field">
+            <span>{t("settings.debug.device.json")}</span>
+            <textarea value={identityJson} readOnly spellCheck={false} />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function DesktopLogsDebugCard() {
@@ -790,10 +1926,62 @@ function TunnelDebugCard() {
   );
 }
 
+function DebugSettingsPanel() {
+  const { t } = useI18n();
+  const [activeCategoryId, setActiveCategoryId] = useState<DebugCategoryId>("device");
+
+  function renderActiveCategory() {
+    switch (activeCategoryId) {
+      case "device":
+        return <DeviceIdentityDebugCard />;
+      case "logs":
+        return <DesktopLogsDebugCard />;
+      case "wsServer":
+        return <LocalWsServerDebugCard />;
+      case "authTokens":
+        return <IdentityTokenDebugCard />;
+      case "other":
+        return (
+          <div className="settings-about-stack">
+            <DesktopActionDebugCard />
+            <TunnelDebugCard />
+          </div>
+        );
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <div className="settings-debug-layout">
+      <nav className="settings-debug-nav" aria-label={t("settings.debug.categories.label")}>
+        {DEBUG_CATEGORY_IDS.map((categoryId) => {
+          const selected = categoryId === activeCategoryId;
+          return (
+            <button
+              key={categoryId}
+              type="button"
+              className={`settings-debug-nav-item${selected ? " is-selected" : ""}`}
+              aria-current={selected ? "page" : undefined}
+              onClick={() => setActiveCategoryId(categoryId)}
+            >
+              {getDebugCategoryLabel(categoryId, t)}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="settings-debug-content">
+        {renderActiveCategory()}
+      </div>
+    </div>
+  );
+}
+
 function LocalWsServerDebugCard() {
   const { t } = useI18n();
   const [desktopWsServerState, setDesktopWsServerState] = useState<DesktopWsServerState | null>(null);
   const [desktopWsServerPending, setDesktopWsServerPending] = useState<"open" | "close" | null>(null);
+  const [wsConsoleOpen, setWsConsoleOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -905,6 +2093,9 @@ function LocalWsServerDebugCard() {
               {t("settings.debug.desktopWs.disableAction")}
             </Button>
           ) : null}
+          <Button onClick={() => setWsConsoleOpen(true)}>
+            {t("settings.debug.desktopWs.consoleAction")}
+          </Button>
         </div>
       </div>
       {desktopWsServerState?.message ? (
@@ -912,6 +2103,11 @@ function LocalWsServerDebugCard() {
           {desktopWsServerState.message}
         </div>
       ) : null}
+      <WsServerDebugDialog
+        open={wsConsoleOpen}
+        url={desktopWsServerUrl}
+        onClose={() => setWsConsoleOpen(false)}
+      />
     </div>
   );
 }
@@ -923,6 +2119,7 @@ function AboutAppCard({
 }: AboutAppCardProps) {
   const { t } = useI18n();
   const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
+  const [deviceIdentity, setDeviceIdentity] = useState<DesktopDeviceIdentityInfo | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -937,6 +2134,27 @@ function AboutAppCard({
       .catch(() => {
         if (!cancelled) {
           setAppInfo({ productName: "", version: "", buildTime: "" });
+        }
+      });
+    window.electronAPI.settings
+      .getDeviceIdentity()
+      .then((nextDeviceIdentity) => {
+        if (!cancelled) {
+          setDeviceIdentity(nextDeviceIdentity);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDeviceIdentity({
+            identityPath: "",
+            version: 0,
+            installId: "",
+            deviceId: "",
+            machineHash: "",
+            machineSource: "unavailable",
+            createdAt: "",
+            updatedAt: ""
+          });
         }
       });
 
@@ -963,6 +2181,15 @@ function AboutAppCard({
     }
     return appInfo.buildTime;
   }, [appInfo, t]);
+  const deviceId = useMemo(() => {
+    if (deviceIdentity === null) {
+      return t("common.loading");
+    }
+    if (!deviceIdentity.deviceId) {
+      return t("common.error");
+    }
+    return deviceIdentity.deviceId;
+  }, [deviceIdentity, t]);
 
   return (
     <div className="settings-about-stack" aria-label={t("settings.about.label")}>
@@ -983,6 +2210,15 @@ function AboutAppCard({
           </div>
           <div className="settings-about-version settings-about-build-time" aria-live="polite">
             {buildTime}
+          </div>
+        </div>
+        <div className="settings-item-row settings-about-row">
+          <div className="settings-about-copy">
+            <strong>{t("settings.about.deviceId")}</strong>
+            <span>{t("settings.about.deviceIdDescription")}</span>
+          </div>
+          <div className="settings-about-version settings-about-device-id" aria-live="polite">
+            {deviceId}
           </div>
         </div>
       </div>
@@ -1045,7 +2281,14 @@ export function SettingsPage({
   const noticeIdRef = useRef(0);
   const [notice, setNotice] = useState<SettingsNotice | null>(null);
   const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
+  const [usageProfile, setUsageProfile] = useState<DesktopUsageProfileResult | null>(null);
+  const [usageSsoStatus, setUsageSsoStatus] = useState<DesktopSsoStatus | null>(null);
+  const [usageProfileLoading, setUsageProfileLoading] = useState(false);
+  const [usageHeatmapMode, setUsageHeatmapMode] = useState<UsageHeatmapMode>("day");
   const [generalSettings, setGeneralSettings] = useState<DesktopGeneralSettings>(defaultGeneralSettings);
+  const [generalDeviceNameDraft, setGeneralDeviceNameDraft] = useState(defaultGeneralSettings.deviceName);
+  const [desktopDeviceInfo, setDesktopDeviceInfo] = useState<DesktopDeviceInfo | null>(null);
+  const [desktopDeviceInfoLoading, setDesktopDeviceInfoLoading] = useState(false);
   const [generalSettingsSaving, setGeneralSettingsSaving] = useState(false);
   const [websiteLabel, setWebsiteLabel] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -1113,6 +2356,7 @@ export function SettingsPage({
     visibleSectionIds
   );
   const shouldReadMemoryData = activeSection === "memory";
+  const shouldReadUsageProfile = activeSection === "usage";
   const shouldReadGeneralSettings = activeSection === "general";
   const shouldReadControlData = activeSection === "kanban";
   const shouldReadTunnelHubData = activeSection === "tunnelHub";
@@ -1183,6 +2427,29 @@ export function SettingsPage({
     showSectionNotice(sectionId, result.message, result.ok ? "success" : "error");
   }
 
+  async function refreshUsageProfile() {
+    setUsageProfileLoading(true);
+    const [profileResult, ssoResult] = await Promise.allSettled([
+      window.electronAPI.settings.getUsageProfile(),
+      window.electronAPI.sso.getStatus()
+    ]);
+
+    if (profileResult.status === "fulfilled") {
+      setUsageProfile(profileResult.value);
+      setReadErrorSections(["usage"], "");
+    } else {
+      setReadErrorSections(
+        ["usage"],
+        profileResult.reason instanceof Error ? profileResult.reason.message : String(profileResult.reason)
+      );
+    }
+
+    if (ssoResult.status === "fulfilled") {
+      setUsageSsoStatus(ssoResult.value);
+    }
+    setUsageProfileLoading(false);
+  }
+
   async function handleLocaleChange(nextLocale: SupportedLocale) {
     if (nextLocale === locale) {
       return;
@@ -1200,25 +2467,44 @@ export function SettingsPage({
   }, [activeSection]);
 
   useEffect(() => {
+    if (!shouldReadUsageProfile) {
+      return;
+    }
+    void refreshUsageProfile();
+  }, [shouldReadUsageProfile]);
+
+  useEffect(() => {
     if (!shouldReadGeneralSettings) {
       return;
     }
 
     let cancelled = false;
-    window.electronAPI.settings.getGeneralSettings()
-      .then((settings) => {
+    setDesktopDeviceInfoLoading(true);
+    Promise.all([
+      window.electronAPI.settings.getGeneralSettings(),
+      window.electronAPI.settings.getDesktopDeviceInfo()
+    ])
+      .then(([settings, deviceInfo]) => {
         if (cancelled) {
           return;
         }
-        setGeneralSettings({
+        const nextSettings = {
           ...defaultGeneralSettings,
           ...settings
-        });
+        };
+        setGeneralSettings(nextSettings);
+        setGeneralDeviceNameDraft(nextSettings.deviceName);
+        setDesktopDeviceInfo(deviceInfo);
         setReadErrorSections(["general"], "");
       })
       .catch((reason) => {
         if (!cancelled) {
           setReadErrorSections(["general"], reason instanceof Error ? reason.message : String(reason));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDesktopDeviceInfoLoading(false);
         }
       });
 
@@ -1978,6 +3264,41 @@ export function SettingsPage({
     return summary;
   }
 
+  async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const previousSettings = generalSettings;
+    const nextSettings = {
+      ...generalSettings,
+      deviceName: generalDeviceNameDraft.trim()
+    };
+    setGeneralSettings(nextSettings);
+    setGeneralSettingsSaving(true);
+    setDesktopDeviceInfoLoading(true);
+    try {
+      const savedSettings = await window.electronAPI.settings.saveGeneralSettings(nextSettings);
+      setGeneralSettings({
+        ...defaultGeneralSettings,
+        ...savedSettings
+      });
+      setGeneralDeviceNameDraft(savedSettings.deviceName);
+      setDesktopDeviceInfo(await window.electronAPI.settings.getDesktopDeviceInfo());
+      setReadErrorSections(["general"], "");
+      showSectionNotice(
+        "general",
+        savedSettings.deviceName
+          ? t("settings.general.noticeDeviceNameSaved", { name: savedSettings.deviceName })
+          : t("settings.general.noticeDeviceNameAuto"),
+        "success"
+      );
+    } catch (reason) {
+      setGeneralSettings(previousSettings);
+      showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+      setDesktopDeviceInfoLoading(false);
+    }
+  }
+
   async function handleTogglePreventSleepWhileRunning() {
     const previousSettings = generalSettings;
     const nextSettings = {
@@ -2627,9 +3948,61 @@ export function SettingsPage({
 
   function renderActiveSection() {
     switch (activeSection) {
-      case "general":
+      case "usage":
+        return (
+          <UsageSettingsPanel
+            profile={usageProfile}
+            ssoStatus={usageSsoStatus}
+            loading={usageProfileLoading}
+            heatmapMode={usageHeatmapMode}
+            onHeatmapModeChange={setUsageHeatmapMode}
+            onRefresh={refreshUsageProfile}
+          />
+        );
+      case "general": {
+        const deviceInfoRows: Array<{ label: TranslationKey; value: unknown }> = [
+          { label: "settings.general.desktopDeviceId", value: desktopDeviceInfo?.deviceId },
+          { label: "settings.general.desktopHostname", value: desktopDeviceInfo?.hostname },
+          { label: "settings.general.desktopUsername", value: desktopDeviceInfo?.username },
+          { label: "settings.general.desktopPlatform", value: desktopDeviceInfo?.platform },
+          { label: "settings.general.desktopArch", value: desktopDeviceInfo?.arch }
+        ];
+        const currentDeviceName = desktopDeviceInfoLoading
+          ? t("common.loading")
+          : desktopDeviceInfo?.deviceName || t("settings.general.deviceNameFallback");
         return (
           <div className="settings-appearance-panel" aria-label={t("settings.general.panelAria")}>
+            <div className="settings-appearance-row">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.general.desktopInfoTitle")}</strong>
+                <span>{t("settings.general.desktopInfoDescription")}</span>
+              </div>
+            </div>
+            <form className="settings-control-form settings-device-form" onSubmit={(event) => void handleSaveGeneralDeviceName(event)}>
+              <label className="settings-control-field">
+                <span>{t("settings.general.desktopDeviceName")}</span>
+                <Input
+                  value={generalDeviceNameDraft}
+                  onChange={(event) => setGeneralDeviceNameDraft(event.target.value)}
+                  placeholder={desktopDeviceInfo?.deviceName || t("settings.general.deviceNameFallback")}
+                  disabled={generalSettingsSaving}
+                />
+                <small>{t("settings.general.desktopDeviceNameHelp", { name: currentDeviceName })}</small>
+              </label>
+              <dl className="settings-device-info-list" aria-label={t("settings.general.desktopInfoReadonly")}>
+                {deviceInfoRows.map((row) => (
+                  <div key={row.label}>
+                    <dt>{t(row.label)}</dt>
+                    <dd>{formatDebugValue(row.value, desktopDeviceInfoLoading ? t("common.loading") : t("settings.debug.empty"))}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="settings-control-actions">
+                <Button type="primary" htmlType="submit" disabled={generalSettingsSaving} loading={generalSettingsSaving}>
+                  {generalSettingsSaving ? t("settings.general.savingDeviceName") : t("settings.general.saveDeviceName")}
+                </Button>
+              </div>
+            </form>
             <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
                 <strong>{t("settings.general.preventSleepWhileRunning")}</strong>
@@ -2644,6 +4017,7 @@ export function SettingsPage({
             </div>
           </div>
         );
+      }
       case "appearance":
         return (
           <>
@@ -2853,13 +4227,6 @@ export function SettingsPage({
               requiredMark={false}
               onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
             >
-              <Form.Item label={t("taskBoard.cloud.deviceAlias")}>
-                <Input
-                  value={controlCloudConfig.deviceAlias ?? ""}
-                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, deviceAlias: event.target.value }))}
-                  placeholder={t("taskBoard.cloud.deviceAliasPlaceholder")}
-                />
-              </Form.Item>
               <Form.Item label={t("taskBoard.cloud.serverUrl")}>
                 <Input
                   value={controlCloudConfig.serverUrl}
@@ -3584,12 +4951,7 @@ export function SettingsPage({
         );
       case "debug":
         return (
-          <div className="settings-about-stack" aria-label={t("settings.debug.label")}>
-            <LocalWsServerDebugCard />
-            <DesktopLogsDebugCard />
-            <IdentityTokenDebugCard />
-            <TunnelDebugCard />
-          </div>
+          <DebugSettingsPanel />
         );
       default:
         return null;

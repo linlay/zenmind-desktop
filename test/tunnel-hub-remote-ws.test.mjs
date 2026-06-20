@@ -120,6 +120,20 @@ test("Tunnel Hub remote WS registration posts broker device and stores agent tok
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  fs.mkdirSync(path.join(desktopRoot(homePath), "config", "desktop"), { recursive: true });
+  fs.writeFileSync(
+    path.join(desktopRoot(homePath), "config", "desktop", "profile.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      general: {
+        deviceName: "Tunnel Studio",
+        preventSleepWhileRunning: true,
+        desktopWsServerEnabled: false
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
@@ -172,7 +186,7 @@ test("Tunnel Hub remote WS registration posts broker device and stores agent tok
   assert.equal(registrations[0].url, "/api/desktop/devices/register");
   assert.equal(registrations[0].authorization, "Bearer registration-secret");
   assert.equal(registrations[0].body.deviceId, "mac-mini-office");
-  assert.equal(typeof registrations[0].body.deviceName, "string");
+  assert.equal(registrations[0].body.deviceName, "Tunnel Studio");
   assert.equal("deviceSecret" in registrations[0].body, false);
   assert.equal("targetUrl" in registrations[0].body, false);
 

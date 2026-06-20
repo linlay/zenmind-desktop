@@ -1,4 +1,5 @@
 export type SettingsSectionId =
+  | "usage"
   | "general"
   | "appearance"
   | "kanban"

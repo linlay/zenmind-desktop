@@ -1,6 +1,7 @@
 import type {
   DesktopGeneralSettings,
   DesktopGeneralSettingsInput,
+  DesktopUsageProfileResult,
   DesktopWsServerState,
   TunnelHubSettingsInput,
   TunnelHubSettingsResult
@@ -14,6 +15,9 @@ import {
 import { readTunnelHubSettings, saveTunnelHubSettings } from "../tunnel-hub-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot } from "../user-paths";
+import { getDesktopDeviceInfo } from "../desktop-device-info";
+import { getDesktopDeviceIdentityInfo } from "../device-identity";
+import { getDesktopUsageProfile } from "../usage-profile";
 import { readWebOrderKeys, writeWebOrderKeys } from "../webs/order-store";
 import { t } from "../i18n/main-i18n";
 
@@ -37,6 +41,7 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   emitLocaleChanged: (settings: any) => void;
   createAppPairingPayload?: (app: any) => Promise<any>;
+  getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
   getDesktopWsServerRuntimeState?: () => Omit<DesktopWsServerState, "enabled">;
   startDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
@@ -103,6 +108,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     refreshTrayContextMenu,
     emitLocaleChanged,
     createAppPairingPayload,
+    getUsageProfile,
     onGeneralSettingsChanged,
     getDesktopWsServerRuntimeState,
     startDesktopWsServer,
@@ -117,6 +123,11 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     version: typeof app.getVersion === "function" ? app.getVersion() : "",
     buildTime: ""
   });
+  ipcMain.handle("settings.getDeviceIdentity", async () => getDesktopDeviceIdentityInfo(app));
+  ipcMain.handle("settings.getUsageProfile", async () =>
+    getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app)
+  );
+  ipcMain.handle("settings.getDesktopDeviceInfo", async () => getDesktopDeviceInfo(app));
   ipcMain.handle("settings.getGeneralSettings", async () =>
     readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general
   );
@@ -135,6 +146,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         const runtimeState = await startDesktopWsServer();
         const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
           general: {
+            deviceName: current.general.deviceName,
             preventSleepWhileRunning: current.general.preventSleepWhileRunning,
             desktopWsServerEnabled: true
           }
@@ -160,6 +172,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     }
     const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
       general: {
+        deviceName: current.general.deviceName,
         preventSleepWhileRunning: current.general.preventSleepWhileRunning,
         desktopWsServerEnabled: false
       }
@@ -171,6 +184,9 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
     const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
       general: {
+        deviceName: typeof input?.deviceName === "string"
+          ? input.deviceName
+          : current.general.deviceName,
         preventSleepWhileRunning: typeof input?.preventSleepWhileRunning === "boolean"
           ? input.preventSleepWhileRunning
           : current.general.preventSleepWhileRunning,

@@ -6,7 +6,7 @@ import type {
   ManifestDesktopCapabilityProvider,
   ServiceId
 } from "../../../shared/contracts";
-import { PRODUCT_NAME } from "../../../shared/brand";
+import { getDesktopDeviceInfo } from "../../desktop-device-info";
 import { getDesktopDeviceId } from "../../device-identity";
 import { readEnvFile } from "../../env-file";
 import type { ServiceDefinition } from "../../manifest-utils";
@@ -19,7 +19,6 @@ import {
 } from "./layout";
 import { t } from "../../i18n/main-i18n";
 
-const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
 const SQLITE_BUSY_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
 const AUTH_PUBLIC_KEY_SIDECAR_FILE_NAMES = ["jwk-private.pem", "jwk-public.pem"] as const;
 
@@ -137,6 +136,7 @@ function buildTemplateValues(
   provider: ManifestDesktopCapabilityProvider
 ) {
   const auth = readAuthSettings(service, layout);
+  const desktopDeviceName = getDesktopDeviceInfo(app).deviceName;
   const outputPath = provider.outputPath
     ? renderTemplate(provider.outputPath, {
       "provider.programDir": layout.programDir,
@@ -148,7 +148,7 @@ function buildTemplateValues(
       "auth.issuer": auth.issuer,
       "auth.username": auth.username,
       "desktop.deviceId": getDesktopDeviceId(app),
-      "desktop.deviceName": DESKTOP_DEVICE_NAME
+      "desktop.deviceName": desktopDeviceName
     })
     : "";
 
@@ -163,7 +163,7 @@ function buildTemplateValues(
     "auth.issuer": auth.issuer,
     "auth.username": auth.username,
     "desktop.deviceId": getDesktopDeviceId(app),
-    "desktop.deviceName": DESKTOP_DEVICE_NAME,
+    "desktop.deviceName": desktopDeviceName,
     "output.path": outputPath,
     "output.dir": outputPath ? path.dirname(outputPath) : ""
   };
@@ -405,6 +405,7 @@ export async function resolveDesktopCapability(
 }
 
 export const __testInternals = {
+  buildTemplateValues,
   commandForCurrentPlatform,
   isSqliteBusyError,
   isUnsupportedDeviceIdArgumentError,

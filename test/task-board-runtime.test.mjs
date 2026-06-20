@@ -500,6 +500,26 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   assert.equal(secondHello.payload.deviceName, "牛家林");
   assert.equal(secondHello.payload.deviceAlias, "牛家林");
   assert.equal(secondHello.payload.currentUser.name, "牛家林");
+
+  writeDesktopConfig(app, "profile.json", {
+    schemaVersion: 1,
+    general: {
+      deviceName: "全局桌面",
+      preventSleepWhileRunning: true,
+      desktopWsServerEnabled: false
+    }
+  });
+  runtime.refreshDeviceInfo();
+  await waitFor(() => sockets.length === 3, "reconnect after global device name save", 3000);
+  assert.equal(secondSocket.closed, true);
+  const thirdSocket = sockets[2];
+  thirdSocket.readyState = 1;
+  thirdSocket.onopen();
+  await waitFor(() => thirdSocket.sent.length === 1, "global device name session.hello", 3000);
+  const thirdHello = thirdSocket.sent[0];
+  assert.equal(thirdHello.payload.deviceName, "全局桌面");
+  assert.equal(thirdHello.payload.deviceAlias, "全局桌面");
+  assert.equal(thirdHello.payload.currentUser.name, "全局桌面");
   runtime.stop();
 });
 
@@ -533,13 +553,17 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
 
   const app = createTempApp(t);
   const startRuns = [];
+  let resolveSlowStartRun = () => {};
+  const slowStartRunGate = new Promise((resolve) => {
+    resolveSlowStartRun = resolve;
+  });
   const runtime = new TaskBoardRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
       startRun: async (request) => {
         startRuns.push(request);
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        await slowStartRunGate;
         return { ok: true, runId: "run-slow-1", chatId: request.chatId, message: "started" };
       }
     },
@@ -624,6 +648,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
     assert.equal(localIssue.chatId, ack.payload.chatId);
     assert.equal(localIssue.runId, ack.payload.runId);
 
+    resolveSlowStartRun();
     await waitFor(() => {
       const issue = runtime.listIssues().issues.find((item) => item.remoteIssueId === "ISS-SLOW");
       return issue?.runId === "run-slow-1";
@@ -633,6 +658,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
     assert.equal(localIssue.chatId, ack.payload.chatId);
     assert.equal(startRuns[0].chatId, ack.payload.chatId);
   } finally {
+    resolveSlowStartRun();
     runtime.stop();
   }
 });

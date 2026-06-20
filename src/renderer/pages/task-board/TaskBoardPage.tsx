@@ -1920,14 +1920,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 />
               </label>
               <label className="task-board-field">
-                <span>{t("taskBoard.cloud.deviceAlias")}</span>
-                <input
-                  value={cloudConfig.deviceAlias ?? ""}
-                  onChange={(event) => setCloudConfig((current) => ({ ...current, deviceAlias: event.target.value }))}
-                  placeholder={t("taskBoard.cloud.deviceAliasPlaceholder")}
-                />
-              </label>
-              <label className="task-board-field">
                 <span>{t("taskBoard.cloud.serverUrl")}</span>
                 <input
                   value={cloudConfig.serverUrl}

@@ -105,6 +105,15 @@ type ProviderConfigLocation = {
   env: Map<string, string>;
 };
 
+export type AgentPlatformUsageProviderCandidate = {
+  providerKey: string;
+  providerName: string;
+  baseURL: string;
+  model: string;
+  apiKey: string;
+  sourcePath: string;
+};
+
 function getPathMtimeMs(filePath: string) {
   try {
     return fs.statSync(filePath).mtimeMs;
@@ -141,6 +150,21 @@ function readAgentPlatformEnv(app: App) {
     }
   }
   return merged;
+}
+
+function resolveRegistriesDirs(app: App, env: Map<string, string>) {
+  const homePath = getPathOrFallback(app, "home", process.env.HOME || "");
+  const candidates: string[] = [];
+  const envRegistriesDir = process.env.REGISTRIES_DIR || process.env.AGENT_PLATFORM_REGISTRIES_DIR;
+  if (envRegistriesDir) {
+    candidates.push(expandHomeShortcut(envRegistriesDir, homePath));
+  }
+  const configuredRegistriesDir = env.get("REGISTRIES_DIR");
+  if (configuredRegistriesDir) {
+    candidates.push(expandHomeShortcut(configuredRegistriesDir, homePath));
+  }
+  candidates.push(path.join(homePath, APP_BRAND.paths.runtimeRootDirName, "registries"));
+  return [...new Set(candidates)];
 }
 
 function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string, string>) {
@@ -198,33 +222,99 @@ function looksLikePlaceholderProviderAPIKey(apiKey: string) {
 
 function resolveProviderConfigLocation(app: App, providerKey = "minimax"): ProviderConfigLocation | null {
   const env = readAgentPlatformEnv(app);
-  const homePath = getPathOrFallback(app, "home", process.env.HOME || "");
   const candidates: Array<{ providerPath: string; modelDirs: string[] }> = [];
-  const envRegistriesDir = process.env.REGISTRIES_DIR || process.env.AGENT_PLATFORM_REGISTRIES_DIR;
-  if (envRegistriesDir) {
-    const registriesDir = expandHomeShortcut(envRegistriesDir, homePath);
+  for (const registriesDir of resolveRegistriesDirs(app, env)) {
     candidates.push({
       providerPath: path.join(registriesDir, "providers", `${providerKey}.yml`),
       modelDirs: [path.join(registriesDir, "models")]
     });
   }
-  const configuredRegistriesDir = env.get("REGISTRIES_DIR");
-  if (configuredRegistriesDir) {
-    const registriesDir = expandHomeShortcut(configuredRegistriesDir, homePath);
-    candidates.push({
-      providerPath: path.join(registriesDir, "providers", `${providerKey}.yml`),
-      modelDirs: [path.join(registriesDir, "models")]
-    });
-  }
-
-  const runtimeRegistriesDir = path.join(homePath, APP_BRAND.paths.runtimeRootDirName, "registries");
-  candidates.push({
-    providerPath: path.join(runtimeRegistriesDir, "providers", `${providerKey}.yml`),
-    modelDirs: [path.join(runtimeRegistriesDir, "models")]
-  });
 
   const match = candidates.find((candidate) => fs.existsSync(candidate.providerPath));
   return match ? { ...match, env } : null;
+}
+
+function listProviderConfigFiles(registriesDir: string) {
+  const providerDir = path.join(registriesDir, "providers");
+  try {
+    return fs.readdirSync(providerDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.ya?ml$/iu.test(entry.name))
+      .map((entry) => path.join(providerDir, entry.name))
+      .sort((left, right) => left.localeCompare(right, "en-US"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function readModelId(modelDirs: string[], modelKey: string) {
+  if (!modelKey) {
+    return "";
+  }
+  const modelPath = modelDirs
+    .map((modelDir) => path.join(modelDir, `${modelKey}.yml`))
+    .find((candidate) => fs.existsSync(candidate));
+  if (!modelPath) {
+    return "";
+  }
+  return loadYamlFile<ModelConfig>(modelPath)?.modelId || "";
+}
+
+function usageProviderPriority(providerKey: string) {
+  if (providerKey === "openai") {
+    return 0;
+  }
+  if (providerKey === "minimax") {
+    return 1;
+  }
+  if (/transit|hub|^th[-_]/iu.test(providerKey)) {
+    return 2;
+  }
+  return 3;
+}
+
+export function listAgentPlatformUsageProviderCandidates(app: App): AgentPlatformUsageProviderCandidate[] {
+  const env = readAgentPlatformEnv(app);
+  const seenPaths = new Set<string>();
+  const candidates: AgentPlatformUsageProviderCandidate[] = [];
+  for (const registriesDir of resolveRegistriesDirs(app, env)) {
+    const modelDirs = [path.join(registriesDir, "models")];
+    for (const providerPath of listProviderConfigFiles(registriesDir)) {
+      if (seenPaths.has(providerPath)) {
+        continue;
+      }
+      seenPaths.add(providerPath);
+      const provider = loadYamlFile<ProviderConfig>(providerPath);
+      if (!provider?.baseUrl || !provider.apiKey) {
+        continue;
+      }
+      const fileKey = path.basename(providerPath).replace(/\.ya?ml$/iu, "");
+      const providerKey = provider.key?.trim() || fileKey;
+      const defaultModel = provider.defaultModel?.trim() || "";
+      const endpointPath = provider.protocols?.OPENAI?.endpointPath || "/v1/chat/completions";
+      const apiKey = resolveProviderAPIKey(providerKey, provider.apiKey, env);
+      if (looksLikePlaceholderProviderAPIKey(apiKey)) {
+        continue;
+      }
+      candidates.push({
+        providerKey,
+        providerName: providerKey,
+        baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
+        model: readModelId(modelDirs, defaultModel) || defaultModel,
+        apiKey,
+        sourcePath: providerPath
+      });
+    }
+  }
+  return candidates.sort((left, right) => {
+    const priorityDelta = usageProviderPriority(left.providerKey) - usageProviderPriority(right.providerKey);
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+    return left.providerKey.localeCompare(right.providerKey, "en-US");
+  });
 }
 
 export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPrivate | null {
@@ -373,7 +463,9 @@ export const __testInternals = {
   parseEnv,
   readAgentPlatformEnv,
   resolveProviderConfigLocation,
+  resolveRegistriesDirs,
   resolveProviderAPIKey,
   looksLikePlaceholderProviderAPIKey,
+  listAgentPlatformUsageProviderCandidates,
   loadAgentPlatformProviderSettings
 };

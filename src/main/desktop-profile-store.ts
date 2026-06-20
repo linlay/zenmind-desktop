@@ -18,6 +18,7 @@ export const DEFAULT_VOICE_CORRECTION_ENABLED = true;
 export type DesktopThemePreference = "system" | "light" | "dark";
 
 export type DesktopGeneralSettings = {
+  deviceName: string;
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
 };
@@ -104,6 +105,13 @@ function normalizeLegacyKanbanNavigation(value: unknown): { enabled?: boolean } 
   };
 }
 
+function readLegacyKanbanDeviceAlias(rootDir: string) {
+  const parsed = readJsonFile(path.join(rootDir, "kanban.json"));
+  const record = isRecord(parsed) ? parsed : {};
+  const cloud = isRecord(record.cloud) ? record.cloud : {};
+  return readText(cloud.deviceAlias) || readText(record.deviceAlias);
+}
+
 function readLegacyPreferences(rootDir: string) {
   const parsed = readJsonFile(path.join(rootDir, LEGACY_DESKTOP_PREFERENCES_FILE));
   return isRecord(parsed) ? parsed : {};
@@ -158,6 +166,9 @@ function normalizeDesktopProfile(
   return {
     schemaVersion: 1,
     general: {
+      deviceName: "deviceName" in general
+        ? readText(general.deviceName)
+        : readLegacyKanbanDeviceAlias(rootDir),
       preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
         ? general.preventSleepWhileRunning
         : true,
@@ -259,6 +270,7 @@ export function updateDesktopProfileInRoot(rootDir: string, patch: DesktopProfil
 
 export const __testInternals = {
   normalizeDesktopProfile,
+  readLegacyKanbanDeviceAlias,
   readLegacyPreferences,
   readLegacyAssistantSettings
 };

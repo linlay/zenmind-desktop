@@ -9,8 +9,18 @@ const require = createRequire(import.meta.url);
 const {
   __testInternals,
   getDesktopDeviceIdentity,
+  getDesktopDeviceIdentityInfo,
   getDesktopDeviceIdentityPath
 } = require("../dist-electron/main/device-identity.js");
+const {
+  buildDesktopDeviceName,
+  getDesktopDeviceInfo
+} = require("../dist-electron/main/desktop-device-info.js");
+const {
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot
+} = require("../dist-electron/main/desktop-profile-store.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
 
 const INSTALL_ID = "11111111-2222-4333-8444-555555555555";
 const INSTALL_ID_2 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -57,6 +67,13 @@ function machineIdentity(machineId, source = "darwinIOPlatformUUID") {
 
 function readStoredIdentity(app) {
   return JSON.parse(fs.readFileSync(getDesktopDeviceIdentityPath(app), "utf8"));
+}
+
+function writeDesktopConfig(app, fileName, value) {
+  const configPath = path.join(getDesktopConfigRoot(app), fileName);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  return configPath;
 }
 
 test("device identity parses macOS and Windows machine IDs", () => {
@@ -121,6 +138,117 @@ test("device identity creates a v2 machine-bound identity and keeps it stable on
     assert.deepEqual(again, identity);
   } finally {
     cleanup();
+  }
+});
+
+test("device identity info exposes the storage path and normalized identity fields", () => {
+  for (const scenario of [
+    {
+      prefix: "zenmind-device-identity-info-darwin-",
+      platform: "darwin",
+      installId: INSTALL_ID,
+      machineId: MACHINE_A,
+      source: "darwinIOPlatformUUID"
+    },
+    {
+      prefix: "zenmind-device-identity-info-win32-",
+      platform: "win32",
+      installId: INSTALL_ID_2,
+      machineId: MACHINE_B,
+      source: "windowsMachineGuid"
+    }
+  ]) {
+    const { app, cleanup } = withTempApp(scenario.prefix);
+    try {
+      const info = getDesktopDeviceIdentityInfo(app, {
+        platform: scenario.platform,
+        now: fixedNow(CREATED_AT),
+        randomUUID: () => scenario.installId,
+        readMachineIdentity: () => machineIdentity(scenario.machineId, scenario.source)
+      });
+
+      assert.equal(info.identityPath, getDesktopDeviceIdentityPath(app));
+      assert.equal(info.version, 2);
+      assert.equal(info.installId, scenario.installId);
+      assert.equal(info.deviceId, __testInternals.deriveDeviceId(scenario.platform, scenario.machineId, scenario.installId));
+      assert.equal(info.machineHash, __testInternals.deriveMachineHash(scenario.platform, scenario.machineId));
+      assert.equal(info.machineSource, scenario.source);
+      assert.equal(info.createdAt, CREATED_AT);
+      assert.equal(info.updatedAt, CREATED_AT);
+      assert.equal(info.lastMachineMismatchAt, undefined);
+    } finally {
+      cleanup();
+    }
+  }
+});
+
+test("desktop device info uses global name, system fallback, and legacy Kanban alias fallback", () => {
+  assert.equal(buildDesktopDeviceName({ configuredDeviceName: "Office Mini", hostname: "host", username: "lin" }), "Office Mini");
+  assert.equal(buildDesktopDeviceName({ hostname: "host", username: "lin", deviceId: INSTALL_ID }), "host · lin");
+  assert.equal(buildDesktopDeviceName({ deviceId: INSTALL_ID }), INSTALL_ID.slice(0, 8));
+
+  const { app, cleanup } = withTempApp("zenmind-desktop-device-info-");
+  try {
+    const identityOptions = {
+      platform: "darwin",
+      now: fixedNow(CREATED_AT),
+      randomUUID: () => INSTALL_ID,
+      readMachineIdentity: () => machineIdentity(MACHINE_A)
+    };
+
+    let info = getDesktopDeviceInfo(app, {
+      platform: "darwin",
+      arch: "arm64",
+      identityOptions,
+      readHostname: () => "Lin-Mac",
+      readUsername: () => "lin"
+    });
+    assert.equal(info.configuredDeviceName, "");
+    assert.equal(info.deviceName, "Lin-Mac · lin");
+    assert.equal(info.platform, "darwin");
+    assert.equal(info.arch, "arm64");
+
+    updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+      general: {
+        deviceName: "Studio"
+      }
+    });
+    info = getDesktopDeviceInfo(app, {
+      platform: "darwin",
+      identityOptions,
+      readHostname: () => "Lin-Mac",
+      readUsername: () => "lin"
+    });
+    assert.equal(info.configuredDeviceName, "Studio");
+    assert.equal(info.deviceName, "Studio");
+
+    updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+      general: {
+        deviceName: ""
+      }
+    });
+    info = getDesktopDeviceInfo(app, {
+      platform: "darwin",
+      identityOptions,
+      readHostname: () => "",
+      readUsername: () => ""
+    });
+    assert.equal(info.configuredDeviceName, "");
+    assert.equal(info.deviceName, info.deviceId.slice(0, 8));
+  } finally {
+    cleanup();
+  }
+
+  const legacy = withTempApp("zenmind-desktop-device-info-legacy-");
+  try {
+    writeDesktopConfig(legacy.app, "kanban.json", {
+      cloud: {
+        deviceAlias: "旧看板别名"
+      }
+    });
+    assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(legacy.app)).general.deviceName, "旧看板别名");
+  } finally {
+    legacy.cleanup();
   }
 });
 

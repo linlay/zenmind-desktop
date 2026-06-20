@@ -13,6 +13,7 @@ import {
   asObject,
   DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
+  getMarketDesktopDeviceHeaders,
   getMarketSettings,
   mergeCatalogItems,
   MarketCatalogItemNotFoundError,
@@ -188,7 +189,10 @@ async function requestFavoriteUpdate(
     }
     const response = await fetchImpl(url, {
       method,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      headers: {
+        ...getMarketDesktopDeviceHeaders(app),
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
     });
     const data = await readMarketApiResponse(response);
     if (response.ok) {

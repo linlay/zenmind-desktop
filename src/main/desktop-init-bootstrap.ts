@@ -235,6 +235,9 @@ function applyProfileDefaults(
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
   updateDesktopProfileInRoot(profileRoot, {
     general: {
+      deviceName: "deviceName" in general
+        ? readText(general.deviceName)
+        : current.general.deviceName,
       preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
         ? general.preventSleepWhileRunning
         : current.general.preventSleepWhileRunning
@@ -288,6 +291,18 @@ function applyKanbanDefaults(
     return "absent";
   }
   saveTaskBoardSettings(app, settings);
+  const deviceAlias = readText(settings.cloud?.deviceAlias);
+  if (deviceAlias) {
+    const profileRoot = getDesktopConfigRoot(app);
+    const current = readDesktopProfileFromRoot(profileRoot);
+    if (!current.general.deviceName) {
+      updateDesktopProfileInRoot(profileRoot, {
+        general: {
+          deviceName: deviceAlias
+        }
+      });
+    }
+  }
   return "applied";
 }
 

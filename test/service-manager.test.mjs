@@ -36,9 +36,14 @@ const {
   registerPlugin
 } = require("../dist-electron/main/services/service-registry.js");
 const {
+  __testInternals: capabilityInternals
+} = require("../dist-electron/main/services/manager/capabilities.js");
+const {
   configurePluginResources,
   __testInternals: pluginResourceInternals
 } = require("../dist-electron/main/plugin-resources.js");
+const { updateDesktopProfileInRoot } = require("../dist-electron/main/desktop-profile-store.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
@@ -2108,6 +2113,66 @@ test("service command env injects DESKTOP_DEVICE_ID for builtin and plugin layou
     assert.equal(pluginEnv.NODE_BIN, "/tmp/node");
     assert.equal(fs.readFileSync(builtinEnvPath, "utf8"), "SERVER_PORT=7078\n");
     assert.equal(fs.readFileSync(pluginEnvPath, "utf8"), "PORT=9090\n");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("desktop capability templates render global device name for macOS and Windows args", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-capability-device-name-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const envPath = writeTestEnv(
+    userDataRoot,
+    "identity-center",
+    [
+      `AUTH_DB_PATH=${path.join(tempRoot, "auth.db")}`,
+      "AUTH_ISSUER=http://127.0.0.1:9090",
+      "AUTH_APP_USERNAME=desktop-user",
+      ""
+    ].join("\n")
+  );
+  const layout = {
+    programDir: getTestServiceProgramDir(userDataRoot, "identity-center", "v1.0.0"),
+    configDir: getTestConfigDir(userDataRoot, "identity-center"),
+    dataDir: getTestDataDir(userDataRoot, "identity-center"),
+    stateDir: getTestStateDir(userDataRoot, "identity-center"),
+    logDir: getTestLogDir(userDataRoot, "identity-center"),
+    envPath
+  };
+  const service = {
+    id: "identity-center",
+    web: {
+      portEnvKey: "SERVER_PORT",
+      defaultPort: 7078
+    }
+  };
+  const provider = {
+    id: "auth.accessToken",
+    output: "stdoutLastLine",
+    outputPath: "{{provider.dataDir}}/tokens/{{desktop.deviceName}}.txt"
+  };
+  const renderArgs = (args, values) => args.map((part) => capabilityInternals.renderTemplate(part, values));
+
+  try {
+    updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+      general: {
+        deviceName: "Studio Desktop"
+      }
+    });
+    const values = capabilityInternals.buildTemplateValues(app, service, layout, provider);
+
+    assert.equal(values["desktop.deviceName"], "Studio Desktop");
+    assert.match(values["desktop.deviceId"], /^[0-9a-f-]{36}$/i);
+    assert.equal(values["output.path"], `${layout.dataDir}/tokens/Studio Desktop.txt`);
+    assert.deepEqual(
+      renderArgs(["--db", "{{auth.dbPath}}", "--device-name", "{{desktop.deviceName}}"], values),
+      ["--db", path.join(tempRoot, "auth.db"), "--device-name", "Studio Desktop"]
+    );
+    assert.deepEqual(
+      renderArgs(["-Db", "{{auth.dbPath}}", "-DeviceName", "{{desktop.deviceName}}", "-DeviceId", "{{desktop.deviceId}}"], values),
+      ["-Db", path.join(tempRoot, "auth.db"), "-DeviceName", "Studio Desktop", "-DeviceId", values["desktop.deviceId"]]
+    );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

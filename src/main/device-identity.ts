@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import type { App } from "electron";
+import type { DesktopDeviceIdentityInfo } from "../shared/contracts";
 import { getDesktopConfigRoot } from "./user-paths";
 
 const DEVICE_IDENTITY_FILE = "device-identity.json";
@@ -38,7 +39,7 @@ export type DesktopDeviceIdentity = {
   lastMachineMismatchAt?: string;
 };
 
-type DesktopDeviceIdentityOptions = {
+export type DesktopDeviceIdentityOptions = {
   platform?: NodeJS.Platform;
   now?: () => Date;
   randomUUID?: () => string;
@@ -304,6 +305,27 @@ export function getDesktopDeviceIdentity(
 
 export function getDesktopDeviceId(app: App, options: DesktopDeviceIdentityOptions = {}) {
   return getDesktopDeviceIdentity(app, options).deviceId;
+}
+
+export function getDesktopDeviceIdentityInfo(
+  app: App,
+  options: DesktopDeviceIdentityOptions = {}
+): DesktopDeviceIdentityInfo {
+  const identity = getDesktopDeviceIdentity(app, options);
+  const info: DesktopDeviceIdentityInfo = {
+    identityPath: getDesktopDeviceIdentityPath(app),
+    version: identity.version,
+    installId: identity.installId,
+    deviceId: identity.deviceId,
+    machineHash: identity.machineHash,
+    machineSource: identity.machineSource,
+    createdAt: identity.createdAt,
+    updatedAt: identity.updatedAt
+  };
+  if (identity.lastMachineMismatchAt) {
+    info.lastMachineMismatchAt = identity.lastMachineMismatchAt;
+  }
+  return info;
 }
 
 export const __testInternals = {

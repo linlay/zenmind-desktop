@@ -142,6 +142,46 @@ test("desktop ws server setting persists successful open and close", async (t) =
   assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, false);
 });
 
+test("general settings persist desktop device name and expose device info", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-general-device-info-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  const changedSettings = [];
+  const ipcMain = registerSettingsHandlers(app, {
+    onGeneralSettingsChanged: (settings) => {
+      changedSettings.push(settings);
+    }
+  });
+
+  const saved = await ipcMain.invoke("settings.saveGeneralSettings", {
+    deviceName: "  Studio Mac  ",
+    preventSleepWhileRunning: false
+  });
+  assert.equal(saved.deviceName, "Studio Mac");
+  assert.equal(saved.preventSleepWhileRunning, false);
+  assert.equal(changedSettings.at(-1).deviceName, "Studio Mac");
+  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.deviceName, "Studio Mac");
+
+  const info = await ipcMain.invoke("settings.getDesktopDeviceInfo");
+  assert.equal(info.configuredDeviceName, "Studio Mac");
+  assert.equal(info.deviceName, "Studio Mac");
+  assert.match(info.deviceId, /^[0-9a-f-]+$/u);
+  assert.equal(typeof info.hostname, "string");
+  assert.equal(typeof info.username, "string");
+  assert.equal(typeof info.platform, "string");
+  assert.equal(typeof info.arch, "string");
+
+  const cleared = await ipcMain.invoke("settings.saveGeneralSettings", {
+    deviceName: ""
+  });
+  assert.equal(cleared.deviceName, "");
+  const fallbackInfo = await ipcMain.invoke("settings.getDesktopDeviceInfo");
+  assert.equal(fallbackInfo.configuredDeviceName, "");
+  assert.equal(typeof fallbackInfo.deviceName, "string");
+  assert.ok(fallbackInfo.deviceName.length > 0);
+});
+
 test("desktop ws server setting does not persist enable when start fails", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-setting-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

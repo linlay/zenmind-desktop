@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
@@ -21,6 +22,7 @@ import {
   getMarketplaceCacheRoot,
   getMarketplaceStateRoot
 } from "../user-paths";
+import { getDesktopDeviceInfo } from "../desktop-device-info";
 import { t } from "../i18n/main-i18n";
 
 export const DEFAULT_MARKET_API_BASE_URL = "";
@@ -602,8 +604,28 @@ export function removeInstalledRecord(app: App, itemId: string, type?: MarketIte
   writeInstalledRecords(app, records);
 }
 
-export async function fetchJson(url: string, label = "market request") {
-  const response = await fetch(url);
+function encodeHeaderText(value: string) {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function sanitizeAsciiHeaderText(value: string) {
+  return value.replace(/[^\x20-\x7e]+/gu, "").trim();
+}
+
+export function getMarketDesktopDeviceHeaders(app: App) {
+  const deviceInfo = getDesktopDeviceInfo(app);
+  return {
+    "X-ZenMind-Desktop-Device-Id": deviceInfo.deviceId,
+    "X-ZenMind-Desktop-Device-Name-B64": encodeHeaderText(deviceInfo.deviceName),
+    "X-ZenMind-Desktop-Hostname-B64": encodeHeaderText(deviceInfo.hostname),
+    "X-ZenMind-Desktop-Username-B64": encodeHeaderText(deviceInfo.username),
+    "X-ZenMind-Desktop-Platform": sanitizeAsciiHeaderText(deviceInfo.platform),
+    "X-ZenMind-Desktop-Arch": sanitizeAsciiHeaderText(deviceInfo.arch)
+  };
+}
+
+export async function fetchJson(url: string, label = "market request", headers: Record<string, string> = {}) {
+  const response = await fetch(url, { headers });
   if (!response.ok) {
     throw new Error(`${label} failed: ${response.status}`);
   }
@@ -706,7 +728,7 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
     };
   }
   try {
-    const catalog = normalizeCatalog(await fetchJson(catalogUrl, label));
+    const catalog = normalizeCatalog(await fetchJson(catalogUrl, label, getMarketDesktopDeviceHeaders(app)));
     return {
       catalog,
       offline: false,

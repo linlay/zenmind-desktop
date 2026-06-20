@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import yaml from "js-yaml";
@@ -27,6 +26,7 @@ import type {
   TaskBoardStatus
 } from "../shared/contracts";
 import { APP_BRAND } from "../shared/brand";
+import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { getDesktopDeviceId } from "./device-identity";
 import { getDesktopSsoStatus } from "./oidc-sso";
 import { buildTaskBoardAutomationPayload, resolveTaskBoardRunStateFromAssistantEvent, resolveTaskBoardStatusFromAssistantEvent } from "./task-board-sync";
@@ -135,36 +135,6 @@ function optionalText(value: unknown) {
 
 function readBoolean(value: unknown) {
   return value === true;
-}
-
-function shortDeviceId(deviceId: string) {
-  const text = readText(deviceId);
-  return text ? text.slice(0, 8) : "";
-}
-
-function getHostname() {
-  try {
-    return readText(os.hostname());
-  } catch {
-    return "";
-  }
-}
-
-function getUsername() {
-  try {
-    return readText(os.userInfo().username);
-  } catch {
-    return "";
-  }
-}
-
-function buildDeviceName(input: { deviceAlias?: string; hostname?: string; username?: string; deviceId?: string }) {
-  const deviceAlias = readText(input.deviceAlias);
-  if (deviceAlias) {
-    return deviceAlias;
-  }
-  const systemName = [readText(input.hostname), readText(input.username)].filter(Boolean).join(" · ");
-  return systemName || shortDeviceId(readText(input.deviceId)) || t("taskBoard.runtime.deviceNameFallback");
 }
 
 function getTaskBoardConfigPath(app: App) {
@@ -358,16 +328,12 @@ export function writeTaskBoardSettingsIfAbsent(app: App, input: TaskBoardSetting
 }
 
 function getTaskBoardDeviceInfo(app: App) {
-  const config = readTaskBoardCloudConfig(app);
-  const deviceId = getDesktopDeviceId(app);
-  const hostname = getHostname();
-  const username = getUsername();
-  const deviceAlias = readText(config.deviceAlias);
+  const deviceInfo = getDesktopDeviceInfo(app);
   return {
-    deviceName: buildDeviceName({ deviceAlias, hostname, username, deviceId }),
-    deviceAlias: deviceAlias || undefined,
-    hostname: hostname || undefined,
-    username: username || undefined
+    deviceName: deviceInfo.deviceName,
+    deviceAlias: deviceInfo.deviceName,
+    hostname: deviceInfo.hostname || undefined,
+    username: deviceInfo.username || undefined
   };
 }
 
@@ -583,6 +549,11 @@ export class TaskBoardRuntime {
   stop() {
     this.cloudSync.stop();
     this.wsClient.stop();
+  }
+
+  refreshDeviceInfo() {
+    this.refreshConnection({ forceReconnect: true });
+    this.notifyChanged();
   }
 
   listIssues(): TaskBoardListResult {

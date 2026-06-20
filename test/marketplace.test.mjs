@@ -1802,10 +1802,26 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
   const app = createApp(root);
   const archivePath = writeRootSkillArchive(root, { id: "saved-skill" });
   const archiveBytes = fs.readFileSync(archivePath);
+  const catalogHeaders = [];
+  const assetHeaders = [];
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(getDesktopConfigRoot(app), { recursive: true });
+  fs.writeFileSync(
+    path.join(getDesktopConfigRoot(app), "profile.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      general: {
+        deviceName: "市场工作站",
+        preventSleepWhileRunning: true,
+        desktopWsServerEnabled: false
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
 
   await withFixtureServer(new Map([
     ["/api/v1/desktop/catalog", (req, res) => {
+      catalogHeaders.push(req.headers);
       const origin = `http://${req.headers.host}`;
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
@@ -1830,7 +1846,10 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
         ]
       }));
     }],
-    ["/saved-skill.zip", archiveBytes]
+    ["/saved-skill.zip", (req, res) => {
+      assetHeaders.push(req.headers);
+      res.end(archiveBytes);
+    }]
   ]), async (baseUrl) => {
     const settings = saveMarketSettings(app, { enabled: true, apiBaseUrl: `${baseUrl}/api/v1` });
     assert.equal(settings.enabled, true);
@@ -1845,10 +1864,16 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
 
     const listed = await listMarketItems(app, { sections: ["skills"] });
     assert.equal(listed.items.find((item) => item.id === "saved-skill")?.name, "Saved Skill");
+    assert.equal(catalogHeaders[0]["x-zenmind-desktop-device-name-b64"], Buffer.from("市场工作站", "utf8").toString("base64url"));
+    assert.equal(typeof catalogHeaders[0]["x-zenmind-desktop-device-id"], "string");
+    assert.equal(typeof catalogHeaders[0]["x-zenmind-desktop-platform"], "string");
 
     const result = await installMarketItem(app, "saved-skill");
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "saved-skill"), "SKILL.md")), true);
+    assert.equal(assetHeaders.length, 1);
+    assert.equal(assetHeaders[0]["x-zenmind-desktop-device-name-b64"], undefined);
+    assert.equal(assetHeaders[0]["x-zenmind-desktop-device-id"], undefined);
   });
 });
 
@@ -1895,6 +1920,19 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(getDesktopConfigRoot(app), { recursive: true });
+  fs.writeFileSync(
+    path.join(getDesktopConfigRoot(app), "profile.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      general: {
+        deviceName: "Favorite Desktop",
+        preventSleepWhileRunning: true,
+        desktopWsServerEnabled: false
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
 
   const requests = [];
   const issueCalls = [];
@@ -1916,7 +1954,9 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
     ["/api/v1/skills/automation/favorite", (req, res) => {
       requests.push({
         method: req.method,
-        authorization: req.headers.authorization
+        authorization: req.headers.authorization,
+        deviceId: req.headers["x-zenmind-desktop-device-id"],
+        deviceName: req.headers["x-zenmind-desktop-device-name-b64"]
       });
       favoriteItem.favorited = req.method === "POST";
       favoriteItem.favoriteCount = favoriteItem.favorited ? 1 : 0;
@@ -1953,6 +1993,10 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
     assert.equal(unfavorited.item.favoriteCount, 0);
     assert.deepEqual(requests.map((request) => request.method), ["POST", "DELETE"]);
     assert.deepEqual(requests.map((request) => request.authorization), ["Bearer market-token", "Bearer market-token"]);
+    assert.equal(requests[0].deviceName, Buffer.from("Favorite Desktop", "utf8").toString("base64url"));
+    assert.equal(requests[1].deviceName, Buffer.from("Favorite Desktop", "utf8").toString("base64url"));
+    assert.equal(typeof requests[0].deviceId, "string");
+    assert.equal(typeof requests[1].deviceId, "string");
     assert.deepEqual(issueCalls, ["missing", "missing"]);
   });
 });

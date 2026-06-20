@@ -130,6 +130,208 @@ export interface DesktopAppInfo {
   buildTime: string;
 }
 
+export type DesktopDeviceIdentityMachineSource =
+  | "darwinIOPlatformUUID"
+  | "windowsMachineGuid"
+  | "unavailable";
+
+export interface DesktopDeviceIdentityInfo {
+  identityPath: string;
+  version: number;
+  installId: string;
+  deviceId: string;
+  machineHash: string;
+  machineSource: DesktopDeviceIdentityMachineSource;
+  createdAt: string;
+  updatedAt: string;
+  lastMachineMismatchAt?: string;
+}
+
+export interface DesktopDeviceInfo {
+  deviceId: string;
+  deviceName: string;
+  configuredDeviceName: string;
+  hostname: string;
+  username: string;
+  platform: string;
+  arch: string;
+}
+
+export interface DesktopUsageProfileProvider {
+  providerKey: string;
+  providerName: string;
+  baseURL: string;
+  model: string;
+}
+
+export interface DesktopUsageProfileRateLimitDefinition {
+  window: string;
+  request_quota: number;
+  token_quota: number;
+  cost_quota_micro: number;
+}
+
+export interface DesktopUsageProfileAPIKey {
+  id: string;
+  name: string;
+  description: string;
+  key_prefix: string;
+  source: string;
+  status: string;
+  expires_at?: string | null;
+  forced_expired: boolean;
+  request_quota: number;
+  token_quota: number;
+  allowed_models: string[];
+  rate_limits: DesktopUsageProfileRateLimitDefinition[];
+  used_requests: number;
+  used_tokens: number;
+  last_used_at?: string | null;
+  deleted_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DesktopUsageProfileTrafficBucket {
+  bucket: string;
+  requests: number;
+  request_tokens: number;
+  response_tokens: number;
+  total_tokens: number;
+  cache_hit_tokens: number;
+  cache_miss_tokens: number;
+  cache_total_tokens: number;
+  cache_hit_rate: number | null;
+  cost_micro: number;
+  error_requests: number;
+  average_latency_ms: number;
+}
+
+export interface DesktopUsageProfileRateLimitStatus {
+  window: string;
+  starts_at: string;
+  resets_at: string;
+  requests: number;
+  request_quota: number;
+  request_remaining: number;
+  tokens: number;
+  token_quota: number;
+  token_remaining: number;
+  cost_micro: number;
+  cost_quota_micro: number;
+  cost_remaining_micro: number;
+}
+
+export interface DesktopUsageProfileLimits {
+  lifetime: {
+    requests: number;
+    request_quota: number;
+    request_remaining: number;
+    tokens: number;
+    token_quota: number;
+    token_remaining: number;
+  };
+  rate_limit_usage: DesktopUsageProfileRateLimitStatus[];
+}
+
+export interface DesktopUsageProfileBalance {
+  currency: string;
+  cost_micro: number;
+  unlimited: boolean;
+  items: DesktopUsageProfileRateLimitStatus[];
+}
+
+export interface DesktopUsageProfileLogEntry {
+  id: number;
+  api_key_id: string;
+  api_key_name: string;
+  protocol: string;
+  public_model: string;
+  upstream_model: string;
+  provider: string;
+  pool: string;
+  account: string;
+  device_id: string;
+  source: string;
+  status_code: number;
+  latency_ms: number;
+  request_tokens: number;
+  response_tokens: number;
+  total_tokens: number;
+  cache_hit_tokens: number;
+  cache_miss_tokens: number;
+  cache_total_tokens: number;
+  cache_hit_rate: number | null;
+  cost_micro: number;
+  estimated: boolean;
+  error_type: string;
+  created_at: string;
+}
+
+export interface DesktopUsageProfileSession {
+  api_key_id: string;
+  api_key_name: string;
+  key_prefix: string;
+  device_id: string;
+  source: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  active: boolean;
+  last_status_code: number;
+  request_count: number;
+  token_count: number;
+}
+
+export interface DesktopUsageProfileListResult<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface DesktopUsageProfilePrice {
+  id: string;
+  protocol: string;
+  public_model: string;
+  input_cost_micro_per_1m_tokens: number;
+  input_cache_hit_cost_micro_per_1m_tokens?: number | null;
+  output_cost_micro_per_1m_tokens: number;
+  currency: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DesktopUsageProfileFailureReason =
+  | "not-configured"
+  | "unauthorized"
+  | "unavailable"
+  | "error";
+
+export type DesktopUsageProfileResult =
+  | {
+      ok: true;
+      provider: DesktopUsageProfileProvider;
+      currentKey: DesktopUsageProfileAPIKey;
+      limits: DesktopUsageProfileLimits;
+      usage: {
+        summary: DesktopUsageProfileTrafficBucket;
+        items: DesktopUsageProfileTrafficBucket[];
+      };
+      balance: DesktopUsageProfileBalance;
+      logs: DesktopUsageProfileListResult<DesktopUsageProfileLogEntry>;
+      sessions: DesktopUsageProfileListResult<DesktopUsageProfileSession>;
+      prices: {
+        items: DesktopUsageProfilePrice[];
+      };
+      fetchedAt: string;
+    }
+  | {
+      ok: false;
+      reason: DesktopUsageProfileFailureReason;
+      message: string;
+      fetchedAt: string;
+    };
+
 export interface DesktopRuntimeEnvResetResult {
   ok: boolean;
   message: string;
@@ -141,11 +343,13 @@ export interface DesktopRuntimeEnvResetResult {
 }
 
 export interface DesktopGeneralSettings {
+  deviceName: string;
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
 }
 
 export interface DesktopGeneralSettingsInput {
+  deviceName?: string;
   preventSleepWhileRunning?: boolean;
 }
 
@@ -370,6 +574,9 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;
+    getDeviceIdentity: () => Promise<DesktopDeviceIdentityInfo>;
+    getUsageProfile: () => Promise<DesktopUsageProfileResult>;
+    getDesktopDeviceInfo: () => Promise<DesktopDeviceInfo>;
     getDesktopWsServerState: () => Promise<DesktopWsServerState>;
     setDesktopWsServerEnabled: (enabled: boolean) => Promise<DesktopWsServerState>;
     getGeneralSettings: () => Promise<DesktopGeneralSettings>;

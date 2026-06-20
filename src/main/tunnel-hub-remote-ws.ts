@@ -1,4 +1,3 @@
-import os from "node:os";
 import type { App } from "electron";
 import {
   DESKTOP_REMOTE_WS_PORT,
@@ -18,6 +17,7 @@ import {
   readTunnelHubRegistrationBearerToken,
   recordTunnelHubRegistrationResult
 } from "./tunnel-hub-settings";
+import { getDesktopDeviceInfo } from "./desktop-device-info";
 
 type FetchLike = (url: string, init: {
   method: string;
@@ -121,6 +121,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   }
 
   const deviceId = ensureTunnelHubDeviceId(app);
+  const deviceInfo = getDesktopDeviceInfo(app);
   const rotateToken = readTunnelHubRelayTokenRotationRequest(app) || settings.hasRelayToken === false;
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
   const fetchImpl = controllerOptions.fetch ?? globalThis.fetch as unknown as FetchLike | undefined;
@@ -136,7 +137,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
     },
     body: JSON.stringify({
       deviceId,
-      deviceName: os.hostname() || deviceId,
+      deviceName: deviceInfo.deviceName || deviceId,
       rotateToken
     })
   });

@@ -19,6 +19,14 @@ export function createSettingsSectionDefinitions({
 }): SettingsSectionDefinition[] {
   return [
     {
+      id: "usage",
+      group: "personal",
+      label: "usage",
+      description: "",
+      layout: "wide",
+      visible: true
+    },
+    {
       id: "general",
       group: "personal",
       label: "general",
@@ -137,6 +145,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   SettingsSectionDefinition["id"],
   { label: TranslationKey; description: TranslationKey }
 > = {
+  usage: { label: "settings.usage.label", description: "settings.usage.description" },
   general: { label: "settings.general.label", description: "settings.general.description" },
   appearance: { label: "settings.appearance.label", description: "settings.appearance.description" },
   kanban: { label: "settings.kanban.label", description: "settings.kanban.description" },

@@ -392,7 +392,10 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     refreshTrayContextMenu: options.refreshTrayContextMenu,
     emitLocaleChanged: options.emitLocaleChanged,
     createAppPairingPayload,
-    onGeneralSettingsChanged: () => assistantRunWakeLock.sync(),
+    onGeneralSettingsChanged: () => {
+      assistantRunWakeLock.sync();
+      state.taskBoardRuntime?.refreshDeviceInfo();
+    },
     getDesktopWsServerRuntimeState: assistantBridgeRuntime.getDesktopWsServerRuntimeStateForSettings,
     startDesktopWsServer: assistantBridgeRuntime.startDesktopWsServerForSettings,
     stopDesktopWsServer: assistantBridgeRuntime.stopDesktopWsServerForSettings,
