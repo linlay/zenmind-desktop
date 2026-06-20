@@ -17,6 +17,7 @@ type BuiltinAssetIndexEntry = {
   id: string;
   version: string;
   assetFileName: string;
+  assetType?: "archive" | "directory";
 };
 
 function isPackaged(app: App) {
@@ -35,13 +36,31 @@ export function getBuiltinAssetsRoot(app: App) {
     : path.join(process.cwd(), "build", "resources", "services");
 }
 
-function listBuiltinArchivePaths(root: string) {
+function archiveExtensionsForCurrentPlatform() {
+  if (process.platform === "win32") {
+    return [".zip"];
+  }
+  if (process.platform === "darwin") {
+    return [".tar.gz", ".tgz"];
+  }
+  return [".tar.gz", ".tgz"];
+}
+
+function isArchiveAssetFileName(fileName: string) {
+  const normalized = fileName.toLowerCase();
+  return archiveExtensionsForCurrentPlatform().some((extension) => normalized.endsWith(extension));
+}
+
+function isDirectoryBuiltinAsset(assetPath: string) {
+  return fs.existsSync(path.join(assetPath, "manifest.json"));
+}
+
+function listBuiltinAssetPaths(root: string) {
   if (!fs.existsSync(root)) {
     return [];
   }
 
-  const extension = process.platform === "win32" ? ".zip" : ".tar.gz";
-  const archivePaths: string[] = [];
+  const assetPaths: string[] = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) {
       continue;
@@ -49,15 +68,19 @@ function listBuiltinArchivePaths(root: string) {
 
     const serviceDir = path.join(root, entry.name);
     for (const asset of fs.readdirSync(serviceDir, { withFileTypes: true })) {
-      if (!asset.isFile() || !asset.name.endsWith(extension)) {
+      const assetPath = path.join(serviceDir, asset.name);
+      if (asset.isDirectory() && isDirectoryBuiltinAsset(assetPath)) {
+        assetPaths.push(assetPath);
         continue;
       }
-      archivePaths.push(path.join(serviceDir, asset.name));
+      if (asset.isFile() && isArchiveAssetFileName(asset.name)) {
+        assetPaths.push(assetPath);
+      }
     }
   }
 
-  archivePaths.sort((left, right) => left.localeCompare(right));
-  return archivePaths;
+  assetPaths.sort((left, right) => left.localeCompare(right));
+  return assetPaths;
 }
 
 function readBuiltinAssetIndex(root: string) {
@@ -80,8 +103,11 @@ function readBuiltinAssetIndex(root: string) {
       const id = typeof record.id === "string" ? record.id.trim() : "";
       const version = typeof record.version === "string" ? record.version.trim() : "";
       const assetFileName = typeof record.assetFileName === "string" ? record.assetFileName.trim() : "";
+      const assetType = record.assetType === "archive" || record.assetType === "directory"
+        ? record.assetType
+        : undefined;
       if (id && version && assetFileName) {
-        byAssetFileName.set(assetFileName, { id, version, assetFileName });
+        byAssetFileName.set(assetFileName, { id, version, assetFileName, assetType });
       }
     }
   } catch (error) {
@@ -91,16 +117,21 @@ function readBuiltinAssetIndex(root: string) {
   return byAssetFileName;
 }
 
-function readCachedManifest(tarPath: string) {
-  const stat = fs.statSync(tarPath);
+function readCachedManifest(assetPath: string) {
+  const statPath = fs.statSync(assetPath).isDirectory()
+    ? path.join(assetPath, "manifest.json")
+    : assetPath;
+  const stat = fs.statSync(statPath);
   const cacheKey = `${stat.size}:${stat.mtimeMs}`;
-  const cached = manifestCache.get(tarPath);
+  const cached = manifestCache.get(assetPath);
   if (cached && cached.key === cacheKey) {
     return cached.manifest;
   }
 
-  const manifest = readManifestFromArchive(tarPath);
-  manifestCache.set(tarPath, {
+  const manifest = fs.statSync(assetPath).isDirectory()
+    ? readManifestFile(path.join(assetPath, "manifest.json"))
+    : readManifestFromArchive(assetPath);
+  manifestCache.set(assetPath, {
     key: cacheKey,
     manifest
   });
@@ -237,15 +268,15 @@ export function loadBuiltinServices(app: App) {
     );
     const assetIndex = readBuiltinAssetIndex(builtinAssetsRoot);
 
-    for (const archivePath of listBuiltinArchivePaths(builtinAssetsRoot)) {
-      const assetFileName = path.basename(archivePath);
+    for (const assetPath of listBuiltinAssetPaths(builtinAssetsRoot)) {
+      const assetFileName = path.basename(assetPath);
       const indexedAsset = assetIndex.get(assetFileName);
       const installed = indexedAsset ? registeredByServiceId.get(indexedAsset.id) : undefined;
       if (indexedAsset && installed && compareBuiltinVersions(installed.version, indexedAsset.version) > 0) {
         continue;
       }
 
-      const manifest = readCachedManifest(archivePath);
+      const manifest = readCachedManifest(assetPath);
       if (LEGACY_BUILTIN_SERVICE_IDS.has(manifest.id)) {
         continue;
       }

@@ -40,6 +40,19 @@ function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
 }
 
+function archiveAssetDirectoryName(fileName) {
+  if (fileName.endsWith(".tar.gz")) {
+    return fileName.slice(0, -".tar.gz".length);
+  }
+  if (fileName.endsWith(".tgz")) {
+    return fileName.slice(0, -".tgz".length);
+  }
+  if (fileName.endsWith(".zip")) {
+    return fileName.slice(0, -".zip".length);
+  }
+  return fileName;
+}
+
 function isIgnorableDirectoryReadError(error) {
   return error &&
     typeof error === "object" &&
@@ -74,10 +87,69 @@ function cleanupLegacyBrandScopedServiceAssets(projectRoot) {
   }
 }
 
-function computeAssetSignature(assetPath) {
+function listRegularFiles(rootDir) {
+  const result = [];
+  const stack = [rootDir];
+
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    const stat = fs.lstatSync(currentPath);
+    if (stat.isSymbolicLink()) {
+      result.push(currentPath);
+      continue;
+    }
+    if (stat.isDirectory()) {
+      for (const entry of readDirectoryEntries(currentPath)) {
+        stack.push(path.join(currentPath, entry.name));
+      }
+      continue;
+    }
+    if (stat.isFile()) {
+      result.push(currentPath);
+    }
+  }
+
+  return result.sort((left, right) => left.localeCompare(right));
+}
+
+function computeFileAssetSignature(assetPath) {
   const stat = fs.statSync(assetPath);
   const sha256 = createHash("sha256").update(fs.readFileSync(assetPath)).digest("hex");
   return `${stat.size}:${sha256}`;
+}
+
+function computeDirectoryAssetSignature(assetPath) {
+  const hash = createHash("sha256");
+  let totalSize = 0;
+  for (const filePath of listRegularFiles(assetPath)) {
+    const relativePath = path.relative(assetPath, filePath).replace(/\\/g, "/");
+    const stat = fs.lstatSync(filePath);
+    hash.update(relativePath);
+    hash.update("\0");
+    hash.update(String(stat.mode & 0o777));
+    hash.update("\0");
+    if (stat.isSymbolicLink()) {
+      hash.update("symlink");
+      hash.update("\0");
+      hash.update(fs.readlinkSync(filePath));
+      hash.update("\0");
+      continue;
+    }
+    totalSize += stat.size;
+    hash.update("file");
+    hash.update("\0");
+    hash.update(fs.readFileSync(filePath));
+    hash.update("\0");
+  }
+  return `dir:${totalSize}:${hash.digest("hex")}`;
+}
+
+function computeAssetSignature(assetPath) {
+  const stat = fs.lstatSync(assetPath);
+  if (stat.isDirectory()) {
+    return computeDirectoryAssetSignature(assetPath);
+  }
+  return computeFileAssetSignature(assetPath);
 }
 
 function normalizeDeveloperIdApplicationName(value) {
@@ -115,7 +187,7 @@ function configuredDarwinSigningIdentityName() {
 
 function assertDarwinSigningHost() {
   if (process.platform !== "darwin") {
-    throw new Error("signing bundled Darwin service archives requires a macOS host with codesign available");
+    throw new Error("pre-signing bundled Darwin service directories requires a macOS host with codesign available");
   }
 }
 
@@ -216,37 +288,53 @@ function signMachOFile(filePath, identity) {
   execFileSync("codesign", ["--verify", "--strict", "--verbose=2", filePath], { stdio: "inherit" });
 }
 
-function signDarwinServiceArchive(archivePath, service, identity) {
+function extractArchiveToBundleDirectory(archivePath, targetDir, service) {
   if (!archivePath.endsWith(".tar.gz")) {
     throw new Error(`Darwin service archives must be .tar.gz files: ${archivePath}`);
   }
 
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-darwin-service-sign-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-darwin-service-extract-"));
   const extractRoot = path.join(tempRoot, "extract");
   fs.mkdirSync(extractRoot, { recursive: true });
 
   try {
     execFileSync("tar", ["-xzf", archivePath, "-C", extractRoot], { stdio: "inherit" });
-    const machOFiles = listMachOFiles(extractRoot);
-    if (machOFiles.length === 0) {
-      return;
-    }
-
-    console.log(`[mac-service-sign] Signing ${machOFiles.length} Mach-O file(s) in ${service.id}...`);
-    for (const filePath of machOFiles) {
-      signMachOFile(filePath, identity);
-    }
-
     const archiveEntries = fs.readdirSync(extractRoot).sort();
-    if (archiveEntries.length === 0) {
-      throw new Error(`Darwin service archive is empty: ${archivePath}`);
+    if (archiveEntries.length !== 1) {
+      throw new Error(`unexpected Darwin service archive layout for ${service.id}: ${archivePath}`);
     }
 
-    const signedArchivePath = path.join(tempRoot, path.basename(archivePath));
-    execFileSync("tar", ["-czf", signedArchivePath, "-C", extractRoot, ...archiveEntries], { stdio: "inherit" });
-    fs.copyFileSync(signedArchivePath, archivePath);
+    const extractedRoot = path.join(extractRoot, archiveEntries[0]);
+    const manifestPath = path.join(extractedRoot, "manifest.json");
+    if (!fs.existsSync(manifestPath)) {
+      throw new Error(`Darwin service archive root is missing manifest.json for ${service.id}: ${archivePath}`);
+    }
+
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+    try {
+      fs.renameSync(extractedRoot, targetDir);
+    } catch (error) {
+      const code = error && typeof error === "object" ? error.code : "";
+      if (code !== "EXDEV" && code !== "EPERM" && code !== "EACCES") {
+        throw error;
+      }
+      fs.cpSync(extractedRoot, targetDir, { recursive: true, force: true });
+    }
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function signDarwinServiceDirectory(directoryPath, service, identity) {
+  const machOFiles = listMachOFiles(directoryPath);
+  if (machOFiles.length === 0) {
+    return;
+  }
+
+  console.log(`[mac-service-sign] Signing ${machOFiles.length} Mach-O file(s) in ${service.id}...`);
+  for (const filePath of machOFiles) {
+    signMachOFile(filePath, identity);
   }
 }
 
@@ -1039,6 +1127,63 @@ export function validateBundleArchive(service, archivePath) {
   }
 }
 
+function findMissingBundleDirectoryEntries(service, directoryPath) {
+  return service.requiredBundleEntries.filter((relativePath) => {
+    const normalizedRelativePath = relativePath.replace(/\\/g, "/");
+    return !fs.existsSync(path.join(directoryPath, ...normalizedRelativePath.split("/").filter(Boolean)));
+  });
+}
+
+function validateBundleDirectoryContents(service, directoryPath) {
+  if (fs.existsSync(path.join(directoryPath, "README.txt"))) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
+        `Unexpected non-runtime file README.txt in final bundle.\n` +
+        `Please regenerate the upstream release bundle.`
+    );
+  }
+
+  if (service.id === "agent-platform" && fs.existsSync(path.join(directoryPath, "local-cli-acp-relay", "README.md"))) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
+        `Unexpected non-runtime file local-cli-acp-relay/README.md in final bundle.\n` +
+        `Please regenerate the upstream release bundle.`
+    );
+  }
+}
+
+export function validateBundleDirectory(service, directoryPath) {
+  if (!fs.existsSync(directoryPath)) {
+    throw new Error(`missing builtin asset directory for ${service.id}: ${directoryPath}`);
+  }
+  if (!fs.statSync(directoryPath).isDirectory()) {
+    throw new Error(`builtin asset path is not a directory for ${service.id}: ${directoryPath}`);
+  }
+
+  const manifestPath = path.join(directoryPath, "manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`builtin asset directory missing manifest.json for ${service.id}: ${directoryPath}`);
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (manifest?.id !== service.id || manifest?.version !== service.version) {
+    throw new Error(
+      `builtin asset directory manifest mismatch for ${service.id}: ${directoryPath}\n` +
+        `Expected ${service.id}@${service.version}, found ${manifest?.id ?? "unknown"}@${manifest?.version ?? "unknown"}.`
+    );
+  }
+
+  const missingEntries = findMissingBundleDirectoryEntries(service, directoryPath);
+  if (missingEntries.length > 0) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
+        `Missing required entries: ${missingEntries.join(", ")}`
+    );
+  }
+
+  validateBundleDirectoryContents(service, directoryPath);
+}
+
 export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
   const { os, arch, signDarwin = false } = options;
   const outputRoot = desktopBuiltinServicesDir(projectRoot);
@@ -1059,18 +1204,29 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
 
     const serviceDir = path.join(outputRoot, service.id);
     fs.mkdirSync(serviceDir, { recursive: true });
-    const outputArchivePath = path.join(serviceDir, service.assetFileName);
-    fs.copyFileSync(sourcePath, outputArchivePath);
-    if (darwinSigningIdentity && service.platform.os === "darwin") {
-      signDarwinServiceArchive(outputArchivePath, service, darwinSigningIdentity);
+    const isDarwinService = service.platform.os === "darwin";
+    const assetFileName = isDarwinService
+      ? archiveAssetDirectoryName(service.assetFileName)
+      : service.assetFileName;
+    const outputAssetPath = path.join(serviceDir, assetFileName);
+
+    if (isDarwinService) {
+      extractArchiveToBundleDirectory(sourcePath, outputAssetPath, service);
+      if (darwinSigningIdentity) {
+        signDarwinServiceDirectory(outputAssetPath, service, darwinSigningIdentity);
+      }
+      validateBundleDirectory(service, outputAssetPath);
+    } else {
+      fs.copyFileSync(sourcePath, outputAssetPath);
+      validateBundleArchive(service, outputAssetPath);
     }
-    validateBundleArchive(service, outputArchivePath);
 
     return {
       id: service.id,
       version: service.version,
-      assetFileName: service.assetFileName,
-      assetSignature: computeAssetSignature(outputArchivePath)
+      assetFileName,
+      assetType: isDarwinService ? "directory" : "archive",
+      assetSignature: computeAssetSignature(outputAssetPath)
     };
   });
 

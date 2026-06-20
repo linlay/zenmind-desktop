@@ -37,8 +37,8 @@ Options:
   --no-sync        Do not copy/sync built packages into this Desktop project.
   --sync-os os     Sync only one target OS (darwin, windows, linux).
   --sync-arch arch Sync only one target arch (arm64, amd64).
-  --sign-mac       Sign synced Darwin service binaries for macOS notarization.
-  --no-sign-mac    Disable macOS service binary signing.
+  --sign-mac       Pre-sign extracted Darwin service binaries before packaging.
+  --no-sign-mac    Disable Darwin service binary pre-signing.
   --dry-run        Print commands without running them.
   -h, --help       Show this help.
 
@@ -47,7 +47,8 @@ Environment:
   SIGN_MAC_BUILTINS=1
                    Enable --sign-mac without putting signing details in git.
   ZENMIND_DARWIN_CODESIGN_IDENTITY / MACOS_CODESIGN_IDENTITY / CSC_NAME
-                   Developer ID Application identity for --sign-mac.
+                   Developer ID Application identity for --sign-mac. Final
+                   release signing still happens in electron-builder.
   PROGRAM_TARGETS / PROGRAM_TARGET_MATRIX / ARCH / VERSION
                    Passed through to the underlying project release scripts.
 
@@ -206,6 +207,20 @@ build_project() {
   log "done $short_name"
 }
 
+assert_no_synced_darwin_archives() {
+  local services_dir="$DESKTOP_ROOT/build/resources/services"
+  local found=0
+
+  [[ -d "$services_dir" ]] || return
+
+  while IFS= read -r -d '' archive_path; do
+    printf '[build-all-dist] unexpected Darwin archive after sync: %s\n' "$archive_path" >&2
+    found=1
+  done < <(find "$services_dir" -type f \( -name '*-darwin-*.tar.gz' -o -name '*-darwin-*.tgz' \) -print0)
+
+  [[ "$found" == "0" ]] || die "Darwin builtin services must be synced as directories, not tar.gz archives."
+}
+
 sync_desktop_assets() {
   if [[ "$SYNC_AFTER_BUILD" != "1" ]]; then
     return
@@ -224,6 +239,9 @@ sync_desktop_assets() {
 
   log "sync builtin packages into $DESKTOP_ROOT/build/resources/services"
   run_cmd_in_dir "$DESKTOP_ROOT" node "${sync_args[@]}"
+  if [[ "$DRY_RUN" != "1" && ( -z "$SYNC_OS" || "$SYNC_OS" == "darwin" ) ]]; then
+    assert_no_synced_darwin_archives
+  fi
 }
 
 while [[ $# -gt 0 ]]; do

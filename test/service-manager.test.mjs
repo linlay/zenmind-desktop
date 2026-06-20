@@ -283,6 +283,13 @@ function currentBuiltinArchiveFileName(serviceId, version) {
   return `${serviceId}-${version}-${currentManifestOs()}-${currentManifestArch()}${currentBuiltinArchiveExtension()}`;
 }
 
+function currentBuiltinDirectoryAssetName(serviceId, version) {
+  return currentBuiltinArchiveFileName(serviceId, version)
+    .replace(/\.tar\.gz$/u, "")
+    .replace(/\.tgz$/u, "")
+    .replace(/\.zip$/u, "");
+}
+
 function powershellSingleQuoted(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
@@ -3075,6 +3082,38 @@ test("installBuiltinService installs extracted builtin root without an extra dir
     assert.equal(__testInternals.isInstallHealthy(getService("agent-container-hub"), installDir), true);
   } finally {
     fs.cpSync = originalCpSync;
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installBuiltinService installs bundled directory assets", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-install-directory-asset-"));
+  const { assetsRoot, userDataRoot, installDir, tarBundleRoot } = createContainerHubBundleFixture(tempRoot);
+  const serviceAssetDir = path.join(assetsRoot, "agent-container-hub");
+  const archiveName = fs.readdirSync(serviceAssetDir).find((entry) => isReleaseArchiveName(entry));
+  const directoryAssetName = currentBuiltinDirectoryAssetName("agent-container-hub", "v0.1.0");
+  assert.ok(archiveName, "expected fixture archive");
+
+  fs.cpSync(tarBundleRoot, path.join(serviceAssetDir, directoryAssetName), {
+    recursive: true,
+    force: true
+  });
+  fs.rmSync(path.join(serviceAssetDir, archiveName), { force: true });
+
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+
+  try {
+    const service = getBuiltinService("agent-container-hub");
+    assert.equal(service.assetFileName, directoryAssetName);
+    assert.match(__testInternals.readBuiltinAssetSignature(app, service), /^dir:/u);
+
+    await installBuiltinService(app, "agent-container-hub");
+
+    assert.ok(fs.existsSync(path.join(installDir, "manifest.json")));
+    assert.ok(fs.existsSync(path.join(installDir, "backend", process.platform === "win32" ? "agent-container-hub.exe" : "agent-container-hub")));
+    assert.equal(__testInternals.isInstallHealthy(service, installDir), true);
+  } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

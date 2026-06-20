@@ -256,6 +256,16 @@ function fileExists(targetPath: string) {
   return fs.existsSync(targetPath);
 }
 
+function isDirectoryAssetPath(assetPath: string) {
+  return fs.existsSync(assetPath) && fs.statSync(assetPath).isDirectory();
+}
+
+function copyDirectoryAssetToTempRoot(assetPath: string, tempRoot: string) {
+  const targetRoot = path.join(tempRoot, path.basename(assetPath));
+  fs.cpSync(assetPath, targetRoot, { recursive: true, force: true });
+  return targetRoot;
+}
+
 function prepareServiceExecutionLayout(_service: ServiceDefinition, layout: ServiceLayout) {
   ensureDir(layout.configDir);
   ensureDir(layout.dataDir);
@@ -579,13 +589,18 @@ async function installBuiltinServiceInternal(
 
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `${service.id}-extract-`));
     try {
-      await extractArchiveToDir(assetPath, tempRoot);
-      didExtract = true;
-      const entries = fs.readdirSync(tempRoot);
-      if (entries.length !== 1) {
-        throw new Error(`unexpected archive layout for ${service.id}`);
+      let extractedRoot: string;
+      if (isDirectoryAssetPath(assetPath)) {
+        extractedRoot = copyDirectoryAssetToTempRoot(assetPath, tempRoot);
+      } else {
+        await extractArchiveToDir(assetPath, tempRoot);
+        const entries = fs.readdirSync(tempRoot);
+        if (entries.length !== 1) {
+          throw new Error(`unexpected archive layout for ${service.id}`);
+        }
+        extractedRoot = path.join(tempRoot, entries[0]);
       }
-      const extractedRoot = path.join(tempRoot, entries[0]);
+      didExtract = true;
       if (fs.existsSync(finalInstallDir)) {
         await stopBuiltinInstallDir(service, finalInstallDir);
       }

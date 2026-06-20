@@ -25,11 +25,65 @@ function getAssetPath(app: App, service: ServiceDefinition) {
 }
 
 export function computeAssetSignature(assetPath: string) {
-  const stat = fs.statSync(assetPath);
+  const stat = fs.lstatSync(assetPath);
+  if (stat.isDirectory()) {
+    const hash = createHash("sha256");
+    let totalSize = 0;
+    for (const filePath of listRegularFiles(assetPath)) {
+      const relativePath = path.relative(assetPath, filePath).replace(/\\/g, "/");
+      const fileStat = fs.lstatSync(filePath);
+      hash.update(relativePath);
+      hash.update("\0");
+      hash.update(String(fileStat.mode & 0o777));
+      hash.update("\0");
+      if (fileStat.isSymbolicLink()) {
+        hash.update("symlink");
+        hash.update("\0");
+        hash.update(fs.readlinkSync(filePath));
+        hash.update("\0");
+        continue;
+      }
+      totalSize += fileStat.size;
+      hash.update("file");
+      hash.update("\0");
+      hash.update(fs.readFileSync(filePath));
+      hash.update("\0");
+    }
+    return `dir:${totalSize}:${hash.digest("hex")}`;
+  }
+
   const hash = createHash("sha256")
     .update(fs.readFileSync(assetPath))
     .digest("hex");
   return `${stat.size}:${hash}`;
+}
+
+function listRegularFiles(rootDir: string) {
+  const result: string[] = [];
+  const stack = [rootDir];
+
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    if (!currentPath) {
+      continue;
+    }
+    const stat = fs.lstatSync(currentPath);
+    if (stat.isSymbolicLink()) {
+      result.push(currentPath);
+      continue;
+    }
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+        stack.push(path.join(currentPath, entry.name));
+      }
+      continue;
+    }
+    if (stat.isFile()) {
+      result.push(currentPath);
+    }
+  }
+
+  return result.sort((left, right) => left.localeCompare(right));
 }
 
 export function moveExtractedBuiltinRoot(extractedRoot: string, finalInstallDir: string) {
@@ -150,6 +204,13 @@ export function listMissingBundleEntries(service: ServiceDefinition, archivePath
   return missingEntries;
 }
 
+export function listMissingBundleDirectoryEntries(service: ServiceDefinition, directoryPath: string) {
+  return service.runtime.requiredPaths.filter((relativePath) => {
+    const normalizedRelativePath = relativePath.replace(/\\/g, "/");
+    return !fs.existsSync(path.join(directoryPath, ...normalizedRelativePath.split("/").filter(Boolean)));
+  });
+}
+
 export function ensureArchiveHealthy(service: ServiceDefinition, archivePath: string, sourceLabel: string) {
   if (!fs.existsSync(archivePath)) {
     throw new Error(t("service.archiveMissing", { sourceLabel, path: archivePath }));
@@ -163,8 +224,28 @@ export function ensureArchiveHealthy(service: ServiceDefinition, archivePath: st
   return archivePath;
 }
 
+export function ensureDirectoryAssetHealthy(service: ServiceDefinition, directoryPath: string, sourceLabel: string) {
+  if (!fs.existsSync(directoryPath)) {
+    throw new Error(t("service.archiveMissing", { sourceLabel, path: directoryPath }));
+  }
+  if (!fs.statSync(directoryPath).isDirectory()) {
+    throw new Error(t("service.archiveMissing", { sourceLabel, path: directoryPath }));
+  }
+
+  const missingEntries = listMissingBundleDirectoryEntries(service, directoryPath);
+  if (missingEntries.length > 0) {
+    throw new Error(t("service.archiveIncomplete", { sourceLabel, entries: missingEntries.join(", ") }));
+  }
+
+  return directoryPath;
+}
+
 export function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
-  return ensureArchiveHealthy(service, getAssetPath(app, service), t("service.builtinAssetLabel"));
+  const assetPath = getAssetPath(app, service);
+  if (fs.existsSync(assetPath) && fs.statSync(assetPath).isDirectory()) {
+    return ensureDirectoryAssetHealthy(service, assetPath, t("service.builtinAssetLabel"));
+  }
+  return ensureArchiveHealthy(service, assetPath, t("service.builtinAssetLabel"));
 }
 
 export function getOptionalBundleAssetPath(app: App, service: ServiceDefinition) {

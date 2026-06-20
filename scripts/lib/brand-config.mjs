@@ -1076,6 +1076,7 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
     },
     electronLanguages: ["zh-CN", "en-US"],
     afterPack: "./scripts/fix-mac-sign.js",
+    afterSign: "./scripts/verify-mac-services-signing.js",
     win: {
       icon: brandBuildRelativePath(brand, "icons", "icon.ico"),
       target: ["nsis"]
