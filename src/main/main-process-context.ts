@@ -303,6 +303,7 @@ export interface SsoIpcHandlerContextDependencies {
   cancelDesktopSsoLogin: (...args: any[]) => unknown;
   issueAgentAccessToken: (...args: any[]) => unknown;
   refreshTaskBoardConnection?: (...args: any[]) => unknown;
+  stopTunnelHubRuntime?: (...args: any[]) => unknown;
 }
 
 export function createSsoIpcHandlerOptions(
@@ -319,7 +320,8 @@ export function createSsoIpcHandlerOptions(
     failDesktopSsoFlow: dependencies.failDesktopSsoFlow,
     cancelDesktopSsoLogin: dependencies.cancelDesktopSsoLogin,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,
-    refreshTaskBoardConnection: dependencies.refreshTaskBoardConnection
+    refreshTaskBoardConnection: dependencies.refreshTaskBoardConnection,
+    stopTunnelHubRuntime: dependencies.stopTunnelHubRuntime
   };
 }
 

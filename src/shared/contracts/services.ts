@@ -236,8 +236,6 @@ export interface TunnelHubSettings {
   deviceId: string;
   hasRelayToken: boolean;
   relayTokenPreview: string;
-  hasRegistrationToken: boolean;
-  registrationTokenPreview: string;
   publicHost: string;
   publicUrl: string;
   webSocketUrl: string;
@@ -253,8 +251,6 @@ export interface TunnelHubSettingsInput {
   deviceId?: string;
   relayToken?: string;
   clearRelayToken?: boolean;
-  registrationToken?: string;
-  clearRegistrationToken?: boolean;
   rotateRelayToken?: boolean;
   tlsInsecureSkipVerify?: boolean;
   reconnectSeconds?: number;

@@ -17,8 +17,10 @@ import {
   ensureTunnelHubRemoteWsReady
 } from "./tunnel-hub-remote-ws";
 import {
+  clearLegacyTunnelHubRegistrationToken,
   readTunnelHubSettings,
   readTunnelHubRelayToken,
+  readTunnelHubRegistrationBearerToken,
   saveTunnelHubSettings
 } from "./tunnel-hub-settings";
 import { TunnelHubTunnelClient } from "./tunnel-hub-tunnel-client";
@@ -170,10 +172,14 @@ export class TunnelHubRuntime {
   }
 
   private async startInternal(): Promise<TunnelHubRuntimeCommandResult> {
+    clearLegacyTunnelHubRegistrationToken(this.options.app);
     const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled) {
       this.phase = "disabled";
-      return this.commandResult(false, "Tunnel Hub is disabled or incomplete.");
+      const message = readTunnelHubRegistrationBearerToken(this.options.app)
+        ? "Tunnel Hub is disabled or incomplete."
+        : "Sign in before starting Tunnel Hub.";
+      return this.commandResult(false, message);
     }
     this.stopping = false;
     this.clearReconnectTimer();
@@ -184,10 +190,13 @@ export class TunnelHubRuntime {
     try {
       const ready = await ensureTunnelHubRemoteWsReady(this.options.app);
       this.setPhase(ready.registered ? "registered" : "connecting");
+      if (!readTunnelHubRegistrationBearerToken(this.options.app)) {
+        throw new Error("Sign in before starting Tunnel Hub.");
+      }
       const nextSettings = readTunnelHubSettings(this.options.app);
       const token = readTunnelHubRelayToken(this.options.app);
       if (!token) {
-        throw new Error("Tunnel Hub relay token is missing. Configure a registration token first.");
+        throw new Error("Tunnel Hub relay token is missing after registration.");
       }
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");

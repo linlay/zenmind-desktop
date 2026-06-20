@@ -309,7 +309,6 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
       relayUrl: "wss://relay.example.test/tunnel",
       deviceId: "mac-mini-office",
       relayToken: "init-relay-token",
-      registrationToken: "init-registration-token",
       tlsInsecureSkipVerify: false
     }
   });
@@ -341,7 +340,7 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   assert.equal("registrationToken" in tunnelSettings, false);
   assert.equal("deviceSecret" in tunnelSettings, false);
   assert.equal(readText(tokenPath), "init-relay-token");
-  assert.equal(readText(registrationTokenPath), "init-registration-token");
+  assert.equal(fs.existsSync(registrationTokenPath), false);
   assert.equal(bootstrapState.appliedResult.tunnelHub, "applied");
 });
 

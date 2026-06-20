@@ -440,8 +440,6 @@ const defaultTunnelHubSettings: TunnelHubSettings = {
   deviceId: "",
   hasRelayToken: false,
   relayTokenPreview: "",
-  hasRegistrationToken: false,
-  registrationTokenPreview: "",
   publicHost: "",
   publicUrl: "",
   webSocketUrl: "",
@@ -2334,8 +2332,7 @@ export function SettingsPage({
   const [controlOnlineSummary, setControlOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultTaskBoardOnlineSummary);
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
-  const [tunnelHubRegistrationToken, setTunnelHubRegistrationToken] = useState("");
-  const [tunnelHubClearRegistrationToken, setTunnelHubClearRegistrationToken] = useState(false);
+  const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [tunnelHubRotateRelayToken, setTunnelHubRotateRelayToken] = useState(false);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
   const [appPairingPending, setAppPairingPending] = useState(false);
@@ -2595,19 +2592,23 @@ export function SettingsPage({
     }
 
     let cancelled = false;
-    window.electronAPI.settings.getTunnelHubSettings()
-      .then((settings) => {
+    Promise.allSettled([
+      window.electronAPI.settings.getTunnelHubSettings(),
+      window.electronAPI.sso.getStatus()
+    ])
+      .then(([settingsResult, ssoResult]) => {
         if (cancelled) {
           return;
         }
+        if (settingsResult.status !== "fulfilled") {
+          throw settingsResult.reason;
+        }
+        const settings = settingsResult.value;
         setTunnelHubSettings({
           ...defaultTunnelHubSettings,
           ...settings
         });
-        setTunnelHubRelayToken("");
-        setTunnelHubClearRelayToken(false);
-        setTunnelHubRegistrationToken("");
-        setTunnelHubClearRegistrationToken(false);
+        setTunnelHubSsoStatus(ssoResult.status === "fulfilled" ? ssoResult.value : null);
         setTunnelHubRotateRelayToken(false);
         setReadErrorSections(["tunnelHub"], "");
       })
@@ -3814,8 +3815,6 @@ export function SettingsPage({
         enabled: tunnelHubSettings.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        registrationToken: tunnelHubRegistrationToken,
-        clearRegistrationToken: tunnelHubClearRegistrationToken,
         rotateRelayToken: tunnelHubRotateRelayToken,
         tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
@@ -3824,8 +3823,6 @@ export function SettingsPage({
         ...defaultTunnelHubSettings,
         ...result.settings
       });
-      setTunnelHubRegistrationToken("");
-      setTunnelHubClearRegistrationToken(false);
       setTunnelHubRotateRelayToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
@@ -3847,8 +3844,6 @@ export function SettingsPage({
         enabled: nextEnabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        registrationToken: tunnelHubRegistrationToken,
-        clearRegistrationToken: tunnelHubClearRegistrationToken,
         rotateRelayToken: tunnelHubRotateRelayToken,
         tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
@@ -3857,8 +3852,6 @@ export function SettingsPage({
         ...defaultTunnelHubSettings,
         ...result.settings
       });
-      setTunnelHubRegistrationToken("");
-      setTunnelHubClearRegistrationToken(false);
       setTunnelHubRotateRelayToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
@@ -4409,32 +4402,11 @@ export function SettingsPage({
                   placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
                 />
               </label>
-              <label className="settings-control-field">
-                <span>{t("settings.tunnelHub.registrationToken")}</span>
-                <Input.Password
-                  value={tunnelHubRegistrationToken}
-                  onChange={(event) => {
-                    setTunnelHubRegistrationToken(event.target.value);
-                    if (event.target.value.trim()) {
-                      setTunnelHubClearRegistrationToken(false);
-                    }
-                  }}
-                  placeholder={t("settings.tunnelHub.registrationTokenPlaceholder")}
-                />
-                <small>
-                  {tunnelHubSettings.hasRegistrationToken
-                    ? t("settings.tunnelHub.registrationTokenConfigured", { preview: tunnelHubSettings.registrationTokenPreview })
-                    : t("settings.tunnelHub.registrationTokenMissing")}
-                </small>
-              </label>
-              <Checkbox
-                className="settings-control-field settings-checkbox-field"
-                checked={tunnelHubClearRegistrationToken}
-                disabled={Boolean(tunnelHubRegistrationToken.trim())}
-                onChange={(event) => setTunnelHubClearRegistrationToken(event.target.checked)}
-              >
-                {t("settings.tunnelHub.clearRegistrationToken")}
-              </Checkbox>
+              {tunnelHubSsoStatus && !tunnelHubSsoStatus.authenticated ? (
+                <div className="settings-control-field settings-readonly-stack">
+                  <small>{t("settings.tunnelHub.loginRequired")}</small>
+                </div>
+              ) : null}
               <Checkbox
                 className="settings-control-field settings-checkbox-field"
                 checked={tunnelHubRotateRelayToken}

@@ -74,7 +74,7 @@ import {
 import { t, initializeMainI18n, setMainLocale } from "../i18n/main-i18n";
 import { isSupportedLocale } from "../../shared/i18n";
 import { DESKTOP_ACTION_DEFINITIONS } from "../../shared/desktop-actions";
-import { applyTunnelHubSettings } from "../tunnel-hub-runtime";
+import { applyTunnelHubSettings, stopTunnelHubRuntime } from "../tunnel-hub-runtime";
 import {
   createAssistantIpcHandlerOptions,
   createDesktopPetIpcHandlerOptions,
@@ -281,7 +281,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     failDesktopSsoFlow,
     cancelDesktopSsoLogin,
     issueAgentAccessToken,
-    refreshTaskBoardConnection: () => state.taskBoardRuntime?.refreshDeviceInfo()
+    refreshTaskBoardConnection: () => state.taskBoardRuntime?.refreshDeviceInfo(),
+    stopTunnelHubRuntime
   }));
   registerTunnelHubIpcHandlers(ipcMain);
   registerTaskBoardIpcHandlers(ipcMain, createTaskBoardIpcHandlerOptions(context, {
