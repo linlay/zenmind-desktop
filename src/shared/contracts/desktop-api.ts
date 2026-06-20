@@ -346,11 +346,13 @@ export interface DesktopGeneralSettings {
   deviceName: string;
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
+  desktopActionConfirmationEnabled: boolean;
 }
 
 export interface DesktopGeneralSettingsInput {
   deviceName?: string;
   preventSleepWhileRunning?: boolean;
+  desktopActionConfirmationEnabled?: boolean;
 }
 
 export interface DesktopWsServerState {

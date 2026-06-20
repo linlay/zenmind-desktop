@@ -418,7 +418,8 @@ const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
 const defaultGeneralSettings: DesktopGeneralSettings = {
   deviceName: "",
   preventSleepWhileRunning: true,
-  desktopWsServerEnabled: false
+  desktopWsServerEnabled: false,
+  desktopActionConfirmationEnabled: true
 };
 
 function createFallbackDesktopWsServerState(message?: string): DesktopWsServerState {
@@ -1020,62 +1021,58 @@ function UsageSettingsPanel({
             {renderHeatmap()}
           </div>
 
-          <div className="usage-main-grid">
-            <div className="data-root-card usage-billing-card">
-              <div className="usage-card-head">
-                <div>
-                  <h2>{t("settings.usage.billing.title")}</h2>
-                  <p className="page-copy">{t("settings.usage.billing.description")}</p>
-                </div>
+          <div className="data-root-card usage-billing-card">
+            <div className="usage-card-head">
+              <div>
+                <h2>{t("settings.usage.billing.title")}</h2>
+                <p className="page-copy">{t("settings.usage.billing.description")}</p>
               </div>
-              <div className="usage-billing-panels">
-                <div className="usage-billing-panel">
-                  <strong>{successProfile.currentKey.name || successProfile.provider.providerName}</strong>
-                  <span>
-                    {t("settings.usage.billing.keyMeta", {
-                      status: successProfile.currentKey.status || t("common.none"),
-                      source: successProfile.currentKey.source || t("common.none")
-                    })}
-                  </span>
-                  <small>{successProfile.provider.baseURL}</small>
-                </div>
-                <div className="usage-billing-panel">
-                  <strong>{formatUsageCostMicro(successProfile.balance.cost_micro, successProfile.balance.currency, locale)}</strong>
-                  <span>{t("settings.usage.billing.balanceSpent")}</span>
-                  <small>
-                    {successProfile.balance.unlimited
-                      ? t("settings.usage.billing.unlimited")
-                      : t("settings.usage.billing.remainingCost", {
-                          amount: formatUsageCostMicro(balanceRemaining, successProfile.balance.currency, locale)
-                        })}
-                  </small>
-                </div>
-              </div>
-              <div className="usage-section-subhead">
-                <h3>{t("settings.usage.billing.limitsTitle")}</h3>
-              </div>
-              {renderLimitRows(successProfile.limits.rate_limit_usage)}
-              <div className="usage-section-subhead">
-                <h3>{t("settings.usage.billing.allowedModels")}</h3>
-              </div>
-              {renderAllowedModels()}
             </div>
+            <div className="usage-billing-panels">
+              <div className="usage-billing-panel">
+                <strong>{successProfile.currentKey.name || successProfile.provider.providerName}</strong>
+                <span>
+                  {t("settings.usage.billing.keyMeta", {
+                    status: successProfile.currentKey.status || t("common.none"),
+                    source: successProfile.currentKey.source || t("common.none")
+                  })}
+                </span>
+                <small>{successProfile.provider.baseURL}</small>
+              </div>
+              <div className="usage-billing-panel">
+                <strong>{formatUsageCostMicro(successProfile.balance.cost_micro, successProfile.balance.currency, locale)}</strong>
+                <span>{t("settings.usage.billing.balanceSpent")}</span>
+                <small>
+                  {successProfile.balance.unlimited
+                    ? t("settings.usage.billing.unlimited")
+                    : t("settings.usage.billing.remainingCost", {
+                        amount: formatUsageCostMicro(balanceRemaining, successProfile.balance.currency, locale)
+                      })}
+                </small>
+              </div>
+            </div>
+            <div className="usage-section-subhead">
+              <h3>{t("settings.usage.billing.limitsTitle")}</h3>
+            </div>
+            {renderLimitRows(successProfile.limits.rate_limit_usage)}
+            <div className="usage-section-subhead">
+              <h3>{t("settings.usage.billing.allowedModels")}</h3>
+            </div>
+            {renderAllowedModels()}
+          </div>
 
-            <div className="usage-side-stack">
-              <div className="data-root-card usage-detail-card">
-                <div className="usage-section-subhead">
-                  <h2>{t("settings.usage.details.modelsTitle")}</h2>
-                </div>
-                {renderCommonModels()}
-                {renderPrices()}
-              </div>
-              <div className="data-root-card usage-detail-card">
-                <div className="usage-section-subhead">
-                  <h2>{t("settings.usage.details.devicesTitle")}</h2>
-                </div>
-                {renderDevices(successProfile.sessions.items)}
-              </div>
+          <div className="data-root-card usage-detail-card usage-models-card">
+            <div className="usage-section-subhead">
+              <h2>{t("settings.usage.details.modelsTitle")}</h2>
             </div>
+            {renderCommonModels()}
+            {renderPrices()}
+          </div>
+          <div className="data-root-card usage-detail-card usage-devices-card">
+            <div className="usage-section-subhead">
+              <h2>{t("settings.usage.details.devicesTitle")}</h2>
+            </div>
+            {renderDevices(successProfile.sessions.items)}
           </div>
         </>
       ) : null}
@@ -1561,6 +1558,7 @@ function WsServerDebugDialog({
 function DeviceIdentityDebugCard() {
   const { t } = useI18n();
   const [identity, setIdentity] = useState<DesktopDeviceIdentityInfo | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DesktopDeviceInfo | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -1568,8 +1566,12 @@ function DeviceIdentityDebugCard() {
     setPending(true);
     setMessage("");
     try {
-      const result = await window.electronAPI.settings.getDeviceIdentity();
-      setIdentity(result);
+      const [identityResult, deviceInfoResult] = await Promise.all([
+        window.electronAPI.settings.getDeviceIdentity(),
+        window.electronAPI.settings.getDesktopDeviceInfo()
+      ]);
+      setIdentity(identityResult);
+      setDeviceInfo(deviceInfoResult);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1591,6 +1593,12 @@ function DeviceIdentityDebugCard() {
   const identityJson = identity ? formatDebugJson(identity) : "";
   const rows: Array<{ label: TranslationKey; value: unknown }> = identity
     ? [
+      { label: "settings.debug.device.resolvedDeviceName", value: deviceInfo?.deviceName },
+      { label: "settings.debug.device.configuredDeviceName", value: deviceInfo?.configuredDeviceName },
+      { label: "settings.debug.device.hostname", value: deviceInfo?.hostname },
+      { label: "settings.debug.device.username", value: deviceInfo?.username },
+      { label: "settings.debug.device.platform", value: deviceInfo?.platform },
+      { label: "settings.debug.device.arch", value: deviceInfo?.arch },
       { label: "settings.debug.device.identityPath", value: identity.identityPath },
       { label: "settings.debug.device.version", value: identity.version },
       { label: "settings.debug.device.installId", value: identity.installId },
@@ -3329,6 +3337,36 @@ export function SettingsPage({
     }
   }
 
+  async function handleToggleDesktopActionConfirmation() {
+    const previousSettings = generalSettings;
+    const nextSettings = {
+      ...generalSettings,
+      desktopActionConfirmationEnabled: !generalSettings.desktopActionConfirmationEnabled
+    };
+    setGeneralSettings(nextSettings);
+    setGeneralSettingsSaving(true);
+    try {
+      const savedSettings = await window.electronAPI.settings.saveGeneralSettings(nextSettings);
+      setGeneralSettings({
+        ...defaultGeneralSettings,
+        ...savedSettings
+      });
+      setReadErrorSections(["general"], "");
+      showSectionNotice(
+        "general",
+        savedSettings.desktopActionConfirmationEnabled
+          ? t("settings.general.noticeDesktopActionConfirmationEnabled")
+          : t("settings.general.noticeDesktopActionConfirmationDisabled"),
+        "success"
+      );
+    } catch (reason) {
+      setGeneralSettings(previousSettings);
+      showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+    }
+  }
+
   async function handleAddWebsiteItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -3961,34 +3999,30 @@ export function SettingsPage({
         );
       case "general": {
         const deviceInfoRows: Array<{ label: TranslationKey; value: unknown }> = [
-          { label: "settings.general.desktopDeviceId", value: desktopDeviceInfo?.deviceId },
-          { label: "settings.general.desktopHostname", value: desktopDeviceInfo?.hostname },
-          { label: "settings.general.desktopUsername", value: desktopDeviceInfo?.username },
-          { label: "settings.general.desktopPlatform", value: desktopDeviceInfo?.platform },
-          { label: "settings.general.desktopArch", value: desktopDeviceInfo?.arch }
+          { label: "settings.general.desktopDeviceId", value: desktopDeviceInfo?.deviceId }
         ];
-        const currentDeviceName = desktopDeviceInfoLoading
-          ? t("common.loading")
-          : desktopDeviceInfo?.deviceName || t("settings.general.deviceNameFallback");
         return (
           <div className="settings-appearance-panel" aria-label={t("settings.general.panelAria")}>
             <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
                 <strong>{t("settings.general.desktopInfoTitle")}</strong>
-                <span>{t("settings.general.desktopInfoDescription")}</span>
               </div>
             </div>
             <form className="settings-control-form settings-device-form" onSubmit={(event) => void handleSaveGeneralDeviceName(event)}>
-              <label className="settings-control-field">
-                <span>{t("settings.general.desktopDeviceName")}</span>
-                <Input
-                  value={generalDeviceNameDraft}
-                  onChange={(event) => setGeneralDeviceNameDraft(event.target.value)}
-                  placeholder={desktopDeviceInfo?.deviceName || t("settings.general.deviceNameFallback")}
-                  disabled={generalSettingsSaving}
-                />
-                <small>{t("settings.general.desktopDeviceNameHelp", { name: currentDeviceName })}</small>
-              </label>
+              <div className="settings-device-name-row">
+                <label className="settings-control-field">
+                  <span>{t("settings.general.desktopDeviceName")}</span>
+                  <Input
+                    value={generalDeviceNameDraft}
+                    onChange={(event) => setGeneralDeviceNameDraft(event.target.value)}
+                    placeholder={desktopDeviceInfo?.deviceName || t("settings.general.deviceNameFallback")}
+                    disabled={generalSettingsSaving}
+                  />
+                </label>
+                <Button type="primary" htmlType="submit" disabled={generalSettingsSaving} loading={generalSettingsSaving}>
+                  {generalSettingsSaving ? t("settings.general.savingDeviceName") : t("settings.general.saveDeviceName")}
+                </Button>
+              </div>
               <dl className="settings-device-info-list" aria-label={t("settings.general.desktopInfoReadonly")}>
                 {deviceInfoRows.map((row) => (
                   <div key={row.label}>
@@ -3997,11 +4031,6 @@ export function SettingsPage({
                   </div>
                 ))}
               </dl>
-              <div className="settings-control-actions">
-                <Button type="primary" htmlType="submit" disabled={generalSettingsSaving} loading={generalSettingsSaving}>
-                  {generalSettingsSaving ? t("settings.general.savingDeviceName") : t("settings.general.saveDeviceName")}
-                </Button>
-              </div>
             </form>
             <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
@@ -4013,6 +4042,18 @@ export function SettingsPage({
                 aria-label={t("settings.general.preventSleepWhileRunning")}
                 disabled={generalSettingsSaving}
                 onChange={() => void handleTogglePreventSleepWhileRunning()}
+              />
+            </div>
+            <div className="settings-appearance-row">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.general.desktopActionConfirmation")}</strong>
+                <span>{t("settings.general.desktopActionConfirmationDescription")}</span>
+              </div>
+              <Switch
+                checked={generalSettings.desktopActionConfirmationEnabled}
+                aria-label={t("settings.general.desktopActionConfirmation")}
+                disabled={generalSettingsSaving}
+                onChange={() => void handleToggleDesktopActionConfirmation()}
               />
             </div>
           </div>

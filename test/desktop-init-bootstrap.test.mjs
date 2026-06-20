@@ -74,6 +74,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const app = createApp(homePath);
   const initPath = writeDesktopInit(app, "darwin", {
     profile: {
+      general: {
+        desktopActionConfirmationEnabled: false
+      },
       appearance: {
         theme: "dark",
         locale: "en-US"
@@ -128,6 +131,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
 
   assert.equal(profile.appearance.theme, "dark");
   assert.equal(profile.appearance.locale, "en-US");
+  assert.equal(profile.general.desktopActionConfirmationEnabled, false);
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
   assert.equal(profile.assistant.quick.enabled, true);
   assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
@@ -185,6 +189,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(second.appliedResult.profile, "applied");
   assert.equal(profileAfterSecondRun.appearance.theme, "light");
   assert.equal(profileAfterSecondRun.appearance.locale, "zh-CN");
+  assert.equal(profileAfterSecondRun.general.desktopActionConfirmationEnabled, false);
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
 });
 

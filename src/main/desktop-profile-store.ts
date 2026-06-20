@@ -21,6 +21,7 @@ export type DesktopGeneralSettings = {
   deviceName: string;
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
+  desktopActionConfirmationEnabled: boolean;
 };
 
 export type DesktopProfile = {
@@ -174,7 +175,10 @@ function normalizeDesktopProfile(
         : true,
       desktopWsServerEnabled: typeof general.desktopWsServerEnabled === "boolean"
         ? general.desktopWsServerEnabled
-        : false
+        : false,
+      desktopActionConfirmationEnabled: typeof general.desktopActionConfirmationEnabled === "boolean"
+        ? general.desktopActionConfirmationEnabled
+        : true
     },
     appearance: {
       theme: normalizeTheme(appearance.theme),

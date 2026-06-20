@@ -240,7 +240,10 @@ function applyProfileDefaults(
         : current.general.deviceName,
       preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
         ? general.preventSleepWhileRunning
-        : current.general.preventSleepWhileRunning
+        : current.general.preventSleepWhileRunning,
+      desktopActionConfirmationEnabled: typeof general.desktopActionConfirmationEnabled === "boolean"
+        ? general.desktopActionConfirmationEnabled
+        : current.general.desktopActionConfirmationEnabled
     },
     appearance: {
       theme: appearance.theme === "light" || appearance.theme === "dark" || appearance.theme === "system"

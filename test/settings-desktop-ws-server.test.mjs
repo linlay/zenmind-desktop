@@ -131,15 +131,20 @@ test("desktop ws server setting persists successful open and close", async (t) =
 
   await ipcMain.invoke("settings.saveGeneralSettings", {
     preventSleepWhileRunning: false,
-    desktopWsServerEnabled: false
+    desktopWsServerEnabled: false,
+    desktopActionConfirmationEnabled: false
   });
-  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, true);
+  let general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
+  assert.equal(general.desktopWsServerEnabled, true);
+  assert.equal(general.desktopActionConfirmationEnabled, false);
 
   const closeState = await ipcMain.invoke("settings.setDesktopWsServerEnabled", false);
   assert.equal(closeState.enabled, false);
   assert.equal(closeState.running, false);
   assert.equal(stopCalls, 1);
-  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, false);
+  general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
+  assert.equal(general.desktopWsServerEnabled, false);
+  assert.equal(general.desktopActionConfirmationEnabled, false);
 });
 
 test("general settings persist desktop device name and expose device info", async (t) => {
@@ -156,12 +161,16 @@ test("general settings persist desktop device name and expose device info", asyn
 
   const saved = await ipcMain.invoke("settings.saveGeneralSettings", {
     deviceName: "  Studio Mac  ",
-    preventSleepWhileRunning: false
+    preventSleepWhileRunning: false,
+    desktopActionConfirmationEnabled: false
   });
   assert.equal(saved.deviceName, "Studio Mac");
   assert.equal(saved.preventSleepWhileRunning, false);
+  assert.equal(saved.desktopActionConfirmationEnabled, false);
   assert.equal(changedSettings.at(-1).deviceName, "Studio Mac");
-  assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.deviceName, "Studio Mac");
+  let general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
+  assert.equal(general.deviceName, "Studio Mac");
+  assert.equal(general.desktopActionConfirmationEnabled, false);
 
   const info = await ipcMain.invoke("settings.getDesktopDeviceInfo");
   assert.equal(info.configuredDeviceName, "Studio Mac");
@@ -176,6 +185,7 @@ test("general settings persist desktop device name and expose device info", asyn
     deviceName: ""
   });
   assert.equal(cleared.deviceName, "");
+  assert.equal(cleared.desktopActionConfirmationEnabled, false);
   const fallbackInfo = await ipcMain.invoke("settings.getDesktopDeviceInfo");
   assert.equal(fallbackInfo.configuredDeviceName, "");
   assert.equal(typeof fallbackInfo.deviceName, "string");

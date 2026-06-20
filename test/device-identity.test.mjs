@@ -184,7 +184,9 @@ test("device identity info exposes the storage path and normalized identity fiel
 
 test("desktop device info uses global name, system fallback, and legacy Kanban alias fallback", () => {
   assert.equal(buildDesktopDeviceName({ configuredDeviceName: "Office Mini", hostname: "host", username: "lin" }), "Office Mini");
+  assert.equal(buildDesktopDeviceName({ configuredDeviceName: "Office Mini.local", hostname: "host.local", username: "lin" }), "Office Mini.local");
   assert.equal(buildDesktopDeviceName({ hostname: "host", username: "lin", deviceId: INSTALL_ID }), "host · lin");
+  assert.equal(buildDesktopDeviceName({ hostname: "host.local", username: "lin", deviceId: INSTALL_ID }), "host · lin");
   assert.equal(buildDesktopDeviceName({ deviceId: INSTALL_ID }), INSTALL_ID.slice(0, 8));
 
   const { app, cleanup } = withTempApp("zenmind-desktop-device-info-");
@@ -200,10 +202,11 @@ test("desktop device info uses global name, system fallback, and legacy Kanban a
       platform: "darwin",
       arch: "arm64",
       identityOptions,
-      readHostname: () => "Lin-Mac",
+      readHostname: () => "Lin-Mac.local",
       readUsername: () => "lin"
     });
     assert.equal(info.configuredDeviceName, "");
+    assert.equal(info.hostname, "Lin-Mac.local");
     assert.equal(info.deviceName, "Lin-Mac · lin");
     assert.equal(info.platform, "darwin");
     assert.equal(info.arch, "arm64");

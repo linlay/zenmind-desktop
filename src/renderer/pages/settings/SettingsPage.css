@@ -410,13 +410,24 @@
   border-top: 1px solid var(--line);
 }
 
+.settings-page .settings-device-name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.settings-page .settings-device-name-row .ant-btn {
+  min-width: 74px;
+}
+
 .settings-page .settings-device-form + .settings-appearance-row {
   border-top: 1px solid var(--line);
 }
 
 .settings-page .settings-device-info-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin: 0;
 }
@@ -1308,10 +1319,12 @@
   .settings-page .usage-summary-item:nth-child(n + 3) {
     border-top: 1px solid var(--line);
   }
-
-  .settings-page .usage-main-grid,
   .settings-page .usage-billing-panels,
   .settings-page .usage-limit-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-page .settings-device-name-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1659,19 +1672,6 @@
   padding: 24px 0 4px;
 }
 
-.settings-page .usage-main-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-  gap: 12px;
-  align-items: start;
-}
-
-.settings-page .usage-side-stack {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 12px;
-}
 
 .settings-page .usage-billing-card,
 .settings-page .usage-detail-card,

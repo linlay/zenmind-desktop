@@ -1844,6 +1844,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /interface DesktopDeviceInfo/);
   assert.match(contracts, /deviceName:\s*string/);
   assert.match(contracts, /configuredDeviceName:\s*string/);
+  assert.match(contracts, /interface DesktopGeneralSettings[\s\S]*?desktopActionConfirmationEnabled:\s*boolean;/);
+  assert.match(contracts, /interface DesktopGeneralSettingsInput[\s\S]*?desktopActionConfirmationEnabled\?:\s*boolean;/);
   assert.match(contracts, /type DesktopUsageProfileResult/);
   assert.match(contracts, /currentKey:\s*DesktopUsageProfileAPIKey/);
   assert.match(contracts, /getUsageProfile: \(\) => Promise<DesktopUsageProfileResult>/);
@@ -1872,6 +1874,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopDeviceInfo", async \(\) => getDesktopDeviceInfo\(app\)\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopWsServerState"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setDesktopWsServerEnabled"/);
+  assert.match(settingsHandlers, /desktopActionConfirmationEnabled:\s*current\.general\.desktopActionConfirmationEnabled/);
+  assert.match(settingsHandlers, /desktopActionConfirmationEnabled:\s*typeof input\?\.desktopActionConfirmationEnabled === "boolean"/);
   assert.match(settingsPage, /settings\.about\.buildTime/);
   assert.match(settingsPage, /settings-about-build-time/);
   assert.match(settingsPage, /settings\.about\.deviceId/);
@@ -1887,6 +1891,9 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
   assert.match(mainIpcRegister, /registerSettingsIpcHandlers\(/);
   assert.match(mainProcess, /general\.desktopWsServerEnabled/);
+  assert.match(settingsPage, /desktopActionConfirmationEnabled:\s*true/);
+  assert.match(settingsPage, /handleToggleDesktopActionConfirmation/);
+  assert.match(settingsPage, /settings\.general\.desktopActionConfirmation/);
   assert.match(assistantRuntime, /startDesktopWsServerForSettings/);
   assert.doesNotMatch(mainProcess, /void startDesktopWsServer\(\{\s*app,/);
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
@@ -2766,8 +2773,11 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);
+  assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)\.general\.desktopActionConfirmationEnabled/);
   assert.match(bridge, /PageControlGrantStore/);
   assert.match(bridge, /t\("desktopAction\.pageControlGrant"\)/);
+  const directCdpHandler = bridge.match(/export async function handleDesktopCdpRequest[\s\S]*?function isLocalhostRequest/)?.[0] ?? "";
+  assert.doesNotMatch(directCdpHandler, /confirmDesktopActionIfNeeded|confirmMutatingAction|desktopActionConfirmationEnabled/);
   assert.doesNotMatch(bridge, /小宅助理/);
   assert.match(assistantRuntime, /startDesktopActionBridge\(\{/);
   assert.match(assistantHandlers, /desktopActions\.respond/);

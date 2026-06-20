@@ -26,6 +26,10 @@ function shortDeviceId(deviceId: string) {
   return text ? text.slice(0, 8) : "";
 }
 
+function normalizeFallbackHostname(value: unknown) {
+  return readText(value).replace(/\.local$/iu, "");
+}
+
 function readHostname(read: () => string = os.hostname) {
   try {
     return readText(read());
@@ -53,7 +57,7 @@ export function buildDesktopDeviceName(input: {
     return configuredDeviceName;
   }
 
-  const systemName = [readText(input.hostname), readText(input.username)].filter(Boolean).join(" · ");
+  const systemName = [normalizeFallbackHostname(input.hostname), readText(input.username)].filter(Boolean).join(" · ");
   return systemName ||
     shortDeviceId(readText(input.deviceId)) ||
     t("settings.general.deviceNameFallback");

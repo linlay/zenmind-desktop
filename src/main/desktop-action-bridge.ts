@@ -62,6 +62,8 @@ import {
   readTunnelHubSettings,
   validateTunnelHubSettingsInput
 } from "./tunnel-hub-settings";
+import { readDesktopProfileFromRoot } from "./desktop-profile-store";
+import { getDesktopConfigRoot } from "./user-paths";
 import {
   applyTunnelHubSettings,
   getTunnelHubRuntimeStatus,
@@ -757,6 +759,9 @@ async function confirmDesktopActionIfNeeded(
   request: DesktopActionCallRequest,
   args: Record<string, unknown>
 ): Promise<DesktopActionCallResponse | null> {
+  if (!readDesktopProfileFromRoot(getDesktopConfigRoot(options.app)).general.desktopActionConfirmationEnabled) {
+    return null;
+  }
   const action = request.action;
   const permissionMode = readRequestPermissionMode(request, args);
   if (permissionMode === "full_access") {
