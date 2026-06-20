@@ -302,6 +302,7 @@ export interface SsoIpcHandlerContextDependencies {
   failDesktopSsoFlow: (...args: any[]) => unknown;
   cancelDesktopSsoLogin: (...args: any[]) => unknown;
   issueAgentAccessToken: (...args: any[]) => unknown;
+  refreshTaskBoardConnection?: (...args: any[]) => unknown;
 }
 
 export function createSsoIpcHandlerOptions(
@@ -317,7 +318,8 @@ export function createSsoIpcHandlerOptions(
     logoutDesktopSso: dependencies.logoutDesktopSso,
     failDesktopSsoFlow: dependencies.failDesktopSsoFlow,
     cancelDesktopSsoLogin: dependencies.cancelDesktopSsoLogin,
-    issueAgentAccessToken: dependencies.issueAgentAccessToken
+    issueAgentAccessToken: dependencies.issueAgentAccessToken,
+    refreshTaskBoardConnection: dependencies.refreshTaskBoardConnection
   };
 }
 

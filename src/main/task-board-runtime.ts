@@ -29,6 +29,7 @@ import { APP_BRAND } from "../shared/brand";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { getDesktopDeviceId } from "./device-identity";
 import { getDesktopSsoStatus } from "./oidc-sso";
+import { readDesktopSsoSiteAccessToken, readDesktopSsoSiteTokenUser } from "./sso-site-token";
 import { buildTaskBoardAutomationPayload, resolveTaskBoardRunStateFromAssistantEvent, resolveTaskBoardStatusFromAssistantEvent } from "./task-board-sync";
 import {
   applyDesktopKanbanCloudSnapshot,
@@ -268,12 +269,13 @@ export function readTaskBoardWsConfig(app: App): KanbanDesktopWsConfig | null {
   const serverUrl = readText(process.env.ZENMIND_KANBAN_SERVER_URL) || readText(config.serverUrl);
   const remoteControlEnabled = process.env.ZENMIND_KANBAN_REMOTE_CONTROL_ENABLED === "true" ||
     config.remoteControlEnabled;
-  if (!settings.enabled || !remoteControlEnabled || !serverUrl) {
+  const token = readText(process.env.ZENMIND_KANBAN_TOKEN) || readDesktopSsoSiteAccessToken(app);
+  if (!settings.enabled || !remoteControlEnabled || !serverUrl || !token) {
     return null;
   }
   return {
     serverUrl,
-    token: readText(process.env.ZENMIND_KANBAN_TOKEN) || readText(config.token),
+    token,
     selectedProjectId: readText(process.env.ZENMIND_KANBAN_PROJECT_ID) ||
       readText(config.selectedProjectId) ||
       DEFAULT_SELECTED_PROJECT_ID
@@ -329,9 +331,11 @@ export function writeTaskBoardSettingsIfAbsent(app: App, input: TaskBoardSetting
 
 function getTaskBoardDeviceInfo(app: App) {
   const deviceInfo = getDesktopDeviceInfo(app);
+  const config = readTaskBoardCloudConfig(app);
+  const deviceName = readText(deviceInfo.configuredDeviceName) || readText(config.deviceAlias) || deviceInfo.deviceName;
   return {
-    deviceName: deviceInfo.deviceName,
-    deviceAlias: deviceInfo.deviceName,
+    deviceName,
+    deviceAlias: deviceName,
     hostname: deviceInfo.hostname || undefined,
     username: deviceInfo.username || undefined
   };
@@ -985,6 +989,15 @@ export class TaskBoardRuntime {
         id: user.sub.trim(),
         name: user.name?.trim() || user.email?.trim() || user.sub.trim(),
         email: user.email?.trim() || "",
+        source: "sso"
+      };
+    }
+    const siteTokenUser = readDesktopSsoSiteTokenUser(this.options.app);
+    if (siteTokenUser?.sub) {
+      return {
+        id: siteTokenUser.sub,
+        name: siteTokenUser.name || siteTokenUser.email || siteTokenUser.sub,
+        email: siteTokenUser.email,
         source: "sso"
       };
     }

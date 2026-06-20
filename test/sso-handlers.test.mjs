@@ -56,7 +56,8 @@ function createHarness(startResult, options = {}) {
     openEmbeddedLoginDialog: [],
     openSystemBrowserUrl: [],
     siteTokenBridgeTickets: [],
-    broadcasts: []
+    broadcasts: [],
+    taskBoardRefreshes: 0
   };
   registerSsoIpcHandlers({
     handle(name, handler) {
@@ -104,7 +105,8 @@ function createHarness(startResult, options = {}) {
     logoutDesktopSso: async () => ({ ok: true, status: createStatus(false) }),
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
-    issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" })
+    issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
+    refreshTaskBoardConnection: () => { calls.taskBoardRefreshes += 1; }
   });
   return { handlers, calls };
 }
@@ -197,6 +199,7 @@ test("desktop sso site token bridge ticket is exchanged by the controller", asyn
 
   assert.equal(result.ok, true);
   assert.deepEqual(calls.siteTokenBridgeTickets, ["site-ticket-1"]);
+  assert.equal(calls.taskBoardRefreshes, 1);
 });
 
 test("desktop sso web session exchange uses configured provider", async (t) => {

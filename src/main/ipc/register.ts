@@ -280,7 +280,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     logoutDesktopSso,
     failDesktopSsoFlow,
     cancelDesktopSsoLogin,
-    issueAgentAccessToken
+    issueAgentAccessToken,
+    refreshTaskBoardConnection: () => state.taskBoardRuntime?.refreshDeviceInfo()
   }));
   registerTunnelHubIpcHandlers(ipcMain);
   registerTaskBoardIpcHandlers(ipcMain, createTaskBoardIpcHandlerOptions(context, {

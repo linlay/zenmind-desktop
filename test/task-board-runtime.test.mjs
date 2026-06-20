@@ -8,6 +8,7 @@ process.env.ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS = "20";
 
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const { TaskBoardRuntime, readTaskBoardSettings, readTaskBoardWsConfig } = await import("../dist-electron/main/task-board-runtime.js");
+const { readDesktopSsoSiteTokenFile } = await import("../dist-electron/main/sso-site-token.js");
 
 function createTempApp(t) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-task-board-runtime-"));
@@ -39,7 +40,30 @@ function writeDesktopConfig(app, fileName, value) {
   return configPath;
 }
 
-test("task board websocket config requires remote control but not token", (t) => {
+function encodeJwtPart(value) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function createSiteJwt(payload = {}) {
+  return `${encodeJwtPart({ alg: "RS256", typ: "JWT" })}.${encodeJwtPart({
+    sub: "user-1",
+    name: "Lin Lay",
+    email: "lin@example.test",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    ...payload
+  })}.signature`;
+}
+
+function writeSsoSiteToken(app, payload = {}, options = {}) {
+  const token = options.token || createSiteJwt(payload);
+  const fieldName = options.fieldName || "accessToken";
+  const tokenPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "secrets", "sso-site-token.json");
+  fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+  fs.writeFileSync(tokenPath, `${JSON.stringify({ [fieldName]: token }, null, 2)}\n`, "utf8");
+  return token;
+}
+
+test("task board websocket config requires remote control and sso site token", (t) => {
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
@@ -50,15 +74,44 @@ test("task board websocket config requires remote control but not token", (t) =>
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
-    token: "",
     selectedProjectId: "project-a",
     remoteControlEnabled: true
   });
+  assert.equal(readTaskBoardWsConfig(app), null);
+
+  const token = writeSsoSiteToken(app);
   assert.deepEqual(readTaskBoardWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
-    token: "",
+    token,
     selectedProjectId: "project-a"
   });
+
+  process.env.ZENMIND_KANBAN_TOKEN = "env-token";
+  t.after(() => {
+    delete process.env.ZENMIND_KANBAN_TOKEN;
+  });
+  assert.deepEqual(readTaskBoardWsConfig(app), {
+    serverUrl: "http://127.0.0.1:8080",
+    token: "env-token",
+    selectedProjectId: "project-a"
+  });
+});
+
+test("desktop sso site token helper reads claims and rejects bad tokens", (t) => {
+  const app = createTempApp(t);
+
+  const token = writeSsoSiteToken(app, { sub: "user-2", name: "User Two", email: "user2@example.test" }, { fieldName: "access_token" });
+  const record = readDesktopSsoSiteTokenFile(app);
+  assert.equal(record.token, token);
+  assert.equal(record.user.sub, "user-2");
+  assert.equal(record.user.name, "User Two");
+  assert.equal(record.user.email, "user2@example.test");
+
+  writeSsoSiteToken(app, {}, { token: "not-a-jwt" });
+  assert.equal(readDesktopSsoSiteTokenFile(app), null);
+
+  writeSsoSiteToken(app, { exp: Math.floor(Date.now() / 1000) - 60 });
+  assert.equal(readDesktopSsoSiteTokenFile(app), null);
 });
 
 test("task board server URL preserves explicit disabled setting", (t) => {
@@ -203,6 +256,7 @@ test("task board runtime stores remote startRun issue locally before executing",
     onChanged: () => {}
   });
 
+  writeSsoSiteToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
@@ -218,7 +272,7 @@ test("task board runtime stores remote startRun issue locally before executing",
   const hello = socket.sent[0];
   assert.equal(hello.payload.deviceName, "测试桌面");
   assert.equal(hello.payload.deviceAlias, "测试桌面");
-  assert.equal(hello.payload.currentUser.name, "测试桌面");
+  assert.equal(hello.payload.currentUser.name, "Lin Lay");
   assert.ok(hello.payload.hostname || hello.payload.username);
   socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
@@ -335,6 +389,7 @@ test("task board runtime stores cloud dispatch issue without auto-starting", asy
     onChanged: () => {}
   });
 
+  writeSsoSiteToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
@@ -463,6 +518,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
     onChanged: () => {}
   });
 
+  writeSsoSiteToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
@@ -499,7 +555,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   const secondHello = secondSocket.sent[0];
   assert.equal(secondHello.payload.deviceName, "牛家林");
   assert.equal(secondHello.payload.deviceAlias, "牛家林");
-  assert.equal(secondHello.payload.currentUser.name, "牛家林");
+  assert.equal(secondHello.payload.currentUser.name, "Lin Lay");
 
   writeDesktopConfig(app, "profile.json", {
     schemaVersion: 1,
@@ -519,7 +575,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   const thirdHello = thirdSocket.sent[0];
   assert.equal(thirdHello.payload.deviceName, "全局桌面");
   assert.equal(thirdHello.payload.deviceAlias, "全局桌面");
-  assert.equal(thirdHello.payload.currentUser.name, "全局桌面");
+  assert.equal(thirdHello.payload.currentUser.name, "Lin Lay");
   runtime.stop();
 });
 
@@ -571,6 +627,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
     onChanged: () => {}
   });
 
+  writeSsoSiteToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
@@ -703,6 +760,7 @@ test("task board runtime falls back to local agents for remote listAgents", asyn
     onChanged: () => {}
   });
 
+  writeSsoSiteToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
@@ -794,6 +852,7 @@ test("task board runtime lists installed agents when platform listAgents times o
     onDebug: (message) => debugMessages.push(message)
   });
 
+  writeSsoSiteToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
