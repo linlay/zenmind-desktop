@@ -74,6 +74,21 @@ function readSharedContractsSource() {
   ].join("\n");
 }
 
+function readMainProcessRuntimeSource() {
+  return [
+    readSourceFile("src", "main", "main-process-runtime.ts"),
+    readSourceFile("src", "main", "app", "runtime.ts"),
+    readSourceFile("src", "main", "app", "app-events.ts"),
+    readSourceFile("src", "main", "app", "startup-environment.ts"),
+    readSourceFile("src", "main", "app", "system-identity.ts"),
+    readSourceFile("src", "main", "app-shell", "runtime.ts"),
+    readSourceFile("src", "main", "services", "runtime.ts"),
+    readSourceFile("src", "main", "settings", "runtime.ts"),
+    readSourceFile("src", "main", "webs", "surface-runtime.ts"),
+    readSourceFile("src", "main", "logs", "runtime.ts")
+  ].join("\n");
+}
+
 function collectTextFiles(root, files = []) {
   for (const child of fs.readdirSync(root, { withFileTypes: true })) {
     const childPath = path.join(root, child.name);
@@ -170,7 +185,7 @@ test("brand i18n owns built-in desktop pet appearance copy", () => {
 test("desktop renderer API no longer exposes native agent-platform request bridge", () => {
   const preloadSource = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
-  const mainProcess = readSourceFile("src", "main", "main-process-runtime.ts");
+  const mainProcess = readMainProcessRuntimeSource();
 
   assert.match(preloadSource, /agentAuth:\s*\{[\s\S]*?issueAccessToken/);
   assert.doesNotMatch(preloadSource, /agentPlatform\.request/);
@@ -1689,7 +1704,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
     "utf8"
   );
   const globalStyles = readRendererStyles();
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
   const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
   const appMetadata = fs.readFileSync(path.join(projectRoot, "src", "main", "app-metadata.ts"), "utf8");
@@ -1774,8 +1789,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setDesktopWsServerEnabled"/);
   assert.match(settingsPage, /settings\.about\.buildTime/);
   assert.match(settingsPage, /settings-about-build-time/);
-  assert.match(mainProcess, /const desktopAppInfo = resolveDesktopAppInfo\(app\);/);
-  assert.match(mainProcess, /configureNativeAboutPanel\(mainProcessContext\.platform, app, desktopAppInfo\);/);
+  assert.match(mainProcess, /const desktopAppInfo = systemIdentityRuntime\.desktopAppInfo;/);
+  assert.match(mainProcess, /configureNativeAboutPanel\(options\.platform, options\.app, desktopAppInfo\);/);
   assert.match(mainIpcRegister, /getAppInfo:\s*\(\) => options\.desktopAppInfo/);
   assert.match(appMetadata, /resolveDesktopBuildTime/);
   assert.match(appMetadata, /if \(platform === "darwin"\)[\s\S]*?app\.setAboutPanelOptions\(\{[\s\S]*?applicationName: appInfo\.productName[\s\S]*?applicationVersion: appInfo\.version[\s\S]*?version: appInfo\.buildTime/);
@@ -2046,7 +2061,7 @@ test("task board scheduled todo cards show execution countdown instead of sort n
 
 test("task board route exposes native desktop api and page styles", () => {
   const contracts = readSharedContractsSource();
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
   const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
   const taskBoardHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "task-board-handlers.ts"), "utf8");
@@ -2332,7 +2347,7 @@ test("task board status order places completed after in progress", () => {
 test("website agent association is exposed across webs desktop api layers", () => {
   const contracts = readSharedContractsSource();
   const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "websites", "actions.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
   const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
@@ -2365,7 +2380,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const contracts = readSharedContractsSource();
   const webContracts = readSourceFile("src", "shared", "contracts", "webs.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const startupPipeline = readSourceFile("src", "main", "lifecycle", "startup.ts");
   const shutdownRunner = readSourceFile("src", "main", "lifecycle", "shutdown.ts");
   const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
@@ -2425,7 +2440,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const installDemoIndex = mainProcess.indexOf("installBundledWebappTemplates(app)", initializeUserDataIndex);
   const applyDesktopInitIndex = mainProcess.indexOf("applyDesktopInitBootstrap(app", initializeUserDataIndex);
   const initializeMainI18nIndex = mainProcess.indexOf("initializeMainI18n(app", initializeUserDataIndex);
-  const prepareStartupRuntimeIndex = mainProcess.indexOf("await prepareStartupRuntimeEnvironment()");
+  const prepareStartupRuntimeIndex = mainProcess.indexOf("await startupEnvironmentRuntime.prepareStartupRuntimeEnvironment()");
   const initializeUserDataCallIndex = mainProcess.indexOf("initializeUserDataRootsAndSettings();", prepareStartupRuntimeIndex);
   const createWindowCallIndex = mainProcess.indexOf("createWindow();", initializeUserDataCallIndex);
   assert.notEqual(initializeUserDataIndex, -1);
@@ -2444,7 +2459,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.equal(initializeUserDataCallIndex < createWindowCallIndex, true);
   assert.doesNotMatch(initializeUserDataBlock, /importBundledEnvZipToRuntime/);
   assert.doesNotMatch(initializeUserDataBlock, /applyDesktopInitSsoDefaults/);
-  assert.match(mainProcess, /function getDefaultEnvImportRequiredMessage\(\) \{\s*return t\("startup\.envImport\.requiredTitle"\);/);
+  assert.match(mainProcess, /function getDefaultEnvImportRequiredMessage\(\) \{\s*return options\.t\("startup\.envImport\.requiredTitle"\);/);
   assert.match(mainProcess, /let startupEnvImportFailureMessage: string \| null = null;/);
   assert.match(startupPipeline, /if \(startupEnvImportFailureMessage !== null\)/);
   assert.doesNotMatch(startupPipeline, /if \(startupEnvImportFailureMessage\)/);
@@ -2457,7 +2472,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
 
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {
   const contracts = readSharedContractsSource();
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
   const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
   const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
@@ -2621,7 +2636,7 @@ test("bootstrap success opens the first available navigation agent", () => {
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
   const actionCatalog = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
   const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
@@ -3128,7 +3143,7 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
     "utf8"
   );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const shellHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "shell-handlers.ts"), "utf8");
   const contracts = readSharedContractsSource();
 
@@ -3181,12 +3196,12 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
 });
 
 test("mac fullscreen forces the main window to an opaque background", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const appState = readSourceFile("src", "main", "app-state.ts");
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
 
   assert.match(appState, /mainWindowSidebarTranslucencyEnabled:\s*initialState\.mainWindowSidebarTranslucencyEnabled \?\? true/);
-  assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => appState\.mainWindowSidebarTranslucencyEnabled/);
+  assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => options\.state\.mainWindowSidebarTranslucencyEnabled/);
   assert.match(windowManager, /vibrancy:\s*"under-window"\s+as const/);
   assert.match(windowManager, /visualEffectState:\s*"active"\s+as const/);
   assert.match(windowManager, /applyAppearance\(targetWindow: TWindow \| null\)/);
@@ -3200,33 +3215,34 @@ test("mac fullscreen forces the main window to an opaque background", () => {
 });
 
 test("main process keeps app identity visible in platform program bars", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
 
-  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/shared\/brand"/);
+  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
   assert.doesNotMatch(mainProcess, /ZENMIND_APP_ID|ZENMIND_PRODUCT_NAME/);
-  assert.match(mainProcess, /app\.setName\(PRODUCT_NAME\);/);
-  assert.match(mainProcess, /applyPlatformAppInit\((?:process|mainProcessContext)\.platform, app, APP_ID\);/);
+  assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
+  assert.match(mainProcess, /options\.app\.setName\(options\.productName\);/);
+  assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, options\.appId\);/);
   assert.match(
     platformAdapter,
     /if \(platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(appId\);[\s\S]*?\}/
   );
-  assert.match(mainProcess, /function ensureDarwinDockIdentity\(\)/);
+  assert.match(mainProcess, /function ensureDockIdentity\(\)/);
   assert.match(
     mainProcess,
-    /if \((?:process|mainProcessContext)\.platform !== "darwin"\)\s*\{[\s\S]*?return;[\s\S]*?\}/
+    /if \(options\.platform === "win32"\)\s*\{[\s\S]*?return;[\s\S]*?\}[\s\S]*?if \(options\.platform !== "darwin"\)\s*\{[\s\S]*?return;[\s\S]*?\}/
   );
   assert.match(mainProcess, /function getDarwinDockIconCandidatePaths\(\)/);
   assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.brandIcon/);
   assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.macDockIcon/);
-  assert.match(mainProcess, /const bundledMacDockIconPath = path\.join\([\s\S]*?process\.resourcesPath,[\s\S]*?APP_ICON_ASSET_FILENAMES\.macDockIcon[\s\S]*?\);/);
+  assert.match(mainProcess, /const bundledMacDockIconPath = path\.join\([\s\S]*?options\.resourcesPath,[\s\S]*?APP_ICON_ASSET_FILENAMES\.macDockIcon[\s\S]*?\);/);
   assert.match(mainProcess, /return \[[\s\S]*?bundledMacDockIconPath,[\s\S]*?buildAppIconPath,[\s\S]*?generatedBrandIconPath,[\s\S]*?rendererBrandIconPath[\s\S]*?\];/);
-  assert.match(mainProcess, /nativeImage\.createFromPath\(iconPath\)/);
+  assert.match(mainProcess, /options\.nativeImage\.createFromPath\(iconPath\)/);
   assert.match(mainProcess, /dock\.setIcon\(icon\);/);
-  assert.match(mainProcess, /app\.setActivationPolicy\("regular"\);/);
+  assert.match(mainProcess, /options\.app\.setActivationPolicy\("regular"\);/);
   assert.match(mainProcess, /dock\.show\(\)/);
   assert.match(mainProcess, /then\(\(\) => \{[\s\S]*?applyDarwinDockIcon\(dock\);[\s\S]*?\}\)/);
-  assert.match(mainProcess, /ensureDockIdentity:\s*ensureDarwinDockIdentity/);
+  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => systemIdentityRuntime\.ensureDockIdentity\(\)/);
   assert.match(mainProcess, /showMainWindow\(\);/);
   assert.match(readSourceFile("src", "main", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
 });
@@ -3271,7 +3287,7 @@ test("external webview browser chrome omits bookmarks and DevTools button entry"
   );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts", "desktop-api.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
 
   assert.doesNotMatch(externalWebviewPage, /external-webview-bookmarks-bar/);
   assert.doesNotMatch(externalWebviewPage, /external-webview-bookmark-toggle/);
@@ -3289,7 +3305,7 @@ test("external webview browser chrome omits bookmarks and DevTools button entry"
 test("web copilot dock yields to native dialogs while quick assistant keeps outside-dismiss handling", () => {
   const appShell = readAppShellSource();
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const nativeDialogs = fs.readFileSync(
     path.join(projectRoot, "src", "main", "app-shell", "native-dialogs.ts"),
     "utf8"
@@ -3310,10 +3326,10 @@ test("web copilot dock yields to native dialogs while quick assistant keeps outs
 
   assert.match(nativeDialogs, /app\.nativeDialogVisibility/);
   assert.match(nativeDialogs, /platform === "darwin"/);
-  assert.match(mainProcess, /hideQuickAssistantForNativeDialog/);
-  assert.match(mainProcess, /restoreQuickAssistantAfterNativeDialog/);
-  assert.match(mainProcess, /quickCopilotWindowController\.hideAfterOutsideFocus\(\)/);
-  assert.match(mainProcess, /app\.on\("activate"[\s\S]{0,120}nativeDialogController\.isOpen\(\)[\s\S]{0,80}return;/);
+  assert.match(mainProcess, /hideQuickCopilot:\s*\(\) => options\.quickCopilotWindowController\.hideForNativeDialog\(\)/);
+  assert.match(mainProcess, /restoreQuickCopilot:\s*\(\) => options\.quickCopilotWindowController\.restoreAfterNativeDialog\(\)/);
+  assert.match(mainProcess, /options\.quickCopilotWindowController\.hideAfterOutsideFocus\(\)/);
+  assert.match(mainProcess, /options\.app\.on\("activate"[\s\S]{0,160}options\.isNativeDialogOpen\(\)[\s\S]{0,80}return;/);
   assert.match(quickCopilotWindowController, /dismissWindow/);
   assert.match(quickCopilotDismissLayer, /QUICK_COPILOT_DISMISS_URL/);
   assert.match(mainProcess, /showQuickAssistantDismissWindow/);
@@ -3344,7 +3360,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
     "serviceWebviewBridgeReservedCapabilities.ts"
   );
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
-  const mainProcess = readSourceFile("src", "main", "main-process-runtime.ts");
+  const mainProcess = readMainProcessRuntimeSource();
   const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
   const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
@@ -3526,7 +3542,7 @@ test("assistant chat export writes directly to the download location", () => {
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
   const quickRouting = fs.readFileSync(
     path.join(projectRoot, "src", "main", "assistant", "quick", "routing.ts"),
@@ -3539,11 +3555,11 @@ test("assistant entrypoints restore core services before opening embedded webcli
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
-  assert.match(mainProcess, /await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/);
+  assert.match(mainProcess, /await servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,120}servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
   assert.match(
     mainProcess,
-    /async function showAssistantTargetWindow[\s\S]*?showMainWindow\(targetPath\);[\s\S]*?await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/
+    /async function showAssistantTargetWindow[\s\S]*?showMainWindow\(targetPath\);[\s\S]*?await servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
   );
   assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
@@ -3568,7 +3584,7 @@ test("assistant entrypoints restore core services before opening embedded webcli
 });
 
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
-  const mainProcess = readSourceFile("src", "main", "main-process-runtime.ts");
+  const mainProcess = readMainProcessRuntimeSource();
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
   const helper = trayController.match(/export function getAppTrayIconCandidatePaths[\s\S]*?\n\}\n\nexport class/u)?.[0] ?? "";
   const packagedBranch = helper.match(/^  if \(options\.isPackaged\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
@@ -3577,7 +3593,7 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
   const windowsDevBranch = helper.match(/^  if \(options\.platform === "win32"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const createIconMethod = trayController.match(/private createIcon\(\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
 
-  assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*app\.isPackaged/u);
+  assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
   assert.match(trayController, /function platformFallbackIconPath/);
   assert.match(trayController, /APP_ICON_ASSET_DIRECTORIES\.brandAssets/);
@@ -3664,7 +3680,7 @@ test("control center renderer text is routed through i18n", () => {
 });
 
 test("service logs open in a separate floating log viewer window", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const logsRuntime = readSourceFile("src", "main", "logs", "runtime.ts");
   const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
   const logViewerWindow = fs.readFileSync(
@@ -3861,7 +3877,7 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
     "utf8"
   );
   const globalStyles = readRendererStyles();
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const quickCopilotWindowController = fs.readFileSync(
     path.join(projectRoot, "src", "main", "assistant", "quick", "window.ts"),
     "utf8"
@@ -3995,7 +4011,7 @@ test("desktop pet click opens the branded app without assistant sidebar copy", (
 });
 
 test("desktop pet base mode stays sprite-sized while bubble and preview modes expand separately", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
@@ -4172,7 +4188,7 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
     "utf8"
   );
   const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
   const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
@@ -4263,7 +4279,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   const desktopPetVisual = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-pet-visual.ts"), "utf8");
   const cutejPetManifest = readSourceFile("brands", "cutej", "desktop-pet", "pet.json");
   const globalStyles = readRendererStyles();
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "main-process-runtime.ts"), "utf8");
+  const mainProcess = readMainProcessRuntimeSource();
   const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
   const desktopPetWindow = fs.readFileSync(
     path.join(projectRoot, "src", "main", "assistant", "pet", "window.ts"),
@@ -4473,7 +4489,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
     "utf8"
   );
   const contracts = readSharedContractsSource();
-  const mainProcess = readSourceFile("src", "main", "main-process-runtime.ts");
+  const mainProcess = readMainProcessRuntimeSource();
   const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
   const ssoController = readSourceFile("src", "main", "sso-controller.ts");
   const globalStyles = readRendererStyles();
@@ -4636,7 +4652,7 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
     "EmbeddedSurfaceHosts.tsx"
   );
   const sharedSso = readSourceFile("src", "shared", "sso.ts");
-  const mainProcess = readSourceFile("src", "main", "main-process-runtime.ts");
+  const mainProcess = readMainProcessRuntimeSource();
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
   const ssoHandlers = readSourceFile("src", "main", "ipc", "sso-handlers.ts");
   const ssoController = readSourceFile("src", "main", "sso-controller.ts");

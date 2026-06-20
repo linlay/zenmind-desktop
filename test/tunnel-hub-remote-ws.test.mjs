@@ -165,7 +165,8 @@ test("Tunnel Hub remote WS registration posts 7083 target and stores Relay respo
   assert.equal(registrations[0].url, "/api/desktop/devices/register");
   assert.equal(registrations[0].authorization, "Bearer registration-secret");
   assert.equal(registrations[0].body.deviceId, "mac-mini-office");
-  assert.equal(typeof registrations[0].body.deviceSecret, "string");
+  assert.equal(typeof registrations[0].body.deviceName, "string");
+  assert.equal("deviceSecret" in registrations[0].body, false);
   assert.equal(registrations[0].body.targetUrl, "http://127.0.0.1:7083");
   assert.notEqual(registrations[0].body.targetUrl, "http://127.0.0.1:7082");
 
@@ -175,4 +176,100 @@ test("Tunnel Hub remote WS registration posts 7083 target and stores Relay respo
   assert.equal(settings.hasAgentToken, true);
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-agent-token")), true);
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "config", "services", "tunnel-hub-agent", ".env")), false);
+});
+
+test("Tunnel Hub remote WS registration uses SSO site token before legacy registration token", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-site-token-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const registrations = [];
+  const relay = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      registrations.push({
+        authorization: req.headers.authorization,
+        body: JSON.parse(Buffer.concat(chunks).toString("utf8"))
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        deviceId: "mac-mini-office",
+        publicHost: "zm1234567890.m.zenmind.cc",
+        publicUrl: "https://zm1234567890.m.zenmind.cc",
+        webSocketUrl: "wss://zm1234567890.m.zenmind.cc/ws",
+        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
+        targetUrl: "http://127.0.0.1:7083",
+        agentToken: "returned-agent-token"
+      }));
+    });
+  });
+  const relayAddress = await listen(relay);
+  t.after(async () => {
+    configureTunnelHubRemoteWsController({
+      desktopWsServerOptions: {
+        app,
+        desktopActionOptions: {},
+        assistantBridge: {
+          listAgents: async () => [],
+          startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+        },
+        getTaskBoardRuntime: () => null,
+        logger: { log() {}, warn() {}, error() {} }
+      }
+    });
+    await stopDesktopRemoteWsServer();
+    await closeServer(relay);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
+  const saved = saveTunnelHubAgentSettings(app, {
+    enabled: true,
+    relayUrl,
+    deviceId: "mac-mini-office",
+    registrationToken: "legacy-registration-secret"
+  });
+  assert.equal(saved.ok, true);
+  const secretsRoot = path.join(desktopRoot(homePath), "secrets");
+  fs.mkdirSync(secretsRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(secretsRoot, "sso-site-token.json"),
+    JSON.stringify({ accessToken: "official-site-jwt" }),
+    "utf8"
+  );
+
+  configureTunnelHubRemoteWsController({
+    desktopWsServerOptions: {
+      app,
+      desktopActionOptions: {},
+      assistantBridge: {
+        listAgents: async () => [],
+        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      },
+      getTaskBoardRuntime: () => null,
+      logger: { log() {}, warn() {}, error() {} }
+    },
+    startRemoteWsServer: async () => ({
+      running: true,
+      host: "127.0.0.1",
+      port: 7083,
+      path: "/ws",
+      url: "ws://127.0.0.1:7083/ws",
+      webSocketUrl: "ws://127.0.0.1:7083/ws"
+    }),
+    getRemoteWsServerRuntimeState: () => ({
+      running: true,
+      host: "127.0.0.1",
+      port: 7083,
+      path: "/ws",
+      url: "ws://127.0.0.1:7083/ws"
+    }),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  const result = await ensureTunnelHubRemoteWsReady(app);
+  assert.equal(result.ok, true);
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].authorization, "Bearer official-site-jwt");
+  assert.equal(registrations[0].body.deviceId, "mac-mini-office");
 });

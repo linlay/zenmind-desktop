@@ -142,7 +142,7 @@ test("Tunnel Hub enable saves drafts but falls back to disabled when config is i
 
   const result = saveTunnelHubAgentSettings(app, {
     enabled: true,
-    relayUrl: "",
+    relayUrl: "https://relay.example.test/tunnel",
     agentToken: "agent-secret"
   });
 
@@ -151,7 +151,7 @@ test("Tunnel Hub enable saves drafts but falls back to disabled when config is i
   assert.match(result.message, /Relay URL/u);
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
   assert.equal(stored.enabled, false);
-  assert.equal(stored.relayUrl, "");
+  assert.equal(stored.relayUrl, "https://relay.example.test/tunnel");
   assert.equal(fs.readFileSync(tunnelTokenPath(app), "utf8").trim(), "agent-secret");
 });
 

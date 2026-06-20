@@ -1,3 +1,4 @@
+import os from "node:os";
 import type { App } from "electron";
 import {
   DESKTOP_REMOTE_WS_PORT,
@@ -11,10 +12,9 @@ import {
 } from "./desktop-ws-server";
 import {
   ensureTunnelHubDeviceId,
-  ensureTunnelHubDeviceSecret,
   readTunnelHubAgentTokenRotationRequest,
   readTunnelHubAgentSettings,
-  readTunnelHubRegistrationToken,
+  readTunnelHubRegistrationBearerToken,
   recordTunnelHubRegistrationResult,
   syncTunnelHubAgentSettingsToEnv
 } from "./tunnel-hub-agent-settings";
@@ -109,7 +109,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   const readRemoteWsState = controllerOptions.getRemoteWsServerRuntimeState ?? getDesktopRemoteWsServerRuntimeState;
   await startRemoteWsServer(controllerOptions.desktopWsServerOptions);
   const targetUrl = getRemoteWsTargetUrl(readRemoteWsState);
-  const registrationToken = readTunnelHubRegistrationToken(app);
+  const registrationToken = readTunnelHubRegistrationBearerToken(app);
   if (!registrationToken) {
     syncTunnelHubAgentSettingsToEnv(app);
     return {
@@ -121,7 +121,6 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   }
 
   const deviceId = ensureTunnelHubDeviceId(app);
-  const deviceSecret = ensureTunnelHubDeviceSecret(app);
   const rotateToken = readTunnelHubAgentTokenRotationRequest(app) || settings.hasAgentToken === false;
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
   const fetchImpl = controllerOptions.fetch ?? globalThis.fetch as unknown as FetchLike | undefined;
@@ -137,7 +136,7 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
     },
     body: JSON.stringify({
       deviceId,
-      deviceSecret,
+      deviceName: os.hostname() || deviceId,
       targetUrl,
       rotateToken
     })

@@ -13,7 +13,8 @@ import { getDesktopConfigRoot, getSecretsRoot, getServiceConfigRoot } from "./us
 import { getDesktopDeviceId } from "./device-identity";
 
 export const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
-export const DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL = "";
+export const DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL = "wss://tunnel-hub.zenmind.cc/tunnel";
+const SSO_SITE_TOKEN_FILE_NAME = "sso-site-token.json";
 const DEFAULT_RECONNECT_SECONDS = 3;
 const MIN_RECONNECT_SECONDS = 1;
 const MAX_RECONNECT_SECONDS = 3600;
@@ -74,6 +75,10 @@ function getTokenPath(app: App) {
 
 function getRegistrationTokenPath(app: App) {
   return path.join(getSecretsRoot(app), "tunnel-hub-registration-token");
+}
+
+function getSsoSiteTokenPath(app: App) {
+  return path.join(getSecretsRoot(app), SSO_SITE_TOKEN_FILE_NAME);
 }
 
 function getDeviceSecretPath(app: App) {
@@ -193,6 +198,50 @@ export function readTunnelHubRegistrationToken(app: App) {
   return readSecretFile(getRegistrationTokenPath(app));
 }
 
+function readJwtExpiresAtMs(token: string) {
+  const [, payloadPart] = token.split(".");
+  if (!payloadPart) {
+    return 0;
+  }
+  try {
+    const payload = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as { exp?: unknown };
+    const exp = Number(payload.exp);
+    return Number.isFinite(exp) && exp > 0 ? exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function readSsoSiteToken(app: App) {
+  const siteTokenPath = getSsoSiteTokenPath(app);
+  if (!fs.existsSync(siteTokenPath)) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(siteTokenPath, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return "";
+    }
+    const record = parsed as Record<string, unknown>;
+    const token = typeof record.accessToken === "string"
+      ? record.accessToken.trim()
+      : typeof record.access_token === "string"
+        ? record.access_token.trim()
+        : "";
+    const expiresAtMs = readJwtExpiresAtMs(token);
+    if (!token || (expiresAtMs > 0 && expiresAtMs <= Date.now())) {
+      return "";
+    }
+    return token;
+  } catch {
+    return "";
+  }
+}
+
+export function readTunnelHubRegistrationBearerToken(app: App) {
+  return readSsoSiteToken(app) || readTunnelHubRegistrationToken(app);
+}
+
 export function ensureTunnelHubDeviceSecret(app: App) {
   const current = readSecretFile(getDeviceSecretPath(app));
   if (current) {
@@ -216,7 +265,7 @@ function previewToken(token: string) {
 export function readTunnelHubAgentSettings(app: App): TunnelHubAgentSettings {
   const stored = readStoredSettings(app);
   const token = readTunnelHubAgentToken(app);
-  const registrationToken = readTunnelHubRegistrationToken(app);
+  const registrationToken = readTunnelHubRegistrationBearerToken(app);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
   const complete = Boolean(token || registrationToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
@@ -349,6 +398,7 @@ export function saveTunnelHubAgentSettings(
     : typeof input.registrationToken === "string" && input.registrationToken.trim()
       ? input.registrationToken.trim()
       : readTunnelHubRegistrationToken(app);
+  const availableRegistrationToken = nextRegistrationToken || readSsoSiteToken(app);
   const issues: string[] = [];
   if (!isValidTunnelHubDeviceId(deviceId)) {
     issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
@@ -357,7 +407,7 @@ export function saveTunnelHubAgentSettings(
     if (!isValidRelayUrl(relayUrl)) {
       issues.push(relayUrl ? "Relay URL must use ws:// or wss://." : "Relay URL is invalid.");
     }
-    if (!nextToken && !nextRegistrationToken) {
+    if (!nextToken && !availableRegistrationToken) {
       issues.push("Registration token or agent token is required.");
     }
   }

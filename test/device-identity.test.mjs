@@ -1,0 +1,213 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const {
+  __testInternals,
+  getDesktopDeviceIdentity,
+  getDesktopDeviceIdentityPath
+} = require("../dist-electron/main/device-identity.js");
+
+const INSTALL_ID = "11111111-2222-4333-8444-555555555555";
+const INSTALL_ID_2 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const MACHINE_A = "12345678-1234-1234-1234-123456789abc";
+const MACHINE_B = "abcdefab-cdef-abcd-efab-cdefabcdefab";
+const CREATED_AT = "2026-06-20T00:00:00.000Z";
+const REBOUND_AT = "2026-06-20T00:01:00.000Z";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function fixedNow(iso) {
+  return () => new Date(iso);
+}
+
+function createTestApp(homePath) {
+  return {
+    getPath(name) {
+      if (name === "home") {
+        return homePath;
+      }
+      if (name === "appData") {
+        return path.join(homePath, "AppData", "Roaming");
+      }
+      if (name === "temp") {
+        return os.tmpdir();
+      }
+      assert.fail(`unexpected app.getPath(${name})`);
+    }
+  };
+}
+
+function withTempApp(prefix) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const app = createTestApp(path.join(tempRoot, "home"));
+  return {
+    app,
+    tempRoot,
+    cleanup: () => fs.rmSync(tempRoot, { recursive: true, force: true })
+  };
+}
+
+function machineIdentity(machineId, source = "darwinIOPlatformUUID") {
+  return { machineId, source };
+}
+
+function readStoredIdentity(app) {
+  return JSON.parse(fs.readFileSync(getDesktopDeviceIdentityPath(app), "utf8"));
+}
+
+test("device identity parses macOS and Windows machine IDs", () => {
+  assert.equal(
+    __testInternals.parseDarwinIOPlatformUUID('    "IOPlatformUUID" = "12345678-1234-1234-1234-123456789ABC"\n'),
+    MACHINE_A
+  );
+  assert.equal(
+    __testInternals.parseWindowsMachineGuid(
+      "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography\r\n    MachineGuid    REG_SZ    {ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB}\r\n"
+    ),
+    MACHINE_B
+  );
+});
+
+test("device identity reads platform machine IDs with explicit branches", () => {
+  const darwin = __testInternals.readPlatformMachineIdentity("darwin", (command, args) => {
+    assert.equal(command, "/usr/sbin/ioreg");
+    assert.deepEqual(args, ["-rd1", "-c", "IOPlatformExpertDevice"]);
+    return '    "IOPlatformUUID" = "12345678-1234-1234-1234-123456789ABC"\n';
+  });
+  assert.deepEqual(darwin, machineIdentity(MACHINE_A, "darwinIOPlatformUUID"));
+
+  const windows = __testInternals.readPlatformMachineIdentity("win32", (command, args) => {
+    assert.equal(command, "reg");
+    assert.deepEqual(args, ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"]);
+    return "    MachineGuid    REG_SZ    {ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB}\r\n";
+  });
+  assert.deepEqual(windows, machineIdentity(MACHINE_B, "windowsMachineGuid"));
+
+  const unavailable = __testInternals.readPlatformMachineIdentity("win32", () => {
+    throw new Error("registry unavailable");
+  });
+  assert.equal(unavailable.source, "unavailable");
+});
+
+test("device identity creates a v2 machine-bound identity and keeps it stable on the same machine", () => {
+  const { app, cleanup } = withTempApp("zenmind-device-identity-create-");
+  try {
+    const identity = getDesktopDeviceIdentity(app, {
+      platform: "darwin",
+      now: fixedNow(CREATED_AT),
+      randomUUID: () => INSTALL_ID,
+      readMachineIdentity: () => machineIdentity(MACHINE_A)
+    });
+
+    assert.equal(identity.version, 2);
+    assert.equal(identity.installId, INSTALL_ID);
+    assert.equal(identity.deviceId, __testInternals.deriveDeviceId("darwin", MACHINE_A, INSTALL_ID));
+    assert.equal(identity.machineHash, __testInternals.deriveMachineHash("darwin", MACHINE_A));
+    assert.equal(identity.machineSource, "darwinIOPlatformUUID");
+    assert.equal(identity.createdAt, CREATED_AT);
+    assert.equal(identity.updatedAt, CREATED_AT);
+    assert.match(identity.deviceId, UUID_PATTERN);
+    assert.deepEqual(readStoredIdentity(app), identity);
+
+    const again = getDesktopDeviceIdentity(app, {
+      platform: "darwin",
+      now: fixedNow(REBOUND_AT),
+      readMachineIdentity: () => machineIdentity(MACHINE_A)
+    });
+    assert.deepEqual(again, identity);
+  } finally {
+    cleanup();
+  }
+});
+
+test("device identity rebinds copied identity files to the current machine", () => {
+  const { app, cleanup } = withTempApp("zenmind-device-identity-rebind-");
+  try {
+    const first = getDesktopDeviceIdentity(app, {
+      platform: "darwin",
+      now: fixedNow(CREATED_AT),
+      randomUUID: () => INSTALL_ID,
+      readMachineIdentity: () => machineIdentity(MACHINE_A)
+    });
+    const rebound = getDesktopDeviceIdentity(app, {
+      platform: "darwin",
+      now: fixedNow(REBOUND_AT),
+      readMachineIdentity: () => machineIdentity(MACHINE_B)
+    });
+
+    assert.equal(rebound.installId, first.installId);
+    assert.notEqual(rebound.deviceId, first.deviceId);
+    assert.equal(rebound.deviceId, __testInternals.deriveDeviceId("darwin", MACHINE_B, INSTALL_ID));
+    assert.equal(rebound.machineHash, __testInternals.deriveMachineHash("darwin", MACHINE_B));
+    assert.equal(rebound.machineSource, "darwinIOPlatformUUID");
+    assert.equal(rebound.createdAt, CREATED_AT);
+    assert.equal(rebound.updatedAt, REBOUND_AT);
+    assert.equal(rebound.lastMachineMismatchAt, REBOUND_AT);
+    assert.deepEqual(readStoredIdentity(app), rebound);
+  } finally {
+    cleanup();
+  }
+});
+
+test("device identity replaces legacy and corrupt files with v2 identities", () => {
+  for (const [prefix, content, installId] of [
+    [
+      "zenmind-device-identity-legacy-",
+      `${JSON.stringify({ version: 1, deviceId: "99999999-9999-4999-8999-999999999999", createdAt: "2026-01-01T00:00:00.000Z" }, null, 2)}\n`,
+      INSTALL_ID
+    ],
+    ["zenmind-device-identity-corrupt-", "{not-json", INSTALL_ID_2]
+  ]) {
+    const { app, cleanup } = withTempApp(prefix);
+    try {
+      const identityPath = getDesktopDeviceIdentityPath(app);
+      fs.mkdirSync(path.dirname(identityPath), { recursive: true });
+      fs.writeFileSync(identityPath, content, "utf8");
+
+      const identity = getDesktopDeviceIdentity(app, {
+        platform: "darwin",
+        now: fixedNow(CREATED_AT),
+        randomUUID: () => installId,
+        readMachineIdentity: () => machineIdentity(MACHINE_A)
+      });
+
+      assert.equal(identity.version, 2);
+      assert.equal(identity.installId, installId);
+      assert.equal(identity.deviceId, __testInternals.deriveDeviceId("darwin", MACHINE_A, installId));
+      assert.deepEqual(readStoredIdentity(app), identity);
+    } finally {
+      cleanup();
+    }
+  }
+});
+
+test("device identity falls back when a system machine ID is unavailable", () => {
+  const { app, cleanup } = withTempApp("zenmind-device-identity-unavailable-");
+  try {
+    const identity = getDesktopDeviceIdentity(app, {
+      platform: "linux",
+      now: fixedNow(CREATED_AT),
+      randomUUID: () => INSTALL_ID,
+      readMachineIdentity: () => ({
+        machineId: __testInternals.UNAVAILABLE_MACHINE_ID,
+        source: "unavailable"
+      })
+    });
+
+    assert.equal(identity.machineSource, "unavailable");
+    assert.equal(
+      identity.deviceId,
+      __testInternals.deriveDeviceId("linux", __testInternals.UNAVAILABLE_MACHINE_ID, INSTALL_ID)
+    );
+    assert.equal(
+      identity.machineHash,
+      __testInternals.deriveMachineHash("linux", __testInternals.UNAVAILABLE_MACHINE_ID)
+    );
+  } finally {
+    cleanup();
+  }
+});
