@@ -549,8 +549,13 @@ function formatAssistantChatTime(updatedAt: string) {
 }
 
 function isAssistantRunningPreview(value: string) {
-  const normalized = value.trim();
-  return normalized === "\u601d\u8003\u4e2d" || normalized === "\u601d\u8003\u4e2d...";
+  const normalized = value.trim().toLowerCase();
+  return [
+    "\u601d\u8003\u4e2d",
+    "\u601d\u8003\u4e2d...",
+    "thinking",
+    "thinking...",
+  ].includes(normalized);
 }
 
 function toAssistantSortTimestamp(value: string | undefined) {
