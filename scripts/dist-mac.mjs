@@ -8,6 +8,16 @@ const DARWIN_BUILTIN_SIGN_ENV_KEYS = [
   "MACOS_CODESIGN_IDENTITY",
   "CSC_NAME"
 ];
+const NOTARIZE_ENV_KEYS = [
+  "APPLE_ID",
+  "APPLE_APP_SPECIFIC_PASSWORD",
+  "APPLE_TEAM_ID",
+  "APPLE_API_KEY",
+  "APPLE_API_KEY_ID",
+  "APPLE_API_ISSUER",
+  "APPLE_KEYCHAIN",
+  "APPLE_KEYCHAIN_PROFILE"
+];
 
 function normalizeMacSigningEnvironment() {
   const cscName = process.env.CSC_NAME;
@@ -57,11 +67,28 @@ function shouldSignDarwinBuiltinAssets() {
   return DARWIN_BUILTIN_SIGN_ENV_KEYS.some((envKey) => Boolean(process.env[envKey]?.trim()));
 }
 
+function shouldSkipNotarize() {
+  return parseBooleanEnv(process.env.SKIP_NOTARIZE, "SKIP_NOTARIZE") ?? false;
+}
+
+function disableNotarizationEnvironment() {
+  const cleared = NOTARIZE_ENV_KEYS.filter((key) => typeof process.env[key] === "string" && process.env[key]);
+  for (const key of cleared) {
+    delete process.env[key];
+  }
+  console.warn(
+    `[dist:mac] SKIP_NOTARIZE enabled — cleared ${cleared.length} Apple notary env var(s): ${cleared.join(", ") || "(none)"}`
+  );
+}
+
 const projectRoot = process.cwd();
 const target = { os: "darwin", arch: "arm64" };
 const brand = syncBrandArtifacts({ brandId: resolveRequiredBrandId(process.argv.slice(2), process.env, "dist:mac"), target });
 process.env.BRAND = brand.id;
 normalizeMacSigningEnvironment();
+if (shouldSkipNotarize()) {
+  disableNotarizationEnvironment();
+}
 const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 
 await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
