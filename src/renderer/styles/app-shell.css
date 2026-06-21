@@ -2,7 +2,7 @@
 
 .app-shell {
   --app-sidebar-width: 160px;
-  --app-window-drag-height: 18px;
+  --app-window-drag-height: 12px;
   --app-window-drag-left: var(--app-sidebar-width, 160px);
   --app-window-drag-right: 0px;
   position: relative;
@@ -197,8 +197,8 @@
 }
 
 .app-window-drag-region {
-  flex: 0 0 var(--app-window-drag-height, 18px);
-  height: var(--app-window-drag-height, 18px);
+  flex: 0 0 var(--app-window-drag-height, 12px);
+  height: var(--app-window-drag-height, 12px);
   min-height: 0;
   margin-left: var(--app-window-drag-left, var(--app-sidebar-width, 160px));
   margin-right: var(--app-window-drag-right, 0px);

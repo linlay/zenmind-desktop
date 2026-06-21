@@ -2108,14 +2108,20 @@ test("task board cards align issue meta, title, and hover actions with website",
   assert.doesNotMatch(taskBoardPage, /status !== "backlog" \? <span className=\{`task-board-status-dot/);
   assert.match(taskBoardPage, /function canEditTaskBoardIssueBody\(issue: TaskBoardIssue \| null \| undefined\)/);
   assert.match(taskBoardPage, /return issue\?\.syncMode !== "cloud"/);
-  assert.match(taskBoardPage, /function getIssueStageLabel\(issue: TaskBoardIssue, t: TranslateFunction\)/);
-  assert.match(taskBoardPage, /issue\.stageName\?\.trim\(\) \|\| issue\.statusName\?\.trim\(\)/);
-  assert.match(taskBoardPage, /return stageName \|\| t\(STATUS_META\[issue\.status\]\.labelKey\)/);
+  assert.match(taskBoardPage, /function getIssueStageLabel\(issue: TaskBoardIssue\)/);
+  assert.match(taskBoardPage, /return issue\.stageName\?\.trim\(\) \|\| ""/);
+  assert.doesNotMatch(taskBoardPage, /function getIssueStageLabel[\s\S]{0,180}statusName/);
+  assert.doesNotMatch(taskBoardPage, /function getIssueStageLabel[\s\S]{0,180}STATUS_META/);
   assert.match(taskBoardPage, /const displayIssueId = getTaskBoardIssueDisplayId\(issue\)/);
+  assert.match(taskBoardPage, /shortLabelKey: "taskBoard\.priority\.highShort"/);
+  assert.match(taskBoardPage, /shortLabelKey: "taskBoard\.severity\.criticalShort"/);
+  assert.match(taskBoardPage, /const shortLabel = t\(meta\.shortLabelKey\)/);
   assert.match(taskBoardPage, /<span className="task-board-card-chip task-board-card-id"[\s\S]{0,120}\{displayIssueId\}/);
   assert.match(taskBoardPage, /<IssuePriorityBadge priority=\{issue\.priority\} t=\{t\} \/>/);
   assert.match(taskBoardPage, /<IssueSeverityBadge severity=\{severity\} t=\{t\} \/>/);
-  assert.match(taskBoardPage, /<span className="task-board-card-chip task-board-card-stage"[\s\S]{0,180}\{stageLabel\}/);
+  assert.match(taskBoardPage, /className="task-board-priority-text">\{shortLabel\}<\/span>/);
+  assert.match(taskBoardPage, /className="task-board-severity-text">\{shortLabel\}<\/span>/);
+  assert.match(taskBoardPage, /\{stageLabel \? \([\s\S]{0,220}<span className="task-board-card-chip task-board-card-stage"[\s\S]{0,180}\{stageLabel\}/);
   assert.match(taskBoardPage, /<span className="task-board-title-body">\{issue\.title\}<\/span>/);
   assert.doesNotMatch(taskBoardPage, /<strong title=\{description \|\| issue\.title\}>/);
   assert.doesNotMatch(taskBoardPage, /task-board-sync-badge/);
@@ -2139,6 +2145,8 @@ test("task board cards align issue meta, title, and hover actions with website",
   assert.match(taskBoardStyles, /\.task-board-priority-badge,[\s\S]{0,80}\.task-board-severity-badge\s*\{[\s\S]{0,180}height:\s*18px;/);
   assert.match(taskBoardStyles, /\.task-board-title-text\s*\{[\s\S]{0,260}-webkit-line-clamp:\s*2;[\s\S]{0,180}font-weight:\s*400;/);
   assert.match(taskBoardStyles, /\.task-board-card-stage\s*\{[\s\S]{0,420}line-height:\s*18px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-stage\s*\{[\s\S]{0,180}background:\s*#eff6ff;[\s\S]{0,120}color:\s*#2563eb;/);
+  assert.doesNotMatch(taskBoardStyles, /\.task-board-card-stage\s*\{[\s\S]{0,220}--task-board-accent/);
   assert.match(taskBoardStyles, /\.task-board-card-description\s*\{[\s\S]{0,220}-webkit-line-clamp:\s*2;/);
   assert.match(taskBoardStyles, /\.task-board-card-status\s*\{[\s\S]{0,180}max-width:[\s\S]{0,180}height:\s*auto;/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-succeeded[\s\S]{0,160}#15803d/);
@@ -2162,8 +2170,12 @@ test("task board cards align issue meta, title, and hover actions with website",
   assert.doesNotMatch(taskBoardStyles, /\.task-board-chat-action/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card-main strong/);
   assert.match(zhCN, /"taskBoard\.severity\.critical": "严重"/);
+  assert.match(zhCN, /"taskBoard\.severity\.criticalShort": "极"/);
+  assert.match(zhCN, /"taskBoard\.priority\.highShort": "高"/);
   assert.match(zhCN, /"taskBoard\.card\.stage": "当前阶段：\{value\}"/);
   assert.match(enUS, /"taskBoard\.severity\.critical": "Critical"/);
+  assert.match(enUS, /"taskBoard\.severity\.criticalShort": "X"/);
+  assert.match(enUS, /"taskBoard\.priority\.highShort": "H"/);
   assert.match(enUS, /"taskBoard\.card\.stage": "Current stage: \{value\}"/);
 });
 
@@ -2427,6 +2439,11 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(taskBoardPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
   assert.doesNotMatch(taskBoardPage, /aria-label=\{`\$\{meta\.label\} 更多`\}/);
   assert.match(globalStyles, /\.task-board-page\s*\{/);
+  assert.match(globalStyles, /\.task-board-toolbar\s*\{[\s\S]{0,180}min-height:\s*52px;[\s\S]{0,180}padding:\s*12px 28px 7px;/);
+  assert.match(globalStyles, /\.task-board-tool\s*\{[\s\S]{0,180}min-width:\s*32px;[\s\S]{0,180}height:\s*32px;/);
+  assert.match(globalStyles, /\.task-board-search\s*\{[\s\S]{0,180}height:\s*32px;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-tool\s*\{[\s\S]{0,180}height:\s*36px;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-search\s*\{[\s\S]{0,180}height:\s*36px;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /--task-board-column-gap:\s*0px;/);
@@ -2447,9 +2464,12 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /--task-board-columns-total-width/);
   assert.doesNotMatch(globalStyles, /--task-board-column-fold-offset/);
   assert.doesNotMatch(globalStyles, /is-backlog-expanded/);
+  assert.match(globalStyles, /--task-board-card-border:\s*rgba\(15, 23, 42, 0\.1\);/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,360}min-height:\s*118px;[\s\S]{0,360}height:\s*auto;/);
+  assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,360}border:\s*1px solid var\(--task-board-card-border\);/);
+  assert.doesNotMatch(globalStyles, /\.task-board-card\.is-(?:backlog|todo|in_progress|in_review|completed):not\(\.is-awaiting-confirmation\)/);
   assert.match(globalStyles, /\.task-board-card:hover\s*\{[\s\S]{0,220}transform:\s*scale\(1\.005\);/);
   assert.match(globalStyles, /\.task-board-title-text\s*\{[\s\S]{0,260}-webkit-line-clamp:\s*2;/);
   assert.match(globalStyles, /\.task-board-title-text\s*\{[\s\S]{0,320}font-weight:\s*400;/);
@@ -2464,6 +2484,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked \.task-board-card-main\s*\{[\s\S]{0,120}padding-right:/);
   assert.match(globalStyles, /\.task-board-card\.is-awaiting-confirmation\s*\{/);
+  assert.match(globalStyles, /\.task-board-card\.is-awaiting-confirmation\s*\{[\s\S]{0,160}background:\s*var\(--task-board-card\);/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-card\.is-awaiting-confirmation\s*\{[\s\S]{0,160}background:\s*var\(--task-board-card\);/);
   assert.match(globalStyles, /\.task-board-card-status\s*\{[\s\S]{0,220}height:\s*auto;[\s\S]{0,220}overflow:\s*hidden;/);
   assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,160}background:\s*currentColor;/);
   assert.match(globalStyles, /\.task-board-automation-panel\s*\{/);
@@ -2480,8 +2502,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-automation-menu-list\.is-time-list\s*\{[\s\S]*?max-height:\s*184px;/);
   assert.doesNotMatch(globalStyles, /\.task-board-automation-time-select/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-task-board-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
-  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*(?:18|24)px;/);
-  assert.doesNotMatch(globalStyles, /\.app-shell\.is-windows-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*(?:18|24)px;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*(?:12|18|24)px;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-windows-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*(?:12|18|24)px;/);
   assert.doesNotMatch(globalStyles, /\.task-board-page::before\s*\{[\s\S]*?app-region:\s*drag;/);
   assert.doesNotMatch(globalStyles, /\.task-board-breadcrumb\s*\{[\s\S]*?-webkit-app-region:\s*drag;/);
   assert.match(globalStyles, /\.task-board-modal-actions \.task-board-secondary-button/);
@@ -3283,8 +3305,8 @@ test("market route keeps the unified native drag overlay", () => {
   assert.match(appShell, /has-market-controls/);
   assert.match(appShell, /className="app-window-drag-layer"[\s\S]*className="app-window-drag-region"/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
-  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--app-window-drag-height:\s*18px;/);
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*flex:\s*0 0 var\(--app-window-drag-height,\s*18px\);/);
+  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--app-window-drag-height:\s*12px;/);
+  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*flex:\s*0 0 var\(--app-window-drag-height,\s*12px\);/);
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
 });
 
@@ -3336,7 +3358,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.doesNotMatch(globalStyles, /\.sidebar-chrome-drag-region\s*\{/);
   assert.doesNotMatch(
     globalStyles,
-    /\.embedded-surface-page-embedded\s+\.embedded-surface-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*(?:8|18|24)px;/
+    /\.embedded-surface-page-embedded\s+\.embedded-surface-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*(?:8|12|18|24)px;/
   );
   assert.match(
     globalStyles,
@@ -3344,7 +3366,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.doesNotMatch(
     globalStyles,
-    /\.external-webview-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*(?:8|18|24)px;/
+    /\.external-webview-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*(?:8|12|18|24)px;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -3378,7 +3400,7 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
 
   assert.match(appShell, /<div className="app-window-drag-layer" aria-hidden="true">\s*<div className="app-window-drag-region" \/>/);
   assert.ok(appShellRule, "missing .app-shell rule");
-  assert.match(appShellRule, /--app-window-drag-height:\s*18px;/);
+  assert.match(appShellRule, /--app-window-drag-height:\s*12px;/);
   assert.match(appShellRule, /--app-window-drag-left:\s*var\(--app-sidebar-width,\s*160px\);/);
   assert.match(appShellRule, /--app-window-drag-right:\s*0px;/);
   assert.ok(dragLayerRule, "missing .app-window-drag-layer rule");
@@ -3389,8 +3411,8 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.match(dragLayerRule, /flex-direction:\s*column;/);
   assert.match(dragLayerRule, /pointer-events:\s*none;/);
   assert.ok(dragRegionRule, "missing .app-window-drag-region rule");
-  assert.match(dragRegionRule, /flex:\s*0 0 var\(--app-window-drag-height,\s*18px\);/);
-  assert.match(dragRegionRule, /height:\s*var\(--app-window-drag-height,\s*18px\);/);
+  assert.match(dragRegionRule, /flex:\s*0 0 var\(--app-window-drag-height,\s*12px\);/);
+  assert.match(dragRegionRule, /height:\s*var\(--app-window-drag-height,\s*12px\);/);
   assert.match(dragRegionRule, /margin-left:\s*var\(--app-window-drag-left,\s*var\(--app-sidebar-width,\s*160px\)\);/);
   assert.match(dragRegionRule, /margin-right:\s*var\(--app-window-drag-right,\s*0px\);/);
   assert.match(dragRegionRule, /app-region:\s*drag;/);

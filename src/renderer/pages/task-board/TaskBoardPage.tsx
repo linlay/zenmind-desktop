@@ -137,17 +137,17 @@ const STATUS_META: Record<TaskBoardStatus, { labelKey: TranslationKey; tone: str
   completed: { labelKey: "taskBoard.status.completed", tone: "info" }
 };
 
-const PRIORITY_META: Record<TaskBoardPriority, { labelKey: TranslationKey; tone: string; bars: number }> = {
-  high: { labelKey: "taskBoard.priority.high", tone: "high", bars: 3 },
-  medium: { labelKey: "taskBoard.priority.medium", tone: "medium", bars: 2 },
-  low: { labelKey: "taskBoard.priority.low", tone: "low", bars: 1 }
+const PRIORITY_META: Record<TaskBoardPriority, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string; bars: number }> = {
+  high: { labelKey: "taskBoard.priority.high", shortLabelKey: "taskBoard.priority.highShort", tone: "high", bars: 3 },
+  medium: { labelKey: "taskBoard.priority.medium", shortLabelKey: "taskBoard.priority.mediumShort", tone: "medium", bars: 2 },
+  low: { labelKey: "taskBoard.priority.low", shortLabelKey: "taskBoard.priority.lowShort", tone: "low", bars: 1 }
 };
 
-const SEVERITY_META: Record<TaskBoardSeverity, { labelKey: TranslationKey; tone: string }> = {
-  critical: { labelKey: "taskBoard.severity.critical", tone: "critical" },
-  high: { labelKey: "taskBoard.severity.high", tone: "high" },
-  medium: { labelKey: "taskBoard.severity.medium", tone: "medium" },
-  low: { labelKey: "taskBoard.severity.low", tone: "low" }
+const SEVERITY_META: Record<TaskBoardSeverity, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string }> = {
+  critical: { labelKey: "taskBoard.severity.critical", shortLabelKey: "taskBoard.severity.criticalShort", tone: "critical" },
+  high: { labelKey: "taskBoard.severity.high", shortLabelKey: "taskBoard.severity.highShort", tone: "high" },
+  medium: { labelKey: "taskBoard.severity.medium", shortLabelKey: "taskBoard.severity.mediumShort", tone: "medium" },
+  low: { labelKey: "taskBoard.severity.low", shortLabelKey: "taskBoard.severity.lowShort", tone: "low" }
 };
 
 const DEFAULT_TASK_BOARD_AUTOMATION_PLAN: TaskBoardAutomationPlan = "daily";
@@ -935,9 +935,8 @@ function normalizeIssueSeverity(severity: TaskBoardIssue["severity"]): TaskBoard
   return severity === "critical" || severity === "high" || severity === "low" ? severity : "medium";
 }
 
-function getIssueStageLabel(issue: TaskBoardIssue, t: TranslateFunction) {
-  const stageName = issue.stageName?.trim() || issue.statusName?.trim();
-  return stageName || t(STATUS_META[issue.status].labelKey);
+function getIssueStageLabel(issue: TaskBoardIssue) {
+  return issue.stageName?.trim() || "";
 }
 
 function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
@@ -2553,7 +2552,7 @@ function TaskBoardCardContent({
   const hasVisibleAttachment = visibleAttachments.length > 0;
   const description = display.description ? descriptionPreview(issue.description) : "";
   const severity = normalizeIssueSeverity(issue.severity);
-  const stageLabel = getIssueStageLabel(issue, t);
+  const stageLabel = getIssueStageLabel(issue);
   const cardStatus = getIssueCardStatusPresentation(issue, {
     awaitingConfirmation,
     now,
@@ -2590,9 +2589,11 @@ function TaskBoardCardContent({
       </div>
       <div className="task-board-card-row task-board-card-row-title">
         <span className="task-board-title-text" title={issue.title}>
-          <span className="task-board-card-chip task-board-card-stage" title={t("taskBoard.card.stage", { value: stageLabel })}>
-            {stageLabel}
-          </span>
+          {stageLabel ? (
+            <span className="task-board-card-chip task-board-card-stage" title={t("taskBoard.card.stage", { value: stageLabel })}>
+              {stageLabel}
+            </span>
+          ) : null}
           <span className="task-board-title-body">{issue.title}</span>
         </span>
       </div>
@@ -2744,10 +2745,11 @@ function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "f
 function IssuePriorityBadge({ priority, t }: { priority: TaskBoardPriority; t: TranslateFunction }) {
   const meta = PRIORITY_META[priority];
   const label = t(meta.labelKey);
+  const shortLabel = t(meta.shortLabelKey);
   return (
     <span className={`task-board-priority-badge is-${meta.tone}`} title={t("taskBoard.card.priority", { value: label })}>
       <ThunderboltOutlined className="task-board-priority-icon" />
-      <span className="task-board-priority-text">{label}</span>
+      <span className="task-board-priority-text">{shortLabel}</span>
     </span>
   );
 }
@@ -2755,10 +2757,11 @@ function IssuePriorityBadge({ priority, t }: { priority: TaskBoardPriority; t: T
 function IssueSeverityBadge({ severity, t }: { severity: TaskBoardSeverity; t: TranslateFunction }) {
   const meta = SEVERITY_META[severity];
   const label = t(meta.labelKey);
+  const shortLabel = t(meta.shortLabelKey);
   return (
     <span className={`task-board-severity-badge is-${meta.tone}`} title={t("taskBoard.card.severity", { value: label })}>
       <FlagOutlined className="task-board-severity-icon" />
-      <span className="task-board-severity-text">{label}</span>
+      <span className="task-board-severity-text">{shortLabel}</span>
     </span>
   );
 }

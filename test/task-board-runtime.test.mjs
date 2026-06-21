@@ -309,6 +309,10 @@ test("task board runtime stores remote startRun issue locally before executing",
             boardId: "default",
             projectId: "project-1",
             workflowId: "workflow-standard-requirement",
+            stageId: "workflow-stage-build",
+            stageName: "构建阶段",
+            statusId: "workflow-status-in-progress",
+            statusName: "进行中状态",
             title: "云端执行任务",
             description: "需要同步到桌面端",
             status: "in_progress",
@@ -336,6 +340,10 @@ test("task board runtime stores remote startRun issue locally before executing",
     const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-31");
     assert.ok(localIssue);
     assert.equal(localIssue.title, "云端执行任务");
+    assert.equal(localIssue.stageId, "workflow-stage-build");
+    assert.equal(localIssue.stageName, "构建阶段");
+    assert.equal(localIssue.statusId, "workflow-status-in-progress");
+    assert.equal(localIssue.statusName, "进行中状态");
     assert.equal(localIssue.origin, "cloud_dispatch");
     assert.equal(localIssue.syncMode, "cloud");
     assert.equal(localIssue.runId, "run-remote-1");

@@ -42,7 +42,9 @@ type TaskBoardIssueRow = {
   workflow_id: string;
   type_id: string | null;
   stage_id: string | null;
+  stage_name: string | null;
   status_id: string | null;
+  status_name: string | null;
   title: string;
   description: string;
   status: TaskBoardStatus;
@@ -281,7 +283,9 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       WORKFLOW_ID_ TEXT NOT NULL DEFAULT 'workflow-standard-requirement',
       TYPE_ID_ TEXT,
       STAGE_ID_ TEXT,
+      STAGE_NAME_ TEXT,
       STATUS_ID_ TEXT,
+      STATUS_NAME_ TEXT,
       TITLE_ TEXT NOT NULL CHECK (length(trim(TITLE_)) > 0),
       DESCRIPTION_ TEXT NOT NULL DEFAULT '',
       STATUS_ TEXT NOT NULL CHECK (STATUS_ IN ('backlog','todo','in_progress','in_review','completed')),
@@ -427,6 +431,20 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       ON issue(STATUS_, POSITION_, ID_)
       WHERE DELETED_AT_ IS NULL;
   `);
+  ensureDesktopKanbanIssueColumns(db);
+}
+
+function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
+  const columns = new Set(
+    (db.prepare("PRAGMA table_info(issue)").all() as Array<{ name: string }>)
+      .map((column) => column.name)
+  );
+  if (!columns.has("STAGE_NAME_")) {
+    db.exec("ALTER TABLE issue ADD COLUMN STAGE_NAME_ TEXT");
+  }
+  if (!columns.has("STATUS_NAME_")) {
+    db.exec("ALTER TABLE issue ADD COLUMN STATUS_NAME_ TEXT");
+  }
 }
 
 function seedDesktopKanban(db: DatabaseSync, currentUser: TaskBoardCurrentUser) {
@@ -508,7 +526,9 @@ function issueFromRow(row: TaskBoardIssueRow): TaskBoardIssue {
     workflowId: row.workflow_id,
     typeId: row.type_id ?? undefined,
     stageId: row.stage_id ?? undefined,
+    stageName: row.stage_name ?? undefined,
     statusId: row.status_id ?? undefined,
+    statusName: row.status_name ?? undefined,
     title: row.title,
     description: row.description,
     status: row.status,
@@ -729,7 +749,9 @@ function selectIssues(db: DatabaseSync, currentUser: TaskBoardCurrentUser): Task
       issue.WORKFLOW_ID_ AS workflow_id,
       issue.TYPE_ID_ AS type_id,
       issue.STAGE_ID_ AS stage_id,
+      issue.STAGE_NAME_ AS stage_name,
       issue.STATUS_ID_ AS status_id,
+      issue.STATUS_NAME_ AS status_name,
       issue.TITLE_ AS title,
       issue.DESCRIPTION_ AS description,
       issue.STATUS_ AS status,
@@ -919,12 +941,12 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: TaskBoardIssue, sync: {
 }) {
   db.prepare(`
     INSERT INTO issue (
-      ID_, REMOTE_ISSUE_ID_, BOARD_ID_, PROJECT_ID_, WORKFLOW_ID_, TYPE_ID_, STAGE_ID_, STATUS_ID_,
+      ID_, REMOTE_ISSUE_ID_, BOARD_ID_, PROJECT_ID_, WORKFLOW_ID_, TYPE_ID_, STAGE_ID_, STAGE_NAME_, STATUS_ID_, STATUS_NAME_,
       TITLE_, DESCRIPTION_, STATUS_, PRIORITY_, SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
       WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
       CHAT_ID_, RUN_ID_, RUN_STATE_, AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_,
       AUTOMATION_TIMEZONE_, ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     ON CONFLICT(ID_) DO UPDATE SET
       REMOTE_ISSUE_ID_ = excluded.REMOTE_ISSUE_ID_,
       BOARD_ID_ = excluded.BOARD_ID_,
@@ -932,7 +954,9 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: TaskBoardIssue, sync: {
       WORKFLOW_ID_ = excluded.WORKFLOW_ID_,
       TYPE_ID_ = excluded.TYPE_ID_,
       STAGE_ID_ = excluded.STAGE_ID_,
+      STAGE_NAME_ = excluded.STAGE_NAME_,
       STATUS_ID_ = excluded.STATUS_ID_,
+      STATUS_NAME_ = excluded.STATUS_NAME_,
       TITLE_ = excluded.TITLE_,
       DESCRIPTION_ = excluded.DESCRIPTION_,
       STATUS_ = excluded.STATUS_,
@@ -969,7 +993,9 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: TaskBoardIssue, sync: {
     issue.workflowId ?? WORKFLOW_ID,
     issue.typeId ?? ISSUE_TYPE_ID,
     issue.stageId ?? null,
+    issue.stageName ?? null,
     issue.statusId ?? null,
+    issue.statusName ?? null,
     issue.title.trim(),
     issue.description,
     issue.status,
