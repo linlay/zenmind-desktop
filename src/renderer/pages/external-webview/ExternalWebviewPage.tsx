@@ -43,12 +43,24 @@ import {
 type ExternalWebviewPageProps = {
   title: string;
   url: string;
-  active?: boolean;
+  active?: boolean | undefined;
   surfaceId?: string;
   surfaceLabel?: string;
   chrome?: "browser" | "app";
   partition?: string;
 };
+
+type EmbeddedWebScriptResult =
+  | { ok: true; result: unknown }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+        details?: unknown;
+      };
+    };
+type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
 
 type ExternalWebviewTabState = {
   id: string;
@@ -182,7 +194,7 @@ function getTabMonogram(title: string, url: string) {
 }
 
 function readEventString(event: Event, key: string) {
-  const candidate = (event as Record<string, unknown>)[key];
+  const candidate = (event as unknown as Record<string, unknown>)[key];
   return typeof candidate === "string" ? candidate : "";
 }
 
@@ -458,7 +470,7 @@ function ExternalWebviewPane({
       aria-hidden={!active}
     >
       {createElement("webview", {
-        ref: (node: Electron.WebviewTag | null) => {
+        ref: (node: Electron.WebviewTag | null): void => {
           webviewRef.current = node;
           onWebviewRefChange(tab.id, node);
         },
@@ -971,9 +983,9 @@ export function ExternalWebviewPage({
     isLoading: tab.isLoading
   });
 
-  function embeddedError(code: string, message: string, details?: unknown) {
+  function embeddedError(code: string, message: string, details?: unknown): EmbeddedWebScriptError {
     return {
-      ok: false,
+      ok: false as const,
       error: {
         code,
         message,
@@ -988,7 +1000,10 @@ export function ExternalWebviewPage({
       : browserStateRef.current.activeTabId;
   }
 
-  async function executeActiveWebviewScript(args: Record<string, unknown>, script: string) {
+  async function executeActiveWebviewScript(
+    args: Record<string, unknown>,
+    script: string
+  ): Promise<EmbeddedWebScriptResult> {
     if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
       return embeddedError("script_too_large", t("externalWebview.error.scriptTooLarge"));
     }
@@ -999,8 +1014,18 @@ export function ExternalWebviewPage({
       return embeddedError("tab_unavailable", t("externalWebview.error.tabUnavailable"), { tabId });
     }
 
-    const result = await targetWebview.executeJavaScript(script, true);
-    return { ok: true, result };
+    try {
+      const result = await targetWebview.executeJavaScript(script, true);
+      return { ok: true as const, result };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: {
+          code: "webview_execution_failed",
+          message: error instanceof Error ? error.message : String(error)
+        }
+      };
+    }
   }
 
   const getEmbeddedWebSurfaceState = () => {
@@ -1106,8 +1131,8 @@ export function ExternalWebviewPage({
     };
   };
 
-  function attachDescriptorMetadata(
-    payload: Record<string, unknown>
+  function attachDescriptorMetadata<T extends Record<string, unknown>>(
+    payload: T
   ) {
     const descriptor = createCurrentPageDescriptor();
     return {
@@ -1126,7 +1151,7 @@ export function ExternalWebviewPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         realtime: true,
         readAt: new Date().toISOString(),
@@ -1145,7 +1170,7 @@ export function ExternalWebviewPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         realtime: true,
         readAt: new Date().toISOString(),
@@ -1172,7 +1197,7 @@ export function ExternalWebviewPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         interacted: true,
         action,
@@ -1194,7 +1219,7 @@ export function ExternalWebviewPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         filled: true,
         outcome: response.result
@@ -1211,7 +1236,7 @@ export function ExternalWebviewPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         submitted: true,
         outcome: response.result

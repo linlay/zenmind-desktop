@@ -1704,7 +1704,7 @@ export function ControlCenterPage() {
                             pendingAction?.scope ===
                             "lifecycle" &&
                             pendingAction.serviceId ===
-                            service.id;
+                            service?.id;
                           const statusLabel = service
                             ? getServiceStatusLabel(service.status, t)
                             : t("controlCenter.status.pending");

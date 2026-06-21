@@ -59,13 +59,25 @@ type PluginPageProps = {
   hostTheme: "light" | "dark";
   pluginId?: string;
   surfaceId?: string;
-  active?: boolean;
+  active?: boolean | undefined;
   embedPath?: string;
   surfaceLabel?: string;
   skipContextRegistration?: boolean;
   loadInitialEmbeddedUrlDirectly?: boolean;
   suppressInitialLoadingCopy?: boolean;
 };
+
+type EmbeddedWebScriptResult =
+  | { ok: true; result: unknown }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+        details?: unknown;
+      };
+    };
+type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
 
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
@@ -160,9 +172,9 @@ function buildPluginWebviewFallbackContext(
   webUrl: string,
   surfaceId: string,
   surfaceLabel: string,
+  t: TranslateFunction,
   surfaceRoute?: string,
   embedPath?: string,
-  t: TranslateFunction,
 ): AssistantPageContext {
   const fallbackName = t("pluginPage.embeddedAppFallback");
   const normalizedName = normalizeWhitespace(serviceDisplayName || fallbackName);
@@ -516,9 +528,9 @@ export function PluginPage({
     () => [webviewBaseKey, webviewRetryNonce].join(":"),
     [webviewBaseKey, webviewRetryNonce],
   );
-  function embeddedError(code: string, message: string, details?: unknown) {
+  function embeddedError(code: string, message: string, details?: unknown): EmbeddedWebScriptError {
     return {
-      ok: false,
+      ok: false as const,
       error: {
         code,
         message,
@@ -558,9 +570,9 @@ export function PluginPage({
         webUrl,
         surfaceId,
         serviceDisplayName,
+        t,
         surfaceRoute,
         effectiveEmbedPath,
-        t,
       )
     );
   }
@@ -568,7 +580,7 @@ export function PluginPage({
   async function executeWebviewScript(
     args: Record<string, unknown>,
     script: string,
-  ) {
+  ): Promise<EmbeddedWebScriptResult> {
     if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
       return embeddedError(
         "script_too_large",
@@ -581,10 +593,10 @@ export function PluginPage({
     }
     try {
       const result = await targetWebview.executeJavaScript(script, true);
-      return { ok: true, result };
+      return { ok: true as const, result };
     } catch (error) {
       return {
-        ok: false,
+        ok: false as const,
         error: {
           code: "webview_execution_failed",
           message: error instanceof Error ? error.message : String(error),
@@ -609,7 +621,7 @@ export function PluginPage({
     };
   };
 
-  function attachDescriptorMetadata(payload: Record<string, unknown>) {
+  function attachDescriptorMetadata<T extends Record<string, unknown>>(payload: T) {
     const descriptor = createCurrentPageDescriptor();
     return {
       pageKey: descriptor.pageKey,
@@ -632,7 +644,7 @@ export function PluginPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         realtime: true,
         readAt: new Date().toISOString(),
@@ -656,7 +668,7 @@ export function PluginPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         realtime: true,
         readAt: new Date().toISOString(),
@@ -698,7 +710,7 @@ export function PluginPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         interacted: true,
         action,
@@ -730,7 +742,7 @@ export function PluginPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         filled: true,
         outcome: response.result,
@@ -756,7 +768,7 @@ export function PluginPage({
       return response;
     }
     return {
-      ok: true,
+      ok: true as const,
       result: attachDescriptorMetadata({
         submitted: true,
         outcome: response.result,
@@ -866,7 +878,7 @@ export function PluginPage({
         void targetWebview.executeJavaScript(
           buildClientSideRouteNavigationScript(embeddedUrl),
           true,
-        ).catch((reason) => {
+        ).catch((reason: unknown) => {
           console.warn(
             "[service-webview] failed to apply client-side embedded route",
             reason instanceof Error ? reason.message : String(reason),
@@ -1276,8 +1288,9 @@ export function PluginPage({
   ]);
 
   useEffect(() => {
+    const isSurfaceActive = active !== false;
     if (
-      active === false ||
+      !isSurfaceActive ||
       service?.status !== "running" ||
       !embeddedUrl ||
       skipContextRegistration
@@ -1294,7 +1307,7 @@ export function PluginPage({
     return registerDesktopActionProviderForScope(
       "embeddedWeb",
       async (request) => {
-        if (active === false || service?.status !== "running") {
+        if (service?.status !== "running") {
           return null;
         }
         const args = request.args ?? {};
@@ -1313,7 +1326,7 @@ export function PluginPage({
                   serviceId: pluginId,
                   label: serviceDisplayName,
                   url: embeddedUrl,
-                  active: active !== false,
+                  active: isSurfaceActive,
                   currentUrl: webviewCurrentUrl || embeddedUrl,
                   title: serviceDisplayName,
                 },
@@ -1482,7 +1495,7 @@ export function PluginPage({
             ) : null}
             {createElement("webview", {
               key: webviewRenderKey,
-              ref: (node: Electron.WebviewTag | null) => {
+              ref: (node: Electron.WebviewTag | null): void => {
                 webviewRef.current = node;
               },
               src: webviewSrcUrl,

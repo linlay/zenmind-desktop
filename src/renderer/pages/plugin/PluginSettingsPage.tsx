@@ -164,7 +164,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
       </button>
       <div className="embedded-surface-frame-shell">
         {createElement("webview", {
-          ref: (node: Electron.WebviewTag | null) => {
+          ref: (node: Electron.WebviewTag | null): void => {
             webviewRef.current = node;
           },
           src: webviewUrl,

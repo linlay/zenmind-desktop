@@ -579,24 +579,6 @@ const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
 
 const fixedNavigationTools = fixedNavigationToolRows.flat();
 
-function formatMemoryStatus(value: AssistantMemoryItem["status"], t: TranslateFunction) {
-  switch (value) {
-    case "active":
-    case "open":
-    case "archived":
-    default:
-      return value;
-  }
-}
-
-function formatMemoryPreview(summary: string, maxLength = 88) {
-  const normalized = summary.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-  return `${normalized.slice(0, maxLength)}...`;
-}
-
 function getDesktopPetAppearanceLabel(appearanceId: string, fallback: string, t: TranslateFunction) {
   switch (appearanceId) {
     case "classic":
@@ -3384,34 +3366,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       setWebsiteTransferPending("");
     }
   }
-
-async function handleToggleMemoryAutoLearn() {
-    if (!memorySettings) {
-      return;
-    }
-    setMemoryPending("settings");
-    try {
-      const nextSettings = await window.electronAPI.assistant.saveMemorySettings({
-        ...memorySettings,
-        autoLearn: !memorySettings.autoLearn
-      });
-      await refreshMemoryItems();
-    } catch (reason) {
-    } finally {
-      setMemoryPending("");
-    }
-  }
-
-async function handleOpenMemoryDirectory() {
-    setMemoryPending("open");
-    try {
-      const result = await window.electronAPI.assistant.openMemoryDirectory();
-    } catch (reason) {
-    } finally {
-      setMemoryPending("");
-    }
-  }
-
 
   async function handleToggleDesktopPet() {
     const nextEnabled = !desktopPetState?.enabled;

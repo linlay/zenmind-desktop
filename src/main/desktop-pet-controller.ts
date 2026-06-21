@@ -25,6 +25,7 @@ import {
   getAnchoredDesktopPetBounds,
   getDesktopPetWindowSize,
   isDesktopPetSupportedPlatform,
+  DESKTOP_PET_EDGE_SNAP_DISTANCE_PX,
   DESKTOP_PET_WINDOW_SIZE
 } from "./assistant/pet/desktop-pet";
 import { normalizeDesktopPetAgentEvent } from "./assistant/pet/desktop-pet-preview";
@@ -423,6 +424,7 @@ export function computeDesktopPetStateRefresh(input: {
   settings: DesktopPetSettingsLike;
   supported: boolean;
   visible: boolean;
+  windowMode?: DesktopPetWindowMode;
   localStatus: DesktopPetLocalStatus;
   patch?: Partial<DesktopPetLocalStatus>;
   agentStatus: DesktopPetBoundAgentStatus | null;
@@ -443,6 +445,7 @@ export function computeDesktopPetStateRefresh(input: {
   const state = createDesktopPetState(input.settings, {
     supported: input.supported,
     visible: input.visible,
+    windowMode: input.windowMode ?? "base",
     localStatus,
     agentStatus: input.agentStatus,
     agentOptions: input.agentOptions,
@@ -620,6 +623,7 @@ export interface DesktopPetDragControllerOptions {
   getDisplayBounds: (position?: { x: number; y: number }) => DesktopPetBounds;
   getPointDisplayBounds: (point: { x: number; y: number }) => DesktopPetBounds;
   persistPosition: (mode: DesktopPetWindowMode) => void;
+  guardProgrammaticBounds?: (bounds: DesktopPetBounds) => void;
   refreshState: () => void;
   setInterval?: typeof setInterval;
   clearInterval?: typeof clearInterval;
@@ -631,7 +635,7 @@ export interface DesktopPetDragController {
   beginDrag(point: { x?: unknown; y?: unknown }): { ok: boolean };
   endDrag(): { ok: boolean; moved: boolean };
   moveWindowBy(delta: { x?: unknown; y?: unknown }): { ok: boolean };
-  stickToEdge(mode?: DesktopPetWindowMode): void;
+  stickToEdge(mode?: DesktopPetWindowMode): { position: { x: number; y: number }; bounds: DesktopPetBounds } | null;
   prepareWindowForDrag(mode: DesktopPetWindowMode): void;
   clearTimer(): void;
 }
@@ -644,6 +648,11 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     moved: boolean;
     startedAt: number;
     lastMovedAt: number;
+    mode: DesktopPetWindowMode;
+  } | null = null;
+  let lastRequestedDragAnchor: {
+    position: { x: number; y: number };
+    displayBounds: DesktopPetBounds;
     mode: DesktopPetWindowMode;
   } | null = null;
   let dragTimer: any = null;
@@ -663,6 +672,15 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     }
   }
 
+  function shouldSnapToCursorEdge(cursorPoint: { x: number; y: number }, displayBounds: DesktopPetBounds) {
+    const rightEdge = displayBounds.x + displayBounds.width;
+    const bottomEdge = displayBounds.y + displayBounds.height;
+    return cursorPoint.x <= displayBounds.x + DESKTOP_PET_EDGE_SNAP_DISTANCE_PX ||
+      cursorPoint.x >= rightEdge - DESKTOP_PET_EDGE_SNAP_DISTANCE_PX ||
+      cursorPoint.y <= displayBounds.y + DESKTOP_PET_EDGE_SNAP_DISTANCE_PX ||
+      cursorPoint.y >= bottomEdge - DESKTOP_PET_EDGE_SNAP_DISTANCE_PX;
+  }
+
   function prepareWindowForDrag(mode: DesktopPetWindowMode) {
     void mode;
     // Do not resize/re-anchor the window while the pointer is already down.
@@ -680,12 +698,21 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     }
     const displayBounds = options.getPointDisplayBounds(cursorPoint);
     const nextLogicalBounds = clampDesktopPetPosition(position, displayBounds, DESKTOP_PET_WINDOW_SIZE, {
-      allowVisibleEdgeDock: true
+      allowVisibleEdgeDock: true,
+      stickToEdges: shouldSnapToCursorEdge(cursorPoint, displayBounds)
     });
     const nextBounds = getAnchoredDesktopPetBounds({
       x: nextLogicalBounds.x,
       y: nextLogicalBounds.y
     }, displayBounds, mode);
+    lastRequestedDragAnchor = {
+      position: {
+        x: nextLogicalBounds.x,
+        y: nextLogicalBounds.y
+      },
+      displayBounds,
+      mode
+    };
     window.setBounds(nextBounds, false);
     window.moveTop();
     return { ok: true };
@@ -724,16 +751,24 @@ export function createDesktopPetDragController(options: DesktopPetDragController
   function stickToEdge(mode: DesktopPetWindowMode = options.getMode()) {
     const window = options.getWindow();
     if (!window || window.isDestroyed()) {
-      return;
+      return null;
     }
     const currentBounds = window.getBounds();
-    const currentCenter = {
-      x: currentBounds.x + Math.round(currentBounds.width / 2),
-      y: currentBounds.y + Math.round(currentBounds.height / 2)
-    };
-    const currentDisplayBounds = options.getPointDisplayBounds(currentCenter);
-    const logicalPosition = getDesktopPetLogicalPositionFromBounds(currentBounds, mode, currentDisplayBounds);
-    const displayBounds = options.getDisplayBounds(logicalPosition);
+    const requestedAnchor = lastRequestedDragAnchor?.mode === mode
+      ? lastRequestedDragAnchor
+      : null;
+    const currentCenter = requestedAnchor
+      ? null
+      : {
+          x: currentBounds.x + Math.round(currentBounds.width / 2),
+          y: currentBounds.y + Math.round(currentBounds.height / 2)
+        };
+    const currentDisplayBounds = requestedAnchor
+      ? requestedAnchor.displayBounds
+      : options.getPointDisplayBounds(currentCenter!);
+    const logicalPosition = requestedAnchor?.position ??
+      getDesktopPetLogicalPositionFromBounds(currentBounds, mode, currentDisplayBounds);
+    const displayBounds = requestedAnchor?.displayBounds ?? options.getDisplayBounds(logicalPosition);
     const snappedBounds = clampDesktopPetPosition(logicalPosition, displayBounds, DESKTOP_PET_WINDOW_SIZE, {
       allowVisibleEdgeDock: true,
       stickToEdges: true
@@ -743,15 +778,23 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       y: snappedBounds.y
     };
     const nextBounds = getAnchoredDesktopPetBounds(snappedPosition, displayBounds, mode);
+    options.guardProgrammaticBounds?.(nextBounds);
     if (
       currentBounds.x === nextBounds.x &&
       currentBounds.y === nextBounds.y &&
       currentBounds.width === nextBounds.width &&
       currentBounds.height === nextBounds.height
     ) {
-      return;
+      return {
+        position: snappedPosition,
+        bounds: nextBounds
+      };
     }
     window.setBounds(nextBounds, false);
+    return {
+      position: snappedPosition,
+      bounds: nextBounds
+    };
   }
 
   function beginDrag(point: { x?: unknown; y?: unknown }) {
@@ -769,6 +812,7 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       startDisplayBounds,
       options.getSettings().position
     );
+    lastRequestedDragAnchor = null;
     clearTimer();
     const startedAt = Date.now();
     dragState = {
@@ -825,9 +869,16 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     dragState = null;
     clearTimer();
     if (moved) {
-      stickToEdge(mode);
-      options.persistPosition(mode);
+      const snappedAnchor = stickToEdge(mode);
+      if (snappedAnchor) {
+        options.saveSettings({
+          position: snappedAnchor.position
+        });
+      } else {
+        options.persistPosition(mode);
+      }
     }
+    lastRequestedDragAnchor = null;
     options.refreshState();
     return {
       ok: true,

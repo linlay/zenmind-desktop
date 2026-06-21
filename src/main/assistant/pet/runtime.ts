@@ -23,7 +23,8 @@ import {
   createDesktopPetDragController,
   createDesktopPetWindowController,
   createDesktopPetClientLifecycleController,
-  createDesktopPetPreviewController
+  createDesktopPetPreviewController,
+  getDesktopPetBoundsSignature
 } from "../../desktop-pet-controller";
 import { getResponsiveServiceState as defaultGetResponsiveServiceState } from "../../services/manager";
 import { t } from "../../i18n/main-i18n";
@@ -32,12 +33,17 @@ import {
   createDefaultDesktopPetLocalStatus,
   DESKTOP_PET_VISIBLE_FOOTPRINT,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  getDesktopPetVisibleFootprintForMode,
   getDesktopPetContextMenuItems,
   getAnchoredDesktopPetBounds,
+  getDesktopPetLogicalPositionFromBounds,
+  getDesktopPetWindowSize,
   isDesktopPetSupportedPlatform,
   listUserDesktopPetAppearanceOptions,
   readDesktopPetStoredState,
   resolveDesktopPetEdgeDock,
+  resolveDesktopPetDisplayArea,
+  resolveDesktopPetPanelLayout,
   saveDesktopPetSettings,
   type DesktopPetLocalStatus,
   type DesktopPetWindowMode
@@ -53,8 +59,8 @@ export type DesktopPetRuntimeOptions = {
   state: MainAppState;
   screen: {
     getCursorScreenPoint: () => { x: number; y: number };
-    getPrimaryDisplay: () => { workArea: Rectangle };
-    getDisplayMatching: (rect: Rectangle) => { workArea: Rectangle };
+    getPrimaryDisplay: () => { bounds: Rectangle; workArea: Rectangle };
+    getDisplayMatching: (rect: Rectangle) => { bounds: Rectangle; workArea: Rectangle };
   };
   preloadPath: string;
   loadRendererRoute: (targetWindow: BrowserWindow, routePath: string) => Promise<unknown>;
@@ -95,6 +101,23 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const desktopPetActiveRunTracker = createDesktopPetActiveRunTracker();
   const desktopPetDismissedMessages = new Map<string, string>();
   const desktopPetMessageCache = new Map<string, DesktopPetMessageItem>();
+  let destroyingPanelWindow = false;
+
+  function isPanelWindowMode(mode: DesktopPetWindowMode) {
+    return mode !== "base" && mode !== "preview-collapsed";
+  }
+
+  function getPanelWindowGap(_mode: DesktopPetWindowMode) {
+    return 8;
+  }
+
+  function getPanelWindowSize(mode: DesktopPetWindowMode) {
+    const size = getDesktopPetWindowSize(mode);
+    return {
+      width: size.width,
+      height: Math.max(180, size.height - DESKTOP_PET_VISIBLE_FOOTPRINT.height)
+    };
+  }
 
   function clearIdleResetTimer() {
     if (state.desktopPetIdleResetTimer) {
@@ -125,11 +148,14 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     saveSettings: (settings) => {
       state.desktopPetSettings = saveDesktopPetSettings(options.app, settings, options.platform);
     },
-    getMode: () => getWindowMode(),
+    getMode: () => "base",
     getCursorScreenPoint: () => options.screen.getCursorScreenPoint(),
     getDisplayBounds: (position) => getDisplayBounds(position),
     getPointDisplayBounds: (point) => getPointDisplayBounds(point),
-    persistPosition: (mode) => persistPosition(mode),
+    persistPosition: () => persistPosition("base"),
+    guardProgrammaticBounds: (bounds) => {
+      armProgrammaticBoundsGuard(getDesktopPetBoundsSignature(bounds));
+    },
     refreshState: () => refreshState()
   });
 
@@ -140,8 +166,10 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
         bounds,
         platform: options.platform,
         preloadPath: options.preloadPath,
+        focusable: false,
         onClosed: () => {
           state.desktopPetWindow = null;
+          hidePanelWindow(false);
         }
       });
       state.desktopPetWindow = win;
@@ -151,8 +179,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     saveSettings: (settings) => {
       state.desktopPetSettings = saveDesktopPetSettings(options.app, settings, options.platform);
     },
-    getMode: () => getWindowMode(),
-    getBounds: () => getBounds(),
+    getMode: () => "base",
+    getBounds: () => getPetBounds(),
     isHandlingQuit: () => state.isHandlingQuit,
     loadRendererRoute: async (win, route) => {
       await options.loadRendererRoute(win, route);
@@ -181,7 +209,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       setMouseInteractive(interactive);
     },
     onWindowMove: () => {
-      persistPosition();
+      persistPosition("base");
+      applyPanelWindowBounds();
     }
   });
 
@@ -387,7 +416,9 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     const nextMode = normalizeDesktopPetRendererWindowMode(mode);
     if (state.desktopPetRendererWindowMode !== nextMode) {
       state.desktopPetRendererWindowMode = nextMode;
-      applyWindowBounds();
+      applyPetWindowBounds();
+      applyPanelWindowBounds();
+      refreshState();
     }
     return { ok: true };
   }
@@ -434,20 +465,19 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       messages,
       previewPanel: desktopPetPreviewController.getPanel(),
       runningTaskCount,
-      edgeDock: resolveDesktopPetEdgeDock(
-        state.desktopPetSettings.position,
-        getDisplayBounds(state.desktopPetSettings.position)
-      )
+      windowMode: state.desktopPetRendererWindowMode,
+      edgeDock: getCurrentPetEdgeDock()
     });
     state.desktopPetLocalStatus = refresh.localStatus;
     state.desktopPetState = refresh.state;
-    applyWindowBounds();
+    applyPetWindowBounds();
+    applyPanelWindowBounds();
     if (refresh.settingsPatch) {
       state.desktopPetSettings = saveDesktopPetSettings(options.app, {
         unreadCount: refresh.settingsPatch.unreadCount
       }, options.platform);
     }
-    for (const targetWindow of [state.mainWindow, state.desktopPetWindow]) {
+    for (const targetWindow of [state.mainWindow, state.desktopPetWindow, state.desktopPetPanelWindow]) {
       if (!targetWindow || targetWindow.isDestroyed()) {
         continue;
       }
@@ -482,24 +512,58 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
           Math.round(DESKTOP_PET_VISIBLE_FOOTPRINT.height / 2)
       });
     }
-    return options.screen.getPrimaryDisplay().workArea;
+    return resolveDesktopPetDisplayArea(options.screen.getPrimaryDisplay());
   }
 
   function getPointDisplayBounds(point: { x: number; y: number }) {
-    return options.screen.getDisplayMatching({
+    return resolveDesktopPetDisplayArea(options.screen.getDisplayMatching({
       x: point.x,
       y: point.y,
       width: 1,
       height: 1
-    }).workArea;
+    }));
   }
 
-  function getBounds() {
+  function getPetBounds() {
     return getAnchoredDesktopPetBounds(
       state.desktopPetSettings.position,
       getDisplayBounds(state.desktopPetSettings.position),
-      getWindowMode()
+      "base"
     );
+  }
+
+  function getCurrentPetLogicalPosition() {
+    const displayArea = getDisplayBounds(state.desktopPetSettings.position);
+    return getDesktopPetLogicalPositionFromBounds(
+      getPetBounds(),
+      "base",
+      displayArea,
+      state.desktopPetSettings.position
+    );
+  }
+
+  function getCurrentPetEdgeDock() {
+    const displayArea = getDisplayBounds(state.desktopPetSettings.position);
+    return resolveDesktopPetEdgeDock(getCurrentPetLogicalPosition(), displayArea);
+  }
+
+  function getPanelBounds(mode: DesktopPetWindowMode) {
+    const displayArea = getDisplayBounds(state.desktopPetSettings.position);
+    const petBounds = getPetBounds();
+    const edgeDock = getCurrentPetEdgeDock();
+    const footprint = getDesktopPetVisibleFootprintForMode("base", edgeDock);
+    const petRect = {
+      x: petBounds.x + footprint.x,
+      y: petBounds.y + footprint.y,
+      width: footprint.width,
+      height: footprint.height
+    };
+    return resolveDesktopPetPanelLayout({
+      displayArea,
+      petRect,
+      panelSize: getPanelWindowSize(mode),
+      gap: getPanelWindowGap(mode)
+    }).rect;
   }
 
   function clearProgrammaticBoundsGuard() {
@@ -518,14 +582,14 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }, 180);
   }
 
-  function applyWindowBounds() {
+  function applyPetWindowBounds() {
     if (!isDesktopPetSupportedPlatform(options.platform) || !state.desktopPetWindow || state.desktopPetWindow.isDestroyed()) {
       return;
     }
     if (desktopPetDragController.isDragging()) {
       return;
     }
-    const nextBounds = getBounds();
+    const nextBounds = getPetBounds();
     const currentBounds = state.desktopPetWindow.getBounds();
     const update = computeDesktopPetBoundsUpdate({ currentBounds, nextBounds });
     if (update.clearPendingGuard) {
@@ -541,6 +605,79 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }
   }
 
+  function createPanelWindow(mode: DesktopPetWindowMode) {
+    if (!isDesktopPetSupportedPlatform(options.platform)) {
+      return null;
+    }
+    if (state.desktopPetPanelWindow && !state.desktopPetPanelWindow.isDestroyed()) {
+      return state.desktopPetPanelWindow;
+    }
+
+    const win = createDesktopPetBrowserWindow({
+      bounds: getPanelBounds(mode),
+      platform: options.platform,
+      preloadPath: options.preloadPath,
+      onClosed: () => {
+        state.desktopPetPanelWindow = null;
+      }
+    });
+    state.desktopPetPanelWindow = win;
+    win.on("close", (event: any) => {
+      if (state.isHandlingQuit || destroyingPanelWindow) {
+        return;
+      }
+      event.preventDefault();
+      hidePanelWindow(true);
+    });
+    win.on("closed", () => {
+      state.desktopPetPanelWindow = null;
+    });
+    options.loadRendererRoute(win, "/desktop-pet?role=panel").catch((error) => {
+      console.error("failed to load desktop pet panel renderer", error);
+    });
+    return win;
+  }
+
+  function hidePanelWindow(resetMode = false) {
+    if (resetMode && state.desktopPetRendererWindowMode !== "base") {
+      state.desktopPetRendererWindowMode = "base";
+    }
+    const panelWindow = state.desktopPetPanelWindow;
+    if (panelWindow && !panelWindow.isDestroyed()) {
+      destroyingPanelWindow = true;
+      panelWindow.destroy();
+      destroyingPanelWindow = false;
+      state.desktopPetPanelWindow = null;
+    }
+  }
+
+  function applyPanelWindowBounds() {
+    const mode = state.desktopPetRendererWindowMode;
+    if (
+      !isDesktopPetSupportedPlatform(options.platform) ||
+      !isPanelWindowMode(mode) ||
+      !state.desktopPetSettings.enabled ||
+      !state.desktopPetWindow ||
+      state.desktopPetWindow.isDestroyed() ||
+      !state.desktopPetWindow.isVisible() ||
+      desktopPetDragController.isDragging()
+    ) {
+      hidePanelWindow(false);
+      return;
+    }
+    const panelWindow = createPanelWindow(mode);
+    if (!panelWindow || panelWindow.isDestroyed()) {
+      return;
+    }
+    const bounds = getPanelBounds(mode);
+    panelWindow.setBounds(bounds, false);
+    if (!panelWindow.isVisible()) {
+      panelWindow.showInactive();
+    }
+    panelWindow.moveTop();
+    state.desktopPetWindow.moveTop();
+  }
+
   function persistPosition(mode: DesktopPetWindowMode = getWindowMode()) {
     if (!state.desktopPetWindow || state.desktopPetWindow.isDestroyed()) {
       return;
@@ -549,9 +686,11 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       return;
     }
     const bounds = state.desktopPetWindow.getBounds();
+    const edgeDock = resolveDesktopPetEdgeDock(state.desktopPetSettings.position, getDisplayBounds(state.desktopPetSettings.position));
+    const footprint = getDesktopPetVisibleFootprintForMode(mode, edgeDock);
     const displayArea = getPointDisplayBounds({
-      x: bounds.x + Math.round(bounds.width / 2),
-      y: bounds.y + Math.round(bounds.height / 2)
+      x: bounds.x + footprint.x + Math.round(footprint.width / 2),
+      y: bounds.y + footprint.y + Math.round(footprint.height / 2)
     });
     const persistence = computeDesktopPetPositionPersistence({
       bounds,
@@ -578,11 +717,12 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   function stickWindowToEdge(mode: DesktopPetWindowMode = getWindowMode()) {
-    desktopPetDragController.stickToEdge(mode);
+    desktopPetDragController.stickToEdge("base");
   }
 
   function prepareWindowForDrag(mode: DesktopPetWindowMode) {
-    desktopPetDragController.prepareWindowForDrag(mode);
+    desktopPetDragController.prepareWindowForDrag("base");
+    hidePanelWindow(true);
   }
 
   function beginDrag(point: { x?: unknown; y?: unknown }) {
@@ -594,6 +734,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   function hideWindow(disable = false) {
+    hidePanelWindow(disable);
     return desktopPetWindowController.hideWindow(disable);
   }
 
@@ -734,7 +875,9 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   function showWindow() {
-    return desktopPetWindowController.showWindow();
+    const result = desktopPetWindowController.showWindow();
+    applyPanelWindowBounds();
+    return result;
   }
 
   function ingestAgentEvent(event: unknown, meta: { source?: string; transportMode?: string } = {}) {
@@ -764,7 +907,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     const message = typeof input?.message === "string" ? input.message.trim() : "";
     const agentKey = typeof input?.agentKey === "string" ? input.agentKey.trim() : "";
     if (!chatId || !message) {
-      return { ok: false, message: "缺少会话或内容。" };
+      return { ok: false, message: t("desktopPet.replyMissingContent") };
     }
     const result = await assistantBridge.startRun({
       chatId,
@@ -808,8 +951,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     scheduleIdleReset,
     getDisplayBounds,
     getPointDisplayBounds,
-    getBounds,
-    applyWindowBounds,
+    getBounds: getPetBounds,
+    applyWindowBounds: applyPetWindowBounds,
     persistPosition,
     moveWindowBy,
     stickWindowToEdge,

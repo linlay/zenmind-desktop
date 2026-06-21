@@ -93,20 +93,21 @@ body.desktop-pet-body,
 .desktop-pet-root.is-edge-dock-left.has-bubble,
 .desktop-pet-root.is-edge-dock-left.has-preview-expanded,
 .desktop-pet-root.is-edge-dock-left.has-tasks {
+  --desktop-pet-task-panel-left: 40px;
   --desktop-pet-button-left: 22px;
   --desktop-pet-stage-left: 32px;
 }
 
 .desktop-pet-root.is-edge-dock-right.has-bubble,
 .desktop-pet-root.is-edge-dock-right.has-compact-tasks {
-  --desktop-pet-button-left: 254px;
-  --desktop-pet-stage-left: 266px;
+  --desktop-pet-button-left: 262px;
+  --desktop-pet-stage-left: 274px;
 }
 
 .desktop-pet-root.is-edge-dock-right.has-preview-expanded,
 .desktop-pet-root.is-edge-dock-right.has-tasks:not(.has-compact-tasks) {
-  --desktop-pet-button-left: 306px;
-  --desktop-pet-stage-left: 318px;
+  --desktop-pet-button-left: 310px;
+  --desktop-pet-stage-left: 322px;
 }
 
 .desktop-pet-root.is-edge-dock-bottom.has-bubble {
@@ -127,6 +128,53 @@ body.desktop-pet-body,
 .desktop-pet-root.is-edge-dock-bottom.has-compact-tasks {
   --desktop-pet-button-top: 228px;
   --desktop-pet-stage-top: 298px;
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-top {
+  --desktop-pet-button-top: -16px;
+  --desktop-pet-stage-top: 54px;
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-right {
+  --desktop-pet-button-left: 62px;
+  --desktop-pet-stage-left: 72px;
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-bottom {
+  --desktop-pet-button-top: 74px;
+  --desktop-pet-stage-top: 144px;
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-left {
+  --desktop-pet-button-left: -18px;
+  --desktop-pet-stage-left: -8px;
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-right .desktop-pet-unread-badges {
+  left: calc(var(--desktop-pet-button-left) + 58px);
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-right .desktop-pet-unread-badges.has-multiple {
+  left: calc(var(--desktop-pet-button-left) + 52px);
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-top .desktop-pet-unread-badges {
+  top: calc(var(--desktop-pet-button-top) + 28px);
+}
+
+.desktop-pet-root.is-panel-window.has-bubble,
+.desktop-pet-root.is-panel-window.has-preview-expanded,
+.desktop-pet-root.is-panel-window.has-tasks {
+  --desktop-pet-task-panel-top: 10px;
+  --desktop-pet-task-panel-bottom: auto;
+  --desktop-pet-task-panel-left: 10px;
+  --desktop-pet-task-panel-width: calc(100% - 20px);
+}
+
+.desktop-pet-root.is-panel-window .desktop-pet-task-panel {
+  min-height: calc(100% - 20px);
+  max-height: calc(100% - 20px);
+  overflow: hidden;
 }
 
 .desktop-pet-root.is-dragging,

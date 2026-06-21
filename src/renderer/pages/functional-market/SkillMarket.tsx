@@ -361,7 +361,7 @@ export function SkillMarketSection({
         <button
           type="button"
           className="market-skill-action"
-          disabled={busy || item.state === "incompatible"}
+          disabled={busy}
           onClick={() => onInstallItem(item)}
           aria-label={item.state === "update-available" ? t("market.skill.action.update", { name: item.name }) : t("market.skill.action.install", { name: item.name })}
         >

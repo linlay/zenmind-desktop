@@ -14,9 +14,10 @@
     "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs --strict",
     "i18n:keys": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs",
     "build:main:types": "tsc -p tsconfig.main.json",
+    "typecheck:renderer": "tsc -p tsconfig.json --noEmit",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",
     "build:main": "npm run brand:sync && npm run build:main:types && npm run build:main:bundle",
-    "build:renderer": "npm run brand:sync && vite build",
+    "build:renderer": "npm run brand:sync && npm run typecheck:renderer && vite build",
     "build": "npm run build:main && npm run build:renderer",
     "stage:app": "node ./scripts/stage-app.mjs",
     "dev": "node ./scripts/dev.mjs",
@@ -24,8 +25,8 @@
     "dist:mac": "node ./scripts/dist-mac.mjs",
     "dist:win": "node ./scripts/dist-win.mjs",
     "dist:win-docker": "node ./scripts/dist-win.mjs --docker",
-    "test": "npm run i18n:keys && npm run build && node --test ./test/*.test.mjs",
-    "test:unit": "node --test ./test/*.test.mjs"
+    "test": "npm run i18n:check && npm run build && node --test ./test/*.test.mjs",
+    "test:unit": "npm run brand:sync && npm run build:main:types && node --test ./test/*.test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.1",

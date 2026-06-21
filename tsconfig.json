@@ -20,7 +20,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client", "electron"]
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "vite.config.ts", "src/renderer/app-shell/embedded-surfaces"]
+  "include": ["src/renderer/**/*", "src/shared/**/*"]
 }

@@ -5,6 +5,7 @@ export function createDesktopPetBrowserWindow(options: {
   bounds: Rectangle;
   platform: NodeJS.Platform | string;
   preloadPath: string;
+  focusable?: boolean;
   onClosed: () => void;
 }) {
   const isMac = options.platform === "darwin";
@@ -20,6 +21,7 @@ export function createDesktopPetBrowserWindow(options: {
     minimizable: false,
     fullscreenable: false,
     skipTaskbar: true,
+    focusable: options.focusable ?? true,
     hasShadow: false,
     title: `${PRODUCT_NAME} Desktop Xianzun`,
     backgroundColor: "#00000000",
@@ -34,7 +36,7 @@ export function createDesktopPetBrowserWindow(options: {
   });
 
   if (isMac) {
-    win.setAlwaysOnTop(true, "floating");
+    win.setAlwaysOnTop(true, "screen-saver");
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   } else if (isWindows) {
     win.setAlwaysOnTop(true);

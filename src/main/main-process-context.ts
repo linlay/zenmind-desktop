@@ -410,7 +410,8 @@ export function createDesktopPetIpcHandlerOptions(
     refreshState: dependencies.refreshState,
     replyMessage: dependencies.replyMessage,
     dismissMessage: dependencies.dismissMessage,
-    getWindow: () => context.state.desktopPetWindow
+    getWindow: () => context.state.desktopPetWindow,
+    getPanelWindow: () => context.state.desktopPetPanelWindow
   };
 }
 

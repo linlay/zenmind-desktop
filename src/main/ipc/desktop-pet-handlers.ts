@@ -4,6 +4,7 @@ import {
   saveDesktopPetSettings,
   toDesktopPetSettings
 } from "../assistant/pet/desktop-pet";
+import { t } from "../i18n/main-i18n";
 
 export interface DesktopPetSettingsInput {
   boundAgentKey?: unknown;
@@ -33,6 +34,20 @@ export interface DesktopPetWindowModeInput {
 }
 
 export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
+  function isPetWindowSender(event: any) {
+    const win = options.getWindow();
+    return Boolean(win && !win.isDestroyed() && event.sender === win.webContents);
+  }
+
+  function isPetSurfaceSender(event: any) {
+    const win = options.getWindow();
+    const panelWin = typeof options.getPanelWindow === "function" ? options.getPanelWindow() : null;
+    return Boolean(
+      (win && !win.isDestroyed() && event.sender === win.webContents) ||
+      (panelWin && !panelWin.isDestroyed() && event.sender === panelWin.webContents)
+    );
+  }
+
   ipcMain.handle("desktopPet.getSettings", async () => {
     return toDesktopPetSettings(options.getSettings());
   });
@@ -79,32 +94,28 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   );
 
   ipcMain.handle("desktopPet.moveBy", async (event: any, delta: { x?: unknown; y?: unknown }) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetWindowSender(event)) {
       return { ok: false };
     }
     return options.moveWindowBy(delta);
   });
 
   ipcMain.handle("desktopPet.beginDrag", async (event: any, point: { x?: unknown; y?: unknown }) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetWindowSender(event)) {
       return { ok: false };
     }
     return options.beginDrag(point);
   });
 
   ipcMain.handle("desktopPet.endDrag", async (event: any) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetWindowSender(event)) {
       return { ok: false, moved: false };
     }
     return options.endDrag();
   });
 
   ipcMain.handle("desktopPet.setPreviewExpanded", async (event: any, expanded: boolean) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetSurfaceSender(event)) {
       return { ok: false };
     }
     options.setPreviewExpanded(expanded);
@@ -113,40 +124,35 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   });
 
   ipcMain.handle("desktopPet.dismissPreview", async (event: any) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetSurfaceSender(event)) {
       return { ok: false };
     }
     return options.dismissPreview();
   });
 
   ipcMain.handle("desktopPet.setMouseInteractive", async (event: any, interactive: boolean) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetWindowSender(event)) {
       return { ok: false };
     }
     return options.setMouseInteractive(interactive);
   });
 
   ipcMain.handle("desktopPet.setWindowMode", async (event: any, mode: unknown) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetSurfaceSender(event)) {
       return { ok: false };
     }
     return options.setWindowMode(mode);
   });
 
   ipcMain.handle("desktopPet.replyMessage", async (event: any, input: DesktopPetReplyMessageInput) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
-      return { ok: false, message: "桌宠窗口不可用。" };
+    if (!isPetSurfaceSender(event)) {
+      return { ok: false, message: t("desktopPet.windowUnavailable") };
     }
     return options.replyMessage(input);
   });
 
   ipcMain.handle("desktopPet.dismissMessage", async (event: any, input: DesktopPetDismissMessageInput) => {
-    const win = options.getWindow();
-    if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    if (!isPetSurfaceSender(event)) {
       return { ok: false };
     }
     return options.dismissMessage(input);

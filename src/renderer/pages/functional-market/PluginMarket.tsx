@@ -214,7 +214,7 @@ export function PluginMarketSection({
         <button
           type="button"
           className="market-item-action"
-          disabled={busy || item.state === "incompatible"}
+          disabled={busy}
           onClick={(event) => {
             event.stopPropagation();
             onInstallItem(item);
