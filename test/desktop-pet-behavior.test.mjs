@@ -19,6 +19,7 @@ const {
   createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetActiveTasksFromNavigationSnapshot,
   createDesktopPetDragController,
+  computeDesktopPetPositionPersistence,
   resolveDesktopPetWindowMode
 } = require("../dist-electron/main/desktop-pet-controller.js");
 const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
@@ -449,6 +450,7 @@ test("desktop pet left edge keeps the BrowserWindow onscreen while the visible p
 
   assert.equal(edgeDock, "left");
   assert.equal(bounds.x, displayArea.x);
+  assert.equal(bounds.width, displayArea.width);
   assert.equal(visibleFootprintRect(bounds, footprint).x, displayArea.x);
   assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bounds, "base", displayArea, position), position);
   assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bounds, "base", displayArea, {
@@ -465,6 +467,53 @@ test("desktop pet left edge keeps the BrowserWindow onscreen while the visible p
     x: displayArea.x,
     y: position.y
   }), position);
+});
+
+test("desktop pet full-width left host persists as a left-edge logical position", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    getAnchoredDesktopPetBounds,
+    getDesktopPetLogicalPositionFromBounds,
+    getDesktopPetVisibleFootprintForMode
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 1440, height: 900 };
+  const leftPosition = {
+    x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
+    y: 300
+  };
+  const staleRightPosition = {
+    x: displayArea.x + displayArea.width -
+      DESKTOP_PET_VISIBLE_FOOTPRINT.x -
+      DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    y: leftPosition.y
+  };
+  const bounds = getAnchoredDesktopPetBounds(leftPosition, displayArea, "base");
+
+  assert.equal(bounds.x, displayArea.x);
+  assert.equal(bounds.width, displayArea.width);
+  assert.deepEqual(
+    visibleFootprintRect(bounds, getDesktopPetVisibleFootprintForMode("base", "left")),
+    {
+      x: displayArea.x,
+      y: leftPosition.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y,
+      width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+      height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+    }
+  );
+  assert.deepEqual(
+    getDesktopPetLogicalPositionFromBounds(bounds, "base", displayArea, staleRightPosition),
+    leftPosition
+  );
+  assert.deepEqual(computeDesktopPetPositionPersistence({
+    bounds,
+    mode: "base",
+    displayArea,
+    currentPosition: staleRightPosition
+  }), {
+    clearPendingGuard: false,
+    position: leftPosition,
+    shouldPersist: true
+  });
 });
 
 test("desktop pet drag keeps the press-time window mode instead of jumping to base bounds", () => {

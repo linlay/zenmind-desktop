@@ -686,9 +686,13 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       return;
     }
     const bounds = state.desktopPetWindow.getBounds();
-    const edgeDock = resolveDesktopPetEdgeDock(state.desktopPetSettings.position, getDisplayBounds(state.desktopPetSettings.position));
+    const currentPosition = state.desktopPetSettings.position;
+    const currentDisplayArea = currentPosition
+      ? getDisplayBounds(currentPosition)
+      : null;
+    const edgeDock = resolveDesktopPetEdgeDock(currentPosition, currentDisplayArea ?? getDisplayBounds(currentPosition));
     const footprint = getDesktopPetVisibleFootprintForMode(mode, edgeDock);
-    const displayArea = getPointDisplayBounds({
+    const displayArea = currentDisplayArea ?? getPointDisplayBounds({
       x: bounds.x + footprint.x + Math.round(footprint.width / 2),
       y: bounds.y + footprint.y + Math.round(footprint.height / 2)
     });
@@ -697,7 +701,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       mode,
       displayArea,
       pendingSignature: state.desktopPetPendingProgrammaticBoundsSignature,
-      currentPosition: state.desktopPetSettings.position
+      currentPosition
     });
     if (persistence.clearPendingGuard) {
       state.desktopPetPendingProgrammaticBoundsSignature = null;
