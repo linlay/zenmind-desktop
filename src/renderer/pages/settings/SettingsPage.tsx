@@ -2298,8 +2298,8 @@ export function SettingsPage({
   );
   const shouldReadUsageProfile = activeSection === "usage";
   const shouldReadGeneralSettings = activeSection === "general";
-  const shouldReadControlData = activeSection === "kanban";
-  const shouldReadTunnelHubData = activeSection === "tunnelHub";
+  const shouldReadControlData = activeSection === "control";
+  const shouldReadTunnelHubData = activeSection === "control";
   const shouldReadMarketSettings = activeSection === "market";
   const shouldReadAssistantSettings = Boolean(
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
@@ -2476,10 +2476,10 @@ export function SettingsPage({
         setControlCloudProjects(issueResult.projects ?? []);
         setControlConnectionState(settingsResult.connectionState ?? issueResult.connectionState ?? "disabled");
         setControlOnlineSummary(onlineResult);
-        setReadErrorSections(["kanban"], "");
+        setReadErrorSections(["control"], "");
       } catch (reason) {
         if (!cancelled) {
-          setReadErrorSections(["kanban"], reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["control"], reason instanceof Error ? reason.message : String(reason));
         }
       }
     }
@@ -2545,11 +2545,11 @@ export function SettingsPage({
         });
         setTunnelHubSsoStatus(ssoResult.status === "fulfilled" ? ssoResult.value : null);
         setTunnelHubRotateRelayToken(false);
-        setReadErrorSections(["tunnelHub"], "");
+        setReadErrorSections(["control"], "");
       })
       .catch((reason) => {
         if (!cancelled) {
-          setReadErrorSections(["tunnelHub"], reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["control"], reason instanceof Error ? reason.message : String(reason));
         }
       });
 
@@ -3538,7 +3538,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         cloud: nextConfig
       });
       if (!result.ok) {
-        throw new Error(result.message || t("settings.kanban.saveFailed"));
+        throw new Error(result.message || t("settings.control.saveFailed"));
       }
       setControlCloudConfig({
         ...defaultTaskBoardCloudConfig,
@@ -3551,10 +3551,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       ]);
       setControlCloudProjects(issueResult.projects ?? []);
       setControlOnlineSummary(onlineResult);
-      setReadErrorSections(["kanban"], "");
-      showSectionNotice("kanban", result.message, "success");
+      setReadErrorSections(["control"], "");
+      showSectionNotice("control", result.message, "success");
     } catch (reason) {
-      showSectionNotice("kanban", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setControlConfigSaving(false);
     }
@@ -3639,10 +3639,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
       }
-      setReadErrorSections(["tunnelHub"], "");
-      showSectionNotice("tunnelHub", result.message, "success");
+      setReadErrorSections(["control"], "");
+      showSectionNotice("control", result.message, "success");
     } catch (reason) {
-      showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setTunnelHubSaving(false);
     }
@@ -3668,14 +3668,14 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
       }
-      setReadErrorSections(["tunnelHub"], "");
+      setReadErrorSections(["control"], "");
       showSectionNotice(
-        "tunnelHub",
+        "control",
         nextEnabled ? t("settings.tunnelHub.noticeEnabled") : t("settings.tunnelHub.noticeDisabled"),
         "success"
       );
     } catch (reason) {
-      showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setTunnelHubSaving(false);
     }
@@ -3684,7 +3684,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
   async function handleCopyTunnelHubMobileLink() {
     const publicUrl = tunnelHubSettings.publicUrl.trim();
     if (!publicUrl) {
-      showSectionNotice("tunnelHub", t("settings.tunnelHub.mobileLinkUnavailable"), "error");
+      showSectionNotice("control", t("settings.tunnelHub.mobileLinkUnavailable"), "error");
       return;
     }
     setTunnelHubMobileLinkCopying(true);
@@ -3700,10 +3700,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       if (!copyResult.ok) {
         throw new Error(copyResult.message || t("settings.tunnelHub.mobileLinkCopyFailed"));
       }
-      showSectionNotice("tunnelHub", t("settings.tunnelHub.mobileLinkCopied"), "success");
+      showSectionNotice("control", t("settings.tunnelHub.mobileLinkCopied"), "success");
     } catch (reason) {
       showSectionNotice(
-        "tunnelHub",
+        "control",
         reason instanceof Error ? reason.message : String(reason),
         "error"
       );
@@ -3807,13 +3807,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
           disabled: marketSettingsSaving,
           label: t("settings.market.enabled"),
           onClick: () => void handleToggleMarketEnabled()
-        });
-      case "tunnelHub":
-        return renderHeaderSwitch({
-          enabled: tunnelHubSettings.enabled,
-          disabled: tunnelHubSaving,
-          label: t("settings.tunnelHub.label"),
-          onClick: () => void handleToggleTunnelHubEnabled()
         });
       default:
         return null;
@@ -4057,88 +4050,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
             </div>
           </>
         );
-      case "kanban":
-        return (
-          <Card
-            className="settings-item-card settings-control-card settings-kanban-ant-card"
-            aria-label={t("settings.kanban.panelAria")}
-            styles={{ body: { padding: 0 } }}
-          >
-            <div className="settings-item-header settings-control-permission-row">
-              <span className="settings-control-app-icon" aria-hidden="true">
-                <span />
-              </span>
-              <Space className="settings-kanban-copy" direction="vertical" size={3}>
-                <Typography.Text strong>{t("settings.control.remoteControlEnabled")}</Typography.Text>
-                <Typography.Text type="secondary">{t("settings.control.remoteControlDescription")}</Typography.Text>
-                <Typography.Text className="settings-kanban-remote-state">
-                  {controlCloudConfig.remoteControlEnabled
-                    ? t("settings.control.remoteControlOn")
-                    : t("settings.control.remoteControlOff")}
-                </Typography.Text>
-              </Space>
-              <Switch
-                checked={controlCloudConfig.remoteControlEnabled}
-                aria-label={t("settings.control.remoteControlEnabled")}
-                disabled={controlConfigSaving}
-                loading={controlConfigSaving}
-                onChange={() => void handleToggleControlRemoteControl()}
-              />
-            </div>
-            <div className="settings-kanban-status">
-              <Space direction="vertical" size={4}>
-                <Typography.Text strong>{t("settings.control.statusTitle")}</Typography.Text>
-                <Typography.Text type="secondary">{getControlConnectionLabel(controlConnectionState)}</Typography.Text>
-              </Space>
-              <Typography.Text type="secondary">
-                {t("settings.control.onlineSummary", {
-                  devices: controlOnlineSummary.deviceCount,
-                  sessions: controlOnlineSummary.sessionCount,
-                  agents: controlOnlineSummary.agentCount
-                })}
-              </Typography.Text>
-            </div>
-            <Form
-              className="settings-control-form settings-kanban-ant-form"
-              layout="vertical"
-              requiredMark={false}
-              onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
-            >
-              <Form.Item label={t("taskBoard.cloud.serverUrl")}>
-                <Input
-                  value={controlCloudConfig.serverUrl}
-                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
-                  placeholder="http://127.0.0.1:8080"
-                />
-              </Form.Item>
-              <Form.Item
-                label={t("taskBoard.cloud.projectId")}
-                extra={controlProjectOptions.length > 0
-                  ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                  : t("taskBoard.cloud.projectFallbackHelp")}
-              >
-                {controlProjectOptions.length > 0 ? (
-                  <Select
-                    value={controlCloudConfig.selectedProjectId}
-                    options={controlProjectSelectOptions}
-                    onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
-                  />
-                ) : (
-                  <Input
-                    value={controlCloudConfig.selectedProjectId}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                    placeholder="default"
-                  />
-                )}
-              </Form.Item>
-              <Form.Item className="settings-control-actions settings-kanban-actions">
-                <Button type="primary" htmlType="submit" loading={controlConfigSaving} disabled={controlConfigSaving}>
-                  {t("settings.kanban.save")}
-                </Button>
-              </Form.Item>
-            </Form>
-          </Card>
-        );
       case "market":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.market.panelAria")}>
@@ -4165,6 +4076,180 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
         return (
           <>
+            <Card
+              className="settings-item-card settings-control-card settings-kanban-ant-card"
+              aria-label={t("settings.control.cloudPanelAria")}
+              styles={{ body: { padding: 0 } }}
+            >
+              <div className="settings-item-header settings-control-permission-row">
+                <span className="settings-control-app-icon" aria-hidden="true">
+                  <span />
+                </span>
+                <Space className="settings-kanban-copy" direction="vertical" size={3}>
+                  <Typography.Text strong>{t("settings.control.remoteControlTitle")}</Typography.Text>
+                  <Typography.Text type="secondary">{t("settings.control.remoteControlDescription")}</Typography.Text>
+                  <Typography.Text className="settings-kanban-remote-state">
+                    {controlCloudConfig.remoteControlEnabled
+                      ? t("settings.control.remoteControlOn")
+                      : t("settings.control.remoteControlOff")}
+                  </Typography.Text>
+                </Space>
+                <Switch
+                  checked={controlCloudConfig.remoteControlEnabled}
+                  aria-label={t("settings.control.remoteControlEnabled")}
+                  disabled={controlConfigSaving}
+                  loading={controlConfigSaving}
+                  onChange={() => void handleToggleControlRemoteControl()}
+                />
+              </div>
+              <div className="settings-kanban-status">
+                <Space direction="vertical" size={4}>
+                  <Typography.Text strong>{t("settings.control.statusTitle")}</Typography.Text>
+                  <Typography.Text type="secondary">{getControlConnectionLabel(controlConnectionState)}</Typography.Text>
+                </Space>
+                <Typography.Text type="secondary">
+                  {t("settings.control.onlineSummary", {
+                    devices: controlOnlineSummary.deviceCount,
+                    sessions: controlOnlineSummary.sessionCount,
+                    agents: controlOnlineSummary.agentCount
+                  })}
+                </Typography.Text>
+              </div>
+              <Form
+                className="settings-control-form settings-kanban-ant-form"
+                layout="vertical"
+                requiredMark={false}
+                onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
+              >
+                <Form.Item label={t("taskBoard.cloud.serverUrl")}>
+                  <Input
+                    value={controlCloudConfig.serverUrl}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
+                    placeholder="http://127.0.0.1:8080"
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t("taskBoard.cloud.projectId")}
+                  extra={controlProjectOptions.length > 0
+                    ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
+                    : t("taskBoard.cloud.projectFallbackHelp")}
+                >
+                  {controlProjectOptions.length > 0 ? (
+                    <Select
+                      value={controlCloudConfig.selectedProjectId}
+                      options={controlProjectSelectOptions}
+                      onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
+                    />
+                  ) : (
+                    <Input
+                      value={controlCloudConfig.selectedProjectId}
+                      onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                      placeholder="default"
+                    />
+                  )}
+                </Form.Item>
+                <Form.Item className="settings-control-actions settings-kanban-actions">
+                  <Button type="primary" htmlType="submit" loading={controlConfigSaving} disabled={controlConfigSaving}>
+                    {t("settings.control.save")}
+                  </Button>
+                </Form.Item>
+              </Form>
+            </Card>
+            <div className="settings-item-card settings-control-card" aria-label={t("settings.control.tunnelPanelAria")}>
+              <div className="settings-item-header settings-mobile-pairing-header">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.control.tunnelTitle")}</strong>
+                  <span>{t("settings.control.tunnelDescription")}</span>
+                </div>
+                <Switch
+                  checked={tunnelHubSettings.enabled}
+                  aria-label={t("settings.control.tunnelTitle")}
+                  disabled={tunnelHubSaving}
+                  loading={tunnelHubSaving}
+                  onChange={() => void handleToggleTunnelHubEnabled()}
+                />
+              </div>
+              <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
+                <label className="settings-control-field">
+                  <span>{t("settings.tunnelHub.deviceId")}</span>
+                  <Input
+                    value={tunnelHubSettings.deviceId}
+                    onChange={(event) => setTunnelHubSettings((current) => ({ ...current, deviceId: event.target.value }))}
+                    placeholder={t("settings.tunnelHub.deviceIdPlaceholder")}
+                  />
+                </label>
+                <label className="settings-control-field">
+                  <span>{t("settings.tunnelHub.relayUrl")}</span>
+                  <Input
+                    value={tunnelHubSettings.relayUrl}
+                    onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
+                    placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
+                  />
+                </label>
+                {tunnelHubSsoStatus && !tunnelHubSsoStatus.authenticated ? (
+                  <div className="settings-control-field settings-readonly-stack">
+                    <small>{t("settings.tunnelHub.loginRequired")}</small>
+                  </div>
+                ) : null}
+                <Checkbox
+                  className="settings-control-field settings-checkbox-field"
+                  checked={tunnelHubRotateRelayToken}
+                  onChange={(event) => setTunnelHubRotateRelayToken(event.target.checked)}
+                >
+                  {t("settings.tunnelHub.rotateRelayToken")}
+                </Checkbox>
+                <Checkbox
+                  className="settings-control-field settings-checkbox-field"
+                  checked={tunnelHubSettings.tlsInsecureSkipVerify}
+                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
+                >
+                  {t("settings.tunnelHub.tlsInsecure")}
+                </Checkbox>
+                <label className="settings-control-field">
+                  <span>{t("settings.tunnelHub.reconnectSeconds")}</span>
+                  <div className="settings-control-inline">
+                    <InputNumber
+                      min={1}
+                      max={3600}
+                      value={tunnelHubSettings.reconnectSeconds}
+                      onChange={(value) => setTunnelHubSettings((current) => ({
+                        ...current,
+                        reconnectSeconds: typeof value === "number" ? value : 3
+                      }))}
+                    />
+                    <small>{t("settings.tunnelHub.reconnectUnit")}</small>
+                  </div>
+                </label>
+                {tunnelHubSettings.publicUrl || tunnelHubSettings.webSocketUrl ? (
+                  <div className="settings-control-field settings-readonly-stack">
+                    {tunnelHubSettings.publicHost ? (
+                      <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
+                    ) : null}
+                    {tunnelHubSettings.publicUrl ? (
+                      <small>{t("settings.tunnelHub.publicUrl")}: <code>{tunnelHubSettings.publicUrl}</code></small>
+                    ) : null}
+                    {tunnelHubSettings.webSocketUrl ? (
+                      <small>{t("settings.tunnelHub.webSocketUrl")}: <code>{tunnelHubSettings.webSocketUrl}</code></small>
+                    ) : null}
+                    {tunnelHubSettings.publicUrl ? (
+                      <Button
+                        size="small"
+                        loading={tunnelHubMobileLinkCopying}
+                        disabled={tunnelHubMobileLinkCopying}
+                        onClick={() => void handleCopyTunnelHubMobileLink()}
+                      >
+                        {t("settings.tunnelHub.copyMobileLink")}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="settings-control-actions">
+                  <Button type="primary" htmlType="submit" disabled={tunnelHubSaving} loading={tunnelHubSaving}>
+                    {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}
+                  </Button>
+                </div>
+              </form>
+            </div>
             <div className="settings-item-card settings-mobile-pairing-card">
               <div className="settings-item-header settings-mobile-pairing-header">
                 <div className="settings-appearance-row-copy">
@@ -4225,92 +4310,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
           </>
         );
       }
-      case "tunnelHub":
-        return (
-          <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
-            <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
-              <label className="settings-control-field">
-                <span>{t("settings.tunnelHub.deviceId")}</span>
-                <Input
-                  value={tunnelHubSettings.deviceId}
-                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, deviceId: event.target.value }))}
-                  placeholder={t("settings.tunnelHub.deviceIdPlaceholder")}
-                />
-              </label>
-              <label className="settings-control-field">
-                <span>{t("settings.tunnelHub.relayUrl")}</span>
-                <Input
-                  value={tunnelHubSettings.relayUrl}
-                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
-                  placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
-                />
-              </label>
-              {tunnelHubSsoStatus && !tunnelHubSsoStatus.authenticated ? (
-                <div className="settings-control-field settings-readonly-stack">
-                  <small>{t("settings.tunnelHub.loginRequired")}</small>
-                </div>
-              ) : null}
-              <Checkbox
-                className="settings-control-field settings-checkbox-field"
-                checked={tunnelHubRotateRelayToken}
-                onChange={(event) => setTunnelHubRotateRelayToken(event.target.checked)}
-              >
-                {t("settings.tunnelHub.rotateRelayToken")}
-              </Checkbox>
-              <Checkbox
-                className="settings-control-field settings-checkbox-field"
-                checked={tunnelHubSettings.tlsInsecureSkipVerify}
-                onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
-              >
-                {t("settings.tunnelHub.tlsInsecure")}
-              </Checkbox>
-              <label className="settings-control-field">
-                <span>{t("settings.tunnelHub.reconnectSeconds")}</span>
-                <div className="settings-control-inline">
-                  <InputNumber
-                    min={1}
-                    max={3600}
-                    value={tunnelHubSettings.reconnectSeconds}
-                    onChange={(value) => setTunnelHubSettings((current) => ({
-                      ...current,
-                      reconnectSeconds: typeof value === "number" ? value : 3
-                    }))}
-                  />
-                  <small>{t("settings.tunnelHub.reconnectUnit")}</small>
-                </div>
-              </label>
-              {tunnelHubSettings.publicUrl || tunnelHubSettings.webSocketUrl ? (
-                <div className="settings-control-field settings-readonly-stack">
-                  {tunnelHubSettings.publicHost ? (
-                    <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
-                  ) : null}
-                  {tunnelHubSettings.publicUrl ? (
-                    <small>{t("settings.tunnelHub.publicUrl")}: <code>{tunnelHubSettings.publicUrl}</code></small>
-                  ) : null}
-                  {tunnelHubSettings.webSocketUrl ? (
-                    <small>{t("settings.tunnelHub.webSocketUrl")}: <code>{tunnelHubSettings.webSocketUrl}</code></small>
-                  ) : null}
-                  {tunnelHubSettings.publicUrl ? (
-                    <Button
-                      size="small"
-                      loading={tunnelHubMobileLinkCopying}
-                      disabled={tunnelHubMobileLinkCopying}
-                      onClick={() => void handleCopyTunnelHubMobileLink()}
-                    >
-                      {t("settings.tunnelHub.copyMobileLink")}
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="settings-control-actions">
-                <Button type="primary" htmlType="submit" disabled={tunnelHubSaving} loading={tunnelHubSaving}>
-                  {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}
-                </Button>
-              </div>
-            </form>
-          </div>
-        );
-
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
         const navigationSettingsOrder = sidebarNavOrder;

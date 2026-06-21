@@ -64,7 +64,7 @@ export function createSettingsSectionDefinitions({
       label: "kanban",
       description: "",
       layout: "measure",
-      visible: true
+      visible: false
     },
     {
       id: "market",
@@ -88,7 +88,7 @@ export function createSettingsSectionDefinitions({
       label: "tunnelHub",
       description: "",
       layout: "measure",
-      visible: true
+      visible: false
     },
     {
       id: "websites",

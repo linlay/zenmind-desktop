@@ -1314,7 +1314,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /group:\s*"system"/);
   assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"/);
   assert.match(settingsSections, /id:\s*"usage"[\s\S]*?label:\s*"usage"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
-  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
+  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*false/);
+  assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*false/);
   assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
@@ -1597,7 +1598,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPageSections, /settings\.kanban\.label/);
   assert.match(settingsPageSections, /settings\.assistant\.label/);
   assert.match(settingsPageSections, /settings\.market\.label/);
-  assert.match(settingsPage, /case "kanban"/);
+  assert.doesNotMatch(settingsPage, /case "kanban"/);
   assert.doesNotMatch(settingsPage, /settings\.kanban\.enabled/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
@@ -1614,7 +1615,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /settings-device-info-list/);
   assert.doesNotMatch(settingsPage, /<Input\.Password[\s\S]*taskBoard\.cloud\.tokenPlaceholder/);
   assert.match(settingsPage, /<Select[\s\S]*options=\{controlProjectSelectOptions\}/);
-  assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.kanban\.save/);
+  assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.control\.save/);
   assert.match(settingsPage, /case "assistant"/);
   assert.match(settingsPage, /activeSection === "assistant"/);
   assert.match(settingsPage, /case "market"/);
@@ -1675,7 +1676,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true;\s*\}/);
-  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "assistant"[\s\S]*handleToggleDesktopPet[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "assistant"[\s\S]*handleToggleDesktopPet[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled/);
+  assert.doesNotMatch(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "tunnelHub"/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
   assert.match(settingsStyles, /\.settings-page-head-action\s*\{[\s\S]*justify-content:\s*flex-end;/);
@@ -1708,9 +1710,10 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /moveSidebarNavOrderItem/);
 });
 
-test("settings page exposes cloud board control as a global section", () => {
+test("settings page merges cloud board and tunnel control into the Control section", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const settingsSections = readSourceFile("src", "renderer", "settingsPageSections.ts");
+  const settingsRoutes = readSourceFile("src", "shared", "settings-routes.ts");
   const sharedSettingsSections = readSourceFile("src", "shared", "settings-sections.ts");
   const taskBoardContracts = readSourceFile("src", "shared", "contracts", "task-board.ts");
   const taskBoardRuntime = readSourceFile("src", "main", "task-board-runtime.ts");
@@ -1719,9 +1722,18 @@ test("settings page exposes cloud board control as a global section", () => {
 
   assert.match(sharedSettingsSections, /"kanban"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?settings\.kanban\.label/);
-  assert.match(settingsPage, /case "kanban"/);
+  assert.match(sharedSettingsSections, /"tunnelHub"/);
+  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*false/);
+  assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*false/);
+  assert.match(settingsRoutes, /kanban:\s*"control"/);
+  assert.match(settingsRoutes, /tunnelHub:\s*"control"/);
+  assert.doesNotMatch(settingsPage, /case "kanban"/);
+  assert.doesNotMatch(settingsPage, /case "tunnelHub"/);
+  assert.match(settingsPage, /case "control"[\s\S]*settings\.control\.cloudPanelAria[\s\S]*settings\.control\.tunnelTitle/);
   assert.match(settingsPage, /settings\.control\.remoteControlEnabled/);
   assert.match(settingsPage, /settings\.control\.remoteControlDescription/);
+  assert.match(settingsPage, /handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /settings\.control\.tunnelDescription/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.listOnlineDevices/);
@@ -1733,10 +1745,11 @@ test("settings page exposes cloud board control as a global section", () => {
   assert.match(taskBoardRuntime, /KANBAN_CONFIG_FILE = "kanban\.json"/);
   assert.match(zhCN, /"settings\.control\.label":\s*"控制"/);
   assert.match(zhCN, /"settings\.kanban\.label":\s*"看板"/);
+  assert.match(zhCN, /"settings\.control\.description":\s*"管理桌面端配对、远程控制、隧道与端口穿透。"/);
   assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
   assert.match(enUS, /"settings\.control\.label":\s*"Control"/);
   assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
-  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
+  assert.match(enUS, /"settings\.control\.description":\s*"Manage Desktop pairing, remote control, and tunnel or port exposure\."/);
   assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, debugVisible, t \}\)/);
 });
 
@@ -1762,7 +1775,8 @@ test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () =
   assert.doesNotMatch(tunnelSettings, removedTunnelHubPatterns);
   assert.match(tunnelRuntime, /startTunnelHubRuntimeIfEnabled/);
   assert.doesNotMatch(tunnelRuntime, new RegExp(`startService|restartService|${removedTunnelHubPatterns.source}`));
-  assert.match(settingsPage, /case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /case "control"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /settings\.control\.tunnelPanelAria/);
 });
 
 test("settings page renderer text is routed through i18n", () => {

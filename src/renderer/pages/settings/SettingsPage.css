@@ -456,6 +456,7 @@
   overflow-wrap: anywhere;
 }
 
+.settings-page .settings-control-card + .settings-control-card,
 .settings-page .settings-control-card + .settings-mobile-pairing-card {
   margin-top: 10px;
 }
