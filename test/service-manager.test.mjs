@@ -36,6 +36,7 @@ const {
   registerPlugin
 } = require("../dist-electron/main/services/service-registry.js");
 const {
+  resolveDesktopCapability,
   __testInternals: capabilityInternals
 } = require("../dist-electron/main/services/manager/capabilities.js");
 const {
@@ -2009,6 +2010,65 @@ test("parsePort reads Desktop core service ports from their config keys", () => 
   assert.equal(platformFallbackPort, 7078);
   assert.equal(platformBadPort, 7078);
   restore();
+});
+
+test("desktop capability resolution prefers identity-center over legacy auth providers", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-capability-provider-priority-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const capabilityId = "auth.publicKey";
+  const registerProvider = (serviceId) => registerPlugin({
+    id: serviceId,
+    name: serviceId,
+    kind: "builtin",
+    version: "v1.0.0",
+    description: "fixture",
+    frontend: {
+      mode: "none"
+    },
+    scripts: {
+      start: "start.ps1",
+      stop: "stop.ps1"
+    },
+    runtime: {},
+    web: {
+      routePath: "/",
+      portEnvKey: "SERVER_PORT",
+      defaultPort: 19000
+    },
+    desktop: {
+      capabilities: {
+        provides: [
+          {
+            id: capabilityId,
+            windowsCommand: [process.execPath, "-e", `console.log(${JSON.stringify(serviceId)})`],
+            darwinCommand: [process.execPath, "-e", `console.log(${JSON.stringify(serviceId)})`],
+            linuxCommand: [process.execPath, "-e", `console.log(${JSON.stringify(serviceId)})`],
+            output: "stdoutLastLine"
+          }
+        ],
+        requires: []
+      }
+    }
+  }, { defaultKind: "builtin" });
+
+  try {
+    registryInternals.clearServices();
+    const identityService = registerProvider("identity-center");
+    registerProvider("zenmind-app-server");
+    for (const service of [identityService]) {
+      fs.mkdirSync(getTestServiceProgramDir(userDataRoot, service.id, service.version), { recursive: true });
+      writeTestEnv(userDataRoot, service.id, "SERVER_PORT=19000\n");
+    }
+
+    const capability = await resolveDesktopCapability(app, capabilityId);
+
+    assert.equal(capability.providerServiceId, "identity-center");
+    assert.equal(capability.text, "identity-center");
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("plugin services without configFiles do not require .env", async () => {

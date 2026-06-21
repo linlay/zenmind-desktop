@@ -21,6 +21,10 @@ import { t } from "../../i18n/main-i18n";
 
 const SQLITE_BUSY_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
 const AUTH_PUBLIC_KEY_SIDECAR_FILE_NAMES = ["jwk-private.pem", "jwk-public.pem"] as const;
+const DESKTOP_CAPABILITY_PROVIDER_PRIORITY: Record<string, ServiceId[]> = {
+  "auth.publicKey": ["identity-center"],
+  "auth.accessToken": ["identity-center"]
+};
 
 export type DesktopCapabilityResult = {
   id: string;
@@ -122,6 +126,12 @@ function findCapabilityProvider(capabilityId: string) {
     throw new Error(`missing Desktop capability provider: ${capabilityId}`);
   }
   if (matches.length > 1) {
+    for (const serviceId of DESKTOP_CAPABILITY_PROVIDER_PRIORITY[capabilityId] ?? []) {
+      const preferred = matches.find((match) => match.service.id === serviceId);
+      if (preferred) {
+        return preferred;
+      }
+    }
     throw new Error(
       `ambiguous Desktop capability provider ${capabilityId}: ${matches.map((match) => match.service.id).join(", ")}`
     );
