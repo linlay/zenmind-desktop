@@ -1213,8 +1213,12 @@ export function getDesktopPetLogicalPositionFromBounds(
     const displayRight = displayArea.x + displayArea.width;
     const shouldPreferWindowBoundaryEdges = mode === "base";
     const boundsTouchLeft = shouldPreferWindowBoundaryEdges && bounds.x <= displayArea.x + 1;
-    const boundsTouchRight = shouldPreferWindowBoundaryEdges && "width" in bounds && Number.isFinite((bounds as { width?: number }).width)
-      ? bounds.x + Number((bounds as { width: number }).width) >= displayRight - 1
+    const boundsWidth = "width" in bounds ? Number((bounds as { width?: number }).width) : Number.NaN;
+    const isFullWidthLeftHost = boundsTouchLeft &&
+      Number.isFinite(boundsWidth) &&
+      boundsWidth >= displayArea.width - 1;
+    const boundsTouchRight = shouldPreferWindowBoundaryEdges && !isFullWidthLeftHost && Number.isFinite(boundsWidth)
+      ? bounds.x + boundsWidth >= displayRight - 1
       : false;
     const edgeCandidates: DesktopPetEdgeDock[] = [
       "top-left",

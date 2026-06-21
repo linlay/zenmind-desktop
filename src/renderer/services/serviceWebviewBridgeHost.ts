@@ -11,6 +11,8 @@ import {
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
+  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
+  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
@@ -171,8 +173,16 @@ export function handleServiceWebviewBridgeMessage(
     return true;
   }
 
-  if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE)) {
-    const responseType = DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE;
+  if (
+    isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE) ||
+    isServiceWebviewBridgeMessageType(payload.type, LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE)
+  ) {
+    const responseType = isServiceWebviewBridgeMessageType(
+      payload.type,
+      LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE
+    )
+      ? LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE
+      : DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE;
     void window.electronAPI.desktopScreenshot
       .capture()
       .then((result) => {

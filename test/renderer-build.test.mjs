@@ -3796,6 +3796,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeReserved, /media\.microphone/);
   assert.match(serviceWebviewBridgeReserved, /media\.camera/);
   assert.doesNotMatch(serviceWebviewBridgeReserved, /screen\.capture/);
@@ -3804,6 +3806,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewPreload, /sendToHost/);
   assert.doesNotMatch(serviceWebviewPreload, /contextBridge\.exposeInMainWorld/);
   assert.doesNotMatch(serviceWebviewPreload, /sendToMain/);
@@ -3818,6 +3822,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
+  assert.match(serviceWebviewMainWorld, /__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
