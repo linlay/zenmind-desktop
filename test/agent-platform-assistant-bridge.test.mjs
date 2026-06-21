@@ -427,8 +427,8 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents");
     assert.deepEqual(agents, [
-      { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 },
-      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "summit" }, unreadCount: 1 }
+      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "summit" }, unreadCount: 1 },
+      { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 }
     ]);
   } finally {
     globalThis.fetch = originalFetch;

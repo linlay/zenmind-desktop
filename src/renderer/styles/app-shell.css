@@ -219,7 +219,7 @@
   cursor: grabbing;
 }
 
-.app-shell.has-task-board-controls .app-main {
+.app-shell.has-kanban-controls .app-main {
   overflow: hidden;
   padding: 0;
   background: transparent;

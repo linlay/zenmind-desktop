@@ -20,8 +20,8 @@ const allowedLinePatterns = [
     reason: "localized PowerShell stderr matcher"
   },
   {
-    file: "src/main/task-board-local-projects.ts",
-    pattern: /replace\(\/\[\^a-z0-9一-龥\]\+/u,
+    file: "src/main/kanban-local-projects.ts",
+    pattern: /replace\(\/\[\^\\p\{Script=Han\}a-z0-9\]\+/u,
     reason: "Chinese slug character range"
   },
   {

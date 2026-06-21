@@ -28,14 +28,14 @@ import type {
   AssistantNavAgentItem,
   DesktopApi,
   DesktopPetAgentOption,
-  TaskBoardIssue,
-  TaskBoardIssueInput,
-  TaskBoardIssueUpdateInput,
-  TaskBoardPriority,
-  TaskBoardProject,
-  TaskBoardStatus
+  KanbanIssue,
+  KanbanIssueInput,
+  KanbanIssueUpdateInput,
+  KanbanPriority,
+  KanbanProject,
+  KanbanStatus
 } from "../../../shared/contracts";
-import { TASK_BOARD_PRIORITIES, TASK_BOARD_STATUSES } from "../../../shared/contracts";
+import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import {
   getAssistantNavAgentRecentChats,
@@ -49,12 +49,12 @@ type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "priority" | "severity" | "automation" | null;
 type ModalMode = "create" | "edit";
 type ThemeMode = "light" | "dark";
-type TaskBoardAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
-type TaskBoardAutomationFilter = "all" | "scheduled" | "manual";
+type KanbanAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
+type KanbanAutomationFilter = "all" | "scheduled" | "manual";
 type AutomationMenuKind = "plan" | "time";
 type ModalState = {
   mode: ModalMode;
-  issue?: TaskBoardIssue;
+  issue?: KanbanIssue;
 };
 
 type IssueFormState = {
@@ -62,11 +62,11 @@ type IssueFormState = {
   description: string;
   attachmentChatId: string;
   attachments: AssistantAttachment[];
-  status: TaskBoardStatus;
-  priority: TaskBoardPriority;
+  status: KanbanStatus;
+  priority: KanbanPriority;
   assigneeAgentKey: string;
   automationEnabled: boolean;
-  automationPreset: TaskBoardAutomationPlan;
+  automationPreset: KanbanAutomationPlan;
   automationTime: string;
   automationCron: string;
   automationMessage: string;
@@ -80,21 +80,21 @@ type DisplayState = {
   priority: boolean;
 };
 
-type TaskBoardCardPresentation = {
+type IssueCardPresentation = {
   assigneeLabel: string;
   assigneeTitle: string;
 };
 
-type TaskBoardIssueOriginPresentation = {
+type KanbanIssueOriginPresentation = {
   projectLabel: string;
   title: string;
 };
 
-type TaskBoardSeverity = NonNullable<TaskBoardIssue["severity"]>;
+type KanbanSeverity = NonNullable<KanbanIssue["severity"]>;
 
-type TaskBoardCardStatusPresentation = {
+type IssueCardStatusPresentation = {
   label: string;
-  tone: TaskBoardStatus | "running" | "awaiting" | "succeeded" | "failed" | "cancelled";
+  tone: KanbanStatus | "running" | "awaiting" | "succeeded" | "failed" | "cancelled";
   updatedTime: string;
 };
 
@@ -103,88 +103,88 @@ type Feedback = {
   message: string;
 };
 
-type TaskBoardPageProps = {
+type KanbanPageProps = {
   hostTheme: ThemeMode;
 };
 
-type TaskBoardConnectionState = NonNullable<Awaited<ReturnType<DesktopApi["taskBoard"]["listIssues"]>>["connectionState"]>;
+type KanbanConnectionState = NonNullable<Awaited<ReturnType<DesktopApi["kanban"]["listIssues"]>>["connectionState"]>;
 
-type TaskBoardChatModalRequest = {
+type KanbanChatModalRequest = {
   agentKey: string;
   chatId?: string;
   displayName?: string;
 };
 
-type TaskBoardContextMenu = {
+type KanbanContextMenu = {
   issueId: string;
   x: number;
   y: number;
 };
 
-type TaskBoardProjectTreeItem = {
-  project: TaskBoardProject;
+type KanbanProjectTreeItem = {
+  project: KanbanProject;
   level: number;
 };
 
-const TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000;
-const TASK_BOARD_TODO_ASSIGNEE_START_DELAY_MS = 1000;
-const TASK_BOARD_COUNTDOWN_REFRESH_MS = 60_000;
-const VISIBLE_TASK_BOARD_STATUSES = [
+const KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000;
+const KANBAN_TODO_ASSIGNEE_START_DELAY_MS = 1000;
+const KANBAN_COUNTDOWN_REFRESH_MS = 60_000;
+const VISIBLE_KANBAN_STATUSES = [
   "backlog",
   "todo",
   "in_progress",
   "in_review",
   "completed"
-] satisfies ReadonlyArray<TaskBoardStatus>;
-const VISIBLE_TASK_BOARD_STATUS_SET = new Set<TaskBoardStatus>(VISIBLE_TASK_BOARD_STATUSES);
+] satisfies ReadonlyArray<KanbanStatus>;
+const VISIBLE_KANBAN_STATUS_SET = new Set<KanbanStatus>(VISIBLE_KANBAN_STATUSES);
 
-const STATUS_META: Record<TaskBoardStatus, { labelKey: TranslationKey; tone: string }> = {
-  backlog: { labelKey: "taskBoard.status.backlog", tone: "neutral" },
-  todo: { labelKey: "taskBoard.status.todo", tone: "muted" },
-  in_progress: { labelKey: "taskBoard.status.inProgress", tone: "warning" },
-  in_review: { labelKey: "taskBoard.status.inReview", tone: "review" },
-  completed: { labelKey: "taskBoard.status.completed", tone: "info" }
+const STATUS_META: Record<KanbanStatus, { labelKey: TranslationKey; tone: string }> = {
+  backlog: { labelKey: "kanban.status.backlog", tone: "neutral" },
+  todo: { labelKey: "kanban.status.todo", tone: "muted" },
+  in_progress: { labelKey: "kanban.status.inProgress", tone: "warning" },
+  in_review: { labelKey: "kanban.status.inReview", tone: "review" },
+  completed: { labelKey: "kanban.status.completed", tone: "info" }
 };
 
-const PRIORITY_META: Record<TaskBoardPriority, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string; bars: number }> = {
-  high: { labelKey: "taskBoard.priority.high", shortLabelKey: "taskBoard.priority.highShort", tone: "high", bars: 3 },
-  medium: { labelKey: "taskBoard.priority.medium", shortLabelKey: "taskBoard.priority.mediumShort", tone: "medium", bars: 2 },
-  low: { labelKey: "taskBoard.priority.low", shortLabelKey: "taskBoard.priority.lowShort", tone: "low", bars: 1 }
+const PRIORITY_META: Record<KanbanPriority, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string; bars: number }> = {
+  high: { labelKey: "kanban.priority.high", shortLabelKey: "kanban.priority.highShort", tone: "high", bars: 3 },
+  medium: { labelKey: "kanban.priority.medium", shortLabelKey: "kanban.priority.mediumShort", tone: "medium", bars: 2 },
+  low: { labelKey: "kanban.priority.low", shortLabelKey: "kanban.priority.lowShort", tone: "low", bars: 1 }
 };
 
-const SEVERITY_META: Record<TaskBoardSeverity, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string }> = {
-  critical: { labelKey: "taskBoard.severity.critical", shortLabelKey: "taskBoard.severity.criticalShort", tone: "critical" },
-  high: { labelKey: "taskBoard.severity.high", shortLabelKey: "taskBoard.severity.highShort", tone: "high" },
-  medium: { labelKey: "taskBoard.severity.medium", shortLabelKey: "taskBoard.severity.mediumShort", tone: "medium" },
-  low: { labelKey: "taskBoard.severity.low", shortLabelKey: "taskBoard.severity.lowShort", tone: "low" }
+const SEVERITY_META: Record<KanbanSeverity, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string }> = {
+  critical: { labelKey: "kanban.severity.critical", shortLabelKey: "kanban.severity.criticalShort", tone: "critical" },
+  high: { labelKey: "kanban.severity.high", shortLabelKey: "kanban.severity.highShort", tone: "high" },
+  medium: { labelKey: "kanban.severity.medium", shortLabelKey: "kanban.severity.mediumShort", tone: "medium" },
+  low: { labelKey: "kanban.severity.low", shortLabelKey: "kanban.severity.lowShort", tone: "low" }
 };
 
-const TASK_BOARD_SEVERITIES = [
+const KANBAN_SEVERITIES = [
   "critical",
   "high",
   "medium",
   "low"
-] satisfies ReadonlyArray<TaskBoardSeverity>;
+] satisfies ReadonlyArray<KanbanSeverity>;
 
-const DEFAULT_TASK_BOARD_AUTOMATION_PLAN: TaskBoardAutomationPlan = "daily";
-const DEFAULT_TASK_BOARD_AUTOMATION_TIME = "09:00";
-const DEFAULT_TASK_BOARD_AUTOMATION_CRON = "0 9 * * *";
+const DEFAULT_KANBAN_AUTOMATION_PLAN: KanbanAutomationPlan = "daily";
+const DEFAULT_KANBAN_AUTOMATION_TIME = "09:00";
+const DEFAULT_KANBAN_AUTOMATION_CRON = "0 9 * * *";
 
-const TASK_BOARD_AUTOMATION_PLANS = [
-  { labelKey: "taskBoard.automation.hourly", value: "hourly" },
-  { labelKey: "taskBoard.automation.daily", value: "daily" },
-  { labelKey: "taskBoard.automation.weekdays", value: "weekdays" },
-  { labelKey: "taskBoard.automation.weekly", value: "weekly" },
-  { labelKey: "taskBoard.automation.custom", value: "custom" }
-] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardAutomationPlan }>;
+const KANBAN_AUTOMATION_PLANS = [
+  { labelKey: "kanban.automation.hourly", value: "hourly" },
+  { labelKey: "kanban.automation.daily", value: "daily" },
+  { labelKey: "kanban.automation.weekdays", value: "weekdays" },
+  { labelKey: "kanban.automation.weekly", value: "weekly" },
+  { labelKey: "kanban.automation.custom", value: "custom" }
+] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: KanbanAutomationPlan }>;
 
-const TASK_BOARD_AUTOMATION_FILTER_OPTIONS = [
-  { labelKey: "taskBoard.searchFilter.allAutomation", value: "all" },
-  { labelKey: "taskBoard.searchFilter.hasAutomation", value: "scheduled" },
-  { labelKey: "taskBoard.searchFilter.noAutomation", value: "manual" }
-] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardAutomationFilter }>;
+const KANBAN_AUTOMATION_FILTER_OPTIONS = [
+  { labelKey: "kanban.searchFilter.allAutomation", value: "all" },
+  { labelKey: "kanban.searchFilter.hasAutomation", value: "scheduled" },
+  { labelKey: "kanban.searchFilter.noAutomation", value: "manual" }
+] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: KanbanAutomationFilter }>;
 
-const TASK_BOARD_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
+const KANBAN_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
 
 const emptyForm: IssueFormState = {
   title: "",
@@ -195,9 +195,9 @@ const emptyForm: IssueFormState = {
   priority: "medium",
   assigneeAgentKey: "",
   automationEnabled: false,
-  automationPreset: DEFAULT_TASK_BOARD_AUTOMATION_PLAN,
-  automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
-  automationCron: DEFAULT_TASK_BOARD_AUTOMATION_CRON,
+  automationPreset: DEFAULT_KANBAN_AUTOMATION_PLAN,
+  automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
+  automationCron: DEFAULT_KANBAN_AUTOMATION_CRON,
   automationMessage: "",
   automationTimezone: "Asia/Shanghai",
   syncToCloud: false
@@ -209,16 +209,16 @@ const defaultDisplayState: DisplayState = {
   priority: true
 };
 
-function getColumnId(status: TaskBoardStatus) {
-  return `task-board-column:${status}`;
+function getColumnId(status: KanbanStatus) {
+  return `kanban-column:${status}`;
 }
 
-function getStatusFromColumnId(id: string): TaskBoardStatus | null {
-  const status = id.replace(/^task-board-column:/u, "");
-  return TASK_BOARD_STATUSES.includes(status as TaskBoardStatus) ? status as TaskBoardStatus : null;
+function getStatusFromColumnId(id: string): KanbanStatus | null {
+  const status = id.replace(/^kanban-column:/u, "");
+  return KANBAN_STATUSES.includes(status as KanbanStatus) ? status as KanbanStatus : null;
 }
 
-function detectTaskBoardCollisions(args: Parameters<CollisionDetection>[0]) {
+function detectKanbanCollisions(args: Parameters<CollisionDetection>[0]) {
   const pointerCollisions = pointerWithin(args);
   if (pointerCollisions.length > 0) {
     return pointerCollisions;
@@ -232,13 +232,13 @@ function detectTaskBoardCollisions(args: Parameters<CollisionDetection>[0]) {
   return closestCenter(args);
 }
 
-function issueUpdatedTime(issue: TaskBoardIssue) {
+function issueUpdatedTime(issue: KanbanIssue) {
   const timestamp = Date.parse(issue.updatedAt);
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function sortIssues(issues: TaskBoardIssue[]) {
-  const statusOrder = new Map(TASK_BOARD_STATUSES.map((status, index) => [status, index]));
+function sortIssues(issues: KanbanIssue[]) {
+  const statusOrder = new Map(KANBAN_STATUSES.map((status, index) => [status, index]));
   return [...issues].sort((a, b) => {
     const statusDelta = (statusOrder.get(a.status) ?? 99) - (statusOrder.get(b.status) ?? 99);
     if (statusDelta !== 0) return statusDelta;
@@ -282,14 +282,14 @@ function formatIssueUpdatedTime(updatedAt: string) {
   return date;
 }
 
-function formatTaskBoardSortNumber(sortIndex: number | undefined, position: number) {
+function formatKanbanSortNumber(sortIndex: number | undefined, position: number) {
   if (typeof sortIndex === "number" && Number.isFinite(sortIndex) && sortIndex > 0) {
     return `#${Math.round(sortIndex)}`;
   }
   return Number.isFinite(position) ? `#${Math.max(1, Math.round(position))}` : "";
 }
 
-function getNextTaskBoardAutomationTime(issue: Pick<TaskBoardIssue, "automationEnabled" | "automationCron">, now: Date) {
+function getNextKanbanAutomationTime(issue: Pick<KanbanIssue, "automationEnabled" | "automationCron">, now: Date) {
   if (!hasIssueAutomation(issue)) {
     return null;
   }
@@ -329,25 +329,25 @@ function getNextTaskBoardAutomationTime(issue: Pick<TaskBoardIssue, "automationE
   return null;
 }
 
-function formatTaskBoardAutomationCountdown(issue: Pick<TaskBoardIssue, "automationEnabled" | "automationCron">, now: Date, t: TranslateFunction) {
-  const nextTime = getNextTaskBoardAutomationTime(issue, now);
+function formatKanbanAutomationCountdown(issue: Pick<KanbanIssue, "automationEnabled" | "automationCron">, now: Date, t: TranslateFunction) {
+  const nextTime = getNextKanbanAutomationTime(issue, now);
   if (!nextTime) {
     return "";
   }
   const totalMinutes = Math.max(1, Math.ceil((nextTime.getTime() - now.getTime()) / 60_000));
   if (totalMinutes < 60) {
-    return t("taskBoard.countdown.minutes", { minutes: totalMinutes });
+    return t("kanban.countdown.minutes", { minutes: totalMinutes });
   }
   const totalHours = Math.ceil(totalMinutes / 60);
   if (totalHours < 24) {
-    return t("taskBoard.countdown.hours", { hours: totalHours });
+    return t("kanban.countdown.hours", { hours: totalHours });
   }
   const days = Math.floor(totalHours / 24);
   const hours = totalHours % 24;
   if (hours > 0) {
-    return t("taskBoard.countdown.daysHours", { days, hours });
+    return t("kanban.countdown.daysHours", { days, hours });
   }
-  return t("taskBoard.countdown.days", { days });
+  return t("kanban.countdown.days", { days });
 }
 
 function buildAutomationTimeOptions() {
@@ -363,7 +363,7 @@ function buildAutomationTimeOptions() {
 function normalizeAutomationTime(value: string) {
   const match = value.trim().match(/^(\d{1,2}):(\d{1,2})/u);
   if (!match) {
-    return DEFAULT_TASK_BOARD_AUTOMATION_TIME;
+    return DEFAULT_KANBAN_AUTOMATION_TIME;
   }
   const hour = Math.min(23, Math.max(0, Number(match[1])));
   const minute = Math.min(59, Math.max(0, Number(match[2])));
@@ -379,7 +379,7 @@ function automationTimeParts(value: string) {
   };
 }
 
-function buildAutomationCron(plan: TaskBoardAutomationPlan, time: string, customCron: string) {
+function buildAutomationCron(plan: KanbanAutomationPlan, time: string, customCron: string) {
   if (plan === "custom") {
     return customCron.trim();
   }
@@ -421,71 +421,71 @@ function formatAutomationTime(hour: string, minute: string) {
 }
 
 function parseAutomationFormFromCron(value: string | null | undefined) {
-  const automationCron = value?.trim() || DEFAULT_TASK_BOARD_AUTOMATION_CRON;
+  const automationCron = value?.trim() || DEFAULT_KANBAN_AUTOMATION_CRON;
   const parts = automationCron.split(/\s+/u);
   if (parts.length !== 5) {
     return {
-      automationPreset: "custom" as TaskBoardAutomationPlan,
-      automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+      automationPreset: "custom" as KanbanAutomationPlan,
+      automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
       automationCron
     };
   }
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
   if (!isFifteenMinuteCronMinute(minute)) {
     return {
-      automationPreset: "custom" as TaskBoardAutomationPlan,
-      automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+      automationPreset: "custom" as KanbanAutomationPlan,
+      automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
       automationCron
     };
   }
   if (hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
     return {
-      automationPreset: "hourly" as TaskBoardAutomationPlan,
+      automationPreset: "hourly" as KanbanAutomationPlan,
       automationTime: formatAutomationTime("0", minute),
       automationCron
     };
   }
   if (!isCronHour(hour) || dayOfMonth !== "*" || month !== "*") {
     return {
-      automationPreset: "custom" as TaskBoardAutomationPlan,
-      automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+      automationPreset: "custom" as KanbanAutomationPlan,
+      automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
       automationCron
     };
   }
   if (dayOfWeek === "*") {
     return {
-      automationPreset: "daily" as TaskBoardAutomationPlan,
+      automationPreset: "daily" as KanbanAutomationPlan,
       automationTime: formatAutomationTime(hour, minute),
       automationCron
     };
   }
   if (dayOfWeek === "1-5") {
     return {
-      automationPreset: "weekdays" as TaskBoardAutomationPlan,
+      automationPreset: "weekdays" as KanbanAutomationPlan,
       automationTime: formatAutomationTime(hour, minute),
       automationCron
     };
   }
   if (dayOfWeek === "1") {
     return {
-      automationPreset: "weekly" as TaskBoardAutomationPlan,
+      automationPreset: "weekly" as KanbanAutomationPlan,
       automationTime: formatAutomationTime(hour, minute),
       automationCron
     };
   }
   return {
-    automationPreset: "custom" as TaskBoardAutomationPlan,
-    automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+    automationPreset: "custom" as KanbanAutomationPlan,
+    automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
     automationCron
   };
 }
 
-function getAutomationPlanLabel(plan: TaskBoardAutomationPlan, t: TranslateFunction) {
-  const labelKey = TASK_BOARD_AUTOMATION_PLANS.find((candidate) => candidate.value === plan)?.labelKey ?? "taskBoard.automation.custom";
+function getAutomationPlanLabel(plan: KanbanAutomationPlan, t: TranslateFunction) {
+  const labelKey = KANBAN_AUTOMATION_PLANS.find((candidate) => candidate.value === plan)?.labelKey ?? "kanban.automation.custom";
   return t(labelKey);
 }
 
-function buildCompactTaskTitle(description: string) {
+function buildCompactIssueTitle(description: string) {
   const firstLine = description
     .trim()
     .split(/\r?\n/u)
@@ -494,22 +494,22 @@ function buildCompactTaskTitle(description: string) {
   return Array.from(firstLine).slice(0, 24).join("");
 }
 
-function buildAssistantPrompt(issue: TaskBoardIssue, t: TranslateFunction) {
+function buildAssistantPrompt(issue: KanbanIssue, t: TranslateFunction) {
   const parts = [
-    t("taskBoard.prompt.intro"),
-    t("taskBoard.prompt.rule"),
-    t("taskBoard.prompt.id", { value: issue.remoteIssueId ?? issue.id }),
-    t("taskBoard.prompt.title", { value: issue.title }),
-    t("taskBoard.prompt.status", { value: t(STATUS_META[issue.status].labelKey) }),
-    t("taskBoard.prompt.priority", { value: t(PRIORITY_META[issue.priority].labelKey) })
+    t("kanban.prompt.intro"),
+    t("kanban.prompt.rule"),
+    t("kanban.prompt.id", { value: issue.remoteIssueId ?? issue.id }),
+    t("kanban.prompt.title", { value: issue.title }),
+    t("kanban.prompt.status", { value: t(STATUS_META[issue.status].labelKey) }),
+    t("kanban.prompt.priority", { value: t(PRIORITY_META[issue.priority].labelKey) })
   ];
   if (issue.description.trim()) {
-    parts.push(t("taskBoard.prompt.description", { value: issue.description.trim() }));
+    parts.push(t("kanban.prompt.description", { value: issue.description.trim() }));
   }
   return parts.join("\n");
 }
 
-function computeDropPosition(targetIssues: TaskBoardIssue[], insertIndex: number) {
+function computeDropPosition(targetIssues: KanbanIssue[], insertIndex: number) {
   const before = insertIndex > 0 ? targetIssues[insertIndex - 1] : null;
   const after = insertIndex < targetIssues.length ? targetIssues[insertIndex] : null;
   if (!before && !after) return 1;
@@ -519,10 +519,10 @@ function computeDropPosition(targetIssues: TaskBoardIssue[], insertIndex: number
 }
 
 function computeSortableDropPosition(
-  issues: TaskBoardIssue[],
+  issues: KanbanIssue[],
   activeId: string,
-  overIssue: TaskBoardIssue | undefined,
-  targetStatus: TaskBoardStatus
+  overIssue: KanbanIssue | undefined,
+  targetStatus: KanbanStatus
 ) {
   const targetIssues = sortIssues(issues).filter((issue) => issue.status === targetStatus);
   if (overIssue?.status === targetStatus) {
@@ -546,12 +546,12 @@ function computeSortableDropPosition(
   return computeDropPosition(targetIssuesWithoutActive, insertIndex);
 }
 
-function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
+function createFormFromIssue(issue: KanbanIssue): IssueFormState {
   const automationForm = parseAutomationFormFromCron(issue.automationCron);
   return {
     title: issue.title,
     description: issue.description,
-    attachmentChatId: issue.attachmentChatId ?? issue.chatId ?? createTaskBoardAttachmentChatId(issue.id),
+    attachmentChatId: issue.attachmentChatId ?? issue.chatId ?? createKanbanAttachmentChatId(issue.id),
     attachments: issue.attachments ?? [],
     status: issue.status,
     priority: issue.priority,
@@ -566,21 +566,21 @@ function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
   };
 }
 
-function createTaskBoardAttachmentChatId(seed: string) {
+function createKanbanAttachmentChatId(seed: string) {
   const safeSeed = seed.replace(/[^a-zA-Z0-9_-]/gu, "_");
-  return `task-board-${safeSeed}`;
+  return `kanban-${safeSeed}`;
 }
 
-function createTaskBoardDraftAttachmentChatId() {
+function createKanbanDraftAttachmentChatId() {
   const randomPart = Math.random().toString(36).slice(2, 10);
-  return `task-board-draft-${Date.now().toString(36)}-${randomPart}`;
+  return `kanban-draft-${Date.now().toString(36)}-${randomPart}`;
 }
 
-function getVisibleTaskBoardAttachments(attachments: AssistantAttachment[] | null | undefined) {
+function getVisibleKanbanAttachments(attachments: AssistantAttachment[] | null | undefined) {
   return (attachments ?? []).filter((attachment) => !attachment.hidden);
 }
 
-function formatTaskBoardAttachmentSize(sizeBytes: number) {
+function formatKanbanAttachmentSize(sizeBytes: number) {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
     return "";
   }
@@ -593,8 +593,8 @@ function formatTaskBoardAttachmentSize(sizeBytes: number) {
   return `${Math.round(sizeBytes / 1024 / 102.4) / 10} MB`;
 }
 
-function mergeTaskBoardIssueAttachmentDraft(
-  issue: TaskBoardIssue | undefined,
+function mergeKanbanIssueAttachmentDraft(
+  issue: KanbanIssue | undefined,
   attachmentChatId: string,
   attachments: AssistantAttachment[]
 ) {
@@ -608,9 +608,9 @@ function mergeTaskBoardIssueAttachmentDraft(
   };
 }
 
-function mergeTaskBoardIssuesAttachmentDraft(
-  issues: TaskBoardIssue[],
-  savedIssue: TaskBoardIssue | undefined
+function mergeKanbanIssuesAttachmentDraft(
+  issues: KanbanIssue[],
+  savedIssue: KanbanIssue | undefined
 ) {
   if (!savedIssue) {
     return issues;
@@ -623,17 +623,17 @@ function getAssigneeName(agentKey: string, agents: AssistantNavAgentItem[]) {
   return agents.find((agent) => agent.agentKey === agentKey)?.displayName ?? agentKey;
 }
 
-function getAssigneeAgent(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+function getAssigneeAgent(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
   const agentKey = issue.assigneeAgentKey?.trim();
   return agentKey ? agents.find((agent) => agent.agentKey === agentKey) : undefined;
 }
 
-function getVisibleAssigneeName(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+function getVisibleAssigneeName(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
   const trimmed = getAssigneeName(issue.assigneeAgentKey ?? "", agents)?.trim() ?? "";
   return trimmed;
 }
 
-function truncateTaskBoardAssigneeName(name: string) {
+function truncateKanbanAssigneeName(name: string) {
   return Array.from(name.trim()).slice(0, 4).join("");
 }
 
@@ -645,13 +645,13 @@ function isFiveFieldCron(value: string) {
   return value.trim().split(/\s+/u).length === 5;
 }
 
-function hasIssueAutomation(issue: Pick<TaskBoardIssue, "automationEnabled" | "automationCron">) {
+function hasIssueAutomation(issue: Pick<KanbanIssue, "automationEnabled" | "automationCron">) {
   return issue.automationEnabled && Boolean(issue.automationCron?.trim());
 }
 
 function shouldShowIssueForAutomationFilter(
-  issue: Pick<TaskBoardIssue, "automationEnabled" | "automationCron">,
-  filter: TaskBoardAutomationFilter
+  issue: Pick<KanbanIssue, "automationEnabled" | "automationCron">,
+  filter: KanbanAutomationFilter
 ) {
   if (filter === "all") {
     return true;
@@ -660,7 +660,7 @@ function shouldShowIssueForAutomationFilter(
   return filter === "scheduled" ? hasAutomation : !hasAutomation;
 }
 
-function getAutomationDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) {
+function getAutomationDisplayLabel(issue: KanbanIssue, t: TranslateFunction) {
   if (!hasIssueAutomation(issue)) {
     return "";
   }
@@ -670,7 +670,7 @@ function getAutomationDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) 
   }
   if (automationForm.automationPreset === "hourly") {
     const minute = Number(automationForm.automationTime.split(":")[1]);
-    return t("taskBoard.automation.hourlyAtMinute", { minute: padAutomationNumber(minute) });
+    return t("kanban.automation.hourlyAtMinute", { minute: padAutomationNumber(minute) });
   }
   return `${getAutomationPlanLabel(automationForm.automationPreset, t)} ${automationForm.automationTime}`;
 }
@@ -684,9 +684,9 @@ function getIssueCardAssigneeLabel(
     return "";
   }
   if (!visibleAssigneeName) {
-    return t("taskBoard.form.unassigned");
+    return t("kanban.form.unassigned");
   }
-  return truncateTaskBoardAssigneeName(visibleAssigneeName);
+  return truncateKanbanAssigneeName(visibleAssigneeName);
 }
 
 function getIssueCardPresentation(
@@ -695,7 +695,7 @@ function getIssueCardPresentation(
     visibleAssigneeName: string;
   },
   t: TranslateFunction
-): TaskBoardCardPresentation {
+): IssueCardPresentation {
   const assigneeLabel = getIssueCardAssigneeLabel(options.visibleAssigneeName, options.displayAssignee, t);
   return {
     assigneeLabel,
@@ -704,28 +704,28 @@ function getIssueCardPresentation(
 }
 
 function getIssueCardStatusPresentation(
-  issue: TaskBoardIssue,
+  issue: KanbanIssue,
   options: {
     awaitingConfirmation: boolean;
     now: Date;
     sortIndex?: number;
   },
   t: TranslateFunction
-): TaskBoardCardStatusPresentation {
+): IssueCardStatusPresentation {
   if (issue.runState === "cancelled") {
-    return { label: t("taskBoard.run.cancelled"), tone: "cancelled", updatedTime: "" };
+    return { label: t("kanban.run.cancelled"), tone: "cancelled", updatedTime: "" };
   }
   if (issue.runState === "failed") {
-    return { label: t("taskBoard.run.failed"), tone: "failed", updatedTime: "" };
+    return { label: t("kanban.run.failed"), tone: "failed", updatedTime: "" };
   }
   if (issue.runState === "completed" || issue.status === "completed") {
-    return { label: t("taskBoard.run.succeeded"), tone: "succeeded", updatedTime: "" };
+    return { label: t("kanban.run.succeeded"), tone: "succeeded", updatedTime: "" };
   }
   if (options.awaitingConfirmation && issue.status === "in_progress") {
-    return { label: t("taskBoard.run.awaitingApproval"), tone: "awaiting", updatedTime: "" };
+    return { label: t("kanban.run.awaitingApproval"), tone: "awaiting", updatedTime: "" };
   }
   if (issue.runState === "running" || (issue.status === "in_progress" && Boolean(issue.runId))) {
-    return { label: t("taskBoard.run.running"), tone: "running", updatedTime: "" };
+    return { label: t("kanban.run.running"), tone: "running", updatedTime: "" };
   }
   if (issue.status === "backlog") {
     return {
@@ -736,10 +736,10 @@ function getIssueCardStatusPresentation(
   }
   if (issue.status === "todo") {
     const automationCountdown = hasIssueAutomation(issue)
-      ? formatTaskBoardAutomationCountdown(issue, options.now, t) || getAutomationDisplayLabel(issue, t)
+      ? formatKanbanAutomationCountdown(issue, options.now, t) || getAutomationDisplayLabel(issue, t)
       : "";
     return {
-      label: automationCountdown || formatTaskBoardSortNumber(options.sortIndex, issue.position),
+      label: automationCountdown || formatKanbanSortNumber(options.sortIndex, issue.position),
       tone: "todo",
       updatedTime: ""
     };
@@ -751,13 +751,13 @@ function getIssueCardStatusPresentation(
   };
 }
 
-function getTaskBoardEmptyHint(status: TaskBoardStatus, t: TranslateFunction) {
-  const hintKey: Record<TaskBoardStatus, TranslationKey> = {
-    backlog: "taskBoard.column.emptyBacklog",
-    todo: "taskBoard.column.emptyTodo",
-    in_progress: "taskBoard.column.emptyInProgress",
-    in_review: "taskBoard.column.emptyInReview",
-    completed: "taskBoard.column.emptyCompleted"
+function getKanbanEmptyHint(status: KanbanStatus, t: TranslateFunction) {
+  const hintKey: Record<KanbanStatus, TranslationKey> = {
+    backlog: "kanban.column.emptyBacklog",
+    todo: "kanban.column.emptyTodo",
+    in_progress: "kanban.column.emptyInProgress",
+    in_review: "kanban.column.emptyInReview",
+    completed: "kanban.column.emptyCompleted"
   };
   return t(hintKey[status]);
 }
@@ -779,7 +779,7 @@ function createNavigationAgentFromOption(agent: DesktopPetAgentOption): Assistan
   };
 }
 
-function hasTaskBoardAgentIcon(icon: AssistantNavAgentItem["icon"] | null | undefined) {
+function hasKanbanAgentIcon(icon: AssistantNavAgentItem["icon"] | null | undefined) {
   if (typeof icon === "string") {
     return icon.trim().length > 0;
   }
@@ -789,10 +789,10 @@ function hasTaskBoardAgentIcon(icon: AssistantNavAgentItem["icon"] | null | unde
   return false;
 }
 
-function mergeTaskBoardAgentIcons(currentAgents: AssistantNavAgentItem[], nextAgents: AssistantNavAgentItem[]) {
+function mergeKanbanAgentIcons(currentAgents: AssistantNavAgentItem[], nextAgents: AssistantNavAgentItem[]) {
   const previousIcons = new Map(
     currentAgents
-      .filter((agent) => hasTaskBoardAgentIcon(agent.icon))
+      .filter((agent) => hasKanbanAgentIcon(agent.icon))
       .map((agent) => [agent.agentKey, agent.icon] as const)
   );
   return nextAgents.map((agent) => {
@@ -801,26 +801,26 @@ function mergeTaskBoardAgentIcons(currentAgents: AssistantNavAgentItem[], nextAg
   });
 }
 
-async function hydrateTaskBoardAgentIcons(items: AssistantNavAgentItem[]) {
-  if (!items.some((agent) => !hasTaskBoardAgentIcon(agent.icon))) {
+async function hydrateKanbanAgentIcons(items: AssistantNavAgentItem[]) {
+  if (!items.some((agent) => !hasKanbanAgentIcon(agent.icon))) {
     return items;
   }
   const agentOptions = await window.electronAPI.assistant.listAgents();
   const fallbackItems = agentOptions.map(createNavigationAgentFromOption);
-  return mergeTaskBoardAgentIcons(fallbackItems, items);
+  return mergeKanbanAgentIcons(fallbackItems, items);
 }
 
-async function loadTaskBoardAgents(): Promise<AssistantNavAgentItem[]> {
+async function loadKanbanAgents(): Promise<AssistantNavAgentItem[]> {
   const navigationResult = await window.electronAPI.assistant.listNavigationAgents();
   if (navigationResult.ok && navigationResult.items.length > 0) {
     const navigationItems = normalizeAssistantNavAgents(navigationResult.items);
-    return await hydrateTaskBoardAgentIcons(navigationItems);
+    return await hydrateKanbanAgentIcons(navigationItems);
   }
   const agentOptions = await window.electronAPI.assistant.listAgents();
   return agentOptions.map(createNavigationAgentFromOption);
 }
 
-function isCancelledAssistantTaskEvent(event: AssistantEvent) {
+function isCancelledAssistantRunEvent(event: AssistantEvent) {
   const eventStatus = String(event.status ?? "");
   return (
     event.type === "run.cancel" ||
@@ -834,9 +834,9 @@ function isCancelledAssistantTaskEvent(event: AssistantEvent) {
   );
 }
 
-function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction): {
-  status: TaskBoardStatus | null;
-  runState: TaskBoardIssue["runState"];
+function resolveAssistantRunStatus(event: AssistantEvent, t: TranslateFunction): {
+  status: KanbanStatus | null;
+  runState: KanbanIssue["runState"];
   tone: Feedback["tone"];
   message: string;
 } | null {
@@ -845,15 +845,15 @@ function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction)
       status: "completed",
       runState: "completed",
       tone: "success",
-      message: t("taskBoard.feedback.agentDone")
+      message: t("kanban.feedback.agentDone")
     };
   }
-  if (isCancelledAssistantTaskEvent(event)) {
+  if (isCancelledAssistantRunEvent(event)) {
     return {
       status: null,
       runState: "cancelled",
       tone: "error",
-      message: t("taskBoard.feedback.agentCancelled")
+      message: t("kanban.feedback.agentCancelled")
     };
   }
   if (
@@ -867,36 +867,36 @@ function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction)
       status: null,
       runState: "failed",
       tone: "error",
-      message: t("taskBoard.feedback.agentIncomplete")
+      message: t("kanban.feedback.agentIncomplete")
     };
   }
   return null;
 }
 
-function readTaskBoardApi(): DesktopApi["taskBoard"] | null {
+function readKanbanApi(): DesktopApi["kanban"] | null {
   if (typeof window === "undefined") {
     return null;
   }
-  const api = (window.electronAPI as Partial<DesktopApi> | undefined)?.taskBoard;
+  const api = (window.electronAPI as Partial<DesktopApi> | undefined)?.kanban;
   return api && typeof api.listIssues === "function" ? api : null;
 }
 
-function getTaskBoardConnectionTone(state: TaskBoardConnectionState) {
+function getKanbanConnectionTone(state: KanbanConnectionState) {
   if (state === "open") return "success";
   if (state === "connecting") return "pending";
   if (state === "error") return "error";
   return "muted";
 }
 
-function getTaskBoardConnectionLabel(state: TaskBoardConnectionState, t: TranslateFunction) {
-  if (state === "open") return t("taskBoard.cloud.status.open");
-  if (state === "connecting") return t("taskBoard.cloud.status.connecting");
-  if (state === "closed") return t("taskBoard.cloud.status.closed");
-  if (state === "error") return t("taskBoard.cloud.status.error");
-  return t("taskBoard.cloud.status.disabled");
+function getKanbanConnectionLabel(state: KanbanConnectionState, t: TranslateFunction) {
+  if (state === "open") return t("kanban.cloud.status.open");
+  if (state === "connecting") return t("kanban.cloud.status.connecting");
+  if (state === "closed") return t("kanban.cloud.status.closed");
+  if (state === "error") return t("kanban.cloud.status.error");
+  return t("kanban.cloud.status.disabled");
 }
 
-function getTaskBoardProjectOptionLabel(project: TaskBoardProject) {
+function getKanbanProjectOptionLabel(project: KanbanProject) {
   const path = project.path.trim();
   if (path && path !== project.name) {
     return `${project.name} · ${path}`;
@@ -904,7 +904,7 @@ function getTaskBoardProjectOptionLabel(project: TaskBoardProject) {
   return project.name;
 }
 
-function sortTaskBoardProjectOptions(projects: TaskBoardProject[]) {
+function sortKanbanProjectOptions(projects: KanbanProject[]) {
   return [...projects]
     .filter((project) => project.id.trim())
     .sort((left, right) => {
@@ -914,7 +914,7 @@ function sortTaskBoardProjectOptions(projects: TaskBoardProject[]) {
     });
 }
 
-function compareTaskBoardProjects(left: TaskBoardProject, right: TaskBoardProject) {
+function compareKanbanProjects(left: KanbanProject, right: KanbanProject) {
   if (left.position !== right.position) {
     return left.position - right.position;
   }
@@ -923,11 +923,11 @@ function compareTaskBoardProjects(left: TaskBoardProject, right: TaskBoardProjec
   return leftLabel.localeCompare(rightLabel, "zh-Hans-CN");
 }
 
-function flattenTaskBoardProjectTree(projects: TaskBoardProject[]): TaskBoardProjectTreeItem[] {
+function flattenKanbanProjectTree(projects: KanbanProject[]): KanbanProjectTreeItem[] {
   const validProjects = projects.filter((project) => project.id.trim());
   const projectIds = new Set(validProjects.map((project) => project.id));
-  const childrenByParentId = new Map<string, TaskBoardProject[]>();
-  const roots: TaskBoardProject[] = [];
+  const childrenByParentId = new Map<string, KanbanProject[]>();
+  const roots: KanbanProject[] = [];
   for (const project of validProjects) {
     const parentId = project.parentId?.trim() ?? "";
     if (!parentId || !projectIds.has(parentId)) {
@@ -938,23 +938,23 @@ function flattenTaskBoardProjectTree(projects: TaskBoardProject[]): TaskBoardPro
     children.push(project);
     childrenByParentId.set(parentId, children);
   }
-  const items: TaskBoardProjectTreeItem[] = [];
+  const items: KanbanProjectTreeItem[] = [];
   const visited = new Set<string>();
-  const visit = (project: TaskBoardProject, level: number) => {
+  const visit = (project: KanbanProject, level: number) => {
     if (visited.has(project.id)) {
       return;
     }
     visited.add(project.id);
     items.push({ project, level });
-    const children = (childrenByParentId.get(project.id) ?? []).sort(compareTaskBoardProjects);
+    const children = (childrenByParentId.get(project.id) ?? []).sort(compareKanbanProjects);
     for (const child of children) {
       visit(child, level + 1);
     }
   };
-  for (const root of roots.sort(compareTaskBoardProjects)) {
+  for (const root of roots.sort(compareKanbanProjects)) {
     visit(root, 0);
   }
-  for (const project of validProjects.sort(compareTaskBoardProjects)) {
+  for (const project of validProjects.sort(compareKanbanProjects)) {
     if (!visited.has(project.id)) {
       visit(project, Math.max(0, project.depth));
     }
@@ -962,7 +962,7 @@ function flattenTaskBoardProjectTree(projects: TaskBoardProject[]): TaskBoardPro
   return items;
 }
 
-function buildTaskBoardProjectChildrenMap(projects: TaskBoardProject[]) {
+function buildKanbanProjectChildrenMap(projects: KanbanProject[]) {
   const projectIds = new Set(projects.map((project) => project.id));
   const childrenByParentId = new Map<string, string[]>();
   for (const project of projects) {
@@ -977,57 +977,57 @@ function buildTaskBoardProjectChildrenMap(projects: TaskBoardProject[]) {
   return childrenByParentId;
 }
 
-function collectTaskBoardProjectAndDescendantIds(projectId: string, childrenByParentId: Map<string, string[]>, output: Set<string>) {
+function collectKanbanProjectAndDescendantIds(projectId: string, childrenByParentId: Map<string, string[]>, output: Set<string>) {
   if (output.has(projectId)) {
     return;
   }
   output.add(projectId);
   for (const childId of childrenByParentId.get(projectId) ?? []) {
-    collectTaskBoardProjectAndDescendantIds(childId, childrenByParentId, output);
+    collectKanbanProjectAndDescendantIds(childId, childrenByParentId, output);
   }
 }
 
-function getTaskBoardProjectFilterIds(projects: TaskBoardProject[], selectedProjectIds: string[]) {
+function getKanbanProjectFilterIds(projects: KanbanProject[], selectedProjectIds: string[]) {
   const selected = selectedProjectIds.filter(Boolean);
   if (selected.length === 0) {
     return null;
   }
-  const childrenByParentId = buildTaskBoardProjectChildrenMap(projects);
+  const childrenByParentId = buildKanbanProjectChildrenMap(projects);
   const filterIds = new Set<string>();
   for (const projectId of selected) {
-    collectTaskBoardProjectAndDescendantIds(projectId, childrenByParentId, filterIds);
+    collectKanbanProjectAndDescendantIds(projectId, childrenByParentId, filterIds);
   }
   return filterIds;
 }
 
-function getTaskBoardProjectFilterLabel(
+function getKanbanProjectFilterLabel(
   selectedProjectIds: string[],
-  projects: TaskBoardProject[],
+  projects: KanbanProject[],
   t: TranslateFunction
 ) {
   if (selectedProjectIds.length === 0) {
-    return t("taskBoard.projectFilter.all");
+    return t("kanban.projectFilter.all");
   }
   if (selectedProjectIds.length === 1) {
     const project = projects.find((candidate) => candidate.id === selectedProjectIds[0]);
-    return project ? getTaskBoardProjectOptionLabel(project) : selectedProjectIds[0];
+    return project ? getKanbanProjectOptionLabel(project) : selectedProjectIds[0];
   }
-  return t("taskBoard.projectFilter.selectedCount", { count: selectedProjectIds.length });
+  return t("kanban.projectFilter.selectedCount", { count: selectedProjectIds.length });
 }
 
-function isIssueDragLocked(issue: TaskBoardIssue | null | undefined) {
+function isIssueDragLocked(issue: KanbanIssue | null | undefined) {
   return Boolean(issue?.runId);
 }
 
-function canEditTaskBoardIssueBody(issue: TaskBoardIssue | null | undefined) {
+function canEditKanbanIssueBody(issue: KanbanIssue | null | undefined) {
   return issue?.syncMode !== "cloud";
 }
 
-function canCreateIssueFromColumnDoubleClick(status: TaskBoardStatus) {
+function canCreateIssueFromColumnDoubleClick(status: KanbanStatus) {
   return status === "backlog" || status === "todo";
 }
 
-function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, status: TaskBoardStatus) {
+function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, status: KanbanStatus) {
   if (!canCreateIssueFromColumnDoubleClick(status)) {
     return false;
   }
@@ -1035,18 +1035,18 @@ function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, 
   if (!(target instanceof Element)) {
     return event.currentTarget === target;
   }
-  return !target.closest(".task-board-card");
+  return !target.closest(".issue-card");
 }
 
-function normalizeIssueSeverity(severity: TaskBoardIssue["severity"]): TaskBoardSeverity {
+function normalizeIssueSeverity(severity: KanbanIssue["severity"]): KanbanSeverity {
   return severity === "critical" || severity === "high" || severity === "low" ? severity : "medium";
 }
 
-function getIssueStageLabel(issue: TaskBoardIssue) {
+function getIssueStageLabel(issue: KanbanIssue) {
   return issue.stageName?.trim() || "";
 }
 
-function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+function issueHasPendingAwaiting(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
   const chatId = issue.chatId?.trim();
   if (issue.status !== "in_progress" || !chatId) {
     return false;
@@ -1058,17 +1058,17 @@ function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgen
   });
 }
 
-function truncateTaskBoardProjectLabel(value: string, maxLength = 16) {
+function truncateKanbanProjectLabel(value: string, maxLength = 16) {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) return trimmed;
   return `${Array.from(trimmed).slice(0, Math.max(1, maxLength - 3)).join("")}...`;
 }
 
-function getTaskBoardIssueOriginPresentation(
-  issue: TaskBoardIssue,
-  projectsById: Map<string, TaskBoardProject>,
+function getKanbanIssueOriginPresentation(
+  issue: KanbanIssue,
+  projectsById: Map<string, KanbanProject>,
   t: TranslateFunction
-): TaskBoardIssueOriginPresentation {
+): KanbanIssueOriginPresentation {
   const projectId = issue.projectId?.trim() || "default";
   const project = projectsById.get(projectId);
   const projectName = project?.name.trim() || projectId;
@@ -1077,25 +1077,25 @@ function getTaskBoardIssueOriginPresentation(
     ? `${issue.remoteIssueId.trim()} / ${issue.id}`
     : issue.id;
   const titleParts = [
-    t("taskBoard.card.project", { value: projectName }),
-    projectPath ? t("taskBoard.card.projectPath", { value: projectPath }) : null,
-    t("taskBoard.card.issueId", { value: issueId })
+    t("kanban.card.project", { value: projectName }),
+    projectPath ? t("kanban.card.projectPath", { value: projectPath }) : null,
+    t("kanban.card.issueId", { value: issueId })
   ].filter((value): value is string => Boolean(value));
   return {
-    projectLabel: truncateTaskBoardProjectLabel(projectName),
+    projectLabel: truncateKanbanProjectLabel(projectName),
     title: titleParts.join("\n")
   };
 }
 
-function formatTaskBoardLastSyncedAt(value: string | null | undefined, t: TranslateFunction) {
+function formatKanbanLastSyncedAt(value: string | null | undefined, t: TranslateFunction) {
   if (!value) {
-    return t("taskBoard.cloud.neverSynced");
+    return t("kanban.cloud.neverSynced");
   }
   const formatted = formatIssueUpdatedTime(value);
-  return formatted ? t("taskBoard.cloud.lastSyncedAt", { time: formatted }) : t("taskBoard.cloud.neverSynced");
+  return formatted ? t("kanban.cloud.lastSyncedAt", { time: formatted }) : t("kanban.cloud.neverSynced");
 }
 
-function resolveIssueAgentKey(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+function resolveIssueAgentKey(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
   if (issue.assigneeAgentKey?.trim()) {
     return issue.assigneeAgentKey.trim();
   }
@@ -1110,7 +1110,7 @@ function resolveIssueAgentKey(issue: TaskBoardIssue, agents: AssistantNavAgentIt
   return matchedAgent?.agentKey ?? "";
 }
 
-function buildTaskBoardChatEmbedPath(request: TaskBoardChatModalRequest) {
+function buildKanbanChatEmbedPath(request: KanbanChatModalRequest) {
   const agentKey = request.agentKey.trim();
   const chatId = request.chatId?.trim() ?? "";
   if (!agentKey) {
@@ -1131,43 +1131,43 @@ function buildTaskBoardChatEmbedPath(request: TaskBoardChatModalRequest) {
   return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
 }
 
-export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
+export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const { t } = useI18n();
-  const [issues, setIssues] = useState<TaskBoardIssue[]>([]);
+  const [issues, setIssues] = useState<KanbanIssue[]>([]);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [, setBusyIssueId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [menu, setMenu] = useState<MenuKind>(null);
   const [query, setQuery] = useState("");
-  const [cloudProjects, setCloudProjects] = useState<TaskBoardProject[]>([]);
+  const [cloudProjects, setCloudProjects] = useState<KanbanProject[]>([]);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [projectFilterOpen, setProjectFilterOpen] = useState(false);
-  const [connectionState, setConnectionState] = useState<TaskBoardConnectionState>("disabled");
+  const [connectionState, setConnectionState] = useState<KanbanConnectionState>("disabled");
   const [cloudResyncing, setCloudResyncing] = useState(false);
-  const [priorityFilters, setPriorityFilters] = useState<TaskBoardPriority[]>([]);
-  const [severityFilters, setSeverityFilters] = useState<TaskBoardSeverity[]>([]);
-  const [automationFilter, setAutomationFilter] = useState<TaskBoardAutomationFilter>("all");
+  const [priorityFilters, setPriorityFilters] = useState<KanbanPriority[]>([]);
+  const [severityFilters, setSeverityFilters] = useState<KanbanSeverity[]>([]);
+  const [automationFilter, setAutomationFilter] = useState<KanbanAutomationFilter>("all");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenuKind>(null);
-  const [taskBoardCountdownNow, setTaskBoardCountdownNow] = useState(() => Date.now());
+  const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
   const [display, setDisplay] = useState<DisplayState>(defaultDisplayState);
   const [modal, setModal] = useState<ModalState | null>(null);
-  const [chatModalRequest, setChatModalRequest] = useState<TaskBoardChatModalRequest | null>(null);
+  const [chatModalRequest, setChatModalRequest] = useState<KanbanChatModalRequest | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<TaskBoardContextMenu | null>(null);
-  const issuesRef = useRef<TaskBoardIssue[]>([]);
+  const [contextMenu, setContextMenu] = useState<KanbanContextMenu | null>(null);
+  const issuesRef = useRef<KanbanIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const taskBoardReady = readTaskBoardApi() !== null;
-  const missingTaskBoardApiMessage = t("taskBoard.missingApi", { appName: t("app.name") });
-  const cloudProjectOptions = useMemo(() => sortTaskBoardProjectOptions(cloudProjects), [cloudProjects]);
-  const taskBoardProjectsById = useMemo(() => new Map(cloudProjects.map((project) => [project.id, project])), [cloudProjects]);
+  const kanbanReady = readKanbanApi() !== null;
+  const missingKanbanApiMessage = t("kanban.missingApi", { appName: t("app.name") });
+  const cloudProjectOptions = useMemo(() => sortKanbanProjectOptions(cloudProjects), [cloudProjects]);
+  const kanbanProjectsById = useMemo(() => new Map(cloudProjects.map((project) => [project.id, project])), [cloudProjects]);
   const projectFilterIds = useMemo(
-    () => getTaskBoardProjectFilterIds(cloudProjects, selectedProjectIds),
+    () => getKanbanProjectFilterIds(cloudProjects, selectedProjectIds),
     [cloudProjects, selectedProjectIds]
   );
 
@@ -1175,19 +1175,19 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     let cancelled = false;
     async function load() {
       setLoading(true);
-      const taskBoardApi = readTaskBoardApi();
-      if (!taskBoardApi) {
+      const kanbanApi = readKanbanApi();
+      if (!kanbanApi) {
         if (!cancelled) {
           setIssues([]);
-          setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+          setFeedback({ tone: "error", message: missingKanbanApiMessage });
           setLoading(false);
         }
         return;
       }
       try {
         const [issueResult, agentResult] = await Promise.all([
-          taskBoardApi.listIssues(),
-          loadTaskBoardAgents()
+          kanbanApi.listIssues(),
+          loadKanbanAgents()
         ]);
         if (cancelled) return;
         setIssues(sortIssues(issueResult.issues));
@@ -1198,7 +1198,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         if (!cancelled) {
           setFeedback({
             tone: "error",
-            message: error instanceof Error ? error.message : t("taskBoard.feedback.loadFailed")
+            message: error instanceof Error ? error.message : t("kanban.feedback.loadFailed")
           });
         }
       } finally {
@@ -1211,30 +1211,30 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [missingTaskBoardApiMessage, t]);
+  }, [missingKanbanApiMessage, t]);
 
-  async function reloadTaskBoard() {
-    const taskBoardApi = readTaskBoardApi();
-    if (!taskBoardApi) return;
-    const issueResult = await taskBoardApi.listIssues();
+  async function reloadKanban() {
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi) return;
+    const issueResult = await kanbanApi.listIssues();
     setIssues(sortIssues(issueResult.issues));
     setCloudProjects(issueResult.projects ?? []);
     setConnectionState(issueResult.connectionState ?? "disabled");
   }
 
   async function resyncCloudBoard() {
-    const taskBoardApi = readTaskBoardApi();
-    if (!taskBoardApi) {
-      setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi) {
+      setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
-    if (typeof taskBoardApi.resyncCloudBoard !== "function") {
-      setFeedback({ tone: "error", message: t("taskBoard.cloud.preloadOutdated") });
+    if (typeof kanbanApi.resyncCloudBoard !== "function") {
+      setFeedback({ tone: "error", message: t("kanban.cloud.preloadOutdated") });
       return;
     }
     setCloudResyncing(true);
     try {
-      const result = await taskBoardApi.resyncCloudBoard();
+      const result = await kanbanApi.resyncCloudBoard();
       setIssues(sortIssues(result.issues));
       setCloudProjects(result.projects ?? []);
       setConnectionState(result.connectionState ?? "disabled");
@@ -1242,7 +1242,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : t("taskBoard.cloud.resyncFailed")
+        message: error instanceof Error ? error.message : t("kanban.cloud.resyncFailed")
       });
     } finally {
       setCloudResyncing(false);
@@ -1252,12 +1252,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   useEffect(() => {
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
       if (result.ok) {
-        setAgents((currentAgents) => mergeTaskBoardAgentIcons(currentAgents, normalizeAssistantNavAgents(result.items)));
+        setAgents((currentAgents) => mergeKanbanAgentIcons(currentAgents, normalizeAssistantNavAgents(result.items)));
         return;
       }
-      void loadTaskBoardAgents().then((items) => {
+      void loadKanbanAgents().then((items) => {
         if (items.length > 0) {
-          setAgents((currentAgents) => mergeTaskBoardAgentIcons(currentAgents, items));
+          setAgents((currentAgents) => mergeKanbanAgentIcons(currentAgents, items));
         }
       });
     });
@@ -1269,12 +1269,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }, [issues]);
 
   useEffect(() => {
-    const taskBoardApi = readTaskBoardApi();
-    if (!taskBoardApi || typeof taskBoardApi.onChanged !== "function") {
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi || typeof kanbanApi.onChanged !== "function") {
       return undefined;
     }
-    return taskBoardApi.onChanged(() => {
-      void reloadTaskBoard();
+    return kanbanApi.onChanged(() => {
+      void reloadKanban();
     });
   }, []);
 
@@ -1285,8 +1285,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setTaskBoardCountdownNow(Date.now());
-    }, TASK_BOARD_COUNTDOWN_REFRESH_MS);
+      setKanbanCountdownNow(Date.now());
+    }, KANBAN_COUNTDOWN_REFRESH_MS);
     return () => {
       window.clearInterval(intervalId);
     };
@@ -1294,7 +1294,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      void reloadTaskBoard();
+      void reloadKanban();
     }, 15_000);
     return () => {
       window.clearInterval(intervalId);
@@ -1330,7 +1330,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
     const timeoutId = window.setTimeout(() => {
       setFeedback((current) => (current === feedback ? null : current));
-    }, TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS);
+    }, KANBAN_FEEDBACK_AUTO_CLOSE_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -1358,34 +1358,34 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
   useEffect(() => {
     const removeAssistantEventListener = window.electronAPI.assistant.onAssistantEvent(async (event) => {
-      const nextTaskStatus = resolveAssistantTaskStatus(event, t);
-      if (!nextTaskStatus) {
+      const nextRunStatus = resolveAssistantRunStatus(event, t);
+      if (!nextRunStatus) {
         return;
       }
       const issue = issuesRef.current.find((candidate) => candidate.runId === event.runId);
       if (!issue) {
         return;
       }
-      const taskBoardApi = readTaskBoardApi();
-      if (!taskBoardApi) {
+      const kanbanApi = readKanbanApi();
+      if (!kanbanApi) {
         return;
       }
       try {
-        const issueUpdate: TaskBoardIssueUpdateInput = {
+        const issueUpdate: KanbanIssueUpdateInput = {
           chatId: event.chatId || issue.chatId,
           runId: null,
-          runState: nextTaskStatus.runState
+          runState: nextRunStatus.runState
         };
-        if (nextTaskStatus.status) {
-          issueUpdate.status = nextTaskStatus.status;
+        if (nextRunStatus.status) {
+          issueUpdate.status = nextRunStatus.status;
         }
-        const result = await taskBoardApi.updateIssue(issue.id, issueUpdate);
+        const result = await kanbanApi.updateIssue(issue.id, issueUpdate);
         setIssues(sortIssues(result.issues));
-        setFeedback({ tone: nextTaskStatus.tone, message: nextTaskStatus.message });
+        setFeedback({ tone: nextRunStatus.tone, message: nextRunStatus.message });
       } catch (error) {
         setFeedback({
           tone: "error",
-          message: error instanceof Error ? error.message : t("taskBoard.feedback.statusWritebackFailed")
+          message: error instanceof Error ? error.message : t("kanban.feedback.statusWritebackFailed")
         });
       }
     });
@@ -1394,7 +1394,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }, [t]);
 
   const visibleIssues = useMemo(
-    () => issues.filter((issue) => VISIBLE_TASK_BOARD_STATUS_SET.has(issue.status)),
+    () => issues.filter((issue) => VISIBLE_KANBAN_STATUS_SET.has(issue.status)),
     [issues]
   );
 
@@ -1439,7 +1439,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         issue.description,
         issue.assigneeAgentKey ?? "",
         getAssigneeName(issue.assigneeAgentKey ?? "", agents) ?? "",
-        ...getVisibleTaskBoardAttachments(issue.attachments).map((attachment) => attachment.name)
+        ...getVisibleKanbanAttachments(issue.attachments).map((attachment) => attachment.name)
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
@@ -1450,28 +1450,28 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const totalCount = visibleIssues.length;
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
 
-  function openCreateModal(status: TaskBoardStatus = "backlog") {
-    if (!readTaskBoardApi()) {
-      setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+  function openCreateModal(status: KanbanStatus = "backlog") {
+    if (!readKanbanApi()) {
+      setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
-    setForm({ ...emptyForm, status, attachmentChatId: createTaskBoardDraftAttachmentChatId() });
+    setForm({ ...emptyForm, status, attachmentChatId: createKanbanDraftAttachmentChatId() });
     setFormCompact(true);
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "create" });
   }
 
-  function openEditModal(issue: TaskBoardIssue) {
+  function openEditModal(issue: KanbanIssue) {
     setContextMenu(null);
     setForm(createFormFromIssue(issue));
-    setFormCompact(canEditTaskBoardIssueBody(issue) ? !hasIssueAutomation(issue) : false);
+    setFormCompact(canEditKanbanIssueBody(issue) ? !hasIssueAutomation(issue) : false);
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "edit", issue });
   }
 
-  function openInProgressAssignmentModal(issue: TaskBoardIssue) {
+  function openInProgressAssignmentModal(issue: KanbanIssue) {
     setForm({
       ...createFormFromIssue(issue),
       status: "in_progress"
@@ -1480,7 +1480,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "edit", issue });
-    setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForProgress") });
+    setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForProgress") });
   }
 
   function toggleFormCompactMode() {
@@ -1491,7 +1491,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         }
         return {
           ...current,
-          title: buildCompactTaskTitle(current.description)
+          title: buildCompactIssueTitle(current.description)
         };
       });
     }
@@ -1503,7 +1503,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setAutomationMenuOpen((current) => current === menuName ? null : menuName);
   }
 
-  function updateAutomationPlan(plan: TaskBoardAutomationPlan) {
+  function updateAutomationPlan(plan: KanbanAutomationPlan) {
     setForm((current) => ({
       ...current,
       automationPreset: plan,
@@ -1522,13 +1522,13 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setAutomationMenuOpen(null);
   }
 
-  async function addTaskBoardAttachments() {
+  async function addKanbanAttachments() {
     if (attachmentBusy) {
       return;
     }
     const fallbackChatId = modal?.issue
-      ? createTaskBoardAttachmentChatId(modal.issue.id)
-      : createTaskBoardDraftAttachmentChatId();
+      ? createKanbanAttachmentChatId(modal.issue.id)
+      : createKanbanDraftAttachmentChatId();
     const attachmentChatId = form.attachmentChatId || fallbackChatId;
     setAttachmentBusy(true);
     setForm((current) => ({
@@ -1553,14 +1553,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : t("taskBoard.feedback.attachmentUploadFailed")
+        message: error instanceof Error ? error.message : t("kanban.feedback.attachmentUploadFailed")
       });
     } finally {
       setAttachmentBusy(false);
     }
   }
 
-  function removeTaskBoardAttachment(attachmentId: string) {
+  function removeKanbanAttachment(attachmentId: string) {
     setForm((current) => ({
       ...current,
       attachments: current.attachments.filter((attachment) =>
@@ -1569,10 +1569,10 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     }));
   }
 
-  async function openTaskBoardAttachment(attachment: AssistantAttachment) {
+  async function openKanbanAttachment(attachment: AssistantAttachment) {
     const chatId = form.attachmentChatId.trim();
     if (!chatId) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.attachmentLocationMissing") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.attachmentLocationMissing") });
       return;
     }
     const result = await window.electronAPI.assistant.openAttachment(chatId, attachment.id);
@@ -1581,16 +1581,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const taskBoardApi = readTaskBoardApi();
-    if (!taskBoardApi) {
-      setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi) {
+      setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
     const title = formCompact && modal?.mode === "create"
-      ? buildCompactTaskTitle(form.description)
+      ? buildCompactIssueTitle(form.description)
       : form.title.trim();
     if (!title) {
-      setFeedback({ tone: "error", message: formCompact ? t("taskBoard.feedback.descriptionRequired") : t("taskBoard.feedback.titleRequired") });
+      setFeedback({ tone: "error", message: formCompact ? t("kanban.feedback.descriptionRequired") : t("kanban.feedback.titleRequired") });
       return;
     }
     const resolvedAutomationCron = buildAutomationCron(form.automationPreset, form.automationTime, form.automationCron);
@@ -1598,23 +1598,23 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     const shouldRunAfterSave = form.status === "in_progress" && !form.automationEnabled && !modal?.issue?.runId;
     const shouldRunTodoAssigneeAfterDelay = form.status === "todo" && !form.automationEnabled && Boolean(form.assigneeAgentKey) && !modal?.issue?.runId;
     if (shouldRunAfterSave && !form.assigneeAgentKey) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForProgress") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForProgress") });
       return;
     }
     if (form.automationEnabled && !form.assigneeAgentKey) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForAutomation") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForAutomation") });
       return;
     }
     if (form.automationEnabled && !isFiveFieldCron(resolvedAutomationCron)) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.invalidCron") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.invalidCron") });
       return;
     }
     if (form.automationEnabled && !resolvedAutomationMessage) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.automationMessageRequired") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.automationMessageRequired") });
       return;
     }
     const savedStatus = shouldRunAfterSave ? modal?.issue?.status ?? "todo" : form.status;
-    const payload: TaskBoardIssueInput | TaskBoardIssueUpdateInput = {
+    const payload: KanbanIssueInput | KanbanIssueUpdateInput = {
       title,
       description: form.description,
       status: savedStatus,
@@ -1632,26 +1632,26 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
     try {
       const result = modal?.mode === "edit" && modal.issue
-        ? await taskBoardApi.updateIssue(modal.issue.id, payload)
-        : await taskBoardApi.createIssue(payload as TaskBoardIssueInput);
-      let savedIssue = mergeTaskBoardIssueAttachmentDraft(
+        ? await kanbanApi.updateIssue(modal.issue.id, payload)
+        : await kanbanApi.createIssue(payload as KanbanIssueInput);
+      let savedIssue = mergeKanbanIssueAttachmentDraft(
         result.issue,
         form.attachmentChatId,
         form.attachments
       );
-      let nextIssues = mergeTaskBoardIssuesAttachmentDraft(result.issues, savedIssue);
+      let nextIssues = mergeKanbanIssuesAttachmentDraft(result.issues, savedIssue);
       let nextMessage = result.message;
       let nextTone: Feedback["tone"] = result.ok ? "success" : "error";
       if (result.ok && savedIssue && (form.automationEnabled || savedIssue.automationId)) {
-        const automationResult = await taskBoardApi.syncIssueAutomation(savedIssue.id);
-        savedIssue = mergeTaskBoardIssueAttachmentDraft(
+        const automationResult = await kanbanApi.syncIssueAutomation(savedIssue.id);
+        savedIssue = mergeKanbanIssueAttachmentDraft(
           automationResult.issue ?? savedIssue,
           form.attachmentChatId,
           form.attachments
         );
-        nextIssues = mergeTaskBoardIssuesAttachmentDraft(automationResult.issues, savedIssue);
+        nextIssues = mergeKanbanIssuesAttachmentDraft(automationResult.issues, savedIssue);
         nextTone = automationResult.ok ? "success" : "error";
-        nextMessage = automationResult.ok ? t("taskBoard.feedback.taskAndAutomationSaved") : automationResult.message;
+        nextMessage = automationResult.ok ? t("kanban.feedback.issueAndAutomationSaved") : automationResult.message;
       }
       setIssues(sortIssues(nextIssues));
       setFeedback({ tone: nextTone, message: nextMessage });
@@ -1663,28 +1663,28 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
           const savedAgentKey = form.assigneeAgentKey;
           window.setTimeout(() => {
             void assignIssueToAssistant(savedIssue, savedAgentKey);
-          }, TASK_BOARD_TODO_ASSIGNEE_START_DELAY_MS);
+          }, KANBAN_TODO_ASSIGNEE_START_DELAY_MS);
         }
       }
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : t("taskBoard.feedback.saveFailed")
+        message: error instanceof Error ? error.message : t("kanban.feedback.saveFailed")
       });
     }
   }
 
-  async function deleteIssue(issue: TaskBoardIssue) {
+  async function deleteIssue(issue: KanbanIssue) {
     setContextMenu(null);
-    const taskBoardApi = readTaskBoardApi();
-    if (!taskBoardApi) {
-      setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi) {
+      setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
-    if (!window.confirm(t("taskBoard.confirm.delete", { title: issue.title }))) {
+    if (!window.confirm(t("kanban.confirm.delete", { title: issue.title }))) {
       return;
     }
-    const result = await taskBoardApi.deleteIssue(issue.id);
+    const result = await kanbanApi.deleteIssue(issue.id);
     setIssues(sortIssues(result.issues));
     setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
     if (result.ok) {
@@ -1692,7 +1692,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     }
   }
 
-  function openIssueContextMenu(issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) {
+  function openIssueContextMenu(issue: KanbanIssue, event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
     const viewportWidth = typeof window === "undefined" ? event.clientX : window.innerWidth;
@@ -1708,23 +1708,23 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     if (agents.length > 0) {
       return agents;
     }
-    const nextAgents = await loadTaskBoardAgents();
+    const nextAgents = await loadKanbanAgents();
     if (nextAgents.length > 0) {
-      setAgents((currentAgents) => mergeTaskBoardAgentIcons(currentAgents, nextAgents));
+      setAgents((currentAgents) => mergeKanbanAgentIcons(currentAgents, nextAgents));
     }
     return nextAgents;
   }
 
-  async function assignIssueToAssistant(issue: TaskBoardIssue, selectedAgentKey?: string) {
-    const taskBoardApi = readTaskBoardApi();
-    if (!taskBoardApi) {
-      setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+  async function assignIssueToAssistant(issue: KanbanIssue, selectedAgentKey?: string) {
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi) {
+      setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
     const availableAgents = await getAvailableAgents();
     const agentKey = selectedAgentKey ?? issue.assigneeAgentKey ?? availableAgents[0]?.agentKey ?? "";
     if (!agentKey) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.noAgents") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.noAgents") });
       return;
     }
 
@@ -1738,10 +1738,10 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         attachments: issue.attachments
       });
       if (!runResult.ok) {
-        setFeedback({ tone: "error", message: runResult.message || t("taskBoard.feedback.assistantStartFailed") });
+        setFeedback({ tone: "error", message: runResult.message || t("kanban.feedback.assistantStartFailed") });
         return;
       }
-      const updateResult = await taskBoardApi.updateIssue(issue.id, {
+      const updateResult = await kanbanApi.updateIssue(issue.id, {
         status: "in_progress",
         assigneeAgentKey: agentKey,
         chatId: runResult.chatId,
@@ -1749,26 +1749,26 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         runState: "running"
       });
       setIssues(sortIssues(updateResult.issues));
-      setFeedback({ tone: "success", message: t("taskBoard.feedback.assignedToAssistant") });
+      setFeedback({ tone: "success", message: t("kanban.feedback.assignedToAssistant") });
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : t("taskBoard.feedback.assistantStartFailed")
+        message: error instanceof Error ? error.message : t("kanban.feedback.assistantStartFailed")
       });
     } finally {
       setBusyIssueId(null);
     }
   }
 
-  async function openAssistantIssueChat(issue: TaskBoardIssue) {
+  async function openAssistantIssueChat(issue: KanbanIssue) {
     const chatId = issue.chatId?.trim() ?? "";
     if (!chatId) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.noChat") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.noChat") });
       return;
     }
     const agentKey = resolveIssueAgentKey(issue, agents);
     if (!agentKey) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.noBoundAgent") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.noBoundAgent") });
       return;
     }
     setChatModalRequest({
@@ -1782,7 +1782,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     const activeIssue = issueMap.get(String(event.active.id));
     if (isIssueDragLocked(activeIssue)) {
       setActiveDragIssueId(null);
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.dragLocked") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.dragLocked") });
       return;
     }
     setActiveDragIssueId(String(event.active.id));
@@ -1794,9 +1794,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
   async function handleDragEnd(event: DragEndEvent) {
     clearActiveDrag();
-    const taskBoardApi = readTaskBoardApi();
-    if (!taskBoardApi) {
-      setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi) {
+      setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
     const activeId = String(event.active.id);
@@ -1810,7 +1810,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       return;
     }
     if (isIssueDragLocked(activeIssue)) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.dragLocked") });
+      setFeedback({ tone: "error", message: t("kanban.feedback.dragLocked") });
       return;
     }
 
@@ -1847,7 +1847,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       updatedAt: new Date().toISOString()
     };
     setIssues(sortIssues(issues.map((issue) => issue.id === activeId ? optimisticIssue : issue)));
-    const result = await taskBoardApi.moveIssue({
+    const result = await kanbanApi.moveIssue({
       id: activeId,
       status: targetStatus,
       position: nextPosition
@@ -1859,7 +1859,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         const savedIssue = result.issue;
         window.setTimeout(() => {
           void assignIssueToAssistant(savedIssue, todoAssigneeAgentKey);
-        }, TASK_BOARD_TODO_ASSIGNEE_START_DELAY_MS);
+        }, KANBAN_TODO_ASSIGNEE_START_DELAY_MS);
       }
     } else {
       setIssues(previousIssues);
@@ -1867,7 +1867,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     }
   }
 
-  function togglePriority(priority: TaskBoardPriority) {
+  function togglePriority(priority: KanbanPriority) {
     setPriorityFilters((current) =>
       current.includes(priority)
         ? current.filter((item) => item !== priority)
@@ -1875,7 +1875,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     );
   }
 
-  function toggleSeverity(severity: TaskBoardSeverity) {
+  function toggleSeverity(severity: KanbanSeverity) {
     setSeverityFilters((current) =>
       current.includes(severity)
         ? current.filter((item) => item !== severity)
@@ -1891,16 +1891,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     );
   }
 
-  const modalReadOnly = modal?.mode === "edit" && !canEditTaskBoardIssueBody(modal.issue);
+  const modalReadOnly = modal?.mode === "edit" && !canEditKanbanIssueBody(modal.issue);
   const modalStatusLocked = modalReadOnly || (modal?.mode === "edit" && Boolean(modal.issue?.runId));
   const modalSyncLocked = modalReadOnly || (modal?.mode === "edit" && modal.issue?.syncMode === "cloud");
-  const visibleFormAttachments = getVisibleTaskBoardAttachments(form.attachments);
+  const visibleFormAttachments = getVisibleKanbanAttachments(form.attachments);
 
   return (
-    <section className="task-board-page" aria-label={t("taskBoard.title")}>
-      <div className="task-board-toolbar">
-        <div className="task-board-toolbar-left">
-          <TaskBoardProjectFilter
+    <section className="kanban-page" aria-label={t("kanban.title")}>
+      <div className="kanban-toolbar">
+        <div className="kanban-toolbar-left">
+          <KanbanProjectFilter
             projects={cloudProjectOptions}
             selectedProjectIds={selectedProjectIds}
             open={projectFilterOpen}
@@ -1915,16 +1915,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             onToggleProject={toggleProjectFilter}
             onClear={() => setSelectedProjectIds([])}
           />
-          <div className="task-board-search-wrap">
-            <TaskBoardIcon kind="search" />
+          <div className="kanban-search-wrap">
+            <KanbanIcon kind="search" />
             <input
-              className="task-board-search"
+              className="kanban-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("taskBoard.search.placeholder")}
-              aria-label={t("taskBoard.search.ariaLabel")}
+              placeholder={t("kanban.search.placeholder")}
+              aria-label={t("kanban.search.ariaLabel")}
             />
-            <TaskBoardSearchFilters
+            <KanbanSearchFilters
               openMenu={searchFilterMenu}
               priorityFilters={priorityFilters}
               severityFilters={severityFilters}
@@ -1945,55 +1945,55 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             />
           </div>
         </div>
-        <div className="task-board-toolbar-right">
+        <div className="kanban-toolbar-right">
           <button
             type="button"
-            className={`task-board-tool task-board-cloud-status is-${getTaskBoardConnectionTone(connectionState)} ${menu === "cloud" ? "is-active" : ""}`}
-            aria-label={t("taskBoard.cloud.configure")}
-            title={t("taskBoard.cloud.configure")}
+            className={`kanban-tool kanban-cloud-status is-${getKanbanConnectionTone(connectionState)} ${menu === "cloud" ? "is-active" : ""}`}
+            aria-label={t("kanban.cloud.configure")}
+            title={t("kanban.cloud.configure")}
             onClick={() => {
               setProjectFilterOpen(false);
               setSearchFilterMenu(null);
               setMenu(menu === "cloud" ? null : "cloud");
             }}
           >
-            <span className="task-board-cloud-dot" aria-hidden="true" />
-            <span className="task-board-tool-label">{getTaskBoardConnectionLabel(connectionState, t)}</span>
+            <span className="kanban-cloud-dot" aria-hidden="true" />
+            <span className="kanban-tool-label">{getKanbanConnectionLabel(connectionState, t)}</span>
             {cloudSyncSummary.errorCount > 0 ? (
-              <span className="task-board-cloud-error-count" title={t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}>
+              <span className="kanban-cloud-error-count" title={t("kanban.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}>
                 {cloudSyncSummary.errorCount}
               </span>
             ) : null}
           </button>
-          <span className="task-board-count">{t("taskBoard.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
+          <span className="kanban-count">{t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
           <button
             type="button"
-            className={`task-board-tool is-icon-only ${menu === "display" ? "is-active" : ""}`}
-            aria-label={t("taskBoard.toolbar.display")}
-            title={t("taskBoard.toolbar.display")}
+            className={`kanban-tool is-icon-only ${menu === "display" ? "is-active" : ""}`}
+            aria-label={t("kanban.toolbar.display")}
+            title={t("kanban.toolbar.display")}
             onClick={() => {
               setProjectFilterOpen(false);
               setSearchFilterMenu(null);
               setMenu(menu === "display" ? null : "display");
             }}
           >
-            <TaskBoardIcon kind="display" />
-            <span className="task-board-tool-label">{t("taskBoard.toolbar.display")}</span>
+            <KanbanIcon kind="display" />
+            <span className="kanban-tool-label">{t("kanban.toolbar.display")}</span>
           </button>
         </div>
       </div>
 
       {menu ? (
-        <div className={`task-board-menu-panel is-${menu}`}>
+        <div className={`kanban-menu-panel is-${menu}`}>
           {menu === "display" ? (
             <>
-              <strong>{t("taskBoard.display.cardFields")}</strong>
+              <strong>{t("kanban.display.cardFields")}</strong>
               {Object.entries({
-                description: t("taskBoard.display.description"),
-                assignee: t("taskBoard.display.assignee"),
-                priority: t("taskBoard.display.priority")
+                description: t("kanban.display.description"),
+                assignee: t("kanban.display.assignee"),
+                priority: t("kanban.display.priority")
               } satisfies Record<keyof DisplayState, string>).map(([key, label]) => (
-                <label key={key} className="task-board-check-row">
+                <label key={key} className="kanban-check-row">
                   <input
                     type="checkbox"
                     checked={display[key as keyof DisplayState]}
@@ -2007,27 +2007,27 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               ))}
             </>
           ) : (
-            <div className="task-board-cloud-form">
-              <div className="task-board-cloud-form-head">
-                <strong>{t("taskBoard.cloud.title")}</strong>
-                <span className={`task-board-cloud-state is-${getTaskBoardConnectionTone(connectionState)}`}>
-                  {getTaskBoardConnectionLabel(connectionState, t)}
+            <div className="kanban-cloud-form">
+              <div className="kanban-cloud-form-head">
+                <strong>{t("kanban.cloud.title")}</strong>
+                <span className={`kanban-cloud-state is-${getKanbanConnectionTone(connectionState)}`}>
+                  {getKanbanConnectionLabel(connectionState, t)}
                 </span>
               </div>
-              <div className="task-board-cloud-summary">
-                <span>{t("taskBoard.cloud.syncedIssues", { count: cloudSyncSummary.cloudCount })}</span>
-                <span>{formatTaskBoardLastSyncedAt(cloudSyncSummary.lastSyncedAt, t)}</span>
-                {cloudSyncSummary.syncingCount > 0 ? <span>{t("taskBoard.cloud.syncingIssues", { count: cloudSyncSummary.syncingCount })}</span> : null}
-                {cloudSyncSummary.errorCount > 0 ? <span className="is-error">{t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}</span> : null}
+              <div className="kanban-cloud-summary">
+                <span>{t("kanban.cloud.syncedIssues", { count: cloudSyncSummary.cloudCount })}</span>
+                <span>{formatKanbanLastSyncedAt(cloudSyncSummary.lastSyncedAt, t)}</span>
+                {cloudSyncSummary.syncingCount > 0 ? <span>{t("kanban.cloud.syncingIssues", { count: cloudSyncSummary.syncingCount })}</span> : null}
+                {cloudSyncSummary.errorCount > 0 ? <span className="is-error">{t("kanban.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}</span> : null}
               </div>
-              <div className="task-board-cloud-actions">
+              <div className="kanban-cloud-actions">
                 <button
                   type="button"
-                  className="task-board-primary-button"
+                  className="kanban-primary-button"
                   disabled={cloudResyncing || connectionState !== "open"}
                   onClick={() => void resyncCloudBoard()}
                 >
-                  {cloudResyncing ? t("taskBoard.cloud.resyncing") : t("taskBoard.cloud.resync")}
+                  {cloudResyncing ? t("kanban.cloud.resyncing") : t("kanban.cloud.resync")}
                 </button>
               </div>
             </div>
@@ -2036,36 +2036,36 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       ) : null}
 
       {feedback ? (
-        <div className={`task-board-feedback is-${feedback.tone}`}>
+        <div className={`kanban-feedback is-${feedback.tone}`}>
           <span>{feedback.message}</span>
-          <button type="button" onClick={() => setFeedback(null)} aria-label={t("taskBoard.notice.close")}>×</button>
+          <button type="button" onClick={() => setFeedback(null)} aria-label={t("kanban.notice.close")}>×</button>
         </div>
       ) : null}
 
       <DndContext
         sensors={sensors}
-        collisionDetection={detectTaskBoardCollisions}
+        collisionDetection={detectKanbanCollisions}
         onDragStart={handleDragStart}
         onDragCancel={clearActiveDrag}
         onDragEnd={handleDragEnd}
       >
         <div
-          className="task-board-columns"
+          className="kanban-columns"
           aria-busy={loading}
         >
-          {VISIBLE_TASK_BOARD_STATUSES.map((status) => {
+          {VISIBLE_KANBAN_STATUSES.map((status) => {
             const columnIssues = filteredIssues.filter((issue) => issue.status === status);
             return (
-              <TaskBoardColumn
+              <KanbanColumn
                 key={status}
                 status={status}
                 issues={columnIssues}
                 agents={agents}
-                projectsById={taskBoardProjectsById}
+                projectsById={kanbanProjectsById}
                 display={display}
-                now={new Date(taskBoardCountdownNow)}
+                now={new Date(kanbanCountdownNow)}
                 t={t}
-                canAdd={taskBoardReady}
+                canAdd={kanbanReady}
                 onAdd={() => openCreateModal(status)}
                 onEdit={openEditModal}
                 onDelete={deleteIssue}
@@ -2079,14 +2079,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         {typeof document !== "undefined" ? createPortal(
           <DragOverlay adjustScale={false} dropAnimation={null} zIndex={120}>
             {activeDragIssue ? (
-              <article className={`task-board-card task-board-drag-overlay-card is-${activeDragIssue.status}`}>
-                <TaskBoardCardContent
+              <article className={`issue-card issue-drag-overlay-card is-${activeDragIssue.status}`}>
+                <IssueCardContent
                   issue={activeDragIssue}
                   awaitingConfirmation={false}
                   agents={agents}
-                  projectsById={taskBoardProjectsById}
+                  projectsById={kanbanProjectsById}
                   display={display}
-                  now={new Date(taskBoardCountdownNow)}
+                  now={new Date(kanbanCountdownNow)}
                   t={t}
                   interactive={false}
                   onEdit={() => undefined}
@@ -2102,12 +2102,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
       {contextMenu ? (() => {
         const issue = issueMap.get(contextMenu.issueId);
-        if (!issue || !canEditTaskBoardIssueBody(issue)) {
+        if (!issue || !canEditKanbanIssueBody(issue)) {
           return null;
         }
         const menu = (
           <div
-            className="task-board-card-context-menu"
+            className="issue-card-context-menu"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             role="menu"
             onPointerDown={(event) => event.stopPropagation()}
@@ -2115,10 +2115,10 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             <button
               type="button"
               role="menuitem"
-              className="task-board-card-context-danger"
+              className="issue-card-context-danger"
               onClick={() => void deleteIssue(issue)}
             >
-              {t("taskBoard.context.delete")}
+              {t("kanban.context.delete")}
             </button>
           </div>
         );
@@ -2126,9 +2126,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       })() : null}
 
       {modal ? (
-        <div className="task-board-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
+        <div className="kanban-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
           <form
-            className={`task-board-modal ${formCompact ? "is-compact" : "is-advanced"} ${modalReadOnly ? "is-readonly" : ""}`}
+            className={`kanban-modal ${formCompact ? "is-compact" : "is-advanced"} ${modalReadOnly ? "is-readonly" : ""}`}
             onSubmit={(event) => {
               if (modalReadOnly) {
                 event.preventDefault();
@@ -2140,28 +2140,28 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             aria-readonly={modalReadOnly || undefined}
             noValidate
           >
-            <div className="task-board-modal-head">
+            <div className="kanban-modal-head">
               <strong>
                 {modalReadOnly
-                  ? t("taskBoard.modal.detailTitle")
-                  : modal.mode === "edit" ? t("taskBoard.modal.editTitle") : t("taskBoard.modal.createTitle")}
+                  ? t("kanban.modal.detailTitle")
+                  : modal.mode === "edit" ? t("kanban.modal.editTitle") : t("kanban.modal.createTitle")}
               </strong>
-              <div className="task-board-modal-head-actions">
+              <div className="kanban-modal-head-actions">
                 {!modalReadOnly ? (
                   <button
                     type="button"
-                    className="task-board-modal-mode-button"
+                    className="kanban-modal-mode-button"
                     onClick={toggleFormCompactMode}
                   >
-                    {formCompact ? t("taskBoard.modal.advancedMode") : t("taskBoard.modal.compactMode")}
+                    {formCompact ? t("kanban.modal.advancedMode") : t("kanban.modal.compactMode")}
                   </button>
                 ) : null}
-                <button type="button" className="task-board-modal-close-button" onClick={() => setModal(null)} aria-label={t("taskBoard.modal.close")}>×</button>
+                <button type="button" className="kanban-modal-close-button" onClick={() => setModal(null)} aria-label={t("kanban.modal.close")}>×</button>
               </div>
             </div>
             {!formCompact ? (
-              <label className="task-board-field">
-                <span>{t("taskBoard.form.title")}</span>
+              <label className="kanban-field">
+                <span>{t("kanban.form.title")}</span>
                 <input
                   value={form.title}
                   onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
@@ -2171,17 +2171,17 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 />
               </label>
             ) : null}
-            <div className="task-board-field">
-              <div className="task-board-field-head">
-                <span>{t("taskBoard.form.description")}</span>
+            <div className="kanban-field">
+              <div className="kanban-field-head">
+                <span>{t("kanban.form.description")}</span>
                 {!modalReadOnly ? (
                   <button
                     type="button"
-                    className="task-board-attachment-add-button"
-                    onClick={() => void addTaskBoardAttachments()}
+                    className="kanban-attachment-add-button"
+                    onClick={() => void addKanbanAttachments()}
                     disabled={attachmentBusy}
                   >
-                    {attachmentBusy ? t("taskBoard.form.uploading") : t("taskBoard.form.addAttachment")}
+                    {attachmentBusy ? t("kanban.form.uploading") : t("kanban.form.addAttachment")}
                   </button>
                 ) : null}
               </div>
@@ -2202,27 +2202,27 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 disabled={modalReadOnly}
               />
               {visibleFormAttachments.length > 0 ? (
-                <div className="task-board-attachment-list" aria-label={t("taskBoard.form.attachments")}>
+                <div className="kanban-attachment-list" aria-label={t("kanban.form.attachments")}>
                   {visibleFormAttachments.map((attachment) => {
-                    const sizeLabel = formatTaskBoardAttachmentSize(attachment.sizeBytes);
+                    const sizeLabel = formatKanbanAttachmentSize(attachment.sizeBytes);
                     return (
-                      <div key={attachment.id} className="task-board-attachment-chip">
+                      <div key={attachment.id} className="kanban-attachment-chip">
                         <button
                           type="button"
-                          className="task-board-attachment-open"
-                          onClick={() => void openTaskBoardAttachment(attachment)}
+                          className="kanban-attachment-open"
+                          onClick={() => void openKanbanAttachment(attachment)}
                           title={sizeLabel ? `${attachment.name} · ${sizeLabel}` : attachment.name}
                         >
-                          <span className="task-board-attachment-icon" aria-hidden="true">⌘</span>
-                          <span className="task-board-attachment-name">{attachment.name}</span>
-                          {sizeLabel ? <span className="task-board-attachment-size">{sizeLabel}</span> : null}
+                          <span className="kanban-attachment-icon" aria-hidden="true">⌘</span>
+                          <span className="kanban-attachment-name">{attachment.name}</span>
+                          {sizeLabel ? <span className="kanban-attachment-size">{sizeLabel}</span> : null}
                         </button>
                         {!modalReadOnly ? (
                           <button
                             type="button"
-                            className="task-board-attachment-remove"
-                            onClick={() => removeTaskBoardAttachment(attachment.id)}
-                            aria-label={t("taskBoard.form.removeAttachment", { name: attachment.name })}
+                            className="kanban-attachment-remove"
+                            onClick={() => removeKanbanAttachment(attachment.id)}
+                            aria-label={t("kanban.form.removeAttachment", { name: attachment.name })}
                           >
                             ×
                           </button>
@@ -2234,41 +2234,41 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               ) : null}
             </div>
             {!formCompact ? (
-              <div className="task-board-field-grid">
-                <label className="task-board-field">
-                  <span>{t("taskBoard.form.status")}</span>
+              <div className="kanban-field-grid">
+                <label className="kanban-field">
+                  <span>{t("kanban.form.status")}</span>
                   <select
                     value={form.status}
                     disabled={modalStatusLocked}
                     onChange={(event) => setForm((current) => ({
                       ...current,
-                      status: event.target.value as TaskBoardStatus
+                      status: event.target.value as KanbanStatus
                     }))}
                   >
-                    {TASK_BOARD_STATUSES.map((status) => (
+                    {KANBAN_STATUSES.map((status) => (
                       <option key={status} value={status}>{t(STATUS_META[status].labelKey)}</option>
                     ))}
                   </select>
                 </label>
-                <label className="task-board-field">
-                  <span>{t("taskBoard.form.priority")}</span>
+                <label className="kanban-field">
+                  <span>{t("kanban.form.priority")}</span>
                   <select
                     value={form.priority}
                     disabled={modalReadOnly}
                     onChange={(event) => setForm((current) => ({
                       ...current,
-                      priority: event.target.value as TaskBoardPriority
+                      priority: event.target.value as KanbanPriority
                     }))}
                   >
-                    {TASK_BOARD_PRIORITIES.map((priority) => (
+                    {KANBAN_PRIORITIES.map((priority) => (
                       <option key={priority} value={priority}>{t(PRIORITY_META[priority].labelKey)}</option>
                     ))}
                   </select>
                 </label>
               </div>
             ) : null}
-            <label className="task-board-field">
-              <span>{t("taskBoard.form.assignee")}</span>
+            <label className="kanban-field">
+              <span>{t("kanban.form.assignee")}</span>
               <select
                 value={form.assigneeAgentKey}
                 disabled={modalReadOnly}
@@ -2280,7 +2280,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   }));
                 }}
               >
-                <option value="">{t("taskBoard.form.unassigned")}</option>
+                <option value="">{t("kanban.form.unassigned")}</option>
                 {agents.map((agent) => (
                   <option key={agent.agentKey} value={agent.agentKey}>
                     {agent.displayName}
@@ -2288,7 +2288,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 ))}
               </select>
             </label>
-            <label className="task-board-check-row task-board-sync-toggle">
+            <label className="kanban-check-row kanban-sync-toggle">
               <input
                 type="checkbox"
                 checked={form.syncToCloud}
@@ -2298,11 +2298,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   syncToCloud: event.target.checked
                 }))}
               />
-              <span>{t("taskBoard.form.syncToCloud")}</span>
+              <span>{t("kanban.form.syncToCloud")}</span>
             </label>
             {!formCompact ? (
-              <section className="task-board-automation-panel" aria-label={t("taskBoard.form.automationPanel")}>
-                <label className="task-board-check-row task-board-automation-toggle">
+              <section className="kanban-automation-panel" aria-label={t("kanban.form.automationPanel")}>
+                <label className="kanban-check-row kanban-automation-toggle">
                   <input
                     type="checkbox"
                     checked={form.automationEnabled}
@@ -2321,28 +2321,28 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                       };
                     })}
                   />
-                  <span>{t("taskBoard.form.automationEnabled")}</span>
+                  <span>{t("kanban.form.automationEnabled")}</span>
                 </label>
                 {form.automationEnabled ? (
-                  <div className="task-board-automation-popover">
-                    <span className="task-board-automation-panel-title">{t("taskBoard.form.automationPlan")}</span>
-                    <div className="task-board-field task-board-automation-select-field">
-                      <span>{t("taskBoard.form.automationFrequency")}</span>
-                      <div className={`task-board-automation-menu ${automationMenuOpen === "plan" ? "is-open" : ""}`}>
+                  <div className="kanban-automation-popover">
+                    <span className="kanban-automation-panel-title">{t("kanban.form.automationPlan")}</span>
+                    <div className="kanban-field kanban-automation-select-field">
+                      <span>{t("kanban.form.automationFrequency")}</span>
+                      <div className={`kanban-automation-menu ${automationMenuOpen === "plan" ? "is-open" : ""}`}>
                         <button
                           type="button"
-                          className="task-board-automation-menu-trigger"
+                          className="kanban-automation-menu-trigger"
                           aria-haspopup="listbox"
                           aria-expanded={automationMenuOpen === "plan"}
                           disabled={modalReadOnly}
                           onClick={() => toggleAutomationMenu("plan")}
                         >
                           <span>{getAutomationPlanLabel(form.automationPreset, t)}</span>
-                          <span className="task-board-automation-menu-arrow" aria-hidden="true">⌄</span>
+                          <span className="kanban-automation-menu-arrow" aria-hidden="true">⌄</span>
                         </button>
                         {automationMenuOpen === "plan" ? (
-                          <div className="task-board-automation-menu-list" role="listbox" aria-label={t("taskBoard.form.automationFrequencyList")}>
-                            {TASK_BOARD_AUTOMATION_PLANS.map((plan) => (
+                          <div className="kanban-automation-menu-list" role="listbox" aria-label={t("kanban.form.automationFrequencyList")}>
+                            {KANBAN_AUTOMATION_PLANS.map((plan) => (
                               <button
                                 key={plan.value}
                                 type="button"
@@ -2360,8 +2360,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                       </div>
                     </div>
                     {form.automationPreset === "custom" ? (
-                      <label className="task-board-field">
-                        <span>{t("taskBoard.form.cron")}</span>
+                      <label className="kanban-field">
+                        <span>{t("kanban.form.cron")}</span>
                         <input
                           value={form.automationCron}
                           disabled={modalReadOnly}
@@ -2373,24 +2373,24 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                         />
                       </label>
                     ) : (
-                      <div className="task-board-automation-time-control">
-                        <div className="task-board-field task-board-automation-select-field">
-                          <span>{t("taskBoard.form.automationTime")}</span>
-                          <div className={`task-board-automation-menu ${automationMenuOpen === "time" ? "is-open" : ""}`}>
+                      <div className="kanban-automation-time-control">
+                        <div className="kanban-field kanban-automation-select-field">
+                          <span>{t("kanban.form.automationTime")}</span>
+                          <div className={`kanban-automation-menu ${automationMenuOpen === "time" ? "is-open" : ""}`}>
                             <button
                               type="button"
-                              className="task-board-automation-menu-trigger"
+                              className="kanban-automation-menu-trigger"
                               aria-haspopup="listbox"
                               aria-expanded={automationMenuOpen === "time"}
                               disabled={modalReadOnly}
                               onClick={() => toggleAutomationMenu("time")}
                             >
                               <span>{form.automationTime}</span>
-                              <span className="task-board-automation-menu-arrow" aria-hidden="true">⌄</span>
+                              <span className="kanban-automation-menu-arrow" aria-hidden="true">⌄</span>
                             </button>
                             {automationMenuOpen === "time" ? (
-                              <div className="task-board-automation-menu-list is-time-list" role="listbox" aria-label={t("taskBoard.form.automationTimeList")}>
-                                {TASK_BOARD_AUTOMATION_TIME_OPTIONS.map((time) => (
+                              <div className="kanban-automation-menu-list is-time-list" role="listbox" aria-label={t("kanban.form.automationTimeList")}>
+                                {KANBAN_AUTOMATION_TIME_OPTIONS.map((time) => (
                                   <button
                                     key={time}
                                     ref={time === form.automationTime ? selectedAutomationTimeRef : null}
@@ -2414,22 +2414,22 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 ) : null}
               </section>
             ) : null}
-            <div className="task-board-modal-actions">
+            <div className="kanban-modal-actions">
               {modal.mode === "edit" && modal.issue && !modalReadOnly ? (
                 <button
                   type="button"
-                  className="task-board-danger-button"
+                  className="kanban-danger-button"
                   onClick={() => void deleteIssue(modal.issue!)}
                 >
-                  {t("taskBoard.form.delete")}
+                  {t("kanban.form.delete")}
                 </button>
               ) : null}
-              <button type="button" className="task-board-secondary-button" onClick={() => setModal(null)}>
-                {modalReadOnly ? t("taskBoard.modal.close") : t("taskBoard.form.cancel")}
+              <button type="button" className="kanban-secondary-button" onClick={() => setModal(null)}>
+                {modalReadOnly ? t("kanban.modal.close") : t("kanban.form.cancel")}
               </button>
               {!modalReadOnly ? (
-                <button type="submit" className="task-board-primary-button" disabled={!taskBoardReady}>
-                  {t("taskBoard.form.save")}
+                <button type="submit" className="kanban-primary-button" disabled={!kanbanReady}>
+                  {t("kanban.form.save")}
                 </button>
               ) : null}
             </div>
@@ -2438,31 +2438,31 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       ) : null}
 
       {chatModalRequest ? (
-        <div className="task-board-modal-layer task-board-chat-modal-layer" role="presentation" onMouseDown={() => setChatModalRequest(null)}>
+        <div className="kanban-modal-layer kanban-chat-modal-layer" role="presentation" onMouseDown={() => setChatModalRequest(null)}>
           <section
-            className="task-board-chat-modal"
+            className="kanban-chat-modal"
             role="dialog"
             aria-modal="true"
-            aria-label={chatModalRequest.displayName ? t("taskBoard.chat.modalLabel", { name: chatModalRequest.displayName }) : t("taskBoard.chat.defaultModalLabel")}
+            aria-label={chatModalRequest.displayName ? t("kanban.chat.modalLabel", { name: chatModalRequest.displayName }) : t("kanban.chat.defaultModalLabel")}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <PluginPage
-              key={`task-board-chat:${chatModalRequest.agentKey}:${chatModalRequest.chatId}`}
+              key={`kanban-chat:${chatModalRequest.agentKey}:${chatModalRequest.chatId}`}
               active
               hostTheme={hostTheme}
               pluginId="agent-webclient"
-              surfaceId="agent-webclient-task-board-chat"
-              surfaceLabel={t("taskBoard.chat.surfaceLabel")}
-              embedPath={buildTaskBoardChatEmbedPath(chatModalRequest)}
+              surfaceId="agent-webclient-kanban-chat"
+              surfaceLabel={t("kanban.chat.surfaceLabel")}
+              embedPath={buildKanbanChatEmbedPath(chatModalRequest)}
               skipContextRegistration
               loadInitialEmbeddedUrlDirectly
               suppressInitialLoadingCopy
             />
             <button
               type="button"
-              className="task-board-chat-modal-close"
-              aria-label={t("taskBoard.chat.close")}
-              title={t("taskBoard.modal.close")}
+              className="kanban-chat-modal-close"
+              aria-label={t("kanban.chat.close")}
+              title={t("kanban.modal.close")}
               onClick={() => setChatModalRequest(null)}
             >
               ×
@@ -2474,7 +2474,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   );
 }
 
-function TaskBoardColumn({
+function KanbanColumn({
   status,
   issues,
   agents,
@@ -2489,19 +2489,19 @@ function TaskBoardColumn({
   onOpenChat,
   onOpenContextMenu
 }: {
-  status: TaskBoardStatus;
-  issues: TaskBoardIssue[];
+  status: KanbanStatus;
+  issues: KanbanIssue[];
   agents: AssistantNavAgentItem[];
-  projectsById: Map<string, TaskBoardProject>;
+  projectsById: Map<string, KanbanProject>;
   display: DisplayState;
   now: Date;
   t: TranslateFunction;
   canAdd: boolean;
   onAdd: () => void;
-  onEdit: (issue: TaskBoardIssue) => void;
-  onDelete: (issue: TaskBoardIssue) => void | Promise<void>;
-  onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
-  onOpenContextMenu: (issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) => void;
+  onEdit: (issue: KanbanIssue) => void;
+  onDelete: (issue: KanbanIssue) => void | Promise<void>;
+  onOpenChat: (issue: KanbanIssue) => void | Promise<void>;
+  onOpenContextMenu: (issue: KanbanIssue, event: MouseEvent<HTMLElement>) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
   const meta = STATUS_META[status];
@@ -2509,18 +2509,18 @@ function TaskBoardColumn({
   return (
     <section
       ref={setNodeRef}
-      className={`task-board-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}
+      className={`kanban-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}
     >
-      <header className="task-board-column-head">
-        <div className="task-board-column-title">
-          <span className={`task-board-status-dot is-${meta.tone}`} aria-hidden="true" />
+      <header className="kanban-column-head">
+        <div className="kanban-column-title">
+          <span className={`kanban-status-dot is-${meta.tone}`} aria-hidden="true" />
           <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
-        <div className="task-board-column-actions">
+        <div className="kanban-column-actions">
           <button
             type="button"
-            aria-label={t("taskBoard.column.addTo", { status: label })}
+            aria-label={t("kanban.column.addTo", { status: label })}
             disabled={!canAdd}
             onClick={(event) => {
               event.stopPropagation();
@@ -2532,7 +2532,7 @@ function TaskBoardColumn({
         </div>
       </header>
       <div
-        className="task-board-column-body"
+        className="kanban-column-body"
         onDoubleClick={(event) => {
           if (shouldCreateIssueFromColumnDoubleClick(event, status)) {
             onAdd();
@@ -2541,7 +2541,7 @@ function TaskBoardColumn({
       >
         <SortableContext items={issues.map((issue) => issue.id)} strategy={verticalListSortingStrategy}>
           {issues.map((issue, index) => (
-            <TaskBoardCard
+            <IssueCard
               key={issue.id}
               issue={issue}
               sortIndex={index + 1}
@@ -2559,9 +2559,9 @@ function TaskBoardColumn({
           ))}
         </SortableContext>
         {issues.length === 0 ? (
-          <div className="task-board-empty-column">
-            <strong>{t("taskBoard.column.empty")}</strong>
-            <span>{getTaskBoardEmptyHint(status, t)}</span>
+          <div className="kanban-empty-column">
+            <strong>{t("kanban.column.empty")}</strong>
+            <span>{getKanbanEmptyHint(status, t)}</span>
           </div>
         ) : null}
       </div>
@@ -2569,7 +2569,7 @@ function TaskBoardColumn({
   );
 }
 
-function TaskBoardCard({
+function IssueCard({
   issue,
   sortIndex,
   awaitingConfirmation,
@@ -2583,11 +2583,11 @@ function TaskBoardCard({
   onOpenChat,
   onOpenContextMenu
 }: {
-  issue: TaskBoardIssue;
+  issue: KanbanIssue;
   sortIndex: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
-  projectsById: Map<string, TaskBoardProject>;
+  projectsById: Map<string, KanbanProject>;
   display: DisplayState;
   now: Date;
   t: TranslateFunction;
@@ -2611,7 +2611,7 @@ function TaskBoardCard({
       ref={sortable.setNodeRef}
       style={style}
       className={[
-        "task-board-card",
+        "issue-card",
         `is-${issue.status}`,
         sortable.isDragging ? "is-dragging-source" : "",
         dragLocked ? "is-drag-locked" : "",
@@ -2624,7 +2624,7 @@ function TaskBoardCard({
       onClick={(event) => event.stopPropagation()}
       {...(dragLocked ? {} : sortable.listeners)}
     >
-      <TaskBoardCardContent
+      <IssueCardContent
         issue={issue}
         sortIndex={sortIndex}
         awaitingConfirmation={awaitingConfirmation}
@@ -2642,7 +2642,7 @@ function TaskBoardCard({
   );
 }
 
-function TaskBoardCardContent({
+function IssueCardContent({
   issue,
   sortIndex,
   awaitingConfirmation,
@@ -2656,11 +2656,11 @@ function TaskBoardCardContent({
   onDelete,
   onOpenChat
 }: {
-  issue: TaskBoardIssue;
+  issue: KanbanIssue;
   sortIndex?: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
-  projectsById: Map<string, TaskBoardProject>;
+  projectsById: Map<string, KanbanProject>;
   display: DisplayState;
   now: Date;
   t: TranslateFunction;
@@ -2670,10 +2670,10 @@ function TaskBoardCardContent({
   onOpenChat: () => void;
 }) {
   const assigneeAgent = getAssigneeAgent(issue, agents);
-  const assigneeIcon = hasTaskBoardAgentIcon(assigneeAgent?.icon) ? assigneeAgent?.icon : undefined;
+  const assigneeIcon = hasKanbanAgentIcon(assigneeAgent?.icon) ? assigneeAgent?.icon : undefined;
   const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
   const automationLabel = getAutomationDisplayLabel(issue, t);
-  const visibleAttachments = getVisibleTaskBoardAttachments(issue.attachments);
+  const visibleAttachments = getVisibleKanbanAttachments(issue.attachments);
   const hasVisibleAttachment = visibleAttachments.length > 0;
   const description = display.description ? descriptionPreview(issue.description) : "";
   const severity = normalizeIssueSeverity(issue.severity);
@@ -2690,41 +2690,41 @@ function TaskBoardCardContent({
     },
     t
   );
-  const issueOrigin = getTaskBoardIssueOriginPresentation(issue, projectsById, t);
+  const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const canOpenIssueDetails = interactive;
-  const canDeleteIssue = interactive && canEditTaskBoardIssueBody(issue);
+  const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
   const hasMetaStrip = Boolean(automationLabel || hasVisibleAttachment);
   const mainContent = (
     <>
-      <div className="task-board-card-row task-board-card-row-top">
-        <span className="task-board-card-top-meta">
-          <span className="task-board-card-chip task-board-card-origin" title={issueOrigin.title}>
+      <div className="issue-card-row issue-card-row-top">
+        <span className="issue-card-top-meta">
+          <span className="issue-card-chip issue-card-origin" title={issueOrigin.title}>
             {issueOrigin.projectLabel}
           </span>
           {display.priority ? <IssuePriorityBadge priority={issue.priority} t={t} /> : null}
           <IssueSeverityBadge severity={severity} t={t} />
         </span>
         <span
-          className={`task-board-card-status is-${cardStatus.tone}`}
+          className={`issue-card-status is-${cardStatus.tone}`}
           title={cardStatus.updatedTime ? `${cardStatus.label} · ${cardStatus.updatedTime}` : cardStatus.label}
         >
-          {cardStatus.tone !== "backlog" && cardStatus.tone !== "todo" ? <span className="task-board-run-dot" aria-hidden="true" /> : null}
-          <span className="task-board-card-status-label">{cardStatus.label}</span>
-          <span className="task-board-card-status-time">{cardStatus.updatedTime}</span>
+          {cardStatus.tone !== "backlog" && cardStatus.tone !== "todo" ? <span className="kanban-run-dot" aria-hidden="true" /> : null}
+          <span className="issue-card-status-label">{cardStatus.label}</span>
+          <span className="issue-card-status-time">{cardStatus.updatedTime}</span>
         </span>
       </div>
-      <div className="task-board-card-row task-board-card-row-title">
-        <span className="task-board-title-text" title={issue.title}>
+      <div className="issue-card-row issue-card-row-title">
+        <span className="kanban-title-text" title={issue.title}>
           {stageLabel ? (
-            <span className="task-board-card-chip task-board-card-stage" title={t("taskBoard.card.stage", { value: stageLabel })}>
+            <span className="issue-card-chip issue-card-stage" title={t("kanban.card.stage", { value: stageLabel })}>
               {stageLabel}
             </span>
           ) : null}
-          <span className="task-board-title-body">{issue.title}</span>
+          <span className="kanban-title-body">{issue.title}</span>
         </span>
       </div>
-      {description ? <p className="task-board-card-description">{description}</p> : null}
+      {description ? <p className="issue-card-description">{description}</p> : null}
     </>
   );
 
@@ -2732,7 +2732,7 @@ function TaskBoardCardContent({
     <>
       {canOpenIssueDetails ? (
         <div
-          className="task-board-card-main"
+          className="issue-card-main"
           role="button"
           tabIndex={0}
           onClick={onEdit}
@@ -2746,60 +2746,60 @@ function TaskBoardCardContent({
           {mainContent}
         </div>
       ) : (
-        <div className={`task-board-card-main ${interactive ? "is-readonly" : ""}`} aria-hidden={interactive ? undefined : "true"}>
+        <div className={`issue-card-main ${interactive ? "is-readonly" : ""}`} aria-hidden={interactive ? undefined : "true"}>
           {mainContent}
         </div>
       )}
       {hasMetaStrip ? (
-        <div className="task-board-card-meta-strip">
+        <div className="issue-card-meta-strip">
           {automationLabel ? (
-            <span className="task-board-automation-badge" title={automationLabel}>
-              <TaskBoardIcon kind="clock" />
-              <span className="task-board-automation-label">{automationLabel}</span>
+            <span className="kanban-automation-badge" title={automationLabel}>
+              <KanbanIcon kind="clock" />
+              <span className="kanban-automation-label">{automationLabel}</span>
             </span>
           ) : null}
           {hasVisibleAttachment ? (
-            <span className="task-board-attachment-badge" title={t("taskBoard.form.attachments")}>
-              <TaskBoardIcon kind="attachment" />
+            <span className="kanban-attachment-badge" title={t("kanban.form.attachments")}>
+              <KanbanIcon kind="attachment" />
               <span>{visibleAttachments.length}</span>
             </span>
           ) : null}
         </div>
       ) : null}
-      <footer className="task-board-card-foot">
+      <footer className="issue-card-foot">
         {cardPresentation.assigneeLabel ? (
           <span
-            className={`task-board-card-assignee ${visibleAssigneeName ? "" : "is-unassigned"}`}
+            className={`issue-card-assignee ${visibleAssigneeName ? "" : "is-unassigned"}`}
             title={cardPresentation.assigneeTitle || undefined}
           >
             {visibleAssigneeName ? (
               <span
-                className={`task-board-card-assignee-avatar${assigneeIcon ? " has-icon" : ""}`}
+                className={`issue-card-assignee-avatar${assigneeIcon ? " has-icon" : ""}`}
                 aria-hidden="true"
               >
                 {assigneeIcon ? (
                   <AgentIcon
                     icon={assigneeIcon}
-                    className="task-board-card-assignee-icon"
+                    className="issue-card-assignee-icon"
                     size={18}
                   />
                 ) : (
-                  <span className="task-board-card-assignee-avatar-label">
+                  <span className="issue-card-assignee-avatar-label">
                     {getIssueCardAssigneeAvatarLabel(visibleAssigneeName)}
                   </span>
                 )}
               </span>
             ) : null}
-            <span className="task-board-card-assignee-name">{cardPresentation.assigneeLabel}</span>
+            <span className="issue-card-assignee-name">{cardPresentation.assigneeLabel}</span>
           </span>
-        ) : <span className="task-board-card-assignee" aria-hidden="true" />}
+        ) : <span className="issue-card-assignee" aria-hidden="true" />}
         {interactive ? (
-          <span className="task-board-card-actions">
+          <span className="issue-card-actions">
             <button
               type="button"
-              className="task-board-card-action"
-              aria-label={t("taskBoard.card.viewDetails")}
-              title={t("taskBoard.card.viewDetails")}
+              className="issue-card-action"
+              aria-label={t("kanban.card.viewDetails")}
+              title={t("kanban.card.viewDetails")}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -2811,9 +2811,9 @@ function TaskBoardCardContent({
             {canOpenIssueChat ? (
               <button
                 type="button"
-                className="task-board-card-action"
-                aria-label={t("taskBoard.chat.view")}
-                title={t("taskBoard.chat.view")}
+                className="issue-card-action"
+                aria-label={t("kanban.chat.view")}
+                title={t("kanban.chat.view")}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -2826,9 +2826,9 @@ function TaskBoardCardContent({
             {canDeleteIssue ? (
               <button
                 type="button"
-                className="task-board-card-action is-danger"
-                aria-label={t("taskBoard.context.delete")}
-                title={t("taskBoard.context.delete")}
+                className="issue-card-action is-danger"
+                aria-label={t("kanban.context.delete")}
+                title={t("kanban.context.delete")}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -2845,7 +2845,7 @@ function TaskBoardCardContent({
   );
 }
 
-function TaskBoardProjectFilter({
+function KanbanProjectFilter({
   projects,
   selectedProjectIds,
   open,
@@ -2854,7 +2854,7 @@ function TaskBoardProjectFilter({
   onToggleProject,
   onClear
 }: {
-  projects: TaskBoardProject[];
+  projects: KanbanProject[];
   selectedProjectIds: string[];
   open: boolean;
   t: TranslateFunction;
@@ -2863,8 +2863,8 @@ function TaskBoardProjectFilter({
   onClear: () => void;
 }) {
   const filterRef = useRef<HTMLDivElement | null>(null);
-  const treeItems = useMemo(() => flattenTaskBoardProjectTree(projects), [projects]);
-  const label = getTaskBoardProjectFilterLabel(selectedProjectIds, projects, t);
+  const treeItems = useMemo(() => flattenKanbanProjectTree(projects), [projects]);
+  const label = getKanbanProjectFilterLabel(selectedProjectIds, projects, t);
 
   useEffect(() => {
     if (!open || typeof document === "undefined") {
@@ -2891,53 +2891,53 @@ function TaskBoardProjectFilter({
   }, [onOpenChange, open]);
 
   return (
-    <div className="task-board-project-filter" ref={filterRef}>
+    <div className="kanban-project-filter" ref={filterRef}>
       <button
         type="button"
-        className={`task-board-project-filter-trigger ${open ? "is-open" : ""}`}
+        className={`kanban-project-filter-trigger ${open ? "is-open" : ""}`}
         aria-haspopup="tree"
         aria-expanded={open}
-        aria-label={t("taskBoard.projectFilter.ariaLabel")}
+        aria-label={t("kanban.projectFilter.ariaLabel")}
         title={label}
         onClick={() => onOpenChange(!open)}
       >
-        <TaskBoardIcon kind="project" />
-        <span className="task-board-project-filter-label">{label}</span>
+        <KanbanIcon kind="project" />
+        <span className="kanban-project-filter-label">{label}</span>
       </button>
       {open ? (
-        <div className="task-board-project-filter-menu" role="tree" aria-label={t("taskBoard.projectFilter.ariaLabel")}>
+        <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>
           <button
             type="button"
-            className={`task-board-project-filter-all ${selectedProjectIds.length === 0 ? "is-active" : ""}`}
+            className={`kanban-project-filter-all ${selectedProjectIds.length === 0 ? "is-active" : ""}`}
             onClick={onClear}
           >
-            {t("taskBoard.projectFilter.all")}
+            {t("kanban.projectFilter.all")}
           </button>
           {treeItems.length > 0 ? (
-            <div className="task-board-project-filter-tree">
+            <div className="kanban-project-filter-tree">
               {treeItems.map(({ project, level }) => (
                 <label
                   key={project.id}
-                  className="task-board-project-filter-row"
+                  className="kanban-project-filter-row"
                   role="treeitem"
                   aria-level={level + 1}
                   style={{ paddingLeft: `${8 + (level * 14)}px` }}
-                  title={getTaskBoardProjectOptionLabel(project)}
+                  title={getKanbanProjectOptionLabel(project)}
                 >
                   <input
                     type="checkbox"
                     checked={selectedProjectIds.includes(project.id)}
                     onChange={() => onToggleProject(project.id)}
                   />
-                  <span className="task-board-project-filter-name">{project.name}</span>
+                  <span className="kanban-project-filter-name">{project.name}</span>
                   {project.path && project.path !== project.name ? (
-                    <span className="task-board-project-filter-path">{project.path}</span>
+                    <span className="kanban-project-filter-path">{project.path}</span>
                   ) : null}
                 </label>
               ))}
             </div>
           ) : (
-            <span className="task-board-project-filter-empty">{t("taskBoard.projectFilter.empty")}</span>
+            <span className="kanban-project-filter-empty">{t("kanban.projectFilter.empty")}</span>
           )}
         </div>
       ) : null}
@@ -2945,7 +2945,7 @@ function TaskBoardProjectFilter({
   );
 }
 
-function TaskBoardSearchFilters({
+function KanbanSearchFilters({
   openMenu,
   priorityFilters,
   severityFilters,
@@ -2959,16 +2959,16 @@ function TaskBoardSearchFilters({
   onAutomationFilterChange
 }: {
   openMenu: SearchFilterMenuKind;
-  priorityFilters: TaskBoardPriority[];
-  severityFilters: TaskBoardSeverity[];
-  automationFilter: TaskBoardAutomationFilter;
+  priorityFilters: KanbanPriority[];
+  severityFilters: KanbanSeverity[];
+  automationFilter: KanbanAutomationFilter;
   t: TranslateFunction;
   onOpenMenuChange: (menu: SearchFilterMenuKind) => void;
-  onTogglePriority: (priority: TaskBoardPriority) => void;
+  onTogglePriority: (priority: KanbanPriority) => void;
   onClearPriority: () => void;
-  onToggleSeverity: (severity: TaskBoardSeverity) => void;
+  onToggleSeverity: (severity: KanbanSeverity) => void;
   onClearSeverity: () => void;
-  onAutomationFilterChange: (filter: TaskBoardAutomationFilter) => void;
+  onAutomationFilterChange: (filter: KanbanAutomationFilter) => void;
 }) {
   const filterRef = useRef<HTMLDivElement | null>(null);
   const hasPriorityFilter = priorityFilters.length > 0;
@@ -3004,62 +3004,62 @@ function TaskBoardSearchFilters({
   }
 
   return (
-    <div className="task-board-search-filters" ref={filterRef}>
+    <div className="kanban-search-filters" ref={filterRef}>
       <button
         type="button"
-        className={`task-board-search-filter-button ${openMenu === "priority" ? "is-open" : ""} ${hasPriorityFilter ? "is-active" : ""}`}
-        aria-label={t("taskBoard.searchFilter.priority")}
+        className={`kanban-search-filter-button ${openMenu === "priority" ? "is-open" : ""} ${hasPriorityFilter ? "is-active" : ""}`}
+        aria-label={t("kanban.searchFilter.priority")}
         aria-haspopup="true"
         aria-expanded={openMenu === "priority"}
-        title={t("taskBoard.searchFilter.priority")}
+        title={t("kanban.searchFilter.priority")}
         onClick={() => toggleMenu("priority")}
       >
         <ThunderboltOutlined />
       </button>
       <button
         type="button"
-        className={`task-board-search-filter-button ${openMenu === "severity" ? "is-open" : ""} ${hasSeverityFilter ? "is-active" : ""}`}
-        aria-label={t("taskBoard.searchFilter.severity")}
+        className={`kanban-search-filter-button ${openMenu === "severity" ? "is-open" : ""} ${hasSeverityFilter ? "is-active" : ""}`}
+        aria-label={t("kanban.searchFilter.severity")}
         aria-haspopup="true"
         aria-expanded={openMenu === "severity"}
-        title={t("taskBoard.searchFilter.severity")}
+        title={t("kanban.searchFilter.severity")}
         onClick={() => toggleMenu("severity")}
       >
         <FlagOutlined />
       </button>
       <button
         type="button"
-        className={`task-board-search-filter-button ${openMenu === "automation" ? "is-open" : ""} ${hasAutomationFilter ? "is-active" : ""}`}
-        aria-label={t("taskBoard.searchFilter.automation")}
+        className={`kanban-search-filter-button ${openMenu === "automation" ? "is-open" : ""} ${hasAutomationFilter ? "is-active" : ""}`}
+        aria-label={t("kanban.searchFilter.automation")}
         aria-haspopup="true"
         aria-expanded={openMenu === "automation"}
-        title={t("taskBoard.searchFilter.automation")}
+        title={t("kanban.searchFilter.automation")}
         onClick={() => toggleMenu("automation")}
       >
-        <TaskBoardIcon kind="clock" />
+        <KanbanIcon kind="clock" />
       </button>
       {openMenu ? (
         <div
-          className={`task-board-search-filter-menu is-${openMenu}`}
+          className={`kanban-search-filter-menu is-${openMenu}`}
           aria-label={
             openMenu === "priority"
-              ? t("taskBoard.searchFilter.priority")
+              ? t("kanban.searchFilter.priority")
               : openMenu === "severity"
-                ? t("taskBoard.searchFilter.severity")
-                : t("taskBoard.searchFilter.automation")
+                ? t("kanban.searchFilter.severity")
+                : t("kanban.searchFilter.automation")
           }
         >
           {openMenu === "priority" ? (
             <>
               <button
                 type="button"
-                className={`task-board-search-filter-all ${!hasPriorityFilter ? "is-active" : ""}`}
+                className={`kanban-search-filter-all ${!hasPriorityFilter ? "is-active" : ""}`}
                 onClick={onClearPriority}
               >
-                {t("taskBoard.searchFilter.allPriorities")}
+                {t("kanban.searchFilter.allPriorities")}
               </button>
-              {TASK_BOARD_PRIORITIES.map((priority) => (
-                <label key={priority} className="task-board-check-row task-board-search-filter-row">
+              {KANBAN_PRIORITIES.map((priority) => (
+                <label key={priority} className="kanban-check-row kanban-search-filter-row">
                   <input
                     type="checkbox"
                     checked={priorityFilters.includes(priority)}
@@ -3073,13 +3073,13 @@ function TaskBoardSearchFilters({
             <>
               <button
                 type="button"
-                className={`task-board-search-filter-all ${!hasSeverityFilter ? "is-active" : ""}`}
+                className={`kanban-search-filter-all ${!hasSeverityFilter ? "is-active" : ""}`}
                 onClick={onClearSeverity}
               >
-                {t("taskBoard.searchFilter.allSeverities")}
+                {t("kanban.searchFilter.allSeverities")}
               </button>
-              {TASK_BOARD_SEVERITIES.map((severity) => (
-                <label key={severity} className="task-board-check-row task-board-search-filter-row">
+              {KANBAN_SEVERITIES.map((severity) => (
+                <label key={severity} className="kanban-check-row kanban-search-filter-row">
                   <input
                     type="checkbox"
                     checked={severityFilters.includes(severity)}
@@ -3091,11 +3091,11 @@ function TaskBoardSearchFilters({
             </>
           ) : (
             <>
-              {TASK_BOARD_AUTOMATION_FILTER_OPTIONS.map((option) => (
-                <label key={option.value} className="task-board-check-row task-board-search-filter-row">
+              {KANBAN_AUTOMATION_FILTER_OPTIONS.map((option) => (
+                <label key={option.value} className="kanban-check-row kanban-search-filter-row">
                   <input
                     type="radio"
-                    name="task-board-automation-filter"
+                    name="kanban-automation-filter"
                     checked={automationFilter === option.value}
                     onChange={() => onAutomationFilterChange(option.value)}
                   />
@@ -3110,7 +3110,7 @@ function TaskBoardSearchFilters({
   );
 }
 
-function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "project" | "search" }) {
+function KanbanIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "project" | "search" }) {
   const paths: Record<typeof kind, ReactNode> = {
     attachment: (
       <path d="M7.5 11.5 12 7a2.1 2.1 0 0 1 3 3l-6 6a3.1 3.1 0 0 1-4.4-4.4l6.4-6.4" />
@@ -3151,41 +3151,41 @@ function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "f
     )
   };
   return (
-    <svg className="task-board-icon" viewBox="0 0 20 20" aria-hidden="true">
+    <svg className="kanban-icon" viewBox="0 0 20 20" aria-hidden="true">
       {paths[kind]}
     </svg>
   );
 }
 
-function IssuePriorityBadge({ priority, t }: { priority: TaskBoardPriority; t: TranslateFunction }) {
+function IssuePriorityBadge({ priority, t }: { priority: KanbanPriority; t: TranslateFunction }) {
   const meta = PRIORITY_META[priority];
   const label = t(meta.labelKey);
   const shortLabel = t(meta.shortLabelKey);
   return (
-    <span className={`task-board-priority-badge is-${meta.tone}`} title={t("taskBoard.card.priority", { value: label })}>
-      <ThunderboltOutlined className="task-board-priority-icon" />
-      <span className="task-board-priority-text">{shortLabel}</span>
+    <span className={`kanban-priority-badge is-${meta.tone}`} title={t("kanban.card.priority", { value: label })}>
+      <ThunderboltOutlined className="kanban-priority-icon" />
+      <span className="kanban-priority-text">{shortLabel}</span>
     </span>
   );
 }
 
-function IssueSeverityBadge({ severity, t }: { severity: TaskBoardSeverity; t: TranslateFunction }) {
+function IssueSeverityBadge({ severity, t }: { severity: KanbanSeverity; t: TranslateFunction }) {
   const meta = SEVERITY_META[severity];
   const label = t(meta.labelKey);
   const shortLabel = t(meta.shortLabelKey);
   return (
-    <span className={`task-board-severity-badge is-${meta.tone}`} title={t("taskBoard.card.severity", { value: label })}>
-      <FlagOutlined className="task-board-severity-icon" />
-      <span className="task-board-severity-text">{shortLabel}</span>
+    <span className={`kanban-severity-badge is-${meta.tone}`} title={t("kanban.card.severity", { value: label })}>
+      <FlagOutlined className="kanban-severity-icon" />
+      <span className="kanban-severity-text">{shortLabel}</span>
     </span>
   );
 }
 
-function PriorityBadge({ priority, t }: { priority: TaskBoardPriority; t: TranslateFunction }) {
+function PriorityBadge({ priority, t }: { priority: KanbanPriority; t: TranslateFunction }) {
   const meta = PRIORITY_META[priority];
   return (
-    <span className={`task-board-priority is-${meta.tone}`}>
-      <span className="task-board-priority-bars" aria-hidden="true">
+    <span className={`kanban-priority is-${meta.tone}`}>
+      <span className="kanban-priority-bars" aria-hidden="true">
         {Array.from({ length: 4 }).map((_, index) => (
           <span key={index} className={index < meta.bars ? "is-on" : ""} />
         ))}

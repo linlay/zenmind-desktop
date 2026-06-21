@@ -1,4 +1,4 @@
-import type { TaskBoardCurrentUser } from "../shared/contracts";
+import type { KanbanCurrentUser } from "../shared/contracts";
 import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
@@ -12,7 +12,7 @@ type WsRequester = {
 
 export type DesktopCloudSyncOptions = {
   app: AppPathProvider;
-  getCurrentUser: () => TaskBoardCurrentUser;
+  getCurrentUser: () => KanbanCurrentUser;
   getDeviceId: () => string;
   wsClient: WsRequester;
   onChanged?: () => void;
@@ -36,6 +36,6 @@ export class DesktopCloudSyncEngine {
   stop() {}
 
   async run(): Promise<DesktopCloudSyncRunResult> {
-    return { ok: true, message: t("taskBoard.cloudSync.disabledV3"), attempted: 0, synced: 0, conflicts: 0, errors: 0 };
+    return { ok: true, message: t("kanban.cloudSync.disabledV3"), attempted: 0, synced: 0, conflicts: 0, errors: 0 };
   }
 }

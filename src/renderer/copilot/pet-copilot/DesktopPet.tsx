@@ -1437,7 +1437,7 @@ export function DesktopPet() {
                     <button
                       type="button"
                       key={task.id}
-                      className={`desktop-pet-task-card is-${task.status}`}
+                      className={`desktop-pet-issue-card is-${task.status}`}
                       onClick={(event) => handleTaskClick(event, task)}
                     >
                       <span className="desktop-pet-task-copy">
@@ -1508,7 +1508,7 @@ export function DesktopPet() {
                   return (
                     <div
                       key={item.id}
-                      className={`desktop-pet-task-card is-${itemBadgeStatus}`}
+                      className={`desktop-pet-issue-card is-${itemBadgeStatus}`}
                       onClick={(event) => event.stopPropagation()}
                     >
                       <span className="desktop-pet-task-copy">
@@ -1652,7 +1652,7 @@ export function DesktopPet() {
                   ) : (
                     <button
                       type="button"
-                      className={`desktop-pet-task-card is-${statusPanelStatus}`}
+                      className={`desktop-pet-issue-card is-${statusPanelStatus}`}
                       onClick={handleOpenAssistantFromPanel}
                     >
                       <span className="desktop-pet-task-copy">

@@ -622,7 +622,7 @@ body.desktop-pet-body,
   scroll-padding-bottom: 12px;
 }
 
-.desktop-pet-task-card {
+.desktop-pet-issue-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 42px;
   gap: 14px;
@@ -642,12 +642,12 @@ body.desktop-pet-body,
   -webkit-app-region: no-drag;
 }
 
-.desktop-pet-task-card:hover {
+.desktop-pet-issue-card:hover {
   border-color: rgba(20, 20, 20, 0.22);
   background: rgba(255, 255, 255, 0.96);
 }
 
-.desktop-pet-task-card.is-error {
+.desktop-pet-issue-card.is-error {
   border-color: rgba(130, 38, 32, 0.18);
 }
 

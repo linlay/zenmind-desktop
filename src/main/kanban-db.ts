@@ -1,24 +1,24 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { TaskBoardIssue } from "../shared/contracts";
+import type { KanbanIssue } from "../shared/contracts";
 import { APP_BRAND } from "../shared/brand";
 
 type AppPathProvider = {
   getPath(name: "home"): string;
 };
 
-type TaskBoardIssueRow = {
+type KanbanIssueRow = {
   id: string;
   title: string;
   description: string;
-  status: TaskBoardIssue["status"];
-  priority: TaskBoardIssue["priority"];
+  status: KanbanIssue["status"];
+  priority: KanbanIssue["priority"];
   assignee_agent_key: string | null;
   position: number;
   chat_id: string | null;
   run_id: string | null;
-  run_state: TaskBoardIssue["runState"];
+  run_state: KanbanIssue["runState"];
   automation_id: string | null;
   automation_enabled: number;
   automation_cron: string | null;
@@ -30,9 +30,9 @@ type TaskBoardIssueRow = {
   updated_at: string;
 };
 
-const TASK_BOARD_DATABASE_FILENAME = "task-board.db";
+const KANBAN_DATABASE_FILENAME = "kanban.db";
 
-export function getTaskBoardRoot(app: AppPathProvider) {
+export function getKanbanRoot(app: AppPathProvider) {
   return path.join(
     app.getPath("home"),
     APP_BRAND.paths.runtimeRootDirName,
@@ -40,11 +40,11 @@ export function getTaskBoardRoot(app: AppPathProvider) {
   );
 }
 
-export function getTaskBoardDatabasePath(app: AppPathProvider) {
-  return path.join(getTaskBoardRoot(app), TASK_BOARD_DATABASE_FILENAME);
+export function getKanbanDatabasePath(app: AppPathProvider) {
+  return path.join(getKanbanRoot(app), KANBAN_DATABASE_FILENAME);
 }
 
-function issueFromRow(row: TaskBoardIssueRow): TaskBoardIssue {
+function issueFromRow(row: KanbanIssueRow): KanbanIssue {
   return {
     id: row.id,
     title: row.title,
@@ -68,19 +68,19 @@ function issueFromRow(row: TaskBoardIssueRow): TaskBoardIssue {
   };
 }
 
-function parseIssueAttachments(value: string | null | undefined): TaskBoardIssue["attachments"] {
+function parseIssueAttachments(value: string | null | undefined): KanbanIssue["attachments"] {
   if (!value) {
     return [];
   }
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed as TaskBoardIssue["attachments"] : [];
+    return Array.isArray(parsed) ? parsed as KanbanIssue["attachments"] : [];
   } catch {
     return [];
   }
 }
 
-function issueParams(issue: TaskBoardIssue) {
+function issueParams(issue: KanbanIssue) {
   return [
     issue.id,
     issue.title,
@@ -104,31 +104,31 @@ function issueParams(issue: TaskBoardIssue) {
   ];
 }
 
-function ensureTaskBoardIssueColumns(db: DatabaseSync) {
+function ensureKanbanIssueColumns(db: DatabaseSync) {
   const columns = new Set(
-    (db.prepare("PRAGMA table_info(task_board_issues)").all() as Array<{ name: string }>)
+    (db.prepare("PRAGMA table_info(kanban_issues)").all() as Array<{ name: string }>)
       .map((column) => column.name)
   );
   if (!columns.has("run_state")) {
     db.exec(`
-      ALTER TABLE task_board_issues
+      ALTER TABLE kanban_issues
       ADD COLUMN run_state TEXT CHECK (run_state IN ('running','completed','failed','cancelled'))
     `);
   }
 }
 
-function ensureTaskBoardRunStateConstraint(db: DatabaseSync) {
+function ensureKanbanRunStateConstraint(db: DatabaseSync) {
   const row = db.prepare(`
     SELECT sql FROM sqlite_master
-    WHERE type = 'table' AND name = 'task_board_issues'
+    WHERE type = 'table' AND name = 'kanban_issues'
   `).get() as { sql?: string } | undefined;
   if (!row?.sql || (row.sql.includes("'cancelled'") && row.sql.includes("'in_review'"))) {
     return;
   }
   db.exec(`
-    ALTER TABLE task_board_issues RENAME TO task_board_issues_old_run_state;
+    ALTER TABLE kanban_issues RENAME TO kanban_issues_old_run_state;
 
-    CREATE TABLE task_board_issues (
+    CREATE TABLE kanban_issues (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL CHECK (length(trim(title)) > 0),
       description TEXT NOT NULL DEFAULT '',
@@ -150,7 +150,7 @@ function ensureTaskBoardRunStateConstraint(db: DatabaseSync) {
       updated_at TEXT NOT NULL
     );
 
-    INSERT INTO task_board_issues (
+    INSERT INTO kanban_issues (
       id,
       title,
       description,
@@ -191,40 +191,40 @@ function ensureTaskBoardRunStateConstraint(db: DatabaseSync) {
       attachments_json,
       created_at,
       updated_at
-    FROM task_board_issues_old_run_state;
+    FROM kanban_issues_old_run_state;
 
-    DROP TABLE task_board_issues_old_run_state;
+    DROP TABLE kanban_issues_old_run_state;
   `);
 }
 
-function ensureTaskBoardIssueIndexes(db: DatabaseSync) {
+function ensureKanbanIssueIndexes(db: DatabaseSync) {
   db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_task_board_issues_status_position
-      ON task_board_issues(status, position, id);
+    CREATE INDEX IF NOT EXISTS idx_kanban_issues_status_position
+      ON kanban_issues(status, position, id);
 
-    CREATE INDEX IF NOT EXISTS idx_task_board_issues_run_id
-      ON task_board_issues(run_id)
+    CREATE INDEX IF NOT EXISTS idx_kanban_issues_run_id
+      ON kanban_issues(run_id)
       WHERE run_id IS NOT NULL;
 
-    CREATE INDEX IF NOT EXISTS idx_task_board_issues_chat_status
-      ON task_board_issues(chat_id, status)
+    CREATE INDEX IF NOT EXISTS idx_kanban_issues_chat_status
+      ON kanban_issues(chat_id, status)
       WHERE chat_id IS NOT NULL;
   `);
 }
 
-export function openTaskBoardDatabase(app: AppPathProvider) {
-  const databasePath = getTaskBoardDatabasePath(app);
+export function openKanbanDatabase(app: AppPathProvider) {
+  const databasePath = getKanbanDatabasePath(app);
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
   const db = new DatabaseSync(databasePath);
   db.exec("PRAGMA busy_timeout = 3000");
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(`
-    CREATE TABLE IF NOT EXISTS task_board_meta (
+    CREATE TABLE IF NOT EXISTS kanban_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS task_board_issues (
+    CREATE TABLE IF NOT EXISTS kanban_issues (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL CHECK (length(trim(title)) > 0),
       description TEXT NOT NULL DEFAULT '',
@@ -246,15 +246,15 @@ export function openTaskBoardDatabase(app: AppPathProvider) {
       updated_at TEXT NOT NULL
     );
   `);
-  ensureTaskBoardIssueColumns(db);
-  ensureTaskBoardRunStateConstraint(db);
-  ensureTaskBoardIssueIndexes(db);
-  setTaskBoardMeta(db, "schema_version", "5");
+  ensureKanbanIssueColumns(db);
+  ensureKanbanRunStateConstraint(db);
+  ensureKanbanIssueIndexes(db);
+  setKanbanMeta(db, "schema_version", "5");
   return db;
 }
 
-export function withTaskBoardDatabase<T>(app: AppPathProvider, callback: (db: DatabaseSync) => T): T {
-  const db = openTaskBoardDatabase(app);
+export function withKanbanDatabase<T>(app: AppPathProvider, callback: (db: DatabaseSync) => T): T {
+  const db = openKanbanDatabase(app);
   try {
     return callback(db);
   } finally {
@@ -262,7 +262,7 @@ export function withTaskBoardDatabase<T>(app: AppPathProvider, callback: (db: Da
   }
 }
 
-export function readTaskBoardIssues(db: DatabaseSync): TaskBoardIssue[] {
+export function readKanbanIssues(db: DatabaseSync): KanbanIssue[] {
   const rows = db.prepare(`
     SELECT
       id,
@@ -284,7 +284,7 @@ export function readTaskBoardIssues(db: DatabaseSync): TaskBoardIssue[] {
       attachments_json,
       created_at,
       updated_at
-    FROM task_board_issues
+    FROM kanban_issues
     ORDER BY
       CASE status
         WHEN 'backlog' THEN 0
@@ -296,13 +296,13 @@ export function readTaskBoardIssues(db: DatabaseSync): TaskBoardIssue[] {
       END,
       position ASC,
       id ASC
-  `).all() as TaskBoardIssueRow[];
+  `).all() as KanbanIssueRow[];
   return rows.map(issueFromRow);
 }
 
-export function replaceTaskBoardIssues(db: DatabaseSync, issues: TaskBoardIssue[]) {
+export function replaceKanbanIssues(db: DatabaseSync, issues: KanbanIssue[]) {
   const insert = db.prepare(`
-    INSERT INTO task_board_issues (
+    INSERT INTO kanban_issues (
       id,
       title,
       description,
@@ -326,7 +326,7 @@ export function replaceTaskBoardIssues(db: DatabaseSync, issues: TaskBoardIssue[
   `);
   db.exec("BEGIN IMMEDIATE");
   try {
-    db.prepare("DELETE FROM task_board_issues").run();
+    db.prepare("DELETE FROM kanban_issues").run();
     for (const issue of issues) {
       insert.run(...issueParams(issue));
     }
@@ -337,9 +337,9 @@ export function replaceTaskBoardIssues(db: DatabaseSync, issues: TaskBoardIssue[
   }
 }
 
-export function setTaskBoardMeta(db: DatabaseSync, key: string, value: string) {
+export function setKanbanMeta(db: DatabaseSync, key: string, value: string) {
   db.prepare(`
-    INSERT INTO task_board_meta (key, value)
+    INSERT INTO kanban_meta (key, value)
     VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key, value);

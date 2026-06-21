@@ -1,18 +1,18 @@
 import type {
-  TaskBoardDeleteResult,
-  TaskBoardIssue,
-  TaskBoardIssueResult,
-  TaskBoardIssueUpdateInput,
-  TaskBoardListResult,
-  TaskBoardStatus
+  KanbanDeleteResult,
+  KanbanIssue,
+  KanbanIssueResult,
+  KanbanIssueUpdateInput,
+  KanbanListResult,
+  KanbanStatus
 } from "../shared/contracts";
 import {
-  deleteTaskBoardIssue,
-  listTaskBoardIssues,
-  updateTaskBoardIssue,
-  updateTaskBoardIssueByChatId,
-  updateTaskBoardIssueByRunId
-} from "./task-board-store";
+  deleteKanbanIssue,
+  listKanbanIssues,
+  updateKanbanIssue,
+  updateKanbanIssueByChatId,
+  updateKanbanIssueByRunId
+} from "./kanban-store";
 import { PRODUCT_NAME } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
 
@@ -29,21 +29,21 @@ type AgentPlatformCaller<TApp> = <T = unknown>(
   }
 ) => Promise<T>;
 
-type TaskBoardAssistantSyncEvent = {
+type KanbanAssistantSyncEvent = {
   type?: string;
   status?: string | null;
   chatId?: string | null;
   runId?: string | null;
 };
 
-type TaskBoardAutomationDetail = {
+type KanbanAutomationDetail = {
   id?: string;
   scheduleId?: string;
 };
 
-export function resolveTaskBoardStatusFromAssistantEvent(
-  event: TaskBoardAssistantSyncEvent
-): TaskBoardStatus | null {
+export function resolveKanbanStatusFromAssistantEvent(
+  event: KanbanAssistantSyncEvent
+): KanbanStatus | null {
   const type = (event.type ?? "").trim().toLowerCase();
   const status = (event.status ?? "").trim().toLowerCase();
   if (
@@ -75,7 +75,7 @@ export function resolveTaskBoardStatusFromAssistantEvent(
   return null;
 }
 
-function isCancelledTaskBoardAssistantEvent(event: TaskBoardAssistantSyncEvent) {
+function isCancelledKanbanAssistantEvent(event: KanbanAssistantSyncEvent) {
   const type = (event.type ?? "").trim().toLowerCase();
   const status = (event.status ?? "").trim().toLowerCase();
   return (
@@ -97,16 +97,16 @@ function isCancelledTaskBoardAssistantEvent(event: TaskBoardAssistantSyncEvent) 
   );
 }
 
-export function resolveTaskBoardRunStateFromAssistantEvent(
-  event: TaskBoardAssistantSyncEvent
-): TaskBoardIssue["runState"] {
-  const status = resolveTaskBoardStatusFromAssistantEvent(event);
+export function resolveKanbanRunStateFromAssistantEvent(
+  event: KanbanAssistantSyncEvent
+): KanbanIssue["runState"] {
+  const status = resolveKanbanStatusFromAssistantEvent(event);
   if (status === "completed") {
     return "completed";
   }
   const typeValue = (event.type ?? "").trim().toLowerCase();
   const statusValue = (event.status ?? "").trim().toLowerCase();
-  if (isCancelledTaskBoardAssistantEvent(event)) {
+  if (isCancelledKanbanAssistantEvent(event)) {
     return "cancelled";
   }
   if (
@@ -130,17 +130,17 @@ export function resolveTaskBoardRunStateFromAssistantEvent(
   return null;
 }
 
-export function syncTaskBoardIssueFromAssistantEvent(
+export function syncKanbanIssueFromAssistantEvent(
   app: AppPathProvider,
-  event: TaskBoardAssistantSyncEvent
+  event: KanbanAssistantSyncEvent
 ) {
-  const status = resolveTaskBoardStatusFromAssistantEvent(event);
-  const runState = resolveTaskBoardRunStateFromAssistantEvent(event);
+  const status = resolveKanbanStatusFromAssistantEvent(event);
+  const runState = resolveKanbanRunStateFromAssistantEvent(event);
   if (!runState || (!event.runId && !event.chatId)) {
     return;
   }
 
-  const input: TaskBoardIssueUpdateInput = {
+  const input: KanbanIssueUpdateInput = {
     runId: null,
     runState
   };
@@ -151,12 +151,12 @@ export function syncTaskBoardIssueFromAssistantEvent(
     input.chatId = event.chatId;
   }
 
-  const runResult = event.runId ? updateTaskBoardIssueByRunId(app, event.runId, input) : null;
+  const runResult = event.runId ? updateKanbanIssueByRunId(app, event.runId, input) : null;
   if (runResult?.ok) {
     return;
   }
 
-  const chatResult = event.chatId ? updateTaskBoardIssueByChatId(app, event.chatId, input) : null;
+  const chatResult = event.chatId ? updateKanbanIssueByChatId(app, event.chatId, input) : null;
   if (chatResult?.ok) {
     return;
   }
@@ -164,10 +164,10 @@ export function syncTaskBoardIssueFromAssistantEvent(
   const result = chatResult ?? runResult;
   if (
     result &&
-    result.message !== t("taskBoard.runtime.runMissing") &&
-    result.message !== t("taskBoard.runtime.chatMissing")
+    result.message !== t("kanban.runtime.runMissing") &&
+    result.message !== t("kanban.runtime.chatMissing")
   ) {
-    console.warn(`[task-board] failed to sync assistant run ${event.runId ?? event.chatId}: ${result.message}`);
+    console.warn(`[kanban] failed to sync assistant run ${event.runId ?? event.chatId}: ${result.message}`);
   }
 }
 
@@ -175,7 +175,7 @@ function readPlatformAutomationId(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return "";
   }
-  const record = value as TaskBoardAutomationDetail;
+  const record = value as KanbanAutomationDetail;
   return typeof record.id === "string" && record.id.trim()
     ? record.id.trim()
     : typeof record.scheduleId === "string" && record.scheduleId.trim()
@@ -183,51 +183,51 @@ function readPlatformAutomationId(value: unknown) {
       : "";
 }
 
-function buildTaskBoardAutomationMessage(issue: TaskBoardIssue) {
+function buildKanbanAutomationMessage(issue: KanbanIssue) {
   const message = issue.automationMessage?.trim() || issue.description.trim() || issue.title.trim();
   return [
     message,
     "",
-    t("taskBoard.automation.messageIntro", { productName: PRODUCT_NAME }),
-    t("taskBoard.automation.issueId", { id: issue.id }),
-    t("taskBoard.automation.issueTitle", { title: issue.title })
+    t("kanban.automation.messageIntro", { productName: PRODUCT_NAME }),
+    t("kanban.automation.issueId", { id: issue.id }),
+    t("kanban.automation.issueTitle", { title: issue.title })
   ].join("\n");
 }
 
-export function buildTaskBoardAutomationPayload(issue: TaskBoardIssue) {
+export function buildKanbanAutomationPayload(issue: KanbanIssue) {
   return {
-    name: t("taskBoard.automation.name", { id: issue.id, title: issue.title }).slice(0, 120),
-    description: t("taskBoard.automation.description", { productName: PRODUCT_NAME, id: issue.id }),
+    name: t("kanban.automation.name", { id: issue.id, title: issue.title }).slice(0, 120),
+    description: t("kanban.automation.description", { productName: PRODUCT_NAME, id: issue.id }),
     cron: issue.automationCron?.trim() ?? "",
     agentKey: issue.assigneeAgentKey?.trim() ?? "",
     enabled: true,
     zoneId: issue.automationTimezone?.trim() || "Asia/Shanghai",
     query: {
-      message: buildTaskBoardAutomationMessage(issue),
+      message: buildKanbanAutomationMessage(issue),
       hidden: true,
       params: {
-        source: "task-board",
+        source: "kanban",
         issueId: issue.id
       }
     }
   };
 }
 
-function currentTaskBoardIssues(app: AppPathProvider): TaskBoardListResult["issues"] {
-  return listTaskBoardIssues(app).issues;
+function currentKanbanIssues(app: AppPathProvider): KanbanListResult["issues"] {
+  return listKanbanIssues(app).issues;
 }
 
-export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>(
+export async function syncKanbanIssueAutomation<TApp extends AppPathProvider>(
   app: TApp,
   issueId: string,
   callAgentPlatform: AgentPlatformCaller<TApp>
-): Promise<TaskBoardIssueResult | { ok: false; message: string; issues: TaskBoardIssue[] }> {
-  const issue = currentTaskBoardIssues(app).find((candidate) => candidate.id === String(issueId ?? "").trim());
+): Promise<KanbanIssueResult | { ok: false; message: string; issues: KanbanIssue[] }> {
+  const issue = currentKanbanIssues(app).find((candidate) => candidate.id === String(issueId ?? "").trim());
   if (!issue) {
     return {
       ok: false,
-      message: t("taskBoard.runtime.missing"),
-      issues: currentTaskBoardIssues(app)
+      message: t("kanban.runtime.missing"),
+      issues: currentKanbanIssues(app)
     };
   }
 
@@ -238,7 +238,7 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
         body: { id: issue.automationId }
       });
     }
-    return updateTaskBoardIssue(app, issue.id, {
+    return updateKanbanIssue(app, issue.id, {
       automationId: null,
       automationEnabled: false
     });
@@ -247,32 +247,32 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
   if (!issue.assigneeAgentKey?.trim()) {
     return {
       ok: false,
-      message: t("taskBoard.automation.assigneeRequired"),
-      issues: currentTaskBoardIssues(app)
+      message: t("kanban.automation.assigneeRequired"),
+      issues: currentKanbanIssues(app)
     };
   }
   if (!issue.automationCron?.trim()) {
     return {
       ok: false,
-      message: t("taskBoard.automation.cronRequired"),
-      issues: currentTaskBoardIssues(app)
+      message: t("kanban.automation.cronRequired"),
+      issues: currentKanbanIssues(app)
     };
   }
   if (!issue.automationMessage?.trim()) {
     return {
       ok: false,
-      message: t("taskBoard.automation.messageRequired"),
-      issues: currentTaskBoardIssues(app)
+      message: t("kanban.automation.messageRequired"),
+      issues: currentKanbanIssues(app)
     };
   }
 
-  const payload = buildTaskBoardAutomationPayload(issue);
+  const payload = buildKanbanAutomationPayload(issue);
   const detail = issue.automationId
-    ? await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/admin/automations/update", {
+    ? await callAgentPlatform<KanbanAutomationDetail>(app, "/api/admin/automations/update", {
       method: "POST",
       body: { id: issue.automationId, ...payload }
     })
-    : await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/admin/automations/create", {
+    : await callAgentPlatform<KanbanAutomationDetail>(app, "/api/admin/automations/create", {
       method: "POST",
       body: payload
     });
@@ -280,22 +280,22 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
   if (!automationId) {
     return {
       ok: false,
-      message: t("taskBoard.automation.platformIdMissing"),
-      issues: currentTaskBoardIssues(app)
+      message: t("kanban.automation.platformIdMissing"),
+      issues: currentKanbanIssues(app)
     };
   }
-  return updateTaskBoardIssue(app, issue.id, {
+  return updateKanbanIssue(app, issue.id, {
     automationId,
     automationEnabled: true
   });
 }
 
-export async function deleteTaskBoardIssueWithAutomation<TApp extends AppPathProvider>(
+export async function deleteKanbanIssueWithAutomation<TApp extends AppPathProvider>(
   app: TApp,
   issueId: string,
   callAgentPlatform: AgentPlatformCaller<TApp>
-): Promise<TaskBoardDeleteResult | { ok: false; message: string; issues: TaskBoardIssue[] }> {
-  const currentIssues = currentTaskBoardIssues(app);
+): Promise<KanbanDeleteResult | { ok: false; message: string; issues: KanbanIssue[] }> {
+  const currentIssues = currentKanbanIssues(app);
   const issue = currentIssues.find((candidate) => candidate.id === String(issueId ?? "").trim());
   if (issue?.automationId) {
     try {
@@ -306,12 +306,12 @@ export async function deleteTaskBoardIssueWithAutomation<TApp extends AppPathPro
     } catch (error) {
       return {
         ok: false,
-        message: t("taskBoard.automation.deleteFailed", {
+        message: t("kanban.automation.deleteFailed", {
           message: error instanceof Error ? error.message : String(error)
         }),
         issues: currentIssues
       };
     }
   }
-  return deleteTaskBoardIssue(app, issueId);
+  return deleteKanbanIssue(app, issueId);
 }

@@ -1,42 +1,42 @@
 import type {
   AssistantAttachment,
-  TaskBoardDeleteResult,
-  TaskBoardIssue,
-  TaskBoardIssueInput,
-  TaskBoardIssueMoveInput,
-  TaskBoardIssueResult,
-  TaskBoardIssueUpdateInput,
-  TaskBoardListResult,
-  TaskBoardPriority,
-  TaskBoardRunState,
-  TaskBoardStatus
+  KanbanDeleteResult,
+  KanbanIssue,
+  KanbanIssueInput,
+  KanbanIssueMoveInput,
+  KanbanIssueResult,
+  KanbanIssueUpdateInput,
+  KanbanListResult,
+  KanbanPriority,
+  KanbanRunState,
+  KanbanStatus
 } from "../shared/contracts";
-import { TASK_BOARD_PRIORITIES, TASK_BOARD_RUN_STATES, TASK_BOARD_STATUSES } from "../shared/contracts";
+import { KANBAN_PRIORITIES, KANBAN_RUN_STATES, KANBAN_STATUSES } from "../shared/contracts";
 import {
-  getTaskBoardDatabasePath,
-  readTaskBoardIssues,
-  replaceTaskBoardIssues,
-  withTaskBoardDatabase
-} from "./task-board-db";
+  getKanbanDatabasePath,
+  readKanbanIssues,
+  replaceKanbanIssues,
+  withKanbanDatabase
+} from "./kanban-db";
 import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
   getPath(name: "home"): string;
 };
 
-type StoredTaskBoardIssues = {
-  issues: TaskBoardIssue[];
+type StoredKanbanIssues = {
+  issues: KanbanIssue[];
 };
 
-const statusRank = new Map<TaskBoardStatus, number>(
-  TASK_BOARD_STATUSES.map((status, index) => [status, index])
+const statusRank = new Map<KanbanStatus, number>(
+  KANBAN_STATUSES.map((status, index) => [status, index])
 );
 
 function nonDragCompletedTransitionMessage() {
-  return t("taskBoard.runtime.completedDragLocked");
+  return t("kanban.runtime.completedDragLocked");
 }
 
-const taskBoardStatusAliases: Record<string, TaskBoardStatus> = {
+const kanbanStatusAliases: Record<string, KanbanStatus> = {
   complete: "completed",
   completed: "completed",
   done: "completed",
@@ -60,18 +60,18 @@ function nullableTrimmedText(value: unknown) {
   return trimmed ? trimmed : null;
 }
 
-function normalizeTaskBoardStatus(value: unknown): TaskBoardStatus | null {
+function normalizeKanbanStatus(value: unknown): KanbanStatus | null {
   const raw = trimText(value).toLowerCase();
   if (!raw) return null;
-  if (TASK_BOARD_STATUSES.includes(raw as TaskBoardStatus)) {
-    return raw as TaskBoardStatus;
+  if (KANBAN_STATUSES.includes(raw as KanbanStatus)) {
+    return raw as KanbanStatus;
   }
-  return taskBoardStatusAliases[raw] ?? null;
+  return kanbanStatusAliases[raw] ?? null;
 }
 
-function normalizeTaskBoardRunState(value: unknown): TaskBoardRunState | null {
+function normalizeKanbanRunState(value: unknown): KanbanRunState | null {
   const raw = trimText(value).toLowerCase();
-  return TASK_BOARD_RUN_STATES.includes(raw as TaskBoardRunState) ? raw as TaskBoardRunState : null;
+  return KANBAN_RUN_STATES.includes(raw as KanbanRunState) ? raw as KanbanRunState : null;
 }
 
 function normalizeDescription(value: unknown) {
@@ -84,11 +84,11 @@ function normalizeAttachments(value: unknown): AssistantAttachment[] {
     : [];
 }
 
-function isTaskBoardPriority(value: unknown): value is TaskBoardPriority {
-  return typeof value === "string" && TASK_BOARD_PRIORITIES.includes(value as TaskBoardPriority);
+function isKanbanPriority(value: unknown): value is KanbanPriority {
+  return typeof value === "string" && KANBAN_PRIORITIES.includes(value as KanbanPriority);
 }
 
-function isNonDragCompletedTransition(issue: TaskBoardIssue, requestedStatus: TaskBoardStatus | null, clearsActiveRun = false) {
+function isNonDragCompletedTransition(issue: KanbanIssue, requestedStatus: KanbanStatus | null, clearsActiveRun = false) {
   return requestedStatus === "completed" && issue.status !== "completed" && !clearsActiveRun;
 }
 
@@ -96,26 +96,26 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function parseTaskBoardIdTick(id: string) {
+function parseKanbanIdTick(id: string) {
   const parsed = Number.parseInt(id.trim(), 36);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function createTaskBoardIssueId(existingIssues: TaskBoardIssue[]) {
+function createKanbanIssueId(existingIssues: KanbanIssue[]) {
   const currentTick = Math.floor(Date.now() / 100);
   const maxExistingTick = existingIssues.reduce(
-    (maxTick, issue) => Math.max(maxTick, parseTaskBoardIdTick(issue.id)),
+    (maxTick, issue) => Math.max(maxTick, parseKanbanIdTick(issue.id)),
     0
   );
   return Math.max(currentTick, maxExistingTick + 1).toString(36).toUpperCase();
 }
 
-function issueUpdatedTime(issue: TaskBoardIssue) {
+function issueUpdatedTime(issue: KanbanIssue) {
   const timestamp = Date.parse(issue.updatedAt);
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function sortIssues(issues: TaskBoardIssue[]) {
+function sortIssues(issues: KanbanIssue[]) {
   return [...issues].sort((a, b) => {
     const statusDelta = (statusRank.get(a.status) ?? 99) - (statusRank.get(b.status) ?? 99);
     if (statusDelta !== 0) return statusDelta;
@@ -126,41 +126,41 @@ function sortIssues(issues: TaskBoardIssue[]) {
   });
 }
 
-function cloneIssue(issue: TaskBoardIssue): TaskBoardIssue {
+function cloneIssue(issue: KanbanIssue): KanbanIssue {
   return { ...issue, attachments: [...issue.attachments] };
 }
 
-function cloneIssues(issues: TaskBoardIssue[]) {
+function cloneIssues(issues: KanbanIssue[]) {
   return sortIssues(issues).map(cloneIssue);
 }
 
-function readStore(app: AppPathProvider): StoredTaskBoardIssues {
-  return withTaskBoardDatabase(app, (db) => ({
-    issues: readTaskBoardIssues(db)
+function readStore(app: AppPathProvider): StoredKanbanIssues {
+  return withKanbanDatabase(app, (db) => ({
+    issues: readKanbanIssues(db)
   }));
 }
 
-function writeStore(app: AppPathProvider, store: StoredTaskBoardIssues) {
-  withTaskBoardDatabase(app, (db) => {
-    replaceTaskBoardIssues(db, sortIssues(store.issues));
+function writeStore(app: AppPathProvider, store: StoredKanbanIssues) {
+  withKanbanDatabase(app, (db) => {
+    replaceKanbanIssues(db, sortIssues(store.issues));
   });
 }
 
-function nextIssuePosition(issues: TaskBoardIssue[], status: TaskBoardStatus) {
+function nextIssuePosition(issues: KanbanIssue[], status: KanbanStatus) {
   const sameStatus = issues.filter((issue) => issue.status === status);
   if (sameStatus.length === 0) return 1;
   return sameStatus.reduce((maxPosition, issue) => Math.max(maxPosition, issue.position), 0) + 1;
 }
 
-function buildIssue(input: TaskBoardIssueInput, existingIssues: TaskBoardIssue[]): TaskBoardIssue | null {
+function buildIssue(input: KanbanIssueInput, existingIssues: KanbanIssue[]): KanbanIssue | null {
   const title = trimText(input.title);
   if (!title) return null;
 
-  const status = normalizeTaskBoardStatus(input.status) ?? "backlog";
-  const priority = isTaskBoardPriority(input.priority) ? input.priority : "medium";
+  const status = normalizeKanbanStatus(input.status) ?? "backlog";
+  const priority = isKanbanPriority(input.priority) ? input.priority : "medium";
   const timestamp = nowIso();
   return {
-    id: createTaskBoardIssueId(existingIssues),
+    id: createKanbanIssueId(existingIssues),
     title,
     description: normalizeDescription(input.description),
     status,
@@ -169,7 +169,7 @@ function buildIssue(input: TaskBoardIssueInput, existingIssues: TaskBoardIssue[]
     position: nextIssuePosition(existingIssues, status),
     chatId: null,
     runId: null,
-    runState: normalizeTaskBoardRunState(input.runState),
+    runState: normalizeKanbanRunState(input.runState),
     automationId: nullableTrimmedText(input.automationId),
     automationEnabled: input.automationEnabled === true,
     automationCron: nullableTrimmedText(input.automationCron),
@@ -182,8 +182,8 @@ function buildIssue(input: TaskBoardIssueInput, existingIssues: TaskBoardIssue[]
   };
 }
 
-function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInput): TaskBoardIssue | null {
-  const nextIssue: TaskBoardIssue = {
+function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): KanbanIssue | null {
+  const nextIssue: KanbanIssue = {
     ...issue,
     attachments: [...issue.attachments],
     updatedAt: nowIso()
@@ -196,15 +196,15 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
   }
   if (input.description !== undefined) nextIssue.description = normalizeDescription(input.description);
   if (input.status !== undefined) {
-    const status = normalizeTaskBoardStatus(input.status);
+    const status = normalizeKanbanStatus(input.status);
     if (status) nextIssue.status = status;
   }
-  if (input.priority !== undefined && isTaskBoardPriority(input.priority)) nextIssue.priority = input.priority;
+  if (input.priority !== undefined && isKanbanPriority(input.priority)) nextIssue.priority = input.priority;
   if (input.assigneeAgentKey !== undefined) nextIssue.assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
   if (input.chatId !== undefined) nextIssue.chatId = nullableTrimmedText(input.chatId);
   if (input.runId !== undefined) nextIssue.runId = nullableTrimmedText(input.runId);
   if (input.runState !== undefined) {
-    nextIssue.runState = normalizeTaskBoardRunState(input.runState);
+    nextIssue.runState = normalizeKanbanRunState(input.runState);
   } else if (input.runId !== undefined) {
     if (nextIssue.runId) {
       nextIssue.runState = "running";
@@ -227,43 +227,43 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
   return nextIssue;
 }
 
-export function listTaskBoardIssues(app: AppPathProvider): TaskBoardListResult {
+export function listKanbanIssues(app: AppPathProvider): KanbanListResult {
   const store = readStore(app);
   return {
     ok: true,
-    message: t("taskBoard.runtime.loaded"),
+    message: t("kanban.runtime.loaded"),
     issues: cloneIssues(store.issues),
-    storagePath: getTaskBoardDatabasePath(app)
+    storagePath: getKanbanDatabasePath(app)
   };
 }
 
-export function createTaskBoardIssue(app: AppPathProvider, input: TaskBoardIssueInput): TaskBoardIssueResult {
+export function createKanbanIssue(app: AppPathProvider, input: KanbanIssueInput): KanbanIssueResult {
   const store = readStore(app);
   const issue = buildIssue(input, store.issues);
   if (!issue) {
-    return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.titleRequired"), issues: cloneIssues(store.issues) };
   }
   const nextIssues = [...store.issues, issue];
   writeStore(app, { issues: nextIssues });
-  return { ok: true, message: t("taskBoard.runtime.created"), issue: cloneIssue(issue), issues: cloneIssues(nextIssues) };
+  return { ok: true, message: t("kanban.runtime.created"), issue: cloneIssue(issue), issues: cloneIssues(nextIssues) };
 }
 
-export function updateTaskBoardIssue(
+export function updateKanbanIssue(
   app: AppPathProvider,
   issueId: string,
-  input: TaskBoardIssueUpdateInput
-): TaskBoardIssueResult {
+  input: KanbanIssueUpdateInput
+): KanbanIssueResult {
   const store = readStore(app);
   const issueIndex = store.issues.findIndex((issue) => issue.id === issueId);
   if (issueIndex < 0) {
-    return { ok: false, message: t("taskBoard.runtime.missing"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.missing"), issues: cloneIssues(store.issues) };
   }
 
   const currentIssue = store.issues[issueIndex]!;
-  const requestedStatus = input.status !== undefined ? normalizeTaskBoardStatus(input.status) : null;
+  const requestedStatus = input.status !== undefined ? normalizeKanbanStatus(input.status) : null;
   const clearsActiveRun = input.runId === null;
   if (currentIssue.runId && requestedStatus && requestedStatus !== currentIssue.status && !clearsActiveRun) {
-    return { ok: false, message: t("taskBoard.runtime.agentRunning"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.agentRunning"), issues: cloneIssues(store.issues) };
   }
   if (isNonDragCompletedTransition(currentIssue, requestedStatus, clearsActiveRun)) {
     return { ok: false, message: nonDragCompletedTransitionMessage(), issues: cloneIssues(store.issues) };
@@ -271,61 +271,61 @@ export function updateTaskBoardIssue(
 
   const nextIssue = applyIssueUpdate(currentIssue, input);
   if (!nextIssue) {
-    return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.titleRequired"), issues: cloneIssues(store.issues) };
   }
 
   const nextIssues = [...store.issues];
   nextIssues[issueIndex] = nextIssue;
   writeStore(app, { issues: nextIssues });
-  return { ok: true, message: t("taskBoard.runtime.updated"), issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
+  return { ok: true, message: t("kanban.runtime.updated"), issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
 }
 
-export function updateTaskBoardIssueByRunId(
+export function updateKanbanIssueByRunId(
   app: AppPathProvider,
   runId: string,
-  input: TaskBoardIssueUpdateInput
-): TaskBoardIssueResult {
+  input: KanbanIssueUpdateInput
+): KanbanIssueResult {
   const trimmedRunId = trimText(runId);
   const store = readStore(app);
   const issueIndex = store.issues.findIndex((issue) => issue.runId === trimmedRunId);
   if (!trimmedRunId || issueIndex < 0) {
-    return { ok: false, message: t("taskBoard.runtime.runMissing"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.runMissing"), issues: cloneIssues(store.issues) };
   }
-  return updateMatchedTaskBoardIssue(app, store, issueIndex, input, t("taskBoard.runtime.runUpdated"));
+  return updateMatchedKanbanIssue(app, store, issueIndex, input, t("kanban.runtime.runUpdated"));
 }
 
-export function updateTaskBoardIssueByChatId(
+export function updateKanbanIssueByChatId(
   app: AppPathProvider,
   chatId: string,
-  input: TaskBoardIssueUpdateInput
-): TaskBoardIssueResult {
+  input: KanbanIssueUpdateInput
+): KanbanIssueResult {
   const trimmedChatId = trimText(chatId);
   const store = readStore(app);
   const issueIndex = store.issues.findIndex((issue) =>
     issue.chatId === trimmedChatId && issue.status === "in_progress"
   );
   if (!trimmedChatId || issueIndex < 0) {
-    return { ok: false, message: t("taskBoard.runtime.chatMissing"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.chatMissing"), issues: cloneIssues(store.issues) };
   }
-  return updateMatchedTaskBoardIssue(app, store, issueIndex, input, t("taskBoard.runtime.chatUpdated"));
+  return updateMatchedKanbanIssue(app, store, issueIndex, input, t("kanban.runtime.chatUpdated"));
 }
 
-function updateMatchedTaskBoardIssue(
+function updateMatchedKanbanIssue(
   app: AppPathProvider,
-  store: StoredTaskBoardIssues,
+  store: StoredKanbanIssues,
   issueIndex: number,
-  input: TaskBoardIssueUpdateInput,
+  input: KanbanIssueUpdateInput,
   message: string
-): TaskBoardIssueResult {
+): KanbanIssueResult {
   const currentIssue = store.issues[issueIndex]!;
-  const requestedStatus = input.status !== undefined ? normalizeTaskBoardStatus(input.status) : null;
+  const requestedStatus = input.status !== undefined ? normalizeKanbanStatus(input.status) : null;
   const clearsActiveRun = input.runId === null;
   if (isNonDragCompletedTransition(currentIssue, requestedStatus, clearsActiveRun)) {
     return { ok: false, message: nonDragCompletedTransitionMessage(), issues: cloneIssues(store.issues) };
   }
   const nextIssue = applyIssueUpdate(currentIssue, input);
   if (!nextIssue) {
-    return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.titleRequired"), issues: cloneIssues(store.issues) };
   }
   const nextIssues = [...store.issues];
   nextIssues[issueIndex] = nextIssue;
@@ -333,22 +333,22 @@ function updateMatchedTaskBoardIssue(
   return { ok: true, message, issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
 }
 
-export function moveTaskBoardIssue(app: AppPathProvider, input: TaskBoardIssueMoveInput): TaskBoardIssueResult {
+export function moveKanbanIssue(app: AppPathProvider, input: KanbanIssueMoveInput): KanbanIssueResult {
   const store = readStore(app);
   const issueIndex = store.issues.findIndex((issue) => issue.id === input.id);
   if (issueIndex < 0) {
-    return { ok: false, message: t("taskBoard.runtime.missing"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.missing"), issues: cloneIssues(store.issues) };
   }
-  const targetStatus = normalizeTaskBoardStatus(input.status);
+  const targetStatus = normalizeKanbanStatus(input.status);
   if (!targetStatus || !Number.isFinite(input.position)) {
-    return { ok: false, message: t("taskBoard.runtime.moveInvalid"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.moveInvalid"), issues: cloneIssues(store.issues) };
   }
   const currentIssue = store.issues[issueIndex]!;
   if (currentIssue.runId) {
-    return { ok: false, message: t("taskBoard.runtime.agentRunning"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.agentRunning"), issues: cloneIssues(store.issues) };
   }
 
-  const nextIssue: TaskBoardIssue = {
+  const nextIssue: KanbanIssue = {
     ...currentIssue,
     status: targetStatus,
     position: input.position,
@@ -358,26 +358,26 @@ export function moveTaskBoardIssue(app: AppPathProvider, input: TaskBoardIssueMo
   const nextIssues = [...store.issues];
   nextIssues[issueIndex] = nextIssue;
   writeStore(app, { issues: nextIssues });
-  return { ok: true, message: t("taskBoard.runtime.moved"), issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
+  return { ok: true, message: t("kanban.runtime.moved"), issue: cloneIssue(nextIssue), issues: cloneIssues(nextIssues) };
 }
 
-export function deleteTaskBoardIssue(app: AppPathProvider, issueId: string): TaskBoardDeleteResult {
+export function deleteKanbanIssue(app: AppPathProvider, issueId: string): KanbanDeleteResult {
   const store = readStore(app);
   const nextIssues = store.issues.filter((issue) => issue.id !== issueId);
   if (nextIssues.length === store.issues.length) {
-    return { ok: false, message: t("taskBoard.runtime.missing"), issues: cloneIssues(store.issues) };
+    return { ok: false, message: t("kanban.runtime.missing"), issues: cloneIssues(store.issues) };
   }
   writeStore(app, { issues: nextIssues });
   return {
     ok: true,
-    message: t("taskBoard.runtime.deleted"),
+    message: t("kanban.runtime.deleted"),
     deletedIssueId: issueId,
     issues: cloneIssues(nextIssues)
   };
 }
 
 export const __testInternals = {
-  createTaskBoardIssueId,
-  getTaskBoardDatabasePath,
+  createKanbanIssueId,
+  getKanbanDatabasePath,
   readStore
 };

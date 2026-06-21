@@ -17,7 +17,7 @@ import { resolveDesktopSsoConfigPath } from "./oidc-sso";
 import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
 import { saveDesktopPetSettings } from "./assistant/pet/desktop-pet";
 import { saveMarketSettings } from "./marketplace/common";
-import { saveTaskBoardSettings } from "./task-board-runtime";
+import { saveKanbanSettings } from "./kanban-runtime";
 import { saveTunnelHubSettings } from "./tunnel-hub-settings";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
@@ -293,7 +293,7 @@ function applyKanbanDefaults(
   if (!settings) {
     return "absent";
   }
-  saveTaskBoardSettings(app, settings);
+  saveKanbanSettings(app, settings);
   const deviceAlias = readText(settings.cloud?.deviceAlias);
   if (deviceAlias) {
     const profileRoot = getDesktopConfigRoot(app);

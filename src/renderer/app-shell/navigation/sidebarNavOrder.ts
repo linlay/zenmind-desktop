@@ -25,7 +25,7 @@ type SidebarNavOrderInput = {
 };
 
 export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
-  { key: "kanban", label: "nav.taskBoard" },
+  { key: "kanban", label: "nav.kanban" },
   { key: "schedules", label: "nav.schedules" },
   { key: "group:assistants", label: "nav.assistants" },
   { key: "group:webs", label: "nav.websites" },

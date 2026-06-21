@@ -71,7 +71,7 @@ function createDesktopWsServerOptions(app, overrides = {}) {
       listAgents: async () => [],
       startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
     },
-    getTaskBoardRuntime: () => null,
+    getKanbanRuntime: () => null,
     logger: { log() {}, warn() {}, error() {} },
     ...overrides
   };
@@ -428,7 +428,7 @@ test("Tunnel Hub runtime requires SSO even when a relay token exists", async (t)
         listAgents: async () => [],
         startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
       },
-      getTaskBoardRuntime: () => null
+      getKanbanRuntime: () => null
     },
     createTunnelClient(input) {
       connectCalls.push(input);
@@ -503,7 +503,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
         listAgents: async () => [],
         startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
       },
-      getTaskBoardRuntime: () => null
+      getKanbanRuntime: () => null
     },
     createTunnelClient(input) {
       connectCalls.push(input);
@@ -598,7 +598,7 @@ test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol through fu
         listAgents: async () => [],
         startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
       },
-      getTaskBoardRuntime: () => null,
+      getKanbanRuntime: () => null,
       verifyToken: async (token) => {
         assert.equal(token, "test-token");
         return {

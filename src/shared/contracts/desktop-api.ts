@@ -5,7 +5,7 @@ import type { NavigateListener, ServicesChangedListener, StartupRestoreState, St
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
-import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConfigResult, TaskBoardDeleteResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult, TaskBoardSettingsInput, TaskBoardSettingsResult } from "./task-board";
+import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
@@ -436,19 +436,19 @@ export interface DesktopApi {
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
   };
-  taskBoard: {
-    listIssues: () => Promise<TaskBoardListResult>;
-    resyncCloudBoard: () => Promise<TaskBoardListResult>;
-    getSettings: () => Promise<TaskBoardSettingsResult>;
-    saveSettings: (input: TaskBoardSettingsInput) => Promise<TaskBoardSettingsResult>;
-    getCloudConfig: () => Promise<TaskBoardCloudConfigResult>;
-    saveCloudConfig: (input: TaskBoardCloudConfig) => Promise<TaskBoardCloudConfigResult>;
-    createIssue: (input: TaskBoardIssueInput) => Promise<TaskBoardIssueResult>;
-    updateIssue: (id: string, input: TaskBoardIssueUpdateInput) => Promise<TaskBoardIssueResult>;
-    deleteIssue: (id: string) => Promise<TaskBoardDeleteResult>;
-    moveIssue: (input: TaskBoardIssueMoveInput) => Promise<TaskBoardIssueResult>;
-    syncIssueAutomation: (issueId: string) => Promise<TaskBoardIssueResult>;
-    onChanged: (listener: TaskBoardChangedListener) => () => void;
+  kanban: {
+    listIssues: () => Promise<KanbanListResult>;
+    resyncCloudBoard: () => Promise<KanbanListResult>;
+    getSettings: () => Promise<KanbanSettingsResult>;
+    saveSettings: (input: KanbanSettingsInput) => Promise<KanbanSettingsResult>;
+    getCloudConfig: () => Promise<KanbanCloudConfigResult>;
+    saveCloudConfig: (input: KanbanCloudConfig) => Promise<KanbanCloudConfigResult>;
+    createIssue: (input: KanbanIssueInput) => Promise<KanbanIssueResult>;
+    updateIssue: (id: string, input: KanbanIssueUpdateInput) => Promise<KanbanIssueResult>;
+    deleteIssue: (id: string) => Promise<KanbanDeleteResult>;
+    moveIssue: (input: KanbanIssueMoveInput) => Promise<KanbanIssueResult>;
+    syncIssueAutomation: (issueId: string) => Promise<KanbanIssueResult>;
+    onChanged: (listener: KanbanChangedListener) => () => void;
   };
   assistant: {
     getSettings: () => Promise<AssistantSettingsPublic>;

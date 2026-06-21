@@ -1,17 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type {
-  TaskBoardCreateLocalProjectResult,
-  TaskBoardCurrentUser,
-  TaskBoardIssue,
-  TaskBoardIssueSyncItemResult,
-  TaskBoardProject
+  KanbanCreateLocalProjectResult,
+  KanbanCurrentUser,
+  KanbanIssue,
+  KanbanIssueSyncItemResult,
+  KanbanProject
 } from "../shared/contracts";
 import {
   linkDesktopKanbanIssueToRemote,
   listDesktopKanbanIssues,
   markDesktopKanbanIssueSyncError,
   withDesktopKanbanDatabase
-} from "./task-board-local-store";
+} from "./kanban-local-store";
 import { t } from "./i18n/main-i18n";
 
 type AppPathProvider = {
@@ -32,7 +32,7 @@ function trimText(value: unknown) {
 function slugify(name: string) {
   const slug = name
     .toLowerCase()
-    .replace(/[^a-z0-9一-龥]+/g, "-")
+    .replace(/[^\p{Script=Han}a-z0-9]+/gu, "-")
     .replace(/^-+|-+$/g, "");
   return slug || `project-${Date.now().toString(36)}`;
 }
@@ -51,12 +51,12 @@ export type CreateLocalDesktopProjectInput = {
 // 本地项目的 PATH_ 是逻辑路径(slug 链),不涉及文件系统路径,无需平台分支。
 export function createLocalDesktopProject(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   input: CreateLocalDesktopProjectInput
-): TaskBoardCreateLocalProjectResult {
+): KanbanCreateLocalProjectResult {
   const name = trimText(input.name);
   if (!name) {
-    return { ok: false, message: t("taskBoard.localProject.nameRequired") };
+    return { ok: false, message: t("kanban.localProject.nameRequired") };
   }
   const id = trimText(input.id) || createLocalProjectId();
   const slug = trimText(input.slug) || slugify(name);
@@ -68,7 +68,7 @@ export function createLocalDesktopProject(
     if (existing?.id) {
       return {
         ok: true,
-        message: t("taskBoard.localProject.exists"),
+        message: t("kanban.localProject.exists"),
         project: {
           id: existing.id,
           name: existing.name ?? name,
@@ -110,7 +110,7 @@ export function createLocalDesktopProject(
     );
     return {
       ok: true,
-      message: t("taskBoard.localProject.created"),
+      message: t("kanban.localProject.created"),
       project: { id, name, slug, path }
     };
   });
@@ -119,9 +119,9 @@ export function createLocalDesktopProject(
 // 校验本地项目是否存在(响应云端 desktop.project.bind)。
 export function findLocalDesktopProject(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   localProjectId: string
-): TaskBoardProject | null {
+): KanbanProject | null {
   const id = trimText(localProjectId);
   if (!id) {
     return null;
@@ -133,7 +133,7 @@ export function findLocalDesktopProject(
 // 解绑后把该本地项目下的 cloud issue 转为 private(本地保留副本,不再随云端同步)。
 export function convertLocalProjectIssuesToPrivate(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   localProjectId: string
 ): number {
   const id = trimText(localProjectId);
@@ -168,9 +168,9 @@ export function convertLocalProjectIssuesToPrivate(
 // localProjectIds 为空数组时返回空(无 active 绑定即无需上行)。
 export function listPendingUpstreamIssues(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   localProjectIds: string[]
-): TaskBoardIssue[] {
+): KanbanIssue[] {
   const ids = localProjectIds.map((value) => trimText(value)).filter(Boolean);
   if (ids.length === 0) {
     return [];
@@ -190,8 +190,8 @@ export function listPendingUpstreamIssues(
 //   error           → syncState=error 并记录消息
 export function applyDesktopIssueSyncResults(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
-  results: TaskBoardIssueSyncItemResult[],
+  currentUser: KanbanCurrentUser,
+  results: KanbanIssueSyncItemResult[],
   revision = 0
 ): { synced: number; conflicts: number; errors: number } {
   let synced = 0;
@@ -212,13 +212,13 @@ export function applyDesktopIssueSyncResults(
       if (item.issue) {
         linkDesktopKanbanIssueToRemote(app, currentUser, localIssueId, item.issue, revision);
       } else {
-        markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("taskBoard.localProject.remoteConflict"));
+        markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("kanban.localProject.remoteConflict"));
       }
       continue;
     }
     if (item.status === "error") {
       errors += 1;
-      markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("taskBoard.localProject.syncFailed"));
+      markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("kanban.localProject.syncFailed"));
       continue;
     }
     if (item.status === "deleted") {

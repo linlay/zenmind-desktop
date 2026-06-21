@@ -1,6 +1,6 @@
 import type { AssistantAttachment } from "./attachments";
 
-export const TASK_BOARD_STATUSES = [
+export const KANBAN_STATUSES = [
   "backlog",
   "todo",
   "in_progress",
@@ -8,34 +8,34 @@ export const TASK_BOARD_STATUSES = [
   "completed"
 ] as const;
 
-export const TASK_BOARD_PRIORITIES = [
+export const KANBAN_PRIORITIES = [
   "high",
   "medium",
   "low"
 ] as const;
 
-export const TASK_BOARD_RUN_STATES = [
+export const KANBAN_RUN_STATES = [
   "running",
   "completed",
   "failed",
   "cancelled"
 ] as const;
 
-export type TaskBoardStatus = typeof TASK_BOARD_STATUSES[number];
-export type TaskBoardPriority = typeof TASK_BOARD_PRIORITIES[number];
-export type TaskBoardRunState = typeof TASK_BOARD_RUN_STATES[number];
-export type TaskBoardSyncMode = "private" | "cloud";
-export type TaskBoardSyncState = "local" | "syncing" | "synced" | "error";
-export type TaskBoardOrigin = "desktop" | "cloud_dispatch";
+export type KanbanStatus = typeof KANBAN_STATUSES[number];
+export type KanbanPriority = typeof KANBAN_PRIORITIES[number];
+export type KanbanRunState = typeof KANBAN_RUN_STATES[number];
+export type KanbanSyncMode = "private" | "cloud";
+export type KanbanSyncState = "local" | "syncing" | "synced" | "error";
+export type KanbanOrigin = "desktop" | "cloud_dispatch";
 
-export interface TaskBoardCurrentUser {
+export interface KanbanCurrentUser {
   id: string;
   name: string;
   email: string;
   source: "sso" | "device";
 }
 
-export interface TaskBoardIssue {
+export interface KanbanIssue {
   id: string;
   localIssueId?: string;
   remoteIssueId?: string | null;
@@ -50,8 +50,8 @@ export interface TaskBoardIssue {
   statusKey?: string;
   title: string;
   description: string;
-  status: TaskBoardStatus;
-  priority: TaskBoardPriority;
+  status: KanbanStatus;
+  priority: KanbanPriority;
   severity?: "critical" | "high" | "medium" | "low";
   assigneeAgentKey: string | null;
   assigneeId?: string | null;
@@ -65,7 +65,7 @@ export interface TaskBoardIssue {
   position: number;
   chatId: string | null;
   runId: string | null;
-  runState: TaskBoardRunState | null;
+  runState: KanbanRunState | null;
   automationId: string | null;
   automationEnabled: boolean;
   automationCron: string | null;
@@ -73,9 +73,9 @@ export interface TaskBoardIssue {
   automationTimezone: string | null;
   attachmentChatId: string | null;
   attachments: AssistantAttachment[];
-  syncMode?: TaskBoardSyncMode;
-  syncState?: TaskBoardSyncState;
-  origin?: TaskBoardOrigin;
+  syncMode?: KanbanSyncMode;
+  syncState?: KanbanSyncState;
+  origin?: KanbanOrigin;
   ownerUserId?: string;
   lastRemoteRevision?: number;
   lastSyncedAt?: string | null;
@@ -85,7 +85,7 @@ export interface TaskBoardIssue {
   updatedAt: string;
 }
 
-export interface TaskBoardProject {
+export interface KanbanProject {
   id: string;
   parentId: string | null;
   slug: string;
@@ -101,7 +101,7 @@ export interface TaskBoardProject {
   updatedAt: string;
 }
 
-export interface TaskBoardProjectBinding {
+export interface KanbanProjectBinding {
   id: string;
   projectId: string;
   deviceId: string;
@@ -117,42 +117,42 @@ export interface TaskBoardProjectBinding {
   updatedAt: string;
 }
 
-export interface TaskBoardProjectBindingIssue {
+export interface KanbanProjectBindingIssue {
   bindingId: string;
   issueId: string;
   source?: "select" | "dispatch" | "desktop_sync";
   createdAt?: string;
 }
 
-export interface TaskBoardDispatchBindingContext {
+export interface KanbanDispatchBindingContext {
   id: string;
   localProjectId: string;
   localDisplayName?: string;
 }
 
-export interface TaskBoardIssueSyncUpsert {
+export interface KanbanIssueSyncUpsert {
   localIssueId: string;
   remoteIssueId?: string | null;
   baseIssueRevision?: number;
   input: Record<string, unknown>;
 }
 
-export interface TaskBoardIssueSyncDelete {
+export interface KanbanIssueSyncDelete {
   localIssueId: string;
   remoteIssueId: string;
   baseIssueRevision?: number;
 }
 
-export interface TaskBoardIssueSyncRequest {
+export interface KanbanIssueSyncRequest {
   deviceId: string;
   projectId: string;
   localProjectId: string;
   baseRevision?: number;
-  upserts?: TaskBoardIssueSyncUpsert[];
-  deletes?: TaskBoardIssueSyncDelete[];
+  upserts?: KanbanIssueSyncUpsert[];
+  deletes?: KanbanIssueSyncDelete[];
 }
 
-export type TaskBoardIssueSyncItemStatus =
+export type KanbanIssueSyncItemStatus =
   | "created"
   | "updated"
   | "deleted"
@@ -160,30 +160,30 @@ export type TaskBoardIssueSyncItemStatus =
   | "skipped"
   | "error";
 
-export interface TaskBoardIssueSyncItemResult {
+export interface KanbanIssueSyncItemResult {
   localIssueId: string;
   remoteIssueId?: string;
-  status: TaskBoardIssueSyncItemStatus;
+  status: KanbanIssueSyncItemStatus;
   issue?: Record<string, unknown>;
   message?: string;
 }
 
-export interface TaskBoardIssueSyncResult {
+export interface KanbanIssueSyncResult {
   ok: boolean;
   message?: string;
   boardId?: string;
   projectId?: string;
   revision?: number;
-  results: TaskBoardIssueSyncItemResult[];
+  results: KanbanIssueSyncItemResult[];
 }
 
-export interface TaskBoardCreateLocalProjectRequest {
+export interface KanbanCreateLocalProjectRequest {
   name: string;
   localProjectId?: string;
   cloudProjectId?: string;
 }
 
-export interface TaskBoardCreateLocalProjectResult {
+export interface KanbanCreateLocalProjectResult {
   ok: boolean;
   message?: string;
   project?: {
@@ -194,12 +194,12 @@ export interface TaskBoardCreateLocalProjectResult {
   };
 }
 
-export interface TaskBoardIssueInput {
+export interface KanbanIssueInput {
   title: string;
   projectId?: string | null;
   description?: string | null;
-  status?: TaskBoardStatus;
-  priority?: TaskBoardPriority;
+  status?: KanbanStatus;
+  priority?: KanbanPriority;
   severity?: "critical" | "high" | "medium" | "low";
   assigneeAgentKey?: string | null;
   assigneeId?: string | null;
@@ -208,7 +208,7 @@ export interface TaskBoardIssueInput {
   workerAgent?: string | null;
   reviewerId?: string | null;
   reviewRequired?: boolean;
-  runState?: TaskBoardRunState | null;
+  runState?: KanbanRunState | null;
   automationId?: string | null;
   automationEnabled?: boolean;
   automationCron?: string | null;
@@ -219,12 +219,12 @@ export interface TaskBoardIssueInput {
   syncToCloud?: boolean;
 }
 
-export interface TaskBoardIssueUpdateInput {
+export interface KanbanIssueUpdateInput {
   title?: string;
   projectId?: string | null;
   description?: string | null;
-  status?: TaskBoardStatus;
-  priority?: TaskBoardPriority;
+  status?: KanbanStatus;
+  priority?: KanbanPriority;
   severity?: "critical" | "high" | "medium" | "low";
   assigneeAgentKey?: string | null;
   assigneeId?: string | null;
@@ -235,7 +235,7 @@ export interface TaskBoardIssueUpdateInput {
   reviewRequired?: boolean;
   chatId?: string | null;
   runId?: string | null;
-  runState?: TaskBoardRunState | null;
+  runState?: KanbanRunState | null;
   automationId?: string | null;
   automationEnabled?: boolean;
   automationCron?: string | null;
@@ -247,29 +247,29 @@ export interface TaskBoardIssueUpdateInput {
   baseIssueRevision?: number;
 }
 
-export interface TaskBoardIssueMoveInput {
+export interface KanbanIssueMoveInput {
   id: string;
-  status: TaskBoardStatus;
+  status: KanbanStatus;
   position: number;
   baseIssueRevision?: number;
 }
 
-export interface TaskBoardListResult {
+export interface KanbanListResult {
   ok: boolean;
   message: string;
-  issues: TaskBoardIssue[];
-  projects?: TaskBoardProject[];
-  projectBindings?: TaskBoardProjectBinding[];
-  projectBindingIssues?: TaskBoardProjectBindingIssue[];
+  issues: KanbanIssue[];
+  projects?: KanbanProject[];
+  projectBindings?: KanbanProjectBinding[];
+  projectBindingIssues?: KanbanProjectBindingIssue[];
   storagePath?: string;
   boardId?: string;
   projectId?: string;
   revision?: number;
-  currentUser?: TaskBoardCurrentUser;
+  currentUser?: KanbanCurrentUser;
   connectionState?: "disabled" | "connecting" | "open" | "closed" | "error";
 }
 
-export interface TaskBoardCloudConfig {
+export interface KanbanCloudConfig {
   serverUrl: string;
   token: string;
   selectedProjectId: string;
@@ -277,44 +277,44 @@ export interface TaskBoardCloudConfig {
   deviceAlias?: string;
 }
 
-export interface TaskBoardSettings {
+export interface KanbanSettings {
   enabled: boolean;
-  cloud: TaskBoardCloudConfig;
+  cloud: KanbanCloudConfig;
 }
 
-export interface TaskBoardSettingsInput {
+export interface KanbanSettingsInput {
   enabled?: boolean;
-  cloud?: Partial<TaskBoardCloudConfig>;
+  cloud?: Partial<KanbanCloudConfig>;
 }
 
-export interface TaskBoardSettingsResult {
+export interface KanbanSettingsResult {
   ok: boolean;
   message: string;
-  settings: TaskBoardSettings;
+  settings: KanbanSettings;
   configPath?: string;
-  connectionState?: TaskBoardListResult["connectionState"];
+  connectionState?: KanbanListResult["connectionState"];
 }
 
-export interface TaskBoardCloudConfigResult {
+export interface KanbanCloudConfigResult {
   ok: boolean;
   message: string;
-  config: TaskBoardCloudConfig;
+  config: KanbanCloudConfig;
   configPath?: string;
-  connectionState?: TaskBoardListResult["connectionState"];
+  connectionState?: KanbanListResult["connectionState"];
 }
 
-export interface TaskBoardIssueResult {
+export interface KanbanIssueResult {
   ok: boolean;
   message: string;
-  issue?: TaskBoardIssue;
-  issues: TaskBoardIssue[];
+  issue?: KanbanIssue;
+  issues: KanbanIssue[];
 }
 
-export interface TaskBoardDeleteResult {
+export interface KanbanDeleteResult {
   ok: boolean;
   message: string;
   deletedIssueId?: string;
-  issues: TaskBoardIssue[];
+  issues: KanbanIssue[];
 }
 
-export type TaskBoardChangedListener = () => void;
+export type KanbanChangedListener = () => void;

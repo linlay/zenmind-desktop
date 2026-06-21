@@ -57,7 +57,7 @@ function createHarness(startResult, options = {}) {
     openSystemBrowserUrl: [],
     siteTokenBridgeTickets: [],
     broadcasts: [],
-    taskBoardRefreshes: 0,
+    kanbanRefreshes: 0,
     tunnelHubStops: 0
   };
   registerSsoIpcHandlers({
@@ -107,7 +107,7 @@ function createHarness(startResult, options = {}) {
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
-    refreshTaskBoardConnection: () => { calls.taskBoardRefreshes += 1; },
+    refreshKanbanConnection: () => { calls.kanbanRefreshes += 1; },
     stopTunnelHubRuntime: () => { calls.tunnelHubStops += 1; }
   });
   return { handlers, calls };
@@ -201,7 +201,7 @@ test("desktop sso site token bridge ticket is exchanged by the controller", asyn
 
   assert.equal(result.ok, true);
   assert.deepEqual(calls.siteTokenBridgeTickets, ["site-ticket-1"]);
-  assert.equal(calls.taskBoardRefreshes, 1);
+  assert.equal(calls.kanbanRefreshes, 1);
 });
 
 test("desktop sso logout stops Tunnel Hub runtime", async () => {

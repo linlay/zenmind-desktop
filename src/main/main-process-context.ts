@@ -302,7 +302,7 @@ export interface SsoIpcHandlerContextDependencies {
   failDesktopSsoFlow: (...args: any[]) => unknown;
   cancelDesktopSsoLogin: (...args: any[]) => unknown;
   issueAgentAccessToken: (...args: any[]) => unknown;
-  refreshTaskBoardConnection?: (...args: any[]) => unknown;
+  refreshKanbanConnection?: (...args: any[]) => unknown;
   stopTunnelHubRuntime?: (...args: any[]) => unknown;
 }
 
@@ -320,43 +320,43 @@ export function createSsoIpcHandlerOptions(
     failDesktopSsoFlow: dependencies.failDesktopSsoFlow,
     cancelDesktopSsoLogin: dependencies.cancelDesktopSsoLogin,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,
-    refreshTaskBoardConnection: dependencies.refreshTaskBoardConnection,
+    refreshKanbanConnection: dependencies.refreshKanbanConnection,
     stopTunnelHubRuntime: dependencies.stopTunnelHubRuntime
   };
 }
 
-export interface TaskBoardIpcHandlerContextDependencies {
-  listTaskBoardIssues: (...args: any[]) => unknown;
-  resyncTaskBoardCloud: (...args: any[]) => unknown;
-  getTaskBoardSettings: (...args: any[]) => unknown;
-  saveTaskBoardSettings: (...args: any[]) => unknown;
-  createTaskBoardIssue: (...args: any[]) => unknown;
-  updateTaskBoardIssue: (...args: any[]) => unknown;
-  deleteTaskBoardIssueWithAutomation: (...args: any[]) => unknown;
-  moveTaskBoardIssue: (...args: any[]) => unknown;
-  syncTaskBoardIssueAutomation: (...args: any[]) => unknown;
+export interface KanbanIpcHandlerContextDependencies {
+  listKanbanIssues: (...args: any[]) => unknown;
+  resyncKanbanCloud: (...args: any[]) => unknown;
+  getKanbanSettings: (...args: any[]) => unknown;
+  saveKanbanSettings: (...args: any[]) => unknown;
+  createKanbanIssue: (...args: any[]) => unknown;
+  updateKanbanIssue: (...args: any[]) => unknown;
+  deleteKanbanIssueWithAutomation: (...args: any[]) => unknown;
+  moveKanbanIssue: (...args: any[]) => unknown;
+  syncKanbanIssueAutomation: (...args: any[]) => unknown;
   callAgentPlatform: (...args: any[]) => unknown;
-  getTaskBoardCloudConfig: (...args: any[]) => unknown;
-  saveTaskBoardCloudConfig: (...args: any[]) => unknown;
+  getKanbanCloudConfig: (...args: any[]) => unknown;
+  saveKanbanCloudConfig: (...args: any[]) => unknown;
 }
 
-export function createTaskBoardIpcHandlerOptions(
+export function createKanbanIpcHandlerOptions(
   context: MainProcessContext,
-  dependencies: TaskBoardIpcHandlerContextDependencies
+  dependencies: KanbanIpcHandlerContextDependencies
 ): any {
   return {
     app: context.app,
-    listTaskBoardIssues: dependencies.listTaskBoardIssues,
-    resyncTaskBoardCloud: dependencies.resyncTaskBoardCloud,
-    getTaskBoardSettings: dependencies.getTaskBoardSettings,
-    saveTaskBoardSettings: dependencies.saveTaskBoardSettings,
-    getTaskBoardCloudConfig: dependencies.getTaskBoardCloudConfig,
-    saveTaskBoardCloudConfig: dependencies.saveTaskBoardCloudConfig,
-    createTaskBoardIssue: dependencies.createTaskBoardIssue,
-    updateTaskBoardIssue: dependencies.updateTaskBoardIssue,
-    deleteTaskBoardIssueWithAutomation: dependencies.deleteTaskBoardIssueWithAutomation,
-    moveTaskBoardIssue: dependencies.moveTaskBoardIssue,
-    syncTaskBoardIssueAutomation: dependencies.syncTaskBoardIssueAutomation,
+    listKanbanIssues: dependencies.listKanbanIssues,
+    resyncKanbanCloud: dependencies.resyncKanbanCloud,
+    getKanbanSettings: dependencies.getKanbanSettings,
+    saveKanbanSettings: dependencies.saveKanbanSettings,
+    getKanbanCloudConfig: dependencies.getKanbanCloudConfig,
+    saveKanbanCloudConfig: dependencies.saveKanbanCloudConfig,
+    createKanbanIssue: dependencies.createKanbanIssue,
+    updateKanbanIssue: dependencies.updateKanbanIssue,
+    deleteKanbanIssueWithAutomation: dependencies.deleteKanbanIssueWithAutomation,
+    moveKanbanIssue: dependencies.moveKanbanIssue,
+    syncKanbanIssueAutomation: dependencies.syncKanbanIssueAutomation,
     callAgentPlatform: dependencies.callAgentPlatform
   };
 }

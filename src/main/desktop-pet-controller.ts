@@ -170,12 +170,12 @@ export function createDesktopPetActiveRunTracker() {
   }
 
   function getRunningTaskCount(input: {
-    taskBoardRunIds?: Array<string | null | undefined>;
+    kanbanRunIds?: Array<string | null | undefined>;
     fallbackRunning?: boolean;
   } = {}) {
     return resolveDesktopPetRunningTaskCount({
       activeRunIds,
-      taskBoardRunIds: input.taskBoardRunIds,
+      kanbanRunIds: input.kanbanRunIds,
       fallbackRunning: input.fallbackRunning
     });
   }

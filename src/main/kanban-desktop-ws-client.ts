@@ -4,12 +4,12 @@ import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
   DesktopPetAgentOption,
-  TaskBoardCurrentUser,
-  TaskBoardIssueResult,
-  TaskBoardListResult,
-  TaskBoardProject
+  KanbanCurrentUser,
+  KanbanIssueResult,
+  KanbanListResult,
+  KanbanProject
 } from "../shared/contracts";
-import type { TaskBoardCloudSnapshot } from "./task-board-local-store";
+import type { KanbanCloudSnapshot } from "./kanban-local-store";
 import { t } from "./i18n/main-i18n";
 
 type MinimalWebSocket = {
@@ -49,7 +49,7 @@ type PendingRequest = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
-export type KanbanDesktopConnectionState = NonNullable<TaskBoardListResult["connectionState"]>;
+export type KanbanDesktopConnectionState = NonNullable<KanbanListResult["connectionState"]>;
 
 export type KanbanDesktopWsConfig = {
   serverUrl: string;
@@ -99,21 +99,21 @@ export type KanbanDesktopDeliveryApplyResult = {
 
 export type KanbanDesktopWsClientOptions = {
   capabilities: string[];
-  getCurrentUser: () => TaskBoardCurrentUser;
+  getCurrentUser: () => KanbanCurrentUser;
   getDeviceId: () => string;
   getDeviceInfo?: () => KanbanDesktopDeviceInfo;
   getSyncCursor?: () => KanbanDesktopSyncCursor;
   onSyncCursor?: (cursor: KanbanDesktopSyncCursor) => void;
-  onSnapshot: (snapshot: TaskBoardCloudSnapshot) => void;
+  onSnapshot: (snapshot: KanbanCloudSnapshot) => void;
   onDelivery?: (delivery: KanbanDesktopDelivery) => Promise<KanbanDesktopDeliveryApplyResult>;
   onDispatchIssue: (
     issue: unknown,
     revision: number
-  ) => TaskBoardIssueResult;
+  ) => KanbanIssueResult;
   onListAgents: () => Promise<DesktopPetAgentOption[]>;
   onStartRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   onAutomationSync: (payload: unknown) => Promise<unknown>;
-  onListLocalProjects: () => Promise<{ ok: boolean; projects: TaskBoardProject[]; message?: string }>;
+  onListLocalProjects: () => Promise<{ ok: boolean; projects: KanbanProject[]; message?: string }>;
   onListSyncLocalProjects?: () => Promise<KanbanDesktopSyncLocalProject[]>;
   onCreateLocalProject: (payload: unknown) => Promise<unknown>;
   onBindProject: (payload: unknown) => Promise<unknown>;
@@ -211,7 +211,7 @@ async function decodeMessageData(data: unknown) {
   return String(data ?? "");
 }
 
-function normalizeSnapshot(payload: unknown, env: KanbanEnvelope): TaskBoardCloudSnapshot {
+function normalizeSnapshot(payload: unknown, env: KanbanEnvelope): KanbanCloudSnapshot {
   const record = isRecord(payload) ? payload : {};
   return {
     boardId: readText(record.boardId) || readText(env.boardId),
@@ -301,13 +301,13 @@ function normalizeAccessLevel(value: unknown): AssistantStartRunRequest["accessL
 function normalizeMessageType(messageType: string) {
   const trimmed = messageType.trim();
   if (!trimmed) {
-    throw new Error(t("taskBoard.ws.messageTypeRequired"));
+    throw new Error(t("kanban.ws.messageTypeRequired"));
   }
   const blockedKanbanPrefix = `kanban${"."}`;
   const blockedDesktopHello = `desktop${"."}hello`;
   const blockedDesktopKanbanPrefix = `desktop${"."}kanban${"."}`;
   if (trimmed.startsWith(blockedKanbanPrefix) || trimmed === blockedDesktopHello || trimmed.startsWith(blockedDesktopKanbanPrefix)) {
-    throw new Error(t("taskBoard.ws.legacyDisabled", { type: trimmed }));
+    throw new Error(t("kanban.ws.legacyDisabled", { type: trimmed }));
   }
   return trimmed;
 }
@@ -393,9 +393,9 @@ export class KanbanDesktopWsClient {
   private async selectProject(selectedProjectId: string) {
     try {
       await this.request("desktop.project.select", { selectedProjectId });
-      this.options.onDebug?.(t("taskBoard.ws.projectSelected", { projectId: selectedProjectId }));
+      this.options.onDebug?.(t("kanban.ws.projectSelected", { projectId: selectedProjectId }));
     } catch (error) {
-      this.options.onDebug?.(t("taskBoard.ws.projectSelectFailed", { message: errorMessage(error) }));
+      this.options.onDebug?.(t("kanban.ws.projectSelectFailed", { message: errorMessage(error) }));
       this.connect();
     }
   }
@@ -418,12 +418,12 @@ export class KanbanDesktopWsClient {
 
   async resyncFromCloud() {
     if (!this.ws || this.state !== "open" || !this.config) {
-      throw new Error(t("taskBoard.cloudSync.notConnected"));
+      throw new Error(t("kanban.cloudSync.notConnected"));
     }
     const wasSnapshotReady = this.snapshotReady;
     this.snapshotReady = false;
     try {
-      const snapshot = await this.request<TaskBoardCloudSnapshot>("snapshot.get", {
+      const snapshot = await this.request<KanbanCloudSnapshot>("snapshot.get", {
         projectId: this.config.selectedProjectId ?? "default",
         deviceId: this.options.getDeviceId()
       });
@@ -440,13 +440,13 @@ export class KanbanDesktopWsClient {
 
   async request<TPayload = unknown>(messageType: string, payload: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TPayload> {
     if (!this.ws || this.state !== "open") {
-      throw new Error(t("taskBoard.cloudSync.notConnected"));
+      throw new Error(t("kanban.cloudSync.notConnected"));
     }
     const id = createRequestId();
     const response = await new Promise<KanbanEnvelope>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this.pending.delete(id)) {
-          reject(new Error(t("taskBoard.ws.requestTimeout", { type: messageType })));
+          reject(new Error(t("kanban.ws.requestTimeout", { type: messageType })));
           this.handleClosed("error");
         }
       }, timeoutMs);
@@ -464,11 +464,11 @@ export class KanbanDesktopWsClient {
       if (!sent) {
         clearTimeout(timeout);
         this.pending.delete(id);
-        reject(new Error(t("taskBoard.cloudSync.notConnected")));
+        reject(new Error(t("kanban.cloudSync.notConnected")));
       }
     });
     if (response.ok === false) {
-      throw new Error(response.error?.message || t("taskBoard.ws.operationFailed", { type: messageType }));
+      throw new Error(response.error?.message || t("kanban.ws.operationFailed", { type: messageType }));
     }
     return response.payload as TPayload;
   }
@@ -480,7 +480,7 @@ export class KanbanDesktopWsClient {
     }
     const WebSocketConstructor = getWebSocketConstructor();
     if (!WebSocketConstructor) {
-      this.options.onDebug?.(t("taskBoard.ws.unsupportedRuntime"));
+      this.options.onDebug?.(t("kanban.ws.unsupportedRuntime"));
       this.setState("error");
       this.scheduleReconnect();
       return;
@@ -492,7 +492,7 @@ export class KanbanDesktopWsClient {
     this.setState("connecting");
     try {
       const wsUrl = createWsUrl(config);
-      this.options.onDebug?.(t("taskBoard.ws.connecting", { url: createWsLogUrl(config) }));
+      this.options.onDebug?.(t("kanban.ws.connecting", { url: createWsLogUrl(config) }));
       const socket = new WebSocketConstructor(wsUrl);
       this.ws = socket;
       const onOpen = () => {
@@ -505,7 +505,7 @@ export class KanbanDesktopWsClient {
       const onClose = (event?: unknown) => this.handleClosed("closed", wsEventDetail(event));
       const onError = (event?: unknown) => {
         const detail = wsEventDetail(event);
-        this.options.onDebug?.(detail ? t("taskBoard.ws.errorWithDetail", { detail }) : t("taskBoard.ws.error"));
+        this.options.onDebug?.(detail ? t("kanban.ws.errorWithDetail", { detail }) : t("kanban.ws.error"));
         this.handleClosed("error", detail);
       };
       if (typeof socket.addEventListener === "function") {
@@ -532,18 +532,18 @@ export class KanbanDesktopWsClient {
     if (this.stopped) {
       return;
     }
-    this.options.onDebug?.(t("taskBoard.ws.opened"));
+    this.options.onDebug?.(t("kanban.ws.opened"));
     this.setState("open");
     this.snapshotReady = false;
     try {
       const agents = await this.options.onListAgents().catch((error) => {
-        this.options.onDebug?.(t("taskBoard.ws.helloAgentsFailed", { message: errorMessage(error) }));
+        this.options.onDebug?.(t("kanban.ws.helloAgentsFailed", { message: errorMessage(error) }));
         return [];
       });
       let localProjects: KanbanDesktopSyncLocalProject[] = [];
       if (this.options.onListSyncLocalProjects) {
         localProjects = await this.options.onListSyncLocalProjects().catch((error) => {
-          this.options.onDebug?.(t("taskBoard.ws.projectSelectFailed", { message: errorMessage(error) }));
+          this.options.onDebug?.(t("kanban.ws.projectSelectFailed", { message: errorMessage(error) }));
           return [];
         });
       }
@@ -564,7 +564,7 @@ export class KanbanDesktopWsClient {
       if (isRecord(hello) && hello.cursor) {
         this.options.onSyncCursor?.(normalizeSyncCursor(hello.cursor));
       }
-      const snapshot = await this.request<TaskBoardCloudSnapshot>("snapshot.get", {
+      const snapshot = await this.request<KanbanCloudSnapshot>("snapshot.get", {
         projectId: this.config?.selectedProjectId ?? "default",
         deviceId: this.options.getDeviceId()
       });
@@ -586,14 +586,14 @@ export class KanbanDesktopWsClient {
     try {
       raw = await decodeMessageData(data);
     } catch (error) {
-      this.options.onDebug?.(t("taskBoard.ws.messageReadFailed", { message: errorMessage(error) }));
+      this.options.onDebug?.(t("kanban.ws.messageReadFailed", { message: errorMessage(error) }));
       return;
     }
     let env: KanbanEnvelope;
     try {
       env = JSON.parse(raw) as KanbanEnvelope;
     } catch (error) {
-      this.options.onDebug?.(t("taskBoard.ws.messageParseFailed", { message: errorMessage(error) }));
+      this.options.onDebug?.(t("kanban.ws.messageParseFailed", { message: errorMessage(error) }));
       return;
     }
     if (!isV2Envelope(env) || !["request", "response", "push"].includes(readText(env.frame))) {
@@ -601,12 +601,12 @@ export class KanbanDesktopWsClient {
       return;
     }
     if (isResponseEnvelope(env) && env.id) {
-      this.options.onDebug?.(t("taskBoard.ws.receivedResponse", { type: envelopeBusinessType(env) || "unknown", id: env.id }));
+      this.options.onDebug?.(t("kanban.ws.receivedResponse", { type: envelopeBusinessType(env) || "unknown", id: env.id }));
       this.resolvePending(env);
       return;
     }
     if (isRequestEnvelope(env)) {
-      this.options.onDebug?.(t("taskBoard.ws.receivedRequest", { type: envelopeBusinessType(env) || "unknown", id: env.id || "" }));
+      this.options.onDebug?.(t("kanban.ws.receivedRequest", { type: envelopeBusinessType(env) || "unknown", id: env.id || "" }));
       void this.handleServerRequest(env);
       return;
     }
@@ -673,7 +673,7 @@ export class KanbanDesktopWsClient {
       }
       const expectedDeliverySeq = cursor.lastAckedDeliverySeq + 1;
       if (delivery.deliverySeq !== expectedDeliverySeq) {
-        this.options.onDebug?.(t("taskBoard.ws.deliverySeqGap", {
+        this.options.onDebug?.(t("kanban.ws.deliverySeqGap", {
           expected: expectedDeliverySeq,
           actual: delivery.deliverySeq
         }));
@@ -683,7 +683,7 @@ export class KanbanDesktopWsClient {
         ? await this.options.onDelivery(delivery)
         : { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
       if (!result.ok) {
-        this.options.onDebug?.(result.message || t("taskBoard.ws.operationFailed", { type: delivery.eventType }));
+        this.options.onDebug?.(result.message || t("kanban.ws.operationFailed", { type: delivery.eventType }));
         return;
       }
       const sourceRevision = typeof delivery.sourceRevision === "number" ? delivery.sourceRevision : 0;
@@ -733,9 +733,9 @@ export class KanbanDesktopWsClient {
       } else if (businessType === "desktop.project.unbind") {
         payload = await this.options.onUnbindProject(env.payload);
       } else {
-        throw new Error(t("taskBoard.ws.unsupportedBusiness", { type: businessType || "unknown" }));
+        throw new Error(t("kanban.ws.unsupportedBusiness", { type: businessType || "unknown" }));
       }
-      this.options.onDebug?.(t("taskBoard.ws.repliedRequest", { type: businessType || "unknown", id: env.id || "" }));
+      this.options.onDebug?.(t("kanban.ws.repliedRequest", { type: businessType || "unknown", id: env.id || "" }));
       this.respond(env, true, payload);
     } catch (error) {
       this.respond(env, false, {
@@ -753,7 +753,7 @@ export class KanbanDesktopWsClient {
     clearTimeout(pending.timeout);
     this.pending.delete(env.id);
     if (env.ok === false) {
-      pending.reject(new Error(env.error?.message || t("taskBoard.ws.operationFailed", { type: pending.messageType })));
+      pending.reject(new Error(env.error?.message || t("kanban.ws.operationFailed", { type: pending.messageType })));
       return;
     }
     pending.resolve(env);
@@ -770,13 +770,13 @@ export class KanbanDesktopWsClient {
       projectId: env.projectId ?? this.config?.selectedProjectId ?? "default",
       revision: env.revision,
       ok,
-      error: ok ? undefined : { code: "desktop_error", message: message || t("taskBoard.ws.desktopFailed") },
+      error: ok ? undefined : { code: "desktop_error", message: message || t("kanban.ws.desktopFailed") },
       payload
     });
   }
 
   private closeProtocolError(reason: string) {
-    this.options.onDebug?.(t("taskBoard.ws.protocolError", { reason }));
+    this.options.onDebug?.(t("kanban.ws.protocolError", { reason }));
     this.rejectAllPending(new Error(reason));
     this.closeWebSocket(reason, 1002);
     this.setState("error");
@@ -786,14 +786,14 @@ export class KanbanDesktopWsClient {
   private sendEnvelope(env: KanbanEnvelope) {
     const socket = this.ws;
     if (!socket || !this.isSocketReady(socket)) {
-      this.options.onDebug?.(t("taskBoard.ws.sendNotReady", { readyState: socket?.readyState ?? "none" }));
+      this.options.onDebug?.(t("kanban.ws.sendNotReady", { readyState: socket?.readyState ?? "none" }));
       this.handleClosed("error");
       return false;
     }
     try {
       socket.send(JSON.stringify(env));
       if (isResponseEnvelope(env)) {
-        this.options.onDebug?.(t("taskBoard.ws.sentResponse", { type: envelopeBusinessType(env) || "unknown", id: env.id || "" }));
+        this.options.onDebug?.(t("kanban.ws.sentResponse", { type: envelopeBusinessType(env) || "unknown", id: env.id || "" }));
       }
       return true;
     } catch (error) {
@@ -811,8 +811,8 @@ export class KanbanDesktopWsClient {
     if (this.stopped) {
       return;
     }
-    this.options.onDebug?.(detail ? t("taskBoard.ws.closedWithDetail", { detail }) : t("taskBoard.ws.closed"));
-    this.rejectAllPending(new Error(t("taskBoard.ws.disconnected")));
+    this.options.onDebug?.(detail ? t("kanban.ws.closedWithDetail", { detail }) : t("kanban.ws.closed"));
+    this.rejectAllPending(new Error(t("kanban.ws.disconnected")));
     this.closeWebSocket(`kanban desktop ws ${nextState}`);
     this.setState(nextState);
     this.scheduleReconnect();

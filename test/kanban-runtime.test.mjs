@@ -4,14 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-process.env.DESKTOP_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS = "20";
+process.env.DESKTOP_KANBAN_REMOTE_START_ACK_TIMEOUT_MS = "20";
 
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
-const { TaskBoardRuntime, readTaskBoardSettings, readTaskBoardWsConfig } = await import("../dist-electron/main/task-board-runtime.js");
+const { KanbanRuntime, readKanbanSettings, readKanbanWsConfig } = await import("../dist-electron/main/kanban-runtime.js");
 const { readDesktopSsoSiteTokenFile } = await import("../dist-electron/main/sso-site-token.js");
 
 function createTempApp(t) {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-task-board-runtime-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-runtime-"));
   const homeRoot = path.join(tempRoot, "home");
   const app = {
     getPath(name) {
@@ -63,24 +63,24 @@ function writeSsoSiteToken(app, payload = {}, options = {}) {
   return token;
 }
 
-test("task board websocket config requires remote control and sso site token", (t) => {
+test("Kanban websocket config requires remote control and sso site token", (t) => {
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
     selectedProjectId: "project-a"
   });
-  assert.equal(readTaskBoardWsConfig(app), null);
+  assert.equal(readKanbanWsConfig(app), null);
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
     selectedProjectId: "project-a",
     remoteControlEnabled: true
   });
-  assert.equal(readTaskBoardWsConfig(app), null);
+  assert.equal(readKanbanWsConfig(app), null);
 
   const token = writeSsoSiteToken(app);
-  assert.deepEqual(readTaskBoardWsConfig(app), {
+  assert.deepEqual(readKanbanWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
     token,
     selectedProjectId: "project-a"
@@ -90,7 +90,7 @@ test("task board websocket config requires remote control and sso site token", (
   t.after(() => {
     delete process.env.DESKTOP_KANBAN_TOKEN;
   });
-  assert.deepEqual(readTaskBoardWsConfig(app), {
+  assert.deepEqual(readKanbanWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
     token: "env-token",
     selectedProjectId: "project-a"
@@ -114,7 +114,7 @@ test("desktop sso site token helper reads claims and rejects bad tokens", (t) =>
   assert.equal(readDesktopSsoSiteTokenFile(app), null);
 });
 
-test("task board server URL preserves explicit disabled setting", (t) => {
+test("Kanban server URL preserves explicit disabled setting", (t) => {
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
@@ -129,17 +129,17 @@ test("task board server URL preserves explicit disabled setting", (t) => {
     }
   });
 
-  assert.equal(readTaskBoardSettings(app).enabled, false);
-  assert.equal(readTaskBoardWsConfig(app), null);
+  assert.equal(readKanbanSettings(app).enabled, false);
+  assert.equal(readKanbanWsConfig(app), null);
 
   const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", "kanban.json");
   const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(migrated.enabled, false);
 });
 
-test("task board settings read and save enabled plus cloud config", (t) => {
+test("Kanban settings read and save enabled plus cloud config", (t) => {
   const app = createTempApp(t);
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [],
@@ -173,7 +173,7 @@ test("task board settings read and save enabled plus cloud config", (t) => {
     assert.equal(serverOnly.settings.enabled, true);
     assert.equal(serverOnly.settings.cloud.serverUrl, "http://127.0.0.1:3000");
     assert.equal(serverOnly.settings.cloud.token, "");
-    assert.equal(readTaskBoardSettings(app).enabled, true);
+    assert.equal(readKanbanSettings(app).enabled, true);
 
     const saved = runtime.saveSettings({
       enabled: true,
@@ -188,7 +188,7 @@ test("task board settings read and save enabled plus cloud config", (t) => {
     assert.equal(saved.settings.enabled, true);
     assert.equal(saved.settings.cloud.serverUrl, "http://127.0.0.1:3000");
     assert.equal(saved.settings.cloud.token, "secret");
-    assert.equal(readTaskBoardSettings(app).enabled, true);
+    assert.equal(readKanbanSettings(app).enabled, true);
   } finally {
     runtime.stop();
   }
@@ -213,7 +213,7 @@ function waitFor(check, message = "condition", timeoutMs = 1000) {
   });
 }
 
-test("task board runtime resyncs cloud board over the existing websocket", async (t) => {
+test("Kanban runtime resyncs cloud board over the existing websocket", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -242,7 +242,7 @@ test("task board runtime resyncs cloud board over the existing websocket", async
   });
 
   const app = createTempApp(t);
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
@@ -292,7 +292,7 @@ test("task board runtime resyncs cloud board over the existing websocket", async
     socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: initialPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
 
     const sentBeforeResync = socket.sent.length;
-    const resyncTask = runtime.resyncCloudBoard();
+    const resyncPromise = runtime.resyncCloudBoard();
     await waitFor(
       () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "snapshot.get"),
       "resync snapshot request"
@@ -317,7 +317,7 @@ test("task board runtime resyncs cloud board over the existing websocket", async
             boardId: "default",
             projectId: "project-1",
             workflowId: "workflow-standard-requirement",
-            title: "重新同步任务",
+            title: "重新同步议题",
             description: "通过手动重新同步拉取",
             status: "todo",
             priority: "medium",
@@ -336,18 +336,18 @@ test("task board runtime resyncs cloud board over the existing websocket", async
     );
     const resyncPull = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "sync.pull");
     socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: resyncPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
-    const result = await resyncTask;
+    const result = await resyncPromise;
 
     assert.equal(result.ok, true);
     assert.equal(sockets.length, 1);
-    assert.ok(result.issues.some((issue) => issue.remoteIssueId === "ISS-RESYNC" && issue.title === "重新同步任务"));
+    assert.ok(result.issues.some((issue) => issue.remoteIssueId === "ISS-RESYNC" && issue.title === "重新同步议题"));
     assert.ok(result.projects.some((project) => project.id === "project-1"));
   } finally {
     runtime.stop();
   }
 });
 
-test("task board runtime stores remote startRun issue locally before executing", async (t) => {
+test("Kanban runtime stores remote startRun issue locally before executing", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -377,7 +377,7 @@ test("task board runtime stores remote startRun issue locally before executing",
 
   const app = createTempApp(t);
   const startRuns = [];
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
@@ -447,7 +447,7 @@ test("task board runtime stores remote startRun issue locally before executing",
             stageName: "构建阶段",
             statusId: "workflow-status-in-progress",
             statusName: "进行中状态",
-            title: "云端执行任务",
+            title: "云端执行议题",
             description: "需要同步到桌面端",
             status: "in_progress",
             priority: "medium",
@@ -459,7 +459,7 @@ test("task board runtime stores remote startRun issue locally before executing",
             updatedAt: "2026-06-09T00:00:00.000Z"
           },
           agentKey: "codeAssistant",
-          message: "执行云端任务"
+          message: "执行云端议题"
         }
       })
     });
@@ -468,12 +468,12 @@ test("task board runtime stores remote startRun issue locally before executing",
     const ack = socket.sent.find((frame) => frame.id === "start-run-remote");
     assert.equal(ack.ok, true);
     assert.equal(ack.payload.runId, "run-remote-1");
-    assert.equal(startRuns[0].message, "执行云端任务");
+    assert.equal(startRuns[0].message, "执行云端议题");
     assert.equal(startRuns[0].issue.id, "ISS-31");
 
     const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-31");
     assert.ok(localIssue);
-    assert.equal(localIssue.title, "云端执行任务");
+    assert.equal(localIssue.title, "云端执行议题");
     assert.equal(localIssue.stageId, "workflow-stage-build");
     assert.equal(localIssue.stageName, "构建阶段");
     assert.equal(localIssue.statusId, "workflow-status-in-progress");
@@ -488,7 +488,7 @@ test("task board runtime stores remote startRun issue locally before executing",
   }
 });
 
-test("task board runtime applies command.runIssue delivery, appends run event, then ACKs", async (t) => {
+test("Kanban runtime applies command.runIssue delivery, appends run event, then ACKs", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -518,7 +518,7 @@ test("task board runtime applies command.runIssue delivery, appends run event, t
 
   const app = createTempApp(t);
   const startRuns = [];
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
@@ -591,7 +591,7 @@ test("task board runtime applies command.runIssue delivery, appends run event, t
               boardId: "default",
               projectId: "project-1",
               workflowId: "workflow-standard-requirement",
-              title: "v3 可靠派发任务",
+              title: "v3 可靠派发议题",
               description: "通过 delivery 执行",
               status: "in_progress",
               priority: "medium",
@@ -635,7 +635,7 @@ test("task board runtime applies command.runIssue delivery, appends run event, t
   runtime.stop();
 });
 
-test("task board runtime stores cloud dispatch issue without auto-starting", async (t) => {
+test("Kanban runtime stores cloud dispatch issue without auto-starting", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -665,7 +665,7 @@ test("task board runtime stores cloud dispatch issue without auto-starting", asy
 
   const app = createTempApp(t);
   const startRuns = [];
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
@@ -728,7 +728,7 @@ test("task board runtime stores cloud dispatch issue without auto-starting", asy
             projectId: "project-1",
             workflowId: "workflow-standard-requirement",
             title: "旧派发协议待本机确认",
-            description: "云端派发只展示任务，本机人员拖到进行中后才执行",
+            description: "云端派发只展示议题，本机人员拖到进行中后才执行",
             status: "todo",
             priority: "medium",
             severity: "medium",
@@ -740,7 +740,7 @@ test("task board runtime stores cloud dispatch issue without auto-starting", asy
           },
           agentKey: "codeAssistant",
           accessLevel: "full_access",
-          message: "执行旧派发任务"
+          message: "执行旧派发议题"
         }
       })
     });
@@ -766,7 +766,7 @@ test("task board runtime stores cloud dispatch issue without auto-starting", asy
   }
 });
 
-test("task board runtime reconnects after saving device alias so cloud sees new device name", async (t) => {
+test("Kanban runtime reconnects after saving device alias so cloud sees new device name", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -797,7 +797,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   });
 
   const app = createTempApp(t);
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [],
@@ -868,7 +868,7 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   runtime.stop();
 });
 
-test("task board runtime ACKs slow remote startRun before bridge resolves", async (t) => {
+test("Kanban runtime ACKs slow remote startRun before bridge resolves", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -902,7 +902,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
   const slowStartRunGate = new Promise((resolve) => {
     resolveSlowStartRun = resolve;
   });
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
@@ -964,7 +964,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
             boardId: "default",
             projectId: "project-1",
             workflowId: "workflow-standard-requirement",
-            title: "慢启动云端任务",
+            title: "慢启动云端议题",
             description: "需要先 ACK",
             status: "in_progress",
             priority: "medium",
@@ -976,7 +976,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
             updatedAt: "2026-06-09T00:00:00.000Z"
           },
           agentKey: "codeAssistant",
-          message: "执行慢启动任务"
+          message: "执行慢启动议题"
         }
       })
     });
@@ -1009,7 +1009,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
   }
 });
 
-test("task board runtime falls back to local agents for remote listAgents", async (t) => {
+test("Kanban runtime falls back to local agents for remote listAgents", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -1038,7 +1038,7 @@ test("task board runtime falls back to local agents for remote listAgents", asyn
   });
 
   const app = createTempApp(t);
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [],
@@ -1088,7 +1088,7 @@ test("task board runtime falls back to local agents for remote listAgents", asyn
   }
 });
 
-test("task board runtime lists installed agents when platform listAgents times out", async (t) => {
+test("Kanban runtime lists installed agents when platform listAgents times out", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -1126,7 +1126,7 @@ test("task board runtime lists installed agents when platform listAgents times o
   fs.writeFileSync(path.join(agentsRoot, "cutej.bootstrap", "agent.yml"), "key: cutej\nname: 小君 Bootstrap\nrole: 重复配置\n", "utf8");
   const debugMessages = [];
   let platformListAgentsCalled = false;
-  const runtime = new TaskBoardRuntime({
+  const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: () => {

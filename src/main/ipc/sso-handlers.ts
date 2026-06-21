@@ -47,7 +47,7 @@ export interface SsoIpcHandlerOptions {
   failDesktopSsoFlow: (message: string) => any;
   cancelDesktopSsoLogin: (app: any) => any;
   issueAgentAccessToken: (app: any, reason: any) => Promise<any> | any;
-  refreshTaskBoardConnection?: () => void;
+  refreshKanbanConnection?: () => void;
   stopTunnelHubRuntime?: () => Promise<unknown> | unknown;
 }
 
@@ -99,7 +99,7 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
         if (!exchanged) {
           throw new Error("Desktop SSO site token bridge exchange did not return a site token.");
         }
-        options.refreshTaskBoardConnection?.();
+        options.refreshKanbanConnection?.();
       },
       onStatusChanged: desktopSsoController.broadcastStatus,
       onReturnToAppRequested: desktopSsoController.returnToApp

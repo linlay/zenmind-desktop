@@ -83,7 +83,7 @@ import {
   createSettingsIpcHandlerOptions,
   createShellIpcHandlerOptions,
   createSsoIpcHandlerOptions,
-  createTaskBoardIpcHandlerOptions,
+  createKanbanIpcHandlerOptions,
   type MainProcessContext
 } from "../main-process-context";
 import type { AssistantBridgeRuntime } from "../bridge/assistant-runtime";
@@ -98,7 +98,7 @@ import { registerServicesIpcHandlers } from "./services-handlers";
 import { registerSettingsIpcHandlers } from "./settings-handlers";
 import { registerShellIpcHandlers } from "./shell-handlers";
 import { registerSsoIpcHandlers } from "./sso-handlers";
-import { registerTaskBoardIpcHandlers } from "./task-board-handlers";
+import { registerKanbanIpcHandlers } from "./kanban-handlers";
 import { registerTunnelHubIpcHandlers } from "./tunnel-hub-handlers";
 import { registerWebIpcHandlers } from "./web-handlers";
 
@@ -281,77 +281,77 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     failDesktopSsoFlow,
     cancelDesktopSsoLogin,
     issueAgentAccessToken,
-    refreshTaskBoardConnection: () => state.taskBoardRuntime?.refreshDeviceInfo(),
+    refreshKanbanConnection: () => state.kanbanRuntime?.refreshDeviceInfo(),
     stopTunnelHubRuntime
   }));
   registerTunnelHubIpcHandlers(ipcMain);
-  registerTaskBoardIpcHandlers(ipcMain, createTaskBoardIpcHandlerOptions(context, {
-    listTaskBoardIssues: () => state.taskBoardRuntime?.listIssues() ?? {
+  registerKanbanIpcHandlers(ipcMain, createKanbanIpcHandlerOptions(context, {
+    listKanbanIssues: () => state.kanbanRuntime?.listIssues() ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       issues: []
     },
-    resyncTaskBoardCloud: () => state.taskBoardRuntime?.resyncCloudBoard() ?? {
+    resyncKanbanCloud: () => state.kanbanRuntime?.resyncCloudBoard() ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       issues: [],
       connectionState: "disabled"
     },
-    getTaskBoardSettings: () => state.taskBoardRuntime?.getSettings() ?? {
+    getKanbanSettings: () => state.kanbanRuntime?.getSettings() ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       settings: {
         enabled: false,
         cloud: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" }
       },
       connectionState: "disabled"
     },
-    saveTaskBoardSettings: (_app: any, input: any) => state.taskBoardRuntime?.saveSettings(input) ?? {
+    saveKanbanSettings: (_app: any, input: any) => state.kanbanRuntime?.saveSettings(input) ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       settings: {
         enabled: false,
         cloud: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" }
       },
       connectionState: "disabled"
     },
-    getTaskBoardCloudConfig: () => state.taskBoardRuntime?.getCloudConfig() ?? {
+    getKanbanCloudConfig: () => state.kanbanRuntime?.getCloudConfig() ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
-    saveTaskBoardCloudConfig: (_app: any, input: any) => state.taskBoardRuntime?.saveCloudConfig(input) ?? {
+    saveKanbanCloudConfig: (_app: any, input: any) => state.kanbanRuntime?.saveCloudConfig(input) ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
-    createTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.createIssue(input) ?? {
+    createKanbanIssue: (_app: any, input: any) => state.kanbanRuntime?.createIssue(input) ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       issues: []
     },
-    updateTaskBoardIssue: (_app: any, issueId: string, input: any) => state.taskBoardRuntime?.updateIssue(issueId, input) ?? {
+    updateKanbanIssue: (_app: any, issueId: string, input: any) => state.kanbanRuntime?.updateIssue(issueId, input) ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       issues: []
     },
-    deleteTaskBoardIssueWithAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
-      state.taskBoardRuntime?.deleteIssueWithAutomation(issueId, agentPlatformCaller) ?? {
+    deleteKanbanIssueWithAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
+      state.kanbanRuntime?.deleteIssueWithAutomation(issueId, agentPlatformCaller) ?? {
         ok: false,
-        message: t("taskBoard.runtime.uninitialized"),
+        message: t("kanban.runtime.uninitialized"),
         issues: []
       },
-    moveTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.moveIssue(input) ?? {
+    moveKanbanIssue: (_app: any, input: any) => state.kanbanRuntime?.moveIssue(input) ?? {
       ok: false,
-      message: t("taskBoard.runtime.uninitialized"),
+      message: t("kanban.runtime.uninitialized"),
       issues: []
     },
-    syncTaskBoardIssueAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
-      state.taskBoardRuntime?.syncIssueAutomation(issueId, agentPlatformCaller) ?? {
+    syncKanbanIssueAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
+      state.kanbanRuntime?.syncIssueAutomation(issueId, agentPlatformCaller) ?? {
         ok: false,
-        message: t("taskBoard.runtime.uninitialized"),
+        message: t("kanban.runtime.uninitialized"),
         issues: []
       },
     callAgentPlatform
@@ -393,7 +393,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     createAppPairingPayload,
     onGeneralSettingsChanged: () => {
       assistantRunWakeLock.sync();
-      state.taskBoardRuntime?.refreshDeviceInfo();
+      state.kanbanRuntime?.refreshDeviceInfo();
     },
     getDesktopWsServerRuntimeState: assistantBridgeRuntime.getDesktopWsServerRuntimeStateForSettings,
     startDesktopWsServer: assistantBridgeRuntime.startDesktopWsServerForSettings,

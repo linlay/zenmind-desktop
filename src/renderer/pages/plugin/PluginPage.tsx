@@ -87,7 +87,7 @@ const AGENT_WEBCLIENT_SOURCE_COPILOT = "agent-webclient-copilot";
 const AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK = "agent-webclient-copilot-dock";
 const AGENT_WEBCLIENT_SOURCE_MANAGEMENT = "agent-webclient-management";
 const AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT = "agent-webclient-quick-copilot";
-const AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT = "agent-webclient-task-board-chat";
+const AGENT_WEBCLIENT_SOURCE_KANBAN_CHAT = "agent-webclient-kanban-chat";
 const DESKTOP_WS_SOURCE_AGENT_WEBCLIENT = "desktop-agent-webclient";
 const DESKTOP_WS_SOURCE_CHAT = "desktop-chat";
 const DESKTOP_WS_SOURCE_COPILOT = "desktop-copilot";
@@ -104,7 +104,7 @@ function resolveAgentWebclientWsSource(surfaceId: string, embedPath: string | un
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT) {
     return DESKTOP_WS_SOURCE_COPILOT;
   }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT) {
+  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_KANBAN_CHAT) {
     return DESKTOP_WS_SOURCE_CHAT;
   }
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_CHAT) {

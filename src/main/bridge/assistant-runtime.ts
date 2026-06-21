@@ -14,7 +14,7 @@ import {
   stopDesktopWsServer
 } from "../desktop-ws-server";
 import { createDesktopActionOptions, type MainProcessContext } from "../main-process-context";
-import { createTaskBoardRuntime } from "../task-board-runtime";
+import { createKanbanRuntime } from "../kanban-runtime";
 import { configureTunnelHubRegistrationController } from "../tunnel-hub-registration";
 import { configureTunnelHubRuntime } from "../tunnel-hub-runtime";
 import type { AssistantRunWakeLock } from "./assistant-wake-lock";
@@ -30,8 +30,8 @@ export type AssistantBridgeRuntimeOptions = {
   showMainWindow: (targetPath?: string) => void;
   openLogViewerWindow: (...args: any[]) => unknown;
   getQuickAssistantWindow: () => BrowserWindow | null;
-  listTaskBoardLocalAgents: () => any[];
-  emitTaskBoardChanged: () => void;
+  listKanbanLocalAgents: () => any[];
+  emitKanbanChanged: () => void;
   emitAssistantNavigationAgentsChanged: (result: AssistantNavAgentItemsResult) => void;
   handleDesktopPetAssistantEvent: (event: AssistantEvent) => void;
   safeConsoleError: (message: string, details: Record<string, unknown>) => void;
@@ -48,7 +48,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     issueAccessToken: options.issueAgentAccessToken,
     wakeLock: options.assistantRunWakeLock,
     onEvent: (event) => {
-      state.taskBoardRuntime?.sendAssistantEvent(event);
+      state.kanbanRuntime?.sendAssistantEvent(event);
       emitDesktopWsPush("assistant.event", event);
       for (const targetWindow of [state.mainWindow, options.getQuickAssistantWindow()]) {
         if (!targetWindow || targetWindow.isDestroyed()) {
@@ -75,7 +75,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     app: options.app,
     desktopActionOptions,
     assistantBridge,
-    getTaskBoardRuntime: () => state.taskBoardRuntime,
+    getKanbanRuntime: () => state.kanbanRuntime,
     agentPlatformBridge: {
       getServiceState: options.getResponsiveServiceState,
       issueAccessToken: options.issueAgentAccessToken
@@ -83,24 +83,24 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     logger: console
   };
 
-  function startTaskBoardAndNavigation() {
-    state.taskBoardRuntime = createTaskBoardRuntime({
+  function startKanbanAndNavigation() {
+    state.kanbanRuntime = createKanbanRuntime({
       app: options.app,
       assistantBridge,
       callAgentPlatform: options.callAgentPlatform as any,
-      listLocalAgents: options.listTaskBoardLocalAgents,
-      onChanged: options.emitTaskBoardChanged,
+      listLocalAgents: options.listKanbanLocalAgents,
+      onChanged: options.emitKanbanChanged,
       onDebug: (message) => {
-        options.logger.warn(`[task-board] ${message}`);
+        options.logger.warn(`[kanban] ${message}`);
       }
     });
-    state.taskBoardRuntime.start();
+    state.kanbanRuntime.start();
     state.assistantNavigationStatusClient = new AssistantNavigationStatusClient({
       app: options.app,
       getServiceState: options.getResponsiveServiceState,
       issueAccessToken: options.issueAgentAccessToken,
       onSnapshot: options.emitAssistantNavigationAgentsChanged,
-      onPushEvent: (event) => state.taskBoardRuntime?.sendAssistantEvent(event),
+      onPushEvent: (event) => state.kanbanRuntime?.sendAssistantEvent(event),
       onDebug: (message) => {
         options.logger.warn(`[assistant-navigation] status unavailable: ${message}`);
       }
@@ -143,7 +143,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     desktopActionOptions,
     desktopWsServerOptions,
     start() {
-      startTaskBoardAndNavigation();
+      startKanbanAndNavigation();
       options.cdpIntegration.start();
       configureRemoteRuntimes();
     },
@@ -167,8 +167,8 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       void options.cdpIntegration.stop();
       stopDesktopActionBridge();
       void stopDesktopWsServer();
-      state.taskBoardRuntime?.stop();
-      state.taskBoardRuntime = null;
+      state.kanbanRuntime?.stop();
+      state.kanbanRuntime = null;
       state.assistantNavigationStatusClient?.stop();
       state.assistantNavigationStatusClient = null;
     }

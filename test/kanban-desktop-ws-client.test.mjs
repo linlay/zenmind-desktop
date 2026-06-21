@@ -73,7 +73,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
       return {
         ok: true,
         message: "dispatched",
-        issue: { id: "local-1", title: "Cloud task" },
+        issue: { id: "local-1", title: "Cloud issue" },
         issues: []
       };
     },
@@ -130,7 +130,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
         boardId: "default",
         projectId: "project-1",
         revision: 12,
-        issues: [{ id: "ISS-1", title: "Cloud task" }]
+        issues: [{ id: "ISS-1", title: "Cloud issue" }]
       }
     })
   });
@@ -145,7 +145,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
         id: "dispatch-1",
         type: "desktop.issue.dispatch",
         revision: 13,
-      payload: { issue: { id: "ISS-2", title: "Dispatched task" } }
+      payload: { issue: { id: "ISS-2", title: "Dispatched issue" } }
     })
   });
     await waitFor(() => socket.sent.some((frame) => frame.id === "dispatch-1"), "dispatch ACK");
@@ -156,7 +156,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     assert.equal(ack.ok, true);
   assert.equal(ack.payload.message, "dispatched");
   assert.deepEqual(dispatches, [{
-    issue: { id: "ISS-2", title: "Dispatched task" },
+    issue: { id: "ISS-2", title: "Dispatched issue" },
     revision: 13
   }]);
   assert.deepEqual(states.slice(0, 2), ["connecting", "open"]);
@@ -235,7 +235,7 @@ test("kanban desktop ws client decodes Blob websocket messages", async (t) => {
         boardId: "default",
         projectId: "project-1",
         revision: 30,
-        issues: [{ id: "ISS-blob", title: "Blob task" }]
+        issues: [{ id: "ISS-blob", title: "Blob issue" }]
       }
     })])
   });
@@ -434,7 +434,7 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
   socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: initialPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
 
   const sentBeforeResync = socket.sent.length;
-  const resyncTask = client.resyncFromCloud();
+  const resyncPromise = client.resyncFromCloud();
   await waitFor(
     () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "snapshot.get"),
     "manual resync snapshot"
@@ -457,7 +457,7 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
   );
   const resyncPullRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "sync.pull");
   socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: resyncPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
-  await resyncTask;
+  await resyncPromise;
 
   assert.equal(sockets.length, 1);
   assert.equal(snapshots.length, 2);
@@ -664,10 +664,10 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
           type: "desktop.assistant.startRun",
           revision: 21,
         payload: {
-          issue: { id: "ISS-9", title: "Remote run task", status: "in_progress" },
+          issue: { id: "ISS-9", title: "Remote run issue", status: "in_progress" },
           agentKey: "codeAssistant",
           accessLevel: "full_access",
-          message: "Run remote task"
+          message: "Run remote issue"
         }
       })
     });
@@ -678,12 +678,12 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
       assert.equal(ack.frame, "response");
       assert.equal(ack.type, "desktop.assistant.startRun");
       assert.deepEqual(startRuns, [{
-      issue: { id: "ISS-9", title: "Remote run task", status: "in_progress" },
+      issue: { id: "ISS-9", title: "Remote run issue", status: "in_progress" },
       revision: 21,
       agentKey: "codeAssistant",
       accessLevel: "full_access",
       chatId: null,
-      message: "Run remote task",
+      message: "Run remote issue",
       source: "sidebar"
     }]);
   } finally {

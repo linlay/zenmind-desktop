@@ -20,7 +20,7 @@ export type SettingsRuntimeOptions = {
   hideDesktopPetWindow: (disable?: boolean) => void;
   broadcastDesktopSsoStatus: (status: ReturnType<typeof getDesktopSsoStatus>) => void;
   notifyServicesChanged: () => void;
-  emitTaskBoardChanged: () => void;
+  emitKanbanChanged: () => void;
 };
 
 export function createSettingsRuntime(options: SettingsRuntimeOptions) {
@@ -72,7 +72,7 @@ export function createSettingsRuntime(options: SettingsRuntimeOptions) {
 
     options.broadcastDesktopSsoStatus(getDesktopSsoStatus(options.app));
     options.notifyServicesChanged();
-    options.emitTaskBoardChanged();
+    options.emitKanbanChanged();
     emitDesktopConfigChanged(reason);
   }
 

@@ -7,5 +7,5 @@ export * from "./contracts/pet-copilot";
 export * from "./contracts/copilot";
 export * from "./contracts/attachments";
 export * from "./contracts/marketplace";
-export * from "./contracts/task-board";
+export * from "./contracts/kanban";
 export * from "./contracts/desktop-api";

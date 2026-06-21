@@ -13,7 +13,7 @@ import type {
   readDesktopPetStoredState
 } from "./assistant/pet/desktop-pet";
 import type { StartupPhase } from "./lifecycle/startup-phases";
-import type { TaskBoardRuntime } from "./task-board-runtime";
+import type { KanbanRuntime } from "./kanban-runtime";
 
 type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
 
@@ -39,7 +39,7 @@ export interface MainAppState {
   desktopPetPendingProgrammaticBoundsSignature: string | null;
   desktopPetProgrammaticBoundsGuardTimer: ReturnType<typeof setTimeout> | null;
   desktopPetMouseInteractive: boolean;
-  taskBoardRuntime: TaskBoardRuntime | null;
+  kanbanRuntime: KanbanRuntime | null;
   desktopActionRendererRequests: Map<string, {
     resolve: (response: DesktopActionRendererResponse) => void;
     timeout: ReturnType<typeof setTimeout>;
@@ -70,7 +70,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     desktopPetPendingProgrammaticBoundsSignature: initialState.desktopPetPendingProgrammaticBoundsSignature ?? null,
     desktopPetProgrammaticBoundsGuardTimer: initialState.desktopPetProgrammaticBoundsGuardTimer ?? null,
     desktopPetMouseInteractive: initialState.desktopPetMouseInteractive ?? true,
-    taskBoardRuntime: initialState.taskBoardRuntime ?? null,
+    kanbanRuntime: initialState.kanbanRuntime ?? null,
     desktopActionRendererRequests: initialState.desktopActionRendererRequests ?? new Map(),
     startupPhase: initialState.startupPhase ?? "booting"
   };

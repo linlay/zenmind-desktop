@@ -246,12 +246,12 @@ function countUniqueDesktopPetRunIds(values: Iterable<unknown>) {
 
 export function resolveDesktopPetRunningTaskCount(input: {
   activeRunIds?: Iterable<unknown>;
-  taskBoardRunIds?: Iterable<unknown>;
+  kanbanRunIds?: Iterable<unknown>;
   fallbackRunning?: boolean;
 }) {
   const activeRunCount = countUniqueDesktopPetRunIds(input.activeRunIds ?? []);
-  const taskBoardRunCount = countUniqueDesktopPetRunIds(input.taskBoardRunIds ?? []);
-  const explicitCount = Math.max(activeRunCount, taskBoardRunCount);
+  const kanbanRunCount = countUniqueDesktopPetRunIds(input.kanbanRunIds ?? []);
+  const explicitCount = Math.max(activeRunCount, kanbanRunCount);
   return explicitCount > 0 || !input.fallbackRunning ? explicitCount : 1;
 }
 

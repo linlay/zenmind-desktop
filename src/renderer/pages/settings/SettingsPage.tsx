@@ -27,8 +27,8 @@ import type {
   DesktopWsServerState,
   IdentityAccessTokenInspection,
   MarketSettings,
-  TaskBoardCloudConfig,
-  TaskBoardProject,
+  KanbanCloudConfig,
+  KanbanProject,
   TunnelDebugSnapshot,
   TunnelHubSettings
 } from "../../../shared/contracts";
@@ -67,7 +67,7 @@ import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../.
 import type { DesktopActionCallRequest, DesktopActionDefinition } from "../../../shared/desktop-actions";
 
 type ThemePreference = "light" | "dark" | "system";
-type TaskBoardConnectionState = "disabled" | "connecting" | "open" | "closed" | "error";
+type KanbanConnectionState = "disabled" | "connecting" | "open" | "closed" | "error";
 type DebugCategoryId = "device" | "logs" | "wsServer" | "authTokens" | "other";
 type UsageHeatmapMode = "day" | "week" | "cumulative";
 type DebugLogDirection = "in" | "out" | "system";
@@ -153,7 +153,7 @@ function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction
   }
 }
 
-function getTaskBoardProjectOptionLabel(project: TaskBoardProject) {
+function getKanbanProjectOptionLabel(project: KanbanProject) {
   const path = project.path.trim();
   if (path && path !== project.name) {
     return `${project.name} · ${path}`;
@@ -161,7 +161,7 @@ function getTaskBoardProjectOptionLabel(project: TaskBoardProject) {
   return project.name;
 }
 
-function sortTaskBoardProjectOptions(projects: TaskBoardProject[]) {
+function sortKanbanProjectOptions(projects: KanbanProject[]) {
   return [...projects]
     .filter((project) => project.id.trim())
     .sort((left, right) => {
@@ -392,7 +392,7 @@ const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "websites"
 ];
 
-const defaultTaskBoardCloudConfig: TaskBoardCloudConfig = {
+const defaultKanbanCloudConfig: KanbanCloudConfig = {
   serverUrl: "",
   token: "",
   selectedProjectId: "default",
@@ -2252,9 +2252,9 @@ export function SettingsPage({
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
   const [marketSettings, setMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
   const [marketSettingsSaving, setMarketSettingsSaving] = useState(false);
-  const [controlCloudConfig, setControlCloudConfig] = useState<TaskBoardCloudConfig>(defaultTaskBoardCloudConfig);
-  const [controlCloudProjects, setControlCloudProjects] = useState<TaskBoardProject[]>([]);
-  const [controlConnectionState, setControlConnectionState] = useState<TaskBoardConnectionState>("disabled");
+  const [controlCloudConfig, setControlCloudConfig] = useState<KanbanCloudConfig>(defaultKanbanCloudConfig);
+  const [controlCloudProjects, setControlCloudProjects] = useState<KanbanProject[]>([]);
+  const [controlConnectionState, setControlConnectionState] = useState<KanbanConnectionState>("disabled");
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -2295,7 +2295,7 @@ export function SettingsPage({
   );
   const shouldReadDesktopPetState = desktopPetSupported && activeSection === "assistant";
   const controlProjectOptions = useMemo(
-    () => sortTaskBoardProjectOptions(controlCloudProjects),
+    () => sortKanbanProjectOptions(controlCloudProjects),
     [controlCloudProjects]
   );
   const selectedControlProjectId = controlCloudConfig.selectedProjectId.trim();
@@ -2306,12 +2306,12 @@ export function SettingsPage({
     ...(selectedControlProjectMissing
       ? [{
           value: selectedControlProjectId,
-          label: t("taskBoard.cloud.currentProject", { id: selectedControlProjectId })
+          label: t("kanban.cloud.currentProject", { id: selectedControlProjectId })
         }]
       : []),
     ...controlProjectOptions.map((project) => ({
       value: project.id,
-      label: getTaskBoardProjectOptionLabel(project)
+      label: getKanbanProjectOptionLabel(project)
     }))
   ], [controlProjectOptions, selectedControlProjectId, selectedControlProjectMissing, t]);
 
@@ -2451,14 +2451,14 @@ export function SettingsPage({
     async function refreshControlState() {
       try {
         const [settingsResult, issueResult] = await Promise.all([
-          window.electronAPI.taskBoard.getSettings(),
-          window.electronAPI.taskBoard.listIssues()
+          window.electronAPI.kanban.getSettings(),
+          window.electronAPI.kanban.listIssues()
         ]);
         if (cancelled) {
           return;
         }
         setControlCloudConfig({
-          ...defaultTaskBoardCloudConfig,
+          ...defaultKanbanCloudConfig,
           ...settingsResult.settings.cloud
         });
         setControlCloudProjects(issueResult.projects ?? []);
@@ -3502,25 +3502,25 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     }
   }
 
-  function getControlConnectionLabel(state: TaskBoardConnectionState) {
+  function getControlConnectionLabel(state: KanbanConnectionState) {
     switch (state) {
       case "connecting":
-        return t("taskBoard.cloud.status.connecting");
+        return t("kanban.cloud.status.connecting");
       case "open":
-        return t("taskBoard.cloud.status.open");
+        return t("kanban.cloud.status.open");
       case "closed":
-        return t("taskBoard.cloud.status.closed");
+        return t("kanban.cloud.status.closed");
       case "error":
-        return t("taskBoard.cloud.status.error");
+        return t("kanban.cloud.status.error");
       default:
-        return t("taskBoard.cloud.status.disabled");
+        return t("kanban.cloud.status.disabled");
     }
   }
 
-  async function saveControlCloudConfig(nextConfig: TaskBoardCloudConfig) {
+  async function saveControlCloudConfig(nextConfig: KanbanCloudConfig) {
     setControlConfigSaving(true);
     try {
-      const result = await window.electronAPI.taskBoard.saveSettings({
+      const result = await window.electronAPI.kanban.saveSettings({
         enabled: true,
         cloud: nextConfig
       });
@@ -3528,11 +3528,11 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         throw new Error(result.message || t("settings.kanban.saveFailed"));
       }
       setControlCloudConfig({
-        ...defaultTaskBoardCloudConfig,
+        ...defaultKanbanCloudConfig,
         ...result.settings.cloud
       });
       setControlConnectionState(result.connectionState ?? "disabled");
-      const issueResult = await window.electronAPI.taskBoard.listIssues();
+      const issueResult = await window.electronAPI.kanban.listIssues();
       setControlCloudProjects(issueResult.projects ?? []);
       setReadErrorSections(["kanban"], "");
       showSectionNotice("kanban", result.message, "success");
@@ -4073,7 +4073,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
               requiredMark={false}
               onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
             >
-              <Form.Item label={t("taskBoard.cloud.serverUrl")}>
+              <Form.Item label={t("kanban.cloud.serverUrl")}>
                 <Input
                   value={controlCloudConfig.serverUrl}
                   onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
@@ -4081,10 +4081,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                 />
               </Form.Item>
               <Form.Item
-                label={t("taskBoard.cloud.projectId")}
+                label={t("kanban.cloud.projectId")}
                 extra={controlProjectOptions.length > 0
-                  ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                  : t("taskBoard.cloud.projectFallbackHelp")}
+                  ? t("kanban.cloud.projectSelectHelp", { count: controlProjectOptions.length })
+                  : t("kanban.cloud.projectFallbackHelp")}
               >
                 {controlProjectOptions.length > 0 ? (
                   <Select

@@ -39,11 +39,11 @@ import type {
   ServiceLogTarget,
   StartupRestoreState,
   StartupRestoreStateListener,
-  TaskBoardIssueInput,
-  TaskBoardIssueMoveInput,
-  TaskBoardIssueUpdateInput,
-  TaskBoardChangedListener,
-  TaskBoardCloudConfig,
+  KanbanIssueInput,
+  KanbanIssueMoveInput,
+  KanbanIssueUpdateInput,
+  KanbanChangedListener,
+  KanbanCloudConfig,
   WebviewOpenTabListener,
   WebviewOpenTabRequest
 } from "../shared/contracts";
@@ -80,27 +80,27 @@ const api: DesktopApi = {
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
   },
-  taskBoard: {
-    listIssues: () => ipcRenderer.invoke("taskBoard.listIssues"),
-    resyncCloudBoard: () => ipcRenderer.invoke("taskBoard.resyncCloudBoard"),
-    getSettings: () => ipcRenderer.invoke("taskBoard.getSettings"),
-    saveSettings: (input) => ipcRenderer.invoke("taskBoard.saveSettings", input),
-    getCloudConfig: () => ipcRenderer.invoke("taskBoard.getCloudConfig"),
-    saveCloudConfig: (input: TaskBoardCloudConfig) => ipcRenderer.invoke("taskBoard.saveCloudConfig", input),
-    createIssue: (input: TaskBoardIssueInput) => ipcRenderer.invoke("taskBoard.createIssue", input),
-    updateIssue: (id: string, input: TaskBoardIssueUpdateInput) =>
-      ipcRenderer.invoke("taskBoard.updateIssue", id, input),
-    deleteIssue: (id: string) => ipcRenderer.invoke("taskBoard.deleteIssue", id),
-    moveIssue: (input: TaskBoardIssueMoveInput) => ipcRenderer.invoke("taskBoard.moveIssue", input),
-    syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("taskBoard.syncIssueAutomation", issueId),
-    onChanged: (listener: TaskBoardChangedListener) => {
-      const handleTaskBoardChanged = () => {
+  kanban: {
+    listIssues: () => ipcRenderer.invoke("kanban.listIssues"),
+    resyncCloudBoard: () => ipcRenderer.invoke("kanban.resyncCloudBoard"),
+    getSettings: () => ipcRenderer.invoke("kanban.getSettings"),
+    saveSettings: (input) => ipcRenderer.invoke("kanban.saveSettings", input),
+    getCloudConfig: () => ipcRenderer.invoke("kanban.getCloudConfig"),
+    saveCloudConfig: (input: KanbanCloudConfig) => ipcRenderer.invoke("kanban.saveCloudConfig", input),
+    createIssue: (input: KanbanIssueInput) => ipcRenderer.invoke("kanban.createIssue", input),
+    updateIssue: (id: string, input: KanbanIssueUpdateInput) =>
+      ipcRenderer.invoke("kanban.updateIssue", id, input),
+    deleteIssue: (id: string) => ipcRenderer.invoke("kanban.deleteIssue", id),
+    moveIssue: (input: KanbanIssueMoveInput) => ipcRenderer.invoke("kanban.moveIssue", input),
+    syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("kanban.syncIssueAutomation", issueId),
+    onChanged: (listener: KanbanChangedListener) => {
+      const handleKanbanChanged = () => {
         listener();
       };
 
-      ipcRenderer.on("taskBoard.changed", handleTaskBoardChanged);
+      ipcRenderer.on("kanban.changed", handleKanbanChanged);
       return () => {
-        ipcRenderer.off("taskBoard.changed", handleTaskBoardChanged);
+        ipcRenderer.off("kanban.changed", handleKanbanChanged);
       };
     }
   },

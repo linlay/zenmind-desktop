@@ -406,7 +406,7 @@ export function createMainProcessRuntime() {
     hideDesktopPetWindow: (disable = false) => hideDesktopPetWindow(disable),
     broadcastDesktopSsoStatus: (status) => desktopSsoController.broadcastStatus(status),
     notifyServicesChanged,
-    emitTaskBoardChanged
+    emitKanbanChanged
   });
   assistantBridgeRuntime = createAssistantBridgeRuntime({
     app,
@@ -419,8 +419,8 @@ export function createMainProcessRuntime() {
     showMainWindow,
     openLogViewerWindow,
     getQuickAssistantWindow: () => quickCopilotWindowController.getWindow(),
-    listTaskBoardLocalAgents: () => petRuntime.listTaskBoardLocalAgents(),
-    emitTaskBoardChanged,
+    listKanbanLocalAgents: () => petRuntime.listKanbanLocalAgents(),
+    emitKanbanChanged,
     emitAssistantNavigationAgentsChanged,
     handleDesktopPetAssistantEvent: (event) => petRuntime.handleAssistantEvent(event),
     safeConsoleError,
@@ -773,13 +773,13 @@ export function createMainProcessRuntime() {
     scheduleAgentPlatformPetStatusRefresh(1000);
   }
   
-  function emitTaskBoardChanged() {
+  function emitKanbanChanged() {
     emitDesktopWsPush("snapshot.updated", { changedAt: new Date().toISOString() });
     const targetWindow = appState.mainWindow;
     if (!targetWindow || targetWindow.isDestroyed()) {
       return;
     }
-    targetWindow.webContents.send("taskBoard.changed");
+    targetWindow.webContents.send("kanban.changed");
   }
   
   function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResult) {

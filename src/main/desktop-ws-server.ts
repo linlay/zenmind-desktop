@@ -30,15 +30,15 @@ import type {
   AgentAuthIssueResult,
   DesktopWsServerState,
   ServiceState,
-  TaskBoardIssueInput,
-  TaskBoardIssueMoveInput,
-  TaskBoardIssueUpdateInput
+  KanbanIssueInput,
+  KanbanIssueMoveInput,
+  KanbanIssueUpdateInput
 } from "../shared/contracts";
 import { resolveDesktopAppInfo } from "./app-metadata";
 import { ensureIdentityCenterJwk } from "./identity-center-auth";
 import { getDesktopDeviceId } from "./device-identity";
 import { handleDesktopActionRequest } from "./desktop-action-bridge";
-import type { TaskBoardRuntime } from "./task-board-runtime";
+import type { KanbanRuntime } from "./kanban-runtime";
 
 export type DesktopWsAuthSession = {
   subject: string;
@@ -124,7 +124,7 @@ export type DesktopWsServerOptions = {
     listAgents: () => Promise<unknown>;
     startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   };
-  getTaskBoardRuntime: () => TaskBoardRuntime | null;
+  getKanbanRuntime: () => KanbanRuntime | null;
   agentPlatformBridge?: AgentPlatformBridgeOptions;
   verifyToken?: (token: string, subprotocol?: string) => Promise<DesktopWsAuthSession>;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
@@ -898,10 +898,10 @@ async function callDesktopAction(options: DesktopWsServerOptions, action: string
   return handleDesktopActionRequest(options.desktopActionOptions, actionPayload(action, payload));
 }
 
-function getTaskBoardRuntime(options: DesktopWsServerOptions) {
-  const runtime = options.getTaskBoardRuntime();
+function getKanbanRuntime(options: DesktopWsServerOptions) {
+  const runtime = options.getKanbanRuntime();
   if (!runtime) {
-    throw new Error("task board runtime is not initialized");
+    throw new Error("Kanban runtime is not initialized");
   }
   return runtime;
 }
@@ -911,22 +911,22 @@ function readIssueId(payload: unknown) {
   return readText(record.id) || readText(record.issueId);
 }
 
-function readIssueCreateInput(payload: unknown): TaskBoardIssueInput {
+function readIssueCreateInput(payload: unknown): KanbanIssueInput {
   const record = asRecord(payload);
   const nested = asRecord(record.input);
-  return (Object.keys(nested).length > 0 ? nested : record) as unknown as TaskBoardIssueInput;
+  return (Object.keys(nested).length > 0 ? nested : record) as unknown as KanbanIssueInput;
 }
 
-function readIssueUpdateInput(payload: unknown): { issueId: string; input: TaskBoardIssueUpdateInput } {
+function readIssueUpdateInput(payload: unknown): { issueId: string; input: KanbanIssueUpdateInput } {
   const record = asRecord(payload);
   return {
     issueId: readIssueId(record),
-    input: asRecord(record.input) as unknown as TaskBoardIssueUpdateInput
+    input: asRecord(record.input) as unknown as KanbanIssueUpdateInput
   };
 }
 
-function readIssueMoveInput(payload: unknown): TaskBoardIssueMoveInput {
-  return asRecord(payload) as unknown as TaskBoardIssueMoveInput;
+function readIssueMoveInput(payload: unknown): KanbanIssueMoveInput {
+  return asRecord(payload) as unknown as KanbanIssueMoveInput;
 }
 
 function unsupported(type: string) {
@@ -1041,21 +1041,21 @@ async function handleRequest(
       return;
     }
     case "snapshot.get":
-      sendResponse(connection, namespace, type, id, getTaskBoardRuntime(options).listIssues());
+      sendResponse(connection, namespace, type, id, getKanbanRuntime(options).listIssues());
       return;
     case "issue.create":
-      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).createIssue(readIssueCreateInput(payload)));
+      sendResponse(connection, namespace, type, id, await getKanbanRuntime(options).createIssue(readIssueCreateInput(payload)));
       return;
     case "issue.update": {
       const update = readIssueUpdateInput(payload);
-      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).updateIssue(update.issueId, update.input));
+      sendResponse(connection, namespace, type, id, await getKanbanRuntime(options).updateIssue(update.issueId, update.input));
       return;
     }
     case "issue.delete":
-      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).deleteIssueWithAutomation(readIssueId(payload)));
+      sendResponse(connection, namespace, type, id, await getKanbanRuntime(options).deleteIssueWithAutomation(readIssueId(payload)));
       return;
     case "issue.move":
-      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).moveIssue(readIssueMoveInput(payload)));
+      sendResponse(connection, namespace, type, id, await getKanbanRuntime(options).moveIssue(readIssueMoveInput(payload)));
       return;
     case "device.status":
       sendResponse(connection, namespace, type, id, {

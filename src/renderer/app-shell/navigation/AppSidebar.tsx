@@ -160,7 +160,7 @@ const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
   },
 ];
 
-const taskBoardNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const kanbanNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "kanban",
   to: "/kanban",
   icon: "futures",
@@ -621,7 +621,7 @@ function getAssistantAwaitingStatusKey(
     case "form":
       return "sidebar.assistants.awaitingStatus.form";
     default:
-      return "taskBoard.run.awaitingApproval";
+      return "kanban.run.awaitingApproval";
   }
 }
 
@@ -894,9 +894,9 @@ export function AppSidebar({
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
       {
-        ...taskBoardNavItemBase,
-        label: t("nav.taskBoard"),
-        collapsedLabel: t("nav.taskBoardCollapsed"),
+        ...kanbanNavItemBase,
+        label: t("nav.kanban"),
+        collapsedLabel: t("nav.kanbanCollapsed"),
       },
       { ...schedulesNavItemBase, label: t("nav.schedules"), collapsedLabel: t("nav.schedulesCollapsed") },
       {

@@ -915,8 +915,8 @@ test("stage-app removes renderer webapp templates from staged app", (t) => {
 
 test("critical runtime path modules read APP_BRAND runtimeRootDirName", () => {
   const files = [
-    "src/main/task-board-db.ts",
-    "src/main/task-board-runtime.ts",
+    "src/main/kanban-db.ts",
+    "src/main/kanban-runtime.ts",
     "src/main/assistant/core/agent-platform-config.ts",
     "src/main/assistant/core/agent-platform-bridge.ts"
   ];

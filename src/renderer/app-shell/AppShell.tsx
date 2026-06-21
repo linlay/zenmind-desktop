@@ -154,8 +154,8 @@ const PluginSettingsPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("../pages/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
 );
-const TaskBoardPage = lazy(() =>
-  import("../pages/task-board/TaskBoardPage").then((module) => ({ default: module.TaskBoardPage }))
+const KanbanPage = lazy(() =>
+  import("../pages/kanban/KanbanPage").then((module) => ({ default: module.KanbanPage }))
 );
 
 const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
@@ -468,10 +468,10 @@ export function AppShell() {
     (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/plugin-settings/");
-  const isTaskBoardRoute = location.pathname === "/kanban";
+  const isKanbanRoute = location.pathname === "/kanban";
   const isMarketRoute = location.pathname === "/market";
   const usesStandardBaseSurface =
-    isTaskBoardRoute ||
+    isKanbanRoute ||
     location.pathname === "/control-center" ||
     location.pathname === "/market" ||
     location.pathname === "/help" ||
@@ -554,7 +554,7 @@ export function AppShell() {
       experimentalItems: [],
       webItems: []
     }).map((item) => {
-      if (item.key === "kanban") return { ...item, label: t("nav.taskBoard") };
+      if (item.key === "kanban") return { ...item, label: t("nav.kanban") };
       if (item.key === "schedules") return { ...item, label: t("nav.schedules") };
       if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
       if (item.key === "group:webs") return { ...item, label: t("nav.websites") };
@@ -706,10 +706,10 @@ export function AppShell() {
 
   async function refreshKanbanSettingsFromCanonical() {
     try {
-      const result = await window.electronAPI.taskBoard.getSettings();
+      const result = await window.electronAPI.kanban.getSettings();
       setKanbanEnabled(result.settings.enabled);
     } catch {
-      // Keep the current task board visibility if settings are temporarily unavailable.
+      // Keep the current Kanban visibility if settings are temporarily unavailable.
     } finally {
       setKanbanSettingsLoaded(true);
     }
@@ -1195,7 +1195,7 @@ export function AppShell() {
 
   useEffect(() => {
     let cancelled = false;
-    window.electronAPI.taskBoard.getSettings()
+    window.electronAPI.kanban.getSettings()
       .then((result) => {
         if (cancelled) {
           return;
@@ -1932,7 +1932,7 @@ export function AppShell() {
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
-        isTaskBoardRoute ? "has-task-board-controls" : "",
+        isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
@@ -2049,7 +2049,7 @@ export function AppShell() {
                   ? null
                   : !kanbanEnabled
                     ? <Navigate to="/control-center" replace />
-                    : <RouteSuspense><TaskBoardPage hostTheme={resolvedTheme} /></RouteSuspense>
+                    : <RouteSuspense><KanbanPage hostTheme={resolvedTheme} /></RouteSuspense>
               }
             />
             <Route path="/control-center" element={<RouteSuspense><ControlCenterPage /></RouteSuspense>} />

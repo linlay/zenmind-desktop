@@ -34,7 +34,7 @@
 | **Shell Handlers** | [`src/main/ipc/shell-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/shell-handlers.ts) | 托管 `shell.*`、`desktopDialog.*`、`desktopDownloads.*`、`diagnostics.*` |
 | **Assistant Handlers** | [`src/main/ipc/assistant-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/assistant-handlers.ts) | 托管 `assistant.*`、`currentPage.*`、`desktopActions.*` 等助手相关交互 |
 | **Services Handlers** | [`src/main/ipc/services-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/services-handlers.ts) | 托管服务列表、启停、配置读写、日志监控（21 个 Handler） |
-| **Task Board Handlers** | [`src/main/ipc/task-board-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/task-board-handlers.ts) | 托管任务看板增删改查、自定义侧边栏配置（12 个 Handler） |
+| **Kanban Handlers** | [`src/main/ipc/kanban-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/kanban-handlers.ts) | 托管看板议题增删改查、自定义侧边栏配置（12 个 Handler） |
 | **SSO Handlers** | [`src/main/ipc/sso-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/sso-handlers.ts) | 托管 SSO 状态、登录/登出及 `agentAuth.issueAccessToken` |
 | **Settings Handlers** | [`src/main/ipc/settings-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/settings-handlers.ts) | 托管本地目录根、多语言国际化环境切换、应用菜单刷新 |
 | **Marketplace Handlers** | [`src/main/ipc/marketplace-handlers.ts`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/src/main/ipc/marketplace-handlers.ts) | 托管插件安装卸载、应用市场同步、沙箱镜像导入导出 |
@@ -92,7 +92,7 @@ function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
 * [`test/settings-handlers.test.mjs`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/test/settings-handlers.test.mjs) (5 tests) - **PASS** 🟢
 * [`test/desktop-pet-handlers.test.mjs`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/test/desktop-pet-handlers.test.mjs) (4 tests) - **PASS** 🟢
 * [`test/sso-handlers.test.mjs`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/test/sso-handlers.test.mjs) (5 tests) - **PASS** 🟢
-* [`test/task-board-handlers.test.mjs`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/test/task-board-handlers.test.mjs) (12 tests) - **PASS** 🟢
+* [`test/kanban-handlers.test.mjs`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/test/kanban-handlers.test.mjs) (12 tests) - **PASS** 🟢
 * [`test/shell-handlers.test.mjs`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/test/shell-handlers.test.mjs) (4 tests) - **PASS** 🟢
 * [`test/user-paths.test.mjs`](file:///c:/Users/42134/Desktop/zenmind-workspace/zenmind-desktop/test/user-paths.test.mjs) (8 tests) - **PASS** 🟢
 

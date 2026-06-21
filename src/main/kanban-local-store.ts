@@ -5,27 +5,27 @@ import { DatabaseSync } from "node:sqlite";
 import type { App } from "electron";
 import type {
   AssistantAttachment,
-  TaskBoardCurrentUser,
-  TaskBoardDeleteResult,
-  TaskBoardIssue,
-  TaskBoardIssueInput,
-  TaskBoardIssueMoveInput,
-  TaskBoardIssueResult,
-  TaskBoardIssueUpdateInput,
-  TaskBoardListResult,
-  TaskBoardOrigin,
-  TaskBoardPriority,
-  TaskBoardProject,
-  TaskBoardProjectBinding,
-  TaskBoardRunState,
-  TaskBoardStatus,
-  TaskBoardSyncMode,
-  TaskBoardSyncState
+  KanbanCurrentUser,
+  KanbanDeleteResult,
+  KanbanIssue,
+  KanbanIssueInput,
+  KanbanIssueMoveInput,
+  KanbanIssueResult,
+  KanbanIssueUpdateInput,
+  KanbanListResult,
+  KanbanOrigin,
+  KanbanPriority,
+  KanbanProject,
+  KanbanProjectBinding,
+  KanbanRunState,
+  KanbanStatus,
+  KanbanSyncMode,
+  KanbanSyncState
 } from "../shared/contracts";
 import {
-  TASK_BOARD_PRIORITIES,
-  TASK_BOARD_RUN_STATES,
-  TASK_BOARD_STATUSES
+  KANBAN_PRIORITIES,
+  KANBAN_RUN_STATES,
+  KANBAN_STATUSES
 } from "../shared/contracts";
 import { getRuntimeDataRoot } from "./user-paths";
 import { t } from "./i18n/main-i18n";
@@ -34,7 +34,7 @@ type AppPathProvider = {
   getPath(name: Parameters<App["getPath"]>[0]): string;
 };
 
-type TaskBoardIssueRow = {
+type KanbanIssueRow = {
   id: string;
   remote_issue_id: string | null;
   board_id: string;
@@ -47,12 +47,12 @@ type TaskBoardIssueRow = {
   status_name: string | null;
   title: string;
   description: string;
-  status: TaskBoardStatus;
-  priority: TaskBoardPriority;
-  severity: NonNullable<TaskBoardIssue["severity"]>;
+  status: KanbanStatus;
+  priority: KanbanPriority;
+  severity: NonNullable<KanbanIssue["severity"]>;
   assignee_agent_key: string | null;
   assignee_id: string | null;
-  worker_type: TaskBoardIssue["workerType"];
+  worker_type: KanbanIssue["workerType"];
   worker_id: string | null;
   worker_agent: string | null;
   reviewer_id: string | null;
@@ -62,7 +62,7 @@ type TaskBoardIssueRow = {
   position: number;
   chat_id: string | null;
   run_id: string | null;
-  run_state: TaskBoardRunState | null;
+  run_state: KanbanRunState | null;
   automation_id: string | null;
   automation_enabled: number;
   automation_cron: string | null;
@@ -73,16 +73,16 @@ type TaskBoardIssueRow = {
   revision: number;
   created_at: string;
   updated_at: string;
-  sync_mode: TaskBoardSyncMode;
-  sync_state: TaskBoardSyncState;
-  origin: TaskBoardOrigin;
+  sync_mode: KanbanSyncMode;
+  sync_state: KanbanSyncState;
+  origin: KanbanOrigin;
   owner_user_id: string;
   last_remote_revision: number;
   last_synced_at: string | null;
   sync_error: string | null;
 };
 
-type TaskBoardProjectRow = {
+type KanbanProjectRow = {
   id: string;
   parent_id: string | null;
   slug: string;
@@ -98,22 +98,22 @@ type TaskBoardProjectRow = {
   updated_at: string;
 };
 
-type TaskBoardProjectBindingRow = {
+type KanbanProjectBindingRow = {
   id: string;
   project_id: string;
   device_id: string;
   current_user_id: string;
   local_project_id: string;
   local_display_name: string;
-  sync_policy: TaskBoardProjectBinding["syncPolicy"];
-  control_mode: TaskBoardProjectBinding["controlMode"];
-  status: TaskBoardProjectBinding["status"];
+  sync_policy: KanbanProjectBinding["syncPolicy"];
+  control_mode: KanbanProjectBinding["controlMode"];
+  status: KanbanProjectBinding["status"];
   last_remote_revision: number;
   created_at: string;
   updated_at: string;
 };
 
-export type TaskBoardCloudSnapshot = {
+export type KanbanCloudSnapshot = {
   boardId?: string;
   projectId?: string;
   revision?: number;
@@ -124,7 +124,7 @@ export type TaskBoardCloudSnapshot = {
   issues?: unknown[];
 };
 
-export type TaskBoardDesktopSyncCursor = {
+export type KanbanDesktopSyncCursor = {
   lastAckedDeliverySeq: number;
   lastAppliedRevision: number;
   cacheSchemaVersion: number;
@@ -151,28 +151,28 @@ function nullableTrimmedText(value: unknown) {
   return text ? text : null;
 }
 
-function normalizeTaskBoardStatus(value: unknown): TaskBoardStatus {
+function normalizeKanbanStatus(value: unknown): KanbanStatus {
   const raw = trimText(value).toLowerCase();
-  return TASK_BOARD_STATUSES.includes(raw as TaskBoardStatus) ? raw as TaskBoardStatus : "backlog";
+  return KANBAN_STATUSES.includes(raw as KanbanStatus) ? raw as KanbanStatus : "backlog";
 }
 
-function normalizeTaskBoardPriority(value: unknown): TaskBoardPriority {
-  return typeof value === "string" && TASK_BOARD_PRIORITIES.includes(value as TaskBoardPriority)
-    ? value as TaskBoardPriority
+function normalizeKanbanPriority(value: unknown): KanbanPriority {
+  return typeof value === "string" && KANBAN_PRIORITIES.includes(value as KanbanPriority)
+    ? value as KanbanPriority
     : "medium";
 }
 
-function normalizeTaskBoardSeverity(value: unknown): NonNullable<TaskBoardIssue["severity"]> {
+function normalizeKanbanSeverity(value: unknown): NonNullable<KanbanIssue["severity"]> {
   return value === "critical" || value === "high" || value === "medium" || value === "low" ? value : "medium";
 }
 
-function normalizeTaskBoardRunState(value: unknown): TaskBoardRunState | null {
-  return typeof value === "string" && TASK_BOARD_RUN_STATES.includes(value as TaskBoardRunState)
-    ? value as TaskBoardRunState
+function normalizeKanbanRunState(value: unknown): KanbanRunState | null {
+  return typeof value === "string" && KANBAN_RUN_STATES.includes(value as KanbanRunState)
+    ? value as KanbanRunState
     : null;
 }
 
-function normalizeWorkerType(value: unknown): TaskBoardIssue["workerType"] {
+function normalizeWorkerType(value: unknown): KanbanIssue["workerType"] {
   return value === "human" || value === "agent" ? value : null;
 }
 
@@ -447,7 +447,7 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   }
 }
 
-function seedDesktopKanban(db: DatabaseSync, currentUser: TaskBoardCurrentUser) {
+function seedDesktopKanban(db: DatabaseSync, currentUser: KanbanCurrentUser) {
   const timestamp = nowIso();
   db.prepare(`
     INSERT INTO board (ID_, PROJECT_ID_, KEY_, NAME_, CREATED_AT_, UPDATED_AT_)
@@ -466,13 +466,13 @@ function seedDesktopKanban(db: DatabaseSync, currentUser: TaskBoardCurrentUser) 
     INSERT INTO workflow (ID_, KEY_, NAME_, DESCRIPTION_, IS_DEFAULT_, CREATED_AT_, UPDATED_AT_)
     VALUES (?, 'standard_requirement', ?, '', 1, ?, ?)
     ON CONFLICT(ID_) DO UPDATE SET NAME_ = excluded.NAME_
-  `).run(WORKFLOW_ID, t("taskBoard.workflow.standardRequirement"), timestamp, timestamp);
-  const statuses: Array<{ id: string; key: TaskBoardStatus; name: string; position: number; terminal: number; review: number }> = [
-    { id: "workflow-status-backlog", key: "backlog", name: t("taskBoard.status.backlog"), position: 1, terminal: 0, review: 0 },
-    { id: "workflow-status-todo", key: "todo", name: t("taskBoard.status.todo"), position: 2, terminal: 0, review: 0 },
-    { id: "workflow-status-in-progress", key: "in_progress", name: t("taskBoard.status.inProgress"), position: 3, terminal: 0, review: 0 },
-    { id: "workflow-status-in-review", key: "in_review", name: t("taskBoard.status.inReview"), position: 4, terminal: 0, review: 1 },
-    { id: "workflow-status-completed", key: "completed", name: t("taskBoard.status.completed"), position: 5, terminal: 1, review: 0 }
+  `).run(WORKFLOW_ID, t("kanban.workflow.standardRequirement"), timestamp, timestamp);
+  const statuses: Array<{ id: string; key: KanbanStatus; name: string; position: number; terminal: number; review: number }> = [
+    { id: "workflow-status-backlog", key: "backlog", name: t("kanban.status.backlog"), position: 1, terminal: 0, review: 0 },
+    { id: "workflow-status-todo", key: "todo", name: t("kanban.status.todo"), position: 2, terminal: 0, review: 0 },
+    { id: "workflow-status-in-progress", key: "in_progress", name: t("kanban.status.inProgress"), position: 3, terminal: 0, review: 0 },
+    { id: "workflow-status-in-review", key: "in_review", name: t("kanban.status.inReview"), position: 4, terminal: 0, review: 1 },
+    { id: "workflow-status-completed", key: "completed", name: t("kanban.status.completed"), position: 5, terminal: 1, review: 0 }
   ];
   const insertStatus = db.prepare(`
     INSERT INTO workflow_status (
@@ -501,7 +501,7 @@ function seedDesktopKanban(db: DatabaseSync, currentUser: TaskBoardCurrentUser) 
 
 export function withDesktopKanbanDatabase<T>(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   callback: (db: DatabaseSync) => T
 ): T {
   const databasePath = getDesktopKanbanDatabasePath(app);
@@ -516,7 +516,7 @@ export function withDesktopKanbanDatabase<T>(
   }
 }
 
-function issueFromRow(row: TaskBoardIssueRow): TaskBoardIssue {
+function issueFromRow(row: KanbanIssueRow): KanbanIssue {
   return {
     id: row.id,
     localIssueId: row.id,
@@ -567,7 +567,7 @@ function issueFromRow(row: TaskBoardIssueRow): TaskBoardIssue {
   };
 }
 
-function projectFromRow(row: TaskBoardProjectRow): TaskBoardProject {
+function projectFromRow(row: KanbanProjectRow): KanbanProject {
   return {
     id: row.id,
     parentId: row.parent_id,
@@ -585,7 +585,7 @@ function projectFromRow(row: TaskBoardProjectRow): TaskBoardProject {
   };
 }
 
-function projectBindingFromRow(row: TaskBoardProjectBindingRow): TaskBoardProjectBinding {
+function projectBindingFromRow(row: KanbanProjectBindingRow): KanbanProjectBinding {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -602,7 +602,7 @@ function projectBindingFromRow(row: TaskBoardProjectBindingRow): TaskBoardProjec
   };
 }
 
-function parseCloudProject(value: unknown): TaskBoardProject | null {
+function parseCloudProject(value: unknown): KanbanProject | null {
   const record = parseCloudIssue(value);
   if (!record) return null;
   const id = trimText(record.id);
@@ -626,7 +626,7 @@ function parseCloudProject(value: unknown): TaskBoardProject | null {
   };
 }
 
-function parseCloudProjectBinding(value: unknown): TaskBoardProjectBinding | null {
+function parseCloudProjectBinding(value: unknown): KanbanProjectBinding | null {
   const record = parseCloudIssue(value);
   if (!record) return null;
   const id = trimText(record.id);
@@ -693,7 +693,7 @@ function writeDesktopKanbanRevision(db: DatabaseSync, revision: number) {
   `).run(BOARD_ID, String(Math.max(0, Math.floor(revision))));
 }
 
-function readDesktopKanbanSyncCursorFromDb(db: DatabaseSync): TaskBoardDesktopSyncCursor {
+function readDesktopKanbanSyncCursorFromDb(db: DatabaseSync): KanbanDesktopSyncCursor {
   return {
     lastAckedDeliverySeq: readBoardMetaInteger(db, "sync.lastAckedDeliverySeq"),
     lastAppliedRevision: Math.max(
@@ -704,7 +704,7 @@ function readDesktopKanbanSyncCursorFromDb(db: DatabaseSync): TaskBoardDesktopSy
   };
 }
 
-function writeDesktopKanbanSyncCursorInDb(db: DatabaseSync, cursor: Partial<TaskBoardDesktopSyncCursor>) {
+function writeDesktopKanbanSyncCursorInDb(db: DatabaseSync, cursor: Partial<KanbanDesktopSyncCursor>) {
   if (cursor.lastAckedDeliverySeq !== undefined) {
     writeBoardMetaInteger(db, "sync.lastAckedDeliverySeq", cursor.lastAckedDeliverySeq);
   }
@@ -718,16 +718,16 @@ function writeDesktopKanbanSyncCursorInDb(db: DatabaseSync, cursor: Partial<Task
 
 export function readDesktopKanbanSyncCursor(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser
-): TaskBoardDesktopSyncCursor {
+  currentUser: KanbanCurrentUser
+): KanbanDesktopSyncCursor {
   return withDesktopKanbanDatabase(app, currentUser, (db) => readDesktopKanbanSyncCursorFromDb(db));
 }
 
 export function writeDesktopKanbanSyncCursor(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
-  cursor: Partial<TaskBoardDesktopSyncCursor>
-): TaskBoardDesktopSyncCursor {
+  currentUser: KanbanCurrentUser,
+  cursor: Partial<KanbanDesktopSyncCursor>
+): KanbanDesktopSyncCursor {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const current = readDesktopKanbanSyncCursorFromDb(db);
     writeDesktopKanbanSyncCursorInDb(db, {
@@ -739,7 +739,7 @@ export function writeDesktopKanbanSyncCursor(
   });
 }
 
-function selectIssues(db: DatabaseSync, currentUser: TaskBoardCurrentUser): TaskBoardIssue[] {
+function selectIssues(db: DatabaseSync, currentUser: KanbanCurrentUser): KanbanIssue[] {
   const rows = db.prepare(`
     SELECT
       issue.ID_ AS id,
@@ -803,11 +803,11 @@ function selectIssues(db: DatabaseSync, currentUser: TaskBoardCurrentUser): Task
       issue.POSITION_ ASC,
       issue.UPDATED_AT_ DESC,
       issue.ID_ ASC
-  `).all(currentUser.id) as TaskBoardIssueRow[];
+  `).all(currentUser.id) as KanbanIssueRow[];
   return rows.map(issueFromRow);
 }
 
-function selectProjects(db: DatabaseSync): TaskBoardProject[] {
+function selectProjects(db: DatabaseSync): KanbanProject[] {
   const rows = db.prepare(`
     SELECT
       ID_ AS id,
@@ -826,11 +826,11 @@ function selectProjects(db: DatabaseSync): TaskBoardProject[] {
     FROM project
     WHERE DELETED_AT_ IS NULL
     ORDER BY DEPTH_ ASC, POSITION_ ASC, NAME_ ASC, ID_ ASC
-  `).all() as TaskBoardProjectRow[];
+  `).all() as KanbanProjectRow[];
   return rows.map(projectFromRow);
 }
 
-function selectProjectBindings(db: DatabaseSync): TaskBoardProjectBinding[] {
+function selectProjectBindings(db: DatabaseSync): KanbanProjectBinding[] {
   const rows = db.prepare(`
     SELECT
       ID_ AS id,
@@ -848,11 +848,11 @@ function selectProjectBindings(db: DatabaseSync): TaskBoardProjectBinding[] {
     FROM project_desktop_binding
     WHERE DELETED_AT_ IS NULL
     ORDER BY UPDATED_AT_ DESC, ID_ ASC
-  `).all() as TaskBoardProjectBindingRow[];
+  `).all() as KanbanProjectBindingRow[];
   return rows.map(projectBindingFromRow);
 }
 
-function nextIssuePosition(db: DatabaseSync, status: TaskBoardStatus) {
+function nextIssuePosition(db: DatabaseSync, status: KanbanStatus) {
   const row = db.prepare(`
     SELECT MAX(POSITION_) AS maxPosition FROM issue
     WHERE STATUS_ = ? AND DELETED_AT_ IS NULL
@@ -860,7 +860,7 @@ function nextIssuePosition(db: DatabaseSync, status: TaskBoardStatus) {
   return typeof row?.maxPosition === "number" && Number.isFinite(row.maxPosition) ? row.maxPosition + 1 : 1;
 }
 
-function insertOrReplaceProject(db: DatabaseSync, project: TaskBoardProject) {
+function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject) {
   db.prepare(`
     INSERT INTO project (
       ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, PATH_, DEPTH_, POSITION_,
@@ -896,7 +896,7 @@ function insertOrReplaceProject(db: DatabaseSync, project: TaskBoardProject) {
   );
 }
 
-function insertOrReplaceProjectBinding(db: DatabaseSync, binding: TaskBoardProjectBinding) {
+function insertOrReplaceProjectBinding(db: DatabaseSync, binding: KanbanProjectBinding) {
   db.prepare(`
     INSERT INTO project_desktop_binding (
       ID_, PROJECT_ID_, DEVICE_ID_, CURRENT_USER_ID_, LOCAL_PROJECT_ID_, LOCAL_DISPLAY_NAME_,
@@ -930,10 +930,10 @@ function insertOrReplaceProjectBinding(db: DatabaseSync, binding: TaskBoardProje
   );
 }
 
-function insertOrReplaceIssue(db: DatabaseSync, issue: TaskBoardIssue, sync: {
-  syncMode: TaskBoardSyncMode;
-  syncState: TaskBoardSyncState;
-  origin: TaskBoardOrigin;
+function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
+  syncMode: KanbanSyncMode;
+  syncState: KanbanSyncState;
+  origin: KanbanOrigin;
   ownerUserId: string;
   lastRemoteRevision?: number;
   lastSyncedAt?: string | null;
@@ -1054,13 +1054,13 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: TaskBoardIssue, sync: {
 
 function buildLocalIssue(
   db: DatabaseSync,
-  input: TaskBoardIssueInput,
-  currentUser: TaskBoardCurrentUser
-): TaskBoardIssue | null {
+  input: KanbanIssueInput,
+  currentUser: KanbanCurrentUser
+): KanbanIssue | null {
   const title = trimText(input.title);
   if (!title) return null;
   const timestamp = nowIso();
-  const status = normalizeTaskBoardStatus(input.status);
+  const status = normalizeKanbanStatus(input.status);
   const assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
   return {
     id: createLocalIssueId("local"),
@@ -1073,8 +1073,8 @@ function buildLocalIssue(
     title,
     description: typeof input.description === "string" ? input.description.trim() : "",
     status,
-    priority: normalizeTaskBoardPriority(input.priority),
-    severity: normalizeTaskBoardSeverity(input.severity),
+    priority: normalizeKanbanPriority(input.priority),
+    severity: normalizeKanbanSeverity(input.severity),
     assigneeAgentKey,
     assigneeId: nullableTrimmedText(input.assigneeId),
     workerType: normalizeWorkerType(input.workerType) ?? (assigneeAgentKey ? "agent" : null),
@@ -1087,7 +1087,7 @@ function buildLocalIssue(
     position: nextIssuePosition(db, status),
     chatId: null,
     runId: null,
-    runState: normalizeTaskBoardRunState(input.runState),
+    runState: normalizeKanbanRunState(input.runState),
     automationId: nullableTrimmedText(input.automationId),
     automationEnabled: input.automationEnabled === true,
     automationCron: nullableTrimmedText(input.automationCron),
@@ -1108,8 +1108,8 @@ function buildLocalIssue(
   };
 }
 
-function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInput): TaskBoardIssue | null {
-  const nextIssue: TaskBoardIssue = {
+function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): KanbanIssue | null {
+  const nextIssue: KanbanIssue = {
     ...issue,
     attachments: [...issue.attachments],
     updatedAt: nowIso()
@@ -1122,11 +1122,11 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
   if (input.projectId !== undefined) nextIssue.projectId = nullableTrimmedText(input.projectId) ?? PROJECT_ID;
   if (input.description !== undefined) nextIssue.description = typeof input.description === "string" ? input.description.trim() : "";
   if (input.status !== undefined) {
-    nextIssue.status = normalizeTaskBoardStatus(input.status);
+    nextIssue.status = normalizeKanbanStatus(input.status);
     nextIssue.reviewRequired = nextIssue.reviewRequired || nextIssue.status === "in_review";
   }
-  if (input.priority !== undefined) nextIssue.priority = normalizeTaskBoardPriority(input.priority);
-  if (input.severity !== undefined) nextIssue.severity = normalizeTaskBoardSeverity(input.severity);
+  if (input.priority !== undefined) nextIssue.priority = normalizeKanbanPriority(input.priority);
+  if (input.severity !== undefined) nextIssue.severity = normalizeKanbanSeverity(input.severity);
   if (input.assigneeAgentKey !== undefined) {
     nextIssue.assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
     nextIssue.workerAgent = nextIssue.assigneeAgentKey;
@@ -1144,7 +1144,7 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
     nextIssue.activeRunId = nextIssue.runId;
   }
   if (input.runState !== undefined) {
-    nextIssue.runState = normalizeTaskBoardRunState(input.runState);
+    nextIssue.runState = normalizeKanbanRunState(input.runState);
   } else if (input.runId !== undefined) {
     nextIssue.runState = nextIssue.runId ? "running" : nextIssue.status === "completed" ? "completed" : nextIssue.runState;
   }
@@ -1160,12 +1160,12 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
 
 export function listDesktopKanbanIssues(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
-  connectionState: TaskBoardListResult["connectionState"] = "disabled"
-): TaskBoardListResult {
+  currentUser: KanbanCurrentUser,
+  connectionState: KanbanListResult["connectionState"] = "disabled"
+): KanbanListResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => ({
     ok: true,
-    message: connectionState === "open" ? t("taskBoard.runtime.synced") : t("taskBoard.runtime.loadedFromCache"),
+    message: connectionState === "open" ? t("kanban.runtime.synced") : t("kanban.runtime.loadedFromCache"),
     issues: selectIssues(db, currentUser),
     projects: selectProjects(db),
     projectBindings: selectProjectBindings(db),
@@ -1180,13 +1180,13 @@ export function listDesktopKanbanIssues(
 
 export function createPrivateDesktopKanbanIssue(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
-  input: TaskBoardIssueInput
-): TaskBoardIssueResult {
+  currentUser: KanbanCurrentUser,
+  input: KanbanIssueInput
+): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = buildLocalIssue(db, input, currentUser);
     if (!issue) {
-      return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("kanban.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
     }
     issue.localIssueId = issue.id;
     insertOrReplaceIssue(db, issue, {
@@ -1197,7 +1197,7 @@ export function createPrivateDesktopKanbanIssue(
     });
     return {
       ok: true,
-      message: t("taskBoard.runtime.privateCreated"),
+      message: t("kanban.runtime.privateCreated"),
       issue,
       issues: selectIssues(db, currentUser)
     };
@@ -1206,18 +1206,18 @@ export function createPrivateDesktopKanbanIssue(
 
 export function updateDesktopKanbanIssue(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issueId: string,
-  input: TaskBoardIssueUpdateInput
-): TaskBoardIssueResult {
+  input: KanbanIssueUpdateInput
+): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
-      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     const nextIssue = applyIssueUpdate(issue, input);
     if (!nextIssue) {
-      return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("kanban.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
     }
     insertOrReplaceIssue(db, nextIssue, {
       syncMode: nextIssue.syncMode ?? "private",
@@ -1228,17 +1228,17 @@ export function updateDesktopKanbanIssue(
       lastSyncedAt: nextIssue.lastSyncedAt,
       syncError: null
     });
-    return { ok: true, message: t("taskBoard.runtime.updated"), issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("kanban.runtime.updated"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
 function updateDesktopKanbanIssueByPredicate(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
-  predicate: (issue: TaskBoardIssue) => boolean,
-  input: TaskBoardIssueUpdateInput,
+  currentUser: KanbanCurrentUser,
+  predicate: (issue: KanbanIssue) => boolean,
+  input: KanbanIssueUpdateInput,
   missingMessage: string
-): TaskBoardIssueResult {
+): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issues = selectIssues(db, currentUser);
     const issue = issues.find(predicate);
@@ -1247,7 +1247,7 @@ function updateDesktopKanbanIssueByPredicate(
     }
     const nextIssue = applyIssueUpdate(issue, input);
     if (!nextIssue) {
-      return { ok: false, message: t("taskBoard.runtime.titleRequired"), issues };
+      return { ok: false, message: t("kanban.runtime.titleRequired"), issues };
     }
     insertOrReplaceIssue(db, nextIssue, {
       syncMode: nextIssue.syncMode ?? "private",
@@ -1258,61 +1258,61 @@ function updateDesktopKanbanIssueByPredicate(
       lastSyncedAt: nextIssue.lastSyncedAt,
       syncError: null
     });
-    return { ok: true, message: t("taskBoard.runtime.updated"), issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("kanban.runtime.updated"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
 export function updateDesktopKanbanIssueByRunId(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   runId: string,
-  input: TaskBoardIssueUpdateInput
-): TaskBoardIssueResult {
+  input: KanbanIssueUpdateInput
+): KanbanIssueResult {
   const targetRunId = trimText(runId);
   return updateDesktopKanbanIssueByPredicate(
     app,
     currentUser,
     (issue) => issue.runId === targetRunId || issue.activeRunId === targetRunId,
     input,
-    t("taskBoard.runtime.runMissing")
+    t("kanban.runtime.runMissing")
   );
 }
 
 export function updateDesktopKanbanIssueByChatId(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   chatId: string,
-  input: TaskBoardIssueUpdateInput
-): TaskBoardIssueResult {
+  input: KanbanIssueUpdateInput
+): KanbanIssueResult {
   const targetChatId = trimText(chatId);
   return updateDesktopKanbanIssueByPredicate(
     app,
     currentUser,
     (issue) => issue.chatId === targetChatId || issue.attachmentChatId === targetChatId,
     input,
-    t("taskBoard.runtime.chatMissing")
+    t("kanban.runtime.chatMissing")
   );
 }
 
 export function moveDesktopKanbanIssue(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
-  input: TaskBoardIssueMoveInput
-): TaskBoardIssueResult {
+  currentUser: KanbanCurrentUser,
+  input: KanbanIssueMoveInput
+): KanbanIssueResult {
   return setDesktopKanbanIssuePosition(app, currentUser, input.id, input.status, input.position);
 }
 
 export function setDesktopKanbanIssuePosition(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issueId: string,
-  status: TaskBoardStatus,
+  status: KanbanStatus,
   position: number
-): TaskBoardIssueResult {
+): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
-      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     const nextIssue = {
       ...issue,
@@ -1330,24 +1330,24 @@ export function setDesktopKanbanIssuePosition(
       lastSyncedAt: nextIssue.lastSyncedAt,
       syncError: null
     });
-    return { ok: true, message: t("taskBoard.runtime.moved"), issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("kanban.runtime.moved"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
 export function deleteDesktopKanbanIssue(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issueId: string
-): TaskBoardDeleteResult {
+): KanbanDeleteResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
-      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(nowIso(), nowIso(), issueId);
     return {
       ok: true,
-      message: t("taskBoard.runtime.deleted"),
+      message: t("kanban.runtime.deleted"),
       deletedIssueId: issueId,
       issues: selectIssues(db, currentUser)
     };
@@ -1356,10 +1356,10 @@ export function deleteDesktopKanbanIssue(
 
 export function tombstoneDesktopKanbanCloudIssue(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   remoteIssueId: string,
   revision = 0
-): TaskBoardDeleteResult {
+): KanbanDeleteResult {
   const normalizedRemoteIssueId = trimText(remoteIssueId);
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const row = db.prepare(`
@@ -1383,14 +1383,14 @@ export function tombstoneDesktopKanbanCloudIssue(
     writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
     return {
       ok: true,
-      message: t("taskBoard.runtime.deleted"),
+      message: t("kanban.runtime.deleted"),
       deletedIssueId: localIssueId || normalizedRemoteIssueId,
       issues: selectIssues(db, currentUser)
     };
   });
 }
 
-function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: TaskBoardCurrentUser, revision: number): TaskBoardIssue | null {
+function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: KanbanCurrentUser, revision: number): KanbanIssue | null {
   const remoteIssueId = trimText(rawIssue.id);
   const title = trimText(rawIssue.title);
   if (!remoteIssueId || !title) return null;
@@ -1413,9 +1413,9 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     statusKey: trimText(rawIssue.statusKey) || undefined,
     title,
     description: trimText(rawIssue.description),
-    status: normalizeTaskBoardStatus(rawIssue.status),
-    priority: normalizeTaskBoardPriority(rawIssue.priority),
-    severity: normalizeTaskBoardSeverity(rawIssue.severity),
+    status: normalizeKanbanStatus(rawIssue.status),
+    priority: normalizeKanbanPriority(rawIssue.priority),
+    severity: normalizeKanbanSeverity(rawIssue.severity),
     assigneeAgentKey: nullableTrimmedText(rawIssue.assigneeAgentKey),
     assigneeId: nullableTrimmedText(rawIssue.assigneeId),
     workerType: normalizeWorkerType(rawIssue.workerType),
@@ -1428,7 +1428,7 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     position: typeof rawIssue.position === "number" && Number.isFinite(rawIssue.position) ? rawIssue.position : 1,
     chatId: nullableTrimmedText(rawIssue.chatId),
     runId: nullableTrimmedText(rawIssue.runId),
-    runState: normalizeTaskBoardRunState(rawIssue.runState),
+    runState: normalizeKanbanRunState(rawIssue.runState),
     automationId: nullableTrimmedText(rawIssue.automationId),
     automationEnabled: rawIssue.automationEnabled === true,
     automationCron: nullableTrimmedText(rawIssue.automationCron),
@@ -1453,7 +1453,7 @@ function findLocalSyncForRemote(db: DatabaseSync, remoteIssueId: string) {
   const row = db.prepare(`
     SELECT LOCAL_ISSUE_ID_ AS localIssueId, ORIGIN_ AS origin FROM desktop_issue_sync
     WHERE REMOTE_ISSUE_ID_ = ?
-  `).get(remoteIssueId) as { localIssueId?: string; origin?: TaskBoardOrigin } | undefined;
+  `).get(remoteIssueId) as { localIssueId?: string; origin?: KanbanOrigin } | undefined;
   return {
     localIssueId: row?.localIssueId ?? "",
     origin: row?.origin
@@ -1462,9 +1462,9 @@ function findLocalSyncForRemote(db: DatabaseSync, remoteIssueId: string) {
 
 function markIssueSyncState(
   db: DatabaseSync,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issueId: string,
-  syncState: TaskBoardSyncState,
+  syncState: KanbanSyncState,
   syncError: string | null
 ) {
   const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
@@ -1485,14 +1485,14 @@ function markIssueSyncState(
 
 export function markDesktopKanbanIssueSyncing(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issueId: string
-): TaskBoardIssueResult {
+): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = markIssueSyncState(db, currentUser, issueId, "syncing", null);
     return {
       ok: Boolean(issue),
-      message: issue ? t("taskBoard.runtime.cloudSyncing") : t("taskBoard.runtime.missing"),
+      message: issue ? t("kanban.runtime.cloudSyncing") : t("kanban.runtime.missing"),
       issue: issue ?? undefined,
       issues: selectIssues(db, currentUser)
     };
@@ -1501,10 +1501,10 @@ export function markDesktopKanbanIssueSyncing(
 
 export function markDesktopKanbanIssueSyncError(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issueId: string,
   message: string
-): TaskBoardIssueResult {
+): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const issue = markIssueSyncState(db, currentUser, issueId, "error", message);
     return {
@@ -1518,10 +1518,10 @@ export function markDesktopKanbanIssueSyncError(
 
 export function applyDesktopKanbanCloudSnapshot(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
-  snapshot: TaskBoardCloudSnapshot,
-  origin: TaskBoardOrigin = "cloud_dispatch"
-): TaskBoardListResult {
+  currentUser: KanbanCurrentUser,
+  snapshot: KanbanCloudSnapshot,
+  origin: KanbanOrigin = "cloud_dispatch"
+): KanbanListResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const currentRevision = readDesktopKanbanRevision(db);
     const revision = typeof snapshot.revision === "number" ? snapshot.revision : currentRevision;
@@ -1589,7 +1589,7 @@ export function applyDesktopKanbanCloudSnapshot(
     }
     return {
       ok: true,
-      message: t("taskBoard.runtime.snapshotSynced"),
+      message: t("kanban.runtime.snapshotSynced"),
       issues: selectIssues(db, currentUser),
       projects: selectProjects(db),
       projectBindings: selectProjectBindings(db),
@@ -1605,23 +1605,23 @@ export function applyDesktopKanbanCloudSnapshot(
 
 export function upsertDispatchedDesktopKanbanIssue(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issue: unknown,
   revision = 0,
-  origin: TaskBoardOrigin = "cloud_dispatch"
-): TaskBoardIssueResult {
+  origin: KanbanOrigin = "cloud_dispatch"
+): KanbanIssueResult {
   const cloudIssue = parseCloudIssue(issue);
   if (!cloudIssue) {
     return {
       ok: false,
-      message: t("taskBoard.runtime.dispatchInvalid"),
+      message: t("kanban.runtime.dispatchInvalid"),
       issues: listDesktopKanbanIssues(app, currentUser).issues
     };
   }
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const localIssue = cloudIssueToLocalIssue(cloudIssue, currentUser, revision);
     if (!localIssue?.remoteIssueId) {
-      return { ok: false, message: t("taskBoard.runtime.dispatchMissingId"), issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("kanban.runtime.dispatchMissingId"), issues: selectIssues(db, currentUser) };
     }
     localIssue.id = findLocalSyncForRemote(db, localIssue.remoteIssueId).localIssueId || createLocalIssueId("cloud");
     localIssue.localIssueId = localIssue.id;
@@ -1635,26 +1635,26 @@ export function upsertDispatchedDesktopKanbanIssue(
       syncError: null
     });
     writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
-    return { ok: true, message: t("taskBoard.runtime.dispatched"), issue: localIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("kanban.runtime.dispatched"), issue: localIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
 export function linkDesktopKanbanIssueToRemote(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   localIssueId: string,
   remoteIssue: unknown,
   revision = 0
-): TaskBoardIssueResult {
+): KanbanIssueResult {
   const cloudIssue = parseCloudIssue(remoteIssue);
   if (!cloudIssue) {
-    return { ok: false, message: t("taskBoard.runtime.cloudIssueInvalid"), issues: listDesktopKanbanIssues(app, currentUser).issues };
+    return { ok: false, message: t("kanban.runtime.cloudIssueInvalid"), issues: listDesktopKanbanIssues(app, currentUser).issues };
   }
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const currentIssue = selectIssues(db, currentUser).find((candidate) => candidate.id === localIssueId);
     const nextIssue = cloudIssueToLocalIssue(cloudIssue, currentUser, revision);
     if (!currentIssue || !nextIssue?.remoteIssueId) {
-      return { ok: false, message: t("taskBoard.runtime.missing"), issues: selectIssues(db, currentUser) };
+      return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
     nextIssue.id = currentIssue.id;
     nextIssue.localIssueId = currentIssue.id;
@@ -1668,13 +1668,13 @@ export function linkDesktopKanbanIssueToRemote(
       syncError: null
     });
     writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
-    return { ok: true, message: t("taskBoard.runtime.syncedToCloud"), issue: nextIssue, issues: selectIssues(db, currentUser) };
+    return { ok: true, message: t("kanban.runtime.syncedToCloud"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 
 export function getDesktopKanbanIssue(
   app: AppPathProvider,
-  currentUser: TaskBoardCurrentUser,
+  currentUser: KanbanCurrentUser,
   issueId: string
 ) {
   return withDesktopKanbanDatabase(app, currentUser, (db) =>

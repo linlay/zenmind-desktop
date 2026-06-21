@@ -212,7 +212,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  const taskBoardRuntime = {
+  const kanbanRuntime = {
     listIssues() {
       return {
         ok: true,
@@ -236,7 +236,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
         message: "started"
       })
     },
-    getTaskBoardRuntime: () => taskBoardRuntime,
+    getKanbanRuntime: () => kanbanRuntime,
     verifyToken: async (token, subprotocol) => {
       assert.equal(token, "test-token");
       assert.equal(subprotocol, "bearer.test-token");
@@ -417,7 +417,7 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
         message: "started"
       })
     },
-    getTaskBoardRuntime: () => null,
+    getKanbanRuntime: () => null,
     agentPlatformBridge: {
       WebSocketConstructor: FakeAgentPlatformWebSocket,
       getServiceState: async () => ({

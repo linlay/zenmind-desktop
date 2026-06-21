@@ -283,14 +283,14 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return true;
   }
 
-  function getTaskBoardActiveRunIds() {
+  function getKanbanActiveRunIds() {
     try {
-      return (state.taskBoardRuntime?.listIssues().issues ?? [])
+      return (state.kanbanRuntime?.listIssues().issues ?? [])
         .filter((issue) => issue.status === "in_progress" && Boolean(issue.runId))
         .map((issue) => issue.runId)
         .filter((runId): runId is string => Boolean(runId));
     } catch (error) {
-      console.warn("[desktop-pet] failed to read task-board active runs", error);
+      console.warn("[desktop-pet] failed to read kanban active runs", error);
       return [];
     }
   }
@@ -301,7 +301,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       state.desktopPetAgentStatus?.presence === "busy" ||
       Boolean(state.desktopPetAgentStatus?.hasPendingAwaiting);
     return desktopPetActiveRunTracker.getRunningTaskCount({
-      taskBoardRunIds: getTaskBoardActiveRunIds(),
+      kanbanRunIds: getKanbanActiveRunIds(),
       fallbackRunning
     });
   }
@@ -365,9 +365,9 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return desktopPetDonePreviewDismissalTracker.filterAgentStatus(state.desktopPetAgentStatus);
   }
 
-  function listTaskBoardLocalAgents(): DesktopPetAgentOption[] {
+  function listKanbanLocalAgents(): DesktopPetAgentOption[] {
     const agents = new Map<string, DesktopPetAgentOption>();
-    const fallbackTaskBoardAgentKey = DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
+    const fallbackKanbanAgentKey = DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
     for (const agent of state.desktopPetAgentOptions) {
       const agentKey = agent.agentKey?.trim();
       if (!agentKey || agents.has(agentKey)) {
@@ -393,8 +393,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       });
     }
     if (agents.size === 0) {
-      agents.set(fallbackTaskBoardAgentKey, {
-        agentKey: fallbackTaskBoardAgentKey,
+      agents.set(fallbackKanbanAgentKey, {
+        agentKey: fallbackKanbanAgentKey,
         displayName: t("main.fallbackAgentName"),
         role: t("main.fallbackAgentRole"),
         unreadCount: 0
@@ -942,7 +942,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     getRunningTaskCount,
     getActiveTasks,
     getAssistantActiveTasksSnapshotForPlugins,
-    listTaskBoardLocalAgents,
+    listKanbanLocalAgents,
     getWindowMode,
     setWindowMode,
     isVisible,
