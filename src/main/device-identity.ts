@@ -4,11 +4,12 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import type { App } from "electron";
 import type { DesktopDeviceIdentityInfo } from "../shared/contracts";
+import { STORAGE_NAMESPACE } from "../shared/brand";
 import { getDesktopConfigRoot } from "./user-paths";
 
 const DEVICE_IDENTITY_FILE = "device-identity.json";
 const DEVICE_IDENTITY_VERSION = 2;
-const DEVICE_NAMESPACE = "zenmind-desktop";
+const DEVICE_NAMESPACE = STORAGE_NAMESPACE;
 const DEVICE_ID_HASH_NAMESPACE = `${DEVICE_NAMESPACE}:device:v2`;
 const MACHINE_HASH_NAMESPACE = `${DEVICE_NAMESPACE}:machine:v2`;
 const UNAVAILABLE_MACHINE_ID = "unavailable";

@@ -1,15 +1,9 @@
 import { ipcRenderer, webFrame } from "electron";
 import {
-  AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
-  DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
-  DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
-  DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
-  DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
-  PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
-  PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
-  SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
+  isServiceWebviewBridgeRequestType,
+  isServiceWebviewBridgeResponseType,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
@@ -46,7 +40,7 @@ function sendBridgeDebug(stage: string, message = "") {
 }
 
 function isDesktopBridgeRequest(value: ServiceWebviewBridgeMessage) {
-  if (value.type && (SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES as readonly string[]).includes(value.type)) {
+  if (isServiceWebviewBridgeRequestType(value.type)) {
     return Boolean(value.requestId);
   }
   return Boolean(
@@ -88,13 +82,7 @@ function forwardDesktopBridgeRequest(
 }
 
 function isDesktopBridgeDeliver(value: ServiceWebviewBridgeMessage) {
-  return value.type === AGENT_APP_CLIPBOARD_RESPONSE_TYPE ||
-    value.type === DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE ||
-    value.type === DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE ||
-    value.type === DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE ||
-    value.type === DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE ||
-    value.type === PLUGIN_SETTINGS_READ_RESPONSE_TYPE ||
-    value.type === PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE ||
+  return isServiceWebviewBridgeResponseType(value.type) ||
     value.type === DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE ||
     value.type === DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE ||
     Boolean(value.type && /:auth:response$/u.test(value.type));

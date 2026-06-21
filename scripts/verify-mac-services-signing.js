@@ -34,10 +34,14 @@ function parseBooleanEnv(value, name) {
 }
 
 function shouldAllowMissingSecureTimestamp() {
+  const legacySkipMacTimestampEnv = "ZENMIND_SKIP_MAC_TIMESTAMP";
+  const legacySkipMacTimestampVerifyEnv = "ZENMIND_SKIP_MAC_TIMESTAMP_VERIFY";
   return (
     parseBooleanEnv(process.env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
-    parseBooleanEnv(process.env.ZENMIND_SKIP_MAC_TIMESTAMP, "ZENMIND_SKIP_MAC_TIMESTAMP") === true ||
-    parseBooleanEnv(process.env.ZENMIND_SKIP_MAC_TIMESTAMP_VERIFY, "ZENMIND_SKIP_MAC_TIMESTAMP_VERIFY") === true
+    parseBooleanEnv(process.env.DESKTOP_SKIP_MAC_TIMESTAMP, "DESKTOP_SKIP_MAC_TIMESTAMP") === true ||
+    parseBooleanEnv(process.env.DESKTOP_SKIP_MAC_TIMESTAMP_VERIFY, "DESKTOP_SKIP_MAC_TIMESTAMP_VERIFY") === true ||
+    parseBooleanEnv(process.env[legacySkipMacTimestampEnv], legacySkipMacTimestampEnv) === true ||
+    parseBooleanEnv(process.env[legacySkipMacTimestampVerifyEnv], legacySkipMacTimestampVerifyEnv) === true
   );
 }
 
@@ -140,7 +144,11 @@ function verifyAppServices(appPath) {
     );
   }
 
-  if (process.env.ZENMIND_SKIP_MAC_SERVICE_SIGNATURE_VERIFY === "1") {
+  const legacySkipMacServiceSignatureVerifyEnv = "ZENMIND_SKIP_MAC_SERVICE_SIGNATURE_VERIFY";
+  if (
+    process.env.DESKTOP_SKIP_MAC_SERVICE_SIGNATURE_VERIFY === "1" ||
+    process.env[legacySkipMacServiceSignatureVerifyEnv] === "1"
+  ) {
     console.warn("[verify-mac-services-signing] Skipping service Mach-O signature verification by environment override.");
     return;
   }

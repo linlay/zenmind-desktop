@@ -694,7 +694,7 @@ export async function installSkillFromCommand(app: App, commandText: string): Pr
   const execution = resolvePackageManagerExecution(command, args);
   const downloadsRoot = path.join(getSkillsMarketDir(app), ".downloads");
   fs.mkdirSync(downloadsRoot, { recursive: true });
-  const downloadRoot = fs.mkdtempSync(path.join(downloadsRoot, "zenmind-skill-download-"));
+  const downloadRoot = fs.mkdtempSync(path.join(downloadsRoot, "desktop-skill-download-"));
   try {
     await execFileAsync(execution.command, execution.args, {
       cwd: downloadRoot,

@@ -1,16 +1,27 @@
 import {
+  LEGACY_SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
+  LEGACY_SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES,
   SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
   SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE
 } from "../shared/service-webview-bridge";
+import {
+  AGENT_APP_AUTH_REQUEST_TYPE,
+  AGENT_APP_AUTH_RESPONSE_TYPE,
+  LEGACY_AGENT_APP_AUTH_REQUEST_TYPE,
+  LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE
+} from "../shared/auth-bridge";
 import { resolveServiceWebviewWsMonitorUrl } from "../shared/service-webview-ws-monitor";
 
-export const PAGE_TO_PRELOAD_EVENT = "__zenmindServiceWebviewBridgeMessage";
-export const PRELOAD_TO_PAGE_EVENT = "__zenmindServiceWebviewBridgeDeliver";
-export const PRELOAD_TO_PAGE_ACTION_EVENT = "__zenmindServiceWebviewBridgeAction";
-export const DESKTOP_WEBVIEW_BRIDGE_FLAG = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
+export const PAGE_TO_PRELOAD_EVENT = "__desktopServiceWebviewBridgeMessage";
+export const PRELOAD_TO_PAGE_EVENT = "__desktopServiceWebviewBridgeDeliver";
+export const PRELOAD_TO_PAGE_ACTION_EVENT = "__desktopServiceWebviewBridgeAction";
+export const DESKTOP_WEBVIEW_BRIDGE_FLAG = "__DESKTOP_WEBVIEW_BRIDGE__";
+export const LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
+const DESKTOP_WS_MONITOR_WRAPPED_FLAG = "__DESKTOP_WS_MONITOR_WRAPPED__";
+const LEGACY_DESKTOP_WS_MONITOR_WRAPPED_FLAG = "__ZENMIND_WS_MONITOR_WRAPPED__";
 export const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = "agent-webclient.appAccessToken";
 export const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = "agent-webclient.appAuthContext";
 
@@ -23,15 +34,24 @@ export function buildServiceWebviewMainWorldScript() {
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
+  const LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG)};
+  const DESKTOP_WS_MONITOR_WRAPPED_FLAG = ${JSON.stringify(DESKTOP_WS_MONITOR_WRAPPED_FLAG)};
+  const LEGACY_DESKTOP_WS_MONITOR_WRAPPED_FLAG = ${JSON.stringify(LEGACY_DESKTOP_WS_MONITOR_WRAPPED_FLAG)};
   const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = ${JSON.stringify(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY)};
   const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = ${JSON.stringify(AGENT_APP_AUTH_CONTEXT_STORAGE_KEY)};
   const AUTH_REQUEST_TYPES = new Set([
-    "zenmind:agent-app-auth:request"
+    ${JSON.stringify(AGENT_APP_AUTH_REQUEST_TYPE)},
+    ${JSON.stringify(LEGACY_AGENT_APP_AUTH_REQUEST_TYPE)}
   ]);
-  const BRIDGE_REQUEST_TYPES = new Set(${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES)});
+  const BRIDGE_REQUEST_TYPES = new Set([
+    ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES)},
+    ...${JSON.stringify(LEGACY_SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES)}
+  ]);
   const BRIDGE_RESPONSE_TYPES = new Set([
-    "zenmind:agent-app-auth:response",
-    ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)}
+    ${JSON.stringify(AGENT_APP_AUTH_RESPONSE_TYPE)},
+    ${JSON.stringify(LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE)},
+    ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)},
+    ...${JSON.stringify(LEGACY_SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)}
   ]);
   const resolveServiceWebviewWsMonitorUrl = ${resolveServiceWebviewWsMonitorUrl.toString()};
   const initialWsSource = (() => {
@@ -92,16 +112,21 @@ export function buildServiceWebviewMainWorldScript() {
     }
   }
 
-  try {
-    Object.defineProperty(window, DESKTOP_WEBVIEW_BRIDGE_FLAG, {
-      configurable: true,
-      enumerable: false,
-      value: true,
-      writable: false
-    });
-  } catch {
-    window[DESKTOP_WEBVIEW_BRIDGE_FLAG] = true;
+  function defineWindowFlag(flag) {
+    try {
+      Object.defineProperty(window, flag, {
+        configurable: true,
+        enumerable: false,
+        value: true,
+        writable: false
+      });
+    } catch {
+      window[flag] = true;
+    }
   }
+
+  defineWindowFlag(DESKTOP_WEBVIEW_BRIDGE_FLAG);
+  defineWindowFlag(LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG);
 
   function isDesktopBridgeRequest(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -134,10 +159,14 @@ export function buildServiceWebviewMainWorldScript() {
 
   function installWebSocketMonitorMetadata() {
     const OriginalWebSocket = window.WebSocket;
-    if (typeof OriginalWebSocket !== "function" || OriginalWebSocket.__ZENMIND_WS_MONITOR_WRAPPED__) {
+    if (
+      typeof OriginalWebSocket !== "function" ||
+      OriginalWebSocket[DESKTOP_WS_MONITOR_WRAPPED_FLAG] ||
+      OriginalWebSocket[LEGACY_DESKTOP_WS_MONITOR_WRAPPED_FLAG]
+    ) {
       return;
     }
-    function ZenmindServiceWebviewWebSocket(url, protocols) {
+    function DesktopServiceWebviewWebSocket(url, protocols) {
       const nextUrl = resolveServiceWebviewWsMonitorUrl(url, readWsMonitorPageHref());
       if (arguments.length > 1) {
         return new OriginalWebSocket(nextUrl, protocols);
@@ -145,14 +174,14 @@ export function buildServiceWebviewMainWorldScript() {
       return new OriginalWebSocket(nextUrl);
     }
     try {
-      Object.setPrototypeOf(ZenmindServiceWebviewWebSocket, OriginalWebSocket);
+      Object.setPrototypeOf(DesktopServiceWebviewWebSocket, OriginalWebSocket);
     } catch {
       // Ignore prototype wiring failures in restricted renderer contexts.
     }
-    ZenmindServiceWebviewWebSocket.prototype = OriginalWebSocket.prototype;
+    DesktopServiceWebviewWebSocket.prototype = OriginalWebSocket.prototype;
     for (const key of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) {
       try {
-        Object.defineProperty(ZenmindServiceWebviewWebSocket, key, {
+        Object.defineProperty(DesktopServiceWebviewWebSocket, key, {
           configurable: true,
           enumerable: true,
           value: OriginalWebSocket[key]
@@ -162,16 +191,25 @@ export function buildServiceWebviewMainWorldScript() {
       }
     }
     try {
-      Object.defineProperty(ZenmindServiceWebviewWebSocket, "__ZENMIND_WS_MONITOR_WRAPPED__", {
+      Object.defineProperty(DesktopServiceWebviewWebSocket, DESKTOP_WS_MONITOR_WRAPPED_FLAG, {
         configurable: true,
         enumerable: false,
         value: true
       });
     } catch {
-      ZenmindServiceWebviewWebSocket.__ZENMIND_WS_MONITOR_WRAPPED__ = true;
+      DesktopServiceWebviewWebSocket[DESKTOP_WS_MONITOR_WRAPPED_FLAG] = true;
     }
     try {
-      window.WebSocket = ZenmindServiceWebviewWebSocket;
+      Object.defineProperty(DesktopServiceWebviewWebSocket, LEGACY_DESKTOP_WS_MONITOR_WRAPPED_FLAG, {
+        configurable: true,
+        enumerable: false,
+        value: true
+      });
+    } catch {
+      DesktopServiceWebviewWebSocket[LEGACY_DESKTOP_WS_MONITOR_WRAPPED_FLAG] = true;
+    }
+    try {
+      window.WebSocket = DesktopServiceWebviewWebSocket;
     } catch {
       // Ignore non-writable WebSocket globals.
     }
@@ -204,7 +242,11 @@ export function buildServiceWebviewMainWorldScript() {
   }
 
   function seedAgentAppAccessToken(payload) {
-    if (!payload || payload.type !== "zenmind:agent-app-auth:response") {
+    if (
+      !payload ||
+      (payload.type !== ${JSON.stringify(AGENT_APP_AUTH_RESPONSE_TYPE)} &&
+        payload.type !== ${JSON.stringify(LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE)})
+    ) {
       return;
     }
     const token = typeof payload.token === "string" ? payload.token.trim() : "";

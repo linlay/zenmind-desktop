@@ -172,7 +172,7 @@ function buildServiceCommandEnv(overrides?: NodeJS.ProcessEnv) {
 function runPowerShellScript(scriptPath: string, args: string[], cwd: string, options: RunExecFileOptions = {}) {
   const wrapperScriptPath = path.join(
     os.tmpdir(),
-    `zenmind-powershell-wrapper-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`
+    `desktop-powershell-wrapper-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`
   );
   fs.writeFileSync(wrapperScriptPath, buildPowerShellWrapperScript(scriptPath, args), "utf8");
   const timeoutMs = getCommandTimeoutMs(options.timeoutMs);

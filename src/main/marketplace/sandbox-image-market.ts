@@ -42,6 +42,7 @@ const IMAGE_COMMAND_TIMEOUT_MS = 300_000;
 const LIST_IMAGE_COMMAND_TIMEOUT_MS = 30_000;
 const CONTAINER_ENGINE_CACHE_SUCCESS_MS = 30_000;
 const CONTAINER_ENGINE_CACHE_MISS_MS = 10_000;
+const LEGACY_DESKTOP_CONTAINER_ENGINE_PATHS_ENV = "ZENMIND_CONTAINER_ENGINE_PATHS";
 
 let cachedContainerEngine:
   | { engine: ContainerEngineResolution | null; expiresAt: number; cacheKey: string }
@@ -225,7 +226,7 @@ function resolveCachedContainerEngine() {
     process.env.PATH ?? "",
     process.env.Path ?? "",
     process.env.DESKTOP_CONTAINER_ENGINE_PATHS ?? "",
-    process.env.ZENMIND_CONTAINER_ENGINE_PATHS ?? "",
+    process.env[LEGACY_DESKTOP_CONTAINER_ENGINE_PATHS_ENV] ?? "",
     process.env.ProgramFiles ?? "",
     process.env.LOCALAPPDATA ?? ""
   ].join("\u0000");
@@ -439,7 +440,7 @@ async function prepareImageArchiveForImport(sourcePath: string): Promise<{ archi
     };
   }
 
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sandbox-image-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-sandbox-image-"));
   try {
     await extractArchiveToDir(sourcePath, tempRoot);
     const archivePath = path.join(tempRoot, entry);
@@ -654,7 +655,7 @@ function listTemplateFiles(filesRoot: string) {
 }
 
 async function readSandboxTemplatePackage(archivePath: string) {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sandbox-template-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-sandbox-template-"));
   try {
     await extractArchiveToDir(archivePath, tempRoot);
     const environmentPath = findFirstFile(tempRoot, "environment.json");

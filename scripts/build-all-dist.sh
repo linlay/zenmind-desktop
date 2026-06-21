@@ -3,8 +3,9 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DEFAULT_ZENMIND_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ZENMIND_ROOT="${ZENMIND_ROOT:-$DEFAULT_ZENMIND_ROOT}"
+DEFAULT_DESKTOP_WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+LEGACY_DESKTOP_WORKSPACE_ROOT="${ZENMIND_ROOT:-}"
+DESKTOP_WORKSPACE_ROOT="${DESKTOP_WORKSPACE_ROOT:-${LEGACY_DESKTOP_WORKSPACE_ROOT:-$DEFAULT_DESKTOP_WORKSPACE_ROOT}}"
 
 CLEAN_FIRST=1
 DRY_RUN=0
@@ -43,10 +44,12 @@ Options:
   -h, --help       Show this help.
 
 Environment:
-  ZENMIND_ROOT     Override the parent directory containing the four projects.
+  DESKTOP_WORKSPACE_ROOT
+                   Override the parent directory containing the four projects.
+                   Legacy ZENMIND_ROOT is still accepted.
   SIGN_MAC_BUILTINS=1
                    Enable --sign-mac without putting signing details in git.
-  ZENMIND_DARWIN_CODESIGN_IDENTITY / MACOS_CODESIGN_IDENTITY / CSC_NAME
+  DESKTOP_DARWIN_CODESIGN_IDENTITY / ZENMIND_DARWIN_CODESIGN_IDENTITY / MACOS_CODESIGN_IDENTITY / CSC_NAME
                    Developer ID Application identity for --sign-mac. Final
                    release signing still happens in electron-builder.
   PROGRAM_TARGETS / PROGRAM_TARGET_MATRIX / ARCH / VERSION
@@ -56,7 +59,7 @@ Examples:
   scripts/build-all-dist.sh
   scripts/build-all-dist.sh --only container-hub,platform
   SIGN_MAC_BUILTINS=1 CSC_NAME="Your Name (TEAMID)" scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64
-  ZENMIND_ROOT=/Users/me/Project/zenmind scripts/build-all-dist.sh
+  DESKTOP_WORKSPACE_ROOT=/Users/me/Project/desktop-workspace scripts/build-all-dist.sh
 EOF
 }
 
@@ -182,7 +185,7 @@ clean_dist_dir() {
   fi
 
   case "$dist_dir" in
-    "$ZENMIND_ROOT"/*/dist)
+    "$DESKTOP_WORKSPACE_ROOT"/*/dist)
       log "clean $dist_dir"
       run_cmd rm -rf "$dist_dir"
       ;;
@@ -196,7 +199,7 @@ build_project() {
   local short_name="$1"
   local repo_name="$2"
   local make_target="$3"
-  local project_dir="$ZENMIND_ROOT/$repo_name"
+  local project_dir="$DESKTOP_WORKSPACE_ROOT/$repo_name"
 
   [[ -d "$project_dir" ]] || die "missing project directory for $short_name: $project_dir"
   [[ -f "$project_dir/Makefile" ]] || die "missing Makefile for $short_name: $project_dir/Makefile"
@@ -322,10 +325,10 @@ case "$HOST_OS" in
     ;;
 esac
 
-[[ -d "$ZENMIND_ROOT" ]] || die "ZENMIND_ROOT does not exist: $ZENMIND_ROOT"
+[[ -d "$DESKTOP_WORKSPACE_ROOT" ]] || die "DESKTOP_WORKSPACE_ROOT does not exist: $DESKTOP_WORKSPACE_ROOT"
 [[ -d "$DESKTOP_ROOT" ]] || die "Desktop root does not exist: $DESKTOP_ROOT"
 
-log "host=$HOST_OS root=$ZENMIND_ROOT desktop=$DESKTOP_ROOT"
+log "host=$HOST_OS root=$DESKTOP_WORKSPACE_ROOT desktop=$DESKTOP_ROOT"
 
 PROJECT_SPECS=(
   "container-hub|agent-container-hub|release"

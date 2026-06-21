@@ -10,7 +10,6 @@ export function spawnElectron(electronBinary, projectRoot, brand) {
     env: {
       ...process.env,
       DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
-      ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
       VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
     }
   });

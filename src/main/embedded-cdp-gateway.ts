@@ -69,7 +69,7 @@ const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
 function stableTargetId(surface: EmbeddedCdpSurface) {
   const source = `webview:${surface.id || surface.url || surface.label}`;
-  return `zenmind-${crypto.createHash("sha1").update(source).digest("hex").slice(0, 16)}`;
+  return `desktop-${crypto.createHash("sha1").update(source).digest("hex").slice(0, 16)}`;
 }
 
 function encodePathSegment(value: string) {
@@ -438,7 +438,7 @@ export class EmbeddedCdpGateway {
         Browser: this.version,
         "Protocol-Version": DEFAULT_PROTOCOL_VERSION,
         "User-Agent": this.version,
-        webSocketDebuggerUrl: `${wsOrigin}/devtools/browser/zenmind-embedded`
+        webSocketDebuggerUrl: `${wsOrigin}/devtools/browser/desktop-embedded`
       });
       return;
     }

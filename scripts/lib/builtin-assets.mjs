@@ -5,11 +5,14 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { desktopBuiltinServicesDir } from "./desktop-resources.mjs";
 
-// monorepo 根目录：zenmind-desktop 的上一级
+// monorepo 根目录：当前仓库的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const BUILTIN_ASSETS_SOURCE_ENV = "DESKTOP_BUILTIN_ASSETS_SOURCE";
 const LEGACY_BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
 const BUILTIN_ASSETS_SOURCE_ENV_LABEL = `${BUILTIN_ASSETS_SOURCE_ENV} or ${LEGACY_BUILTIN_ASSETS_SOURCE_ENV}`;
+const SKIP_MAC_TIMESTAMP_ENV = "DESKTOP_SKIP_MAC_TIMESTAMP";
+const LEGACY_SKIP_MAC_TIMESTAMP_ENV = "ZENMIND_SKIP_MAC_TIMESTAMP";
+const LEGACY_DARWIN_CODESIGN_IDENTITY_ENV = "ZENMIND_DARWIN_CODESIGN_IDENTITY";
 const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
   "identity-center",
   "agent-platform",
@@ -21,7 +24,8 @@ const EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS = new Set([
 ]);
 const DEVELOPER_ID_APPLICATION_PREFIX = "Developer ID Application:";
 const DARWIN_CODESIGN_IDENTITY_ENV_KEYS = [
-  "ZENMIND_DARWIN_CODESIGN_IDENTITY",
+  "DESKTOP_DARWIN_CODESIGN_IDENTITY",
+  LEGACY_DARWIN_CODESIGN_IDENTITY_ENV,
   "MACOS_CODESIGN_IDENTITY",
   "CSC_NAME"
 ];
@@ -59,7 +63,8 @@ function parseBooleanEnv(value, name) {
 function shouldSkipMacTimestamp(env = process.env) {
   return (
     parseBooleanEnv(env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
-    parseBooleanEnv(env.ZENMIND_SKIP_MAC_TIMESTAMP, "ZENMIND_SKIP_MAC_TIMESTAMP") === true
+    parseBooleanEnv(env[SKIP_MAC_TIMESTAMP_ENV], SKIP_MAC_TIMESTAMP_ENV) === true ||
+    parseBooleanEnv(env[LEGACY_SKIP_MAC_TIMESTAMP_ENV], LEGACY_SKIP_MAC_TIMESTAMP_ENV) === true
   );
 }
 
@@ -320,7 +325,7 @@ function extractArchiveToBundleDirectory(archivePath, targetDir, service) {
     throw new Error(`Darwin service archives must be .tar.gz files: ${archivePath}`);
   }
 
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-darwin-service-extract-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-darwin-service-extract-"));
   const extractRoot = path.join(tempRoot, "extract");
   fs.mkdirSync(extractRoot, { recursive: true });
 

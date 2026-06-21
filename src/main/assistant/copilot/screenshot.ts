@@ -48,9 +48,11 @@ type CaptureBridgeScreenshotOptions = Omit<CaptureAssistantScreenshotOptions, "a
 
 const MAX_BRIDGE_SCREENSHOT_BYTES = 32 * 1024 * 1024;
 const SCREENSHOT_SOURCE_UNAVAILABLE = "screen_capture_source_unavailable";
+const SCREENSHOT_SELECTION_PROTOCOL = "desktop:";
+const LEGACY_SCREENSHOT_SELECTION_PROTOCOL = "zenmind:";
 
 function createScreenshotSelectionHtml(selectionId: string) {
-  const doneUrl = `zenmind://screenshot-selection/${selectionId}`;
+  const doneUrl = `${SCREENSHOT_SELECTION_PROTOCOL}//screenshot-selection/${selectionId}`;
   const selectionHint = t("screenshot.selectionHint");
   const selectionReleaseHint = t("screenshot.selectionReleaseHint");
   const selectionTooSmall = t("screenshot.selectionTooSmall");
@@ -97,7 +99,7 @@ function parseScreenshotSelectionUrl(value: string, selectionId: string) {
   try {
     const url = new URL(value);
     if (
-      url.protocol !== "zenmind:" ||
+      (url.protocol !== SCREENSHOT_SELECTION_PROTOCOL && url.protocol !== LEGACY_SCREENSHOT_SELECTION_PROTOCOL) ||
       url.hostname !== "screenshot-selection" ||
       url.pathname !== `/${selectionId}`
     ) {

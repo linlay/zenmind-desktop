@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-process.env.ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS = "20";
+process.env.DESKTOP_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS = "20";
 
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const { TaskBoardRuntime, readTaskBoardSettings, readTaskBoardWsConfig } = await import("../dist-electron/main/task-board-runtime.js");
@@ -86,13 +86,22 @@ test("task board websocket config requires remote control and sso site token", (
     selectedProjectId: "project-a"
   });
 
-  process.env.ZENMIND_KANBAN_TOKEN = "env-token";
+  process.env.DESKTOP_KANBAN_TOKEN = "env-token";
   t.after(() => {
+    delete process.env.DESKTOP_KANBAN_TOKEN;
     delete process.env.ZENMIND_KANBAN_TOKEN;
   });
   assert.deepEqual(readTaskBoardWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
     token: "env-token",
+    selectedProjectId: "project-a"
+  });
+
+  delete process.env.DESKTOP_KANBAN_TOKEN;
+  process.env.ZENMIND_KANBAN_TOKEN = "legacy-env-token";
+  assert.deepEqual(readTaskBoardWsConfig(app), {
+    serverUrl: "http://127.0.0.1:8080",
+    token: "legacy-env-token",
     selectedProjectId: "project-a"
   });
 });

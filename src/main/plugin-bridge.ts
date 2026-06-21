@@ -117,14 +117,14 @@ export function createPluginBridgePath(
   const pluginHash = hashPluginId(pluginId);
 
   if (platform === "win32") {
-    return `\\\\.\\pipe\\ZenMind.PluginBridge.${pluginHash}.${instanceId}`;
+    return `\\\\.\\pipe\\Desktop.PluginBridge.${pluginHash}.${instanceId}`;
   }
 
   if (platform === "darwin") {
-    return path.join(getTempPath(app), `zm-pb-${pluginHash}-${instanceId}.sock`);
+    return path.join(getTempPath(app), `desktop-pb-${pluginHash}-${instanceId}.sock`);
   }
 
-  return path.join(getTempPath(app), `zm-pb-${pluginHash}-${instanceId}.sock`);
+  return path.join(getTempPath(app), `desktop-pb-${pluginHash}-${instanceId}.sock`);
 }
 
 function sendEnvelope(client: BridgeClient, envelope: BridgeEnvelope) {

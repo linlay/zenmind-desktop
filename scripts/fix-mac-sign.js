@@ -235,7 +235,8 @@ exports.default = async function (context) {
 
   pruneUnusedElectronLocales(appPath);
 
-  if (process.env.ZENMIND_MAC_AD_HOC_SIGN !== "1") {
+  const legacyMacAdHocSignEnv = "ZENMIND_MAC_AD_HOC_SIGN";
+  if (process.env.DESKTOP_MAC_AD_HOC_SIGN !== "1" && process.env[legacyMacAdHocSignEnv] !== "1") {
     console.log("[fix-mac-sign] Skipping ad-hoc signing; electron-builder will handle macOS code signing.");
     return;
   }

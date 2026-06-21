@@ -1864,16 +1864,17 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
 
     const listed = await listMarketItems(app, { sections: ["skills"] });
     assert.equal(listed.items.find((item) => item.id === "saved-skill")?.name, "Saved Skill");
-    assert.equal(catalogHeaders[0]["x-zenmind-desktop-device-name-b64"], Buffer.from("市场工作站", "utf8").toString("base64url"));
-    assert.equal(typeof catalogHeaders[0]["x-zenmind-desktop-device-id"], "string");
-    assert.equal(typeof catalogHeaders[0]["x-zenmind-desktop-platform"], "string");
+    assert.equal(catalogHeaders[0]["x-desktop-device-name-b64"], Buffer.from("市场工作站", "utf8").toString("base64url"));
+    assert.equal(typeof catalogHeaders[0]["x-desktop-device-id"], "string");
+    assert.equal(typeof catalogHeaders[0]["x-desktop-platform"], "string");
+    assert.equal(catalogHeaders[0]["x-zenmind-desktop-device-name-b64"], catalogHeaders[0]["x-desktop-device-name-b64"]);
 
     const result = await installMarketItem(app, "saved-skill");
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "saved-skill"), "SKILL.md")), true);
     assert.equal(assetHeaders.length, 1);
-    assert.equal(assetHeaders[0]["x-zenmind-desktop-device-name-b64"], undefined);
-    assert.equal(assetHeaders[0]["x-zenmind-desktop-device-id"], undefined);
+    assert.equal(assetHeaders[0]["x-desktop-device-name-b64"], undefined);
+    assert.equal(assetHeaders[0]["x-desktop-device-id"], undefined);
   });
 });
 
@@ -1955,8 +1956,9 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
       requests.push({
         method: req.method,
         authorization: req.headers.authorization,
-        deviceId: req.headers["x-zenmind-desktop-device-id"],
-        deviceName: req.headers["x-zenmind-desktop-device-name-b64"]
+        deviceId: req.headers["x-desktop-device-id"],
+        deviceName: req.headers["x-desktop-device-name-b64"],
+        legacyDeviceId: req.headers["x-zenmind-desktop-device-id"]
       });
       favoriteItem.favorited = req.method === "POST";
       favoriteItem.favoriteCount = favoriteItem.favorited ? 1 : 0;
@@ -1997,6 +1999,7 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
     assert.equal(requests[1].deviceName, Buffer.from("Favorite Desktop", "utf8").toString("base64url"));
     assert.equal(typeof requests[0].deviceId, "string");
     assert.equal(typeof requests[1].deviceId, "string");
+    assert.equal(requests[0].legacyDeviceId, requests[0].deviceId);
     assert.deepEqual(issueCalls, ["missing", "missing"]);
   });
 });
@@ -2136,7 +2139,7 @@ echo {"id":"downloaded-skill","name":"Downloaded Skill","version":"1.2.3","descr
     : `#!/bin/sh
 set -eu
 case "$HOME" in
-  *skills-market/.downloads/zenmind-skill-download-*/home) ;;
+  *skills-market/.downloads/desktop-skill-download-*/home) ;;
   *) echo "unexpected HOME: $HOME" >&2; exit 42 ;;
 esac
 target="$HOME/.claude/skills/downloaded-skill"

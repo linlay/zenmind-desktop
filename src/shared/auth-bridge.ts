@@ -1,12 +1,21 @@
 export type PluginAuthBridgeProtocol = {
   requestType: string;
   responseType: string;
+  legacyRequestType?: string;
+  legacyResponseType?: string;
 };
+
+export const AGENT_APP_AUTH_REQUEST_TYPE = "desktop:agent-app-auth:request";
+export const AGENT_APP_AUTH_RESPONSE_TYPE = "desktop:agent-app-auth:response";
+export const LEGACY_AGENT_APP_AUTH_REQUEST_TYPE = "zenmind:agent-app-auth:request";
+export const LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE = "zenmind:agent-app-auth:response";
 
 const AUTH_BRIDGE_PROTOCOLS: Record<string, PluginAuthBridgeProtocol> = {
   "agent-webclient": {
-    requestType: "zenmind:agent-app-auth:request",
-    responseType: "zenmind:agent-app-auth:response"
+    requestType: AGENT_APP_AUTH_REQUEST_TYPE,
+    responseType: AGENT_APP_AUTH_RESPONSE_TYPE,
+    legacyRequestType: LEGACY_AGENT_APP_AUTH_REQUEST_TYPE,
+    legacyResponseType: LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE
   }
 };
 
@@ -17,6 +26,30 @@ export function getPluginAuthBridgeProtocol(
     return null;
   }
   return AUTH_BRIDGE_PROTOCOLS[serviceId] ?? null;
+}
+
+export function isPluginAuthBridgeRequestType(
+  protocol: PluginAuthBridgeProtocol | null | undefined,
+  type: string | undefined | null
+) {
+  return Boolean(type && protocol && (type === protocol.requestType || type === protocol.legacyRequestType));
+}
+
+export function isPluginAuthBridgeResponseType(
+  protocol: PluginAuthBridgeProtocol | null | undefined,
+  type: string | undefined | null
+) {
+  return Boolean(type && protocol && (type === protocol.responseType || type === protocol.legacyResponseType));
+}
+
+export function resolvePluginAuthBridgeResponseType(
+  protocol: PluginAuthBridgeProtocol,
+  requestType: string | undefined | null
+) {
+  if (requestType && requestType === protocol.legacyRequestType && protocol.legacyResponseType) {
+    return protocol.legacyResponseType;
+  }
+  return protocol.responseType;
 }
 
 type BuildPluginEmbeddedUrlOptions = {

@@ -166,7 +166,7 @@ export async function installWebsiteAppMarketItem(
   }
 
   const archivePath = await downloadAsset(app, item, selected.asset);
-  const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "zenmind-market-webapps", `${item.id}-${Date.now()}`);
+  const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "desktop-market-webapps", `${item.id}-${Date.now()}`);
   try {
     const entries = await listArchiveEntriesAsync(archivePath);
     assertSafeArchiveEntries(entries);

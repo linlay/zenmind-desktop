@@ -95,7 +95,8 @@ function expandHomeShortcut(value: string, homeDir: string) {
 }
 
 const PROVIDER_API_KEY_ENV_PART = "PROVIDER_APIKEY_KEY_PART";
-const PROVIDER_API_KEY_CODE_PART = "zenmind-provider";
+const PROVIDER_API_KEY_CODE_PART = `${APP_BRAND.storageNamespace}:provider`;
+const LEGACY_PROVIDER_API_KEY_CODE_PART = "zenmind-provider";
 const DEFAULT_PROVIDER_API_KEY_ENV_PART = "0.1.0";
 const AES_WRAPPED_PATTERN = /^AES\((.+)\)$/u;
 
@@ -191,25 +192,29 @@ function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string
     throw new Error(t("agentPlatform.providerApiKeyPayloadLengthInvalid", { providerKey }));
   }
 
-  try {
-    const key = crypto
-      .createHash("sha256")
-      .update(`${PROVIDER_API_KEY_CODE_PART}:${envPart.trim()}`)
-      .digest();
-    const nonce = payload.subarray(0, nonceSize);
-    const encrypted = payload.subarray(nonceSize);
-    const ciphertext = encrypted.subarray(0, encrypted.length - tagSize);
-    const tag = encrypted.subarray(encrypted.length - tagSize);
-    const decipher = crypto.createDecipheriv("aes-256-gcm", key, nonce);
-    decipher.setAuthTag(tag);
-    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8").trim();
-    if (!plaintext) {
-      throw new Error("empty plaintext");
+  const nonce = payload.subarray(0, nonceSize);
+  const encrypted = payload.subarray(nonceSize);
+  const ciphertext = encrypted.subarray(0, encrypted.length - tagSize);
+  const tag = encrypted.subarray(encrypted.length - tagSize);
+  for (const codePart of [PROVIDER_API_KEY_CODE_PART, LEGACY_PROVIDER_API_KEY_CODE_PART]) {
+    try {
+      const key = crypto
+        .createHash("sha256")
+        .update(`${codePart}:${envPart.trim()}`)
+        .digest();
+      const decipher = crypto.createDecipheriv("aes-256-gcm", key, nonce);
+      decipher.setAuthTag(tag);
+      const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8").trim();
+      if (!plaintext) {
+        throw new Error("empty plaintext");
+      }
+      return plaintext;
+    } catch {
+      // Try the legacy salt before reporting a bad provider key.
     }
-    return plaintext;
-  } catch {
-    throw new Error(t("agentPlatform.providerApiKeyDecryptFailed", { providerKey }));
   }
+
+  throw new Error(t("agentPlatform.providerApiKeyDecryptFailed", { providerKey }));
 }
 
 function looksLikePlaceholderProviderAPIKey(apiKey: string) {

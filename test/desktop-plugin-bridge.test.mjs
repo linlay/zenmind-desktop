@@ -271,8 +271,8 @@ test("plugin bridge path generation is platform explicit", () => {
     });
 
     assert.equal(path.dirname(darwinPath), path.join(root, "tmp"));
-    assert.match(path.basename(darwinPath), /^zm-pb-[a-f0-9]{12}-abc\.sock$/u);
-    assert.match(windowsPath, /^\\\\\.\\pipe\\ZenMind\.PluginBridge\.[a-f0-9]{12}\.abc$/u);
+    assert.match(path.basename(darwinPath), /^desktop-pb-[a-f0-9]{12}-abc\.sock$/u);
+    assert.match(windowsPath, /^\\\\\.\\pipe\\Desktop\.PluginBridge\.[a-f0-9]{12}\.abc$/u);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

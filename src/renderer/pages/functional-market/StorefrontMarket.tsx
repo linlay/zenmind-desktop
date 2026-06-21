@@ -18,6 +18,7 @@ import {
   UserOutlined
 } from "@ant-design/icons";
 import { Alert, Button, Card, Empty, Input, Modal, Select, Tag } from "antd";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
 import { getServiceDisplayName } from "../../service-display";
@@ -286,7 +287,7 @@ function itemAssetSize(item: MarketItem) {
 }
 
 function itemAuthor(item: MarketItem) {
-  return item.author || item.metadata?.author || "ZenMind";
+  return item.author || item.metadata?.author || PRODUCT_NAME;
 }
 
 function formatMarketDate(value: string | undefined, locale: string, fallback: string) {

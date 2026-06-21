@@ -3,11 +3,15 @@ import { syncBrandArtifacts, resolveRequiredBrandId, electronBuilderConfigPath }
 import { npmCmd, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 
 const MAC_SIGNING_CERTIFICATE_PREFIX = "Developer ID Application:";
+const LEGACY_DARWIN_CODESIGN_IDENTITY_ENV = "ZENMIND_DARWIN_CODESIGN_IDENTITY";
 const DARWIN_BUILTIN_SIGN_ENV_KEYS = [
-  "ZENMIND_DARWIN_CODESIGN_IDENTITY",
+  "DESKTOP_DARWIN_CODESIGN_IDENTITY",
+  LEGACY_DARWIN_CODESIGN_IDENTITY_ENV,
   "MACOS_CODESIGN_IDENTITY",
   "CSC_NAME"
 ];
+const SIGN_DARWIN_BUILTINS_ENV = "DESKTOP_SIGN_DARWIN_BUILTINS";
+const LEGACY_SIGN_DARWIN_BUILTINS_ENV = "ZENMIND_SIGN_DARWIN_BUILTINS";
 const NOTARIZE_ENV_KEYS = [
   "APPLE_ID",
   "APPLE_APP_SPECIFIC_PASSWORD",
@@ -58,7 +62,8 @@ function parseBooleanEnv(value, name) {
 
 function shouldSignDarwinBuiltinAssets() {
   const explicit =
-    parseBooleanEnv(process.env.ZENMIND_SIGN_DARWIN_BUILTINS, "ZENMIND_SIGN_DARWIN_BUILTINS") ??
+    parseBooleanEnv(process.env[SIGN_DARWIN_BUILTINS_ENV], SIGN_DARWIN_BUILTINS_ENV) ??
+    parseBooleanEnv(process.env[LEGACY_SIGN_DARWIN_BUILTINS_ENV], LEGACY_SIGN_DARWIN_BUILTINS_ENV) ??
     parseBooleanEnv(process.env.SIGN_MAC_BUILTINS, "SIGN_MAC_BUILTINS");
   if (explicit !== undefined) {
     return explicit;

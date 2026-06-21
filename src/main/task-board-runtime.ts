@@ -109,10 +109,19 @@ type TaskBoardAssistantSyncEvent = {
 const KANBAN_CONFIG_FILE = "kanban.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
 const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
-const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv("ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS", 5_000);
+const LEGACY_REMOTE_START_RUN_ACK_TIMEOUT_ENV = "ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS";
+const LEGACY_KANBAN_SERVER_URL_ENV = "ZENMIND_KANBAN_SERVER_URL";
+const LEGACY_KANBAN_REMOTE_CONTROL_ENABLED_ENV = "ZENMIND_KANBAN_REMOTE_CONTROL_ENABLED";
+const LEGACY_KANBAN_TOKEN_ENV = "ZENMIND_KANBAN_TOKEN";
+const LEGACY_KANBAN_PROJECT_ID_ENV = "ZENMIND_KANBAN_PROJECT_ID";
+const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv(
+  "DESKTOP_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS",
+  5_000,
+  LEGACY_REMOTE_START_RUN_ACK_TIMEOUT_ENV
+);
 
-function readPositiveIntegerEnv(name: string, fallback: number) {
-  const value = Number.parseInt(process.env[name] ?? "", 10);
+function readPositiveIntegerEnv(name: string, fallback: number, legacyName?: string) {
+  const value = Number.parseInt(process.env[name] ?? (legacyName ? process.env[legacyName] : "") ?? "", 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
@@ -266,17 +275,23 @@ export function readTaskBoardSettings(app: App): TaskBoardSettings {
 export function readTaskBoardWsConfig(app: App): KanbanDesktopWsConfig | null {
   const settings = readTaskBoardSettings(app);
   const config = settings.cloud;
-  const serverUrl = readText(process.env.ZENMIND_KANBAN_SERVER_URL) || readText(config.serverUrl);
-  const remoteControlEnabled = process.env.ZENMIND_KANBAN_REMOTE_CONTROL_ENABLED === "true" ||
+  const serverUrl = readText(process.env.DESKTOP_KANBAN_SERVER_URL) ||
+    readText(process.env[LEGACY_KANBAN_SERVER_URL_ENV]) ||
+    readText(config.serverUrl);
+  const remoteControlEnabled = process.env.DESKTOP_KANBAN_REMOTE_CONTROL_ENABLED === "true" ||
+    process.env[LEGACY_KANBAN_REMOTE_CONTROL_ENABLED_ENV] === "true" ||
     config.remoteControlEnabled;
-  const token = readText(process.env.ZENMIND_KANBAN_TOKEN) || readDesktopSsoSiteAccessToken(app);
+  const token = readText(process.env.DESKTOP_KANBAN_TOKEN) ||
+    readText(process.env[LEGACY_KANBAN_TOKEN_ENV]) ||
+    readDesktopSsoSiteAccessToken(app);
   if (!settings.enabled || !remoteControlEnabled || !serverUrl || !token) {
     return null;
   }
   return {
     serverUrl,
     token,
-    selectedProjectId: readText(process.env.ZENMIND_KANBAN_PROJECT_ID) ||
+    selectedProjectId: readText(process.env.DESKTOP_KANBAN_PROJECT_ID) ||
+      readText(process.env[LEGACY_KANBAN_PROJECT_ID_ENV]) ||
       readText(config.selectedProjectId) ||
       DEFAULT_SELECTED_PROJECT_ID
   };

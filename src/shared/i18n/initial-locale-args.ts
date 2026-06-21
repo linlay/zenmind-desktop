@@ -1,8 +1,10 @@
 import { normalizeLocale } from "./locales";
 import type { LocaleSettings } from "./types";
 
-const INITIAL_LOCALE_ARG_PREFIX = "--zenmind-initial-locale=";
-const INITIAL_LOCALE_SOURCE_ARG_PREFIX = "--zenmind-initial-locale-source=";
+const INITIAL_LOCALE_ARG_PREFIX = "--desktop-initial-locale=";
+const INITIAL_LOCALE_SOURCE_ARG_PREFIX = "--desktop-initial-locale-source=";
+const LEGACY_INITIAL_LOCALE_ARG_PREFIX = "--zenmind-initial-locale=";
+const LEGACY_INITIAL_LOCALE_SOURCE_ARG_PREFIX = "--zenmind-initial-locale-source=";
 const LOCALE_SOURCES: Array<LocaleSettings["source"]> = ["stored", "system", "default"];
 
 function readArgumentValue(argv: readonly string[], prefix: string) {
@@ -23,8 +25,14 @@ export function createInitialLocaleArguments(settings: LocaleSettings): string[]
 }
 
 export function readInitialLocaleSettingsFromArgv(argv: readonly string[]): LocaleSettings | null {
-  const locale = normalizeLocale(readArgumentValue(argv, INITIAL_LOCALE_ARG_PREFIX));
-  const source = normalizeLocaleSource(readArgumentValue(argv, INITIAL_LOCALE_SOURCE_ARG_PREFIX));
+  const locale = normalizeLocale(
+    readArgumentValue(argv, INITIAL_LOCALE_ARG_PREFIX) ??
+      readArgumentValue(argv, LEGACY_INITIAL_LOCALE_ARG_PREFIX)
+  );
+  const source = normalizeLocaleSource(
+    readArgumentValue(argv, INITIAL_LOCALE_SOURCE_ARG_PREFIX) ??
+      readArgumentValue(argv, LEGACY_INITIAL_LOCALE_SOURCE_ARG_PREFIX)
+  );
 
   if (!locale || !source) {
     return null;

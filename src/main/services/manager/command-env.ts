@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
+const LEGACY_DESKTOP_NODE_BIN_ENV = "ZENMIND_NODE_BIN";
+
 let shellPathEntriesCache: string[] | null = null;
 
 function listExistingDirs(paths: string[]) {
@@ -49,7 +51,7 @@ function getStaticServicePaths() {
     const localAppData = process.env.LOCALAPPDATA ?? "";
     const appData = process.env.APPDATA ?? "";
     const userProfile = process.env.USERPROFILE ?? "";
-    const configuredNodeBin = process.env.DESKTOP_NODE_BIN ?? process.env.ZENMIND_NODE_BIN;
+    const configuredNodeBin = process.env.DESKTOP_NODE_BIN ?? process.env[LEGACY_DESKTOP_NODE_BIN_ENV];
     const nodeBinDir = configuredNodeBin
       ? path.dirname(configuredNodeBin)
       : (process.execPath ? path.dirname(process.execPath) : null);
@@ -136,7 +138,7 @@ export function buildServiceEnv(): NodeJS.ProcessEnv {
 }
 
 export function resolveNodeBin() {
-  const explicit = (process.env.DESKTOP_NODE_BIN ?? process.env.ZENMIND_NODE_BIN)?.trim();
+  const explicit = (process.env.DESKTOP_NODE_BIN ?? process.env[LEGACY_DESKTOP_NODE_BIN_ENV])?.trim();
   if (explicit && fs.existsSync(explicit)) {
     return explicit;
   }

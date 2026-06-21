@@ -18,7 +18,7 @@ import type {
   DesktopSsoStartResult,
   DesktopSsoStatus
 } from "../shared/contracts";
-import { PRODUCT_NAME } from "../shared/brand";
+import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../shared/brand";
 import { getDesktopStateRoot, getSecretsRoot } from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { t } from "./i18n/main-i18n";
@@ -314,8 +314,8 @@ const DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT = "text/plain,application/json,*/*";
 const DEFAULT_ACCESS_TOKEN_COOKIE_NAME = "access_token";
 const DEFAULT_GOOGLE_SCOPE = "openid email profile";
 const DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG: DesktopSsoClaimsConfig = {
-  audience: "zenmind-desktop",
-  webSessionSubPrefix: "zenmind-user:",
+  audience: STORAGE_NAMESPACE,
+  webSessionSubPrefix: `${BRAND_ID}-user:`,
   ticketPlaceholderSub: "desktop-sso-ticket",
   cookieFallbackSub: "desktop-sso-cookie",
   browserFallbackSub: "desktop-sso-browser"

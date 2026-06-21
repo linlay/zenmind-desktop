@@ -14,6 +14,7 @@ const {
   createMainWindowLifecycleController
 } = await import("../dist-electron/main/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
+const { readInitialLocaleSettingsFromArgv } = await import("../dist-electron/shared/i18n/initial-locale-args.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -292,9 +293,19 @@ test("window manager includes initial locale arguments for renderer bootstrap", 
   });
 
   assert.deepEqual(options.webPreferences.additionalArguments, [
+    "--desktop-initial-locale=en-US",
+    "--desktop-initial-locale-source=stored"
+  ]);
+});
+
+test("initial locale bootstrap still accepts legacy zenmind arguments", () => {
+  assert.deepEqual(readInitialLocaleSettingsFromArgv([
     "--zenmind-initial-locale=en-US",
     "--zenmind-initial-locale-source=stored"
-  ]);
+  ]), {
+    locale: "en-US",
+    source: "stored"
+  });
 });
 
 test("window manager loads the main renderer from dev URL or production file", async () => {

@@ -1,3 +1,10 @@
+import {
+  AGENT_APP_AUTH_REQUEST_TYPE,
+  AGENT_APP_AUTH_RESPONSE_TYPE,
+  LEGACY_AGENT_APP_AUTH_REQUEST_TYPE,
+  LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE
+} from "./auth-bridge";
+
 export function buildAgentWebclientAccessTokenInjectionScript(
   token: string | null,
   desktopAuthContext: string,
@@ -7,9 +14,16 @@ export function buildAgentWebclientAccessTokenInjectionScript(
     const desktopAuthContext = ${JSON.stringify(desktopAuthContext)};
     const accessTokenStorageKey = "agent-webclient.appAccessToken";
     const authContextStorageKey = "agent-webclient.appAuthContext";
-    const bridgeFlag = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
-    const fallbackFlag = "__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__";
-    const fallbackTokenKey = "__ZENMIND_AGENT_WEBCLIENT_FALLBACK_TOKEN__";
+    const bridgeFlag = "__DESKTOP_WEBVIEW_BRIDGE__";
+    const legacyBridgeFlag = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
+    const fallbackFlag = "__DESKTOP_AGENT_WEBCLIENT_AUTH_FALLBACK__";
+    const legacyFallbackFlag = "__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__";
+    const fallbackTokenKey = "__DESKTOP_AGENT_WEBCLIENT_FALLBACK_TOKEN__";
+    const legacyFallbackTokenKey = "__ZENMIND_AGENT_WEBCLIENT_FALLBACK_TOKEN__";
+    const authRequestType = ${JSON.stringify(AGENT_APP_AUTH_REQUEST_TYPE)};
+    const authResponseType = ${JSON.stringify(AGENT_APP_AUTH_RESPONSE_TYPE)};
+    const legacyAuthRequestType = ${JSON.stringify(LEGACY_AGENT_APP_AUTH_REQUEST_TYPE)};
+    const legacyAuthResponseType = ${JSON.stringify(LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE)};
     let tokenBefore = "";
     try {
       tokenBefore = window.sessionStorage.getItem(accessTokenStorageKey) || "";
@@ -33,27 +47,33 @@ export function buildAgentWebclientAccessTokenInjectionScript(
       }
       window.__AGENT_APP_ACCESS_TOKEN = normalizedToken || undefined;
       window[fallbackTokenKey] = normalizedToken;
+      window[legacyFallbackTokenKey] = normalizedToken;
       return normalizedToken;
     }
 
-    function markBridgeAvailable() {
+    function defineWindowFlag(flag) {
       try {
-        Object.defineProperty(window, bridgeFlag, {
+        Object.defineProperty(window, flag, {
           configurable: true,
           enumerable: false,
           value: true,
           writable: false
         });
       } catch {
-        window[bridgeFlag] = true;
+        window[flag] = true;
       }
+    }
+
+    function markBridgeAvailable() {
+      defineWindowFlag(bridgeFlag);
+      defineWindowFlag(legacyBridgeFlag);
     }
 
     function isAuthRequest(value) {
       return Boolean(
         value &&
         typeof value === "object" &&
-        value.type === "zenmind:agent-app-auth:request" &&
+        (value.type === authRequestType || value.type === legacyAuthRequestType) &&
         value.requestId &&
         (value.action === "getAccessToken" || value.action === "refreshAccessToken")
       );
@@ -65,7 +85,7 @@ export function buildAgentWebclientAccessTokenInjectionScript(
       }
       window.dispatchEvent(new MessageEvent("message", {
         data: {
-          type: "zenmind:agent-app-auth:response",
+          type: value.type === legacyAuthRequestType ? legacyAuthResponseType : authResponseType,
           requestId: String(value.requestId),
           token: window[fallbackTokenKey] || null
         },
@@ -77,17 +97,9 @@ export function buildAgentWebclientAccessTokenInjectionScript(
 
     markBridgeAvailable();
     const normalizedToken = writeToken(token);
-    if (!window[fallbackFlag]) {
-      try {
-        Object.defineProperty(window, fallbackFlag, {
-          configurable: true,
-          enumerable: false,
-          value: true,
-          writable: false
-        });
-      } catch {
-        window[fallbackFlag] = true;
-      }
+    if (!window[fallbackFlag] && !window[legacyFallbackFlag]) {
+      defineWindowFlag(fallbackFlag);
+      defineWindowFlag(legacyFallbackFlag);
       window.addEventListener("message", (event) => {
         respondToAuthRequest(event.data);
       });

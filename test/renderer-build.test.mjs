@@ -150,6 +150,41 @@ test("source and tests do not contain internal endpoint or legacy icon literals"
   }
 });
 
+test("public source uses neutral desktop prefixes outside explicit ZenMind compatibility paths", () => {
+  const files = collectTextFiles(path.join(projectRoot, "src"))
+    .filter((filePath) => !path.relative(projectRoot, filePath).startsWith(path.join("src", "shared", "generated")));
+  const allowedCompatibilityFiles = new Set([
+    path.join("src", "main", "env-bootstrap.ts"),
+    path.join("src", "main", "services", "manager", "program-layout.ts"),
+    path.join("src", "main", "skill-installer.ts")
+  ]);
+  const legacyMarketHeadersPath = path.join("src", "main", "marketplace", "common.ts");
+  const allowedDomainPattern = /(?:^|[./])zenmind\.cc\b/u;
+  const violations = [];
+
+  for (const filePath of files) {
+    const relativePath = path.relative(projectRoot, filePath);
+    const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/u);
+    lines.forEach((line, index) => {
+      if (!/zenmi(?:nd)?/iu.test(line)) {
+        return;
+      }
+      const isLegacyMarketDeviceHeader =
+        relativePath === legacyMarketHeadersPath && /"X-ZenMind-Desktop-[A-Za-z0-9-]+"/u.test(line);
+      const isAllowed =
+        /LEGACY|legacy/u.test(line) ||
+        allowedDomainPattern.test(line) ||
+        isLegacyMarketDeviceHeader ||
+        allowedCompatibilityFiles.has(relativePath);
+      if (!isAllowed) {
+        violations.push(`${relativePath}:${index + 1}: ${line.trim()}`);
+      }
+    });
+  }
+
+  assert.deepEqual(violations, []);
+});
+
 test("renderer entry uses HashRouter for Electron routing", () => {
   const rendererEntry = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "main.tsx"),
@@ -3645,17 +3680,18 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
+  assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
   assert.match(serviceWebviewMainWorld, /resolveServiceWebviewWsMonitorUrl/);
-  assert.match(serviceWebviewMainWorld, /window\.WebSocket = ZenmindServiceWebviewWebSocket/);
+  assert.match(serviceWebviewMainWorld, /window\.WebSocket = DesktopServiceWebviewWebSocket/);
   assert.match(serviceWebviewMainWorld, /initialWsSource/);
   assert.match(serviceWebviewPreload, /sendBridgeDebug/);
   assert.match(serviceWebviewPreload, /preload-installed/);
   assert.match(serviceWebviewPreload, /auth-response-seeded/);
-  assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES/);
+  assert.match(serviceWebviewPreload, /isServiceWebviewBridgeRequestType/);
   assert.match(serviceWebviewPreload, /recentForwardedBridgeRequestKeys/);
   assert.match(serviceWebviewPreload, /function forwardDesktopBridgeRequest\(/);
   assert.match(serviceWebviewPreload, /const requestKey = `\$\{value\.type\}:\$\{value\.requestId\}`/);

@@ -9,6 +9,7 @@ import { getServicesRoot } from "./user-paths";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
 const LEGACY_IDENTITY_SERVICE_ID = ["zenmind", "app", "server"].join("-");
+const LEGACY_DESKTOP_BUILTIN_ASSETS_ROOT_ENV = "ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT";
 const LEGACY_BUILTIN_SERVICE_IDS = new Set<string>([
   LEGACY_IDENTITY_SERVICE_ID
 ]);
@@ -28,8 +29,8 @@ export function getBuiltinAssetsRoot(app: App) {
   if (process.env.DESKTOP_BUILTIN_ASSETS_ROOT) {
     return process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
   }
-  if (process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT) {
-    return process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  if (process.env[LEGACY_DESKTOP_BUILTIN_ASSETS_ROOT_ENV]) {
+    return process.env[LEGACY_DESKTOP_BUILTIN_ASSETS_ROOT_ENV];
   }
   return isPackaged(app)
     ? path.join(process.resourcesPath, "services")

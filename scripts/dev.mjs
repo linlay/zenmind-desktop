@@ -31,7 +31,6 @@ const nodeBin = process.execPath;
 const nodeDir = path.dirname(nodeBin);
 process.env.PATH = `${nodeDir}${path.delimiter}${process.env.PATH ?? ""}`;
 process.env.DESKTOP_NODE_BIN = nodeBin;
-process.env.ZENMIND_NODE_BIN = nodeBin;
 
 function waitForUrl(url, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;

@@ -69,7 +69,7 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 ### 内置资源目录
 - 开发环境默认从 `build/resources/services` 读取内置服务资源包。
 - 打包后默认从应用资源目录下的 `services` 读取。
-- 如需覆盖资源目录，可设置环境变量 `ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT`。
+- 如需覆盖资源目录，可设置环境变量 `DESKTOP_BUILTIN_ASSETS_ROOT`；旧变量 `ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT` 仍作为 legacy fallback 读取。
 - 每个内置资源包都必须在根目录包含 `manifest.json`，Desktop 会从中读取 `kind`、`scripts`、`runtime`、`web` 和 `desktop` 扩展字段。
 
 ### 前端访问模式
@@ -162,7 +162,7 @@ npm run dist:win-docker
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
 - `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.tar.gz` / `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。
-- 如设置 `ZENMIND_BUILTIN_ASSETS_SOURCE`，`sync:assets` 会优先从该目录扫描 `<service-id>/<archive-file>` 结构的预收集产物，再 fallback 到工作区自动发现。`../zenmind-dist` 就符合这个目录结构。
+- 如设置 `DESKTOP_BUILTIN_ASSETS_SOURCE`，`sync:assets` 会优先从该目录扫描 `<service-id>/<archive-file>` 结构的预收集产物，再 fallback 到工作区自动发现；旧变量 `ZENMIND_BUILTIN_ASSETS_SOURCE` 仍作为 legacy fallback 读取。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
 - 如需覆盖已有品牌运行环境（例如 `~/.zenmind` 或 `~/.cutej`），使用 env 包内的显式脚本 `env/scripts/overwrite-env.sh` 或 `env/scripts/overwrite-env.ps1`。Desktop 不会自动调用覆盖脚本，也不提供自动覆盖入口。

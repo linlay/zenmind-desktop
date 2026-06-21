@@ -9,6 +9,7 @@ import {
 } from "./quick-copilot";
 import {
   getQuickCopilotDismissHtml,
+  LEGACY_QUICK_COPILOT_DISMISS_URL,
   QUICK_COPILOT_DISMISS_URL
 } from "./dismiss-layer";
 
@@ -83,7 +84,7 @@ export class QuickCopilotWindowController {
     this.dismissWindow.setAlwaysOnTop(true, "floating");
     this.dismissWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     this.dismissWindow.webContents.on("will-navigate", (event, url) => {
-      if (!url.startsWith(QUICK_COPILOT_DISMISS_URL)) {
+      if (!url.startsWith(QUICK_COPILOT_DISMISS_URL) && !url.startsWith(LEGACY_QUICK_COPILOT_DISMISS_URL)) {
         return;
       }
       event.preventDefault();

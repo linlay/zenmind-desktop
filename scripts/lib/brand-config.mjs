@@ -7,6 +7,7 @@ export const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
 export const INSTALLER_SHUTDOWN_ARG = "--desktop-shutdown-for-update";
 export const LEGACY_INSTALLER_SHUTDOWN_ARGS = ["--zenmind-shutdown-for-update"];
 export const DESKTOP_PACKAGE_NAME = "desktop";
+const LEGACY_SKIP_MAC_TIMESTAMP_ENV = "ZENMIND_SKIP_MAC_TIMESTAMP";
 
 const PACKAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const BRAND_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
@@ -60,7 +61,8 @@ function parseBooleanEnv(value, name) {
 function shouldSkipMacTimestamp(env = process.env) {
   return (
     parseBooleanEnv(env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
-    parseBooleanEnv(env.ZENMIND_SKIP_MAC_TIMESTAMP, "ZENMIND_SKIP_MAC_TIMESTAMP") === true
+    parseBooleanEnv(env.DESKTOP_SKIP_MAC_TIMESTAMP, "DESKTOP_SKIP_MAC_TIMESTAMP") === true ||
+    parseBooleanEnv(env[LEGACY_SKIP_MAC_TIMESTAMP_ENV], LEGACY_SKIP_MAC_TIMESTAMP_ENV) === true
   );
 }
 

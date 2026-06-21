@@ -301,7 +301,7 @@ export async function installPetMarketItem(
     throw new Error(t("market.main.platformUnavailable"));
   }
   const archivePath = await downloadAsset(app, item, selected.asset);
-  const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "zenmind-market-pets", `${item.id}-${Date.now()}`);
+  const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "desktop-market-pets", `${item.id}-${Date.now()}`);
   const safePetDirName = normalizePetDirectoryName(item.id);
   if (!safePetDirName) {
     throw new Error(t("market.pet.invalidId"));

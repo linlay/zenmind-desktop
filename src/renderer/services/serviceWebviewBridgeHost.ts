@@ -1,4 +1,8 @@
-import type { PluginAuthBridgeProtocol } from "../../shared/auth-bridge";
+import {
+  isPluginAuthBridgeRequestType,
+  resolvePluginAuthBridgeResponseType,
+  type PluginAuthBridgeProtocol
+} from "../../shared/auth-bridge";
 import type { PluginSettingsValues } from "../../shared/contracts";
 import {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
@@ -16,6 +20,8 @@ import {
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
+  isServiceWebviewBridgeMessageType,
+  resolveServiceWebviewBridgeResponseType,
   type ServiceWebviewBridgeMessage
 } from "../../shared/service-webview-bridge";
 
@@ -57,7 +63,7 @@ export function handleServiceWebviewBridgeMessage(
     return false;
   }
 
-  if (payload.type === SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE)) {
     context.logDebug?.(String(payload.stage || ""), String(payload.message || ""));
     return true;
   }
@@ -65,14 +71,15 @@ export function handleServiceWebviewBridgeMessage(
   const bridgeProtocol = context.bridgeProtocol;
   if (
     bridgeProtocol &&
-    payload.type === bridgeProtocol.requestType &&
+    isPluginAuthBridgeRequestType(bridgeProtocol, payload.type) &&
     (payload.action === "getAccessToken" || payload.action === "refreshAccessToken")
   ) {
+    const responseType = resolvePluginAuthBridgeResponseType(bridgeProtocol, payload.type);
     void window.electronAPI.agentAuth
       .issueAccessToken(payload.reason === "unauthorized" ? "unauthorized" : "missing")
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: bridgeProtocol.responseType,
+          type: responseType,
           requestId: payload.requestId,
           token: result.ok ? result.token : null
         });
@@ -86,29 +93,31 @@ export function handleServiceWebviewBridgeMessage(
     return true;
   }
 
-  if (payload.type === AGENT_APP_CLIPBOARD_REQUEST_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, AGENT_APP_CLIPBOARD_REQUEST_TYPE)) {
+    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, AGENT_APP_CLIPBOARD_RESPONSE_TYPE);
     void window.electronAPI.clipboard
       .writeText(typeof payload.text === "string" ? payload.text : "")
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
+          type: responseType,
           requestId: payload.requestId,
           ok: result.ok,
           message: result.message ?? ""
         });
       })
       .catch((reason) => {
-        sendFailure(context, AGENT_APP_CLIPBOARD_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
       });
     return true;
   }
 
-  if (payload.type === DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE)) {
+    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE);
     void window.electronAPI.desktopDialog
       .selectDirectory()
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
+          type: responseType,
           requestId: payload.requestId,
           ok: result.ok,
           path: result.path ?? "",
@@ -116,17 +125,18 @@ export function handleServiceWebviewBridgeMessage(
         });
       })
       .catch((reason) => {
-        sendFailure(context, DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
       });
     return true;
   }
 
-  if (payload.type === DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE)) {
+    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE);
     void window.electronAPI.desktopShell
       .openPath(typeof payload.path === "string" ? payload.path : "")
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
+          type: responseType,
           requestId: payload.requestId,
           ok: result.ok,
           message: result.message ?? "",
@@ -134,12 +144,13 @@ export function handleServiceWebviewBridgeMessage(
         });
       })
       .catch((reason) => {
-        sendFailure(context, DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
       });
     return true;
   }
 
-  if (payload.type === DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE)) {
+    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE);
     void window.electronAPI.desktopDownloads
       .saveFile({
         filename: typeof payload.filename === "string" ? payload.filename : "",
@@ -148,7 +159,7 @@ export function handleServiceWebviewBridgeMessage(
       })
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
+          type: responseType,
           requestId: payload.requestId,
           ok: result.ok,
           message: result.message ?? "",
@@ -156,17 +167,18 @@ export function handleServiceWebviewBridgeMessage(
         });
       })
       .catch((reason) => {
-        sendFailure(context, DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
       });
     return true;
   }
 
-  if (payload.type === DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE)) {
+    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE);
     void window.electronAPI.desktopScreenshot
       .capture()
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
+          type: responseType,
           requestId: payload.requestId,
           ok: result.ok,
           message: result.message ?? "",
@@ -179,22 +191,23 @@ export function handleServiceWebviewBridgeMessage(
         });
       })
       .catch((reason) => {
-        sendFailure(context, DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
       });
     return true;
   }
 
-  if (payload.type === PLUGIN_SETTINGS_READ_REQUEST_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, PLUGIN_SETTINGS_READ_REQUEST_TYPE)) {
+    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, PLUGIN_SETTINGS_READ_RESPONSE_TYPE);
     const serviceId = context.serviceId?.trim() ?? "";
     if (!serviceId) {
-      sendFailure(context, PLUGIN_SETTINGS_READ_RESPONSE_TYPE, payload.requestId, "plugin settings service id is unavailable");
+      sendFailure(context, responseType, payload.requestId, "plugin settings service id is unavailable");
       return true;
     }
     void window.electronAPI.services
       .readPluginSettings(serviceId)
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
+          type: responseType,
           requestId: payload.requestId,
           ok: result.ok,
           values: result.values,
@@ -204,22 +217,23 @@ export function handleServiceWebviewBridgeMessage(
         });
       })
       .catch((reason) => {
-        sendFailure(context, PLUGIN_SETTINGS_READ_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
       });
     return true;
   }
 
-  if (payload.type === PLUGIN_SETTINGS_WRITE_REQUEST_TYPE) {
+  if (isServiceWebviewBridgeMessageType(payload.type, PLUGIN_SETTINGS_WRITE_REQUEST_TYPE)) {
+    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE);
     const serviceId = context.serviceId?.trim() ?? "";
     if (!serviceId) {
-      sendFailure(context, PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE, payload.requestId, "plugin settings service id is unavailable");
+      sendFailure(context, responseType, payload.requestId, "plugin settings service id is unavailable");
       return true;
     }
     void window.electronAPI.services
       .writePluginSettings(serviceId, (payload.values ?? {}) as PluginSettingsValues)
       .then((result) => {
         context.sendBridgeMessageToWebview({
-          type: PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
+          type: responseType,
           requestId: payload.requestId,
           ok: result.ok,
           message: result.message,
@@ -232,7 +246,7 @@ export function handleServiceWebviewBridgeMessage(
         });
       })
       .catch((reason) => {
-        sendFailure(context, PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
       });
     return true;
   }

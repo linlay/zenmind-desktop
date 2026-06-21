@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 export const CONTAINER_ENGINES = ["docker", "podman"] as const;
+const LEGACY_DESKTOP_CONTAINER_ENGINE_PATHS_ENV = "ZENMIND_CONTAINER_ENGINE_PATHS";
 
 export type ContainerEngineName = typeof CONTAINER_ENGINES[number];
 
@@ -78,7 +79,7 @@ export function buildContainerEngineEnv(options: ContainerEnginePathOptions = {}
   const currentPath = baseEnv.PATH ?? baseEnv.Path;
   const pathEntries = [
     ...splitPathList(baseEnv.DESKTOP_CONTAINER_ENGINE_PATHS),
-    ...splitPathList(baseEnv.ZENMIND_CONTAINER_ENGINE_PATHS),
+    ...splitPathList(baseEnv[LEGACY_DESKTOP_CONTAINER_ENGINE_PATHS_ENV]),
     ...splitPathList(currentPath),
     ...getDefaultContainerEnginePathEntries({ ...options, platform })
   ];
