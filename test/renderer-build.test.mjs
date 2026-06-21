@@ -830,7 +830,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /websGroupNavItemBase[\s\S]*?orderKey:\s*"group:webs"[\s\S]*?entryType:\s*"webs"/);
   assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
   assert.match(sidebarSource, /label:\s*t\("nav\.assistants"\)/);
-  assert.match(sidebarSource, /label:\s*t\("nav\.embeddedWebs"\)/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.websites"\)/);
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
   assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
   assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
@@ -966,7 +966,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(sidebarSource, /sidebar-tool-grid/);
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-launcher/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
-  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)[\s\S]*?label:\s*t\("nav\.schedules"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.embeddedWebs"\)/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)[\s\S]*?label:\s*t\("nav\.schedules"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.websites"\)/);
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
@@ -1012,7 +1012,6 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /listNavigationAgents/);
   assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /key:\s*"memory"[\s\S]*?routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/copilot\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
@@ -1312,7 +1311,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /group:\s*"personal"/);
   assert.match(settingsSections, /group:\s*"integrations"/);
   assert.match(settingsSections, /group:\s*"system"/);
-  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"/);
   assert.match(settingsSections, /id:\s*"usage"[\s\S]*?label:\s*"usage"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
@@ -1320,9 +1319,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"/);
   assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
-  assert.match(settingsSections, /id:\s*"embeddedWebs"[\s\S]*?label:\s*"embeddedWebs"[\s\S]*?layout:\s*"wide"/);
-  assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
-  assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"websites"[\s\S]*?label:\s*"websites"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsPage, /case "about"[\s\S]*?isWindows=\{isWindows\}/);
+  assert.match(settingsPage, /AboutAppCard[\s\S]*?isWindows && <WindowsDataRootCard/);
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?visible:\s*true[\s\S]*?id:\s*"debug"[\s\S]*?visible:\s*debugVisible/);
   assert.match(settingsSections, /usage:\s*\{\s*label:\s*"settings\.usage\.label",\s*description:\s*"settings\.usage\.description"\s*\}/);
   assert.match(settingsSections, /debug:\s*\{\s*label:\s*"settings\.debug\.label",\s*description:\s*"settings\.debug\.description"\s*\}/);
@@ -1392,7 +1391,6 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsStyles, /\.settings-appearance-panel/);
   assert.match(settingsStyles, /\.settings-theme-segment/);
   assert.match(settingsPage, /case "assistant"/);
-  assert.match(settingsPage, /case "memory"/);
   assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
   assert.match(settingsPage, /case "debug"[\s\S]*?<DebugSettingsPanel \/>/);
   assert.match(settingsPage, /const DEBUG_CATEGORY_IDS:\s*DebugCategoryId\[\]\s*=\s*\["device", "logs", "wsServer", "authTokens", "other"\]/);
@@ -1636,17 +1634,17 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /handleSidebarNavPointerDown/);
   assert.doesNotMatch(settingsPage, /document\.addEventListener\("pointermove"/);
   assert.doesNotMatch(settingsPage, /navigation-order-drag-handle/);
-  assert.match(settingsPageSections, /settings\.embeddedWebs\.label/);
-  assert.match(settingsPage, /settings\.embeddedWebs\.linkedAgentFor/);
+  assert.match(settingsPageSections, /settings\.websites\.label/);
+  assert.match(settingsPage, /settings\.websites\.linkedAgentFor/);
   assert.match(settingsPage, /handleUpdateWebsiteAgent/);
   assert.match(settingsPage, /editingWebsiteId/);
   assert.match(settingsPage, /handleStartEditWebsiteItem/);
   assert.match(settingsPage, /handleUpdateWebsiteItem/);
   assert.match(settingsPage, /label:\s*websiteLabel/);
   assert.match(settingsPage, /url:\s*websiteUrl/);
-  assert.match(settingsPage, /settings\.embeddedWebs\.edit/);
-  assert.match(settingsPage, /settings\.embeddedWebs\.save/);
-  assert.match(settingsPage, /settings\.embeddedWebs\.cancel/);
+  assert.match(settingsPage, /settings\.websites\.edit/);
+  assert.match(settingsPage, /settings\.websites\.save/);
+  assert.match(settingsPage, /settings\.websites\.cancel/);
   assert.match(settingsPage, /window\.electronAPI\.webs\.websites\.update/);
   assert.doesNotMatch(settingsPage, /自定义侧边栏/);
   assert.doesNotMatch(settingsPage, /添加到侧边栏/);
@@ -1709,24 +1707,6 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /moveSidebarNavOrderItem/);
 });
 
-test("settings page memory section routes visible text through i18n", () => {
-  const settingsPage = readSourceFile(
-    "src",
-    "renderer",
-    "pages",
-    "settings",
-    "SettingsPage.tsx"
-  );
-
-  assert.match(settingsPage, /t\("settings\.memory\.sectionDescription"\)/);
-  assert.match(settingsPage, /t\("settings\.memory\.recall"\)/);
-  assert.match(settingsPage, /t\("settings\.memory\.storage"\)/);
-  assert.doesNotMatch(
-    settingsPage,
-    /助手记忆|记忆召回|自动学习|最近记忆|本地存储|最近记录|暂无操作|已暂停引用|仅保留现有记忆/
-  );
-});
-
 test("settings page exposes cloud board control as a global section", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const settingsSections = readSourceFile("src", "renderer", "settingsPageSections.ts");
@@ -1782,16 +1762,6 @@ test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () =
   assert.match(tunnelRuntime, /startTunnelHubRuntimeIfEnabled/);
   assert.doesNotMatch(tunnelRuntime, new RegExp(`startService|restartService|${removedTunnelHubPatterns.source}`));
   assert.match(settingsPage, /case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
-});
-
-test("settings page hides assistant memory while the module is disabled", () => {
-  const settingsSections = readSourceFile(
-    "src",
-    "renderer",
-    "settingsPageSections.ts"
-  );
-
-  assert.match(settingsSections, /id:\s*"memory"[\s\S]*?visible:\s*false/);
 });
 
 test("settings page renderer text is routed through i18n", () => {
@@ -2039,7 +2009,6 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
 
   assert.match(resolver, /resolveDesktopCopilotPageKey/);
   assert.match(resolver, /"\/control-center"[\s\S]*?"controlCenter"/);
-  assert.match(resolver, /"\/memory"[\s\S]*?"memory"/);
   assert.match(appShell, /resolveDesktopCopilotPreference/);
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
   assert.match(appShell, /\[assistantDockOpenPath, setAssistantDockOpenPath\] = useState<string \| null>\(null\)/);
@@ -4972,16 +4941,16 @@ test("embedded websites use compact rows and inline edit", () => {
     "utf8"
   );
 
-  assert.match(settingsPage, /settings\.embeddedWebs\.addTitle/);
-  assert.match(settingsPage, /settings\.embeddedWebs\.addDescription/);
-  assert.match(settingsPage, /settings\.embeddedWebs\.addedDescription/);
+  assert.match(settingsPage, /settings\.websites\.addTitle/);
+  assert.match(settingsPage, /settings\.websites\.addDescription/);
+  assert.match(settingsPage, /settings\.websites\.addedDescription/);
   assert.match(settingsPage, /website-add-head/);
   assert.match(settingsPage, /website-row-edit-form/);
   assert.match(settingsPage, /!editingWebsiteId \?/);
   assert.match(settingsPage, /itemEditing \? \([\s\S]*?website-row-edit-form/);
   assert.doesNotMatch(settingsPage, /website-editing-note/);
-  assert.doesNotMatch(settingsPage, /settings\.embeddedWebs\.agentEnhancement/);
-  assert.match(settingsPage, /settings\.embeddedWebs\.linkedAgentFor/);
+  assert.doesNotMatch(settingsPage, /settings\.websites\.agentEnhancement/);
+  assert.match(settingsPage, /settings\.websites\.linkedAgentFor/);
   assert.match(settingsPageCss, /\.settings-page \.website-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(140px,\s*1fr\)\s+minmax\(180px,\s*240px\)\s+auto;/u);
   assert.match(settingsPageCss, /\.settings-page \.website-form input,[\s\S]*?\.settings-page \.website-row-edit-form input\s*\{[\s\S]*?border-radius:\s*8px;/u);
   assert.match(settingsPageCss, /\.settings-page \.website-row-edit-form input:focus\s*\{[\s\S]*?box-shadow:\s*var\(--control-focus-ring\);/u);

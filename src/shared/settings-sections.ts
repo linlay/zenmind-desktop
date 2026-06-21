@@ -8,9 +8,7 @@ export type SettingsSectionId =
   | "control"
   | "tunnelHub"
   | "navigation"
-  | "embeddedWebs"
-  | "dataRoot"
-  | "memory"
+  | "websites"
   | "about"
   | "debug";
 

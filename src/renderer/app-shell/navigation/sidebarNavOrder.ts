@@ -5,7 +5,6 @@ export type SidebarNavOrderItemKey =
   | "assistant"
   | "agents"
   | "schedules"
-  | "memory"
   | "market"
   | "help"
   | `service:${string}`
@@ -29,7 +28,7 @@ export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
   { key: "kanban", label: "nav.taskBoard" },
   { key: "schedules", label: "nav.schedules" },
   { key: "group:assistants", label: "nav.assistants" },
-  { key: "group:webs", label: "nav.embeddedWebs" },
+  { key: "group:webs", label: "nav.websites" },
 ];
 
 export function createServiceSidebarNavOrderKey(serviceId: string): SidebarNavOrderItemKey {

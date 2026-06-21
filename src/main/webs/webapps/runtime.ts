@@ -96,7 +96,7 @@ function readStoredState(app: App, webappId: string): WebappRuntimeState | null 
   }
 }
 
-function createStoppedState(item: WebappEntry, message = t("service.currentlyNotRunning", { name: t("settings.embeddedWebs.label") })): WebappRuntimeState {
+function createStoppedState(item: WebappEntry, message = t("service.currentlyNotRunning", { name: t("settings.websites.label") })): WebappRuntimeState {
   return {
     id: item.id,
     entryKey: item.entryKey,
@@ -575,7 +575,7 @@ export class WebappRuntime {
     }
   }
 
-  async stop(app: App, webappId: string, message = t("service.stopped", { name: t("settings.embeddedWebs.label") })): Promise<WebappCommandResult> {
+  async stop(app: App, webappId: string, message = t("service.stopped", { name: t("settings.websites.label") })): Promise<WebappCommandResult> {
     const id = webappId.trim();
     const item = findWebapp(app, id);
     const record = this.records.get(id);

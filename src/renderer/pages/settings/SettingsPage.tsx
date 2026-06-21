@@ -6,11 +6,6 @@ import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import "./SettingsPage.css";
 import type {
-  AssistantMemoryItem,
-  AssistantMemorySettings,
-  AssistantMemorySummary,
-  AssistantMemoryStorage,
-  AssistantMemoryStats,
   AssistantNavAgentItem,
   AssistantSettingsPublic,
   WebsiteEntry,
@@ -112,6 +107,7 @@ type SettingsNotice = {
 type SectionReadErrorMap = Partial<Record<SettingsSectionId, string>>;
 
 type AboutAppCardProps = {
+  isWindows: boolean;
   runtimeResetPending: boolean;
   runtimeResetResult: DesktopRuntimeEnvResetResult | null;
   onResetRuntimeEnv: () => void | Promise<void>;
@@ -394,7 +390,7 @@ const SETTINGS_ACTION_PATCH_FIELDS = [
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "navigation",
   "assistant",
-  "embeddedWebs"
+  "websites"
 ];
 
 const defaultTaskBoardCloudConfig: TaskBoardCloudConfig = {
@@ -538,8 +534,6 @@ function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: Translate
       return t("nav.agents");
     case "schedules":
       return t("nav.schedules");
-    case "memory":
-      return t("nav.memory");
     default:
       return pageKey;
   }
@@ -585,30 +579,11 @@ const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
 
 const fixedNavigationTools = fixedNavigationToolRows.flat();
 
-function formatMemoryTime(value: string | null | undefined, locale: SupportedLocale, t: TranslateFunction) {
-  if (!value) {
-    return t("common.none");
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return t("common.none");
-  }
-  return new Intl.DateTimeFormat(locale, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
 function formatMemoryStatus(value: AssistantMemoryItem["status"], t: TranslateFunction) {
   switch (value) {
     case "active":
-      return t("settings.memory.statusActive");
     case "open":
-      return t("settings.memory.statusOpen");
     case "archived":
-      return t("settings.memory.statusArchived");
     default:
       return value;
   }
@@ -620,13 +595,6 @@ function formatMemoryPreview(summary: string, maxLength = 88) {
     return normalized;
   }
   return `${normalized.slice(0, maxLength)}...`;
-}
-
-function formatMemoryAuditSummary(summary: AssistantMemorySummary["recentAudit"], t: TranslateFunction) {
-  if (!summary) {
-    return t("settings.memory.noActivity");
-  }
-  return [summary.operation, summary.status, summary.reason].filter(Boolean).join(" / ");
 }
 
 function getDesktopPetAppearanceLabel(appearanceId: string, fallback: string, t: TranslateFunction) {
@@ -2109,6 +2077,7 @@ function LocalWsServerDebugCard() {
 }
 
 function AboutAppCard({
+  isWindows,
   runtimeResetPending,
   runtimeResetResult,
   onResetRuntimeEnv
@@ -2251,6 +2220,7 @@ function AboutAppCard({
           </Button>
         </div>
       </div>
+      {isWindows && <WindowsDataRootCard />}
     </div>
   );
 }
@@ -2293,12 +2263,6 @@ export function SettingsPage({
   const [websiteTransferPending, setWebsiteTransferPending] = useState("");
   const [websiteAgentPendingId, setWebsiteAgentPendingId] = useState("");
   const [deletingWebsiteId, setDeletingWebsiteId] = useState("");
-  const [memorySettings, setMemorySettings] = useState<AssistantMemorySettings | null>(null);
-  const [memoryStats, setMemoryStats] = useState<AssistantMemoryStats | null>(null);
-  const [memoryStorage, setMemoryStorage] = useState<AssistantMemoryStorage | null>(null);
-  const [memoryRecentAudit, setMemoryRecentAudit] = useState<AssistantMemorySummary["recentAudit"]>(null);
-  const [memoryItems, setMemoryItems] = useState<AssistantMemoryItem[]>([]);
-  const [memoryPending, setMemoryPending] = useState("");
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantAgentOptions, setAssistantAgentOptions] = useState<DesktopPetAgentOption[]>([]);
   const [desktopHelperAgentKey, setDesktopHelperAgentKey] = useState(DEFAULT_DESKTOP_HELPER_AGENT_KEY);
@@ -2331,7 +2295,6 @@ export function SettingsPage({
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
-  const memoryDataLoadedRef = useRef(false);
   const assistantSettingsLoadedRef = useRef(false);
   const desktopPetStateLoadedRef = useRef(false);
   const sectionDefinitions = useMemo(
@@ -2350,7 +2313,6 @@ export function SettingsPage({
     `/settings/${sectionIdParam ?? ""}`,
     visibleSectionIds
   );
-  const shouldReadMemoryData = activeSection === "memory";
   const shouldReadUsageProfile = activeSection === "usage";
   const shouldReadGeneralSettings = activeSection === "general";
   const shouldReadControlData = activeSection === "kanban";
@@ -2613,39 +2575,6 @@ export function SettingsPage({
     };
   }, [shouldReadTunnelHubData]);
 
-  useEffect(() => {
-    if (!shouldReadMemoryData || memoryDataLoadedRef.current) {
-      return;
-    }
-    memoryDataLoadedRef.current = true;
-    let cancelled = false;
-    Promise.all([
-      window.electronAPI.assistant.getMemorySummary(),
-      window.electronAPI.assistant.listMemoryItems()
-    ])
-      .then(([summary, memoryList]) => {
-        if (cancelled) {
-          memoryDataLoadedRef.current = false;
-          return;
-        }
-        setMemorySettings(summary.settings);
-        setMemoryStats(summary.stats);
-        setMemoryStorage(summary.storage);
-        setMemoryRecentAudit(summary.recentAudit ?? null);
-        setMemoryItems(memoryList.items);
-        setReadErrorSections(["memory"], "");
-      })
-      .catch((reason) => {
-        memoryDataLoadedRef.current = false;
-        if (!cancelled) {
-          setReadErrorSections(["memory"], reason instanceof Error ? reason.message : String(reason));
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [shouldReadMemoryData]);
 
   useEffect(() => {
     if (!shouldReadAssistantSettings || assistantSettingsLoadedRef.current) {
@@ -2789,10 +2718,6 @@ export function SettingsPage({
           valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === quickAssistantAgentKey))
         },
         desktopCopilotPages,
-        memory: {
-          enabled: memorySettings?.enabled ?? null,
-          autoLearn: memorySettings?.autoLearn ?? null
-        }
       },
       options: {
         assistantAgents: assistantAgentOptions.map((agent) => ({
@@ -3244,26 +3169,10 @@ export function SettingsPage({
     desktopCopilotPages,
     quickAssistantAgentKey,
     quickAssistantEnabled,
-    memorySettings?.autoLearn,
-    memorySettings?.enabled,
     t
   ]);
 
-  async function refreshMemoryItems() {
-    const [summary, memoryList] = await Promise.all([
-      window.electronAPI.assistant.getMemorySummary(),
-      window.electronAPI.assistant.listMemoryItems()
-    ]);
-    setMemorySettings(summary.settings);
-    setMemoryStats(summary.stats);
-    setMemoryStorage(summary.storage);
-    setMemoryRecentAudit(summary.recentAudit ?? null);
-    setMemoryItems(memoryList.items);
-    setReadErrorSections(["memory"], "");
-    return summary;
-  }
-
-  async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
+async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const previousSettings = generalSettings;
     const nextSettings = {
@@ -3367,14 +3276,14 @@ export function SettingsPage({
         label: websiteLabel,
         url: websiteUrl
       });
-      showSectionResultNotice("embeddedWebs", result);
+      showSectionResultNotice("websites", result);
       onWebsiteItemsChange(result.items);
       if (result.ok) {
         setWebsiteLabel("");
         setWebsiteUrl("");
       }
     } catch (reason) {
-      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setWebsitePending(false);
     }
@@ -3390,7 +3299,7 @@ export function SettingsPage({
     setEditingWebsiteId(item.id);
     setWebsiteLabel(item.label);
     setWebsiteUrl(item.url);
-    setNotice((current) => current?.sectionId === "embeddedWebs" ? null : current);
+    setNotice((current) => current?.sectionId === "websites" ? null : current);
   }
 
   function handleCancelEditWebsiteItem() {
@@ -3404,13 +3313,13 @@ export function SettingsPage({
         label: websiteLabel,
         url: websiteUrl
       });
-      showSectionResultNotice("embeddedWebs", result);
+      showSectionResultNotice("websites", result);
       onWebsiteItemsChange(result.items);
       if (result.ok) {
         resetWebsiteForm();
       }
     } catch (reason) {
-      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setWebsitePending(false);
     }
@@ -3420,13 +3329,13 @@ export function SettingsPage({
     setDeletingWebsiteId(item.id);
     try {
       const result = await window.electronAPI.webs.websites.remove(item.id);
-      showSectionResultNotice("embeddedWebs", result);
+      showSectionResultNotice("websites", result);
       onWebsiteItemsChange(result.items);
       if (editingWebsiteId === item.id) {
         resetWebsiteForm();
       }
     } catch (reason) {
-      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDeletingWebsiteId("");
     }
@@ -3436,10 +3345,10 @@ export function SettingsPage({
     setWebsiteAgentPendingId(itemId);
     try {
       const result = await window.electronAPI.webs.websites.update(itemId, { agentKey });
-      showSectionResultNotice("embeddedWebs", result);
+      showSectionResultNotice("websites", result);
       onWebsiteItemsChange(result.items);
     } catch (reason) {
-      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setWebsiteAgentPendingId("");
     }
@@ -3449,11 +3358,11 @@ export function SettingsPage({
     setWebsiteTransferPending("import");
     try {
       const result = await window.electronAPI.webs.websites.import();
-      showSectionResultNotice("embeddedWebs", result);
+      showSectionResultNotice("websites", result);
       onWebsiteItemsChange(result.items);
       resetWebsiteForm();
     } catch (reason) {
-      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setWebsiteTransferPending("");
     }
@@ -3464,38 +3373,19 @@ export function SettingsPage({
     try {
       const result = await window.electronAPI.webs.websites.export();
       showSectionNotice(
-        "embeddedWebs",
+        "websites",
         result.path ? `${result.message} ${result.path}` : result.message,
         result.ok ? "success" : "error"
       );
       onWebsiteItemsChange(result.items);
     } catch (reason) {
-      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setWebsiteTransferPending("");
     }
   }
 
-  async function handleToggleMemoryEnabled() {
-    if (!memorySettings) {
-      return;
-    }
-    setMemoryPending("settings");
-    try {
-      const nextSettings = await window.electronAPI.assistant.saveMemorySettings({
-        ...memorySettings,
-        enabled: !memorySettings.enabled
-      });
-      await refreshMemoryItems();
-      showSectionNotice("memory", nextSettings.enabled ? t("settings.memory.noticeEnabled") : t("settings.memory.noticeDisabled"), "success");
-    } catch (reason) {
-      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setMemoryPending("");
-    }
-  }
-
-  async function handleToggleMemoryAutoLearn() {
+async function handleToggleMemoryAutoLearn() {
     if (!memorySettings) {
       return;
     }
@@ -3506,45 +3396,22 @@ export function SettingsPage({
         autoLearn: !memorySettings.autoLearn
       });
       await refreshMemoryItems();
-      showSectionNotice("memory", nextSettings.autoLearn ? t("settings.memory.noticeAutoLearnEnabled") : t("settings.memory.noticeAutoLearnDisabled"), "success");
     } catch (reason) {
-      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setMemoryPending("");
     }
   }
 
-  async function handleClearMemoryItems() {
-    setMemoryPending("clear");
-    try {
-      const result = await window.electronAPI.assistant.clearMemoryItems();
-      showSectionResultNotice("memory", result);
-      await refreshMemoryItems();
-    } catch (reason) {
-      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setMemoryPending("");
-    }
-  }
-
-  async function handleOpenMemoryDirectory() {
+async function handleOpenMemoryDirectory() {
     setMemoryPending("open");
     try {
       const result = await window.electronAPI.assistant.openMemoryDirectory();
-      showSectionResultNotice("memory", result);
     } catch (reason) {
-      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setMemoryPending("");
     }
   }
 
-  const recentMemoryItems = memoryItems.slice(0, 3);
-  const memoryTotal = memoryStats?.total ?? 0;
-  const memoryFactCount = memoryStats?.factCount ?? 0;
-  const memoryObservationCount = memoryStats?.observationCount ?? 0;
-  const memoryRecallLabel = memorySettings?.enabled ? t("settings.memory.recallEnabled") : t("settings.memory.recallDisabled");
-  const memoryAutoLearnLabel = memorySettings?.autoLearn ? t("settings.memory.autoLearnEnabled") : t("settings.memory.autoLearnDisabled");
 
   async function handleToggleDesktopPet() {
     const nextEnabled = !desktopPetState?.enabled;
@@ -4626,40 +4493,40 @@ export function SettingsPage({
           );
       }
 
-      case "embeddedWebs":
+      case "websites":
         return (
           <div className="settings-item-card website-card">
             {!editingWebsiteId ? (
               <>
                 <div className="settings-item-section-head website-list-head website-add-head">
                   <div>
-                    <strong>{t("settings.embeddedWebs.addTitle")}</strong>
-                    <span>{t("settings.embeddedWebs.addDescription")}</span>
+                    <strong>{t("settings.websites.addTitle")}</strong>
+                    <span>{t("settings.websites.addDescription")}</span>
                   </div>
                 </div>
                 <div className="settings-item-form website-add-form">
                   <form className="website-form" onSubmit={(event) => void handleAddWebsiteItem(event)}>
                     <label>
-                      <span>{t("settings.embeddedWebs.displayName")}</span>
+                      <span>{t("settings.websites.displayName")}</span>
                       <Input
                         value={websiteLabel}
                         onChange={(event) => setWebsiteLabel(event.target.value)}
-                        placeholder={t("settings.embeddedWebs.displayNamePlaceholder")}
+                        placeholder={t("settings.websites.displayNamePlaceholder")}
                         maxLength={24}
                       />
                     </label>
                     <label>
-                      <span>{t("settings.embeddedWebs.url")}</span>
+                      <span>{t("settings.websites.url")}</span>
                       <Input
                         value={websiteUrl}
                         onChange={(event) => setWebsiteUrl(event.target.value)}
-                        placeholder={t("settings.embeddedWebs.urlPlaceholder")}
+                        placeholder={t("settings.websites.urlPlaceholder")}
                         required
                       />
                     </label>
                     <div className="website-submit-wrap">
                       <Button type="link" htmlType="submit" className="website-submit" disabled={websitePending} loading={websitePending}>
-                        {websitePending ? t("settings.embeddedWebs.adding") : t("settings.embeddedWebs.add")}
+                        {websitePending ? t("settings.websites.adding") : t("settings.websites.add")}
                       </Button>
                     </div>
                   </form>
@@ -4669,8 +4536,8 @@ export function SettingsPage({
 
             <div className="settings-item-section-head website-list-head website-added-head">
               <div>
-                <strong>{t("settings.embeddedWebs.addedTitle")}</strong>
-                <span>{t("settings.embeddedWebs.addedDescription")}</span>
+                <strong>{t("settings.websites.addedTitle")}</strong>
+                <span>{t("settings.websites.addedDescription")}</span>
               </div>
               <div className="settings-item-section-actions">
                 <Button
@@ -4678,21 +4545,21 @@ export function SettingsPage({
                   onClick={() => void handleImportWebsiteItems()}
                   disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
                 >
-                  {websiteTransferPending === "import" ? t("settings.embeddedWebs.importing") : t("settings.embeddedWebs.import")}
+                  {websiteTransferPending === "import" ? t("settings.websites.importing") : t("settings.websites.import")}
                 </Button>
                 <Button
                   type="link"
                   onClick={() => void handleExportWebsiteItems()}
                   disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
                 >
-                  {websiteTransferPending === "export" ? t("settings.embeddedWebs.exporting") : t("settings.embeddedWebs.export")}
+                  {websiteTransferPending === "export" ? t("settings.websites.exporting") : t("settings.websites.export")}
                 </Button>
               </div>
             </div>
             {websiteItems.length === 0 ? (
-              <div className="settings-item-empty website-empty">{t("settings.embeddedWebs.empty")}</div>
+              <div className="settings-item-empty website-empty">{t("settings.websites.empty")}</div>
             ) : (
-              <div className="settings-item-list website-list" role="list" aria-label={t("settings.embeddedWebs.addedTitle")}>
+              <div className="settings-item-list website-list" role="list" aria-label={t("settings.websites.addedTitle")}>
                 {websiteItems.map((item) => {
                   const itemAgentKey = item.agentKey || "";
                   const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
@@ -4713,34 +4580,34 @@ export function SettingsPage({
                           }}
                         >
                           <label>
-                            <span>{t("settings.embeddedWebs.displayName")}</span>
+                            <span>{t("settings.websites.displayName")}</span>
                             <Input
                               value={websiteLabel}
                               onChange={(event) => setWebsiteLabel(event.target.value)}
-                              placeholder={t("settings.embeddedWebs.displayNamePlaceholder")}
+                              placeholder={t("settings.websites.displayNamePlaceholder")}
                               maxLength={24}
                               required
                             />
                           </label>
                           <label>
-                            <span>{t("settings.embeddedWebs.url")}</span>
+                            <span>{t("settings.websites.url")}</span>
                             <Input
                               value={websiteUrl}
                               onChange={(event) => setWebsiteUrl(event.target.value)}
-                              placeholder={t("settings.embeddedWebs.urlPlaceholder")}
+                              placeholder={t("settings.websites.urlPlaceholder")}
                               required
                             />
                           </label>
                           <div className="website-row-actions">
                             <Button type="link" htmlType="submit" disabled={websitePending} loading={websitePending}>
-                              {websitePending ? t("settings.embeddedWebs.updating") : t("settings.embeddedWebs.save")}
+                              {websitePending ? t("settings.websites.updating") : t("settings.websites.save")}
                             </Button>
                             <Button
                               type="link"
                               onClick={handleCancelEditWebsiteItem}
                               disabled={websitePending}
                             >
-                              {t("settings.embeddedWebs.cancel")}
+                              {t("settings.websites.cancel")}
                             </Button>
                           </div>
                         </form>
@@ -4759,7 +4626,7 @@ export function SettingsPage({
                                 value={itemAgentKey}
                                 onChange={(value) => void handleUpdateWebsiteAgent(item.id, value)}
                                 disabled={assistantAgentOptions.length === 0 || itemAgentPending || Boolean(editingWebsiteId)}
-                                aria-label={t("settings.embeddedWebs.linkedAgentFor", { label: item.label })}
+                                aria-label={t("settings.websites.linkedAgentFor", { label: item.label })}
                                 options={[
                                   { value: "", label: t("settings.defaultAssistant") },
                                   ...(itemAgentKey && !itemAgentKnown ? [{
@@ -4780,7 +4647,7 @@ export function SettingsPage({
                               onClick={() => handleStartEditWebsiteItem(item)}
                               disabled={websitePending || deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
                             >
-                              {t("settings.embeddedWebs.edit")}
+                              {t("settings.websites.edit")}
                             </Button>
                             <Button
                               type="link"
@@ -4788,7 +4655,7 @@ export function SettingsPage({
                               onClick={() => void handleDeleteWebsiteItem(item)}
                               disabled={deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
                             >
-                              {deletingWebsiteId === item.id ? t("settings.embeddedWebs.deleting") : t("settings.embeddedWebs.delete")}
+                              {deletingWebsiteId === item.id ? t("settings.websites.deleting") : t("settings.websites.delete")}
                             </Button>
                           </div>
                         </>
@@ -4800,150 +4667,10 @@ export function SettingsPage({
             )}
           </div>
         );
-      case "dataRoot":
-        return isWindows ? <WindowsDataRootCard /> : null;
-      case "memory":
-        return (
-          <div className="data-root-card assistant-memory-card">
-            <div className="website-copy assistant-memory-copy">
-              <h2>{t("settings.memory.label")}</h2>
-              <p className="page-copy">
-                {t("settings.memory.sectionDescription")}
-              </p>
-              <div className="assistant-memory-stats" aria-label={t("settings.memory.statsLabel")}>
-                <div>
-                  <strong>{memoryTotal}</strong>
-                  <span>{t("settings.memory.statsTotal")}</span>
-                </div>
-                <div>
-                  <strong>{memoryFactCount}</strong>
-                  <span>{t("settings.memory.statsStable")}</span>
-                </div>
-                <div>
-                  <strong>{memoryObservationCount}</strong>
-                  <span>{t("settings.memory.statsObservation")}</span>
-                </div>
-              </div>
-              <div className="assistant-memory-timeline" aria-label={t("settings.memory.timelineLabel")}>
-                <span>{t("settings.memory.learnedAt", { time: formatMemoryTime(memoryStats?.lastLearnedAt, locale, t) })}</span>
-                <span>{t("settings.memory.referencedAt", { time: formatMemoryTime(memoryStats?.lastReferencedAt, locale, t) })}</span>
-              </div>
-              <p className="assistant-memory-audit">
-                {t("settings.memory.recentRecord", { summary: formatMemoryAuditSummary(memoryRecentAudit, t) })}
-              </p>
-            </div>
-            <div className="assistant-memory-panel">
-              <div className="settings-item-card assistant-memory-settings-card">
-                <div className="settings-item-list assistant-memory-switches">
-                  <div className="settings-item-row assistant-memory-switch-row">
-                    <span className="assistant-memory-switch-copy">
-                      <span>{t("settings.memory.recall")}</span>
-                      <small>{memoryRecallLabel}</small>
-                    </span>
-                    <Switch
-                      checked={Boolean(memorySettings?.enabled)}
-                      aria-label={t("settings.memory.recall")}
-                      disabled={!memorySettings || memoryPending === "settings"}
-                      onChange={() => void handleToggleMemoryEnabled()}
-                    />
-                  </div>
-                  <div className="settings-item-row assistant-memory-switch-row">
-                    <span className="assistant-memory-switch-copy">
-                      <span>{t("settings.memory.autoLearn")}</span>
-                      <small>{memoryAutoLearnLabel}</small>
-                    </span>
-                    <Switch
-                      checked={Boolean(memorySettings?.autoLearn)}
-                      aria-label={t("settings.memory.autoLearn")}
-                      disabled={!memorySettings || memoryPending === "settings"}
-                      onChange={() => void handleToggleMemoryAutoLearn()}
-                    />
-                  </div>
-                </div>
-                <div className="settings-item-section-head website-list-head assistant-memory-section-head">
-                  <div>
-                    <strong>{t("settings.memory.recent")}</strong>
-                    <span>
-                      {memoryItems.length > 0
-                        ? t("settings.memory.recentCount", { shown: recentMemoryItems.length, total: memoryItems.length })
-                        : t("common.none")}
-                    </span>
-                  </div>
-                </div>
-                {recentMemoryItems.length > 0 ? (
-                  <div className="settings-item-list assistant-memory-list">
-                    {recentMemoryItems.map((item) => (
-                      <div className="settings-item-row assistant-memory-row" key={item.id}>
-                        <div className="assistant-memory-row-main">
-                          <div className="assistant-memory-row-title">
-                            <strong>{item.title}</strong>
-                            <span>{item.category} / {formatMemoryStatus(item.status, t)}</span>
-                          </div>
-                          <p>{formatMemoryPreview(item.summary, 64)}</p>
-                        </div>
-                        <time dateTime={item.updatedAt}>{formatMemoryTime(item.updatedAt, locale, t)}</time>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="settings-item-empty">{t("settings.memory.recentEmpty")}</div>
-                )}
-                <div className="settings-item-form assistant-memory-storage-card">
-                <div className="assistant-memory-storage-header">
-                  <div>
-                    <strong>{t("settings.memory.storage")}</strong>
-                    <span>{t("settings.memory.storageDescription")}</span>
-                  </div>
-                  <span className="assistant-memory-storage-actions">
-                    <Button
-                      type="link"
-                      onClick={() => void handleOpenMemoryDirectory()}
-                      disabled={memoryPending === "open"}
-                    >
-                      {memoryPending === "open" ? t("settings.memory.openingDirectory") : t("settings.memory.openDirectory")}
-                    </Button>
-                    <Button
-                      type="link"
-                      danger
-                      onClick={() => void handleClearMemoryItems()}
-                      disabled={memoryTotal === 0 || memoryPending === "clear"}
-                    >
-                      {memoryPending === "clear" ? t("settings.memory.clearing") : t("common.clear")}
-                    </Button>
-                  </span>
-                </div>
-                <details className="assistant-memory-storage-details">
-                  <summary>
-                    <span>{t("settings.memory.viewLocalPaths")}</span>
-                    <span className="assistant-memory-storage-caret" aria-hidden="true" />
-                  </summary>
-                  <div className="assistant-memory-storage">
-                    <div>
-                      <span>{t("settings.memory.directoryPath")}</span>
-                      <code>{memoryStorage?.directoryPath ?? t("settings.memory.loadingValue")}</code>
-                    </div>
-                    <div>
-                      <span>{t("settings.memory.recordsPath")}</span>
-                      <code>{memoryStorage?.recordsPath ?? t("settings.memory.loadingValue")}</code>
-                    </div>
-                    <div>
-                      <span>{t("settings.memory.staticPath")}</span>
-                      <code>{memoryStorage?.staticPath ?? t("settings.memory.loadingValue")}</code>
-                    </div>
-                    <div>
-                      <span>{t("settings.memory.auditPath")}</span>
-                      <code>{memoryStorage?.auditPath ?? t("settings.memory.loadingValue")}</code>
-                    </div>
-                  </div>
-                </details>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
       case "about":
         return (
           <AboutAppCard
+            isWindows={isWindows}
             runtimeResetPending={runtimeResetPending}
             runtimeResetResult={runtimeResetResult}
             onResetRuntimeEnv={handleResetRuntimeEnv}

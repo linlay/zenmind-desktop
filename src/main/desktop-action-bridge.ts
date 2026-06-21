@@ -144,7 +144,6 @@ function agentPlatformAuthFailureMessage() {
 const agentWebclientHelpTopicTitles = new Map([
   ["agents", "nav.agents"],
   ["schedules", "nav.schedules"],
-  ["memory", "nav.memory"],
   ["copilot", "service.display.agentWebclient"]
 ]);
 

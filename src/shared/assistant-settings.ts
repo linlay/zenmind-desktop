@@ -7,8 +7,7 @@ export const DESKTOP_COPILOT_PAGE_KEYS = [
   "market",
   "help",
   "agents",
-  "schedules",
-  "memory"
+  "schedules"
 ] as const;
 
 export type DesktopCopilotPageKey = typeof DESKTOP_COPILOT_PAGE_KEYS[number];

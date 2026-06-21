@@ -303,8 +303,6 @@ function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: ReturnTyp
       return t("nav.agents");
     case "schedules":
       return t("nav.schedules");
-    case "memory":
-      return t("nav.memory");
   }
 }
 
@@ -509,7 +507,7 @@ export function AppShell() {
       if (item.key === "kanban") return { ...item, label: t("nav.taskBoard") };
       if (item.key === "schedules") return { ...item, label: t("nav.schedules") };
       if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
-      if (item.key === "group:webs") return { ...item, label: t("nav.embeddedWebs") };
+      if (item.key === "group:webs") return { ...item, label: t("nav.websites") };
       return item;
     });
   }, [kanbanEnabled, t]);

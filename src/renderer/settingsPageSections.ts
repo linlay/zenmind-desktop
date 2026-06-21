@@ -19,14 +19,6 @@ export function createSettingsSectionDefinitions({
 }): SettingsSectionDefinition[] {
   return [
     {
-      id: "usage",
-      group: "personal",
-      label: "usage",
-      description: "",
-      layout: "wide",
-      visible: true
-    },
-    {
       id: "general",
       group: "personal",
       label: "general",
@@ -40,6 +32,14 @@ export function createSettingsSectionDefinitions({
       label: "appearance",
       description: "",
       layout: "measure",
+      visible: true
+    },
+    {
+      id: "usage",
+      group: "personal",
+      label: "usage",
+      description: "",
+      layout: "wide",
       visible: true
     },
     {
@@ -91,20 +91,12 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
-      id: "embeddedWebs",
+      id: "websites",
       group: "integrations",
-      label: "embeddedWebs",
+      label: "websites",
       description: "",
       layout: "wide",
       visible: true
-    },
-    {
-      id: "dataRoot",
-      group: "system",
-      label: "dataRoot",
-      description: "",
-      layout: "measure",
-      visible: isWindows
     },
     {
       id: "about",
@@ -121,14 +113,6 @@ export function createSettingsSectionDefinitions({
       description: "",
       layout: "measure",
       visible: debugVisible
-    },
-    {
-      id: "memory",
-      group: "system",
-      label: "memory",
-      description: "",
-      layout: "wide",
-      visible: false
     }
   ];
 }
@@ -154,9 +138,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   control: { label: "settings.control.label", description: "settings.control.description" },
   tunnelHub: { label: "settings.tunnelHub.label", description: "settings.tunnelHub.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
-  embeddedWebs: { label: "settings.embeddedWebs.label", description: "settings.embeddedWebs.description" },
-  dataRoot: { label: "settings.dataRoot.label", description: "settings.dataRoot.description" },
-  memory: { label: "settings.memory.label", description: "settings.memory.description" },
+  websites: { label: "settings.websites.label", description: "settings.websites.description" },
   about: { label: "settings.about.label", description: "settings.about.description" },
   debug: { label: "settings.debug.label", description: "settings.debug.description" }
 };

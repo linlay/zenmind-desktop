@@ -906,8 +906,8 @@ export function AppSidebar({
       },
       {
         ...websGroupNavItemBase,
-        label: t("nav.embeddedWebs"),
-        collapsedLabel: t("nav.embeddedWebsCollapsed"),
+        label: t("nav.websites"),
+        collapsedLabel: t("nav.websitesCollapsed"),
       },
     ].filter((item) => sidebarNavOrder.includes(item.orderKey)),
     sidebarNavOrder,
@@ -3188,12 +3188,8 @@ export function AppSidebar({
         return "service";
       case "navigation":
         return "sidebar-assistant-closed";
-      case "embeddedWebs":
+      case "websites":
         return "website";
-      case "dataRoot":
-        return "service";
-      case "memory":
-        return "memory";
       case "about":
         return "about";
       case "debug":

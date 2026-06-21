@@ -21,8 +21,6 @@ export function resolveDesktopCopilotPageKey(pathname: string): DesktopCopilotPa
       return "agents";
     case "/automations":
       return "schedules";
-    case "/memory":
-      return "memory";
     default:
       return null;
   }
