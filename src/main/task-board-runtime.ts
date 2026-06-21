@@ -11,7 +11,6 @@ import type {
   TaskBoardCloudConfigResult,
   TaskBoardCurrentUser,
   TaskBoardDeleteResult,
-  TaskBoardDesktopOnlineResult,
   TaskBoardIssue,
   TaskBoardIssueInput,
   TaskBoardIssueMoveInput,
@@ -544,32 +543,24 @@ export class TaskBoardRuntime {
     };
   }
 
-  async listOnlineDevices(): Promise<TaskBoardDesktopOnlineResult> {
+  async resyncCloudBoard(): Promise<TaskBoardListResult> {
     this.refreshConnection();
+    const currentUser = this.currentUser();
     if (!this.wsClient.isOpen()) {
       return {
+        ...listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState),
         ok: false,
-        online: false,
-        deviceCount: 0,
-        sessionCount: 0,
-        agentCount: 0,
-        devices: [],
         message: t("taskBoard.cloudSync.notConnected")
       };
     }
     try {
-      return await this.wsClient.request<TaskBoardDesktopOnlineResult>("desktop.online.list", {
-        projectId: readTaskBoardCloudConfig(this.options.app).selectedProjectId || "default"
-      });
+      await this.wsClient.resyncFromCloud();
+      return listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState);
     } catch (error) {
       return {
+        ...listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState),
         ok: false,
-        online: false,
-        deviceCount: 0,
-        sessionCount: 0,
-        agentCount: 0,
-        devices: [],
-        message: error instanceof Error ? error.message : t("taskBoard.runtime.onlineDevicesFailed")
+        message: error instanceof Error ? error.message : String(error)
       };
     }
   }

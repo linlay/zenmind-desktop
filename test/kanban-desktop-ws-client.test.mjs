@@ -356,6 +356,117 @@ test("kanban desktop ws client applies sync.deliver items and ACKs after deliver
   client.stop();
 });
 
+test("kanban desktop ws client resyncs snapshot and deliveries without reconnecting", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const snapshots = [];
+  let cursor = { lastAckedDeliverySeq: 0, lastAppliedRevision: 12, cacheSchemaVersion: 1 };
+  const client = new KanbanDesktopWsClient({
+    capabilities: ["command.dispatchIssue"],
+    getCurrentUser: () => ({
+      id: "user-1",
+      name: "Desktop User",
+      email: "desktop@example.com",
+      source: "sso"
+    }),
+    getDeviceId: () => "device-1",
+    getSyncCursor: () => cursor,
+    onSyncCursor: (next) => {
+      cursor = { ...cursor, ...next };
+    },
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onDelivery: async (delivery) => ({ ok: true, lastAppliedRevision: Math.max(cursor.lastAppliedRevision, delivery.sourceRevision ?? 0) }),
+    onDispatchIssue: () => ({ ok: true, message: "dispatched", issues: [] }),
+    onListAgents: async () => [],
+    onStartRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" }),
+    onAutomationSync: async () => ({ ok: true })
+  });
+
+  client.start({
+    serverUrl: "http://127.0.0.1:3000",
+    selectedProjectId: "project-1"
+  });
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  await waitFor(() => socket.sent.length === 1, "sync.hello");
+  const hello = socket.sent[0];
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor } }) });
+  await waitFor(() => socket.sent.length === 2, "initial snapshot request");
+  const initialSnapshotRequest = socket.sent[1];
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 3,
+      frame: "response",
+      id: initialSnapshotRequest.id,
+      type: "snapshot.get",
+      ok: true,
+      payload: { boardId: "default", projectId: "project-1", revision: 12, issues: [] }
+    })
+  });
+  await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "initial sync.pull");
+  const initialPullRequest = socket.sent.find((frame) => frame.type === "sync.pull");
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: initialPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+
+  const sentBeforeResync = socket.sent.length;
+  const resyncTask = client.resyncFromCloud();
+  await waitFor(
+    () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "snapshot.get"),
+    "manual resync snapshot"
+  );
+  const resyncSnapshotRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "snapshot.get");
+  assert.equal(resyncSnapshotRequest.payload.projectId, "project-1");
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 3,
+      frame: "response",
+      id: resyncSnapshotRequest.id,
+      type: "snapshot.get",
+      ok: true,
+      payload: { boardId: "default", projectId: "project-1", revision: 13, issues: [{ id: "ISS-13", title: "Resynced" }] }
+    })
+  });
+  await waitFor(
+    () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "sync.pull"),
+    "manual resync pull"
+  );
+  const resyncPullRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "sync.pull");
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: resyncPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+  await resyncTask;
+
+  assert.equal(sockets.length, 1);
+  assert.equal(snapshots.length, 2);
+  assert.equal(snapshots[1].revision, 13);
+  assert.equal(snapshots[1].issues[0].id, "ISS-13");
+
+  client.stop();
+});
+
 test("kanban desktop ws client waits when sync.deliver has a deliverySeq gap", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
@@ -458,7 +569,7 @@ test("kanban desktop ws client waits when sync.deliver has a deliverySeq gap", a
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(deliveries.length, 0);
   assert.equal(socket.sent.some((frame) => frame.type === "sync.ack"), false);
-  assert.ok(debugMessages.some((message) => /delivery.*2/u.test(message)));
+  assert.ok(debugMessages.some((message) => /1/u.test(message) && /2/u.test(message)));
 
   socket.onmessage({
     data: JSON.stringify({

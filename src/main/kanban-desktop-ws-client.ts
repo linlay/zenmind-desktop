@@ -416,6 +416,28 @@ export class KanbanDesktopWsClient {
     return this.state === "open" && Boolean(this.ws);
   }
 
+  async resyncFromCloud() {
+    if (!this.ws || this.state !== "open" || !this.config) {
+      throw new Error(t("taskBoard.cloudSync.notConnected"));
+    }
+    const wasSnapshotReady = this.snapshotReady;
+    this.snapshotReady = false;
+    try {
+      const snapshot = await this.request<TaskBoardCloudSnapshot>("snapshot.get", {
+        projectId: this.config.selectedProjectId ?? "default",
+        deviceId: this.options.getDeviceId()
+      });
+      this.options.onSnapshot(snapshot);
+      this.snapshotReady = true;
+      await this.flushQueuedDeliveries();
+      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
+      this.options.onConnected?.();
+    } catch (error) {
+      this.snapshotReady = wasSnapshotReady;
+      throw error;
+    }
+  }
+
   async request<TPayload = unknown>(messageType: string, payload: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TPayload> {
     if (!this.ws || this.state !== "open") {
       throw new Error(t("taskBoard.cloudSync.notConnected"));

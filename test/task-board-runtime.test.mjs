@@ -213,6 +213,140 @@ function waitFor(check, message = "condition", timeoutMs = 1000) {
   });
 }
 
+test("task board runtime resyncs cloud board over the existing websocket", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const app = createTempApp(t);
+  const runtime = new TaskBoardRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
+      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {}
+  });
+
+  writeSsoSiteToken(app);
+  runtime.saveCloudConfig({
+    serverUrl: "http://127.0.0.1:3000",
+    token: "secret",
+    selectedProjectId: "project-1",
+    remoteControlEnabled: true,
+    deviceAlias: "测试桌面"
+  });
+
+  try {
+    const socket = sockets[0];
+    socket.readyState = 1;
+    socket.onopen();
+    await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
+    const hello = socket.sent[0];
+    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 30, cacheSchemaVersion: 1 } } }) });
+    await waitFor(() => socket.sent.length === 2, "initial snapshot request");
+    const initialSnapshotRequest = socket.sent[1];
+    socket.onmessage({
+      data: JSON.stringify({
+        v: 3,
+        frame: "response",
+        id: initialSnapshotRequest.id,
+        type: "snapshot.get",
+        ok: true,
+        payload: {
+          boardId: "default",
+          projectId: "project-1",
+          revision: 30,
+          complete: true,
+          scope: "project",
+          issues: []
+        }
+      })
+    });
+    await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "initial sync.pull");
+    const initialPull = socket.sent.find((frame) => frame.type === "sync.pull");
+    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: initialPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+
+    const sentBeforeResync = socket.sent.length;
+    const resyncTask = runtime.resyncCloudBoard();
+    await waitFor(
+      () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "snapshot.get"),
+      "resync snapshot request"
+    );
+    const resyncSnapshotRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "snapshot.get");
+    socket.onmessage({
+      data: JSON.stringify({
+        v: 3,
+        frame: "response",
+        id: resyncSnapshotRequest.id,
+        type: "snapshot.get",
+        ok: true,
+        payload: {
+          boardId: "default",
+          projectId: "project-1",
+          revision: 31,
+          complete: true,
+          scope: "project",
+          projects: [{ id: "project-1", name: "Project One", path: "Project One", updatedAt: "2026-06-09T00:00:00.000Z" }],
+          issues: [{
+            id: "ISS-RESYNC",
+            boardId: "default",
+            projectId: "project-1",
+            workflowId: "workflow-standard-requirement",
+            title: "重新同步任务",
+            description: "通过手动重新同步拉取",
+            status: "todo",
+            priority: "medium",
+            severity: "medium",
+            position: 1,
+            revision: 31,
+            createdAt: "2026-06-09T00:00:00.000Z",
+            updatedAt: "2026-06-09T00:00:00.000Z"
+          }]
+        }
+      })
+    });
+    await waitFor(
+      () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "sync.pull"),
+      "resync sync.pull"
+    );
+    const resyncPull = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "sync.pull");
+    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: resyncPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+    const result = await resyncTask;
+
+    assert.equal(result.ok, true);
+    assert.equal(sockets.length, 1);
+    assert.ok(result.issues.some((issue) => issue.remoteIssueId === "ISS-RESYNC" && issue.title === "重新同步任务"));
+    assert.ok(result.projects.some((project) => project.id === "project-1"));
+  } finally {
+    runtime.stop();
+  }
+});
+
 test("task board runtime stores remote startRun issue locally before executing", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];

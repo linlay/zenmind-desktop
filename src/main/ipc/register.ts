@@ -291,14 +291,11 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       message: t("taskBoard.runtime.uninitialized"),
       issues: []
     },
-    listTaskBoardOnlineDevices: () => state.taskBoardRuntime?.listOnlineDevices() ?? {
+    resyncTaskBoardCloud: () => state.taskBoardRuntime?.resyncCloudBoard() ?? {
       ok: false,
-      online: false,
-      deviceCount: 0,
-      sessionCount: 0,
-      agentCount: 0,
-      devices: [],
-      message: t("taskBoard.runtime.uninitialized")
+      message: t("taskBoard.runtime.uninitialized"),
+      issues: [],
+      connectionState: "disabled"
     },
     getTaskBoardSettings: () => state.taskBoardRuntime?.getSettings() ?? {
       ok: false,

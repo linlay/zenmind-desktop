@@ -82,7 +82,7 @@ const api: DesktopApi = {
   },
   taskBoard: {
     listIssues: () => ipcRenderer.invoke("taskBoard.listIssues"),
-    listOnlineDevices: () => ipcRenderer.invoke("taskBoard.listOnlineDevices"),
+    resyncCloudBoard: () => ipcRenderer.invoke("taskBoard.resyncCloudBoard"),
     getSettings: () => ipcRenderer.invoke("taskBoard.getSettings"),
     saveSettings: (input) => ipcRenderer.invoke("taskBoard.saveSettings", input),
     getCloudConfig: () => ipcRenderer.invoke("taskBoard.getCloudConfig"),

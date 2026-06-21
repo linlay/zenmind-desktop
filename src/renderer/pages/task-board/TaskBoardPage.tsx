@@ -21,15 +21,13 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { DeleteOutlined, EditOutlined, FlagOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EyeOutlined, FlagOutlined, MessageOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import type {
   AssistantAttachment,
   AssistantEvent,
   AssistantNavAgentItem,
   DesktopApi,
   DesktopPetAgentOption,
-  TaskBoardCloudConfig,
-  TaskBoardDesktopOnlineResult,
   TaskBoardIssue,
   TaskBoardIssueInput,
   TaskBoardIssueUpdateInput,
@@ -47,11 +45,12 @@ import { AgentIcon } from "../../app-shell/navigation/AgentIcon";
 import { useI18n } from "../../i18n/useI18n";
 import { PluginPage } from "../plugin/PluginPage";
 
-type MenuKind = "filter" | "display" | "cloud" | null;
+type MenuKind = "display" | "cloud" | null;
+type SearchFilterMenuKind = "priority" | "severity" | "automation" | null;
 type ModalMode = "create" | "edit";
 type ThemeMode = "light" | "dark";
 type TaskBoardAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
-type TaskBoardTodoAutomationFilter = "all" | "scheduled";
+type TaskBoardAutomationFilter = "all" | "scheduled" | "manual";
 type AutomationMenuKind = "plan" | "time";
 type ModalState = {
   mode: ModalMode;
@@ -86,6 +85,11 @@ type TaskBoardCardPresentation = {
   assigneeTitle: string;
 };
 
+type TaskBoardIssueOriginPresentation = {
+  projectLabel: string;
+  title: string;
+};
+
 type TaskBoardSeverity = NonNullable<TaskBoardIssue["severity"]>;
 
 type TaskBoardCardStatusPresentation = {
@@ -115,6 +119,11 @@ type TaskBoardContextMenu = {
   issueId: string;
   x: number;
   y: number;
+};
+
+type TaskBoardProjectTreeItem = {
+  project: TaskBoardProject;
+  level: number;
 };
 
 const TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000;
@@ -150,6 +159,13 @@ const SEVERITY_META: Record<TaskBoardSeverity, { labelKey: TranslationKey; short
   low: { labelKey: "taskBoard.severity.low", shortLabelKey: "taskBoard.severity.lowShort", tone: "low" }
 };
 
+const TASK_BOARD_SEVERITIES = [
+  "critical",
+  "high",
+  "medium",
+  "low"
+] satisfies ReadonlyArray<TaskBoardSeverity>;
+
 const DEFAULT_TASK_BOARD_AUTOMATION_PLAN: TaskBoardAutomationPlan = "daily";
 const DEFAULT_TASK_BOARD_AUTOMATION_TIME = "09:00";
 const DEFAULT_TASK_BOARD_AUTOMATION_CRON = "0 9 * * *";
@@ -162,10 +178,11 @@ const TASK_BOARD_AUTOMATION_PLANS = [
   { labelKey: "taskBoard.automation.custom", value: "custom" }
 ] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardAutomationPlan }>;
 
-const TASK_BOARD_TODO_AUTOMATION_FILTERS = [
-  { labelKey: "taskBoard.filter.all", value: "all" },
-  { labelKey: "taskBoard.filter.scheduledOnly", value: "scheduled" }
-] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardTodoAutomationFilter }>;
+const TASK_BOARD_AUTOMATION_FILTER_OPTIONS = [
+  { labelKey: "taskBoard.searchFilter.allAutomation", value: "all" },
+  { labelKey: "taskBoard.searchFilter.hasAutomation", value: "scheduled" },
+  { labelKey: "taskBoard.searchFilter.noAutomation", value: "manual" }
+] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardAutomationFilter }>;
 
 const TASK_BOARD_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
 
@@ -184,23 +201,6 @@ const emptyForm: IssueFormState = {
   automationMessage: "",
   automationTimezone: "Asia/Shanghai",
   syncToCloud: false
-};
-
-const defaultCloudConfig: TaskBoardCloudConfig = {
-  serverUrl: "",
-  token: "",
-  selectedProjectId: "default",
-  remoteControlEnabled: false,
-  deviceAlias: ""
-};
-
-const defaultDesktopOnlineSummary: TaskBoardDesktopOnlineResult = {
-  ok: false,
-  online: false,
-  deviceCount: 0,
-  sessionCount: 0,
-  agentCount: 0,
-  devices: []
 };
 
 const defaultDisplayState: DisplayState = {
@@ -270,11 +270,16 @@ function formatIssueUpdatedTime(updatedAt: string) {
   if (Number.isNaN(updatedDate.getTime())) {
     return "";
   }
+  const currentDate = new Date();
   const time = `${padAutomationNumber(updatedDate.getHours())}:${padAutomationNumber(updatedDate.getMinutes())}`;
-  if (isSameLocalDate(updatedDate, new Date())) {
+  if (isSameLocalDate(updatedDate, currentDate)) {
     return time;
   }
-  return `${padAutomationNumber(updatedDate.getMonth() + 1)}/${padAutomationNumber(updatedDate.getDate())} ${time}`;
+  const date = `${padAutomationNumber(updatedDate.getMonth() + 1)}/${padAutomationNumber(updatedDate.getDate())}`;
+  if (updatedDate.getFullYear() !== currentDate.getFullYear()) {
+    return `${updatedDate.getFullYear()}/${date}`;
+  }
+  return date;
 }
 
 function formatTaskBoardSortNumber(sortIndex: number | undefined, position: number) {
@@ -644,14 +649,15 @@ function hasIssueAutomation(issue: Pick<TaskBoardIssue, "automationEnabled" | "a
   return issue.automationEnabled && Boolean(issue.automationCron?.trim());
 }
 
-function shouldShowIssueForTodoAutomationFilter(
-  issue: Pick<TaskBoardIssue, "status" | "automationEnabled" | "automationCron">,
-  filter: TaskBoardTodoAutomationFilter
+function shouldShowIssueForAutomationFilter(
+  issue: Pick<TaskBoardIssue, "automationEnabled" | "automationCron">,
+  filter: TaskBoardAutomationFilter
 ) {
-  if (issue.status !== "todo" || filter === "all") {
+  if (filter === "all") {
     return true;
   }
-  return hasIssueAutomation(issue);
+  const hasAutomation = hasIssueAutomation(issue);
+  return filter === "scheduled" ? hasAutomation : !hasAutomation;
 }
 
 function getAutomationDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) {
@@ -908,6 +914,107 @@ function sortTaskBoardProjectOptions(projects: TaskBoardProject[]) {
     });
 }
 
+function compareTaskBoardProjects(left: TaskBoardProject, right: TaskBoardProject) {
+  if (left.position !== right.position) {
+    return left.position - right.position;
+  }
+  const leftLabel = left.path || left.name || left.id;
+  const rightLabel = right.path || right.name || right.id;
+  return leftLabel.localeCompare(rightLabel, "zh-Hans-CN");
+}
+
+function flattenTaskBoardProjectTree(projects: TaskBoardProject[]): TaskBoardProjectTreeItem[] {
+  const validProjects = projects.filter((project) => project.id.trim());
+  const projectIds = new Set(validProjects.map((project) => project.id));
+  const childrenByParentId = new Map<string, TaskBoardProject[]>();
+  const roots: TaskBoardProject[] = [];
+  for (const project of validProjects) {
+    const parentId = project.parentId?.trim() ?? "";
+    if (!parentId || !projectIds.has(parentId)) {
+      roots.push(project);
+      continue;
+    }
+    const children = childrenByParentId.get(parentId) ?? [];
+    children.push(project);
+    childrenByParentId.set(parentId, children);
+  }
+  const items: TaskBoardProjectTreeItem[] = [];
+  const visited = new Set<string>();
+  const visit = (project: TaskBoardProject, level: number) => {
+    if (visited.has(project.id)) {
+      return;
+    }
+    visited.add(project.id);
+    items.push({ project, level });
+    const children = (childrenByParentId.get(project.id) ?? []).sort(compareTaskBoardProjects);
+    for (const child of children) {
+      visit(child, level + 1);
+    }
+  };
+  for (const root of roots.sort(compareTaskBoardProjects)) {
+    visit(root, 0);
+  }
+  for (const project of validProjects.sort(compareTaskBoardProjects)) {
+    if (!visited.has(project.id)) {
+      visit(project, Math.max(0, project.depth));
+    }
+  }
+  return items;
+}
+
+function buildTaskBoardProjectChildrenMap(projects: TaskBoardProject[]) {
+  const projectIds = new Set(projects.map((project) => project.id));
+  const childrenByParentId = new Map<string, string[]>();
+  for (const project of projects) {
+    const parentId = project.parentId?.trim() ?? "";
+    if (!parentId || !projectIds.has(parentId)) {
+      continue;
+    }
+    const children = childrenByParentId.get(parentId) ?? [];
+    children.push(project.id);
+    childrenByParentId.set(parentId, children);
+  }
+  return childrenByParentId;
+}
+
+function collectTaskBoardProjectAndDescendantIds(projectId: string, childrenByParentId: Map<string, string[]>, output: Set<string>) {
+  if (output.has(projectId)) {
+    return;
+  }
+  output.add(projectId);
+  for (const childId of childrenByParentId.get(projectId) ?? []) {
+    collectTaskBoardProjectAndDescendantIds(childId, childrenByParentId, output);
+  }
+}
+
+function getTaskBoardProjectFilterIds(projects: TaskBoardProject[], selectedProjectIds: string[]) {
+  const selected = selectedProjectIds.filter(Boolean);
+  if (selected.length === 0) {
+    return null;
+  }
+  const childrenByParentId = buildTaskBoardProjectChildrenMap(projects);
+  const filterIds = new Set<string>();
+  for (const projectId of selected) {
+    collectTaskBoardProjectAndDescendantIds(projectId, childrenByParentId, filterIds);
+  }
+  return filterIds;
+}
+
+function getTaskBoardProjectFilterLabel(
+  selectedProjectIds: string[],
+  projects: TaskBoardProject[],
+  t: TranslateFunction
+) {
+  if (selectedProjectIds.length === 0) {
+    return t("taskBoard.projectFilter.all");
+  }
+  if (selectedProjectIds.length === 1) {
+    const project = projects.find((candidate) => candidate.id === selectedProjectIds[0]);
+    return project ? getTaskBoardProjectOptionLabel(project) : selectedProjectIds[0];
+  }
+  return t("taskBoard.projectFilter.selectedCount", { count: selectedProjectIds.length });
+}
+
 function isIssueDragLocked(issue: TaskBoardIssue | null | undefined) {
   return Boolean(issue?.runId);
 }
@@ -945,14 +1052,39 @@ function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgen
     return false;
   }
 
-    return agents.some((agent) => {
+  return agents.some((agent) => {
     const matchingChat = getAssistantNavAgentRecentChats(agent).find((chat) => chat.chatId === chatId);
     return matchingChat?.hasPendingAwaiting === true;
   });
 }
 
-function getTaskBoardIssueDisplayId(issue: TaskBoardIssue) {
-  return issue.syncMode === "cloud" && issue.remoteIssueId ? issue.remoteIssueId : issue.id;
+function truncateTaskBoardProjectLabel(value: string, maxLength = 16) {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${Array.from(trimmed).slice(0, Math.max(1, maxLength - 3)).join("")}...`;
+}
+
+function getTaskBoardIssueOriginPresentation(
+  issue: TaskBoardIssue,
+  projectsById: Map<string, TaskBoardProject>,
+  t: TranslateFunction
+): TaskBoardIssueOriginPresentation {
+  const projectId = issue.projectId?.trim() || "default";
+  const project = projectsById.get(projectId);
+  const projectName = project?.name.trim() || projectId;
+  const projectPath = project?.path.trim() || "";
+  const issueId = issue.remoteIssueId?.trim()
+    ? `${issue.remoteIssueId.trim()} / ${issue.id}`
+    : issue.id;
+  const titleParts = [
+    t("taskBoard.card.project", { value: projectName }),
+    projectPath ? t("taskBoard.card.projectPath", { value: projectPath }) : null,
+    t("taskBoard.card.issueId", { value: issueId })
+  ].filter((value): value is string => Boolean(value));
+  return {
+    projectLabel: truncateTaskBoardProjectLabel(projectName),
+    title: titleParts.join("\n")
+  };
 }
 
 function formatTaskBoardLastSyncedAt(value: string | null | undefined, t: TranslateFunction) {
@@ -1008,13 +1140,15 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [menu, setMenu] = useState<MenuKind>(null);
   const [query, setQuery] = useState("");
-  const [cloudConfig, setCloudConfig] = useState<TaskBoardCloudConfig>(defaultCloudConfig);
   const [cloudProjects, setCloudProjects] = useState<TaskBoardProject[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [projectFilterOpen, setProjectFilterOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<TaskBoardConnectionState>("disabled");
-  const [desktopOnlineSummary, setDesktopOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultDesktopOnlineSummary);
-  const [cloudConfigSaving, setCloudConfigSaving] = useState(false);
+  const [cloudResyncing, setCloudResyncing] = useState(false);
   const [priorityFilters, setPriorityFilters] = useState<TaskBoardPriority[]>([]);
-  const [todoAutomationFilter, setTodoAutomationFilter] = useState<TaskBoardTodoAutomationFilter>("all");
+  const [severityFilters, setSeverityFilters] = useState<TaskBoardSeverity[]>([]);
+  const [automationFilter, setAutomationFilter] = useState<TaskBoardAutomationFilter>("all");
+  const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenuKind>(null);
   const [taskBoardCountdownNow, setTaskBoardCountdownNow] = useState(() => Date.now());
   const [display, setDisplay] = useState<DisplayState>(defaultDisplayState);
   const [modal, setModal] = useState<ModalState | null>(null);
@@ -1031,9 +1165,10 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const taskBoardReady = readTaskBoardApi() !== null;
   const missingTaskBoardApiMessage = t("taskBoard.missingApi", { appName: t("app.name") });
   const cloudProjectOptions = useMemo(() => sortTaskBoardProjectOptions(cloudProjects), [cloudProjects]);
-  const selectedCloudProjectId = cloudConfig.selectedProjectId.trim();
-  const selectedCloudProjectMissing = Boolean(
-    selectedCloudProjectId && !cloudProjectOptions.some((project) => project.id === selectedCloudProjectId)
+  const taskBoardProjectsById = useMemo(() => new Map(cloudProjects.map((project) => [project.id, project])), [cloudProjects]);
+  const projectFilterIds = useMemo(
+    () => getTaskBoardProjectFilterIds(cloudProjects, selectedProjectIds),
+    [cloudProjects, selectedProjectIds]
   );
 
   useEffect(() => {
@@ -1050,29 +1185,15 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         return;
       }
       try {
-        const configTask = typeof taskBoardApi.getCloudConfig === "function"
-          ? taskBoardApi.getCloudConfig()
-          : Promise.resolve({
-            ok: true,
-            message: "",
-            config: defaultCloudConfig,
-            connectionState: "disabled" as TaskBoardConnectionState
-          });
-        const [issueResult, configResult, agentResult, onlineResult] = await Promise.all([
+        const [issueResult, agentResult] = await Promise.all([
           taskBoardApi.listIssues(),
-          configTask,
-          loadTaskBoardAgents(),
-          typeof taskBoardApi.listOnlineDevices === "function"
-            ? taskBoardApi.listOnlineDevices()
-            : Promise.resolve(defaultDesktopOnlineSummary)
+          loadTaskBoardAgents()
         ]);
         if (cancelled) return;
         setIssues(sortIssues(issueResult.issues));
         setCloudProjects(issueResult.projects ?? []);
-        setConnectionState(issueResult.connectionState ?? configResult.connectionState ?? "disabled");
-        setCloudConfig(configResult.config);
+        setConnectionState(issueResult.connectionState ?? "disabled");
         setAgents(agentResult);
-        setDesktopOnlineSummary(onlineResult);
       } catch (error) {
         if (!cancelled) {
           setFeedback({
@@ -1095,46 +1216,36 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   async function reloadTaskBoard() {
     const taskBoardApi = readTaskBoardApi();
     if (!taskBoardApi) return;
-    const [issueResult, onlineResult] = await Promise.all([
-      taskBoardApi.listIssues(),
-      typeof taskBoardApi.listOnlineDevices === "function"
-        ? taskBoardApi.listOnlineDevices()
-        : Promise.resolve(defaultDesktopOnlineSummary)
-    ]);
+    const issueResult = await taskBoardApi.listIssues();
     setIssues(sortIssues(issueResult.issues));
     setCloudProjects(issueResult.projects ?? []);
     setConnectionState(issueResult.connectionState ?? "disabled");
-    setDesktopOnlineSummary(onlineResult);
   }
 
-  async function saveCloudConfig(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function resyncCloudBoard() {
     const taskBoardApi = readTaskBoardApi();
     if (!taskBoardApi) {
       setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
       return;
     }
-    if (typeof taskBoardApi.saveCloudConfig !== "function") {
+    if (typeof taskBoardApi.resyncCloudBoard !== "function") {
       setFeedback({ tone: "error", message: t("taskBoard.cloud.preloadOutdated") });
       return;
     }
-    setCloudConfigSaving(true);
+    setCloudResyncing(true);
     try {
-      const result = await taskBoardApi.saveCloudConfig(cloudConfig);
-      setCloudConfig(result.config);
+      const result = await taskBoardApi.resyncCloudBoard();
+      setIssues(sortIssues(result.issues));
+      setCloudProjects(result.projects ?? []);
       setConnectionState(result.connectionState ?? "disabled");
-      await reloadTaskBoard();
       setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
-      if (result.ok) {
-        setMenu(null);
-      }
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : t("taskBoard.cloud.saveFailed")
+        message: error instanceof Error ? error.message : t("taskBoard.cloud.resyncFailed")
       });
     } finally {
-      setCloudConfigSaving(false);
+      setCloudResyncing(false);
     }
   }
 
@@ -1166,6 +1277,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       void reloadTaskBoard();
     });
   }, []);
+
+  useEffect(() => {
+    const projectIds = new Set(cloudProjects.map((project) => project.id));
+    setSelectedProjectIds((current) => current.filter((projectId) => projectIds.has(projectId)));
+  }, [cloudProjects]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -1304,7 +1420,13 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       if (priorityFilters.length > 0 && !priorityFilters.includes(issue.priority)) {
         return false;
       }
-      if (!shouldShowIssueForTodoAutomationFilter(issue, todoAutomationFilter)) {
+      if (severityFilters.length > 0 && !severityFilters.includes(normalizeIssueSeverity(issue.severity))) {
+        return false;
+      }
+      if (projectFilterIds && !projectFilterIds.has(issue.projectId ?? "")) {
+        return false;
+      }
+      if (!shouldShowIssueForAutomationFilter(issue, automationFilter)) {
         return false;
       }
       if (!keyword) {
@@ -1321,7 +1443,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [agents, priorityFilters, query, todoAutomationFilter, visibleIssues]);
+  }, [agents, automationFilter, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const filteredCount = filteredIssues.length;
@@ -1343,7 +1465,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   function openEditModal(issue: TaskBoardIssue) {
     setContextMenu(null);
     setForm(createFormFromIssue(issue));
-    setFormCompact(!hasIssueAutomation(issue));
+    setFormCompact(canEditTaskBoardIssueBody(issue) ? !hasIssueAutomation(issue) : false);
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "edit", issue });
@@ -1753,14 +1875,46 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     );
   }
 
-  const modalStatusLocked = modal?.mode === "edit" && Boolean(modal.issue?.runId);
-  const modalSyncLocked = modal?.mode === "edit" && modal.issue?.syncMode === "cloud";
+  function toggleSeverity(severity: TaskBoardSeverity) {
+    setSeverityFilters((current) =>
+      current.includes(severity)
+        ? current.filter((item) => item !== severity)
+        : [...current, severity]
+    );
+  }
+
+  function toggleProjectFilter(projectId: string) {
+    setSelectedProjectIds((current) =>
+      current.includes(projectId)
+        ? current.filter((item) => item !== projectId)
+        : [...current, projectId]
+    );
+  }
+
+  const modalReadOnly = modal?.mode === "edit" && !canEditTaskBoardIssueBody(modal.issue);
+  const modalStatusLocked = modalReadOnly || (modal?.mode === "edit" && Boolean(modal.issue?.runId));
+  const modalSyncLocked = modalReadOnly || (modal?.mode === "edit" && modal.issue?.syncMode === "cloud");
   const visibleFormAttachments = getVisibleTaskBoardAttachments(form.attachments);
 
   return (
     <section className="task-board-page" aria-label={t("taskBoard.title")}>
       <div className="task-board-toolbar">
         <div className="task-board-toolbar-left">
+          <TaskBoardProjectFilter
+            projects={cloudProjectOptions}
+            selectedProjectIds={selectedProjectIds}
+            open={projectFilterOpen}
+            t={t}
+            onOpenChange={(open) => {
+              setProjectFilterOpen(open);
+              if (open) {
+                setMenu(null);
+                setSearchFilterMenu(null);
+              }
+            }}
+            onToggleProject={toggleProjectFilter}
+            onClear={() => setSelectedProjectIds([])}
+          />
           <div className="task-board-search-wrap">
             <TaskBoardIcon kind="search" />
             <input
@@ -1770,17 +1924,26 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               placeholder={t("taskBoard.search.placeholder")}
               aria-label={t("taskBoard.search.ariaLabel")}
             />
+            <TaskBoardSearchFilters
+              openMenu={searchFilterMenu}
+              priorityFilters={priorityFilters}
+              severityFilters={severityFilters}
+              automationFilter={automationFilter}
+              t={t}
+              onOpenMenuChange={(nextMenu) => {
+                setSearchFilterMenu(nextMenu);
+                if (nextMenu) {
+                  setMenu(null);
+                  setProjectFilterOpen(false);
+                }
+              }}
+              onTogglePriority={togglePriority}
+              onClearPriority={() => setPriorityFilters([])}
+              onToggleSeverity={toggleSeverity}
+              onClearSeverity={() => setSeverityFilters([])}
+              onAutomationFilterChange={setAutomationFilter}
+            />
           </div>
-          <button
-            type="button"
-            className={`task-board-tool is-icon-only ${menu === "filter" ? "is-active" : ""}`}
-            aria-label={t("taskBoard.toolbar.filter")}
-            title={t("taskBoard.toolbar.filter")}
-            onClick={() => setMenu(menu === "filter" ? null : "filter")}
-          >
-            <TaskBoardIcon kind="filter" />
-            <span className="task-board-tool-label">{t("taskBoard.toolbar.filter")}</span>
-          </button>
         </div>
         <div className="task-board-toolbar-right">
           <button
@@ -1788,13 +1951,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             className={`task-board-tool task-board-cloud-status is-${getTaskBoardConnectionTone(connectionState)} ${menu === "cloud" ? "is-active" : ""}`}
             aria-label={t("taskBoard.cloud.configure")}
             title={t("taskBoard.cloud.configure")}
-            onClick={() => setMenu(menu === "cloud" ? null : "cloud")}
+            onClick={() => {
+              setProjectFilterOpen(false);
+              setSearchFilterMenu(null);
+              setMenu(menu === "cloud" ? null : "cloud");
+            }}
           >
             <span className="task-board-cloud-dot" aria-hidden="true" />
             <span className="task-board-tool-label">{getTaskBoardConnectionLabel(connectionState, t)}</span>
-            <span className="task-board-online-count">
-              {t("taskBoard.cloud.onlineDevices", { count: desktopOnlineSummary.deviceCount })}
-            </span>
             {cloudSyncSummary.errorCount > 0 ? (
               <span className="task-board-cloud-error-count" title={t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}>
                 {cloudSyncSummary.errorCount}
@@ -1807,7 +1971,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             className={`task-board-tool is-icon-only ${menu === "display" ? "is-active" : ""}`}
             aria-label={t("taskBoard.toolbar.display")}
             title={t("taskBoard.toolbar.display")}
-            onClick={() => setMenu(menu === "display" ? null : "display")}
+            onClick={() => {
+              setProjectFilterOpen(false);
+              setSearchFilterMenu(null);
+              setMenu(menu === "display" ? null : "display");
+            }}
           >
             <TaskBoardIcon kind="display" />
             <span className="task-board-tool-label">{t("taskBoard.toolbar.display")}</span>
@@ -1817,23 +1985,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
       {menu ? (
         <div className={`task-board-menu-panel is-${menu}`}>
-          {menu === "filter" ? (
-            <>
-              <strong>{t("taskBoard.filter.priority")}</strong>
-              <div className="task-board-menu-grid">
-                {TASK_BOARD_PRIORITIES.map((priority) => (
-                  <label key={priority} className="task-board-check-row">
-                    <input
-                      type="checkbox"
-                      checked={priorityFilters.includes(priority)}
-                      onChange={() => togglePriority(priority)}
-                    />
-                    <PriorityBadge priority={priority} t={t} />
-                  </label>
-                ))}
-              </div>
-            </>
-          ) : menu === "display" ? (
+          {menu === "display" ? (
             <>
               <strong>{t("taskBoard.display.cardFields")}</strong>
               {Object.entries({
@@ -1855,7 +2007,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               ))}
             </>
           ) : (
-            <form className="task-board-cloud-form" onSubmit={(event) => void saveCloudConfig(event)}>
+            <div className="task-board-cloud-form">
               <div className="task-board-cloud-form-head">
                 <strong>{t("taskBoard.cloud.title")}</strong>
                 <span className={`task-board-cloud-state is-${getTaskBoardConnectionTone(connectionState)}`}>
@@ -1863,78 +2015,22 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 </span>
               </div>
               <div className="task-board-cloud-summary">
-                <span>{t("taskBoard.cloud.onlineDevices", { count: desktopOnlineSummary.deviceCount })}</span>
-                <span>{t("taskBoard.cloud.onlineSessions", { count: desktopOnlineSummary.sessionCount })}</span>
-                <span>{t("taskBoard.cloud.onlineAgents", { count: desktopOnlineSummary.agentCount })}</span>
                 <span>{t("taskBoard.cloud.syncedIssues", { count: cloudSyncSummary.cloudCount })}</span>
                 <span>{formatTaskBoardLastSyncedAt(cloudSyncSummary.lastSyncedAt, t)}</span>
                 {cloudSyncSummary.syncingCount > 0 ? <span>{t("taskBoard.cloud.syncingIssues", { count: cloudSyncSummary.syncingCount })}</span> : null}
                 {cloudSyncSummary.errorCount > 0 ? <span className="is-error">{t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}</span> : null}
               </div>
-              <label className="task-board-cloud-toggle-row">
-                <span>
-                  <strong>{t("settings.control.remoteControlEnabled")}</strong>
-                  <small>{t("settings.control.remoteControlDescription")}</small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={cloudConfig.remoteControlEnabled}
-                  onChange={(event) => setCloudConfig((current) => ({ ...current, remoteControlEnabled: event.target.checked }))}
-                />
-              </label>
-              <label className="task-board-field">
-                <span>{t("taskBoard.cloud.serverUrl")}</span>
-                <input
-                  value={cloudConfig.serverUrl}
-                  onChange={(event) => setCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
-                  placeholder="http://127.0.0.1:8080"
-                />
-              </label>
-              <label className="task-board-field">
-                <span>{t("taskBoard.cloud.token")}</span>
-                <input
-                  value={cloudConfig.token}
-                  onChange={(event) => setCloudConfig((current) => ({ ...current, token: event.target.value }))}
-                  placeholder={t("taskBoard.cloud.tokenPlaceholder")}
-                />
-              </label>
-              <label className="task-board-field">
-                <span>{t("taskBoard.cloud.projectId")}</span>
-                {cloudProjectOptions.length > 0 ? (
-                  <select
-                    value={cloudConfig.selectedProjectId}
-                    onChange={(event) => setCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                  >
-                    {selectedCloudProjectMissing ? (
-                      <option value={cloudConfig.selectedProjectId}>
-                        {t("taskBoard.cloud.currentProject", { id: cloudConfig.selectedProjectId })}
-                      </option>
-                    ) : null}
-                    {cloudProjectOptions.map((project) => (
-                      <option value={project.id} key={project.id}>
-                        {getTaskBoardProjectOptionLabel(project)}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    value={cloudConfig.selectedProjectId}
-                    onChange={(event) => setCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                    placeholder="default"
-                  />
-                )}
-                <small>
-                  {cloudProjectOptions.length > 0
-                    ? t("taskBoard.cloud.projectSelectHelp", { count: cloudProjectOptions.length })
-                    : t("taskBoard.cloud.projectFallbackHelp")}
-                </small>
-              </label>
               <div className="task-board-cloud-actions">
-                <button type="submit" className="task-board-primary-button" disabled={cloudConfigSaving}>
-                  {cloudConfigSaving ? t("taskBoard.cloud.saving") : t("taskBoard.cloud.save")}
+                <button
+                  type="button"
+                  className="task-board-primary-button"
+                  disabled={cloudResyncing || connectionState !== "open"}
+                  onClick={() => void resyncCloudBoard()}
+                >
+                  {cloudResyncing ? t("taskBoard.cloud.resyncing") : t("taskBoard.cloud.resync")}
                 </button>
               </div>
-            </form>
+            </div>
           )}
         </div>
       ) : null}
@@ -1965,15 +2061,15 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 status={status}
                 issues={columnIssues}
                 agents={agents}
+                projectsById={taskBoardProjectsById}
                 display={display}
-                todoAutomationFilter={todoAutomationFilter}
                 now={new Date(taskBoardCountdownNow)}
                 t={t}
                 canAdd={taskBoardReady}
                 onAdd={() => openCreateModal(status)}
-                onTodoAutomationFilterChange={setTodoAutomationFilter}
                 onEdit={openEditModal}
                 onDelete={deleteIssue}
+                onOpenChat={openAssistantIssueChat}
                 onOpenContextMenu={openIssueContextMenu}
               />
             );
@@ -1988,12 +2084,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   issue={activeDragIssue}
                   awaitingConfirmation={false}
                   agents={agents}
+                  projectsById={taskBoardProjectsById}
                   display={display}
                   now={new Date(taskBoardCountdownNow)}
                   t={t}
                   interactive={false}
                   onEdit={() => undefined}
                   onDelete={() => undefined}
+                  onOpenChat={() => undefined}
                 />
               </article>
             ) : null}
@@ -2030,21 +2128,34 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       {modal ? (
         <div className="task-board-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
           <form
-            className={`task-board-modal ${formCompact ? "is-compact" : "is-advanced"}`}
-            onSubmit={submitForm}
+            className={`task-board-modal ${formCompact ? "is-compact" : "is-advanced"} ${modalReadOnly ? "is-readonly" : ""}`}
+            onSubmit={(event) => {
+              if (modalReadOnly) {
+                event.preventDefault();
+                return;
+              }
+              void submitForm(event);
+            }}
             onMouseDown={(event) => event.stopPropagation()}
+            aria-readonly={modalReadOnly || undefined}
             noValidate
           >
             <div className="task-board-modal-head">
-              <strong>{modal.mode === "edit" ? t("taskBoard.modal.editTitle") : t("taskBoard.modal.createTitle")}</strong>
+              <strong>
+                {modalReadOnly
+                  ? t("taskBoard.modal.detailTitle")
+                  : modal.mode === "edit" ? t("taskBoard.modal.editTitle") : t("taskBoard.modal.createTitle")}
+              </strong>
               <div className="task-board-modal-head-actions">
-                <button
-                  type="button"
-                  className="task-board-modal-mode-button"
-                  onClick={toggleFormCompactMode}
-                >
-                  {formCompact ? t("taskBoard.modal.advancedMode") : t("taskBoard.modal.compactMode")}
-                </button>
+                {!modalReadOnly ? (
+                  <button
+                    type="button"
+                    className="task-board-modal-mode-button"
+                    onClick={toggleFormCompactMode}
+                  >
+                    {formCompact ? t("taskBoard.modal.advancedMode") : t("taskBoard.modal.compactMode")}
+                  </button>
+                ) : null}
                 <button type="button" className="task-board-modal-close-button" onClick={() => setModal(null)} aria-label={t("taskBoard.modal.close")}>×</button>
               </div>
             </div>
@@ -2055,6 +2166,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   value={form.title}
                   onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
                   autoFocus={!formCompact}
+                  disabled={modalReadOnly}
                   required
                 />
               </label>
@@ -2062,14 +2174,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             <div className="task-board-field">
               <div className="task-board-field-head">
                 <span>{t("taskBoard.form.description")}</span>
-                <button
-                  type="button"
-                  className="task-board-attachment-add-button"
-                  onClick={() => void addTaskBoardAttachments()}
-                  disabled={attachmentBusy}
-                >
-                  {attachmentBusy ? t("taskBoard.form.uploading") : t("taskBoard.form.addAttachment")}
-                </button>
+                {!modalReadOnly ? (
+                  <button
+                    type="button"
+                    className="task-board-attachment-add-button"
+                    onClick={() => void addTaskBoardAttachments()}
+                    disabled={attachmentBusy}
+                  >
+                    {attachmentBusy ? t("taskBoard.form.uploading") : t("taskBoard.form.addAttachment")}
+                  </button>
+                ) : null}
               </div>
               <textarea
                 value={form.description}
@@ -2085,6 +2199,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 }}
                 rows={formCompact ? 5 : 4}
                 autoFocus={formCompact}
+                disabled={modalReadOnly}
               />
               {visibleFormAttachments.length > 0 ? (
                 <div className="task-board-attachment-list" aria-label={t("taskBoard.form.attachments")}>
@@ -2102,14 +2217,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                           <span className="task-board-attachment-name">{attachment.name}</span>
                           {sizeLabel ? <span className="task-board-attachment-size">{sizeLabel}</span> : null}
                         </button>
-                        <button
-                          type="button"
-                          className="task-board-attachment-remove"
-                          onClick={() => removeTaskBoardAttachment(attachment.id)}
-                          aria-label={t("taskBoard.form.removeAttachment", { name: attachment.name })}
-                        >
-                          ×
-                        </button>
+                        {!modalReadOnly ? (
+                          <button
+                            type="button"
+                            className="task-board-attachment-remove"
+                            onClick={() => removeTaskBoardAttachment(attachment.id)}
+                            aria-label={t("taskBoard.form.removeAttachment", { name: attachment.name })}
+                          >
+                            ×
+                          </button>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -2137,6 +2254,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   <span>{t("taskBoard.form.priority")}</span>
                   <select
                     value={form.priority}
+                    disabled={modalReadOnly}
                     onChange={(event) => setForm((current) => ({
                       ...current,
                       priority: event.target.value as TaskBoardPriority
@@ -2153,6 +2271,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               <span>{t("taskBoard.form.assignee")}</span>
               <select
                 value={form.assigneeAgentKey}
+                disabled={modalReadOnly}
                 onChange={(event) => {
                   const assigneeAgentKey = event.target.value;
                   setForm((current) => ({
@@ -2187,6 +2306,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   <input
                     type="checkbox"
                     checked={form.automationEnabled}
+                    disabled={modalReadOnly}
                     onChange={(event) => setForm((current) => {
                       const enabled = event.target.checked;
                       return {
@@ -2214,6 +2334,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                           className="task-board-automation-menu-trigger"
                           aria-haspopup="listbox"
                           aria-expanded={automationMenuOpen === "plan"}
+                          disabled={modalReadOnly}
                           onClick={() => toggleAutomationMenu("plan")}
                         >
                           <span>{getAutomationPlanLabel(form.automationPreset, t)}</span>
@@ -2228,6 +2349,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                                 className={plan.value === form.automationPreset ? "is-selected" : ""}
                                 role="option"
                                 aria-selected={plan.value === form.automationPreset}
+                                disabled={modalReadOnly}
                                 onClick={() => updateAutomationPlan(plan.value)}
                               >
                                 {t(plan.labelKey)}
@@ -2242,6 +2364,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                         <span>{t("taskBoard.form.cron")}</span>
                         <input
                           value={form.automationCron}
+                          disabled={modalReadOnly}
                           onChange={(event) => setForm((current) => ({
                             ...current,
                             automationCron: event.target.value
@@ -2259,6 +2382,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                               className="task-board-automation-menu-trigger"
                               aria-haspopup="listbox"
                               aria-expanded={automationMenuOpen === "time"}
+                              disabled={modalReadOnly}
                               onClick={() => toggleAutomationMenu("time")}
                             >
                               <span>{form.automationTime}</span>
@@ -2274,6 +2398,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                                     className={time === form.automationTime ? "is-selected" : ""}
                                     role="option"
                                     aria-selected={time === form.automationTime}
+                                    disabled={modalReadOnly}
                                     onClick={() => updateAutomationTime(time)}
                                   >
                                     {time}
@@ -2290,7 +2415,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               </section>
             ) : null}
             <div className="task-board-modal-actions">
-              {modal.mode === "edit" && modal.issue ? (
+              {modal.mode === "edit" && modal.issue && !modalReadOnly ? (
                 <button
                   type="button"
                   className="task-board-danger-button"
@@ -2300,11 +2425,13 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 </button>
               ) : null}
               <button type="button" className="task-board-secondary-button" onClick={() => setModal(null)}>
-                {t("taskBoard.form.cancel")}
+                {modalReadOnly ? t("taskBoard.modal.close") : t("taskBoard.form.cancel")}
               </button>
-              <button type="submit" className="task-board-primary-button" disabled={!taskBoardReady}>
-                {t("taskBoard.form.save")}
-              </button>
+              {!modalReadOnly ? (
+                <button type="submit" className="task-board-primary-button" disabled={!taskBoardReady}>
+                  {t("taskBoard.form.save")}
+                </button>
+              ) : null}
             </div>
           </form>
         </div>
@@ -2351,29 +2478,29 @@ function TaskBoardColumn({
   status,
   issues,
   agents,
+  projectsById,
   display,
-  todoAutomationFilter,
   now,
   t,
   canAdd,
   onAdd,
-  onTodoAutomationFilterChange,
   onEdit,
   onDelete,
+  onOpenChat,
   onOpenContextMenu
 }: {
   status: TaskBoardStatus;
   issues: TaskBoardIssue[];
   agents: AssistantNavAgentItem[];
+  projectsById: Map<string, TaskBoardProject>;
   display: DisplayState;
-  todoAutomationFilter: TaskBoardTodoAutomationFilter;
   now: Date;
   t: TranslateFunction;
   canAdd: boolean;
   onAdd: () => void;
-  onTodoAutomationFilterChange: (filter: TaskBoardTodoAutomationFilter) => void;
   onEdit: (issue: TaskBoardIssue) => void;
   onDelete: (issue: TaskBoardIssue) => void | Promise<void>;
+  onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
   onOpenContextMenu: (issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
@@ -2390,20 +2517,6 @@ function TaskBoardColumn({
           <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
-        {status === "todo" ? (
-          <div className="task-board-column-filter" aria-label={t("taskBoard.filter.todoAutomation")} onClick={(event) => event.stopPropagation()}>
-            {TASK_BOARD_TODO_AUTOMATION_FILTERS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={todoAutomationFilter === option.value ? "is-active" : ""}
-                onClick={() => onTodoAutomationFilterChange(option.value)}
-              >
-                {t(option.labelKey)}
-              </button>
-            ))}
-          </div>
-        ) : null}
         <div className="task-board-column-actions">
           <button
             type="button"
@@ -2434,11 +2547,13 @@ function TaskBoardColumn({
               sortIndex={index + 1}
               awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
               agents={agents}
+              projectsById={projectsById}
               display={display}
               now={now}
               t={t}
               onEdit={() => onEdit(issue)}
               onDelete={() => void onDelete(issue)}
+              onOpenChat={() => void onOpenChat(issue)}
               onOpenContextMenu={(event) => onOpenContextMenu(issue, event)}
             />
           ))}
@@ -2459,22 +2574,26 @@ function TaskBoardCard({
   sortIndex,
   awaitingConfirmation,
   agents,
+  projectsById,
   display,
   now,
   t,
   onEdit,
   onDelete,
+  onOpenChat,
   onOpenContextMenu
 }: {
   issue: TaskBoardIssue;
   sortIndex: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
+  projectsById: Map<string, TaskBoardProject>;
   display: DisplayState;
   now: Date;
   t: TranslateFunction;
   onEdit: () => void;
   onDelete: () => void;
+  onOpenChat: () => void;
   onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const dragLocked = isIssueDragLocked(issue);
@@ -2510,12 +2629,14 @@ function TaskBoardCard({
         sortIndex={sortIndex}
         awaitingConfirmation={awaitingConfirmation}
         agents={agents}
+        projectsById={projectsById}
         display={display}
         now={now}
         t={t}
         interactive
         onEdit={onEdit}
         onDelete={onDelete}
+        onOpenChat={onOpenChat}
       />
     </article>
   );
@@ -2526,23 +2647,27 @@ function TaskBoardCardContent({
   sortIndex,
   awaitingConfirmation,
   agents,
+  projectsById,
   display,
   now,
   t,
   interactive,
   onEdit,
-  onDelete
+  onDelete,
+  onOpenChat
 }: {
   issue: TaskBoardIssue;
   sortIndex?: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
+  projectsById: Map<string, TaskBoardProject>;
   display: DisplayState;
   now: Date;
   t: TranslateFunction;
   interactive: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onOpenChat: () => void;
 }) {
   const assigneeAgent = getAssigneeAgent(issue, agents);
   const assigneeIcon = hasTaskBoardAgentIcon(assigneeAgent?.icon) ? assigneeAgent?.icon : undefined;
@@ -2565,15 +2690,17 @@ function TaskBoardCardContent({
     },
     t
   );
-  const displayIssueId = getTaskBoardIssueDisplayId(issue);
-  const canEditIssue = interactive && canEditTaskBoardIssueBody(issue);
+  const issueOrigin = getTaskBoardIssueOriginPresentation(issue, projectsById, t);
+  const canOpenIssueDetails = interactive;
+  const canDeleteIssue = interactive && canEditTaskBoardIssueBody(issue);
+  const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
   const hasMetaStrip = Boolean(automationLabel || hasVisibleAttachment);
   const mainContent = (
     <>
       <div className="task-board-card-row task-board-card-row-top">
         <span className="task-board-card-top-meta">
-          <span className="task-board-card-chip task-board-card-id" title={issue.remoteIssueId ? `${issue.id} / ${issue.remoteIssueId}` : issue.id}>
-            {displayIssueId}
+          <span className="task-board-card-chip task-board-card-origin" title={issueOrigin.title}>
+            {issueOrigin.projectLabel}
           </span>
           {display.priority ? <IssuePriorityBadge priority={issue.priority} t={t} /> : null}
           <IssueSeverityBadge severity={severity} t={t} />
@@ -2603,7 +2730,7 @@ function TaskBoardCardContent({
 
   return (
     <>
-      {canEditIssue ? (
+      {canOpenIssueDetails ? (
         <div
           className="task-board-card-main"
           role="button"
@@ -2666,34 +2793,51 @@ function TaskBoardCardContent({
             <span className="task-board-card-assignee-name">{cardPresentation.assigneeLabel}</span>
           </span>
         ) : <span className="task-board-card-assignee" aria-hidden="true" />}
-        {canEditIssue ? (
+        {interactive ? (
           <span className="task-board-card-actions">
             <button
               type="button"
               className="task-board-card-action"
-              aria-label={t("taskBoard.modal.editTitle")}
-              title={t("taskBoard.modal.editTitle")}
+              aria-label={t("taskBoard.card.viewDetails")}
+              title={t("taskBoard.card.viewDetails")}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
                 onEdit();
               }}
             >
-              <EditOutlined />
+              <EyeOutlined />
             </button>
-            <button
-              type="button"
-              className="task-board-card-action is-danger"
-              aria-label={t("taskBoard.context.delete")}
-              title={t("taskBoard.context.delete")}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete();
-              }}
-            >
-              <DeleteOutlined />
-            </button>
+            {canOpenIssueChat ? (
+              <button
+                type="button"
+                className="task-board-card-action"
+                aria-label={t("taskBoard.chat.view")}
+                title={t("taskBoard.chat.view")}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenChat();
+                }}
+              >
+                <MessageOutlined />
+              </button>
+            ) : null}
+            {canDeleteIssue ? (
+              <button
+                type="button"
+                className="task-board-card-action is-danger"
+                aria-label={t("taskBoard.context.delete")}
+                title={t("taskBoard.context.delete")}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete();
+                }}
+              >
+                <DeleteOutlined />
+              </button>
+            ) : null}
           </span>
         ) : null}
       </footer>
@@ -2701,7 +2845,272 @@ function TaskBoardCardContent({
   );
 }
 
-function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "search" }) {
+function TaskBoardProjectFilter({
+  projects,
+  selectedProjectIds,
+  open,
+  t,
+  onOpenChange,
+  onToggleProject,
+  onClear
+}: {
+  projects: TaskBoardProject[];
+  selectedProjectIds: string[];
+  open: boolean;
+  t: TranslateFunction;
+  onOpenChange: (open: boolean) => void;
+  onToggleProject: (projectId: string) => void;
+  onClear: () => void;
+}) {
+  const filterRef = useRef<HTMLDivElement | null>(null);
+  const treeItems = useMemo(() => flattenTaskBoardProjectTree(projects), [projects]);
+  const label = getTaskBoardProjectFilterLabel(selectedProjectIds, projects, t);
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") {
+      return undefined;
+    }
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && filterRef.current?.contains(target)) {
+        return;
+      }
+      onOpenChange(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onOpenChange(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onOpenChange, open]);
+
+  return (
+    <div className="task-board-project-filter" ref={filterRef}>
+      <button
+        type="button"
+        className={`task-board-project-filter-trigger ${open ? "is-open" : ""}`}
+        aria-haspopup="tree"
+        aria-expanded={open}
+        aria-label={t("taskBoard.projectFilter.ariaLabel")}
+        title={label}
+        onClick={() => onOpenChange(!open)}
+      >
+        <TaskBoardIcon kind="project" />
+        <span className="task-board-project-filter-label">{label}</span>
+      </button>
+      {open ? (
+        <div className="task-board-project-filter-menu" role="tree" aria-label={t("taskBoard.projectFilter.ariaLabel")}>
+          <button
+            type="button"
+            className={`task-board-project-filter-all ${selectedProjectIds.length === 0 ? "is-active" : ""}`}
+            onClick={onClear}
+          >
+            {t("taskBoard.projectFilter.all")}
+          </button>
+          {treeItems.length > 0 ? (
+            <div className="task-board-project-filter-tree">
+              {treeItems.map(({ project, level }) => (
+                <label
+                  key={project.id}
+                  className="task-board-project-filter-row"
+                  role="treeitem"
+                  aria-level={level + 1}
+                  style={{ paddingLeft: `${8 + (level * 14)}px` }}
+                  title={getTaskBoardProjectOptionLabel(project)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedProjectIds.includes(project.id)}
+                    onChange={() => onToggleProject(project.id)}
+                  />
+                  <span className="task-board-project-filter-name">{project.name}</span>
+                  {project.path && project.path !== project.name ? (
+                    <span className="task-board-project-filter-path">{project.path}</span>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <span className="task-board-project-filter-empty">{t("taskBoard.projectFilter.empty")}</span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskBoardSearchFilters({
+  openMenu,
+  priorityFilters,
+  severityFilters,
+  automationFilter,
+  t,
+  onOpenMenuChange,
+  onTogglePriority,
+  onClearPriority,
+  onToggleSeverity,
+  onClearSeverity,
+  onAutomationFilterChange
+}: {
+  openMenu: SearchFilterMenuKind;
+  priorityFilters: TaskBoardPriority[];
+  severityFilters: TaskBoardSeverity[];
+  automationFilter: TaskBoardAutomationFilter;
+  t: TranslateFunction;
+  onOpenMenuChange: (menu: SearchFilterMenuKind) => void;
+  onTogglePriority: (priority: TaskBoardPriority) => void;
+  onClearPriority: () => void;
+  onToggleSeverity: (severity: TaskBoardSeverity) => void;
+  onClearSeverity: () => void;
+  onAutomationFilterChange: (filter: TaskBoardAutomationFilter) => void;
+}) {
+  const filterRef = useRef<HTMLDivElement | null>(null);
+  const hasPriorityFilter = priorityFilters.length > 0;
+  const hasSeverityFilter = severityFilters.length > 0;
+  const hasAutomationFilter = automationFilter !== "all";
+
+  useEffect(() => {
+    if (!openMenu || typeof document === "undefined") {
+      return undefined;
+    }
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && filterRef.current?.contains(target)) {
+        return;
+      }
+      onOpenMenuChange(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onOpenMenuChange(null);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onOpenMenuChange, openMenu]);
+
+  function toggleMenu(menu: Exclude<SearchFilterMenuKind, null>) {
+    onOpenMenuChange(openMenu === menu ? null : menu);
+  }
+
+  return (
+    <div className="task-board-search-filters" ref={filterRef}>
+      <button
+        type="button"
+        className={`task-board-search-filter-button ${openMenu === "priority" ? "is-open" : ""} ${hasPriorityFilter ? "is-active" : ""}`}
+        aria-label={t("taskBoard.searchFilter.priority")}
+        aria-haspopup="true"
+        aria-expanded={openMenu === "priority"}
+        title={t("taskBoard.searchFilter.priority")}
+        onClick={() => toggleMenu("priority")}
+      >
+        <ThunderboltOutlined />
+      </button>
+      <button
+        type="button"
+        className={`task-board-search-filter-button ${openMenu === "severity" ? "is-open" : ""} ${hasSeverityFilter ? "is-active" : ""}`}
+        aria-label={t("taskBoard.searchFilter.severity")}
+        aria-haspopup="true"
+        aria-expanded={openMenu === "severity"}
+        title={t("taskBoard.searchFilter.severity")}
+        onClick={() => toggleMenu("severity")}
+      >
+        <FlagOutlined />
+      </button>
+      <button
+        type="button"
+        className={`task-board-search-filter-button ${openMenu === "automation" ? "is-open" : ""} ${hasAutomationFilter ? "is-active" : ""}`}
+        aria-label={t("taskBoard.searchFilter.automation")}
+        aria-haspopup="true"
+        aria-expanded={openMenu === "automation"}
+        title={t("taskBoard.searchFilter.automation")}
+        onClick={() => toggleMenu("automation")}
+      >
+        <TaskBoardIcon kind="clock" />
+      </button>
+      {openMenu ? (
+        <div
+          className={`task-board-search-filter-menu is-${openMenu}`}
+          aria-label={
+            openMenu === "priority"
+              ? t("taskBoard.searchFilter.priority")
+              : openMenu === "severity"
+                ? t("taskBoard.searchFilter.severity")
+                : t("taskBoard.searchFilter.automation")
+          }
+        >
+          {openMenu === "priority" ? (
+            <>
+              <button
+                type="button"
+                className={`task-board-search-filter-all ${!hasPriorityFilter ? "is-active" : ""}`}
+                onClick={onClearPriority}
+              >
+                {t("taskBoard.searchFilter.allPriorities")}
+              </button>
+              {TASK_BOARD_PRIORITIES.map((priority) => (
+                <label key={priority} className="task-board-check-row task-board-search-filter-row">
+                  <input
+                    type="checkbox"
+                    checked={priorityFilters.includes(priority)}
+                    onChange={() => onTogglePriority(priority)}
+                  />
+                  <PriorityBadge priority={priority} t={t} />
+                </label>
+              ))}
+            </>
+          ) : openMenu === "severity" ? (
+            <>
+              <button
+                type="button"
+                className={`task-board-search-filter-all ${!hasSeverityFilter ? "is-active" : ""}`}
+                onClick={onClearSeverity}
+              >
+                {t("taskBoard.searchFilter.allSeverities")}
+              </button>
+              {TASK_BOARD_SEVERITIES.map((severity) => (
+                <label key={severity} className="task-board-check-row task-board-search-filter-row">
+                  <input
+                    type="checkbox"
+                    checked={severityFilters.includes(severity)}
+                    onChange={() => onToggleSeverity(severity)}
+                  />
+                  <IssueSeverityBadge severity={severity} t={t} />
+                </label>
+              ))}
+            </>
+          ) : (
+            <>
+              {TASK_BOARD_AUTOMATION_FILTER_OPTIONS.map((option) => (
+                <label key={option.value} className="task-board-check-row task-board-search-filter-row">
+                  <input
+                    type="radio"
+                    name="task-board-automation-filter"
+                    checked={automationFilter === option.value}
+                    onChange={() => onAutomationFilterChange(option.value)}
+                  />
+                  <span>{t(option.labelKey)}</span>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "project" | "search" }) {
   const paths: Record<typeof kind, ReactNode> = {
     attachment: (
       <path d="M7.5 11.5 12 7a2.1 2.1 0 0 1 3 3l-6 6a3.1 3.1 0 0 1-4.4-4.4l6.4-6.4" />
@@ -2726,6 +3135,12 @@ function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "f
         <path d="M4 5h12" />
         <path d="M6.5 10h7" />
         <path d="M9 15h2" />
+      </>
+    ),
+    project: (
+      <>
+        <path d="M3.8 6.2h5l1.4 1.6h6v7.4H3.8z" />
+        <path d="M3.8 6.2V4.8h4.4l1.2 1.4" />
       </>
     ),
     search: (

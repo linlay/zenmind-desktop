@@ -28,7 +28,6 @@ import type {
   IdentityAccessTokenInspection,
   MarketSettings,
   TaskBoardCloudConfig,
-  TaskBoardDesktopOnlineResult,
   TaskBoardProject,
   TunnelDebugSnapshot,
   TunnelHubSettings
@@ -399,15 +398,6 @@ const defaultTaskBoardCloudConfig: TaskBoardCloudConfig = {
   selectedProjectId: "default",
   remoteControlEnabled: false,
   deviceAlias: ""
-};
-
-const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
-  ok: false,
-  online: false,
-  deviceCount: 0,
-  sessionCount: 0,
-  agentCount: 0,
-  devices: []
 };
 
 const defaultGeneralSettings: DesktopGeneralSettings = {
@@ -2265,7 +2255,6 @@ export function SettingsPage({
   const [controlCloudConfig, setControlCloudConfig] = useState<TaskBoardCloudConfig>(defaultTaskBoardCloudConfig);
   const [controlCloudProjects, setControlCloudProjects] = useState<TaskBoardProject[]>([]);
   const [controlConnectionState, setControlConnectionState] = useState<TaskBoardConnectionState>("disabled");
-  const [controlOnlineSummary, setControlOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultTaskBoardOnlineSummary);
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -2461,9 +2450,8 @@ export function SettingsPage({
     let cancelled = false;
     async function refreshControlState() {
       try {
-        const [settingsResult, onlineResult, issueResult] = await Promise.all([
+        const [settingsResult, issueResult] = await Promise.all([
           window.electronAPI.taskBoard.getSettings(),
-          window.electronAPI.taskBoard.listOnlineDevices(),
           window.electronAPI.taskBoard.listIssues()
         ]);
         if (cancelled) {
@@ -2475,7 +2463,6 @@ export function SettingsPage({
         });
         setControlCloudProjects(issueResult.projects ?? []);
         setControlConnectionState(settingsResult.connectionState ?? issueResult.connectionState ?? "disabled");
-        setControlOnlineSummary(onlineResult);
         setReadErrorSections(["kanban"], "");
       } catch (reason) {
         if (!cancelled) {
@@ -3545,12 +3532,8 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         ...result.settings.cloud
       });
       setControlConnectionState(result.connectionState ?? "disabled");
-      const [onlineResult, issueResult] = await Promise.all([
-        window.electronAPI.taskBoard.listOnlineDevices(),
-        window.electronAPI.taskBoard.listIssues()
-      ]);
+      const issueResult = await window.electronAPI.taskBoard.listIssues();
       setControlCloudProjects(issueResult.projects ?? []);
-      setControlOnlineSummary(onlineResult);
       setReadErrorSections(["kanban"], "");
       showSectionNotice("kanban", result.message, "success");
     } catch (reason) {
@@ -4083,13 +4066,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                 <Typography.Text strong>{t("settings.control.statusTitle")}</Typography.Text>
                 <Typography.Text type="secondary">{getControlConnectionLabel(controlConnectionState)}</Typography.Text>
               </Space>
-              <Typography.Text type="secondary">
-                {t("settings.control.onlineSummary", {
-                  devices: controlOnlineSummary.deviceCount,
-                  sessions: controlOnlineSummary.sessionCount,
-                  agents: controlOnlineSummary.agentCount
-                })}
-              </Typography.Text>
             </div>
             <Form
               className="settings-control-form settings-kanban-ant-form"

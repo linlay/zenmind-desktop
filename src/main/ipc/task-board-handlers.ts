@@ -3,7 +3,7 @@ export interface TaskBoardIpcHandlerOptions {
 
   // Task board
   listTaskBoardIssues: (app: any) => any;
-  listTaskBoardOnlineDevices: (app: any) => any;
+  resyncTaskBoardCloud: (app: any) => any;
   getTaskBoardSettings: (app: any) => any;
   saveTaskBoardSettings: (app: any, input: any) => any;
   getTaskBoardCloudConfig: (app: any) => any;
@@ -21,7 +21,7 @@ export function registerTaskBoardIpcHandlers(ipcMain: any, options: TaskBoardIpc
   const {
     app,
     listTaskBoardIssues,
-    listTaskBoardOnlineDevices,
+    resyncTaskBoardCloud,
     getTaskBoardSettings,
     saveTaskBoardSettings,
     getTaskBoardCloudConfig,
@@ -41,8 +41,8 @@ export function registerTaskBoardIpcHandlers(ipcMain: any, options: TaskBoardIpc
     listTaskBoardIssues(app)
   );
 
-  ipcMain.handle("taskBoard.listOnlineDevices", async () =>
-    listTaskBoardOnlineDevices(app)
+  ipcMain.handle("taskBoard.resyncCloudBoard", async () =>
+    resyncTaskBoardCloud(app)
   );
 
   ipcMain.handle("taskBoard.getSettings", async () =>

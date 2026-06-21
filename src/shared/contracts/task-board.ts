@@ -303,53 +303,6 @@ export interface TaskBoardCloudConfigResult {
   connectionState?: TaskBoardListResult["connectionState"];
 }
 
-export interface TaskBoardDesktopSessionStatus {
-  sessionId: string;
-  deviceId?: string;
-  deviceName?: string;
-  deviceAlias?: string;
-  hostname?: string;
-  username?: string;
-  currentUserId?: string;
-  currentUserName?: string;
-  selectedProjectId?: string;
-  capabilities: string[];
-  lastSeenAt?: string;
-}
-
-export interface TaskBoardDesktopOnlineAgent {
-  agentKey: string;
-  displayName: string;
-  role?: string;
-  icon?: Record<string, unknown>;
-}
-
-export interface TaskBoardDesktopOnlineDevice {
-  deviceId: string;
-  deviceName?: string;
-  deviceAlias?: string;
-  hostname?: string;
-  username?: string;
-  currentUserId?: string;
-  currentUserName?: string;
-  selectedProjectId?: string;
-  capabilities: string[];
-  lastSeenAt?: string;
-  sessions: TaskBoardDesktopSessionStatus[];
-  agents: TaskBoardDesktopOnlineAgent[];
-  agentError?: string;
-}
-
-export interface TaskBoardDesktopOnlineResult {
-  ok: boolean;
-  online: boolean;
-  deviceCount: number;
-  sessionCount: number;
-  agentCount: number;
-  devices: TaskBoardDesktopOnlineDevice[];
-  message?: string;
-}
-
 export interface TaskBoardIssueResult {
   ok: boolean;
   message: string;

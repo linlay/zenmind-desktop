@@ -1115,7 +1115,7 @@
   align-items: center;
   width: 100%;
   min-height: 34px;
-  padding: 9px;
+  padding: 5px 8px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1137,7 +1137,7 @@
 .worker-chat-item-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   min-width: 0;
 }
@@ -1148,7 +1148,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.35;
 }
 

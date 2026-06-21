@@ -982,7 +982,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.assistant-worker-name\s*\{[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?font-weight:\s*400;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
-  assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*12px;/);
+  assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*13px;/);
   assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\s*\{[\s\S]*?background:\s*var\(--surface\);/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded \.worker-panel-icon\s*\{[\s\S]*?width:\s*20px;[\s\S]*?height:\s*20px;/);
@@ -1739,7 +1739,7 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.match(settingsPage, /settings\.control\.tunnelDescription/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
-  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.listOnlineDevices/);
+  assert.doesNotMatch(settingsPage, /window\.electronAPI\.taskBoard\.listOnlineDevices/);
   assert.match(taskBoardContracts, /interface TaskBoardSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?cloud:\s*TaskBoardCloudConfig;/);
   assert.match(taskBoardContracts, /interface TaskBoardSettingsInput[\s\S]*?enabled\?:\s*boolean;[\s\S]*?cloud\?:\s*Partial<TaskBoardCloudConfig>;/);
   assert.match(taskBoardContracts, /remoteControlEnabled:\s*boolean/);
@@ -2093,6 +2093,9 @@ test("task board cards align issue meta, title, and hover actions with website",
   assert.match(contracts, /statusName\?: string/);
   assert.match(contracts, /statusKey\?: string/);
   assert.match(taskBoardPage, /function formatIssueUpdatedTime\(updatedAt: string\)/);
+  assert.match(taskBoardPage, /const date = `\$\{padAutomationNumber\(updatedDate\.getMonth\(\) \+ 1\)\}\/\$\{padAutomationNumber\(updatedDate\.getDate\(\)\)\}`/);
+  assert.match(taskBoardPage, /return `\$\{updatedDate\.getFullYear\(\)\}\/\$\{date\}`/);
+  assert.doesNotMatch(taskBoardPage, /return `\$\{padAutomationNumber\(updatedDate\.getMonth\(\) \+ 1\)\}\/\$\{padAutomationNumber\(updatedDate\.getDate\(\)\)\} \$\{time\}`/);
   assert.match(taskBoardPage, /function getIssueCardStatusPresentation\(\s*issue: TaskBoardIssue,\s*options:/);
   assert.match(taskBoardPage, /issue\.status === "backlog"[\s\S]{0,220}label:\s*formatIssueUpdatedTime\(issue\.updatedAt\)/);
   assert.match(taskBoardPage, /issue\.status === "todo"[\s\S]{0,280}label:\s*automationCountdown \|\| formatTaskBoardSortNumber\(options\.sortIndex, issue\.position\)/);
@@ -2112,11 +2115,17 @@ test("task board cards align issue meta, title, and hover actions with website",
   assert.match(taskBoardPage, /return issue\.stageName\?\.trim\(\) \|\| ""/);
   assert.doesNotMatch(taskBoardPage, /function getIssueStageLabel[\s\S]{0,180}statusName/);
   assert.doesNotMatch(taskBoardPage, /function getIssueStageLabel[\s\S]{0,180}STATUS_META/);
-  assert.match(taskBoardPage, /const displayIssueId = getTaskBoardIssueDisplayId\(issue\)/);
+  assert.match(taskBoardPage, /type TaskBoardIssueOriginPresentation/);
+  assert.match(taskBoardPage, /function getTaskBoardIssueOriginPresentation\(\s*issue: TaskBoardIssue,\s*projectsById: Map<string, TaskBoardProject>,\s*t: TranslateFunction/);
+  assert.match(taskBoardPage, /const project = projectsById\.get\(projectId\)/);
+  assert.match(taskBoardPage, /const taskBoardProjectsById = useMemo\(\(\) => new Map\(cloudProjects\.map\(\(project\) => \[project\.id, project\]\)\), \[cloudProjects\]\)/);
+  assert.match(taskBoardPage, /const issueOrigin = getTaskBoardIssueOriginPresentation\(issue, projectsById, t\)/);
+  assert.doesNotMatch(taskBoardPage, /getTaskBoardIssueDisplayId/);
+  assert.doesNotMatch(taskBoardPage, /displayIssueId/);
   assert.match(taskBoardPage, /shortLabelKey: "taskBoard\.priority\.highShort"/);
   assert.match(taskBoardPage, /shortLabelKey: "taskBoard\.severity\.criticalShort"/);
   assert.match(taskBoardPage, /const shortLabel = t\(meta\.shortLabelKey\)/);
-  assert.match(taskBoardPage, /<span className="task-board-card-chip task-board-card-id"[\s\S]{0,120}\{displayIssueId\}/);
+  assert.match(taskBoardPage, /<span className="task-board-card-chip task-board-card-origin"[\s\S]{0,120}title=\{issueOrigin\.title\}[\s\S]{0,120}\{issueOrigin\.projectLabel\}/);
   assert.match(taskBoardPage, /<IssuePriorityBadge priority=\{issue\.priority\} t=\{t\} \/>/);
   assert.match(taskBoardPage, /<IssueSeverityBadge severity=\{severity\} t=\{t\} \/>/);
   assert.match(taskBoardPage, /className="task-board-priority-text">\{shortLabel\}<\/span>/);
@@ -2133,10 +2142,18 @@ test("task board cards align issue meta, title, and hover actions with website",
   assert.match(taskBoardPage, /<span className="task-board-card-status-time">\{cardStatus\.updatedTime\}<\/span>/);
   assert.match(taskBoardPage, /title=\{automationLabel\}/);
   assert.match(taskBoardPage, /className="task-board-automation-label">\{automationLabel\}<\/span>/);
-  assert.match(taskBoardPage, /const canEditIssue = interactive && canEditTaskBoardIssueBody\(issue\)/);
+  assert.match(taskBoardPage, /const canOpenIssueDetails = interactive/);
+  assert.match(taskBoardPage, /const canDeleteIssue = interactive && canEditTaskBoardIssueBody\(issue\)/);
+  assert.match(taskBoardPage, /const canOpenIssueChat = interactive && Boolean\(issue\.chatId\?\.trim\(\)\)/);
   assert.match(taskBoardPage, /className="task-board-card-actions"/);
-  assert.match(taskBoardPage, /<EditOutlined \/>/);
+  assert.match(taskBoardPage, /<EyeOutlined \/>/);
+  assert.match(taskBoardPage, /<MessageOutlined \/>/);
   assert.match(taskBoardPage, /<DeleteOutlined \/>/);
+  assert.match(taskBoardPage, /aria-label=\{t\("taskBoard\.card\.viewDetails"\)\}/);
+  assert.match(taskBoardPage, /aria-label=\{t\("taskBoard\.chat\.view"\)\}/);
+  assert.match(taskBoardPage, /modalReadOnly[\s\S]{0,80}\? t\("taskBoard\.modal\.detailTitle"\)/);
+  assert.match(taskBoardPage, /const modalReadOnly = modal\?\.mode === "edit" && !canEditTaskBoardIssueBody\(modal\.issue\)/);
+  assert.match(taskBoardPage, /modal\.mode === "edit" && modal\.issue && !modalReadOnly/);
   assert.match(taskBoardPage, /runState: nextTaskStatus\.runState/);
   assert.match(taskBoardPage, /runState: "running"/);
   assert.match(taskBoardStyles, /--task-board-column-min-width:\s*220px;/);
@@ -2167,16 +2184,22 @@ test("task board cards align issue meta, title, and hover actions with website",
   assert.match(taskBoardStyles, /\.task-board-card-actions\s*\{[\s\S]{0,180}opacity:\s*0;[\s\S]{0,80}pointer-events:\s*none;/);
   assert.match(taskBoardStyles, /\.task-board-card:hover \.task-board-card-actions,[\s\S]{0,80}\.task-board-card:focus-within \.task-board-card-actions\s*\{[\s\S]{0,100}opacity:\s*1;[\s\S]{0,80}pointer-events:\s*auto;/);
   assert.match(taskBoardStyles, /\.task-board-card-action\s*\{[\s\S]{0,180}width:\s*26px;[\s\S]{0,180}height:\s*26px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-origin/);
+  assert.match(taskBoardStyles, /\.task-board-modal\.is-readonly/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-chat-action/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card-main strong/);
   assert.match(zhCN, /"taskBoard\.severity\.critical": "严重"/);
   assert.match(zhCN, /"taskBoard\.severity\.criticalShort": "极"/);
   assert.match(zhCN, /"taskBoard\.priority\.highShort": "高"/);
   assert.match(zhCN, /"taskBoard\.card\.stage": "当前阶段：\{value\}"/);
+  assert.match(zhCN, /"taskBoard\.card\.viewDetails": "查看详情"/);
+  assert.match(zhCN, /"taskBoard\.card\.project": "项目：\{value\}"/);
   assert.match(enUS, /"taskBoard\.severity\.critical": "Critical"/);
   assert.match(enUS, /"taskBoard\.severity\.criticalShort": "X"/);
   assert.match(enUS, /"taskBoard\.priority\.highShort": "H"/);
   assert.match(enUS, /"taskBoard\.card\.stage": "Current stage: \{value\}"/);
+  assert.match(enUS, /"taskBoard\.card\.viewDetails": "View details"/);
+  assert.match(enUS, /"taskBoard\.card\.project": "Project: \{value\}"/);
 });
 
 test("task board todo column can filter scheduled tasks", () => {
@@ -2202,6 +2225,53 @@ test("task board todo column can filter scheduled tasks", () => {
   assert.match(zhCN, /"taskBoard\.filter\.scheduledOnly": "定时"/);
   assert.match(enUS, /"taskBoard\.filter\.todoAutomation": "Todo schedule filter"/);
   assert.match(enUS, /"taskBoard\.filter\.scheduledOnly": "Scheduled"/);
+});
+
+test("task board cloud popover resyncs and toolbar filters by project tree", () => {
+  const contracts = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const taskBoardHandlers = readSourceFile("src", "main", "ipc", "task-board-handlers.ts");
+  const taskBoardRuntime = readSourceFile("src", "main", "task-board-runtime.ts");
+  const wsClient = readSourceFile("src", "main", "kanban-desktop-ws-client.ts");
+  const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
+  const taskBoardStyles = readSourceFile("src", "renderer", "styles", "task-board.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(contracts, /resyncCloudBoard: \(\) => Promise<TaskBoardListResult>/);
+  assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.resyncCloudBoard"\)/);
+  assert.match(taskBoardHandlers, /ipcMain\.handle\("taskBoard\.resyncCloudBoard"/);
+  assert.match(taskBoardRuntime, /async resyncCloudBoard\(\): Promise<TaskBoardListResult>/);
+  assert.match(wsClient, /async resyncFromCloud\(\)/);
+  assert.match(wsClient, /async resyncFromCloud\(\)[\s\S]*"snapshot\.get"/);
+  assert.match(wsClient, /async resyncFromCloud\(\)[\s\S]*pullDeliveries/);
+  assert.match(taskBoardPage, /async function resyncCloudBoard\(\)/);
+  assert.match(taskBoardPage, /taskBoardApi\.resyncCloudBoard\(\)/);
+  assert.match(taskBoardPage, /cloudResyncing \? t\("taskBoard\.cloud\.resyncing"\) : t\("taskBoard\.cloud\.resync"\)/);
+  assert.doesNotMatch(taskBoardPage, /listOnlineDevices/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.cloud\.onlineDevices/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.cloud\.onlineSessions/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.cloud\.onlineAgents/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.cloud\.serverUrl/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.cloud\.token/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.cloud\.projectId/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.cloud\.save"/);
+  assert.doesNotMatch(taskBoardPage, /settings\.control\.remoteControlEnabled/);
+  assert.match(taskBoardPage, /function flattenTaskBoardProjectTree\(projects: TaskBoardProject\[\]\)/);
+  assert.match(taskBoardPage, /function collectTaskBoardProjectAndDescendantIds\(projectId: string/);
+  assert.match(taskBoardPage, /function getTaskBoardProjectFilterIds\(projects: TaskBoardProject\[\], selectedProjectIds: string\[\]\)/);
+  assert.match(taskBoardPage, /collectTaskBoardProjectAndDescendantIds\(projectId, childrenByParentId, filterIds\)/);
+  assert.match(taskBoardPage, /projectFilterIds && !projectFilterIds\.has\(issue\.projectId \?\? ""\)/);
+  assert.match(taskBoardPage, /<TaskBoardProjectFilter[\s\S]{0,260}selectedProjectIds=\{selectedProjectIds\}/);
+  assert.match(taskBoardPage, /role="tree"/);
+  assert.match(taskBoardPage, /role="treeitem"/);
+  assert.match(taskBoardStyles, /\.task-board-project-filter-trigger\s*\{/);
+  assert.match(taskBoardStyles, /\.task-board-project-filter-menu\s*\{/);
+  assert.match(taskBoardStyles, /\.task-board-project-filter-row\s*\{/);
+  assert.match(zhCN, /"taskBoard\.cloud\.resync": "重新同步"/);
+  assert.match(zhCN, /"taskBoard\.projectFilter\.all": "全部项目"/);
+  assert.match(enUS, /"taskBoard\.cloud\.resync": "Resync"/);
+  assert.match(enUS, /"taskBoard\.projectFilter\.all": "All Projects"/);
 });
 
 test("task board scheduled tasks wait for automation time before assistant run", () => {
@@ -2362,7 +2432,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /TASK_BOARD_AUTOMATION_TIME_OPTIONS/);
   assert.match(taskBoardPage, /automationTime/);
   assert.match(taskBoardPage, /function hasIssueAutomation\(issue: Pick<TaskBoardIssue, "automationEnabled" \| "automationCron">\)/);
-  assert.match(taskBoardPage, /function openEditModal\(issue: TaskBoardIssue\)[\s\S]{0,220}setFormCompact\(!hasIssueAutomation\(issue\)\);/);
+  assert.match(taskBoardPage, /function openEditModal\(issue: TaskBoardIssue\)[\s\S]{0,260}setFormCompact\(canEditTaskBoardIssueBody\(issue\) \? !hasIssueAutomation\(issue\) : false\);/);
   assert.match(taskBoardPage, /function buildAutomationCron/);
   assert.match(taskBoardPage, /const \[automationMenuOpen,\s*setAutomationMenuOpen\] = useState<AutomationMenuKind \| null>\(null\)/);
   assert.match(taskBoardPage, /selectedAutomationTimeRef\.current\?\.scrollIntoView/);
