@@ -213,19 +213,12 @@ test("syncBuiltinAssets writes brand-neutral service resources and removes legac
   fs.writeFileSync(path.join(legacyServicesRoot, "stale.txt"), "stale", "utf8");
 
   const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  const previousLegacySource = process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
   process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  delete process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
   t.after(() => {
     if (previousSource === undefined) {
       delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
     } else {
       process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-    if (previousLegacySource === undefined) {
-      delete process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.ZENMIND_BUILTIN_ASSETS_SOURCE = previousLegacySource;
     }
   });
 
@@ -263,19 +256,12 @@ test("syncBuiltinAssets expands Darwin builtin service archives into directories
   }
 
   const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
-  const previousLegacySource = process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
   process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
-  delete process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
   t.after(() => {
     if (previousSource === undefined) {
       delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
     } else {
       process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
-    }
-    if (previousLegacySource === undefined) {
-      delete process.env.ZENMIND_BUILTIN_ASSETS_SOURCE;
-    } else {
-      process.env.ZENMIND_BUILTIN_ASSETS_SOURCE = previousLegacySource;
     }
   });
 

@@ -1,10 +1,7 @@
 import type { App } from "electron";
 
-export function createInstallerShutdownArgs(primaryArg: string, legacyArgs: readonly string[]) {
-  return new Set<string>([
-    primaryArg,
-    ...legacyArgs
-  ]);
+export function createInstallerShutdownArgs(primaryArg: string) {
+  return new Set<string>([primaryArg]);
 }
 
 export function hasInstallerShutdownArg(commandLine: string[], installerShutdownArgs: ReadonlySet<string>) {

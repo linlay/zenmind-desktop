@@ -70,8 +70,8 @@ function readBrandDesktopPetManifest(root, brandId) {
   };
 }
 
-test("default dev brand resolves to CuteJ when no brand is provided", () => {
-  assert.equal(resolveBrandId([], {}), "cutej");
+test("default dev brand resolves to ZenMind when no brand is provided", () => {
+  assert.equal(resolveBrandId([], {}), "zenmind");
   assert.equal(resolveBrandId(["--brand", "zenmind"], {}), "zenmind");
   assert.equal(resolveBrandId([], { BRAND: "zenmind" }), "zenmind");
 });
@@ -876,8 +876,8 @@ test("sync-demo defaults to manifest only and copies webapp templates when enabl
   });
   assert.equal(defaultResult.bundled, false);
   assert.deepEqual(defaultResult.webappTemplates, []);
-  assert.equal(fs.existsSync(path.join(brandResourcesDir(root, "cutej"), "demo", "webapp-templates")), false);
-  assert.equal(readJson(path.join(brandResourcesDir(root, "cutej"), "demo", "manifest.json")).bundled, false);
+  assert.equal(fs.existsSync(path.join(brandResourcesDir(root, "zenmind"), "demo", "webapp-templates")), false);
+  assert.equal(readJson(path.join(brandResourcesDir(root, "zenmind"), "demo", "manifest.json")).bundled, false);
 
   const enabledResult = await prepareBundledDemoAssets({
     rootDir: root,
@@ -887,7 +887,7 @@ test("sync-demo defaults to manifest only and copies webapp templates when enabl
   assert.equal(enabledResult.bundled, true);
   assert.deepEqual(enabledResult.webappTemplates, ["demo-node-html"]);
   assert.equal(
-    fs.existsSync(path.join(brandResourcesDir(root, "cutej"), "demo", "webapp-templates", "demo-node-html", "webapp.json")),
+    fs.existsSync(path.join(brandResourcesDir(root, "zenmind"), "demo", "webapp-templates", "demo-node-html", "webapp.json")),
     true
   );
 

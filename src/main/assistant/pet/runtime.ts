@@ -31,6 +31,7 @@ import {
   createDesktopPetState,
   createDefaultDesktopPetLocalStatus,
   DESKTOP_PET_VISIBLE_FOOTPRINT,
+  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   getDesktopPetContextMenuItems,
   getAnchoredDesktopPetBounds,
   isDesktopPetSupportedPlatform,
@@ -337,7 +338,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
 
   function listTaskBoardLocalAgents(): DesktopPetAgentOption[] {
     const agents = new Map<string, DesktopPetAgentOption>();
-    const fallbackTaskBoardAgentKey = "cutej";
+    const fallbackTaskBoardAgentKey = DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
     for (const agent of state.desktopPetAgentOptions) {
       const agentKey = agent.agentKey?.trim();
       if (!agentKey || agents.has(agentKey)) {

@@ -19,7 +19,6 @@ const IDENTITY_CENTER_SERVICE_ID = "identity-center";
 const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
 const IDENTITY_CENTER_AUTH_SCRIPT_TIMEOUT_MS = 30_000;
 const IDENTITY_CENTER_AUTH_SCRIPT_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
-const LEGACY_DESKTOP_NODE_BIN_ENV = "ZENMIND_NODE_BIN";
 
 type IdentityCenterAuthLayout = {
   programDir: string;
@@ -193,7 +192,7 @@ function runIdentityCenterScript(
     if (process.platform === "win32") {
       const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
       const userProfile = process.env.USERPROFILE ?? "";
-      const configuredNodeBin = process.env.DESKTOP_NODE_BIN ?? process.env[LEGACY_DESKTOP_NODE_BIN_ENV];
+      const configuredNodeBin = process.env.DESKTOP_NODE_BIN;
       const nodeBinDir = configuredNodeBin
         ? path.dirname(configuredNodeBin)
         : (process.execPath ? path.dirname(process.execPath) : null);

@@ -171,7 +171,7 @@ test("agent-platform YAML migration helpers are no longer exported by Desktop", 
 });
 
 test("agent-platform provider registry is not used to infer provider key env", (t) => {
-  const root = createTempDir(t, "zenmind-provider-registry-");
+  const root = createTempDir(t, "desktop-provider-registry-");
   writeText(path.join(root, "registries", "providers", "openai.yml"), "apiKey: AES(ciphertext)\n");
 
   const output = normalizeAgentPlatformEnvContentForRuntime([

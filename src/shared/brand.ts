@@ -47,7 +47,6 @@ export type AppBrand = {
   };
   installer: {
     shutdownArg: string;
-    legacyShutdownArgs: string[];
   };
   desktopPet: DesktopPetBrandConfig;
   i18n: Record<BrandLocale, Partial<Record<string, string>>>;
@@ -168,4 +167,3 @@ export const PRODUCT_NAME = APP_BRAND.productName;
 export const APP_ID = APP_BRAND.appId;
 export const APP_DESCRIPTION = APP_BRAND.description;
 export const INSTALLER_SHUTDOWN_ARG = APP_BRAND.installer.shutdownArg;
-export const LEGACY_INSTALLER_SHUTDOWN_ARGS = APP_BRAND.installer.legacyShutdownArgs;

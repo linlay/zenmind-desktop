@@ -21,7 +21,6 @@ import {
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   isServiceWebviewBridgeMessageType,
-  resolveServiceWebviewBridgeResponseType,
   type ServiceWebviewBridgeMessage
 } from "../../shared/service-webview-bridge";
 
@@ -74,7 +73,7 @@ export function handleServiceWebviewBridgeMessage(
     isPluginAuthBridgeRequestType(bridgeProtocol, payload.type) &&
     (payload.action === "getAccessToken" || payload.action === "refreshAccessToken")
   ) {
-    const responseType = resolvePluginAuthBridgeResponseType(bridgeProtocol, payload.type);
+    const responseType = resolvePluginAuthBridgeResponseType(bridgeProtocol);
     void window.electronAPI.agentAuth
       .issueAccessToken(payload.reason === "unauthorized" ? "unauthorized" : "missing")
       .then((result) => {
@@ -94,7 +93,7 @@ export function handleServiceWebviewBridgeMessage(
   }
 
   if (isServiceWebviewBridgeMessageType(payload.type, AGENT_APP_CLIPBOARD_REQUEST_TYPE)) {
-    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, AGENT_APP_CLIPBOARD_RESPONSE_TYPE);
+    const responseType = AGENT_APP_CLIPBOARD_RESPONSE_TYPE;
     void window.electronAPI.clipboard
       .writeText(typeof payload.text === "string" ? payload.text : "")
       .then((result) => {
@@ -112,7 +111,7 @@ export function handleServiceWebviewBridgeMessage(
   }
 
   if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE)) {
-    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE);
+    const responseType = DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE;
     void window.electronAPI.desktopDialog
       .selectDirectory()
       .then((result) => {
@@ -131,7 +130,7 @@ export function handleServiceWebviewBridgeMessage(
   }
 
   if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE)) {
-    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE);
+    const responseType = DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE;
     void window.electronAPI.desktopShell
       .openPath(typeof payload.path === "string" ? payload.path : "")
       .then((result) => {
@@ -150,7 +149,7 @@ export function handleServiceWebviewBridgeMessage(
   }
 
   if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE)) {
-    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE);
+    const responseType = DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE;
     void window.electronAPI.desktopDownloads
       .saveFile({
         filename: typeof payload.filename === "string" ? payload.filename : "",
@@ -173,7 +172,7 @@ export function handleServiceWebviewBridgeMessage(
   }
 
   if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE)) {
-    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE);
+    const responseType = DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE;
     void window.electronAPI.desktopScreenshot
       .capture()
       .then((result) => {
@@ -197,7 +196,7 @@ export function handleServiceWebviewBridgeMessage(
   }
 
   if (isServiceWebviewBridgeMessageType(payload.type, PLUGIN_SETTINGS_READ_REQUEST_TYPE)) {
-    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, PLUGIN_SETTINGS_READ_RESPONSE_TYPE);
+    const responseType = PLUGIN_SETTINGS_READ_RESPONSE_TYPE;
     const serviceId = context.serviceId?.trim() ?? "";
     if (!serviceId) {
       sendFailure(context, responseType, payload.requestId, "plugin settings service id is unavailable");
@@ -223,7 +222,7 @@ export function handleServiceWebviewBridgeMessage(
   }
 
   if (isServiceWebviewBridgeMessageType(payload.type, PLUGIN_SETTINGS_WRITE_REQUEST_TYPE)) {
-    const responseType = resolveServiceWebviewBridgeResponseType(payload.type, PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE);
+    const responseType = PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE;
     const serviceId = context.serviceId?.trim() ?? "";
     if (!serviceId) {
       sendFailure(context, responseType, payload.requestId, "plugin settings service id is unavailable");

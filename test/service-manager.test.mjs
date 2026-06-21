@@ -1313,13 +1313,13 @@ function createApp(userDataRoot, options = {}) {
 }
 
 function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
-  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
-  const previousTestCorePortBase = process.env.ZENMIND_TEST_CORE_SERVICE_PORT_BASE;
+  const previousAssetsRoot = process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
+  const previousTestCorePortBase = process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE;
   const { testCoreServicePortBase, ...createAppOptions } = appOptions;
   const generatedAssets = assetsRoot ? null : createCurrentPlatformAssetsFixture();
-  process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot ?? generatedAssets.assetsRoot;
+  process.env.DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot ?? generatedAssets.assetsRoot;
   if (testCoreServicePortBase !== undefined) {
-    process.env.ZENMIND_TEST_CORE_SERVICE_PORT_BASE = String(testCoreServicePortBase);
+    process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE = String(testCoreServicePortBase);
   }
 
   registryInternals.clearServices();
@@ -1331,14 +1331,14 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
     restore() {
       registryInternals.clearServices();
       if (previousAssetsRoot) {
-        process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+        process.env.DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
       } else {
-        delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+        delete process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
       }
       if (previousTestCorePortBase !== undefined) {
-        process.env.ZENMIND_TEST_CORE_SERVICE_PORT_BASE = previousTestCorePortBase;
+        process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE = previousTestCorePortBase;
       } else {
-        delete process.env.ZENMIND_TEST_CORE_SERVICE_PORT_BASE;
+        delete process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE;
       }
       if (generatedAssets) {
         fs.rmSync(generatedAssets.tempRoot, { recursive: true, force: true });
@@ -1914,7 +1914,6 @@ test("normalizeAgentPlatformEnvContentForRuntime does not inject Desktop CDP env
 
   assert.doesNotMatch(withoutCdp, /^CDP_HOST=/m);
   assert.doesNotMatch(withoutCdp, /^CDP_PORT=/m);
-  assert.doesNotMatch(withoutCdp, /^ZENMIND_DESKTOP_CDP_GATEWAY_URL=/m);
 
   const withExistingCdp = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
@@ -1926,7 +1925,6 @@ test("normalizeAgentPlatformEnvContentForRuntime does not inject Desktop CDP env
 
   assert.match(withExistingCdp, /^CDP_HOST=localhost$/m);
   assert.match(withExistingCdp, /^CDP_PORT=9222$/m);
-  assert.doesNotMatch(withExistingCdp, /^ZENMIND_DESKTOP_CDP_GATEWAY_URL=/m);
 });
 
 test("service install dir follows Application Support services/<id>/<version>", () => {
@@ -3060,7 +3058,7 @@ test("loadBuiltinServices reuses newer installed builtin manifests without openi
   const assetFileName = currentBuiltinArchiveFileName(serviceId, bundledVersion);
   const serviceAssetDir = path.join(assetsRoot, serviceId);
   const installDir = getTestServiceProgramDir(userDataRoot, serviceId, installedVersion);
-  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  const previousAssetsRoot = process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
 
   fs.mkdirSync(serviceAssetDir, { recursive: true });
   fs.mkdirSync(installDir, { recursive: true });
@@ -3111,7 +3109,7 @@ test("loadBuiltinServices reuses newer installed builtin manifests without openi
   );
 
   try {
-    process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
+    process.env.DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
     registryInternals.clearServices();
     const loaded = loadBuiltinServices(createApp(userDataRoot));
     const service = getBuiltinService(serviceId);
@@ -3122,9 +3120,9 @@ test("loadBuiltinServices reuses newer installed builtin manifests without openi
   } finally {
     registryInternals.clearServices();
     if (previousAssetsRoot) {
-      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+      process.env.DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
     } else {
-      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+      delete process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
     }
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

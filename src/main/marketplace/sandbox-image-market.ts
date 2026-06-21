@@ -42,7 +42,6 @@ const IMAGE_COMMAND_TIMEOUT_MS = 300_000;
 const LIST_IMAGE_COMMAND_TIMEOUT_MS = 30_000;
 const CONTAINER_ENGINE_CACHE_SUCCESS_MS = 30_000;
 const CONTAINER_ENGINE_CACHE_MISS_MS = 10_000;
-const LEGACY_DESKTOP_CONTAINER_ENGINE_PATHS_ENV = "ZENMIND_CONTAINER_ENGINE_PATHS";
 
 let cachedContainerEngine:
   | { engine: ContainerEngineResolution | null; expiresAt: number; cacheKey: string }
@@ -226,7 +225,6 @@ function resolveCachedContainerEngine() {
     process.env.PATH ?? "",
     process.env.Path ?? "",
     process.env.DESKTOP_CONTAINER_ENGINE_PATHS ?? "",
-    process.env[LEGACY_DESKTOP_CONTAINER_ENGINE_PATHS_ENV] ?? "",
     process.env.ProgramFiles ?? "",
     process.env.LOCALAPPDATA ?? ""
   ].join("\u0000");

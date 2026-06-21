@@ -8,24 +8,15 @@ import { desktopBuiltinServicesDir } from "./desktop-resources.mjs";
 // monorepo 根目录：当前仓库的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const BUILTIN_ASSETS_SOURCE_ENV = "DESKTOP_BUILTIN_ASSETS_SOURCE";
-const LEGACY_BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
-const BUILTIN_ASSETS_SOURCE_ENV_LABEL = `${BUILTIN_ASSETS_SOURCE_ENV} or ${LEGACY_BUILTIN_ASSETS_SOURCE_ENV}`;
 const SKIP_MAC_TIMESTAMP_ENV = "DESKTOP_SKIP_MAC_TIMESTAMP";
-const LEGACY_SKIP_MAC_TIMESTAMP_ENV = "ZENMIND_SKIP_MAC_TIMESTAMP";
-const LEGACY_DARWIN_CODESIGN_IDENTITY_ENV = "ZENMIND_DARWIN_CODESIGN_IDENTITY";
 const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
   "identity-center",
   "agent-platform",
   "agent-webclient"
 ];
-const LEGACY_IDENTITY_SERVICE_ID = ["zenmind", "app", "server"].join("-");
-const EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS = new Set([
-  LEGACY_IDENTITY_SERVICE_ID
-]);
 const DEVELOPER_ID_APPLICATION_PREFIX = "Developer ID Application:";
 const DARWIN_CODESIGN_IDENTITY_ENV_KEYS = [
   "DESKTOP_DARWIN_CODESIGN_IDENTITY",
-  LEGACY_DARWIN_CODESIGN_IDENTITY_ENV,
   "MACOS_CODESIGN_IDENTITY",
   "CSC_NAME"
 ];
@@ -63,8 +54,7 @@ function parseBooleanEnv(value, name) {
 function shouldSkipMacTimestamp(env = process.env) {
   return (
     parseBooleanEnv(env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
-    parseBooleanEnv(env[SKIP_MAC_TIMESTAMP_ENV], SKIP_MAC_TIMESTAMP_ENV) === true ||
-    parseBooleanEnv(env[LEGACY_SKIP_MAC_TIMESTAMP_ENV], LEGACY_SKIP_MAC_TIMESTAMP_ENV) === true
+    parseBooleanEnv(env[SKIP_MAC_TIMESTAMP_ENV], SKIP_MAC_TIMESTAMP_ENV) === true
   );
 }
 
@@ -517,11 +507,11 @@ function listArchivesInDirectory(directoryPath) {
 
 function listConfiguredReleaseArchives(sourceRoot) {
   if (!fs.existsSync(sourceRoot)) {
-    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV_LABEL} does not exist: ${sourceRoot}`);
+    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} does not exist: ${sourceRoot}`);
   }
 
   if (!fs.statSync(sourceRoot).isDirectory()) {
-    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV_LABEL} must point to a directory: ${sourceRoot}`);
+    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} must point to a directory: ${sourceRoot}`);
   }
 
   const archives = [];
@@ -600,9 +590,6 @@ function listReleaseArchives() {
     if (!manifest || manifest.kind !== "builtin") {
       return;
     }
-    if (EXCLUDED_DESKTOP_BUILTIN_SERVICE_IDS.has(manifest.id)) {
-      return;
-    }
 
     const buildKey = [
       manifest.id,
@@ -635,10 +622,7 @@ function listReleaseArchives() {
     }
   }
 
-  const configuredSourceRoot = (
-    process.env[BUILTIN_ASSETS_SOURCE_ENV] ??
-    process.env[LEGACY_BUILTIN_ASSETS_SOURCE_ENV]
-  )?.trim();
+  const configuredSourceRoot = process.env[BUILTIN_ASSETS_SOURCE_ENV]?.trim();
   if (configuredSourceRoot) {
     for (const archivePath of listConfiguredReleaseArchives(configuredSourceRoot)) {
       tryAddArchive(archivePath, 2);
@@ -681,9 +665,9 @@ export function assertRequiredDesktopCoreServices(services, platform = {}) {
   }
 
   throw new Error(
-    `missing required Desktop builtin service assets for ${formatPlatformLabel(platform)}: ${missingServiceIds.join(", ")}\n` +
+      `missing required Desktop builtin service assets for ${formatPlatformLabel(platform)}: ${missingServiceIds.join(", ")}\n` +
       `Desktop startup requires ${REQUIRED_DESKTOP_CORE_SERVICE_IDS.join(", ")}.\n` +
-      `Regenerate or provide the missing upstream release bundle, or set ${BUILTIN_ASSETS_SOURCE_ENV_LABEL} to a directory containing the complete Desktop builtin assets.`
+      `Regenerate or provide the missing upstream release bundle, or set ${BUILTIN_ASSETS_SOURCE_ENV} to a directory containing the complete Desktop builtin assets.`
   );
 }
 

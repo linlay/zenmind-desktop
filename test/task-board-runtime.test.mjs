@@ -89,19 +89,10 @@ test("task board websocket config requires remote control and sso site token", (
   process.env.DESKTOP_KANBAN_TOKEN = "env-token";
   t.after(() => {
     delete process.env.DESKTOP_KANBAN_TOKEN;
-    delete process.env.ZENMIND_KANBAN_TOKEN;
   });
   assert.deepEqual(readTaskBoardWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
     token: "env-token",
-    selectedProjectId: "project-a"
-  });
-
-  delete process.env.DESKTOP_KANBAN_TOKEN;
-  process.env.ZENMIND_KANBAN_TOKEN = "legacy-env-token";
-  assert.deepEqual(readTaskBoardWsConfig(app), {
-    serverUrl: "http://127.0.0.1:8080",
-    token: "legacy-env-token",
     selectedProjectId: "project-a"
   });
 });

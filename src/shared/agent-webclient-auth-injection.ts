@@ -1,8 +1,6 @@
 import {
   AGENT_APP_AUTH_REQUEST_TYPE,
-  AGENT_APP_AUTH_RESPONSE_TYPE,
-  LEGACY_AGENT_APP_AUTH_REQUEST_TYPE,
-  LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE
+  AGENT_APP_AUTH_RESPONSE_TYPE
 } from "./auth-bridge";
 
 export function buildAgentWebclientAccessTokenInjectionScript(
@@ -15,15 +13,10 @@ export function buildAgentWebclientAccessTokenInjectionScript(
     const accessTokenStorageKey = "agent-webclient.appAccessToken";
     const authContextStorageKey = "agent-webclient.appAuthContext";
     const bridgeFlag = "__DESKTOP_WEBVIEW_BRIDGE__";
-    const legacyBridgeFlag = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
     const fallbackFlag = "__DESKTOP_AGENT_WEBCLIENT_AUTH_FALLBACK__";
-    const legacyFallbackFlag = "__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__";
     const fallbackTokenKey = "__DESKTOP_AGENT_WEBCLIENT_FALLBACK_TOKEN__";
-    const legacyFallbackTokenKey = "__ZENMIND_AGENT_WEBCLIENT_FALLBACK_TOKEN__";
     const authRequestType = ${JSON.stringify(AGENT_APP_AUTH_REQUEST_TYPE)};
     const authResponseType = ${JSON.stringify(AGENT_APP_AUTH_RESPONSE_TYPE)};
-    const legacyAuthRequestType = ${JSON.stringify(LEGACY_AGENT_APP_AUTH_REQUEST_TYPE)};
-    const legacyAuthResponseType = ${JSON.stringify(LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE)};
     let tokenBefore = "";
     try {
       tokenBefore = window.sessionStorage.getItem(accessTokenStorageKey) || "";
@@ -47,7 +40,6 @@ export function buildAgentWebclientAccessTokenInjectionScript(
       }
       window.__AGENT_APP_ACCESS_TOKEN = normalizedToken || undefined;
       window[fallbackTokenKey] = normalizedToken;
-      window[legacyFallbackTokenKey] = normalizedToken;
       return normalizedToken;
     }
 
@@ -66,14 +58,13 @@ export function buildAgentWebclientAccessTokenInjectionScript(
 
     function markBridgeAvailable() {
       defineWindowFlag(bridgeFlag);
-      defineWindowFlag(legacyBridgeFlag);
     }
 
     function isAuthRequest(value) {
       return Boolean(
         value &&
         typeof value === "object" &&
-        (value.type === authRequestType || value.type === legacyAuthRequestType) &&
+        value.type === authRequestType &&
         value.requestId &&
         (value.action === "getAccessToken" || value.action === "refreshAccessToken")
       );
@@ -85,7 +76,7 @@ export function buildAgentWebclientAccessTokenInjectionScript(
       }
       window.dispatchEvent(new MessageEvent("message", {
         data: {
-          type: value.type === legacyAuthRequestType ? legacyAuthResponseType : authResponseType,
+          type: authResponseType,
           requestId: String(value.requestId),
           token: window[fallbackTokenKey] || null
         },
@@ -97,9 +88,8 @@ export function buildAgentWebclientAccessTokenInjectionScript(
 
     markBridgeAvailable();
     const normalizedToken = writeToken(token);
-    if (!window[fallbackFlag] && !window[legacyFallbackFlag]) {
+    if (!window[fallbackFlag]) {
       defineWindowFlag(fallbackFlag);
-      defineWindowFlag(legacyFallbackFlag);
       window.addEventListener("message", (event) => {
         respondToAuthRequest(event.data);
       });

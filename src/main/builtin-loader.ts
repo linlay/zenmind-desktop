@@ -8,11 +8,6 @@ import { beginStartupTiming } from "./startup-timing";
 import { getServicesRoot } from "./user-paths";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
-const LEGACY_IDENTITY_SERVICE_ID = ["zenmind", "app", "server"].join("-");
-const LEGACY_DESKTOP_BUILTIN_ASSETS_ROOT_ENV = "ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT";
-const LEGACY_BUILTIN_SERVICE_IDS = new Set<string>([
-  LEGACY_IDENTITY_SERVICE_ID
-]);
 
 type BuiltinAssetIndexEntry = {
   id: string;
@@ -28,9 +23,6 @@ function isPackaged(app: App) {
 export function getBuiltinAssetsRoot(app: App) {
   if (process.env.DESKTOP_BUILTIN_ASSETS_ROOT) {
     return process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
-  }
-  if (process.env[LEGACY_DESKTOP_BUILTIN_ASSETS_ROOT_ENV]) {
-    return process.env[LEGACY_DESKTOP_BUILTIN_ASSETS_ROOT_ENV];
   }
   return isPackaged(app)
     ? path.join(process.resourcesPath, "services")
@@ -218,7 +210,7 @@ function listInstalledBuiltinManifestPaths(app: App) {
   return manifestPaths.sort((left, right) => left.localeCompare(right));
 }
 
-function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> = LEGACY_BUILTIN_SERVICE_IDS) {
+function loadInstalledBuiltinServices(app: App) {
   const latestByServiceId = new Map<string, { manifestPath: string; manifest: Manifest }>();
 
   for (const manifestPath of listInstalledBuiltinManifestPaths(app)) {
@@ -228,9 +220,6 @@ function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> =
         ? (manifest as { kind?: unknown }).kind
         : undefined;
       if (manifestKind !== "builtin") {
-        continue;
-      }
-      if (ignoredServiceIds.has(manifest.id)) {
         continue;
       }
       if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
@@ -278,9 +267,6 @@ export function loadBuiltinServices(app: App) {
       }
 
       const manifest = readCachedManifest(assetPath);
-      if (LEGACY_BUILTIN_SERVICE_IDS.has(manifest.id)) {
-        continue;
-      }
       if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
         continue;
       }

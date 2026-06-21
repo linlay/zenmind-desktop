@@ -4,8 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_DESKTOP_WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-LEGACY_DESKTOP_WORKSPACE_ROOT="${ZENMIND_ROOT:-}"
-DESKTOP_WORKSPACE_ROOT="${DESKTOP_WORKSPACE_ROOT:-${LEGACY_DESKTOP_WORKSPACE_ROOT:-$DEFAULT_DESKTOP_WORKSPACE_ROOT}}"
+DESKTOP_WORKSPACE_ROOT="${DESKTOP_WORKSPACE_ROOT:-$DEFAULT_DESKTOP_WORKSPACE_ROOT}"
 
 CLEAN_FIRST=1
 DRY_RUN=0
@@ -46,10 +45,9 @@ Options:
 Environment:
   DESKTOP_WORKSPACE_ROOT
                    Override the parent directory containing the four projects.
-                   Legacy ZENMIND_ROOT is still accepted.
   SIGN_MAC_BUILTINS=1
                    Enable --sign-mac without putting signing details in git.
-  DESKTOP_DARWIN_CODESIGN_IDENTITY / ZENMIND_DARWIN_CODESIGN_IDENTITY / MACOS_CODESIGN_IDENTITY / CSC_NAME
+  DESKTOP_DARWIN_CODESIGN_IDENTITY / MACOS_CODESIGN_IDENTITY / CSC_NAME
                    Developer ID Application identity for --sign-mac. Final
                    release signing still happens in electron-builder.
   PROGRAM_TARGETS / PROGRAM_TARGET_MATRIX / ARCH / VERSION

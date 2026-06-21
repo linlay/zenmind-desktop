@@ -2,12 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { desktopBuiltinServicesRelativePath } from "./desktop-resources.mjs";
 
-export const DEFAULT_BRAND_ID = "cutej";
+export const DEFAULT_BRAND_ID = "zenmind";
 export const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
 export const INSTALLER_SHUTDOWN_ARG = "--desktop-shutdown-for-update";
-export const LEGACY_INSTALLER_SHUTDOWN_ARGS = ["--zenmind-shutdown-for-update"];
 export const DESKTOP_PACKAGE_NAME = "desktop";
-const LEGACY_SKIP_MAC_TIMESTAMP_ENV = "ZENMIND_SKIP_MAC_TIMESTAMP";
 
 const PACKAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const BRAND_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
@@ -61,8 +59,7 @@ function parseBooleanEnv(value, name) {
 function shouldSkipMacTimestamp(env = process.env) {
   return (
     parseBooleanEnv(env.SKIP_NOTARIZE, "SKIP_NOTARIZE") === true ||
-    parseBooleanEnv(env.DESKTOP_SKIP_MAC_TIMESTAMP, "DESKTOP_SKIP_MAC_TIMESTAMP") === true ||
-    parseBooleanEnv(env[LEGACY_SKIP_MAC_TIMESTAMP_ENV], LEGACY_SKIP_MAC_TIMESTAMP_ENV) === true
+    parseBooleanEnv(env.DESKTOP_SKIP_MAC_TIMESTAMP, "DESKTOP_SKIP_MAC_TIMESTAMP") === true
   );
 }
 
@@ -657,8 +654,7 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
     },
     icons,
     installer: {
-      shutdownArg: INSTALLER_SHUTDOWN_ARG,
-      legacyShutdownArgs: LEGACY_INSTALLER_SHUTDOWN_ARGS
+      shutdownArg: INSTALLER_SHUTDOWN_ARG
     },
     desktopPet: desktopPet.manifest,
     i18n,
@@ -983,7 +979,6 @@ function writeGeneratedBrandFiles(rootDir, brand) {
       "export const APP_ID = APP_BRAND.appId;",
       "export const APP_DESCRIPTION = APP_BRAND.description;",
       "export const INSTALLER_SHUTDOWN_ARG = APP_BRAND.installer.shutdownArg;",
-      "export const LEGACY_INSTALLER_SHUTDOWN_ARGS = APP_BRAND.installer.legacyShutdownArgs;",
       ""
     ].join("\n")
   );

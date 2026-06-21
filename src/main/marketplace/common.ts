@@ -612,15 +612,6 @@ function sanitizeAsciiHeaderText(value: string) {
   return value.replace(/[^\x20-\x7e]+/gu, "").trim();
 }
 
-const LEGACY_MARKET_DESKTOP_DEVICE_HEADERS = {
-  deviceId: "X-ZenMind-Desktop-Device-Id",
-  deviceName: "X-ZenMind-Desktop-Device-Name-B64",
-  hostname: "X-ZenMind-Desktop-Hostname-B64",
-  username: "X-ZenMind-Desktop-Username-B64",
-  platform: "X-ZenMind-Desktop-Platform",
-  arch: "X-ZenMind-Desktop-Arch"
-} as const;
-
 export function getMarketDesktopDeviceHeaders(app: App) {
   const deviceInfo = getDesktopDeviceInfo(app);
   return {
@@ -629,13 +620,7 @@ export function getMarketDesktopDeviceHeaders(app: App) {
     "X-Desktop-Hostname-B64": encodeHeaderText(deviceInfo.hostname),
     "X-Desktop-Username-B64": encodeHeaderText(deviceInfo.username),
     "X-Desktop-Platform": sanitizeAsciiHeaderText(deviceInfo.platform),
-    "X-Desktop-Arch": sanitizeAsciiHeaderText(deviceInfo.arch),
-    [LEGACY_MARKET_DESKTOP_DEVICE_HEADERS.deviceId]: deviceInfo.deviceId,
-    [LEGACY_MARKET_DESKTOP_DEVICE_HEADERS.deviceName]: encodeHeaderText(deviceInfo.deviceName),
-    [LEGACY_MARKET_DESKTOP_DEVICE_HEADERS.hostname]: encodeHeaderText(deviceInfo.hostname),
-    [LEGACY_MARKET_DESKTOP_DEVICE_HEADERS.username]: encodeHeaderText(deviceInfo.username),
-    [LEGACY_MARKET_DESKTOP_DEVICE_HEADERS.platform]: sanitizeAsciiHeaderText(deviceInfo.platform),
-    [LEGACY_MARKET_DESKTOP_DEVICE_HEADERS.arch]: sanitizeAsciiHeaderText(deviceInfo.arch)
+    "X-Desktop-Arch": sanitizeAsciiHeaderText(deviceInfo.arch)
   };
 }
 

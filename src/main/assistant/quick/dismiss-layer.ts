@@ -1,5 +1,4 @@
 export const QUICK_COPILOT_DISMISS_URL = "desktop://quick-assistant-dismiss";
-export const LEGACY_QUICK_COPILOT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 
 export function getQuickCopilotDismissHtml() {
   return [

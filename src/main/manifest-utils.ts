@@ -265,11 +265,9 @@ const testCoreServicePortOffsets: Record<string, number> = {
   "identity-center": 2,
   "agent-container-hub": 3
 };
-const LEGACY_DESKTOP_TEST_CORE_SERVICE_PORT_BASE_ENV = "ZENMIND_TEST_CORE_SERVICE_PORT_BASE";
 
 function getTestCoreServicePortBase() {
-  const raw = (process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE ??
-    process.env[LEGACY_DESKTOP_TEST_CORE_SERVICE_PORT_BASE_ENV])?.trim() ?? "";
+  const raw = process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE?.trim() ?? "";
   if (!raw || !/^\d+$/u.test(raw)) {
     return null;
   }

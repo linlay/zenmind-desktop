@@ -51,7 +51,6 @@ import type {
 import {
   APP_ID,
   INSTALLER_SHUTDOWN_ARG,
-  LEGACY_INSTALLER_SHUTDOWN_ARGS,
   PRODUCT_NAME,
 } from "../../shared/brand";
 import {
@@ -174,10 +173,7 @@ export function createMainProcessRuntime() {
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
   const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
-  const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(
-    INSTALLER_SHUTDOWN_ARG,
-    LEGACY_INSTALLER_SHUTDOWN_ARGS
-  );
+  const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(INSTALLER_SHUTDOWN_ARG);
   
   const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform, {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning

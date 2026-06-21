@@ -35,19 +35,12 @@ function patchShellProgramCommonForLayeredLayout(programDir: string) {
   let content = fs.readFileSync(scriptPath, "utf8");
   const original = content;
   content = content
-    .replace(/ENV_FILE="\$\{ZENMIND_SERVICE_ENV_FILE:-\$BUNDLE_ROOT\/\.env\}"/gu, 'ENV_FILE="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/.env"')
     .replace(/ENV_FILE="\$BUNDLE_ROOT\/\.env"/gu, 'ENV_FILE="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/.env"')
-    .replace(/CONFIG_DIR="\$\{ZENMIND_SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/configs"/gu, 'CONFIG_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs"')
     .replace(/CONFIG_DIR="\$BUNDLE_ROOT\/configs"/gu, 'CONFIG_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs"')
-    .replace(/CONFIG_ENV_DIR="\$\{ZENMIND_SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/configs\/environments"/gu, 'CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"')
     .replace(/CONFIG_ENV_DIR="\$BUNDLE_ROOT\/configs\/environments"/gu, 'CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"')
-    .replace(/DATA_DIR="\$\{ZENMIND_SERVICE_DATA_DIR:-\$BUNDLE_ROOT\/data\}"/gu, 'DATA_DIR="${SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
     .replace(/DATA_DIR="\$BUNDLE_ROOT\/data"/gu, 'DATA_DIR="${SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
-    .replace(/RUN_DIR="\$\{ZENMIND_SERVICE_STATE_DIR:-\$BUNDLE_ROOT\/run\}"/gu, 'RUN_DIR="${SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
     .replace(/RUN_DIR="\$BUNDLE_ROOT\/run"/gu, 'RUN_DIR="${SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
-    .replace(/LOG_FILE="\$\{ZENMIND_SERVICE_LOG_DIR:-\$RUN_DIR\}\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
     .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
-    .replace(/ERROR_LOG_FILE="\$\{ZENMIND_SERVICE_LOG_DIR:-\$RUN_DIR\}\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
     .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
     .replace(/nohup "\$BACKEND_BIN" >>"\$LOG_FILE" 2>&1 &/gu, 'nohup "$BACKEND_BIN" </dev/null >>"$LOG_FILE" 2>&1 &')
     .replace(/nohup "\$NODE_CMD" "\$BACKEND_ENTRY" >>"\$LOG_FILE" 2>&1 &/gu, 'nohup "$NODE_CMD" "$BACKEND_ENTRY" </dev/null >>"$LOG_FILE" 2>&1 &')
@@ -80,17 +73,12 @@ function patchPowerShellProgramCommonForLayeredLayout(programDir: string) {
   let content = fs.readFileSync(scriptPath, "utf8");
   const original = content;
   content = content
-    .replace(/\$Script:EnvFile\s*=\s*if\s*\(\$env:ZENMIND_SERVICE_ENV_FILE\)\s*\{\s*\$env:ZENMIND_SERVICE_ENV_FILE\s*\}\s*else\s*\{\s*Join-Path\s+\$Script:BundleRoot\s+["']\.env["']\s*\}/gu, '$Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) ".env"')
     .replace(/\$Script:EnvFile\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]\.env['"]/gu, '$Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) ".env"')
     .replace(/\$Script:ConfigDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]/gu, '$Script:ConfigDir = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs"')
     .replace(/\$Script:ConfigEnvDir\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]\)\s+['"]environments['"]/gu, '$Script:ConfigEnvDir = Join-Path (Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs") "environments"')
-    .replace(/\$Script:DataDir\s*=\s*if\s*\(\$env:ZENMIND_SERVICE_DATA_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_DATA_DIR\s*\}\s*else\s*\{\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]\s*\}/gu, '$Script:DataDir = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
     .replace(/\$Script:DataDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]/gu, '$Script:DataDir = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
-    .replace(/\$Script:RunDir\s*=\s*if\s*\(\$env:ZENMIND_SERVICE_STATE_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_STATE_DIR\s*\}\s*else\s*\{\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]\s*\}/gu, '$Script:RunDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
     .replace(/\$Script:RunDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]/gu, '$Script:RunDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
-    .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$\(if\s*\(\$env:ZENMIND_SERVICE_LOG_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_LOG_DIR\s*\}\s*else\s*\{\s*\$Script:RunDir\s*\}\)\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
     .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
-    .replace(/\$Script:ErrorLogFile\s*=\s*Join-Path\s+\$\(if\s*\(\$env:ZENMIND_SERVICE_LOG_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_LOG_DIR\s*\}\s*else\s*\{\s*\$Script:RunDir\s*\}\)\s+([^;\r\n]+)/gu, '$Script:ErrorLogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
     .replace(/\$Script:ErrorLogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:ErrorLogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1');
 
   if (content !== original) {

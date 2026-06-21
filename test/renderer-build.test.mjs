@@ -150,7 +150,7 @@ test("source and tests do not contain internal endpoint or legacy icon literals"
   }
 });
 
-test("public source uses neutral desktop prefixes outside explicit ZenMind compatibility paths", () => {
+test("public source keeps ZenMind literals out of shared paths except brand-specific defaults", () => {
   const files = collectTextFiles(path.join(projectRoot, "src"))
     .filter((filePath) => !path.relative(projectRoot, filePath).startsWith(path.join("src", "shared", "generated")));
   const allowedCompatibilityFiles = new Set([
@@ -158,7 +158,6 @@ test("public source uses neutral desktop prefixes outside explicit ZenMind compa
     path.join("src", "main", "services", "manager", "program-layout.ts"),
     path.join("src", "main", "skill-installer.ts")
   ]);
-  const legacyMarketHeadersPath = path.join("src", "main", "marketplace", "common.ts");
   const allowedDomainPattern = /(?:^|[./])zenmind\.cc\b/u;
   const violations = [];
 
@@ -169,12 +168,9 @@ test("public source uses neutral desktop prefixes outside explicit ZenMind compa
       if (!/zenmi(?:nd)?/iu.test(line)) {
         return;
       }
-      const isLegacyMarketDeviceHeader =
-        relativePath === legacyMarketHeadersPath && /"X-ZenMind-Desktop-[A-Za-z0-9-]+"/u.test(line);
       const isAllowed =
         /LEGACY|legacy/u.test(line) ||
         allowedDomainPattern.test(line) ||
-        isLegacyMarketDeviceHeader ||
         allowedCompatibilityFiles.has(relativePath);
       if (!isAllowed) {
         violations.push(`${relativePath}:${index + 1}: ${line.trim()}`);
@@ -3421,7 +3417,6 @@ test("main process keeps app identity visible in platform program bars", () => {
   const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
 
   assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
-  assert.doesNotMatch(mainProcess, /ZENMIND_APP_ID|ZENMIND_PRODUCT_NAME/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
   assert.match(mainProcess, /options\.app\.setName\(options\.productName\);/);
   assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, options\.appId\);/);
@@ -3681,7 +3676,6 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
-  assert.match(serviceWebviewMainWorld, /__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);

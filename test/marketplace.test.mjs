@@ -369,17 +369,17 @@ fs.writeFileSync(path.join(target, "skill.json"), JSON.stringify({
 
 async function withPathPrefix(prefix, fn) {
   const previousPath = process.env.PATH;
-  const previousContainerEnginePaths = process.env.ZENMIND_CONTAINER_ENGINE_PATHS;
+  const previousContainerEnginePaths = process.env.DESKTOP_CONTAINER_ENGINE_PATHS;
   process.env.PATH = `${prefix}${path.delimiter}${previousPath ?? ""}`;
-  process.env.ZENMIND_CONTAINER_ENGINE_PATHS = prefix;
+  process.env.DESKTOP_CONTAINER_ENGINE_PATHS = prefix;
   try {
     return await fn();
   } finally {
     process.env.PATH = previousPath;
     if (previousContainerEnginePaths === undefined) {
-      delete process.env.ZENMIND_CONTAINER_ENGINE_PATHS;
+      delete process.env.DESKTOP_CONTAINER_ENGINE_PATHS;
     } else {
-      process.env.ZENMIND_CONTAINER_ENGINE_PATHS = previousContainerEnginePaths;
+      process.env.DESKTOP_CONTAINER_ENGINE_PATHS = previousContainerEnginePaths;
     }
   }
 }
@@ -723,8 +723,7 @@ test("listMarketItems can load plugin and skill sections without sandbox probing
     PATH: isolatedPath,
     ProgramFiles: missingProgramFiles,
     LOCALAPPDATA: missingLocalAppData,
-    DESKTOP_CONTAINER_ENGINE_PATHS: isolatedPath,
-    ZENMIND_CONTAINER_ENGINE_PATHS: isolatedPath
+    DESKTOP_CONTAINER_ENGINE_PATHS: isolatedPath
   }, async () => {
     const catalog = {
       schemaVersion: 1,
@@ -795,7 +794,7 @@ exit 2
 
   await withEnvPatch({
     PATH: inheritedPathDir,
-    ZENMIND_CONTAINER_ENGINE_PATHS: enginePathDir
+    DESKTOP_CONTAINER_ENGINE_PATHS: enginePathDir
   }, async () => {
     const result = await listMarketItems(app, {
       catalog: { schemaVersion: 1, items: [] },
@@ -1867,7 +1866,6 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
     assert.equal(catalogHeaders[0]["x-desktop-device-name-b64"], Buffer.from("市场工作站", "utf8").toString("base64url"));
     assert.equal(typeof catalogHeaders[0]["x-desktop-device-id"], "string");
     assert.equal(typeof catalogHeaders[0]["x-desktop-platform"], "string");
-    assert.equal(catalogHeaders[0]["x-zenmind-desktop-device-name-b64"], catalogHeaders[0]["x-desktop-device-name-b64"]);
 
     const result = await installMarketItem(app, "saved-skill");
     assert.equal(result.ok, true);
@@ -1957,8 +1955,7 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
         method: req.method,
         authorization: req.headers.authorization,
         deviceId: req.headers["x-desktop-device-id"],
-        deviceName: req.headers["x-desktop-device-name-b64"],
-        legacyDeviceId: req.headers["x-zenmind-desktop-device-id"]
+        deviceName: req.headers["x-desktop-device-name-b64"]
       });
       favoriteItem.favorited = req.method === "POST";
       favoriteItem.favoriteCount = favoriteItem.favorited ? 1 : 0;
@@ -1999,7 +1996,6 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
     assert.equal(requests[1].deviceName, Buffer.from("Favorite Desktop", "utf8").toString("base64url"));
     assert.equal(typeof requests[0].deviceId, "string");
     assert.equal(typeof requests[1].deviceId, "string");
-    assert.equal(requests[0].legacyDeviceId, requests[0].deviceId);
     assert.deepEqual(issueCalls, ["missing", "missing"]);
   });
 });

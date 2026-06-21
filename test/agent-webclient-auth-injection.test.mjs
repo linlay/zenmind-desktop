@@ -10,9 +10,7 @@ const {
 } = require("../dist-electron/shared/agent-webclient-auth-injection.js");
 const {
   AGENT_APP_AUTH_REQUEST_TYPE,
-  AGENT_APP_AUTH_RESPONSE_TYPE,
-  LEGACY_AGENT_APP_AUTH_REQUEST_TYPE,
-  LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE
+  AGENT_APP_AUTH_RESPONSE_TYPE
 } = require("../dist-electron/shared/auth-bridge.js");
 
 function createStorage() {
@@ -120,7 +118,6 @@ test("agent-webclient token fallback does not overwrite window postMessage", () 
 
   assert.equal(window.postMessage, originalPostMessage);
   assert.equal(window.__DESKTOP_WEBVIEW_BRIDGE__, true);
-  assert.equal(window.__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__, true);
   assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-one");
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-one");
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-1");
@@ -139,7 +136,7 @@ test("agent-webclient token fallback responds through message listener and updat
   runInjectionScript(window, "token-one");
   runInjectionScript(window, "token-two");
   window.addEventListener("message", (event) => {
-    if (event.data?.type === AGENT_APP_AUTH_RESPONSE_TYPE || event.data?.type === LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE) {
+    if (event.data?.type === AGENT_APP_AUTH_RESPONSE_TYPE) {
       responses.push(event.data);
     }
   });
@@ -164,37 +161,6 @@ test("agent-webclient token fallback responds through message listener and updat
       type: AGENT_APP_AUTH_RESPONSE_TYPE,
       requestId: "request-1",
       token: "token-two"
-    }
-  ]);
-});
-
-test("agent-webclient token fallback preserves legacy auth response type", () => {
-  const { window } = createFakeWindow();
-  const responses = [];
-
-  runInjectionScript(window, "token-one");
-  window.addEventListener("message", (event) => {
-    if (event.data?.type === LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE) {
-      responses.push(event.data);
-    }
-  });
-
-  window.dispatchEvent({
-    data: {
-      type: LEGACY_AGENT_APP_AUTH_REQUEST_TYPE,
-      requestId: "request-legacy",
-      action: "refreshAccessToken"
-    },
-    origin: window.location.origin,
-    source: window,
-    type: "message"
-  });
-
-  assert.deepEqual(toPlainJson(responses), [
-    {
-      type: LEGACY_AGENT_APP_AUTH_RESPONSE_TYPE,
-      requestId: "request-legacy",
-      token: "token-one"
     }
   ]);
 });
