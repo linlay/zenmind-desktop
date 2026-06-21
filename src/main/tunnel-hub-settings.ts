@@ -26,7 +26,6 @@ type StoredTunnelHubSettings = {
   publicHost?: unknown;
   publicUrl?: unknown;
   webSocketUrl?: unknown;
-  targetUrl?: unknown;
   lastRegisteredAt?: unknown;
   rotateRelayToken?: unknown;
   tlsInsecureSkipVerify?: unknown;
@@ -40,7 +39,6 @@ type WritableTunnelHubSettings = {
   publicHost?: string;
   publicUrl?: string;
   webSocketUrl?: string;
-  targetUrl?: string;
   lastRegisteredAt?: string;
   rotateRelayToken?: boolean;
   tlsInsecureSkipVerify: boolean;
@@ -53,7 +51,6 @@ export type TunnelHubRegistrationRecord = {
   publicHost?: string;
   publicUrl?: string;
   webSocketUrl?: string;
-  targetUrl?: string;
   relayToken?: string;
   lastRegisteredAt?: string;
 };
@@ -282,7 +279,6 @@ export function readTunnelHubSettings(app: App): TunnelHubSettings {
     publicHost: readStoredString(stored.publicHost),
     publicUrl: readStoredString(stored.publicUrl),
     webSocketUrl: readStoredString(stored.webSocketUrl),
-    targetUrl: "",
     lastRegisteredAt: readStoredString(stored.lastRegisteredAt) || undefined,
     tlsInsecureSkipVerify: stored.tlsInsecureSkipVerify === true,
     reconnectSeconds: normalizeReconnectSeconds(stored.reconnectSeconds)
@@ -402,7 +398,6 @@ export function saveTunnelHubSettings(
     publicHost: deviceIdChanged ? "" : current.publicHost,
     publicUrl: deviceIdChanged ? "" : current.publicUrl,
     webSocketUrl: deviceIdChanged ? "" : current.webSocketUrl,
-    targetUrl: "",
     lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
     rotateRelayToken: input.rotateRelayToken === true,
     tlsInsecureSkipVerify,
@@ -449,7 +444,6 @@ export function ensureTunnelHubDeviceId(app: App) {
     publicHost: currentSettings.publicHost,
     publicUrl: currentSettings.publicUrl,
     webSocketUrl: currentSettings.webSocketUrl,
-    targetUrl: "",
     lastRegisteredAt: currentSettings.lastRegisteredAt,
     rotateRelayToken: readStoredSettings(app).rotateRelayToken === true,
     tlsInsecureSkipVerify: currentSettings.tlsInsecureSkipVerify,
@@ -472,7 +466,6 @@ export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubReg
     publicHost: record.publicHost?.trim() ?? current.publicHost,
     publicUrl: record.publicUrl?.trim() ?? current.publicUrl,
     webSocketUrl: record.webSocketUrl?.trim() ?? current.webSocketUrl,
-    targetUrl: "",
     lastRegisteredAt: record.lastRegisteredAt?.trim() || new Date().toISOString(),
     rotateRelayToken: false,
     tlsInsecureSkipVerify: current.tlsInsecureSkipVerify,

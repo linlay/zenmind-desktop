@@ -12,7 +12,7 @@ import type {
 import type { DesktopWsServerOptions } from "./desktop-ws-server";
 import {
   ensureTunnelHubRegistrationReady
-} from "./tunnel-hub-remote-ws";
+} from "./tunnel-hub-registration";
 import {
   clearLegacyTunnelHubRegistrationToken,
   readTunnelHubSettings,
@@ -59,7 +59,6 @@ function readSettingsStatus(settings: TunnelHubSettings, phase: TunnelHubRuntime
     phase: settings.enabled ? phase : "disabled",
     deviceId: settings.deviceId,
     relayUrl: settings.relayUrl,
-    targetUrl: settings.targetUrl,
     publicHost: settings.publicHost,
     publicUrl: settings.publicUrl,
     webSocketUrl: settings.webSocketUrl,

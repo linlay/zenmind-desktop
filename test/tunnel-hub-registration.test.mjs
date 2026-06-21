@@ -10,10 +10,10 @@ const require = createRequire(import.meta.url);
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 const {
-  configureTunnelHubRemoteWsController,
+  configureTunnelHubRegistrationController,
   deriveTunnelHubRegistrationApiOrigin,
-  ensureTunnelHubRemoteWsReady
-} = require("../dist-electron/main/tunnel-hub-remote-ws.js");
+  ensureTunnelHubRegistrationReady
+} = require("../dist-electron/main/tunnel-hub-registration.js");
 const {
   readTunnelHubSettings,
   saveTunnelHubSettings
@@ -83,7 +83,7 @@ test("deriveTunnelHubRegistrationApiOrigin maps relay websocket URLs to HTTP API
 });
 
 test("Tunnel Hub registration uses SSO site token and stores agent token", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-remote-ws-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-registration-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   const registrations = [];
@@ -137,11 +137,11 @@ test("Tunnel Hub registration uses SSO site token and stores agent token", async
   });
   assert.equal(saved.ok, true);
 
-  configureTunnelHubRemoteWsController({
+  configureTunnelHubRegistrationController({
     logger: { log() {}, warn() {}, error() {} }
   });
 
-  const result = await ensureTunnelHubRemoteWsReady(app);
+  const result = await ensureTunnelHubRegistrationReady(app);
   assert.equal(result.ok, true);
   assert.equal(result.registered, true);
   assert.equal(registrations.length, 1);
@@ -151,11 +151,9 @@ test("Tunnel Hub registration uses SSO site token and stores agent token", async
   assert.equal(registrations[0].body.deviceId, "mac-mini-office");
   assert.equal(registrations[0].body.deviceName, "Tunnel Studio");
   assert.equal("deviceSecret" in registrations[0].body, false);
-  assert.equal("targetUrl" in registrations[0].body, false);
 
   const settings = readTunnelHubSettings(app);
   assert.equal(settings.webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
-  assert.equal(settings.targetUrl, "");
   assert.equal(settings.hasRelayToken, true);
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), true);
 });
@@ -205,11 +203,11 @@ test("Tunnel Hub registration ignores legacy registration token", async (t) => {
     "utf8"
   );
 
-  configureTunnelHubRemoteWsController({
+  configureTunnelHubRegistrationController({
     logger: { log() {}, warn() {}, error() {} }
   });
 
-  const result = await ensureTunnelHubRemoteWsReady(app);
+  const result = await ensureTunnelHubRegistrationReady(app);
   assert.equal(result.ok, true);
   assert.equal(registrations.length, 1);
   assert.equal(registrations[0].authorization, "Bearer official-site-jwt");

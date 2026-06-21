@@ -11,11 +11,8 @@ const require = createRequire(import.meta.url);
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 const {
-  getDesktopRemoteWsServerRuntimeState
-} = require("../dist-electron/main/desktop-ws-server.js");
-const {
-  configureTunnelHubRemoteWsController
-} = require("../dist-electron/main/tunnel-hub-remote-ws.js");
+  configureTunnelHubRegistrationController
+} = require("../dist-electron/main/tunnel-hub-registration.js");
 const {
   TunnelHubRuntime
 } = require("../dist-electron/main/tunnel-hub-runtime.js");
@@ -427,7 +424,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
     deviceId: "mac-mini-office"
   }).ok, true);
 
-  configureTunnelHubRemoteWsController({
+  configureTunnelHubRegistrationController({
     logger: { log() {}, warn() {}, error() {} }
   });
 
@@ -460,18 +457,15 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(registrations[0].method, "POST");
   assert.equal(registrations[0].url, "/api/desktop/devices/register");
   assert.equal(registrations[0].authorization, "Bearer runtime-registration-secret");
-  assert.equal("targetUrl" in registrations[0].body, false);
   assert.equal(connectCalls.length, 1);
   assert.equal(connectCalls[0].relayUrl, relayUrl);
   assert.equal(connectCalls[0].relayToken, "returned-runtime-token");
   assert.equal(typeof connectCalls[0].desktopWsServerOptions.verifyToken, "undefined");
-  assert.equal(getDesktopRemoteWsServerRuntimeState().running, false);
   assert.equal(readTunnelHubSettings(app).webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
-  assert.equal(readTunnelHubSettings(app).targetUrl, "");
   await runtime.stop();
 });
 
-test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol without remote WS", async (t) => {
+test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol through function-level session", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-protocol-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -538,7 +532,6 @@ test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol without re
   assert.equal(response.id, "hello-through-tunnel");
   assert.equal(response.code, 0);
   assert.notEqual(response.msg, "unknown type: session.hello");
-  assert.equal(getDesktopRemoteWsServerRuntimeState().running, false);
 });
 
 test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge", async (t) => {

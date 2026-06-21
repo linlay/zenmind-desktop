@@ -175,7 +175,6 @@ test("Tunnel Hub registration result stores returned relay token", (t) => {
   });
 
   assert.equal(settings.webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
-  assert.equal(settings.targetUrl, "");
   assert.equal(settings.hasRelayToken, true);
   assert.equal(fs.readFileSync(tunnelTokenPath(app), "utf8").trim(), "returned-relay-token");
 });

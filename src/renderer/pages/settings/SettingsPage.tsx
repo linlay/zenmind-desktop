@@ -442,7 +442,6 @@ const defaultTunnelHubSettings: TunnelHubSettings = {
   publicHost: "",
   publicUrl: "",
   webSocketUrl: "",
-  targetUrl: "",
   tlsInsecureSkipVerify: false,
   reconnectSeconds: 3
 };

@@ -15,7 +15,7 @@ import {
 } from "../desktop-ws-server";
 import { createDesktopActionOptions, type MainProcessContext } from "../main-process-context";
 import { createTaskBoardRuntime } from "../task-board-runtime";
-import { configureTunnelHubRemoteWsController } from "../tunnel-hub-remote-ws";
+import { configureTunnelHubRegistrationController } from "../tunnel-hub-registration";
 import { configureTunnelHubRuntime } from "../tunnel-hub-runtime";
 import type { AssistantRunWakeLock } from "./assistant-wake-lock";
 
@@ -112,8 +112,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     startDesktopActionBridge({
       ...desktopActionOptions
     });
-    configureTunnelHubRemoteWsController({
-      desktopWsServerOptions,
+    configureTunnelHubRegistrationController({
       logger: console
     });
     configureTunnelHubRuntime({

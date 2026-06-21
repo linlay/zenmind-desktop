@@ -30,13 +30,12 @@ type TunnelHubRegistrationResponse = {
   relayToken?: unknown;
 };
 
-type TunnelHubRemoteWsControllerOptions = {
+type TunnelHubRegistrationControllerOptions = {
   fetch?: FetchLike;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
-  desktopWsServerOptions?: unknown;
 };
 
-let controllerOptions: TunnelHubRemoteWsControllerOptions | null = null;
+let controllerOptions: TunnelHubRegistrationControllerOptions | null = null;
 
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -68,7 +67,7 @@ export function deriveTunnelHubRegistrationApiOrigin(relayUrl: string) {
   return parsed.origin;
 }
 
-export function configureTunnelHubRemoteWsController(options: TunnelHubRemoteWsControllerOptions) {
+export function configureTunnelHubRegistrationController(options: TunnelHubRegistrationControllerOptions) {
   controllerOptions = options;
 }
 
@@ -144,12 +143,6 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     registered: true,
     skipped: false
   };
-}
-
-export const ensureTunnelHubRemoteWsReady = ensureTunnelHubRegistrationReady;
-
-export function stopTunnelHubRemoteWs() {
-  return Promise.resolve();
 }
 
 export const __testInternals = {

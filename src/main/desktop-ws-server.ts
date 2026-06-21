@@ -12,7 +12,6 @@ import {
   DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
   DESKTOP_WS_PATH,
   DESKTOP_WS_PORT,
-  DESKTOP_REMOTE_WS_PORT,
   DESKTOP_WS_PUSH_TYPES,
   DESKTOP_WS_REQUEST_TYPES,
   type DesktopWsPushType
@@ -130,7 +129,7 @@ export type DesktopWsServerOptions = {
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
 
-type DesktopWsServerKind = "debug" | "remote";
+type DesktopWsServerKind = "debug";
 type DesktopWsSessionKind = DesktopWsServerKind | "tunnel";
 
 export type DesktopWsProtocolTransport = {
@@ -1347,16 +1346,8 @@ export function startDesktopWsServer(options: DesktopWsServerOptions) {
   return startDesktopWsServerInstance("debug", options, DESKTOP_WS_PORT);
 }
 
-export function startDesktopRemoteWsServer(options: DesktopWsServerOptions) {
-  return startDesktopWsServerInstance("remote", options, DESKTOP_REMOTE_WS_PORT);
-}
-
 export function getDesktopWsServerRuntimeState() {
   return createDesktopWsServerRuntimeState(activeServers.get("debug") ?? null, DESKTOP_WS_PORT);
-}
-
-export function getDesktopRemoteWsServerRuntimeState() {
-  return createDesktopWsServerRuntimeState(activeServers.get("remote") ?? null, DESKTOP_REMOTE_WS_PORT);
 }
 
 export function emitDesktopWsPush(type: DesktopWsPushType | string, data?: unknown) {
@@ -1385,10 +1376,6 @@ function stopDesktopWsServerInstance(kind: DesktopWsServerKind) {
 
 export function stopDesktopWsServer() {
   return stopDesktopWsServerInstance("debug");
-}
-
-export function stopDesktopRemoteWsServer() {
-  return stopDesktopWsServerInstance("remote");
 }
 
 export const __testInternals = {

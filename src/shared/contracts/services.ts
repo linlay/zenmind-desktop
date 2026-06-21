@@ -239,7 +239,6 @@ export interface TunnelHubSettings {
   publicHost: string;
   publicUrl: string;
   webSocketUrl: string;
-  targetUrl: string;
   lastRegisteredAt?: string;
   tlsInsecureSkipVerify: boolean;
   reconnectSeconds: number;
@@ -282,7 +281,6 @@ export interface TunnelHubRuntimeStatus {
   phase: TunnelHubRuntimePhase;
   deviceId: string;
   relayUrl: string;
-  targetUrl: string;
   publicHost: string;
   publicUrl: string;
   webSocketUrl: string;
