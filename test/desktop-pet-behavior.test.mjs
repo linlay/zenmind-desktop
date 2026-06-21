@@ -105,17 +105,116 @@ function edgeAdjustedFootprint(mode, position, displayArea, internals) {
   const visibleRight = visibleLeft + DESKTOP_PET_VISIBLE_FOOTPRINT.width;
   const visibleBottom = visibleTop + DESKTOP_PET_VISIBLE_FOOTPRINT.height;
   if (visibleLeft <= displayArea.x) {
-    footprint.x = DESKTOP_PET_VISIBLE_FOOTPRINT.x;
+    footprint.x = 0;
   } else if (visibleRight >= displayArea.x + displayArea.width) {
     footprint.x = DESKTOP_PET_WINDOW_SIZES[mode].width - DESKTOP_PET_VISIBLE_FOOTPRINT.width;
   }
   if (visibleTop <= displayArea.y) {
-    footprint.y = DESKTOP_PET_VISIBLE_FOOTPRINT.y;
+    footprint.y = 0;
   } else if (visibleBottom >= displayArea.y + displayArea.height) {
     footprint.y = DESKTOP_PET_WINDOW_SIZES[mode].height - DESKTOP_PET_VISIBLE_FOOTPRINT.height;
   }
   return footprint;
 }
+
+test("desktop pet panel layout chooses a free side at every screen corner", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    DESKTOP_PET_WINDOW_SIZES,
+    resolveDesktopPetPanelLayout
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 500, height: 400 };
+  const panelSize = { width: 336, height: 210 };
+  const petSize = {
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  };
+  const corners = [
+    {
+      name: "top-left",
+      petRect: { x: 0, y: displayArea.y, ...petSize },
+      expectedSide: "below"
+    },
+    {
+      name: "top-right",
+      petRect: { x: displayArea.x + displayArea.width - petSize.width, y: displayArea.y, ...petSize },
+      expectedSide: "below"
+    },
+    {
+      name: "bottom-left",
+      petRect: { x: 0, y: displayArea.y + displayArea.height - petSize.height, ...petSize },
+      expectedSide: "above"
+    },
+    {
+      name: "bottom-right",
+      petRect: {
+        x: displayArea.x + displayArea.width - petSize.width,
+        y: displayArea.y + displayArea.height - petSize.height,
+        ...petSize
+      },
+      expectedSide: "above"
+    }
+  ];
+
+  for (const corner of corners) {
+    const layout = resolveDesktopPetPanelLayout({
+      displayArea,
+      petRect: corner.petRect,
+      panelSize,
+      gap: 10
+    });
+    assert.equal(layout.side, corner.expectedSide, corner.name);
+    assert.ok(layout.rect.x >= displayArea.x, `${corner.name} panel left is visible`);
+    assert.ok(
+      layout.rect.x + layout.rect.width <= displayArea.x + displayArea.width,
+      `${corner.name} panel right is visible`
+    );
+    assert.ok(layout.rect.y >= displayArea.y, `${corner.name} panel top is visible`);
+    assert.ok(
+      layout.rect.y + layout.rect.height <= displayArea.y + displayArea.height,
+      `${corner.name} panel bottom is visible`
+    );
+    if (corner.name.includes("left")) {
+      assert.equal(layout.rect.x, displayArea.x, `${corner.name} panel sticks to the left edge`);
+    }
+    assert.equal(corner.petRect.x === 0 || corner.petRect.x + corner.petRect.width === displayArea.width, true);
+    assert.equal(
+      corner.petRect.y === displayArea.y ||
+        corner.petRect.y + corner.petRect.height === displayArea.y + displayArea.height,
+      true
+    );
+  }
+
+  assert.ok(
+    DESKTOP_PET_WINDOW_SIZES.bubble.width >= DESKTOP_PET_VISIBLE_FOOTPRINT.x + 336,
+    "bubble window can hold the visible left-edge panel"
+  );
+  assert.ok(
+    DESKTOP_PET_WINDOW_SIZES["task-list-compact"].width >= DESKTOP_PET_VISIBLE_FOOTPRINT.x + 336,
+    "compact task window can hold the visible left-edge panel"
+  );
+  assert.ok(
+    DESKTOP_PET_WINDOW_SIZES["preview-expanded"].width >= DESKTOP_PET_VISIBLE_FOOTPRINT.x + 384,
+    "preview window can hold the visible left-edge panel"
+  );
+  assert.ok(
+    DESKTOP_PET_WINDOW_SIZES["task-list"].width >= DESKTOP_PET_VISIBLE_FOOTPRINT.x + 384,
+    "task-list window can hold the visible left-edge panel"
+  );
+});
+
+test("desktop pet display area keeps full horizontal screen bounds when work area has side insets", () => {
+  const { resolveDesktopPetDisplayArea } = __testInternals;
+  assert.deepEqual(resolveDesktopPetDisplayArea({
+    bounds: { x: 0, y: 0, width: 1280, height: 720 },
+    workArea: { x: 79, y: 25, width: 1201, height: 640 }
+  }), {
+    x: 0,
+    y: 25,
+    width: 1280,
+    height: 640
+  });
+});
 
 function writeStrictUserPet(petRoot, overrides = {}) {
   fs.mkdirSync(path.join(petRoot, "signature"), { recursive: true });
@@ -252,7 +351,9 @@ test("desktop pet window modes allow panels to overflow edges instead of moving 
 	    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
 	    DESKTOP_PET_WINDOW_SIZES,
 	    getAnchoredDesktopPetBounds,
-	    getDesktopPetLogicalPositionFromBounds
+	    getDesktopPetLogicalPositionFromBounds,
+      getDesktopPetVisibleFootprintForMode,
+      resolveDesktopPetEdgeDock
 	  } = __testInternals;
 	  const displayArea = { x: 100, y: 80, width: 500, height: 400 };
   const edgePositions = [
@@ -294,22 +395,16 @@ test("desktop pet window modes allow panels to overflow edges instead of moving 
 
   for (const position of edgePositions) {
 	    const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
-	    const baseFootprint = visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT);
+      const edgeDock = resolveDesktopPetEdgeDock(position, displayArea);
+	    const baseFootprint = visibleFootprintRect(baseBounds, getDesktopPetVisibleFootprintForMode("base", edgeDock));
 	    for (const mode of Object.keys(DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS)) {
 	      const modeBounds = getAnchoredDesktopPetBounds(position, displayArea, mode);
-	      const modeFootprint = edgeAdjustedFootprint(mode, baseBounds, displayArea, {
-	        DESKTOP_PET_VISIBLE_FOOTPRINT,
-	        DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
-	        DESKTOP_PET_WINDOW_SIZES
-	      });
-	      assert.deepEqual(
-	        visibleFootprintRect(modeBounds, modeFootprint),
-	        baseFootprint
+	      const modeFootprint = getDesktopPetVisibleFootprintForMode(mode, edgeDock);
+      assert.deepEqual(
+        visibleFootprintRect(modeBounds, modeFootprint),
+        baseFootprint
       );
-      assert.deepEqual(getDesktopPetLogicalPositionFromBounds(modeBounds, mode, displayArea, baseBounds), {
-        x: baseBounds.x,
-        y: baseBounds.y
-      });
+      assert.deepEqual(getDesktopPetLogicalPositionFromBounds(modeBounds, mode, displayArea, position), position);
     }
   }
 });
@@ -317,25 +412,59 @@ test("desktop pet window modes allow panels to overflow edges instead of moving 
 test("desktop pet top-edge panels anchor below the pet instead of pushing the pet down", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
-    DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
     getAnchoredDesktopPetBounds,
-    getDesktopPetLogicalPositionFromBounds
+    getDesktopPetLogicalPositionFromBounds,
+    getDesktopPetVisibleFootprintForMode
   } = __testInternals;
   const displayArea = { x: 0, y: 25, width: 500, height: 400 };
   const position = { x: 180, y: displayArea.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y };
   const baseBounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
   const taskBounds = getAnchoredDesktopPetBounds(position, displayArea, "task-list");
-  const topEdgeFootprint = {
-    ...DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS["task-list"],
-    y: DESKTOP_PET_VISIBLE_FOOTPRINT.y
-  };
+  const topEdgeFootprint = getDesktopPetVisibleFootprintForMode("task-list", "top");
 
-  assert.equal(taskBounds.y, displayArea.y - DESKTOP_PET_VISIBLE_FOOTPRINT.y);
+  assert.equal(taskBounds.y, displayArea.y);
   assert.deepEqual(
     visibleFootprintRect(taskBounds, topEdgeFootprint),
-    visibleFootprintRect(baseBounds, DESKTOP_PET_VISIBLE_FOOTPRINT)
+    visibleFootprintRect(baseBounds, getDesktopPetVisibleFootprintForMode("base", "top"))
   );
   assert.deepEqual(getDesktopPetLogicalPositionFromBounds(taskBounds, "task-list", displayArea, position), position);
+});
+
+test("desktop pet left edge keeps the BrowserWindow onscreen while the visible pet touches the edge", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    getAnchoredDesktopPetBounds,
+    getDesktopPetLogicalPositionFromBounds,
+    getDesktopPetVisibleFootprintForMode,
+    resolveDesktopPetEdgeDock
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 500, height: 400 };
+  const position = {
+    x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
+    y: 180
+  };
+  const bounds = getAnchoredDesktopPetBounds(position, displayArea, "base");
+  const edgeDock = resolveDesktopPetEdgeDock(position, displayArea);
+  const footprint = getDesktopPetVisibleFootprintForMode("base", edgeDock);
+
+  assert.equal(edgeDock, "left");
+  assert.equal(bounds.x, displayArea.x);
+  assert.equal(visibleFootprintRect(bounds, footprint).x, displayArea.x);
+  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bounds, "base", displayArea, position), position);
+  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(bounds, "base", displayArea, {
+    x: displayArea.x,
+    y: position.y
+  }), position);
+
+  const legacyBounds = getAnchoredDesktopPetBounds({
+    x: displayArea.x,
+    y: position.y
+  }, displayArea, "base");
+  assert.equal(legacyBounds.x, displayArea.x);
+  assert.deepEqual(getDesktopPetLogicalPositionFromBounds(legacyBounds, "base", displayArea, {
+    x: displayArea.x,
+    y: position.y
+  }), position);
 });
 
 test("desktop pet drag keeps the press-time window mode instead of jumping to base bounds", () => {
@@ -355,6 +484,7 @@ test("desktop pet drag keeps the press-time window mode instead of jumping to ba
   };
   const startPoint = { ...cursorPoint };
   const setBoundsCalls = [];
+  const savedSettings = [];
   const persistedModes = [];
   let intervalCallback = null;
   let getModeCalls = 0;
@@ -372,7 +502,9 @@ test("desktop pet drag keeps the press-time window mode instead of jumping to ba
     platform: "darwin",
     getWindow: () => fakeWindow,
     getSettings: () => ({}),
-    saveSettings: () => {},
+    saveSettings: (settings) => {
+      savedSettings.push(settings);
+    },
     getMode: () => {
       getModeCalls += 1;
       return getModeCalls === 1 ? "bubble" : "base";
@@ -404,7 +536,15 @@ test("desktop pet drag keeps the press-time window mode instead of jumping to ba
   assert.equal(bounds.width, DESKTOP_PET_WINDOW_SIZES.bubble.width);
   assert.equal(bounds.height, DESKTOP_PET_WINDOW_SIZES.bubble.height);
   assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
-  assert.deepEqual(persistedModes, ["bubble"]);
+  assert.equal(bounds.width, DESKTOP_PET_WINDOW_SIZES.bubble.width);
+  assert.equal(bounds.height, DESKTOP_PET_WINDOW_SIZES.bubble.height);
+  assert.deepEqual(savedSettings, [{
+    position: {
+      x: initialPosition.x + 24,
+      y: initialPosition.y + 10
+    }
+  }]);
+  assert.deepEqual(persistedModes, []);
 });
 
 test("desktop pet drag starts from the main-process cursor point instead of renderer screen coordinates", () => {
@@ -455,7 +595,7 @@ test("desktop pet drag clamps the pet body instead of the expanded panel window"
     getAnchoredDesktopPetBounds
   } = __testInternals;
   const displayArea = { x: 0, y: 0, width: 500, height: 400 };
-  const initialPosition = { x: 360, y: 180 };
+  const initialPosition = { x: 220, y: 180 };
   let bounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "bubble");
   const currentPetLeft = bounds.x + DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS.bubble.x;
   const setBoundsCalls = [];
@@ -490,6 +630,152 @@ test("desktop pet drag clamps the pet body instead of the expanded panel window"
 
   assert.equal(setBoundsCalls.length, 1);
   assert.deepEqual(bounds, getAnchoredDesktopPetBounds({ x: initialPosition.x - 8, y: initialPosition.y }, displayArea, "bubble"));
+});
+
+test("desktop pet drag snaps to the full left screen edge when macOS keeps the cursor at the work-area inset", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    getAnchoredDesktopPetBounds,
+    getDesktopPetVisibleFootprintForMode
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 1440, height: 900 };
+  const initialPosition = { x: 220, y: 300 };
+  let bounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
+  let cursorPoint = {
+    x: bounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x + 10,
+    y: bounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y + 54
+  };
+  const setBoundsCalls = [];
+  let intervalCallback = null;
+  const fakeWindow = {
+    isDestroyed: () => false,
+    getBounds: () => ({ ...bounds }),
+    setBounds: (nextBounds) => {
+      bounds = { ...nextBounds };
+      setBoundsCalls.push({ ...nextBounds });
+    },
+    moveTop: () => {}
+  };
+
+  const controller = createDesktopPetDragController({
+    platform: "darwin",
+    getWindow: () => fakeWindow,
+    getSettings: () => ({}),
+    saveSettings: () => {},
+    getMode: () => "base",
+    getCursorScreenPoint: () => ({ ...cursorPoint }),
+    getDisplayBounds: () => displayArea,
+    getPointDisplayBounds: () => displayArea,
+    persistPosition: () => {},
+    refreshState: () => {},
+    setInterval: (callback) => {
+      intervalCallback = callback;
+      return 1;
+    },
+    clearInterval: () => {},
+    forceEndMs: 100000
+  });
+
+  assert.deepEqual(controller.beginDrag(cursorPoint), { ok: true });
+
+  cursorPoint = {
+    ...cursorPoint,
+    x: 79
+  };
+  intervalCallback();
+
+  assert.equal(setBoundsCalls.length, 1);
+  assert.equal(bounds.x, displayArea.x);
+  assert.equal(
+    visibleFootprintRect(bounds, getDesktopPetVisibleFootprintForMode("base", "left")).x,
+    displayArea.x
+  );
+  assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
+});
+
+test("desktop pet drag release keeps the requested left-edge snap when getBounds reports the work-area inset", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    getAnchoredDesktopPetBounds,
+    getDesktopPetVisibleFootprintForMode
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 1440, height: 900 };
+  const initialPosition = { x: 220, y: 300 };
+  let requestedBounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
+  let reportedBounds = { ...requestedBounds };
+  let cursorPoint = {
+    x: requestedBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x + 10,
+    y: requestedBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y + 54
+  };
+  const setBoundsCalls = [];
+  const savedSettings = [];
+  const guardedBounds = [];
+  const persistedModes = [];
+  let intervalCallback = null;
+  const fakeWindow = {
+    isDestroyed: () => false,
+    getBounds: () => ({ ...reportedBounds }),
+    setBounds: (nextBounds) => {
+      requestedBounds = { ...nextBounds };
+      setBoundsCalls.push({ ...nextBounds });
+      reportedBounds = nextBounds.x === displayArea.x
+        ? { ...nextBounds, x: 79 }
+        : { ...nextBounds };
+    },
+    moveTop: () => {}
+  };
+
+  const controller = createDesktopPetDragController({
+    platform: "darwin",
+    getWindow: () => fakeWindow,
+    getSettings: () => ({}),
+    saveSettings: (settings) => {
+      savedSettings.push(settings);
+    },
+    getMode: () => "base",
+    getCursorScreenPoint: () => ({ ...cursorPoint }),
+    getDisplayBounds: () => displayArea,
+    getPointDisplayBounds: () => displayArea,
+    persistPosition: (mode) => {
+      persistedModes.push(mode);
+    },
+    guardProgrammaticBounds: (bounds) => {
+      guardedBounds.push(bounds);
+    },
+    refreshState: () => {},
+    setInterval: (callback) => {
+      intervalCallback = callback;
+      return 1;
+    },
+    clearInterval: () => {},
+    forceEndMs: 100000
+  });
+
+  assert.deepEqual(controller.beginDrag(cursorPoint), { ok: true });
+
+  cursorPoint = {
+    ...cursorPoint,
+    x: 79
+  };
+  intervalCallback();
+
+  assert.equal(requestedBounds.x, displayArea.x);
+  assert.equal(reportedBounds.x, 79);
+  assert.equal(
+    visibleFootprintRect(requestedBounds, getDesktopPetVisibleFootprintForMode("base", "left")).x,
+    displayArea.x
+  );
+  assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
+
+  assert.equal(setBoundsCalls.at(-1).x, displayArea.x);
+  assert.deepEqual(savedSettings, [{
+    position: {
+      x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
+      y: initialPosition.y
+    }
+  }]);
+  assert.deepEqual(guardedBounds.at(-1), requestedBounds);
+  assert.deepEqual(persistedModes, []);
 });
 
 test("desktop pet idle and unread states keep base window bounds for stable dragging", () => {

@@ -9,7 +9,8 @@ const hanPattern = /[\p{Script=Han}]/u;
 
 const allowedFiles = new Set([
   "src/shared/i18n/dictionaries/zhCN.ts",
-  "src/shared/brand.ts"
+  "src/shared/brand.ts",
+  "src/shared/generated/brand.ts"
 ]);
 
 const allowedLinePatterns = [

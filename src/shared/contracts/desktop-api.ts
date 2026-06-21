@@ -382,7 +382,7 @@ export type DesktopAppPairingPayloadResult =
   | { ok: true; payload: DesktopAppPairingPayload; payloadText: string }
   | { ok: false; message: string };
 
-export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
+export type NativeDialogVisibilityListener = (state: { open: boolean; platform: string }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
 export type DesktopConfigChangedEvent = {
@@ -635,7 +635,7 @@ export interface DesktopApi {
     openAssistant: () => Promise<{ ok: boolean }>;
     openTaskChat: (input: { agentKey: string; chatId: string }) => Promise<{ ok: boolean; message?: string }>;
     moveBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean }>;
-    beginDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean }>;
+    beginDrag: (point: { x?: number; y?: number }) => Promise<{ ok: boolean }>;
     endDrag: () => Promise<{ ok: boolean; moved: boolean }>;
     setPreviewExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
     dismissPreview: () => Promise<{ ok: boolean }>;

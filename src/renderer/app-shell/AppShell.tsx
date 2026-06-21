@@ -13,7 +13,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebEntry, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -77,6 +77,7 @@ import {
   isEmbeddedAgentWebclientRoute,
   type AgentWebclientResolvedRoute
 } from "../../shared/agent-webclient-routes";
+import { I18N_KEYS, type TranslationKey } from "../../shared/i18n";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
@@ -85,6 +86,25 @@ type WebappRuntimeViewState = {
   webUrl: string;
   message: string;
   state: WebappRuntimeState | null;
+};
+
+type WebappNavigationEntry = WebappEntry & {
+  url: string;
+  chrome: "app";
+  runtimeStatus: WebappRuntimeViewState["status"];
+  runtimeMessage: string;
+};
+
+type WebNavigationEntry = WebsiteEntry | WebappNavigationEntry;
+
+type ExternalExperimentalItem = {
+  id: string;
+  kind?: "website" | "webapp";
+  label: string;
+  url: string;
+  chrome?: "browser" | "app";
+  runtimeStatus?: WebappRuntimeViewState["status"];
+  runtimeMessage?: string;
 };
 
 function isThemePreference(value: unknown): value is ThemePreference {
@@ -184,7 +204,7 @@ function createUnavailableDesktopSsoStatus(message: string): DesktopSsoStatus {
 }
 
 function getDesktopSsoApi() {
-  return window.electronAPI.sso?.getStatus ? window.electronAPI.sso : null;
+  return window.electronAPI.sso;
 }
 
 function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[] {
@@ -245,7 +265,7 @@ function normalizeWebGroupOrder(
   return normalized;
 }
 
-export const EXTERNAL_EXPERIMENTAL_ITEMS = [] as const;
+export const EXTERNAL_EXPERIMENTAL_ITEMS: readonly ExternalExperimentalItem[] = [];
 
 function isWebsiteEntry(item: WebEntry): item is WebsiteEntry {
   return item.kind === "website";
@@ -376,12 +396,14 @@ export function AppShell() {
   const [envImportBusy, setEnvImportBusy] = useState(false);
   const [envImportError, setEnvImportError] = useState("");
   const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search, copilotAgentOptions);
+  const rawActiveAgentWebclientRouteLabelKey = rawActiveAgentWebclientRoute?.labelKey;
   const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
     ? {
         ...rawActiveAgentWebclientRoute,
-        label: rawActiveAgentWebclientRoute.labelKey
-          ? t(rawActiveAgentWebclientRoute.labelKey)
-          : rawActiveAgentWebclientRoute.label
+        label: rawActiveAgentWebclientRouteLabelKey &&
+          I18N_KEYS.includes(rawActiveAgentWebclientRouteLabelKey as TranslationKey)
+          ? t(rawActiveAgentWebclientRouteLabelKey as TranslationKey)
+          : rawActiveAgentWebclientRoute.label ?? rawActiveAgentWebclientRouteLabelKey
       }
     : null;
   const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
@@ -397,7 +419,7 @@ export function AppShell() {
   const [mountedPluginIds, setMountedPluginIds] = useState<string[]>(() =>
     activePluginId ? [activePluginId] : []
   );
-  const [mountedWebEntryKeys, setMountedWebEntryKeys] = useState<string[]>(() =>
+  const [mountedWebEntryKeys, setMountedWebEntryKeys] = useState<WebEntryKey[]>(() =>
     activeWebEntryKey ? [activeWebEntryKey] : []
   );
   const [builtinBrowserSurfaceMounted, setBuiltinBrowserSurfaceMounted] = useState(
@@ -463,7 +485,7 @@ export function AppShell() {
     !startupCardDismissed &&
     shouldShowStartupProgressCard(startupRestoreState, startupAllReady, location.pathname);
   const webItemMap = useMemo(() => {
-    return new Map(webItems.map((item) => {
+    return new Map<WebEntryKey, WebNavigationEntry>(webItems.map((item) => {
       if (item.kind === "webapp") {
         const runtime = webappRuntimeById[item.id];
         return [item.entryKey, {
@@ -2258,7 +2280,7 @@ function resolveCopilotAgentWebclientRoute(
   pathname: string,
   search: string,
   copilotAgentOptions: AssistantNavAgentItem[]
-) {
+): AgentWebclientResolvedRoute | null {
   const firstAgentKey = getFirstCopilotAgentKey(copilotAgentOptions);
   const match = matchPath("/copilot/:agentKey", pathname);
   const requestedAgentKey = match?.params.agentKey?.trim() ?? "";
@@ -2285,7 +2307,7 @@ function resolveCopilotAgentWebclientRoute(
   };
 }
 
-function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
+function resolveSingleAgentWebclientRoute(pathname: string, search: string): AgentWebclientResolvedRoute | null {
   const match = matchPath("/agent/:agentKey", pathname);
   const agentKey = match?.params.agentKey?.trim() ?? "";
   if (!agentKey) {
@@ -2310,6 +2332,11 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
   };
 }
 
-function resolveWebRouteEntryKey(pathname: string) {
-  return matchPath("/webs/:entryKey", pathname)?.params.entryKey ?? null;
+function isWebEntryKey(value: string): value is WebEntryKey {
+  return value.startsWith("website:") || value.startsWith("webapp:");
+}
+
+function resolveWebRouteEntryKey(pathname: string): WebEntryKey | null {
+  const entryKey = matchPath("/webs/:entryKey", pathname)?.params.entryKey ?? "";
+  return isWebEntryKey(entryKey) ? entryKey : null;
 }

@@ -300,7 +300,7 @@ function normalizeSidebarGroupState(candidate: unknown): SidebarGroupState {
   if (!candidate || typeof candidate !== "object") {
     return defaultSidebarGroupState;
   }
-  const record = candidate as Partial<Record<SidebarGroupId, unknown>>;
+  const record = candidate as Partial<Record<SidebarGroupId | "websites", unknown>>;
   return {
     assistants:
       typeof record.assistants === "boolean"
@@ -965,12 +965,14 @@ export function AppSidebar({
   }, [websiteCreatePending, websiteDialogOpen]);
 
   useEffect(() => {
-    if (!agentDialog) {
+    const currentDialog = agentDialog;
+    if (!currentDialog) {
       return undefined;
     }
+    const canCloseDialog = !currentDialog.pending;
 
     function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !agentDialog.pending) {
+      if (event.key === "Escape" && canCloseDialog) {
         setAgentDialog(null);
       }
     }
@@ -982,12 +984,14 @@ export function AppSidebar({
   }, [agentDialog]);
 
   useEffect(() => {
-    if (!assistantChatRenameDialog) {
+    const currentDialog = assistantChatRenameDialog;
+    if (!currentDialog) {
       return undefined;
     }
+    const canCloseDialog = !currentDialog.pending;
 
     function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !assistantChatRenameDialog.pending) {
+      if (event.key === "Escape" && canCloseDialog) {
         setAssistantChatRenameDialog(null);
       }
     }
@@ -1186,7 +1190,7 @@ export function AppSidebar({
       "true;",
     ].join("\n");
 
-    void webview.executeJavaScript(script, true).catch((error) => {
+    void webview.executeJavaScript(script, true).catch((error: unknown) => {
       console.warn("[assistant] failed to retrigger agent route", error);
     });
     return true;

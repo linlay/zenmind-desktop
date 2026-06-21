@@ -669,7 +669,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       return (
         <Button
           className="market-store-action is-primary"
-          disabled={busy || item.state === "incompatible"}
+          disabled={busy}
           loading={busy}
           onClick={() => void runMarketAction(item, "install")}
           type="primary"

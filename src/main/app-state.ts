@@ -20,6 +20,7 @@ type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
 export interface MainAppState {
   mainWindow: BrowserWindow | null;
   desktopPetWindow: BrowserWindow | null;
+  desktopPetPanelWindow: BrowserWindow | null;
   isHandlingQuit: boolean;
   desktopSsoWebviewCompletionInFlight: boolean;
   shutdownCleanupPromise: Promise<void> | null;
@@ -50,6 +51,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
   return {
     mainWindow: initialState.mainWindow ?? null,
     desktopPetWindow: initialState.desktopPetWindow ?? null,
+    desktopPetPanelWindow: initialState.desktopPetPanelWindow ?? null,
     isHandlingQuit: initialState.isHandlingQuit ?? false,
     desktopSsoWebviewCompletionInFlight: initialState.desktopSsoWebviewCompletionInFlight ?? false,
     shutdownCleanupPromise: initialState.shutdownCleanupPromise ?? null,

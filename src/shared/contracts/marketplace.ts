@@ -107,6 +107,7 @@ export interface MarketItem {
   state: MarketInstallState;
   source: "cloud" | "local";
   installedVersion?: string;
+  minDesktopVersion?: string;
   installPath?: string;
   serviceId?: string;
   message?: string;

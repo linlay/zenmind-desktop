@@ -1,12 +1,12 @@
-import type { SettingsSectionDefinition } from "../../shared/settings-sections";
-import type { TranslationKey } from "../../shared/i18n";
+import type { SettingsSectionDefinition } from "../shared/settings-sections";
+import type { TranslationKey } from "../shared/i18n";
 
 export type {
   SettingsSectionDefinition,
   SettingsSectionGroupId,
   SettingsSectionId,
   SettingsSectionLayout
-} from "../../shared/settings-sections";
+} from "../shared/settings-sections";
 
 export function createSettingsSectionDefinitions({
   isWindows,

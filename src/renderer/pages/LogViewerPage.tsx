@@ -12,6 +12,7 @@ import type {
 	DesktopLogTarget,
 	LogViewerSource,
 	ServiceId,
+	ServiceLogReadResult,
 	ServiceLogStreamEvent,
 	ServiceLogTarget,
 } from "@shared/contracts";
@@ -594,7 +595,14 @@ export function LogViewerPage() {
 
 		const requestId = requestIdRef.current;
 		const currentViewer = state;
-		const beforeOffset = currentViewer.pages[0]?.startOffset ?? 0;
+		const beforeOffset = currentViewer.pages[0]?.startOffset;
+		if (!beforeOffset) {
+			return null;
+		}
+		const serviceId = currentViewer.serviceId;
+		if (currentViewer.source !== "desktop" && !serviceId) {
+			return null;
+		}
 
 		setState((current) => ({
 			...current,
@@ -604,17 +612,23 @@ export function LogViewerPage() {
 		}));
 
 		try {
-			const result = currentViewer.source === "desktop"
-				? await window.electronAPI.diagnostics.readDesktopLog(currentViewer.target as DesktopLogTarget, {
+			let result: ServiceLogReadResult;
+			if (currentViewer.source === "desktop") {
+				result = await window.electronAPI.diagnostics.readDesktopLog(currentViewer.target as DesktopLogTarget, {
 					beforeOffset,
-				})
-				: await readLog(
-					currentViewer.serviceId,
+				});
+			} else {
+				if (!serviceId) {
+					return null;
+				}
+				result = await readLog(
+					serviceId,
 					currentViewer.target as ServiceLogTarget,
 					{
 						beforeOffset,
 					},
 				);
+			}
 			if (requestIdRef.current !== requestId) {
 				return null;
 			}
