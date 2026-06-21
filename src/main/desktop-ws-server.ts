@@ -40,7 +40,7 @@ import { getDesktopDeviceId } from "./device-identity";
 import { handleDesktopActionRequest } from "./desktop-action-bridge";
 import type { TaskBoardRuntime } from "./task-board-runtime";
 
-type DesktopWsAuthSession = {
+export type DesktopWsAuthSession = {
   subject: string;
   deviceId: string;
   expiresAt: number;
@@ -131,11 +131,23 @@ export type DesktopWsServerOptions = {
 };
 
 type DesktopWsServerKind = "debug" | "remote";
+type DesktopWsSessionKind = DesktopWsServerKind | "tunnel";
+
+export type DesktopWsProtocolTransport = {
+  sendText: (text: string) => void;
+  close: (code?: number, reason?: string) => void;
+};
+
+type DesktopWsSessionGroup = {
+  kind: DesktopWsSessionKind;
+  connections: Set<DesktopWsConnection>;
+  logger: Pick<typeof console, "log" | "warn" | "error">;
+  startedAt: string;
+};
 
 type DesktopWsConnection = {
   id: string;
-  socket: Socket;
-  server: DesktopWsServerRecord;
+  server: DesktopWsSessionGroup;
   auth: DesktopWsAuthSession;
   source: string;
   clientDeviceId: string;
@@ -144,16 +156,14 @@ type DesktopWsConnection = {
   closed: boolean;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
   agentPlatformBridge: AgentPlatformWsBridge | null;
+  transport: DesktopWsProtocolTransport;
 };
 
-type DesktopWsServerRecord = {
+type DesktopWsServerRecord = DesktopWsSessionGroup & {
   kind: DesktopWsServerKind;
   server: http.Server;
   host: string;
   port: number;
-  connections: Set<DesktopWsConnection>;
-  logger: Pick<typeof console, "log" | "warn" | "error">;
-  startedAt: string;
 };
 
 export type DesktopWsServerRuntimeState = Omit<DesktopWsServerState, "enabled" | "message">;
@@ -176,6 +186,12 @@ const AGENT_PLATFORM_CONTROL_PUSH_TYPES = new Set(["connected", "heartbeat", "au
 const AGENT_PLATFORM_CONNECT_TIMEOUT_MS = 8_000;
 
 const activeServers = new Map<DesktopWsServerKind, DesktopWsServerRecord>();
+const tunnelSessionGroup: DesktopWsSessionGroup = {
+  kind: "tunnel",
+  connections: new Set(),
+  logger: console,
+  startedAt: nowIso()
+};
 
 function createDesktopWsServerRuntimeState(
   record: DesktopWsServerRecord | null,
@@ -465,6 +481,15 @@ async function verifyDesktopAccessToken(app: App, token: string, subprotocol?: s
   };
 }
 
+export function authenticateDesktopWsProtocolSession(
+  options: DesktopWsServerOptions,
+  token: string,
+  subprotocol?: string
+) {
+  return (options.verifyToken ?? ((nextToken, nextSubprotocol) =>
+    verifyDesktopAccessToken(options.app, nextToken, nextSubprotocol)))(token, subprotocol);
+}
+
 function writeUpgradeFailure(socket: Socket, status: number, message: string) {
   if (socket.destroyed) {
     return;
@@ -516,10 +541,10 @@ function encodeWebSocketFrame(opcode: number, payload: Buffer) {
 }
 
 function sendJson(connection: DesktopWsConnection, payload: DesktopWsOutboundFrame) {
-  if (connection.closed || connection.socket.destroyed) {
+  if (connection.closed) {
     return;
   }
-  connection.socket.write(encodeWebSocketFrame(0x1, Buffer.from(JSON.stringify(payload), "utf8")));
+  connection.transport.sendText(JSON.stringify(payload));
 }
 
 function sendResponse(connection: DesktopWsConnection, type: string, id: string, data: unknown, msg = "success") {
@@ -778,7 +803,7 @@ class AgentPlatformWsBridge {
   }
 }
 
-function closeConnection(record: DesktopWsServerRecord, connection: DesktopWsConnection, code = 1000, reason = "closed") {
+function closeConnection(connection: DesktopWsConnection, code = 1000, reason = "closed") {
   if (connection.closed) {
     return;
   }
@@ -789,18 +814,8 @@ function closeConnection(record: DesktopWsServerRecord, connection: DesktopWsCon
     clearInterval(connection.heartbeatTimer);
     connection.heartbeatTimer = null;
   }
-  record.connections.delete(connection);
-  if (!connection.socket.destroyed) {
-    const reasonBuffer = Buffer.from(reason, "utf8");
-    const payload = Buffer.alloc(2 + reasonBuffer.byteLength);
-    payload.writeUInt16BE(code, 0);
-    reasonBuffer.copy(payload, 2);
-    try {
-      connection.socket.end(encodeWebSocketFrame(0x8, payload));
-    } catch {
-      connection.socket.destroy();
-    }
-  }
+  connection.server.connections.delete(connection);
+  connection.transport.close(code, reason);
 }
 
 function parseFrames(connection: DesktopWsConnection) {
@@ -1103,22 +1118,60 @@ function handleTextMessage(options: DesktopWsServerOptions, connection: DesktopW
   });
 }
 
-function bindConnection(record: DesktopWsServerRecord, options: DesktopWsServerOptions, req: http.IncomingMessage, socket: Socket, auth: DesktopWsAuthSession) {
-  const parsed = new URL(req.url || "/", `http://${record.host}:${record.port}`);
+export type DesktopWsProtocolSessionCreateInput = {
+  authToken: string;
+  subprotocol?: string;
+  source?: string;
+  clientDeviceId?: string;
+  transport: DesktopWsProtocolTransport;
+};
+
+type BindDesktopWsProtocolSessionInput = {
+  auth: DesktopWsAuthSession;
+  source?: string;
+  clientDeviceId?: string;
+  transport: DesktopWsProtocolTransport;
+};
+
+export class DesktopWsProtocolSession {
+  constructor(
+    private readonly options: DesktopWsServerOptions,
+    private readonly connection: DesktopWsConnection
+  ) {}
+
+  receiveTextFrame(text: string) {
+    handleTextMessage(this.options, this.connection, text);
+  }
+
+  close(code = 1000, reason = "closed") {
+    closeConnection(this.connection, code, reason);
+  }
+
+  get id() {
+    return this.connection.id;
+  }
+}
+
+function bindProtocolSession(
+  group: DesktopWsSessionGroup,
+  options: DesktopWsServerOptions,
+  input: BindDesktopWsProtocolSessionInput
+) {
+  group.logger = options.logger || console;
   const connection: DesktopWsConnection = {
     id: createSessionId(),
-    socket,
-    server: record,
-    auth,
-    source: readText(parsed.searchParams.get("source")),
-    clientDeviceId: readText(parsed.searchParams.get("deviceId")) || readText(parsed.searchParams.get("device_id")),
+    server: group,
+    auth: input.auth,
+    source: readText(input.source),
+    clientDeviceId: readText(input.clientDeviceId),
     buffer: Buffer.alloc(0),
     subscriptions: new Set(),
     closed: false,
     heartbeatTimer: null,
-    agentPlatformBridge: null
+    agentPlatformBridge: null,
+    transport: input.transport
   };
-  record.connections.add(connection);
+  group.connections.add(connection);
   sendPush(connection, "connected", { sessionId: connection.id });
   let lastAuthExpiringAt = 0;
   connection.heartbeatTimer = setInterval(() => {
@@ -1128,27 +1181,81 @@ function bindConnection(record: DesktopWsServerRecord, options: DesktopWsServerO
       sendPush(connection, "auth.expiring", { expiresAt: connection.auth.expiresAt });
     }
   }, HEARTBEAT_INTERVAL_MS);
+  return {
+    connection,
+    session: new DesktopWsProtocolSession(options, connection)
+  };
+}
 
+export async function createDesktopWsProtocolSession(
+  options: DesktopWsServerOptions,
+  input: DesktopWsProtocolSessionCreateInput
+) {
+  const authToken = readText(input.authToken);
+  if (!authToken) {
+    throw new Error("authToken is required");
+  }
+  const auth = await authenticateDesktopWsProtocolSession(options, authToken, input.subprotocol);
+  return bindProtocolSession(tunnelSessionGroup, options, {
+    auth,
+    source: input.source,
+    clientDeviceId: input.clientDeviceId,
+    transport: input.transport
+  }).session;
+}
+
+function closeSocketWithFrame(socket: Socket, code = 1000, reason = "closed") {
+  if (socket.destroyed) {
+    return;
+  }
+  const reasonBuffer = Buffer.from(reason, "utf8");
+  const payload = Buffer.alloc(2 + reasonBuffer.byteLength);
+  payload.writeUInt16BE(code, 0);
+  reasonBuffer.copy(payload, 2);
+  try {
+    socket.end(encodeWebSocketFrame(0x8, payload));
+  } catch {
+    socket.destroy();
+  }
+}
+
+function bindSocketConnection(record: DesktopWsServerRecord, options: DesktopWsServerOptions, req: http.IncomingMessage, socket: Socket, auth: DesktopWsAuthSession) {
+  const parsed = new URL(req.url || "/", `http://${record.host}:${record.port}`);
+  const { connection, session } = bindProtocolSession(record, options, {
+    auth,
+    source: readText(parsed.searchParams.get("source")),
+    clientDeviceId: readText(parsed.searchParams.get("deviceId")) || readText(parsed.searchParams.get("device_id")),
+    transport: {
+      sendText(text) {
+        if (!socket.destroyed) {
+          socket.write(encodeWebSocketFrame(0x1, Buffer.from(text, "utf8")));
+        }
+      },
+      close(code, reason) {
+        closeSocketWithFrame(socket, code, reason);
+      }
+    }
+  });
   socket.on("data", (chunk) => {
     try {
       connection.buffer = Buffer.concat([connection.buffer, chunk]);
       const frames = parseFrames(connection);
       for (const frame of frames) {
         if (frame.opcode === 0x1) {
-          handleTextMessage(options, connection, frame.payload.toString("utf8"));
+          session.receiveTextFrame(frame.payload.toString("utf8"));
         } else if (frame.opcode === 0x8) {
-          closeConnection(record, connection);
+          session.close();
         } else if (frame.opcode === 0x9) {
           socket.write(encodeWebSocketFrame(0xA, frame.payload));
         }
       }
     } catch (error) {
       record.logger.warn?.(`[desktop-ws] closing invalid websocket frame: ${error instanceof Error ? error.message : String(error)}`);
-      closeConnection(record, connection, 1002, "protocol error");
+      session.close(1002, "protocol error");
     }
   });
-  socket.on("close", () => closeConnection(record, connection));
-  socket.on("error", () => closeConnection(record, connection));
+  socket.on("close", () => session.close());
+  socket.on("error", () => session.close());
 }
 
 async function handleUpgrade(record: DesktopWsServerRecord, options: DesktopWsServerOptions, req: http.IncomingMessage, socket: Socket) {
@@ -1163,10 +1270,9 @@ async function handleUpgrade(record: DesktopWsServerRecord, options: DesktopWsSe
     return;
   }
   try {
-    const auth = await (options.verifyToken ?? ((token, subprotocol) =>
-      verifyDesktopAccessToken(options.app, token, subprotocol)))(tokenInfo.token, tokenInfo.subprotocol);
+    const auth = await authenticateDesktopWsProtocolSession(options, tokenInfo.token, tokenInfo.subprotocol);
     writeUpgradeSuccess(socket, req, tokenInfo.subprotocol);
-    bindConnection(record, options, req, socket, auth);
+    bindSocketConnection(record, options, req, socket, auth);
   } catch (error) {
     record.logger.warn?.(`[desktop-ws] unauthorized websocket upgrade: ${error instanceof Error ? error.message : String(error)}`);
     writeUpgradeFailure(socket, 401, "Unauthorized");
@@ -1254,7 +1360,7 @@ export function getDesktopRemoteWsServerRuntimeState() {
 }
 
 export function emitDesktopWsPush(type: DesktopWsPushType | string, data?: unknown) {
-  for (const record of activeServers.values()) {
+  for (const record of [...activeServers.values(), tunnelSessionGroup]) {
     for (const connection of record.connections) {
       if (connection.subscriptions.has(type)) {
         sendPush(connection, type, data);
@@ -1270,7 +1376,7 @@ function stopDesktopWsServerInstance(kind: DesktopWsServerKind) {
     return Promise.resolve();
   }
   for (const connection of [...record.connections]) {
-    closeConnection(record, connection, 1001, "server stopping");
+    closeConnection(connection, 1001, "server stopping");
   }
   return new Promise<void>((resolve) => {
     record.server.close(() => resolve());

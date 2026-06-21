@@ -15,9 +15,6 @@ const {
   ensureTunnelHubRemoteWsReady
 } = require("../dist-electron/main/tunnel-hub-remote-ws.js");
 const {
-  stopDesktopRemoteWsServer
-} = require("../dist-electron/main/desktop-ws-server.js");
-const {
   readTunnelHubSettings,
   saveTunnelHubSettings
 } = require("../dist-electron/main/tunnel-hub-settings.js");
@@ -85,7 +82,7 @@ test("deriveTunnelHubRegistrationApiOrigin maps relay websocket URLs to HTTP API
   );
 });
 
-test("Tunnel Hub remote WS registration uses SSO site token and stores agent token", async (t) => {
+test("Tunnel Hub registration uses SSO site token and stores agent token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-remote-ws-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -113,19 +110,6 @@ test("Tunnel Hub remote WS registration uses SSO site token and stores agent tok
   });
   const relayAddress = await listen(relay);
   t.after(async () => {
-    configureTunnelHubRemoteWsController({
-      desktopWsServerOptions: {
-        app,
-        desktopActionOptions: {},
-        assistantBridge: {
-          listAgents: async () => [],
-          startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
-        },
-        getTaskBoardRuntime: () => null,
-        logger: { log() {}, warn() {}, error() {} }
-      }
-    });
-    await stopDesktopRemoteWsServer();
     await closeServer(relay);
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -154,37 +138,6 @@ test("Tunnel Hub remote WS registration uses SSO site token and stores agent tok
   assert.equal(saved.ok, true);
 
   configureTunnelHubRemoteWsController({
-    desktopWsServerOptions: {
-      app,
-      desktopActionOptions: {},
-      assistantBridge: {
-        listAgents: async () => [],
-        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
-      },
-      getTaskBoardRuntime: () => null,
-      verifyToken: async () => ({
-        subject: "app",
-        deviceId: "device-1",
-        expiresAt: Date.now() + 600_000,
-        scope: "app"
-      }),
-      logger: { log() {}, warn() {}, error() {} }
-    },
-    startRemoteWsServer: async () => ({
-      running: true,
-      host: "127.0.0.1",
-      port: 7083,
-      path: "/ws",
-      url: "ws://127.0.0.1:7083/ws",
-      webSocketUrl: "ws://127.0.0.1:7083/ws"
-    }),
-    getRemoteWsServerRuntimeState: () => ({
-      running: true,
-      host: "127.0.0.1",
-      port: 7083,
-      path: "/ws",
-      url: "ws://127.0.0.1:7083/ws"
-    }),
     logger: { log() {}, warn() {}, error() {} }
   });
 
@@ -202,12 +155,12 @@ test("Tunnel Hub remote WS registration uses SSO site token and stores agent tok
 
   const settings = readTunnelHubSettings(app);
   assert.equal(settings.webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
-  assert.equal(settings.targetUrl, "http://127.0.0.1:7083");
+  assert.equal(settings.targetUrl, "");
   assert.equal(settings.hasRelayToken, true);
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), true);
 });
 
-test("Tunnel Hub remote WS registration ignores legacy registration token", async (t) => {
+test("Tunnel Hub registration ignores legacy registration token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-site-token-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -233,19 +186,6 @@ test("Tunnel Hub remote WS registration ignores legacy registration token", asyn
   });
   const relayAddress = await listen(relay);
   t.after(async () => {
-    configureTunnelHubRemoteWsController({
-      desktopWsServerOptions: {
-        app,
-        desktopActionOptions: {},
-        assistantBridge: {
-          listAgents: async () => [],
-          startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
-        },
-        getTaskBoardRuntime: () => null,
-        logger: { log() {}, warn() {}, error() {} }
-      }
-    });
-    await stopDesktopRemoteWsServer();
     await closeServer(relay);
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -266,31 +206,6 @@ test("Tunnel Hub remote WS registration ignores legacy registration token", asyn
   );
 
   configureTunnelHubRemoteWsController({
-    desktopWsServerOptions: {
-      app,
-      desktopActionOptions: {},
-      assistantBridge: {
-        listAgents: async () => [],
-        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
-      },
-      getTaskBoardRuntime: () => null,
-      logger: { log() {}, warn() {}, error() {} }
-    },
-    startRemoteWsServer: async () => ({
-      running: true,
-      host: "127.0.0.1",
-      port: 7083,
-      path: "/ws",
-      url: "ws://127.0.0.1:7083/ws",
-      webSocketUrl: "ws://127.0.0.1:7083/ws"
-    }),
-    getRemoteWsServerRuntimeState: () => ({
-      running: true,
-      host: "127.0.0.1",
-      port: 7083,
-      path: "/ws",
-      url: "ws://127.0.0.1:7083/ws"
-    }),
     logger: { log() {}, warn() {}, error() {} }
   });
 

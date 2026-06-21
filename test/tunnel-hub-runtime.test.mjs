@@ -11,8 +11,7 @@ const require = createRequire(import.meta.url);
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 const {
-  startDesktopRemoteWsServer,
-  stopDesktopRemoteWsServer
+  getDesktopRemoteWsServerRuntimeState
 } = require("../dist-electron/main/desktop-ws-server.js");
 const {
   configureTunnelHubRemoteWsController
@@ -21,8 +20,8 @@ const {
   TunnelHubRuntime
 } = require("../dist-electron/main/tunnel-hub-runtime.js");
 const {
-  TunnelHubTunnelClient
-} = require("../dist-electron/main/tunnel-hub-tunnel-client.js");
+  TunnelClientEndpoint
+} = require("../dist-electron/main/tunnel-client-endpoint.js");
 const {
   readTunnelHubSettings,
   saveTunnelHubSettings
@@ -65,6 +64,20 @@ function writeSsoSiteToken(homePath, token = "runtime-site-token") {
     JSON.stringify({ accessToken: token }),
     "utf8"
   );
+}
+
+function createDesktopWsServerOptions(app, overrides = {}) {
+  return {
+    app,
+    desktopActionOptions: {},
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+    },
+    getTaskBoardRuntime: () => null,
+    logger: { log() {}, warn() {}, error() {} },
+    ...overrides
+  };
 }
 
 function listen(server) {
@@ -177,6 +190,12 @@ function encodeTunnelWsFrame(type, payload) {
   return Buffer.concat([header, payload]);
 }
 
+function encodeTunnelChunk(payload = Buffer.alloc(0)) {
+  const header = Buffer.alloc(4);
+  header.writeUInt32BE(payload.byteLength, 0);
+  return Buffer.concat([header, payload]);
+}
+
 function createStreamReader() {
   let buffer = Buffer.alloc(0);
   const waiters = [];
@@ -222,6 +241,16 @@ function createStreamReader() {
       const prefix = await readBytes(4);
       return JSON.parse((await readBytes(prefix.readUInt32BE(0))).toString("utf8"));
     },
+    async readChunk() {
+      const prefix = await readBytes(4);
+      const size = prefix.readUInt32BE(0);
+      return size === 0 ? Buffer.alloc(0) : readBytes(size);
+    },
+    async readWsFrame() {
+      const header = await readBytes(9);
+      const payload = await readBytes(Number(header.readBigUInt64BE(1)));
+      return { type: header[0], payload };
+    },
     async readWsJson() {
       const header = await readBytes(9);
       const payload = await readBytes(Number(header.readBigUInt64BE(1)));
@@ -230,7 +259,7 @@ function createStreamReader() {
   };
 }
 
-function createFakeRelay({ targetUrl, kind = "websocket" }) {
+function createFakeRelay(runScenario) {
   const streamId = 2;
   const streamReader = createStreamReader();
   let socket = null;
@@ -252,38 +281,6 @@ function createFakeRelay({ targetUrl, kind = "websocket" }) {
 
   function sendStreamData(payload) {
     sendTunnelFrame(FRAME_DATA, streamId, payload);
-  }
-
-  async function runScenario() {
-    sendTunnelFrame(FRAME_OPEN, streamId);
-    const request = {
-      kind,
-      requestId: "req-remote-ws",
-      method: "GET",
-      path: "/ws?token=test-token",
-      host: "mac-mini-office.relay.example.test",
-      header: {}
-    };
-    if (targetUrl) {
-      request.target = targetUrl;
-    }
-    sendStreamData(encodeTunnelJson(request));
-    const upgrade = await streamReader.readJson();
-    assert.equal(upgrade.ok, true);
-    assert.equal(upgrade.statusCode, 101);
-    sendStreamData(encodeTunnelWsFrame(1, Buffer.from(JSON.stringify({
-      ns: "d",
-      frame: "request",
-      type: "session.hello",
-      id: "hello-through-tunnel",
-      payload: {}
-    }), "utf8")));
-    for (;;) {
-      const frame = await streamReader.readWsJson();
-      if (frame.id === "hello-through-tunnel") {
-        return frame;
-      }
-    }
   }
 
   const server = http.createServer();
@@ -327,7 +324,13 @@ function createFakeRelay({ targetUrl, kind = "websocket" }) {
     },
     async start() {
       await upgraded;
-      return runScenario();
+      sendTunnelFrame(FRAME_OPEN, streamId);
+      return runScenario({
+        streamReader,
+        sendStreamData,
+        sendTunnelFrame,
+        streamId
+      });
     },
     close() {
       socket?.destroy();
@@ -412,7 +415,6 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   });
   const relayAddress = await listen(relay);
   t.after(async () => {
-    await stopDesktopRemoteWsServer();
     await closeServer(relay);
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -426,32 +428,6 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   }).ok, true);
 
   configureTunnelHubRemoteWsController({
-    desktopWsServerOptions: {
-      app,
-      desktopActionOptions: {},
-      assistantBridge: {
-        listAgents: async () => [],
-        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
-      },
-      getTaskBoardRuntime: () => null,
-      verifyToken: async () => ({ subject: "app", deviceId: "device-1", expiresAt: Date.now() + 600_000, scope: "app" }),
-      logger: { log() {}, warn() {}, error() {} }
-    },
-    startRemoteWsServer: async () => ({
-      running: true,
-      host: "127.0.0.1",
-      port: 7083,
-      path: "/ws",
-      url: "ws://127.0.0.1:7083/ws",
-      webSocketUrl: "ws://127.0.0.1:7083/ws"
-    }),
-    getRemoteWsServerRuntimeState: () => ({
-      running: true,
-      host: "127.0.0.1",
-      port: 7083,
-      path: "/ws",
-      url: "ws://127.0.0.1:7083/ws"
-    }),
     logger: { log() {}, warn() {}, error() {} }
   });
 
@@ -488,48 +464,67 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(connectCalls.length, 1);
   assert.equal(connectCalls[0].relayUrl, relayUrl);
   assert.equal(connectCalls[0].relayToken, "returned-runtime-token");
-  assert.equal(connectCalls[0].desktopWebSocketTargetUrl, "http://127.0.0.1:7083");
+  assert.equal(typeof connectCalls[0].desktopWsServerOptions.verifyToken, "undefined");
+  assert.equal(getDesktopRemoteWsServerRuntimeState().running, false);
   assert.equal(readTunnelHubSettings(app).webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
+  assert.equal(readTunnelHubSettings(app).targetUrl, "");
   await runtime.stop();
 });
 
-test("Tunnel Hub integrated tunnel forwards desktop.websocket stream to Desktop protocol", async (t) => {
+test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol without remote WS", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-protocol-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  const remote = await startDesktopRemoteWsServer({
-    app,
-    host: "127.0.0.1",
-    port: 0,
-    desktopActionOptions: {},
-    assistantBridge: {
-      listAgents: async () => [],
-      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
-    },
-    getTaskBoardRuntime: () => null,
-    verifyToken: async (token) => {
-      assert.equal(token, "test-token");
-      return {
-        subject: "app",
-        deviceId: "device-1",
-        expiresAt: Date.now() + 600_000,
-        scope: "app"
-      };
-    },
-    logger: { log() {}, warn() {}, error() {} }
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      ns: "d",
+      authToken: "test-token",
+      source: "test-relay",
+      clientDeviceId: "browser-1"
+    }));
+    await streamReader.readWsJson();
+    sendStreamData(encodeTunnelWsFrame(1, Buffer.from(JSON.stringify({
+      ns: "d",
+      frame: "request",
+      type: "session.hello",
+      id: "hello-through-tunnel",
+      payload: {}
+    }), "utf8")));
+    for (;;) {
+      const frame = await streamReader.readWsJson();
+      if (frame.id === "hello-through-tunnel") {
+        return frame;
+      }
+    }
   });
-  const fakeRelay = createFakeRelay({ kind: "desktop.websocket" });
   const relayAddress = await listen(fakeRelay.server);
-  const client = new TunnelHubTunnelClient({
+  const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
     relayToken: "relay-token",
-    desktopWebSocketTargetUrl: `http://127.0.0.1:${remote.port}`,
+    desktopWsServerOptions: {
+      app,
+      desktopActionOptions: {},
+      assistantBridge: {
+        listAgents: async () => [],
+        startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+      },
+      getTaskBoardRuntime: () => null,
+      verifyToken: async (token) => {
+        assert.equal(token, "test-token");
+        return {
+          subject: "app",
+          deviceId: "device-1",
+          expiresAt: Date.now() + 600_000,
+          scope: "app"
+        };
+      },
+      logger: { log() {}, warn() {}, error() {} }
+    },
     logger: { log() {}, warn() {}, error() {} }
   });
   t.after(async () => {
     client.close();
     fakeRelay.close();
-    await stopDesktopRemoteWsServer();
     await closeServer(fakeRelay.server);
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -543,4 +538,328 @@ test("Tunnel Hub integrated tunnel forwards desktop.websocket stream to Desktop 
   assert.equal(response.id, "hello-through-tunnel");
   assert.equal(response.code, 0);
   assert.notEqual(response.msg, "unknown type: session.hello");
+  assert.equal(getDesktopRemoteWsServerRuntimeState().running, false);
+});
+
+test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-ap-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+
+  class FakeAgentPlatformWebSocket {
+    static sockets = [];
+
+    constructor(url) {
+      this.url = url;
+      this.readyState = 0;
+      this.sent = [];
+      this.listeners = new Map();
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      FakeAgentPlatformWebSocket.sockets.push(this);
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.emit("open", { type: "open" });
+      });
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    emit(type, event) {
+      const handler = this[`on${type}`];
+      if (typeof handler === "function") {
+        handler(event);
+      }
+      for (const listener of this.listeners.get(type) ?? []) {
+        listener(event);
+      }
+    }
+
+    send(data) {
+      const frame = JSON.parse(data);
+      this.sent.push(frame);
+      queueMicrotask(() => {
+        this.emit("message", { data: JSON.stringify({
+          frame: "response",
+          type: frame.type,
+          id: frame.id,
+          code: 0,
+          msg: "success",
+          data: [{ key: "demo" }]
+        }) });
+      });
+    }
+
+    close(code = 1000, reason = "closed") {
+      this.readyState = 3;
+      this.emit("close", { type: "close", code, reason });
+    }
+  }
+
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      ns: "ap",
+      authToken: "test-token",
+      source: "test-relay"
+    }));
+    await streamReader.readWsJson();
+    sendStreamData(encodeTunnelWsFrame(1, Buffer.from(JSON.stringify({
+      ns: "ap",
+      frame: "request",
+      type: "/api/agents",
+      id: "ap-agents-through-tunnel",
+      payload: { includeChats: 1 }
+    }), "utf8")));
+    for (;;) {
+      const frame = await streamReader.readWsJson();
+      if (frame.id === "ap-agents-through-tunnel") {
+        return frame;
+      }
+    }
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    desktopWsServerOptions: createDesktopWsServerOptions(app, {
+      agentPlatformBridge: {
+        WebSocketConstructor: FakeAgentPlatformWebSocket,
+        getServiceState: async () => ({
+          status: "running",
+          message: "",
+          healthMeta: { webUrl: "http://127.0.0.1:7078", port: 7078 }
+        }),
+        issueAccessToken: async () => ({ ok: true, token: "platform-token", message: "issued" })
+      },
+      verifyToken: async (token) => {
+        assert.equal(token, "test-token");
+        return { subject: "app", deviceId: "device-1", expiresAt: Date.now() + 600_000, scope: "app" };
+      }
+    }),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    await closeServer(fakeRelay.server);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(response.ns, "ap");
+  assert.equal(response.frame, "response");
+  assert.deepEqual(response.data, [{ key: "demo" }]);
+  assert.equal(FakeAgentPlatformWebSocket.sockets.length, 1);
+  assert.equal(new URL(FakeAgentPlatformWebSocket.sockets[0].url).searchParams.get("token"), "platform-token");
+});
+
+test("Tunnel Client endpoint proxies ns=wa HTTP streams with chunked body", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-http-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  let captured = null;
+  const local = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      captured = {
+        method: req.method,
+        url: req.url,
+        host: req.headers.host,
+        forwardedHost: req.headers["x-forwarded-host"],
+        requestId: req.headers["x-zenm-request-id"],
+        routeId: req.headers["x-zenm-route-id"],
+        body: Buffer.concat(chunks).toString("utf8")
+      };
+      res.writeHead(201, {
+        "Content-Type": "text/plain",
+        "X-Local-Reply": "yes"
+      });
+      res.write("chunk-a:");
+      res.end("chunk-b");
+    });
+  });
+  const localAddress = await listen(local);
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      ns: "wa",
+      kind: "http",
+      routeId: "route_http",
+      requestId: "req_http",
+      nsPort: localAddress.port,
+      nsProtocol: "http",
+      method: "POST",
+      path: "/api/foo?x=1",
+      host: "demo.wa.zenmind.cc",
+      headers: { "content-type": "text/plain" }
+    }));
+    sendStreamData(encodeTunnelChunk(Buffer.from("hello ")));
+    sendStreamData(encodeTunnelChunk(Buffer.from("world")));
+    sendStreamData(encodeTunnelChunk());
+    const head = await streamReader.readJson();
+    const chunks = [];
+    for (;;) {
+      const chunk = await streamReader.readChunk();
+      if (chunk.byteLength === 0) break;
+      chunks.push(chunk);
+    }
+    return { head, body: Buffer.concat(chunks).toString("utf8") };
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    await closeServer(fakeRelay.server);
+    await closeServer(local);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(response.head.ok, true);
+  assert.equal(response.head.statusCode, 201);
+  assert.equal(response.head.headers["x-local-reply"], "yes");
+  assert.equal(response.body, "chunk-a:chunk-b");
+  assert.deepEqual(captured, {
+    method: "POST",
+    url: "/api/foo?x=1",
+    host: "demo.wa.zenmind.cc",
+    forwardedHost: "demo.wa.zenmind.cc",
+    requestId: "req_http",
+    routeId: "route_http",
+    body: "hello world"
+  });
+});
+
+test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-ws-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  let capturedHost = "";
+  const local = http.createServer();
+  const localSockets = new Set();
+  local.on("upgrade", (req, socket) => {
+    localSockets.add(socket);
+    socket.on("close", () => localSockets.delete(socket));
+    capturedHost = String(req.headers.host ?? "");
+    const key = String(req.headers["sec-websocket-key"] ?? "");
+    socket.write([
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Accept: ${websocketAccept(key)}`,
+      "",
+      ""
+    ].join("\r\n"));
+    let buffer = Buffer.alloc(0);
+    socket.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const parsed = parseClientWsFrames(buffer);
+      buffer = parsed.rest;
+      for (const frame of parsed.frames) {
+        if (frame.opcode === 0x1) {
+          socket.write(encodeServerWsFrame(0x1, Buffer.from(`echo:${frame.payload.toString("utf8")}`)));
+        }
+        if (frame.opcode === 0x2) {
+          socket.write(encodeServerWsFrame(0x2, Buffer.concat([Buffer.from([9]), frame.payload])));
+        }
+      }
+    });
+  });
+  const localAddress = await listen(local);
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      ns: "wa",
+      kind: "websocket",
+      routeId: "route_ws",
+      requestId: "req_ws",
+      nsPort: localAddress.port,
+      nsProtocol: "http",
+      path: "/socket?room=1",
+      host: "socket.wa.zenmind.cc",
+      headers: {}
+    }));
+    const upgrade = await streamReader.readJson();
+    assert.equal(upgrade.ok, true);
+    assert.equal(upgrade.statusCode, 101);
+    sendStreamData(encodeTunnelWsFrame(1, Buffer.from("hello")));
+    const text = await streamReader.readWsFrame();
+    sendStreamData(encodeTunnelWsFrame(2, Buffer.from([1, 2, 3])));
+    const binary = await streamReader.readWsFrame();
+    return { text, binary };
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    for (const socket of localSockets) {
+      socket.destroy();
+    }
+    await closeServer(fakeRelay.server);
+    await closeServer(local);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(capturedHost, "socket.wa.zenmind.cc");
+  assert.equal(response.text.type, 1);
+  assert.equal(response.text.payload.toString("utf8"), "echo:hello");
+  assert.equal(response.binary.type, 2);
+  assert.deepEqual([...response.binary.payload], [9, 1, 2, 3]);
+});
+
+test("Tunnel Client endpoint rejects invalid ns=wa envelope", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-invalid-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      ns: "wa",
+      kind: "http",
+      nsPort: 0,
+      nsProtocol: "http",
+      method: "GET",
+      path: "/"
+    }));
+    return streamReader.readJson();
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    await closeServer(fakeRelay.server);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(response.ok, false);
+  assert.equal(response.statusCode, 400);
+  assert.match(response.error, /nsPort/u);
 });

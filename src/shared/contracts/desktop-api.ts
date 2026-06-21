@@ -52,7 +52,7 @@ export interface DesktopWsProbeFrame {
 
 export interface DesktopWsProbeResult {
   ok: boolean;
-  target: "localDebug" | "remoteUpstream";
+  target: "localDebug";
   url: string;
   message: string;
   frames: DesktopWsProbeFrame[];
@@ -624,7 +624,7 @@ export interface DesktopApi {
       reason?: AgentAuthRefreshReason;
     }) => Promise<IdentityAccessTokenInspection>;
     getTunnelDebugSnapshot: () => Promise<TunnelDebugSnapshot>;
-    probeDesktopWs: (input: { target: "localDebug" | "remoteUpstream" }) => Promise<DesktopWsProbeResult>;
+    probeDesktopWs: (input: { target: "localDebug" }) => Promise<DesktopWsProbeResult>;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;

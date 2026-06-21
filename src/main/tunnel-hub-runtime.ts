@@ -11,10 +11,7 @@ import type {
 } from "../shared/contracts";
 import type { DesktopWsServerOptions } from "./desktop-ws-server";
 import {
-  stopDesktopRemoteWsServer
-} from "./desktop-ws-server";
-import {
-  ensureTunnelHubRemoteWsReady
+  ensureTunnelHubRegistrationReady
 } from "./tunnel-hub-remote-ws";
 import {
   clearLegacyTunnelHubRegistrationToken,
@@ -23,14 +20,14 @@ import {
   readTunnelHubRegistrationBearerToken,
   saveTunnelHubSettings
 } from "./tunnel-hub-settings";
-import { TunnelHubTunnelClient } from "./tunnel-hub-tunnel-client";
+import { TunnelClientEndpoint } from "./tunnel-client-endpoint";
 
 type Logger = Pick<typeof console, "log" | "warn" | "error">;
 
 type TunnelClientFactoryInput = {
   relayUrl: string;
   relayToken: string;
-  desktopWebSocketTargetUrl: string;
+  desktopWsServerOptions: DesktopWsServerOptions;
   tlsInsecureSkipVerify: boolean;
   logger: Logger;
 };
@@ -128,7 +125,6 @@ export class TunnelHubRuntime {
     this.setPhase("stopping");
     this.client?.close();
     this.client = null;
-    await stopDesktopRemoteWsServer();
     this.stopping = false;
     this.lastError = "";
     const settings = readTunnelHubSettings(this.options.app);
@@ -188,7 +184,7 @@ export class TunnelHubRuntime {
     this.lastError = "";
     this.setPhase("starting");
     try {
-      const ready = await ensureTunnelHubRemoteWsReady(this.options.app);
+      const ready = await ensureTunnelHubRegistrationReady(this.options.app);
       this.setPhase(ready.registered ? "registered" : "connecting");
       if (!readTunnelHubRegistrationBearerToken(this.options.app)) {
         throw new Error("Sign in before starting Tunnel Hub.");
@@ -200,10 +196,10 @@ export class TunnelHubRuntime {
       }
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
-      await this.connectTunnel(relayUrl, token, nextSettings.tlsInsecureSkipVerify, ready.targetUrl || nextSettings.targetUrl);
+      await this.connectTunnel(relayUrl, token, nextSettings.tlsInsecureSkipVerify);
       this.lastConnectedAt = new Date().toISOString();
       this.setPhase("connected");
-      this.log(`connected relay=${relayUrl} target=${ready.targetUrl || nextSettings.targetUrl}`);
+      this.log(`connected relay=${relayUrl}`);
       return this.commandResult(true, "Tunnel Hub connected.");
     } catch (error) {
       this.lastError = messageFromError(error);
@@ -214,11 +210,11 @@ export class TunnelHubRuntime {
     }
   }
 
-  private async connectTunnel(relayUrl: string, relayToken: string, tlsInsecureSkipVerify: boolean, desktopWebSocketTargetUrl: string) {
+  private async connectTunnel(relayUrl: string, relayToken: string, tlsInsecureSkipVerify: boolean) {
     const client = this.createTunnelClient({
       relayUrl,
       relayToken,
-      desktopWebSocketTargetUrl,
+      desktopWsServerOptions: this.options.desktopWsServerOptions,
       tlsInsecureSkipVerify,
       logger: this.options.logger ?? console
     });
@@ -232,7 +228,7 @@ export class TunnelHubRuntime {
   }
 
   private createTunnelClient(input: TunnelClientFactoryInput) {
-    return this.options.createTunnelClient?.(input) ?? new TunnelHubTunnelClient(input);
+    return this.options.createTunnelClient?.(input) ?? new TunnelClientEndpoint(input);
   }
 
   private handleClientClosed() {

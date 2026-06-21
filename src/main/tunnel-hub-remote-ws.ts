@@ -1,15 +1,5 @@
 import type { App } from "electron";
 import {
-  DESKTOP_REMOTE_WS_PORT,
-  DESKTOP_WS_HOST
-} from "../shared/desktop-ws";
-import {
-  getDesktopRemoteWsServerRuntimeState,
-  startDesktopRemoteWsServer,
-  stopDesktopRemoteWsServer,
-  type DesktopWsServerOptions
-} from "./desktop-ws-server";
-import {
   ensureTunnelHubDeviceId,
   normalizeRelayUrl,
   readTunnelHubRelayTokenRotationRequest,
@@ -36,17 +26,14 @@ type TunnelHubRegistrationResponse = {
   publicHost?: unknown;
   publicUrl?: unknown;
   webSocketUrl?: unknown;
-  targetUrl?: unknown;
   agentToken?: unknown;
   relayToken?: unknown;
 };
 
 type TunnelHubRemoteWsControllerOptions = {
-  desktopWsServerOptions: DesktopWsServerOptions;
   fetch?: FetchLike;
-  startRemoteWsServer?: typeof startDesktopRemoteWsServer;
-  getRemoteWsServerRuntimeState?: typeof getDesktopRemoteWsServerRuntimeState;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
+  desktopWsServerOptions?: unknown;
 };
 
 let controllerOptions: TunnelHubRemoteWsControllerOptions | null = null;
@@ -81,42 +68,29 @@ export function deriveTunnelHubRegistrationApiOrigin(relayUrl: string) {
   return parsed.origin;
 }
 
-function getRemoteWsTargetUrl(
-  readRuntimeState: typeof getDesktopRemoteWsServerRuntimeState = getDesktopRemoteWsServerRuntimeState
-) {
-  const state = readRuntimeState();
-  return `http://${state.host || DESKTOP_WS_HOST}:${state.port || DESKTOP_REMOTE_WS_PORT}`;
-}
-
 export function configureTunnelHubRemoteWsController(options: TunnelHubRemoteWsControllerOptions) {
   controllerOptions = options;
 }
 
-export async function ensureTunnelHubRemoteWsReady(app: App) {
+export async function ensureTunnelHubRegistrationReady(app: App) {
   const settings = readTunnelHubSettings(app);
   if (!settings.enabled) {
     return {
       ok: true,
       registered: false,
-      skipped: true,
-      targetUrl: ""
+      skipped: true
     };
   }
   if (!controllerOptions) {
-    throw new Error("Tunnel Hub remote WS controller is not configured.");
+    throw new Error("Tunnel Hub registration controller is not configured.");
   }
 
-  const startRemoteWsServer = controllerOptions.startRemoteWsServer ?? startDesktopRemoteWsServer;
-  const readRemoteWsState = controllerOptions.getRemoteWsServerRuntimeState ?? getDesktopRemoteWsServerRuntimeState;
-  await startRemoteWsServer(controllerOptions.desktopWsServerOptions);
-  const targetUrl = getRemoteWsTargetUrl(readRemoteWsState);
   const siteToken = readTunnelHubRegistrationBearerToken(app);
   if (!siteToken) {
     return {
       ok: true,
       registered: false,
-      skipped: false,
-      targetUrl
+      skipped: false
     };
   }
 
@@ -149,7 +123,6 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
   const registrationRecord = {
     deviceId: readText(data.deviceId) || deviceId,
     relayUrl: readText(data.relayUrl) || settings.relayUrl,
-    targetUrl: readText(data.targetUrl) || targetUrl,
     relayToken: readText(data.agentToken) || readText(data.relayToken)
   };
   const publicHost = readText(data.publicHost);
@@ -165,20 +138,20 @@ export async function ensureTunnelHubRemoteWsReady(app: App) {
     Object.assign(registrationRecord, { webSocketUrl });
   }
   recordTunnelHubRegistrationResult(app, registrationRecord);
-  controllerOptions.logger?.log?.(`[tunnel-hub] registered desktop device ${deviceId} -> ${targetUrl}`);
+  controllerOptions.logger?.log?.(`[tunnel-hub] registered desktop device ${deviceId}`);
   return {
     ok: true,
     registered: true,
-    skipped: false,
-    targetUrl
+    skipped: false
   };
 }
 
+export const ensureTunnelHubRemoteWsReady = ensureTunnelHubRegistrationReady;
+
 export function stopTunnelHubRemoteWs() {
-  return stopDesktopRemoteWsServer();
+  return Promise.resolve();
 }
 
 export const __testInternals = {
-  parseRegistrationResponse,
-  getRemoteWsTargetUrl
+  parseRegistrationResponse
 };

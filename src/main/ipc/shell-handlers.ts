@@ -491,9 +491,8 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
         frames: []
       };
     }
-    const record = input && typeof input === "object" ? input as Record<string, unknown> : {};
     return probeDesktopWs(app, options.issueAgentPlatformAccessToken, {
-      target: record.target === "remoteUpstream" ? "remoteUpstream" : "localDebug"
+      target: "localDebug"
     });
   });
 }

@@ -10,7 +10,6 @@ import type {
   TunnelDebugSnapshot
 } from "../shared/contracts";
 import {
-  DESKTOP_REMOTE_WS_PORT,
   DESKTOP_WS_HOST,
   DESKTOP_WS_NAMESPACE_DESKTOP,
   DESKTOP_WS_PATH,
@@ -20,7 +19,7 @@ import { getTunnelHubRuntimeStatus } from "./tunnel-hub-runtime";
 
 type IssueAccessToken = (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
 
-type DesktopWsProbeTarget = "localDebug" | "remoteUpstream";
+type DesktopWsProbeTarget = "localDebug";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const WS_PROBE_TIMEOUT_MS = 5000;
@@ -193,7 +192,7 @@ function parseServerFrames(buffer: Buffer) {
 }
 
 function createProbeUrl(target: DesktopWsProbeTarget, token: string) {
-  const port = target === "remoteUpstream" ? DESKTOP_REMOTE_WS_PORT : DESKTOP_WS_PORT;
+  const port = DESKTOP_WS_PORT;
   const url = new URL(`ws://${DESKTOP_WS_HOST}:${port}${DESKTOP_WS_PATH}`);
   url.searchParams.set("token", token);
   url.searchParams.set("source", "desktop-debug-probe");
@@ -201,7 +200,7 @@ function createProbeUrl(target: DesktopWsProbeTarget, token: string) {
 }
 
 function createProbeDisplayUrl(target: DesktopWsProbeTarget) {
-  const port = target === "remoteUpstream" ? DESKTOP_REMOTE_WS_PORT : DESKTOP_WS_PORT;
+  const port = DESKTOP_WS_PORT;
   return `ws://${DESKTOP_WS_HOST}:${port}${DESKTOP_WS_PATH}`;
 }
 
@@ -364,7 +363,7 @@ export async function probeDesktopWs(
   issueAccessToken: IssueAccessToken,
   input?: { target?: DesktopWsProbeTarget }
 ): Promise<DesktopWsProbeResult> {
-  const target = input?.target === "remoteUpstream" ? "remoteUpstream" : "localDebug";
+  const target: DesktopWsProbeTarget = "localDebug";
   const displayUrl = createProbeDisplayUrl(target);
   const tokenResult = await issueAccessToken(app, "missing");
   if (!tokenResult.ok || !tokenResult.token.trim()) {

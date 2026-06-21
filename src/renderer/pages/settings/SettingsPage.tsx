@@ -59,7 +59,6 @@ import {
   DESKTOP_WS_HOST,
   DESKTOP_WS_PATH,
   DESKTOP_WS_PORT,
-  DESKTOP_REMOTE_WS_URL,
   DESKTOP_WS_URL
 } from "../../../shared/desktop-ws";
 import {
@@ -1824,7 +1823,7 @@ function TunnelDebugCard() {
   const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<TunnelDebugSnapshot | null>(null);
   const [probeResult, setProbeResult] = useState<DesktopWsProbeResult | null>(null);
-  const [pending, setPending] = useState<"snapshot" | "localDebug" | "remoteUpstream" | null>(null);
+  const [pending, setPending] = useState<"snapshot" | "localDebug" | null>(null);
   const [message, setMessage] = useState("");
 
   async function handleRefreshSnapshot() {
@@ -1840,7 +1839,7 @@ function TunnelDebugCard() {
     }
   }
 
-  async function handleProbe(target: "localDebug" | "remoteUpstream") {
+  async function handleProbe(target: "localDebug") {
     setPending(target);
     setMessage("");
     try {
@@ -1878,10 +1877,6 @@ function TunnelDebugCard() {
           <dd>{status?.connected ? t("common.yes") : t("common.no")}</dd>
         </div>
         <div>
-          <dt>{t("settings.debug.tunnel.targetUrl")}</dt>
-          <dd>{formatDebugValue(status?.targetUrl, t("settings.debug.empty"))}</dd>
-        </div>
-        <div>
           <dt>{t("settings.debug.tunnel.publicUrl")}</dt>
           <dd>{formatDebugValue(status?.publicUrl, t("settings.debug.empty"))}</dd>
         </div>
@@ -1909,13 +1904,9 @@ function TunnelDebugCard() {
         <Button disabled={pending !== null} onClick={() => void handleProbe("localDebug")}>
           {pending === "localDebug" ? t("common.loading") : t("settings.debug.tunnel.probeLocal")}
         </Button>
-        <Button disabled={pending !== null} onClick={() => void handleProbe("remoteUpstream")}>
-          {pending === "remoteUpstream" ? t("common.loading") : t("settings.debug.tunnel.probeRemote")}
-        </Button>
       </div>
       <div className="settings-debug-probe-targets">
         <code>{DESKTOP_WS_URL}</code>
-        <code>{DESKTOP_REMOTE_WS_URL}</code>
       </div>
       {message ? (
         <div className={`feedback-banner settings-desktop-ws-message${probeResult && !probeResult.ok ? " warning-banner" : ""}`} role="status">
@@ -4436,7 +4427,7 @@ export function SettingsPage({
                   <small>{t("settings.tunnelHub.reconnectUnit")}</small>
                 </div>
               </label>
-              {tunnelHubSettings.publicUrl || tunnelHubSettings.webSocketUrl || tunnelHubSettings.targetUrl ? (
+              {tunnelHubSettings.publicUrl || tunnelHubSettings.webSocketUrl ? (
                 <div className="settings-control-field settings-readonly-stack">
                   {tunnelHubSettings.publicHost ? (
                     <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
@@ -4446,9 +4437,6 @@ export function SettingsPage({
                   ) : null}
                   {tunnelHubSettings.webSocketUrl ? (
                     <small>{t("settings.tunnelHub.webSocketUrl")}: <code>{tunnelHubSettings.webSocketUrl}</code></small>
-                  ) : null}
-                  {tunnelHubSettings.targetUrl ? (
-                    <small>{t("settings.tunnelHub.targetUrl")}: <code>{tunnelHubSettings.targetUrl}</code></small>
                   ) : null}
                 </div>
               ) : null}
