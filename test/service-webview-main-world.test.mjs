@@ -8,10 +8,12 @@ const require = createRequire(import.meta.url);
 const {
   PAGE_TO_PRELOAD_EVENT,
   DESKTOP_WEBVIEW_BRIDGE_FLAG,
+  LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG,
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
-  AGENT_APP_CLIPBOARD_REQUEST_TYPE
+  AGENT_APP_CLIPBOARD_REQUEST_TYPE,
+  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE
 } = require("../dist-electron/shared/service-webview-bridge.js");
 
 function createStorage() {
@@ -152,6 +154,7 @@ test("service webview main-world script does not overwrite window postMessage", 
 
   assert.equal(window.postMessage, originalWindowPostMessage);
   assert.equal(window[DESKTOP_WEBVIEW_BRIDGE_FLAG], true);
+  assert.equal(window[LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG], true);
 });
 
 test("service webview main-world script forwards ordinary postMessage calls", () => {
@@ -189,5 +192,22 @@ test("service webview main-world script dispatches desktop bridge requests from 
 
   assert.equal(originalPostMessageCalls.length, 1);
   assert.equal(originalPostMessageCalls[0].value, payload);
+  assert.deepEqual(captured, [payload]);
+});
+
+test("service webview main-world script keeps legacy screenshot bridge requests working", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  const payload = {
+    type: LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
+    requestId: "screenshot-legacy-1"
+  };
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+  window.postMessage(payload, "*");
+
   assert.deepEqual(captured, [payload]);
 });
