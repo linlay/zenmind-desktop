@@ -20,8 +20,19 @@ export type SystemIdentityRuntimeOptions = {
   safeConsoleError: (message: string, details: Record<string, unknown>) => void;
 };
 
-function projectRootFromMainDir(mainDir: string) {
-  return path.join(mainDir, "..", "..");
+function pathApiForPlatform(platform: NodeJS.Platform) {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
+function projectRootFromMainDir(mainDir: string, platform: NodeJS.Platform) {
+  const pathApi = pathApiForPlatform(platform);
+  if (platform === "win32") {
+    return pathApi.resolve(pathApi.join(mainDir, ".."));
+  }
+  if (platform === "darwin") {
+    return pathApi.resolve(pathApi.join(mainDir, ".."));
+  }
+  return pathApi.resolve(pathApi.join(mainDir, ".."));
 }
 
 export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
@@ -31,23 +42,24 @@ export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
   configureNativeAboutPanel(options.platform, options.app, desktopAppInfo);
 
   function getDarwinDockIconCandidatePaths() {
-    const projectRoot = projectRootFromMainDir(options.mainProcessDir);
-    const bundledMacDockIconPath = path.join(
+    const pathApi = pathApiForPlatform(options.platform);
+    const projectRoot = projectRootFromMainDir(options.mainProcessDir, options.platform);
+    const bundledMacDockIconPath = pathApi.join(
       options.resourcesPath,
       APP_ICON_ASSET_FILENAMES.macDockIcon
     );
-    const packagedBrandIconPath = path.join(options.resourcesPath, APP_ICON_ASSET_FILENAMES.brandIcon);
-    const buildAppIconPath = path.join(
+    const packagedBrandIconPath = pathApi.join(options.resourcesPath, APP_ICON_ASSET_FILENAMES.brandIcon);
+    const buildAppIconPath = pathApi.join(
       projectRoot,
       APP_ICON_ASSET_DIRECTORIES.buildIcons,
       APP_ICON_ASSET_FILENAMES.macDockIcon
     );
-    const generatedBrandIconPath = path.join(
+    const generatedBrandIconPath = pathApi.join(
       projectRoot,
       APP_ICON_ASSET_DIRECTORIES.brandAssets,
       APP_ICON_ASSET_FILENAMES.brandIcon
     );
-    const rendererBrandIconPath = path.join(
+    const rendererBrandIconPath = pathApi.join(
       projectRoot,
       APP_ICON_ASSET_DIRECTORIES.distRenderer,
       APP_ICON_ASSET_FILENAMES.brandIcon

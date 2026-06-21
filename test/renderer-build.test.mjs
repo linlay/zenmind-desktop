@@ -3402,7 +3402,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /function getDarwinDockIconCandidatePaths\(\)/);
   assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.brandIcon/);
   assert.match(mainProcess, /APP_ICON_ASSET_FILENAMES\.macDockIcon/);
-  assert.match(mainProcess, /const bundledMacDockIconPath = path\.join\([\s\S]*?options\.resourcesPath,[\s\S]*?APP_ICON_ASSET_FILENAMES\.macDockIcon[\s\S]*?\);/);
+  assert.match(mainProcess, /const bundledMacDockIconPath = pathApi\.join\([\s\S]*?options\.resourcesPath,[\s\S]*?APP_ICON_ASSET_FILENAMES\.macDockIcon[\s\S]*?\);/);
   assert.match(mainProcess, /return \[[\s\S]*?bundledMacDockIconPath,[\s\S]*?buildAppIconPath,[\s\S]*?generatedBrandIconPath,[\s\S]*?rendererBrandIconPath[\s\S]*?\];/);
   assert.match(mainProcess, /options\.nativeImage\.createFromPath\(iconPath\)/);
   assert.match(mainProcess, /dock\.setIcon\(icon\);/);

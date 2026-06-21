@@ -30,16 +30,29 @@ export type AppTrayIconPathOptions = Pick<
   "platform" | "isPackaged" | "mainDir" | "resourcesPath"
 >;
 
-function projectRootFromMainDir(mainDir: string) {
-  return path.join(mainDir, "..", "..");
+function pathApiForPlatform(platform: NodeJS.Platform) {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
+function projectRootFromMainDir(mainDir: string, platform: NodeJS.Platform) {
+  const pathApi = pathApiForPlatform(platform);
+  if (platform === "win32") {
+    return pathApi.resolve(pathApi.join(mainDir, ".."));
+  }
+  if (platform === "darwin") {
+    return pathApi.resolve(pathApi.join(mainDir, ".."));
+  }
+  return pathApi.resolve(pathApi.join(mainDir, ".."));
 }
 
 function projectAssetPath(options: AppTrayIconPathOptions, directoryName: string, fileName: string) {
-  return path.join(projectRootFromMainDir(options.mainDir), directoryName, fileName);
+  const pathApi = pathApiForPlatform(options.platform);
+  return pathApi.join(projectRootFromMainDir(options.mainDir, options.platform), directoryName, fileName);
 }
 
 function packagedResourcePath(options: AppTrayIconPathOptions, fileName: string) {
-  return path.join(options.resourcesPath, APP_ICON_ASSET_DIRECTORIES.packagedResources, fileName);
+  const pathApi = pathApiForPlatform(options.platform);
+  return pathApi.join(options.resourcesPath, APP_ICON_ASSET_DIRECTORIES.packagedResources, fileName);
 }
 
 function platformFallbackIconPath(options: AppTrayIconPathOptions) {

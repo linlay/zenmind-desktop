@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import {
   app,
   clipboard,
@@ -125,7 +124,7 @@ import {
   createMainProcessContext,
   type MainProcessContext,
 } from "../main-process-context";
-import { getMainPreloadPath } from "../electron-bundle-paths";
+import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../electron-bundle-paths";
 import {
   loadRendererRoute,
 } from "../renderer-route";
@@ -171,7 +170,7 @@ export function createMainProcessRuntime() {
   });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
-  const MAIN_PROCESS_DIR = path.join(__dirname, "..");
+  const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, mainProcessContext.platform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
   const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
