@@ -2241,8 +2241,13 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardSync, /updateTaskBoardIssueByRunId\(app, event\.runId/);
   assert.match(taskBoardSync, /updateTaskBoardIssueByChatId/);
   assert.match(taskBoardSync, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
-  assert.match(taskBoardRuntime, /function toCloudIssueInput/);
-  assert.match(taskBoardRuntime, /"chatId"[\s\S]{0,80}"runId"[\s\S]{0,80}"runState"/);
+  assert.match(taskBoardRuntime, /private async applyDelivery\(delivery: KanbanDesktopDelivery\)/);
+  assert.match(taskBoardRuntime, /sourceRevision > 0 && sourceRevision <= cursor\.lastAppliedRevision/);
+  assert.match(taskBoardRuntime, /"run\.event\.append"/);
+  assert.match(taskBoardRuntime, /clientEventId: stableClientEventId\(deviceId, input\.clientEventParts\)/);
+  assert.match(taskBoardRuntime, /t\("taskBoard\.runtime\.cloudReadOnly"\)/);
+  assert.doesNotMatch(taskBoardRuntime, /desktop\.issue\.sync/);
+  assert.match(taskBoardRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
   assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => state\.taskBoardRuntime\?\.sendAssistantEvent\(event\)/);
   assert.match(taskBoardStore, /export function updateTaskBoardIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);

@@ -37,15 +37,15 @@ import {
   deleteDesktopKanbanIssue,
   getDesktopKanbanIssue,
   listDesktopKanbanIssues,
-  linkDesktopKanbanIssueToRemote,
-  markDesktopKanbanIssueSyncError,
-  markDesktopKanbanIssueSyncing,
   moveDesktopKanbanIssue,
+  readDesktopKanbanSyncCursor,
   setDesktopKanbanIssuePosition,
+  tombstoneDesktopKanbanCloudIssue,
   updateDesktopKanbanIssue,
   updateDesktopKanbanIssueByChatId,
   updateDesktopKanbanIssueByRunId,
   upsertDispatchedDesktopKanbanIssue,
+  writeDesktopKanbanSyncCursor,
   type TaskBoardCloudSnapshot
 } from "./task-board-local-store";
 import { getDesktopConfigRoot } from "./user-paths";
@@ -57,7 +57,10 @@ import {
 import { DesktopCloudSyncEngine } from "./task-board-cloud-sync";
 import {
   KanbanDesktopWsClient,
+  type KanbanDesktopDelivery,
+  type KanbanDesktopDeliveryApplyResult,
   type KanbanDesktopConnectionState,
+  type KanbanDesktopSyncLocalProject,
   type KanbanDesktopWsConfig
 } from "./kanban-desktop-ws-client";
 import { t } from "./i18n/main-i18n";
@@ -354,92 +357,40 @@ function getRemoteIssueId(issue: TaskBoardIssue) {
   return readText(issue.remoteIssueId) || readText(issue.id);
 }
 
-function toCloudIssueInput(input: TaskBoardIssueInput | TaskBoardIssueUpdateInput | TaskBoardIssue): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
-  const fields = [
-    "title",
-    "projectId",
-    "workflowId",
-    "typeId",
-    "stageId",
-    "statusId",
-    "description",
-    "status",
-    "priority",
-    "severity",
-    "assigneeAgentKey",
-    "assigneeId",
-    "workerType",
-    "workerId",
-    "workerAgent",
-    "reviewerId",
-    "reviewRequired",
-    "chatId",
-    "runId",
-    "runState",
-    "automationId",
-    "automationEnabled",
-    "automationCron",
-    "automationMessage",
-    "automationTimezone",
-    "attachmentChatId",
-    "attachments"
-  ] as const;
-  for (const field of fields) {
-    if (field in input && (input as Record<string, unknown>)[field] !== undefined) {
-      payload[field] = (input as Record<string, unknown>)[field];
-    }
-  }
-  return payload;
+function normalizeRemoteAccessLevel(value: unknown): AssistantStartRunRequest["accessLevel"] | undefined {
+  const text = readText(value);
+  return text === "default" || text === "auto_approve" || text === "full_access" ? text : undefined;
 }
 
-function resultIssuePayload(payload: unknown) {
-  return isRecord(payload) && "issue" in payload ? payload.issue : null;
+function deliveryPayloadRecord(delivery: KanbanDesktopDelivery): Record<string, unknown> {
+  return isRecord(delivery.payload) ? delivery.payload : {};
 }
 
-function resultIssuesPayload(payload: unknown) {
-  return isRecord(payload) && Array.isArray(payload.issues) ? payload.issues : null;
+function deliverySourceRevision(delivery: KanbanDesktopDelivery) {
+  const payload = deliveryPayloadRecord(delivery);
+  const revision = typeof delivery.sourceRevision === "number" && Number.isFinite(delivery.sourceRevision)
+    ? delivery.sourceRevision
+    : typeof payload.revision === "number" && Number.isFinite(payload.revision)
+      ? payload.revision
+      : 0;
+  return Math.max(0, Math.floor(revision));
 }
 
-function resultRevision(payload: unknown) {
-  return isRecord(payload) && typeof payload.revision === "number" ? payload.revision : 0;
+function deliveryIssuePayload(delivery: KanbanDesktopDelivery) {
+  const payload = deliveryPayloadRecord(delivery);
+  return "issue" in payload ? payload.issue : null;
 }
 
-function resultProjectId(payload: unknown) {
-  return isRecord(payload) ? readText(payload.projectId) : "";
+function deliveryIssueId(delivery: KanbanDesktopDelivery) {
+  const payload = deliveryPayloadRecord(delivery);
+  const issue = deliveryIssuePayload(delivery);
+  return readText(payload.issueId) ||
+    readText(payload.deletedIssueId) ||
+    (isRecord(issue) ? readText(issue.id) : "");
 }
 
-function resultComplete(payload: unknown) {
-  return isRecord(payload) && payload.complete === true;
-}
-
-function resultScope(payload: unknown) {
-  return isRecord(payload) ? readText(payload.scope) : "";
-}
-
-function resultOk(payload: unknown) {
-  return !isRecord(payload) || payload.ok !== false;
-}
-
-function resultMessage(payload: unknown, fallback: string) {
-  return isRecord(payload) ? readText(payload.message) || fallback : fallback;
-}
-
-function baseIssueRevision(issue: TaskBoardIssue) {
-  return typeof issue.revision === "number" && issue.revision > 0 ? issue.revision : undefined;
-}
-
-function buildListLikeIssueResult(list: TaskBoardListResult, message: string, issue?: TaskBoardIssue): TaskBoardIssueResult {
-  const remoteIssueId = isRecord(issue) ? readText(issue.remoteIssueId) || readText(issue.id) : "";
-  const localIssue = remoteIssueId
-    ? list.issues.find((candidate) => candidate.remoteIssueId === remoteIssueId || candidate.id === remoteIssueId)
-    : undefined;
-  return {
-    ok: list.ok,
-    message,
-    issue: localIssue ?? issue,
-    issues: list.issues
-  };
+function stableClientEventId(deviceId: string, parts: Array<string | number | null | undefined>) {
+  return [deviceId, ...parts.map((part) => readText(String(part ?? ""))).filter(Boolean)].join(":");
 }
 
 function taskBoardIssueFromAutomationPayload(payload: unknown): TaskBoardIssue | null {
@@ -509,32 +460,30 @@ export class TaskBoardRuntime {
   constructor(private readonly options: TaskBoardRuntimeOptions) {
     this.wsClient = new KanbanDesktopWsClient({
       capabilities: [
-        "desktop.issue.dispatch",
-        "desktop.issue.sync",
-        "desktop.issue.sync",
-        "desktop.project.bind",
-        "desktop.project.createLocal",
-        "desktop.project.select",
+        "command.dispatchIssue",
+        "command.runIssue",
+        "run.event.append",
         "agent.listDesktop",
-        "desktop.assistant.startRun",
         "automation.sync"
       ],
       getCurrentUser: () => this.currentUser(),
       getDeviceId: () => getDesktopDeviceId(this.options.app),
       getDeviceInfo: () => getTaskBoardDeviceInfo(this.options.app),
+      getSyncCursor: () => readDesktopKanbanSyncCursor(this.options.app, this.currentUser()),
+      onSyncCursor: (cursor) => {
+        writeDesktopKanbanSyncCursor(this.options.app, this.currentUser(), cursor);
+      },
       onSnapshot: (snapshot) => this.applySnapshot(snapshot),
+      onDelivery: (delivery) => this.applyDelivery(delivery),
       onDispatchIssue: (issue, revision) => this.applyDispatch(issue, revision),
       onListAgents: () => this.listAgents(),
       onStartRun: (request) => this.startRemoteRun(request),
       onAutomationSync: (payload) => this.syncRemoteAutomationPayload(payload),
       onListLocalProjects: () => this.listLocalProjects(),
+      onListSyncLocalProjects: () => this.listSyncLocalProjects(),
       onCreateLocalProject: (payload) => Promise.resolve(this.createLocalProject(payload)),
       onBindProject: (payload) => Promise.resolve(this.bindLocalProject(payload)),
       onUnbindProject: (payload) => Promise.resolve(this.unbindLocalProject(payload)),
-      onConnected: () => {
-        // 重连对账:下行差异已由快照覆盖,上行补 pending 的本地 issue。
-        void this.cloudSync.run();
-      },
       onStateChanged: (state) => {
         this.connectionState = state;
         this.notifyChanged();
@@ -631,6 +580,35 @@ export class TaskBoardRuntime {
     };
   }
 
+  async listSyncLocalProjects(): Promise<KanbanDesktopSyncLocalProject[]> {
+    const deviceId = getDesktopDeviceId(this.options.app);
+    const config = readTaskBoardCloudConfig(this.options.app);
+    const selectedProjectId = readText(config.selectedProjectId) || DEFAULT_SELECTED_PROJECT_ID;
+    const result = this.listIssues();
+    const bindings = (result.projectBindings ?? []).filter((binding) =>
+      binding.deviceId === deviceId &&
+      binding.status === "active"
+    );
+    if (bindings.length > 0) {
+      return bindings.map((binding) => ({
+        projectId: binding.projectId,
+        localProjectId: binding.localProjectId,
+        localDisplayName: binding.localDisplayName || binding.localProjectId,
+        controlMode: binding.controlMode === "disabled"
+          ? "disabled"
+          : binding.controlMode === "observe" ? "readonly" : "execute"
+      }));
+    }
+    const projects = result.projects ?? [];
+    const localProject = projects.find((project) => project.id === DEFAULT_SELECTED_PROJECT_ID) ?? projects[0];
+    return [{
+      projectId: selectedProjectId,
+      localProjectId: localProject?.id || DEFAULT_SELECTED_PROJECT_ID,
+      localDisplayName: localProject?.name || DEFAULT_SELECTED_PROJECT_ID,
+      controlMode: "execute"
+    }];
+  }
+
   saveCloudConfig(input: TaskBoardCloudConfig): TaskBoardCloudConfigResult {
     const config = writeTaskBoardCloudConfig(this.options.app, input);
     this.refreshConnection({ forceReconnect: true });
@@ -664,30 +642,9 @@ export class TaskBoardRuntime {
     this.refreshConnection();
     const currentUser = this.currentUser();
     if (input.syncToCloud !== true) {
-      const result = createPrivateDesktopKanbanIssue(this.options.app, currentUser, input);
-      if (result.ok) {
-        // 新私有 issue 若落在活动绑定的本地项目下,自动触发上行同步
-        void this.cloudSync.run();
-      }
-      return result;
+      return createPrivateDesktopKanbanIssue(this.options.app, currentUser, input);
     }
-    if (!this.wsClient.isOpen()) {
-      return {
-        ok: false,
-        message: t("taskBoard.runtime.createCloudRequiresConnection"),
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
-    try {
-      const response = await this.wsClient.request("issue.create", toCloudIssueInput(input));
-      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.syncedToCloud"), "desktop");
-    } catch (error) {
-      return {
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
+    return this.cloudIssueReadOnlyResult();
   }
 
   async updateIssue(issueId: string, input: TaskBoardIssueUpdateInput): Promise<TaskBoardIssueResult> {
@@ -704,75 +661,12 @@ export class TaskBoardRuntime {
 
     if (issueSyncMode(issue) === "private") {
       if (input.syncToCloud === true) {
-        if (!this.wsClient.isOpen()) {
-          return {
-            ok: false,
-            message: t("taskBoard.runtime.syncPrivateRequiresConnection"),
-            issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-          };
-        }
-        const localResult = updateDesktopKanbanIssue(this.options.app, currentUser, issue.id, input);
-        if (!localResult.ok || !localResult.issue) {
-          return localResult;
-        }
-        markDesktopKanbanIssueSyncing(this.options.app, currentUser, localResult.issue.id);
-        try {
-          const response = await this.wsClient.request("issue.create", toCloudIssueInput(localResult.issue));
-          const remoteIssue = resultIssuePayload(response);
-          if (!remoteIssue) {
-            return this.applyCloudIssueResponse(response, t("taskBoard.runtime.syncedToCloud"), "desktop");
-          }
-          return linkDesktopKanbanIssueToRemote(
-            this.options.app,
-            currentUser,
-            localResult.issue.id,
-            remoteIssue,
-            resultRevision(response)
-          );
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          markDesktopKanbanIssueSyncError(this.options.app, currentUser, localResult.issue.id, message);
-          return {
-            ok: false,
-            message,
-            issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-          };
-        }
+        return this.cloudIssueReadOnlyResult();
       }
-      const localUpdate = updateDesktopKanbanIssue(this.options.app, currentUser, issue.id, input);
-      if (localUpdate.ok) {
-        // 私有 issue 更新后若命中活动绑定,自动触发上行同步
-        void this.cloudSync.run();
-      }
-      return localUpdate;
+      return updateDesktopKanbanIssue(this.options.app, currentUser, issue.id, input);
     }
 
-    if (!this.wsClient.isOpen()) {
-      return {
-        ok: false,
-        message: t("taskBoard.runtime.cloudUpdateRequiresConnection"),
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
-    try {
-      markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
-      const response = await this.wsClient.request("issue.update", {
-        id: getRemoteIssueId(issue),
-        input: {
-          ...toCloudIssueInput(input),
-          baseIssueRevision: baseIssueRevision(issue)
-        }
-      });
-      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.cloudUpdated"), issue.origin ?? "cloud_dispatch");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
-      return {
-        ok: false,
-        message,
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
+    return this.cloudIssueReadOnlyResult();
   }
 
   async moveIssue(input: TaskBoardIssueMoveInput): Promise<TaskBoardIssueResult> {
@@ -789,31 +683,7 @@ export class TaskBoardRuntime {
     if (issueSyncMode(issue) === "private") {
       return moveDesktopKanbanIssue(this.options.app, currentUser, input);
     }
-    if (!this.wsClient.isOpen()) {
-      return {
-        ok: false,
-        message: t("taskBoard.runtime.cloudMoveRequiresConnection"),
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
-    try {
-      markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
-      const response = await this.wsClient.request("issue.move", {
-        id: getRemoteIssueId(issue),
-        status: input.status,
-        position: input.position,
-        baseIssueRevision: baseIssueRevision(issue)
-      });
-      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.cloudMoved"), issue.origin ?? "cloud_dispatch");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
-      return {
-        ok: false,
-        message,
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
+    return this.cloudIssueReadOnlyResult();
   }
 
   async deleteIssueWithAutomation(
@@ -827,12 +697,8 @@ export class TaskBoardRuntime {
     if (!issue) {
       return { ok: false, message: t("taskBoard.runtime.missing"), issues: currentIssues };
     }
-    if (issueSyncMode(issue) === "cloud" && !this.wsClient.isOpen()) {
-      return {
-        ok: false,
-        message: t("taskBoard.runtime.cloudDeleteRequiresConnection"),
-        issues: currentIssues
-      };
+    if (issueSyncMode(issue) === "cloud") {
+      return this.cloudIssueReadOnlyDeleteResult(currentIssues);
     }
     if (issue.automationId) {
       try {
@@ -851,39 +717,7 @@ export class TaskBoardRuntime {
     if (issueSyncMode(issue) === "private") {
       return deleteDesktopKanbanIssue(this.options.app, currentUser, issue.id);
     }
-    try {
-      markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
-      const response = await this.wsClient.request("issue.delete", {
-        id: getRemoteIssueId(issue),
-        baseIssueRevision: baseIssueRevision(issue)
-      });
-      const snapshotIssues = resultIssuesPayload(response);
-      if (snapshotIssues) {
-        const list = applyDesktopKanbanCloudSnapshot(this.options.app, currentUser, {
-          boardId: isRecord(response) ? readText(response.boardId) : "",
-          projectId: resultProjectId(response),
-          revision: resultRevision(response),
-          complete: resultComplete(response),
-          scope: resultScope(response),
-          issues: snapshotIssues
-        });
-        return {
-          ok: resultOk(response),
-          message: resultMessage(response, t("taskBoard.runtime.cloudDeleted")),
-          deletedIssueId: issue.id,
-          issues: list.issues
-        };
-      }
-      return deleteDesktopKanbanIssue(this.options.app, currentUser, issue.id);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
-      return {
-        ok: false,
-        message,
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
+    return deleteDesktopKanbanIssue(this.options.app, currentUser, issue.id);
   }
 
   async syncIssueAutomation(
@@ -900,42 +734,14 @@ export class TaskBoardRuntime {
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
-    if (issueSyncMode(issue) === "cloud" && !this.wsClient.isOpen()) {
-      return {
-        ok: false,
-        message: t("taskBoard.runtime.cloudAutomationRequiresConnection"),
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
+    if (issueSyncMode(issue) === "cloud") {
+      return this.cloudIssueReadOnlyResult();
     }
     const localResult = await this.syncAutomationForIssue(issue, callAgentPlatform);
     if (!localResult.ok || !localResult.issue || issueSyncMode(localResult.issue) === "private") {
       return localResult;
     }
-    try {
-      markDesktopKanbanIssueSyncing(this.options.app, currentUser, localResult.issue.id);
-      const response = await this.wsClient.request("issue.update", {
-        id: getRemoteIssueId(localResult.issue),
-        input: {
-          ...toCloudIssueInput({
-            automationId: localResult.issue.automationId,
-            automationEnabled: localResult.issue.automationEnabled,
-            automationCron: localResult.issue.automationCron,
-            automationMessage: localResult.issue.automationMessage,
-            automationTimezone: localResult.issue.automationTimezone
-          }),
-          baseIssueRevision: baseIssueRevision(localResult.issue)
-        }
-      });
-      return this.applyCloudIssueResponse(response, t("taskBoard.runtime.cloudAutomationSynced"), localResult.issue.origin ?? "cloud_dispatch");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      markDesktopKanbanIssueSyncError(this.options.app, currentUser, localResult.issue.id, message);
-      return {
-        ok: false,
-        message,
-        issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-      };
-    }
+    return localResult;
   }
 
   sendAssistantEvent(event: TaskBoardAssistantSyncEvent) {
@@ -979,8 +785,29 @@ export class TaskBoardRuntime {
       }
       return;
     }
-    if (this.wsClient.isOpen()) {
-      void this.wsClient.request("desktop.assistant.event", event).catch((error) => {
+    if (matchingIssue && issueSyncMode(matchingIssue) === "cloud") {
+      void this.appendRunEvent({
+        projectId: matchingIssue.projectId,
+        issueId: getRemoteIssueId(matchingIssue),
+        runId: event.runId,
+        chatId: event.chatId,
+        eventType: readText(event.type) || `run.${runState}`,
+        clientEventParts: [
+          "assistant",
+          getRemoteIssueId(matchingIssue),
+          event.runId || event.chatId,
+          readText(event.type) || readText(event.status) || runState
+        ],
+        payload: {
+          type: event.type,
+          status: status ?? event.status ?? runState,
+          runState,
+          chatId: event.chatId,
+          runId: event.runId,
+          message: event.message,
+          error: event.error
+        }
+      }).catch((error) => {
         this.options.onDebug?.(error instanceof Error ? error.message : String(error));
       });
     }
@@ -1030,6 +857,132 @@ export class TaskBoardRuntime {
     const result = upsertDispatchedDesktopKanbanIssue(this.options.app, this.currentUser(), issue, revision, "cloud_dispatch");
     this.notifyChanged();
     return result;
+  }
+
+  private cloudIssueReadOnlyResult(): TaskBoardIssueResult {
+    return {
+      ok: false,
+      message: t("taskBoard.runtime.cloudReadOnly"),
+      issues: listDesktopKanbanIssues(this.options.app, this.currentUser(), this.connectionState).issues
+    };
+  }
+
+  private cloudIssueReadOnlyDeleteResult(issues: TaskBoardIssue[]): { ok: false; message: string; issues: TaskBoardIssue[] } {
+    return {
+      ok: false,
+      message: t("taskBoard.runtime.cloudReadOnly"),
+      issues
+    };
+  }
+
+  private async applyDelivery(delivery: KanbanDesktopDelivery): Promise<KanbanDesktopDeliveryApplyResult> {
+    const currentUser = this.currentUser();
+    const cursor = readDesktopKanbanSyncCursor(this.options.app, currentUser);
+    const sourceRevision = deliverySourceRevision(delivery);
+    if (delivery.kind === "event" && sourceRevision > 0 && sourceRevision <= cursor.lastAppliedRevision) {
+      return { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
+    }
+
+    if (delivery.kind === "snapshot_reset") {
+      const snapshot = await this.wsClient.request<TaskBoardCloudSnapshot>("snapshot.get", {
+        projectId: delivery.projectId || readTaskBoardCloudConfig(this.options.app).selectedProjectId || DEFAULT_SELECTED_PROJECT_ID,
+        deviceId: getDesktopDeviceId(this.options.app)
+      });
+      this.applySnapshot(snapshot);
+      return {
+        ok: true,
+        lastAppliedRevision: readDesktopKanbanSyncCursor(this.options.app, currentUser).lastAppliedRevision
+      };
+    }
+
+    if (delivery.kind === "event") {
+      const issue = deliveryIssuePayload(delivery);
+      if (delivery.eventType === "issue.deleted") {
+        tombstoneDesktopKanbanCloudIssue(this.options.app, currentUser, deliveryIssueId(delivery), sourceRevision);
+      } else if (issue) {
+        const result = upsertDispatchedDesktopKanbanIssue(this.options.app, currentUser, issue, sourceRevision, "cloud_dispatch");
+        if (!result.ok) {
+          return { ok: false, message: result.message };
+        }
+      }
+      writeDesktopKanbanSyncCursor(this.options.app, currentUser, { lastAppliedRevision: sourceRevision });
+      this.notifyChanged();
+      return {
+        ok: true,
+        lastAppliedRevision: Math.max(cursor.lastAppliedRevision, sourceRevision)
+      };
+    }
+
+    if (delivery.kind !== "command") {
+      return { ok: false, message: t("taskBoard.ws.unsupportedBusiness", { type: delivery.kind || "unknown" }) };
+    }
+
+    const payload = deliveryPayloadRecord(delivery);
+    const issue = deliveryIssuePayload(delivery);
+    if (delivery.eventType === "command.dispatchIssue") {
+      const result = this.applyDispatch(issue, sourceRevision);
+      return { ok: result.ok, message: result.message, lastAppliedRevision: cursor.lastAppliedRevision };
+    }
+    if (delivery.eventType === "command.runIssue") {
+      const agentKey = optionalText(payload.agentKey);
+      const runResult = await this.startRemoteRun({
+        issue,
+        revision: sourceRevision,
+        agentKey,
+        accessLevel: normalizeRemoteAccessLevel(payload.accessLevel),
+        chatId: nullableText(payload.chatId),
+        message: readText(payload.message),
+        source: "sidebar"
+      });
+      if (!runResult.ok) {
+        return { ok: false, message: runResult.message };
+      }
+      await this.appendRunEvent({
+        sourceDeliverySeq: delivery.deliverySeq,
+        projectId: readText(delivery.projectId) || readText(payload.projectId),
+        issueId: deliveryIssueId(delivery),
+        runId: runResult.runId,
+        chatId: runResult.chatId,
+        eventType: "run.started",
+        clientEventParts: ["delivery", delivery.deliverySeq, "run.started"],
+        payload: {
+          status: "running",
+          agentKey,
+          runId: runResult.runId,
+          chatId: runResult.chatId
+        }
+      });
+      return { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
+    }
+    return { ok: false, message: t("taskBoard.ws.unsupportedBusiness", { type: delivery.eventType || "unknown" }) };
+  }
+
+  private async appendRunEvent(input: {
+    sourceDeliverySeq?: number;
+    projectId?: string;
+    issueId: string;
+    runId?: string | null;
+    chatId?: string | null;
+    eventType: string;
+    clientEventParts: Array<string | number | null | undefined>;
+    payload: Record<string, unknown>;
+  }) {
+    const issueId = readText(input.issueId);
+    if (!issueId || !this.wsClient.isOpen()) {
+      return;
+    }
+    const deviceId = getDesktopDeviceId(this.options.app);
+    await this.wsClient.request("run.event.append", {
+      deviceId,
+      clientEventId: stableClientEventId(deviceId, input.clientEventParts),
+      sourceDeliverySeq: input.sourceDeliverySeq ?? 0,
+      projectId: readText(input.projectId) || readTaskBoardCloudConfig(this.options.app).selectedProjectId || DEFAULT_SELECTED_PROJECT_ID,
+      issueId,
+      runId: readText(input.runId) || undefined,
+      chatId: readText(input.chatId) || undefined,
+      eventType: input.eventType,
+      payload: input.payload
+    });
   }
 
   // 响应云端 desktop.project.createLocal:在本地真正创建项目。
@@ -1205,38 +1158,6 @@ export class TaskBoardRuntime {
 
   private notifyChanged() {
     this.options.onChanged?.();
-  }
-
-  private applyCloudIssueResponse(payload: unknown, fallbackMessage: string, origin: TaskBoardIssue["origin"] = "desktop"): TaskBoardIssueResult {
-    const currentUser = this.currentUser();
-    const issues = resultIssuesPayload(payload);
-    if (issues) {
-      const list = applyDesktopKanbanCloudSnapshot(this.options.app, currentUser, {
-        boardId: isRecord(payload) ? readText(payload.boardId) : "",
-        projectId: resultProjectId(payload),
-        revision: resultRevision(payload),
-        complete: resultComplete(payload),
-        scope: resultScope(payload),
-        issues
-      }, origin);
-      const result = buildListLikeIssueResult(list, resultMessage(payload, fallbackMessage), resultIssuePayload(payload) as TaskBoardIssue | undefined);
-      return { ...result, ok: result.ok && resultOk(payload) };
-    }
-    const issue = resultIssuePayload(payload);
-    if (issue) {
-      return upsertDispatchedDesktopKanbanIssue(
-        this.options.app,
-        currentUser,
-        issue,
-        resultRevision(payload),
-        origin ?? "desktop"
-      );
-    }
-    return {
-      ok: false,
-      message: t("taskBoard.runtime.noTaskData"),
-      issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
-    };
   }
 
   private async syncAutomationForIssue(

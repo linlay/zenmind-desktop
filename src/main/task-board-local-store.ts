@@ -122,12 +122,19 @@ export type TaskBoardCloudSnapshot = {
   issues?: unknown[];
 };
 
+export type TaskBoardDesktopSyncCursor = {
+  lastAckedDeliverySeq: number;
+  lastAppliedRevision: number;
+  cacheSchemaVersion: number;
+};
+
 const BOARD_ID = "default";
 const PROJECT_ID = "default";
 const WORKFLOW_ID = "workflow-standard-requirement";
 const ISSUE_TYPE_ID = "issue-type-standard-requirement";
 const DATABASE_DIRECTORY = "desktop-kanban";
 const DATABASE_FILENAME = "kanban.db";
+const SYNC_CACHE_SCHEMA_VERSION = 1;
 
 function nowIso() {
   return new Date().toISOString();
@@ -610,7 +617,9 @@ function parseCloudProjectBinding(value: unknown): TaskBoardProjectBinding | nul
   if (!id || !projectId || !deviceId || !localProjectId || !localDisplayName) return null;
   const timestamp = trimText(record.updatedAt) || nowIso();
   const syncPolicy = record.syncPolicy === "select" || record.syncPolicy === "all" ? record.syncPolicy : "future";
-  const controlMode = record.controlMode === "observe" || record.controlMode === "disabled" ? record.controlMode : "dispatch";
+  const controlMode = record.controlMode === "observe" || record.controlMode === "readonly"
+    ? "observe"
+    : record.controlMode === "disabled" ? "disabled" : "dispatch";
   const status = record.status === "paused" || record.status === "error" ? record.status : "active";
   return {
     id,
@@ -639,12 +648,75 @@ function readDesktopKanbanRevision(db: DatabaseSync) {
   return Number.isFinite(revision) ? revision : 0;
 }
 
+function readBoardMetaInteger(db: DatabaseSync, key: string, fallback = 0) {
+  const row = db.prepare(`
+    SELECT VALUE_ AS value FROM board_meta
+    WHERE BOARD_ID_ = ? AND KEY_ = ?
+  `).get(BOARD_ID, key) as { value?: string } | undefined;
+  const value = Number.parseInt(row?.value ?? "", 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function writeBoardMetaInteger(db: DatabaseSync, key: string, value: number) {
+  db.prepare(`
+    INSERT INTO board_meta (BOARD_ID_, KEY_, VALUE_)
+    VALUES (?, ?, ?)
+    ON CONFLICT(BOARD_ID_, KEY_) DO UPDATE SET VALUE_ = excluded.VALUE_
+  `).run(BOARD_ID, key, String(Math.max(0, Math.floor(value))));
+}
+
 function writeDesktopKanbanRevision(db: DatabaseSync, revision: number) {
   db.prepare(`
     INSERT INTO board_meta (BOARD_ID_, KEY_, VALUE_)
     VALUES (?, 'revision', ?)
     ON CONFLICT(BOARD_ID_, KEY_) DO UPDATE SET VALUE_ = excluded.VALUE_
   `).run(BOARD_ID, String(Math.max(0, Math.floor(revision))));
+}
+
+function readDesktopKanbanSyncCursorFromDb(db: DatabaseSync): TaskBoardDesktopSyncCursor {
+  return {
+    lastAckedDeliverySeq: readBoardMetaInteger(db, "sync.lastAckedDeliverySeq"),
+    lastAppliedRevision: Math.max(
+      readBoardMetaInteger(db, "sync.lastAppliedRevision"),
+      readDesktopKanbanRevision(db)
+    ),
+    cacheSchemaVersion: readBoardMetaInteger(db, "sync.cacheSchemaVersion", SYNC_CACHE_SCHEMA_VERSION) || SYNC_CACHE_SCHEMA_VERSION
+  };
+}
+
+function writeDesktopKanbanSyncCursorInDb(db: DatabaseSync, cursor: Partial<TaskBoardDesktopSyncCursor>) {
+  if (cursor.lastAckedDeliverySeq !== undefined) {
+    writeBoardMetaInteger(db, "sync.lastAckedDeliverySeq", cursor.lastAckedDeliverySeq);
+  }
+  if (cursor.lastAppliedRevision !== undefined) {
+    const revision = Math.max(readDesktopKanbanRevision(db), cursor.lastAppliedRevision);
+    writeBoardMetaInteger(db, "sync.lastAppliedRevision", revision);
+    writeDesktopKanbanRevision(db, revision);
+  }
+  writeBoardMetaInteger(db, "sync.cacheSchemaVersion", cursor.cacheSchemaVersion ?? SYNC_CACHE_SCHEMA_VERSION);
+}
+
+export function readDesktopKanbanSyncCursor(
+  app: AppPathProvider,
+  currentUser: TaskBoardCurrentUser
+): TaskBoardDesktopSyncCursor {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => readDesktopKanbanSyncCursorFromDb(db));
+}
+
+export function writeDesktopKanbanSyncCursor(
+  app: AppPathProvider,
+  currentUser: TaskBoardCurrentUser,
+  cursor: Partial<TaskBoardDesktopSyncCursor>
+): TaskBoardDesktopSyncCursor {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const current = readDesktopKanbanSyncCursorFromDb(db);
+    writeDesktopKanbanSyncCursorInDb(db, {
+      lastAckedDeliverySeq: Math.max(current.lastAckedDeliverySeq, cursor.lastAckedDeliverySeq ?? 0),
+      lastAppliedRevision: Math.max(current.lastAppliedRevision, cursor.lastAppliedRevision ?? 0),
+      cacheSchemaVersion: cursor.cacheSchemaVersion ?? current.cacheSchemaVersion
+    });
+    return readDesktopKanbanSyncCursorFromDb(db);
+  });
 }
 
 function selectIssues(db: DatabaseSync, currentUser: TaskBoardCurrentUser): TaskBoardIssue[] {
@@ -1256,11 +1328,50 @@ export function deleteDesktopKanbanIssue(
   });
 }
 
+export function tombstoneDesktopKanbanCloudIssue(
+  app: AppPathProvider,
+  currentUser: TaskBoardCurrentUser,
+  remoteIssueId: string,
+  revision = 0
+): TaskBoardDeleteResult {
+  const normalizedRemoteIssueId = trimText(remoteIssueId);
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const row = db.prepare(`
+      SELECT LOCAL_ISSUE_ID_ AS localIssueId
+      FROM desktop_issue_sync
+      WHERE REMOTE_ISSUE_ID_ = ?
+    `).get(normalizedRemoteIssueId) as { localIssueId?: string } | undefined;
+    const localIssueId = row?.localIssueId ?? "";
+    const timestamp = nowIso();
+    if (localIssueId) {
+      db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(timestamp, timestamp, localIssueId);
+      db.prepare(`
+        UPDATE desktop_issue_sync
+        SET SYNC_STATE_ = 'synced',
+          LAST_REMOTE_REVISION_ = MAX(LAST_REMOTE_REVISION_, ?),
+          LAST_SYNCED_AT_ = ?,
+          SYNC_ERROR_ = NULL
+        WHERE LOCAL_ISSUE_ID_ = ?
+      `).run(Math.max(0, Math.floor(revision)), timestamp, localIssueId);
+    }
+    writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
+    return {
+      ok: true,
+      message: t("taskBoard.runtime.deleted"),
+      deletedIssueId: localIssueId || normalizedRemoteIssueId,
+      issues: selectIssues(db, currentUser)
+    };
+  });
+}
+
 function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: TaskBoardCurrentUser, revision: number): TaskBoardIssue | null {
   const remoteIssueId = trimText(rawIssue.id);
   const title = trimText(rawIssue.title);
   if (!remoteIssueId || !title) return null;
   const timestamp = trimText(rawIssue.updatedAt) || nowIso();
+  const issueRevision = typeof rawIssue.revision === "number" && Number.isFinite(rawIssue.revision)
+    ? Math.max(0, Math.floor(rawIssue.revision))
+    : Math.max(0, Math.floor(revision));
   return {
     id: "",
     localIssueId: "",
@@ -1300,10 +1411,10 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     syncState: "synced",
     origin: "cloud_dispatch",
     ownerUserId: currentUser.id,
-    lastRemoteRevision: revision,
+    lastRemoteRevision: issueRevision,
     lastSyncedAt: nowIso(),
     syncError: null,
-    revision: typeof rawIssue.revision === "number" ? rawIssue.revision : revision,
+    revision: issueRevision,
     createdAt: trimText(rawIssue.createdAt) || timestamp,
     updatedAt: timestamp
   };
@@ -1417,7 +1528,7 @@ export function applyDesktopKanbanCloudSnapshot(
           syncState: "synced",
           origin: existingSync.origin ?? origin,
           ownerUserId: currentUser.id,
-          lastRemoteRevision: revision,
+          lastRemoteRevision: localIssue.revision ?? revision,
           lastSyncedAt: nowIso(),
           syncError: null
         });
@@ -1441,6 +1552,7 @@ export function applyDesktopKanbanCloudSnapshot(
         }
       }
       writeDesktopKanbanRevision(db, Math.max(currentRevision, revision));
+      writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(currentRevision, revision) });
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -1489,11 +1601,11 @@ export function upsertDispatchedDesktopKanbanIssue(
       syncState: "synced",
       origin,
       ownerUserId: currentUser.id,
-      lastRemoteRevision: revision,
+      lastRemoteRevision: localIssue.revision ?? revision,
       lastSyncedAt: nowIso(),
       syncError: null
     });
-    writeDesktopKanbanRevision(db, Math.max(readDesktopKanbanRevision(db), revision));
+    writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
     return { ok: true, message: t("taskBoard.runtime.dispatched"), issue: localIssue, issues: selectIssues(db, currentUser) };
   });
 }
@@ -1522,10 +1634,11 @@ export function linkDesktopKanbanIssueToRemote(
       syncState: "synced",
       origin: currentIssue.origin ?? "desktop",
       ownerUserId: currentUser.id,
-      lastRemoteRevision: revision,
+      lastRemoteRevision: nextIssue.revision ?? revision,
       lastSyncedAt: nowIso(),
       syncError: null
     });
+    writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
     return { ok: true, message: t("taskBoard.runtime.syncedToCloud"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }

@@ -268,18 +268,18 @@ test("task board runtime stores remote startRun issue locally before executing",
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "session.hello", 3000);
+  await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
   const hello = socket.sent[0];
   assert.equal(hello.payload.deviceName, "测试桌面");
   assert.equal(hello.payload.deviceAlias, "测试桌面");
-  assert.equal(hello.payload.currentUser.name, "Lin Lay");
+  assert.equal(hello.payload.ownerUserId, "user-1");
   assert.ok(hello.payload.hostname || hello.payload.username);
-  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 2, frame: "response",
+      v: 3, frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
@@ -297,7 +297,7 @@ test("task board runtime stores remote startRun issue locally before executing",
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 2, frame: "request",
+        v: 3, frame: "request",
         id: "start-run-remote",
         type: "desktop.assistant.startRun",
         boardId: "default",
@@ -344,6 +344,153 @@ test("task board runtime stores remote startRun issue locally before executing",
   } finally {
     runtime.stop();
   }
+});
+
+test("task board runtime applies command.runIssue delivery, appends run event, then ACKs", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const app = createTempApp(t);
+  const startRuns = [];
+  const runtime = new TaskBoardRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
+      startRun: async (request) => {
+        startRuns.push(request);
+        return { ok: true, runId: "run-v3-1", chatId: "chat-v3-1", message: "started" };
+      }
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {}
+  });
+
+  writeSsoSiteToken(app);
+  runtime.saveCloudConfig({
+    serverUrl: "http://127.0.0.1:3000",
+    token: "secret",
+    selectedProjectId: "project-1",
+    remoteControlEnabled: true,
+    deviceAlias: "测试桌面"
+  });
+
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
+  const hello = socket.sent[0];
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 40, cacheSchemaVersion: 1 } } }) });
+  await waitFor(() => socket.sent.length === 2, "snapshot request");
+  const snapshotRequest = socket.sent[1];
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 3,
+      frame: "response",
+      id: snapshotRequest.id,
+      type: "snapshot.get",
+      ok: true,
+      payload: {
+        boardId: "default",
+        projectId: "project-1",
+        revision: 40,
+        complete: true,
+        scope: "project",
+        issues: []
+      }
+    })
+  });
+  await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "sync.pull");
+  const pull = socket.sent.find((frame) => frame.type === "sync.pull");
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: pull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 3,
+      frame: "push",
+      type: "sync.deliver",
+      projectId: "project-1",
+      payload: {
+        items: [{
+          deliveryId: 101,
+          deviceId: "device-1",
+          deliverySeq: 1,
+          projectId: "project-1",
+          kind: "command",
+          commandId: "cmd-run-1",
+          eventType: "command.runIssue",
+          payload: {
+            issueId: "ISS-V3-RUN",
+            issue: {
+              id: "ISS-V3-RUN",
+              boardId: "default",
+              projectId: "project-1",
+              workflowId: "workflow-standard-requirement",
+              title: "v3 可靠派发任务",
+              description: "通过 delivery 执行",
+              status: "in_progress",
+              priority: "medium",
+              severity: "medium",
+              assigneeAgentKey: "codeAssistant",
+              position: 1,
+              revision: 40,
+              createdAt: "2026-06-09T00:00:00.000Z",
+              updatedAt: "2026-06-09T00:00:00.000Z"
+            },
+            agentKey: "codeAssistant",
+            message: "执行 v3 delivery"
+          }
+        }]
+      }
+    })
+  });
+
+  await waitFor(() => socket.sent.some((frame) => frame.type === "run.event.append"), "run.event.append", 3000);
+  const runEvent = socket.sent.find((frame) => frame.type === "run.event.append");
+  assert.equal(runEvent.payload.sourceDeliverySeq, 1);
+  assert.equal(runEvent.payload.issueId, "ISS-V3-RUN");
+  assert.equal(runEvent.payload.eventType, "run.started");
+  assert.equal(runEvent.payload.payload.runId, "run-v3-1");
+  assert.match(runEvent.payload.clientEventId, /delivery:1:run\.started$/);
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: runEvent.id, type: "run.event.append", ok: true, payload: { ok: true, revision: 41 } }) });
+
+  await waitFor(() => socket.sent.some((frame) => frame.type === "sync.ack"), "sync.ack", 3000);
+  const ack = socket.sent.find((frame) => frame.type === "sync.ack");
+  assert.equal(ack.payload.ackedDeliverySeq, 1);
+  assert.equal(ack.payload.lastAppliedRevision, 40);
+  assert.equal(startRuns.length, 1);
+  assert.equal(startRuns[0].message, "执行 v3 delivery");
+
+  const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-V3-RUN");
+  assert.ok(localIssue);
+  assert.equal(localIssue.runId, "run-v3-1");
+  assert.equal(localIssue.chatId, "chat-v3-1");
+  assert.equal(localIssue.runState, "running");
+
+  runtime.stop();
 });
 
 test("task board runtime stores cloud dispatch issue without auto-starting", async (t) => {
@@ -401,14 +548,14 @@ test("task board runtime stores cloud dispatch issue without auto-starting", asy
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "session.hello", 3000);
+  await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 2, frame: "response",
+      v: 3, frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
@@ -426,7 +573,7 @@ test("task board runtime stores cloud dispatch issue without auto-starting", asy
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 2, frame: "request",
+        v: 3, frame: "request",
         id: "dispatch-run",
         type: "desktop.issue.dispatch",
         boardId: "default",
@@ -530,11 +677,11 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   const firstSocket = sockets[0];
   firstSocket.readyState = 1;
   firstSocket.onopen();
-  await waitFor(() => firstSocket.sent.length === 1, "initial session.hello", 3000);
+  await waitFor(() => firstSocket.sent.length === 1, "initial sync.hello", 3000);
   const firstHello = firstSocket.sent[0];
   assert.equal(firstHello.payload.deviceName, "旧设备名");
   firstSocket.onmessage({
-    data: JSON.stringify({ v: 2, frame: "response", id: firstHello.id, type: "session.hello", ok: true, payload: { ok: true } })
+    data: JSON.stringify({ v: 3, frame: "response", id: firstHello.id, type: "sync.hello", ok: true, payload: { ok: true } })
   });
   await waitFor(() => firstSocket.sent.length === 2, "initial snapshot request", 3000);
 
@@ -551,11 +698,11 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   const secondSocket = sockets[1];
   secondSocket.readyState = 1;
   secondSocket.onopen();
-  await waitFor(() => secondSocket.sent.length === 1, "updated session.hello", 3000);
+  await waitFor(() => secondSocket.sent.length === 1, "updated sync.hello", 3000);
   const secondHello = secondSocket.sent[0];
   assert.equal(secondHello.payload.deviceName, "牛家林");
   assert.equal(secondHello.payload.deviceAlias, "牛家林");
-  assert.equal(secondHello.payload.currentUser.name, "Lin Lay");
+  assert.equal(secondHello.payload.ownerUserId, "user-1");
 
   writeDesktopConfig(app, "profile.json", {
     schemaVersion: 1,
@@ -571,11 +718,11 @@ test("task board runtime reconnects after saving device alias so cloud sees new 
   const thirdSocket = sockets[2];
   thirdSocket.readyState = 1;
   thirdSocket.onopen();
-  await waitFor(() => thirdSocket.sent.length === 1, "global device name session.hello", 3000);
+  await waitFor(() => thirdSocket.sent.length === 1, "global device name sync.hello", 3000);
   const thirdHello = thirdSocket.sent[0];
   assert.equal(thirdHello.payload.deviceName, "全局桌面");
   assert.equal(thirdHello.payload.deviceAlias, "全局桌面");
-  assert.equal(thirdHello.payload.currentUser.name, "Lin Lay");
+  assert.equal(thirdHello.payload.ownerUserId, "user-1");
   runtime.stop();
 });
 
@@ -638,14 +785,14 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "session.hello");
+  await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 2, frame: "response",
+      v: 3, frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
@@ -663,7 +810,7 @@ test("task board runtime ACKs slow remote startRun before bridge resolves", asyn
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 2, frame: "request",
+        v: 3, frame: "request",
         id: "start-run-slow",
         type: "desktop.assistant.startRun",
         boardId: "default",
@@ -771,15 +918,15 @@ test("task board runtime falls back to local agents for remote listAgents", asyn
   const socket = sockets[0];
   socket.readyState = 1;
   socket.onopen();
-  await waitFor(() => socket.sent.length === 1, "session.hello");
+  await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
 
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 2, frame: "request",
+        v: 3, frame: "request",
         id: "list-agents-local",
         type: "agent.listDesktop",
         boardId: "default",
@@ -864,13 +1011,13 @@ test("task board runtime lists installed agents when platform listAgents times o
   try {
     socket.readyState = 1;
     socket.onopen();
-    await waitFor(() => socket.sent.length === 1, "session.hello", 3000);
+    await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
     const hello = socket.sent[0];
-    socket.onmessage({ data: JSON.stringify({ v: 2, frame: "response", id: hello.id, type: "session.hello", ok: true, payload: { ok: true } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
 
     socket.onmessage({
       data: JSON.stringify({
-        v: 2, frame: "request",
+        v: 3, frame: "request",
         id: "list-agents-timeout",
         type: "agent.listDesktop",
         boardId: "default",

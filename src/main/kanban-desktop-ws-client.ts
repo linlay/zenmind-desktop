@@ -64,12 +64,48 @@ export type KanbanDesktopDeviceInfo = {
   username?: string;
 };
 
+export type KanbanDesktopSyncCursor = {
+  lastAckedDeliverySeq: number;
+  lastAppliedRevision: number;
+  cacheSchemaVersion?: number;
+};
+
+export type KanbanDesktopSyncLocalProject = {
+  projectId: string;
+  localProjectId: string;
+  localDisplayName: string;
+  controlMode?: string;
+};
+
+export type KanbanDesktopDelivery = {
+  deliveryId?: number;
+  deviceId?: string;
+  deliverySeq: number;
+  projectId?: string | null;
+  localProjectId?: string | null;
+  kind: string;
+  sourceRevision?: number | null;
+  commandId?: string | null;
+  eventType: string;
+  payload?: unknown;
+  status?: string;
+};
+
+export type KanbanDesktopDeliveryApplyResult = {
+  ok: boolean;
+  lastAppliedRevision?: number;
+  message?: string;
+};
+
 export type KanbanDesktopWsClientOptions = {
   capabilities: string[];
   getCurrentUser: () => TaskBoardCurrentUser;
   getDeviceId: () => string;
   getDeviceInfo?: () => KanbanDesktopDeviceInfo;
+  getSyncCursor?: () => KanbanDesktopSyncCursor;
+  onSyncCursor?: (cursor: KanbanDesktopSyncCursor) => void;
   onSnapshot: (snapshot: TaskBoardCloudSnapshot) => void;
+  onDelivery?: (delivery: KanbanDesktopDelivery) => Promise<KanbanDesktopDeliveryApplyResult>;
   onDispatchIssue: (
     issue: unknown,
     revision: number
@@ -78,6 +114,7 @@ export type KanbanDesktopWsClientOptions = {
   onStartRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   onAutomationSync: (payload: unknown) => Promise<unknown>;
   onListLocalProjects: () => Promise<{ ok: boolean; projects: TaskBoardProject[]; message?: string }>;
+  onListSyncLocalProjects?: () => Promise<KanbanDesktopSyncLocalProject[]>;
   onCreateLocalProject: (payload: unknown) => Promise<unknown>;
   onBindProject: (payload: unknown) => Promise<unknown>;
   onUnbindProject: (payload: unknown) => Promise<unknown>;
@@ -86,7 +123,7 @@ export type KanbanDesktopWsClientOptions = {
   onDebug?: (message: string) => void;
 };
 
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECONNECT_MS = 5_000;
 const WS_OPEN_STATE = 1;
@@ -188,6 +225,56 @@ function normalizeSnapshot(payload: unknown, env: KanbanEnvelope): TaskBoardClou
   };
 }
 
+function readNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function normalizeSyncCursor(value: unknown): KanbanDesktopSyncCursor {
+  const record = isRecord(value) ? value : {};
+  const cacheSchemaVersion = readNonNegativeInteger(record.cacheSchemaVersion);
+  return {
+    lastAckedDeliverySeq: readNonNegativeInteger(record.lastAckedDeliverySeq),
+    lastAppliedRevision: readNonNegativeInteger(record.lastAppliedRevision),
+    cacheSchemaVersion: cacheSchemaVersion > 0 ? cacheSchemaVersion : 1
+  };
+}
+
+function normalizeDelivery(value: unknown): KanbanDesktopDelivery | null {
+  const record = isRecord(value) ? value : null;
+  if (!record) {
+    return null;
+  }
+  const deliverySeq = readNonNegativeInteger(record.deliverySeq);
+  const kind = readText(record.kind);
+  const eventType = readText(record.eventType);
+  if (deliverySeq <= 0 || !kind || !eventType) {
+    return null;
+  }
+  const sourceRevision = readNonNegativeInteger(record.sourceRevision);
+  return {
+    deliveryId: readNonNegativeInteger(record.deliveryId) || undefined,
+    deviceId: readText(record.deviceId) || undefined,
+    deliverySeq,
+    projectId: readText(record.projectId) || null,
+    localProjectId: readText(record.localProjectId) || null,
+    kind,
+    sourceRevision: sourceRevision > 0 ? sourceRevision : null,
+    commandId: readText(record.commandId) || null,
+    eventType,
+    payload: record.payload,
+    status: readText(record.status) || undefined
+  };
+}
+
+function normalizeDeliveries(payload: unknown) {
+  const record = isRecord(payload) ? payload : {};
+  const rawItems = Array.isArray(record.items) ? record.items : Array.isArray(payload) ? payload : [];
+  return rawItems
+    .map((item) => normalizeDelivery(item))
+    .filter((item): item is KanbanDesktopDelivery => Boolean(item))
+    .sort((a, b) => a.deliverySeq - b.deliverySeq);
+}
+
 function normalizeStartRunPayload(payload: unknown, env: KanbanEnvelope): AssistantStartRunRequest {
   const record = isRecord(payload) ? payload : {};
   const request: AssistantStartRunRequest = {
@@ -245,6 +332,10 @@ function isSnapshotPushEnvelope(env: KanbanEnvelope) {
   return isV2Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "snapshot.updated";
 }
 
+function isSyncDeliverPushEnvelope(env: KanbanEnvelope) {
+  return isV2Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "sync.deliver";
+}
+
 export class KanbanDesktopWsClient {
   private ws: MinimalWebSocket | null = null;
   private config: KanbanDesktopWsConfig | null = null;
@@ -252,6 +343,8 @@ export class KanbanDesktopWsClient {
   private stopped = true;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pending = new Map<string, PendingRequest>();
+  private snapshotReady = false;
+  private queuedDeliveries: KanbanDesktopDelivery[] = [];
 
   constructor(private readonly options: KanbanDesktopWsClientOptions) {}
 
@@ -372,6 +465,8 @@ export class KanbanDesktopWsClient {
     }
     this.clearReconnectTimer();
     this.closeWebSocket("kanban desktop ws reconnect");
+    this.snapshotReady = false;
+    this.queuedDeliveries = [];
     this.setState("connecting");
     try {
       const wsUrl = createWsUrl(config);
@@ -417,24 +512,44 @@ export class KanbanDesktopWsClient {
     }
     this.options.onDebug?.(t("taskBoard.ws.opened"));
     this.setState("open");
+    this.snapshotReady = false;
     try {
       const agents = await this.options.onListAgents().catch((error) => {
         this.options.onDebug?.(t("taskBoard.ws.helloAgentsFailed", { message: errorMessage(error) }));
         return [];
       });
-      await this.request("session.hello", {
+      let localProjects: KanbanDesktopSyncLocalProject[] = [];
+      if (this.options.onListSyncLocalProjects) {
+        localProjects = await this.options.onListSyncLocalProjects().catch((error) => {
+          this.options.onDebug?.(t("taskBoard.ws.projectSelectFailed", { message: errorMessage(error) }));
+          return [];
+        });
+      }
+      const currentUser = this.options.getCurrentUser();
+      const cursor = normalizeSyncCursor(this.options.getSyncCursor?.());
+      const hello = await this.request<{ cursor?: unknown }>("sync.hello", {
         capabilities: this.options.capabilities,
         deviceId: this.options.getDeviceId(),
+        ownerUserId: currentUser.id,
         ...this.options.getDeviceInfo?.(),
         selectedProjectId: this.config?.selectedProjectId ?? "default",
-        currentUser: this.options.getCurrentUser(),
-        scope: "project",
+        lastAckedDeliverySeq: cursor.lastAckedDeliverySeq,
+        lastAppliedRevision: cursor.lastAppliedRevision,
+        cacheSchemaVersion: cursor.cacheSchemaVersion ?? 1,
+        localProjects,
         agents
       });
+      if (isRecord(hello) && hello.cursor) {
+        this.options.onSyncCursor?.(normalizeSyncCursor(hello.cursor));
+      }
       const snapshot = await this.request<TaskBoardCloudSnapshot>("snapshot.get", {
-        projectId: this.config?.selectedProjectId ?? "default"
+        projectId: this.config?.selectedProjectId ?? "default",
+        deviceId: this.options.getDeviceId()
       });
       this.options.onSnapshot(snapshot);
+      this.snapshotReady = true;
+      await this.flushQueuedDeliveries();
+      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
       this.options.onConnected?.();
     } catch (error) {
       this.options.onDebug?.(errorMessage(error));
@@ -460,7 +575,7 @@ export class KanbanDesktopWsClient {
       return;
     }
     if (!isV2Envelope(env) || !["request", "response", "push"].includes(readText(env.frame))) {
-      this.closeProtocolError("kanban v2 envelope required");
+      this.closeProtocolError("kanban v3 envelope required");
       return;
     }
     if (isResponseEnvelope(env) && env.id) {
@@ -475,6 +590,100 @@ export class KanbanDesktopWsClient {
     }
     if (isSnapshotPushEnvelope(env)) {
       this.options.onSnapshot(normalizeSnapshot(env.payload, env));
+      return;
+    }
+    if (isSyncDeliverPushEnvelope(env)) {
+      void this.handleDeliveryPush(env);
+    }
+  }
+
+  private async handleDeliveryPush(env: KanbanEnvelope) {
+    const deliveries = normalizeDeliveries(env.payload);
+    if (deliveries.length === 0) {
+      return;
+    }
+    if (!this.snapshotReady) {
+      this.queuedDeliveries.push(...deliveries);
+      this.queuedDeliveries.sort((a, b) => a.deliverySeq - b.deliverySeq);
+      return;
+    }
+    try {
+      await this.applyAndAckDeliveries(deliveries);
+    } catch (error) {
+      this.options.onDebug?.(errorMessage(error));
+    }
+  }
+
+  private async flushQueuedDeliveries() {
+    if (this.queuedDeliveries.length === 0) {
+      return;
+    }
+    const deliveries = this.queuedDeliveries;
+    this.queuedDeliveries = [];
+    await this.applyAndAckDeliveries(deliveries);
+  }
+
+  private async pullDeliveries(afterDeliverySeq: number) {
+    let nextAfter = Math.max(0, Math.floor(afterDeliverySeq));
+    for (;;) {
+      const result = await this.request<{ items?: unknown[]; hasMore?: boolean; nextDeliverySeq?: number }>("sync.pull", {
+        deviceId: this.options.getDeviceId(),
+        afterDeliverySeq: nextAfter,
+        limit: 100
+      });
+      const deliveries = normalizeDeliveries(result);
+      if (deliveries.length === 0) {
+        return;
+      }
+      await this.applyAndAckDeliveries(deliveries);
+      nextAfter = deliveries[deliveries.length - 1].deliverySeq;
+      if (!result.hasMore) {
+        return;
+      }
+    }
+  }
+
+  private async applyAndAckDeliveries(deliveries: KanbanDesktopDelivery[]) {
+    for (const delivery of deliveries.sort((a, b) => a.deliverySeq - b.deliverySeq)) {
+      const cursor = normalizeSyncCursor(this.options.getSyncCursor?.());
+      if (delivery.deliverySeq <= cursor.lastAckedDeliverySeq) {
+        continue;
+      }
+      const expectedDeliverySeq = cursor.lastAckedDeliverySeq + 1;
+      if (delivery.deliverySeq !== expectedDeliverySeq) {
+        this.options.onDebug?.(t("taskBoard.ws.deliverySeqGap", {
+          expected: expectedDeliverySeq,
+          actual: delivery.deliverySeq
+        }));
+        return;
+      }
+      const result = this.options.onDelivery
+        ? await this.options.onDelivery(delivery)
+        : { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
+      if (!result.ok) {
+        this.options.onDebug?.(result.message || t("taskBoard.ws.operationFailed", { type: delivery.eventType }));
+        return;
+      }
+      const sourceRevision = typeof delivery.sourceRevision === "number" ? delivery.sourceRevision : 0;
+      const lastAppliedRevision = Math.max(
+        cursor.lastAppliedRevision,
+        result.lastAppliedRevision ?? 0,
+        sourceRevision
+      );
+      const ack = await this.request<{ cursor?: unknown }>("sync.ack", {
+        deviceId: this.options.getDeviceId(),
+        ackedDeliverySeq: delivery.deliverySeq,
+        lastAppliedRevision
+      });
+      if (isRecord(ack) && ack.cursor) {
+        this.options.onSyncCursor?.(normalizeSyncCursor(ack.cursor));
+      } else {
+        this.options.onSyncCursor?.({
+          ...cursor,
+          lastAckedDeliverySeq: delivery.deliverySeq,
+          lastAppliedRevision
+        });
+      }
     }
   }
 
