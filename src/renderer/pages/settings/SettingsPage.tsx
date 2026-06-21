@@ -2298,7 +2298,7 @@ export function SettingsPage({
   );
   const shouldReadUsageProfile = activeSection === "usage";
   const shouldReadGeneralSettings = activeSection === "general";
-  const shouldReadControlData = activeSection === "control";
+  const shouldReadControlData = activeSection === "kanban";
   const shouldReadTunnelHubData = activeSection === "control";
   const shouldReadMarketSettings = activeSection === "market";
   const shouldReadAssistantSettings = Boolean(
@@ -2476,10 +2476,10 @@ export function SettingsPage({
         setControlCloudProjects(issueResult.projects ?? []);
         setControlConnectionState(settingsResult.connectionState ?? issueResult.connectionState ?? "disabled");
         setControlOnlineSummary(onlineResult);
-        setReadErrorSections(["control"], "");
+        setReadErrorSections(["kanban"], "");
       } catch (reason) {
         if (!cancelled) {
-          setReadErrorSections(["control"], reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["kanban"], reason instanceof Error ? reason.message : String(reason));
         }
       }
     }
@@ -3538,7 +3538,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         cloud: nextConfig
       });
       if (!result.ok) {
-        throw new Error(result.message || t("settings.control.saveFailed"));
+        throw new Error(result.message || t("settings.kanban.saveFailed"));
       }
       setControlCloudConfig({
         ...defaultTaskBoardCloudConfig,
@@ -3551,10 +3551,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       ]);
       setControlCloudProjects(issueResult.projects ?? []);
       setControlOnlineSummary(onlineResult);
-      setReadErrorSections(["control"], "");
-      showSectionNotice("control", result.message, "success");
+      setReadErrorSections(["kanban"], "");
+      showSectionNotice("kanban", result.message, "success");
     } catch (reason) {
-      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("kanban", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setControlConfigSaving(false);
     }
@@ -4050,6 +4050,88 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
             </div>
           </>
         );
+      case "kanban":
+        return (
+          <Card
+            className="settings-item-card settings-control-card settings-kanban-ant-card"
+            aria-label={t("settings.kanban.panelAria")}
+            styles={{ body: { padding: 0 } }}
+          >
+            <div className="settings-item-header settings-control-permission-row">
+              <span className="settings-control-app-icon" aria-hidden="true">
+                <span />
+              </span>
+              <Space className="settings-kanban-copy" direction="vertical" size={3}>
+                <Typography.Text strong>{t("settings.control.remoteControlEnabled")}</Typography.Text>
+                <Typography.Text type="secondary">{t("settings.control.remoteControlDescription")}</Typography.Text>
+                <Typography.Text className="settings-kanban-remote-state">
+                  {controlCloudConfig.remoteControlEnabled
+                    ? t("settings.control.remoteControlOn")
+                    : t("settings.control.remoteControlOff")}
+                </Typography.Text>
+              </Space>
+              <Switch
+                checked={controlCloudConfig.remoteControlEnabled}
+                aria-label={t("settings.control.remoteControlEnabled")}
+                disabled={controlConfigSaving}
+                loading={controlConfigSaving}
+                onChange={() => void handleToggleControlRemoteControl()}
+              />
+            </div>
+            <div className="settings-kanban-status">
+              <Space direction="vertical" size={4}>
+                <Typography.Text strong>{t("settings.control.statusTitle")}</Typography.Text>
+                <Typography.Text type="secondary">{getControlConnectionLabel(controlConnectionState)}</Typography.Text>
+              </Space>
+              <Typography.Text type="secondary">
+                {t("settings.control.onlineSummary", {
+                  devices: controlOnlineSummary.deviceCount,
+                  sessions: controlOnlineSummary.sessionCount,
+                  agents: controlOnlineSummary.agentCount
+                })}
+              </Typography.Text>
+            </div>
+            <Form
+              className="settings-control-form settings-kanban-ant-form"
+              layout="vertical"
+              requiredMark={false}
+              onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
+            >
+              <Form.Item label={t("taskBoard.cloud.serverUrl")}>
+                <Input
+                  value={controlCloudConfig.serverUrl}
+                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
+                  placeholder="http://127.0.0.1:8080"
+                />
+              </Form.Item>
+              <Form.Item
+                label={t("taskBoard.cloud.projectId")}
+                extra={controlProjectOptions.length > 0
+                  ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
+                  : t("taskBoard.cloud.projectFallbackHelp")}
+              >
+                {controlProjectOptions.length > 0 ? (
+                  <Select
+                    value={controlCloudConfig.selectedProjectId}
+                    options={controlProjectSelectOptions}
+                    onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
+                  />
+                ) : (
+                  <Input
+                    value={controlCloudConfig.selectedProjectId}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                    placeholder="default"
+                  />
+                )}
+              </Form.Item>
+              <Form.Item className="settings-control-actions settings-kanban-actions">
+                <Button type="primary" htmlType="submit" loading={controlConfigSaving} disabled={controlConfigSaving}>
+                  {t("settings.kanban.save")}
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        );
       case "market":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.market.panelAria")}>
@@ -4076,85 +4158,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
         return (
           <>
-            <Card
-              className="settings-item-card settings-control-card settings-kanban-ant-card"
-              aria-label={t("settings.control.cloudPanelAria")}
-              styles={{ body: { padding: 0 } }}
-            >
-              <div className="settings-item-header settings-control-permission-row">
-                <span className="settings-control-app-icon" aria-hidden="true">
-                  <span />
-                </span>
-                <Space className="settings-kanban-copy" direction="vertical" size={3}>
-                  <Typography.Text strong>{t("settings.control.remoteControlTitle")}</Typography.Text>
-                  <Typography.Text type="secondary">{t("settings.control.remoteControlDescription")}</Typography.Text>
-                  <Typography.Text className="settings-kanban-remote-state">
-                    {controlCloudConfig.remoteControlEnabled
-                      ? t("settings.control.remoteControlOn")
-                      : t("settings.control.remoteControlOff")}
-                  </Typography.Text>
-                </Space>
-                <Switch
-                  checked={controlCloudConfig.remoteControlEnabled}
-                  aria-label={t("settings.control.remoteControlEnabled")}
-                  disabled={controlConfigSaving}
-                  loading={controlConfigSaving}
-                  onChange={() => void handleToggleControlRemoteControl()}
-                />
-              </div>
-              <div className="settings-kanban-status">
-                <Space direction="vertical" size={4}>
-                  <Typography.Text strong>{t("settings.control.statusTitle")}</Typography.Text>
-                  <Typography.Text type="secondary">{getControlConnectionLabel(controlConnectionState)}</Typography.Text>
-                </Space>
-                <Typography.Text type="secondary">
-                  {t("settings.control.onlineSummary", {
-                    devices: controlOnlineSummary.deviceCount,
-                    sessions: controlOnlineSummary.sessionCount,
-                    agents: controlOnlineSummary.agentCount
-                  })}
-                </Typography.Text>
-              </div>
-              <Form
-                className="settings-control-form settings-kanban-ant-form"
-                layout="vertical"
-                requiredMark={false}
-                onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
-              >
-                <Form.Item label={t("taskBoard.cloud.serverUrl")}>
-                  <Input
-                    value={controlCloudConfig.serverUrl}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
-                    placeholder="http://127.0.0.1:8080"
-                  />
-                </Form.Item>
-                <Form.Item
-                  label={t("taskBoard.cloud.projectId")}
-                  extra={controlProjectOptions.length > 0
-                    ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                    : t("taskBoard.cloud.projectFallbackHelp")}
-                >
-                  {controlProjectOptions.length > 0 ? (
-                    <Select
-                      value={controlCloudConfig.selectedProjectId}
-                      options={controlProjectSelectOptions}
-                      onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
-                    />
-                  ) : (
-                    <Input
-                      value={controlCloudConfig.selectedProjectId}
-                      onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                      placeholder="default"
-                    />
-                  )}
-                </Form.Item>
-                <Form.Item className="settings-control-actions settings-kanban-actions">
-                  <Button type="primary" htmlType="submit" loading={controlConfigSaving} disabled={controlConfigSaving}>
-                    {t("settings.control.save")}
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Card>
             <div className="settings-item-card settings-control-card" aria-label={t("settings.control.tunnelPanelAria")}>
               <div className="settings-item-header settings-mobile-pairing-header">
                 <div className="settings-appearance-row-copy">

@@ -2123,13 +2123,13 @@
   transition: transform 0.22s ease, background-color 0.22s ease, box-shadow 0.22s ease;
 }
 
-.app-shell.is-mac-overlay-sidebar .app-window-drag-region {
-  left: 220px;
+.app-shell.is-mac-overlay-sidebar {
+  --app-window-drag-left: 220px;
 }
 
-.app-shell.is-mac-overlay-sidebar.has-right-corner-toggle .app-window-drag-region {
-  left: 0;
-  right: 72px;
+.app-shell.is-mac-overlay-sidebar.has-right-corner-toggle {
+  --app-window-drag-left: 0px;
+  --app-window-drag-right: 72px;
 }
 
 .app-shell.is-mac-overlay-sidebar.has-right-corner-toggle .app-sidebar-toggle {

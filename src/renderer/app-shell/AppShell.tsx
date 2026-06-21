@@ -1917,7 +1917,9 @@ export function AppShell() {
         isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
     >
-      <div className="app-window-drag-region" aria-hidden="true" />
+      <div className="app-window-drag-layer" aria-hidden="true">
+        <div className="app-window-drag-region" />
+      </div>
       <div className="app-sidebar-shell">
         <AppSidebar
           isCollapsed={effectiveSidebarCollapsed}

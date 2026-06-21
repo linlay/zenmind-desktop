@@ -28,14 +28,6 @@
   color: var(--task-board-ink);
 }
 
-.app-shell.is-windows-platform.has-task-board-controls .task-board-page {
-  padding-top: 24px;
-}
-
-.app-shell.is-mac-platform.has-task-board-controls .task-board-page {
-  padding-top: 24px;
-}
-
 :root[data-theme="dark"] .task-board-page {
   --task-board-bg: #111418;
   --task-board-card: #1c2026;
@@ -614,13 +606,15 @@
 }
 
 .task-board-column-head {
+  height: 48px;
   min-height: 48px;
+  flex: 0 0 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
   gap: 6px;
-  padding: 12px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--task-board-column-border);
 }
 

@@ -64,7 +64,7 @@ export function createSettingsSectionDefinitions({
       label: "kanban",
       description: "",
       layout: "measure",
-      visible: false
+      visible: true
     },
     {
       id: "market",

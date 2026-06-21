@@ -1598,7 +1598,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPageSections, /settings\.kanban\.label/);
   assert.match(settingsPageSections, /settings\.assistant\.label/);
   assert.match(settingsPageSections, /settings\.market\.label/);
-  assert.doesNotMatch(settingsPage, /case "kanban"/);
+  assert.match(settingsPage, /case "kanban"/);
   assert.doesNotMatch(settingsPage, /settings\.kanban\.enabled/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
@@ -1615,7 +1615,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /settings-device-info-list/);
   assert.doesNotMatch(settingsPage, /<Input\.Password[\s\S]*taskBoard\.cloud\.tokenPlaceholder/);
   assert.match(settingsPage, /<Select[\s\S]*options=\{controlProjectSelectOptions\}/);
-  assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.control\.save/);
+  assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.kanban\.save/);
   assert.match(settingsPage, /case "assistant"/);
   assert.match(settingsPage, /activeSection === "assistant"/);
   assert.match(settingsPage, /case "market"/);
@@ -1710,7 +1710,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /moveSidebarNavOrderItem/);
 });
 
-test("settings page merges cloud board and tunnel control into the Control section", () => {
+test("settings page keeps Kanban separate while merging Tunnel into Control", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const settingsSections = readSourceFile("src", "renderer", "settingsPageSections.ts");
   const settingsRoutes = readSourceFile("src", "shared", "settings-routes.ts");
@@ -1723,13 +1723,16 @@ test("settings page merges cloud board and tunnel control into the Control secti
   assert.match(sharedSettingsSections, /"kanban"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?settings\.kanban\.label/);
   assert.match(sharedSettingsSections, /"tunnelHub"/);
-  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*false/);
+  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*false/);
-  assert.match(settingsRoutes, /kanban:\s*"control"/);
+  assert.doesNotMatch(settingsRoutes, /kanban:\s*"control"/);
   assert.match(settingsRoutes, /tunnelHub:\s*"control"/);
-  assert.doesNotMatch(settingsPage, /case "kanban"/);
+  assert.match(settingsPage, /case "kanban"[\s\S]*settings\.kanban\.panelAria[\s\S]*settings\.control\.remoteControlDescription/);
   assert.doesNotMatch(settingsPage, /case "tunnelHub"/);
-  assert.match(settingsPage, /case "control"[\s\S]*settings\.control\.cloudPanelAria[\s\S]*settings\.control\.tunnelTitle/);
+  assert.doesNotMatch(settingsPage, /settings\.control\.cloudPanelAria/);
+  assert.match(settingsPage, /case "control"[\s\S]*settings\.control\.tunnelTitle[\s\S]*settings\.mobilePairing\.title/);
+  assert.match(settingsPage, /shouldReadControlData = activeSection === "kanban"/);
+  assert.match(settingsPage, /shouldReadTunnelHubData = activeSection === "control"/);
   assert.match(settingsPage, /settings\.control\.remoteControlEnabled/);
   assert.match(settingsPage, /settings\.control\.remoteControlDescription/);
   assert.match(settingsPage, /handleToggleTunnelHubEnabled/);
@@ -1745,11 +1748,13 @@ test("settings page merges cloud board and tunnel control into the Control secti
   assert.match(taskBoardRuntime, /KANBAN_CONFIG_FILE = "kanban\.json"/);
   assert.match(zhCN, /"settings\.control\.label":\s*"控制"/);
   assert.match(zhCN, /"settings\.kanban\.label":\s*"看板"/);
-  assert.match(zhCN, /"settings\.control\.description":\s*"管理桌面端配对、远程控制、隧道与端口穿透。"/);
+  assert.match(zhCN, /"settings\.control\.description":\s*"管理桌面端配对、隧道与端口穿透。"/);
+  assert.match(zhCN, /"settings\.kanban\.description":\s*"管理看板云端 API 与远程控制权限。"/);
   assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
   assert.match(enUS, /"settings\.control\.label":\s*"Control"/);
   assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
-  assert.match(enUS, /"settings\.control\.description":\s*"Manage Desktop pairing, remote control, and tunnel or port exposure\."/);
+  assert.match(enUS, /"settings\.control\.description":\s*"Manage Desktop pairing, tunnel, and port exposure\."/);
+  assert.match(enUS, /"settings\.kanban\.description":\s*"Manage the Kanban cloud API and remote control permission\."/);
   assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, debugVisible, t \}\)/);
 });
 
@@ -2475,8 +2480,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-automation-menu-list\.is-time-list\s*\{[\s\S]*?max-height:\s*184px;/);
   assert.doesNotMatch(globalStyles, /\.task-board-automation-time-select/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-task-board-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*24px;/);
-  assert.match(globalStyles, /\.app-shell\.is-windows-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*24px;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*(?:18|24)px;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-windows-platform\.has-task-board-controls \.task-board-page\s*\{[^}]*padding-top:\s*(?:18|24)px;/);
   assert.doesNotMatch(globalStyles, /\.task-board-page::before\s*\{[\s\S]*?app-region:\s*drag;/);
   assert.doesNotMatch(globalStyles, /\.task-board-breadcrumb\s*\{[\s\S]*?-webkit-app-region:\s*drag;/);
   assert.match(globalStyles, /\.task-board-modal-actions \.task-board-secondary-button/);
@@ -3276,8 +3281,10 @@ test("market route keeps the unified native drag overlay", () => {
   const marketStyles = readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css");
 
   assert.match(appShell, /has-market-controls/);
+  assert.match(appShell, /className="app-window-drag-layer"[\s\S]*className="app-window-drag-region"/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*height:\s*24px;/);
+  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--app-window-drag-height:\s*18px;/);
+  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*flex:\s*0 0 var\(--app-window-drag-height,\s*18px\);/);
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
 });
 
@@ -3303,12 +3310,12 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
   );
-  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*height:\s*8px;/);
+  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*z-index:\s*1000;/);
+  assert.match(globalStyles, /\.app-window-drag-layer\s*\{[^}]*z-index:\s*1000;/);
   assert.doesNotMatch(pluginPage, /className="pan-drag-region"/);
   assert.doesNotMatch(pluginSettingsPage, /className="pan-drag-region"/);
   assert.doesNotMatch(externalWebviewPage, /className="pan-drag-region"/);
@@ -3329,7 +3336,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.doesNotMatch(globalStyles, /\.sidebar-chrome-drag-region\s*\{/);
   assert.doesNotMatch(
     globalStyles,
-    /\.embedded-surface-page-embedded\s+\.embedded-surface-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*8px;/
+    /\.embedded-surface-page-embedded\s+\.embedded-surface-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*(?:8|18|24)px;/
   );
   assert.match(
     globalStyles,
@@ -3337,7 +3344,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.doesNotMatch(
     globalStyles,
-    /\.external-webview-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*8px;/
+    /\.external-webview-frame-shell\s*\{[^}]*(?:padding-top|margin-top|top):\s*(?:8|18|24)px;/
   );
   assert.doesNotMatch(
     globalStyles,
@@ -3365,13 +3372,35 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const shellHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "shell-handlers.ts"), "utf8");
   const contracts = readSharedContractsSource();
+  const appShellRule = globalStyles.match(/(?:^|\n)\.app-shell\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
+  const dragLayerRule = globalStyles.match(/(?:^|\n)\.app-window-drag-layer\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
+  const dragRegionRule = globalStyles.match(/(?:^|\n)\.app-window-drag-region\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
 
-  assert.match(
-    globalStyles,
-    /\.app-window-drag-region\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
-  );
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*height:\s*24px;/);
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*cursor:\s*grab;/);
+  assert.match(appShell, /<div className="app-window-drag-layer" aria-hidden="true">\s*<div className="app-window-drag-region" \/>/);
+  assert.ok(appShellRule, "missing .app-shell rule");
+  assert.match(appShellRule, /--app-window-drag-height:\s*18px;/);
+  assert.match(appShellRule, /--app-window-drag-left:\s*var\(--app-sidebar-width,\s*160px\);/);
+  assert.match(appShellRule, /--app-window-drag-right:\s*0px;/);
+  assert.ok(dragLayerRule, "missing .app-window-drag-layer rule");
+  assert.match(dragLayerRule, /position:\s*absolute;/);
+  assert.match(dragLayerRule, /inset:\s*0;/);
+  assert.match(dragLayerRule, /z-index:\s*1000;/);
+  assert.match(dragLayerRule, /display:\s*flex;/);
+  assert.match(dragLayerRule, /flex-direction:\s*column;/);
+  assert.match(dragLayerRule, /pointer-events:\s*none;/);
+  assert.ok(dragRegionRule, "missing .app-window-drag-region rule");
+  assert.match(dragRegionRule, /flex:\s*0 0 var\(--app-window-drag-height,\s*18px\);/);
+  assert.match(dragRegionRule, /height:\s*var\(--app-window-drag-height,\s*18px\);/);
+  assert.match(dragRegionRule, /margin-left:\s*var\(--app-window-drag-left,\s*var\(--app-sidebar-width,\s*160px\)\);/);
+  assert.match(dragRegionRule, /margin-right:\s*var\(--app-window-drag-right,\s*0px\);/);
+  assert.match(dragRegionRule, /app-region:\s*drag;/);
+  assert.match(dragRegionRule, /-webkit-app-region:\s*drag;/);
+  assert.match(dragRegionRule, /pointer-events:\s*auto;/);
+  assert.match(dragRegionRule, /cursor:\s*grab;/);
+  assert.doesNotMatch(dragRegionRule, /(?:^|\n)\s*(?:left|right):/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\s*\{[^}]*--app-window-drag-left:\s*220px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\.has-right-corner-toggle\s*\{[^}]*--app-window-drag-left:\s*0px;[^}]*--app-window-drag-right:\s*72px;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\s+\.app-window-drag-region\s*\{/);
   assert.match(globalStyles, /\.app-window-drag-region:active\s*\{[^}]*cursor:\s*grabbing;/);
   assert.doesNotMatch(globalStyles, /\.sidebar-chrome-drag-region/);
   const appMainRule = globalStyles.match(/(?:^|\n)\.app-main\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";

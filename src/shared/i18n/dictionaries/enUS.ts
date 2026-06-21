@@ -303,7 +303,7 @@ export const enUSMessages = {
   "settings.market.noticeVisible": "Feature Market is enabled.",
   "settings.market.noticeHidden": "Feature Market is hidden.",
   "settings.control.label": "Control",
-  "settings.control.description": "Manage Desktop pairing, remote control, and tunnel or port exposure.",
+  "settings.control.description": "Manage Desktop pairing, tunnel, and port exposure.",
   "settings.control.panelAria": "Control settings",
   "settings.control.cloudPanelAria": "Cloud board control settings",
   "settings.control.remoteControlTitle": "Cloud board remote control",
