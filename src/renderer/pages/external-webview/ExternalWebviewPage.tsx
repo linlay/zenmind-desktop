@@ -505,6 +505,7 @@ export function ExternalWebviewPage({
   const activeRef = useRef(active !== false);
   const surfaceClassName = [
     "embedded-surface-page external-webview-page",
+    appChrome ? "" : "has-browser-chrome",
     appChrome ? "is-app-surface" : "",
     active === false ? "is-inactive-surface" : ""
   ].filter(Boolean).join(" ");

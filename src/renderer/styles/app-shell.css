@@ -30,6 +30,11 @@
   -webkit-backdrop-filter: none;
 }
 
+.app-shell.has-browser-chrome-surface.is-mac-platform,
+.app-shell.has-browser-chrome-surface.is-windows-platform {
+  --app-window-drag-height: 0px;
+}
+
 .app-shell.is-mac-translucent-sidebar,
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
   background: transparent;

@@ -326,6 +326,34 @@ function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: ReturnTyp
   }
 }
 
+const BROWSER_CHROME_DRAG_BLOCK_SELECTOR = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  "[role=\"button\"]",
+  "[role=\"tab\"]",
+  "[contenteditable=\"true\"]",
+  ".external-webview-tab",
+  ".external-webview-toolbar-location",
+  ".external-webview-debug-sidebar"
+].join(",");
+
+function resolveWindowDragTarget(target: Element | null) {
+  const dragRegion = target?.closest(".app-window-drag-region");
+  if (dragRegion) {
+    return dragRegion;
+  }
+
+  const browserChrome = target?.closest(".external-webview-browser-chrome");
+  if (!browserChrome || target?.closest(BROWSER_CHROME_DRAG_BLOCK_SELECTOR)) {
+    return null;
+  }
+
+  return browserChrome;
+}
+
 export function AppShell() {
   const { t } = useI18n();
   const location = useLocation();
@@ -504,9 +532,9 @@ export function AppShell() {
     [webItems]
   );
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
-  const websiteAgentKey = activeWebEntryKey
-    ? webItemMap.get(activeWebEntryKey)?.agentKey || ""
-    : "";
+  const activeWebEntry = activeWebEntryKey ? webItemMap.get(activeWebEntryKey) ?? null : null;
+  const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
+  const websiteAgentKey = activeWebEntry?.agentKey || "";
   const resolvedCopilotAgentKey = websiteAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute =
@@ -1831,8 +1859,8 @@ export function AppShell() {
     }
 
     const target = event.target instanceof Element ? event.target : null;
-    const dragRegion = target?.closest(".app-window-drag-region");
-    if (!dragRegion) {
+    const dragTarget = resolveWindowDragTarget(target);
+    if (!dragTarget) {
       return;
     }
 
@@ -1856,10 +1884,10 @@ export function AppShell() {
       window.removeEventListener("pointerup", finishDrag, true);
       window.removeEventListener("pointercancel", finishDrag, true);
       window.removeEventListener("blur", finishDrag, true);
-      dragRegion.removeEventListener("lostpointercapture", finishDrag, true);
+      dragTarget.removeEventListener("lostpointercapture", finishDrag, true);
       try {
-        if (dragRegion.hasPointerCapture(pointerId)) {
-          dragRegion.releasePointerCapture(pointerId);
+        if (dragTarget.hasPointerCapture(pointerId)) {
+          dragTarget.releasePointerCapture(pointerId);
         }
       } catch {
         // Pointer capture can already be gone when the pointer leaves an embedded surface.
@@ -1872,9 +1900,9 @@ export function AppShell() {
     window.addEventListener("pointerup", finishDrag, true);
     window.addEventListener("pointercancel", finishDrag, true);
     window.addEventListener("blur", finishDrag, true);
-    dragRegion.addEventListener("lostpointercapture", finishDrag, true);
+    dragTarget.addEventListener("lostpointercapture", finishDrag, true);
     try {
-      dragRegion.setPointerCapture(pointerId);
+      dragTarget.setPointerCapture(pointerId);
     } catch {
       // The main-process cursor loop still keeps the drag alive across webview boundaries.
     }
@@ -1902,6 +1930,7 @@ export function AppShell() {
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
+        usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
         isTaskBoardRoute ? "has-task-board-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
