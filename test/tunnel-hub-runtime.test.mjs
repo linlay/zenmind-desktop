@@ -187,15 +187,11 @@ function encodeTunnelWsFrame(type, payload) {
   return Buffer.concat([header, payload]);
 }
 
-function encodeTunnelChunk(payload = Buffer.alloc(0)) {
-  const header = Buffer.alloc(4);
-  header.writeUInt32BE(payload.byteLength, 0);
-  return Buffer.concat([header, payload]);
-}
-
 function createStreamReader() {
   let buffer = Buffer.alloc(0);
+  let closed = false;
   const waiters = [];
+  const closeWaiters = [];
 
   function flush() {
     for (const waiter of [...waiters]) {
@@ -208,6 +204,20 @@ function createStreamReader() {
       clearTimeout(waiter.timer);
       waiter.resolve(data);
     }
+    if (closed) {
+      if (closeWaiters.length > 0) {
+        const data = buffer;
+        buffer = Buffer.alloc(0);
+        for (const waiter of closeWaiters.splice(0)) {
+          clearTimeout(waiter.timer);
+          waiter.resolve(data);
+        }
+      }
+      for (const waiter of waiters.splice(0)) {
+        clearTimeout(waiter.timer);
+        waiter.reject(new Error("stream closed before enough data was received"));
+      }
+    }
   }
 
   async function readBytes(size) {
@@ -215,6 +225,9 @@ function createStreamReader() {
       const data = buffer.subarray(0, size);
       buffer = buffer.subarray(size);
       return data;
+    }
+    if (closed) {
+      throw new Error("stream closed before enough data was received");
     }
     return new Promise((resolve, reject) => {
       const waiter = {
@@ -234,14 +247,33 @@ function createStreamReader() {
       buffer = Buffer.concat([buffer, chunk]);
       flush();
     },
+    close() {
+      closed = true;
+      flush();
+    },
     async readJson() {
       const prefix = await readBytes(4);
       return JSON.parse((await readBytes(prefix.readUInt32BE(0))).toString("utf8"));
     },
-    async readChunk() {
-      const prefix = await readBytes(4);
-      const size = prefix.readUInt32BE(0);
-      return size === 0 ? Buffer.alloc(0) : readBytes(size);
+    async readRaw(size) {
+      return readBytes(size);
+    },
+    async readUntilClosed() {
+      if (closed) {
+        const data = buffer;
+        buffer = Buffer.alloc(0);
+        return data;
+      }
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          resolve,
+          timer: setTimeout(() => {
+            closeWaiters.splice(closeWaiters.indexOf(waiter), 1);
+            reject(new Error("stream close timed out"));
+          }, 2000)
+        };
+        closeWaiters.push(waiter);
+      });
     },
     async readWsFrame() {
       const header = await readBytes(9);
@@ -307,6 +339,9 @@ function createFakeRelay(runScenario) {
         for (const tunnelFrame of tunnelFrames.frames) {
           if (tunnelFrame.type === FRAME_DATA && tunnelFrame.streamId === streamId) {
             streamReader.append(tunnelFrame.payload);
+          }
+          if (tunnelFrame.type === FRAME_CLOSE && tunnelFrame.streamId === streamId) {
+            streamReader.close();
           }
         }
       }
@@ -653,11 +688,12 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
   assert.equal(new URL(FakeAgentPlatformWebSocket.sockets[0].url).searchParams.get("token"), "platform-token");
 });
 
-test("Tunnel Client endpoint proxies ns=wa HTTP streams with chunked body", async (t) => {
+test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream metadata and raw body", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-http-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   let captured = null;
+  const responseBody = Buffer.from("chunk-a:chunk-b");
   const local = http.createServer((req, res) => {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
@@ -667,43 +703,47 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with chunked body", asyn
         url: req.url,
         host: req.headers.host,
         forwardedHost: req.headers["x-forwarded-host"],
-        requestId: req.headers["x-zenm-request-id"],
-        routeId: req.headers["x-zenm-route-id"],
         body: Buffer.concat(chunks).toString("utf8")
       };
       res.writeHead(201, {
         "Content-Type": "text/plain",
-        "X-Local-Reply": "yes"
+        "X-Local-Reply": "yes",
+        "Content-Length": String(responseBody.byteLength)
       });
-      res.write("chunk-a:");
-      res.end("chunk-b");
+      res.end(responseBody);
     });
   });
   const localAddress = await listen(local);
+  const requestBody = Buffer.from("hello world");
   const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
     sendStreamData(encodeTunnelJson({
+      v: 1,
       ns: "wa",
-      kind: "http",
-      routeId: "route_http",
-      requestId: "req_http",
-      nsPort: localAddress.port,
-      nsProtocol: "http",
-      method: "POST",
-      path: "/api/foo?x=1",
-      host: "demo.wa.zenmind.cc",
-      headers: { "content-type": "text/plain" }
+      type: "http.request",
+      id: "req_http",
+      public: {
+        method: "POST",
+        path: "/api/foo?x=1",
+        host: "demo.wa.zenmind.cc",
+        headers: { "content-type": "text/plain" }
+      },
+      upstream: {
+        scheme: "http",
+        host: "127.0.0.1",
+        port: localAddress.port,
+        basePath: "/app"
+      },
+      route: {
+        id: "route_http",
+        name: "demo",
+        publicHost: "demo.wa.zenmind.cc"
+      },
+      bodyLength: requestBody.byteLength
     }));
-    sendStreamData(encodeTunnelChunk(Buffer.from("hello ")));
-    sendStreamData(encodeTunnelChunk(Buffer.from("world")));
-    sendStreamData(encodeTunnelChunk());
+    sendStreamData(requestBody);
     const head = await streamReader.readJson();
-    const chunks = [];
-    for (;;) {
-      const chunk = await streamReader.readChunk();
-      if (chunk.byteLength === 0) break;
-      chunks.push(chunk);
-    }
-    return { head, body: Buffer.concat(chunks).toString("utf8") };
+    const body = await streamReader.readRaw(head.bodyLength);
+    return { head, body: body.toString("utf8") };
   });
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
@@ -722,19 +762,82 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with chunked body", asyn
 
   await client.connect();
   const response = await fakeRelay.start();
+  assert.equal(response.head.v, 1);
+  assert.equal(response.head.ns, "wa");
+  assert.equal(response.head.type, "http.response");
+  assert.equal(response.head.id, "req_http");
   assert.equal(response.head.ok, true);
   assert.equal(response.head.statusCode, 201);
   assert.equal(response.head.headers["x-local-reply"], "yes");
+  assert.equal(response.head.bodyLength, responseBody.byteLength);
   assert.equal(response.body, "chunk-a:chunk-b");
   assert.deepEqual(captured, {
     method: "POST",
-    url: "/api/foo?x=1",
+    url: "/app/api/foo?x=1",
     host: "demo.wa.zenmind.cc",
     forwardedHost: "demo.wa.zenmind.cc",
-    requestId: "req_http",
-    routeId: "route_http",
     body: "hello world"
   });
+});
+
+test("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body length", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-http-stream-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const local = http.createServer((_req, res) => {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream"
+    });
+    res.write("event: one\n\n");
+    res.end("event: two\n\n");
+  });
+  const localAddress = await listen(local);
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      v: 1,
+      ns: "wa",
+      type: "http.request",
+      id: "req_stream",
+      public: {
+        method: "GET",
+        path: "/events",
+        host: "events.wa.zenmind.cc",
+        headers: {}
+      },
+      upstream: {
+        scheme: "http",
+        host: "localhost",
+        port: localAddress.port,
+        basePath: ""
+      },
+      bodyLength: 0
+    }));
+    const head = await streamReader.readJson();
+    const body = await streamReader.readUntilClosed();
+    return { head, body: body.toString("utf8") };
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    await closeServer(fakeRelay.server);
+    await closeServer(local);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(response.head.type, "http.response");
+  assert.equal(response.head.id, "req_stream");
+  assert.equal(response.head.statusCode, 200);
+  assert.equal(response.head.bodyLength, -1);
+  assert.equal(response.body, "event: one\n\nevent: two\n\n");
 });
 
 test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", async (t) => {
@@ -775,17 +878,33 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
   const localAddress = await listen(local);
   const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
     sendStreamData(encodeTunnelJson({
+      v: 1,
       ns: "wa",
-      kind: "websocket",
-      routeId: "route_ws",
-      requestId: "req_ws",
-      nsPort: localAddress.port,
-      nsProtocol: "http",
-      path: "/socket?room=1",
-      host: "socket.wa.zenmind.cc",
-      headers: {}
+      type: "websocket.connect",
+      id: "req_ws",
+      public: {
+        method: "GET",
+        path: "/socket?room=1",
+        host: "socket.wa.zenmind.cc",
+        headers: {}
+      },
+      upstream: {
+        scheme: "ws",
+        host: "127.0.0.1",
+        port: localAddress.port,
+        basePath: ""
+      },
+      route: {
+        id: "route_ws",
+        name: "socket",
+        publicHost: "socket.wa.zenmind.cc"
+      }
     }));
     const upgrade = await streamReader.readJson();
+    assert.equal(upgrade.v, 1);
+    assert.equal(upgrade.ns, "wa");
+    assert.equal(upgrade.type, "websocket.accept");
+    assert.equal(upgrade.id, "req_ws");
     assert.equal(upgrade.ok, true);
     assert.equal(upgrade.statusCode, 101);
     sendStreamData(encodeTunnelWsFrame(1, Buffer.from("hello")));
@@ -852,7 +971,162 @@ test("Tunnel Client endpoint rejects invalid ns=wa envelope", async (t) => {
 
   await client.connect();
   const response = await fakeRelay.start();
+  assert.equal(response.v, 1);
+  assert.equal(response.ns, "wa");
+  assert.equal(response.type, "error");
   assert.equal(response.ok, false);
   assert.equal(response.statusCode, 400);
-  assert.match(response.error, /nsPort/u);
+  assert.match(response.error, /v must be 1/u);
+});
+
+test("Tunnel Client endpoint rejects non-loopback ns=wa upstream hosts", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-host-invalid-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      v: 1,
+      ns: "wa",
+      type: "http.request",
+      id: "req_bad_host",
+      public: {
+        method: "GET",
+        path: "/",
+        host: "bad.wa.zenmind.cc",
+        headers: {}
+      },
+      upstream: {
+        scheme: "http",
+        host: "example.com",
+        port: 80,
+        basePath: ""
+      },
+      bodyLength: 0
+    }));
+    return streamReader.readJson();
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    await closeServer(fakeRelay.server);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(response.v, 1);
+  assert.equal(response.ns, "wa");
+  assert.equal(response.type, "error");
+  assert.equal(response.id, "req_bad_host");
+  assert.equal(response.ok, false);
+  assert.equal(response.statusCode, 400);
+  assert.match(response.error, /loopback/u);
+});
+
+test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
+  const cases = [
+    {
+      name: "unknown-type",
+      envelope: {
+        v: 1,
+        ns: "wa",
+        type: "http",
+        id: "req_unknown_type",
+        public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+        upstream: { scheme: "http", host: "127.0.0.1", port: 5173, basePath: "" },
+        bodyLength: 0
+      },
+      error: /unknown webapp stream type/u
+    },
+    {
+      name: "invalid-body-length",
+      envelope: {
+        v: 1,
+        ns: "wa",
+        type: "http.request",
+        id: "req_bad_body",
+        public: { method: "POST", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+        upstream: { scheme: "http", host: "127.0.0.1", port: 5173, basePath: "" },
+        bodyLength: -1
+      },
+      error: /bodyLength/u
+    },
+    {
+      name: "invalid-port",
+      envelope: {
+        v: 1,
+        ns: "wa",
+        type: "http.request",
+        id: "req_bad_port",
+        public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+        upstream: { scheme: "http", host: "127.0.0.1", port: 0, basePath: "" },
+        bodyLength: 0
+      },
+      error: /upstream\.port/u
+    },
+    {
+      name: "http-scheme-mismatch",
+      envelope: {
+        v: 1,
+        ns: "wa",
+        type: "http.request",
+        id: "req_http_scheme",
+        public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+        upstream: { scheme: "ws", host: "127.0.0.1", port: 5173, basePath: "" },
+        bodyLength: 0
+      },
+      error: /http or https/u
+    },
+    {
+      name: "websocket-scheme-mismatch",
+      envelope: {
+        v: 1,
+        ns: "wa",
+        type: "websocket.connect",
+        id: "req_ws_scheme",
+        public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+        upstream: { scheme: "http", host: "127.0.0.1", port: 5173, basePath: "" }
+      },
+      error: /ws or wss/u
+    }
+  ];
+
+  for (const testCase of cases) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), `zenmind-tunnel-wa-${testCase.name}-`));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+      sendStreamData(encodeTunnelJson(testCase.envelope));
+      return streamReader.readJson();
+    });
+    const relayAddress = await listen(fakeRelay.server);
+    const client = new TunnelClientEndpoint({
+      relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+      relayToken: "relay-token",
+      desktopWsServerOptions: createDesktopWsServerOptions(app),
+      logger: { log() {}, warn() {}, error() {} }
+    });
+    try {
+      await client.connect();
+      const response = await fakeRelay.start();
+      assert.equal(response.v, 1);
+      assert.equal(response.ns, "wa");
+      assert.equal(response.type, "error");
+      assert.equal(response.ok, false);
+      assert.equal(response.statusCode, 400);
+      assert.match(response.error, testCase.error);
+    } finally {
+      client.close();
+      fakeRelay.close();
+      await closeServer(fakeRelay.server);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
 });
