@@ -44,7 +44,10 @@ export interface TaskBoardIssue {
   workflowId?: string;
   typeId?: string;
   stageId?: string;
+  stageName?: string;
   statusId?: string;
+  statusName?: string;
+  statusKey?: string;
   title: string;
   description: string;
   status: TaskBoardStatus;

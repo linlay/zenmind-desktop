@@ -2059,14 +2059,19 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
 });
 
-test("task board cards show three-line status metadata and light actions", () => {
+test("task board cards align issue meta, title, and hover actions with website", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "task-board.ts");
   const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
   const taskBoardStyles = readSourceFile("src", "renderer", "styles", "task-board.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
   assert.match(contracts, /TASK_BOARD_RUN_STATES/);
   assert.match(contracts, /"cancelled"/);
   assert.match(contracts, /runState: TaskBoardRunState \| null/);
+  assert.match(contracts, /stageName\?: string/);
+  assert.match(contracts, /statusName\?: string/);
+  assert.match(contracts, /statusKey\?: string/);
   assert.match(taskBoardPage, /function formatIssueUpdatedTime\(updatedAt: string\)/);
   assert.match(taskBoardPage, /function getIssueCardStatusPresentation\(\s*issue: TaskBoardIssue,\s*options:/);
   assert.match(taskBoardPage, /issue\.status === "backlog"[\s\S]{0,220}label:\s*formatIssueUpdatedTime\(issue\.updatedAt\)/);
@@ -2081,15 +2086,40 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardPage, /const cardStatus = getIssueCardStatusPresentation\(issue, \{[\s\S]{0,120}awaitingConfirmation[\s\S]{0,120}sortIndex/);
   assert.match(taskBoardPage, /<span className=\{`task-board-status-dot is-\$\{meta\.tone\}`\} aria-hidden="true" \/>/);
   assert.doesNotMatch(taskBoardPage, /status !== "backlog" \? <span className=\{`task-board-status-dot/);
+  assert.match(taskBoardPage, /function canEditTaskBoardIssueBody\(issue: TaskBoardIssue \| null \| undefined\)/);
+  assert.match(taskBoardPage, /return issue\?\.syncMode !== "cloud"/);
+  assert.match(taskBoardPage, /function getIssueStageLabel\(issue: TaskBoardIssue, t: TranslateFunction\)/);
+  assert.match(taskBoardPage, /issue\.stageName\?\.trim\(\) \|\| issue\.statusName\?\.trim\(\)/);
+  assert.match(taskBoardPage, /return stageName \|\| t\(STATUS_META\[issue\.status\]\.labelKey\)/);
+  assert.match(taskBoardPage, /const displayIssueId = getTaskBoardIssueDisplayId\(issue\)/);
+  assert.match(taskBoardPage, /<span className="task-board-card-chip task-board-card-id"[\s\S]{0,120}\{displayIssueId\}/);
+  assert.match(taskBoardPage, /<IssuePriorityBadge priority=\{issue\.priority\} t=\{t\} \/>/);
+  assert.match(taskBoardPage, /<IssueSeverityBadge severity=\{severity\} t=\{t\} \/>/);
+  assert.match(taskBoardPage, /<span className="task-board-card-chip task-board-card-stage"[\s\S]{0,180}\{stageLabel\}/);
+  assert.match(taskBoardPage, /<span className="task-board-title-body">\{issue\.title\}<\/span>/);
+  assert.doesNotMatch(taskBoardPage, /<strong title=\{description \|\| issue\.title\}>/);
+  assert.doesNotMatch(taskBoardPage, /task-board-sync-badge/);
+  assert.doesNotMatch(taskBoardPage, /task-board-chat-action/);
+  assert.doesNotMatch(taskBoardPage, /TaskBoardIcon kind="message"/);
   assert.match(taskBoardPage, /className=\{`task-board-card-status is-\$\{cardStatus\.tone\}`\}/);
   assert.match(taskBoardPage, /\{cardStatus\.tone !== "backlog" && cardStatus\.tone !== "todo" \? <span className="task-board-run-dot" aria-hidden="true" \/> : null\}/);
   assert.match(taskBoardPage, /<span className="task-board-card-status-label">\{cardStatus\.label\}<\/span>/);
   assert.match(taskBoardPage, /<span className="task-board-card-status-time">\{cardStatus\.updatedTime\}<\/span>/);
   assert.match(taskBoardPage, /title=\{automationLabel\}/);
   assert.match(taskBoardPage, /className="task-board-automation-label">\{automationLabel\}<\/span>/);
+  assert.match(taskBoardPage, /const canEditIssue = interactive && canEditTaskBoardIssueBody\(issue\)/);
+  assert.match(taskBoardPage, /className="task-board-card-actions"/);
+  assert.match(taskBoardPage, /<EditOutlined \/>/);
+  assert.match(taskBoardPage, /<DeleteOutlined \/>/);
   assert.match(taskBoardPage, /runState: nextTaskStatus\.runState/);
   assert.match(taskBoardPage, /runState: "running"/);
-  assert.match(taskBoardStyles, /\.task-board-card-line-top\s*\{[\s\S]{0,160}min-height:\s*18px;[\s\S]{0,80}height:\s*auto;/);
+  assert.match(taskBoardStyles, /--task-board-column-min-width:\s*220px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-row-top\s*\{[\s\S]{0,160}min-height:\s*18px;[\s\S]{0,80}height:\s*auto;/);
+  assert.match(taskBoardStyles, /\.task-board-card-top-meta\s*\{[\s\S]{0,180}gap:\s*4px;[\s\S]{0,120}overflow:\s*hidden;/);
+  assert.match(taskBoardStyles, /\.task-board-priority-badge,[\s\S]{0,80}\.task-board-severity-badge\s*\{[\s\S]{0,180}height:\s*18px;/);
+  assert.match(taskBoardStyles, /\.task-board-title-text\s*\{[\s\S]{0,260}-webkit-line-clamp:\s*2;[\s\S]{0,180}font-weight:\s*400;/);
+  assert.match(taskBoardStyles, /\.task-board-card-stage\s*\{[\s\S]{0,420}line-height:\s*18px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-description\s*\{[\s\S]{0,220}-webkit-line-clamp:\s*2;/);
   assert.match(taskBoardStyles, /\.task-board-card-status\s*\{[\s\S]{0,180}max-width:[\s\S]{0,180}height:\s*auto;/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-succeeded[\s\S]{0,160}#15803d/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-failed[\s\S]{0,160}#b91c1c/);
@@ -2106,13 +2136,15 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardStyles, /\.task-board-automation-label\s*\{/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card::before/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card\.is-[^{]+::before/);
-  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,240}border-color:\s*rgba\(148, 163, 184, 0\.3\);[\s\S]{0,240}background:\s*rgba\(248, 250, 252, 0\.92\);[\s\S]{0,240}color:\s*#64748b;/);
-  assert.match(taskBoardStyles, /\.task-board-attachment-badge\s*\{[\s\S]{0,180}width:\s*28px;[\s\S]{0,180}height:\s*28px;[\s\S]{0,220}border:\s*1px solid rgba\(148, 163, 184, 0\.3\);[\s\S]{0,220}background:\s*rgba\(248, 250, 252, 0\.92\);[\s\S]{0,220}color:\s*#64748b;/);
-  assert.match(taskBoardStyles, /\.task-board-attachment-badge:hover,[\s\S]{0,120}\.task-board-chat-action:hover:not\(:disabled\)\s*\{[\s\S]{0,180}background:\s*rgba\(15, 23, 42, 0\.05\);/);
-  assert.match(taskBoardStyles, /\.task-board-card-foot-actions\s*\{[\s\S]{0,160}height:\s*28px;/);
-  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,180}width:\s*28px;[\s\S]{0,180}height:\s*28px;/);
-  assert.match(taskBoardStyles, /\.task-board-attachment-badge \.task-board-icon\s*\{[\s\S]{0,120}width:\s*22px;[\s\S]{0,120}height:\s*22px;/);
-  assert.match(taskBoardStyles, /\.task-board-chat-action \.task-board-icon\s*\{[\s\S]{0,120}width:\s*22px;[\s\S]{0,120}height:\s*22px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-actions\s*\{[\s\S]{0,180}opacity:\s*0;[\s\S]{0,80}pointer-events:\s*none;/);
+  assert.match(taskBoardStyles, /\.task-board-card:hover \.task-board-card-actions,[\s\S]{0,80}\.task-board-card:focus-within \.task-board-card-actions\s*\{[\s\S]{0,100}opacity:\s*1;[\s\S]{0,80}pointer-events:\s*auto;/);
+  assert.match(taskBoardStyles, /\.task-board-card-action\s*\{[\s\S]{0,180}width:\s*26px;[\s\S]{0,180}height:\s*26px;/);
+  assert.doesNotMatch(taskBoardStyles, /\.task-board-chat-action/);
+  assert.doesNotMatch(taskBoardStyles, /\.task-board-card-main strong/);
+  assert.match(zhCN, /"taskBoard\.severity\.critical": "严重"/);
+  assert.match(zhCN, /"taskBoard\.card\.stage": "当前阶段：\{value\}"/);
+  assert.match(enUS, /"taskBoard\.severity\.critical": "Critical"/);
+  assert.match(enUS, /"taskBoard\.card\.stage": "Current stage: \{value\}"/);
 });
 
 test("task board todo column can filter scheduled tasks", () => {
@@ -2255,15 +2287,10 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /if \(!chatId\) \{[\s\S]{0,100}return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}`/);
   assert.match(taskBoardPage, /params\.set\("chatId", chatId\)/);
   assert.match(taskBoardPage, /return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}\?\$\{params\.toString\(\)\}`/);
-  assert.match(taskBoardPage, /function getIssueChatActionLabel/);
   assert.match(taskBoardPage, /function issueHasPendingAwaiting/);
   assert.match(taskBoardPage, /const matchingChat = getAssistantNavAgentRecentChats\(agent\)\.find\(\(chat\) => chat\.chatId === chatId\)/);
   assert.match(taskBoardPage, /return matchingChat\?\.hasPendingAwaiting === true/);
   assert.doesNotMatch(taskBoardPage, /agent\.latestChatId === chatId && agent\.hasPendingAwaiting/);
-  assert.match(taskBoardPage, /t\("taskBoard\.chat\.viewOrConfirm"\)/);
-  assert.match(taskBoardPage, /t\("taskBoard\.chat\.view"\)/);
-  assert.match(taskBoardPage, /t\("taskBoard\.chat\.awaitingConfirmation"\)/);
-  assert.match(taskBoardPage, /const visibleChatActionLabel = awaitingConfirmation \? t\("taskBoard\.chat\.awaitingConfirmation"\) : chatActionLabel/);
   assert.doesNotMatch(taskBoardPage, /task-board-human-loop-hint/);
   assert.match(taskBoardPage, /is-awaiting-confirmation/);
   assert.match(taskBoardPage, /function openAssistantIssueChat/);
@@ -2272,7 +2299,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /task-board-chat-modal-layer/);
   assert.match(taskBoardPage, /task-board-chat-modal/);
   assert.doesNotMatch(taskBoardPage, /void openAssistantIssueChat\(updateResult\.issue/);
-  assert.match(taskBoardPage, /task-board-chat-action/);
+  assert.doesNotMatch(taskBoardPage, /task-board-chat-action/);
   assert.doesNotMatch(taskBoardPage, /setAgentPickerIssue/);
   assert.doesNotMatch(taskBoardPage, /requestAssignIssueToAssistant/);
   assert.match(taskBoardPage, /<DragOverlay[\s\S]*?dropAnimation=\{null\}/);
@@ -2375,7 +2402,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /<footer className="task-board-card-foot">/);
   assert.doesNotMatch(taskBoardPage, /className="task-board-column-summary"/);
   assert.doesNotMatch(taskBoardPage, /className="task-board-empty-illustration"/);
-  assert.doesNotMatch(taskBoardPage, /className="task-board-card-action"/);
+  assert.match(taskBoardPage, /className="task-board-card-action"/);
   assert.doesNotMatch(taskBoardPage, />\s*\{busy \? "提交中" : "交给智能体"\}\s*<\/button>/);
   assert.doesNotMatch(taskBoardPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
   assert.doesNotMatch(taskBoardPage, /aria-label=\{`\$\{meta\.label\} 更多`\}/);
@@ -2383,6 +2410,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /--task-board-column-gap:\s*0px;/);
+  assert.match(globalStyles, /--task-board-column-min-width:\s*220px;/);
   assert.doesNotMatch(globalStyles, /--task-board-column-fit-width/);
   assert.match(globalStyles, /--task-board-column-width:\s*max\(\s*calc\(100% \/ 5\),\s*var\(--task-board-column-min-width\)\s*\);/);
   assert.match(globalStyles, /\.task-board-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;/);
@@ -2403,7 +2431,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,360}min-height:\s*118px;[\s\S]{0,360}height:\s*auto;/);
   assert.match(globalStyles, /\.task-board-card:hover\s*\{[\s\S]{0,220}transform:\s*scale\(1\.005\);/);
-  assert.match(globalStyles, /\.task-board-card-main strong\s*\{[\s\S]{0,260}-webkit-line-clamp:\s*2;/);
+  assert.match(globalStyles, /\.task-board-title-text\s*\{[\s\S]{0,260}-webkit-line-clamp:\s*2;/);
+  assert.match(globalStyles, /\.task-board-title-text\s*\{[\s\S]{0,320}font-weight:\s*400;/);
   assert.match(globalStyles, /\.task-board-card-foot\s*\{[\s\S]{0,220}border-top:\s*1px solid var\(--task-board-border\);/);
   assert.doesNotMatch(globalStyles, /\.task-board-card::before/);
   assert.doesNotMatch(globalStyles, /\.task-board-column-summary\s*\{/);
@@ -2417,11 +2446,11 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-card\.is-awaiting-confirmation\s*\{/);
   assert.match(globalStyles, /\.task-board-card-status\s*\{[\s\S]{0,220}height:\s*auto;[\s\S]{0,220}overflow:\s*hidden;/);
   assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,160}background:\s*currentColor;/);
-  assert.match(globalStyles, /\.task-board-chat-action\s*\{/);
-  assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
   assert.match(globalStyles, /\.task-board-automation-panel\s*\{/);
   assert.match(globalStyles, /\.task-board-automation-badge\s*\{/);
-  assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,220}background:\s*rgba\(245, 158, 11, 0\.14\);[\s\S]{0,220}box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.task-board-card-actions\s*\{[\s\S]{0,220}opacity:\s*0;[\s\S]{0,120}pointer-events:\s*none;/);
+  assert.match(globalStyles, /\.task-board-card:hover \.task-board-card-actions,[\s\S]{0,80}\.task-board-card:focus-within \.task-board-card-actions\s*\{[\s\S]{0,120}opacity:\s*1;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-chat-action/);
   assert.match(globalStyles, /\.task-board-modal-head-actions/);
   assert.match(globalStyles, /\.task-board-modal-mode-button[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?white-space:\s*nowrap;/);
   assert.match(globalStyles, /\.task-board-modal\.is-compact/);
@@ -2437,7 +2466,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.task-board-breadcrumb\s*\{[\s\S]*?-webkit-app-region:\s*drag;/);
   assert.match(globalStyles, /\.task-board-modal-actions \.task-board-secondary-button/);
   assert.doesNotMatch(globalStyles, /\.task-board-human-loop-hint\s*\{/);
-  assert.doesNotMatch(globalStyles, /\.task-board-card-action\s*\{/);
+  assert.match(globalStyles, /\.task-board-card-action\s*\{/);
   assert.doesNotMatch(globalStyles, /\.task-board-agent-picker\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-modal-layer\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-modal\s*\{/);

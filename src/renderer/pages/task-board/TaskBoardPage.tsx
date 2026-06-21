@@ -21,6 +21,7 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { DeleteOutlined, EditOutlined, FlagOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import type {
   AssistantAttachment,
   AssistantEvent,
@@ -85,6 +86,8 @@ type TaskBoardCardPresentation = {
   assigneeTitle: string;
 };
 
+type TaskBoardSeverity = NonNullable<TaskBoardIssue["severity"]>;
+
 type TaskBoardCardStatusPresentation = {
   label: string;
   tone: TaskBoardStatus | "running" | "awaiting" | "succeeded" | "failed" | "cancelled";
@@ -138,6 +141,13 @@ const PRIORITY_META: Record<TaskBoardPriority, { labelKey: TranslationKey; tone:
   high: { labelKey: "taskBoard.priority.high", tone: "high", bars: 3 },
   medium: { labelKey: "taskBoard.priority.medium", tone: "medium", bars: 2 },
   low: { labelKey: "taskBoard.priority.low", tone: "low", bars: 1 }
+};
+
+const SEVERITY_META: Record<TaskBoardSeverity, { labelKey: TranslationKey; tone: string }> = {
+  critical: { labelKey: "taskBoard.severity.critical", tone: "critical" },
+  high: { labelKey: "taskBoard.severity.high", tone: "high" },
+  medium: { labelKey: "taskBoard.severity.medium", tone: "medium" },
+  low: { labelKey: "taskBoard.severity.low", tone: "low" }
 };
 
 const DEFAULT_TASK_BOARD_AUTOMATION_PLAN: TaskBoardAutomationPlan = "daily";
@@ -902,6 +912,10 @@ function isIssueDragLocked(issue: TaskBoardIssue | null | undefined) {
   return Boolean(issue?.runId);
 }
 
+function canEditTaskBoardIssueBody(issue: TaskBoardIssue | null | undefined) {
+  return issue?.syncMode !== "cloud";
+}
+
 function canCreateIssueFromColumnDoubleClick(status: TaskBoardStatus) {
   return status === "backlog" || status === "todo";
 }
@@ -917,18 +931,13 @@ function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, 
   return !target.closest(".task-board-card");
 }
 
-function isIssueChatViewable(issue: TaskBoardIssue) {
-  return Boolean(issue.chatId && (
-    issue.status === "in_progress" ||
-    issue.status === "completed"
-  ));
+function normalizeIssueSeverity(severity: TaskBoardIssue["severity"]): TaskBoardSeverity {
+  return severity === "critical" || severity === "high" || severity === "low" ? severity : "medium";
 }
 
-function getIssueChatActionLabel(issue: TaskBoardIssue, t: TranslateFunction) {
-  if (!isIssueChatViewable(issue)) {
-    return null;
-  }
-  return issue.status === "in_progress" ? t("taskBoard.chat.viewOrConfirm") : t("taskBoard.chat.view");
+function getIssueStageLabel(issue: TaskBoardIssue, t: TranslateFunction) {
+  const stageName = issue.stageName?.trim() || issue.statusName?.trim();
+  return stageName || t(STATUS_META[issue.status].labelKey);
 }
 
 function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
@@ -945,36 +954,6 @@ function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgen
 
 function getTaskBoardIssueDisplayId(issue: TaskBoardIssue) {
   return issue.syncMode === "cloud" && issue.remoteIssueId ? issue.remoteIssueId : issue.id;
-}
-
-function getTaskBoardIssueSyncTone(issue: TaskBoardIssue) {
-  if (issue.syncMode !== "cloud") {
-    return "private";
-  }
-  if (issue.syncState === "error") {
-    return "error";
-  }
-  if (issue.syncState === "syncing") {
-    return "syncing";
-  }
-  return issue.origin === "cloud_dispatch" ? "dispatched" : "cloud";
-}
-
-function getTaskBoardIssueSyncLabel(issue: TaskBoardIssue, t: TranslateFunction) {
-  const tone = getTaskBoardIssueSyncTone(issue);
-  if (tone === "error") {
-    return t("taskBoard.sync.error");
-  }
-  if (tone === "syncing") {
-    return t("taskBoard.sync.syncing");
-  }
-  if (tone === "dispatched") {
-    return t("taskBoard.sync.dispatched");
-  }
-  if (tone === "cloud") {
-    return t("taskBoard.sync.cloud");
-  }
-  return t("taskBoard.sync.private");
 }
 
 function formatTaskBoardLastSyncedAt(value: string | null | undefined, t: TranslateFunction) {
@@ -1995,7 +1974,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 onAdd={() => openCreateModal(status)}
                 onTodoAutomationFilterChange={setTodoAutomationFilter}
                 onEdit={openEditModal}
-                onOpenChat={openAssistantIssueChat}
+                onDelete={deleteIssue}
                 onOpenContextMenu={openIssueContextMenu}
               />
             );
@@ -2015,7 +1994,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   t={t}
                   interactive={false}
                   onEdit={() => undefined}
-                  onOpenChat={() => undefined}
+                  onDelete={() => undefined}
                 />
               </article>
             ) : null}
@@ -2026,7 +2005,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
       {contextMenu ? (() => {
         const issue = issueMap.get(contextMenu.issueId);
-        if (!issue) {
+        if (!issue || !canEditTaskBoardIssueBody(issue)) {
           return null;
         }
         const menu = (
@@ -2381,7 +2360,7 @@ function TaskBoardColumn({
   onAdd,
   onTodoAutomationFilterChange,
   onEdit,
-  onOpenChat,
+  onDelete,
   onOpenContextMenu
 }: {
   status: TaskBoardStatus;
@@ -2395,7 +2374,7 @@ function TaskBoardColumn({
   onAdd: () => void;
   onTodoAutomationFilterChange: (filter: TaskBoardTodoAutomationFilter) => void;
   onEdit: (issue: TaskBoardIssue) => void;
-  onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
+  onDelete: (issue: TaskBoardIssue) => void | Promise<void>;
   onOpenContextMenu: (issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
@@ -2460,7 +2439,7 @@ function TaskBoardColumn({
               now={now}
               t={t}
               onEdit={() => onEdit(issue)}
-              onOpenChat={() => void onOpenChat(issue)}
+              onDelete={() => void onDelete(issue)}
               onOpenContextMenu={(event) => onOpenContextMenu(issue, event)}
             />
           ))}
@@ -2485,7 +2464,7 @@ function TaskBoardCard({
   now,
   t,
   onEdit,
-  onOpenChat,
+  onDelete,
   onOpenContextMenu
 }: {
   issue: TaskBoardIssue;
@@ -2496,7 +2475,7 @@ function TaskBoardCard({
   now: Date;
   t: TranslateFunction;
   onEdit: () => void;
-  onOpenChat: () => void;
+  onDelete: () => void;
   onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const dragLocked = isIssueDragLocked(issue);
@@ -2537,7 +2516,7 @@ function TaskBoardCard({
         t={t}
         interactive
         onEdit={onEdit}
-        onOpenChat={onOpenChat}
+        onDelete={onDelete}
       />
     </article>
   );
@@ -2553,7 +2532,7 @@ function TaskBoardCardContent({
   t,
   interactive,
   onEdit,
-  onOpenChat
+  onDelete
 }: {
   issue: TaskBoardIssue;
   sortIndex?: number;
@@ -2564,10 +2543,8 @@ function TaskBoardCardContent({
   t: TranslateFunction;
   interactive: boolean;
   onEdit: () => void;
-  onOpenChat: () => void;
+  onDelete: () => void;
 }) {
-  const chatActionLabel = getIssueChatActionLabel(issue, t);
-  const visibleChatActionLabel = awaitingConfirmation ? t("taskBoard.chat.awaitingConfirmation") : chatActionLabel;
   const assigneeAgent = getAssigneeAgent(issue, agents);
   const assigneeIcon = hasTaskBoardAgentIcon(assigneeAgent?.icon) ? assigneeAgent?.icon : undefined;
   const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
@@ -2575,6 +2552,8 @@ function TaskBoardCardContent({
   const visibleAttachments = getVisibleTaskBoardAttachments(issue.attachments);
   const hasVisibleAttachment = visibleAttachments.length > 0;
   const description = display.description ? descriptionPreview(issue.description) : "";
+  const severity = normalizeIssueSeverity(issue.severity);
+  const stageLabel = getIssueStageLabel(issue, t);
   const cardStatus = getIssueCardStatusPresentation(issue, {
     awaitingConfirmation,
     now,
@@ -2588,18 +2567,17 @@ function TaskBoardCardContent({
     t
   );
   const displayIssueId = getTaskBoardIssueDisplayId(issue);
-  const syncTone = getTaskBoardIssueSyncTone(issue);
-  const syncLabel = getTaskBoardIssueSyncLabel(issue, t);
-  const syncTitle = issue.syncState === "error" && issue.syncError ? `${syncLabel}：${issue.syncError}` : syncLabel;
+  const canEditIssue = interactive && canEditTaskBoardIssueBody(issue);
+  const hasMetaStrip = Boolean(automationLabel || hasVisibleAttachment);
   const mainContent = (
     <>
-      <div className="task-board-card-line task-board-card-line-top">
-        <span className="task-board-card-id-group">
-          <span className="task-board-card-id" title={issue.remoteIssueId ? `${issue.id} / ${issue.remoteIssueId}` : issue.id}>
+      <div className="task-board-card-row task-board-card-row-top">
+        <span className="task-board-card-top-meta">
+          <span className="task-board-card-chip task-board-card-id" title={issue.remoteIssueId ? `${issue.id} / ${issue.remoteIssueId}` : issue.id}>
             {displayIssueId}
           </span>
-          <span className={`task-board-sync-badge is-${syncTone}`} title={syncTitle}>{syncLabel}</span>
-          {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
+          {display.priority ? <IssuePriorityBadge priority={issue.priority} t={t} /> : null}
+          <IssueSeverityBadge severity={severity} t={t} />
         </span>
         <span
           className={`task-board-card-status is-${cardStatus.tone}`}
@@ -2610,13 +2588,21 @@ function TaskBoardCardContent({
           <span className="task-board-card-status-time">{cardStatus.updatedTime}</span>
         </span>
       </div>
-      <strong title={description || issue.title}>{issue.title}</strong>
+      <div className="task-board-card-row task-board-card-row-title">
+        <span className="task-board-title-text" title={issue.title}>
+          <span className="task-board-card-chip task-board-card-stage" title={t("taskBoard.card.stage", { value: stageLabel })}>
+            {stageLabel}
+          </span>
+          <span className="task-board-title-body">{issue.title}</span>
+        </span>
+      </div>
+      {description ? <p className="task-board-card-description">{description}</p> : null}
     </>
   );
 
   return (
     <>
-      {interactive ? (
+      {canEditIssue ? (
         <div
           className="task-board-card-main"
           role="button"
@@ -2632,10 +2618,26 @@ function TaskBoardCardContent({
           {mainContent}
         </div>
       ) : (
-        <div className="task-board-card-main" aria-hidden="true">
+        <div className={`task-board-card-main ${interactive ? "is-readonly" : ""}`} aria-hidden={interactive ? undefined : "true"}>
           {mainContent}
         </div>
       )}
+      {hasMetaStrip ? (
+        <div className="task-board-card-meta-strip">
+          {automationLabel ? (
+            <span className="task-board-automation-badge" title={automationLabel}>
+              <TaskBoardIcon kind="clock" />
+              <span className="task-board-automation-label">{automationLabel}</span>
+            </span>
+          ) : null}
+          {hasVisibleAttachment ? (
+            <span className="task-board-attachment-badge" title={t("taskBoard.form.attachments")}>
+              <TaskBoardIcon kind="attachment" />
+              <span>{visibleAttachments.length}</span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <footer className="task-board-card-foot">
         {cardPresentation.assigneeLabel ? (
           <span
@@ -2663,52 +2665,42 @@ function TaskBoardCardContent({
             <span className="task-board-card-assignee-name">{cardPresentation.assigneeLabel}</span>
           </span>
         ) : <span className="task-board-card-assignee" aria-hidden="true" />}
-        <span className="task-board-card-foot-actions">
-          {automationLabel ? (
-            <span className="task-board-automation-badge" title={automationLabel}>
-              <TaskBoardIcon kind="clock" />
-              <span className="task-board-automation-label">{automationLabel}</span>
-            </span>
-          ) : null}
-          {hasVisibleAttachment ? (
-            <span className="task-board-attachment-badge" title={t("taskBoard.form.attachments")}>
-              <TaskBoardIcon kind="attachment" />
-            </span>
-          ) : null}
-          {chatActionLabel ? (
+        {canEditIssue ? (
+          <span className="task-board-card-actions">
             <button
               type="button"
-              className={[
-                "task-board-chat-action",
-                issue.status === "in_progress" ? "is-awaiting" : "",
-                awaitingConfirmation ? "is-human-loop" : ""
-              ].filter(Boolean).join(" ")}
-              disabled={!interactive}
-              tabIndex={interactive ? 0 : -1}
-              aria-label={
-                awaitingConfirmation
-                  ? t("taskBoard.chat.openWithConfirmation", { id: issue.id })
-                  : t("taskBoard.chat.open", { id: issue.id })
-              }
-              title={visibleChatActionLabel ?? undefined}
+              className="task-board-card-action"
+              aria-label={t("taskBoard.modal.editTitle")}
+              title={t("taskBoard.modal.editTitle")}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
-                if (interactive) {
-                  onOpenChat();
-                }
+                onEdit();
               }}
             >
-              <TaskBoardIcon kind="message" />
+              <EditOutlined />
             </button>
-          ) : null}
-        </span>
+            <button
+              type="button"
+              className="task-board-card-action is-danger"
+              aria-label={t("taskBoard.context.delete")}
+              title={t("taskBoard.context.delete")}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete();
+              }}
+            >
+              <DeleteOutlined />
+            </button>
+          </span>
+        ) : null}
       </footer>
     </>
   );
 }
 
-function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "message" | "search" }) {
+function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "search" }) {
   const paths: Record<typeof kind, ReactNode> = {
     attachment: (
       <path d="M7.5 11.5 12 7a2.1 2.1 0 0 1 3 3l-6 6a3.1 3.1 0 0 1-4.4-4.4l6.4-6.4" />
@@ -2735,12 +2727,6 @@ function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "f
         <path d="M9 15h2" />
       </>
     ),
-    message: (
-      <>
-        <path d="M5 5.5h10v7H9l-3.5 2.7v-2.7H5z" />
-        <path d="M7.5 8h5" />
-      </>
-    ),
     search: (
       <>
         <circle cx="8.5" cy="8.5" r="4.5" />
@@ -2752,6 +2738,28 @@ function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "f
     <svg className="task-board-icon" viewBox="0 0 20 20" aria-hidden="true">
       {paths[kind]}
     </svg>
+  );
+}
+
+function IssuePriorityBadge({ priority, t }: { priority: TaskBoardPriority; t: TranslateFunction }) {
+  const meta = PRIORITY_META[priority];
+  const label = t(meta.labelKey);
+  return (
+    <span className={`task-board-priority-badge is-${meta.tone}`} title={t("taskBoard.card.priority", { value: label })}>
+      <ThunderboltOutlined className="task-board-priority-icon" />
+      <span className="task-board-priority-text">{label}</span>
+    </span>
+  );
+}
+
+function IssueSeverityBadge({ severity, t }: { severity: TaskBoardSeverity; t: TranslateFunction }) {
+  const meta = SEVERITY_META[severity];
+  const label = t(meta.labelKey);
+  return (
+    <span className={`task-board-severity-badge is-${meta.tone}`} title={t("taskBoard.card.severity", { value: label })}>
+      <FlagOutlined className="task-board-severity-icon" />
+      <span className="task-board-severity-text">{label}</span>
+    </span>
   );
 }
 

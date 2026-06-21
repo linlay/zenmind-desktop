@@ -2289,6 +2289,7 @@ export function SettingsPage({
   const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [tunnelHubRotateRelayToken, setTunnelHubRotateRelayToken] = useState(false);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
+  const [tunnelHubMobileLinkCopying, setTunnelHubMobileLinkCopying] = useState(false);
   const [appPairingPending, setAppPairingPending] = useState(false);
   const [appPairingResult, setAppPairingResult] = useState<DesktopAppPairingPayloadResult | null>(null);
   const [runtimeResetPending, setRuntimeResetPending] = useState(false);
@@ -3726,6 +3727,37 @@ async function handleOpenMemoryDirectory() {
     }
   }
 
+  async function handleCopyTunnelHubMobileLink() {
+    const publicUrl = tunnelHubSettings.publicUrl.trim();
+    if (!publicUrl) {
+      showSectionNotice("tunnelHub", t("settings.tunnelHub.mobileLinkUnavailable"), "error");
+      return;
+    }
+    setTunnelHubMobileLinkCopying(true);
+    try {
+      const tokenResult = await window.electronAPI.agentAuth.issueAccessToken("missing");
+      const token = tokenResult.token.trim();
+      if (!tokenResult.ok || !token) {
+        throw new Error(tokenResult.message || t("settings.tunnelHub.mobileLinkTokenFailed"));
+      }
+      const mobileUrl = new URL(publicUrl);
+      mobileUrl.searchParams.set("token", token);
+      const copyResult = await window.electronAPI.clipboard.writeText(mobileUrl.toString());
+      if (!copyResult.ok) {
+        throw new Error(copyResult.message || t("settings.tunnelHub.mobileLinkCopyFailed"));
+      }
+      showSectionNotice("tunnelHub", t("settings.tunnelHub.mobileLinkCopied"), "success");
+    } catch (reason) {
+      showSectionNotice(
+        "tunnelHub",
+        reason instanceof Error ? reason.message : String(reason),
+        "error"
+      );
+    } finally {
+      setTunnelHubMobileLinkCopying(false);
+    }
+  }
+
   async function handleCreateAppPairingPayload() {
     setAppPairingPending(true);
     try {
@@ -4303,6 +4335,16 @@ async function handleOpenMemoryDirectory() {
                   ) : null}
                   {tunnelHubSettings.webSocketUrl ? (
                     <small>{t("settings.tunnelHub.webSocketUrl")}: <code>{tunnelHubSettings.webSocketUrl}</code></small>
+                  ) : null}
+                  {tunnelHubSettings.publicUrl ? (
+                    <Button
+                      size="small"
+                      loading={tunnelHubMobileLinkCopying}
+                      disabled={tunnelHubMobileLinkCopying}
+                      onClick={() => void handleCopyTunnelHubMobileLink()}
+                    >
+                      {t("settings.tunnelHub.copyMobileLink")}
+                    </Button>
                   ) : null}
                 </div>
               ) : null}
