@@ -735,20 +735,6 @@ function getIssueCardStatusPresentation(
   };
 }
 
-function getTaskBoardColumnSummary(status: TaskBoardStatus, count: number, t: TranslateFunction) {
-  const detailKey: Record<TaskBoardStatus, TranslationKey> = {
-    backlog: "taskBoard.column.summary.backlog",
-    todo: "taskBoard.column.summary.todo",
-    in_progress: "taskBoard.column.summary.inProgress",
-    in_review: "taskBoard.column.summary.inReview",
-    completed: "taskBoard.column.summary.completed"
-  };
-  return {
-    count: t("taskBoard.column.summary.count", { count }),
-    detail: t(detailKey[status])
-  };
-}
-
 function getTaskBoardEmptyHint(status: TaskBoardStatus, t: TranslateFunction) {
   const hintKey: Record<TaskBoardStatus, TranslationKey> = {
     backlog: "taskBoard.column.emptyBacklog",
@@ -1061,7 +1047,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<TaskBoardContextMenu | null>(null);
-  const [backlogExpanded, setBacklogExpanded] = useState(false);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -1991,9 +1976,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         onDragEnd={handleDragEnd}
       >
         <div
-          className={`task-board-columns ${backlogExpanded ? "is-backlog-expanded" : ""}`}
+          className="task-board-columns"
           aria-busy={loading}
-          onClick={() => setBacklogExpanded(false)}
         >
           {VISIBLE_TASK_BOARD_STATUSES.map((status) => {
             const columnIssues = filteredIssues.filter((issue) => issue.status === status);
@@ -2009,7 +1993,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 t={t}
                 canAdd={taskBoardReady}
                 onAdd={() => openCreateModal(status)}
-                onSelectColumn={() => setBacklogExpanded(status === "backlog")}
                 onTodoAutomationFilterChange={setTodoAutomationFilter}
                 onEdit={openEditModal}
                 onOpenChat={openAssistantIssueChat}
@@ -2396,7 +2379,6 @@ function TaskBoardColumn({
   t,
   canAdd,
   onAdd,
-  onSelectColumn,
   onTodoAutomationFilterChange,
   onEdit,
   onOpenChat,
@@ -2411,7 +2393,6 @@ function TaskBoardColumn({
   t: TranslateFunction;
   canAdd: boolean;
   onAdd: () => void;
-  onSelectColumn: () => void;
   onTodoAutomationFilterChange: (filter: TaskBoardTodoAutomationFilter) => void;
   onEdit: (issue: TaskBoardIssue) => void;
   onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
@@ -2420,15 +2401,10 @@ function TaskBoardColumn({
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
   const meta = STATUS_META[status];
   const label = t(meta.labelKey);
-  const summary = getTaskBoardColumnSummary(status, issues.length, t);
   return (
     <section
       ref={setNodeRef}
       className={`task-board-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onSelectColumn();
-      }}
     >
       <header className="task-board-column-head">
         <div className="task-board-column-title">
@@ -2491,19 +2467,11 @@ function TaskBoardColumn({
         </SortableContext>
         {issues.length === 0 ? (
           <div className="task-board-empty-column">
-            <span className="task-board-empty-illustration" aria-hidden="true" />
             <strong>{t("taskBoard.column.empty")}</strong>
             <span>{getTaskBoardEmptyHint(status, t)}</span>
           </div>
         ) : null}
       </div>
-      <footer className="task-board-column-summary">
-        <span className="task-board-column-summary-icon" aria-hidden="true" />
-        <span className="task-board-column-summary-text">
-          <strong>{summary.count}</strong>
-          <span>{summary.detail}</span>
-        </span>
-      </footer>
     </section>
   );
 }

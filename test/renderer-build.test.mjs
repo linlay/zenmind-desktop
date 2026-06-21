@@ -2120,8 +2120,8 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardPage, /className="task-board-automation-label">\{automationLabel\}<\/span>/);
   assert.match(taskBoardPage, /runState: nextTaskStatus\.runState/);
   assert.match(taskBoardPage, /runState: "running"/);
-  assert.match(taskBoardStyles, /\.task-board-card-line-top\s*\{[\s\S]{0,120}height:\s*20px;/);
-  assert.match(taskBoardStyles, /\.task-board-card-status\s*\{[\s\S]{0,180}max-width:[\s\S]{0,180}height:\s*20px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-line-top\s*\{[\s\S]{0,160}min-height:\s*18px;[\s\S]{0,80}height:\s*auto;/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\s*\{[\s\S]{0,180}max-width:[\s\S]{0,180}height:\s*auto;/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-succeeded[\s\S]{0,160}#15803d/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-failed[\s\S]{0,160}#b91c1c/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-cancelled[\s\S]{0,160}#475569/);
@@ -2130,11 +2130,10 @@ test("task board cards show three-line status metadata and light actions", () =>
   const taskBoardStatusRules = taskBoardStyles.match(/[^{}]*\.task-board-card-status\.is-[^{}]*\{[^{}]*\}/g) ?? [];
   assert.notEqual(taskBoardStatusRules.length, 0);
   for (const rule of taskBoardStatusRules.filter(
-    (rule) => !rule.includes(".task-board-run-dot") && !rule.includes(".task-board-card-status.is-succeeded")
+    (rule) => !rule.includes(".task-board-run-dot")
   )) {
     assert.doesNotMatch(rule, /background:/);
   }
-  assert.match(taskBoardStyles, /\.task-board-card-status\.is-completed,[\s\S]{0,120}\.task-board-card-status\.is-succeeded\s*\{[\s\S]{0,120}background:\s*rgba\(22, 163, 74, 0\.1\);/);
   assert.match(taskBoardStyles, /\.task-board-automation-label\s*\{/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card::before/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card\.is-[^{]+::before/);
@@ -2405,8 +2404,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(taskBoardPage, /issue\.assigneeName\.slice\(0, 1\)/);
   assert.doesNotMatch(taskBoardPage, /task-board-run-badge/);
   assert.match(taskBoardPage, /<footer className="task-board-card-foot">/);
-  assert.match(taskBoardPage, /className="task-board-column-summary"/);
-  assert.match(taskBoardPage, /className="task-board-empty-illustration"/);
+  assert.doesNotMatch(taskBoardPage, /className="task-board-column-summary"/);
+  assert.doesNotMatch(taskBoardPage, /className="task-board-empty-illustration"/);
   assert.doesNotMatch(taskBoardPage, /className="task-board-card-action"/);
   assert.doesNotMatch(taskBoardPage, />\s*\{busy \? "提交中" : "交给智能体"\}\s*<\/button>/);
   assert.doesNotMatch(taskBoardPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
@@ -2414,36 +2413,40 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-page\s*\{/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
-  assert.match(globalStyles, /--task-board-column-fit-width:\s*calc\(\(100% - 48px\) \/ 4\);/);
-  assert.match(globalStyles, /--task-board-column-width:\s*max\(\s*calc\(\(100% - 64px\) \/ 5\),\s*min\(var\(--task-board-column-min-width\), var\(--task-board-column-fit-width\)\)\s*\);/);
-  assert.match(globalStyles, /--task-board-columns-total-width:\s*calc\(\s*var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+\s*var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\)\s*\);/);
-  assert.match(globalStyles, /--task-board-column-fold-offset:\s*max\(0px,\s*calc\(var\(--task-board-columns-total-width\) - 100%\)\);/);
-  assert.match(globalStyles, /\.task-board-columns\s*\{[\s\S]{0,220}overflow-x:\s*hidden;/);
+  assert.match(globalStyles, /--task-board-column-gap:\s*0px;/);
+  assert.doesNotMatch(globalStyles, /--task-board-column-fit-width/);
+  assert.match(globalStyles, /--task-board-column-width:\s*max\(\s*calc\(100% \/ 5\),\s*var\(--task-board-column-min-width\)\s*\);/);
+  assert.match(globalStyles, /\.task-board-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
-  assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]{0,260}margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
+  assert.match(globalStyles, /\.task-board-column\s*\{[\s\S]{0,260}border:\s*0;[\s\S]{0,260}border-radius:\s*0;[\s\S]{0,260}box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.task-board-column \+ \.task-board-column\s*\{[\s\S]{0,120}border-left:\s*1px solid var\(--task-board-column-border\);/);
+  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-todo\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-in_progress\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-in_review\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-completed\s*\{[^}]*margin-left:/);
-  assert.match(taskBoardPage, /const \[backlogExpanded,\s*setBacklogExpanded\] = useState\(false\)/);
-  assert.match(taskBoardPage, /className=\{`task-board-columns \$\{backlogExpanded \? "is-backlog-expanded" : ""\}`\}/);
-  assert.match(taskBoardPage, /onClick=\{\(\) => setBacklogExpanded\(false\)\}/);
-  assert.match(taskBoardPage, /onSelectColumn=\{\(\) => setBacklogExpanded\(status === "backlog"\)\}/);
-  assert.match(globalStyles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo\s*\{[\s\S]{0,120}margin-left:\s*0;/);
+  assert.doesNotMatch(taskBoardPage, /backlogExpanded/);
+  assert.match(taskBoardPage, /className="task-board-columns"/);
+  assert.doesNotMatch(taskBoardPage, /onSelectColumn/);
+  assert.doesNotMatch(globalStyles, /--task-board-columns-total-width/);
+  assert.doesNotMatch(globalStyles, /--task-board-column-fold-offset/);
+  assert.doesNotMatch(globalStyles, /is-backlog-expanded/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
+  assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,360}min-height:\s*118px;[\s\S]{0,360}height:\s*auto;/);
+  assert.match(globalStyles, /\.task-board-card:hover\s*\{[\s\S]{0,220}transform:\s*scale\(1\.005\);/);
+  assert.match(globalStyles, /\.task-board-card-main strong\s*\{[\s\S]{0,260}-webkit-line-clamp:\s*2;/);
+  assert.match(globalStyles, /\.task-board-card-foot\s*\{[\s\S]{0,220}border-top:\s*1px solid var\(--task-board-border\);/);
   assert.doesNotMatch(globalStyles, /\.task-board-card::before/);
-  assert.match(globalStyles, /\.task-board-column-summary\s*\{/);
-  assert.match(globalStyles, /\.task-board-column-summary\s*\{[\s\S]{0,220}flex-direction:\s*row;[\s\S]{0,220}align-items:\s*center;/);
-  assert.match(globalStyles, /\.task-board-column-summary-text\s*\{/);
-  assert.match(globalStyles, /\.task-board-empty-illustration\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.task-board-column-summary\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.task-board-empty-illustration\s*\{/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-page\s*\{[\s\S]{0,260}--task-board-bg:\s*#111418;[\s\S]{0,260}background:/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-column\.is-backlog\s*\{[\s\S]{0,180}--task-board-column-tint:\s*#121c2d;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-empty-column\s*\{[\s\S]{0,220}background:\s*color-mix\(in srgb, var\(--task-board-column-tint\) 34%, rgba\(15, 18, 24, 0\.84\)\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-column-summary\s*\{[\s\S]{0,120}color:\s*#e2e8f0;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-empty-column\s*\{[\s\S]{0,220}background:\s*color-mix\(in srgb, var\(--task-board-accent\) 8%, transparent\);/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.task-board-column-summary/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked \.task-board-card-main\s*\{[\s\S]{0,120}padding-right:/);
   assert.match(globalStyles, /\.task-board-card\.is-awaiting-confirmation\s*\{/);
-  assert.match(globalStyles, /\.task-board-card-status\s*\{[\s\S]{0,220}height:\s*20px;[\s\S]{0,220}overflow:\s*hidden;/);
+  assert.match(globalStyles, /\.task-board-card-status\s*\{[\s\S]{0,220}height:\s*auto;[\s\S]{0,220}overflow:\s*hidden;/);
   assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,160}background:\s*currentColor;/);
   assert.match(globalStyles, /\.task-board-chat-action\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
