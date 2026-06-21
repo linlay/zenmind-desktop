@@ -27,6 +27,7 @@ type Logger = Pick<typeof console, "log" | "warn" | "error">;
 type TunnelClientFactoryInput = {
   relayUrl: string;
   relayToken: string;
+  deviceId: string;
   desktopWsServerOptions: DesktopWsServerOptions;
   tlsInsecureSkipVerify: boolean;
   logger: Logger;
@@ -195,7 +196,7 @@ export class TunnelHubRuntime {
       }
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
-      await this.connectTunnel(relayUrl, token, nextSettings.tlsInsecureSkipVerify);
+      await this.connectTunnel(relayUrl, token, nextSettings.deviceId, nextSettings.tlsInsecureSkipVerify);
       this.lastConnectedAt = new Date().toISOString();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl}`);
@@ -209,10 +210,11 @@ export class TunnelHubRuntime {
     }
   }
 
-  private async connectTunnel(relayUrl: string, relayToken: string, tlsInsecureSkipVerify: boolean) {
+  private async connectTunnel(relayUrl: string, relayToken: string, deviceId: string, tlsInsecureSkipVerify: boolean) {
     const client = this.createTunnelClient({
       relayUrl,
       relayToken,
+      deviceId,
       desktopWsServerOptions: this.options.desktopWsServerOptions,
       tlsInsecureSkipVerify,
       logger: this.options.logger ?? console

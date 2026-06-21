@@ -271,9 +271,17 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(hello.msg, "success");
   assert.equal(hello.data.protocolVersion, 1);
   assert.equal(hello.data.namespaceField, "ns");
-  assert.deepEqual(hello.data.namespaces, { d: "desktop", ap: "agent-platform" });
+  assert.deepEqual(hello.data.namespaces, { d: "desktop", ap: "agent-platform", wa: "webapp" });
   assert.ok(hello.data.requestTypes.includes("action.call"));
   assert.ok(hello.data.requestTypes.includes("issue.claim"));
+
+  client.send({ ns: "wa", frame: "request", type: "session.hello", id: "wa-hello-1", payload: {} });
+  const webappHello = await client.waitFor((message) => message.id === "wa-hello-1");
+  assert.equal(webappHello.ns, "wa");
+  assert.equal(webappHello.frame, "response");
+  assert.equal(webappHello.type, "session.hello");
+  assert.equal(webappHello.code, 0);
+  assert.equal(webappHello.data.namespaces.wa, "webapp");
 
   client.send({ frame: "request", type: "snapshot.get", id: "snapshot-1", payload: {} });
   const snapshot = await client.waitFor((message) => message.id === "snapshot-1");

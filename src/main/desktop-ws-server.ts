@@ -7,6 +7,7 @@ import {
   DESKTOP_WS_NAMESPACE_AGENT_PLATFORM,
   DESKTOP_WS_NAMESPACE_DESKTOP,
   DESKTOP_WS_NAMESPACE_FIELD,
+  DESKTOP_WS_NAMESPACE_WEBAPP,
   DESKTOP_WS_NAMESPACES,
   DESKTOP_WS_HOST,
   DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
@@ -56,7 +57,7 @@ type DesktopWsRequestFrame = {
 };
 
 type DesktopWsResponseFrame = {
-  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM;
+  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM | typeof DESKTOP_WS_NAMESPACE_WEBAPP;
   frame: "response";
   type: string;
   id: string;
@@ -66,7 +67,7 @@ type DesktopWsResponseFrame = {
 };
 
 type DesktopWsErrorFrame = {
-  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM;
+  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM | typeof DESKTOP_WS_NAMESPACE_WEBAPP;
   frame: "error";
   type: string;
   id?: string;
@@ -76,7 +77,7 @@ type DesktopWsErrorFrame = {
 };
 
 type DesktopWsPushFrame = {
-  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM;
+  ns: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_AGENT_PLATFORM | typeof DESKTOP_WS_NAMESPACE_WEBAPP;
   frame: "push";
   type: DesktopWsPushType | string;
   data?: unknown;
@@ -546,12 +547,27 @@ function sendJson(connection: DesktopWsConnection, payload: DesktopWsOutboundFra
   connection.transport.sendText(JSON.stringify(payload));
 }
 
-function sendResponse(connection: DesktopWsConnection, type: string, id: string, data: unknown, msg = "success") {
-  sendJson(connection, { ns: DESKTOP_WS_NAMESPACE_DESKTOP, frame: "response", type, id, code: 0, msg, data });
+function sendResponse(
+  connection: DesktopWsConnection,
+  namespace: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_WEBAPP,
+  type: string,
+  id: string,
+  data: unknown,
+  msg = "success"
+) {
+  sendJson(connection, { ns: namespace, frame: "response", type, id, code: 0, msg, data });
 }
 
-function sendError(connection: DesktopWsConnection, id: string | undefined, type: string, code: number, msg: string, data?: unknown) {
-  sendJson(connection, { ns: DESKTOP_WS_NAMESPACE_DESKTOP, frame: "error", type, id, code, msg, data });
+function sendError(
+  connection: DesktopWsConnection,
+  namespace: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_WEBAPP,
+  id: string | undefined,
+  type: string,
+  code: number,
+  msg: string,
+  data?: unknown
+) {
+  sendJson(connection, { ns: namespace, frame: "error", type, id, code, msg, data });
 }
 
 function sendPush(connection: DesktopWsConnection, type: DesktopWsPushType | string, data?: unknown) {
@@ -920,26 +936,31 @@ function unsupported(type: string) {
   };
 }
 
-async function handleRequest(options: DesktopWsServerOptions, connection: DesktopWsConnection, req: DesktopWsRequestFrame) {
+async function handleRequest(
+  options: DesktopWsServerOptions,
+  connection: DesktopWsConnection,
+  req: DesktopWsRequestFrame,
+  namespace: typeof DESKTOP_WS_NAMESPACE_DESKTOP | typeof DESKTOP_WS_NAMESPACE_WEBAPP
+) {
   const type = readText(req.type);
   const id = readText(req.id);
   if (!type || !id) {
-    sendError(connection, id || undefined, "invalid_request", 400, "request type and id are required");
+    sendError(connection, namespace, id || undefined, "invalid_request", 400, "request type and id are required");
     return;
   }
   if (!DESKTOP_WS_REQUEST_TYPES.includes(type as any)) {
-    sendError(connection, id, "invalid_request", 400, `unknown type: ${type}`);
+    sendError(connection, namespace, id, "invalid_request", 400, `unknown type: ${type}`);
     return;
   }
   if (!DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES.includes(type as any)) {
-    sendError(connection, id, "unsupported", 501, unsupported(type).message, unsupported(type));
+    sendError(connection, namespace, id, "unsupported", 501, unsupported(type).message, unsupported(type));
     return;
   }
 
   const payload = req.payload;
   switch (type) {
     case "session.hello":
-      sendResponse(connection, type, id, {
+      sendResponse(connection, namespace, type, id, {
         sessionId: connection.id,
         protocolVersion: 1,
         server: "desktop-ws",
@@ -960,20 +981,20 @@ async function handleRequest(options: DesktopWsServerOptions, connection: Deskto
     case "auth.refresh": {
       const token = readText(asRecord(payload).token);
       if (!token) {
-        sendError(connection, id, "invalid_request", 400, "token is required");
+        sendError(connection, namespace, id, "invalid_request", 400, "token is required");
         return;
       }
       try {
         connection.auth = await (options.verifyToken ?? ((nextToken, subprotocol) =>
           verifyDesktopAccessToken(options.app, nextToken, subprotocol)))(token, connection.auth.subprotocol);
-        sendResponse(connection, type, id, { expiresAt: connection.auth.expiresAt });
+        sendResponse(connection, namespace, type, id, { expiresAt: connection.auth.expiresAt });
       } catch {
-        sendError(connection, id, "unauthorized", 401, "invalid token");
+        sendError(connection, namespace, id, "unauthorized", 401, "invalid token");
       }
       return;
     }
     case "capability.list":
-      sendResponse(connection, type, id, {
+      sendResponse(connection, namespace, type, id, {
         namespaceField: DESKTOP_WS_NAMESPACE_FIELD,
         defaultNamespace: DESKTOP_WS_NAMESPACE_DESKTOP,
         namespaces: DESKTOP_WS_NAMESPACES,
@@ -990,7 +1011,7 @@ async function handleRequest(options: DesktopWsServerOptions, connection: Deskto
       for (const nextType of types) {
         connection.subscriptions.add(nextType);
       }
-      sendResponse(connection, type, id, { types: [...connection.subscriptions] });
+      sendResponse(connection, namespace, type, id, { types: [...connection.subscriptions] });
       return;
     }
     case "event.unsubscribe": {
@@ -1004,50 +1025,50 @@ async function handleRequest(options: DesktopWsServerOptions, connection: Deskto
           connection.subscriptions.delete(nextType);
         }
       }
-      sendResponse(connection, type, id, { types: [...connection.subscriptions] });
+      sendResponse(connection, namespace, type, id, { types: [...connection.subscriptions] });
       return;
     }
     case "action.list":
-      sendResponse(connection, type, id, { actions: listPublicActions() });
+      sendResponse(connection, namespace, type, id, { actions: listPublicActions() });
       return;
     case "action.call": {
       const response = await callDesktopAction(options, "", payload);
       if (!response.ok) {
-        sendError(connection, id, response.error?.code || "action_failed", 400, response.error?.message || "action failed", response);
+        sendError(connection, namespace, id, response.error?.code || "action_failed", 400, response.error?.message || "action failed", response);
         return;
       }
-      sendResponse(connection, type, id, response);
+      sendResponse(connection, namespace, type, id, response);
       return;
     }
     case "snapshot.get":
-      sendResponse(connection, type, id, getTaskBoardRuntime(options).listIssues());
+      sendResponse(connection, namespace, type, id, getTaskBoardRuntime(options).listIssues());
       return;
     case "issue.create":
-      sendResponse(connection, type, id, await getTaskBoardRuntime(options).createIssue(readIssueCreateInput(payload)));
+      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).createIssue(readIssueCreateInput(payload)));
       return;
     case "issue.update": {
       const update = readIssueUpdateInput(payload);
-      sendResponse(connection, type, id, await getTaskBoardRuntime(options).updateIssue(update.issueId, update.input));
+      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).updateIssue(update.issueId, update.input));
       return;
     }
     case "issue.delete":
-      sendResponse(connection, type, id, await getTaskBoardRuntime(options).deleteIssueWithAutomation(readIssueId(payload)));
+      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).deleteIssueWithAutomation(readIssueId(payload)));
       return;
     case "issue.move":
-      sendResponse(connection, type, id, await getTaskBoardRuntime(options).moveIssue(readIssueMoveInput(payload)));
+      sendResponse(connection, namespace, type, id, await getTaskBoardRuntime(options).moveIssue(readIssueMoveInput(payload)));
       return;
     case "device.status":
-      sendResponse(connection, type, id, {
+      sendResponse(connection, namespace, type, id, {
         deviceId: getDesktopDeviceId(options.app),
         serverTime: nowIso(),
         connectionCount: connection.server.connections.size
       });
       return;
     case "runtime.info":
-      sendResponse(connection, type, id, resolveDesktopAppInfo(options.app));
+      sendResponse(connection, namespace, type, id, resolveDesktopAppInfo(options.app));
       return;
     case "assistant.startRun":
-      sendResponse(connection, type, id, await options.assistantBridge.startRun(asRecord(payload) as unknown as AssistantStartRunRequest));
+      sendResponse(connection, namespace, type, id, await options.assistantBridge.startRun(asRecord(payload) as unknown as AssistantStartRunRequest));
       return;
     case "service.list":
     case "service.get":
@@ -1056,19 +1077,19 @@ async function handleRequest(options: DesktopWsServerOptions, connection: Deskto
     case "automation.list": {
       const response = await callDesktopAction(options, type, { args: asRecord(payload) });
       if (!response.ok) {
-        sendError(connection, id, response.error?.code || "action_failed", 400, response.error?.message || "action failed", response);
+        sendError(connection, namespace, id, response.error?.code || "action_failed", 400, response.error?.message || "action failed", response);
         return;
       }
-      sendResponse(connection, type, id, response.result ?? response.preview ?? response);
+      sendResponse(connection, namespace, type, id, response.result ?? response.preview ?? response);
       return;
     }
     default:
       if (DIRECT_ACTION_TYPES.has(type)) {
         const response = await callDesktopAction(options, type, { args: asRecord(payload) });
-        sendResponse(connection, type, id, response);
+        sendResponse(connection, namespace, type, id, response);
         return;
       }
-      sendError(connection, id, "unsupported", 501, unsupported(type).message, unsupported(type));
+      sendError(connection, namespace, id, "unsupported", 501, unsupported(type).message, unsupported(type));
   }
 }
 
@@ -1077,13 +1098,18 @@ function handleTextMessage(options: DesktopWsServerOptions, connection: DesktopW
   try {
     parsed = JSON.parse(text) as DesktopWsRequestFrame;
   } catch {
-    sendError(connection, undefined, "invalid_request", 400, "invalid JSON frame");
+    sendError(connection, DESKTOP_WS_NAMESPACE_DESKTOP, undefined, "invalid_request", 400, "invalid JSON frame");
     return;
   }
   const namespace = readNamespace(parsed);
-  if (namespace !== DESKTOP_WS_NAMESPACE_DESKTOP && namespace !== DESKTOP_WS_NAMESPACE_AGENT_PLATFORM) {
+  if (
+    namespace !== DESKTOP_WS_NAMESPACE_DESKTOP &&
+    namespace !== DESKTOP_WS_NAMESPACE_AGENT_PLATFORM &&
+    namespace !== DESKTOP_WS_NAMESPACE_WEBAPP
+  ) {
     sendError(
       connection,
+      DESKTOP_WS_NAMESPACE_DESKTOP,
       readText(parsed.id) || undefined,
       "invalid_namespace",
       400,
@@ -1096,7 +1122,14 @@ function handleTextMessage(options: DesktopWsServerOptions, connection: DesktopW
     return;
   }
   if (parsed.frame !== "request") {
-    sendError(connection, readText(parsed.id) || undefined, "invalid_request", 400, "only request frames are accepted");
+    sendError(
+      connection,
+      namespace === DESKTOP_WS_NAMESPACE_WEBAPP ? DESKTOP_WS_NAMESPACE_WEBAPP : DESKTOP_WS_NAMESPACE_DESKTOP,
+      readText(parsed.id) || undefined,
+      "invalid_request",
+      400,
+      "only request frames are accepted"
+    );
     return;
   }
   if (namespace === DESKTOP_WS_NAMESPACE_AGENT_PLATFORM) {
@@ -1106,9 +1139,15 @@ function handleTextMessage(options: DesktopWsServerOptions, connection: DesktopW
     void connection.agentPlatformBridge.forwardRequest(parsed);
     return;
   }
-  void handleRequest(options, connection, parsed).catch((error) => {
+  void handleRequest(
+    options,
+    connection,
+    parsed,
+    namespace === DESKTOP_WS_NAMESPACE_WEBAPP ? DESKTOP_WS_NAMESPACE_WEBAPP : DESKTOP_WS_NAMESPACE_DESKTOP
+  ).catch((error) => {
     sendError(
       connection,
+      namespace === DESKTOP_WS_NAMESPACE_WEBAPP ? DESKTOP_WS_NAMESPACE_WEBAPP : DESKTOP_WS_NAMESPACE_DESKTOP,
       readText(parsed.id) || undefined,
       "internal_error",
       500,
@@ -1122,6 +1161,7 @@ export type DesktopWsProtocolSessionCreateInput = {
   subprotocol?: string;
   source?: string;
   clientDeviceId?: string;
+  onAuthenticated?: (auth: DesktopWsAuthSession) => Promise<void> | void;
   transport: DesktopWsProtocolTransport;
 };
 
@@ -1195,6 +1235,7 @@ export async function createDesktopWsProtocolSession(
     throw new Error("authToken is required");
   }
   const auth = await authenticateDesktopWsProtocolSession(options, authToken, input.subprotocol);
+  await input.onAuthenticated?.(auth);
   return bindProtocolSession(tunnelSessionGroup, options, {
     auth,
     source: input.source,

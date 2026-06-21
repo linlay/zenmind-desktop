@@ -18,8 +18,13 @@ type HeaderRecord = Record<string, string[] | string>;
 type TunnelStreamEnvelope = {
   v?: unknown;
   ns?: unknown;
+  frame?: unknown;
   type?: unknown;
   id?: unknown;
+  payload?: unknown;
+  code?: unknown;
+  msg?: unknown;
+  data?: unknown;
   public?: unknown;
   upstream?: unknown;
   bodyLength?: unknown;
@@ -33,6 +38,7 @@ type TunnelStreamEnvelope = {
 export type TunnelClientEndpointOptions = {
   relayUrl: string;
   relayToken: string;
+  deviceId: string;
   desktopWsServerOptions: DesktopWsServerOptions;
   tlsInsecureSkipVerify?: boolean;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
@@ -42,6 +48,14 @@ const MAX_JSON_FRAME_BYTES = 1 << 20;
 const MAX_WS_FRAME_BYTES = 64 << 20;
 const STREAM_IO_CHUNK_BYTES = 64 * 1024;
 const LOOPBACK_HOST = "127.0.0.1";
+const TUNNEL_OPEN_TIMEOUT_MS = 10_000;
+const TUNNEL_OPEN_ID_PREFIX = "tun";
+const TUNNEL_CLIENT_NAME = ["zen", "mind-desktop"].join("");
+const TUNNEL_CLIENT_CAPABILITIES = [
+  "desktop.websocket",
+  "webapp.http",
+  "webapp.websocket"
+];
 const HTTP_UPSTREAM_SCHEMES = new Set(["http", "https"]);
 const WS_UPSTREAM_SCHEMES = new Set(["ws", "wss"]);
 
@@ -66,6 +80,10 @@ function readText(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function payloadRecord(envelope: TunnelStreamEnvelope) {
+  return isRecord(envelope.payload) ? envelope.payload : {};
 }
 
 function readPort(value: unknown, fieldName = "upstream.port") {
@@ -217,38 +235,38 @@ function hostForHeader(host: string, port: number) {
   return `${hostForUrl(host)}:${port}`;
 }
 
-function parseWebAppPublicRequest(envelope: TunnelStreamEnvelope): WebAppPublicRequest {
-  if (!isRecord(envelope.public)) {
+function parseWebAppPublicRequest(payload: Record<string, unknown>): WebAppPublicRequest {
+  if (!isRecord(payload.public)) {
     throw new Error("public must be an object");
   }
-  const host = readText(envelope.public.host);
+  const host = readText(payload.public.host);
   if (!host) {
     throw new Error("public.host is required");
   }
   return {
-    method: methodFromValue(envelope.public.method),
+    method: methodFromValue(payload.public.method),
     host,
-    path: normalizeRequestPath(envelope.public.path),
-    headers: normalizeHeader(envelope.public.headers)
+    path: normalizeRequestPath(payload.public.path),
+    headers: normalizeHeader(payload.public.headers)
   };
 }
 
 function parseWebAppUpstreamTarget(
-  envelope: TunnelStreamEnvelope,
+  payload: Record<string, unknown>,
   publicRequest: WebAppPublicRequest,
   websocket: boolean
 ): WebAppUpstreamTarget {
-  if (!isRecord(envelope.upstream)) {
+  if (!isRecord(payload.upstream)) {
     throw new Error("upstream must be an object");
   }
-  const scheme = readText(envelope.upstream.scheme).toLowerCase();
+  const scheme = readText(payload.upstream.scheme).toLowerCase();
   const allowedSchemes = websocket ? WS_UPSTREAM_SCHEMES : HTTP_UPSTREAM_SCHEMES;
   if (!allowedSchemes.has(scheme)) {
     throw new Error(websocket ? "upstream.scheme must be ws or wss" : "upstream.scheme must be http or https");
   }
-  const host = normalizeUpstreamHost(envelope.upstream.host);
-  const port = readPort(envelope.upstream.port);
-  const basePath = normalizeBasePath(envelope.upstream.basePath);
+  const host = normalizeUpstreamHost(payload.upstream.host);
+  const port = readPort(payload.upstream.port);
+  const basePath = normalizeBasePath(payload.upstream.basePath);
   const path = joinUpstreamPath(basePath, publicRequest.path);
   return {
     scheme: scheme as WebAppUpstreamTarget["scheme"],
@@ -286,6 +304,84 @@ async function writeTunnelJson(stream: TunnelHubYamuxStream, value: Record<strin
   const prefix = Buffer.alloc(4);
   prefix.writeUInt32BE(data.byteLength, 0);
   await stream.write(Buffer.concat([prefix, data]));
+}
+
+function createControlId(prefix: string) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readTextJsonPayload(message: TunnelHubWebSocketMessage) {
+  return message.type === 0x1 ? JSON.parse(message.payload.toString("utf8")) as TunnelStreamEnvelope : null;
+}
+
+async function writeTunnelOpen(ws: TunnelHubWebSocketClient, options: TunnelClientEndpointOptions) {
+  const id = createControlId(TUNNEL_OPEN_ID_PREFIX);
+  ws.sendMessage(0x1, Buffer.from(JSON.stringify({
+    v: 1,
+    ns: TUNNEL_NAMESPACE_DESKTOP,
+    frame: "request",
+    type: "tunnel.open",
+    id,
+    payload: {
+      agentToken: options.relayToken,
+      deviceId: options.deviceId,
+      client: TUNNEL_CLIENT_NAME,
+      capabilities: TUNNEL_CLIENT_CAPABILITIES
+    }
+  }), "utf8"));
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      ws.off("message", handleMessage);
+      ws.off("error", handleError);
+      ws.off("close", handleClose);
+    };
+    const handleError = (error: Error) => fail(error);
+    const handleClose = () => fail(new Error("tunnel websocket closed before tunnel.open completed"));
+    const handleMessage = (message: TunnelHubWebSocketMessage) => {
+      if (message.type !== 0x1) {
+        return;
+      }
+      let response: TunnelStreamEnvelope | null = null;
+      try {
+        response = readTextJsonPayload(message);
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      if (!response || readText(response.id) !== id) {
+        return;
+      }
+      const code = typeof response.code === "number" ? response.code : Number(response.code);
+      if (
+        response.v === 1 &&
+        readText(response.ns) === TUNNEL_NAMESPACE_DESKTOP &&
+        readText(response.frame) === "response" &&
+        readText(response.type) === "tunnel.open" &&
+        code === 0
+      ) {
+        settled = true;
+        cleanup();
+        resolve();
+        return;
+      }
+      fail(new Error(readText(response.msg) || `tunnel.open failed with code ${Number.isFinite(code) ? code : "unknown"}`));
+    };
+    const timer = setTimeout(() => fail(new Error("tunnel.open timed out")), TUNNEL_OPEN_TIMEOUT_MS);
+    ws.on("message", handleMessage);
+    ws.on("error", handleError);
+    ws.on("close", handleClose);
+  });
 }
 
 async function readWsFrame(stream: TunnelHubYamuxStream) {
@@ -341,11 +437,11 @@ function writeWebAppError(stream: TunnelHubYamuxStream, envelope: TunnelStreamEn
   return writeTunnelJson(stream, {
     v: 1,
     ns: TUNNEL_NAMESPACE_WEBAPP,
-    type: "error",
+    frame: "error",
+    type: readText(envelope.type) || "error",
     id: readText(envelope.id) || undefined,
-    ok: false,
-    statusCode,
-    error: error instanceof Error ? error.message : String(error)
+    code: statusCode,
+    msg: error instanceof Error ? error.message : String(error)
   });
 }
 
@@ -363,12 +459,10 @@ export class TunnelClientEndpoint extends EventEmitter {
       throw new Error("tunnel client endpoint is closed");
     }
     const ws = await connectTunnelHubWebSocket(this.options.relayUrl, {
-      headers: {
-        Authorization: `Bearer ${this.options.relayToken}`
-      },
       tlsInsecureSkipVerify: this.options.tlsInsecureSkipVerify,
       timeoutMs: 10_000
     });
+    await writeTunnelOpen(ws, this.options);
     const session = new TunnelHubYamuxSession(ws);
     this.ws = ws;
     this.session = session;
@@ -395,7 +489,6 @@ export class TunnelClientEndpoint extends EventEmitter {
     const namespace = readText(envelope.ns);
     switch (namespace) {
       case TUNNEL_NAMESPACE_DESKTOP:
-      case TUNNEL_NAMESPACE_AGENT_PLATFORM:
         await this.handlePlatformStream(stream, envelope);
         return;
       case TUNNEL_NAMESPACE_WEBAPP:
@@ -403,22 +496,60 @@ export class TunnelClientEndpoint extends EventEmitter {
         return;
       default:
         await writeTunnelJson(stream, {
-          ok: false,
-          statusCode: 400,
-          error: namespace ? `unknown namespace: ${namespace}` : "namespace is required"
+          v: 1,
+          ns: namespace || undefined,
+          frame: "error",
+          type: readText(envelope.type) || "error",
+          id: readText(envelope.id) || undefined,
+          code: 400,
+          msg: namespace ? `unknown namespace: ${namespace}` : "namespace is required"
         });
         stream.end();
     }
   }
 
   private async handlePlatformStream(stream: TunnelHubYamuxStream, envelope: TunnelStreamEnvelope) {
+    const payload = payloadRecord(envelope);
+    const id = readText(envelope.id) || undefined;
+    if (
+      envelope.v !== 1 ||
+      readText(envelope.frame) !== "request" ||
+      readText(envelope.type) !== "desktop.websocket.open"
+    ) {
+      await writeTunnelJson(stream, {
+        v: 1,
+        ns: TUNNEL_NAMESPACE_DESKTOP,
+        frame: "error",
+        type: readText(envelope.type) || "desktop.websocket.open",
+        id,
+        code: 400,
+        msg: "desktop.websocket.open request is required"
+      });
+      stream.end();
+      return;
+    }
     let protocolSession: DesktopWsProtocolSession | null = null;
     try {
       protocolSession = await createDesktopWsProtocolSession(this.options.desktopWsServerOptions, {
-        authToken: readText(envelope.authToken),
-        subprotocol: readText(envelope.subprotocol),
-        source: readText(envelope.source) || "tunnel-client",
-        clientDeviceId: readText(envelope.clientDeviceId),
+        authToken: readText(payload.authToken),
+        subprotocol: readText(payload.subprotocol),
+        source: readText(payload.source) || "tunnel-client",
+        clientDeviceId: readText(payload.clientDeviceId),
+        onAuthenticated: async () => {
+          await writeTunnelJson(stream, {
+            v: 1,
+            ns: TUNNEL_NAMESPACE_DESKTOP,
+            frame: "response",
+            type: "desktop.websocket.open",
+            id,
+            code: 0,
+            msg: "success",
+            data: {
+              statusCode: 101,
+              headers: {}
+            }
+          });
+        },
         transport: {
           sendText: (text) => {
             void stream.write(encodeWsFrame(0x1, Buffer.from(text, "utf8"))).catch(() => {
@@ -432,9 +563,13 @@ export class TunnelClientEndpoint extends EventEmitter {
       });
     } catch (error) {
       await writeTunnelJson(stream, {
-        ok: false,
-        statusCode: 401,
-        error: error instanceof Error ? error.message : String(error)
+        v: 1,
+        ns: TUNNEL_NAMESPACE_DESKTOP,
+        frame: "error",
+        type: "desktop.websocket.open",
+        id,
+        code: 401,
+        msg: error instanceof Error ? error.message : String(error)
       });
       stream.end();
       return;
@@ -459,8 +594,8 @@ export class TunnelClientEndpoint extends EventEmitter {
   }
 
   private async handleWebAppStream(stream: TunnelHubYamuxStream, envelope: TunnelStreamEnvelope) {
-    if (envelope.v !== 1) {
-      await writeWebAppError(stream, envelope, 400, "v must be 1");
+    if (envelope.v !== 1 || readText(envelope.frame) !== "request") {
+      await writeWebAppError(stream, envelope, 400, "webapp request frame with v=1 is required");
       stream.end();
       return;
     }
@@ -482,10 +617,11 @@ export class TunnelClientEndpoint extends EventEmitter {
     let publicRequest: WebAppPublicRequest;
     let target: WebAppUpstreamTarget;
     let bodyLength = 0;
+    const payload = payloadRecord(envelope);
     try {
-      publicRequest = parseWebAppPublicRequest(envelope);
-      target = parseWebAppUpstreamTarget(envelope, publicRequest, false);
-      bodyLength = readBodyLength(envelope.bodyLength);
+      publicRequest = parseWebAppPublicRequest(payload);
+      target = parseWebAppUpstreamTarget(payload, publicRequest, false);
+      bodyLength = readBodyLength(payload.bodyLength);
     } catch (error) {
       await writeWebAppError(stream, envelope, 400, error);
       stream.end();
@@ -509,12 +645,16 @@ export class TunnelClientEndpoint extends EventEmitter {
             await writeTunnelJson(stream, {
               v: 1,
               ns: TUNNEL_NAMESPACE_WEBAPP,
-              type: "http.response",
+              frame: "response",
+              type: "http.request",
               id: readText(envelope.id) || undefined,
-              ok: true,
-              statusCode: res.statusCode ?? 200,
-              headers: responseHeaders,
-              bodyLength: readContentLength(responseHeaders)
+              code: 0,
+              msg: "success",
+              data: {
+                statusCode: res.statusCode ?? 200,
+                headers: responseHeaders,
+                bodyLength: readContentLength(responseHeaders)
+              }
             });
             for await (const chunk of res) {
               await stream.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -539,9 +679,10 @@ export class TunnelClientEndpoint extends EventEmitter {
     let localWs: TunnelHubWebSocketClient | null = null;
     let publicRequest: WebAppPublicRequest;
     let target: WebAppUpstreamTarget;
+    const payload = payloadRecord(envelope);
     try {
-      publicRequest = parseWebAppPublicRequest(envelope);
-      target = parseWebAppUpstreamTarget(envelope, publicRequest, true);
+      publicRequest = parseWebAppPublicRequest(payload);
+      target = parseWebAppUpstreamTarget(payload, publicRequest, true);
     } catch (error) {
       await writeWebAppError(stream, envelope, 400, error);
       stream.end();
@@ -558,11 +699,15 @@ export class TunnelClientEndpoint extends EventEmitter {
       await writeTunnelJson(stream, {
         v: 1,
         ns: TUNNEL_NAMESPACE_WEBAPP,
-        type: "websocket.accept",
+        frame: "response",
+        type: "websocket.connect",
         id: readText(envelope.id) || undefined,
-        ok: true,
-        statusCode: 101,
-        headers: {}
+        code: 0,
+        msg: "success",
+        data: {
+          statusCode: 101,
+          headers: {}
+        }
       });
     } catch (error) {
       await writeWebAppError(stream, envelope, 502, error);
