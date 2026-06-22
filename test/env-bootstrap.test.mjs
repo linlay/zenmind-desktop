@@ -10,7 +10,8 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const {
-  resolveBundledEnvZipPath
+  resolveBundledEnvZipPath,
+  runtimeEnvExists
 } = require(path.join(__dirname, "..", "dist-electron", "main", "env-bootstrap.js"));
 
 test("bundled env.zip falls back to the packaged app resources directory", (t) => {
@@ -36,4 +37,42 @@ test("bundled env.zip falls back to the packaged app resources directory", (t) =
     resolveBundledEnvZipPath(app, "win32", staleResourcesRoot),
     path.join(resourcesRoot, "env", "env.zip")
   );
+});
+
+test("runtime env does not treat empty runtime directories as initialized", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-empty-runtime-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = {
+    getPath(name) {
+      assert.equal(name, "home");
+      return root;
+    }
+  };
+  const runtimeRoot = path.join(root, ".cutej");
+  for (const dirName of ["agents", "registries", "teams", "chats", "skills-market"]) {
+    fs.mkdirSync(path.join(runtimeRoot, dirName), { recursive: true });
+  }
+
+  assert.equal(runtimeEnvExists(app, "darwin"), false);
+
+  fs.writeFileSync(path.join(runtimeRoot, "agents", "webOperator.yml"), "key: webOperator\n", "utf8");
+  assert.equal(runtimeEnvExists(app, "darwin"), true);
+});
+
+test("runtime env marker still marks the runtime as initialized", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-marker-runtime-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = {
+    getPath(name) {
+      assert.equal(name, "home");
+      return root;
+    }
+  };
+  const markerPath = path.join(root, ".cutej", ".desktop", "state", "desktop", "env-bootstrap.json");
+  fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+  fs.writeFileSync(markerPath, "{}\n", "utf8");
+
+  assert.equal(runtimeEnvExists(app, "darwin"), true);
 });

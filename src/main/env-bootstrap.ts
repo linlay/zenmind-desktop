@@ -135,11 +135,35 @@ export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform =
   return ENV_RUNTIME_DIRS.some((dirName) => {
     const targetPath = path.join(root, dirName);
     try {
-      return fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
+      return fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory() && hasDirectoryEntries(targetPath);
     } catch {
       return false;
     }
   });
+}
+
+function hasDirectoryEntries(dirPath: string) {
+  const stack = [dirPath];
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    if (!currentPath) {
+      continue;
+    }
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+      if (entry.name === ".DS_Store") {
+        continue;
+      }
+      const entryPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      if (entry.isFile()) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 export function shouldRequireEnvZipImport(input: {
