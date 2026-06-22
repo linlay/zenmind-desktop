@@ -1925,6 +1925,24 @@
   justify-content: center;
 }
 
+.app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-windows,
+.app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-default {
+  padding: 0;
+  justify-content: center;
+}
+
+.app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-windows .sidebar-top-actions,
+.app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-default .sidebar-top-actions {
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  box-sizing: border-box;
+  gap: 0;
+}
+
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions {
   top: 30px;
   left: 0;
