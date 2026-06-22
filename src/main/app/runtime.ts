@@ -140,6 +140,7 @@ import {
 } from "../plugin-global-shortcuts";
 import { invokePluginDesktopAction } from "../plugin-actions";
 import { cleanupRetiredPluginUserData } from "../retired-plugins";
+import { cleanupProgramDataForVersion } from "../program-data-cleanup";
 import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../bridge/assistant-runtime";
 import { createAssistantRunWakeLock } from "../bridge/assistant-wake-lock";
 import { createPluginClipboardBridge } from "../bridge/plugin-clipboard";
@@ -281,6 +282,18 @@ export function createMainProcessRuntime() {
     const electronUserDataRoot = getElectronUserDataRoot(app);
     fs.mkdirSync(electronUserDataRoot, { recursive: true });
     app.setPath("userData", electronUserDataRoot);
+    const programDataCleanup = cleanupProgramDataForVersion(app, desktopAppInfo.version);
+    if (programDataCleanup.cleaned) {
+      console.info(
+        `[main] refreshed program data for ${desktopAppInfo.version}: ${programDataCleanup.removedPaths.length} path(s) removed`
+      );
+    } else if (programDataCleanup.failedPaths.length > 0) {
+      console.warn(
+        `[main] program data cleanup incomplete for ${desktopAppInfo.version}: ${
+          programDataCleanup.failedPaths.map((item) => `${item.path}: ${item.message}`).join("; ")
+        }`
+      );
+    }
     cleanupRetiredPluginUserData(app);
   
     petRuntime.initializeState(isFirstDesktopInstall);

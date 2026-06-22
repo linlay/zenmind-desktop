@@ -664,7 +664,8 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(electronBuilderConfig.win.icon, brandBuildRelativePath(brand, "icons", "icon.ico"));
   assert.equal(electronBuilderConfig.nsis.include, brandBuildRelativePath(brand, "installer", "installer.nsh"));
   assert.match(installerInclude, /%APPDATA%\\CuteJ/u);
-  assert.match(installerInclude, /%USERPROFILE%\\\.cutej\\\.desktop\\state/u);
+  assert.doesNotMatch(installerInclude, /%USERPROFILE%\\\.cutej/u);
+  assert.doesNotMatch(installerInclude, /\\.desktop\\state/u);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/CuteJ"/u);
   assert.match(rendererIndex, /<title>CuteJ<\/title>/u);
