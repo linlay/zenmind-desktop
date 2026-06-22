@@ -31,9 +31,9 @@ type MainWindowRendererLoadLike = Pick<BrowserWindow, "loadFile" | "loadURL">;
 
 type MainWindowLifecycleEventsLike = Pick<
   BrowserWindow,
-  "focus" | "isDestroyed" | "on" | "once" | "show"
+  "focus" | "isDestroyed" | "isFullScreen" | "on" | "once" | "show"
 > & {
-  webContents: Pick<BrowserWindow["webContents"], "on" | "toggleDevTools">;
+  webContents: Pick<BrowserWindow["webContents"], "on" | "send" | "toggleDevTools">;
 };
 
 type MainWindowWebContentsLike = {
@@ -179,12 +179,20 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     hideQuickAssistantAfterOutsideFocus(): void;
   }
 ) {
+  function sendWindowState() {
+    if (targetWindow.isDestroyed()) {
+      return;
+    }
+    targetWindow.webContents.send("desktopShell.windowStateChanged", { isFullScreen: targetWindow.isFullScreen() });
+  }
+
   targetWindow.once("ready-to-show", () => {
     if (targetWindow.isDestroyed()) {
       return;
     }
     targetWindow.show();
     targetWindow.focus();
+    sendWindowState();
   });
 
   targetWindow.on("focus", () => {
@@ -196,10 +204,12 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
 
   targetWindow.on("enter-full-screen", () => {
     options.lifecycle.applyAppearance(targetWindow);
+    sendWindowState();
   });
 
   targetWindow.on("leave-full-screen", () => {
     options.lifecycle.applyAppearance(targetWindow);
+    sendWindowState();
   });
 
   targetWindow.webContents.on("before-input-event", (event, input) => {

@@ -3643,6 +3643,10 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const appState = readSourceFile("src", "main", "app-state.ts");
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appShell = readAppShellSource();
+  const contracts = readSharedContractsSource();
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const globalStyles = readRendererStyles();
 
   assert.match(appState, /mainWindowSidebarTranslucencyEnabled:\s*initialState\.mainWindowSidebarTranslucencyEnabled \?\? true/);
   assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => options\.state\.mainWindowSidebarTranslucencyEnabled/);
@@ -3656,6 +3660,18 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(windowManager, /targetWindow\.setBackgroundColor\("#FFFFFF"\);/);
   assert.match(windowManager, /targetWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
   assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
+  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;/);
+  assert.match(contracts, /getWindowState:\s*\(\) => Promise<\{ ok:\s*boolean; isFullScreen:\s*boolean; message\?:\s*string \}>;/);
+  assert.match(contracts, /onWindowStateChanged:\s*\(listener:\s*DesktopWindowStateListener\) => \(\(\) => void\);/);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.getWindowState"\)/);
+  assert.match(preload, /ipcRenderer\.on\("desktopShell\.windowStateChanged"/);
+  assert.match(windowManager, /targetWindow\.webContents\.send\("desktopShell\.windowStateChanged",\s*\{ isFullScreen:\s*targetWindow\.isFullScreen\(\) \}\);/);
+  assert.match(appShell, /const desktopShell = window\.electronAPI\.desktopShell;[\s\S]*?!desktopShell\.getWindowState \|\| !desktopShell\.onWindowStateChanged/);
+  assert.match(appShell, /desktopShell\.getWindowState\(\)/);
+  assert.match(appShell, /desktopShell\.onWindowStateChanged/);
+  assert.match(appShell, /windowFullScreen \? "is-window-fullscreen" : ""/);
+  assert.match(globalStyles, /--mac-fullscreen-top-safe-area:\s*32px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-window-fullscreen\s*\{[\s\S]*?padding-top:\s*var\(--mac-fullscreen-top-safe-area\);/);
 });
 
 test("main process keeps app identity visible in platform program bars", () => {

@@ -395,6 +395,7 @@ export function AppShell() {
   const refreshServicesRef = useRef(refreshServices);
   const assistantNavAgentsRefreshIdRef = useRef(0);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
+  const [windowFullScreen, setWindowFullScreen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
   const [themePreferenceLoaded, setThemePreferenceLoaded] = useState(false);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
@@ -524,6 +525,32 @@ export function AppShell() {
     [visibleSettingsSections]
   );
   const activeSettingsSectionId = resolveSettingsSectionId(location.pathname, visibleSettingsSectionIds);
+
+  useEffect(() => {
+    const desktopShell = window.electronAPI.desktopShell;
+    if (!desktopShell.getWindowState || !desktopShell.onWindowStateChanged) {
+      return undefined;
+    }
+
+    let active = true;
+    void desktopShell.getWindowState().then((result) => {
+      if (active && result.ok) {
+        setWindowFullScreen(result.isFullScreen);
+      }
+    }).catch(() => undefined);
+
+    const unsubscribe = desktopShell.onWindowStateChanged((state) => {
+      if (active) {
+        setWindowFullScreen(state.isFullScreen);
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
   );
@@ -2544,6 +2571,7 @@ export function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
+        windowFullScreen ? "is-window-fullscreen" : "",
         effectiveSidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
         isSettingsRoute ? "is-settings-mode" : "",

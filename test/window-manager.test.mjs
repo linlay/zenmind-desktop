@@ -372,13 +372,20 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
 
   target.emit("ready-to-show");
   target.emit("focus");
+  target.fullscreen = true;
   target.emit("enter-full-screen");
+  target.fullscreen = false;
   target.emit("leave-full-screen");
 
   assert.equal(target.showCount, 1);
   assert.equal(target.focusCount, 1);
   assert.equal(hiddenOutsideFocus, 1);
   assert.deepEqual(appearances, [target, target]);
+  assert.deepEqual(target.webContents.sentMessages, [
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: true } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false } }
+  ]);
 });
 
 test("window manager wires DevTools shortcuts and close lifecycle events", () => {
