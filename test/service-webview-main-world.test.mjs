@@ -16,6 +16,8 @@ const {
   LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE
 } = require("../dist-electron/shared/service-webview-bridge.js");
 
+const LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
+
 function createStorage() {
   const values = new Map();
   return {
@@ -192,6 +194,24 @@ test("service webview main-world script dispatches desktop bridge requests from 
 
   assert.equal(originalPostMessageCalls.length, 1);
   assert.equal(originalPostMessageCalls[0].value, payload);
+  assert.deepEqual(captured, [payload]);
+});
+
+test("service webview main-world script keeps legacy clipboard bridge requests working", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  const payload = {
+    type: LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE,
+    requestId: "clipboard-legacy-1",
+    text: "hello"
+  };
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+  window.postMessage(payload, "*");
+
   assert.deepEqual(captured, [payload]);
 });
 

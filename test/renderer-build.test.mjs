@@ -3925,6 +3925,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /handleServiceWebviewBridgeMessage/);
   assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE/);
@@ -3938,6 +3939,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
