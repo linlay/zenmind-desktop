@@ -42,6 +42,7 @@ import {
 } from "./marketPageModel";
 import {
   canOpenPlugin,
+  getMarketItemStatusClass,
   marketCardDescription,
   marketItemStateLabel,
   marketSourceLabel,
@@ -830,6 +831,14 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
             <div className="market-store-title-line">
               <h2>{displayName}</h2>
               <span className="market-store-version">{marketVersionLabel(item)}</span>
+            </div>
+            <div className="market-store-submeta">
+              <span className={`market-store-state-pill ${getMarketItemStatusClass(item.state)}`}>
+                <span className="market-store-state-dot" aria-hidden="true" />
+                {marketItemStateLabel(item, t)}
+              </span>
+              <span className="market-store-source-pill">{marketSourceLabel(item, t)}</span>
+              {service ? <span className="market-store-source-pill">{serviceMetric(service)}</span> : null}
             </div>
             {description ? <p className="market-store-description">{description}</p> : null}
           </div>
