@@ -4035,6 +4035,12 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(quickRouting, /return AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(quickRouting, /return "\/service\/agent-webclient";/);
   assert.match(quickRouting, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
+  assert.match(quickRouting, /pathname === "\/copilot" \|\| pathname\.startsWith\("\/copilot\/"\)/);
+  assert.match(quickRouting, /getAllWebContents\(\)/);
+  assert.match(quickRouting, /contents\.getType\(\) !== "webview"/);
+  assert.match(quickRouting, /hostWebContents\.id !== targetWindow\.webContents\.id/);
+  assert.match(quickRouting, /workerKey:\s*`agent:\$\{agentKey\}`/);
+  assert.match(quickRouting, /const QUICK_AGENT_OPEN_RETRY_COUNT = 80;/);
   assert.doesNotMatch(quickRouting, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
   assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
@@ -4373,8 +4379,12 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   assert.equal(fs.existsSync(nativeQuickAssistantPath), false);
   assert.match(quickCopilotRoute, /function QuickCopilotRoute/);
   assert.match(appShell, /location\.pathname === "\/quick-assistant"[\s\S]{0,180}<QuickCopilotRoute \/>/);
-  assert.match(quickCopilotRoute, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
+  assert.match(quickCopilotRoute, /function buildAgentWebclientCopilotPath\(agentKey: string\)/);
+  assert.match(quickCopilotRoute, /encodeURIComponent\(normalizedAgentKey\)/);
+  assert.match(quickCopilotRoute, /const quickAssistantEmbedPath = buildAgentWebclientCopilotPath\(quickAssistantAgentKey\);/);
+  assert.match(quickCopilotRoute, /embedPath=\{quickAssistantEmbedPath\}/);
   assert.match(quickCopilotRoute, /pluginId="agent-webclient"/);
+  assert.match(quickCopilotRoute, /loadInitialEmbeddedUrlDirectly/);
   assert.match(quickCopilotRoute, /quickAssistantAgentKey/);
   assert.match(quickCopilotRoute, /data-open-agent-key=\{quickAssistantAgentKey\}/);
   assert.match(quickCopilotRoute, /quickAssistant\.openControlCenter/);

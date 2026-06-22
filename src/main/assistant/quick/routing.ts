@@ -1,14 +1,18 @@
-import type { BrowserWindow, WebFrameMain } from "electron";
+import type { BrowserWindow, WebContents, WebFrameMain } from "electron";
+import { webContents as electronWebContents } from "electron";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../../../shared/agent-webclient-routes";
 
-const QUICK_AGENT_WEBCLIENT_PATHNAMES = new Set(["/copilot"]);
-const QUICK_AGENT_OPEN_RETRY_COUNT = 24;
-const QUICK_AGENT_OPEN_RETRY_MS = 180;
+const QUICK_AGENT_OPEN_RETRY_COUNT = 80;
+const QUICK_AGENT_OPEN_RETRY_MS = 200;
 
 export type QuickAgentOpenRequest = {
   chatId?: string;
   agentKey: string;
   focusComposerOnComplete: boolean;
+};
+
+type WebContentsAccess = {
+  getAllWebContents(): WebContents[];
 };
 
 export function createAgentWebclientRoute(request: {
@@ -29,6 +33,15 @@ export function createAgentWebclientRoute(request: {
   return `/agent/${encodeURIComponent(agentKey)}${query ? `?${query}` : ""}`;
 }
 
+export function isQuickAgentWebclientUrl(value: string) {
+  try {
+    const pathname = new URL(value).pathname;
+    return pathname === "/copilot" || pathname.startsWith("/copilot/");
+  } catch {
+    return false;
+  }
+}
+
 export function collectWebFrames(frame: WebFrameMain, frames: WebFrameMain[] = []) {
   frames.push(frame);
   for (const childFrame of frame.frames) {
@@ -38,10 +51,41 @@ export function collectWebFrames(frame: WebFrameMain, frames: WebFrameMain[] = [
 }
 
 export function isQuickAgentWebclientFrame(frame: WebFrameMain) {
+  return isQuickAgentWebclientUrl(frame.url);
+}
+
+export function isQuickAgentWebclientContents(
+  contents: WebContents,
+  targetWindow: BrowserWindow
+) {
   try {
-    return QUICK_AGENT_WEBCLIENT_PATHNAMES.has(new URL(frame.url).pathname);
+    if (contents.isDestroyed() || contents.getType() !== "webview") {
+      return false;
+    }
+    const hostWebContents = contents.hostWebContents;
+    if (
+      !hostWebContents ||
+      hostWebContents.isDestroyed() ||
+      hostWebContents.id !== targetWindow.webContents.id
+    ) {
+      return false;
+    }
+    return isQuickAgentWebclientUrl(contents.getURL());
   } catch {
     return false;
+  }
+}
+
+export function collectQuickAgentWebContents(
+  targetWindow: BrowserWindow,
+  webContentsAccess: WebContentsAccess = electronWebContents
+) {
+  try {
+    return webContentsAccess
+      .getAllWebContents()
+      .filter((contents) => isQuickAgentWebclientContents(contents, targetWindow));
+  } catch {
+    return [];
   }
 }
 
@@ -54,6 +98,7 @@ export function createQuickAgentOpenScript(request: QuickAgentOpenRequest) {
     "window.dispatchEvent(new CustomEvent('agent:select-worker', {",
     `  detail: ${JSON.stringify({
       agentKey,
+      workerKey: `agent:${agentKey}`,
       focusComposerOnComplete: request.focusComposerOnComplete
     })}`,
     "}));",
@@ -63,14 +108,22 @@ export function createQuickAgentOpenScript(request: QuickAgentOpenRequest) {
 
 export function dispatchQuickAgentOpenRequest(
   targetWindow: BrowserWindow,
-  request: QuickAgentOpenRequest
+  request: QuickAgentOpenRequest,
+  webContentsAccess: WebContentsAccess = electronWebContents
 ) {
   const script = createQuickAgentOpenScript(request);
   const frames = collectWebFrames(targetWindow.webContents.mainFrame).filter(isQuickAgentWebclientFrame);
+  const contentsList = collectQuickAgentWebContents(targetWindow, webContentsAccess);
   let dispatched = false;
   for (const frame of frames) {
     dispatched = true;
     frame.executeJavaScript(script).catch((error) => {
+      console.warn("[quick-assistant] failed to open agent webclient copilot", error);
+    });
+  }
+  for (const contents of contentsList) {
+    dispatched = true;
+    contents.executeJavaScript(script, true).catch((error) => {
       console.warn("[quick-assistant] failed to open agent webclient copilot", error);
     });
   }

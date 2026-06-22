@@ -987,7 +987,14 @@ export async function readAssistantCopilotAgentsFromPlatform(
     `${createApiUrl(baseUrl, "/api/agents")}?scope=copilot`,
     token
   );
-  return buildAssistantCopilotAgentsFromPlatformAgents(agents);
+  if (Array.isArray(agents) && agents.length > 0) {
+    return buildAssistantCopilotAgentsFromPlatformAgents(agents);
+  }
+  const fallbackAgents = await readApiJson<unknown[]>(
+    `${createApiUrl(baseUrl, "/api/agents")}?scope=nav`,
+    token
+  );
+  return buildAssistantCopilotAgentsFromPlatformAgents(fallbackAgents);
 }
 
 export class AssistantNavigationStatusClient {
