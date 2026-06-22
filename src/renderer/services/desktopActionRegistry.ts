@@ -106,7 +106,7 @@ async function handleDefaultAction(request: DesktopActionRendererRequest) {
   if (request.action.startsWith("desktop.web.")) {
     return actionError("web_action_unavailable", translate("desktopAction.webUnavailable"));
   }
-  if (request.action.startsWith("desktop.settings.")) {
+  if (request.action.startsWith("desktop.setting.")) {
     return actionError("settings_action_unavailable", translate("desktopAction.settingsUnavailable"));
   }
   return actionError("page_action_unavailable", translate("desktopAction.pageActionUnavailable"));
@@ -177,7 +177,7 @@ function buildRealtimePageResult(
 }
 
 function getProviderScopesForAction(action: string): DesktopActionProviderScope[] {
-  if (action.startsWith("desktop.settings.")) {
+  if (action.startsWith("desktop.setting.")) {
     return ["global"];
   }
   if (action.startsWith("desktop.web.")) {

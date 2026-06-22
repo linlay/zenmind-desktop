@@ -211,10 +211,10 @@ function createDesktopWsServerRuntimeState(
 const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "navigation.toRoute": "desktop.navigate.toRoute",
 
-  "setting.get": "desktop.settings.getState",
-  "setting.validatePatch": "desktop.settings.validatePatch",
-  "setting.previewPatch": "desktop.settings.previewPatch",
-  "setting.applyPatch": "desktop.settings.applyPatch",
+  "setting.get": "desktop.setting.getState",
+  "setting.validatePatch": "desktop.setting.validatePatch",
+  "setting.previewPatch": "desktop.setting.previewPatch",
+  "setting.applyPatch": "desktop.setting.applyPatch",
 
   "service.list": "desktop.controlCenter.listServices",
   "service.get": "desktop.controlCenter.getServiceDetail",

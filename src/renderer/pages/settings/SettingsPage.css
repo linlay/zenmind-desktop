@@ -561,6 +561,207 @@
   border-color: rgba(255, 255, 255, 0.12);
 }
 
+/* Settings owns its Ant controls locally so app-wide Ant defaults stay untouched. */
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-label > label,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-extra,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-explain,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-typography.ant-typography-secondary {
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-typography:not(.ant-typography-secondary) {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-affix-wrapper,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select:not(.ant-select-customize-input) .ant-select-selector,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: var(--control-select-bg) !important;
+  color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-affix-wrapper,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-selector,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select {
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    box-shadow 0.16s ease,
+    color 0.16s ease;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input::placeholder,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-input::placeholder,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-selection-placeholder,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea::placeholder {
+  color: var(--ink-muted) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-affix-wrapper:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select:hover {
+  border-color: var(--line-strong) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input:focus,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-focused,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-affix-wrapper-focused,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-affix-wrapper:focus-within,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-focused,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-focused:not(.ant-select-disabled) .ant-select-selector,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-open:not(.ant-select-disabled) .ant-select-selector,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea:focus,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select:focus {
+  border-color: var(--accent-border) !important;
+  box-shadow: var(--control-focus-ring) !important;
+  outline: none !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input[disabled],
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-disabled,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-affix-wrapper-disabled,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-disabled,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-disabled .ant-select-selector,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea:disabled,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select:disabled {
+  border-color: var(--line) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--ink-muted) !important;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-selection-item,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-selection-search-input,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-input {
+  color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-affix-wrapper .ant-input,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-input,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-selection-search-input {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-arrow,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-clear,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-clear-icon,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-handler,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-handler .anticon {
+  color: var(--ink-soft) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-handler-wrap {
+  border-left-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-handler {
+  border-block-start-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-number-handler:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-clear-icon:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-clear:hover {
+  color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented {
+  border: 1px solid var(--line);
+  background: var(--control-select-bg);
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented:focus-within {
+  border-color: var(--accent-border);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented:focus-within {
+  box-shadow: var(--control-focus-ring);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented-item {
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented-item:hover,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented-item:focus {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented-thumb,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented-item-selected {
+  background: var(--surface-soft) !important;
+  color: var(--ink) !important;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented-disabled,
+:root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented-disabled .ant-segmented-item {
+  color: var(--ink-muted) !important;
+  opacity: var(--control-disabled-opacity);
+}
+
+:root[data-theme="dark"] .settings-debug-modal .ant-modal-content,
+:root[data-theme="dark"] .settings-debug-modal .ant-modal-header {
+  background: var(--surface-strong);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-debug-modal .ant-modal-title,
+:root[data-theme="dark"] .settings-debug-modal .ant-modal-close {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-select-popup {
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  box-shadow: var(--panel-shadow);
+}
+
+:root[data-theme="dark"] .settings-select-popup .ant-select-item {
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] .settings-select-popup .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--accent-fill-subtle);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-select-popup .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+:root[data-theme="dark"] .settings-select-popup .ant-select-item-option-disabled {
+  color: var(--ink-muted);
+  opacity: 0.62;
+}
+
+:root[data-theme="dark"] .settings-select-popup .ant-select-item-empty,
+:root[data-theme="dark"] .settings-select-popup .ant-empty-description {
+  color: var(--ink-muted);
+}
+
+:root[data-theme="dark"] .settings-select-popup .rc-virtual-list-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
 .settings-page .quick-assistant-settings-panel {
   display: block;
   padding: 0;

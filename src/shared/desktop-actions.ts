@@ -14,10 +14,10 @@ export type DesktopActionDefinition = {
 export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
-  { name: "desktop.settings.getState", kind: "read", category: "settings", description: "Read Desktop settings state." },
-  { name: "desktop.settings.validatePatch", kind: "validate", category: "settings", description: "Validate a Desktop settings patch." },
-  { name: "desktop.settings.previewPatch", kind: "preview", category: "settings", description: "Preview Desktop settings changes." },
-  { name: "desktop.settings.applyPatch", kind: "apply", category: "settings", description: "Apply Desktop settings changes." },
+  { name: "desktop.setting.getState", kind: "read", category: "setting", description: "Read Desktop setting state." },
+  { name: "desktop.setting.validatePatch", kind: "validate", category: "setting", description: "Validate a Desktop setting patch." },
+  { name: "desktop.setting.previewPatch", kind: "preview", category: "setting", description: "Preview Desktop setting changes." },
+  { name: "desktop.setting.applyPatch", kind: "apply", category: "setting", description: "Apply Desktop setting changes." },
 
   { name: "desktop.web.listSurfaces", kind: "read", category: "web", description: "List Desktop web surfaces." },
   { name: "desktop.web.getActiveSurface", kind: "read", category: "web", description: "Read the active Desktop web surface." },

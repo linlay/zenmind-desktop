@@ -971,10 +971,10 @@ async function executeAction(
     case "desktop.page.validateForm":
     case "desktop.page.previewPatch":
     case "desktop.page.applyPatch":
-    case "desktop.settings.getState":
-    case "desktop.settings.validatePatch":
-    case "desktop.settings.previewPatch":
-    case "desktop.settings.applyPatch":
+    case "desktop.setting.getState":
+    case "desktop.setting.validatePatch":
+    case "desktop.setting.previewPatch":
+    case "desktop.setting.applyPatch":
     case "desktop.web.listSurfaces":
     case "desktop.web.getActiveSurface":
     case "desktop.web.activateSurface":

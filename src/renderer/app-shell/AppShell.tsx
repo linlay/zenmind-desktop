@@ -16,6 +16,7 @@ import {
 import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
   type DesktopCopilotPageKey
 } from "../../shared/assistant-settings";
@@ -77,7 +78,7 @@ import {
   isEmbeddedAgentWebclientRoute,
   type AgentWebclientResolvedRoute
 } from "../../shared/agent-webclient-routes";
-import { I18N_KEYS, type TranslationKey } from "../../shared/i18n";
+import { I18N_KEYS, isSupportedLocale, type SupportedLocale, type TranslationKey } from "../../shared/i18n";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
@@ -188,7 +189,16 @@ function asRecord(value: unknown) {
 }
 
 function readSettingsPatch(args: Record<string, unknown>) {
-  return asRecord(args.patch);
+  const patch = asRecord(args.patch);
+  return Object.keys(patch).length > 0 ? patch : args;
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function hasOwn(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 function createUnavailableDesktopSsoStatus(message: string): DesktopSsoStatus {
@@ -355,7 +365,7 @@ function resolveWindowDragTarget(target: Element | null) {
 }
 
 export function AppShell() {
-  const { t } = useI18n();
+  const { locale, setLocale, t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
@@ -1662,59 +1672,507 @@ export function AppShell() {
       });
     }
 
-    async function readSettingsState() {
-      const [nextAssistantSettings, assistantAgents, desktopPetState] = await Promise.all([
+    const settingSectionIds = [
+      "general",
+      "appearance",
+      "usage",
+      "quick",
+      "copilot",
+      "pet",
+      "kanban",
+      "market",
+      "control",
+      "web",
+      "about"
+    ] as const;
+    const writableSettingFields = [
+      "general.deviceName",
+      "appearance.themeMode",
+      "appearance.locale",
+      "quick.enabled",
+      "quick.agentKey",
+      "copilot.desktopCopilotPages",
+      "pet.enabled",
+      "pet.boundAgentKey",
+      "pet.appearanceId",
+      "kanban.selectedProjectId",
+      "web.websites.add",
+      "web.websites.update",
+      "web.websites.remove"
+    ];
+    const readonlySettingFields = [
+      "general.preventSleepWhileRunning",
+      "general.desktopActionConfirmationEnabled",
+      "kanban.remoteControlEnabled",
+      "kanban.deviceAlias",
+      "market.enabled",
+      "market.apiBaseUrl",
+      "usage.*",
+      "about.*",
+      "control.*",
+      "token",
+      "secret",
+      "apiKey"
+    ];
+    const supportedSettingSections = new Set<string>(settingSectionIds);
+    const supportedSettingFields = new Map<string, Set<string>>([
+      ["general", new Set(["deviceName", "preventSleepWhileRunning", "desktopActionConfirmationEnabled"])],
+      ["appearance", new Set(["themeMode", "locale"])],
+      ["usage", new Set(["*"])],
+      ["quick", new Set(["enabled", "agentKey"])],
+      ["copilot", new Set(["desktopCopilotPages"])],
+      ["pet", new Set(["enabled", "boundAgentKey", "appearanceId"])],
+      ["kanban", new Set(["selectedProjectId", "remoteControlEnabled", "deviceAlias"])],
+      ["market", new Set(["enabled", "apiBaseUrl"])],
+      ["control", new Set(["*"])],
+      ["web", new Set(["websites"])],
+      ["about", new Set(["*"])]
+    ]);
+
+    function settingError(error: unknown) {
+      return {
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+
+    async function readSettingSection(read: () => Promise<Record<string, unknown>>) {
+      try {
+        return {
+          ok: true,
+          ...await read()
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: settingError(error)
+        };
+      }
+    }
+
+    function sanitizeKanbanCloudConfig(cloud: Record<string, unknown>) {
+      const token = readString(cloud.token);
+      return {
+        serverUrl: readString(cloud.serverUrl),
+        selectedProjectId: readString(cloud.selectedProjectId),
+        remoteControlEnabled: cloud.remoteControlEnabled === true,
+        deviceAlias: readString(cloud.deviceAlias),
+        hasToken: Boolean(token),
+        tokenPreview: token ? `${token.slice(0, 4)}...${token.slice(-4)}` : ""
+      };
+    }
+
+    function sanitizeTunnelHubSettings(settings: Record<string, unknown>) {
+      return {
+        enabled: settings.enabled === true,
+        relayUrl: readString(settings.relayUrl),
+        deviceId: readString(settings.deviceId),
+        hasRelayToken: settings.hasRelayToken === true,
+        relayTokenPreview: readString(settings.relayTokenPreview),
+        publicHost: readString(settings.publicHost),
+        publicUrl: readString(settings.publicUrl),
+        webSocketUrl: readString(settings.webSocketUrl),
+        tlsInsecureSkipVerify: settings.tlsInsecureSkipVerify === true,
+        reconnectSeconds: typeof settings.reconnectSeconds === "number" ? settings.reconnectSeconds : null
+      };
+    }
+
+    function getWebsiteOperations(webPatch: Record<string, unknown>) {
+      const websites = asRecord(webPatch.websites);
+      const toRecordList = (value: unknown) => Array.isArray(value)
+        ? value.map(asRecord).filter((item) => Object.keys(item).length > 0)
+        : Object.keys(asRecord(value)).length > 0
+          ? [asRecord(value)]
+          : [];
+      const toRemoveList = (value: unknown) => Array.isArray(value)
+        ? value.map((item) => typeof item === "string" ? { id: item.trim() } : asRecord(item))
+        : typeof value === "string"
+          ? [{ id: value.trim() }]
+          : Object.keys(asRecord(value)).length > 0
+            ? [asRecord(value)]
+            : [];
+      return {
+        add: toRecordList(websites.add),
+        update: toRecordList(websites.update),
+        remove: toRemoveList(websites.remove)
+      };
+    }
+
+    function isValidWebsiteUrl(value: unknown) {
+      const raw = readString(value);
+      if (!raw) {
+        return false;
+      }
+      try {
+        const parsed = new URL(/^https?:\/\//iu.test(raw) ? raw : `https://${raw}`);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        return false;
+      }
+    }
+
+    function hasAgentKey(agentOptions: Array<{ agentKey: string }>, agentKey: string) {
+      return agentOptions.some((agent) => agent.agentKey === agentKey);
+    }
+
+    async function readSettingValidationState() {
+      const [
+        generalSettings,
+        assistantSettingsResult,
+        assistantAgentsResult,
+        desktopPetStateResult,
+        kanbanSettingsResult,
+        kanbanListResult,
+        webListResult
+      ] = await Promise.all([
+        window.electronAPI.settings.getGeneralSettings(),
         window.electronAPI.assistant.getSettings(),
         window.electronAPI.assistant.listAgents(),
-        window.electronAPI.desktopPet.getState()
+        window.electronAPI.desktopPet.getState(),
+        window.electronAPI.kanban.getSettings(),
+        window.electronAPI.kanban.listIssues(),
+        window.electronAPI.webs.list()
       ]);
-      setAssistantSettings(nextAssistantSettings);
+      setAssistantSettings(assistantSettingsResult);
       return {
-        themeMode,
-        sidebarTranslucencyEnabled: true,
-        assistantSettings: nextAssistantSettings,
-        assistantAgents,
-        desktopPet: desktopPetState
+        generalSettings,
+        assistantSettings: assistantSettingsResult,
+        assistantAgents: assistantAgentsResult,
+        desktopPet: desktopPetStateResult,
+        kanbanSettings: kanbanSettingsResult,
+        kanbanList: kanbanListResult,
+        webList: webListResult
+      };
+    }
+
+    async function readSettingsState(sectionFilter?: readonly string[]) {
+      const requestedSections = sectionFilter && sectionFilter.length > 0
+        ? settingSectionIds.filter((section) => sectionFilter.includes(section))
+        : settingSectionIds;
+      const sectionEntries = await Promise.all(requestedSections.map(async (section) => {
+        switch (section) {
+          case "general":
+            return [section, await readSettingSection(async () => {
+              const [settings, deviceInfo] = await Promise.all([
+                window.electronAPI.settings.getGeneralSettings(),
+                window.electronAPI.settings.getDesktopDeviceInfo()
+              ]);
+              return { settings, deviceInfo };
+            })] as const;
+          case "appearance":
+            return [section, await readSettingSection(async () => ({
+              themeMode,
+              resolvedTheme,
+              sidebarTranslucencyEnabled: true,
+              locale,
+              localeSettings: await window.electronAPI.settings.getLocale()
+            }))] as const;
+          case "usage":
+            return [section, await readSettingSection(async () => {
+              const [profile, ssoStatus] = await Promise.allSettled([
+                window.electronAPI.settings.getUsageProfile(),
+                window.electronAPI.sso.getStatus()
+              ]);
+              return {
+                profile: profile.status === "fulfilled" ? profile.value : null,
+                profileError: profile.status === "rejected" ? settingError(profile.reason) : null,
+                ssoStatus: ssoStatus.status === "fulfilled" ? ssoStatus.value : null,
+                ssoError: ssoStatus.status === "rejected" ? settingError(ssoStatus.reason) : null
+              };
+            })] as const;
+          case "quick":
+            return [section, await readSettingSection(async () => {
+              const [settings, agentOptions] = await Promise.all([
+                window.electronAPI.assistant.getSettings(),
+                window.electronAPI.assistant.listAgents()
+              ]);
+              setAssistantSettings(settings);
+              return {
+                enabled: settings.quickAssistantEnabled,
+                agentKey: settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+                configured: settings.configured,
+                source: settings.source,
+                sourceLabel: settings.sourceLabel,
+                agentOptions
+              };
+            })] as const;
+          case "copilot":
+            return [section, await readSettingSection(async () => {
+              const [settings, agentOptions] = await Promise.all([
+                window.electronAPI.assistant.getSettings(),
+                window.electronAPI.assistant.listAgents()
+              ]);
+              setAssistantSettings(settings);
+              return {
+                desktopCopilotPages: settings.desktopCopilotPages,
+                agentOptions
+              };
+            })] as const;
+          case "pet":
+            return [section, await readSettingSection(async () => {
+              const state = await window.electronAPI.desktopPet.getState();
+              return {
+                supported: state.supported,
+                enabled: state.enabled,
+                visible: state.visible,
+                boundAgentKey: state.boundAgentKey,
+                appearanceId: state.appearanceId,
+                appearanceOptions: state.appearanceOptions,
+                agentOptions: state.agentOptions,
+                state
+              };
+            })] as const;
+          case "kanban":
+            return [section, await readSettingSection(async () => {
+              const [settingsResult, issueResult] = await Promise.all([
+                window.electronAPI.kanban.getSettings(),
+                window.electronAPI.kanban.listIssues()
+              ]);
+              return {
+                enabled: settingsResult.settings.enabled,
+                cloud: sanitizeKanbanCloudConfig(asRecord(settingsResult.settings.cloud)),
+                connectionState: settingsResult.connectionState ?? issueResult.connectionState ?? "disabled",
+                projects: issueResult.projects ?? [],
+                selectedProjectId: settingsResult.settings.cloud.selectedProjectId,
+                remoteControlEnabled: settingsResult.settings.cloud.remoteControlEnabled,
+                deviceAlias: settingsResult.settings.cloud.deviceAlias ?? ""
+              };
+            })] as const;
+          case "market":
+            return [section, await readSettingSection(async () => ({
+              settings: await window.electronAPI.market.getSettings()
+            }))] as const;
+          case "control":
+            return [section, await readSettingSection(async () => {
+              const [tunnel, desktopWs, ssoStatus] = await Promise.allSettled([
+                window.electronAPI.settings.getTunnelHubSettings(),
+                window.electronAPI.settings.getDesktopWsServerState(),
+                window.electronAPI.sso.getStatus()
+              ]);
+              return {
+                tunnel: tunnel.status === "fulfilled" ? sanitizeTunnelHubSettings(asRecord(tunnel.value)) : null,
+                tunnelError: tunnel.status === "rejected" ? settingError(tunnel.reason) : null,
+                desktopWs: desktopWs.status === "fulfilled" ? desktopWs.value : null,
+                desktopWsError: desktopWs.status === "rejected" ? settingError(desktopWs.reason) : null,
+                mobilePairing: { available: Boolean(window.electronAPI.settings.createAppPairingPayload) },
+                ssoStatus: ssoStatus.status === "fulfilled" ? ssoStatus.value : null
+              };
+            })] as const;
+          case "web":
+            return [section, await readSettingSection(async () => {
+              const result = await window.electronAPI.webs.list();
+              if (result.ok) {
+                updateWebItems(result.items);
+              }
+              return {
+                ...result,
+                items: result.items.map((item) => item.kind === "webapp"
+                  ? {
+                      ...item,
+                      runtime: webappRuntimeById[item.id] ?? null
+                    }
+                  : item)
+              };
+            })] as const;
+          case "about":
+          default:
+            return [section, await readSettingSection(async () => {
+              const [appInfo, platform, dataRoot, deviceIdentity] = await Promise.all([
+                window.electronAPI.settings.getAppInfo(),
+                window.electronAPI.settings.getPlatform(),
+                window.electronAPI.settings.getDataRoot(),
+                window.electronAPI.settings.getDeviceIdentity()
+              ]);
+              return {
+                appInfo,
+                platform,
+                dataRoot,
+                deviceIdentity
+              };
+            })] as const;
+        }
+      }));
+      return {
+        sections: Object.fromEntries(sectionEntries),
+        meta: {
+          readAt: new Date().toISOString(),
+          readableSections: settingSectionIds,
+          writableFields: writableSettingFields,
+          readonlyFields: readonlySettingFields
+        }
       };
     }
 
     async function validateSettingsPatch(patch: Record<string, unknown>) {
-      const state = await readSettingsState();
+      const state = await readSettingValidationState();
       const issues: Array<{ field: string; message: string; value?: unknown }> = [];
-      const desktopPetPatch = asRecord(patch.desktopPet);
 
-      if ("themeMode" in patch && patch.themeMode !== "light" && patch.themeMode !== "dark" && patch.themeMode !== "system") {
-        issues.push({ field: "themeMode", value: patch.themeMode, message: "themeMode must be light, dark, or system." });
+      function addIssue(field: string, message: string, value?: unknown) {
+        issues.push({ field, message, ...(value === undefined ? {} : { value }) });
       }
-      if ("enabled" in desktopPetPatch && typeof desktopPetPatch.enabled !== "boolean") {
-        issues.push({ field: "desktopPet.enabled", value: desktopPetPatch.enabled, message: "desktopPet.enabled must be boolean." });
+
+      function validateObjectSection(section: string) {
+        const sectionPatch = asRecord(patch[section]);
+        if (hasOwn(patch, section) && Object.keys(sectionPatch).length === 0) {
+          addIssue(section, `${section} must be an object.`, patch[section]);
+        }
+        return sectionPatch;
       }
-      if ("appearanceId" in desktopPetPatch) {
-        const appearanceId = typeof desktopPetPatch.appearanceId === "string" ? desktopPetPatch.appearanceId.trim() : "";
-        if (!state.desktopPet.appearanceOptions.some((appearance) => appearance.id === appearanceId)) {
-          issues.push({ field: "desktopPet.appearanceId", value: desktopPetPatch.appearanceId, message: t("settings.desktopPet.enableUnavailable") });
+
+      for (const section of Object.keys(patch)) {
+        if (!supportedSettingSections.has(section)) {
+          addIssue(section, `Unsupported setting section: ${section}.`, patch[section]);
+          continue;
+        }
+        const fields = supportedSettingFields.get(section);
+        const sectionPatch = asRecord(patch[section]);
+        if (!fields?.has("*")) {
+          for (const field of Object.keys(sectionPatch)) {
+            if (!fields?.has(field)) {
+              addIssue(`${section}.${field}`, `Unsupported setting field: ${section}.${field}.`, sectionPatch[field]);
+            }
+          }
+        } else if (Object.keys(sectionPatch).length > 0) {
+          addIssue(section, `${section} is read-only.`, patch[section]);
         }
       }
-      if ("desktopHelperAgentKey" in patch) {
-        const agentKey = typeof patch.desktopHelperAgentKey === "string" ? patch.desktopHelperAgentKey.trim() : "";
-        if (!state.assistantAgents.some((agent) => agent.agentKey === agentKey)) {
-          issues.push({ field: "desktopHelperAgentKey", value: patch.desktopHelperAgentKey, message: t("settings.navigation.helperAgentInvalid") });
+
+      const generalPatch = validateObjectSection("general");
+      if (hasOwn(generalPatch, "deviceName") && typeof generalPatch.deviceName !== "string") {
+        addIssue("general.deviceName", "general.deviceName must be a string.", generalPatch.deviceName);
+      }
+      for (const readonlyField of ["preventSleepWhileRunning", "desktopActionConfirmationEnabled"]) {
+        if (hasOwn(generalPatch, readonlyField)) {
+          addIssue(`general.${readonlyField}`, `general.${readonlyField} is read-only.`, generalPatch[readonlyField]);
         }
       }
-      if ("desktopCopilotPages" in patch) {
+
+      const appearancePatch = validateObjectSection("appearance");
+      if (hasOwn(appearancePatch, "themeMode") && !isThemePreference(appearancePatch.themeMode)) {
+        addIssue("appearance.themeMode", "appearance.themeMode must be light, dark, or system.", appearancePatch.themeMode);
+      }
+      if (hasOwn(appearancePatch, "locale") && !isSupportedLocale(appearancePatch.locale)) {
+        addIssue("appearance.locale", "appearance.locale is not supported.", appearancePatch.locale);
+      }
+
+      const quickPatch = validateObjectSection("quick");
+      if (hasOwn(quickPatch, "enabled") && typeof quickPatch.enabled !== "boolean") {
+        addIssue("quick.enabled", "quick.enabled must be boolean.", quickPatch.enabled);
+      }
+      if (hasOwn(quickPatch, "agentKey")) {
+        const agentKey = readString(quickPatch.agentKey);
+        if (typeof quickPatch.agentKey !== "string") {
+          addIssue("quick.agentKey", "quick.agentKey must be a string.", quickPatch.agentKey);
+        } else if (agentKey && !hasAgentKey(state.assistantAgents, agentKey)) {
+          addIssue("quick.agentKey", t("settings.navigation.helperAgentInvalid"), quickPatch.agentKey);
+        }
+      }
+
+      const copilotPatch = validateObjectSection("copilot");
+      if (hasOwn(copilotPatch, "desktopCopilotPages")) {
         const nextPages = sanitizeDesktopCopilotPagePreferences({
           ...state.assistantSettings.desktopCopilotPages,
-          ...asRecord(patch.desktopCopilotPages)
+          ...asRecord(copilotPatch.desktopCopilotPages)
         });
+        if (Object.keys(asRecord(copilotPatch.desktopCopilotPages)).length === 0) {
+          addIssue("copilot.desktopCopilotPages", "copilot.desktopCopilotPages must be an object.", copilotPatch.desktopCopilotPages);
+        }
         for (const pageKey of DESKTOP_COPILOT_PAGE_KEYS) {
           const preference = nextPages[pageKey];
-          if (preference.enabled && !state.assistantAgents.some((agent) => agent.agentKey === preference.agentKey)) {
-            issues.push({
-              field: `desktopCopilotPages.${pageKey}.agentKey`,
-              value: preference.agentKey,
-              message: t("settings.navigation.copilotAgentUnavailable", { page: getDesktopCopilotPageLabel(pageKey, t) })
-            });
+          if (preference.enabled && !hasAgentKey(state.assistantAgents, preference.agentKey)) {
+            addIssue(
+              `copilot.desktopCopilotPages.${pageKey}.agentKey`,
+              t("settings.navigation.copilotAgentUnavailable", { page: getDesktopCopilotPageLabel(pageKey, t) }),
+              preference.agentKey
+            );
           }
+        }
+      }
+
+      const petPatch = validateObjectSection("pet");
+      if (hasOwn(petPatch, "enabled") && typeof petPatch.enabled !== "boolean") {
+        addIssue("pet.enabled", "pet.enabled must be boolean.", petPatch.enabled);
+      }
+      if (hasOwn(petPatch, "boundAgentKey")) {
+        const agentKey = readString(petPatch.boundAgentKey);
+        if (typeof petPatch.boundAgentKey !== "string") {
+          addIssue("pet.boundAgentKey", "pet.boundAgentKey must be a string.", petPatch.boundAgentKey);
+        } else if (agentKey && !hasAgentKey(state.desktopPet.agentOptions, agentKey)) {
+          addIssue("pet.boundAgentKey", t("settings.navigation.helperAgentInvalid"), petPatch.boundAgentKey);
+        }
+      }
+      if (hasOwn(petPatch, "appearanceId")) {
+        const appearanceId = readString(petPatch.appearanceId);
+        if (!state.desktopPet.appearanceOptions.some((appearance) => appearance.id === appearanceId)) {
+          addIssue("pet.appearanceId", t("settings.desktopPet.enableUnavailable"), petPatch.appearanceId);
+        }
+      }
+
+      const kanbanPatch = validateObjectSection("kanban");
+      if (hasOwn(kanbanPatch, "selectedProjectId")) {
+        const projectId = readString(kanbanPatch.selectedProjectId);
+        const projects = state.kanbanList.projects ?? [];
+        if (typeof kanbanPatch.selectedProjectId !== "string") {
+          addIssue("kanban.selectedProjectId", "kanban.selectedProjectId must be a string.", kanbanPatch.selectedProjectId);
+        } else if (projectId && projects.length > 0 && !projects.some((project) => project.id === projectId)) {
+          addIssue("kanban.selectedProjectId", "kanban.selectedProjectId was not found.", kanbanPatch.selectedProjectId);
+        }
+      }
+      for (const readonlyField of ["remoteControlEnabled", "deviceAlias"]) {
+        if (hasOwn(kanbanPatch, readonlyField)) {
+          addIssue(`kanban.${readonlyField}`, `kanban.${readonlyField} is read-only.`, kanbanPatch[readonlyField]);
+        }
+      }
+
+      const marketPatch = validateObjectSection("market");
+      for (const readonlyField of ["enabled", "apiBaseUrl"]) {
+        if (hasOwn(marketPatch, readonlyField)) {
+          addIssue(`market.${readonlyField}`, `market.${readonlyField} is read-only.`, marketPatch[readonlyField]);
+        }
+      }
+
+      for (const readonlySection of ["usage", "about", "control"]) {
+        if (hasOwn(patch, readonlySection)) {
+          addIssue(readonlySection, `${readonlySection} is read-only.`, patch[readonlySection]);
+        }
+      }
+
+      const webPatch = validateObjectSection("web");
+      const websiteOperations = getWebsiteOperations(webPatch);
+      if (hasOwn(webPatch, "websites")) {
+        const websitesPatch = asRecord(webPatch.websites);
+        if (Object.keys(websitesPatch).length === 0) {
+          addIssue("web.websites", "web.websites must be an object.", webPatch.websites);
+        }
+        for (const field of Object.keys(websitesPatch)) {
+          if (!["add", "update", "remove"].includes(field)) {
+            addIssue(`web.websites.${field}`, `Unsupported setting field: web.websites.${field}.`, websitesPatch[field]);
+          }
+        }
+      }
+      for (const item of websiteOperations.add) {
+        if (!isValidWebsiteUrl(item.url)) {
+          addIssue("web.websites.add.url", "web.websites.add.url must be a valid URL or hostname.", item.url);
+        }
+        const agentKey = readString(item.agentKey);
+        if (agentKey && !hasAgentKey(state.assistantAgents, agentKey)) {
+          addIssue("web.websites.add.agentKey", t("settings.navigation.helperAgentInvalid"), item.agentKey);
+        }
+      }
+      for (const item of websiteOperations.update) {
+        if (!readString(item.id)) {
+          addIssue("web.websites.update.id", "web.websites.update.id is required.", item.id);
+        }
+        if (hasOwn(item, "url") && !isValidWebsiteUrl(item.url)) {
+          addIssue("web.websites.update.url", "web.websites.update.url must be a valid URL or hostname.", item.url);
+        }
+        const agentKey = readString(item.agentKey);
+        if (agentKey && !hasAgentKey(state.assistantAgents, agentKey)) {
+          addIssue("web.websites.update.agentKey", t("settings.navigation.helperAgentInvalid"), item.agentKey);
+        }
+      }
+      for (const item of websiteOperations.remove) {
+        if (!readString(item.id)) {
+          addIssue("web.websites.remove.id", "web.websites.remove.id is required.", item.id);
         }
       }
 
@@ -1725,36 +2183,182 @@ export function AppShell() {
       };
     }
 
-    function createSettingsPreview(patch: Record<string, unknown>, state: Awaited<ReturnType<typeof readSettingsState>>) {
-      const desktopPetPatch = asRecord(patch.desktopPet);
-      const changes = [];
-      if ("themeMode" in patch) {
-        changes.push({ field: "themeMode", from: state.themeMode, to: patch.themeMode });
+    function createSettingsPreview(patch: Record<string, unknown>, state: Awaited<ReturnType<typeof readSettingValidationState>>) {
+      const changes: Array<{ section: string; field: string; from: unknown; to: unknown }> = [];
+      const generalPatch = asRecord(patch.general);
+      const appearancePatch = asRecord(patch.appearance);
+      const quickPatch = asRecord(patch.quick);
+      const copilotPatch = asRecord(patch.copilot);
+      const petPatch = asRecord(patch.pet);
+      const kanbanPatch = asRecord(patch.kanban);
+      const webPatch = asRecord(patch.web);
+      const websiteOperations = getWebsiteOperations(webPatch);
+
+      if (hasOwn(generalPatch, "deviceName")) {
+        changes.push({ section: "general", field: "deviceName", from: state.generalSettings.deviceName, to: generalPatch.deviceName });
       }
-      if ("enabled" in desktopPetPatch) {
-        changes.push({ field: "desktopPet.enabled", from: state.desktopPet.enabled, to: desktopPetPatch.enabled });
+      if (hasOwn(appearancePatch, "themeMode")) {
+        changes.push({ section: "appearance", field: "themeMode", from: themeMode, to: appearancePatch.themeMode });
       }
-      if ("appearanceId" in desktopPetPatch) {
-        changes.push({ field: "desktopPet.appearanceId", from: state.desktopPet.appearanceId, to: desktopPetPatch.appearanceId });
+      if (hasOwn(appearancePatch, "locale")) {
+        changes.push({ section: "appearance", field: "locale", from: locale, to: appearancePatch.locale });
       }
-      if ("desktopHelperAgentKey" in patch) {
+      if (hasOwn(quickPatch, "enabled")) {
+        changes.push({ section: "quick", field: "enabled", from: state.assistantSettings.quickAssistantEnabled, to: quickPatch.enabled });
+      }
+      if (hasOwn(quickPatch, "agentKey")) {
         changes.push({
-          field: "desktopHelperAgentKey",
-          from: state.assistantSettings.desktopHelperAgentKey,
-          to: patch.desktopHelperAgentKey
+          section: "quick",
+          field: "agentKey",
+          from: state.assistantSettings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+          to: quickPatch.agentKey
         });
       }
-      if ("desktopCopilotPages" in patch) {
+      if (hasOwn(copilotPatch, "desktopCopilotPages")) {
         changes.push({
+          section: "copilot",
           field: "desktopCopilotPages",
           from: state.assistantSettings.desktopCopilotPages,
           to: sanitizeDesktopCopilotPagePreferences({
             ...state.assistantSettings.desktopCopilotPages,
-            ...asRecord(patch.desktopCopilotPages)
+            ...asRecord(copilotPatch.desktopCopilotPages)
           })
         });
       }
+      for (const field of ["enabled", "boundAgentKey", "appearanceId"]) {
+        if (hasOwn(petPatch, field)) {
+          changes.push({ section: "pet", field, from: state.desktopPet[field as keyof typeof state.desktopPet], to: petPatch[field] });
+        }
+      }
+      if (hasOwn(kanbanPatch, "selectedProjectId")) {
+        changes.push({
+          section: "kanban",
+          field: "selectedProjectId",
+          from: state.kanbanSettings.settings.cloud.selectedProjectId,
+          to: kanbanPatch.selectedProjectId
+        });
+      }
+      for (const item of websiteOperations.add) {
+        changes.push({ section: "web", field: "websites.add", from: null, to: item });
+      }
+      for (const item of websiteOperations.update) {
+        changes.push({
+          section: "web",
+          field: "websites.update",
+          from: state.webList.items.find((entry) => entry.kind === "website" && entry.id === readString(item.id)) ?? null,
+          to: item
+        });
+      }
+      for (const item of websiteOperations.remove) {
+        changes.push({
+          section: "web",
+          field: "websites.remove",
+          from: state.webList.items.find((entry) => entry.kind === "website" && entry.id === readString(item.id)) ?? null,
+          to: null
+        });
+      }
       return { changes };
+    }
+
+    async function applySettingsPatch(patch: Record<string, unknown>, state: Awaited<ReturnType<typeof readSettingValidationState>>) {
+      const affectedSections = new Set<string>();
+      const generalPatch = asRecord(patch.general);
+      const appearancePatch = asRecord(patch.appearance);
+      const quickPatch = asRecord(patch.quick);
+      const copilotPatch = asRecord(patch.copilot);
+      const petPatch = asRecord(patch.pet);
+      const kanbanPatch = asRecord(patch.kanban);
+      const webPatch = asRecord(patch.web);
+      const websiteOperations = getWebsiteOperations(webPatch);
+
+      if (hasOwn(generalPatch, "deviceName")) {
+        await window.electronAPI.settings.saveGeneralSettings({
+          deviceName: readString(generalPatch.deviceName)
+        });
+        affectedSections.add("general");
+      }
+      if (isThemePreference(appearancePatch.themeMode)) {
+        setThemeMode(appearancePatch.themeMode);
+        await window.electronAPI.settings.setNativeThemeSource(appearancePatch.themeMode);
+        affectedSections.add("appearance");
+      }
+      if (isSupportedLocale(appearancePatch.locale)) {
+        await setLocale(appearancePatch.locale as SupportedLocale);
+        affectedSections.add("appearance");
+      }
+      if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey") || hasOwn(copilotPatch, "desktopCopilotPages")) {
+        const nextSettings = await window.electronAPI.assistant.saveSettings({
+          ...(typeof quickPatch.enabled === "boolean" ? { quickAssistantEnabled: quickPatch.enabled } : {}),
+          ...(typeof quickPatch.agentKey === "string"
+            ? { quickAssistantAgentKey: quickPatch.agentKey.trim() || DEFAULT_QUICK_ASSISTANT_AGENT_KEY }
+            : {}),
+          ...(hasOwn(copilotPatch, "desktopCopilotPages")
+            ? {
+                desktopCopilotPages: sanitizeDesktopCopilotPagePreferences({
+                  ...state.assistantSettings.desktopCopilotPages,
+                  ...asRecord(copilotPatch.desktopCopilotPages)
+                })
+              }
+            : {})
+        });
+        setAssistantSettings(nextSettings);
+        if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey")) {
+          affectedSections.add("quick");
+        }
+        if (hasOwn(copilotPatch, "desktopCopilotPages")) {
+          affectedSections.add("copilot");
+        }
+      }
+      if (Object.keys(petPatch).some((field) => ["enabled", "boundAgentKey", "appearanceId"].includes(field))) {
+        await window.electronAPI.desktopPet.saveSettings({
+          ...(typeof petPatch.enabled === "boolean" ? { enabled: petPatch.enabled } : {}),
+          ...(typeof petPatch.boundAgentKey === "string" ? { boundAgentKey: petPatch.boundAgentKey.trim() } : {}),
+          ...(typeof petPatch.appearanceId === "string" ? { appearanceId: petPatch.appearanceId.trim() } : {})
+        });
+        affectedSections.add("pet");
+      }
+      if (typeof kanbanPatch.selectedProjectId === "string") {
+        await window.electronAPI.kanban.saveSettings({
+          cloud: {
+            selectedProjectId: kanbanPatch.selectedProjectId.trim()
+          }
+        });
+        affectedSections.add("kanban");
+      }
+      for (const item of websiteOperations.add) {
+        const result = await window.electronAPI.webs.websites.add({
+          label: readString(item.label),
+          url: readString(item.url),
+          ...(typeof item.agentKey === "string" ? { agentKey: item.agentKey.trim() } : {})
+        });
+        if (!result.ok) {
+          throw new Error(result.message);
+        }
+        affectedSections.add("web");
+      }
+      for (const item of websiteOperations.update) {
+        const id = readString(item.id);
+        const result = await window.electronAPI.webs.websites.update(id, {
+          ...(typeof item.label === "string" ? { label: item.label.trim() } : {}),
+          ...(typeof item.url === "string" ? { url: item.url.trim() } : {}),
+          ...(typeof item.agentKey === "string" ? { agentKey: item.agentKey.trim() } : {})
+        });
+        if (!result.ok) {
+          throw new Error(result.message);
+        }
+        affectedSections.add("web");
+      }
+      for (const item of websiteOperations.remove) {
+        const result = await window.electronAPI.webs.websites.remove(readString(item.id));
+        if (!result.ok) {
+          throw new Error(result.message);
+        }
+        affectedSections.add("web");
+      }
+      if (affectedSections.has("web")) {
+        await refreshWebItems().catch(() => undefined);
+      }
+      return [...affectedSections];
     }
 
     return registerDesktopActionProviderForScope("global", async (request) => {
@@ -1762,13 +2366,13 @@ export function AppShell() {
       const patch = readSettingsPatch(args);
 
       switch (request.action) {
-        case "desktop.settings.getState":
+        case "desktop.setting.getState":
           return { ok: true, result: await readSettingsState() };
-        case "desktop.settings.validatePatch": {
+        case "desktop.setting.validatePatch": {
           const validation = await validateSettingsPatch(patch);
           return { ok: true, result: { valid: validation.valid, issues: validation.issues } };
         }
-        case "desktop.settings.previewPatch": {
+        case "desktop.setting.previewPatch": {
           const validation = await validateSettingsPatch(patch);
           return {
             ok: true,
@@ -1779,7 +2383,7 @@ export function AppShell() {
             }
           };
         }
-        case "desktop.settings.applyPatch": {
+        case "desktop.setting.applyPatch": {
           const validation = await validateSettingsPatch(patch);
           if (!validation.valid) {
             return {
@@ -1791,34 +2395,15 @@ export function AppShell() {
               }
             };
           }
-
-          const desktopPetPatch = asRecord(patch.desktopPet);
-          if (patch.themeMode === "light" || patch.themeMode === "dark" || patch.themeMode === "system") {
-            setThemeMode(patch.themeMode);
-          }
-          if (Object.keys(desktopPetPatch).length > 0) {
-            await window.electronAPI.desktopPet.saveSettings({
-              ...(typeof desktopPetPatch.enabled === "boolean" ? { enabled: desktopPetPatch.enabled } : {}),
-              ...(typeof desktopPetPatch.appearanceId === "string" ? { appearanceId: desktopPetPatch.appearanceId } : {})
-            });
-          }
-          if ("desktopHelperAgentKey" in patch || "desktopCopilotPages" in patch) {
-            const nextSettings = await window.electronAPI.assistant.saveSettings({
-              ...(typeof patch.desktopHelperAgentKey === "string"
-                ? { desktopHelperAgentKey: patch.desktopHelperAgentKey.trim() || DEFAULT_DESKTOP_HELPER_AGENT_KEY }
-                : {}),
-              ...("desktopCopilotPages" in patch
-                ? {
-                    desktopCopilotPages: sanitizeDesktopCopilotPagePreferences({
-                      ...validation.state.assistantSettings.desktopCopilotPages,
-                      ...asRecord(patch.desktopCopilotPages)
-                    })
-                  }
-                : {})
-            });
-            setAssistantSettings(nextSettings);
-          }
-          return { ok: true, result: { applied: true, state: await readSettingsState() } };
+          const affectedSections = await applySettingsPatch(patch, validation.state);
+          return {
+            ok: true,
+            result: {
+              applied: true,
+              affectedSections,
+              state: await readSettingsState(affectedSections.length > 0 ? affectedSections : undefined)
+            }
+          };
         }
         case "desktop.web.listSurfaces":
           return { ok: true, result: { surfaces: createSurfaceList() } };
@@ -1849,8 +2434,12 @@ export function AppShell() {
     webItems,
     location.pathname,
     navigate,
+    locale,
+    resolvedTheme,
     services,
-    themeMode
+    setLocale,
+    themeMode,
+    webappRuntimeById
   ]);
 
   const handleWindowDragPointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {

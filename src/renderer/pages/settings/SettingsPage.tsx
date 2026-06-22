@@ -114,7 +114,12 @@ type AboutAppCardProps = {
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
 const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "logs", "wsServer", "authTokens", "other"];
-const DEFAULT_DESKTOP_ACTION_NAME = "desktop.settings.getState";
+const SETTINGS_SELECT_CLASS_NAMES = {
+  popup: {
+    root: "settings-select-popup"
+  }
+};
+const DEFAULT_DESKTOP_ACTION_NAME = "desktop.setting.getState";
 const DEFAULT_WS_DEBUG_COMMAND = {
   type: "runtime.info",
   payload: {}
@@ -1264,6 +1269,7 @@ function DesktopActionDebugDialog({
         <div className="settings-debug-dialog-actions">
           <Select
             className="settings-debug-action-select"
+            classNames={SETTINGS_SELECT_CLASS_NAMES}
             showSearch
             value={selectedAction}
             optionFilterProp="label"
@@ -3907,6 +3913,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                   <span>{t("settings.language.uiDescription")}</span>
                 </div>
                 <Select<SupportedLocale>
+                  classNames={SETTINGS_SELECT_CLASS_NAMES}
                   style={{ minWidth: 148 }}
                   value={locale}
                   aria-label={t("settings.language.label")}
@@ -4007,6 +4014,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                   <span>{t("settings.quickAssistant.defaultAgent")}</span>
                   <span className="desktop-pet-agent-select-wrap">
                     <Select
+                      classNames={SETTINGS_SELECT_CLASS_NAMES}
                       style={{ width: "100%" }}
                       value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
                       onChange={(value) => void handleSelectQuickAssistantAgentKey(value)}
@@ -4088,6 +4096,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
               >
                 {controlProjectOptions.length > 0 ? (
                   <Select
+                    classNames={SETTINGS_SELECT_CLASS_NAMES}
                     value={controlCloudConfig.selectedProjectId}
                     options={controlProjectSelectOptions}
                     onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
@@ -4318,6 +4327,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
               <label className="navigation-order-assistant-field">
                 <span className="desktop-pet-agent-select-wrap">
                   <Select
+                    classNames={SETTINGS_SELECT_CLASS_NAMES}
                     style={{ width: "100%" }}
                     value={assistantSelectValue}
                     onChange={(value) => {
@@ -4359,6 +4369,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
               <div className="settings-item-form navigation-assistant-default">
                 <span className="desktop-pet-agent-select-wrap navigation-assistant-default-select">
                   <Select
+                    classNames={SETTINGS_SELECT_CLASS_NAMES}
                     style={{ width: "100%" }}
                     value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
                     onChange={(value) => void handleSelectDesktopHelperAgentKey(value)}
@@ -4421,6 +4432,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                         <label className="navigation-order-assistant-field">
                           <span className="desktop-pet-agent-select-wrap">
                             <Select
+                              classNames={SETTINGS_SELECT_CLASS_NAMES}
                               style={{ width: "100%" }}
                               value={assistantSelectValue}
                               onChange={(value) => {
@@ -4596,6 +4608,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                           <label className="website-agent-field">
                             <span className="desktop-pet-agent-select-wrap">
                               <Select
+                                classNames={SETTINGS_SELECT_CLASS_NAMES}
                                 style={{ width: "100%" }}
                                 value={itemAgentKey}
                                 onChange={(value) => void handleUpdateWebsiteAgent(item.id, value)}

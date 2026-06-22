@@ -2983,7 +2983,8 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
   assert.match(actionCatalog, /page_control/);
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
-  assert.match(actionCatalog, /desktop\.settings\.applyPatch/);
+  assert.match(actionCatalog, /desktop\.setting\.applyPatch/);
+  assert.doesNotMatch(actionCatalog, /desktop\.settings\./);
   assert.doesNotMatch(actionCatalog, /desktop\.page\./);
   assert.match(actionCatalog, /desktop\.web\.listSurfaces/);
   assert.match(actionCatalog, /desktop\.web\.navigate/);
@@ -3043,7 +3044,16 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(registry, /page_action_unavailable/);
   assert.match(appShell, /startDesktopActionRendererBridge\(\)/);
   assert.match(appShell, /registerDesktopActionProviderForScope\("global"/);
-  assert.match(appShell, /desktop\.settings\.getState/);
+  assert.match(appShell, /desktop\.setting\.getState/);
+  assert.match(appShell, /settingSectionIds = \[/);
+  assert.match(appShell, /"quick"/);
+  assert.match(appShell, /"copilot"/);
+  assert.match(appShell, /"pet"/);
+  assert.match(appShell, /"general\.desktopActionConfirmationEnabled"/);
+  assert.match(appShell, /"kanban\.remoteControlEnabled"/);
+  assert.match(appShell, /"market\.apiBaseUrl"/);
+  assert.match(appShell, /quickAssistantEnabled: quickPatch\.enabled/);
+  assert.match(appShell, /quickAssistantAgentKey: quickPatch\.agentKey\.trim\(\) \|\| DEFAULT_QUICK_ASSISTANT_AGENT_KEY/);
   assert.match(appShell, /desktop\.web\.listSurfaces/);
   assert.match(settingsPage, /registerDesktopActionProvider/);
   assert.match(settingsPage, /desktopHelperAgentKey/);

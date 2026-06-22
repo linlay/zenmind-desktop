@@ -305,6 +305,10 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.ok(actionNames.includes("web.webapps.installAndOpen"));
   assert.ok(actionNames.includes("pet.getState"));
   assert.ok(actionNames.includes("pet.listAppearances"));
+  assert.ok(actionNames.includes("setting.get"));
+  assert.ok(actionNames.includes("setting.validatePatch"));
+  assert.ok(actionNames.includes("setting.previewPatch"));
+  assert.ok(actionNames.includes("setting.applyPatch"));
   assert.ok(actionNames.includes("help.open"));
   assert.ok(actionNames.includes("kanban.issue.list"));
   assert.ok(actionNames.includes("kanban.issue.get"));
