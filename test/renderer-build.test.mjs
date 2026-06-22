@@ -3053,6 +3053,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     readSourceFile("src", "renderer", "pages", "functional-market", "SkillMarket.tsx"),
     readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
   ].join("\n");
+  const petActionBlock = bridge.match(/async function executePetAction[\s\S]*?\n}\n\nasync function executeAction/)?.[0] ?? "";
 
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
@@ -3065,7 +3066,14 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /desktop\.web\.navigate/);
   assert.match(actionCatalog, /desktop\.web\.interactElement/);
   assert.match(actionCatalog, /desktop\.web\.webapps\.installAndOpen/);
-  assert.match(actionCatalog, /desktop\.pet\.setAppearance/);
+  assert.match(actionCatalog, /desktop\.pet\.state/);
+  assert.match(actionCatalog, /desktop\.pet\.list/);
+  assert.match(actionCatalog, /desktop\.pet\.set/);
+  assert.doesNotMatch(actionCatalog, /desktop\.pet\.getState/);
+  assert.doesNotMatch(actionCatalog, /desktop\.pet\.getSettings/);
+  assert.doesNotMatch(actionCatalog, /desktop\.pet\.setEnabled/);
+  assert.doesNotMatch(actionCatalog, /desktop\.pet\.listAppearances/);
+  assert.doesNotMatch(actionCatalog, /desktop\.pet\.setAppearance/);
   assert.match(actionCatalog, /desktop\.kanban\.listIssues/);
   assert.match(actionCatalog, /desktop\.kanban\.moveIssue/);
   assert.match(actionCatalog, /desktop\.help\.openTopic/);
@@ -3083,6 +3091,15 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /POST" && url\.pathname === "\/actions\/call"/);
   assert.match(bridge, /POST" && url\.pathname === "\/cdp\/call"/);
   assert.match(bridge, /function resolveHelpOpenRoute/);
+  assert.match(petActionBlock, /desktop\.pet\.state/);
+  assert.match(petActionBlock, /desktop\.pet\.list/);
+  assert.match(petActionBlock, /desktop\.pet\.set/);
+  assert.doesNotMatch(petActionBlock, /desktop\.pet\.getState/);
+  assert.doesNotMatch(petActionBlock, /desktop\.pet\.getSettings/);
+  assert.doesNotMatch(petActionBlock, /desktop\.pet\.setEnabled/);
+  assert.doesNotMatch(petActionBlock, /desktop\.pet\.listAppearances/);
+  assert.doesNotMatch(petActionBlock, /desktop\.pet\.setAppearance/);
+  assert.doesNotMatch(petActionBlock, /listMarketItems|refreshMarketCatalog|installMarketItem|desktop\.market/);
   assert.match(bridge, /case "desktop\.kanban\.moveIssue"/);
   assert.match(bridge, /kanban_unavailable/);
   assert.doesNotMatch(bridge, /case "desktop\.tunnelHub\./);

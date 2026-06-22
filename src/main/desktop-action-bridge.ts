@@ -7,7 +7,6 @@ import type {
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
   DesktopPageContextSnapshot,
-  DesktopPetSettings,
   DesktopPetState,
   KanbanIssueInput,
   KanbanIssueMoveInput,
@@ -91,8 +90,6 @@ type DesktopActionBridgeOptions = {
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
   getKanbanRuntime?: () => KanbanRuntime | null;
   desktopPet?: {
-    getSettings: () => DesktopPetSettings;
-    getState: () => DesktopPetState;
     refreshState: () => DesktopPetState | Promise<DesktopPetState>;
     saveSettings: (input: { enabled?: boolean; appearanceId?: string }) => DesktopPetState | Promise<DesktopPetState>;
     show: () => DesktopPetState | Promise<DesktopPetState>;
@@ -898,14 +895,11 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
   if (!desktopPet) {
     return fail(action, "pet_action_unavailable", "Desktop pet action is unavailable.");
   }
-  if (action === "desktop.pet.getSettings") {
-    return ok(action, desktopPet.getSettings());
-  }
   const state = await desktopPet.refreshState();
-  if (action === "desktop.pet.getState") {
+  if (action === "desktop.pet.state") {
     return ok(action, state);
   }
-  if (action === "desktop.pet.listAppearances") {
+  if (action === "desktop.pet.list") {
     return ok(action, {
       appearanceId: state.appearanceId,
       appearances: state.appearanceOptions
@@ -917,15 +911,12 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
   if (action === "desktop.pet.hide") {
     return ok(action, await desktopPet.hide(true));
   }
-  if (action === "desktop.pet.setEnabled") {
-    if (typeof args.enabled !== "boolean") {
-      return fail(action, "invalid_args", "enabled must be boolean.");
-    }
-    return ok(action, args.enabled ? await desktopPet.show() : await desktopPet.hide(true));
+  if (action !== "desktop.pet.set") {
+    return fail(action, "unknown_action", `unknown action: ${action}`);
   }
   const appearanceId = readString(args, "appearanceId") || readString(args, "id");
   if (!appearanceId) {
-    return fail(action, "invalid_args", "appearanceId is required.");
+    return fail(action, "invalid_args", "id or appearanceId is required.");
   }
   if (!state.supported) {
     return fail(action, "pet_unsupported", t("settings.desktopPet.enableUnavailable"), state);
@@ -1113,13 +1104,11 @@ async function executeAction(
     case "desktop.kanban.deleteIssue":
     case "desktop.kanban.moveIssue":
       return executeKanbanAction(options, action, args);
-    case "desktop.pet.getState":
-    case "desktop.pet.getSettings":
+    case "desktop.pet.state":
     case "desktop.pet.show":
     case "desktop.pet.hide":
-    case "desktop.pet.setEnabled":
-    case "desktop.pet.listAppearances":
-    case "desktop.pet.setAppearance":
+    case "desktop.pet.list":
+    case "desktop.pet.set":
       return executePetAction(options, action, args);
     default:
       return fail(action, "unknown_action", `unknown action: ${action}`);

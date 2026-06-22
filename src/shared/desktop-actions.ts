@@ -81,13 +81,11 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.kanban.deleteIssue", kind: "execute", category: "kanban", description: "Delete a Desktop Kanban issue." },
   { name: "desktop.kanban.moveIssue", kind: "execute", category: "kanban", description: "Move a Desktop Kanban issue." },
 
-  { name: "desktop.pet.getState", kind: "read", category: "pet", description: "Read Desktop pet state." },
-  { name: "desktop.pet.getSettings", kind: "read", category: "pet", description: "Read Desktop pet settings." },
+  { name: "desktop.pet.state", kind: "read", category: "pet", description: "Read Desktop pet state." },
   { name: "desktop.pet.show", kind: "execute", category: "pet", description: "Show the Desktop pet." },
   { name: "desktop.pet.hide", kind: "execute", category: "pet", description: "Hide the Desktop pet." },
-  { name: "desktop.pet.setEnabled", kind: "execute", category: "pet", description: "Enable or disable the Desktop pet." },
-  { name: "desktop.pet.listAppearances", kind: "read", category: "pet", description: "List Desktop pet appearances." },
-  { name: "desktop.pet.setAppearance", kind: "execute", category: "pet", description: "Set the Desktop pet appearance." }
+  { name: "desktop.pet.list", kind: "read", category: "pet", description: "List local Desktop pet appearances." },
+  { name: "desktop.pet.set", kind: "execute", category: "pet", description: "Set the Desktop pet appearance." }
 ] as const satisfies readonly DesktopActionDefinition[];
 
 export type DesktopActionName = typeof DESKTOP_ACTION_DEFINITIONS[number]["name"];

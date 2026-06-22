@@ -1,6 +1,5 @@
 import type { MainAppState } from "./app-state";
 import type { LogStreamSubscriptionRegistry } from "./logs/subscriptions";
-import { toDesktopPetSettings } from "./assistant/pet/desktop-pet";
 
 export interface MainProcessContext {
   state: MainAppState;
@@ -49,8 +48,6 @@ export function createDesktopActionOptions(
     getKanbanRuntime: () => context.state.kanbanRuntime,
     desktopPet: dependencies.desktopPet
       ? {
-          getSettings: () => toDesktopPetSettings(context.state.desktopPetSettings),
-          getState: () => context.state.desktopPetState,
           refreshState: () => dependencies.desktopPet?.refreshState(),
           saveSettings: (input: unknown) => dependencies.desktopPet?.saveSettings(input),
           show: () => dependencies.desktopPet?.showWindow(),

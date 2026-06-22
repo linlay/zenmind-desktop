@@ -316,7 +316,6 @@ const BLOCKED_PUBLIC_ACTION_NAMES = new Set([
   "webapp.restart",
   "webapp.open",
   "webapp.installAndOpen",
-  "pet.state",
   "pet.settings",
   "pet.appearances",
   "help.openTopic",
