@@ -812,31 +812,31 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   if (action === "desktop.web.list") {
     return ok(action, listWebEntries(options.app));
   }
-  if (action === "desktop.web.websites.list") {
+  if (action === "desktop.web.website.list") {
     return ok(action, listWebsiteItems(options.app));
   }
-  if (action === "desktop.web.websites.add") {
+  if (action === "desktop.web.website.add") {
     return ok(action, addWebsiteItem(options.app, readActionInput(args) as any));
   }
-  if (action === "desktop.web.websites.update") {
+  if (action === "desktop.web.website.update") {
     return ok(action, updateWebsiteItem(options.app, readWebsiteId(args), readActionInput(args) as any));
   }
-  if (action === "desktop.web.websites.remove") {
+  if (action === "desktop.web.website.remove") {
     return ok(action, removeWebsiteItem(options.app, readWebsiteId(args)));
   }
-  if (action === "desktop.web.webapps.getStatus") {
+  if (action === "desktop.web.webapp.getStatus") {
     return ok(action, webappRuntime.getStatus(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapps.start") {
+  if (action === "desktop.web.webapp.start") {
     return ok(action, await webappRuntime.start(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapps.stop") {
+  if (action === "desktop.web.webapp.stop") {
     return ok(action, await webappRuntime.stop(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapps.restart") {
+  if (action === "desktop.web.webapp.restart") {
     return ok(action, await webappRuntime.restart(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapps.open") {
+  if (action === "desktop.web.webapp.open") {
     return openWebapp(options, action, readWebappId(args));
   }
   return installAndOpenWebapp(options, action, args);
@@ -969,17 +969,12 @@ async function executeAction(
     case "desktop.web.listSurfaces":
     case "desktop.web.getActiveSurface":
     case "desktop.web.activateSurface":
-    case "desktop.web.getPageContext":
     case "desktop.web.navigate":
     case "desktop.web.reload":
     case "desktop.web.goBack":
     case "desktop.web.openTab":
     case "desktop.web.closeTab":
     case "desktop.web.switchTab":
-    case "desktop.web.readPageData":
-    case "desktop.web.extractStructured":
-    case "desktop.web.interactElement":
-    case "desktop.web.executeScript":
       return callRendererPageAction(options, request, args);
     case "desktop.navigate.toRoute": {
       const route = readString(args, "route") || readString(args, "path");
@@ -1022,16 +1017,16 @@ async function executeAction(
     case "desktop.controlCenter.restartService":
       return ok(action, await restartService(options.app, readServiceId(args)));
     case "desktop.web.list":
-    case "desktop.web.websites.list":
-    case "desktop.web.websites.add":
-    case "desktop.web.websites.update":
-    case "desktop.web.websites.remove":
-    case "desktop.web.webapps.getStatus":
-    case "desktop.web.webapps.start":
-    case "desktop.web.webapps.stop":
-    case "desktop.web.webapps.restart":
-    case "desktop.web.webapps.open":
-    case "desktop.web.webapps.installAndOpen":
+    case "desktop.web.website.list":
+    case "desktop.web.website.add":
+    case "desktop.web.website.update":
+    case "desktop.web.website.remove":
+    case "desktop.web.webapp.getStatus":
+    case "desktop.web.webapp.start":
+    case "desktop.web.webapp.stop":
+    case "desktop.web.webapp.restart":
+    case "desktop.web.webapp.open":
+    case "desktop.web.webapp.installAndOpen":
       return executeWebAction(options, action, args);
     case "desktop.market.getSettings":
       return ok(action, getMarketSettings(options.app));
