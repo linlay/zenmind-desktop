@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Form, Input, InputNumber, Modal, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
+import { Button, Card, Checkbox, Form, Input, Modal, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import "./SettingsPage.css";
@@ -3642,8 +3642,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       const result = await window.electronAPI.settings.saveTunnelHubSettings({
         enabled: tunnelHubSettings.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
-        deviceId: tunnelHubSettings.deviceId,
-        reconnectSeconds: tunnelHubSettings.reconnectSeconds
+        deviceId: tunnelHubSettings.deviceId
       });
       setTunnelHubSettings({
         ...defaultTunnelHubSettings,
@@ -3672,8 +3671,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       const result = await window.electronAPI.settings.saveTunnelHubSettings({
         enabled: nextEnabled,
         relayUrl: tunnelHubSettings.relayUrl,
-        deviceId: tunnelHubSettings.deviceId,
-        reconnectSeconds: tunnelHubSettings.reconnectSeconds
+        deviceId: tunnelHubSettings.deviceId
       });
       setTunnelHubSettings({
         ...defaultTunnelHubSettings,
@@ -4182,21 +4180,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                     <small>{t("settings.tunnelHub.loginRequired")}</small>
                   </div>
                 ) : null}
-                <label className="settings-control-field">
-                  <span>{t("settings.tunnelHub.reconnectSeconds")}</span>
-                  <div className="settings-control-inline">
-                    <InputNumber
-                      min={1}
-                      max={3600}
-                      value={tunnelHubSettings.reconnectSeconds}
-                      onChange={(value) => setTunnelHubSettings((current) => ({
-                        ...current,
-                        reconnectSeconds: typeof value === "number" ? value : 3
-                      }))}
-                    />
-                    <small>{t("settings.tunnelHub.reconnectUnit")}</small>
-                  </div>
-                </label>
                 {tunnelHubSettings.publicHost ? (
                   <div className="settings-control-field settings-readonly-stack">
                     <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>

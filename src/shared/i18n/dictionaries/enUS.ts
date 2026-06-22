@@ -349,8 +349,6 @@ export const enUSMessages = {
   "settings.tunnelHub.tokenMissing": "Token not configured",
   "settings.tunnelHub.clearToken": "Clear saved token",
   "settings.tunnelHub.rotateRelayToken": "Rotate relay token on next sign-in sync",
-  "settings.tunnelHub.reconnectSeconds": "Reconnect interval",
-  "settings.tunnelHub.reconnectUnit": "seconds",
   "settings.tunnelHub.publicHost": "Public host",
   "settings.tunnelHub.publicUrl": "Public URL",
   "settings.tunnelHub.webSocketUrl": "WebSocket URL",

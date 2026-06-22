@@ -349,8 +349,6 @@ export const zhCNMessages = {
   "settings.tunnelHub.tokenMissing": "未配置令牌",
   "settings.tunnelHub.clearToken": "清除已保存令牌",
   "settings.tunnelHub.rotateRelayToken": "下次登录同步时轮换中继令牌",
-  "settings.tunnelHub.reconnectSeconds": "重连间隔",
-  "settings.tunnelHub.reconnectUnit": "秒",
   "settings.tunnelHub.publicHost": "公网主机",
   "settings.tunnelHub.publicUrl": "公网地址",
   "settings.tunnelHub.webSocketUrl": "WebSocket 地址",

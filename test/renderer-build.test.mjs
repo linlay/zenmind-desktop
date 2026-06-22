@@ -1672,7 +1672,6 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /window\.electronAPI\.kanban\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.kanban\.saveSettings/);
   assert.match(settingsPage, /import \{[^}]*\bForm\b[^}]*\} from "antd"/);
-  assert.match(settingsPage, /import \{[^}]*\bInputNumber\b[^}]*\} from "antd"/);
   assert.match(settingsPage, /import \{[^}]*\bSwitch\b[^}]*\} from "antd"/);
   assert.match(settingsPage, /<Card[\s\S]*className="settings-item-card settings-control-card settings-kanban-ant-card"/);
   assert.match(settingsPage, /<Switch[\s\S]*handleToggleControlRemoteControl/);
@@ -1806,8 +1805,12 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.doesNotMatch(settingsPage, /tlsInsecureSkipVerify:\s*tunnelHubSettings\.tlsInsecureSkipVerify/);
   assert.doesNotMatch(settingsPage, /checked=\{tunnelHubSettings\.tlsInsecureSkipVerify\}/);
   assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.tlsInsecure/);
+  assert.doesNotMatch(settingsPage, /reconnectSeconds:\s*tunnelHubSettings\.reconnectSeconds/);
+  assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.reconnectSeconds|settings\.tunnelHub\.reconnectUnit/);
   assert.doesNotMatch(enUS, /Skip relay TLS verification|settings\.tunnelHub\.tlsInsecure/);
   assert.doesNotMatch(zhCN, /跳过中继 TLS 校验|settings\.tunnelHub\.tlsInsecure/);
+  assert.doesNotMatch(enUS, /Reconnect interval|settings\.tunnelHub\.reconnect/);
+  assert.doesNotMatch(zhCN, /重连间隔|settings\.tunnelHub\.reconnect/);
   assert.doesNotMatch(settingsPage, /settings\.createAppPairingPayload/);
   assert.match(settingsPage, /buildMobileAccessUrl/);
   assert.match(settingsPage, /window\.electronAPI\.agentAuth\.issueAccessToken\("missing"\)/);
