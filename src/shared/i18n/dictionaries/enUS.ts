@@ -349,8 +349,6 @@ export const enUSMessages = {
   "settings.tunnelHub.tokenMissing": "Token not configured",
   "settings.tunnelHub.clearToken": "Clear saved token",
   "settings.tunnelHub.rotateRelayToken": "Rotate relay token on next sign-in sync",
-  "settings.tunnelHub.tlsInsecure": "Skip relay TLS verification",
-  "settings.tunnelHub.tlsInsecureDescription": "Only affects the Tunnel Hub WSS relay connection. Local 7082 debugging is unchanged.",
   "settings.tunnelHub.reconnectSeconds": "Reconnect interval",
   "settings.tunnelHub.reconnectUnit": "seconds",
   "settings.tunnelHub.publicHost": "Public host",

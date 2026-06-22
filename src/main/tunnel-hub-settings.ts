@@ -102,7 +102,7 @@ export function normalizeRelayUrl(value: unknown) {
   try {
     const parsed = new URL(withProtocol);
     if (parsed.protocol === "http:") {
-      parsed.protocol = "ws:";
+      parsed.protocol = isLoopbackRelayHost(parsed.hostname) ? "ws:" : "wss:";
     } else if (parsed.protocol === "https:") {
       parsed.protocol = "wss:";
     }
@@ -113,6 +113,11 @@ export function normalizeRelayUrl(value: unknown) {
   } catch {
     return trimmed;
   }
+}
+
+function isLoopbackRelayHost(hostname: string) {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
 }
 
 function readStoredString(value: unknown) {
@@ -185,7 +190,13 @@ function createDefaultDeviceId(app: App) {
 function isValidRelayUrl(relayUrl: string) {
   try {
     const parsed = new URL(relayUrl);
-    return Boolean(parsed.host) && (parsed.protocol === "ws:" || parsed.protocol === "wss:");
+    if (!parsed.host) {
+      return false;
+    }
+    if (parsed.protocol === "wss:") {
+      return true;
+    }
+    return parsed.protocol === "ws:" && isLoopbackRelayHost(parsed.hostname);
   } catch {
     return false;
   }
@@ -311,7 +322,7 @@ export function readTunnelHubSettings(app: App): TunnelHubSettings {
     publicUrl: publicUrlFromHost(publicHost),
     webSocketUrl: webSocketUrlFromHost(publicHost),
     lastRegisteredAt: readStoredString(stored.lastRegisteredAt) || undefined,
-    tlsInsecureSkipVerify: stored.tlsInsecureSkipVerify === true,
+    tlsInsecureSkipVerify: false,
     reconnectSeconds: normalizeReconnectSeconds(stored.reconnectSeconds)
   };
 }
@@ -351,7 +362,7 @@ export function validateTunnelHubSettingsInput(input: TunnelHubSettingsInput) {
       enabled: input.enabled === true,
       relayUrl,
       deviceId: normalizeTunnelHubDeviceId(input.deviceId),
-      tlsInsecureSkipVerify: input.tlsInsecureSkipVerify === true,
+      tlsInsecureSkipVerify: false,
       reconnectSeconds
     }
   };
@@ -403,9 +414,6 @@ export function saveTunnelHubSettings(
     ? normalizeTunnelHubDeviceId(input.deviceId)
     : current.deviceId || createDefaultDeviceId(app);
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
-  const tlsInsecureSkipVerify = typeof input.tlsInsecureSkipVerify === "boolean"
-    ? input.tlsInsecureSkipVerify
-    : current.tlsInsecureSkipVerify;
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
   const ssoSiteToken = readTunnelHubRegistrationBearerToken(app);
   const issues: string[] = [];
@@ -429,7 +437,7 @@ export function saveTunnelHubSettings(
     publicHost: deviceIdChanged ? "" : current.publicHost,
     lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
     rotateRelayToken: input.rotateRelayToken === true,
-    tlsInsecureSkipVerify,
+    tlsInsecureSkipVerify: false,
     reconnectSeconds
   };
   writeStoredSettings(app, nextSettings);
@@ -473,7 +481,7 @@ export function ensureTunnelHubDeviceId(app: App) {
     publicHost: currentSettings.publicHost,
     lastRegisteredAt: currentSettings.lastRegisteredAt,
     rotateRelayToken: readStoredSettings(app).rotateRelayToken === true,
-    tlsInsecureSkipVerify: currentSettings.tlsInsecureSkipVerify,
+    tlsInsecureSkipVerify: false,
     reconnectSeconds: currentSettings.reconnectSeconds
   });
   return deviceId;
@@ -497,7 +505,7 @@ export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubReg
     publicHost,
     lastRegisteredAt: record.lastRegisteredAt?.trim() || new Date().toISOString(),
     rotateRelayToken: false,
-    tlsInsecureSkipVerify: current.tlsInsecureSkipVerify,
+    tlsInsecureSkipVerify: false,
     reconnectSeconds: current.reconnectSeconds
   };
   writeStoredSettings(app, nextSettings);

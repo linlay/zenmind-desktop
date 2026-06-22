@@ -487,7 +487,8 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
-    deviceId: "mac-mini-office"
+    deviceId: "mac-mini-office",
+    tlsInsecureSkipVerify: true
   }).ok, true);
 
   configureTunnelHubRegistrationController({
@@ -527,6 +528,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(connectCalls[0].relayUrl, relayUrl);
   assert.equal(connectCalls[0].relayToken, "returned-runtime-token");
   assert.equal(connectCalls[0].deviceId, "mac-mini-office");
+  assert.equal(connectCalls[0].tlsInsecureSkipVerify, false);
   assert.equal(typeof connectCalls[0].desktopWsServerOptions.verifyToken, "undefined");
   assert.equal(readTunnelHubSettings(app).webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
   await runtime.stop();

@@ -196,7 +196,7 @@ export class TunnelHubRuntime {
       }
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
-      await this.connectTunnel(relayUrl, token, nextSettings.deviceId, nextSettings.tlsInsecureSkipVerify);
+      await this.connectTunnel(relayUrl, token, nextSettings.deviceId);
       this.lastConnectedAt = new Date().toISOString();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl}`);
@@ -210,13 +210,13 @@ export class TunnelHubRuntime {
     }
   }
 
-  private async connectTunnel(relayUrl: string, relayToken: string, deviceId: string, tlsInsecureSkipVerify: boolean) {
+  private async connectTunnel(relayUrl: string, relayToken: string, deviceId: string) {
     const client = this.createTunnelClient({
       relayUrl,
       relayToken,
       deviceId,
       desktopWsServerOptions: this.options.desktopWsServerOptions,
-      tlsInsecureSkipVerify,
+      tlsInsecureSkipVerify: false,
       logger: this.options.logger ?? console
     });
     client.on("close", () => this.handleClientClosed());

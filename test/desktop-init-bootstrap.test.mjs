@@ -309,7 +309,7 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
       relayUrl: "wss://relay.example.test/tunnel",
       deviceId: "mac-mini-office",
       relayToken: "init-relay-token",
-      tlsInsecureSkipVerify: false
+      tlsInsecureSkipVerify: true
     }
   });
 

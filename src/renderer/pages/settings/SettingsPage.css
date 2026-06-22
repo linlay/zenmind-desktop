@@ -393,18 +393,6 @@
   line-height: 1.4;
 }
 
-.settings-page .settings-checkbox-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.settings-page .settings-checkbox-copy small {
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.45;
-}
-
 .settings-page .settings-checkbox-field.ant-checkbox-wrapper-disabled {
   cursor: not-allowed;
   opacity: 0.55;

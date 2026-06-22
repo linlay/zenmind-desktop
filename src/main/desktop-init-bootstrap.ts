@@ -369,7 +369,7 @@ function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): Bootstrap
     deviceId: readText(tunnelHubDefaults.deviceId),
     relayToken: readText(tunnelHubDefaults.relayToken),
     rotateRelayToken: tunnelHubDefaults.rotateRelayToken === true,
-    tlsInsecureSkipVerify: tunnelHubDefaults.tlsInsecureSkipVerify === true,
+    tlsInsecureSkipVerify: false,
     reconnectSeconds: typeof tunnelHubDefaults.reconnectSeconds === "number"
       ? tunnelHubDefaults.reconnectSeconds
       : 3

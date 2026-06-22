@@ -66,15 +66,19 @@ test("Tunnel Hub settings normalize host-only relay URL with SSO site token", (t
   assert.equal(result.settings.relayUrl, "wss://tunnel-hub.zenmind.cc/tunnel");
   assert.match(result.settings.deviceId, /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u);
   assert.equal(result.settings.hasRelayToken, false);
-  assert.equal(result.settings.tlsInsecureSkipVerify, true);
+  assert.equal(result.settings.tlsInsecureSkipVerify, false);
   assert.equal(result.settings.reconnectSeconds, 9);
+  const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
+  assert.equal(stored.tlsInsecureSkipVerify, false);
   assert.equal(readTunnelHubSettings(app).enabled, true);
 });
 
 test("Tunnel Hub settings normalize HTTP, HTTPS, WSS, and local WS relay URLs", (t) => {
   const cases = [
     ["https://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
+    ["http://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
     ["wss://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
+    ["http://127.0.0.1:8080/tunnel", "ws://127.0.0.1:8080/tunnel"],
     ["ws://127.0.0.1:8080/tunnel", "ws://127.0.0.1:8080/tunnel"]
   ];
 
@@ -88,6 +92,21 @@ test("Tunnel Hub settings normalize HTTP, HTTPS, WSS, and local WS relay URLs", 
     assert.equal(result.ok, true);
     assert.equal(result.settings.relayUrl, expected);
   }
+});
+
+test("Tunnel Hub settings reject non-loopback WS relay URLs", (t) => {
+  const app = createTempApp(t);
+  writeSsoSiteToken(app);
+
+  const result = saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "ws://relay.example.test/tunnel"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.settings.enabled, false);
+  assert.equal(result.settings.relayUrl, "ws://relay.example.test/tunnel");
+  assert.match(result.message, /Relay URL/u);
 });
 
 test("Tunnel Hub settings keep relay URL empty until explicitly configured", (t) => {
@@ -243,11 +262,12 @@ test("Tunnel Hub legacy settings without enabled are treated as enabled only whe
   fs.mkdirSync(path.dirname(tunnelTokenPath(app)), { recursive: true });
   fs.writeFileSync(tunnelSettingsPath(app), `${JSON.stringify({
     relayUrl: "wss://legacy.example.test/ws",
-    tlsInsecureSkipVerify: false,
+    tlsInsecureSkipVerify: true,
     reconnectSeconds: 3
   }, null, 2)}\n`, "utf8");
 
   assert.equal(readTunnelHubSettings(app).enabled, false);
+  assert.equal(readTunnelHubSettings(app).tlsInsecureSkipVerify, false);
 
   fs.writeFileSync(tunnelTokenPath(app), "legacy-token\n", "utf8");
   assert.equal(readTunnelHubSettings(app).enabled, false);

@@ -1803,7 +1803,11 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.deviceId/);
   assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.publicUrl|settings\.tunnelHub\.webSocketUrl/);
   assert.doesNotMatch(settingsPage, /rotateRelayToken|settings\.tunnelHub\.rotateRelayToken/);
-  assert.match(settingsPage, /settings\.tunnelHub\.tlsInsecureDescription/);
+  assert.doesNotMatch(settingsPage, /tlsInsecureSkipVerify:\s*tunnelHubSettings\.tlsInsecureSkipVerify/);
+  assert.doesNotMatch(settingsPage, /checked=\{tunnelHubSettings\.tlsInsecureSkipVerify\}/);
+  assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.tlsInsecure/);
+  assert.doesNotMatch(enUS, /Skip relay TLS verification|settings\.tunnelHub\.tlsInsecure/);
+  assert.doesNotMatch(zhCN, /跳过中继 TLS 校验|settings\.tunnelHub\.tlsInsecure/);
   assert.doesNotMatch(settingsPage, /settings\.createAppPairingPayload/);
   assert.match(settingsPage, /buildMobileAccessUrl/);
   assert.match(settingsPage, /window\.electronAPI\.agentAuth\.issueAccessToken\("missing"\)/);

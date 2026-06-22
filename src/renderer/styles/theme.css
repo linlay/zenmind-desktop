@@ -13,7 +13,7 @@
     radial-gradient(circle at 92% 100%, rgba(150, 210, 255, 0.42), transparent 32%),
     linear-gradient(180deg, #4A9EDB 0%, #6CB1E4 26%, #A9D0F2 58%, #B6D8F4 100%);
   --surface: rgba(255, 255, 255, 0.18);
-  --surface-strong: rgba(255, 255, 255, 0.74);
+  --surface-strong: rgba(255, 255, 255, 0.9);
   --surface-soft: rgba(255, 255, 255, 0.28);
   --surface-sidebar: rgba(247, 250, 252, 0.78);
   --ink: #1D2129;
@@ -100,7 +100,7 @@
   --bg-base: #181818;
   --bg-canvas: linear-gradient(180deg, #2c2d30 0%, #26272a 100%);
   --surface: rgba(42, 43, 47, 0.9);
-  --surface-strong: rgba(48, 50, 54, 0.96);
+  --surface-strong: rgba(48, 50, 54, 0.9);
   --surface-soft: rgba(54, 56, 61, 0.9);
   --surface-sidebar: rgba(35, 37, 40, 0.92);
   --ink: #F2F3F5;

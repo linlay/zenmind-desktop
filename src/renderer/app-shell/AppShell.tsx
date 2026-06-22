@@ -1814,7 +1814,7 @@ export function AppShell() {
         publicHost: readString(settings.publicHost),
         publicUrl: readString(settings.publicUrl),
         webSocketUrl: readString(settings.webSocketUrl),
-        tlsInsecureSkipVerify: settings.tlsInsecureSkipVerify === true,
+        tlsInsecureSkipVerify: false,
         reconnectSeconds: typeof settings.reconnectSeconds === "number" ? settings.reconnectSeconds : null
       };
     }

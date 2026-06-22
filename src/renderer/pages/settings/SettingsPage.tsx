@@ -3643,7 +3643,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         enabled: tunnelHubSettings.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
       });
       setTunnelHubSettings({
@@ -3674,7 +3673,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         enabled: nextEnabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
       });
       setTunnelHubSettings({
@@ -4184,16 +4182,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                     <small>{t("settings.tunnelHub.loginRequired")}</small>
                   </div>
                 ) : null}
-                <Checkbox
-                  className="settings-control-field settings-checkbox-field"
-                  checked={tunnelHubSettings.tlsInsecureSkipVerify}
-                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
-                >
-                  <span className="settings-checkbox-copy">
-                    <span>{t("settings.tunnelHub.tlsInsecure")}</span>
-                    <small>{t("settings.tunnelHub.tlsInsecureDescription")}</small>
-                  </span>
-                </Checkbox>
                 <label className="settings-control-field">
                   <span>{t("settings.tunnelHub.reconnectSeconds")}</span>
                   <div className="settings-control-inline">
