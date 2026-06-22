@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiOutlined,
   AppstoreOutlined,
@@ -7,6 +7,7 @@ import {
   CodeOutlined,
   CopyOutlined,
   DownloadOutlined,
+  FilterOutlined,
   GlobalOutlined,
   HeartFilled,
   HeartOutlined,
@@ -15,9 +16,10 @@ import {
   RobotOutlined,
   SafetyCertificateOutlined,
   SmileOutlined,
+  SortAscendingOutlined,
   UserOutlined
 } from "@ant-design/icons";
-import { Alert, Button, Card, Empty, Input, Modal, Select, Tag } from "antd";
+import { Alert, Button, Card, Empty, Input, Modal, Tag } from "antd";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
@@ -52,6 +54,7 @@ import "./StorefrontMarket.css";
 
 type RangeMode = "all" | "installed" | "updates";
 type SortMode = "popular" | "latest" | "rating";
+type SearchFilterMenu = "sort" | "scope" | null;
 
 function isInstalledMarketItem(item: MarketItem) {
   return item.state === "installed" || item.state === "update-available" || item.state === "local-imported";
@@ -189,6 +192,30 @@ function rangeMatches(item: MarketItem, rangeMode: RangeMode) {
     return item.state === "update-available";
   }
   return true;
+}
+
+function marketSortLabel(sortMode: SortMode, t: ReturnType<typeof useI18n>["t"]) {
+  switch (sortMode) {
+    case "latest":
+      return t("market.sort.latest");
+    case "rating":
+      return t("market.sort.rating");
+    case "popular":
+    default:
+      return t("market.sort.popular");
+  }
+}
+
+function marketScopeLabel(rangeMode: RangeMode, t: ReturnType<typeof useI18n>["t"]) {
+  switch (rangeMode) {
+    case "installed":
+      return t("market.scope.installed");
+    case "updates":
+      return t("market.scope.updates");
+    case "all":
+    default:
+      return t("market.scope.all");
+  }
 }
 
 function marketTypeLabel(type: MarketItemType, t: ReturnType<typeof useI18n>["t"]) {
@@ -450,6 +477,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   const [query, setQuery] = useState("");
   const [rangeMode, setRangeMode] = useState<RangeMode>("all");
   const [sortMode, setSortMode] = useState<SortMode>("popular");
+  const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenu>(null);
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
   const [busyItemId, setBusyItemId] = useState("");
@@ -457,6 +485,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   const [feedback, setFeedback] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<MarketItem | null>(null);
+  const searchFilterRef = useRef<HTMLDivElement | null>(null);
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
   const itemType = MARKET_TAB_ITEM_TYPES[activeTab];
@@ -510,6 +539,30 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   useEffect(() => {
     void loadMarket(false);
   }, []);
+
+  useEffect(() => {
+    if (!searchFilterMenu) {
+      return undefined;
+    }
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && searchFilterRef.current?.contains(target)) {
+        return;
+      }
+      setSearchFilterMenu(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSearchFilterMenu(null);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [searchFilterMenu]);
 
   async function refreshEverything(force = false) {
     await refreshServices();
@@ -890,6 +943,18 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       : activeTab === "sandboxImages"
         ? t("market.sandbox.import")
         : "";
+  const sortOptions: Array<{ label: string; value: SortMode }> = [
+    { label: t("market.sort.popular"), value: "popular" },
+    { label: t("market.sort.latest"), value: "latest" },
+    { label: t("market.sort.rating"), value: "rating" }
+  ];
+  const scopeOptions: Array<{ label: string; value: RangeMode }> = [
+    { label: t("market.scope.all"), value: "all" },
+    { label: t("market.scope.installed"), value: "installed" },
+    { label: t("market.scope.updates"), value: "updates" }
+  ];
+  const sortFilterLabel = marketSortLabel(sortMode, t);
+  const scopeFilterLabel = marketScopeLabel(rangeMode, t);
 
   return (
     <MarketPageFrame
@@ -907,39 +972,68 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("market.search.storefront")}
             prefix={<AppstoreOutlined />}
+            suffix={
+              <div className="market-store-search-filters" ref={searchFilterRef}>
+                <button
+                  type="button"
+                  className={`market-store-search-filter-button ${searchFilterMenu === "sort" ? "is-open" : ""} ${sortMode !== "popular" ? "is-active" : ""}`}
+                  aria-label={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
+                  aria-haspopup="true"
+                  aria-expanded={searchFilterMenu === "sort"}
+                  title={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
+                  onClick={() => setSearchFilterMenu(searchFilterMenu === "sort" ? null : "sort")}
+                >
+                  <SortAscendingOutlined />
+                </button>
+                <button
+                  type="button"
+                  className={`market-store-search-filter-button ${searchFilterMenu === "scope" ? "is-open" : ""} ${rangeMode !== "all" ? "is-active" : ""}`}
+                  aria-label={`${t("market.toolbar.scope")}: ${scopeFilterLabel}`}
+                  aria-haspopup="true"
+                  aria-expanded={searchFilterMenu === "scope"}
+                  title={`${t("market.toolbar.scope")}: ${scopeFilterLabel}`}
+                  onClick={() => setSearchFilterMenu(searchFilterMenu === "scope" ? null : "scope")}
+                >
+                  <FilterOutlined />
+                </button>
+                {searchFilterMenu ? (
+                  <div
+                    className={`market-store-search-filter-menu is-${searchFilterMenu}`}
+                    aria-label={searchFilterMenu === "sort" ? t("market.toolbar.sort") : t("market.toolbar.scope")}
+                  >
+                    {(searchFilterMenu === "sort" ? sortOptions : scopeOptions).map((option) => (
+                      <label key={option.value} className="market-store-search-filter-row">
+                        <input
+                          type="radio"
+                          name={`market-${searchFilterMenu}-filter`}
+                          checked={searchFilterMenu === "sort" ? sortMode === option.value : rangeMode === option.value}
+                          onChange={() => {
+                            if (searchFilterMenu === "sort") {
+                              setSortMode(option.value as SortMode);
+                            } else {
+                              setRangeMode(option.value as RangeMode);
+                            }
+                            setSearchFilterMenu(null);
+                          }}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            }
             value={query}
-          />
-          <Select
-            className="market-store-select"
-            onChange={(value) => setSortMode(value as SortMode)}
-            options={[
-              { label: t("market.sort.popular"), value: "popular" },
-              { label: t("market.sort.latest"), value: "latest" },
-              { label: t("market.sort.rating"), value: "rating" }
-            ]}
-            prefix={<span className="market-store-select-prefix">{t("market.toolbar.sort")}</span>}
-            value={sortMode}
-          />
-          <Select
-            className="market-store-select"
-            onChange={(value) => setRangeMode(value as RangeMode)}
-            options={[
-              { label: t("market.scope.all"), value: "all" },
-              { label: t("market.scope.installed"), value: "installed" },
-              { label: t("market.scope.updates"), value: "updates" }
-            ]}
-            prefix={<span className="market-store-select-prefix">{t("market.toolbar.scope")}</span>}
-            value={rangeMode}
           />
           <div className="market-store-toolbar-actions">
             <Button
-              className="market-store-toolbar-button"
+              aria-label={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
+              title={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
+              className="market-store-toolbar-button is-icon-only"
               icon={<ReloadOutlined />}
               loading={isLoadingMarket}
               onClick={() => void refreshEverything(true)}
-            >
-              {isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
-            </Button>
+            />
             {toolbarImportLabel ? (
               <Button
                 className="market-store-toolbar-button is-primary"
