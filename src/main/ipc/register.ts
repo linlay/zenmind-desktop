@@ -138,6 +138,7 @@ export type MainIpcRegistrationOptions = {
   refreshDesktopRuntimeConfigFromCanonicalFiles: (reason: string) => void;
   buildApplicationMenu: () => void;
   refreshTrayContextMenu: () => void;
+  refreshMainWindowAppearance: () => void;
   emitLocaleChanged: (...args: any[]) => unknown;
   captureDesktopScreenshotForWebview: () => unknown;
   reportRendererDiagnostic: (...args: any[]) => unknown;
@@ -390,6 +391,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     getAppInfo: () => options.desktopAppInfo,
     buildApplicationMenu: options.buildApplicationMenu,
     refreshTrayContextMenu: options.refreshTrayContextMenu,
+    refreshMainWindowAppearance: options.refreshMainWindowAppearance,
     emitLocaleChanged: options.emitLocaleChanged,
     createAppPairingPayload,
     onGeneralSettingsChanged: () => {

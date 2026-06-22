@@ -39,6 +39,7 @@ export interface SettingsIpcHandlerOptions {
   getAppInfo?: () => any;
   buildApplicationMenu: () => void;
   refreshTrayContextMenu: () => void;
+  refreshMainWindowAppearance?: () => void;
   emitLocaleChanged: (settings: any) => void;
   createAppPairingPayload?: (app: any) => Promise<any>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
@@ -106,6 +107,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     getAppInfo,
     buildApplicationMenu,
     refreshTrayContextMenu,
+    refreshMainWindowAppearance,
     emitLocaleChanged,
     createAppPairingPayload,
     getUsageProfile,
@@ -281,6 +283,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         theme: normalizedThemeMode
       }
     });
+    refreshMainWindowAppearance?.();
     return result;
   });
   ipcMain.handle("settings.getLocale", async () => initializeMainI18n(app));

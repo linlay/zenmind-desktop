@@ -5,6 +5,8 @@
   --app-window-drag-height: 12px;
   --app-window-drag-left: var(--app-sidebar-width, 160px);
   --app-window-drag-right: 0px;
+  --windows-titlebar-overlay-height: 44px;
+  --windows-titlebar-control-width: 144px;
   position: relative;
   box-sizing: border-box;
   height: 100%;
@@ -34,6 +36,11 @@
 .app-shell.has-browser-chrome-surface.is-mac-platform,
 .app-shell.has-browser-chrome-surface.is-windows-platform {
   --app-window-drag-height: 0px;
+}
+
+.app-shell.has-embedded-surface.is-windows-platform:not(.has-browser-chrome-surface) {
+  --app-window-drag-height: var(--windows-titlebar-overlay-height);
+  --app-window-drag-right: var(--windows-titlebar-control-width);
 }
 
 .app-shell.is-mac-platform.is-window-fullscreen {

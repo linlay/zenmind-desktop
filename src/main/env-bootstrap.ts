@@ -64,6 +64,7 @@ export type RuntimeEnvResetFailure = Error & {
 
 const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-market"] as const;
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
+const ENV_AGENT_DEFINITION_FILE_NAME = "agent.yml";
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
 const ENV_INITIAL_DATA_RELATIVE_DIR = path.join(".desktop", "data", "env-initial");
@@ -142,6 +143,20 @@ export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform =
   });
 }
 
+export function runtimeEnvNeedsBundledSeedRefresh(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
+  if (platform !== "darwin" && platform !== "win32") {
+    return false;
+  }
+  const root = resolveRuntimeRoot(app, platform);
+  if (!runtimeRootExists(app, platform)) {
+    return false;
+  }
+  if (fs.existsSync(path.join(root, ENV_IMPORT_MARKER_RELATIVE_PATH))) {
+    return false;
+  }
+  return !hasRuntimeAgentDefinitions(root);
+}
+
 function hasDirectoryEntries(dirPath: string) {
   const stack = [dirPath];
   while (stack.length > 0) {
@@ -159,6 +174,38 @@ function hasDirectoryEntries(dirPath: string) {
         continue;
       }
       if (entry.isFile()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasRuntimeAgentDefinitions(root: string) {
+  const agentsRoot = path.join(root, "agents");
+  try {
+    return fs.existsSync(agentsRoot) &&
+      fs.statSync(agentsRoot).isDirectory() &&
+      hasFileNamed(agentsRoot, ENV_AGENT_DEFINITION_FILE_NAME);
+  } catch {
+    return false;
+  }
+}
+
+function hasFileNamed(dirPath: string, fileName: string) {
+  const stack = [dirPath];
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    if (!currentPath) {
+      continue;
+    }
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+      const entryPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      if (entry.isFile() && entry.name === fileName) {
         return true;
       }
     }

@@ -1,4 +1,4 @@
-import type { BrowserWindow } from "electron";
+import type { BrowserWindow, NativeTheme } from "electron";
 import { PRODUCT_NAME } from "../shared/brand";
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
@@ -6,6 +6,17 @@ import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
 const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
+const WINDOWS_TITLEBAR_OVERLAY_HEIGHT = 44;
+const WINDOWS_TITLEBAR_LIGHT = {
+  color: "#FFFFFF",
+  symbolColor: "#1F2937"
+};
+const WINDOWS_TITLEBAR_DARK = {
+  color: "#111111",
+  symbolColor: "#F2F2F2"
+};
+const WINDOWS_BACKGROUND_LIGHT = "#FFFFFF";
+const WINDOWS_BACKGROUND_DARK = "#111111";
 
 type MainWindowLike = Pick<
   BrowserWindow,
@@ -17,6 +28,7 @@ type MainWindowLike = Pick<
   | "once"
   | "setBackgroundColor"
   | "setFullScreen"
+  | "setTitleBarOverlay"
   | "setVibrancy"
 > & Partial<Pick<BrowserWindow, "webContents">>;
 
@@ -100,10 +112,12 @@ export function buildMainWindowOptions(input: {
   platform: DesktopPlatform;
   preloadPath: string;
   initialLocaleSettings?: LocaleSettings;
+  shouldUseDarkColors?: boolean;
 }): MainWindowOptions {
   const initialLocaleArguments = input.initialLocaleSettings
     ? createInitialLocaleArguments(input.initialLocaleSettings)
     : [];
+  const windowsTitleBarOverlay = resolveWindowsTitleBarOverlay(input.shouldUseDarkColors ?? false);
 
   return {
     width: 1440,
@@ -112,7 +126,11 @@ export function buildMainWindowOptions(input: {
     minHeight: 760,
     title: PRODUCT_NAME,
     show: false,
-    backgroundColor: input.platform === "darwin" ? "#00000000" : "#F6F8FC",
+    backgroundColor: input.platform === "darwin"
+      ? "#00000000"
+      : input.platform === "win32"
+        ? resolveWindowsBackgroundColor(input.shouldUseDarkColors ?? false)
+        : "#F6F8FC",
     ...(input.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,
@@ -124,9 +142,7 @@ export function buildMainWindowOptions(input: {
         ? {
             titleBarStyle: "hidden" as const,
             titleBarOverlay: {
-              color: "#F6F8FC",
-              symbolColor: "#475569",
-              height: 44
+              ...windowsTitleBarOverlay
             }
           }
         : {}),
@@ -139,6 +155,18 @@ export function buildMainWindowOptions(input: {
       ...(initialLocaleArguments.length > 0 ? { additionalArguments: initialLocaleArguments } : {})
     }
   };
+}
+
+function resolveWindowsTitleBarOverlay(shouldUseDarkColors: boolean) {
+  const palette = shouldUseDarkColors ? WINDOWS_TITLEBAR_DARK : WINDOWS_TITLEBAR_LIGHT;
+  return {
+    ...palette,
+    height: WINDOWS_TITLEBAR_OVERLAY_HEIGHT
+  };
+}
+
+function resolveWindowsBackgroundColor(shouldUseDarkColors: boolean) {
+  return shouldUseDarkColors ? WINDOWS_BACKGROUND_DARK : WINDOWS_BACKGROUND_LIGHT;
 }
 
 export async function loadMainWindowRenderer(
@@ -536,6 +564,7 @@ export type MainWindowLifecycleControllerOptions<TWindow extends MainWindowLike>
   getWindow(): TWindow | null;
   createWindow(): TWindow;
   clearWindow(targetWindow: TWindow): void;
+  nativeTheme?: Pick<NativeTheme, "shouldUseDarkColors">;
   isSidebarTranslucencyEnabled?: () => boolean;
   reportRendererDiagnostic?: RendererDiagnosticReporter;
 };
@@ -677,6 +706,12 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
         (options.isSidebarTranslucencyEnabled?.() ?? true) && !targetWindow.isFullScreen();
       targetWindow.setVibrancy(useSidebarTranslucency ? "under-window" : null);
       targetWindow.setBackgroundColor(useSidebarTranslucency ? "#00000000" : "#FFFFFF");
+      return;
+    }
+    if (options.platform === "win32") {
+      const shouldUseDarkColors = options.nativeTheme?.shouldUseDarkColors ?? false;
+      targetWindow.setBackgroundColor(resolveWindowsBackgroundColor(shouldUseDarkColors));
+      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors));
       return;
     }
     targetWindow.setBackgroundColor("#FFFFFF");
