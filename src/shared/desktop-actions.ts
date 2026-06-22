@@ -45,15 +45,6 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.webapps.open", kind: "execute", category: "web", description: "Start and open a local webapp." },
   { name: "desktop.web.webapps.installAndOpen", kind: "execute", category: "web", description: "Install and open a website app." },
 
-  { name: "desktop.tunnelHub.getSettings", kind: "read", category: "tunnelHub", description: "Read Desktop Tunnel Hub settings." },
-  { name: "desktop.tunnelHub.validateSettings", kind: "validate", category: "tunnelHub", description: "Validate Desktop Tunnel Hub settings." },
-  { name: "desktop.tunnelHub.applySettings", kind: "apply", category: "tunnelHub", description: "Apply Desktop Tunnel Hub settings." },
-  { name: "desktop.tunnelHub.getStatus", kind: "read", category: "tunnelHub", description: "Read Desktop Tunnel Hub status." },
-  { name: "desktop.tunnelHub.start", kind: "execute", category: "tunnelHub", description: "Start Desktop Tunnel Hub." },
-  { name: "desktop.tunnelHub.stop", kind: "execute", category: "tunnelHub", description: "Stop Desktop Tunnel Hub." },
-  { name: "desktop.tunnelHub.restart", kind: "execute", category: "tunnelHub", description: "Restart Desktop Tunnel Hub." },
-  { name: "desktop.tunnelHub.readLog", kind: "read", category: "tunnelHub", description: "Read Desktop Tunnel Hub logs." },
-
   { name: "desktop.controlCenter.listServices", kind: "read", category: "controlCenter", description: "List Desktop services." },
   { name: "desktop.controlCenter.getServiceStatus", kind: "read", category: "controlCenter", description: "Read one service status." },
   { name: "desktop.controlCenter.getServiceDetail", kind: "read", category: "controlCenter", description: "Read one service detail." },
@@ -65,11 +56,6 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.controlCenter.startService", kind: "execute", category: "controlCenter", description: "Start a service." },
   { name: "desktop.controlCenter.stopService", kind: "execute", category: "controlCenter", description: "Stop a service." },
   { name: "desktop.controlCenter.restartService", kind: "execute", category: "controlCenter", description: "Restart a service." },
-
-  { name: "desktop.staticServer.list", kind: "read", category: "staticServer", description: "List Desktop-managed static servers." },
-  { name: "desktop.staticServer.start", kind: "execute", category: "staticServer", description: "Start a Desktop-managed static server." },
-  { name: "desktop.staticServer.stop", kind: "execute", category: "staticServer", description: "Stop a Desktop-managed static server." },
-  { name: "desktop.staticServer.restart", kind: "execute", category: "staticServer", description: "Restart a Desktop-managed static server." },
 
   { name: "desktop.market.getSettings", kind: "read", category: "market", description: "Read market settings." },
   { name: "desktop.market.validateSettings", kind: "validate", category: "market", description: "Validate market settings." },
@@ -86,12 +72,14 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.market.exportSandboxImage", kind: "execute", category: "market", description: "Export a local sandbox image to a Docker or Podman archive." },
   { name: "desktop.market.deleteSandboxImage", kind: "execute", category: "market", description: "Delete a local sandbox image from Docker or Podman." },
 
-  { name: "desktop.help.getCurrentTopic", kind: "read", category: "help", description: "Read current help topic." },
-  { name: "desktop.help.searchTopics", kind: "read", category: "help", description: "Search help topics." },
   { name: "desktop.help.openTopic", kind: "execute", category: "help", description: "Open a help topic." },
-  { name: "desktop.help.explainCurrentPage", kind: "read", category: "help", description: "Explain current Desktop page." },
-  { name: "desktop.help.suggestNextAction", kind: "read", category: "help", description: "Suggest next Desktop action." },
-  { name: "desktop.help.navigateToRelatedPage", kind: "execute", category: "help", description: "Navigate to a related Desktop page." },
+
+  { name: "desktop.kanban.listIssues", kind: "read", category: "kanban", description: "List Desktop Kanban issues." },
+  { name: "desktop.kanban.getIssue", kind: "read", category: "kanban", description: "Read one Desktop Kanban issue." },
+  { name: "desktop.kanban.createIssue", kind: "execute", category: "kanban", description: "Create a Desktop Kanban issue." },
+  { name: "desktop.kanban.updateIssue", kind: "execute", category: "kanban", description: "Update a Desktop Kanban issue." },
+  { name: "desktop.kanban.deleteIssue", kind: "execute", category: "kanban", description: "Delete a Desktop Kanban issue." },
+  { name: "desktop.kanban.moveIssue", kind: "execute", category: "kanban", description: "Move a Desktop Kanban issue." },
 
   { name: "desktop.pet.getState", kind: "read", category: "pet", description: "Read Desktop pet state." },
   { name: "desktop.pet.getSettings", kind: "read", category: "pet", description: "Read Desktop pet settings." },
@@ -99,31 +87,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.pet.hide", kind: "execute", category: "pet", description: "Hide the Desktop pet." },
   { name: "desktop.pet.setEnabled", kind: "execute", category: "pet", description: "Enable or disable the Desktop pet." },
   { name: "desktop.pet.listAppearances", kind: "read", category: "pet", description: "List Desktop pet appearances." },
-  { name: "desktop.pet.setAppearance", kind: "execute", category: "pet", description: "Set the Desktop pet appearance." },
-
-  { name: "desktop.agents.listAgents", kind: "read", category: "agents", description: "List agent-platform agents." },
-  { name: "desktop.agents.getAgentDetail", kind: "read", category: "agents", description: "Read one agent detail." },
-  { name: "desktop.agents.validateAgentConfig", kind: "validate", category: "agents", description: "Validate an agent config payload." },
-  { name: "desktop.agents.previewAgentConfigPatch", kind: "preview", category: "agents", description: "Preview an agent config patch." },
-  { name: "desktop.agents.applyAgentConfigPatch", kind: "apply", category: "agents", description: "Apply an agent config patch." },
-  { name: "desktop.agents.createAgentDraft", kind: "preview", category: "agents", description: "Create an agent draft payload." },
-  { name: "desktop.agents.createAgent", kind: "execute", category: "agents", description: "Create an agent." },
-  { name: "desktop.agents.updateAgent", kind: "execute", category: "agents", description: "Update an agent." },
-  { name: "desktop.agents.deleteAgent", kind: "execute", category: "agents", description: "Delete an agent." },
-  { name: "desktop.agents.cloneAgent", kind: "execute", category: "agents", description: "Clone an agent." },
-  { name: "desktop.agents.disableAgent", kind: "execute", category: "agents", description: "Disable an agent." },
-  { name: "desktop.agents.reloadAgents", kind: "execute", category: "agents", description: "Reload agents." },
-
-  { name: "desktop.automations.listAutomations", kind: "read", category: "automations", description: "List automations." },
-  { name: "desktop.automations.getAutomationDetail", kind: "read", category: "automations", description: "Read one automation." },
-  { name: "desktop.automations.validateAutomation", kind: "validate", category: "automations", description: "Validate an automation payload." },
-  { name: "desktop.automations.previewAutomation", kind: "preview", category: "automations", description: "Preview an automation payload." },
-  { name: "desktop.automations.createAutomation", kind: "execute", category: "automations", description: "Create an automation." },
-  { name: "desktop.automations.updateAutomation", kind: "execute", category: "automations", description: "Update an automation." },
-  { name: "desktop.automations.pauseAutomation", kind: "execute", category: "automations", description: "Pause an automation." },
-  { name: "desktop.automations.resumeAutomation", kind: "execute", category: "automations", description: "Resume an automation." },
-  { name: "desktop.automations.deleteAutomation", kind: "execute", category: "automations", description: "Delete an automation." },
-  { name: "desktop.automations.explainNextRun", kind: "read", category: "automations", description: "Explain the next schedule run." }
+  { name: "desktop.pet.setAppearance", kind: "execute", category: "pet", description: "Set the Desktop pet appearance." }
 ] as const satisfies readonly DesktopActionDefinition[];
 
 export type DesktopActionName = typeof DESKTOP_ACTION_DEFINITIONS[number]["name"];

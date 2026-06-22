@@ -225,20 +225,6 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "service.stop": "desktop.controlCenter.stopService",
   "service.restart": "desktop.controlCenter.restartService",
 
-  "agent.list": "desktop.agents.listAgents",
-  "agent.get": "desktop.agents.getAgentDetail",
-  "agent.create": "desktop.agents.createAgent",
-  "agent.update": "desktop.agents.updateAgent",
-  "agent.delete": "desktop.agents.deleteAgent",
-
-  "automation.list": "desktop.automations.listAutomations",
-  "automation.get": "desktop.automations.getAutomationDetail",
-  "automation.create": "desktop.automations.createAutomation",
-  "automation.update": "desktop.automations.updateAutomation",
-  "automation.toggle": "desktop.automations.pauseAutomation",
-  "automation.delete": "desktop.automations.deleteAutomation",
-  "automation.executions": "desktop.automations.getAutomationDetail",
-
   "market.settings": "desktop.market.getSettings",
   "market.list": "desktop.market.listItems",
   "market.refresh": "desktop.market.refresh",
@@ -247,11 +233,14 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "market.update": "desktop.market.updateItem",
   "market.uninstall": "desktop.market.uninstallItem",
 
-  "help.current": "desktop.help.getCurrentTopic",
-  "help.search": "desktop.help.searchTopics",
   "help.open": "desktop.help.openTopic",
-  "help.explain": "desktop.help.explainCurrentPage",
-  "help.suggest": "desktop.help.suggestNextAction",
+
+  "kanban.issue.list": "desktop.kanban.listIssues",
+  "kanban.issue.get": "desktop.kanban.getIssue",
+  "kanban.issue.create": "desktop.kanban.createIssue",
+  "kanban.issue.update": "desktop.kanban.updateIssue",
+  "kanban.issue.delete": "desktop.kanban.deleteIssue",
+  "kanban.issue.move": "desktop.kanban.moveIssue",
 
   "page.context": "desktop.page.getContext",
   "page.read": "desktop.page.readCurrent",
@@ -283,12 +272,7 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "web.webapps.stop": "desktop.web.webapps.stop",
   "web.webapps.restart": "desktop.web.webapps.restart",
   "web.webapps.open": "desktop.web.webapps.open",
-  "web.webapps.installAndOpen": "desktop.web.webapps.installAndOpen",
-
-  "staticServer.list": "desktop.staticServer.list",
-  "staticServer.start": "desktop.staticServer.start",
-  "staticServer.stop": "desktop.staticServer.stop",
-  "staticServer.restart": "desktop.staticServer.restart"
+  "web.webapps.installAndOpen": "desktop.web.webapps.installAndOpen"
 };
 
 const BLOCKED_PUBLIC_ACTION_NAMES = new Set([
@@ -311,15 +295,20 @@ const BLOCKED_PUBLIC_ACTION_NAMES = new Set([
   "webapp.installAndOpen",
   "pet.state",
   "pet.settings",
-  "pet.appearances"
+  "pet.appearances",
+  "help.openTopic",
+  "kanban.listIssues",
+  "kanban.getIssue",
+  "kanban.createIssue",
+  "kanban.updateIssue",
+  "kanban.deleteIssue",
+  "kanban.moveIssue"
 ]);
 
 const DIRECT_ACTION_TYPES = new Set([
   "service.list",
   "service.get",
-  "service.status",
-  "agent.list",
-  "automation.list"
+  "service.status"
 ]);
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -1108,9 +1097,7 @@ async function handleRequest(
       return;
     case "service.list":
     case "service.get":
-    case "service.status":
-    case "agent.list":
-    case "automation.list": {
+    case "service.status": {
       const response = await callDesktopAction(options, type, { args: asRecord(payload) });
       if (!response.ok) {
         sendError(connection, namespace, id, response.error?.code || "action_failed", 400, response.error?.message || "action failed", response);

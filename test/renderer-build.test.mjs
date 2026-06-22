@@ -947,7 +947,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(confirmRenameChatHandler, /if \(!result\.ok\)/u);
   assert.match(confirmRenameChatHandler, /setAssistantChatRenameDialog\(null\)/u);
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
-  assert.match(sidebarSource, /<span>\{t\("sidebar\.agent\.delete"\)\}<\/span>/);
+  assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
@@ -1237,7 +1237,7 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Ques"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.plan": "Await Impl"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByName": "By name"/);
-  assert.match(enUS, /"nav\.archives": "Archived Conversations"/);
+  assert.match(enUS, /"nav\.archives": "Archived Chats"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByTime": "By time"/);
 });
 
@@ -2874,7 +2874,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /agent\.workspaceDirExists === false/);
   assert.match(appSidebar, /disabled=\{Boolean\(openWorkspaceDisabledReason\)\}/);
   assert.match(appSidebar, /openWorkspaceDirectory\(agent\.workspaceDir, agent\.agentKey\)/);
-  assert.match(appSidebar, /const title = isRename \? t\("sidebar\.agent\.rename"\) : t\("sidebar\.agent\.delete"\)/);
+  assert.doesNotMatch(appSidebar, /const title = isRename \? t\("sidebar\.agent\.rename"\) : t\("sidebar\.agent\.delete"\)/);
   assert.match(appSidebar, /role="dialog"/);
   const agentDialogInputRule = globalStyles.match(
     /^\.sidebar-agent-dialog-field input\s*\{(?<body>[\s\S]*?)^\}/m
@@ -2886,19 +2886,17 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(agentDialogInputRule, /var\(--border\)/);
   assert.match(agentDialogInputFocusRule, /border-color:\s*var\(--desktop-ui-primary\);/);
   assert.match(agentDialogInputFocusRule, /box-shadow:\s*0 0 0 2px rgba\(var\(--desktop-ui-primary-rgb\),\s*0\.14\);/);
-  assert.match(appSidebar, /desktop\.agents\.getAgentDetail/);
-  assert.match(appSidebar, /buildAgentDefinitionForRename/);
-  assert.doesNotMatch(appSidebar, /definition:\s*\{\s*name:\s*nextName/);
   assert.match(appSidebar, /function createAgentEditRoute\(agent: AssistantNavAgentItem\)/);
   assert.match(appSidebar, /return `\/agents\/\$\{encodeURIComponent\(agent\.agentKey\)\}`;/);
   assert.match(appSidebar, /requestNavigate\(createAgentEditRoute\(agent\)\)/);
   assert.doesNotMatch(appSidebar, /window\.open\(createAgentEditWindowUrl\(agent\), "_blank"\)/);
   assert.match(appSidebar, /agent\.agentType === "coder"/);
-  assert.match(appSidebar, /desktop\.agents\.deleteAgent/);
-  assert.match(appSidebar, /className="is-danger"/);
-  assert.match(desktopActions, /desktop\.agents\.deleteAgent/);
-  assert.match(desktopActionBridge, /case "desktop\.agents\.deleteAgent"/);
-  assert.match(desktopActionBridge, /"\/api\/admin\/agents\/delete"[\s\S]*?body:\s*\{\s*key: readAgentKey\(args\)\s*\}/);
+  assert.doesNotMatch(appSidebar, /desktop\.agents\./);
+  assert.doesNotMatch(appSidebar, /buildAgentDefinitionForRename/);
+  assert.doesNotMatch(appSidebar, /sidebar\.agent\.delete/);
+  assert.doesNotMatch(appSidebar, /sidebar\.agent\.rename/);
+  assert.doesNotMatch(desktopActions, /desktop\.agents\./);
+  assert.doesNotMatch(desktopActionBridge, /case "desktop\.agents\./);
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 
@@ -2992,16 +2990,30 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /desktop\.web\.interactElement/);
   assert.match(actionCatalog, /desktop\.web\.webapps\.installAndOpen/);
   assert.match(actionCatalog, /desktop\.pet\.setAppearance/);
+  assert.match(actionCatalog, /desktop\.kanban\.listIssues/);
+  assert.match(actionCatalog, /desktop\.kanban\.moveIssue/);
+  assert.match(actionCatalog, /desktop\.help\.openTopic/);
   assert.doesNotMatch(actionCatalog, /desktop\.embeddedWeb\./);
   assert.doesNotMatch(actionCatalog, /desktop\.webs\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.tunnelHub\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.staticServer\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.agents\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.automations\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.help\.(?:getCurrentTopic|searchTopics|explainCurrentPage|suggestNextAction|navigateToRelatedPage)/);
   assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
-  assert.match(actionCatalog, /desktop\.automations\.listAutomations/);
   assert.doesNotMatch(actionCatalog, /desktop\.memory\./);
   assert.match(bridge, /GET" && url\.pathname === "\/health"/);
   assert.match(bridge, /GET" && url\.pathname === "\/actions"/);
   assert.match(bridge, /POST" && url\.pathname === "\/actions\/call"/);
   assert.match(bridge, /POST" && url\.pathname === "\/cdp\/call"/);
-  assert.match(bridge, /agentWebclientHelpTopicTitles[\s\S]*?\["archives", "nav\.archives"\]/);
+  assert.match(bridge, /function resolveHelpOpenRoute/);
+  assert.match(bridge, /case "desktop\.kanban\.moveIssue"/);
+  assert.match(bridge, /kanban_unavailable/);
+  assert.doesNotMatch(bridge, /case "desktop\.tunnelHub\./);
+  assert.doesNotMatch(bridge, /case "desktop\.staticServer\./);
+  assert.doesNotMatch(bridge, /case "desktop\.agents\./);
+  assert.doesNotMatch(bridge, /case "desktop\.automations\./);
+  assert.doesNotMatch(bridge, /case "desktop\.help\.(?:getCurrentTopic|searchTopics|explainCurrentPage|suggestNextAction|navigateToRelatedPage)/);
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);

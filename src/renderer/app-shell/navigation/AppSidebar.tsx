@@ -109,14 +109,6 @@ type NavigateOptions = {
   retriggerAgentRoute?: boolean;
 };
 
-type AgentDialogState = {
-  kind: "rename" | "delete";
-  agent: AssistantNavAgentItem;
-  value: string;
-  pending: boolean;
-  error: string;
-};
-
 type CoderAcpProxyOption = {
   serviceId: string;
   acpProxyId: string;
@@ -829,7 +821,6 @@ export function AppSidebar({
     x: number;
     y: number;
   } | null>(null);
-  const [agentDialog, setAgentDialog] = useState<AgentDialogState | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -970,25 +961,6 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [websiteCreatePending, websiteDialogOpen]);
-
-  useEffect(() => {
-    const currentDialog = agentDialog;
-    if (!currentDialog) {
-      return undefined;
-    }
-    const canCloseDialog = !currentDialog.pending;
-
-    function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && canCloseDialog) {
-        setAgentDialog(null);
-      }
-    }
-
-    document.addEventListener("keydown", handleDocumentKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleDocumentKeyDown);
-    };
-  }, [agentDialog]);
 
   useEffect(() => {
     const currentDialog = assistantChatRenameDialog;
@@ -2411,83 +2383,6 @@ export function AppSidebar({
     return agent.agentType === "coder";
   }
 
-  function asPlainRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  }
-
-  function readActionResultRecord(response: unknown) {
-    const record = asPlainRecord(response);
-    return asPlainRecord(record.result);
-  }
-
-  function readAgentDetailRecord(value: unknown) {
-    const result = readActionResultRecord(value);
-    const nestedAgent = asPlainRecord(result.agent);
-    return Object.keys(nestedAgent).length > 0 ? nestedAgent : result;
-  }
-
-  function buildAgentDefinitionForRename(
-    detail: Record<string, unknown>,
-    agent: AssistantNavAgentItem,
-    nextName: string,
-  ) {
-    const currentDefinition = asPlainRecord(detail.definition);
-    const definition =
-      Object.keys(currentDefinition).length > 0
-        ? { ...currentDefinition }
-        : (
-            [
-              "key",
-              "mode",
-              "icon",
-              "workspace",
-              "runtimeConfig",
-              "model",
-              "modelConfig",
-              "tools",
-              "toolConfig",
-              "visibility",
-              "prompts",
-              "soulPrompt",
-              "agentsPrompt",
-            ] as const
-          ).reduce<Record<string, unknown>>((next, key) => {
-            if (detail[key] !== undefined) {
-              next[key] = detail[key];
-            }
-            return next;
-          }, {});
-
-    if (!definition.key) {
-      definition.key = agent.agentKey;
-    }
-    if (!definition.mode && agent.mode) {
-      definition.mode = agent.mode;
-    }
-    if (!definition.icon && agent.icon) {
-      definition.icon = agent.icon;
-    }
-    if (
-      !definition.workspace &&
-      agent.workspaceDir &&
-      agent.workspaceDir !== "@chat"
-    ) {
-      definition.workspace = { root: agent.workspaceDir };
-    }
-    if (
-      !definition.runtimeConfig &&
-      agent.workspaceDir &&
-      agent.workspaceDir !== "@chat"
-    ) {
-      definition.runtimeConfig = { workspaceRoot: agent.workspaceDir };
-    }
-    definition.name = nextName;
-
-    return definition.mode ? definition : null;
-  }
-
   function createAgentEditRoute(agent: AssistantNavAgentItem) {
     return `/agents/${encodeURIComponent(agent.agentKey)}`;
   }
@@ -2510,123 +2405,9 @@ export function AppSidebar({
     await window.electronAPI.desktopShell.openPath(workspaceDir);
   }
 
-  async function handleRenameAgent(agent: AssistantNavAgentItem) {
-    setAgentMenu(null);
-    setAgentDialog({
-      kind: "rename",
-      agent,
-      value: agent.displayName,
-      pending: false,
-      error: "",
-    });
-  }
-
   function handleEditAgent(agent: AssistantNavAgentItem) {
     setAgentMenu(null);
     requestNavigate(createAgentEditRoute(agent));
-  }
-
-  function handleDeleteAgent(agent: AssistantNavAgentItem) {
-    setAgentMenu(null);
-    setAgentDialog({
-      kind: "delete",
-      agent,
-      value: agent.displayName,
-      pending: false,
-      error: "",
-    });
-  }
-
-  async function handleConfirmRenameAgent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!agentDialog || agentDialog.kind !== "rename" || agentDialog.pending) {
-      return;
-    }
-    const nextName = agentDialog.value.trim();
-    if (!nextName) {
-      setAgentDialog((current) =>
-        current ? { ...current, error: t("sidebar.agent.nameRequired") } : current,
-      );
-      return;
-    }
-    const targetAgent = agentDialog.agent;
-    setAgentDialog((current) =>
-      current ? { ...current, pending: true, error: "" } : current,
-    );
-    try {
-      const detailResponse = await window.electronAPI.desktopActions.call({
-        action: "desktop.agents.getAgentDetail",
-        args: { key: targetAgent.agentKey },
-      });
-      if (!detailResponse.ok) {
-        throw new Error(
-          detailResponse.error?.message || t("sidebar.agent.detailFailed"),
-        );
-      }
-      const definition = buildAgentDefinitionForRename(
-        readAgentDetailRecord(detailResponse),
-        targetAgent,
-        nextName,
-      );
-      if (!definition) {
-        throw new Error(t("sidebar.agent.incomplete"));
-      }
-      const updateResponse = await window.electronAPI.desktopActions.call({
-        action: "desktop.agents.updateAgent",
-        args: {
-          key: targetAgent.agentKey,
-          definition,
-        },
-      });
-      if (!updateResponse.ok) {
-        throw new Error(
-          updateResponse.error?.message || t("sidebar.agent.renameFailed"),
-        );
-      }
-      setAgentDialog(null);
-      await onRefreshAssistantNavAgents?.();
-    } catch (error) {
-      setAgentDialog((current) =>
-        current
-          ? {
-              ...current,
-              pending: false,
-              error: error instanceof Error ? error.message : String(error),
-            }
-          : current,
-      );
-    }
-  }
-
-  async function handleConfirmDeleteAgent() {
-    if (!agentDialog || agentDialog.kind !== "delete" || agentDialog.pending) {
-      return;
-    }
-    const targetAgent = agentDialog.agent;
-    setAgentDialog((current) =>
-      current ? { ...current, pending: true, error: "" } : current,
-    );
-    try {
-      const response = await window.electronAPI.desktopActions.call({
-        action: "desktop.agents.deleteAgent",
-        args: { key: targetAgent.agentKey },
-      });
-      if (!response.ok) {
-        throw new Error(response.error?.message || t("sidebar.agent.deleteFailed"));
-      }
-      setAgentDialog(null);
-      await onRefreshAssistantNavAgents?.();
-    } catch (error) {
-      setAgentDialog((current) =>
-        current
-          ? {
-              ...current,
-              pending: false,
-              error: error instanceof Error ? error.message : String(error),
-            }
-          : current,
-      );
-    }
   }
 
   function renderAssistantChatMenu() {
@@ -2762,7 +2543,6 @@ export function AppSidebar({
       return null;
     }
     const agent = agentMenu.agent;
-    const coderAgent = agent.agentType === "coder";
     const openWorkspaceDisabledReason = getOpenWorkspaceDisabledReason(agent);
     return createPortal(
       <div
@@ -2785,124 +2565,10 @@ export function AppSidebar({
         <button
           type="button"
           role="menuitem"
-          onClick={() => void handleRenameAgent(agent)}
-        >
-          <span>{t("sidebar.agent.rename")}</span>
-        </button>
-        <button
-          type="button"
-          role="menuitem"
           onClick={() => handleEditAgent(agent)}
         >
           <span>{t("sidebar.agent.edit")}</span>
         </button>
-        {coderAgent ? (
-          <button
-            type="button"
-            className="is-danger"
-            role="menuitem"
-            onClick={() => handleDeleteAgent(agent)}
-          >
-            <span>{t("sidebar.agent.delete")}</span>
-          </button>
-        ) : null}
-      </div>,
-      document.body,
-    );
-  }
-
-  function renderAgentDialog() {
-    if (!agentDialog || typeof document === "undefined") {
-      return null;
-    }
-    const isRename = agentDialog.kind === "rename";
-    const title = isRename ? t("sidebar.agent.rename") : t("sidebar.agent.delete");
-    return createPortal(
-      <div
-        className="sidebar-agent-dialog-layer"
-        role="presentation"
-        onMouseDown={() => {
-          if (!agentDialog.pending) {
-            setAgentDialog(null);
-          }
-        }}
-      >
-        <form
-          className="sidebar-agent-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="sidebar-agent-dialog-title"
-          onSubmit={
-            isRename
-              ? (event) => void handleConfirmRenameAgent(event)
-              : (event) => {
-                  event.preventDefault();
-                  void handleConfirmDeleteAgent();
-                }
-          }
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <div className="sidebar-agent-dialog-head">
-            <strong id="sidebar-agent-dialog-title">{title}</strong>
-            <button
-              type="button"
-              className="sidebar-agent-dialog-close"
-              aria-label={t("common.close")}
-              disabled={agentDialog.pending}
-              onClick={() => setAgentDialog(null)}
-            >
-              ×
-            </button>
-          </div>
-          {isRename ? (
-            <label className="sidebar-agent-dialog-field">
-              <span>{t("externalWebview.name")}</span>
-              <input
-                value={agentDialog.value}
-                onChange={(event) =>
-                  setAgentDialog((current) =>
-                    current
-                      ? { ...current, value: event.target.value, error: "" }
-                      : current,
-                  )
-                }
-                disabled={agentDialog.pending}
-                maxLength={80}
-                autoFocus
-              />
-            </label>
-          ) : (
-            <p className="sidebar-agent-dialog-copy">
-              {t("sidebar.agent.deleteConfirm", { name: agentDialog.agent.displayName })}
-            </p>
-          )}
-          {agentDialog.error ? (
-            <div className="sidebar-agent-dialog-error" role="alert">
-              {agentDialog.error}
-            </div>
-          ) : null}
-          <div className="sidebar-agent-dialog-actions">
-            <button
-              type="button"
-              className="sidebar-agent-secondary-button"
-              disabled={agentDialog.pending}
-              onClick={() => setAgentDialog(null)}
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              type="submit"
-              className={
-                isRename
-                  ? "sidebar-agent-primary-button"
-                  : "sidebar-agent-danger-button"
-              }
-              disabled={agentDialog.pending}
-            >
-              {agentDialog.pending ? t("sidebar.common.processing") : isRename ? t("common.save") : t("common.delete")}
-            </button>
-          </div>
-        </form>
       </div>,
       document.body,
     );
@@ -3419,7 +3085,6 @@ export function AppSidebar({
           {renderAssistantChatMenu()}
           {renderAssistantChatRenameDialog()}
           {renderAgentMenu()}
-          {renderAgentDialog()}
           {renderCoderAcpProjectDialog()}
           {renderWebsiteDialog()}
         </div>

@@ -226,7 +226,9 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
     app: createApp(path.join(root, "home")),
     host: "127.0.0.1",
     port: 0,
-    desktopActionOptions: {},
+    desktopActionOptions: {
+      getKanbanRuntime: () => kanbanRuntime
+    },
     assistantBridge: {
       listAgents: async () => [],
       startRun: async (request) => ({
@@ -283,9 +285,14 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(webappHello.code, 0);
   assert.equal(webappHello.data.namespaces.wa, "webapp");
   assert.ok(hello.data.requestTypes.includes("web.listSurfaces"));
+  assert.ok(hello.data.requestTypes.includes("kanban.issue.list"));
   assert.equal(hello.data.requestTypes.includes("web.list"), false);
   assert.equal(hello.data.requestTypes.includes("web.webapps.status"), false);
   assert.equal(hello.data.requestTypes.includes("webapp.start"), false);
+  assert.equal(hello.data.requestTypes.includes("agent.list"), false);
+  assert.equal(hello.data.requestTypes.includes("automation.list"), false);
+  assert.equal(hello.data.requestTypes.includes("staticServer.list"), false);
+  assert.equal(hello.data.requestTypes.includes("help.search"), false);
 
   client.send({ frame: "request", type: "action.list", id: "actions-1", payload: {} });
   const actionList = await client.waitFor((message) => message.id === "actions-1");
@@ -298,12 +305,38 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.ok(actionNames.includes("web.webapps.installAndOpen"));
   assert.ok(actionNames.includes("pet.getState"));
   assert.ok(actionNames.includes("pet.listAppearances"));
+  assert.ok(actionNames.includes("help.open"));
+  assert.ok(actionNames.includes("kanban.issue.list"));
+  assert.ok(actionNames.includes("kanban.issue.get"));
+  assert.ok(actionNames.includes("kanban.issue.create"));
+  assert.ok(actionNames.includes("kanban.issue.update"));
+  assert.ok(actionNames.includes("kanban.issue.delete"));
+  assert.ok(actionNames.includes("kanban.issue.move"));
   assert.equal(actionNames.includes("web.list"), false);
   assert.equal(actionNames.includes("web.surfaces"), false);
   assert.equal(actionNames.includes("web.webapps.status"), false);
   assert.equal(actionNames.some((action) => action.startsWith("embeddedWeb.")), false);
   assert.equal(actionNames.some((action) => action.startsWith("webapp.")), false);
   assert.equal(actionNames.includes("pet.state"), false);
+  assert.equal(actionNames.includes("help.openTopic"), false);
+  assert.equal(actionNames.includes("help.search"), false);
+  assert.equal(actionNames.some((action) => action.startsWith("agent.")), false);
+  assert.equal(actionNames.some((action) => action.startsWith("automation.")), false);
+  assert.equal(actionNames.some((action) => action.startsWith("staticServer.")), false);
+  assert.equal(actionNames.some((action) => action.startsWith("tunnelHub.")), false);
+  assert.equal(actionNames.some((action) => action.startsWith("kanban.") && !action.startsWith("kanban.issue.")), false);
+
+  client.send({
+    frame: "request",
+    type: "action.call",
+    id: "kanban-list-action-1",
+    payload: { action: "kanban.issue.list", args: {} }
+  });
+  const kanbanListAction = await client.waitFor((message) => message.id === "kanban-list-action-1");
+  assert.equal(kanbanListAction.code, 0);
+  assert.equal(kanbanListAction.data.ok, true);
+  assert.equal(kanbanListAction.data.action, "desktop.kanban.listIssues");
+  assert.equal(kanbanListAction.data.result.revision, 7);
 
   client.send({ frame: "request", type: "snapshot.get", id: "snapshot-1", payload: {} });
   const snapshot = await client.waitFor((message) => message.id === "snapshot-1");

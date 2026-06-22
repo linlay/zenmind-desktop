@@ -9,6 +9,9 @@ import type {
   DesktopPageContextSnapshot,
   DesktopPetSettings,
   DesktopPetState,
+  KanbanIssueInput,
+  KanbanIssueMoveInput,
+  KanbanIssueUpdateInput,
   MarketListOptions,
   ServiceId,
   ServiceLogTarget,
@@ -41,10 +44,6 @@ import {
   startService,
   stopService
 } from "./services/manager";
-import {
-  StaticSiteHostError,
-  staticSiteHostManager
-} from "./static-site-host-manager";
 import { listWebEntries } from "./ipc/web-handlers";
 import {
   addWebsiteItem,
@@ -70,26 +69,15 @@ import {
   installWebsiteAppMarketItem
 } from "./marketplace/website-app-market";
 import { normalizeMarketApiBaseUrl } from "./marketplace/common";
-import {
-  readTunnelHubSettings,
-  validateTunnelHubSettingsInput
-} from "./tunnel-hub-settings";
 import { readDesktopProfileFromRoot } from "./desktop-profile-store";
 import { getDesktopConfigRoot } from "./user-paths";
-import {
-  applyTunnelHubSettings,
-  getTunnelHubRuntimeStatus,
-  readTunnelHubRuntimeLog,
-  restartTunnelHubRuntime,
-  startTunnelHubRuntime,
-  stopTunnelHubRuntime
-} from "./tunnel-hub-runtime";
 import {
   executeCurrentPageCdpAction,
   inspectCurrentPageCdpElement,
   readCurrentPageCdpLocation,
   type CurrentPageCdpElementSnapshot
 } from "./current-page-cdp-executor";
+import type { KanbanRuntime } from "./kanban-runtime";
 import { t } from "./i18n/main-i18n";
 
 type DesktopActionBridgeOptions = {
@@ -101,6 +89,7 @@ type DesktopActionBridgeOptions = {
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
+  getKanbanRuntime?: () => KanbanRuntime | null;
   desktopPet?: {
     getSettings: () => DesktopPetSettings;
     getState: () => DesktopPetState;
@@ -161,27 +150,37 @@ function agentPlatformAuthFailureMessage() {
   return t("desktopAction.agentPlatformAuthFailed");
 }
 
-const agentWebclientHelpTopicTitles = new Map([
-  ["agents", "nav.agents"],
-  ["archives", "nav.archives"],
-  ["schedules", "nav.schedules"],
-  ["copilot", "service.display.agentWebclient"]
-]);
-
-function createAgentWebclientHelpTopics() {
-  return AGENT_WEBCLIENT_ROUTE_DEFINITIONS.map((route) => ({
-    id: route.key,
-    title: t((agentWebclientHelpTopicTitles.get(route.key) ?? route.key) as any),
-    route: route.routePath
-  }));
-}
-
 function resolveAgentWebclientHelpRoute(topic: string) {
   return AGENT_WEBCLIENT_ROUTE_DEFINITIONS.find((route) =>
     route.key === topic ||
     route.routePath === topic ||
     route.routePath.slice(1) === topic
   )?.routePath ?? null;
+}
+
+const HELP_TOPIC_ROUTES = new Map([
+  ["help", "/help"],
+  ["settings", "/settings"],
+  ["market", "/market"],
+  ["control-center", "/control-center"],
+  ["controlCenter", "/control-center"]
+]);
+
+function isAllowedHelpRoute(route: string) {
+  return [...HELP_TOPIC_ROUTES.values()].includes(route) ||
+    AGENT_WEBCLIENT_ROUTE_DEFINITIONS.some((definition) => definition.routePath === route);
+}
+
+function resolveHelpOpenRoute(args: Record<string, unknown>) {
+  const route = readString(args, "route");
+  if (route) {
+    return isAllowedHelpRoute(route) ? route : "";
+  }
+  const topic = readString(args, "topic") || readString(args, "id");
+  if (!topic) {
+    return "/help";
+  }
+  return HELP_TOPIC_ROUTES.get(topic) ?? resolveAgentWebclientHelpRoute(topic) ?? "";
 }
 
 type PageControlGrantScope = {
@@ -265,41 +264,12 @@ function hasObjectKeys(value: Record<string, unknown>) {
   return Object.keys(value).length > 0;
 }
 
-function readTunnelHubSettingsInput(args: Record<string, unknown>) {
-  const settings = asRecord(args.settings);
-  const patch = asRecord(args.patch);
-  const source = hasObjectKeys(settings) ? settings : hasObjectKeys(patch) ? patch : args;
-  return {
-    enabled: typeof source.enabled === "boolean" ? source.enabled : undefined,
-    relayUrl: typeof source.relayUrl === "string" ? source.relayUrl : undefined,
-    deviceId: typeof source.deviceId === "string" ? source.deviceId : undefined,
-    relayToken: typeof source.relayToken === "string" ? source.relayToken : undefined,
-    clearRelayToken: source.clearRelayToken === true,
-    rotateRelayToken: source.rotateRelayToken === true,
-    tlsInsecureSkipVerify: source.tlsInsecureSkipVerify === true,
-    reconnectSeconds: typeof source.reconnectSeconds === "number"
-      ? source.reconnectSeconds
-      : typeof source.reconnectSeconds === "string" && source.reconnectSeconds.trim()
-        ? Number(source.reconnectSeconds)
-        : undefined
-  };
-}
-
-
 function readServiceId(args: Record<string, unknown>) {
   const serviceId = readString(args, "serviceId");
   if (!serviceId) {
     throw new Error("serviceId is required");
   }
   return serviceId as ServiceId;
-}
-
-function readStaticSiteId(args: Record<string, unknown>) {
-  const siteId = readString(args, "siteId");
-  if (!siteId) {
-    throw new StaticSiteHostError("invalid_args", "siteId is required.");
-  }
-  return siteId;
 }
 
 function readWebappId(args: Record<string, unknown>) {
@@ -332,6 +302,32 @@ function readActionInput(args: Record<string, unknown>) {
   return hasObjectKeys(input) ? input : hasObjectKeys(patch) ? patch : args;
 }
 
+function readKanbanIssueId(args: Record<string, unknown>) {
+  return readString(args, "id");
+}
+
+function readKanbanInput(args: Record<string, unknown>) {
+  const input = args.input;
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : null;
+}
+
+function readKanbanMoveInput(args: Record<string, unknown>): KanbanIssueMoveInput | null {
+  const id = readKanbanIssueId(args);
+  const status = readString(args, "status");
+  const position = typeof args.position === "number" ? args.position : Number.NaN;
+  if (!id || !status || !Number.isFinite(position)) {
+    return null;
+  }
+  return {
+    id,
+    status: status as KanbanIssueMoveInput["status"],
+    position,
+    ...(typeof args.baseIssueRevision === "number" ? { baseIssueRevision: args.baseIssueRevision } : {})
+  };
+}
+
 function isMarketSection(value: unknown): value is NonNullable<MarketListOptions["sections"]>[number] {
   return value === "plugins" ||
     value === "skills" ||
@@ -351,22 +347,6 @@ function readMarketListOptions(args: Record<string, unknown>): MarketListOptions
       : [];
   const sections = rawSections.filter(isMarketSection);
   return sections.length > 0 ? { sections } : {};
-}
-
-function readAutomationId(args: Record<string, unknown>) {
-  const id = readString(args, "id") || readString(args, "automationId") || readString(args, "scheduleId");
-  if (!id) {
-    throw new Error("automation id is required");
-  }
-  return id;
-}
-
-function readAgentKey(args: Record<string, unknown>) {
-  const key = readString(args, "key") || readString(args, "agentKey");
-  if (!key) {
-    throw new Error("agent key is required");
-  }
-  return key;
 }
 
 function validateMarketSettings(input: Record<string, unknown>) {
@@ -417,48 +397,6 @@ function saveMarketSettingsPreview(
   return {
     enabled: requestedEnabled && Boolean(apiBaseUrl),
     apiBaseUrl
-  };
-}
-
-function validateAgentConfig(args: Record<string, unknown>) {
-  const definition = asRecord(args.definition);
-  const key = readString(args, "key") || (typeof definition.key === "string" ? definition.key.trim() : "");
-  const issues = [];
-  if (!key) {
-    issues.push({ field: "key", message: "agent key is required" });
-  }
-  if (key.includes("/") || key.includes("\\") || key.includes("..")) {
-    issues.push({ field: "key", message: "agent key must not contain path separators or traversal" });
-  }
-  if (definition.key && definition.key !== key) {
-    issues.push({ field: "definition.key", message: "definition.key must match key" });
-  }
-  if (!definition.name) {
-    issues.push({ field: "definition.name", message: "agent name is recommended" });
-  }
-  return {
-    valid: issues.length === 0,
-    issues,
-    key,
-    definition
-  };
-}
-
-function validateAutomation(args: Record<string, unknown>) {
-  const issues = [];
-  if (!readString(args, "name") && !readString(args, "id")) {
-    issues.push({ field: "name", message: "automation name is required for create, id is required for update" });
-  }
-  if (!readString(args, "cron")) {
-    issues.push({ field: "cron", message: "cron is required" });
-  }
-  const query = asRecord(args.query);
-  if (!readString(query, "message")) {
-    issues.push({ field: "query.message", message: "query.message is required" });
-  }
-  return {
-    valid: issues.length === 0,
-    issues
   };
 }
 
@@ -583,7 +521,7 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
   const providedSummary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
     : "";
-  const summary = providedSummary || buildStaticServerConfirmationSummary(action, args) || t("desktopAction.confirmSummary", { action });
+  const summary = providedSummary || t("desktopAction.confirmSummary", { action });
   const dialogOptions = {
     type: "question" as const,
     buttons: [t("desktopAction.confirmExecute"), t("common.cancel")],
@@ -597,29 +535,6 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
     ? await dialog.showMessageBox(owner, dialogOptions)
     : await dialog.showMessageBox(dialogOptions);
   return result.response === 0;
-}
-
-function buildStaticServerConfirmationSummary(action: string, args: Record<string, unknown>) {
-  if (action === "desktop.staticServer.start") {
-    const rootDir = readString(args, "rootDir") || t("desktopAction.missingValue");
-    const rawPort = args.port === undefined || args.port === null || args.port === "" ? "" : String(args.port);
-    const target = rawPort ? `http://127.0.0.1:${rawPort}/` : "http://127.0.0.1:<auto>/";
-    return t("desktopAction.staticServerStartSummary", { rootDir, target });
-  }
-  if (action === "desktop.staticServer.stop" || action === "desktop.staticServer.restart") {
-    const siteId = readString(args, "siteId");
-    const state = staticSiteHostManager.list().find((item) => item.siteId === siteId);
-    const verb = action.endsWith(".restart") ? t("desktopAction.staticServerRestart") : t("desktopAction.staticServerStop");
-    const rootDir = state?.rootDir || t("desktopAction.unknownValue");
-    const target = state?.webUrl || (state?.requestedPort ? `http://127.0.0.1:${state.requestedPort}/` : t("desktopAction.notRunningValue"));
-    return t("desktopAction.staticServerControlSummary", {
-      verb,
-      siteId: siteId || t("desktopAction.missingValue"),
-      rootDir,
-      target
-    });
-  }
-  return "";
 }
 
 async function confirmPageControlAction(
@@ -855,26 +770,6 @@ async function callRendererPageAction(
   } satisfies DesktopActionCallResponse;
 }
 
-async function executeStaticServerAction(action: string, args: Record<string, unknown>) {
-  try {
-    if (action === "desktop.staticServer.start") {
-      return ok(action, await staticSiteHostManager.start(args));
-    }
-    if (action === "desktop.staticServer.stop") {
-      return ok(action, await staticSiteHostManager.stop(readStaticSiteId(args)));
-    }
-    if (action === "desktop.staticServer.restart") {
-      return ok(action, await staticSiteHostManager.restart(readStaticSiteId(args)));
-    }
-    return ok(action, staticSiteHostManager.list());
-  } catch (error) {
-    if (error instanceof StaticSiteHostError) {
-      return fail(action, error.code, error.message, error.details);
-    }
-    throw error;
-  }
-}
-
 function webappRoute(webappId: string) {
   return `/webs/webapp:${webappId.trim()}`;
 }
@@ -948,6 +843,54 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     return openWebapp(options, action, readWebappId(args));
   }
   return installAndOpenWebapp(options, action, args);
+}
+
+async function executeKanbanAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
+  const runtime = options.getKanbanRuntime?.() ?? null;
+  if (!runtime) {
+    return fail(action, "kanban_unavailable", "Kanban runtime is not initialized.");
+  }
+  if (action === "desktop.kanban.listIssues") {
+    return ok(action, runtime.listIssues());
+  }
+  if (action === "desktop.kanban.getIssue") {
+    const id = readKanbanIssueId(args);
+    if (!id) {
+      return fail(action, "invalid_args", "id is required.");
+    }
+    const list = runtime.listIssues();
+    const issue = list.issues.find((candidate) => candidate.id === id);
+    return issue
+      ? ok(action, { ok: true, message: "Kanban issue loaded.", issue, issues: list.issues })
+      : fail(action, "not_found", `Kanban issue not found: ${id}`, { id });
+  }
+  if (action === "desktop.kanban.createIssue") {
+    const input = readKanbanInput(args);
+    if (!input) {
+      return fail(action, "invalid_args", "input object is required.");
+    }
+    return ok(action, await runtime.createIssue(input as unknown as KanbanIssueInput));
+  }
+  if (action === "desktop.kanban.updateIssue") {
+    const id = readKanbanIssueId(args);
+    const input = readKanbanInput(args);
+    if (!id || !input) {
+      return fail(action, "invalid_args", "id and input object are required.");
+    }
+    return ok(action, await runtime.updateIssue(id, input as unknown as KanbanIssueUpdateInput));
+  }
+  if (action === "desktop.kanban.deleteIssue") {
+    const id = readKanbanIssueId(args);
+    if (!id) {
+      return fail(action, "invalid_args", "id is required.");
+    }
+    return ok(action, await runtime.deleteIssueWithAutomation(id));
+  }
+  const input = readKanbanMoveInput(args);
+  if (!input) {
+    return fail(action, "invalid_args", "id, status, and numeric position are required.");
+  }
+  return ok(action, await runtime.moveIssue(input));
 }
 
 async function executePetAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
@@ -1055,35 +998,6 @@ async function executeAction(
       options.navigate(route);
       return ok(action, { route });
     }
-    case "desktop.tunnelHub.getSettings":
-      return ok(action, readTunnelHubSettings(options.app));
-    case "desktop.tunnelHub.validateSettings": {
-      const validation = validateTunnelHubSettingsInput(readTunnelHubSettingsInput(args));
-      return ok(action, {
-        valid: validation.valid,
-        issues: validation.issues,
-        settings: validation.settings
-      });
-    }
-    case "desktop.tunnelHub.applySettings": {
-      return ok(action, await applyTunnelHubSettings(readTunnelHubSettingsInput(args)));
-    }
-    case "desktop.tunnelHub.getStatus":
-      return ok(action, getTunnelHubRuntimeStatus());
-    case "desktop.tunnelHub.start":
-      return ok(action, await startTunnelHubRuntime());
-    case "desktop.tunnelHub.stop":
-      return ok(action, await stopTunnelHubRuntime());
-    case "desktop.tunnelHub.restart":
-      return ok(action, await restartTunnelHubRuntime());
-    case "desktop.tunnelHub.readLog": {
-      return ok(action, readTunnelHubRuntimeLog({
-        limitBytes: typeof args.limitBytes === "number" ? args.limitBytes : undefined,
-        beforeOffset: typeof args.beforeOffset === "number" ? args.beforeOffset : undefined
-      }));
-    }
-
-
     case "desktop.controlCenter.listServices":
       return ok(action, await listServices(options.app));
     case "desktop.controlCenter.getServiceStatus":
@@ -1116,11 +1030,6 @@ async function executeAction(
       return ok(action, await stopService(options.app, readServiceId(args)));
     case "desktop.controlCenter.restartService":
       return ok(action, await restartService(options.app, readServiceId(args)));
-    case "desktop.staticServer.list":
-    case "desktop.staticServer.start":
-    case "desktop.staticServer.stop":
-    case "desktop.staticServer.restart":
-      return executeStaticServerAction(action, args);
     case "desktop.web.list":
     case "desktop.web.websites.list":
     case "desktop.web.websites.add":
@@ -1189,39 +1098,21 @@ async function executeAction(
       return ok(action, await deleteSandboxImage(options.app, readItemId(args)));
     case "desktop.market.buildSandboxImage":
       return ok(action, await buildSandboxImage(options.app, readItemId(args)));
-    case "desktop.help.getCurrentTopic":
-    case "desktop.help.explainCurrentPage": {
-      const response = await callRendererPageAction(options, { ...request, action: "desktop.page.getContext" }, args);
-      return { ...response, action };
-    }
-    case "desktop.help.searchTopics":
-      return ok(action, {
-        query: readString(args, "query"),
-        topics: [
-          { id: "control-center", title: t("desktopAction.helpControlCenter"), route: "/control-center" },
-          { id: "market", title: t("desktopAction.helpMarket"), route: "/market" },
-          ...createAgentWebclientHelpTopics(),
-          { id: "settings", title: t("desktopAction.helpSettings"), route: "/settings" },
-          { id: "help", title: t("desktopAction.helpHelp"), route: "/help" }
-        ]
-      });
-    case "desktop.help.openTopic":
-    case "desktop.help.navigateToRelatedPage": {
-      const topic = readString(args, "topic") || readString(args, "id");
-      const route = topic === "control-center" ? "/control-center"
-        : topic === "market" ? "/market"
-          : (resolveAgentWebclientHelpRoute(topic) ?? (topic === "settings" ? "/settings" : "/help"));
+    case "desktop.help.openTopic": {
+      const route = resolveHelpOpenRoute(args);
+      if (!route) {
+        return fail(action, "invalid_args", "route, topic, or id must resolve to an allowed Help route.");
+      }
       options.navigate(route);
       return ok(action, { route });
     }
-    case "desktop.help.suggestNextAction":
-      return ok(action, {
-        suggestions: [
-          t("desktopAction.suggestionCurrentPage"),
-          t("desktopAction.suggestionSettings"),
-          t("desktopAction.suggestionRelatedPage")
-        ]
-      });
+    case "desktop.kanban.listIssues":
+    case "desktop.kanban.getIssue":
+    case "desktop.kanban.createIssue":
+    case "desktop.kanban.updateIssue":
+    case "desktop.kanban.deleteIssue":
+    case "desktop.kanban.moveIssue":
+      return executeKanbanAction(options, action, args);
     case "desktop.pet.getState":
     case "desktop.pet.getSettings":
     case "desktop.pet.show":
@@ -1230,58 +1121,6 @@ async function executeAction(
     case "desktop.pet.listAppearances":
     case "desktop.pet.setAppearance":
       return executePetAction(options, action, args);
-    case "desktop.agents.listAgents":
-      return ok(action, await options.assistantBridge.listAgents());
-    case "desktop.agents.getAgentDetail":
-      return ok(action, await callAgentPlatform(options.app, `/api/agent?agentKey=${encodeURIComponent(readAgentKey(args))}`));
-    case "desktop.agents.validateAgentConfig":
-      return ok(action, validateAgentConfig(args));
-    case "desktop.agents.previewAgentConfigPatch":
-      return preview(action, { key: readAgentKey(args), patch: asRecord(args.patch), warning: t("desktopAction.previewPatchWarning") });
-    case "desktop.agents.applyAgentConfigPatch":
-      return fail(action, "unsupported_action", t("desktopAction.updateAgentRequired"));
-    case "desktop.agents.createAgentDraft":
-      return preview(action, {
-        key: readString(args, "key"),
-        definition: asRecord(args.definition),
-        soulPrompt: typeof args.soulPrompt === "string" ? args.soulPrompt : "",
-        agentsPrompt: typeof args.agentsPrompt === "string" ? args.agentsPrompt : ""
-      });
-    case "desktop.agents.createAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/admin/agents/create", { method: "POST", body: args }));
-    case "desktop.agents.updateAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/admin/agents/update", { method: "POST", body: args }));
-    case "desktop.agents.deleteAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/admin/agents/delete", { method: "POST", body: { key: readAgentKey(args) } }));
-    case "desktop.agents.cloneAgent":
-    case "desktop.agents.disableAgent":
-    case "desktop.agents.reloadAgents":
-      return fail(action, "unsupported_action", `${action} is reserved but not implemented in Desktop v1.`);
-    case "desktop.automations.listAutomations":
-      return ok(action, await callAgentPlatform(options.app, "/api/automations", { method: "POST", body: {} }));
-    case "desktop.automations.getAutomationDetail":
-      return ok(action, await callAgentPlatform(options.app, "/api/automation", { method: "POST", body: { id: readAutomationId(args) } }));
-    case "desktop.automations.validateAutomation":
-      return ok(action, validateAutomation(args));
-    case "desktop.automations.previewAutomation":
-      return preview(action, { automation: args, validation: validateAutomation(args) });
-    case "desktop.automations.createAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/create", { method: "POST", body: args }));
-    case "desktop.automations.updateAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/update", { method: "POST", body: args }));
-    case "desktop.automations.pauseAutomation":
-    case "desktop.automations.resumeAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/toggle", {
-        method: "POST",
-        body: { id: readAutomationId(args), enabled: action === "desktop.automations.resumeAutomation" }
-      }));
-    case "desktop.automations.deleteAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/delete", { method: "POST", body: { id: readAutomationId(args) } }));
-    case "desktop.automations.explainNextRun": {
-      const id = readAutomationId(args);
-      const detail = await callAgentPlatform<Record<string, unknown>>(options.app, "/api/automation", { method: "POST", body: { id } });
-      return ok(action, { id, nextFireTime: detail.nextFireTime ?? null, detail });
-    }
     default:
       return fail(action, "unknown_action", `unknown action: ${action}`);
   }

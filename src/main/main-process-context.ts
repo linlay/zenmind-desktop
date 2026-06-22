@@ -46,6 +46,7 @@ export function createDesktopActionOptions(
       const gateway = dependencies.cdpIntegration.start();
       return gateway.executeCommand(request);
     },
+    getKanbanRuntime: () => context.state.kanbanRuntime,
     desktopPet: dependencies.desktopPet
       ? {
           getSettings: () => toDesktopPetSettings(context.state.desktopPetSettings),
