@@ -562,6 +562,20 @@
 }
 
 /* Settings owns its Ant controls locally so app-wide Ant defaults stay untouched. */
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card.ant-card {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card .ant-card-body {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-form .ant-form-item-extra {
+  color: var(--ink-muted);
+}
+
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-label > label,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-extra,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-explain,

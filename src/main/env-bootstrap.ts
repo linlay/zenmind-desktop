@@ -11,7 +11,7 @@ export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
 
 type AppPathReader = Pick<App, "getPath">;
 type AppVersionReader = Partial<Pick<App, "getAppPath" | "getVersion">>;
-type AppPackageReader = Partial<Pick<App, "isPackaged">>;
+type AppPackageReader = Partial<Pick<App, "getAppPath" | "isPackaged">>;
 
 type EnvZipEntry = {
   relativePath: string;
@@ -150,13 +150,44 @@ export function shouldRequireEnvZipImport(input: {
   return (platform === "darwin" || platform === "win32") && !input.runtimeEnvExistedAtStartup;
 }
 
-function bundledResourcesRoot(app: AppPackageReader, resourcesRootOverride?: string) {
-  if (resourcesRootOverride) {
-    return resourcesRootOverride;
+function pushUniquePath(candidates: string[], candidate: string | undefined) {
+  if (!candidate) {
+    return;
   }
-  return app.isPackaged
-    ? process.resourcesPath
-    : path.join(process.cwd(), "build", "resources");
+  const normalized = path.resolve(candidate);
+  if (!candidates.includes(normalized)) {
+    candidates.push(normalized);
+  }
+}
+
+function getPackagedAppPath(app: AppPackageReader) {
+  try {
+    return typeof app.getAppPath === "function" ? app.getAppPath() : "";
+  } catch {
+    return "";
+  }
+}
+
+function bundledResourcesRootCandidates(app: AppPackageReader, resourcesRootOverride?: string) {
+  const candidates: string[] = [];
+  pushUniquePath(candidates, resourcesRootOverride);
+
+  if (app.isPackaged) {
+    pushUniquePath(candidates, process.resourcesPath);
+
+    const appPath = getPackagedAppPath(app);
+    if (appPath) {
+      pushUniquePath(candidates, path.dirname(appPath));
+    }
+
+    if (process.execPath) {
+      pushUniquePath(candidates, path.join(path.dirname(process.execPath), "resources"));
+    }
+  } else if (!resourcesRootOverride) {
+    pushUniquePath(candidates, path.join(process.cwd(), "build", "resources"));
+  }
+
+  return candidates;
 }
 
 function fileExists(filePath: string) {
@@ -172,14 +203,13 @@ export function resolveBundledEnvZipPath(
   platform: NodeJS.Platform = process.platform,
   resourcesRootOverride?: string
 ) {
-  const resourcesRoot = bundledResourcesRoot(app, resourcesRootOverride);
-  if (platform === "darwin") {
-    return path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME, ENV_ZIP_FILE_NAME);
+  if (platform !== "darwin" && platform !== "win32") {
+    return null;
   }
-  if (platform === "win32") {
-    return path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME, ENV_ZIP_FILE_NAME);
-  }
-  return null;
+
+  const candidates = bundledResourcesRootCandidates(app, resourcesRootOverride)
+    .map((resourcesRoot) => path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME, ENV_ZIP_FILE_NAME));
+  return candidates.find(fileExists) ?? candidates[0] ?? null;
 }
 
 export function bundledEnvZipExists(

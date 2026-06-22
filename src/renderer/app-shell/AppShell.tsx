@@ -350,10 +350,26 @@ const BROWSER_CHROME_DRAG_BLOCK_SELECTOR = [
   ".external-webview-debug-sidebar"
 ].join(",");
 
+const SIDEBAR_DRAG_BLOCK_SELECTOR = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  "[role=\"button\"]",
+  "[role=\"menuitem\"]",
+  "[contenteditable=\"true\"]"
+].join(",");
+
 function resolveWindowDragTarget(target: Element | null) {
   const dragRegion = target?.closest(".app-window-drag-region");
   if (dragRegion) {
     return dragRegion;
+  }
+
+  const sidebarShell = target?.closest(".app-sidebar-shell");
+  if (sidebarShell && !target?.closest(SIDEBAR_DRAG_BLOCK_SELECTOR)) {
+    return sidebarShell;
   }
 
   const browserChrome = target?.closest(".external-webview-browser-chrome");
