@@ -106,7 +106,7 @@ npm run build
 npm run dist:mac
 ```
 
-使用 `electron-builder` 输出 DMG 安装包，目标 arm64 架构，使用 ad-hoc 签名。
+使用 `electron-builder` 输出 DMG 安装包，目标 arm64 架构，并使用当前 macOS 签名环境完成签名。打包配置会关闭 electron-builder 对 `.app` 的自动公证；如果配置了 Apple 公证环境变量，`dist:mac` 会在最终 DMG 生成后提交该 DMG 并把票据 staple 到 DMG 上。支持 `APPLE_KEYCHAIN_PROFILE` / `APPLE_KEYCHAIN`、`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`、`APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`，也可以设置 `SKIP_NOTARIZE=1` 跳过公证。
 如需把首启环境包内置进应用，可传入 `ENV_ZIP`；如需同时内置 demo，可设置 `DEMO=1` 或 `DEMO=true`：
 
 ```bash

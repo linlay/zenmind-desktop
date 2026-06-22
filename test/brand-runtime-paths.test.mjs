@@ -660,6 +660,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
     true
   );
   assert.equal(electronBuilderConfig.mac.icon, brandBuildRelativePath(brand, "icons", "icon.icns"));
+  assert.equal(electronBuilderConfig.mac.notarize, false);
   assert.equal(electronBuilderConfig.mac.timestamp, undefined);
   assert.equal(electronBuilderConfig.win.icon, brandBuildRelativePath(brand, "icons", "icon.ico"));
   assert.equal(electronBuilderConfig.nsis.include, brandBuildRelativePath(brand, "installer", "installer.nsh"));

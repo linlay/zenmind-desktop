@@ -1097,6 +1097,7 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
       target: ["dmg"],
       category: "public.app-category.developer-tools",
       hardenedRuntime: true,
+      notarize: false,
       timestamp: shouldSkipMacTimestamp() ? "none" : undefined
     },
     electronLanguages: ["zh-CN", "en-US"],

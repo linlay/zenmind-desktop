@@ -1,5 +1,6 @@
 import process from "node:process";
 import { syncBrandArtifacts, resolveRequiredBrandId, electronBuilderConfigPath } from "./lib/brand-config.mjs";
+import { notarizeAndStapleDmg, resolveMacDmgArtifactPath } from "./lib/mac-notarize.mjs";
 import { npmCmd, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 
 const MAC_SIGNING_CERTIFICATE_PREFIX = "Developer ID Application:";
@@ -113,3 +114,11 @@ await runAndWait(npmCmd, [
   "--mac",
   "--arm64"
 ], brandProcessOptions({ cwd: projectRoot }));
+
+if (!shouldSkipNotarize()) {
+  const dmgPath = resolveMacDmgArtifactPath(projectRoot, brand);
+  await notarizeAndStapleDmg(dmgPath, {
+    rootDir: projectRoot,
+    env: brandProcessOptions().env
+  });
+}
