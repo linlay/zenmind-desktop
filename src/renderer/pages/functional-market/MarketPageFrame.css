@@ -15,14 +15,16 @@
 }
 
 :root[data-theme="dark"] .market-page {
-  --market-control-bg: var(--desktop-ui-bg, #181818);
-  --market-control-card: color-mix(in srgb, var(--surface-strong) 90%, #111827 10%);
-  --market-control-card-soft: rgba(255, 255, 255, 0.045);
-  --market-control-border: rgba(255, 255, 255, 0.12);
-  --market-control-text: var(--desktop-ui-text);
-  --market-control-muted: var(--desktop-ui-muted);
-  --market-control-blue: #6366f1;
-  --market-control-blue-strong: #818cf8;
+  --market-control-bg: #0f141b;
+  --market-control-card: #171e28;
+  --market-control-card-soft: #121821;
+  --market-control-border: rgba(148, 163, 184, 0.16);
+  --market-control-text: #e7edf6;
+  --market-control-muted: #94a3b8;
+  --market-control-blue: #6ea8ff;
+  --market-control-blue-strong: #9bc2ff;
+  background:
+    linear-gradient(180deg, #151b24 0%, #10161e 42%, var(--market-control-bg) 100%);
 }
 
 .market-shell {
@@ -182,16 +184,16 @@
 :root[data-theme="dark"] .tab-websiteApps .market-tab-icon { color: #c4b5fd; }
 
 :root[data-theme="dark"] .market-tabs {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.045);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-color: rgba(148, 163, 184, 0.16);
+  background: #121821;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 :root[data-theme="dark"] .market-tabs .ant-segmented-thumb,
 :root[data-theme="dark"] .market-tabs .ant-segmented-item-selected {
-  border-color: rgba(148, 163, 184, 0.18);
-  background: color-mix(in srgb, var(--surface-strong) 90%, #111827 10%);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+  border-color: rgba(148, 163, 184, 0.22);
+  background: #1a2330;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
 }
 
 :root[data-theme="dark"] .market-tabs .ant-segmented-item:hover:not(.ant-segmented-item-selected) {

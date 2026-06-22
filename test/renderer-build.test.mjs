@@ -1800,6 +1800,11 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.doesNotMatch(settingsPage, /case "tunnelHub"/);
   assert.doesNotMatch(settingsPage, /settings\.control\.cloudPanelAria/);
   assert.match(settingsPage, /case "control"[\s\S]*settings\.control\.tunnelTitle[\s\S]*settings\.mobilePairing\.title/);
+  assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.deviceId/);
+  assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.publicUrl|settings\.tunnelHub\.webSocketUrl/);
+  assert.doesNotMatch(settingsPage, /settings\.createAppPairingPayload/);
+  assert.match(settingsPage, /buildMobileAccessUrl/);
+  assert.match(settingsPage, /window\.electronAPI\.agentAuth\.issueAccessToken\("missing"\)/);
   assert.match(settingsPage, /shouldReadControlData = activeSection === "kanban"/);
   assert.match(settingsPage, /shouldReadTunnelHubData = activeSection === "control"/);
   assert.match(settingsPage, /settings\.control\.remoteControlEnabled/);
@@ -1817,12 +1822,12 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.match(kanbanRuntime, /KANBAN_CONFIG_FILE = "kanban\.json"/);
   assert.match(zhCN, /"settings\.control\.label":\s*"控制"/);
   assert.match(zhCN, /"settings\.kanban\.label":\s*"看板"/);
-  assert.match(zhCN, /"settings\.control\.description":\s*"管理桌面端配对、隧道与端口穿透。"/);
+  assert.match(zhCN, /"settings\.control\.description":\s*"管理桌面端移动访问、隧道与端口穿透。"/);
   assert.match(zhCN, /"settings\.kanban\.description":\s*"管理看板云端 API 与远程控制权限。"/);
   assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
   assert.match(enUS, /"settings\.control\.label":\s*"Control"/);
   assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
-  assert.match(enUS, /"settings\.control\.description":\s*"Manage Desktop pairing, tunnel, and port exposure\."/);
+  assert.match(enUS, /"settings\.control\.description":\s*"Manage Desktop mobile access, tunnel, and port exposure\."/);
   assert.match(enUS, /"settings\.kanban\.description":\s*"Manage the Kanban cloud API and remote control permission\."/);
   assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, debugVisible, t \}\)/);
 });

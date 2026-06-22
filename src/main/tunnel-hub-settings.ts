@@ -37,8 +37,6 @@ type WritableTunnelHubSettings = {
   relayUrl: string;
   deviceId?: string;
   publicHost?: string;
-  publicUrl?: string;
-  webSocketUrl?: string;
   lastRegisteredAt?: string;
   rotateRelayToken?: boolean;
   tlsInsecureSkipVerify: boolean;
@@ -119,6 +117,38 @@ export function normalizeRelayUrl(value: unknown) {
 
 function readStoredString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePublicHost(value: unknown) {
+  const text = readStoredString(value);
+  if (!text) {
+    return "";
+  }
+  try {
+    const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//iu.test(text) ? text : `https://${text}`);
+    return parsed.host.toLowerCase();
+  } catch {
+    return text
+      .replace(/^https?:\/\//iu, "")
+      .replace(/^wss?:\/\//iu, "")
+      .split("/")[0]
+      .trim()
+      .toLowerCase();
+  }
+}
+
+function readStoredPublicHost(stored: StoredTunnelHubSettings) {
+  return normalizePublicHost(stored.publicHost) ||
+    normalizePublicHost(stored.publicUrl) ||
+    normalizePublicHost(stored.webSocketUrl);
+}
+
+function publicUrlFromHost(publicHost: string) {
+  return publicHost ? `https://${publicHost}` : "";
+}
+
+function webSocketUrlFromHost(publicHost: string) {
+  return publicHost ? `wss://${publicHost}/ws` : "";
 }
 
 export function normalizeTunnelHubDeviceId(value: unknown) {
@@ -266,6 +296,7 @@ export function readTunnelHubSettings(app: App): TunnelHubSettings {
   const ssoSiteToken = readTunnelHubRegistrationBearerToken(app);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
+  const publicHost = readStoredPublicHost(stored);
   const complete = Boolean(ssoSiteToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
     ? stored.enabled && complete
@@ -276,9 +307,9 @@ export function readTunnelHubSettings(app: App): TunnelHubSettings {
     deviceId,
     hasRelayToken: Boolean(token),
     relayTokenPreview: previewToken(token),
-    publicHost: readStoredString(stored.publicHost),
-    publicUrl: readStoredString(stored.publicUrl),
-    webSocketUrl: readStoredString(stored.webSocketUrl),
+    publicHost,
+    publicUrl: publicUrlFromHost(publicHost),
+    webSocketUrl: webSocketUrlFromHost(publicHost),
     lastRegisteredAt: readStoredString(stored.lastRegisteredAt) || undefined,
     tlsInsecureSkipVerify: stored.tlsInsecureSkipVerify === true,
     reconnectSeconds: normalizeReconnectSeconds(stored.reconnectSeconds)
@@ -396,8 +427,6 @@ export function saveTunnelHubSettings(
     relayUrl,
     deviceId,
     publicHost: deviceIdChanged ? "" : current.publicHost,
-    publicUrl: deviceIdChanged ? "" : current.publicUrl,
-    webSocketUrl: deviceIdChanged ? "" : current.webSocketUrl,
     lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
     rotateRelayToken: input.rotateRelayToken === true,
     tlsInsecureSkipVerify,
@@ -442,8 +471,6 @@ export function ensureTunnelHubDeviceId(app: App) {
     relayUrl: currentSettings.relayUrl,
     deviceId,
     publicHost: currentSettings.publicHost,
-    publicUrl: currentSettings.publicUrl,
-    webSocketUrl: currentSettings.webSocketUrl,
     lastRegisteredAt: currentSettings.lastRegisteredAt,
     rotateRelayToken: readStoredSettings(app).rotateRelayToken === true,
     tlsInsecureSkipVerify: currentSettings.tlsInsecureSkipVerify,
@@ -459,13 +486,15 @@ export function readTunnelHubRelayTokenRotationRequest(app: App) {
 export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubRegistrationRecord) {
   const current = readTunnelHubSettings(app);
   const deviceId = normalizeTunnelHubDeviceId(record.deviceId) || current.deviceId || createDefaultDeviceId(app);
+  const publicHost = normalizePublicHost(record.publicHost) ||
+    normalizePublicHost(record.publicUrl) ||
+    normalizePublicHost(record.webSocketUrl) ||
+    current.publicHost;
   const nextSettings = {
     enabled: current.enabled,
     relayUrl: normalizeRelayUrl(record.relayUrl ?? current.relayUrl),
     deviceId,
-    publicHost: record.publicHost?.trim() ?? current.publicHost,
-    publicUrl: record.publicUrl?.trim() ?? current.publicUrl,
-    webSocketUrl: record.webSocketUrl?.trim() ?? current.webSocketUrl,
+    publicHost,
     lastRegisteredAt: record.lastRegisteredAt?.trim() || new Date().toISOString(),
     rotateRelayToken: false,
     tlsInsecureSkipVerify: current.tlsInsecureSkipVerify,

@@ -174,9 +174,33 @@ test("Tunnel Hub registration result stores returned relay token", (t) => {
     relayToken: "returned-relay-token"
   });
 
+  assert.equal(settings.publicHost, "mac-mini-office.relay.example.test");
+  assert.equal(settings.publicUrl, "https://mac-mini-office.relay.example.test");
   assert.equal(settings.webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
   assert.equal(settings.hasRelayToken, true);
   assert.equal(fs.readFileSync(tunnelTokenPath(app), "utf8").trim(), "returned-relay-token");
+  const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
+  assert.equal(stored.publicHost, "mac-mini-office.relay.example.test");
+  assert.equal("publicUrl" in stored, false);
+  assert.equal("webSocketUrl" in stored, false);
+});
+
+test("Tunnel Hub settings derive public URLs from host and recover legacy URL-only settings", (t) => {
+  const app = createTempApp(t);
+  fs.mkdirSync(path.dirname(tunnelSettingsPath(app)), { recursive: true });
+  fs.writeFileSync(tunnelSettingsPath(app), `${JSON.stringify({
+    enabled: false,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    publicUrl: "https://legacy-public.example.test/path",
+    webSocketUrl: "wss://ignored-public.example.test/ws"
+  }, null, 2)}\n`, "utf8");
+
+  const settings = readTunnelHubSettings(app);
+
+  assert.equal(settings.publicHost, "legacy-public.example.test");
+  assert.equal(settings.publicUrl, "https://legacy-public.example.test");
+  assert.equal(settings.webSocketUrl, "wss://legacy-public.example.test/ws");
 });
 
 test("Tunnel Hub enable saves drafts but falls back to disabled when config is incomplete", (t) => {

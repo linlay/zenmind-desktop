@@ -1,4 +1,7 @@
 .market-storefront {
+  --market-grid-gap: 4px;
+  --market-card-target: 320px;
+  --market-card-min: calc(var(--market-card-target) - 20px);
   --market-store-accent: #2563eb;
   --market-store-accent-strong: #1d4ed8;
   --market-store-accent-soft: #eff6ff;
@@ -166,9 +169,11 @@
 
 .market-store-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 8px;
+  /* The parent app-content has already subtracted the left sidebar width. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--market-card-min)), var(--market-card-target)));
+  gap: var(--market-grid-gap);
   align-content: start;
+  justify-content: start;
 }
 
 /* ---------- item ---------- */
@@ -922,21 +927,21 @@
 /* ---------- dark mode ---------- */
 
 :root[data-theme="dark"] .market-storefront {
-  --market-store-text: var(--desktop-ui-text);
-  --market-store-muted: var(--desktop-ui-muted);
-  --market-store-faint: #7d8796;
-  --market-store-line: rgba(148, 163, 184, 0.18);
-  --market-store-line-strong: rgba(148, 163, 184, 0.26);
-  --market-store-surface: color-mix(in srgb, var(--surface-strong) 90%, #111827 10%);
-  --market-store-surface-soft: rgba(255, 255, 255, 0.055);
-  --market-store-accent: #60a5fa;
-  --market-store-accent-strong: #93c5fd;
-  --market-store-accent-soft: rgba(96, 165, 250, 0.14);
+  --market-store-accent: #6ea8ff;
+  --market-store-accent-strong: #9bc2ff;
+  --market-store-accent-soft: rgba(110, 168, 255, 0.14);
+  --market-store-text: #e7edf6;
+  --market-store-muted: #9aa8ba;
+  --market-store-faint: #718095;
+  --market-store-line: rgba(130, 151, 177, 0.18);
+  --market-store-line-strong: rgba(148, 163, 184, 0.3);
+  --market-store-surface: #17202a;
+  --market-store-surface-soft: #111821;
   --market-store-success: #4ade80;
   --market-store-warning: #fbbf24;
   --market-store-danger: #fb7185;
-  --market-store-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
-  --market-store-shadow-hover: 0 16px 34px rgba(0, 0, 0, 0.28);
+  --market-store-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --market-store-shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.34);
 }
 
 :root[data-theme="dark"] .market-store-search.ant-input-affix-wrapper,
@@ -966,14 +971,21 @@
 :root[data-theme="dark"] .market-store-detail-meta-pill,
 :root[data-theme="dark"] .market-store-detail-category-pill.ant-tag {
   border-color: var(--market-store-line);
-  background: rgba(255, 255, 255, 0.055);
-  color: #cbd5e1;
+  background: var(--market-store-surface-soft);
+  color: #c5d0de;
 }
 
 :root[data-theme="dark"] .market-store-toolbar-button.is-primary.ant-btn,
 :root[data-theme="dark"] .market-store-action.is-primary.ant-btn {
-  border-color: #60a5fa;
-  background: #2563eb;
+  border-color: #4f8df7;
+  background: #2f6fec;
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .market-store-toolbar-actions .market-store-toolbar-button.is-primary.ant-btn:hover:not(:disabled),
+:root[data-theme="dark"] .market-store-card-footer .market-store-action.is-primary.ant-btn:hover:not(:disabled) {
+  border-color: #6ea8ff;
+  background: #3f7fe8;
   color: #ffffff;
 }
 
@@ -1044,6 +1056,24 @@
 }
 
 /* ---------- responsive ---------- */
+
+@container (min-width: 1212px) {
+  .market-store-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1516px) {
+  .market-store-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1820px) {
+  .market-store-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
 
 @container (max-width: 760px) {
   .market-store-grid {

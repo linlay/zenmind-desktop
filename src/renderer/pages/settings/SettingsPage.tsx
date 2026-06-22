@@ -9,7 +9,6 @@ import type {
   AssistantNavAgentItem,
   AssistantSettingsPublic,
   WebsiteEntry,
-  DesktopAppPairingPayloadResult,
   DesktopAppInfo,
   DesktopDeviceInfo,
   DesktopDeviceIdentityInfo,
@@ -176,17 +175,47 @@ function sortKanbanProjectOptions(projects: KanbanProject[]) {
     });
 }
 
-function formatPairingExpiresAt(value: string, locale: SupportedLocale) {
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp) || timestamp <= 0) {
-    return value;
+function normalizeTunnelPublicHost(value: string) {
+  const text = value.trim();
+  if (!text) {
+    return "";
   }
-  return new Intl.DateTimeFormat(locale, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(timestamp);
+  try {
+    const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//iu.test(text) ? text : `https://${text}`);
+    return parsed.host.toLowerCase();
+  } catch {
+    return text
+      .replace(/^https?:\/\//iu, "")
+      .replace(/^wss?:\/\//iu, "")
+      .split("/")[0]
+      .trim()
+      .toLowerCase();
+  }
+}
+
+function buildMobileAccessUrl(publicHost: string, token: string) {
+  const host = normalizeTunnelPublicHost(publicHost);
+  if (!host) {
+    return "";
+  }
+  const url = new URL(`https://${host}/`);
+  const trimmedToken = token.trim();
+  if (trimmedToken) {
+    url.searchParams.set("token", trimmedToken);
+  }
+  return url.toString();
+}
+
+function redactMobileAccessUrlToken(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.searchParams.has("token")) {
+      url.searchParams.set("token", "***");
+    }
+    return url.toString();
+  } catch {
+    return value.replace(/([?&]token=)[^&\s]+/giu, "$1***");
+  }
 }
 
 function dateKeyUTC(date: Date) {
@@ -2266,9 +2295,9 @@ export function SettingsPage({
   const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [tunnelHubRotateRelayToken, setTunnelHubRotateRelayToken] = useState(false);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
-  const [tunnelHubMobileLinkCopying, setTunnelHubMobileLinkCopying] = useState(false);
-  const [appPairingPending, setAppPairingPending] = useState(false);
-  const [appPairingResult, setAppPairingResult] = useState<DesktopAppPairingPayloadResult | null>(null);
+  const [mobileAccessPending, setMobileAccessPending] = useState(false);
+  const [mobileAccessUrl, setMobileAccessUrl] = useState("");
+  const [mobileAccessError, setMobileAccessError] = useState("");
   const [runtimeResetPending, setRuntimeResetPending] = useState(false);
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
@@ -3624,6 +3653,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         ...defaultTunnelHubSettings,
         ...result.settings
       });
+      if (result.settings.publicHost !== tunnelHubSettings.publicHost) {
+        setMobileAccessUrl("");
+        setMobileAccessError("");
+      }
       setTunnelHubRotateRelayToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
@@ -3653,6 +3686,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         ...defaultTunnelHubSettings,
         ...result.settings
       });
+      if (result.settings.publicHost !== tunnelHubSettings.publicHost) {
+        setMobileAccessUrl("");
+        setMobileAccessError("");
+      }
       setTunnelHubRotateRelayToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
@@ -3670,61 +3707,44 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     }
   }
 
-  async function handleCopyTunnelHubMobileLink() {
-    const publicUrl = tunnelHubSettings.publicUrl.trim();
-    if (!publicUrl) {
-      showSectionNotice("control", t("settings.tunnelHub.mobileLinkUnavailable"), "error");
+  async function handleCreateMobileAccessUrl() {
+    const publicHost = tunnelHubSettings.publicHost.trim();
+    if (!publicHost) {
+      const message = t("settings.mobilePairing.unavailableHost");
+      setMobileAccessUrl("");
+      setMobileAccessError(message);
+      showSectionNotice("control", message, "error");
       return;
     }
-    setTunnelHubMobileLinkCopying(true);
+    setMobileAccessPending(true);
+    setMobileAccessError("");
     try {
       const tokenResult = await window.electronAPI.agentAuth.issueAccessToken("missing");
       const token = tokenResult.token.trim();
       if (!tokenResult.ok || !token) {
         throw new Error(tokenResult.message || t("settings.tunnelHub.mobileLinkTokenFailed"));
       }
-      const mobileUrl = new URL(publicUrl);
-      mobileUrl.searchParams.set("token", token);
-      const copyResult = await window.electronAPI.clipboard.writeText(mobileUrl.toString());
-      if (!copyResult.ok) {
-        throw new Error(copyResult.message || t("settings.tunnelHub.mobileLinkCopyFailed"));
+      const nextUrl = buildMobileAccessUrl(publicHost, token);
+      if (!nextUrl) {
+        throw new Error(t("settings.mobilePairing.unavailableHost"));
       }
-      showSectionNotice("control", t("settings.tunnelHub.mobileLinkCopied"), "success");
-    } catch (reason) {
-      showSectionNotice(
-        "control",
-        reason instanceof Error ? reason.message : String(reason),
-        "error"
-      );
-    } finally {
-      setTunnelHubMobileLinkCopying(false);
-    }
-  }
-
-  async function handleCreateAppPairingPayload() {
-    setAppPairingPending(true);
-    try {
-      const result = await window.electronAPI.settings.createAppPairingPayload();
-      setAppPairingResult(result);
-      if (!result.ok) {
-        showSectionNotice("control", result.message || t("settings.mobilePairing.failed"), "error");
-        return;
-      }
+      setMobileAccessUrl(nextUrl);
       setReadErrorSections(["control"], "");
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
-      setAppPairingResult({ ok: false, message });
+      setMobileAccessUrl("");
+      setMobileAccessError(message);
       showSectionNotice("control", message, "error");
     } finally {
-      setAppPairingPending(false);
+      setMobileAccessPending(false);
     }
   }
 
-  async function handleCopyAppPairingPayload() {
-    if (!appPairingResult?.ok) {
+  async function handleCopyMobileAccessUrl() {
+    if (!mobileAccessUrl) {
       return;
     }
-    const result = await window.electronAPI.clipboard.writeText(appPairingResult.payloadText);
+    const result = await window.electronAPI.clipboard.writeText(mobileAccessUrl);
     if (!result.ok) {
       showSectionNotice("control", result.message || t("settings.mobilePairing.copyFailed"), "error");
     }
@@ -4139,8 +4159,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
           </div>
         );
       case "control": {
-        const pairingPayloadResult = appPairingResult?.ok ? appPairingResult : null;
-        const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
+        const mobileAccessDisplayUrl = mobileAccessUrl ? redactMobileAccessUrlToken(mobileAccessUrl) : "";
         return (
           <>
             <div className="settings-item-card settings-control-card" aria-label={t("settings.control.tunnelPanelAria")}>
@@ -4158,14 +4177,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                 />
               </div>
               <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
-                <label className="settings-control-field">
-                  <span>{t("settings.tunnelHub.deviceId")}</span>
-                  <Input
-                    value={tunnelHubSettings.deviceId}
-                    onChange={(event) => setTunnelHubSettings((current) => ({ ...current, deviceId: event.target.value }))}
-                    placeholder={t("settings.tunnelHub.deviceIdPlaceholder")}
-                  />
-                </label>
                 <label className="settings-control-field">
                   <span>{t("settings.tunnelHub.relayUrl")}</span>
                   <Input
@@ -4208,27 +4219,9 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                     <small>{t("settings.tunnelHub.reconnectUnit")}</small>
                   </div>
                 </label>
-                {tunnelHubSettings.publicUrl || tunnelHubSettings.webSocketUrl ? (
+                {tunnelHubSettings.publicHost ? (
                   <div className="settings-control-field settings-readonly-stack">
-                    {tunnelHubSettings.publicHost ? (
-                      <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
-                    ) : null}
-                    {tunnelHubSettings.publicUrl ? (
-                      <small>{t("settings.tunnelHub.publicUrl")}: <code>{tunnelHubSettings.publicUrl}</code></small>
-                    ) : null}
-                    {tunnelHubSettings.webSocketUrl ? (
-                      <small>{t("settings.tunnelHub.webSocketUrl")}: <code>{tunnelHubSettings.webSocketUrl}</code></small>
-                    ) : null}
-                    {tunnelHubSettings.publicUrl ? (
-                      <Button
-                        size="small"
-                        loading={tunnelHubMobileLinkCopying}
-                        disabled={tunnelHubMobileLinkCopying}
-                        onClick={() => void handleCopyTunnelHubMobileLink()}
-                      >
-                        {t("settings.tunnelHub.copyMobileLink")}
-                      </Button>
-                    ) : null}
+                    <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
                   </div>
                 ) : null}
                 <div className="settings-control-actions">
@@ -4246,23 +4239,23 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                 </div>
                 <Button
                   type="primary"
-                  disabled={appPairingPending}
-                  loading={appPairingPending}
-                  onClick={() => void handleCreateAppPairingPayload()}
+                  disabled={mobileAccessPending}
+                  loading={mobileAccessPending}
+                  onClick={() => void handleCreateMobileAccessUrl()}
                 >
-                  {appPairingPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
+                  {mobileAccessPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
                 </Button>
               </div>
-              {pairingErrorMessage ? (
+              {mobileAccessError ? (
                 <div className="settings-item-empty settings-mobile-pairing-error" role="alert">
-                  {pairingErrorMessage}
+                  {mobileAccessError}
                 </div>
               ) : null}
-              {pairingPayloadResult ? (
+              {mobileAccessUrl ? (
                 <div className="settings-mobile-pairing-body">
                   <div className="settings-mobile-pairing-qr" aria-label={t("settings.mobilePairing.qrCode")}>
                     <QRCode
-                      value={pairingPayloadResult.payloadText}
+                      value={mobileAccessUrl}
                       size={196}
                       bordered={false}
                       errorLevel="M"
@@ -4270,21 +4263,17 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                   </div>
                   <div className="settings-mobile-pairing-details">
                     <div className="settings-mobile-pairing-meta">
-                      <span>{t("settings.mobilePairing.apiBaseUrl")}</span>
-                      <code>{pairingPayloadResult.payload.apiBaseUrl}</code>
+                      <span>{t("settings.mobilePairing.publicHost")}</span>
+                      <code>{tunnelHubSettings.publicHost}</code>
                     </div>
                     <div className="settings-mobile-pairing-meta">
-                      <span>{t("settings.mobilePairing.expiresAt")}</span>
-                      <code>{formatPairingExpiresAt(pairingPayloadResult.payload.expiresAt, locale)}</code>
+                      <span>{t("settings.mobilePairing.accessUrl")}</span>
+                      <code>{mobileAccessDisplayUrl}</code>
                     </div>
-                    <label className="settings-mobile-pairing-payload">
-                      <span>{t("settings.mobilePairing.payload")}</span>
-                      <Input.TextArea value={pairingPayloadResult.payloadText} readOnly spellCheck={false} autoSize={{ minRows: 3, maxRows: 8 }} />
-                    </label>
                     <div className="settings-control-actions">
                       <Button
                         type="primary"
-                        onClick={() => void handleCopyAppPairingPayload()}
+                        onClick={() => void handleCopyMobileAccessUrl()}
                       >
                         {t("settings.mobilePairing.copy")}
                       </Button>
