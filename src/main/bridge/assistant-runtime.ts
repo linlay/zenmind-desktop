@@ -1,5 +1,5 @@
 import type { App, BrowserWindow } from "electron";
-import type { AssistantEvent, AssistantNavAgentItemsResult } from "../../shared/contracts";
+import type { AssistantEvent, AssistantNavAgentItemsResult, DesktopWsServerStartOptions } from "../../shared/contracts";
 import { AgentPlatformAssistantBridge } from "../assistant/core/agent-platform-bridge";
 import { AssistantNavigationStatusClient } from "../assistant/core/assistant-navigation-status-client";
 import { callDesktopActionRenderer } from "../desktop-action-renderer";
@@ -83,6 +83,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     desktopActionOptions,
     assistantBridge,
     getKanbanRuntime: () => state.kanbanRuntime,
+    issueAccessToken: options.issueAgentAccessToken,
     agentPlatformBridge: {
       getServiceState: options.getResponsiveServiceState,
       issueAccessToken: options.issueAgentAccessToken
@@ -129,10 +130,13 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     });
   }
 
-  async function startDesktopWsServerForSettings() {
+  async function startDesktopWsServerForSettings(startOptions?: DesktopWsServerStartOptions) {
     desktopWsServerLastError = "";
     try {
-      return await startDesktopWsServer(desktopWsServerOptions);
+      return await startDesktopWsServer({
+        ...desktopWsServerOptions,
+        ...startOptions
+      });
     } catch (error) {
       desktopWsServerLastError = error instanceof Error ? error.message : String(error);
       throw error;

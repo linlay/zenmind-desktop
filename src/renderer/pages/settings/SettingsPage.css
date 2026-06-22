@@ -477,6 +477,14 @@
   align-items: flex-start;
 }
 
+.settings-page .settings-mobile-pairing-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .settings-page
   .settings-mobile-pairing-header
   .settings-control-primary-button {
@@ -528,22 +536,6 @@
   font-size: 11px;
   line-height: 1.45;
   overflow-wrap: anywhere;
-}
-
-.settings-page .settings-mobile-pairing-payload textarea {
-  width: 100%;
-  min-height: 112px;
-  max-height: 180px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
-  color: var(--ink);
-  outline: none;
-  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
-  font-size: 11px;
-  line-height: 1.45;
-  resize: vertical;
 }
 
 .settings-page .settings-mobile-pairing-error {
@@ -2301,6 +2293,10 @@
   .settings-page .settings-mobile-pairing-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .settings-page .settings-mobile-pairing-actions {
+    justify-content: flex-start;
   }
 
   .settings-page .settings-debug-card .text-button {

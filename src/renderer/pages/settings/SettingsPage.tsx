@@ -9,6 +9,7 @@ import type {
   AssistantNavAgentItem,
   AssistantSettingsPublic,
   WebsiteEntry,
+  DesktopAppPairingPayloadResult,
   DesktopAppInfo,
   DesktopDeviceInfo,
   DesktopDeviceIdentityInfo,
@@ -28,6 +29,7 @@ import type {
   MarketSettings,
   KanbanCloudConfig,
   KanbanProject,
+  PairingTargetMode,
   TunnelDebugSnapshot,
   TunnelHubSettings
 } from "../../../shared/contracts";
@@ -130,6 +132,7 @@ const DEFAULT_WS_ACTION_DEBUG_COMMAND = {
     args: {}
   }
 };
+const APP_PAIRING_TARGET_MODES: PairingTargetMode[] = ["local", "lan", "tunnel"];
 
 function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunction) {
   switch (themeMode) {
@@ -175,47 +178,32 @@ function sortKanbanProjectOptions(projects: KanbanProject[]) {
     });
 }
 
-function normalizeTunnelPublicHost(value: string) {
-  const text = value.trim();
-  if (!text) {
-    return "";
+function formatPairingExpiresAt(value: string, locale: SupportedLocale) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return value;
   }
-  try {
-    const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//iu.test(text) ? text : `https://${text}`);
-    return parsed.host.toLowerCase();
-  } catch {
-    return text
-      .replace(/^https?:\/\//iu, "")
-      .replace(/^wss?:\/\//iu, "")
-      .split("/")[0]
-      .trim()
-      .toLowerCase();
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(timestamp);
+}
+
+function getPairingTargetModeLabel(targetMode: PairingTargetMode, t: TranslateFunction) {
+  switch (targetMode) {
+    case "lan":
+      return t("settings.mobilePairing.targetModeLan");
+    case "tunnel":
+      return t("settings.mobilePairing.targetModeTunnel");
+    default:
+      return t("settings.mobilePairing.targetModeLocal");
   }
 }
 
-function buildMobileAccessUrl(publicHost: string, token: string) {
-  const host = normalizeTunnelPublicHost(publicHost);
-  if (!host) {
-    return "";
-  }
-  const url = new URL(`https://${host}/`);
-  const trimmedToken = token.trim();
-  if (trimmedToken) {
-    url.searchParams.set("token", trimmedToken);
-  }
-  return url.toString();
-}
-
-function redactMobileAccessUrlToken(value: string) {
-  try {
-    const url = new URL(value);
-    if (url.searchParams.has("token")) {
-      url.searchParams.set("token", "***");
-    }
-    return url.toString();
-  } catch {
-    return value.replace(/([?&]token=)[^&\s]+/giu, "$1***");
-  }
+function maskPairingPayloadText(value: string) {
+  return value ? "zmpair:v2:********" : "";
 }
 
 function dateKeyUTC(date: Date) {
@@ -2294,9 +2282,9 @@ export function SettingsPage({
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
-  const [mobileAccessPending, setMobileAccessPending] = useState(false);
-  const [mobileAccessUrl, setMobileAccessUrl] = useState("");
-  const [mobileAccessError, setMobileAccessError] = useState("");
+  const [appPairingPending, setAppPairingPending] = useState(false);
+  const [appPairingTargetMode, setAppPairingTargetMode] = useState<PairingTargetMode>("local");
+  const [appPairingResult, setAppPairingResult] = useState<DesktopAppPairingPayloadResult | null>(null);
   const [runtimeResetPending, setRuntimeResetPending] = useState(false);
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
@@ -3650,9 +3638,8 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         ...defaultTunnelHubSettings,
         ...result.settings
       });
-      if (result.settings.publicHost !== tunnelHubSettings.publicHost) {
-        setMobileAccessUrl("");
-        setMobileAccessError("");
+      if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
+        setAppPairingResult(null);
       }
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
@@ -3681,9 +3668,8 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         ...defaultTunnelHubSettings,
         ...result.settings
       });
-      if (result.settings.publicHost !== tunnelHubSettings.publicHost) {
-        setMobileAccessUrl("");
-        setMobileAccessError("");
+      if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
+        setAppPairingResult(null);
       }
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
@@ -3701,44 +3687,37 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     }
   }
 
-  async function handleCreateMobileAccessUrl() {
-    const publicHost = tunnelHubSettings.publicHost.trim();
-    if (!publicHost) {
-      const message = t("settings.mobilePairing.unavailableHost");
-      setMobileAccessUrl("");
-      setMobileAccessError(message);
-      showSectionNotice("control", message, "error");
-      return;
-    }
-    setMobileAccessPending(true);
-    setMobileAccessError("");
+  async function handleCreateAppPairingPayload() {
+    setAppPairingPending(true);
     try {
-      const tokenResult = await window.electronAPI.agentAuth.issueAccessToken("missing");
-      const token = tokenResult.token.trim();
-      if (!tokenResult.ok || !token) {
-        throw new Error(tokenResult.message || t("settings.tunnelHub.mobileLinkTokenFailed"));
+      const result = await window.electronAPI.settings.createAppPairingPayload({
+        targetMode: appPairingTargetMode
+      });
+      setAppPairingResult(result);
+      if (!result.ok) {
+        showSectionNotice("control", result.message || t("settings.mobilePairing.failed"), "error");
+        return;
       }
-      const nextUrl = buildMobileAccessUrl(publicHost, token);
-      if (!nextUrl) {
-        throw new Error(t("settings.mobilePairing.unavailableHost"));
-      }
-      setMobileAccessUrl(nextUrl);
       setReadErrorSections(["control"], "");
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
-      setMobileAccessUrl("");
-      setMobileAccessError(message);
+      setAppPairingResult({ ok: false, message });
       showSectionNotice("control", message, "error");
     } finally {
-      setMobileAccessPending(false);
+      setAppPairingPending(false);
     }
   }
 
-  async function handleCopyMobileAccessUrl() {
-    if (!mobileAccessUrl) {
+  function handleAppPairingTargetModeChange(value: PairingTargetMode) {
+    setAppPairingTargetMode(value);
+    setAppPairingResult(null);
+  }
+
+  async function handleCopyAppPairingPayload() {
+    if (!appPairingResult?.ok) {
       return;
     }
-    const result = await window.electronAPI.clipboard.writeText(mobileAccessUrl);
+    const result = await window.electronAPI.clipboard.writeText(appPairingResult.payloadText);
     if (!result.ok) {
       showSectionNotice("control", result.message || t("settings.mobilePairing.copyFailed"), "error");
     }
@@ -4153,7 +4132,8 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
           </div>
         );
       case "control": {
-        const mobileAccessDisplayUrl = mobileAccessUrl ? redactMobileAccessUrlToken(mobileAccessUrl) : "";
+        const pairingPayloadResult = appPairingResult?.ok ? appPairingResult : null;
+        const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
         return (
           <>
             <div className="settings-item-card settings-control-card" aria-label={t("settings.control.tunnelPanelAria")}>
@@ -4227,25 +4207,37 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                   <strong>{t("settings.mobilePairing.title")}</strong>
                   <span>{t("settings.mobilePairing.description")}</span>
                 </div>
-                <Button
-                  type="primary"
-                  disabled={mobileAccessPending}
-                  loading={mobileAccessPending}
-                  onClick={() => void handleCreateMobileAccessUrl()}
-                >
-                  {mobileAccessPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
-                </Button>
+                <div className="settings-mobile-pairing-actions">
+                  <Segmented<PairingTargetMode>
+                    aria-label={t("settings.mobilePairing.targetMode")}
+                    value={appPairingTargetMode}
+                    disabled={appPairingPending}
+                    onChange={handleAppPairingTargetModeChange}
+                    options={APP_PAIRING_TARGET_MODES.map((targetMode) => ({
+                      value: targetMode,
+                      label: getPairingTargetModeLabel(targetMode, t)
+                    }))}
+                  />
+                  <Button
+                    type="primary"
+                    disabled={appPairingPending}
+                    loading={appPairingPending}
+                    onClick={() => void handleCreateAppPairingPayload()}
+                  >
+                    {appPairingPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
+                  </Button>
+                </div>
               </div>
-              {mobileAccessError ? (
+              {pairingErrorMessage ? (
                 <div className="settings-item-empty settings-mobile-pairing-error" role="alert">
-                  {mobileAccessError}
+                  {pairingErrorMessage}
                 </div>
               ) : null}
-              {mobileAccessUrl ? (
+              {pairingPayloadResult ? (
                 <div className="settings-mobile-pairing-body">
                   <div className="settings-mobile-pairing-qr" aria-label={t("settings.mobilePairing.qrCode")}>
                     <QRCode
-                      value={mobileAccessUrl}
+                      value={pairingPayloadResult.payloadText}
                       size={196}
                       bordered={false}
                       errorLevel="M"
@@ -4253,17 +4245,25 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                   </div>
                   <div className="settings-mobile-pairing-details">
                     <div className="settings-mobile-pairing-meta">
-                      <span>{t("settings.mobilePairing.publicHost")}</span>
-                      <code>{tunnelHubSettings.publicHost}</code>
+                      <span>{t("settings.mobilePairing.targetMode")}</span>
+                      <code>{getPairingTargetModeLabel(pairingPayloadResult.display.targetMode, t)}</code>
                     </div>
                     <div className="settings-mobile-pairing-meta">
-                      <span>{t("settings.mobilePairing.accessUrl")}</span>
-                      <code>{mobileAccessDisplayUrl}</code>
+                      <span>{t("settings.mobilePairing.wsUrl")}</span>
+                      <code>{pairingPayloadResult.display.wsUrl}</code>
+                    </div>
+                    <div className="settings-mobile-pairing-meta">
+                      <span>{t("settings.mobilePairing.expiresAt")}</span>
+                      <code>{formatPairingExpiresAt(pairingPayloadResult.display.expiresAt, locale)}</code>
+                    </div>
+                    <div className="settings-mobile-pairing-meta settings-mobile-pairing-payload">
+                      <span>{t("settings.mobilePairing.payload")}</span>
+                      <code>{maskPairingPayloadText(pairingPayloadResult.payloadText)}</code>
                     </div>
                     <div className="settings-control-actions">
                       <Button
                         type="primary"
-                        onClick={() => void handleCopyMobileAccessUrl()}
+                        onClick={() => void handleCopyAppPairingPayload()}
                       >
                         {t("settings.mobilePairing.copy")}
                       </Button>

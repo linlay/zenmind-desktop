@@ -11,6 +11,7 @@ import {
   DESKTOP_WS_NAMESPACES,
   DESKTOP_WS_HOST,
   DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
+  DESKTOP_WS_LAN_BIND_HOST,
   DESKTOP_WS_PATH,
   DESKTOP_WS_PORT,
   DESKTOP_WS_PUSH_TYPES,
@@ -28,6 +29,7 @@ import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
   AgentAuthIssueResult,
+  AgentAuthRefreshReason,
   DesktopWsServerState,
   ServiceState,
   KanbanIssueInput,
@@ -111,7 +113,7 @@ type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
 
 type AgentPlatformBridgeOptions = {
   getServiceState: (app: App, serviceId: string) => Promise<ServiceState>;
-  issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
+  issueAccessToken: (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
   WebSocketConstructor?: MinimalWebSocketConstructor;
 };
 
@@ -125,6 +127,7 @@ export type DesktopWsServerOptions = {
     startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   };
   getKanbanRuntime: () => KanbanRuntime | null;
+  issueAccessToken?: (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
   agentPlatformBridge?: AgentPlatformBridgeOptions;
   verifyToken?: (token: string, subprotocol?: string) => Promise<DesktopWsAuthSession>;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
@@ -155,8 +158,14 @@ type DesktopWsConnection = {
   subscriptions: Set<string>;
   closed: boolean;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
+  authRefresh: Promise<DesktopWsIssuedAuthRefresh> | null;
   agentPlatformBridge: AgentPlatformWsBridge | null;
   transport: DesktopWsProtocolTransport;
+};
+
+type DesktopWsIssuedAuthRefresh = {
+  token: string;
+  auth: DesktopWsAuthSession;
 };
 
 type DesktopWsServerRecord = DesktopWsSessionGroup & {
@@ -193,18 +202,32 @@ const tunnelSessionGroup: DesktopWsSessionGroup = {
   startedAt: nowIso()
 };
 
+function normalizeDesktopWsBindHost(value: unknown) {
+  const host = typeof value === "string" ? value.trim() : "";
+  return host || DESKTOP_WS_HOST;
+}
+
+function isDesktopWsBindHostSatisfied(activeHost: string, requestedHost: string) {
+  return activeHost === requestedHost || activeHost === DESKTOP_WS_LAN_BIND_HOST;
+}
+
+function getDesktopWsLocalUrlHost(host: string) {
+  return host === DESKTOP_WS_LAN_BIND_HOST ? DESKTOP_WS_HOST : host;
+}
+
 function createDesktopWsServerRuntimeState(
   record: DesktopWsServerRecord | null,
   defaultPort: number
 ): DesktopWsServerRuntimeState {
   const host = record?.host ?? DESKTOP_WS_HOST;
+  const urlHost = getDesktopWsLocalUrlHost(host);
   const port = record?.port ?? defaultPort;
   return {
     running: Boolean(record),
     host,
     port,
     path: DESKTOP_WS_PATH,
-    url: `ws://${host}:${port}${DESKTOP_WS_PATH}`
+    url: `ws://${urlHost}:${port}${DESKTOP_WS_PATH}`
   };
 }
 
@@ -513,6 +536,41 @@ export function authenticateDesktopWsProtocolSession(
 ) {
   return (options.verifyToken ?? ((nextToken, nextSubprotocol) =>
     verifyDesktopAccessToken(options.app, nextToken, nextSubprotocol)))(token, subprotocol);
+}
+
+function readAuthRefreshReason(payload: Record<string, unknown>): AgentAuthRefreshReason {
+  return readText(payload.reason) === "unauthorized" ? "unauthorized" : "missing";
+}
+
+async function issueDesktopWsRefreshAuth(
+  options: DesktopWsServerOptions,
+  connection: DesktopWsConnection,
+  reason: AgentAuthRefreshReason
+): Promise<DesktopWsIssuedAuthRefresh> {
+  if (!options.issueAccessToken) {
+    throw new Error("Desktop WS token issuer is not configured");
+  }
+  const tokenResult = await options.issueAccessToken(options.app, reason);
+  const token = readText(tokenResult.token);
+  if (!tokenResult.ok || !token) {
+    throw new Error(tokenResult.message || "Desktop WS token unavailable");
+  }
+  const auth = await authenticateDesktopWsProtocolSession(options, token, connection.auth.subprotocol);
+  connection.auth = auth;
+  return { token, auth };
+}
+
+function refreshDesktopWsConnectionAuth(
+  options: DesktopWsServerOptions,
+  connection: DesktopWsConnection,
+  reason: AgentAuthRefreshReason
+) {
+  if (!connection.authRefresh) {
+    connection.authRefresh = issueDesktopWsRefreshAuth(options, connection, reason).finally(() => {
+      connection.authRefresh = null;
+    });
+  }
+  return connection.authRefresh;
 }
 
 function writeUpgradeFailure(socket: Socket, status: number, message: string) {
@@ -1004,17 +1062,22 @@ async function handleRequest(
       });
       return;
     case "auth.refresh": {
-      const token = readText(asRecord(payload).token);
-      if (!token) {
-        sendError(connection, namespace, id, "invalid_request", 400, "token is required");
+      const payloadRecord = asRecord(payload);
+      const token = readText(payloadRecord.token);
+      if (token) {
+        try {
+          connection.auth = await authenticateDesktopWsProtocolSession(options, token, connection.auth.subprotocol);
+          sendResponse(connection, namespace, type, id, { token, expiresAt: connection.auth.expiresAt });
+        } catch {
+          sendError(connection, namespace, id, "unauthorized", 401, "invalid token");
+        }
         return;
       }
       try {
-        connection.auth = await (options.verifyToken ?? ((nextToken, subprotocol) =>
-          verifyDesktopAccessToken(options.app, nextToken, subprotocol)))(token, connection.auth.subprotocol);
-        sendResponse(connection, namespace, type, id, { expiresAt: connection.auth.expiresAt });
+        const refreshed = await refreshDesktopWsConnectionAuth(options, connection, readAuthRefreshReason(payloadRecord));
+        sendResponse(connection, namespace, type, id, { token: refreshed.token, expiresAt: refreshed.auth.expiresAt });
       } catch {
-        sendError(connection, namespace, id, "unauthorized", 401, "invalid token");
+        sendError(connection, namespace, id, "auth_refresh_failed", 503, "token refresh failed");
       }
       return;
     }
@@ -1230,6 +1293,7 @@ function bindProtocolSession(
     subscriptions: new Set(),
     closed: false,
     heartbeatTimer: null,
+    authRefresh: null,
     agentPlatformBridge: null,
     transport: input.transport
   };
@@ -1347,17 +1411,20 @@ async function startDesktopWsServerInstance(
   options: DesktopWsServerOptions,
   defaultPort: number
 ) {
+  const host = normalizeDesktopWsBindHost(options.host);
+  const logger = options.logger || console;
   const activeServer = activeServers.get(kind) ?? null;
   if (activeServer) {
-    const runtimeState = createDesktopWsServerRuntimeState(activeServer, defaultPort);
-    return {
-      ...runtimeState,
-      webSocketUrl: runtimeState.url
-    };
+    if (isDesktopWsBindHostSatisfied(activeServer.host, host)) {
+      const runtimeState = createDesktopWsServerRuntimeState(activeServer, defaultPort);
+      return {
+        ...runtimeState,
+        webSocketUrl: runtimeState.url
+      };
+    }
+    await stopDesktopWsServerInstance(kind);
   }
-  const host = options.host || DESKTOP_WS_HOST;
   const port = options.port ?? defaultPort;
-  const logger = options.logger || console;
   const server = http.createServer((_req, res) => {
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Desktop WS Server only accepts WebSocket upgrades on /ws.");

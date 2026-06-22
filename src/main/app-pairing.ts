@@ -1,60 +1,103 @@
-import crypto from "node:crypto";
 import os from "node:os";
-import path from "node:path";
 import type { App } from "electron";
-import { issueIdentityCenterAccessToken, ensureIdentityCenterJwk } from "./identity-center-auth";
-import { getDesktopDeviceIdentity } from "./device-identity";
-import { readEnvFile } from "./env-file";
-import { getService } from "./services/service-registry";
-import { getServiceConfigRoot } from "./user-paths";
+import { issueAgentAccessToken } from "./agent-auth";
+import { readTunnelHubSettings } from "./tunnel-hub-settings";
+import { t } from "./i18n/main-i18n";
+import type {
+  AgentAuthIssueResult,
+  AgentAuthRefreshReason,
+  DesktopAppPairingPayloadRequest,
+  DesktopAppPairingPayloadResult,
+  DesktopWsServerStartOptions,
+  DesktopWsServerState,
+  MobilePairingPayloadV2,
+  PairingTargetMode
+} from "../shared/contracts";
+import {
+  DESKTOP_WS_HOST,
+  DESKTOP_WS_LAN_BIND_HOST,
+  DESKTOP_WS_PATH,
+  DESKTOP_WS_PORT
+} from "../shared/desktop-ws";
+import {
+  encodePairingPayloadV2,
+  normalizeDesktopWsUrlInput
+} from "../shared/desktop-ws-protocol";
 
-const IDENTITY_CENTER_SERVICE_ID = "identity-center";
 const MAX_TCP_PORT = 65535;
+const DEFAULT_TARGET_MODE: PairingTargetMode = "local";
 
-export type AppPairingPayload = {
-  desktopDeviceId: string;
-  desktopIdentityCreatedAt: string;
-  desktopUsername: string;
-  desktopHostname: string;
-  identityCenterIssuer: string;
-  identityCenterPublicKeySha256: string;
-  apiBaseUrl: string;
-  pairingId: string;
-  secret: string;
-  expiresAt: string;
+export type AppPairingRuntimeState = Omit<DesktopWsServerState, "enabled" | "message">;
+
+export type AppPairingRuntimeOptions = {
+  issueAccessToken?: (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
+  getDesktopWsServerRuntimeState?: () => AppPairingRuntimeState;
+  startDesktopWsServer?: (options?: DesktopWsServerStartOptions) => Promise<AppPairingRuntimeState>;
 };
 
-export type AppPairingPayloadResult =
-  | { ok: true; payload: AppPairingPayload; payloadText: string }
-  | { ok: false; message: string };
+type TokenClaims = {
+  deviceId: string;
+  expiresAtMs: number;
+};
 
-type FetchLike = (
-  input: string,
-  init: {
-    method: "POST";
-    headers: Record<string, string>;
-    body: string;
-  }
-) => Promise<{
-  ok: boolean;
-  status: number;
-  text: () => Promise<string>;
-}>;
+type PairingTargetPreflight =
+  | { targetMode: "local" }
+  | { targetMode: "lan"; host: string }
+  | { targetMode: "tunnel"; wsUrl: string };
 
-function parsePortValue(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 0;
-  }
-  const parsed = Number.parseInt(trimmed, 10);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= MAX_TCP_PORT ? parsed : 0;
+function readText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-export function resolveIdentityCenterPort(app: App) {
-  const service = getService(IDENTITY_CENTER_SERVICE_ID);
-  const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind), ".env");
-  const env = readEnvFile(envPath);
-  return parsePortValue(env.get(service.web.portEnvKey) ?? "") || service.web.defaultPort;
+function normalizeTargetMode(value: unknown): PairingTargetMode {
+  return value === "lan" || value === "tunnel" || value === "local" ? value : DEFAULT_TARGET_MODE;
+}
+
+function normalizePort(value: unknown) {
+  const port = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(port) && port > 0 && port <= MAX_TCP_PORT ? port : DESKTOP_WS_PORT;
+}
+
+function normalizePath(value: unknown) {
+  const pathname = readText(value);
+  return pathname.startsWith("/") ? pathname : DESKTOP_WS_PATH;
+}
+
+function decodeJwtPayload(token: string) {
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[1]) {
+    throw new Error(t("settings.mobilePairing.invalidToken"));
+  }
+  try {
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Record<string, unknown>;
+  } catch {
+    throw new Error(t("settings.mobilePairing.invalidToken"));
+  }
+}
+
+function readPairingTokenClaims(token: string): TokenClaims {
+  const payload = decodeJwtPayload(token);
+  const scope = readText(payload.scope);
+  if (scope !== "app") {
+    throw new Error(t("settings.mobilePairing.invalidScope"));
+  }
+
+  const deviceId = readText(payload.device_id) || readText(payload.deviceId);
+  if (!deviceId) {
+    throw new Error(t("settings.mobilePairing.missingDeviceId"));
+  }
+
+  const exp = Number(payload.exp);
+  if (!Number.isFinite(exp) || exp <= 0) {
+    throw new Error(t("settings.mobilePairing.missingExpiration"));
+  }
+
+  const expiresAtMs = exp * 1000;
+  if (expiresAtMs <= Date.now()) {
+    throw new Error(t("settings.mobilePairing.expiredToken"));
+  }
+
+  return { deviceId, expiresAtMs };
 }
 
 function isPrivateIPv4(address: string) {
@@ -69,107 +112,120 @@ function isPrivateIPv4(address: string) {
   return second >= 16 && second <= 31;
 }
 
-export function selectPairingHost(interfaces = os.networkInterfaces()) {
-  const candidates: string[] = [];
+function listExternalIPv4(interfaces = os.networkInterfaces()) {
+  const addresses: string[] = [];
   for (const items of Object.values(interfaces)) {
     for (const item of items ?? []) {
       if (item.family === "IPv4" && !item.internal && item.address) {
-        candidates.push(item.address);
+        addresses.push(item.address);
       }
     }
   }
-  return candidates.find(isPrivateIPv4) ?? candidates[0] ?? "127.0.0.1";
+  return addresses;
 }
 
-function getDesktopUsername() {
-  try {
-    return os.userInfo().username || "";
-  } catch {
-    return "";
+function selectLanPairingHost(interfaces = os.networkInterfaces()) {
+  return listExternalIPv4(interfaces).find(isPrivateIPv4) ?? "";
+}
+
+function preflightPairingTarget(app: App, targetMode: PairingTargetMode): PairingTargetPreflight {
+  if (targetMode === "lan") {
+    const host = selectLanPairingHost();
+    if (!host) {
+      throw new Error(t("settings.mobilePairing.lanUnavailable"));
+    }
+    return { targetMode, host };
   }
-}
 
-function parseJSON(text: string) {
-  if (!text) {
-    return null;
+  if (targetMode === "tunnel") {
+    const wsUrl = readTunnelHubSettings(app).webSocketUrl.trim();
+    if (!wsUrl) {
+      throw new Error(t("settings.mobilePairing.tunnelUnavailable"));
+    }
+    return { targetMode, wsUrl };
   }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
+
+  return { targetMode: "local" };
+}
+
+async function ensureDesktopWsRuntime(
+  target: PairingTargetPreflight,
+  options: AppPairingRuntimeOptions
+): Promise<AppPairingRuntimeState> {
+  const startOptions = target.targetMode === "lan" ? { host: DESKTOP_WS_LAN_BIND_HOST } : undefined;
+  if (!startOptions) {
+    const current = options.getDesktopWsServerRuntimeState?.();
+    if (current?.running) {
+      return current;
+    }
   }
+  if (!options.startDesktopWsServer) {
+    throw new Error(t("settings.mobilePairing.serverUnavailable"));
+  }
+  const next = await options.startDesktopWsServer(startOptions);
+  if (!next.running) {
+    throw new Error(t("settings.mobilePairing.serverUnavailable"));
+  }
+  return next;
 }
 
-function readString(record: Record<string, unknown>, key: string) {
-  return typeof record[key] === "string" ? record[key].trim() : "";
-}
+function buildWsUrl(target: PairingTargetPreflight, runtimeState: AppPairingRuntimeState) {
+  const port = normalizePort(runtimeState.port);
+  const pathname = normalizePath(runtimeState.path);
 
-function normalizePairingPayload(raw: unknown, fallback: {
-  desktopDeviceId: string;
-  desktopIdentityCreatedAt: string;
-  desktopUsername: string;
-  desktopHostname: string;
-  identityCenterPublicKeySha256: string;
-  apiBaseUrl: string;
-}): AppPairingPayload {
-  const record = raw && typeof raw === "object" && !Array.isArray(raw)
-    ? raw as Record<string, unknown>
-    : {};
-  return {
-    desktopDeviceId: readString(record, "desktopDeviceId") || fallback.desktopDeviceId,
-    desktopIdentityCreatedAt: readString(record, "desktopIdentityCreatedAt") || fallback.desktopIdentityCreatedAt,
-    desktopUsername: readString(record, "desktopUsername") || fallback.desktopUsername,
-    desktopHostname: readString(record, "desktopHostname") || fallback.desktopHostname,
-    identityCenterIssuer: readString(record, "identityCenterIssuer"),
-    identityCenterPublicKeySha256: readString(record, "identityCenterPublicKeySha256") || fallback.identityCenterPublicKeySha256,
-    apiBaseUrl: readString(record, "apiBaseUrl") || fallback.apiBaseUrl,
-    pairingId: readString(record, "pairingId"),
-    secret: readString(record, "secret"),
-    expiresAt: readString(record, "expiresAt")
-  };
+  if (target.targetMode === "local") {
+    return `ws://${DESKTOP_WS_HOST}:${port}${pathname}`;
+  }
+
+  if (target.targetMode === "lan") {
+    return `ws://${target.host}:${port}${pathname}`;
+  }
+
+  const normalizedTunnelUrl = normalizeDesktopWsUrlInput(target.wsUrl);
+  if (!normalizedTunnelUrl) {
+    throw new Error(t("settings.mobilePairing.tunnelUnavailable"));
+  }
+  return normalizedTunnelUrl;
 }
 
 export async function createAppPairingPayload(
   app: App,
-  fetchImpl: FetchLike = fetch
-): Promise<AppPairingPayloadResult> {
+  request: DesktopAppPairingPayloadRequest = {},
+  options: AppPairingRuntimeOptions = {}
+): Promise<DesktopAppPairingPayloadResult> {
   try {
-    const identity = getDesktopDeviceIdentity(app);
-    const port = resolveIdentityCenterPort(app);
-    const loopbackBaseUrl = `http://127.0.0.1:${port}`;
-    const apiBaseUrl = `http://${selectPairingHost()}:${port}`;
-    const publicKey = await ensureIdentityCenterJwk(app);
-    const publicKeySha256 = crypto.createHash("sha256").update(publicKey.publicKeyPem).digest("hex");
-    const accessToken = await issueIdentityCenterAccessToken(app);
-    const fallback = {
-      desktopDeviceId: identity.deviceId,
-      desktopIdentityCreatedAt: identity.createdAt,
-      desktopUsername: getDesktopUsername(),
-      desktopHostname: os.hostname() || "",
-      identityCenterPublicKeySha256: publicKeySha256,
-      apiBaseUrl
+    const targetMode = normalizeTargetMode(request?.targetMode);
+    const target = preflightPairingTarget(app, targetMode);
+    const runtimeState = await ensureDesktopWsRuntime(target, options);
+    const tokenResult = await (options.issueAccessToken ?? issueAgentAccessToken)(app, "missing");
+    const token = readText(tokenResult.token);
+    if (!tokenResult.ok || !token) {
+      return { ok: false, message: tokenResult.message || t("settings.mobilePairing.tokenUnavailable") };
+    }
+
+    const claims = readPairingTokenClaims(token);
+    const wsUrl = buildWsUrl(target, runtimeState);
+    const payload: MobilePairingPayloadV2 = {
+      v: 2,
+      kind: "desktop-ws",
+      targetMode,
+      wsUrl,
+      tokenMode: "query",
+      token,
+      expiresAtMs: claims.expiresAtMs,
+      desktopDeviceId: claims.deviceId
     };
-    const response = await fetchImpl(`${loopbackBaseUrl}/api/auth/pairing/start`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(fallback)
-    });
-    const responseText = await response.text();
-    const parsed = parseJSON(responseText);
-    if (!response.ok) {
-      const message = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? readString(parsed as Record<string, unknown>, "error") || readString(parsed as Record<string, unknown>, "message")
-        : String(parsed || "");
-      return { ok: false, message: message || `app pairing failed: HTTP ${response.status}` };
-    }
-    const payload = normalizePairingPayload(parsed, fallback);
-    if (!payload.pairingId || !payload.secret || !payload.apiBaseUrl) {
-      return { ok: false, message: "app pairing response is missing required fields." };
-    }
-    return { ok: true, payload, payloadText: JSON.stringify(payload) };
+
+    return {
+      ok: true,
+      payload,
+      payloadText: encodePairingPayloadV2(payload),
+      display: {
+        targetMode,
+        wsUrl,
+        expiresAt: new Date(claims.expiresAtMs).toISOString()
+      }
+    };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) };
   }

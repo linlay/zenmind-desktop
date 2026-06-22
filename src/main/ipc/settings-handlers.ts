@@ -1,7 +1,9 @@
 import type {
   DesktopGeneralSettings,
   DesktopGeneralSettingsInput,
+  DesktopAppPairingPayloadRequest,
   DesktopUsageProfileResult,
+  DesktopWsServerStartOptions,
   DesktopWsServerState,
   TunnelHubSettingsInput,
   TunnelHubSettingsResult
@@ -41,11 +43,14 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance?: () => void;
   emitLocaleChanged: (settings: any) => void;
-  createAppPairingPayload?: (app: any) => Promise<any>;
+  createAppPairingPayload?: (app: any, input?: DesktopAppPairingPayloadRequest, options?: {
+    getDesktopWsServerRuntimeState?: () => Omit<DesktopWsServerState, "enabled">;
+    startDesktopWsServer?: (options?: DesktopWsServerStartOptions) => Promise<Omit<DesktopWsServerState, "enabled">>;
+  }) => Promise<any>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
   getDesktopWsServerRuntimeState?: () => Omit<DesktopWsServerState, "enabled">;
-  startDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
+  startDesktopWsServer?: (options?: DesktopWsServerStartOptions) => Promise<Omit<DesktopWsServerState, "enabled">>;
   stopDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
   applyTunnelHubSettings?: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
 }
@@ -297,10 +302,13 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     emitLocaleChanged(settings);
     return settings;
   });
-  ipcMain.handle("settings.createAppPairingPayload", async () => {
+  ipcMain.handle("settings.createAppPairingPayload", async (_event: any, input?: DesktopAppPairingPayloadRequest) => {
     if (!createAppPairingPayload) {
       return { ok: false, message: t("settings.mobilePairing.unavailable") };
     }
-    return createAppPairingPayload(app);
+    return createAppPairingPayload(app, input, {
+      getDesktopWsServerRuntimeState,
+      startDesktopWsServer
+    });
   });
 }
