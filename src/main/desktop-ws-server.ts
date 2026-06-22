@@ -259,30 +259,60 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "page.fillForm": "desktop.page.fillForm",
   "page.submitForm": "desktop.page.submitForm",
 
-  "embeddedWeb.surfaces": "desktop.embeddedWeb.listSurfaces",
-  "embeddedWeb.active": "desktop.embeddedWeb.getActiveSurface",
-  "embeddedWeb.activate": "desktop.embeddedWeb.activateSurface",
-  "embeddedWeb.context": "desktop.embeddedWeb.getPageContext",
-  "embeddedWeb.navigate": "desktop.embeddedWeb.navigate",
-  "embeddedWeb.reload": "desktop.embeddedWeb.reload",
-  "embeddedWeb.back": "desktop.embeddedWeb.goBack",
-  "embeddedWeb.tab.open": "desktop.embeddedWeb.openTab",
-  "embeddedWeb.tab.close": "desktop.embeddedWeb.closeTab",
-  "embeddedWeb.tab.switch": "desktop.embeddedWeb.switchTab",
-  "embeddedWeb.read": "desktop.embeddedWeb.readPageData",
-  "embeddedWeb.executeScript": "desktop.embeddedWeb.executeScript",
-
-  "web.list": "desktop.webs.list",
-  "webapp.status": "desktop.webs.webapps.getStatus",
-  "webapp.start": "desktop.webs.webapps.start",
-  "webapp.stop": "desktop.webs.webapps.stop",
-  "webapp.restart": "desktop.webs.webapps.restart",
+  "web.entries.list": "desktop.web.list",
+  "web.listSurfaces": "desktop.web.listSurfaces",
+  "web.getActiveSurface": "desktop.web.getActiveSurface",
+  "web.activateSurface": "desktop.web.activateSurface",
+  "web.getPageContext": "desktop.web.getPageContext",
+  "web.readPageData": "desktop.web.readPageData",
+  "web.extractStructured": "desktop.web.extractStructured",
+  "web.interactElement": "desktop.web.interactElement",
+  "web.executeScript": "desktop.web.executeScript",
+  "web.navigate": "desktop.web.navigate",
+  "web.reload": "desktop.web.reload",
+  "web.goBack": "desktop.web.goBack",
+  "web.openTab": "desktop.web.openTab",
+  "web.closeTab": "desktop.web.closeTab",
+  "web.switchTab": "desktop.web.switchTab",
+  "web.websites.list": "desktop.web.websites.list",
+  "web.websites.add": "desktop.web.websites.add",
+  "web.websites.update": "desktop.web.websites.update",
+  "web.websites.remove": "desktop.web.websites.remove",
+  "web.webapps.getStatus": "desktop.web.webapps.getStatus",
+  "web.webapps.start": "desktop.web.webapps.start",
+  "web.webapps.stop": "desktop.web.webapps.stop",
+  "web.webapps.restart": "desktop.web.webapps.restart",
+  "web.webapps.open": "desktop.web.webapps.open",
+  "web.webapps.installAndOpen": "desktop.web.webapps.installAndOpen",
 
   "staticServer.list": "desktop.staticServer.list",
   "staticServer.start": "desktop.staticServer.start",
   "staticServer.stop": "desktop.staticServer.stop",
   "staticServer.restart": "desktop.staticServer.restart"
 };
+
+const BLOCKED_PUBLIC_ACTION_NAMES = new Set([
+  "web.list",
+  "web.surfaces",
+  "web.active",
+  "web.activate",
+  "web.context",
+  "web.read",
+  "web.back",
+  "web.tab.open",
+  "web.tab.close",
+  "web.tab.switch",
+  "web.webapps.status",
+  "webapp.status",
+  "webapp.start",
+  "webapp.stop",
+  "webapp.restart",
+  "webapp.open",
+  "webapp.installAndOpen",
+  "pet.state",
+  "pet.settings",
+  "pet.appearances"
+]);
 
 const DIRECT_ACTION_TYPES = new Set([
   "service.list",
@@ -365,6 +395,9 @@ function normalizePublicActionName(action: string) {
   if (PUBLIC_ACTION_ALIASES[normalized]) {
     return PUBLIC_ACTION_ALIASES[normalized];
   }
+  if (BLOCKED_PUBLIC_ACTION_NAMES.has(normalized)) {
+    return normalized;
+  }
   if (getDesktopActionDefinition(normalized)) {
     return normalized;
   }
@@ -393,6 +426,9 @@ function listPublicActions(): PublicActionDefinition[] {
   }
   for (const definition of DESKTOP_ACTION_DEFINITIONS) {
     const publicName = definition.name.replace(/^desktop\./u, "");
+    if (BLOCKED_PUBLIC_ACTION_NAMES.has(publicName)) {
+      continue;
+    }
     if (seen.has(publicName)) {
       continue;
     }

@@ -38,7 +38,7 @@ import {
   readActionSelector,
   readAllowedValues,
   readFormFields
-} from "../../copilot/page-context/embeddedWebActions";
+} from "../../copilot/page-context/webActions";
 
 type ExternalWebviewPageProps = {
   title: string;
@@ -1311,7 +1311,7 @@ export function ExternalWebviewPage({
       return Boolean(targetSurfaceId && surfaceId && targetSurfaceId !== surfaceId);
     }
 
-    return registerDesktopActionProviderForScope("embeddedWeb", async (request) => {
+    return registerDesktopActionProviderForScope("web", async (request) => {
       if (!activeRef.current) {
         return null;
       }
@@ -1321,39 +1321,39 @@ export function ExternalWebviewPage({
       }
 
       switch (request.action) {
-        case "desktop.embeddedWeb.getActiveSurface":
+        case "desktop.web.getActiveSurface":
           return { ok: true, result: getEmbeddedWebSurfaceState() };
-        case "desktop.embeddedWeb.getPageContext":
+        case "desktop.web.getPageContext":
           return { ok: true, result: await readActivePageContext() };
-        case "desktop.embeddedWeb.readPageData": {
+        case "desktop.web.readPageData": {
           const response = await executeCurrentPageRead(args);
           if (!response.ok) {
             return response;
           }
           return { ok: true, result: response.result.data };
         }
-        case "desktop.embeddedWeb.extractStructured": {
+        case "desktop.web.extractStructured": {
           const response = await executeCurrentPageStructuredRead(args);
           if (!response.ok) {
             return response;
           }
           return { ok: true, result: response.result.data };
         }
-        case "desktop.embeddedWeb.interactElement": {
+        case "desktop.web.interactElement": {
           const response = await executeCurrentPageInteract(args);
           if (!response.ok) {
             return response;
           }
           return { ok: true, result: response.result.outcome };
         }
-        case "desktop.embeddedWeb.executeScript": {
+        case "desktop.web.executeScript": {
           const script = typeof args.script === "string" ? args.script : "";
           if (!script.trim()) {
             return embeddedError("invalid_script", t("externalWebview.error.invalidScript"));
           }
           return executeActiveWebviewScript(args, script);
         }
-        case "desktop.embeddedWeb.navigate": {
+        case "desktop.web.navigate": {
           const nextUrl = readActionUrl(args);
           if (!nextUrl) {
             return embeddedError("invalid_url", t("externalWebview.error.invalidUrl"), args);
@@ -1367,7 +1367,7 @@ export function ExternalWebviewPage({
           setAddressInputValue(nextUrl);
           return { ok: true, result: { ...getEmbeddedWebSurfaceState(), navigatedUrl: nextUrl } };
         }
-        case "desktop.embeddedWeb.reload": {
+        case "desktop.web.reload": {
           const tabId = readTargetTabId(args);
           const targetWebview = webviewRefs.current.get(tabId);
           if (!targetWebview) {
@@ -1376,7 +1376,7 @@ export function ExternalWebviewPage({
           targetWebview.reload();
           return { ok: true, result: getEmbeddedWebSurfaceState() };
         }
-        case "desktop.embeddedWeb.goBack": {
+        case "desktop.web.goBack": {
           const tabId = readTargetTabId(args);
           const targetWebview = webviewRefs.current.get(tabId);
           if (!targetWebview) {
@@ -1388,7 +1388,7 @@ export function ExternalWebviewPage({
           targetWebview.goBack();
           return { ok: true, result: getEmbeddedWebSurfaceState() };
         }
-        case "desktop.embeddedWeb.openTab": {
+        case "desktop.web.openTab": {
           const nextUrl = readActionUrl(args);
           if (!nextUrl) {
             return embeddedError("invalid_url", t("externalWebview.error.invalidUrl"), args);
@@ -1397,7 +1397,7 @@ export function ExternalWebviewPage({
           const nextTab = openTab(nextUrl, preferredTitle);
           return { ok: true, result: { ...getEmbeddedWebSurfaceState(), openedTab: serializeTab(nextTab) } };
         }
-        case "desktop.embeddedWeb.closeTab": {
+        case "desktop.web.closeTab": {
           const tabId = readTargetTabId(args);
           const currentState = browserStateRef.current;
           if (currentState.tabs.length <= 1) {
@@ -1423,7 +1423,7 @@ export function ExternalWebviewPage({
           });
           return { ok: true, result: { closedTabId: tabId } };
         }
-        case "desktop.embeddedWeb.switchTab": {
+        case "desktop.web.switchTab": {
           const tabId = readTargetTabId(args);
           if (!browserStateRef.current.tabs.some((tab) => tab.id === tabId)) {
             return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });

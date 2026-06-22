@@ -282,6 +282,28 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(webappHello.type, "session.hello");
   assert.equal(webappHello.code, 0);
   assert.equal(webappHello.data.namespaces.wa, "webapp");
+  assert.ok(hello.data.requestTypes.includes("web.listSurfaces"));
+  assert.equal(hello.data.requestTypes.includes("web.list"), false);
+  assert.equal(hello.data.requestTypes.includes("web.webapps.status"), false);
+  assert.equal(hello.data.requestTypes.includes("webapp.start"), false);
+
+  client.send({ frame: "request", type: "action.list", id: "actions-1", payload: {} });
+  const actionList = await client.waitFor((message) => message.id === "actions-1");
+  const actionNames = actionList.data.actions.map((action) => action.action);
+  assert.ok(actionNames.includes("web.listSurfaces"));
+  assert.ok(actionNames.includes("web.getActiveSurface"));
+  assert.ok(actionNames.includes("web.entries.list"));
+  assert.ok(actionNames.includes("web.websites.list"));
+  assert.ok(actionNames.includes("web.webapps.getStatus"));
+  assert.ok(actionNames.includes("web.webapps.installAndOpen"));
+  assert.ok(actionNames.includes("pet.getState"));
+  assert.ok(actionNames.includes("pet.listAppearances"));
+  assert.equal(actionNames.includes("web.list"), false);
+  assert.equal(actionNames.includes("web.surfaces"), false);
+  assert.equal(actionNames.includes("web.webapps.status"), false);
+  assert.equal(actionNames.some((action) => action.startsWith("embeddedWeb.")), false);
+  assert.equal(actionNames.some((action) => action.startsWith("webapp.")), false);
+  assert.equal(actionNames.includes("pet.state"), false);
 
   client.send({ frame: "request", type: "snapshot.get", id: "snapshot-1", payload: {} });
   const snapshot = await client.waitFor((message) => message.id === "snapshot-1");

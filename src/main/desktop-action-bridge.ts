@@ -7,6 +7,8 @@ import type {
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
   DesktopPageContextSnapshot,
+  DesktopPetSettings,
+  DesktopPetState,
   MarketListOptions,
   ServiceId,
   ServiceLogTarget,
@@ -44,6 +46,12 @@ import {
   staticSiteHostManager
 } from "./static-site-host-manager";
 import { listWebEntries } from "./ipc/web-handlers";
+import {
+  addWebsiteItem,
+  listWebsiteItems,
+  removeWebsiteItem,
+  updateWebsiteItem
+} from "./webs/websites/actions";
 import { webappRuntime } from "./webs/webapps/runtime";
 import {
   buildSandboxImage,
@@ -57,6 +65,10 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
+import {
+  installWebsiteAppArchiveFromPath,
+  installWebsiteAppMarketItem
+} from "./marketplace/website-app-market";
 import { normalizeMarketApiBaseUrl } from "./marketplace/common";
 import {
   readTunnelHubSettings,
@@ -89,6 +101,14 @@ type DesktopActionBridgeOptions = {
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
+  desktopPet?: {
+    getSettings: () => DesktopPetSettings;
+    getState: () => DesktopPetState;
+    refreshState: () => DesktopPetState | Promise<DesktopPetState>;
+    saveSettings: (input: { enabled?: boolean; appearanceId?: string }) => DesktopPetState | Promise<DesktopPetState>;
+    show: () => DesktopPetState | Promise<DesktopPetState>;
+    hide: (disable?: boolean) => DesktopPetState | Promise<DesktopPetState>;
+  };
 };
 
 type PlatformResponse<T> = {
@@ -143,6 +163,7 @@ function agentPlatformAuthFailureMessage() {
 
 const agentWebclientHelpTopicTitles = new Map([
   ["agents", "nav.agents"],
+  ["archives", "nav.archives"],
   ["schedules", "nav.schedules"],
   ["copilot", "service.display.agentWebclient"]
 ]);
@@ -289,12 +310,26 @@ function readWebappId(args: Record<string, unknown>) {
   return webappId;
 }
 
+function readWebsiteId(args: Record<string, unknown>) {
+  const websiteId = readString(args, "websiteId") || readString(args, "id");
+  if (!websiteId) {
+    throw new Error("website id is required");
+  }
+  return websiteId;
+}
+
 function readItemId(args: Record<string, unknown>) {
   const itemId = readString(args, "itemId");
   if (!itemId) {
     throw new Error("itemId is required");
   }
   return itemId;
+}
+
+function readActionInput(args: Record<string, unknown>) {
+  const input = asRecord(args.input);
+  const patch = asRecord(args.patch);
+  return hasObjectKeys(input) ? input : hasObjectKeys(patch) ? patch : args;
 }
 
 function isMarketSection(value: unknown): value is NonNullable<MarketListOptions["sections"]>[number] {
@@ -840,20 +875,126 @@ async function executeStaticServerAction(action: string, args: Record<string, un
   }
 }
 
-async function executeWebsAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
-  if (action === "desktop.webs.list") {
+function webappRoute(webappId: string) {
+  return `/webs/webapp:${webappId.trim()}`;
+}
+
+async function openWebapp(options: DesktopActionBridgeOptions, action: string, webappId: string, installResult?: unknown) {
+  const command = await webappRuntime.start(options.app, webappId);
+  if (!command.ok || !command.state) {
+    return fail(action, "webapp_open_failed", command.message, command);
+  }
+  const route = webappRoute(webappId);
+  options.navigate(route);
+  return ok(action, {
+    ...(installResult === undefined ? {} : { install: installResult }),
+    command,
+    state: command.state,
+    route
+  });
+}
+
+async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
+  const itemId = readString(args, "itemId");
+  const archivePath = readString(args, "archivePath");
+  const expectedId = readString(args, "expectedId");
+  if (itemId && archivePath) {
+    return fail(action, "invalid_args", "Provide either itemId or archivePath, not both.");
+  }
+  if (!itemId && !archivePath) {
+    return fail(action, "invalid_args", "itemId or archivePath is required.");
+  }
+  const installResult = itemId
+    ? await installWebsiteAppMarketItem(options.app, itemId)
+    : await installWebsiteAppArchiveFromPath(options.app, archivePath, {
+        ...(expectedId ? { expectedId } : {})
+      });
+  const webappId = typeof installResult.itemId === "string" ? installResult.itemId.trim() : "";
+  if (!installResult.ok || !webappId) {
+    return fail(action, "webapp_install_failed", installResult.message, installResult);
+  }
+  return openWebapp(options, action, webappId, installResult);
+}
+
+async function executeWebAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
+  if (action === "desktop.web.list") {
     return ok(action, listWebEntries(options.app));
   }
-  if (action === "desktop.webs.webapps.getStatus") {
+  if (action === "desktop.web.websites.list") {
+    return ok(action, listWebsiteItems(options.app));
+  }
+  if (action === "desktop.web.websites.add") {
+    return ok(action, addWebsiteItem(options.app, readActionInput(args) as any));
+  }
+  if (action === "desktop.web.websites.update") {
+    return ok(action, updateWebsiteItem(options.app, readWebsiteId(args), readActionInput(args) as any));
+  }
+  if (action === "desktop.web.websites.remove") {
+    return ok(action, removeWebsiteItem(options.app, readWebsiteId(args)));
+  }
+  if (action === "desktop.web.webapps.getStatus") {
     return ok(action, webappRuntime.getStatus(options.app, readWebappId(args)));
   }
-  if (action === "desktop.webs.webapps.start") {
+  if (action === "desktop.web.webapps.start") {
     return ok(action, await webappRuntime.start(options.app, readWebappId(args)));
   }
-  if (action === "desktop.webs.webapps.stop") {
+  if (action === "desktop.web.webapps.stop") {
     return ok(action, await webappRuntime.stop(options.app, readWebappId(args)));
   }
-  return ok(action, await webappRuntime.restart(options.app, readWebappId(args)));
+  if (action === "desktop.web.webapps.restart") {
+    return ok(action, await webappRuntime.restart(options.app, readWebappId(args)));
+  }
+  if (action === "desktop.web.webapps.open") {
+    return openWebapp(options, action, readWebappId(args));
+  }
+  return installAndOpenWebapp(options, action, args);
+}
+
+async function executePetAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
+  const desktopPet = options.desktopPet;
+  if (!desktopPet) {
+    return fail(action, "pet_action_unavailable", "Desktop pet action is unavailable.");
+  }
+  if (action === "desktop.pet.getSettings") {
+    return ok(action, desktopPet.getSettings());
+  }
+  const state = await desktopPet.refreshState();
+  if (action === "desktop.pet.getState") {
+    return ok(action, state);
+  }
+  if (action === "desktop.pet.listAppearances") {
+    return ok(action, {
+      appearanceId: state.appearanceId,
+      appearances: state.appearanceOptions
+    });
+  }
+  if (action === "desktop.pet.show") {
+    return ok(action, await desktopPet.show());
+  }
+  if (action === "desktop.pet.hide") {
+    return ok(action, await desktopPet.hide(true));
+  }
+  if (action === "desktop.pet.setEnabled") {
+    if (typeof args.enabled !== "boolean") {
+      return fail(action, "invalid_args", "enabled must be boolean.");
+    }
+    return ok(action, args.enabled ? await desktopPet.show() : await desktopPet.hide(true));
+  }
+  const appearanceId = readString(args, "appearanceId") || readString(args, "id");
+  if (!appearanceId) {
+    return fail(action, "invalid_args", "appearanceId is required.");
+  }
+  if (!state.supported) {
+    return fail(action, "pet_unsupported", t("settings.desktopPet.enableUnavailable"), state);
+  }
+  const appearance = state.appearanceOptions.find((candidate) => candidate.id === appearanceId);
+  if (!appearance) {
+    return fail(action, "pet_appearance_not_found", t("settings.desktopPet.enableUnavailable"), {
+      appearanceId,
+      appearances: state.appearanceOptions
+    });
+  }
+  return ok(action, await desktopPet.saveSettings({ appearanceId }));
 }
 
 async function executeAction(
@@ -891,20 +1032,20 @@ async function executeAction(
     case "desktop.settings.validatePatch":
     case "desktop.settings.previewPatch":
     case "desktop.settings.applyPatch":
-    case "desktop.embeddedWeb.listSurfaces":
-    case "desktop.embeddedWeb.getActiveSurface":
-    case "desktop.embeddedWeb.activateSurface":
-    case "desktop.embeddedWeb.getPageContext":
-    case "desktop.embeddedWeb.navigate":
-    case "desktop.embeddedWeb.reload":
-    case "desktop.embeddedWeb.goBack":
-    case "desktop.embeddedWeb.openTab":
-    case "desktop.embeddedWeb.closeTab":
-    case "desktop.embeddedWeb.switchTab":
-    case "desktop.embeddedWeb.readPageData":
-    case "desktop.embeddedWeb.extractStructured":
-    case "desktop.embeddedWeb.interactElement":
-    case "desktop.embeddedWeb.executeScript":
+    case "desktop.web.listSurfaces":
+    case "desktop.web.getActiveSurface":
+    case "desktop.web.activateSurface":
+    case "desktop.web.getPageContext":
+    case "desktop.web.navigate":
+    case "desktop.web.reload":
+    case "desktop.web.goBack":
+    case "desktop.web.openTab":
+    case "desktop.web.closeTab":
+    case "desktop.web.switchTab":
+    case "desktop.web.readPageData":
+    case "desktop.web.extractStructured":
+    case "desktop.web.interactElement":
+    case "desktop.web.executeScript":
       return callRendererPageAction(options, request, args);
     case "desktop.navigate.toRoute": {
       const route = readString(args, "route") || readString(args, "path");
@@ -980,12 +1121,18 @@ async function executeAction(
     case "desktop.staticServer.stop":
     case "desktop.staticServer.restart":
       return executeStaticServerAction(action, args);
-    case "desktop.webs.list":
-    case "desktop.webs.webapps.getStatus":
-    case "desktop.webs.webapps.start":
-    case "desktop.webs.webapps.stop":
-    case "desktop.webs.webapps.restart":
-      return executeWebsAction(options, action, args);
+    case "desktop.web.list":
+    case "desktop.web.websites.list":
+    case "desktop.web.websites.add":
+    case "desktop.web.websites.update":
+    case "desktop.web.websites.remove":
+    case "desktop.web.webapps.getStatus":
+    case "desktop.web.webapps.start":
+    case "desktop.web.webapps.stop":
+    case "desktop.web.webapps.restart":
+    case "desktop.web.webapps.open":
+    case "desktop.web.webapps.installAndOpen":
+      return executeWebAction(options, action, args);
     case "desktop.market.getSettings":
       return ok(action, getMarketSettings(options.app));
     case "desktop.market.validateSettings":
@@ -1075,6 +1222,14 @@ async function executeAction(
           t("desktopAction.suggestionRelatedPage")
         ]
       });
+    case "desktop.pet.getState":
+    case "desktop.pet.getSettings":
+    case "desktop.pet.show":
+    case "desktop.pet.hide":
+    case "desktop.pet.setEnabled":
+    case "desktop.pet.listAppearances":
+    case "desktop.pet.setAppearance":
+      return executePetAction(options, action, args);
     case "desktop.agents.listAgents":
       return ok(action, await options.assistantBridge.listAgents());
     case "desktop.agents.getAgentDetail":

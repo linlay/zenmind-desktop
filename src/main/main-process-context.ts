@@ -1,5 +1,6 @@
 import type { MainAppState } from "./app-state";
 import type { LogStreamSubscriptionRegistry } from "./logs/subscriptions";
+import { toDesktopPetSettings } from "./assistant/pet/desktop-pet";
 
 export interface MainProcessContext {
   state: MainAppState;
@@ -21,6 +22,12 @@ export interface DesktopActionContextDependencies {
   openLogViewer: (...args: any[]) => unknown;
   callRendererAction: (...args: any[]) => unknown;
   cdpIntegration: any;
+  desktopPet?: {
+    refreshState: (...args: any[]) => unknown;
+    showWindow: (...args: any[]) => unknown;
+    hideWindow: (...args: any[]) => unknown;
+    saveSettings: (...args: any[]) => unknown;
+  };
 }
 
 export function createDesktopActionOptions(
@@ -38,7 +45,17 @@ export function createDesktopActionOptions(
     executeCdpCommand: async (request: unknown) => {
       const gateway = dependencies.cdpIntegration.start();
       return gateway.executeCommand(request);
-    }
+    },
+    desktopPet: dependencies.desktopPet
+      ? {
+          getSettings: () => toDesktopPetSettings(context.state.desktopPetSettings),
+          getState: () => context.state.desktopPetState,
+          refreshState: () => dependencies.desktopPet?.refreshState(),
+          saveSettings: (input: unknown) => dependencies.desktopPet?.saveSettings(input),
+          show: () => dependencies.desktopPet?.showWindow(),
+          hide: (disable?: boolean) => dependencies.desktopPet?.hideWindow(disable)
+        }
+      : undefined
   };
 }
 

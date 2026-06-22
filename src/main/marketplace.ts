@@ -45,6 +45,7 @@ import {
   uninstallPluginMarketItem
 } from "./marketplace/plugin-market";
 import {
+  installWebsiteAppArchiveFromPath,
   installWebsiteAppMarketItem,
   listWebsiteAppMarketItems,
   uninstallWebsiteAppMarketItem
@@ -74,6 +75,7 @@ export {
   DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   getMarketSettings,
+  installWebsiteAppArchiveFromPath,
   saveMarketSettings,
   writeMarketSettingsIfAbsent
 };

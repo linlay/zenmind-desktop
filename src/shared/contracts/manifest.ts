@@ -305,6 +305,7 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
   spaRoutes: [
     "/agent/",
     "/agents/",
+    "/archives",
     "/automations",
     "/copilot",
     "/memory",

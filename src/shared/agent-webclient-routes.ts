@@ -3,6 +3,7 @@ export const AGENT_WEBCLIENT_TARGET_PATH = "/agents";
 
 export type AgentWebclientRouteKey =
   | "agents"
+  | "archives"
   | "schedules"
   | "memory"
   | "registries"
@@ -38,6 +39,14 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     routePath: "/agents",
     embedPath: "/agents",
     labelKey: "nav.agents",
+    kind: "management",
+    mode: "embedded"
+  },
+  {
+    key: "archives",
+    routePath: "/archives",
+    embedPath: "/archives",
+    labelKey: "nav.archives",
     kind: "management",
     mode: "embedded"
   },

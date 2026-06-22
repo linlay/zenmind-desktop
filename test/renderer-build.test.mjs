@@ -280,6 +280,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   );
 
   assert.match(routeDefinitions, /routePath:\s*"\/agents"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(routeDefinitions, /routePath:\s*"\/archives"[\s\S]*?embedPath:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
@@ -290,8 +291,8 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
-  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/registries"[\s\S]*?\]/);
-  assert.match(pluginPage, /normalizedEmbedPath === "\/registries"/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(pluginPage, /normalizedEmbedPath === "\/archives"[\s\S]*?normalizedEmbedPath === "\/registries"/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
   assert.doesNotMatch(appShell, /usesAgentNativeSurface/);
   assert.doesNotMatch(appShellCss, /has-agent-native-surface/);
@@ -948,7 +949,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.match(sidebarSource, /<span>\{t\("sidebar\.agent\.delete"\)\}<\/span>/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
+  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/automations"/);
@@ -1011,6 +1012,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /assistantNavAgents/);
   assert.match(appShell, /listNavigationAgents/);
   assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"archives"[\s\S]*?routePath:\s*"\/archives"[\s\S]*?embedPath:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
@@ -1042,6 +1044,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /matchPath\("\/agents\/:agentKey", pathname\)/);
   assert.match(appShell, /embedPath:\s*`\$\{pathname\}\$\{search\}`/);
   assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"archives"[\s\S]*?routePath:\s*"\/archives"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
@@ -1227,12 +1230,14 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.plan": "等待实施"/);
   assert.match(zhCN, /"sidebar\.assistants\.sortByName": "按名称"/);
   assert.match(zhCN, /"sidebar\.assistants\.sortByTime": "按时间"/);
+  assert.match(zhCN, /"nav\.archives": "已归档对话"/);
   assert.match(enUS, /"sidebar\.assistants\.empty": "No assistants"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Await Appr"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Await Submit"/);
-  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Question"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Ques"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.plan": "Await Impl"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByName": "By name"/);
+  assert.match(enUS, /"nav\.archives": "Archived Conversations"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByTime": "By time"/);
 });
 
@@ -1304,6 +1309,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /debugSettingsUnlocked/);
   assert.match(appShell, /debugVisible:\s*debugSettingsUnlocked/);
   assert.match(appShell, /debugVisible=\{debugSettingsUnlocked\}/);
+  assert.match(brandMarkSource, /archiveIcon from "\.\.\/assets\/sidebar-icons\/archive\.svg"/);
+  assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*\| "archive"/);
+  assert.match(brandMarkSource, /archive:\s*archiveIcon/);
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
   assert.match(settingsSections, /debugVisible = false/);
@@ -2778,8 +2786,8 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   );
   assert.match(startupPipeline, /options\.setStartupPhase\("core-services-starting"\);[\s\S]*?options\.loadBuiltinServices\(options\.app\);[\s\S]*?options\.loadInstalledPlugins\(options\.app\);[\s\S]*?options\.notifyCoreServicesChanged\(\);/);
   assert.match(startupPipeline, /options\.setStartupPhase\("core-ready"\);\s*options\.startNonCoreRuntime\(\);/);
-  assert.match(desktopActions, /"desktop\.webs\.webapps\.start"/);
-  assert.match(desktopActionBridge, /case "desktop\.webs\.webapps\.restart"/);
+  assert.match(desktopActions, /"desktop\.web\.webapps\.start"/);
+  assert.match(desktopActionBridge, /case "desktop\.web\.webapps\.restart"/);
   assert.match(desktopActionBridge, /readWebappId\(args\)/);
 });
 
@@ -2979,9 +2987,13 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
   assert.match(actionCatalog, /desktop\.settings\.applyPatch/);
   assert.doesNotMatch(actionCatalog, /desktop\.page\./);
-  assert.match(actionCatalog, /desktop\.embeddedWeb\.listSurfaces/);
-  assert.match(actionCatalog, /desktop\.embeddedWeb\.navigate/);
-  assert.match(actionCatalog, /desktop\.embeddedWeb\.interactElement/);
+  assert.match(actionCatalog, /desktop\.web\.listSurfaces/);
+  assert.match(actionCatalog, /desktop\.web\.navigate/);
+  assert.match(actionCatalog, /desktop\.web\.interactElement/);
+  assert.match(actionCatalog, /desktop\.web\.webapps\.installAndOpen/);
+  assert.match(actionCatalog, /desktop\.pet\.setAppearance/);
+  assert.doesNotMatch(actionCatalog, /desktop\.embeddedWeb\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.webs\./);
   assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
   assert.match(actionCatalog, /desktop\.automations\.listAutomations/);
   assert.doesNotMatch(actionCatalog, /desktop\.memory\./);
@@ -2989,6 +3001,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /GET" && url\.pathname === "\/actions"/);
   assert.match(bridge, /POST" && url\.pathname === "\/actions\/call"/);
   assert.match(bridge, /POST" && url\.pathname === "\/cdp\/call"/);
+  assert.match(bridge, /agentWebclientHelpTopicTitles[\s\S]*?\["archives", "nav\.archives"\]/);
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);
@@ -3011,21 +3024,21 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(contracts, /setDesktopWsServerEnabled: \(enabled: boolean\) => Promise<DesktopWsServerState>/);
   assert.match(contracts, /DesktopActionRendererRequest/);
   assert.match(contracts, /DesktopActionCallListener/);
-  assert.match(registry, /DesktopActionProviderScope = "global" \| "page" \| "embeddedWeb"/);
+  assert.match(registry, /DesktopActionProviderScope = "global" \| "page" \| "web"/);
   assert.match(registry, /registerDesktopActionProviderForScope/);
-  assert.match(registry, /embedded_web_action_unavailable/);
+  assert.match(registry, /web_action_unavailable/);
   assert.match(registry, /registerDesktopActionProvider/);
   assert.match(registry, /page_action_unavailable/);
   assert.match(appShell, /startDesktopActionRendererBridge\(\)/);
   assert.match(appShell, /registerDesktopActionProviderForScope\("global"/);
   assert.match(appShell, /desktop\.settings\.getState/);
-  assert.match(appShell, /desktop\.embeddedWeb\.listSurfaces/);
+  assert.match(appShell, /desktop\.web\.listSurfaces/);
   assert.match(settingsPage, /registerDesktopActionProvider/);
   assert.match(settingsPage, /desktopHelperAgentKey/);
-  assert.match(externalWebviewPage, /registerDesktopActionProviderForScope\("embeddedWeb"/);
-  assert.match(externalWebviewPage, /desktop\.embeddedWeb\.getPageContext/);
-  assert.match(externalWebviewPage, /desktop\.embeddedWeb\.navigate/);
-  assert.match(externalWebviewPage, /desktop\.embeddedWeb\.closeTab/);
+  assert.match(externalWebviewPage, /registerDesktopActionProviderForScope\("web"/);
+  assert.match(externalWebviewPage, /desktop\.web\.getPageContext/);
+  assert.match(externalWebviewPage, /desktop\.web\.navigate/);
+  assert.match(externalWebviewPage, /desktop\.web\.closeTab/);
   assert.doesNotMatch(externalWebviewPage, /querySelector\(request/);
   assert.match(marketPage, /registerDesktopActionProvider/);
   assert.match(marketPage, /skillDownloadCommand/);
@@ -3720,7 +3733,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
 
   assert.match(pluginPage, /registerAssistantPageContextProvider/);
   assert.doesNotMatch(pluginPage, /<<<<<<<|=======|>>>>>>>/);
-  assert.match(pluginPage, /registerDesktopActionProviderForScope\(\s*"embeddedWeb"/);
+  assert.match(pluginPage, /registerDesktopActionProviderForScope\(\s*"web"/);
   assert.match(pluginPage, /surfaceId\?: string/);
   assert.match(pluginPage, /skipContextRegistration\?: boolean/);
   assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly\?: boolean/);
@@ -4907,7 +4920,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/agents" \|\| item\.to === "\/registries" \|\| item\.to === "\/market"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/agents" \|\| item\.to === "\/archives" \|\| item\.to === "\/registries" \|\| item\.to === "\/market"/);
   assert.match(sidebarSource, /const middleToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/control-center" \|\| item\.to === "\/help"/);
   assert.match(sidebarSource, /const settingsToolItems = fixedToolItems\.filter\(\(item\) => item\.to === "\/settings"\);/);
   assert.match(sidebarSource, /shouldRenderDesktopSsoAccount \? \([\s\S]*?\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?\) : null/);

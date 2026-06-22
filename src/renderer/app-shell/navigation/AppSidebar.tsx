@@ -191,6 +191,7 @@ const fixedToolRowsBase: Array<
     Omit<SidebarToolItem, "label"> & {
       labelKey:
         | "nav.agents"
+        | "nav.archives"
         | "nav.registries"
         | "nav.controlCenter"
         | "nav.market"
@@ -205,6 +206,12 @@ const fixedToolRowsBase: Array<
       to: "/agents",
       labelKey: "nav.agents",
       icon: "agent",
+    },
+    {
+      orderKey: "archives",
+      to: "/archives",
+      labelKey: "nav.archives",
+      icon: "archive",
     },
     {
       orderKey: "registries",
@@ -2336,7 +2343,7 @@ export function AppSidebar({
   function renderToolMenu() {
     const shouldRenderDesktopSsoAccount = desktopSsoStatus?.configured === true;
     const topToolItems = fixedToolItems.filter((item) =>
-      item.to === "/agents" || item.to === "/registries" || item.to === "/market"
+      item.to === "/agents" || item.to === "/archives" || item.to === "/registries" || item.to === "/market"
     );
     const middleToolItems = fixedToolItems.filter((item) =>
       item.to === "/control-center" || item.to === "/help"

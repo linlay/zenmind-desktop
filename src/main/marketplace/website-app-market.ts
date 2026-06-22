@@ -29,6 +29,16 @@ type WebsiteAppCatalogResult = {
   sourceUrl: string;
 };
 
+type WebsiteAppArchiveInstallOptions = {
+  expectedId?: string;
+  displayName?: string;
+  version?: string;
+  source?: "cloud" | "local";
+  assetUrl?: string;
+  sha256?: string;
+  removeArchive?: boolean;
+};
+
 function websiteAppOnlyCatalog(catalog: Catalog): Catalog {
   return {
     ...catalog,
@@ -160,13 +170,26 @@ export async function installWebsiteAppMarketItem(
   if (!selected) {
     throw new Error(t("market.main.platformUnavailable"));
   }
-  const safeWebappDirName = normalizeWebappDirectoryName(item.id);
-  if (!safeWebappDirName) {
-    throw new Error(t("market.websiteApp.invalidId"));
-  }
-
   const archivePath = await downloadAsset(app, item, selected.asset);
-  const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "desktop-market-webapps", `${item.id}-${Date.now()}`);
+  return installWebsiteAppArchiveFromPath(app, archivePath, {
+    expectedId: item.id,
+    displayName: item.name,
+    version: item.version,
+    source: "cloud",
+    assetUrl: selected.asset.url,
+    sha256: selected.asset.sha256,
+    removeArchive: true
+  });
+}
+
+export async function installWebsiteAppArchiveFromPath(
+  app: App,
+  archivePath: string,
+  options: WebsiteAppArchiveInstallOptions = {}
+): Promise<MarketCommandResult> {
+  const expectedId = normalizeWebappDirectoryName(options.expectedId);
+  const tempId = expectedId || `local-${Date.now()}`;
+  const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "desktop-market-webapps", `${tempId}-${Date.now()}`);
   try {
     const entries = await listArchiveEntriesAsync(archivePath);
     assertSafeArchiveEntries(entries);
@@ -179,12 +202,16 @@ export async function installWebsiteAppMarketItem(
       throw new Error(t("market.websiteApp.invalidPackage"));
     }
 
-    const webapp = readWebappItemFromDir(webappRoot, safeWebappDirName);
+    const webapp = readWebappItemFromDir(webappRoot, expectedId);
     if (!webapp) {
       throw new Error(t("market.websiteApp.invalidPackage"));
     }
+    const safeWebappDirName = normalizeWebappDirectoryName(expectedId || webapp.id);
+    if (!safeWebappDirName) {
+      throw new Error(t("market.websiteApp.invalidId"));
+    }
     if (webapp.id !== safeWebappDirName) {
-      throw new Error(t("market.websiteApp.idMismatch", { expected: item.id, actual: webapp.id }));
+      throw new Error(t("market.websiteApp.idMismatch", { expected: safeWebappDirName, actual: webapp.id }));
     }
 
     const targetRoot = getDesktopWebappsDataRoot(app);
@@ -194,26 +221,28 @@ export async function installWebsiteAppMarketItem(
     fs.rmSync(installPath, { recursive: true, force: true });
     fs.cpSync(webappRoot, installPath, { recursive: true });
     upsertInstalledRecord(app, {
-      id: item.id,
+      id: webapp.id,
       type: "website-app",
-      version: item.version,
-      source: "cloud",
-      assetUrl: selected.asset.url,
-      sha256: selected.asset.sha256,
+      version: options.version ?? "0.0.0",
+      source: options.source ?? "local",
+      ...(options.assetUrl ? { assetUrl: options.assetUrl } : {}),
+      ...(options.sha256 ? { sha256: options.sha256 } : {}),
       installPath,
       installedAt: new Date().toISOString()
     });
 
     return {
       ok: true,
-      itemId: item.id,
+      itemId: webapp.id,
       type: "website-app",
       state: "installed",
-      message: t("market.websiteApp.installed", { name: item.name }),
+      message: t("market.websiteApp.installed", { name: options.displayName || webapp.label }),
       installPath
     };
   } finally {
-    fs.rmSync(archivePath, { force: true });
+    if (options.removeArchive) {
+      fs.rmSync(archivePath, { force: true });
+    }
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 }
@@ -240,6 +269,7 @@ export async function uninstallWebsiteAppMarketItem(app: App, itemId: string): P
 }
 
 export const __websiteAppMarketInternals = {
+  installWebsiteAppArchiveFromPath,
   loadWebsiteAppCatalog,
   normalizeWebappDirectoryName
 };

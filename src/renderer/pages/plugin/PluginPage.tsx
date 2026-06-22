@@ -52,7 +52,7 @@ import {
   readActionSelector,
   readAllowedValues,
   readFormFields,
-} from "../../copilot/page-context/embeddedWebActions";
+} from "../../copilot/page-context/webActions";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
 
 type PluginPageProps = {
@@ -126,6 +126,7 @@ function resolveAgentWebclientWsSource(surfaceId: string, embedPath: string | un
   }
   if (
     normalizedEmbedPath === "/agents" ||
+    normalizedEmbedPath === "/archives" ||
     normalizedEmbedPath === "/automations" ||
     normalizedEmbedPath === "/memory" ||
     normalizedEmbedPath === "/registries"
@@ -1305,7 +1306,7 @@ export function PluginPage({
     }
 
     return registerDesktopActionProviderForScope(
-      "embeddedWeb",
+      "web",
       async (request) => {
         if (service?.status !== "running") {
           return null;
@@ -1316,7 +1317,7 @@ export function PluginPage({
         }
 
         switch (request.action) {
-          case "desktop.embeddedWeb.getActiveSurface":
+          case "desktop.web.getActiveSurface":
             return {
               ok: true,
               result: {
@@ -1334,30 +1335,30 @@ export function PluginPage({
                 activeTab: null,
               },
             };
-          case "desktop.embeddedWeb.getPageContext":
+          case "desktop.web.getPageContext":
             return { ok: true, result: await readPluginPageContext() };
-          case "desktop.embeddedWeb.readPageData": {
+          case "desktop.web.readPageData": {
             const response = await executeCurrentPageRead(args);
             if (!response.ok) {
               return response;
             }
             return { ok: true, result: response.result.data };
           }
-          case "desktop.embeddedWeb.extractStructured": {
+          case "desktop.web.extractStructured": {
             const response = await executeCurrentPageStructuredRead(args);
             if (!response.ok) {
               return response;
             }
             return { ok: true, result: response.result.data };
           }
-          case "desktop.embeddedWeb.interactElement": {
+          case "desktop.web.interactElement": {
             const response = await executeCurrentPageInteract(args);
             if (!response.ok) {
               return response;
             }
             return { ok: true, result: response.result.outcome };
           }
-          case "desktop.embeddedWeb.executeScript": {
+          case "desktop.web.executeScript": {
             const script = typeof args.script === "string" ? args.script : "";
             if (!script.trim()) {
               return embeddedError("invalid_script", t("externalWebview.error.invalidScript"));

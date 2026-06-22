@@ -34,6 +34,12 @@ export type AssistantBridgeRuntimeOptions = {
   emitKanbanChanged: () => void;
   emitAssistantNavigationAgentsChanged: (result: AssistantNavAgentItemsResult) => void;
   handleDesktopPetAssistantEvent: (event: AssistantEvent) => void;
+  desktopPet: {
+    refreshState: (...args: any[]) => unknown;
+    showWindow: (...args: any[]) => unknown;
+    hideWindow: (...args: any[]) => unknown;
+    saveSettings: (...args: any[]) => unknown;
+  };
   safeConsoleError: (message: string, details: Record<string, unknown>) => void;
   logger: Pick<Console, "warn">;
 };
@@ -68,7 +74,8 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       getMainWindow: () => state.mainWindow,
       pendingRequests: state.desktopActionRendererRequests
     }),
-    cdpIntegration: options.cdpIntegration
+    cdpIntegration: options.cdpIntegration,
+    desktopPet: options.desktopPet
   });
 
   const desktopWsServerOptions = {

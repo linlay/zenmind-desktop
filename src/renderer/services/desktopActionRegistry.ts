@@ -13,7 +13,7 @@ export type DesktopActionProvider = (
   request: DesktopActionRendererRequest
 ) => Promise<Omit<DesktopActionRendererResponse, "requestId" | "action"> | null>;
 
-export type DesktopActionProviderScope = "global" | "page" | "embeddedWeb";
+export type DesktopActionProviderScope = "global" | "page" | "web";
 type DesktopActionResult = Omit<DesktopActionRendererResponse, "requestId" | "action">;
 
 export type CurrentPageDescriptor = {
@@ -38,7 +38,7 @@ export type CurrentPageExecutor = {
 const providers: Record<DesktopActionProviderScope, DesktopActionProvider[]> = {
   global: [],
   page: [],
-  embeddedWeb: []
+  web: []
 };
 let bridgeStarted = false;
 let currentPageExecutor: CurrentPageExecutor | null = null;
@@ -103,8 +103,8 @@ async function handleDefaultAction(request: DesktopActionRendererRequest) {
     }
     return actionError("page_submit_unavailable", translate("desktopAction.pageSubmitUnavailable"));
   }
-  if (request.action.startsWith("desktop.embeddedWeb.")) {
-    return actionError("embedded_web_action_unavailable", translate("desktopAction.embeddedWebUnavailable"));
+  if (request.action.startsWith("desktop.web.")) {
+    return actionError("web_action_unavailable", translate("desktopAction.webUnavailable"));
   }
   if (request.action.startsWith("desktop.settings.")) {
     return actionError("settings_action_unavailable", translate("desktopAction.settingsUnavailable"));
@@ -180,8 +180,8 @@ function getProviderScopesForAction(action: string): DesktopActionProviderScope[
   if (action.startsWith("desktop.settings.")) {
     return ["global"];
   }
-  if (action.startsWith("desktop.embeddedWeb.")) {
-    return ["embeddedWeb", "global"];
+  if (action.startsWith("desktop.web.")) {
+    return ["web", "global"];
   }
   if (action.startsWith("desktop.page.")) {
     return ["page"];

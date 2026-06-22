@@ -86,6 +86,7 @@ import {
 } from "../assistant/pet/pet-asset-protocol";
 import {
   isDesktopPetSupportedPlatform,
+  saveDesktopPetSettings,
 } from "../assistant/pet/desktop-pet";
 import { createDesktopPetRuntime, type DesktopPetRuntime } from "../assistant/pet/runtime";
 import {
@@ -423,6 +424,15 @@ export function createMainProcessRuntime() {
     emitKanbanChanged,
     emitAssistantNavigationAgentsChanged,
     handleDesktopPetAssistantEvent: (event) => petRuntime.handleAssistantEvent(event),
+    desktopPet: {
+      refreshState: () => petRuntime.refreshState(),
+      showWindow: () => petRuntime.showWindow(),
+      hideWindow: (disable = false) => petRuntime.hideWindow(disable),
+      saveSettings: (input) => {
+        appState.desktopPetSettings = saveDesktopPetSettings(app, input, mainProcessContext.platform);
+        return petRuntime.refreshState();
+      }
+    },
     safeConsoleError,
     logger: console
   });

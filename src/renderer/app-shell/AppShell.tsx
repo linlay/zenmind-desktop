@@ -1820,9 +1820,9 @@ export function AppShell() {
           }
           return { ok: true, result: { applied: true, state: await readSettingsState() } };
         }
-        case "desktop.embeddedWeb.listSurfaces":
+        case "desktop.web.listSurfaces":
           return { ok: true, result: { surfaces: createSurfaceList() } };
-        case "desktop.embeddedWeb.activateSurface": {
+        case "desktop.web.activateSurface": {
           const target = getSurfaceTarget(args);
           const surface = createSurfaceList().find((candidate) => surfaceMatchesTarget(candidate, target));
           if (!surface) {

@@ -19,6 +19,7 @@ const {
   importSkillFromCommand,
   importSandboxImageFromPath,
   installMarketItem,
+  installWebsiteAppArchiveFromPath,
   listMarketItems,
   refreshMarketCatalog,
   saveMarketSettings,
@@ -1723,6 +1724,23 @@ test("installMarketItem installs and uninstalls website app packages into deskto
     const uninstalledList = await listMarketItems(app, options);
     assert.equal(uninstalledList.items.find((item) => item.id === "reg-report")?.state, "not-installed");
   });
+});
+
+test("installWebsiteAppArchiveFromPath installs local website app packages", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-local-"));
+  const app = createApp(root);
+  const archivePath = await writeWebappArchive(root, { id: "local-report", label: "Local Report" });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = await installWebsiteAppArchiveFromPath(app, archivePath, {
+    expectedId: "local-report"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.type, "website-app");
+  assert.equal(result.itemId, "local-report");
+  assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), "local-report", "webapp.json")), true);
+  assert.equal(readWebappItems(app).find((item) => item.id === "local-report")?.label, "Local Report");
 });
 
 test("installMarketItem does not execute cli installs from Desktop", async (t) => {

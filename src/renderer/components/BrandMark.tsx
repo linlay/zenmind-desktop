@@ -2,6 +2,7 @@ import { APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
 import { useI18n } from "../i18n/useI18n";
 import aboutIcon from "../assets/sidebar-icons/about.svg";
 import agentIcon from "../assets/sidebar-icons/agent.svg";
+import archiveIcon from "../assets/sidebar-icons/archive.svg";
 import appearanceIcon from "../assets/sidebar-icons/appearance.svg";
 import assistantIcon from "../assets/sidebar-icons/assistant.svg";
 import autumnIcon from "../assets/sidebar-icons/autumn.svg";
@@ -29,6 +30,7 @@ export type SidebarIllustrationKind =
   | "control"
   | "assistant"
   | "agent"
+  | "archive"
   | "market"
   | "help"
   | "settings"
@@ -50,6 +52,7 @@ type SidebarIllustrationProps = {
 const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
   about: aboutIcon,
   agent: agentIcon,
+  archive: archiveIcon,
   appearance: appearanceIcon,
   assistant: assistantIcon,
   autumn: autumnIcon,
