@@ -1802,6 +1802,8 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.match(settingsPage, /case "control"[\s\S]*settings\.control\.tunnelTitle[\s\S]*settings\.mobilePairing\.title/);
   assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.deviceId/);
   assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.publicUrl|settings\.tunnelHub\.webSocketUrl/);
+  assert.doesNotMatch(settingsPage, /rotateRelayToken|settings\.tunnelHub\.rotateRelayToken/);
+  assert.match(settingsPage, /settings\.tunnelHub\.tlsInsecureDescription/);
   assert.doesNotMatch(settingsPage, /settings\.createAppPairingPayload/);
   assert.match(settingsPage, /buildMobileAccessUrl/);
   assert.match(settingsPage, /window\.electronAPI\.agentAuth\.issueAccessToken\("missing"\)/);

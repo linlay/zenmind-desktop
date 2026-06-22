@@ -2293,7 +2293,6 @@ export function SettingsPage({
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
-  const [tunnelHubRotateRelayToken, setTunnelHubRotateRelayToken] = useState(false);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
   const [mobileAccessPending, setMobileAccessPending] = useState(false);
   const [mobileAccessUrl, setMobileAccessUrl] = useState("");
@@ -2566,7 +2565,6 @@ export function SettingsPage({
           ...settings
         });
         setTunnelHubSsoStatus(ssoResult.status === "fulfilled" ? ssoResult.value : null);
-        setTunnelHubRotateRelayToken(false);
         setReadErrorSections(["control"], "");
       })
       .catch((reason) => {
@@ -3645,7 +3643,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         enabled: tunnelHubSettings.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        rotateRelayToken: tunnelHubRotateRelayToken,
         tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
       });
@@ -3657,7 +3654,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         setMobileAccessUrl("");
         setMobileAccessError("");
       }
-      setTunnelHubRotateRelayToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
       }
@@ -3678,7 +3674,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         enabled: nextEnabled,
         relayUrl: tunnelHubSettings.relayUrl,
         deviceId: tunnelHubSettings.deviceId,
-        rotateRelayToken: tunnelHubRotateRelayToken,
         tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
         reconnectSeconds: tunnelHubSettings.reconnectSeconds
       });
@@ -3690,7 +3685,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         setMobileAccessUrl("");
         setMobileAccessError("");
       }
-      setTunnelHubRotateRelayToken(false);
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
       }
@@ -4192,17 +4186,13 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                 ) : null}
                 <Checkbox
                   className="settings-control-field settings-checkbox-field"
-                  checked={tunnelHubRotateRelayToken}
-                  onChange={(event) => setTunnelHubRotateRelayToken(event.target.checked)}
-                >
-                  {t("settings.tunnelHub.rotateRelayToken")}
-                </Checkbox>
-                <Checkbox
-                  className="settings-control-field settings-checkbox-field"
                   checked={tunnelHubSettings.tlsInsecureSkipVerify}
                   onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
                 >
-                  {t("settings.tunnelHub.tlsInsecure")}
+                  <span className="settings-checkbox-copy">
+                    <span>{t("settings.tunnelHub.tlsInsecure")}</span>
+                    <small>{t("settings.tunnelHub.tlsInsecureDescription")}</small>
+                  </span>
                 </Checkbox>
                 <label className="settings-control-field">
                   <span>{t("settings.tunnelHub.reconnectSeconds")}</span>
