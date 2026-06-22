@@ -204,6 +204,36 @@ test("desktop pet panel layout chooses a free side at every screen corner", () =
   );
 });
 
+test("desktop pet panel layout follows the pet when a center position cannot fit above", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    resolveDesktopPetPanelLayout
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 500, height: 400 };
+  const panelSize = { width: 336, height: 210 };
+  const gap = 8;
+  const petRect = {
+    x: 202,
+    y: 78,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  };
+
+  const layout = resolveDesktopPetPanelLayout({
+    displayArea,
+    petRect,
+    panelSize,
+    gap
+  });
+
+  assert.equal(layout.side, "below");
+  assert.equal(layout.rect.y, petRect.y + petRect.height + gap);
+  assert.equal(
+    layout.rect.x + Math.round(layout.rect.width / 2),
+    petRect.x + Math.round(petRect.width / 2)
+  );
+});
+
 test("desktop pet display area keeps full horizontal screen bounds when work area has side insets", () => {
   const { resolveDesktopPetDisplayArea } = __testInternals;
   assert.deepEqual(resolveDesktopPetDisplayArea({

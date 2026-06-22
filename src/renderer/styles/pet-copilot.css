@@ -158,6 +158,16 @@ body.desktop-pet-body,
   left: calc(var(--desktop-pet-button-left) + 52px);
 }
 
+.desktop-pet-root.is-pet-window.is-edge-dock-right.is-edge-dock-bottom .desktop-pet-unread-badges {
+  left: calc(var(--desktop-pet-button-left) + 76px);
+  top: calc(var(--desktop-pet-button-top) - 8px);
+}
+
+.desktop-pet-root.is-pet-window.is-edge-dock-right.is-edge-dock-bottom .desktop-pet-unread-badges.has-multiple {
+  left: calc(var(--desktop-pet-button-left) + 52px);
+  top: calc(var(--desktop-pet-button-top) - 8px);
+}
+
 .desktop-pet-root.is-pet-window.is-edge-dock-top .desktop-pet-unread-badges {
   top: calc(var(--desktop-pet-button-top) + 28px);
 }
@@ -171,10 +181,34 @@ body.desktop-pet-body,
   --desktop-pet-task-panel-width: calc(100% - 20px);
 }
 
+.desktop-pet-root.is-panel-window.has-bubble {
+  --desktop-pet-task-panel-top: auto;
+  --desktop-pet-task-panel-bottom: 10px;
+}
+
+.desktop-pet-root.is-panel-window.is-edge-dock-top.has-bubble {
+  --desktop-pet-task-panel-top: 10px;
+  --desktop-pet-task-panel-bottom: auto;
+}
+
+.desktop-pet-root.is-panel-window.is-edge-dock-bottom.has-bubble {
+  --desktop-pet-task-panel-top: auto;
+  --desktop-pet-task-panel-bottom: 10px;
+}
+
 .desktop-pet-root.is-panel-window .desktop-pet-task-panel {
   min-height: calc(100% - 20px);
   max-height: calc(100% - 20px);
   overflow: hidden;
+}
+
+.desktop-pet-root.is-panel-window.has-bubble .desktop-pet-status-panel {
+  min-height: auto;
+  max-height: calc(100% - 20px);
+  box-shadow:
+    0 8px 20px rgba(47, 88, 96, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    inset 0 -1px 0 rgba(126, 158, 164, 0.1);
 }
 
 .desktop-pet-root.is-dragging,
@@ -522,11 +556,14 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-status-panel {
-  gap: 7px;
+  gap: 6px;
+  padding-top: 7px;
+  padding-bottom: 9px;
 }
 
 .desktop-pet-status-panel .desktop-pet-task-head {
   grid-template-columns: minmax(0, 1fr) 32px;
+  min-height: 24px;
 }
 
 .desktop-pet-task-head {

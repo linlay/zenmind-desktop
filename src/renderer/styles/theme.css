@@ -6,6 +6,7 @@
   color-scheme: light;
   --window-radius: 18px;
   --mac-traffic-light-safe-area: 88px;
+  --mac-fullscreen-top-safe-area: 32px;
   --bg-base: #FFFFFF;
   --bg-canvas:
     radial-gradient(circle at 8% 0%, rgba(122, 201, 255, 0.48), transparent 28%),

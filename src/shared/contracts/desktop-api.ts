@@ -385,6 +385,10 @@ export type DesktopAppPairingPayloadResult =
 export type NativeDialogVisibilityListener = (state: { open: boolean; platform: string }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
+export type DesktopWindowState = {
+  isFullScreen: boolean;
+};
+export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
 export type DesktopConfigChangedEvent = {
   reason: string;
   changedAt: string;
@@ -414,6 +418,8 @@ export interface DesktopApi {
     moveWindowBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
+    getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
+    onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
   };
   desktopDownloads: {
     saveFile: (input: {

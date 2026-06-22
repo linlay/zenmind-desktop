@@ -3648,6 +3648,10 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const appState = readSourceFile("src", "main", "app-state.ts");
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appShell = readAppShellSource();
+  const contracts = readSharedContractsSource();
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const globalStyles = readRendererStyles();
 
   assert.match(appState, /mainWindowSidebarTranslucencyEnabled:\s*initialState\.mainWindowSidebarTranslucencyEnabled \?\? true/);
   assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => options\.state\.mainWindowSidebarTranslucencyEnabled/);
@@ -3661,6 +3665,18 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(windowManager, /targetWindow\.setBackgroundColor\("#FFFFFF"\);/);
   assert.match(windowManager, /targetWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
   assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
+  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;/);
+  assert.match(contracts, /getWindowState:\s*\(\) => Promise<\{ ok:\s*boolean; isFullScreen:\s*boolean; message\?:\s*string \}>;/);
+  assert.match(contracts, /onWindowStateChanged:\s*\(listener:\s*DesktopWindowStateListener\) => \(\(\) => void\);/);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.getWindowState"\)/);
+  assert.match(preload, /ipcRenderer\.on\("desktopShell\.windowStateChanged"/);
+  assert.match(windowManager, /targetWindow\.webContents\.send\("desktopShell\.windowStateChanged",\s*\{ isFullScreen:\s*targetWindow\.isFullScreen\(\) \}\);/);
+  assert.match(appShell, /const desktopShell = window\.electronAPI\.desktopShell;[\s\S]*?!desktopShell\.getWindowState \|\| !desktopShell\.onWindowStateChanged/);
+  assert.match(appShell, /desktopShell\.getWindowState\(\)/);
+  assert.match(appShell, /desktopShell\.onWindowStateChanged/);
+  assert.match(appShell, /windowFullScreen \? "is-window-fullscreen" : ""/);
+  assert.match(globalStyles, /--mac-fullscreen-top-safe-area:\s*32px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-window-fullscreen\s*\{[\s\S]*?padding-top:\s*var\(--mac-fullscreen-top-safe-area\);/);
 });
 
 test("main process keeps app identity visible in platform program bars", () => {
@@ -4024,6 +4040,12 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(quickRouting, /return AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(quickRouting, /return "\/service\/agent-webclient";/);
   assert.match(quickRouting, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
+  assert.match(quickRouting, /pathname === "\/copilot" \|\| pathname\.startsWith\("\/copilot\/"\)/);
+  assert.match(quickRouting, /getAllWebContents\(\)/);
+  assert.match(quickRouting, /contents\.getType\(\) !== "webview"/);
+  assert.match(quickRouting, /hostWebContents\.id !== targetWindow\.webContents\.id/);
+  assert.match(quickRouting, /workerKey:\s*`agent:\$\{agentKey\}`/);
+  assert.match(quickRouting, /const QUICK_AGENT_OPEN_RETRY_COUNT = 80;/);
   assert.doesNotMatch(quickRouting, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
   assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
@@ -4362,8 +4384,12 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   assert.equal(fs.existsSync(nativeQuickAssistantPath), false);
   assert.match(quickCopilotRoute, /function QuickCopilotRoute/);
   assert.match(appShell, /location\.pathname === "\/quick-assistant"[\s\S]{0,180}<QuickCopilotRoute \/>/);
-  assert.match(quickCopilotRoute, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
+  assert.match(quickCopilotRoute, /function buildAgentWebclientCopilotPath\(agentKey: string\)/);
+  assert.match(quickCopilotRoute, /encodeURIComponent\(normalizedAgentKey\)/);
+  assert.match(quickCopilotRoute, /const quickAssistantEmbedPath = buildAgentWebclientCopilotPath\(quickAssistantAgentKey\);/);
+  assert.match(quickCopilotRoute, /embedPath=\{quickAssistantEmbedPath\}/);
   assert.match(quickCopilotRoute, /pluginId="agent-webclient"/);
+  assert.match(quickCopilotRoute, /loadInitialEmbeddedUrlDirectly/);
   assert.match(quickCopilotRoute, /quickAssistantAgentKey/);
   assert.match(quickCopilotRoute, /data-open-agent-key=\{quickAssistantAgentKey\}/);
   assert.match(quickCopilotRoute, /quickAssistant\.openControlCenter/);
@@ -4577,6 +4603,9 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-task-copy strong\s*\{[\s\S]{0,120}font-size:\s*12px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*155px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble\s*\{[\s\S]{0,120}--desktop-pet-task-panel-top:\s*auto;[\s\S]{0,80}--desktop-pet-task-panel-bottom:\s*10px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.is-edge-dock-top\.has-bubble\s*\{[\s\S]{0,120}--desktop-pet-task-panel-top:\s*10px;[\s\S]{0,80}--desktop-pet-task-panel-bottom:\s*auto;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.is-edge-dock-bottom\.has-bubble\s*\{[\s\S]{0,120}--desktop-pet-task-panel-top:\s*auto;[\s\S]{0,80}--desktop-pet-task-panel-bottom:\s*10px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-edge-dock-top\.has-bubble,[\s\S]{0,160}--desktop-pet-task-panel-top:\s*168px;[\s\S]{0,120}--desktop-pet-task-panel-bottom:\s*auto;/);
   assert.doesNotMatch(globalStyles, /0 18px 40px rgba\(30,\s*32,\s*38,\s*0\.12\)/);
   assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?box-shadow:\s*none;/);
@@ -4587,6 +4616,13 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-running::after\s*\{[\s\S]{0,100}inset:\s*6px;[\s\S]{0,80}border-width:\s*2px;/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-reply[\s\S]*?opacity:\s*1;/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-main \.desktop-pet-task-status-badge[\s\S]*?opacity:\s*0;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,160}min-height:\s*auto;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,220}max-height:\s*calc\(100% - 20px\);/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,260}box-shadow:[\s\S]{0,120}0 8px 20px rgba\(47,\s*88,\s*96,\s*0\.06\)/);
+  assert.match(globalStyles, /\.desktop-pet-status-panel\s*\{[\s\S]{0,120}gap:\s*6px;[\s\S]{0,80}padding-top:\s*7px;[\s\S]{0,80}padding-bottom:\s*9px;/);
+  assert.match(globalStyles, /\.desktop-pet-status-panel \.desktop-pet-task-head\s*\{[\s\S]{0,120}grid-template-columns:\s*minmax\(0,\s*1fr\) 32px;[\s\S]{0,80}min-height:\s*24px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-pet-window\.is-edge-dock-right\.is-edge-dock-bottom \.desktop-pet-unread-badges\s*\{[\s\S]{0,160}left:\s*calc\(var\(--desktop-pet-button-left\) \+ 76px\);/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-pet-window\.is-edge-dock-right\.is-edge-dock-bottom \.desktop-pet-unread-badges\s*\{[\s\S]{0,220}top:\s*calc\(var\(--desktop-pet-button-top\) - 8px\);/);
   assert.match(desktopPet, /className=\{`desktop-pet-message-stack\$\{replyingChatId \? " is-replying" : ""\}`\}/);
   assert.match(desktopPet, /const isReplying = replyingChatId === message\.chatId;/);
   assert.match(desktopPet, /className=\{`desktop-pet-message-card is-\$\{cardStatus\}\$\{message\.unread \? " is-unread" : ""\}\$\{isReplying \? " is-replying" : ""\}`\}/);

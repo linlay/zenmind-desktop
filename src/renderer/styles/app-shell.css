@@ -6,6 +6,7 @@
   --app-window-drag-left: var(--app-sidebar-width, 160px);
   --app-window-drag-right: 0px;
   position: relative;
+  box-sizing: border-box;
   height: 100%;
   min-height: 0;
   display: flex;
@@ -33,6 +34,11 @@
 .app-shell.has-browser-chrome-surface.is-mac-platform,
 .app-shell.has-browser-chrome-surface.is-windows-platform {
   --app-window-drag-height: 0px;
+}
+
+.app-shell.is-mac-platform.is-window-fullscreen {
+  --app-window-drag-height: 0px;
+  padding-top: var(--mac-fullscreen-top-safe-area);
 }
 
 .app-shell.is-mac-translucent-sidebar,

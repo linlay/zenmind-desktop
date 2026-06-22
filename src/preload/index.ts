@@ -20,6 +20,7 @@ import type {
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
   DesktopConfigChangedListener,
+  DesktopWindowStateListener,
   DesktopPetStateListener,
   DesktopLogTarget,
   DesktopApi,
@@ -69,7 +70,21 @@ const api: DesktopApi = {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
     moveWindowBy: (delta: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.moveWindowBy", delta),
     beginWindowDrag: (point: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.beginWindowDrag", point),
-    endWindowDrag: () => ipcRenderer.invoke("desktopShell.endWindowDrag")
+    endWindowDrag: () => ipcRenderer.invoke("desktopShell.endWindowDrag"),
+    getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
+    onWindowStateChanged: (listener: DesktopWindowStateListener) => {
+      const handleWindowStateChanged = (
+        _event: Electron.IpcRendererEvent,
+        state: Parameters<DesktopWindowStateListener>[0]
+      ) => {
+        listener(state);
+      };
+
+      ipcRenderer.on("desktopShell.windowStateChanged", handleWindowStateChanged);
+      return () => {
+        ipcRenderer.off("desktopShell.windowStateChanged", handleWindowStateChanged);
+      };
+    }
   },
   desktopDownloads: {
     saveFile: (input) => ipcRenderer.invoke("desktopDownloads.saveFile", input)

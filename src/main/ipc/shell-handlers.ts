@@ -244,6 +244,22 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
   });
 
+  ipcMain.handle("desktopShell.getWindowState", async (event: IpcMainInvokeEvent) => {
+    try {
+      const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? options.mainWindow;
+      if (!ownerWindow || ownerWindow.isDestroyed()) {
+        return { ok: false as const, isFullScreen: false, message: t("shell.windowUnavailable") };
+      }
+      return { ok: true as const, isFullScreen: ownerWindow.isFullScreen() };
+    } catch (error) {
+      return {
+        ok: false as const,
+        isFullScreen: false,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
   ipcMain.handle("desktopShell.moveWindowBy", async (event: IpcMainInvokeEvent, delta: unknown) => {
     try {
       const input = delta && typeof delta === "object" ? delta as Record<string, unknown> : {};

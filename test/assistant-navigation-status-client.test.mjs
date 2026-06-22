@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   applyAssistantNavigationPush,
+  readAssistantCopilotAgentsFromPlatform,
 } = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
 
 function createAgent(overrides = {}) {
@@ -27,6 +28,57 @@ function createAgent(overrides = {}) {
 function findChat(items, chatId) {
   return items.flatMap((agent) => agent.recentChats).find((chat) => chat.chatId === chatId);
 }
+
+test("assistant copilot agents fall back to nav scope when the copilot scope is empty", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url));
+    const data = String(url).includes("scope=copilot")
+      ? []
+      : [{ key: "cutej", name: "小君", role: "平台总管" }];
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data };
+      },
+    };
+  };
+
+  const items = await readAssistantCopilotAgentsFromPlatform("http://127.0.0.1:11789", "token");
+
+  assert.deepEqual(requestedUrls.map((url) => new URL(url).searchParams.get("scope")), ["copilot", "nav"]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].agentKey, "cutej");
+});
+
+test("assistant copilot agents keep the copilot scope when it has results", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url));
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data: [{ key: "sidekick", name: "Sidekick" }] };
+      },
+    };
+  };
+
+  const items = await readAssistantCopilotAgentsFromPlatform("http://127.0.0.1:11789", "token");
+
+  assert.deepEqual(requestedUrls.map((url) => new URL(url).searchParams.get("scope")), ["copilot"]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].agentKey, "sidekick");
+});
 
 test("assistant navigation run.started keeps a newly created chat title instead of writing Thinking", () => {
   const chatId = "fdc7af9d-31d4-4853-b2b8-de25c2a89f78";

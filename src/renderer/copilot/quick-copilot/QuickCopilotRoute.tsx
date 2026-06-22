@@ -13,6 +13,13 @@ const QUICK_COPILOT_STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID = "agent-webclient-quick-copilot";
 
+function buildAgentWebclientCopilotPath(agentKey: string) {
+  const normalizedAgentKey = agentKey.trim();
+  return normalizedAgentKey
+    ? `${AGENT_WEBCLIENT_COPILOT_PATH}/${encodeURIComponent(normalizedAgentKey)}`
+    : AGENT_WEBCLIENT_COPILOT_PATH;
+}
+
 function readStoredThemeMode() {
   if (typeof window === "undefined") {
     return "light";
@@ -67,6 +74,7 @@ export function QuickCopilotRoute() {
   }, []);
 
   const quickAssistantAgentKey = assistantSettings?.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
+  const quickAssistantEmbedPath = buildAgentWebclientCopilotPath(quickAssistantAgentKey);
 
   if (!allReady) {
     return (
@@ -95,11 +103,12 @@ export function QuickCopilotRoute() {
     <main className="quick-web-copilot">
       <PluginPage
         active
-        embedPath={AGENT_WEBCLIENT_COPILOT_PATH}
+        embedPath={quickAssistantEmbedPath}
         hostTheme={hostTheme}
         pluginId="agent-webclient"
         surfaceId={AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID}
         surfaceLabel={t("copilotDock.surfaceLabel")}
+        loadInitialEmbeddedUrlDirectly
       />
       <span className="quick-web-copilot-agent-marker" data-open-agent-key={quickAssistantAgentKey} aria-hidden="true" />
     </main>
