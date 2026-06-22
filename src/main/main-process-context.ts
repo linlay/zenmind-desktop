@@ -91,6 +91,7 @@ export function createShellIpcHandlerOptions(
 export interface AssistantIpcHandlerContextDependencies {
   assistantBridge: unknown;
   desktopActionOptions: unknown;
+  reportRendererDiagnostic: (...args: any[]) => unknown;
   showFileDialog: (...args: any[]) => unknown;
   callAgentPlatform: (...args: any[]) => unknown;
   handleDesktopActionRequest: (...args: any[]) => unknown;
@@ -135,7 +136,8 @@ export function createAssistantIpcHandlerOptions(
     getCurrentPageSnapshot: () => context.state.currentPageSnapshot,
     setCurrentPageSnapshot: (snapshot: unknown) => {
       context.state.currentPageSnapshot = snapshot as any;
-    }
+    },
+    reportRendererDiagnostic: dependencies.reportRendererDiagnostic
   };
 }
 

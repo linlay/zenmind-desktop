@@ -32,3 +32,15 @@ test("plugin page does not sync API resource navigations back into the embedded 
   assert.match(navigationHandlerBlock, /isPluginRouteSyncTarget\(nextUrl, webviewSrcUrl\)/);
   assert.match(navigationHandlerBlock, /sendPluginRouteToWebview\(resolvedUrl, "navigation"\)/);
 });
+
+test("plugin page reports webview breadcrumbs for post-crash diagnosis", () => {
+  const pluginPage = readPluginPageSource();
+
+  assert.match(pluginPage, /function reportPluginWebviewDiagnostic/);
+  assert.match(pluginPage, /source:\s*"plugin-webview"/);
+  assert.match(pluginPage, /reportPluginWebviewDiagnostic\("listeners-attached"\)/);
+  assert.match(pluginPage, /reportPluginWebviewDiagnostic\("dom-ready"\)/);
+  assert.match(pluginPage, /reportPluginWebviewDiagnostic\("navigation"/);
+  assert.match(pluginPage, /reportPluginWebviewDiagnostic\("direct-route-load-url"/);
+  assert.match(pluginPage, /reportPluginWebviewDiagnostic\("direct-route-load-failed"/);
+});

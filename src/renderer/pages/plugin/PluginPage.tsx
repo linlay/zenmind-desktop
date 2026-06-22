@@ -213,6 +213,11 @@ function readEventBoolean(event: Event, key: string) {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function readEventNumber(event: Event, key: string) {
+  const value = (event as Event & Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function readWebviewContentsId(webview: Electron.WebviewTag | null) {
   try {
     const webContentsId = webview?.getWebContentsId();
@@ -540,6 +545,39 @@ export function PluginPage({
     };
   }
 
+  function reportPluginWebviewDiagnostic(
+    stage: string,
+    details: Record<string, unknown> = {},
+  ) {
+    const targetWebview = webviewRef.current;
+    let currentUrl = "";
+    let webContentsId: number | undefined;
+    try {
+      currentUrl = targetWebview?.getURL() ?? "";
+      webContentsId = readWebviewContentsId(targetWebview);
+    } catch {
+      // The guest can disappear during route changes or app shutdown.
+    }
+    window.electronAPI.diagnostics?.reportRendererError({
+      source: "plugin-webview",
+      message: stage,
+      filename: "PluginPage.tsx",
+      details: {
+        serviceId: service?.id ?? pluginId,
+        serviceStatus: service?.status ?? "",
+        surfaceId,
+        surfaceRoute,
+        embedPath: effectiveEmbedPath,
+        active: active !== false,
+        embeddedUrl,
+        webviewSrcUrl,
+        currentUrl,
+        webContentsId,
+        ...details,
+      },
+    });
+  }
+
   function readCurrentWebviewUrl() {
     try {
       const webviewUrl = webviewRef.current?.getURL();
@@ -590,12 +628,22 @@ export function PluginPage({
     }
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
+      reportPluginWebviewDiagnostic("execute-script-skipped", {
+        reason: "webview-unavailable",
+      });
       return embeddedError("webview_unavailable", t("pluginPage.error.webviewUnavailable"));
     }
     try {
+      reportPluginWebviewDiagnostic("execute-script-start", {
+        scriptBytes: getUtf8ByteLength(script),
+      });
       const result = await targetWebview.executeJavaScript(script, true);
+      reportPluginWebviewDiagnostic("execute-script-finish");
       return { ok: true as const, result };
     } catch (error) {
+      reportPluginWebviewDiagnostic("execute-script-failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return {
         ok: false as const,
         error: {
@@ -851,6 +899,9 @@ export function PluginPage({
 
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
+      reportPluginWebviewDiagnostic("direct-route-load-skipped", {
+        reason: "webview-unavailable",
+      });
       return;
     }
 
@@ -861,9 +912,15 @@ export function PluginPage({
         : "";
       if (normalizedCurrentUrl === embeddedUrl) {
         lastDirectWebviewRouteRef.current = embeddedUrl;
+        reportPluginWebviewDiagnostic("direct-route-load-skipped", {
+          reason: "already-at-target",
+        });
         return;
       }
       if (!currentUrl && lastDirectWebviewRouteRef.current === embeddedUrl) {
+        reportPluginWebviewDiagnostic("direct-route-load-skipped", {
+          reason: "pending-first-url",
+        });
         return;
       }
       lastDirectWebviewRouteRef.current = embeddedUrl;
@@ -876,10 +933,16 @@ export function PluginPage({
         currentParsed.origin === targetParsed.origin &&
         !webviewLoadedChromeErrorPage()
       ) {
+        reportPluginWebviewDiagnostic("direct-route-client-navigation", {
+          targetUrl: embeddedUrl,
+        });
         void targetWebview.executeJavaScript(
           buildClientSideRouteNavigationScript(embeddedUrl),
           true,
         ).catch((reason: unknown) => {
+          reportPluginWebviewDiagnostic("direct-route-client-navigation-failed", {
+            error: reason instanceof Error ? reason.message : String(reason),
+          });
           console.warn(
             "[service-webview] failed to apply client-side embedded route",
             reason instanceof Error ? reason.message : String(reason),
@@ -888,8 +951,14 @@ export function PluginPage({
         });
         return;
       }
+      reportPluginWebviewDiagnostic("direct-route-load-url", {
+        targetUrl: embeddedUrl,
+      });
       void targetWebview.loadURL(embeddedUrl);
     } catch (reason) {
+      reportPluginWebviewDiagnostic("direct-route-load-failed", {
+        error: reason instanceof Error ? reason.message : String(reason),
+      });
       console.warn(
         "[service-webview] failed to load direct embedded route",
         reason instanceof Error ? reason.message : String(reason),
@@ -903,6 +972,9 @@ export function PluginPage({
     }
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
+      reportPluginWebviewDiagnostic("token-injection-skipped", {
+        reason: "webview-unavailable",
+      });
       return false;
     }
 
@@ -1029,17 +1101,23 @@ export function PluginPage({
     }
 
     const handleDomReady = () => {
+      reportPluginWebviewDiagnostic("dom-ready");
       syncWebviewState();
       sendPluginRouteToWebview(embeddedUrl, "initial");
       seedAgentWebclientAccessToken();
     };
     const handleDidFinishLoad = () => {
+      reportPluginWebviewDiagnostic("did-finish-load");
       syncWebviewState();
       sendPluginRouteToWebview(embeddedUrl, "route-sync");
       seedAgentWebclientAccessToken();
     };
     const syncNavigationRoute = (event: Event) => {
       const nextUrl = readEventString(event, "url");
+      reportPluginWebviewDiagnostic("navigation", {
+        url: nextUrl,
+        isMainFrame: readEventBoolean(event, "isMainFrame"),
+      });
       const resolvedUrl = nextUrl
         ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
         : readCurrentWebviewUrl();
@@ -1059,8 +1137,16 @@ export function PluginPage({
     const handleDidNavigateInPage = (event: Event) => {
       syncNavigationRoute(event);
     };
-    const handleDidFailLoad = () => syncWebviewState();
+    const handleDidFailLoad = (event: Event) => {
+      reportPluginWebviewDiagnostic("did-fail-load", {
+        url: readEventString(event, "validatedURL") || readEventString(event, "url"),
+        errorCode: readEventNumber(event, "errorCode"),
+        errorDescription: readEventString(event, "errorDescription"),
+      });
+      syncWebviewState();
+    };
 
+    reportPluginWebviewDiagnostic("listeners-attached");
     targetWebview.addEventListener("dom-ready", handleDomReady);
     targetWebview.addEventListener("did-finish-load", handleDidFinishLoad);
     targetWebview.addEventListener("did-navigate", handleDidNavigate);
@@ -1075,6 +1161,7 @@ export function PluginPage({
     const seedTimers = scheduleAgentWebclientAccessTokenSeeds();
 
     return () => {
+      reportPluginWebviewDiagnostic("listeners-detached");
       seedTimers.forEach((timer) => window.clearTimeout(timer));
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);

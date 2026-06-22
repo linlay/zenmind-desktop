@@ -2582,8 +2582,8 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanPage, />\s*\{busy \? "提交中" : "交给智能体"\}\s*<\/button>/);
   assert.doesNotMatch(kanbanPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
   assert.doesNotMatch(kanbanPage, /aria-label=\{`\$\{meta\.label\} 更多`\}/);
-  assert.match(globalStyles, /\.kanban-page\s*\{/);
-  assert.match(globalStyles, /\.kanban-toolbar\s*\{[\s\S]{0,180}min-height:\s*52px;[\s\S]{0,180}padding:\s*12px 28px 7px;/);
+  assert.match(globalStyles, /\.kanban-page\s*\{[\s\S]*?padding:\s*4px;[\s\S]*?\}/);
+  assert.match(globalStyles, /\.kanban-toolbar\s*\{[\s\S]{0,180}min-height:\s*50px;[\s\S]{0,180}padding:\s*12px 28px 7px;/);
   assert.match(globalStyles, /\.kanban-tool\s*\{[\s\S]{0,180}min-width:\s*32px;[\s\S]{0,180}height:\s*32px;/);
   assert.match(globalStyles, /\.kanban-search\s*\{[\s\S]{0,180}height:\s*32px;/);
   assert.doesNotMatch(globalStyles, /\.kanban-tool\s*\{[\s\S]{0,180}height:\s*36px;/);

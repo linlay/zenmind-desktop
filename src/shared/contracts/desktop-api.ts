@@ -392,8 +392,9 @@ export type DesktopConfigChangedEvent = {
 export type DesktopConfigChangedListener = (event: DesktopConfigChangedEvent) => void;
 
 export interface RendererDiagnosticReport {
-  source: "window-error" | "unhandledrejection" | "react-error-boundary";
+  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "plugin-webview";
   message: string;
+  details?: Record<string, unknown>;
   stack?: string;
   componentStack?: string;
   filename?: string;
@@ -604,7 +605,7 @@ export interface DesktopApi {
     onCall: (listener: DesktopActionCallListener) => () => void;
   };
   currentPage: {
-    publishSnapshot: (snapshot: DesktopPageContextSnapshot) => Promise<{ ok: boolean }>;
+    publishSnapshot: (snapshot: DesktopPageContextSnapshot | null) => Promise<{ ok: boolean }>;
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
   };
   diagnostics: {

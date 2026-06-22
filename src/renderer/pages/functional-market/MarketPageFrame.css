@@ -31,7 +31,8 @@
   height: calc(100vh - 72px);
   display: flex;
   flex-direction: column;
-  padding: 8px 10px 0;
+  box-sizing: border-box;
+  padding: 12px;
   overflow: hidden;
 }
 
@@ -1287,7 +1288,7 @@
 
 @media (max-width: 480px) {
   .market-shell {
-    padding-inline: 4px;
+    padding: 12px;
   }
 
   .market-item-action {

@@ -367,6 +367,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       route: event.sender.getURL(),
       source: typeof rendererReport.source === "string" ? rendererReport.source : "unknown",
       message: typeof rendererReport.message === "string" ? rendererReport.message : String(report),
+      details: rendererReport.details && typeof rendererReport.details === "object" ? rendererReport.details : undefined,
       stack: typeof rendererReport.stack === "string" ? rendererReport.stack : undefined,
       componentStack: typeof rendererReport.componentStack === "string" ? rendererReport.componentStack : undefined,
       filename: typeof rendererReport.filename === "string" ? rendererReport.filename : undefined,

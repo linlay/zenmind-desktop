@@ -76,6 +76,7 @@ export function clearCurrentPageContextSnapshot(pageKey?: string) {
     return;
   }
   currentSnapshot = null;
+  void window.electronAPI.currentPage.publishSnapshot(null).catch(() => undefined);
   notifyListeners();
 }
 

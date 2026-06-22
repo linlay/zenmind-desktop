@@ -17,6 +17,8 @@ export interface AssistantIpcHandlerOptions {
   getCurrentPageSnapshot?: () => any;
   /** Optional external setter for currentPage snapshot (called when renderer publishes) */
   setCurrentPageSnapshot?: (snapshot: any) => void;
+  /** Optional diagnostic sink for crash breadcrumbs. */
+  reportRendererDiagnostic?: (source: string, details: Record<string, unknown>) => void;
   desktopActionOptions: any;
   app: any;
   mainWindow: any;
@@ -94,6 +96,24 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
 
   ipcMain.handle("currentPage.publishSnapshot", async (_event: any, snapshot: any) => {
     setSnapshot(snapshot);
+    if (snapshot && typeof snapshot === "object") {
+      const currentPage = snapshot as Record<string, unknown>;
+      options.reportRendererDiagnostic?.("current-page", {
+        route: currentPage.route,
+        pageKey: currentPage.pageKey,
+        pageKind: currentPage.pageKind,
+        surfaceId: currentPage.surfaceId,
+        surfaceLabel: currentPage.surfaceLabel,
+        surfaceRoute: currentPage.surfaceRoute,
+        embedPath: currentPage.embedPath,
+        webContentsId: currentPage.webContentsId,
+        pageContext: currentPage.pageContext
+      });
+    } else {
+      options.reportRendererDiagnostic?.("current-page", {
+        cleared: true
+      });
+    }
     return { ok: true };
   });
 

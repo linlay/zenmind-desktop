@@ -171,6 +171,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {
     assistantBridge,
     desktopActionOptions,
+    reportRendererDiagnostic: options.reportRendererDiagnostic,
     showFileDialog: options.showFileDialog,
     callAgentPlatform,
     handleDesktopActionRequest,
