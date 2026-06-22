@@ -14,6 +14,10 @@ const {
   startDesktopWsServer,
   stopDesktopWsServer
 } = require("../dist-electron/main/desktop-ws-server.js");
+const {
+  DESKTOP_WS_HOST,
+  DESKTOP_WS_LAN_BIND_HOST
+} = require("../dist-electron/shared/desktop-ws.js");
 
 function createApp(homePath) {
   return {
@@ -205,6 +209,65 @@ function connectRawWebSocket(wsUrl, protocol) {
   };
 }
 
+function createDeferred() {
+  let resolve;
+  const promise = new Promise((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
+test("desktop ws server upgrades loopback listener to LAN bind and reuses broad listener", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-bind-"));
+  t.after(async () => {
+    await stopDesktopWsServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const baseOptions = {
+    app: createApp(path.join(root, "home")),
+    port: 0,
+    desktopActionOptions: {},
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({
+        ok: true,
+        runId: "run-1",
+        chatId: "chat-1",
+        message: "started"
+      })
+    },
+    getKanbanRuntime: () => null,
+    verifyToken: async (token, subprotocol) => ({
+      subject: "app",
+      deviceId: token || "device-1",
+      expiresAt: Date.now() + 600_000,
+      scope: "app",
+      subprotocol
+    }),
+    logger: {
+      log() {},
+      warn() {},
+      error() {}
+    }
+  };
+
+  const local = await startDesktopWsServer({ ...baseOptions, host: DESKTOP_WS_HOST });
+  assert.equal(local.host, DESKTOP_WS_HOST);
+
+  const lan = await startDesktopWsServer({ ...baseOptions, host: DESKTOP_WS_LAN_BIND_HOST });
+  assert.equal(lan.host, DESKTOP_WS_LAN_BIND_HOST);
+  assert.match(lan.webSocketUrl, /^ws:\/\/127\.0\.0\.1:\d+\/ws$/u);
+
+  const client = await connectRawWebSocket(lan.webSocketUrl, "bearer.test-token").open();
+  t.after(() => client.close());
+  await client.waitFor((message) => message.ns === "d" && message.frame === "push" && message.type === "connected");
+
+  const reused = await startDesktopWsServer({ ...baseOptions, host: DESKTOP_WS_HOST });
+  assert.equal(reused.host, DESKTOP_WS_LAN_BIND_HOST);
+  assert.equal(reused.port, lan.port);
+});
+
 test("desktop ws server exposes v1 request/response and push frames", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-"));
   t.after(async () => {
@@ -378,6 +441,185 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(streamError.frame, "error");
   assert.equal(streamError.type, "invalid_request");
   assert.equal(streamError.code, 400);
+});
+
+test("desktop ws auth.refresh validates explicit tokens and issues missing tokens", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-refresh-"));
+  t.after(async () => {
+    await stopDesktopWsServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const verifyCalls = [];
+  const issueReasons = [];
+  const started = await startDesktopWsServer({
+    app: createApp(path.join(root, "home")),
+    host: "127.0.0.1",
+    port: 0,
+    desktopActionOptions: {},
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({
+        ok: true,
+        runId: "run-1",
+        chatId: "chat-1",
+        message: "started"
+      })
+    },
+    getKanbanRuntime: () => null,
+    issueAccessToken: async (_app, reason) => {
+      issueReasons.push(reason);
+      return {
+        ok: true,
+        token: `${reason}-issued-token`,
+        message: "issued"
+      };
+    },
+    verifyToken: async (token, subprotocol) => {
+      verifyCalls.push({ token, subprotocol });
+      if (token === "invalid-token") {
+        throw new Error("invalid token");
+      }
+      return {
+        subject: "app",
+        deviceId: "device-1",
+        expiresAt: Date.now() + (token.endsWith("-issued-token") ? 900_000 : 600_000),
+        scope: "app",
+        subprotocol
+      };
+    },
+    logger: {
+      log() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  const client = await connectRawWebSocket(started.webSocketUrl, "bearer.initial-token").open();
+  t.after(() => client.close());
+  await client.waitFor((message) => message.ns === "d" && message.frame === "push" && message.type === "connected");
+
+  client.send({ frame: "request", type: "auth.refresh", id: "refresh-explicit", payload: { token: "client-token" } });
+  const explicitRefresh = await client.waitFor((message) => message.id === "refresh-explicit");
+  assert.equal(explicitRefresh.ns, "d");
+  assert.equal(explicitRefresh.frame, "response");
+  assert.equal(explicitRefresh.type, "auth.refresh");
+  assert.equal(explicitRefresh.code, 0);
+  assert.equal(explicitRefresh.data.token, "client-token");
+  assert.equal(typeof explicitRefresh.data.expiresAt, "number");
+  assert.deepEqual(issueReasons, []);
+
+  client.send({ frame: "request", type: "auth.refresh", id: "refresh-issued", payload: {} });
+  const issuedRefresh = await client.waitFor((message) => message.id === "refresh-issued");
+  assert.equal(issuedRefresh.ns, "d");
+  assert.equal(issuedRefresh.frame, "response");
+  assert.equal(issuedRefresh.type, "auth.refresh");
+  assert.equal(issuedRefresh.code, 0);
+  assert.equal(issuedRefresh.data.token, "missing-issued-token");
+  assert.equal(typeof issuedRefresh.data.expiresAt, "number");
+  assert.deepEqual(issueReasons, ["missing"]);
+
+  client.send({ frame: "request", type: "session.hello", id: "hello-after-refresh", payload: {} });
+  const hello = await client.waitFor((message) => message.id === "hello-after-refresh");
+  assert.equal(hello.data.auth.expiresAt, issuedRefresh.data.expiresAt);
+
+  client.send({
+    frame: "request",
+    type: "auth.refresh",
+    id: "refresh-unauthorized",
+    payload: { reason: "unauthorized" }
+  });
+  const unauthorizedRefresh = await client.waitFor((message) => message.id === "refresh-unauthorized");
+  assert.equal(unauthorizedRefresh.frame, "response");
+  assert.equal(unauthorizedRefresh.code, 0);
+  assert.equal(unauthorizedRefresh.data.token, "unauthorized-issued-token");
+  assert.deepEqual(issueReasons, ["missing", "unauthorized"]);
+
+  client.send({ frame: "request", type: "auth.refresh", id: "refresh-invalid", payload: { token: "invalid-token" } });
+  const invalidRefresh = await client.waitFor((message) => message.id === "refresh-invalid");
+  assert.equal(invalidRefresh.ns, "d");
+  assert.equal(invalidRefresh.frame, "error");
+  assert.equal(invalidRefresh.type, "unauthorized");
+  assert.equal(invalidRefresh.code, 401);
+
+  assert.deepEqual(verifyCalls.map((call) => call.token), [
+    "initial-token",
+    "client-token",
+    "missing-issued-token",
+    "unauthorized-issued-token",
+    "invalid-token"
+  ]);
+  assert.ok(verifyCalls.every((call) => call.subprotocol === "bearer.initial-token"));
+});
+
+test("desktop ws auth.refresh coalesces concurrent server-issued refreshes per connection", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-refresh-coalesce-"));
+  t.after(async () => {
+    await stopDesktopWsServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const issueDeferred = createDeferred();
+  const verifyCalls = [];
+  let issueCalls = 0;
+  const started = await startDesktopWsServer({
+    app: createApp(path.join(root, "home")),
+    host: "127.0.0.1",
+    port: 0,
+    desktopActionOptions: {},
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({
+        ok: true,
+        runId: "run-1",
+        chatId: "chat-1",
+        message: "started"
+      })
+    },
+    getKanbanRuntime: () => null,
+    issueAccessToken: async (_app, reason) => {
+      assert.equal(reason, "missing");
+      issueCalls += 1;
+      return issueDeferred.promise;
+    },
+    verifyToken: async (token, subprotocol) => {
+      verifyCalls.push({ token, subprotocol });
+      return {
+        subject: "app",
+        deviceId: "device-1",
+        expiresAt: Date.now() + 600_000,
+        scope: "app",
+        subprotocol
+      };
+    },
+    logger: {
+      log() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  const client = await connectRawWebSocket(started.webSocketUrl, "bearer.initial-token").open();
+  t.after(() => client.close());
+  await client.waitFor((message) => message.ns === "d" && message.frame === "push" && message.type === "connected");
+
+  client.send({ frame: "request", type: "auth.refresh", id: "refresh-a", payload: {} });
+  client.send({ frame: "request", type: "auth.refresh", id: "refresh-b", payload: {} });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(issueCalls, 1);
+  issueDeferred.resolve({
+    ok: true,
+    token: "shared-issued-token",
+    message: "issued"
+  });
+
+  const refreshA = await client.waitFor((message) => message.id === "refresh-a");
+  const refreshB = await client.waitFor((message) => message.id === "refresh-b");
+  assert.equal(refreshA.frame, "response");
+  assert.equal(refreshB.frame, "response");
+  assert.equal(refreshA.data.token, "shared-issued-token");
+  assert.equal(refreshB.data.token, "shared-issued-token");
+  assert.equal(verifyCalls.filter((call) => call.token === "shared-issued-token").length, 1);
 });
 
 test("desktop ws server routes agent-platform namespace frames", async (t) => {

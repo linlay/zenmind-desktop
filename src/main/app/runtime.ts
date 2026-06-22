@@ -66,6 +66,7 @@ import {
   bundledEnvZipExists,
   resolveRuntimeRoot,
   runtimeEnvExists,
+  runtimeEnvNeedsBundledSeedRefresh,
   runtimeRootExists,
   shouldPromptEnvRootConflict,
   shouldRequireEnvZipImport,
@@ -246,10 +247,13 @@ export function createMainProcessRuntime() {
   const runtimeRootExistedAtStartup = runtimeRootExists(app, mainProcessContext.platform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, mainProcessContext.platform);
   const bundledEnvZipExistsAtStartup = bundledEnvZipExists(app, mainProcessContext.platform);
+  const bundledSeedRefreshNeededAtStartup =
+    bundledEnvZipExistsAtStartup &&
+    runtimeEnvNeedsBundledSeedRefresh(app, mainProcessContext.platform);
   const requireEnvZipImportAtStartup = shouldRequireEnvZipImport({
     platform: mainProcessContext.platform,
     runtimeEnvExistedAtStartup
-  });
+  }) || bundledSeedRefreshNeededAtStartup;
   const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
     platform: mainProcessContext.platform,
     isFirstDesktopInstall,
@@ -340,6 +344,7 @@ export function createMainProcessRuntime() {
     resourcesPath: process.resourcesPath,
     session,
     shell,
+    nativeTheme,
     systemPreferences,
     t,
     quickCopilotWindowController,
@@ -987,6 +992,7 @@ export function createMainProcessRuntime() {
         refreshDesktopRuntimeConfigFromCanonicalFiles: settingsRuntime.refreshDesktopRuntimeConfigFromCanonicalFiles,
         buildApplicationMenu,
         refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
+        refreshMainWindowAppearance: () => appShellRuntime.refreshMainWindowAppearance(),
         emitLocaleChanged: settingsRuntime.emitLocaleChanged,
       captureDesktopScreenshotForWebview,
       reportRendererDiagnostic,

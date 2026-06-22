@@ -1,4 +1,6 @@
-export const DESKTOP_WS_HOST = "127.0.0.1";
+export const DESKTOP_WS_LOOPBACK_HOST = "127.0.0.1";
+export const DESKTOP_WS_LAN_BIND_HOST = "0.0.0.0";
+export const DESKTOP_WS_HOST = DESKTOP_WS_LOOPBACK_HOST;
 export const DESKTOP_WS_PORT = 7082;
 export const DESKTOP_WS_PATH = "/ws";
 export const DESKTOP_WS_URL = `ws://${DESKTOP_WS_HOST}:${DESKTOP_WS_PORT}${DESKTOP_WS_PATH}`;

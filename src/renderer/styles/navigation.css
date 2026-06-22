@@ -2938,6 +2938,11 @@
   overflow: hidden;
 }
 
+.app-shell.is-windows-platform:not(.has-browser-chrome-surface) .embedded-surface-page.embedded-surface-page-embedded {
+  box-sizing: border-box;
+  padding-top: var(--windows-titlebar-overlay-height);
+}
+
 /* ── 悬浮返回按钮样式 ── */
 .embedded-back-button {
   position: absolute;

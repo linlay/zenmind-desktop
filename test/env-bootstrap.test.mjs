@@ -10,7 +10,10 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const {
-  resolveBundledEnvZipPath
+  resolveRuntimeRoot,
+  resolveBundledEnvZipPath,
+  runtimeEnvExists,
+  runtimeEnvNeedsBundledSeedRefresh
 } = require(path.join(__dirname, "..", "dist-electron", "main", "env-bootstrap.js"));
 
 test("bundled env.zip falls back to the packaged app resources directory", (t) => {
@@ -36,4 +39,72 @@ test("bundled env.zip falls back to the packaged app resources directory", (t) =
     resolveBundledEnvZipPath(app, "win32", staleResourcesRoot),
     path.join(resourcesRoot, "env", "env.zip")
   );
+});
+
+test("runtime env does not treat empty runtime directories as initialized", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-empty-runtime-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = {
+    getPath(name) {
+      assert.equal(name, "home");
+      return root;
+    }
+  };
+  const runtimeRoot = resolveRuntimeRoot(app, "win32");
+  for (const dirName of ["agents", "registries", "teams", "chats", "skills-market"]) {
+    fs.mkdirSync(path.join(runtimeRoot, dirName), { recursive: true });
+  }
+
+  assert.equal(runtimeEnvExists(app, "win32"), false);
+
+  fs.writeFileSync(path.join(runtimeRoot, "agents", "webOperator.yml"), "key: webOperator\n", "utf8");
+  assert.equal(runtimeEnvExists(app, "win32"), true);
+});
+
+test("runtime env marker still marks the runtime as initialized", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-marker-runtime-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = {
+    getPath(name) {
+      assert.equal(name, "home");
+      return root;
+    }
+  };
+  const markerPath = path.join(
+    resolveRuntimeRoot(app, "win32"),
+    ".desktop",
+    "state",
+    "desktop",
+    "env-bootstrap.json"
+  );
+  fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+  fs.writeFileSync(markerPath, "{}\n", "utf8");
+
+  assert.equal(runtimeEnvExists(app, "win32"), true);
+  assert.equal(runtimeEnvNeedsBundledSeedRefresh(app, "win32"), false);
+});
+
+test("runtime env requests bundled seed refresh when generated data exists without agents", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-seed-refresh-runtime-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = {
+    getPath(name) {
+      assert.equal(name, "home");
+      return root;
+    }
+  };
+  const runtimeRoot = resolveRuntimeRoot(app, "win32");
+  fs.mkdirSync(path.join(runtimeRoot, "chats"), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, "chats", "chats.db"), "sqlite", "utf8");
+
+  assert.equal(runtimeEnvExists(app, "win32"), true);
+  assert.equal(runtimeEnvNeedsBundledSeedRefresh(app, "win32"), true);
+
+  fs.mkdirSync(path.join(runtimeRoot, "agents", "cutej"), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, "agents", "cutej", "agent.yml"), "key: cutej\n", "utf8");
+
+  assert.equal(runtimeEnvNeedsBundledSeedRefresh(app, "win32"), false);
 });

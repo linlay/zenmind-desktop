@@ -365,21 +365,40 @@ export interface DesktopWsServerState {
   message?: string;
 }
 
-export interface DesktopAppPairingPayload {
+export interface DesktopWsServerStartOptions {
+  host?: string;
+}
+
+export type PairingTargetMode = "local" | "lan" | "tunnel";
+
+export interface DesktopAppPairingPayloadRequest {
+  targetMode?: PairingTargetMode;
+}
+
+export interface MobilePairingPayloadV2 {
+  v: 2;
+  kind: "desktop-ws";
+  targetMode: PairingTargetMode;
+  wsUrl: string;
+  tokenMode: "query" | "subprotocol";
+  token: string;
+  expiresAtMs: number;
   desktopDeviceId: string;
-  desktopIdentityCreatedAt: string;
-  desktopUsername: string;
-  desktopHostname: string;
-  identityCenterIssuer: string;
-  identityCenterPublicKeySha256: string;
-  apiBaseUrl: string;
-  pairingId: string;
-  secret: string;
+}
+
+export interface DesktopAppPairingDisplay {
+  targetMode: PairingTargetMode;
+  wsUrl: string;
   expiresAt: string;
 }
 
 export type DesktopAppPairingPayloadResult =
-  | { ok: true; payload: DesktopAppPairingPayload; payloadText: string }
+  | {
+      ok: true;
+      payload: MobilePairingPayloadV2;
+      payloadText: string;
+      display: DesktopAppPairingDisplay;
+    }
   | { ok: false; message: string };
 
 export type NativeDialogVisibilityListener = (state: { open: boolean; platform: string }) => void;
@@ -600,7 +619,7 @@ export interface DesktopApi {
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
     setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;
-    createAppPairingPayload: () => Promise<DesktopAppPairingPayloadResult>;
+    createAppPairingPayload: (request?: DesktopAppPairingPayloadRequest) => Promise<DesktopAppPairingPayloadResult>;
     onLocaleChanged: (listener: LocaleChangedListener) => () => void;
     onDesktopConfigChanged: (listener: DesktopConfigChangedListener) => () => void;
   };

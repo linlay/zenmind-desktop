@@ -356,7 +356,7 @@ const api: DesktopApi = {
     getInitialLocale: () => ({ ...initialLocaleSettings }),
     getLocale: () => ipcRenderer.invoke("settings.getLocale"),
     setLocale: (locale) => ipcRenderer.invoke("settings.setLocale", locale),
-    createAppPairingPayload: () => ipcRenderer.invoke("settings.createAppPairingPayload"),
+    createAppPairingPayload: (request) => ipcRenderer.invoke("settings.createAppPairingPayload", request),
     onLocaleChanged: (listener: LocaleChangedListener) => {
       const handleLocaleChanged = (
         _event: Electron.IpcRendererEvent,

@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import {
   BrowserWindow,
   type App,
+  type NativeTheme,
   type Session,
   type Shell,
   type SystemPreferences
@@ -44,6 +45,7 @@ export type AppShellRuntimeOptions = {
   resourcesPath: string;
   session: { defaultSession: Session };
   shell: Pick<Shell, "openExternal">;
+  nativeTheme: Pick<NativeTheme, "shouldUseDarkColors" | "on">;
   systemPreferences: Pick<SystemPreferences, "askForMediaAccess">;
   t: (...args: any[]) => string;
   quickCopilotWindowController: any;
@@ -84,6 +86,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       }
     },
     isSidebarTranslucencyEnabled: () => options.state.mainWindowSidebarTranslucencyEnabled,
+    nativeTheme: options.nativeTheme,
     reportRendererDiagnostic: options.reportRendererDiagnostic
   });
   const mainWindowActivation = createMainWindowActivationController({
@@ -133,6 +136,10 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     quit: options.requestAppQuit
   });
 
+  if (options.platform === "win32") {
+    options.nativeTheme.on("updated", () => refreshMainWindowAppearance());
+  }
+
   function getServiceWebviewPreloadPath() {
     return resolveServiceWebviewPreloadPath(options.mainProcessDir, options.platform);
   }
@@ -178,7 +185,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     options.state.mainWindow = new BrowserWindow(buildMainWindowOptions({
       platform: options.platform,
       preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
-      initialLocaleSettings: getMainLocaleSettings()
+      initialLocaleSettings: getMainLocaleSettings(),
+      shouldUseDarkColors: options.nativeTheme.shouldUseDarkColors
     }));
     const targetWindow = options.state.mainWindow;
 
@@ -243,6 +251,10 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     mainWindowActivation.navigateMainWindow(targetPath);
   }
 
+  function refreshMainWindowAppearance() {
+    mainWindowLifecycle.applyAppearance(options.state.mainWindow);
+  }
+
   function createAppTray() {
     return appTrayController.create();
   }
@@ -276,6 +288,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     configureAppMediaPermissions,
     showMainWindow,
     navigateMainWindow,
+    refreshMainWindowAppearance,
     createAppTray,
     buildApplicationMenu,
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),
