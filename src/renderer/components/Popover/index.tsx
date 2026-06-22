@@ -81,6 +81,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
   const isOpen = isControlled ? open : uncontrolledOpen;
   const hasContent =
     content !== null && content !== undefined && content !== false;
+  const shouldRenderDismissLayer = closeOnOutsideClick && isOpen && hasContent;
 
   const setTriggerRef = useCallback(
     (node: HTMLElement | null) => {
@@ -308,16 +309,21 @@ export const Popover: React.FC<PopoverProps> = (props) => {
       {trigger}
       {isOpen && hasContent
         ? createPortal(
-            <div
-              id={popoverId}
-              ref={popoverRef}
-              className={`${Style.Popover} ${className || ""}`}
-              onClick={(event) => event.stopPropagation()}
-              role="dialog"
-              style={{ ...position, ...style }}
-            >
-              {content}
-            </div>,
+            <>
+              {shouldRenderDismissLayer ? (
+                <div className={Style.PopoverDismissLayer} aria-hidden="true" />
+              ) : null}
+              <div
+                id={popoverId}
+                ref={popoverRef}
+                className={`${Style.Popover} ${className || ""}`}
+                onClick={(event) => event.stopPropagation()}
+                role="dialog"
+                style={{ ...position, ...style }}
+              >
+                {content}
+              </div>
+            </>,
             document.body,
           )
         : null}

@@ -11,7 +11,14 @@
   contain: layout paint;
   will-change: width;
   z-index: 2;
+  app-region: drag;
+  -webkit-app-region: drag;
+  cursor: grab;
   transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
+}
+
+.app-sidebar-shell:active {
+  cursor: grabbing;
 }
 
 .app-shell.is-sidebar-resizing .app-sidebar-shell {

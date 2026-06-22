@@ -737,10 +737,22 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron::before/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  const collapsedToggleIconSource = sidebarSource.match(
+    /className="app-sidebar-collapse-button-icon-chevron"[\s\S]*?<\/svg>/
+  )?.[0] ?? "";
+  assert.ok(collapsedToggleIconSource, "missing collapsed sidebar toggle icon source");
+  assert.match(collapsedToggleIconSource, /fill="currentColor"/);
   assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar button[\s\S]*?\{[\s\S]*?app-region:\s*no-drag;/);
 });
 
 test("body-level popovers stay clickable above Electron drag regions", () => {
+  const popoverSource = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "Popover",
+    "index.tsx"
+  );
   const popoverStyles = readSourceFile(
     "src",
     "renderer",
@@ -755,6 +767,12 @@ test("body-level popovers stay clickable above Electron drag regions", () => {
   assert.match(popoverRule, /app-region:\s*no-drag;/);
   assert.match(popoverRule, /-webkit-app-region:\s*no-drag;/);
   assert.match(popoverRule, /pointer-events:\s*auto;/);
+  assert.match(popoverSource, /Style\.PopoverDismissLayer/);
+  assert.match(popoverSource, /closeOnOutsideClick && isOpen/);
+  assert.match(popoverStyles, /\.PopoverDismissLayer\s*\{[\s\S]*?position:\s*fixed;/);
+  assert.match(popoverStyles, /\.PopoverDismissLayer\s*\{[\s\S]*?z-index:\s*9999;/);
+  assert.match(popoverStyles, /\.PopoverDismissLayer\s*\{[\s\S]*?app-region:\s*no-drag;/);
+  assert.match(popoverStyles, /\.PopoverDismissLayer\s*\{[\s\S]*?pointer-events:\s*auto;/);
 });
 
 test("fixed sidebar tool menu uses controlled popover state", () => {
@@ -1496,6 +1514,49 @@ test("startup env import overlay uses packaged-relative brand icon", () => {
   assert.match(brandMark, /src=\{`\.\//);
   assert.match(brandMark, /APP_ICON_ASSET_FILENAMES\.brandMark/);
   assert.doesNotMatch(brandMark, /APP_ICON_ASSET_FILENAMES\.brandIcon/);
+});
+
+test("settings dark mode themes Ant Design controls inside settings cards", () => {
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
+
+  assert.match(settingsPage, /case "general"[\s\S]*?settings-appearance-panel/);
+  assert.match(settingsPage, /case "appearance"[\s\S]*?<Segmented<ThemePreference>/);
+  assert.match(settingsPage, /case "assistant"[\s\S]*?desktop-pet-agent-select-wrap/);
+  assert.match(settingsPage, /case "kanban"[\s\S]*?settings-kanban-ant-card/);
+  assert.match(settingsPage, /case "navigation"[\s\S]*?navigation-order-assistant-field/);
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.settings-appearance-panel \.ant-segmented\s*\{[\s\S]*?background:\s*rgba\(22, 24, 28, 0\.86\);/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.settings-item-card \.ant-select-selector,[\s\S]*?:root\[data-theme="dark"\] \.settings-page \.settings-kanban-ant-card \.ant-select-selector/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.settings-control-field \.ant-input,[\s\S]*?:root\[data-theme="dark"\] \.settings-page \.settings-kanban-ant-card \.ant-input/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.ant-select-disabled \.ant-select-selector\s*\{[\s\S]*?background:\s*rgba\(27, 29, 34, 0\.62\)\s*!important;/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.ant-input::placeholder,[\s\S]*?:root\[data-theme="dark"\] \.settings-page textarea::placeholder/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.ant-select-arrow\s*\{[\s\S]*?color:\s*rgba\(226, 232, 240, 0\.62\)\s*!important;/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.ant-select-dropdown\s*\{[\s\S]*?background:\s*rgba\(31, 33, 38, 0\.98\);/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.ant-select-dropdown \.ant-select-item-option-selected:not\(\.ant-select-item-option-disabled\)\s*\{[\s\S]*?background:\s*rgba\(var\(--accent-rgb\), 0\.22\);/
+  );
 });
 
 test("settings page scopes notices to the active section and keeps load failures in-section", () => {
@@ -3465,11 +3526,13 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   const shellHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "shell-handlers.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const appShellRule = globalStyles.match(/(?:^|\n)\.app-shell\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
+  const sidebarShellRule = globalStyles.match(/(?:^|\n)\.app-sidebar-shell\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
   const dragLayerRule = globalStyles.match(/(?:^|\n)\.app-window-drag-layer\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
   const dragRegionRule = globalStyles.match(/(?:^|\n)\.app-window-drag-region\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
 
   assert.match(appShell, /<div className="app-window-drag-layer" aria-hidden="true">\s*<div className="app-window-drag-region" \/>/);
   assert.ok(appShellRule, "missing .app-shell rule");
+  assert.ok(sidebarShellRule, "missing .app-sidebar-shell rule");
   assert.match(appShellRule, /--app-window-drag-height:\s*12px;/);
   assert.match(appShellRule, /--app-window-drag-left:\s*var\(--app-sidebar-width,\s*160px\);/);
   assert.match(appShellRule, /--app-window-drag-right:\s*0px;/);
@@ -3490,6 +3553,9 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.match(dragRegionRule, /pointer-events:\s*auto;/);
   assert.match(dragRegionRule, /cursor:\s*grab;/);
   assert.doesNotMatch(dragRegionRule, /(?:^|\n)\s*(?:left|right):/);
+  assert.match(sidebarShellRule, /app-region:\s*drag;/);
+  assert.match(sidebarShellRule, /-webkit-app-region:\s*drag;/);
+  assert.match(sidebarShellRule, /cursor:\s*grab;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\s*\{[^}]*--app-window-drag-left:\s*220px;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\.has-right-corner-toggle\s*\{[^}]*--app-window-drag-left:\s*0px;[^}]*--app-window-drag-right:\s*72px;/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\s+\.app-window-drag-region\s*\{/);
@@ -3505,6 +3571,7 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.doesNotMatch(globalStyles, /\.app-header\s*\{[^}]*app-region:\s*drag;/);
   assert.doesNotMatch(globalStyles, /\.app-header\s*\{[^}]*-webkit-app-region:\s*drag;/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-drag-region/);
+  assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar \[role="menuitem"\]\s*\{[\s\S]*?app-region:\s*no-drag;[\s\S]*?-webkit-app-region:\s*no-drag;/);
   assert.doesNotMatch(sidebarSource, /sidebar-chrome-drag-region/);
   assert.doesNotMatch(appShell, /app-sidebar-drag-region/);
   assert.doesNotMatch(appShell, /app-main-drag-region/);
@@ -3513,6 +3580,8 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleSidebarWindowPointerDownCapture\}/);
   assert.match(appShell, /onPointerDownCapture=\{handleWindowDragPointerDownCapture\}/);
   assert.match(appShell, /target\?\.closest\("\.app-window-drag-region"\)/);
+  assert.match(appShell, /target\?\.closest\("\.app-sidebar-shell"\)/);
+  assert.match(appShell, /SIDEBAR_DRAG_BLOCK_SELECTOR/);
   assert.doesNotMatch(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
   assert.match(appShell, /event\.button !== 0/);
   assert.match(appShell, /desktopShell\.beginWindowDrag\(\{ x: event\.screenX, y: event\.screenY \}\)/);

@@ -1,3 +1,13 @@
+.PopoverDismissLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: transparent;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
 .Popover {
   position: fixed;
   z-index: 10000;

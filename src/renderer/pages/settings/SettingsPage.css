@@ -561,6 +561,140 @@
   border-color: rgba(255, 255, 255, 0.12);
 }
 
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card.ant-card {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card .ant-card-body,
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card .ant-typography,
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-form .ant-form-item-label > label {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card .ant-typography-secondary,
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-form .ant-form-item-extra {
+  color: var(--ink-muted);
+}
+
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-segmented {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(22, 24, 28, 0.86);
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-segmented-item {
+  color: rgba(226, 232, 240, 0.78);
+}
+
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-segmented-item-selected,
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-segmented-thumb {
+  background: rgba(62, 65, 72, 0.96);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-segmented-item-selected .ant-segmented-item-label {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .settings-page .settings-item-card .ant-select-selector,
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-select-selector,
+:root[data-theme="dark"] .settings-page .settings-control-card .ant-select-selector,
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card .ant-select-selector {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(22, 24, 28, 0.86) !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .settings-page .settings-control-field .ant-input,
+:root[data-theme="dark"] .settings-page .settings-control-field input,
+:root[data-theme="dark"] .settings-page .settings-control-field textarea,
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-input,
+:root[data-theme="dark"] .settings-page .settings-item-card .ant-input,
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card .ant-input {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(22, 24, 28, 0.86) !important;
+  color: var(--ink) !important;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .settings-page .settings-control-field .ant-input:focus,
+:root[data-theme="dark"] .settings-page .settings-control-field input:focus,
+:root[data-theme="dark"] .settings-page .settings-control-field textarea:focus,
+:root[data-theme="dark"] .settings-page .settings-item-card .ant-select-focused .ant-select-selector,
+:root[data-theme="dark"] .settings-page .settings-appearance-panel .ant-select-focused .ant-select-selector,
+:root[data-theme="dark"] .settings-page .settings-kanban-ant-card .ant-select-focused .ant-select-selector {
+  border-color: var(--accent-border) !important;
+  box-shadow: var(--control-focus-ring) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-select-selection-item,
+:root[data-theme="dark"] .settings-page .ant-select-selection-search-input {
+  color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-select-selection-placeholder {
+  color: rgba(226, 232, 240, 0.38) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-select-arrow {
+  color: rgba(226, 232, 240, 0.62) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-select-disabled .ant-select-selector {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(27, 29, 34, 0.62) !important;
+  color: rgba(226, 232, 240, 0.42) !important;
+  cursor: not-allowed;
+}
+
+:root[data-theme="dark"] .settings-page .ant-select-disabled .ant-select-selection-item,
+:root[data-theme="dark"] .settings-page .ant-input-disabled,
+:root[data-theme="dark"] .settings-page .ant-input[disabled],
+:root[data-theme="dark"] .settings-page input:disabled {
+  color: rgba(226, 232, 240, 0.42) !important;
+  -webkit-text-fill-color: rgba(226, 232, 240, 0.42);
+}
+
+:root[data-theme="dark"] .settings-page .ant-input-disabled,
+:root[data-theme="dark"] .settings-page .ant-input[disabled],
+:root[data-theme="dark"] .settings-page input:disabled {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(27, 29, 34, 0.62) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-input::placeholder,
+:root[data-theme="dark"] .settings-page input::placeholder,
+:root[data-theme="dark"] .settings-page textarea::placeholder {
+  color: rgba(226, 232, 240, 0.38);
+}
+
+:root[data-theme="dark"] .ant-select-dropdown {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(31, 33, 38, 0.98);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="dark"] .ant-select-dropdown .ant-select-item {
+  color: rgba(242, 243, 245, 0.9);
+}
+
+:root[data-theme="dark"] .ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: rgba(var(--accent-rgb), 0.22);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .ant-select-dropdown .ant-select-item-option-disabled {
+  color: rgba(226, 232, 240, 0.34);
+}
+
 .settings-page .quick-assistant-settings-panel {
   display: block;
   padding: 0;
