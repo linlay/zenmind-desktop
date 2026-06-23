@@ -2110,6 +2110,14 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
     "embedded-surfaces",
     "EmbeddedSurfaceHosts.tsx"
   );
+  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const dockComponent = readSourceFile(
+    "src",
+    "renderer",
+    "copilot",
+    "sidebar-copilot",
+    "AgentWebclientCopilotDock.tsx"
+  );
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
@@ -2151,6 +2159,23 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
   assert.match(appShell, /key=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
   assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
+  assert.match(appShell, /function mergeWebsiteItems\(currentItems: WebEntry\[\], nextWebsiteItems: WebsiteEntry\[\]\)/);
+  assert.match(appShell, /websiteAgentSyncRequestRef = useRef\(""\)/);
+  assert.match(appShell, /function handleCopilotSelectedAgentKeyChange\(agentKey: string\)[\s\S]*?activeWebEntry\?\.kind !== "website"/);
+  assert.match(appShell, /normalizedAgentKey === resolvedCopilotAgentKey/);
+  assert.match(appShell, /copilotAgentOptions\.some\(\(agent\) => agent\.agentKey\.trim\(\) === normalizedAgentKey\)/);
+  assert.match(appShell, /window\.electronAPI\.webs\.websites[\s\S]*?\.update\(websiteId, \{ agentKey: normalizedAgentKey \}\)/);
+  assert.match(appShell, /updateWebItems\(mergeWebsiteItems\(webItems, result\.items\)\)/);
+  assert.match(appShell, /onSelectedAgentKeyChange=\{handleCopilotSelectedAgentKeyChange\}/);
+  assert.match(pluginPage, /onCurrentUrlChange\?: \(url: string\) => void/);
+  assert.match(pluginPage, /const onCurrentUrlChangeRef = useRef\(onCurrentUrlChange\)/);
+  assert.match(pluginPage, /function updateWebviewCurrentUrl\(nextUrl: string\)[\s\S]*?onCurrentUrlChangeRef\.current\?\.\(nextUrl\)/);
+  assert.match(pluginPage, /const syncNavigationRoute = \(event: Event\) => \{[\s\S]*?updateWebviewCurrentUrl\(resolvedUrl\)/);
+  assert.match(dockComponent, /function readCopilotAgentKeyFromUrl\(value: string\)/);
+  assert.match(dockComponent, /readCopilotAgentKeyFromPathname\(new URL\(trimmed, "http:\/\/agent-webclient\.local"\)\.pathname\)/);
+  assert.match(dockComponent, /onSelectedAgentKeyChange\?: \(agentKey: string\) => void/);
+  assert.match(dockComponent, /onSelectedAgentKeyChange\?\.\(selectedAgentKey\)/);
+  assert.match(dockComponent, /onCurrentUrlChange=\{handleCurrentUrlChange\}/);
   assert.doesNotMatch(appShell, /key=\{`agent-webclient-copilot:\$\{targetEmbedPath\}`\}/);
   assert.match(appShell, /function isSingleAgentWebclientRoute\(pathname: string\)[\s\S]*?matchPath\("\/agent\/:agentKey", pathname\)/);
   assert.match(sidebarSource, /assistantLauncherVisible/);

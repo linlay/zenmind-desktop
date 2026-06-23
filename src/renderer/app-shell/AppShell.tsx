@@ -281,6 +281,32 @@ function isWebsiteEntry(item: WebEntry): item is WebsiteEntry {
   return item.kind === "website";
 }
 
+function mergeWebsiteItems(currentItems: WebEntry[], nextWebsiteItems: WebsiteEntry[]) {
+  const nextWebsiteByEntryKey = new Map(nextWebsiteItems.map((item) => [item.entryKey, item]));
+  const mergedItems: WebEntry[] = [];
+
+  for (const item of currentItems) {
+    if (item.kind !== "website") {
+      mergedItems.push(item);
+      continue;
+    }
+
+    const nextWebsiteItem = nextWebsiteByEntryKey.get(item.entryKey);
+    if (nextWebsiteItem) {
+      mergedItems.push(nextWebsiteItem);
+      nextWebsiteByEntryKey.delete(item.entryKey);
+    }
+  }
+
+  for (const item of nextWebsiteItems) {
+    if (nextWebsiteByEntryKey.has(item.entryKey)) {
+      mergedItems.push(item);
+    }
+  }
+
+  return mergedItems;
+}
+
 type SidebarResizeDragState = {
   initialState: SidebarLayoutState;
   startClientX: number;
@@ -437,6 +463,7 @@ export function AppShell() {
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
   const webappStartInFlightRef = useRef<Set<string>>(new Set());
+  const websiteAgentSyncRequestRef = useRef("");
   const marketSettingsRefreshIdRef = useRef(0);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
   const [sidebarNavigationHistory, setSidebarNavigationHistory] = useState<SidebarNavigationHistory>({
@@ -641,6 +668,47 @@ export function AppShell() {
     setWebItems(items);
     setWebItemsLoaded(true);
     setWebGroupOrder((currentOrder) => normalizeWebGroupOrder(currentOrder, items));
+  }
+
+  function handleCopilotSelectedAgentKeyChange(agentKey: string) {
+    const normalizedAgentKey = agentKey.trim();
+    if (!normalizedAgentKey || activeWebEntry?.kind !== "website") {
+      return;
+    }
+    if (normalizedAgentKey === resolvedCopilotAgentKey) {
+      return;
+    }
+    if (!copilotAgentOptions.some((agent) => agent.agentKey.trim() === normalizedAgentKey)) {
+      return;
+    }
+
+    const requestKey = `${activeWebEntry.id}:${normalizedAgentKey}`;
+    if (websiteAgentSyncRequestRef.current === requestKey) {
+      return;
+    }
+
+    const websiteId = activeWebEntry.id;
+    websiteAgentSyncRequestRef.current = requestKey;
+    void window.electronAPI.webs.websites
+      .update(websiteId, { agentKey: normalizedAgentKey })
+      .then((result) => {
+        if (!result.ok) {
+          console.warn("[webs] failed to save website copilot agent", result.message);
+          return;
+        }
+        updateWebItems(mergeWebsiteItems(webItems, result.items));
+      })
+      .catch((reason) => {
+        console.warn(
+          "[webs] failed to save website copilot agent",
+          reason instanceof Error ? reason.message : String(reason)
+        );
+      })
+      .finally(() => {
+        if (websiteAgentSyncRequestRef.current === requestKey) {
+          websiteAgentSyncRequestRef.current = "";
+        }
+      });
   }
 
   function handleExternalWebItemsChange(_items: WebsiteEntry[]) {
@@ -2787,6 +2855,7 @@ export function AppShell() {
           assistantDockOpenRequestPathRef.current = null;
         }}
         onRunningRunIdChange={setAssistantRunningRunId}
+        onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
       />
       {desktopSsoLoginDialog ? (
         <div className="desktop-sso-login-modal-layer" role="presentation">

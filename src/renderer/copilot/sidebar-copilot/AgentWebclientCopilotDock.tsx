@@ -39,6 +39,36 @@ function buildAgentWebclientCopilotPath(openRequest: AssistantWorkerOpenRequest 
   return `${AGENT_WEBCLIENT_COPILOT_PATH}/${encodeURIComponent(agentKey)}?${params.toString()}`;
 }
 
+function readCopilotAgentKeyFromPathname(pathname: string) {
+  if (!pathname.startsWith(`${AGENT_WEBCLIENT_COPILOT_PATH}/`)) {
+    return "";
+  }
+
+  const rawAgentKey = pathname.slice(AGENT_WEBCLIENT_COPILOT_PATH.length + 1).split("/")[0]?.trim() ?? "";
+  if (!rawAgentKey) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(rawAgentKey).trim();
+  } catch {
+    return rawAgentKey;
+  }
+}
+
+function readCopilotAgentKeyFromUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    return readCopilotAgentKeyFromPathname(new URL(trimmed, "http://agent-webclient.local").pathname);
+  } catch {
+    return "";
+  }
+}
+
 export function AgentWebclientCopilotDock({
   open,
   hostTheme,
@@ -46,7 +76,8 @@ export function AgentWebclientCopilotDock({
   openRequest,
   resolvedAgentKey,
   onClose,
-  onRunningRunIdChange
+  onRunningRunIdChange,
+  onSelectedAgentKeyChange
 }: {
   open: boolean;
   hostTheme: "light" | "dark";
@@ -55,6 +86,7 @@ export function AgentWebclientCopilotDock({
   resolvedAgentKey: string;
   onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
+  onSelectedAgentKeyChange?: (agentKey: string) => void;
 }) {
   const { t } = useI18n();
   const [mounted, setMounted] = useState(open);
@@ -72,6 +104,14 @@ export function AgentWebclientCopilotDock({
       onRunningRunIdChange(null);
     }
   }, [onRunningRunIdChange, open]);
+
+  function handleCurrentUrlChange(currentUrl: string) {
+    const selectedAgentKey = readCopilotAgentKeyFromUrl(currentUrl);
+    if (!selectedAgentKey) {
+      return;
+    }
+    onSelectedAgentKeyChange?.(selectedAgentKey);
+  }
 
   return (
     <aside
@@ -97,6 +137,7 @@ export function AgentWebclientCopilotDock({
             skipContextRegistration
             loadInitialEmbeddedUrlDirectly
             suppressInitialLoadingCopy
+            onCurrentUrlChange={handleCurrentUrlChange}
           />
         </Suspense>
       ) : null}

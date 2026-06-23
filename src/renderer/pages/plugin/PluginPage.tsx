@@ -65,6 +65,7 @@ type PluginPageProps = {
   skipContextRegistration?: boolean;
   loadInitialEmbeddedUrlDirectly?: boolean;
   suppressInitialLoadingCopy?: boolean;
+  onCurrentUrlChange?: (url: string) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -400,6 +401,7 @@ export function PluginPage({
   skipContextRegistration,
   loadInitialEmbeddedUrlDirectly,
   suppressInitialLoadingCopy,
+  onCurrentUrlChange,
 }: PluginPageProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -428,6 +430,8 @@ export function PluginPage({
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const lastDirectWebviewRouteRef = useRef("");
+  const lastReportedCurrentUrlRef = useRef("");
+  const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
   const surfaceVisibilityProps =
     active === undefined
       ? {}
@@ -439,6 +443,10 @@ export function PluginPage({
   useEffect(() => {
     return registerPluginSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
+
+  useEffect(() => {
+    onCurrentUrlChangeRef.current = onCurrentUrlChange;
+  }, [onCurrentUrlChange]);
 
   const webUrl = service?.healthMeta.webUrl ?? "";
   const bridgeProtocol = useMemo(
@@ -587,6 +595,15 @@ export function PluginPage({
     } catch {
       return embeddedUrl;
     }
+  }
+
+  function updateWebviewCurrentUrl(nextUrl: string) {
+    setWebviewCurrentUrl(nextUrl);
+    if (!nextUrl || lastReportedCurrentUrlRef.current === nextUrl) {
+      return;
+    }
+    lastReportedCurrentUrlRef.current = nextUrl;
+    onCurrentUrlChangeRef.current?.(nextUrl);
   }
 
   async function readPluginPageContext() {
@@ -830,7 +847,7 @@ export function PluginPage({
   }, [service?.id, embeddedUrl]);
 
   useEffect(() => {
-    setWebviewCurrentUrl(embeddedUrl);
+    updateWebviewCurrentUrl(embeddedUrl);
   }, [embeddedUrl]);
 
   useEffect(() => {
@@ -924,7 +941,7 @@ export function PluginPage({
         return;
       }
       lastDirectWebviewRouteRef.current = embeddedUrl;
-      setWebviewCurrentUrl(embeddedUrl);
+      updateWebviewCurrentUrl(embeddedUrl);
       const currentParsed = parseHttpUrl(currentUrl);
       const targetParsed = parseHttpUrl(embeddedUrl);
       if (
@@ -1071,7 +1088,7 @@ export function PluginPage({
   }
 
   function syncWebviewState() {
-    setWebviewCurrentUrl(readCurrentWebviewUrl());
+    updateWebviewCurrentUrl(readCurrentWebviewUrl());
     if (!webviewLoadedChromeErrorPage()) {
       setWebviewLoadError(false);
       return;
@@ -1121,7 +1138,7 @@ export function PluginPage({
       const resolvedUrl = nextUrl
         ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
         : readCurrentWebviewUrl();
-      setWebviewCurrentUrl(resolvedUrl);
+      updateWebviewCurrentUrl(resolvedUrl);
       if (
         nextUrl &&
         readEventBoolean(event, "isMainFrame") !== false &&
