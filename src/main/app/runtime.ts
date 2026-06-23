@@ -158,7 +158,6 @@ import {
 } from "../lifecycle/startup-phases";
 import { createShutdownCleanupRunner } from "../lifecycle/shutdown";
 import { registerMainAppEvents } from "./app-events";
-import { cleanupObsoleteWebsitesLayout } from "../obsolete-websites-cleanup";
 import {
   createResourceDirectoryWatcher,
   type ResourceDirectoryWatcher
@@ -279,10 +278,6 @@ export function createMainProcessRuntime() {
 
   function initializeUserDataRootsAndSettings() {
     ensureDataRoot(app);
-    const obsoleteCleanup = cleanupObsoleteWebsitesLayout(app);
-    if (obsoleteCleanup.removed.length > 0) {
-      console.info(`[main] removed obsolete websites paths: ${obsoleteCleanup.removed.join(", ")}`);
-    }
     applyDesktopInitBootstrap(app, mainProcessContext.platform);
     const webappTemplateResult = installBundledWebappTemplates(app);
     if (!webappTemplateResult.ok) {

@@ -32,9 +32,6 @@ const {
   installBundledWebappTemplates
 } = require("../dist-electron/main/webs/webapps/template-installer.js");
 const {
-  cleanupObsoleteWebsitesLayout
-} = require("../dist-electron/main/obsolete-websites-cleanup.js");
-const {
   createResourceDirectoryWatcher
 } = require("../dist-electron/main/resource-directory-watcher.js");
 const {
@@ -282,37 +279,6 @@ test("webapp store rejects unsafe manifests", (t) => {
   assert.equal(items.some((item) => item.id === "bad-entry"), false);
   assert.equal(items.some((item) => item.id === "bad-frontend"), false);
   assert.equal(warnings.length, 3);
-});
-
-test("obsolete websites cleanup removes legacy paths and keeps canonical webs", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webs-cleanup-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const homePath = path.join(root, "home");
-  const app = createApp(homePath);
-  const desktop = desktopRoot(homePath);
-
-  writeJson(path.join(desktop, "data", "websites", "legacy", "website.json"), { kind: "website" });
-  writeJson(path.join(desktop, "config", "websites", "order.json"), { ids: ["legacy"] });
-  writeJson(path.join(desktop, "state", "websites", "legacy", "runtime.json"), { status: "stopped" });
-  writeJson(path.join(desktop, "logs", "websites", "legacy", "main.json"), { ok: true });
-  writeJson(path.join(desktop, "config", "desktop", "custom-sidebar-items.json"), { items: [] });
-  writeJson(path.join(desktop, "state", "webs", "migration.json"), { migratedAt: "old" });
-  writeWebsite(websitesRoot(homePath), "docs");
-  writeWebapp(webappsRoot(homePath), "local-demo");
-  writeJson(path.join(desktop, "state", "webs", "webapps", "local-demo", "runtime.json"), { status: "running" });
-
-  const result = cleanupObsoleteWebsitesLayout(app);
-  assert.equal(result.failed.length, 0);
-  assert.equal(result.removed.length, 6);
-  assert.equal(fs.existsSync(path.join(desktop, "data", "websites")), false);
-  assert.equal(fs.existsSync(path.join(desktop, "config", "websites")), false);
-  assert.equal(fs.existsSync(path.join(desktop, "state", "websites")), false);
-  assert.equal(fs.existsSync(path.join(desktop, "logs", "websites")), false);
-  assert.equal(fs.existsSync(path.join(desktop, "config", "desktop", "custom-sidebar-items.json")), false);
-  assert.equal(fs.existsSync(path.join(desktop, "state", "webs", "migration.json")), false);
-  assert.equal(fs.existsSync(path.join(websitesRoot(homePath), "docs", "website.json")), true);
-  assert.equal(fs.existsSync(path.join(webappsRoot(homePath), "local-demo", "webapp.json")), true);
-  assert.equal(fs.existsSync(path.join(desktop, "state", "webs", "webapps", "local-demo", "runtime.json")), true);
 });
 
 test("resource directory watcher debounces and refreshes web, pet, and plugin domains", (t) => {
