@@ -14,7 +14,6 @@ export type MainAppEventsOptions = {
   onReady: () => Promise<void> | void;
   showMainWindow: () => void;
   beginAppQuitWithoutConfirmation: () => void;
-  requestAppQuit: () => void;
   isNativeDialogOpen: () => boolean;
   emitPluginBeforeQuit: () => void;
   prepareQuitUi: () => void;
@@ -55,11 +54,6 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
 
   options.app.on("before-quit", (event) => {
     if (options.state.shutdownCleanupComplete) {
-      return;
-    }
-    if (options.platform === "darwin" && !options.state.isHandlingQuit) {
-      event.preventDefault();
-      options.requestAppQuit();
       return;
     }
     event.preventDefault();

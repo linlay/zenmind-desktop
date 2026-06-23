@@ -17,11 +17,7 @@ import {
   type EmbeddedWebStructuredTarget
 } from "../../../shared/embedded-web-scripts";
 import { registerAssistantPageContextProvider } from "../../copilot/page-context/assistantPageContext";
-import {
-  getCurrentPageContextSnapshot,
-  publishCurrentPageContextSnapshot,
-  subscribeCurrentPageContext
-} from "../../services/currentPageContext";
+import { publishCurrentPageContextSnapshot } from "../../services/currentPageContext";
 import {
   registerCurrentPageExecutor,
   registerDesktopActionProviderForScope
@@ -164,27 +160,6 @@ function shouldRefreshWebviewAfterDesktopSso(value: string) {
   } catch {
     return false;
   }
-}
-
-function defaultDesktopPageDebugArgs(action: string) {
-  switch (action) {
-    case "desktop.page.readCurrent":
-      return { include: ["forms", "links", "images"] };
-    case "desktop.page.extractStructured":
-      return { targets: ["tables", "lists", "forms", "links"] };
-    case "desktop.page.interact":
-      return { selector: "", action: "click", value: "" };
-    case "desktop.page.fillForm":
-      return { formSelector: "", fields: [{ selector: "", value: "", action: "fill" }] };
-    case "desktop.page.submitForm":
-      return { formSelector: "", submitSelector: "" };
-    default:
-      return {};
-  }
-}
-
-function formatDebugJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
 }
 
 function getTabMonogram(title: string, url: string) {
@@ -544,13 +519,7 @@ export function ExternalWebviewPage({
 
   const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(() => createInitialBrowserState());
   const [addressInputValue, setAddressInputValue] = useState(() => url);
-  const [debugSidebarOpen, setDebugSidebarOpen] = useState(false);
-  const [debugActions, setDebugActions] = useState<string[]>([]);
-  const [debugAction, setDebugAction] = useState("desktop.page.readCurrent");
-  const [debugArgsJson, setDebugArgsJson] = useState(formatDebugJson(defaultDesktopPageDebugArgs("desktop.page.readCurrent")));
-  const [debugResultJson, setDebugResultJson] = useState("");
-  const [debugPending, setDebugPending] = useState(false);
-  const [debugSnapshot, setDebugSnapshot] = useState(getCurrentPageContextSnapshot());
+  const [addressInputUnlocked, setAddressInputUnlocked] = useState(false);
   const [tabsOverflowing, setTabsOverflowing] = useState(false);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [tabDragOffsetX, setTabDragOffsetX] = useState(0);
@@ -583,6 +552,7 @@ export function ExternalWebviewPage({
     webviewRefs.current.clear();
     setBrowserState(createInitialBrowserState());
     setAddressInputValue(url);
+    setAddressInputUnlocked(false);
   }, [title, url, partition]);
 
   const openTab = (
@@ -900,69 +870,8 @@ export function ExternalWebviewPage({
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
 
   useEffect(() => {
-    return subscribeCurrentPageContext((snapshot) => {
-      setDebugSnapshot(snapshot);
-    });
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void window.electronAPI.desktopActions.list().then((response) => {
-      if (cancelled || !response.ok) {
-        return;
-      }
-      const pageActions = response.actions
-        .map((action) => action.name)
-        .filter((name) => name.startsWith("desktop.page."));
-      setDebugActions(pageActions);
-      if (pageActions.length > 0 && !pageActions.includes(debugAction)) {
-        const nextAction = pageActions.includes("desktop.page.readCurrent") ? "desktop.page.readCurrent" : pageActions[0];
-        setDebugAction(nextAction);
-        setDebugArgsJson(formatDebugJson(defaultDesktopPageDebugArgs(nextAction)));
-      }
-    }).catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [debugAction]);
-
-  function handleSelectDebugAction(nextAction: string) {
-    setDebugAction(nextAction);
-    setDebugArgsJson(formatDebugJson(defaultDesktopPageDebugArgs(nextAction)));
-  }
-
-  async function executeDebugAction() {
-    setDebugPending(true);
-    const startedAt = performance.now();
-    try {
-      const args = debugArgsJson.trim() ? JSON.parse(debugArgsJson) as Record<string, unknown> : {};
-      const response = await window.electronAPI.desktopActions.call({
-        action: debugAction,
-        args,
-        source: {
-          agentKey: "manual_debug"
-        },
-        permissionMode: "full_access",
-        expectedPageKey: debugSnapshot?.pageKey
-      });
-      setDebugResultJson(formatDebugJson({
-        elapsedMs: Math.round(performance.now() - startedAt),
-        request: {
-          action: debugAction,
-          args,
-          expectedPageKey: debugSnapshot?.pageKey
-        },
-        response
-      }));
-    } catch (error) {
-      setDebugResultJson(formatDebugJson({
-        elapsedMs: Math.round(performance.now() - startedAt),
-        error: error instanceof Error ? error.message : String(error)
-      }));
-    } finally {
-      setDebugPending(false);
-    }
-  }
+    setAddressInputUnlocked(false);
+  }, [activeTab?.id]);
 
   const getActiveWebviewState = () => {
     const currentState = browserStateRef.current;
@@ -1510,7 +1419,7 @@ export function ExternalWebviewPage({
   };
 
   const handleNavigateToInputUrl = () => {
-    if (!activeTab) {
+    if (!activeTab || !addressInputUnlocked) {
       return;
     }
 
@@ -1533,66 +1442,15 @@ export function ExternalWebviewPage({
     });
   };
 
-  const debugSidebarNode = debugSidebarOpen ? (
-    <aside className="external-webview-debug-sidebar" aria-label={t("externalWebview.debugSidebar")}>
-      <div className="external-webview-debug-header">
-        <div>
-          <strong>desktop.page</strong>
-          <span>{debugSnapshot?.pageKind ?? "unknown"}</span>
-        </div>
-        <button
-          type="button"
-          className="external-webview-debug-icon-button"
-          onClick={() => setDebugSidebarOpen(false)}
-          aria-label={t("externalWebview.closeDebugSidebar")}
-          title={t("common.close")}
-        >
-          <CloseIcon />
-        </button>
-      </div>
-      <dl className="external-webview-debug-target">
-        <div>
-          <dt>pageKey</dt>
-          <dd>{debugSnapshot?.pageKey ?? t("externalWebview.notSynced")}</dd>
-        </div>
-        <div>
-          <dt>surface</dt>
-          <dd>{debugSnapshot?.surfaceId ?? t("externalWebview.defaultSurface")} {debugSnapshot?.surfaceLabel ?? ""}</dd>
-        </div>
-      </dl>
-      <label className="external-webview-debug-field">
-        <span>{t("externalWebview.action")}</span>
-        <select value={debugAction} onChange={(event) => handleSelectDebugAction(event.target.value)}>
-          {(debugActions.length > 0 ? debugActions : ["desktop.page.readCurrent"]).map((action) => (
-            <option key={action} value={action}>{action}</option>
-          ))}
-        </select>
-      </label>
-      <label className="external-webview-debug-field">
-        <span>{t("externalWebview.argsJson")}</span>
-        <textarea value={debugArgsJson} onChange={(event) => setDebugArgsJson(event.target.value)} spellCheck={false} />
-      </label>
-      <div className="external-webview-debug-actions">
-        <button type="button" onClick={() => void executeDebugAction()} disabled={debugPending}>
-          {debugPending ? t("externalWebview.executing") : t("externalWebview.execute")}
-        </button>
-        <button type="button" onClick={() => setDebugResultJson("")} disabled={!debugResultJson}>
-          {t("externalWebview.clear")}
-        </button>
-        <button
-          type="button"
-          onClick={() => void window.electronAPI.clipboard.writeText(debugResultJson)}
-          disabled={!debugResultJson}
-        >
-          {t("externalWebview.copy")}
-        </button>
-      </div>
-      <label className="external-webview-debug-field is-result">
-        <span>{t("externalWebview.result")}</span>
-        <textarea value={debugResultJson} readOnly spellCheck={false} placeholder={t("externalWebview.resultPlaceholder")} />
-      </label>
-    </aside>
-  ) : null;
+  const handleAddressInputClick = (event: ReactMouseEvent<HTMLInputElement>) => {
+    if (event.detail < 3) {
+      return;
+    }
+
+    setAddressInputUnlocked(true);
+    event.currentTarget.focus();
+    event.currentTarget.select();
+  };
 
   return (
     <>
@@ -1709,18 +1567,23 @@ export function ExternalWebviewPage({
               className="external-webview-toolbar-location-input"
               value={addressInputValue}
               onChange={(event) => {
+                if (!addressInputUnlocked) {
+                  return;
+                }
                 setAddressInputValue(event.target.value);
               }}
+              onClick={handleAddressInputClick}
               onBlur={() => {
                 setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
               }}
               onKeyDown={(event) => {
-                if (event.key !== "Enter") {
+                if (!addressInputUnlocked || event.key !== "Enter") {
                   return;
                 }
                 event.preventDefault();
                 handleNavigateToInputUrl();
               }}
+              readOnly={!addressInputUnlocked}
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="none"
@@ -1728,15 +1591,6 @@ export function ExternalWebviewPage({
               aria-label={t("externalWebview.address")}
             />
           </div>
-          <button
-            type="button"
-            className={`external-webview-debug-toggle${debugSidebarOpen ? " is-active" : ""}`}
-            onClick={() => setDebugSidebarOpen((value) => !value)}
-            aria-label={t("externalWebview.openDesktopDebug")}
-            title={t("externalWebview.desktopDebugTitle")}
-          >
-            pg
-          </button>
         </div>
         </div>
       )}
@@ -1759,7 +1613,6 @@ export function ExternalWebviewPage({
           />
         ))}
       </div>
-      {appChrome ? null : debugSidebarNode}
     </section>
     </>
   );

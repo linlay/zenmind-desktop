@@ -284,8 +284,7 @@
 
 .external-webview-tab-close,
 .external-webview-tab-add,
-.external-webview-toolbar-button,
-.external-webview-debug-toggle {
+.external-webview-toolbar-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -323,8 +322,7 @@
 
 .external-webview-tab-close:hover,
 .external-webview-tab-add:hover,
-.external-webview-toolbar-button:hover:not(:disabled),
-.external-webview-debug-toggle:hover {
+.external-webview-toolbar-button:hover:not(:disabled) {
   background: var(--browser-hover);
   color: var(--browser-ink);
 }
@@ -428,6 +426,11 @@
   color: var(--browser-muted);
 }
 
+.external-webview-toolbar-location-input[readonly] {
+  caret-color: transparent;
+  cursor: default;
+}
+
 :root[data-theme="dark"] .external-webview-toolbar-location {
   background: #1f2329;
   border-color: rgba(255, 255, 255, 0.14);
@@ -445,24 +448,6 @@
 
 :root[data-theme="dark"] .external-webview-toolbar-location-input::placeholder {
   color: #9aa0a6;
-}
-
-.external-webview-debug-toggle {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  color: var(--browser-muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.external-webview-debug-toggle.is-active {
-  background: var(--browser-accent);
-  color: #fff;
 }
 
 .external-webview-frame-shell {
@@ -496,187 +481,6 @@
 .external-webview-frame {
   min-height: 100%;
   background: var(--browser-frame-bg);
-}
-
-.external-webview-debug-sidebar {
-  position: absolute;
-  top: 104px;
-  right: 10px;
-  bottom: 10px;
-  z-index: 12;
-  width: min(360px, calc(100% - 20px));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(95, 99, 104, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.97);
-  color: var(--browser-ink);
-  box-shadow: 0 22px 54px rgba(32, 33, 36, 0.22);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.external-webview-debug-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.external-webview-debug-header strong,
-.external-webview-debug-header span {
-  display: block;
-}
-
-.external-webview-debug-header strong {
-  font-size: 13px;
-}
-
-.external-webview-debug-header span {
-  margin-top: 2px;
-  color: var(--browser-muted);
-  font-size: 11px;
-}
-
-.external-webview-debug-icon-button {
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--browser-muted);
-}
-
-.external-webview-debug-icon-button:hover {
-  background: var(--browser-hover);
-  color: var(--browser-ink);
-}
-
-.external-webview-debug-icon-button svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-}
-
-.external-webview-debug-target {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 8px;
-  border-radius: 6px;
-  background: rgba(232, 240, 254, 0.56);
-}
-
-.external-webview-debug-target div {
-  min-width: 0;
-}
-
-.external-webview-debug-target dt {
-  color: var(--browser-muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.external-webview-debug-target dd {
-  min-width: 0;
-  margin: 2px 0 0;
-  overflow: hidden;
-  color: var(--browser-ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.external-webview-debug-field {
-  display: grid;
-  gap: 6px;
-  min-height: 0;
-}
-
-.external-webview-debug-field span {
-  color: var(--browser-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.external-webview-debug-field select,
-.external-webview-debug-field textarea {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid rgba(95, 99, 104, 0.2);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--browser-ink);
-  font-size: 12px;
-  outline: none;
-}
-
-.external-webview-debug-field select {
-  height: 32px;
-  padding: 0 8px;
-}
-
-.external-webview-debug-field textarea {
-  min-height: 112px;
-  padding: 8px;
-  resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  line-height: 1.45;
-}
-
-.external-webview-debug-field.is-result {
-  flex: 1;
-}
-
-.external-webview-debug-field.is-result textarea {
-  flex: 1;
-  min-height: 160px;
-}
-
-.external-webview-debug-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.external-webview-debug-actions button {
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--browser-hover);
-  color: var(--browser-ink);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.external-webview-debug-actions button:first-child {
-  background: var(--browser-accent);
-  color: #fff;
-}
-
-.external-webview-debug-actions button:disabled {
-  opacity: 0.42;
-}
-
-:root[data-theme="dark"] .external-webview-debug-sidebar {
-  background: rgba(45, 50, 58, 0.98);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.34);
-}
-
-:root[data-theme="dark"] .external-webview-debug-target {
-  background: rgba(138, 180, 248, 0.12);
-}
-
-:root[data-theme="dark"] .external-webview-debug-field select,
-:root[data-theme="dark"] .external-webview-debug-field textarea {
-  background: #1f2329;
-  border-color: rgba(255, 255, 255, 0.12);
 }
 
 :root[data-theme="dark"] .external-webview-frame-shell {

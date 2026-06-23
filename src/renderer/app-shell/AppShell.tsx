@@ -346,8 +346,7 @@ const BROWSER_CHROME_DRAG_BLOCK_SELECTOR = [
   "[role=\"tab\"]",
   "[contenteditable=\"true\"]",
   ".external-webview-tab",
-  ".external-webview-toolbar-location",
-  ".external-webview-debug-sidebar"
+  ".external-webview-toolbar-location"
 ].join(",");
 
 const SIDEBAR_DRAG_BLOCK_SELECTOR = [

@@ -2768,7 +2768,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(externalWebviewPage, /chrome = "browser"/);
   assert.match(externalWebviewPage, /const appChrome = chrome === "app"/);
   assert.match(externalWebviewPage, /\{appChrome \? null : \([\s\S]*?external-webview-browser-chrome/);
-  assert.match(externalWebviewPage, /appChrome \? null : debugSidebarNode/);
+  assert.doesNotMatch(externalWebviewPage, /debugSidebarNode/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
   assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?if \(appChrome\) \{[\s\S]*?return;[\s\S]*?\}/);
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
@@ -3768,7 +3768,7 @@ test("external webview tabs use repeatable pointer reordering", () => {
   assert.doesNotMatch(externalWebviewPage, /onDragStart=\{\(event\) => handleTabDragStart\(event, tab\.id\)\}/);
 });
 
-test("external webview browser chrome omits bookmarks and DevTools button entry", () => {
+test("external webview browser chrome omits bookmarks, DevTools, and manual debug entry", () => {
   const externalWebviewPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
     "utf8"
@@ -3779,16 +3779,22 @@ test("external webview browser chrome omits bookmarks and DevTools button entry"
   );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts", "desktop-api.ts"), "utf8");
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"), "utf8");
   const mainProcess = readMainProcessRuntimeSource();
 
   assert.doesNotMatch(externalWebviewPage, /external-webview-bookmarks-bar/);
   assert.doesNotMatch(externalWebviewPage, /external-webview-bookmark-toggle/);
   assert.doesNotMatch(externalWebviewPage, /external-webview-devtools-toggle/);
+  assert.doesNotMatch(externalWebviewPage, /external-webview-debug-toggle/);
+  assert.doesNotMatch(externalWebviewPage, /external-webview-debug-sidebar/);
+  assert.doesNotMatch(externalWebviewPage, /manual_debug/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
   assert.doesNotMatch(externalWebviewPage, /window\.electronAPI\.webview\.openDevTools/);
   assert.doesNotMatch(externalWebviewPage, /external-webview-bookmarks/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-bookmark/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-devtools-toggle/);
+  assert.doesNotMatch(externalWebviewStyles, /external-webview-debug/);
+  assert.doesNotMatch(appShell, /external-webview-debug-sidebar/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
   assert.doesNotMatch(mainProcess, /registerWebviewDevToolsIpcHandlers/);
@@ -4094,9 +4100,11 @@ test("assistant entrypoints restore core services before opening embedded webcli
 });
 
 test("quit menu entries skip confirmation except keyboard accelerator", () => {
+  const appEvents = readSourceFile("src", "main", "app", "app-events.ts");
   const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const appMenu = readSourceFile("src", "main", "app-shell", "app-menu.ts");
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const beforeQuitHandler = appEvents.match(/options\.app\.on\("before-quit", \(event\) => \{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const trayOptions = trayController.match(/export type AppTrayControllerOptions = \{[\s\S]*?\n\};/u)?.[0] ?? "";
   const trayQuitMenuItem = trayController.match(/label: t\("tray\.quit"\),[\s\S]*?\n      \}/u)?.[0] ?? "";
   const trayRuntimeOptions = runtime.match(/new AppTrayController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
@@ -4121,6 +4129,14 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
   );
   assert.match(appMenuRuntimeOptions, /requestQuit:\s*options\.requestAppQuit/);
   assert.match(appMenuRuntimeOptions, /quitWithoutConfirmation:\s*options\.beginAppQuitWithoutConfirmation/);
+
+  assert.doesNotMatch(appEvents, /requestAppQuit:\s*\(\) => void;/);
+  assert.doesNotMatch(appEvents, /options\.requestAppQuit\(\)/);
+  assert.doesNotMatch(beforeQuitHandler, /platform === "darwin"[\s\S]*?requestAppQuit/);
+  assert.match(beforeQuitHandler, /event\.preventDefault\(\);/);
+  assert.match(beforeQuitHandler, /options\.state\.isHandlingQuit = true;/);
+  assert.match(beforeQuitHandler, /void options\.runShutdownCleanup\(\)\.finally\(\(\) => \{/);
+  assert.match(beforeQuitHandler, /options\.beginAppQuitWithoutConfirmation\(\);/);
 });
 
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
@@ -5265,7 +5281,7 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /afterTabId: sourceTab\.id,[\s\S]{0,120}partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
 });
 
-test("embedded browser plus button opens a blank tab for manual address entry", () => {
+test("embedded browser address entry stays read-only until the current tab is unlocked", () => {
   const externalWebviewPage = readSourceFile(
     "src",
     "renderer",
@@ -5277,6 +5293,13 @@ test("embedded browser plus button opens a blank tab for manual address entry", 
   assert.match(externalWebviewPage, /const BLANK_EXTERNAL_WEBVIEW_URL\s*=\s*"about:blank"/u);
   assert.match(externalWebviewPage, /function getEditableAddressInputValue\(value: string\)/u);
   assert.match(externalWebviewPage, /value === BLANK_EXTERNAL_WEBVIEW_URL \? "" : value/u);
+  assert.match(externalWebviewPage, /const \[addressInputUnlocked, setAddressInputUnlocked\] = useState\(false\)/u);
+  assert.match(externalWebviewPage, /useEffect\(\(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(false\);[\s\S]{0,80}\}, \[activeTab\?\.id\]\);/u);
+  assert.match(externalWebviewPage, /event\.detail < 3/u);
+  assert.match(externalWebviewPage, /setAddressInputUnlocked\(true\)/u);
+  assert.match(externalWebviewPage, /if \(!addressInputUnlocked\) \{[\s\S]{0,80}return;[\s\S]{0,80}\}[\s\S]{0,80}setAddressInputValue\(event\.target\.value\);/u);
+  assert.match(externalWebviewPage, /if \(!addressInputUnlocked \|\| event\.key !== "Enter"\) \{/u);
+  assert.match(externalWebviewPage, /readOnly=\{!addressInputUnlocked\}/u);
   assert.match(externalWebviewPage, /onClick=\{\(\) => openTab\(BLANK_EXTERNAL_WEBVIEW_URL,\s*""\)\}/u);
   assert.doesNotMatch(externalWebviewPage, /onClick=\{\(\) => openTab\(url,\s*title\)\}/u);
 });

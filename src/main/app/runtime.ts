@@ -1072,7 +1072,6 @@ export function createMainProcessRuntime() {
       onReady: handleAppReady,
       showMainWindow: () => showMainWindow(),
       beginAppQuitWithoutConfirmation,
-      requestAppQuit,
       isNativeDialogOpen: () => appShellRuntime.isNativeDialogOpen(),
       emitPluginBeforeQuit: () => pluginBridgeRuntime.emitBeforeQuit(),
       prepareQuitUi,
