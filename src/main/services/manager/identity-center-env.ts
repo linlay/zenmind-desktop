@@ -39,6 +39,11 @@ function unquoteEnvValue(rawValue: string) {
   return rawValue.trim().replace(/^['"]|['"]$/gu, "");
 }
 
+function isAbsoluteEnvPath(rawValue: string) {
+  const value = unquoteEnvValue(rawValue);
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
 function isSingleQuotedBcryptEnvValue(rawValue: string) {
   const trimmed = rawValue.trim();
   if (!trimmed.startsWith("'") || !trimmed.endsWith("'") || trimmed.length < 2) {
@@ -78,8 +83,6 @@ export function syncIdentityCenterDesktopEnv(
   content: string,
   updates: Map<string, string>
 ) {
-  updates.set("AUTH_DB_PATH", path.join(layout.dataDir, "auth.db"));
-
   for (const key of IDENTITY_CENTER_BCRYPT_KEYS) {
     const currentRawValue = readRawEnvValue(content, key);
     if (!isSingleQuotedBcryptEnvValue(currentRawValue)) {
@@ -88,8 +91,34 @@ export function syncIdentityCenterDesktopEnv(
   }
 }
 
+export function normalizeIdentityCenterEnvContentForDesktop(content: string) {
+  const nextLines = content
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return true;
+      }
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        return true;
+      }
+      const key = trimmed.slice(0, separatorIndex).trim();
+      if (key !== "AUTH_DB_PATH") {
+        return true;
+      }
+      return isAbsoluteEnvPath(trimmed.slice(separatorIndex + 1));
+    });
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
 export const __testInternals = {
   readRawEnvValue,
   isSingleQuotedBcryptEnvValue,
-  singleQuoteEnvValue
+  singleQuoteEnvValue,
+  normalizeIdentityCenterEnvContentForDesktop
 };

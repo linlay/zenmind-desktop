@@ -4,6 +4,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 let shellPathEntriesCache: string[] | null = null;
+const LEGACY_LAYOUT_ENV_KEYS = ["CONFIG", "DATA", "STATE", "LOG"].map((name) => `SERVICE_${name}_DIR`);
+const LEGACY_LAYOUT_ENV_KEY_SET = new Set(LEGACY_LAYOUT_ENV_KEYS);
 
 function listExistingDirs(paths: string[]) {
   return paths.filter((dirPath) => {
@@ -122,6 +124,16 @@ function getShellPathEntries() {
 
 export function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
+  for (const key of LEGACY_LAYOUT_ENV_KEYS) {
+    delete env[key];
+  }
+  if (process.platform === "win32") {
+    for (const key of Object.keys(env)) {
+      if (LEGACY_LAYOUT_ENV_KEY_SET.has(key.toUpperCase())) {
+        delete env[key];
+      }
+    }
+  }
   const extraPaths = [...getStaticServicePaths(), ...getShellPathEntries()];
   if (extraPaths.length === 0) {
     return env;

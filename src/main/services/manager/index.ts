@@ -164,6 +164,7 @@ import {
   writeManagedPidFiles
 } from "./pid-files";
 import {
+  normalizeIdentityCenterEnvContentForDesktop,
   syncIdentityCenterDesktopEnv
 } from "./identity-center-env";
 import {
@@ -455,11 +456,20 @@ function migrateAgentPlatformLegacyServerPort(
   return removeEnvFileKeys(content, [AGENT_PLATFORM_LEGACY_PORT_ENV_KEY]);
 }
 
-function getAgentPlatformCommandPort(service: ServiceDefinition, layout: ServiceLayout) {
-  if (service.id !== "agent-platform") {
-    return parsePort(service, readEnvFile(layout.envPath));
+function getDesktopManagedCommandPort(service: ServiceDefinition, layout: ServiceLayout) {
+  if (service.id === "agent-platform") {
+    return readAgentPlatformRuntimeServerPort(layout) ?? parsePort(service, readEnvFile(layout.envPath));
   }
-  return readAgentPlatformRuntimeServerPort(layout) ?? parsePort(service, readEnvFile(layout.envPath));
+  return parsePort(service, readEnvFile(layout.envPath));
+}
+
+function getDesktopManagedContainerHubBindAddr(service: ServiceDefinition, layout: ServiceLayout) {
+  const env = readEnvFile(layout.envPath);
+  const value = env.get(service.web.portEnvKey)?.trim();
+  if (value && /:\d+(?:[/\s]|$)/u.test(value)) {
+    return value;
+  }
+  return `127.0.0.1:${getDesktopManagedCommandPort(service, layout)}`;
 }
 
 function getServiceNetworkEnv(service: ServiceDefinition, layout: ServiceLayout, env: Map<string, string>) {
@@ -475,26 +485,49 @@ function getServiceNetworkEnv(service: ServiceDefinition, layout: ServiceLayout,
   return next;
 }
 
-function appendAgentPlatformLayoutFlags(
+function appendDesktopManagedLayoutFlags(
   service: ServiceDefinition,
   command: string[],
   layout: ServiceLayout,
   kind: ServiceCommandKind
 ) {
-  if (service.id !== "agent-platform") {
-    return command;
+  if (service.id === "agent-platform") {
+    if (kind === "stop") {
+      return [...command, "--state-dir", layout.stateDir];
+    }
+    return [
+      ...command,
+      "--config-dir", layout.configDir,
+      "--runtime-dir", layout.dataDir,
+      "--state-dir", layout.stateDir,
+      "--log-dir", layout.logDir,
+      "--port", String(getDesktopManagedCommandPort(service, layout))
+    ];
   }
-  if (kind === "stop") {
-    return [...command, "--state-dir", layout.stateDir];
+
+  if (service.id === "agent-container-hub") {
+    return [
+      ...command,
+      "--config-dir", layout.configDir,
+      "--data-dir", layout.dataDir,
+      "--state-dir", layout.stateDir,
+      "--log-dir", layout.logDir,
+      "--bind-addr", getDesktopManagedContainerHubBindAddr(service, layout)
+    ];
   }
-  return [
-    ...command,
-    "--config-dir", layout.configDir,
-    "--runtime-dir", layout.dataDir,
-    "--state-dir", layout.stateDir,
-    "--log-dir", layout.logDir,
-    "--port", String(getAgentPlatformCommandPort(service, layout))
-  ];
+
+  if (service.id === "identity-center") {
+    return [
+      ...command,
+      "--config-dir", layout.configDir,
+      "--data-dir", layout.dataDir,
+      "--state-dir", layout.stateDir,
+      "--log-dir", layout.logDir,
+      "--port", String(getDesktopManagedCommandPort(service, layout))
+    ];
+  }
+
+  return command;
 }
 
 function collectPrerequisites(
@@ -829,7 +862,7 @@ async function initializeServiceInternal(
         ensureAgentContainerHubDesktopConfig(layout);
       }
       if (service.deployCommand) {
-        const deployCommand = appendAgentPlatformLayoutFlags(service, service.deployCommand, layout, "deploy");
+        const deployCommand = appendDesktopManagedLayoutFlags(service, service.deployCommand, layout, "deploy");
         await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, {
           env: buildDesktopServiceCommandEnv(app, service, layout, undefined)
         });
@@ -1674,6 +1707,14 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
       content = normalizedContent;
     }
   }
+  if (service.id === "identity-center") {
+    const normalizedContent = normalizeIdentityCenterEnvContentForDesktop(content);
+    if (normalizedContent !== content) {
+      ensureDir(path.dirname(envPath));
+      fs.writeFileSync(envPath, normalizedContent, "utf8");
+      content = normalizedContent;
+    }
+  }
 
   const env = parseEnvFileContent(content);
   const updates = new Map<string, string>();
@@ -1985,7 +2026,12 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   if (service.id === "identity-center") {
     const envPath = layout.envPath;
-    const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    const content = normalizeIdentityCenterEnvContentForDesktop(currentContent);
+    if (content !== currentContent) {
+      ensureDir(path.dirname(envPath));
+      fs.writeFileSync(envPath, content, "utf8");
+    }
     const env = parseEnvFileContent(content);
     const updates = new Map<string, string>();
     syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
@@ -2169,7 +2215,7 @@ async function runServiceCommand(
     }
     const layout = getServiceLayout(app, service);
     prepareServiceExecutionLayout(service, layout);
-    const commandForExec = appendAgentPlatformLayoutFlags(
+    const commandForExec = appendDesktopManagedLayoutFlags(
       service,
       command,
       layout,
@@ -3455,6 +3501,7 @@ export const __testInternals = {
   getStartCommandEnvOverrides,
   buildDesktopServiceCommandEnv: buildDesktopServiceCommandEnvForTests,
   getDesktopStartCommand,
+  appendDesktopManagedLayoutFlags,
   getDesktopStartCommandOptions,
   getPreparedStartupStartOptions,
   resolveAcpCommandForDesktop,

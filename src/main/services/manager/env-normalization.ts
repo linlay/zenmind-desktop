@@ -144,37 +144,8 @@ const AGENT_CONTAINER_HUB_DESKTOP_MANAGED_PATH_KEYS = [
   "SESSION_MOUNT_TEMPLATE_ROOT"
 ] as const;
 
-function isAbsoluteServiceEnvPath(value: string) {
-  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
-}
-
 export function normalizeAgentContainerHubEnvContentForDesktop(content: string) {
-  const nextLines = content
-    .split(/\r?\n/u)
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        return true;
-      }
-      const separatorIndex = trimmed.indexOf("=");
-      if (separatorIndex <= 0) {
-        return true;
-      }
-      const key = trimmed.slice(0, separatorIndex).trim();
-      if (!AGENT_CONTAINER_HUB_DESKTOP_MANAGED_PATH_KEYS.includes(
-        key as (typeof AGENT_CONTAINER_HUB_DESKTOP_MANAGED_PATH_KEYS)[number]
-      )) {
-        return true;
-      }
-
-      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/gu, "");
-      return isAbsoluteServiceEnvPath(value);
-    });
-
-  if (nextLines.length === 0) {
-    return "";
-  }
-  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+  return removeEnvKeysFromContent(content, AGENT_CONTAINER_HUB_DESKTOP_MANAGED_PATH_KEYS);
 }
 
 function removeEnvKeysFromContent(content: string, keys: readonly string[]) {

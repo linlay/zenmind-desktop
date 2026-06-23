@@ -49,6 +49,31 @@ const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_IDENTITY_CENTER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
+const LEGACY_LAYOUT_ENV_KEYS = ["CONFIG", "DATA", "STATE", "LOG"].map((name) => `SERVICE_${name}_DIR`);
+
+async function withLegacyLayoutEnv(callback) {
+  const previous = new Map(LEGACY_LAYOUT_ENV_KEYS.map((key) => [key, process.env[key]]));
+  try {
+    for (const key of LEGACY_LAYOUT_ENV_KEYS) {
+      process.env[key] = `/tmp/legacy-${key.toLowerCase()}`;
+    }
+    return await callback();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
+function assertNoLegacyLayoutEnv(env) {
+  for (const key of LEGACY_LAYOUT_ENV_KEYS) {
+    assert.ok(env[key] === undefined || env[key] === null, `${key} should not be passed to service commands`);
+  }
+}
 
 function createAuthCapabilityProviders() {
   const publicKeyArgs = [
@@ -1844,7 +1869,7 @@ test("normalizeAgentContainerHubEnvContentForDesktop removes stale relative desk
   assert.doesNotMatch(next, /^SESSION_MOUNT_TEMPLATE_ROOT=/m);
 });
 
-test("normalizeAgentContainerHubEnvContentForDesktop preserves custom absolute desktop-managed paths", () => {
+test("normalizeAgentContainerHubEnvContentForDesktop removes custom absolute desktop-managed paths", () => {
   const next = __testInternals.normalizeAgentContainerHubEnvContentForDesktop(
     [
       "BIND_ADDR=127.0.0.1:11960",
@@ -1857,11 +1882,11 @@ test("normalizeAgentContainerHubEnvContentForDesktop preserves custom absolute d
     ].join("\n") + "\n"
   );
 
-  assert.match(next, /^STATE_DB_PATH=\/var\/lib\/agent-container-hub\/hub\.db$/m);
-  assert.match(next, /^CONFIG_ROOT="\/etc\/agent-container-hub\/configs"$/m);
-  assert.match(next, /^ROOTFS_ROOT='\/var\/lib\/agent-container-hub\/rootfs'$/m);
-  assert.match(next, /^BUILD_ROOT=\/var\/lib\/agent-container-hub\/builds$/m);
-  assert.match(next, /^SESSION_MOUNT_TEMPLATE_ROOT=C:\\\\agent-container-hub\\\\templates$/m);
+  assert.doesNotMatch(next, /^STATE_DB_PATH=/m);
+  assert.doesNotMatch(next, /^CONFIG_ROOT=/m);
+  assert.doesNotMatch(next, /^ROOTFS_ROOT=/m);
+  assert.doesNotMatch(next, /^BUILD_ROOT=/m);
+  assert.doesNotMatch(next, /^SESSION_MOUNT_TEMPLATE_ROOT=/m);
   assert.match(next, /^ENGINE=podman$/m);
 });
 
@@ -2168,6 +2193,76 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("desktop managed service commands append layout flags for container hub and identity-center", () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+
+  const assertFlag = (command, flag, value) => {
+    const index = command.indexOf(flag);
+    assert.notEqual(index, -1, `expected ${flag} in ${command.join(" ")}`);
+    assert.equal(command[index + 1], value);
+  };
+
+  try {
+    for (const serviceId of ["agent-container-hub", "identity-center"]) {
+      const service = getBuiltinService(serviceId);
+      const envPath = writeTestEnv(
+        userDataRoot,
+        service.id,
+        service.id === "agent-container-hub" ? "BIND_ADDR=127.0.0.1:7079\n" : "SERVER_PORT=7076\n"
+      );
+      const layout = {
+        programDir: getTestServiceProgramDir(userDataRoot, service.id, service.version),
+        configDir: getTestConfigDir(userDataRoot, service.id),
+        dataDir: getTestDataDir(userDataRoot, service.id),
+        stateDir: getTestStateDir(userDataRoot, service.id),
+        logDir: getTestLogDir(userDataRoot, service.id),
+        envPath
+      };
+
+      for (const kind of ["start", "deploy", "stop"]) {
+        const command = __testInternals.appendDesktopManagedLayoutFlags(service, [`${kind}.sh`], layout, kind);
+        assertFlag(command, "--config-dir", layout.configDir);
+        assertFlag(command, "--data-dir", layout.dataDir);
+        assertFlag(command, "--state-dir", layout.stateDir);
+        assertFlag(command, "--log-dir", layout.logDir);
+        if (service.id === "agent-container-hub") {
+          assertFlag(command, "--bind-addr", "127.0.0.1:7079");
+        } else {
+          assertFlag(command, "--port", "7076");
+        }
+      }
+    }
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("service command runner strips legacy layout env from child process", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-env-scrub-"));
+  try {
+    await withLegacyLayoutEnv(async () => {
+      const result = await __testInternals.runExecFile(
+        process.execPath,
+        [
+          "-e",
+          [
+            `const keys = ${JSON.stringify(LEGACY_LAYOUT_ENV_KEYS)};`,
+            "const found = Object.fromEntries(keys.map((key) => [key, process.env[key] ?? null]));",
+            "process.stdout.write(JSON.stringify(found));"
+          ].join("")
+        ],
+        tempRoot
+      );
+      assertNoLegacyLayoutEnv(JSON.parse(result.stdout));
+    });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
@@ -3366,7 +3461,7 @@ test("installBuiltinService removes stale container hub relative path env during
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("installBuiltinService preserves custom absolute container hub path env", async () => {
+test("installBuiltinService removes custom absolute container hub path env", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-env-absolute-"));
   const envContent = [
     "BIND_ADDR=127.0.0.1:12000",
@@ -3387,10 +3482,10 @@ test("installBuiltinService preserves custom absolute container hub path env", a
 
   const nextEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
   assert.match(nextEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
-  assert.match(nextEnv, /^STATE_DB_PATH=\/var\/lib\/agent-container-hub\/hub\.db$/m);
-  assert.match(nextEnv, /^CONFIG_ROOT=\/etc\/agent-container-hub\/configs$/m);
-  assert.match(nextEnv, /^ROOTFS_ROOT=\/var\/lib\/agent-container-hub\/rootfs$/m);
-  assert.match(nextEnv, /^BUILD_ROOT=\/var\/lib\/agent-container-hub\/builds$/m);
+  assert.doesNotMatch(nextEnv, /^STATE_DB_PATH=/m);
+  assert.doesNotMatch(nextEnv, /^CONFIG_ROOT=/m);
+  assert.doesNotMatch(nextEnv, /^ROOTFS_ROOT=/m);
+  assert.doesNotMatch(nextEnv, /^BUILD_ROOT=/m);
   assert.match(nextEnv, /^ENGINE=podman$/m);
 
   restore();
@@ -4195,10 +4290,7 @@ test("initializeService recreates Desktop defaults for core services after confi
 
     assert.match(hubEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
     assert.match(identityCenterEnv, /^SERVER_PORT=7076$/m);
-    assert.match(
-      identityCenterEnv,
-      new RegExp(`^AUTH_DB_PATH=${path.join(getTestDataDir(userDataRoot, "identity-center"), "auth.db").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
-    );
+    assert.doesNotMatch(identityCenterEnv, /^AUTH_DB_PATH=/m);
     assertIdentityCenterDefaultBcryptEnv(identityCenterEnv);
     assert.doesNotMatch(platformEnv, /^SERVER_PORT=/m);
     assert.match(platformRuntimeConfig, /^  port: \d+$/m);
@@ -4258,10 +4350,7 @@ test("initializeService repairs partial identity-center env with bcrypt defaults
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
     assert.match(envContent, /^SERVER_PORT=7076$/m);
-    assert.match(
-      envContent,
-      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "identity-center"), "auth.db"))}$`, "m")
-    );
+    assert.doesNotMatch(envContent, /^AUTH_DB_PATH=/m);
     assertIdentityCenterDefaultBcryptEnv(envContent);
     assert.match(envContent, /^AP_UPSTREAM_BASE_URL=http:\/\/127\.0\.0\.1:\d+$/m);
     assert.match(envContent, /^CHAT_WS_UPSTREAM_URL=http:\/\/127\.0\.0\.1:\d+\/ws$/m);
@@ -6504,10 +6593,7 @@ test("runStartupPreparation repairs partial identity-center env preserved before
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
     assert.match(identityCenterEnv, new RegExp(`^SERVER_PORT=${fixture.ports.identityCenter}$`, "m"));
-    assert.match(
-      identityCenterEnv,
-      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "identity-center"), "auth.db"))}$`, "m")
-    );
+    assert.doesNotMatch(identityCenterEnv, /^AUTH_DB_PATH=/m);
     assertIdentityCenterDefaultBcryptEnv(identityCenterEnv);
   } finally {
     await stopStartupCoreProcesses(app);

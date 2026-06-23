@@ -106,8 +106,11 @@ function parsePortValue(value: string) {
 function readAuthSettings(service: ServiceDefinition, layout: ServiceLayout) {
   const env = readEnvFile(layout.envPath);
   const port = parsePortValue(env.get(service.web.portEnvKey) ?? "") || service.web.defaultPort;
+  const configuredDBPath = env.get("AUTH_DB_PATH")?.trim() ?? "";
   return {
-    dbPath: env.get("AUTH_DB_PATH")?.trim() || path.join(layout.dataDir, "auth.db"),
+    dbPath: configuredDBPath && path.isAbsolute(configuredDBPath)
+      ? configuredDBPath
+      : path.join(layout.dataDir, "auth.db"),
     issuer: env.get("AUTH_ISSUER")?.trim() || `http://127.0.0.1:${port}`,
     username: env.get("AUTH_APP_USERNAME")?.trim() || "app"
   };
