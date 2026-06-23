@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "1.0",
+  "profile": "knowledge",
+  "project": {
+    "name": "desktop",
+    "type": [
+      "javascript-project"
+    ],
+    "primaryLanguages": [
+      "javascript",
+      "typescript"
+    ],
+    "summary": "Project context has been initialized but not scanned yet."
+  },
+  "readOrder": [
+    {
+      "when": "always",
+      "files": [
+        ".doc/project.json",
+        ".doc/rules/agent.md",
+        ".doc/catalog/tasks.json"
+      ]
+    },
+    {
+      "when": "choosing task",
+      "resolve": ".doc/tasks/{task}.json"
+    },
+    {
+      "when": "editing module",
+      "resolve": ".doc/modules/{module}.json"
+    },
+    {
+      "when": "changing behavior",
+      "files": [
+        ".doc/rules.json",
+        ".doc/catalog/flows.json"
+      ]
+    }
+  ],
+  "moduleMap": {
+    "contracts": {
+      "paths": [
+        "src/shared/contracts/**"
+      ],
+      "context": ".doc/modules/contracts.json",
+      "confidence": "confirmed"
+    },
+    "copilot": {
+      "paths": [
+        "dist-electron/shared/copilot/**"
+      ],
+      "context": ".doc/modules/copilot.json",
+      "confidence": "confirmed"
+    },
+    "desktop-actions": {
+      "paths": [
+        "dist-electron/shared/desktop-actions/**"
+      ],
+      "context": ".doc/modules/desktop-actions.json",
+      "confidence": "confirmed"
+    },
+    "generated": {
+      "paths": [
+        "src/shared/generated/**"
+      ],
+      "context": ".doc/modules/generated.json",
+      "confidence": "confirmed"
+    },
+    "i18n": {
+      "paths": [
+        "src/shared/i18n/**"
+      ],
+      "context": ".doc/modules/i18n.json",
+      "confidence": "confirmed"
+    },
+    "manager": {
+      "paths": [
+        "src/main/services/manager/**"
+      ],
+      "context": ".doc/modules/manager.json",
+      "confidence": "confirmed"
+    },
+    "navigation": {
+      "paths": [
+        "dist-electron/shared/navigation/**"
+      ],
+      "context": ".doc/modules/navigation.json",
+      "confidence": "confirmed"
+    }
+  },
+  "curated": {
+    "modules": ".doc/curated/modules",
+    "flows": ".doc/curated/flows",
+    "tasks": ".doc/curated/tasks",
+    "rules": ".doc/curated/rules.json"
+  },
+  "catalogs": {
+    "modules": ".doc/catalog/modules.json",
+    "flows": ".doc/catalog/flows.json",
+    "tasks": ".doc/catalog/tasks.json"
+  },
+  "rulesRef": ".doc/rules.json",
+  "generated": {
+    "moduleCount": 7,
+    "flowCount": 2,
+    "taskCount": 3,
+    "sourceFileCount": 690,
+    "factsRef": ".doc/generated/project-facts.json"
+  }
+}
