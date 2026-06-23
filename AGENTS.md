@@ -12,3 +12,16 @@
 
 - For compatibility-sensitive code, clarity is more important than clever abstraction.
 - If platform behavior is intentionally different, keep the branching explicit in code and explain the reason briefly in comments when it is not obvious.
+
+<!-- xgraph:start -->
+## Project Context
+
+Before work, read `.doc/index.json`.
+
+Follow its `readOrder` progressively. Start from `.doc/catalog.json` or the catalog paths declared by the index, then inspect related module cards only as needed.
+
+Keep this entry file short; use `.doc/rules/agent.md` for detailed behavior.
+
+When an agent lifecycle hook is installed, let it run `xgraph finish`; otherwise run `xgraph sync` before finishing.
+
+<!-- xgraph:end -->

@@ -55,3 +55,10 @@ agent.md
 skills-lock.json
 .codegraph/
 \\Users\\*\\.zenmind/
+
+<!-- xgraph:start -->
+# xgraph local state
+.doc/.cache/
+.doc/local/
+.doc/tmp/
+<!-- xgraph:end -->

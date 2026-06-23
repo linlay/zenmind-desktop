@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1.0",
+  "items": [
+    {
+      "id": "contracts",
+      "title": "contracts",
+      "summary": "Module boundary confirmed during xgraph init.",
+      "pathHints": [
+        "src/shared/contracts/**"
+      ],
+      "card": ".doc/modules/contracts.json"
+    },
+    {
+      "id": "copilot",
+      "title": "copilot",
+      "summary": "Module boundary confirmed during xgraph init.",
+      "pathHints": [
+        "dist-electron/shared/copilot/**"
+      ],
+      "card": ".doc/modules/copilot.json"
+    },
+    {
+      "id": "desktop-actions",
+      "title": "desktop-actions",
+      "summary": "Module boundary confirmed during xgraph init.",
+      "pathHints": [
+        "dist-electron/shared/desktop-actions/**"
+      ],
+      "card": ".doc/modules/desktop-actions.json"
+    },
+    {
+      "id": "generated",
+      "title": "generated",
+      "summary": "Module boundary confirmed during xgraph init.",
+      "pathHints": [
+        "src/shared/generated/**"
+      ],
+      "card": ".doc/modules/generated.json"
+    },
+    {
+      "id": "i18n",
+      "title": "i18n",
+      "summary": "Module boundary confirmed during xgraph init.",
+      "pathHints": [
+        "src/shared/i18n/**"
+      ],
+      "card": ".doc/modules/i18n.json"
+    },
+    {
+      "id": "manager",
+      "title": "manager",
+      "summary": "Module boundary confirmed during xgraph init.",
+      "pathHints": [
+        "src/main/services/manager/**"
+      ],
+      "card": ".doc/modules/manager.json"
+    },
+    {
+      "id": "navigation",
+      "title": "navigation",
+      "summary": "Module boundary confirmed during xgraph init.",
+      "pathHints": [
+        "dist-electron/shared/navigation/**"
+      ],
+      "card": ".doc/modules/navigation.json"
+    }
+  ]
+}

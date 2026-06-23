@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0",
+  "module": "i18n",
+  "status": "confirmed",
+  "paths": [
+    "src/shared/i18n/**"
+  ],
+  "summary": {
+    "purpose": "Module boundary confirmed during xgraph init.",
+    "ownedConcepts": [],
+    "nonGoals": []
+  },
+  "facts": {
+    "entrypoints": [],
+    "publicApi": [
+      "BaseMessages",
+      "DEFAULT_LOCALE",
+      "I18N_KEYS",
+      "I18nDictionary",
+      "LocaleSettings",
+      "SUPPORTED_LOCALES",
+      "SupportedLocale",
+      "TranslateFunction",
+      "TranslateParams",
+      "TranslationKey",
+      "createInitialLocaleArguments",
+      "createTranslator",
+      "enUSMessages",
+      "formatMessage",
+      "getDictionary",
+      "i18nMessages",
+      "isSupportedLocale",
+      "normalizeLocale",
+      "readInitialLocaleSettingsFromArgv",
+      "translate",
+      "zhCNMessages"
+    ],
+    "dependencies": [],
+    "dependents": [
+      "contracts"
+    ],
+    "tests": [],
+    "lastScannedAt": ""
+  },
+  "readHints": {
+    "alwaysRead": [],
+    "readFor": []
+  },
+  "riskRules": [],
+  "recentChanges": []
+}

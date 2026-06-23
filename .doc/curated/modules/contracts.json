@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "module": "contracts",
+  "status": "confirmed",
+  "paths": [
+    "src/shared/contracts/**"
+  ],
+  "summary": {
+    "purpose": "Module boundary confirmed during xgraph init.",
+    "ownedConcepts": [],
+    "nonGoals": []
+  },
+  "facts": {
+    "entrypoints": [],
+    "publicApi": [],
+    "dependencies": [],
+    "dependents": [],
+    "tests": [],
+    "lastScannedAt": ""
+  },
+  "readHints": {
+    "alwaysRead": [],
+    "readFor": []
+  },
+  "riskRules": [],
+  "recentChanges": []
+}
