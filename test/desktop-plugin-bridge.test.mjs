@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { once } from "node:events";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -18,6 +20,9 @@ const {
   __testInternals: registryInternals
 } = require("../dist-electron/main/services/service-registry.js");
 const {
+  configurePluginBridge,
+  getPluginBridgeEnv,
+  stopPluginBridgeServers,
   __testInternals: bridgeInternals
 } = require("../dist-electron/main/plugin-bridge.js");
 const {
@@ -76,6 +81,57 @@ function desktopRoot(root) {
 function writePluginManifest(targetDir, manifest) {
   fs.mkdirSync(targetDir, { recursive: true });
   fs.writeFileSync(path.join(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+async function sendPluginBridgeRequest(app, service, method, params = {}) {
+  const env = getPluginBridgeEnv(app, service);
+  assert.ok(env.DESKTOP_PLUGIN_BRIDGE_PATH, "expected plugin bridge path");
+  assert.ok(env.DESKTOP_PLUGIN_BRIDGE_TOKEN, "expected plugin bridge token");
+
+  const socket = net.createConnection(env.DESKTOP_PLUGIN_BRIDGE_PATH);
+  let buffer = "";
+  const responsePromise = new Promise((resolve, reject) => {
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      for (;;) {
+        const lineEnd = buffer.indexOf("\n");
+        if (lineEnd < 0) {
+          break;
+        }
+        const line = buffer.slice(0, lineEnd).trim();
+        buffer = buffer.slice(lineEnd + 1);
+        if (!line) {
+          continue;
+        }
+        const envelope = JSON.parse(line);
+        if (envelope.type === "response" && envelope.id === "test-request") {
+          resolve(envelope);
+          return;
+        }
+      }
+    });
+    socket.on("error", reject);
+  });
+
+  await once(socket, "connect");
+  socket.write(`${JSON.stringify({
+    type: "hello",
+    pluginId: service.id,
+    token: env.DESKTOP_PLUGIN_BRIDGE_TOKEN,
+    protocolVersion: Number(env.DESKTOP_PLUGIN_BRIDGE_VERSION)
+  })}\n`);
+  socket.write(`${JSON.stringify({
+    type: "request",
+    id: "test-request",
+    method,
+    params
+  })}\n`);
+
+  try {
+    return await responsePromise;
+  } finally {
+    socket.destroy();
+  }
 }
 
 test("plugin manifest v2 registers from plugin directory without kind", () => {
@@ -286,6 +342,7 @@ test("plugin bridge filters hooks and requests by manifest declarations", () => 
     bridge: {
       requests: [
         "service.getStatus",
+        "agentPlatform.query",
         "desktopOverlay.showSystemUpdate",
         "assistantRuns.getActiveTasks",
         "desktopActivityIsland.update",
@@ -299,6 +356,7 @@ test("plugin bridge filters hooks and requests by manifest declarations", () => 
   assert.equal(bridgeInternals.isHookSubscribed(service, "plugin.actionInvoked:run-system-update"), true);
   assert.equal(bridgeInternals.isHookSubscribed(service, "agentPlatform.ready"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "service.getStatus"), true);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "agentPlatform.query"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopOverlay.showSystemUpdate"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "assistantRuns.getActiveTasks"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopActivityIsland.update"), true);
@@ -306,6 +364,77 @@ test("plugin bridge filters hooks and requests by manifest declarations", () => 
   assert.equal(bridgeInternals.isRequestAllowed(service, "agentPlatform.upsertAcpProxy"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopPet.runBanner"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopClipboard.writeText"), false);
+});
+
+test("plugin bridge rejects undeclared agentPlatform.query requests", async () => {
+  const root = fs.mkdtempSync("/tmp/zm-query-undeclared-");
+  try {
+    const app = createApp(root);
+    fs.mkdirSync(path.join(root, "tmp"), { recursive: true });
+    let called = false;
+    configurePluginBridge({
+      queryAgentPlatform: async () => {
+        called = true;
+        return { message: "should not run" };
+      }
+    });
+
+    const response = await sendPluginBridgeRequest(app, {
+      id: "query-undeclared",
+      kind: "plugin",
+      hooks: { subscribe: ["desktop.ready"] },
+      bridge: { requests: [] }
+    }, "agentPlatform.query", { message: "Translate me" });
+
+    assert.equal(response.ok, false);
+    assert.match(response.error, /bridge request is not allowed/u);
+    assert.equal(called, false);
+  } finally {
+    stopPluginBridgeServers();
+    configurePluginBridge({});
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("plugin bridge handles declared agentPlatform.query through Desktop callback", async () => {
+  const root = fs.mkdtempSync("/tmp/zm-query-declared-");
+  try {
+    const app = createApp(root);
+    fs.mkdirSync(path.join(root, "tmp"), { recursive: true });
+    let captured = null;
+    configurePluginBridge({
+      queryAgentPlatform: async (params) => {
+        captured = params;
+        return { data: { message: "Translated text" } };
+      }
+    });
+
+    const response = await sendPluginBridgeRequest(app, {
+      id: "selection-menu",
+      kind: "plugin",
+      hooks: { subscribe: [] },
+      bridge: { requests: ["agentPlatform.query"] }
+    }, "agentPlatform.query", {
+      message: "  Translate me  ",
+      agentKey: "translator",
+      source: "selection-menu",
+      action: "translate"
+    });
+
+    assert.equal(response.ok, true);
+    assert.deepEqual(captured, {
+      message: "Translate me",
+      agentKey: "translator",
+      source: "selection-menu",
+      action: "translate"
+    });
+    assert.equal(response.result.text, "Translated text");
+    assert.deepEqual(response.result.raw, { data: { message: "Translated text" } });
+  } finally {
+    stopPluginBridgeServers();
+    configurePluginBridge({});
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("plugin desktop effects normalize activity island input and local palette URLs", () => {

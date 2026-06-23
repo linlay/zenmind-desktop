@@ -35,12 +35,16 @@ CuteJ 品牌对应：
     │   │   └── <pet-id>/
     │   │       ├── pet.json
     │   │       └── ...
-    │   ├── websites/
-    │   │   └── <website-id>/
-    │   │       ├── website.json
-    │   │       ├── frontend/
-    │   │       ├── backend/
-    │   │       └── icon.png
+    │   ├── webs/
+    │   │   ├── websites/
+    │   │   │   └── <website-id>/
+    │   │   │       ├── website.json
+    │   │   │       └── icon.png
+    │   │   └── webapps/
+    │   │       └── <webapp-id>/
+    │   │           ├── webapp.json
+    │   │           ├── frontend/
+    │   │           └── backend/
     │   ├── env-initial/
     │   │   ├── env.zip
     │   │   └── manifest.json
@@ -52,14 +56,16 @@ CuteJ 品牌对应：
     │   │   ├── env-bootstrap.json
     │   │   ├── pet-state.json
     │   │   └── sso-session.json
-    │   └── websites/
-    │       └── <website-id>/
-    │           └── runtime.json
+    │   └── webs/
+    │       └── webapps/
+    │           └── <webapp-id>/
+    │               └── runtime.json
     └── logs/
-        └── websites/
-            └── <website-id>/
-                ├── main.log
-                └── error.log
+        └── webs/
+            └── webapps/
+                └── <webapp-id>/
+                    ├── main.log
+                    └── error.log
 ```
 
 完整 Desktop 数据根目录还包含服务、插件、日志、缓存、凭据和浏览器 profile：
@@ -72,7 +78,7 @@ CuteJ 品牌对应：
 │   │   ├── pet.json
 │   │   ├── sso.json
 │   │   └── control.json
-│   ├── websites/
+│   ├── webs/
 │   │   └── order.json
 │   ├── services/
 │   │   └── <service-id>/
@@ -85,11 +91,16 @@ CuteJ 品牌对应：
 ├── data/
 │   ├── pets/
 │   │   └── <pet-id>/
-│   ├── websites/
-│   │   └── <website-id>/
-│   │       ├── website.json
-│   │       ├── frontend/
-│   │       └── backend/
+│   ├── webs/
+│   │   ├── websites/
+│   │   │   └── <website-id>/
+│   │   │       ├── website.json
+│   │   │       └── icon.png
+│   │   └── webapps/
+│   │       └── <webapp-id>/
+│   │           ├── webapp.json
+│   │           ├── frontend/
+│   │           └── backend/
 │   ├── env-initial/
 │   │   ├── env.zip
 │   │   └── manifest.json
@@ -112,19 +123,21 @@ CuteJ 品牌对应：
 │   │   └── <plugin-id>/
 │   │       ├── init-state.json
 │   │       └── pid/
-│   ├── websites/
-│   │   └── <website-id>/
-│   │       └── runtime.json
+│   ├── webs/
+│   │   └── webapps/
+│   │       └── <webapp-id>/
+│   │           └── runtime.json
 │   └── marketplace/
 ├── logs/
 │   ├── services/
 │   │   └── <service-id>/
 │   ├── plugins/
 │   │   └── <plugin-id>/
-│   └── websites/
-│       └── <website-id>/
-│           ├── main.log
-│           └── error.log
+│   └── webs/
+│       └── webapps/
+│           └── <webapp-id>/
+│               ├── main.log
+│               └── error.log
 ├── cache/
 │   └── marketplace/
 ├── secrets/
@@ -243,7 +256,7 @@ Manifest 中的路径必须是项目目录内的相对路径。Desktop 会拒绝
 ~/<brand-runtime-root>/.desktop/logs/webs/webapps/<webapp-id>/error.log
 ```
 
-打包时设置 `DEMO=1` 或 `DEMO=true` 后，内置 `demo-node-html` 模板会在启动时复制到 `data/webs/webapps/demo-node-html/`；目标已存在时按安装包内模板强制刷新。未设置 `DEMO` 时安装包不包含 demo，启动时也不会创建 demo 网站应用。旧 `data/websites/`、`config/websites/order.json`、`state/websites/`、`logs/websites/` 和 `config/desktop/custom-sidebar-items.json` 只作为一次性迁移来源，迁移记录写入 `state/webs/migration.json`，旧目录保留为备份。网站自身的浏览器数据不保存在 manifest 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
+打包时设置 `DEMO=1` 或 `DEMO=true` 后，内置 `demo-node-html` 模板会在启动时复制到 `data/webs/webapps/demo-node-html/`；目标已存在时按安装包内模板强制刷新。未设置 `DEMO` 时安装包不包含 demo，启动时也不会创建 demo 网站应用。Desktop 启动时会清理旧版 `websites` 布局遗留目录；运行时只承认 `data/webs/`、`config/webs/`、`state/webs/` 和 `logs/webs/`。网站自身的浏览器数据不保存在 manifest 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
 
 ```text
 ~/<brand-runtime-root>/.desktop/profiles/electron/

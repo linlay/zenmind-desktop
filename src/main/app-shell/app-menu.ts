@@ -10,6 +10,7 @@ export type BuildApplicationMenuOptions = {
   t: TranslateFunction;
   openSettings: () => void;
   requestQuit: () => void;
+  quitWithoutConfirmation: () => void;
 };
 
 export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
@@ -43,7 +44,13 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
             {
               label: options.t("menu.quit", { appName: options.appName }),
               accelerator: "Command+Q",
-              click: () => options.requestQuit()
+              click: (_menuItem, _window, event) => {
+                if (event.triggeredByAccelerator) {
+                  options.requestQuit();
+                  return;
+                }
+                options.quitWithoutConfirmation();
+              }
             }
           ]
         }

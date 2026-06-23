@@ -2427,8 +2427,10 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanSync, /updateKanbanIssueByRunId\(app, event\.runId/);
   assert.match(kanbanSync, /updateKanbanIssueByChatId/);
   assert.match(kanbanSync, /updateKanbanIssueByChatId\(app,\s*event\.chatId/);
+  assert.match(kanbanRuntime, /private async applyIssueEvent\(event: KanbanDesktopIssueEvent\)/);
   assert.match(kanbanRuntime, /private async applyDelivery\(delivery: KanbanDesktopDelivery\)/);
-  assert.match(kanbanRuntime, /sourceRevision > 0 && sourceRevision <= cursor\.lastAppliedRevision/);
+  assert.match(kanbanRuntime, /seq <= cursor\.lastAppliedRevision/);
+  assert.match(kanbanRuntime, /tombstoneDesktopKanbanCloudIssue\(this\.options\.app, currentUser, issueEventIssueId\(event\), seq\)/);
   assert.match(kanbanRuntime, /"run\.event\.append"/);
   assert.match(kanbanRuntime, /clientEventId: stableClientEventId\(deviceId, input\.clientEventParts\)/);
   assert.match(kanbanRuntime, /t\("kanban\.runtime\.cloudReadOnly"\)/);

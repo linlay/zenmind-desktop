@@ -45,6 +45,7 @@ import type {
   KanbanIssueUpdateInput,
   KanbanChangedListener,
   KanbanCloudConfig,
+  WebsChangedListener,
   WebviewOpenTabListener,
   WebviewOpenTabRequest
 } from "../shared/contracts";
@@ -489,6 +490,19 @@ const api: DesktopApi = {
   },
   webs: {
     list: () => ipcRenderer.invoke("webs.list"),
+    onChanged: (listener: WebsChangedListener) => {
+      const handleWebsChanged = (
+        _event: Electron.IpcRendererEvent,
+        payload: Parameters<WebsChangedListener>[0]
+      ) => {
+        listener(payload);
+      };
+
+      ipcRenderer.on("webs.changed", handleWebsChanged);
+      return () => {
+        ipcRenderer.off("webs.changed", handleWebsChanged);
+      };
+    },
     websites: {
       list: () => ipcRenderer.invoke("webs.websites.list"),
       add: (input) => ipcRenderer.invoke("webs.websites.add", input),

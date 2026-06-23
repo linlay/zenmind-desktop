@@ -133,7 +133,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     openSettings: () => showMainWindow("/settings"),
     showDesktopPet: () => options.showDesktopPetWindow(),
     hideDesktopPet: () => options.hideDesktopPetWindow(true),
-    quit: options.requestAppQuit
+    quitWithoutConfirmation: options.beginAppQuitWithoutConfirmation
   });
 
   if (options.platform === "win32") {
@@ -265,7 +265,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       t: options.t,
       openSettings: () => navigateMainWindow("/settings"),
-      requestQuit: options.requestAppQuit
+      requestQuit: options.requestAppQuit,
+      quitWithoutConfirmation: options.beginAppQuitWithoutConfirmation
     });
   }
 

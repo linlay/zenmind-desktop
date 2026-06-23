@@ -5,7 +5,6 @@ import type { WebEntry, WebEntryKey } from "../../shared/contracts";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot } from "../desktop-profile-store";
 import { getDesktopConfigRoot, getDesktopWebsConfigRoot } from "../user-paths";
 import { normalizeWebEntryKey } from "./common";
-import { ensureWebsMigration } from "./migration";
 
 const ORDER_FILE = "order.json";
 
@@ -44,7 +43,6 @@ function readProfileOrder(app: App) {
 }
 
 export function readWebOrderKeys(app: App, availableEntryKeys: string[] = []) {
-  ensureWebsMigration(app);
   const available = new Set(availableEntryKeys);
   const filterKnown = (keys: WebEntryKey[]) => available.size > 0 ? keys.filter((key) => available.has(key)) : keys;
   const orderFromFile = readOrderFile(app);

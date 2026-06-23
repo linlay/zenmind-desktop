@@ -158,6 +158,11 @@ import {
 } from "../lifecycle/startup-phases";
 import { createShutdownCleanupRunner } from "../lifecycle/shutdown";
 import { registerMainAppEvents } from "./app-events";
+import { cleanupObsoleteWebsitesLayout } from "../obsolete-websites-cleanup";
+import {
+  createResourceDirectoryWatcher,
+  type ResourceDirectoryWatcher
+} from "../resource-directory-watcher";
 
 export function createMainProcessRuntime() {
   const appState = createMainAppState();
@@ -190,6 +195,7 @@ export function createMainProcessRuntime() {
   let assistantBridgeRuntime: AssistantBridgeRuntime;
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
+  let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
   
   const startupRestoreController = createStartupRestoreController({
     onChange: (state) => {
@@ -273,6 +279,10 @@ export function createMainProcessRuntime() {
 
   function initializeUserDataRootsAndSettings() {
     ensureDataRoot(app);
+    const obsoleteCleanup = cleanupObsoleteWebsitesLayout(app);
+    if (obsoleteCleanup.removed.length > 0) {
+      console.info(`[main] removed obsolete websites paths: ${obsoleteCleanup.removed.join(", ")}`);
+    }
     applyDesktopInitBootstrap(app, mainProcessContext.platform);
     const webappTemplateResult = installBundledWebappTemplates(app);
     if (!webappTemplateResult.ok) {
@@ -402,6 +412,20 @@ export function createMainProcessRuntime() {
     retryPendingPluginResourceSync,
     notifyAgentPlatformConfigChanged: () => notifyServicesChanged(),
     getAssistantActiveTasks: () => petRuntime.getAssistantActiveTasksSnapshotForPlugins(),
+    queryAgentPlatform: (params) => callAgentPlatform(app, "/api/query", {
+      method: "POST",
+      body: {
+        message: params.message,
+        ...(params.agentKey ? { agentKey: params.agentKey } : {}),
+        params: {
+          desktop: {
+            source: params.source || "plugin",
+            action: params.action || "query"
+          }
+        },
+        stream: false
+      }
+    }),
     onError: safeConsoleError
   });
   const desktopSsoController = createDesktopSsoController({
@@ -800,6 +824,40 @@ export function createMainProcessRuntime() {
     }
     scheduleAgentPlatformPetStatusRefresh(1000);
   }
+
+  function emitWebsChanged() {
+    const payload = { changedAt: new Date().toISOString() };
+    const targetWindow = appState.mainWindow;
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      return;
+    }
+    targetWindow.webContents.send("webs.changed", payload);
+  }
+
+  function startResourceDirectoryWatcher() {
+    if (resourceDirectoryWatcher) {
+      return;
+    }
+    resourceDirectoryWatcher = createResourceDirectoryWatcher({
+      app,
+      platform: mainProcessContext.platform,
+      onWebsChanged: emitWebsChanged,
+      onPetsChanged: () => {
+        petRuntime.refreshState();
+      },
+      onPluginsChanged: () => {
+        loadInstalledPlugins(app);
+        notifyServicesChanged();
+      },
+      onError: (message, error) => safeConsoleError(message, error)
+    });
+    resourceDirectoryWatcher.start();
+  }
+
+  function stopResourceDirectoryWatcher() {
+    resourceDirectoryWatcher?.stop();
+    resourceDirectoryWatcher = null;
+  }
   
   function emitKanbanChanged() {
     emitDesktopWsPush("snapshot.updated", { changedAt: new Date().toISOString() });
@@ -1002,6 +1060,7 @@ export function createMainProcessRuntime() {
     configureAppMediaPermissions();
     createWindow();
     setStartupPhase("shell-ready");
+    startResourceDirectoryWatcher();
   
     void startupPipeline.run();
   }
@@ -1033,6 +1092,7 @@ export function createMainProcessRuntime() {
         globalShortcut
       }),
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
+      stopResourceDirectoryWatcher,
       stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop()
     });
   }

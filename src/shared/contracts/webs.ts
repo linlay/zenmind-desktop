@@ -67,6 +67,12 @@ export interface WebListResult {
   message: string;
 }
 
+export interface WebsChangedEvent {
+  changedAt: string;
+}
+
+export type WebsChangedListener = (event: WebsChangedEvent) => void;
+
 export interface WebsiteInput {
   id?: string;
   label?: string;

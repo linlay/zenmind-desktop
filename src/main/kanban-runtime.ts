@@ -59,6 +59,8 @@ import {
   type KanbanDesktopDelivery,
   type KanbanDesktopDeliveryApplyResult,
   type KanbanDesktopConnectionState,
+  type KanbanDesktopIssueEvent,
+  type KanbanDesktopIssueEventApplyResult,
   type KanbanDesktopSyncLocalProject,
   type KanbanDesktopWsConfig
 } from "./kanban-desktop-ws-client";
@@ -388,6 +390,18 @@ function deliveryIssueId(delivery: KanbanDesktopDelivery) {
     (isRecord(issue) ? readText(issue.id) : "");
 }
 
+function issueEventIssuePayload(event: KanbanDesktopIssueEvent) {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  return event.issue ?? ("issue" in payload ? payload.issue : null);
+}
+
+function issueEventIssueId(event: KanbanDesktopIssueEvent) {
+  const issue = issueEventIssuePayload(event);
+  return readText(event.issueId) ||
+    readText(event.deletedIssueId) ||
+    (isRecord(issue) ? readText(issue.id) : "");
+}
+
 function stableClientEventId(deviceId: string, parts: Array<string | number | null | undefined>) {
   return [deviceId, ...parts.map((part) => readText(String(part ?? ""))).filter(Boolean)].join(":");
 }
@@ -477,6 +491,7 @@ export class KanbanRuntime {
       },
       onSnapshot: (snapshot) => this.applySnapshot(snapshot),
       onDelivery: (delivery) => this.applyDelivery(delivery),
+      onIssueEvent: (event) => this.applyIssueEvent(event),
       onDispatchIssue: (issue, revision) => this.applyDispatch(issue, revision),
       onListAgents: () => this.listAgents(),
       onStartRun: (request) => this.startRemoteRun(request),
@@ -869,13 +884,42 @@ export class KanbanRuntime {
     };
   }
 
+  private async applyIssueEvent(event: KanbanDesktopIssueEvent): Promise<KanbanDesktopIssueEventApplyResult> {
+    const currentUser = this.currentUser();
+    const cursor = readDesktopKanbanSyncCursor(this.options.app, currentUser);
+    const seq = Math.max(0, Math.floor(event.seq));
+    if (seq <= 0) {
+      return { ok: false, message: t("kanban.ws.unsupportedBusiness", { type: event.eventType || "unknown" }) };
+    }
+    if (seq <= cursor.lastAppliedRevision) {
+      return { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
+    }
+
+    if (event.eventType === "issue.deleted") {
+      tombstoneDesktopKanbanCloudIssue(this.options.app, currentUser, issueEventIssueId(event), seq);
+    } else {
+      const issue = issueEventIssuePayload(event);
+      if (!issue) {
+        return { ok: false, message: t("kanban.runtime.dispatchInvalid") };
+      }
+      const result = upsertDispatchedDesktopKanbanIssue(this.options.app, currentUser, issue, seq, "cloud_dispatch");
+      if (!result.ok) {
+        return { ok: false, message: result.message };
+      }
+    }
+
+    writeDesktopKanbanSyncCursor(this.options.app, currentUser, { lastAppliedRevision: seq });
+    this.notifyChanged();
+    return {
+      ok: true,
+      lastAppliedRevision: Math.max(cursor.lastAppliedRevision, seq)
+    };
+  }
+
   private async applyDelivery(delivery: KanbanDesktopDelivery): Promise<KanbanDesktopDeliveryApplyResult> {
     const currentUser = this.currentUser();
     const cursor = readDesktopKanbanSyncCursor(this.options.app, currentUser);
     const sourceRevision = deliverySourceRevision(delivery);
-    if (delivery.kind === "event" && sourceRevision > 0 && sourceRevision <= cursor.lastAppliedRevision) {
-      return { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
-    }
 
     if (delivery.kind === "snapshot_reset") {
       const snapshot = await this.wsClient.request<KanbanCloudSnapshot>("snapshot.get", {
@@ -886,24 +930,6 @@ export class KanbanRuntime {
       return {
         ok: true,
         lastAppliedRevision: readDesktopKanbanSyncCursor(this.options.app, currentUser).lastAppliedRevision
-      };
-    }
-
-    if (delivery.kind === "event") {
-      const issue = deliveryIssuePayload(delivery);
-      if (delivery.eventType === "issue.deleted") {
-        tombstoneDesktopKanbanCloudIssue(this.options.app, currentUser, deliveryIssueId(delivery), sourceRevision);
-      } else if (issue) {
-        const result = upsertDispatchedDesktopKanbanIssue(this.options.app, currentUser, issue, sourceRevision, "cloud_dispatch");
-        if (!result.ok) {
-          return { ok: false, message: result.message };
-        }
-      }
-      writeDesktopKanbanSyncCursor(this.options.app, currentUser, { lastAppliedRevision: sourceRevision });
-      this.notifyChanged();
-      return {
-        ok: true,
-        lastAppliedRevision: Math.max(cursor.lastAppliedRevision, sourceRevision)
       };
     }
 

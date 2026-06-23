@@ -18,7 +18,6 @@ import {
   sortWebEntries,
   toTimestamp
 } from "../common";
-import { ensureWebsMigration } from "../migration";
 
 export const WEBAPP_FILE = "webapp.json";
 
@@ -143,7 +142,6 @@ function sanitizeWebappItems(items: WebappEntry[]) {
 }
 
 export function readWebappItems(app: App) {
-  ensureWebsMigration(app);
   return readWebappItemsWithoutMigration(app);
 }
 

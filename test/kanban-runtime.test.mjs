@@ -213,6 +213,26 @@ function waitFor(check, message = "condition", timeoutMs = 1000) {
   });
 }
 
+function respondOk(socket, request, payload) {
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 3,
+      frame: "response",
+      id: request.id,
+      type: request.type,
+      ok: true,
+      payload
+    })
+  });
+}
+
+async function respondNextRequest(socket, type, payload, fromIndex = 0, timeoutMs = 3000) {
+  await waitFor(() => socket.sent.slice(fromIndex).some((frame) => frame.type === type), type, timeoutMs);
+  const request = socket.sent.slice(fromIndex).find((frame) => frame.type === type);
+  respondOk(socket, request, payload);
+  return request;
+}
+
 test("Kanban runtime resyncs cloud board over the existing websocket", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
@@ -281,12 +301,14 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
           boardId: "default",
           projectId: "project-1",
           revision: 30,
+          lastSeq: 30,
           complete: true,
           scope: "project",
           issues: []
         }
       })
     });
+    await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", events: [], hasMore: false, lastSeq: 30, nextAfterSeq: 30 });
     await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "initial sync.pull");
     const initialPull = socket.sent.find((frame) => frame.type === "sync.pull");
     socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: initialPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
@@ -309,6 +331,7 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
           boardId: "default",
           projectId: "project-1",
           revision: 31,
+          lastSeq: 31,
           complete: true,
           scope: "project",
           projects: [{ id: "project-1", name: "Project One", path: "Project One", updatedAt: "2026-06-09T00:00:00.000Z" }],
@@ -330,6 +353,7 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
         }
       })
     });
+    await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", events: [], hasMore: false, lastSeq: 31, nextAfterSeq: 31 }, sentBeforeResync);
     await waitFor(
       () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "sync.pull"),
       "resync sync.pull"
@@ -342,6 +366,153 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
     assert.equal(sockets.length, 1);
     assert.ok(result.issues.some((issue) => issue.remoteIssueId === "ISS-RESYNC" && issue.title === "重新同步议题"));
     assert.ok(result.projects.some((project) => project.id === "project-1"));
+  } finally {
+    runtime.stop();
+  }
+});
+
+test("Kanban runtime applies paged issue event pulls and tombstones deleted issues", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const app = createTempApp(t);
+  const runtime = new KanbanRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
+      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {}
+  });
+
+  writeSsoSiteToken(app);
+  runtime.saveCloudConfig({
+    serverUrl: "http://127.0.0.1:3000",
+    token: "secret",
+    selectedProjectId: "project-1",
+    remoteControlEnabled: true,
+    deviceAlias: "测试桌面"
+  });
+
+  try {
+    const socket = sockets[0];
+    socket.readyState = 1;
+    socket.onopen();
+    await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
+    const hello = socket.sent[0];
+    respondOk(socket, hello, { ok: true, cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 10, cacheSchemaVersion: 1 } });
+    await waitFor(() => socket.sent.length === 2, "snapshot request");
+    const snapshotRequest = socket.sent[1];
+    respondOk(socket, snapshotRequest, {
+      boardId: "default",
+      projectId: "project-1",
+      revision: 10,
+      lastSeq: 10,
+      complete: true,
+      scope: "project",
+      issues: []
+    });
+
+    const firstPull = await respondNextRequest(socket, "event.pull", {
+      ok: true,
+      projectId: "project-1",
+      lastSeq: 13,
+      hasMore: true,
+      nextAfterSeq: 11,
+      events: [{
+        seq: 11,
+        eventType: "issue.updated",
+        projectId: "project-1",
+        issueId: "ISS-PULL-1",
+        issue: {
+          id: "ISS-PULL-1",
+          boardId: "default",
+          projectId: "project-1",
+          workflowId: "workflow-standard-requirement",
+          title: "First pulled issue",
+          description: "Will be deleted by the next page",
+          status: "todo",
+          priority: "medium",
+          severity: "medium",
+          position: 1,
+          revision: 11,
+          createdAt: "2026-06-09T00:00:00.000Z",
+          updatedAt: "2026-06-09T00:00:00.000Z"
+        }
+      }]
+    });
+    assert.equal(firstPull.payload.afterSeq, 10);
+
+    await waitFor(() => socket.sent.filter((frame) => frame.type === "event.pull").length === 2, "second event.pull", 3000);
+    const secondPull = socket.sent.filter((frame) => frame.type === "event.pull").at(-1);
+    assert.equal(secondPull.payload.afterSeq, 11);
+    respondOk(socket, secondPull, {
+      ok: true,
+      projectId: "project-1",
+      lastSeq: 13,
+      hasMore: false,
+      nextAfterSeq: 13,
+      events: [{
+        seq: 12,
+        eventType: "issue.deleted",
+        projectId: "project-1",
+        issueId: "ISS-PULL-1",
+        deletedIssueId: "ISS-PULL-1"
+      }, {
+        seq: 13,
+        eventType: "issue.updated",
+        projectId: "project-1",
+        issueId: "ISS-PULL-2",
+        issue: {
+          id: "ISS-PULL-2",
+          boardId: "default",
+          projectId: "project-1",
+          workflowId: "workflow-standard-requirement",
+          title: "Second pulled issue",
+          description: "Survives the event pull",
+          status: "in_progress",
+          priority: "high",
+          severity: "medium",
+          position: 2,
+          revision: 13,
+          createdAt: "2026-06-09T00:00:00.000Z",
+          updatedAt: "2026-06-09T00:00:00.000Z"
+        }
+      }]
+    });
+    await respondNextRequest(socket, "sync.pull", { ok: true, items: [], hasMore: false });
+
+    const issues = runtime.listIssues().issues;
+    assert.equal(issues.some((issue) => issue.remoteIssueId === "ISS-PULL-1"), false);
+    const pulled = issues.find((issue) => issue.remoteIssueId === "ISS-PULL-2");
+    assert.ok(pulled);
+    assert.equal(pulled.title, "Second pulled issue");
+    assert.equal(pulled.revision, 13);
   } finally {
     runtime.stop();
   }
@@ -559,12 +730,14 @@ test("Kanban runtime applies command.runIssue delivery, appends run event, then 
         boardId: "default",
         projectId: "project-1",
         revision: 40,
+        lastSeq: 40,
         complete: true,
         scope: "project",
         issues: []
       }
     })
   });
+  await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", events: [], hasMore: false, lastSeq: 40, nextAfterSeq: 40 });
   await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "sync.pull");
   const pull = socket.sent.find((frame) => frame.type === "sync.pull");
   socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: pull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });

@@ -53,6 +53,13 @@ type AcpProxyInput = {
   timeoutMs: number;
 };
 
+type AgentPlatformQueryInput = {
+  message: string;
+  agentKey?: string;
+  source?: string;
+  action?: string;
+};
+
 const bridgeRecords = new Map<string, BridgeRecord>();
 const latestServiceStates = new Map<string, ServiceState>();
 const pendingPluginEvents = new Map<string, PendingPluginEvent[]>();
@@ -73,6 +80,7 @@ let unregisterDesktopClipboardShortcutCallback: ((pluginId: string, params: unkn
 let showDesktopClipboardPaletteCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
 let hideDesktopClipboardPaletteCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
 let cleanupPluginBridgePluginCallback: ((pluginId: string) => void) | null = null;
+let queryAgentPlatformCallback: ((params: AgentPlatformQueryInput) => unknown) | null = null;
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -350,6 +358,76 @@ function removeAgentPlatformAcpProxy(app: App, sourcePluginId: string, params: u
   return { changed: hadProxy, removed: hadProxy };
 }
 
+function normalizeAgentPlatformQueryInput(params: unknown): AgentPlatformQueryInput {
+  const record = asObject(params);
+  const message = asString(record.message);
+  if (!message) {
+    throw new Error("message is required");
+  }
+  const agentKey = asString(record.agentKey);
+  const source = asString(record.source);
+  const action = asString(record.action);
+  return {
+    message,
+    ...(agentKey ? { agentKey } : {}),
+    ...(source ? { source } : {}),
+    ...(action ? { action } : {})
+  };
+}
+
+const AGENT_PLATFORM_QUERY_TEXT_KEYS = [
+  "text",
+  "message",
+  "content",
+  "answer",
+  "output",
+  "finalMessage",
+  "translation",
+  "translatedText",
+  "result",
+  "response",
+  "data"
+];
+
+function extractAgentPlatformQueryText(value: unknown, depth = 0): string {
+  if (depth > 4) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = extractAgentPlatformQueryText(item, depth + 1);
+      if (text) {
+        return text;
+      }
+    }
+    return "";
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of AGENT_PLATFORM_QUERY_TEXT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) {
+      continue;
+    }
+    const text = extractAgentPlatformQueryText(record[key], depth + 1);
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function normalizeAgentPlatformQueryResult(raw: unknown) {
+  return {
+    text: extractAgentPlatformQueryText(raw),
+    raw: raw ?? null
+  };
+}
+
 async function handleBridgeRequest(
   app: App,
   context: PluginBridgeRequestContext
@@ -370,6 +448,13 @@ async function handleBridgeRequest(
     }
     if (context.method === "agentPlatform.removeAcpProxy") {
       return { ok: true, result: removeAgentPlatformAcpProxy(app, context.sourcePluginId, context.params) };
+    }
+    if (context.method === "agentPlatform.query") {
+      if (!queryAgentPlatformCallback) {
+        throw new Error("agent platform query bridge is unavailable");
+      }
+      const input = normalizeAgentPlatformQueryInput(context.params);
+      return { ok: true, result: normalizeAgentPlatformQueryResult(await queryAgentPlatformCallback(input)) };
     }
     if (context.method === "desktopPet.runBanner") {
       if (!runDesktopPetBannerCallback) {
@@ -549,6 +634,7 @@ export function configurePluginBridge(options: {
   showDesktopClipboardPalette?: (pluginId: string, params: unknown) => unknown;
   hideDesktopClipboardPalette?: (pluginId: string, params: unknown) => unknown;
   cleanupPluginBridgePlugin?: (pluginId: string) => void;
+  queryAgentPlatform?: (params: AgentPlatformQueryInput) => unknown;
 }) {
   getServiceStateCallback = options.getServiceState ?? null;
   notifyAgentPlatformConfigChangedCallback = options.notifyAgentPlatformConfigChanged ?? null;
@@ -564,6 +650,7 @@ export function configurePluginBridge(options: {
   showDesktopClipboardPaletteCallback = options.showDesktopClipboardPalette ?? null;
   hideDesktopClipboardPaletteCallback = options.hideDesktopClipboardPalette ?? null;
   cleanupPluginBridgePluginCallback = options.cleanupPluginBridgePlugin ?? null;
+  queryAgentPlatformCallback = options.queryAgentPlatform ?? null;
 }
 
 export function getPluginBridgeEnv(app: App, service: ServiceDefinition): NodeJS.ProcessEnv {
@@ -664,5 +751,8 @@ export const __testInternals = {
   isRequestAllowed,
   normalizeAcpProxyInput,
   upsertAgentPlatformAcpProxy,
-  removeAgentPlatformAcpProxy
+  removeAgentPlatformAcpProxy,
+  normalizeAgentPlatformQueryInput,
+  extractAgentPlatformQueryText,
+  normalizeAgentPlatformQueryResult
 };

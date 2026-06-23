@@ -1010,6 +1010,12 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    return window.electronAPI.webs.onChanged(() => {
+      refreshWebItems().catch(() => undefined);
+    });
+  }, []);
+
+  useEffect(() => {
     return window.electronAPI.settings.onDesktopConfigChanged(() => {
       refreshDesktopShellConfigFromCanonical();
     });

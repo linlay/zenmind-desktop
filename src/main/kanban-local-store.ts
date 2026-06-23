@@ -117,6 +117,7 @@ export type KanbanCloudSnapshot = {
   boardId?: string;
   projectId?: string;
   revision?: number;
+  lastSeq?: number;
   complete?: boolean;
   scope?: string;
   projects?: unknown[];
@@ -1524,7 +1525,13 @@ export function applyDesktopKanbanCloudSnapshot(
 ): KanbanListResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const currentRevision = readDesktopKanbanRevision(db);
-    const revision = typeof snapshot.revision === "number" ? snapshot.revision : currentRevision;
+    const snapshotLastSeq = typeof snapshot.lastSeq === "number" && Number.isFinite(snapshot.lastSeq)
+      ? Math.max(0, Math.floor(snapshot.lastSeq))
+      : undefined;
+    const snapshotRevision = typeof snapshot.revision === "number" && Number.isFinite(snapshot.revision)
+      ? Math.max(0, Math.floor(snapshot.revision))
+      : undefined;
+    const revision = snapshotLastSeq ?? snapshotRevision ?? currentRevision;
     const snapshotProjectId = trimText(snapshot.projectId);
     const canTombstoneMissing = snapshot.complete === true && snapshot.scope === "project" && Boolean(snapshotProjectId);
     const remoteIds = new Set<string>();

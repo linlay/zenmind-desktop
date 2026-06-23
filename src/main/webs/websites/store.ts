@@ -17,7 +17,6 @@ import {
   toIsoTimestamp,
   toTimestamp
 } from "../common";
-import { ensureWebsMigration } from "../migration";
 
 export const WEBSITE_FILE = "website.json";
 
@@ -63,7 +62,6 @@ export function readWebsiteItemFromDir(websiteDir: string, fallbackId = "") {
 }
 
 export function readWebsiteItems(app: App) {
-  ensureWebsMigration(app);
   return readWebsiteItemsWithoutMigration(app);
 }
 
@@ -90,7 +88,6 @@ export function readWebsiteItemsWithoutMigration(app: App) {
 }
 
 export function writeWebsiteItems(app: App, items: WebsiteEntry[]) {
-  ensureWebsMigration(app);
   return writeWebsiteItemsWithoutMigration(app, items);
 }
 

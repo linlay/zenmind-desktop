@@ -22,7 +22,7 @@ export type AppTrayControllerOptions = {
   openSettings: () => void;
   showDesktopPet: () => void;
   hideDesktopPet: () => void;
-  quit: () => void;
+  quitWithoutConfirmation: () => void;
 };
 
 export type AppTrayIconPathOptions = Pick<
@@ -235,7 +235,7 @@ export class AppTrayController {
       { type: "separator" },
       {
         label: t("tray.quit"),
-        click: () => this.options.quit()
+        click: () => this.options.quitWithoutConfirmation()
       }
     ];
     return Menu.buildFromTemplate(template);

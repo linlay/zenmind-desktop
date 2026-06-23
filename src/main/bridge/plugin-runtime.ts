@@ -25,6 +25,7 @@ export type PluginBridgeRuntimeOptions = {
   retryPendingPluginResourceSync: (app: App) => Promise<unknown>;
   notifyAgentPlatformConfigChanged: () => void;
   getAssistantActiveTasks: () => unknown;
+  queryAgentPlatform: (params: { message: string; agentKey?: string; source?: string; action?: string }) => Promise<unknown> | unknown;
   onError: (message: string, details: Record<string, unknown>) => void;
 };
 
@@ -50,7 +51,8 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
         options.clipboardBridge.showDesktopClipboardPaletteForPlugin(pluginId, params),
       hideDesktopClipboardPalette: (pluginId) =>
         options.clipboardBridge.hideDesktopClipboardPaletteForPlugin(pluginId),
-      cleanupPluginBridgePlugin: options.clipboardBridge.cleanupPlugin
+      cleanupPluginBridgePlugin: options.clipboardBridge.cleanupPlugin,
+      queryAgentPlatform: options.queryAgentPlatform
     });
   }
 

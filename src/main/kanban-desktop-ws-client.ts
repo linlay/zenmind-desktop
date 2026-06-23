@@ -91,11 +91,25 @@ export type KanbanDesktopDelivery = {
   status?: string;
 };
 
+export type KanbanDesktopIssueEvent = {
+  seq: number;
+  eventType: string;
+  projectId?: string | null;
+  issueId?: string;
+  deletedIssueId?: string;
+  issue?: unknown;
+  payload?: unknown;
+  actor?: unknown;
+  createdAt?: string;
+};
+
 export type KanbanDesktopDeliveryApplyResult = {
   ok: boolean;
   lastAppliedRevision?: number;
   message?: string;
 };
+
+export type KanbanDesktopIssueEventApplyResult = KanbanDesktopDeliveryApplyResult;
 
 export type KanbanDesktopWsClientOptions = {
   capabilities: string[];
@@ -106,6 +120,7 @@ export type KanbanDesktopWsClientOptions = {
   onSyncCursor?: (cursor: KanbanDesktopSyncCursor) => void;
   onSnapshot: (snapshot: KanbanCloudSnapshot) => void;
   onDelivery?: (delivery: KanbanDesktopDelivery) => Promise<KanbanDesktopDeliveryApplyResult>;
+  onIssueEvent?: (event: KanbanDesktopIssueEvent) => Promise<KanbanDesktopIssueEventApplyResult>;
   onDispatchIssue: (
     issue: unknown,
     revision: number
@@ -127,6 +142,13 @@ const PROTOCOL_VERSION = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECONNECT_MS = 5_000;
 const WS_OPEN_STATE = 1;
+const ISSUE_EVENT_TYPES = new Set([
+  "issue.created",
+  "issue.updated",
+  "issue.deleted",
+  "issue.transitioned",
+  "issue.moved"
+]);
 
 function getWebSocketConstructor(): MinimalWebSocketConstructor | null {
   const candidate = (globalThis as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
@@ -217,6 +239,7 @@ function normalizeSnapshot(payload: unknown, env: KanbanEnvelope): KanbanCloudSn
     boardId: readText(record.boardId) || readText(env.boardId),
     projectId: readText(record.projectId) || readText(env.projectId),
     revision: typeof record.revision === "number" ? record.revision : env.revision,
+    lastSeq: typeof record.lastSeq === "number" ? record.lastSeq : undefined,
     complete: record.complete === true,
     scope: readText(record.scope),
     projects: Array.isArray(record.projects) ? record.projects : [],
@@ -273,6 +296,45 @@ function normalizeDeliveries(payload: unknown) {
     .map((item) => normalizeDelivery(item))
     .filter((item): item is KanbanDesktopDelivery => Boolean(item))
     .sort((a, b) => a.deliverySeq - b.deliverySeq);
+}
+
+function normalizeIssueEvent(value: unknown, env?: KanbanEnvelope): KanbanDesktopIssueEvent | null {
+  const record = isRecord(value) ? value : {};
+  const eventType = readText(record.eventType) || (env ? envelopeBusinessType(env) : "");
+  if (!ISSUE_EVENT_TYPES.has(eventType)) {
+    return null;
+  }
+  const seq = readNonNegativeInteger(record.seq) ||
+    readNonNegativeInteger(record.revision) ||
+    (env ? readNonNegativeInteger(env.revision) : 0);
+  if (seq <= 0) {
+    return null;
+  }
+  const issue = "issue" in record ? record.issue : undefined;
+  const issueRecord = isRecord(issue) ? issue : {};
+  const issueId = readText(record.issueId) ||
+    readText(record.deletedIssueId) ||
+    readText(issueRecord.id);
+  return {
+    seq,
+    eventType,
+    projectId: readText(record.projectId) || (env ? readText(env.projectId) : "") || null,
+    issueId: issueId || undefined,
+    deletedIssueId: readText(record.deletedIssueId) || undefined,
+    issue,
+    payload: record,
+    actor: record.actor,
+    createdAt: readText(record.createdAt) || undefined
+  };
+}
+
+function normalizeIssueEvents(payload: unknown) {
+  const record = isRecord(payload) ? payload : {};
+  const rawEvents = Array.isArray(record.events) ? record.events : Array.isArray(payload) ? payload : [];
+  return rawEvents
+    .map((event) => normalizeIssueEvent(event))
+    .filter((event): event is KanbanDesktopIssueEvent => Boolean(event))
+    .sort((a, b) => a.seq - b.seq);
 }
 
 function normalizeStartRunPayload(payload: unknown, env: KanbanEnvelope): AssistantStartRunRequest {
@@ -336,6 +398,10 @@ function isSyncDeliverPushEnvelope(env: KanbanEnvelope) {
   return isV2Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "sync.deliver";
 }
 
+function isIssueEventPushEnvelope(env: KanbanEnvelope) {
+  return isV2Envelope(env) && env.frame === "push" && ISSUE_EVENT_TYPES.has(envelopeBusinessType(env));
+}
+
 export class KanbanDesktopWsClient {
   private ws: MinimalWebSocket | null = null;
   private config: KanbanDesktopWsConfig | null = null;
@@ -344,7 +410,9 @@ export class KanbanDesktopWsClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pending = new Map<string, PendingRequest>();
   private snapshotReady = false;
+  private issueEventsReady = false;
   private queuedDeliveries: KanbanDesktopDelivery[] = [];
+  private queuedIssueEvents: KanbanDesktopIssueEvent[] = [];
 
   constructor(private readonly options: KanbanDesktopWsClientOptions) {}
 
@@ -421,7 +489,9 @@ export class KanbanDesktopWsClient {
       throw new Error(t("kanban.cloudSync.notConnected"));
     }
     const wasSnapshotReady = this.snapshotReady;
+    const wasIssueEventsReady = this.issueEventsReady;
     this.snapshotReady = false;
+    this.issueEventsReady = false;
     try {
       const snapshot = await this.request<KanbanCloudSnapshot>("snapshot.get", {
         projectId: this.config.selectedProjectId ?? "default",
@@ -429,11 +499,15 @@ export class KanbanDesktopWsClient {
       });
       this.options.onSnapshot(snapshot);
       this.snapshotReady = true;
+      await this.pullIssueEvents(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAppliedRevision);
+      this.issueEventsReady = true;
+      await this.flushQueuedIssueEvents();
       await this.flushQueuedDeliveries();
-      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
+      await this.pullCommandDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
       this.options.onConnected?.();
     } catch (error) {
       this.snapshotReady = wasSnapshotReady;
+      this.issueEventsReady = wasIssueEventsReady;
       throw error;
     }
   }
@@ -488,7 +562,9 @@ export class KanbanDesktopWsClient {
     this.clearReconnectTimer();
     this.closeWebSocket("kanban desktop ws reconnect");
     this.snapshotReady = false;
+    this.issueEventsReady = false;
     this.queuedDeliveries = [];
+    this.queuedIssueEvents = [];
     this.setState("connecting");
     try {
       const wsUrl = createWsUrl(config);
@@ -535,6 +611,7 @@ export class KanbanDesktopWsClient {
     this.options.onDebug?.(t("kanban.ws.opened"));
     this.setState("open");
     this.snapshotReady = false;
+    this.issueEventsReady = false;
     try {
       const agents = await this.options.onListAgents().catch((error) => {
         this.options.onDebug?.(t("kanban.ws.helloAgentsFailed", { message: errorMessage(error) }));
@@ -570,8 +647,11 @@ export class KanbanDesktopWsClient {
       });
       this.options.onSnapshot(snapshot);
       this.snapshotReady = true;
+      await this.pullIssueEvents(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAppliedRevision);
+      this.issueEventsReady = true;
+      await this.flushQueuedIssueEvents();
       await this.flushQueuedDeliveries();
-      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
+      await this.pullCommandDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
       this.options.onConnected?.();
     } catch (error) {
       this.options.onDebug?.(errorMessage(error));
@@ -614,8 +694,29 @@ export class KanbanDesktopWsClient {
       this.options.onSnapshot(normalizeSnapshot(env.payload, env));
       return;
     }
+    if (isIssueEventPushEnvelope(env)) {
+      void this.handleIssueEventPush(env);
+      return;
+    }
     if (isSyncDeliverPushEnvelope(env)) {
       void this.handleDeliveryPush(env);
+    }
+  }
+
+  private async handleIssueEventPush(env: KanbanEnvelope) {
+    const event = normalizeIssueEvent(env.payload, env);
+    if (!event) {
+      return;
+    }
+    if (!this.snapshotReady || !this.issueEventsReady) {
+      this.queuedIssueEvents.push(event);
+      this.queuedIssueEvents.sort((a, b) => a.seq - b.seq);
+      return;
+    }
+    try {
+      await this.applyIssueEvents([event]);
+    } catch (error) {
+      this.options.onDebug?.(errorMessage(error));
     }
   }
 
@@ -624,7 +725,7 @@ export class KanbanDesktopWsClient {
     if (deliveries.length === 0) {
       return;
     }
-    if (!this.snapshotReady) {
+    if (!this.snapshotReady || !this.issueEventsReady) {
       this.queuedDeliveries.push(...deliveries);
       this.queuedDeliveries.sort((a, b) => a.deliverySeq - b.deliverySeq);
       return;
@@ -645,7 +746,78 @@ export class KanbanDesktopWsClient {
     await this.applyAndAckDeliveries(deliveries);
   }
 
-  private async pullDeliveries(afterDeliverySeq: number) {
+  private async flushQueuedIssueEvents() {
+    if (this.queuedIssueEvents.length === 0) {
+      return;
+    }
+    const events = this.queuedIssueEvents;
+    this.queuedIssueEvents = [];
+    await this.applyIssueEvents(events);
+  }
+
+  private async pullIssueEvents(afterSeq: number) {
+    let nextAfter = Math.max(0, Math.floor(afterSeq));
+    for (;;) {
+      const result = await this.request<{ events?: unknown[]; hasMore?: boolean; nextAfterSeq?: number; lastSeq?: number }>("event.pull", {
+        projectId: this.config?.selectedProjectId ?? "default",
+        afterSeq: nextAfter,
+        limit: 100
+      });
+      const events = normalizeIssueEvents(result);
+      if (events.length > 0) {
+        const applied = await this.applyIssueEvents(events);
+        if (!applied) {
+          return;
+        }
+        nextAfter = Math.max(nextAfter, events[events.length - 1].seq);
+      }
+      if (!result.hasMore) {
+        const lastSeq = readNonNegativeInteger(result.lastSeq);
+        if (lastSeq > 0) {
+          this.advanceIssueCursor(lastSeq);
+        }
+        return;
+      }
+      const responseNextAfter = readNonNegativeInteger(result.nextAfterSeq);
+      if (responseNextAfter > nextAfter) {
+        nextAfter = responseNextAfter;
+      } else if (events.length === 0) {
+        return;
+      }
+    }
+  }
+
+  private async applyIssueEvents(events: KanbanDesktopIssueEvent[]) {
+    for (const event of events.sort((a, b) => a.seq - b.seq)) {
+      const cursor = normalizeSyncCursor(this.options.getSyncCursor?.());
+      if (event.seq <= cursor.lastAppliedRevision) {
+        continue;
+      }
+      const result = this.options.onIssueEvent
+        ? await this.options.onIssueEvent(event)
+        : { ok: true, lastAppliedRevision: event.seq };
+      if (!result.ok) {
+        this.options.onDebug?.(result.message || t("kanban.ws.operationFailed", { type: event.eventType }));
+        return false;
+      }
+      this.advanceIssueCursor(Math.max(cursor.lastAppliedRevision, result.lastAppliedRevision ?? 0, event.seq));
+    }
+    return true;
+  }
+
+  private advanceIssueCursor(lastAppliedRevision: number) {
+    const cursor = normalizeSyncCursor(this.options.getSyncCursor?.());
+    const revision = Math.max(cursor.lastAppliedRevision, Math.max(0, Math.floor(lastAppliedRevision)));
+    if (revision <= cursor.lastAppliedRevision) {
+      return;
+    }
+    this.options.onSyncCursor?.({
+      ...cursor,
+      lastAppliedRevision: revision
+    });
+  }
+
+  private async pullCommandDeliveries(afterDeliverySeq: number) {
     let nextAfter = Math.max(0, Math.floor(afterDeliverySeq));
     for (;;) {
       const result = await this.request<{ items?: unknown[]; hasMore?: boolean; nextDeliverySeq?: number }>("sync.pull", {

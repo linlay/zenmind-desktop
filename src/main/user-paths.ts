@@ -236,22 +236,6 @@ export function getDesktopWebappLogsRoot(app: App, webappId: string) {
   return path.join(getDesktopWebappsLogsRoot(app), webappId);
 }
 
-export function getLegacyDesktopWebsitesDataRoot(app: App) {
-  return path.join(getRuntimeDataRoot(app), "websites");
-}
-
-export function getLegacyDesktopWebsitesConfigRoot(app: App) {
-  return path.join(getDataRoot(app), "config", "websites");
-}
-
-export function getLegacyDesktopWebsitesStateRoot(app: App) {
-  return path.join(getDataRoot(app), "state", "websites");
-}
-
-export function getLegacyDesktopWebsitesLogsRoot(app: App) {
-  return path.join(getDataRoot(app), "logs", "websites");
-}
-
 export function getDesktopInitialEnvDataRoot(app: App) {
   return path.join(getRuntimeDataRoot(app), "env-initial");
 }

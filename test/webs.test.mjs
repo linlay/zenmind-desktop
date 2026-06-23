@@ -25,15 +25,22 @@ const {
   writeWebOrderKeys
 } = require("../dist-electron/main/webs/order-store.js");
 const {
-  getWebsMigrationPath
-} = require("../dist-electron/main/webs/migration.js");
-const {
   webappRuntime
 } = require("../dist-electron/main/webs/webapps/runtime.js");
 const {
   __testInternals: webappTemplateInstallerInternals,
   installBundledWebappTemplates
 } = require("../dist-electron/main/webs/webapps/template-installer.js");
+const {
+  cleanupObsoleteWebsitesLayout
+} = require("../dist-electron/main/obsolete-websites-cleanup.js");
+const {
+  createResourceDirectoryWatcher
+} = require("../dist-electron/main/resource-directory-watcher.js");
+const {
+  getDesktopPetsDataRoot,
+  getPluginsRoot
+} = require("../dist-electron/main/user-paths.js");
 
 function createApp(homePath, appPath = process.cwd()) {
   return {
@@ -60,10 +67,6 @@ function websitesRoot(homePath) {
 
 function webappsRoot(homePath) {
   return path.join(desktopRoot(homePath), "data", "webs", "webapps");
-}
-
-function legacyWebsitesRoot(homePath) {
-  return path.join(desktopRoot(homePath), "data", "websites");
 }
 
 function writeJson(filePath, value) {
@@ -140,18 +143,6 @@ server.listen(port, host);
   return appDir;
 }
 
-function writeLegacyLocalApp(root, id) {
-  const appDir = writeWebapp(root, id);
-  const manifest = JSON.parse(fs.readFileSync(path.join(appDir, "webapp.json"), "utf8"));
-  fs.rmSync(path.join(appDir, "webapp.json"), { force: true });
-  writeJson(path.join(appDir, "website.json"), {
-    ...manifest,
-    schemaVersion: 2,
-    kind: "local-app"
-  });
-  return appDir;
-}
-
 function readUrl(target) {
   return new Promise((resolve, reject) => {
     http.get(target, (res) => {
@@ -164,6 +155,76 @@ function readUrl(target) {
       }));
     }).on("error", reject);
   });
+}
+
+function createFakeWatchHarness() {
+  const watchers = [];
+  const timers = [];
+  const fsImpl = {
+    existsSync: fs.existsSync,
+    mkdirSync: fs.mkdirSync,
+    readdirSync: fs.readdirSync,
+    statSync: fs.statSync,
+    watch(targetPath, _options, listener) {
+      const watcher = {
+        targetPath,
+        listener,
+        closed: false,
+        close() {
+          watcher.closed = true;
+        }
+      };
+      watchers.push(watcher);
+      return watcher;
+    }
+  };
+
+  function setTimeoutImpl(callback, ms) {
+    const timer = {
+      callback,
+      ms,
+      cleared: false
+    };
+    timers.push(timer);
+    return timer;
+  }
+
+  function clearTimeoutImpl(timer) {
+    timer.cleared = true;
+  }
+
+  function emit(targetPath, eventType = "rename", filename = "resource") {
+    for (const watcher of watchers) {
+      if (!watcher.closed && watcher.targetPath === targetPath) {
+        watcher.listener(eventType, filename);
+      }
+    }
+  }
+
+  function flushTimers() {
+    const pending = timers.splice(0);
+    for (const timer of pending) {
+      if (!timer.cleared) {
+        timer.callback();
+      }
+    }
+  }
+
+  function activePaths() {
+    return watchers
+      .filter((watcher) => !watcher.closed)
+      .map((watcher) => watcher.targetPath)
+      .sort();
+  }
+
+  return {
+    fsImpl,
+    setTimeoutImpl,
+    clearTimeoutImpl,
+    emit,
+    flushTimers,
+    activePaths
+  };
 }
 
 test("web stores read canonical website and webapp manifests", (t) => {
@@ -223,53 +284,95 @@ test("webapp store rejects unsafe manifests", (t) => {
   assert.equal(warnings.length, 3);
 });
 
-test("web migration copies legacy websites, webapps, order, state, logs, and custom sidebar source", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webs-migration-"));
+test("obsolete websites cleanup removes legacy paths and keeps canonical webs", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webs-cleanup-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   const desktop = desktopRoot(homePath);
 
-  writeWebsite(legacyWebsitesRoot(homePath), "docs", { url: "https://docs.example.com/" });
-  writeLegacyLocalApp(legacyWebsitesRoot(homePath), "local-demo");
-  writeJson(path.join(desktop, "config", "desktop", "custom-sidebar-items.json"), {
-    items: [
-      { id: "notes", label: "Notes", url: "https://notes.example.com/" }
-    ]
-  });
-  writeJson(path.join(desktop, "config", "websites", "order.json"), {
-    ids: ["custom:notes", "docs"]
-  });
-  writeJson(path.join(desktop, "config", "desktop", "profile.json"), {
-    navigation: {
-      websiteOrder: ["local-only"]
-    }
-  });
-  writeJson(path.join(desktop, "state", "websites", "local-demo", "runtime.json"), { status: "stopped" });
-  fs.mkdirSync(path.join(desktop, "logs", "websites", "local-demo"), { recursive: true });
-  fs.writeFileSync(path.join(desktop, "logs", "websites", "local-demo", "main.log"), "legacy log", "utf8");
+  writeJson(path.join(desktop, "data", "websites", "legacy", "website.json"), { kind: "website" });
+  writeJson(path.join(desktop, "config", "websites", "order.json"), { ids: ["legacy"] });
+  writeJson(path.join(desktop, "state", "websites", "legacy", "runtime.json"), { status: "stopped" });
+  writeJson(path.join(desktop, "logs", "websites", "legacy", "main.json"), { ok: true });
+  writeJson(path.join(desktop, "config", "desktop", "custom-sidebar-items.json"), { items: [] });
+  writeJson(path.join(desktop, "state", "webs", "migration.json"), { migratedAt: "old" });
+  writeWebsite(websitesRoot(homePath), "docs");
+  writeWebapp(webappsRoot(homePath), "local-demo");
+  writeJson(path.join(desktop, "state", "webs", "webapps", "local-demo", "runtime.json"), { status: "running" });
 
-  const items = readWebItems(app);
-  assert.deepEqual(items.map((item) => item.entryKey).sort(), [
-    "webapp:local-demo",
-    "website:docs",
-    "website:notes"
-  ]);
+  const result = cleanupObsoleteWebsitesLayout(app);
+  assert.equal(result.failed.length, 0);
+  assert.equal(result.removed.length, 6);
+  assert.equal(fs.existsSync(path.join(desktop, "data", "websites")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "config", "websites")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "state", "websites")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "logs", "websites")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "config", "desktop", "custom-sidebar-items.json")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "state", "webs", "migration.json")), false);
   assert.equal(fs.existsSync(path.join(websitesRoot(homePath), "docs", "website.json")), true);
-  assert.equal(fs.existsSync(path.join(websitesRoot(homePath), "notes", "website.json")), true);
   assert.equal(fs.existsSync(path.join(webappsRoot(homePath), "local-demo", "webapp.json")), true);
-  assert.equal(fs.existsSync(path.join(legacyWebsitesRoot(homePath), "local-demo", "website.json")), true);
   assert.equal(fs.existsSync(path.join(desktop, "state", "webs", "webapps", "local-demo", "runtime.json")), true);
-  assert.equal(fs.readFileSync(path.join(desktop, "logs", "webs", "webapps", "local-demo", "main.log"), "utf8"), "legacy log");
+});
 
-  const order = JSON.parse(fs.readFileSync(path.join(desktop, "config", "webs", "order.json"), "utf8"));
-  assert.deepEqual(order.entryKeys, ["website:notes", "website:docs", "website:local-only"]);
+test("resource directory watcher debounces and refreshes web, pet, and plugin domains", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-watcher-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const petRoot = getDesktopPetsDataRoot(app);
+  const pluginRoot = getPluginsRoot(app);
+  const pluginVersionRoot = path.join(pluginRoot, "alpha-plugin", "1.0.0");
+  fs.mkdirSync(path.join(websitesRoot(homePath), "docs"), { recursive: true });
+  fs.mkdirSync(webappsRoot(homePath), { recursive: true });
+  fs.mkdirSync(path.join(desktopRoot(homePath), "config", "webs"), { recursive: true });
+  fs.mkdirSync(path.join(petRoot, "pony"), { recursive: true });
+  fs.mkdirSync(pluginVersionRoot, { recursive: true });
 
-  const migration = JSON.parse(fs.readFileSync(getWebsMigrationPath(app), "utf8"));
-  assert.equal(migration.data.websites, 2);
-  assert.equal(migration.data.webapps, 1);
-  assert.equal(migration.runtime.stateDirs, 1);
-  assert.equal(migration.runtime.logDirs, 1);
+  const harness = createFakeWatchHarness();
+  const changes = [];
+  const watcher = createResourceDirectoryWatcher({
+    app,
+    platform: "darwin",
+    debounceMs: 50,
+    fsImpl: harness.fsImpl,
+    setTimeoutImpl: harness.setTimeoutImpl,
+    clearTimeoutImpl: harness.clearTimeoutImpl,
+    onWebsChanged: () => changes.push("webs"),
+    onPetsChanged: () => changes.push("pets"),
+    onPluginsChanged: () => changes.push("plugins")
+  });
+  watcher.start();
+
+  assert.ok(harness.activePaths().includes(websitesRoot(homePath)));
+  assert.ok(harness.activePaths().includes(path.join(websitesRoot(homePath), "docs")));
+  assert.ok(harness.activePaths().includes(petRoot));
+  assert.ok(harness.activePaths().includes(path.join(petRoot, "pony")));
+  assert.ok(harness.activePaths().includes(pluginRoot));
+  assert.ok(harness.activePaths().includes(path.join(pluginRoot, "alpha-plugin")));
+  assert.ok(harness.activePaths().includes(pluginVersionRoot));
+
+  harness.emit(websitesRoot(homePath));
+  harness.emit(websitesRoot(homePath), "change", "website.json");
+  harness.flushTimers();
+  assert.deepEqual(changes, ["webs"]);
+
+  fs.mkdirSync(path.join(petRoot, "desk-cat"), { recursive: true });
+  harness.emit(petRoot);
+  harness.flushTimers();
+  assert.deepEqual(changes, ["webs", "pets"]);
+  assert.ok(harness.activePaths().includes(path.join(petRoot, "desk-cat")));
+
+  const nextPluginVersionRoot = path.join(pluginRoot, "beta-plugin", "2.0.0");
+  fs.mkdirSync(nextPluginVersionRoot, { recursive: true });
+  harness.emit(pluginRoot);
+  harness.flushTimers();
+  assert.deepEqual(changes, ["webs", "pets", "plugins"]);
+  assert.ok(harness.activePaths().includes(path.join(pluginRoot, "beta-plugin")));
+  assert.ok(harness.activePaths().includes(nextPluginVersionRoot));
+
+  watcher.stop();
+  assert.deepEqual(harness.activePaths(), []);
 });
 
 test("web order stores entryKey values and sorts mixed website and webapp entries", (t) => {
