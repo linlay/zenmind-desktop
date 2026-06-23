@@ -4093,6 +4093,36 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.doesNotMatch(trayController, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
 });
 
+test("quit menu entries skip confirmation except keyboard accelerator", () => {
+  const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appMenu = readSourceFile("src", "main", "app-shell", "app-menu.ts");
+  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const trayOptions = trayController.match(/export type AppTrayControllerOptions = \{[\s\S]*?\n\};/u)?.[0] ?? "";
+  const trayQuitMenuItem = trayController.match(/label: t\("tray\.quit"\),[\s\S]*?\n      \}/u)?.[0] ?? "";
+  const trayRuntimeOptions = runtime.match(/new AppTrayController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
+  const appMenuRuntimeOptions = runtime.match(/installApplicationMenu\(\{[\s\S]*?\n    \}\);/u)?.[0] ?? "";
+  const macQuitMenuItem = appMenu.match(/label: options\.t\("menu\.quit", \{ appName: options\.appName \}\),[\s\S]*?\n            \}/u)?.[0] ?? "";
+
+  assert.match(trayOptions, /quitWithoutConfirmation:\s*\(\) => void;/);
+  assert.match(trayQuitMenuItem, /click:\s*\(\) => this\.options\.quitWithoutConfirmation\(\)/);
+  assert.doesNotMatch(trayController, /this\.options\.quit\(\)/);
+  assert.match(trayRuntimeOptions, /quitWithoutConfirmation:\s*options\.beginAppQuitWithoutConfirmation/);
+  assert.doesNotMatch(trayRuntimeOptions, /quit:\s*options\.requestAppQuit/);
+
+  assert.match(appMenu, /quitWithoutConfirmation:\s*\(\) => void;/);
+  assert.match(macQuitMenuItem, /accelerator:\s*"Command\+Q"/);
+  assert.match(macQuitMenuItem, /if \(event\.triggeredByAccelerator\)/);
+  assert.match(macQuitMenuItem, /options\.requestQuit\(\);/);
+  assert.match(macQuitMenuItem, /options\.quitWithoutConfirmation\(\);/);
+  assert(
+    indexOfRequired(macQuitMenuItem, "options.requestQuit();") <
+      indexOfRequired(macQuitMenuItem, "options.quitWithoutConfirmation();"),
+    "Command+Q should keep the confirmation path before menu clicks quit without confirmation"
+  );
+  assert.match(appMenuRuntimeOptions, /requestQuit:\s*options\.requestAppQuit/);
+  assert.match(appMenuRuntimeOptions, /quitWithoutConfirmation:\s*options\.beginAppQuitWithoutConfirmation/);
+});
+
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
