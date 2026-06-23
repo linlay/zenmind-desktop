@@ -26,66 +26,6 @@ export function fixShellScriptPermissions(rootDir: string) {
   }
 }
 
-function patchShellProgramCommonForLayeredLayout(programDir: string) {
-  const scriptPath = path.join(programDir, "scripts", "program-common.sh");
-  if (!fs.existsSync(scriptPath)) {
-    return;
-  }
-
-  let content = fs.readFileSync(scriptPath, "utf8");
-  const original = content;
-  content = content
-    .replace(/ENV_FILE="\$BUNDLE_ROOT\/\.env"/gu, 'ENV_FILE="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/.env"')
-    .replace(/CONFIG_DIR="\$BUNDLE_ROOT\/configs"/gu, 'CONFIG_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs"')
-    .replace(/CONFIG_ENV_DIR="\$BUNDLE_ROOT\/configs\/environments"/gu, 'CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"')
-    .replace(/DATA_DIR="\$BUNDLE_ROOT\/data"/gu, 'DATA_DIR="${SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
-    .replace(/RUN_DIR="\$BUNDLE_ROOT\/run"/gu, 'RUN_DIR="${SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
-    .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
-    .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
-    .replace(/nohup "\$BACKEND_BIN" >>"\$LOG_FILE" 2>&1 &/gu, 'nohup "$BACKEND_BIN" </dev/null >>"$LOG_FILE" 2>&1 &')
-    .replace(/nohup "\$NODE_CMD" "\$BACKEND_ENTRY" >>"\$LOG_FILE" 2>&1 &/gu, 'nohup "$NODE_CMD" "$BACKEND_ENTRY" </dev/null >>"$LOG_FILE" 2>&1 &')
-    .replace(
-      /cp -R -n "\$source_env_dir"\/\. "\$CONFIG_ENV_DIR"\/\n/gu,
-      [
-        'local entry',
-        '    for entry in "$source_env_dir"/*; do',
-        '      [[ -e "$entry" ]] || continue',
-        '      local target="$CONFIG_ENV_DIR/$(basename "$entry")"',
-        '      if [[ ! -e "$target" ]]; then',
-        '        cp -R "$entry" "$target"',
-        '      fi',
-        '    done',
-        ''
-      ].join("\n")
-    );
-
-  if (content !== original) {
-    fs.writeFileSync(scriptPath, content, "utf8");
-  }
-}
-
-function patchPowerShellProgramCommonForLayeredLayout(programDir: string) {
-  const scriptPath = path.join(programDir, "scripts", "program-common.ps1");
-  if (!fs.existsSync(scriptPath)) {
-    return;
-  }
-
-  let content = fs.readFileSync(scriptPath, "utf8");
-  const original = content;
-  content = content
-    .replace(/\$Script:EnvFile\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]\.env['"]/gu, '$Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) ".env"')
-    .replace(/\$Script:ConfigDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]/gu, '$Script:ConfigDir = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs"')
-    .replace(/\$Script:ConfigEnvDir\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]\)\s+['"]environments['"]/gu, '$Script:ConfigEnvDir = Join-Path (Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs") "environments"')
-    .replace(/\$Script:DataDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]/gu, '$Script:DataDir = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
-    .replace(/\$Script:RunDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]/gu, '$Script:RunDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
-    .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
-    .replace(/\$Script:ErrorLogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:ErrorLogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1');
-
-  if (content !== original) {
-    fs.writeFileSync(scriptPath, content, "utf8");
-  }
-}
-
 function patchAgentPlatformRuntimeNames(programDir: string) {
   const shellPath = path.join(programDir, "scripts", "program-common.sh");
   if (fs.existsSync(shellPath)) {
@@ -314,8 +254,6 @@ function patchAgentPlatformDeployDiagnostics(programDir: string) {
 }
 
 export function patchProgramCommonForLayeredLayout(programDir: string) {
-  patchShellProgramCommonForLayeredLayout(programDir);
-  patchPowerShellProgramCommonForLayeredLayout(programDir);
   const manifestPath = path.join(programDir, "manifest.json");
   if (!fs.existsSync(manifestPath)) {
     return;

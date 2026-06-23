@@ -66,16 +66,6 @@ function getIdentityCenterLayout(app: App): IdentityCenterAuthLayout {
   };
 }
 
-function buildLayoutEnv(layout: IdentityCenterAuthLayout): NodeJS.ProcessEnv {
-  return {
-    SERVICE_PROGRAM_DIR: layout.programDir,
-    SERVICE_CONFIG_DIR: layout.configDir,
-    SERVICE_DATA_DIR: layout.dataDir,
-    SERVICE_STATE_DIR: layout.stateDir,
-    SERVICE_LOG_DIR: layout.logDir
-  };
-}
-
 function readIdentityCenterEnv(layout: IdentityCenterAuthLayout) {
   const content = fs.existsSync(layout.envPath) ? fs.readFileSync(layout.envPath, "utf8") : "";
   return parseEnvFileContent(content);
@@ -184,7 +174,6 @@ function runIdentityCenterScript(
   return new Promise((resolve, reject) => {
     const childEnv: NodeJS.ProcessEnv = {
       ...process.env,
-      ...buildLayoutEnv(layout),
       ...env
     };
 

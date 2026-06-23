@@ -80,16 +80,6 @@ export function getInitializationStatePath(layoutOrInstallDir: ServiceLayout | s
   return path.join(layoutOrInstallDir.stateDir, INITIALIZATION_STATE_FILE);
 }
 
-export function buildServiceLayoutEnv(layout: ServiceLayout): NodeJS.ProcessEnv {
-  return {
-    SERVICE_PROGRAM_DIR: layout.programDir,
-    SERVICE_CONFIG_DIR: layout.configDir,
-    SERVICE_DATA_DIR: layout.dataDir,
-    SERVICE_STATE_DIR: layout.stateDir,
-    SERVICE_LOG_DIR: layout.logDir
-  };
-}
-
 export function getBuiltinServiceVersionRoot(app: App, serviceId: ServiceId) {
   return path.join(getServicesRoot(app), serviceId);
 }

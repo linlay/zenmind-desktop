@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { App } from "electron";
+import yaml from "js-yaml";
 import type {
   ServiceCommandResult,
   ServiceConfigReadResult,
@@ -35,7 +36,6 @@ import {
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir } from "../../archive-utils";
 import {
-  buildServiceLayoutEnv,
   getInitializationStatePath,
   getInstallDir,
   getServiceLayout,
@@ -60,13 +60,6 @@ import {
   identityCenterInstallNeedsRefresh,
   serviceInstallNeedsRefresh
 } from "./install-refresh";
-import {
-  formatDesktopAgentPlatformRuntimeRoot,
-  hasConfiguredAgentPlatformRuntimePath,
-  resolveAgentPlatformAgentsDir,
-  resolveAgentPlatformInitializationRuntimeRoot,
-  resolvePreferredAgentPlatformRuntimeRoot
-} from "./runtime-paths";
 import {
   resolveNodeBin
 } from "./command-env";
@@ -356,9 +349,152 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
 ]);
 const MAX_TCP_PORT = 65535;
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
+const AGENT_PLATFORM_LEGACY_PORT_ENV_KEY = "SERVER_PORT";
+const AGENT_PLATFORM_RUNTIME_CONFIG_RELATIVE_PATH = path.join("configs", "runtime.yml");
+
+type ServiceCommandKind = "start" | "deploy" | "stop";
 
 function isHostManagedService(service: ServiceDefinition) {
   return isHostManagedAgentWebclientService(service);
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseTcpPortValue(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value > 0 && value <= MAX_TCP_PORT ? value : null;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim().replace(/^['"]|['"]$/gu, "");
+  if (!trimmed) {
+    return null;
+  }
+  if (/^\d+$/u.test(trimmed)) {
+    const port = Number.parseInt(trimmed, 10);
+    return port > 0 && port <= MAX_TCP_PORT ? port : null;
+  }
+
+  const match = /:(\d+)(?:[/\s]|$)/u.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+  const port = Number.parseInt(match[1] ?? "", 10);
+  return port > 0 && port <= MAX_TCP_PORT ? port : null;
+}
+
+function getAgentPlatformRuntimeConfigPath(layout: ServiceLayout) {
+  return resolveConfigPath(layout, AGENT_PLATFORM_RUNTIME_CONFIG_RELATIVE_PATH);
+}
+
+function readAgentPlatformRuntimeConfig(layout: ServiceLayout) {
+  const configPath = getAgentPlatformRuntimeConfigPath(layout);
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+  const parsed = yaml.load(fs.readFileSync(configPath, "utf8"));
+  return isObjectRecord(parsed) ? parsed : {};
+}
+
+function readAgentPlatformRuntimeServerPort(layout: ServiceLayout) {
+  const config = readAgentPlatformRuntimeConfig(layout);
+  const server = isObjectRecord(config.server) ? config.server : {};
+  return parseTcpPortValue(server.port);
+}
+
+function writeAgentPlatformRuntimeServerPort(layout: ServiceLayout, port: number) {
+  const configPath = getAgentPlatformRuntimeConfigPath(layout);
+  const config = readAgentPlatformRuntimeConfig(layout);
+  const server = isObjectRecord(config.server) ? { ...config.server } : {};
+  server.port = port;
+  const nextConfig = {
+    ...config,
+    server
+  };
+  ensureDir(path.dirname(configPath));
+  fs.writeFileSync(configPath, yaml.dump(nextConfig, { lineWidth: 120, noRefs: true }), "utf8");
+}
+
+function removeEnvFileKeys(content: string, keys: readonly string[]) {
+  const blocked = new Set(keys);
+  const nextLines = content
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return true;
+      }
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        return true;
+      }
+      const key = trimmed.slice(0, separatorIndex).trim();
+      return !blocked.has(key);
+    });
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
+function migrateAgentPlatformLegacyServerPort(
+  layout: ServiceLayout,
+  content: string,
+  options: { overwriteRuntimePort?: boolean } = {}
+) {
+  const env = parseEnvFileContent(content);
+  const legacyPort = parseTcpPortValue(env.get(AGENT_PLATFORM_LEGACY_PORT_ENV_KEY) ?? "");
+  if (legacyPort && (options.overwriteRuntimePort || !readAgentPlatformRuntimeServerPort(layout))) {
+    writeAgentPlatformRuntimeServerPort(layout, legacyPort);
+  }
+  return removeEnvFileKeys(content, [AGENT_PLATFORM_LEGACY_PORT_ENV_KEY]);
+}
+
+function getAgentPlatformCommandPort(service: ServiceDefinition, layout: ServiceLayout) {
+  if (service.id !== "agent-platform") {
+    return parsePort(service, readEnvFile(layout.envPath));
+  }
+  return readAgentPlatformRuntimeServerPort(layout) ?? parsePort(service, readEnvFile(layout.envPath));
+}
+
+function getServiceNetworkEnv(service: ServiceDefinition, layout: ServiceLayout, env: Map<string, string>) {
+  if (service.id !== "agent-platform") {
+    return env;
+  }
+  const port = readAgentPlatformRuntimeServerPort(layout) ?? parsePort(service, env);
+  if (!port || !service.web.portEnvKey) {
+    return env;
+  }
+  const next = new Map(env);
+  next.set(service.web.portEnvKey, String(port));
+  return next;
+}
+
+function appendAgentPlatformLayoutFlags(
+  service: ServiceDefinition,
+  command: string[],
+  layout: ServiceLayout,
+  kind: ServiceCommandKind
+) {
+  if (service.id !== "agent-platform") {
+    return command;
+  }
+  if (kind === "stop") {
+    return [...command, "--state-dir", layout.stateDir];
+  }
+  return [
+    ...command,
+    "--config-dir", layout.configDir,
+    "--runtime-dir", layout.dataDir,
+    "--state-dir", layout.stateDir,
+    "--log-dir", layout.logDir,
+    "--port", String(getAgentPlatformCommandPort(service, layout))
+  ];
 }
 
 function collectPrerequisites(
@@ -688,11 +824,13 @@ async function initializeServiceInternal(
       fixShellScriptPermissions(installDir);
       patchProgramCommonForLayeredLayout(layout.programDir);
       prepareServiceExecutionLayout(service, layout);
+      ensureDefaultConfig(service, layout);
       if (service.id === "agent-container-hub") {
         ensureAgentContainerHubDesktopConfig(layout);
       }
       if (service.deployCommand) {
-        await runExecFile(service.deployCommand[0], service.deployCommand.slice(1), installDir, {
+        const deployCommand = appendAgentPlatformLayoutFlags(service, service.deployCommand, layout, "deploy");
+        await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, {
           env: buildDesktopServiceCommandEnv(app, service, layout, undefined)
         });
       }
@@ -798,8 +936,9 @@ export async function getServiceState(
   });
 
   const env = installed ? readEnvFile(layout.envPath) : new Map<string, string>();
-  const port = parsePort(service, env);
-  const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
+  const networkEnv = getServiceNetworkEnv(service, layout, env);
+  const port = parsePort(service, networkEnv);
+  const webUrl = installed ? getWebUrl(service, networkEnv) : getWebUrl(service, new Map<string, string>());
   const pidFromFile = installed
     ? readManagedPidFile(pidFilePaths, installDir, {
         isProcessRunningImpl: isProcessRunning,
@@ -1279,6 +1418,9 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
     if (service.id === "agent-webclient" && AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS.has(bindingKey)) {
       continue;
     }
+    if (service.id === "agent-platform" && bindingKey === AGENT_PLATFORM_LEGACY_PORT_ENV_KEY) {
+      continue;
+    }
     const currentValue = env.get(bindingKey) ?? "";
 
     if (binding.onlyIfDefault) {
@@ -1372,6 +1514,9 @@ function syncCoreServiceDefaultPortEnv(
   options: { force?: boolean } = {}
 ) {
   if (!CORE_SERVICE_IDS.has(service.id)) {
+    return;
+  }
+  if (service.id === "agent-platform") {
     return;
   }
 
@@ -1520,6 +1665,15 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
       content = normalizedContent;
     }
   }
+  if (service.id === "agent-platform") {
+    const migratedContent = migrateAgentPlatformLegacyServerPort(layout, content);
+    const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(migratedContent, layout);
+    if (normalizedContent !== content) {
+      ensureDir(path.dirname(envPath));
+      fs.writeFileSync(envPath, normalizedContent, "utf8");
+      content = normalizedContent;
+    }
+  }
 
   const env = parseEnvFileContent(content);
   const updates = new Map<string, string>();
@@ -1533,8 +1687,6 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
 
   if (service.id === "agent-platform") {
     await syncAgentPlatformContainerHubUrl(app, env, updates, { force: true });
-    const runtimeRoot = resolveAgentPlatformInitializationRuntimeRoot(app);
-    updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, runtimeRoot));
   }
 
   if (service.id === "agent-webclient") {
@@ -1796,7 +1948,8 @@ async function collectDesktopCapabilityRequirementIssues(
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
   const envPath = layout.envPath;
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-  const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent, layout);
+  const migratedContent = migrateAgentPlatformLegacyServerPort(layout, currentContent);
+  const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(migratedContent, layout);
   if (normalizedContent !== currentContent) {
     ensureDir(path.dirname(envPath));
     fs.writeFileSync(envPath, normalizedContent, "utf8");
@@ -1808,11 +1961,6 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   await syncAgentPlatformContainerHubUrl(app, env, updates);
 
   applyAgentPlatformWindowsHostShellDefaults(env, updates);
-
-  const desktopRuntimeRoot = resolvePreferredAgentPlatformRuntimeRoot(app);
-  if (!hasConfiguredAgentPlatformRuntimePath(env)) {
-    updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, desktopRuntimeRoot));
-  }
 
   if (updates.size > 0) {
     normalizeShellSourcedAgentPlatformEnvUpdates(updates);
@@ -1866,6 +2014,7 @@ type RunServiceCommandOptions = {
   refreshBuiltinAsset?: boolean;
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  commandKind?: ServiceCommandKind;
   stateReadOptions?: ServiceStateReadOptions;
 };
 
@@ -1929,11 +2078,10 @@ function getDesktopStartCommandOptions(app: App, service: ServiceDefinition): Ru
 function buildDesktopServiceCommandEnv(
   app: App,
   service: ServiceDefinition,
-  layout: ServiceLayout,
+  _layout: ServiceLayout,
   overrides: NodeJS.ProcessEnv | undefined
 ) {
   return {
-    ...buildServiceLayoutEnv(layout),
     ...getPluginBridgeEnv(app, service),
     ...getPluginSettingsEnv(app, service),
     ...(overrides ?? {}),
@@ -1949,7 +2097,6 @@ function buildDesktopServiceCommandEnvForTests(
 ) {
   if ("programDir" in serviceOrLayout) {
     return {
-      ...buildServiceLayoutEnv(serviceOrLayout),
       ...((layoutOrOverrides as NodeJS.ProcessEnv | undefined) ?? {}),
       DESKTOP_DEVICE_ID: getDesktopDeviceId(app)
     };
@@ -2022,7 +2169,13 @@ async function runServiceCommand(
     }
     const layout = getServiceLayout(app, service);
     prepareServiceExecutionLayout(service, layout);
-    await runExecFile(command[0], command.slice(1), installDir, {
+    const commandForExec = appendAgentPlatformLayoutFlags(
+      service,
+      command,
+      layout,
+      options.commandKind ?? "start"
+    );
+    await runExecFile(commandForExec[0], commandForExec.slice(1), installDir, {
       timeoutMs: options.timeoutMs,
       env: buildDesktopServiceCommandEnv(app, service, layout, options.env)
     });
@@ -2192,6 +2345,7 @@ async function startServiceInternal(
           t("service.started", { name: service.name }),
           {
             ...getDesktopStartCommandOptions(app, service),
+            commandKind: "start",
             stateReadOptions: options.commandStateReadOptions ?? options.stateReadOptions
           }
         );
@@ -2285,7 +2439,8 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   }
 
   const result = await runServiceCommand(app, service, service.stopCommand, t("service.stopped", { name: service.name }), {
-    refreshBuiltinAsset: false
+    refreshBuiltinAsset: false,
+    commandKind: "stop"
   });
   const installDir = getInstallDir(app, service);
   const layout = getServiceLayout(app, service);
@@ -2386,8 +2541,13 @@ export async function writeServiceConfig(
   const layout = getServiceLayout(app, service);
 
   const filePath = resolveConfigPath(layout, configFile.relativePath);
+  const nextContent = service.id === "agent-platform" && key === "env"
+    ? normalizeAgentPlatformEnvContentForSave(
+      migrateAgentPlatformLegacyServerPort(layout, content, { overwriteRuntimePort: true })
+    )
+    : content;
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, content, "utf8");
+  fs.writeFileSync(filePath, nextContent, "utf8");
   prepareServiceExecutionLayout(service, layout);
 
   const message =
@@ -2675,6 +2835,7 @@ async function stopServiceForShutdown(
     } else {
       await runServiceCommand(app, service, service.stopCommand, t("service.stopped", { name: service.name }), {
         refreshBuiltinAsset: false,
+        commandKind: "stop",
         timeoutMs
       });
     }

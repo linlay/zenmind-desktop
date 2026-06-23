@@ -13,7 +13,6 @@ import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices } from "../service-registry";
 import { runExecFile, type ExecResult } from "./command-runner";
 import {
-  buildServiceLayoutEnv,
   getServiceLayout,
   type ServiceLayout
 } from "./layout";
@@ -250,7 +249,6 @@ async function runCapabilityCommand(
     try {
       return await runExecFile(command[0], command.slice(1), layout.programDir, {
         env: {
-          ...buildServiceLayoutEnv(layout),
           ...Object.fromEntries(readEnvFile(layout.envPath)),
           ...env
         }
