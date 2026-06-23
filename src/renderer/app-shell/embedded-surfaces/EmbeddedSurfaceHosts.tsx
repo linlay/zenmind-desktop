@@ -175,10 +175,14 @@ export function PluginSurfaceHost({
 
 export function BuiltinBrowserSurfaceHost({
   active,
-  mounted
+  mounted,
+  assistantDockOpen,
+  onOpenAssistantDock
 }: {
   active: boolean;
   mounted: boolean;
+  assistantDockOpen?: boolean;
+  onOpenAssistantDock?: () => void;
 }) {
   if (!mounted) {
     return null;
@@ -192,6 +196,8 @@ export function BuiltinBrowserSurfaceHost({
         active={active}
         title={BUILTIN_BROWSER_SURFACE_LABEL}
         url={BUILTIN_BROWSER_DEFAULT_URL}
+        assistantDockOpen={assistantDockOpen}
+        onOpenAssistantDock={onOpenAssistantDock}
       />
     </EmbeddedSurfaceSuspense>
   );
@@ -200,11 +206,15 @@ export function BuiltinBrowserSurfaceHost({
 export function WebSurfaceHost({
   activeEntryKey,
   itemMap,
-  mountedEntryKeys
+  mountedEntryKeys,
+  assistantDockOpen,
+  onOpenAssistantDock
 }: {
   activeEntryKey: string | null;
   itemMap: Map<string, EmbeddedSidebarItem>;
   mountedEntryKeys: string[];
+  assistantDockOpen?: boolean;
+  onOpenAssistantDock?: () => void;
 }) {
   const { t } = useI18n();
   const visibleEntryKeys =
@@ -247,6 +257,8 @@ export function WebSurfaceHost({
             url={item.url}
             chrome={item.chrome}
             partition={resolveWebsiteSsoPartition(item)}
+            assistantDockOpen={assistantDockOpen}
+            onOpenAssistantDock={onOpenAssistantDock}
           />
         );
       })}
@@ -255,9 +267,13 @@ export function WebSurfaceHost({
 }
 
 export function ExternalItemRoute({
-  itemMap
+  itemMap,
+  assistantDockOpen,
+  onOpenAssistantDock
 }: {
   itemMap: Map<string, EmbeddedSidebarItem>;
+  assistantDockOpen?: boolean;
+  onOpenAssistantDock?: () => void;
 }) {
   const { t } = useI18n();
   const { itemId = "" } = useParams<{ itemId: string }>();
@@ -290,6 +306,8 @@ export function ExternalItemRoute({
         url={item.url}
         chrome={item.chrome}
         partition={resolveWebsiteSsoPartition(item)}
+        assistantDockOpen={assistantDockOpen}
+        onOpenAssistantDock={onOpenAssistantDock}
       />
     </EmbeddedSurfaceSuspense>
   );

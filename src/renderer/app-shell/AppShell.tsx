@@ -2662,11 +2662,15 @@ export function AppShell() {
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}
             mounted={shouldMountBuiltinBrowserSurface}
+            assistantDockOpen={assistantCopilotOpen}
+            onOpenAssistantDock={() => openAssistantDock()}
           />
           <WebSurfaceHost
             activeEntryKey={activeWebEntryKey}
             itemMap={webItemMap}
             mountedEntryKeys={mountedWebEntryKeys}
+            assistantDockOpen={assistantCopilotOpen}
+            onOpenAssistantDock={() => openAssistantDock()}
           />
           <Routes>
             <Route
@@ -2739,7 +2743,16 @@ export function AppShell() {
                 element={null}
               />
             ))}
-            <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
+            <Route
+              path="/external/:itemId"
+              element={
+                <ExternalItemRoute
+                  itemMap={experimentalItemMap}
+                  assistantDockOpen={assistantCopilotOpen}
+                  onOpenAssistantDock={() => openAssistantDock()}
+                />
+              }
+            />
             <Route path={BUILTIN_BROWSER_ROUTE} element={null} />
             <Route path="/webs/:entryKey" element={<WebRouteFallback itemMap={webItemMap} />} />
             <Route path="/service/:serviceId" element={null} />

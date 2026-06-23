@@ -2103,6 +2103,13 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {
   const appShell = readAppShellSource();
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
@@ -2124,6 +2131,12 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /assistantLauncherDisabled=\{isAgentWebclientMainRoute\}/);
   assert.match(appShell, /open=\{assistantCopilotOpen\}/);
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
+  assert.match(appShell, /<BuiltinBrowserSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
+  assert.match(appShell, /<WebSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
+  assert.match(appShell, /<ExternalItemRoute[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
+  assert.match(embeddedSurfaceHosts, /assistantDockOpen\?: boolean;/);
+  assert.match(embeddedSurfaceHosts, /onOpenAssistantDock\?: \(\) => void;/);
+  assert.match(embeddedSurfaceHosts, /<ExternalWebviewPage[\s\S]*?assistantDockOpen=\{assistantDockOpen\}[\s\S]*?onOpenAssistantDock=\{onOpenAssistantDock\}/);
   assert.match(appShell, /onRunningRunIdChange=\{setAssistantRunningRunId\}/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
   assert.match(appShell, /websiteAgentKey = activeWebEntry\?\.agentKey \|\| ""/);
@@ -3768,7 +3781,7 @@ test("external webview tabs use repeatable pointer reordering", () => {
   assert.doesNotMatch(externalWebviewPage, /onDragStart=\{\(event\) => handleTabDragStart\(event, tab\.id\)\}/);
 });
 
-test("external webview browser chrome omits bookmarks, DevTools, and manual debug entry", () => {
+test("external webview browser chrome omits bookmarks and debug entry while exposing copilot", () => {
   const externalWebviewPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
     "utf8"
@@ -3788,12 +3801,19 @@ test("external webview browser chrome omits bookmarks, DevTools, and manual debu
   assert.doesNotMatch(externalWebviewPage, /external-webview-debug-toggle/);
   assert.doesNotMatch(externalWebviewPage, /external-webview-debug-sidebar/);
   assert.doesNotMatch(externalWebviewPage, /manual_debug/);
+  assert.match(externalWebviewPage, /external-webview-copilot-button/);
+  assert.match(externalWebviewPage, /onClick=\{\(\) => onOpenAssistantDock\(\)\}/);
+  assert.match(externalWebviewPage, /SidebarIllustration[\s\S]*?sidebar-assistant-open[\s\S]*?sidebar-assistant-closed/);
+  assert.match(externalWebviewPage, /t\("sidebar\.copilot\.open", \{ appName: PRODUCT_NAME \}\)/);
+  assert.doesNotMatch(externalWebviewPage, /onCloseAssistantDock/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
   assert.doesNotMatch(externalWebviewPage, /window\.electronAPI\.webview\.openDevTools/);
   assert.doesNotMatch(externalWebviewPage, /external-webview-bookmarks/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-bookmark/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-devtools-toggle/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-debug/);
+  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\s*\{/);
+  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\.is-active\s*\{/);
   assert.doesNotMatch(appShell, /external-webview-debug-sidebar/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);

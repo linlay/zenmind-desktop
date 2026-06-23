@@ -5,6 +5,7 @@ import type {
   WheelEvent as ReactWheelEvent
 } from "react";
 import { useLocation } from "react-router-dom";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
 import {
   EXTRACT_STRUCTURED_SCRIPT,
@@ -22,6 +23,7 @@ import {
   registerCurrentPageExecutor,
   registerDesktopActionProviderForScope
 } from "../../services/desktopActionRegistry";
+import { SidebarIllustration } from "../../components/BrandMark";
 import { useI18n } from "../../i18n/useI18n";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
@@ -44,6 +46,8 @@ type ExternalWebviewPageProps = {
   surfaceLabel?: string;
   chrome?: "browser" | "app";
   partition?: string;
+  assistantDockOpen?: boolean;
+  onOpenAssistantDock?: () => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -468,7 +472,9 @@ export function ExternalWebviewPage({
   surfaceId,
   surfaceLabel,
   chrome = "browser",
-  partition
+  partition,
+  assistantDockOpen = false,
+  onOpenAssistantDock
 }: ExternalWebviewPageProps) {
   const { t } = useI18n();
   const location = useLocation();
@@ -1591,6 +1597,21 @@ export function ExternalWebviewPage({
               aria-label={t("externalWebview.address")}
             />
           </div>
+          {onOpenAssistantDock ? (
+            <button
+              type="button"
+              className={`external-webview-copilot-button${assistantDockOpen ? " is-active" : ""}`}
+              onClick={() => onOpenAssistantDock()}
+              aria-label={t("sidebar.copilot.open", { appName: PRODUCT_NAME })}
+              aria-expanded={assistantDockOpen}
+              title={t("sidebar.copilot.title")}
+            >
+              <SidebarIllustration
+                kind={assistantDockOpen ? "sidebar-assistant-open" : "sidebar-assistant-closed"}
+                className="external-webview-copilot-button-icon"
+              />
+            </button>
+          ) : null}
         </div>
         </div>
       )}

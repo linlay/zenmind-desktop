@@ -284,7 +284,8 @@
 
 .external-webview-tab-close,
 .external-webview-tab-add,
-.external-webview-toolbar-button {
+.external-webview-toolbar-button,
+.external-webview-copilot-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -322,7 +323,8 @@
 
 .external-webview-tab-close:hover,
 .external-webview-tab-add:hover,
-.external-webview-toolbar-button:hover:not(:disabled) {
+.external-webview-toolbar-button:hover:not(:disabled),
+.external-webview-copilot-button:hover {
   background: var(--browser-hover);
   color: var(--browser-ink);
 }
@@ -366,6 +368,30 @@
 .external-webview-toolbar-button:disabled {
   opacity: 0.38;
   cursor: not-allowed;
+}
+
+.external-webview-copilot-button {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.external-webview-copilot-button.is-active {
+  background: var(--browser-hover);
+  color: var(--browser-ink);
+}
+
+.external-webview-copilot-button-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.external-webview-copilot-button:not(.is-active) .external-webview-copilot-button-icon {
+  filter: grayscale(1) saturate(0) opacity(0.76);
 }
 
 .external-webview-toolbar-location {
