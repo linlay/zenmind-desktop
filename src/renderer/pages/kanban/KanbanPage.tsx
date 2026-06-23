@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -21,7 +21,17 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { DeleteOutlined, EyeOutlined, FlagOutlined, MessageOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import {
+  ArrowRightOutlined,
+  DeleteOutlined,
+  EyeOutlined,
+  FlagOutlined,
+  MessageOutlined,
+  RobotOutlined,
+  SettingOutlined,
+  ThunderboltOutlined,
+  UserOutlined
+} from "@ant-design/icons";
 import type {
   AssistantAttachment,
   AssistantEvent,
@@ -41,9 +51,10 @@ import {
   getAssistantNavAgentRecentChats,
   normalizeAssistantNavAgents
 } from "../../assistantNavigation";
-import { AgentIcon } from "../../app-shell/navigation/AgentIcon";
-import { useI18n } from "../../i18n/useI18n";
 import { PluginPage } from "../plugin/PluginPage";
+import { useI18n } from "../../i18n/useI18n";
+import { flattenKanbanProjectTree } from "./kanbanProjectTree";
+import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 
 type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "priority" | "severity" | "automation" | null;
@@ -80,11 +91,6 @@ type DisplayState = {
   priority: boolean;
 };
 
-type IssueCardPresentation = {
-  assigneeLabel: string;
-  assigneeTitle: string;
-};
-
 type KanbanIssueOriginPresentation = {
   projectLabel: string;
   title: string;
@@ -119,11 +125,6 @@ type KanbanContextMenu = {
   issueId: string;
   x: number;
   y: number;
-};
-
-type KanbanProjectTreeItem = {
-  project: KanbanProject;
-  level: number;
 };
 
 const KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000;
@@ -633,12 +634,74 @@ function getVisibleAssigneeName(issue: KanbanIssue, agents: AssistantNavAgentIte
   return trimmed;
 }
 
-function truncateKanbanAssigneeName(name: string) {
-  return Array.from(name.trim()).slice(0, 4).join("");
+function formatKanbanPersonLabel(value: string | null | undefined, fallback: string) {
+  const raw = (value ?? "").trim();
+  if (!raw) {
+    return fallback;
+  }
+  const deviceMatch = /^device:([0-9a-f]{8})/i.exec(raw);
+  if (deviceMatch) {
+    return `设备·${deviceMatch[1]}`;
+  }
+  const uuidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.exec(raw);
+  if (uuidMatch) {
+    return raw.slice(0, 8);
+  }
+  if (raw.length > 14) {
+    return `${raw.slice(0, 12)}…`;
+  }
+  return raw;
 }
 
-function getIssueCardAssigneeAvatarLabel(name: string) {
-  return Array.from(name.trim())[0]?.toUpperCase() ?? "";
+function getIssueCardWorkerPresentation(issue: KanbanIssue, t: TranslateFunction) {
+  if (issue.workerType === "agent" && issue.workerAgent?.trim()) {
+    const rawLabel = issue.workerAgent.trim();
+    return {
+      icon: <RobotOutlined />,
+      label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
+      rawLabel
+    };
+  }
+  if (issue.workerType === "human" && issue.workerId?.trim()) {
+    const rawLabel = issue.workerId.trim();
+    return {
+      icon: <UserOutlined />,
+      label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
+      rawLabel
+    };
+  }
+  return {
+    icon: <SettingOutlined />,
+    label: "未指定",
+    rawLabel: "未指定"
+  };
+}
+
+function getIssueCardPeoplePresentation(
+  issue: KanbanIssue,
+  agents: AssistantNavAgentItem[],
+  t: TranslateFunction
+) {
+  const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
+  const assigneeLabel = formatKanbanPersonLabel(visibleAssigneeName, t("kanban.form.unassigned"));
+  const worker = getIssueCardWorkerPresentation(issue, t);
+  const hasWorker = worker.rawLabel !== "未指定";
+  return {
+    assigneeLabel,
+    worker: hasWorker ? worker : null,
+    title: hasWorker ? `${assigneeLabel} -> ${worker.rawLabel}` : assigneeLabel
+  };
+}
+
+function getIssueCardShellClassName(issue: KanbanIssue, extra: string[] = []) {
+  return [
+    "issue-card",
+    `is-${issue.status}`,
+    `is-priority-${issue.priority}`,
+    issue.assigneeAgentKey?.trim() ? "has-agent" : "",
+    issue.runState === "running" || issue.runId ? "is-running-state" : "",
+    ...extra
+  ].filter(Boolean).join(" ");
 }
 
 function isFiveFieldCron(value: string) {
@@ -673,34 +736,6 @@ function getAutomationDisplayLabel(issue: KanbanIssue, t: TranslateFunction) {
     return t("kanban.automation.hourlyAtMinute", { minute: padAutomationNumber(minute) });
   }
   return `${getAutomationPlanLabel(automationForm.automationPreset, t)} ${automationForm.automationTime}`;
-}
-
-function getIssueCardAssigneeLabel(
-  visibleAssigneeName: string,
-  displayAssignee: boolean,
-  t: TranslateFunction
-) {
-  if (!displayAssignee) {
-    return "";
-  }
-  if (!visibleAssigneeName) {
-    return t("kanban.form.unassigned");
-  }
-  return truncateKanbanAssigneeName(visibleAssigneeName);
-}
-
-function getIssueCardPresentation(
-  options: {
-    displayAssignee: boolean;
-    visibleAssigneeName: string;
-  },
-  t: TranslateFunction
-): IssueCardPresentation {
-  const assigneeLabel = getIssueCardAssigneeLabel(options.visibleAssigneeName, options.displayAssignee, t);
-  return {
-    assigneeLabel,
-    assigneeTitle: options.visibleAssigneeName || assigneeLabel
-  };
 }
 
 function getIssueCardStatusPresentation(
@@ -914,54 +949,6 @@ function sortKanbanProjectOptions(projects: KanbanProject[]) {
     });
 }
 
-function compareKanbanProjects(left: KanbanProject, right: KanbanProject) {
-  if (left.position !== right.position) {
-    return left.position - right.position;
-  }
-  const leftLabel = left.path || left.name || left.id;
-  const rightLabel = right.path || right.name || right.id;
-  return leftLabel.localeCompare(rightLabel, "zh-Hans-CN");
-}
-
-function flattenKanbanProjectTree(projects: KanbanProject[]): KanbanProjectTreeItem[] {
-  const validProjects = projects.filter((project) => project.id.trim());
-  const projectIds = new Set(validProjects.map((project) => project.id));
-  const childrenByParentId = new Map<string, KanbanProject[]>();
-  const roots: KanbanProject[] = [];
-  for (const project of validProjects) {
-    const parentId = project.parentId?.trim() ?? "";
-    if (!parentId || !projectIds.has(parentId)) {
-      roots.push(project);
-      continue;
-    }
-    const children = childrenByParentId.get(parentId) ?? [];
-    children.push(project);
-    childrenByParentId.set(parentId, children);
-  }
-  const items: KanbanProjectTreeItem[] = [];
-  const visited = new Set<string>();
-  const visit = (project: KanbanProject, level: number) => {
-    if (visited.has(project.id)) {
-      return;
-    }
-    visited.add(project.id);
-    items.push({ project, level });
-    const children = (childrenByParentId.get(project.id) ?? []).sort(compareKanbanProjects);
-    for (const child of children) {
-      visit(child, level + 1);
-    }
-  };
-  for (const root of roots.sort(compareKanbanProjects)) {
-    visit(root, 0);
-  }
-  for (const project of validProjects.sort(compareKanbanProjects)) {
-    if (!visited.has(project.id)) {
-      visit(project, Math.max(0, project.depth));
-    }
-  }
-  return items;
-}
-
 function buildKanbanProjectChildrenMap(projects: KanbanProject[]) {
   const projectIds = new Set(projects.map((project) => project.id));
   const childrenByParentId = new Map<string, string[]>();
@@ -1159,6 +1146,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<KanbanContextMenu | null>(null);
+  const activeDragIssueIdRef = useRef<string | null>(null);
   const issuesRef = useRef<KanbanIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -1284,6 +1272,10 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   }, [cloudProjects]);
 
   useEffect(() => {
+    activeDragIssueIdRef.current = activeDragIssueId;
+  }, [activeDragIssueId]);
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => {
       setKanbanCountdownNow(Date.now());
     }, KANBAN_COUNTDOWN_REFRESH_MS);
@@ -1294,6 +1286,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
+      if (activeDragIssueIdRef.current) {
+        return;
+      }
       void reloadKanban();
     }, 15_000);
     return () => {
@@ -1445,12 +1440,26 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     });
   }, [agents, automationFilter, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
 
+  const issuesByStatus = useMemo(() => {
+    const grouped = {
+      backlog: [] as KanbanIssue[],
+      todo: [] as KanbanIssue[],
+      in_progress: [] as KanbanIssue[],
+      in_review: [] as KanbanIssue[],
+      completed: [] as KanbanIssue[]
+    };
+    for (const issue of filteredIssues) {
+      grouped[issue.status].push(issue);
+    }
+    return grouped;
+  }, [filteredIssues]);
+
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const filteredCount = filteredIssues.length;
   const totalCount = visibleIssues.length;
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
 
-  function openCreateModal(status: KanbanStatus = "backlog") {
+  const openCreateModal = useCallback((status: KanbanStatus = "backlog") => {
     if (!readKanbanApi()) {
       setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
@@ -1460,16 +1469,23 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "create" });
-  }
+  }, [missingKanbanApiMessage]);
 
-  function openEditModal(issue: KanbanIssue) {
+  const createIssueHandlersByStatus = useMemo(
+    () => Object.fromEntries(
+      VISIBLE_KANBAN_STATUSES.map((status) => [status, () => openCreateModal(status)])
+    ) as Record<KanbanStatus, () => void>,
+    [openCreateModal]
+  );
+
+  const openEditModal = useCallback((issue: KanbanIssue) => {
     setContextMenu(null);
     setForm(createFormFromIssue(issue));
     setFormCompact(canEditKanbanIssueBody(issue) ? !hasIssueAutomation(issue) : false);
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "edit", issue });
-  }
+  }, []);
 
   function openInProgressAssignmentModal(issue: KanbanIssue) {
     setForm({
@@ -1674,7 +1690,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  async function deleteIssue(issue: KanbanIssue) {
+  const deleteIssue = useCallback(async (issue: KanbanIssue) => {
     setContextMenu(null);
     const kanbanApi = readKanbanApi();
     if (!kanbanApi) {
@@ -1690,9 +1706,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     if (result.ok) {
       setModal(null);
     }
-  }
+  }, [missingKanbanApiMessage, t]);
 
-  function openIssueContextMenu(issue: KanbanIssue, event: MouseEvent<HTMLElement>) {
+  const openIssueContextMenu = useCallback((issue: KanbanIssue, event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
     const viewportWidth = typeof window === "undefined" ? event.clientX : window.innerWidth;
@@ -1702,7 +1718,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       x: Math.min(event.clientX, Math.max(8, viewportWidth - 176)),
       y: Math.min(event.clientY, Math.max(8, viewportHeight - 48))
     });
-  }
+  }, []);
 
   async function getAvailableAgents() {
     if (agents.length > 0) {
@@ -1760,7 +1776,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  async function openAssistantIssueChat(issue: KanbanIssue) {
+  const openAssistantIssueChat = useCallback(async (issue: KanbanIssue) => {
     const chatId = issue.chatId?.trim() ?? "";
     if (!chatId) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noChat") });
@@ -1776,7 +1792,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       chatId,
       displayName: getAssigneeName(agentKey, agents) ?? undefined
     });
-  }
+  }, [agents, t]);
 
   function handleDragStart(event: DragStartEvent) {
     const activeIssue = issueMap.get(String(event.active.id));
@@ -2054,7 +2070,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           aria-busy={loading}
         >
           {VISIBLE_KANBAN_STATUSES.map((status) => {
-            const columnIssues = filteredIssues.filter((issue) => issue.status === status);
+            const columnIssues = issuesByStatus[status] ?? [];
             return (
               <KanbanColumn
                 key={status}
@@ -2066,7 +2082,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 now={new Date(kanbanCountdownNow)}
                 t={t}
                 canAdd={kanbanReady}
-                onAdd={() => openCreateModal(status)}
+                onAdd={createIssueHandlersByStatus[status]}
                 onEdit={openEditModal}
                 onDelete={deleteIssue}
                 onOpenChat={openAssistantIssueChat}
@@ -2077,9 +2093,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         </div>
 
         {typeof document !== "undefined" ? createPortal(
-          <DragOverlay adjustScale={false} dropAnimation={null} zIndex={120}>
+          <DragOverlay adjustScale={false} className="kanban-drag-overlay" dropAnimation={null} zIndex={120}>
             {activeDragIssue ? (
-              <article className={`issue-card issue-drag-overlay-card is-${activeDragIssue.status}`}>
+              <article className={getIssueCardShellClassName(activeDragIssue, ["issue-drag-overlay-card"])}>
                 <IssueCardContent
                   issue={activeDragIssue}
                   awaitingConfirmation={false}
@@ -2474,7 +2490,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   );
 }
 
-function KanbanColumn({
+const KanbanColumn = memo(function KanbanColumn({
   status,
   issues,
   agents,
@@ -2567,9 +2583,9 @@ function KanbanColumn({
       </div>
     </section>
   );
-}
+});
 
-function IssueCard({
+const IssueCard = memo(function IssueCard({
   issue,
   sortIndex,
   awaitingConfirmation,
@@ -2610,13 +2626,11 @@ function IssueCard({
     <article
       ref={sortable.setNodeRef}
       style={style}
-      className={[
-        "issue-card",
-        `is-${issue.status}`,
+      className={getIssueCardShellClassName(issue, [
         sortable.isDragging ? "is-dragging-source" : "",
         dragLocked ? "is-drag-locked" : "",
         awaitingConfirmation ? "is-awaiting-confirmation" : ""
-      ].filter(Boolean).join(" ")}
+      ])}
       data-drag-locked={dragLocked ? "true" : undefined}
       {...sortable.attributes}
       aria-disabled={undefined}
@@ -2640,9 +2654,9 @@ function IssueCard({
       />
     </article>
   );
-}
+});
 
-function IssueCardContent({
+const IssueCardContent = memo(function IssueCardContent({
   issue,
   sortIndex,
   awaitingConfirmation,
@@ -2669,9 +2683,6 @@ function IssueCardContent({
   onDelete: () => void;
   onOpenChat: () => void;
 }) {
-  const assigneeAgent = getAssigneeAgent(issue, agents);
-  const assigneeIcon = hasKanbanAgentIcon(assigneeAgent?.icon) ? assigneeAgent?.icon : undefined;
-  const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
   const automationLabel = getAutomationDisplayLabel(issue, t);
   const visibleAttachments = getVisibleKanbanAttachments(issue.attachments);
   const hasVisibleAttachment = visibleAttachments.length > 0;
@@ -2683,35 +2694,27 @@ function IssueCardContent({
     now,
     sortIndex
   }, t);
-  const cardPresentation = getIssueCardPresentation(
-    {
-      displayAssignee: display.assignee,
-      visibleAssigneeName
-    },
-    t
-  );
+  const peopleLine = getIssueCardPeoplePresentation(issue, agents, t);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const canOpenIssueDetails = interactive;
   const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
-  const hasMetaStrip = Boolean(automationLabel || hasVisibleAttachment);
   const mainContent = (
     <>
       <div className="issue-card-row issue-card-row-top">
-        <span className="issue-card-top-meta">
+        <div className="issue-card-top-meta">
           <span className="issue-card-chip issue-card-origin" title={issueOrigin.title}>
             {issueOrigin.projectLabel}
           </span>
           {display.priority ? <IssuePriorityBadge priority={issue.priority} t={t} /> : null}
           <IssueSeverityBadge severity={severity} t={t} />
-        </span>
+        </div>
         <span
           className={`issue-card-status is-${cardStatus.tone}`}
           title={cardStatus.updatedTime ? `${cardStatus.label} · ${cardStatus.updatedTime}` : cardStatus.label}
         >
-          {cardStatus.tone !== "backlog" && cardStatus.tone !== "todo" ? <span className="kanban-run-dot" aria-hidden="true" /> : null}
           <span className="issue-card-status-label">{cardStatus.label}</span>
-          <span className="issue-card-status-time">{cardStatus.updatedTime}</span>
+          {cardStatus.updatedTime ? <span className="issue-card-status-time">{cardStatus.updatedTime}</span> : null}
         </span>
       </div>
       <div className="issue-card-row issue-card-row-title">
@@ -2750,49 +2753,38 @@ function IssueCardContent({
           {mainContent}
         </div>
       )}
-      {hasMetaStrip ? (
-        <div className="issue-card-meta-strip">
-          {automationLabel ? (
-            <span className="kanban-automation-badge" title={automationLabel}>
-              <KanbanIcon kind="clock" />
-              <span className="kanban-automation-label">{automationLabel}</span>
-            </span>
-          ) : null}
-          {hasVisibleAttachment ? (
-            <span className="kanban-attachment-badge" title={t("kanban.form.attachments")}>
-              <KanbanIcon kind="attachment" />
-              <span>{visibleAttachments.length}</span>
-            </span>
-          ) : null}
+      {automationLabel ? (
+        <div className="issue-card-meta-line" title={automationLabel}>
+          <KanbanIcon kind="clock" />
+          <span>{automationLabel}</span>
+        </div>
+      ) : null}
+      {hasVisibleAttachment ? (
+        <div className="issue-card-meta-line" title={t("kanban.form.attachments")}>
+          <KanbanIcon kind="attachment" />
+          <span>{visibleAttachments.length}</span>
         </div>
       ) : null}
       <footer className="issue-card-foot">
-        {cardPresentation.assigneeLabel ? (
-          <span
-            className={`issue-card-assignee ${visibleAssigneeName ? "" : "is-unassigned"}`}
-            title={cardPresentation.assigneeTitle || undefined}
-          >
-            {visibleAssigneeName ? (
-              <span
-                className={`issue-card-assignee-avatar${assigneeIcon ? " has-icon" : ""}`}
-                aria-hidden="true"
-              >
-                {assigneeIcon ? (
-                  <AgentIcon
-                    icon={assigneeIcon}
-                    className="issue-card-assignee-icon"
-                    size={18}
-                  />
-                ) : (
-                  <span className="issue-card-assignee-avatar-label">
-                    {getIssueCardAssigneeAvatarLabel(visibleAssigneeName)}
-                  </span>
-                )}
-              </span>
+        {display.assignee ? (
+          <div className="issue-card-people-line" title={peopleLine.title}>
+            <span className="issue-card-person">
+              <UserOutlined />
+              <span>{peopleLine.assigneeLabel}</span>
+            </span>
+            {peopleLine.worker ? (
+              <>
+                <ArrowRightOutlined className="issue-card-person-arrow" />
+                <span className="issue-card-person">
+                  {peopleLine.worker.icon}
+                  <span>{peopleLine.worker.label}</span>
+                </span>
+              </>
             ) : null}
-            <span className="issue-card-assignee-name">{cardPresentation.assigneeLabel}</span>
-          </span>
-        ) : <span className="issue-card-assignee" aria-hidden="true" />}
+          </div>
+        ) : (
+          <span className="issue-card-people-line" aria-hidden="true" />
+        )}
         {interactive ? (
           <span className="issue-card-actions">
             <button
@@ -2843,7 +2835,7 @@ function IssueCardContent({
       </footer>
     </>
   );
-}
+});
 
 function KanbanProjectFilter({
   projects,
@@ -3162,8 +3154,8 @@ function IssuePriorityBadge({ priority, t }: { priority: KanbanPriority; t: Tran
   const label = t(meta.labelKey);
   const shortLabel = t(meta.shortLabelKey);
   return (
-    <span className={`kanban-priority-badge is-${meta.tone}`} title={t("kanban.card.priority", { value: label })}>
-      <ThunderboltOutlined className="kanban-priority-icon" />
+    <span className="kanban-priority-badge" title={t("kanban.card.priority", { value: label })}>
+      <PriorityIcon priority={priority} />
       <span className="kanban-priority-text">{shortLabel}</span>
     </span>
   );
@@ -3174,8 +3166,8 @@ function IssueSeverityBadge({ severity, t }: { severity: KanbanSeverity; t: Tran
   const label = t(meta.labelKey);
   const shortLabel = t(meta.shortLabelKey);
   return (
-    <span className={`kanban-severity-badge is-${meta.tone}`} title={t("kanban.card.severity", { value: label })}>
-      <FlagOutlined className="kanban-severity-icon" />
+    <span className="kanban-severity-badge" title={t("kanban.card.severity", { value: label })}>
+      <ImportanceIcon severity={severity} />
       <span className="kanban-severity-text">{shortLabel}</span>
     </span>
   );
