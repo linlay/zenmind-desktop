@@ -1920,7 +1920,7 @@ test("applyAgentPlatformWindowsHostShellDefaults skips non-Windows platforms", (
   assert.equal(updates.size, 0);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dir keys when RUNTIME_DIR is set", () => {
+test("normalizeAgentPlatformEnvContentForRuntime migrates RUNTIME_DIR to AP_RUNTIME_DIR", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
@@ -1931,10 +1931,23 @@ test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dir keys 
     ].join("\n")
   );
 
-  assert.match(next, /^RUNTIME_DIR=\/tmp\/agent-runtime$/m);
+  assert.match(next, /^AP_RUNTIME_DIR=\/tmp\/agent-runtime$/m);
+  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
   assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(next, /^MEMORY_DIR=/m);
   assert.doesNotMatch(next, /^CHATS_DIR=/m);
+});
+
+test("normalizeAgentPlatformEnvContentForRuntime preserves AP_RUNTIME_DIR over legacy RUNTIME_DIR", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "AP_RUNTIME_DIR=/tmp/current-runtime",
+      "RUNTIME_DIR=/tmp/legacy-runtime"
+    ].join("\n")
+  );
+
+  assert.match(next, /^AP_RUNTIME_DIR=\/tmp\/current-runtime$/m);
+  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
 });
 
 test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dirs without inferring RUNTIME_DIR", () => {
@@ -2326,7 +2339,7 @@ test("desktop managed service commands insert configured lifecycle args before l
   }
 });
 
-test("agent-platform deploy command uses deploy-only Desktop args after configured args", async () => {
+test("agent-platform deploy command includes default deploy args before Desktop args", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2338,25 +2351,13 @@ test("agent-platform deploy command uses deploy-only Desktop args after configur
   };
 
   try {
-    const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
-    const configuredArgs = [
+    const defaultDeployArgs = [
       "--ai-vision-general-model-key", "th-minimax-m3",
       "--ai-vision-ocr-model-key", "th-minimax-m3",
       "--ai-web-fetch-model-key", "th-minimax-m3",
       "--coder-model-key", "deepseek-v4-pro",
       "--coder-reasoning-effort", "MEDIUM"
     ];
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, `${JSON.stringify({
-      schemaVersion: 1,
-      services: {
-        "agent-platform": {
-          lifecycleArgs: {
-            deploy: configuredArgs
-          }
-        }
-      }
-    }, null, 2)}\n`, "utf8");
 
     await installBuiltinService(app, "agent-container-hub");
     const service = getBuiltinService("agent-platform");
@@ -2381,15 +2382,15 @@ test("agent-platform deploy command uses deploy-only Desktop args after configur
       layout
     );
 
-    assert.deepEqual(command.slice(0, 2 + configuredArgs.length), [
+    assert.deepEqual(command.slice(0, 2 + defaultDeployArgs.length), [
       "deploy.sh",
       "--manifest-arg",
-      ...configuredArgs
+      ...defaultDeployArgs
     ]);
     for (const forbidden of ["--config-dir", "--runtime-dir", "--state-dir", "--log-dir", "--port", "--daemon"]) {
       assert.equal(command.includes(forbidden), false, `${forbidden} should not be passed to agent-platform deploy`);
     }
-    assert.ok(command.indexOf("--output-dir") > command.indexOf(configuredArgs.at(-1)));
+    assert.ok(command.indexOf("--output-dir") > command.indexOf(defaultDeployArgs.at(-1)));
     assertFlag(command, "--output-dir", layout.configDir);
     assertFlag(command, "--ap-runtime-dir", getTestRuntimeRootForHome(app.getPath("home")));
     assertFlag(command, "--container-hub-base-url", `http://127.0.0.1:${fixture.ports.containerHub}`);
@@ -2405,6 +2406,74 @@ test("agent-platform deploy command uses deploy-only Desktop args after configur
     assertFlag(startCommand, "--port", String(fixture.ports.platform));
     const stopCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["stop.sh"], layout, "stop");
     assert.deepEqual(stopCommand, ["stop.sh", "--state-dir", layout.stateDir]);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("agent-platform deploy defaults do not override configured lifecycle args", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+
+  const findFlagValues = (command, flag) => {
+    const values = [];
+    for (let index = 0; index < command.length; index += 1) {
+      if (command[index] === flag) {
+        values.push(command[index + 1]);
+      }
+    }
+    return values;
+  };
+
+  try {
+    const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
+    const configuredArgs = [
+      "--ai-web-fetch-model-key", "custom-web-fetch",
+      "--coder-reasoning-effort", "HIGH"
+    ];
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "agent-platform": {
+          lifecycleArgs: {
+            deploy: configuredArgs
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+
+    await installBuiltinService(app, "agent-container-hub");
+    const service = getBuiltinService("agent-platform");
+    const envPath = writeTestEnv(userDataRoot, service.id, `SERVER_PORT=${fixture.ports.platform}\n`);
+    const layout = {
+      programDir: getTestServiceProgramDir(userDataRoot, service.id, service.version),
+      configDir: getTestConfigDir(userDataRoot, service.id),
+      dataDir: getTestDataDir(userDataRoot, service.id),
+      stateDir: getTestStateDir(userDataRoot, service.id),
+      logDir: getTestLogDir(userDataRoot, service.id),
+      envPath
+    };
+
+    const command = await __testInternals.buildDesktopManagedDeployCommand(
+      app,
+      service,
+      ["deploy.sh"],
+      layout
+    );
+
+    assert.deepEqual(command.slice(0, 1 + configuredArgs.length), [
+      "deploy.sh",
+      ...configuredArgs
+    ]);
+    assert.deepEqual(findFlagValues(command, "--coder-reasoning-effort"), ["HIGH"]);
+    assert.deepEqual(findFlagValues(command, "--ai-vision-general-model-key"), ["th-minimax-m3"]);
+    assert.deepEqual(findFlagValues(command, "--ai-vision-ocr-model-key"), ["th-minimax-m3"]);
+    assert.deepEqual(findFlagValues(command, "--ai-web-fetch-model-key"), ["custom-web-fetch"]);
+    assert.deepEqual(findFlagValues(command, "--coder-model-key"), ["deepseek-v4-pro"]);
+    assert.ok(command.indexOf("--output-dir") > command.indexOf("--coder-model-key"));
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -5732,7 +5801,8 @@ test("ensurePreStartRequirements leaves agent-platform runtime path migration to
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  assert.match(envContent, new RegExp(`^AP_RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  assert.doesNotMatch(envContent, /^RUNTIME_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
 

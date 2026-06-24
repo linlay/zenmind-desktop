@@ -210,6 +210,13 @@ export {
 const startedThisSession = new Set<ServiceId>();
 const inFlightBuiltinInstalls = new Map<string, Promise<string>>();
 const backgroundStartupPreparationTasks = new Set<Promise<void>>();
+const AGENT_PLATFORM_DEPLOY_DEFAULT_VALUE_ARGS = [
+  ["--ai-vision-general-model-key", "th-minimax-m3"],
+  ["--ai-vision-ocr-model-key", "th-minimax-m3"],
+  ["--ai-web-fetch-model-key", "th-minimax-m3"],
+  ["--coder-model-key", "deepseek-v4-pro"],
+  ["--coder-reasoning-effort", "MEDIUM"]
+] as const;
 
 type ServiceLogStreamCallback = (event: ServiceLogStreamEvent) => void;
 
@@ -507,6 +514,21 @@ async function resolveAgentPlatformDeployPublicKeySourceFile(app: App) {
   throw new Error("auth.publicKey capability did not produce a usable local public key file.");
 }
 
+function appendMissingValueArgs(command: string[], defaults: ReadonlyArray<readonly [string, string]>) {
+  const presentFlags = new Set(
+    command
+      .map((arg) => arg.trim().toLowerCase())
+      .filter((arg) => arg.startsWith("--"))
+  );
+  const nextCommand = [...command];
+  for (const [flag, value] of defaults) {
+    if (!presentFlags.has(flag.toLowerCase())) {
+      nextCommand.push(flag, value);
+    }
+  }
+  return nextCommand;
+}
+
 function appendAgentPlatformDesktopDeployArgs(
   command: string[],
   app: App,
@@ -514,8 +536,9 @@ function appendAgentPlatformDesktopDeployArgs(
   containerHubBaseUrl: string,
   publicKeySourceFile: string
 ) {
+  const commandWithDeployDefaults = appendMissingValueArgs(command, AGENT_PLATFORM_DEPLOY_DEFAULT_VALUE_ARGS);
   return [
-    ...command,
+    ...commandWithDeployDefaults,
     "--output-dir", layout.configDir,
     "--ap-runtime-dir", resolvePreferredAgentPlatformRuntimeRoot(app),
     "--container-hub-base-url", containerHubBaseUrl,
