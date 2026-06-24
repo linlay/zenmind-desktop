@@ -2746,6 +2746,7 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(contracts, /interface WebsiteUpdateInput/);
   assert.match(contracts, /update: \(id: string, input: WebsiteUpdateInput\) => Promise<WebsiteResult>/);
   assert.match(contracts, /add: \(input: WebsiteInput\) => Promise<WebsiteResult>/);
+  assert.match(contracts, /remove: \(id: string\) => Promise<WebsiteDeleteResult>/);
   assert.match(store, /export function updateWebsiteItem/);
   assert.match(store, /delete updated\.agentKey/);
   assert.match(store, /export function addWebsiteItem/);
@@ -2753,14 +2754,24 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(webHandlers, /ipcMain\.handle\("webs\.websites\.update"/);
   assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("webs\.websites\.update", id, input\)/);
   assert.match(preload, /add: \(input\) => ipcRenderer\.invoke\("webs\.websites\.add", input\)/);
+  assert.match(preload, /remove: \(id(?:: string)?\) => ipcRenderer\.invoke\("webs\.websites\.remove", id\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
   assert.match(appShell, /function createWebsiteItem\(input: WebsiteInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.add\(input\)/);
+  assert.match(appShell, /function updateWebsiteItem\(id: string, input: WebsiteUpdateInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.update\(id, input\)/);
+  assert.match(appShell, /function deleteWebsiteItem\(id: string\): Promise<WebsiteDeleteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.remove\(id\)/);
   assert.match(appShell, /onCreateWebsiteItem=\{createWebsiteItem\}/);
+  assert.match(appShell, /onUpdateWebsiteItem=\{updateWebsiteItem\}/);
+  assert.match(appShell, /onDeleteWebsiteItem=\{deleteWebsiteItem\}/);
   assert.match(appSidebar, /args\.groupId === "webs"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
+  assert.match(appSidebar, /className="sidebar-website-child-actions"/);
+  assert.match(appSidebar, /t\("sidebar\.website\.edit"\)/);
+  assert.match(appSidebar, /t\("sidebar\.website\.delete"\)/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
   assert.match(appSidebar, /t\("sidebar\.website\.name"\)[\s\S]*?t\("sidebar\.website\.url"\)[\s\S]*?t\("sidebar\.website\.sideAssistant"\)/);
   assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
+  assert.match(appSidebar, /onUpdateWebsiteItem\(websiteEditingItem\.id,[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}/);
+  assert.match(appSidebar, /onDeleteWebsiteItem\(item\.id\)/);
   assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
 });
 
@@ -3044,6 +3055,20 @@ test("assistant navigation agents stay empty before platform data is ready", () 
   assert.doesNotMatch(appShell, /clearAssistantNavAgentsCache/);
   assert.doesNotMatch(appShell, /setAssistantNavAgents\(result\.ok \? result\.items : \[\]\)/);
   assert.doesNotMatch(appShell, /catch\s*\{[\s\S]{0,220}?setAssistantNavAgents\(\[\]\)/);
+});
+
+test("main process automation callers use current platform automation routes", () => {
+  const sourceFiles = [
+    path.join(projectRoot, "src", "main", "plugin-resources.ts"),
+    path.join(projectRoot, "src", "main", "kanban-sync.ts"),
+    path.join(projectRoot, "src", "main", "kanban-runtime.ts")
+  ];
+  const combined = sourceFiles.map((filePath) => fs.readFileSync(filePath, "utf8")).join("\n");
+
+  assert.doesNotMatch(combined, /\/api\/admin\/automations\//);
+  assert.match(combined, /\/api\/automation\/create/);
+  assert.match(combined, /\/api\/automation\/update/);
+  assert.match(combined, /\/api\/automation\/delete/);
 });
 
 test("assistant navigation agents refresh immediately after startup services become ready", () => {
@@ -5046,6 +5071,13 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(sharedDesktopPet, /"pony"/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-image/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-button::before/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-button::after/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-signature\.has-signature-aura\s+\.desktop-pet-button::before/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-signature\.has-signature-aura\s+\.desktop-pet-button::after/);
+  assert.match(desktopPet, /import \{ BRAND_ID, PRODUCT_NAME \} from "..\/..\/..\/shared\/brand";/);
+  assert.match(desktopPet, /const hasSignatureAura = BRAND_ID === "cutej";/);
+  assert.match(desktopPet, /hasSignatureAura && visualStatus === "signature" \? "has-signature-aura" : ""/);
   assert.match(globalStyles, /\.desktop-pet-signature-sprite\s*\{[\s\S]{0,260}background-size:\s*calc\(96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 104px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-signature-animation\s+\.desktop-pet-signature-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-signature-frames var\(--desktop-pet-signature-duration,\s*5200ms\) steps\(var\(--desktop-pet-signature-frames,\s*30\),\s*end\) 1 both;/);
   assert.match(globalStyles, /@keyframes desktop-pet-signature-frames\s*\{[\s\S]*?background-position:\s*calc\(-96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 0;/);

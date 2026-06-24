@@ -13,7 +13,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteDeleteResult, WebsiteEntry, WebsiteInput, WebsiteResult, WebsiteUpdateInput } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
@@ -660,6 +660,18 @@ export function AppShell() {
 
   async function createWebsiteItem(input: WebsiteInput): Promise<WebsiteResult> {
     const result = await window.electronAPI.webs.websites.add(input);
+    await refreshWebItems().catch(() => undefined);
+    return result;
+  }
+
+  async function updateWebsiteItem(id: string, input: WebsiteUpdateInput): Promise<WebsiteResult> {
+    const result = await window.electronAPI.webs.websites.update(id, input);
+    await refreshWebItems().catch(() => undefined);
+    return result;
+  }
+
+  async function deleteWebsiteItem(id: string): Promise<WebsiteDeleteResult> {
+    const result = await window.electronAPI.webs.websites.remove(id);
     await refreshWebItems().catch(() => undefined);
     return result;
   }
@@ -2689,6 +2701,8 @@ export function AppShell() {
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateWebsiteItem={createWebsiteItem}
+          onUpdateWebsiteItem={updateWebsiteItem}
+          onDeleteWebsiteItem={deleteWebsiteItem}
           onRequestNavigate={requestSidebarNavigation}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}

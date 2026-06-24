@@ -333,20 +333,23 @@ body.desktop-pet-body,
 .desktop-pet-root.is-signature .desktop-pet-image {
   animation: desktop-pet-signature-bounce 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
   transform-origin: 50% 88%;
+}
+
+.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-image {
   filter:
     drop-shadow(0 0 6px rgba(255, 229, 86, 0.78))
     drop-shadow(0 0 18px rgba(255, 172, 28, 0.42));
 }
 
-.desktop-pet-root.is-signature .desktop-pet-button::before,
-.desktop-pet-root.is-signature .desktop-pet-button::after {
+.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::before,
+.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::after {
   content: "";
   position: absolute;
   z-index: 1;
   pointer-events: none;
 }
 
-.desktop-pet-root.is-signature .desktop-pet-button::before {
+.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::before {
   left: 5px;
   top: -4px;
   width: 122px;
@@ -361,7 +364,7 @@ body.desktop-pet-body,
   animation: desktop-pet-power-aura 0.86s ease-in-out infinite;
 }
 
-.desktop-pet-root.is-signature .desktop-pet-button::after {
+.desktop-pet-root.is-signature.has-signature-aura .desktop-pet-button::after {
   left: 0;
   top: 0;
   width: 132px;
