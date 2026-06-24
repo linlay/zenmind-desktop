@@ -1465,7 +1465,23 @@ export function AppSidebar({
     await window.electronAPI.assistant.markAgentChatsRead(agent.agentKey);
   }
 
-  function handleAssistantOpenChat(chat: AssistantNavChatItem) {
+  async function handleAssistantOpenChat(chat: AssistantNavChatItem) {
+    if (!chat.isRead) {
+      const assistantApi = window.electronAPI.assistant as typeof window.electronAPI.assistant & {
+        markChatRead?: (
+          chatId: string,
+          runId?: string,
+        ) => ReturnType<typeof window.electronAPI.assistant.markAgentChatsRead>;
+      };
+      const markChatRead = assistantApi.markChatRead;
+      const markReadRequest =
+        typeof markChatRead === "function"
+          ? markChatRead(chat.chatId, chat.lastRunId || undefined)
+          : window.electronAPI.assistant.markAgentChatsRead(chat.agentKey || currentAgentKey);
+      void markReadRequest.catch((error: unknown) => {
+        console.warn("[assistant] failed to mark chat read", error);
+      });
+    }
     requestNavigate(
       createAgentChatRoute(chat.agentKey || currentAgentKey, chat.chatId),
     );
@@ -1984,7 +2000,7 @@ export function AppSidebar({
                 <AgentIcon
                   icon={agent.icon}
                   className="worker-panel-icon"
-                  size={selected ? 20 : 32}
+                  fallbackSeed={`${agent.agentKey}:${agent.displayName}`}
                   type="agent"
                 />
                 <span className="assistant-worker-main worker-panel-main">

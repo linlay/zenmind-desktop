@@ -238,6 +238,10 @@
   background: transparent;
 }
 
+.app-shell.is-windows-platform:not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
+  padding-top: calc(var(--windows-titlebar-overlay-height) + 12px);
+}
+
 /* Embedded H5 surfaces keep the top drag lane thin on every platform. */
 
 .app-sidebar-toggle,

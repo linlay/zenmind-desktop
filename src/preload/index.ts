@@ -154,6 +154,8 @@ const api: DesktopApi = {
       ipcRenderer.invoke("assistant.openAttachment", chatId, attachmentId),
     deleteChat: (chatId: string) => ipcRenderer.invoke("assistant.deleteChat", chatId),
     markAgentChatsRead: (agentKey: string) => ipcRenderer.invoke("assistant.markAgentChatsRead", agentKey),
+    markChatRead: (chatId: string, runId?: string) =>
+      ipcRenderer.invoke("assistant.markChatRead", chatId, runId),
     renameChat: (chatId: string, chatName: string) => ipcRenderer.invoke("assistant.renameChat", chatId, chatName),
     archiveChat: (chatId: string) => ipcRenderer.invoke("assistant.archiveChat", chatId),
     exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),

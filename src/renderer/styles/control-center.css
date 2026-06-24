@@ -1684,6 +1684,7 @@
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
+  min-width: 0;
   overflow: visible;
 }
 
@@ -2506,6 +2507,8 @@
   width: 100%;
   max-width: none;
   min-height: 100%;
+  container-name: control-center-page;
+  container-type: inline-size;
   gap: 20px;
   background: var(--control-center-bg);
   color: var(--control-center-text);
@@ -3000,6 +3003,7 @@
 }
 
 .control-center-service-hero {
+  min-width: 0;
   padding: 22px 24px;
   border: 1px solid var(--control-center-border);
   border-radius: var(--control-center-card-radius);
@@ -3421,7 +3425,8 @@
 
 .service-detail-link {
   display: block;
-  width: fit-content;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   color: var(--control-center-blue);
   font-size: 13px;
@@ -3537,6 +3542,7 @@
 
 .config-panel {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   padding: 0;
   border: 1px solid var(--control-center-border);
@@ -3647,6 +3653,7 @@
   display: flex;
   align-items: center;
   width: 100%;
+  box-sizing: border-box;
   min-height: 32px;
   padding: 0 40px 0 12px;
   border: 1px solid var(--control-center-border);
@@ -3813,6 +3820,7 @@
   min-height: 0;
   margin: 0;
   padding: 22px 24px;
+  box-sizing: border-box;
   border: 0;
   border-radius: 0;
   background:
@@ -3961,12 +3969,49 @@
 }
 
 @media (max-width: 1320px) {
+  .control-center-shell {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .service-sider.service-catalog {
+    min-height: auto;
+  }
+
   .control-center-service-head {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .service-primary-actions {
+    justify-content: flex-start;
+  }
+
+  .service-detail-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 20px;
+  }
+
+  .service-detail-metadata-item.is-endpoint {
+    grid-column: 1 / -1;
+  }
+
+  .config-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .config-title-main {
+    flex-wrap: wrap;
+  }
+
+  .config-title-file-select {
+    width: min(280px, 100%);
+    margin-left: 0;
+  }
+
+  .config-select-wrap {
+    align-items: stretch;
     justify-content: flex-start;
   }
 }
@@ -4054,5 +4099,41 @@
   .config-editor {
     min-height: 360px;
     padding: 20px;
+  }
+}
+
+@container control-center-page (max-width: 920px) {
+  .control-center-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .control-center-dashboard-metrics {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .control-center-shell {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .service-sider.service-catalog {
+    min-height: auto;
+  }
+
+  .service-detail-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .service-detail-metadata-item.is-endpoint {
+    grid-column: 1 / -1;
+  }
+}
+
+@container control-center-page (max-width: 680px) {
+  .control-center-dashboard-metrics,
+  .service-detail-metadata {
+    grid-template-columns: 1fr;
   }
 }

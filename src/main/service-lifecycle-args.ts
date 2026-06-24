@@ -22,6 +22,8 @@ const CORE_SERVICE_LIFECYCLE_COMMANDS = {
   "agent-webclient": ["deploy"]
 } as const satisfies Record<string, readonly ServiceLifecycleCommandKind[]>;
 
+const AGENT_PLATFORM_REMOVED_VALUE_FLAGS = new Set(["--runtime-dir"]);
+
 type CoreLifecycleServiceId = keyof typeof CORE_SERVICE_LIFECYCLE_COMMANDS;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -150,7 +152,20 @@ export function getConfiguredServiceLifecycleArgs(
   kind: ServiceLifecycleCommandKind,
   platform: NodeJS.Platform = process.platform
 ) {
-  return readServiceLifecycleArgsConfig(app, platform)?.services[serviceId]?.lifecycleArgs[kind] ?? [];
+  const args = readServiceLifecycleArgsConfig(app, platform)?.services[serviceId]?.lifecycleArgs[kind] ?? [];
+  if (serviceId !== "agent-platform") {
+    return args;
+  }
+  const nextArgs: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]?.trim().toLowerCase();
+    if (AGENT_PLATFORM_REMOVED_VALUE_FLAGS.has(arg)) {
+      index += 1;
+      continue;
+    }
+    nextArgs.push(args[index]);
+  }
+  return nextArgs;
 }
 
 export function appendConfiguredServiceLifecycleArgs(

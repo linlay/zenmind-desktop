@@ -782,6 +782,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         [
           "$runDir = Join-Path $PSScriptRoot 'run'",
           "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+          "$args | Set-Content -LiteralPath (Join-Path $runDir 'start-args.txt')",
           windowsStartPrelude,
           options.failOnStartServiceId === service.id
             ? "throw 'fixture start failure'"
@@ -905,6 +906,7 @@ function createStartupCoreAssetsFixture(options = {}) {
           "#!/usr/bin/env bash",
           "set -euo pipefail",
           "mkdir -p run",
+          'printf "%s\\n" "$@" > run/start-args.txt',
           unixStartPrelude,
           'pid_dir="$PWD/run"',
           "config_dir=''",
@@ -2403,6 +2405,42 @@ test("agent-platform deploy command uses deploy-only Desktop args after configur
     assertFlag(startCommand, "--port", String(fixture.ports.platform));
     const stopCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["stop.sh"], layout, "stop");
     assert.deepEqual(stopCommand, ["stop.sh", "--state-dir", layout.stateDir]);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("agent-platform lifecycle args drop legacy runtime-dir flags", () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+
+  try {
+    const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "agent-platform": {
+          lifecycleArgs: {
+            start: ["--runtime-dir", "/legacy/runtime", "--extra-start"],
+            deploy: ["--runtime-dir", "/legacy/runtime", "--extra-deploy"]
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+
+    const service = getBuiltinService("agent-platform");
+
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["start.sh"], "start"),
+      ["start.sh", "--extra-start"]
+    );
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["deploy.sh"], "deploy"),
+      ["deploy.sh", "--extra-deploy"]
+    );
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -5435,6 +5473,15 @@ test("startService starts agent-platform when desktop-managed container hub is u
     assert.equal(result.ok, true, result.message);
     assert.equal(result.service.status, "running");
     assert.equal(fs.existsSync(path.join(platformInstallDir, "run", "started.txt")), true);
+    const startArgs = fs.readFileSync(path.join(platformInstallDir, "run", "start-args.txt"), "utf8")
+      .split(/\r?\n/u)
+      .filter(Boolean);
+    assert.equal(startArgs.includes("--runtime-dir"), false);
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
+    assert.doesNotMatch(
+      envContent,
+      new RegExp(`^RUNTIME_DIR=${getTestDataDir(userDataRoot, "agent-platform").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
+    );
   } finally {
     childProcess.spawnSync = previousSpawnSync;
     await stopStartupCoreProcesses(app);

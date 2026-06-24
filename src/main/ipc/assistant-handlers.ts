@@ -282,6 +282,14 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     return result;
   });
 
+  ipcMain.handle("assistant.markChatRead", async (_event: any, chatId: string, runId?: string) => {
+    const result = await assistantBridge?.markChatRead(chatId, runId);
+    if (result?.ok) {
+      assistantNavigationStatusClient?.scheduleRefresh(0);
+    }
+    return result;
+  });
+
   ipcMain.handle("assistant.renameChat", async (_event: any, chatId: string, chatName: string) => {
     const result = await assistantBridge?.renameChat(chatId, chatName);
     if (result?.ok) {
