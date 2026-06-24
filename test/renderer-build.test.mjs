@@ -3606,6 +3606,19 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     /\.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
   );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
+  assert.match(globalStyles, /--mac-embedded-titlebar-height:\s*34px;/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-plugin-surface \.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*padding-top:\s*var\(--mac-embedded-titlebar-height\);/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-plugin-surface \.embedded-surface-page\.embedded-surface-page-embedded::before\s*\{[^}]*height:\s*var\(--mac-embedded-titlebar-height\);[^}]*background:\s*var\(--embedded-surface-shell-bg\);/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-plugin-surface \.embedded-surface-page\.embedded-surface-page-embedded::before\s*\{[^}]*border-bottom:/
+  );
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
