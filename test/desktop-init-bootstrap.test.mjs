@@ -114,6 +114,41 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         agentKey: "desktopAssistant"
       }
     ],
+    services: {
+      "agent-platform": {
+        lifecycleArgs: {
+          deploy: ["--platform-deploy"],
+          start: ["--platform-start", "alpha"],
+          stop: ["--platform-stop"]
+        },
+        platforms: {
+          darwin: {
+            lifecycleArgs: {
+              deploy: ["--platform-deploy-darwin"],
+              start: ["--platform-start-darwin", ""],
+              stop: [123, "--platform-stop-darwin"]
+            }
+          },
+          win32: {
+            lifecycleArgs: {
+              start: ["-PlatformStartWindows"]
+            }
+          }
+        }
+      },
+      "agent-webclient": {
+        lifecycleArgs: {
+          deploy: ["--webclient-deploy"],
+          start: ["--ignored-webclient-start"],
+          stop: ["--ignored-webclient-stop"]
+        }
+      },
+      "unknown-service": {
+        lifecycleArgs: {
+          start: ["--ignored"]
+        }
+      }
+    }
   });
 
   const first = applyDesktopInitBootstrap(app, "darwin");
@@ -126,6 +161,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const pet = readJson(path.join(desktop, "config", "desktop", "pet.json"));
   const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
+  const serviceLifecycleArgs = readJson(path.join(desktop, "config", "desktop", "service-lifecycle-args.json"));
   const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
   const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
 
@@ -157,6 +193,23 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");
   assert.equal(fs.existsSync(path.join(desktop, "config", "marketplace", "settings.json")), false);
   assert.equal(sso.enabled, true);
+  assert.deepEqual(serviceLifecycleArgs, {
+    schemaVersion: 1,
+    services: {
+      "agent-platform": {
+        lifecycleArgs: {
+          deploy: ["--platform-deploy", "--platform-deploy-darwin"],
+          start: ["--platform-start", "alpha", "--platform-start-darwin"],
+          stop: ["--platform-stop", "--platform-stop-darwin"]
+        }
+      },
+      "agent-webclient": {
+        lifecycleArgs: {
+          deploy: ["--webclient-deploy"]
+        }
+      }
+    }
+  });
   assert.equal(website.id, "docs");
   assert.equal(website.kind, "website");
   assert.equal(website.agentKey, "desktopAssistant");
@@ -171,6 +224,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.tunnelHub, "absent");
   assert.equal(bootstrapState.appliedResult.webs, "applied");
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
+  assert.equal(bootstrapState.appliedResult.services, "applied");
   assert.match(bootstrapState.appliedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(fs.existsSync(initPath), false);
 
@@ -518,6 +572,53 @@ test("desktop-init bootstrap uses explicit Windows path branches", () => {
     resolveDesktopInitPath(app, "win32"),
     path.win32.join("C:\\Users\\tester", RUNTIME_ROOT_DIR_NAME, "desktop-init.json")
   );
+});
+
+test("desktop-init bootstrap applies Windows service lifecycle args branch", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-service-args-win-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "win32", {
+    services: {
+      "identity-center": {
+        lifecycleArgs: {
+          start: ["--identity-start"]
+        },
+        platforms: {
+          darwin: {
+            lifecycleArgs: {
+              start: ["--identity-start-darwin"]
+            }
+          },
+          win32: {
+            lifecycleArgs: {
+              start: ["-IdentityStartWindows"],
+              stop: ["-IdentityStopWindows"]
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "win32");
+  const serviceLifecycleArgs = readJson(path.join(desktopRoot(homePath), "config", "desktop", "service-lifecycle-args.json"));
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.services, "applied");
+  assert.deepEqual(serviceLifecycleArgs, {
+    schemaVersion: 1,
+    services: {
+      "identity-center": {
+        lifecycleArgs: {
+          start: ["--identity-start", "-IdentityStartWindows"],
+          stop: ["-IdentityStopWindows"]
+        }
+      }
+    }
+  });
 });
 
 test("desktop-init bootstrap writes canonical SSO even when old configs exist", (t) => {

@@ -2243,6 +2243,95 @@ test("desktop managed service commands append layout flags for container hub and
   }
 });
 
+test("desktop managed service commands insert configured lifecycle args before layout flags", () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+
+  const assertFlag = (command, flag, value) => {
+    const index = command.indexOf(flag);
+    assert.notEqual(index, -1, `expected ${flag} in ${command.join(" ")}`);
+    assert.equal(command[index + 1], value);
+  };
+
+  try {
+    const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "identity-center": {
+          lifecycleArgs: {
+            deploy: ["--extra-deploy"],
+            start: ["--extra-start", "alpha"],
+            stop: ["--extra-stop"]
+          }
+        },
+        "agent-webclient": {
+          lifecycleArgs: {
+            deploy: ["--extra-webclient-deploy"],
+            start: ["--ignored-webclient-start"],
+            stop: ["--ignored-webclient-stop"]
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+
+    const service = getBuiltinService("identity-center");
+    const envPath = writeTestEnv(userDataRoot, service.id, "SERVER_PORT=7076\n");
+    const layout = {
+      programDir: getTestServiceProgramDir(userDataRoot, service.id, service.version),
+      configDir: getTestConfigDir(userDataRoot, service.id),
+      dataDir: getTestDataDir(userDataRoot, service.id),
+      stateDir: getTestStateDir(userDataRoot, service.id),
+      logDir: getTestLogDir(userDataRoot, service.id),
+      envPath
+    };
+
+    for (const [kind, extraArgs] of [
+      ["deploy", ["--extra-deploy"]],
+      ["start", ["--extra-start", "alpha"]],
+      ["stop", ["--extra-stop"]]
+    ]) {
+      const commandWithArgs = __testInternals.appendConfiguredServiceLifecycleArgs(
+        app,
+        service,
+        [`${kind}.sh`, "--manifest-arg"],
+        kind
+      );
+      const command = __testInternals.appendDesktopManagedLayoutFlags(service, commandWithArgs, layout, kind);
+      assert.deepEqual(command.slice(0, 2 + extraArgs.length), [
+        `${kind}.sh`,
+        "--manifest-arg",
+        ...extraArgs
+      ]);
+      assert.ok(command.indexOf("--config-dir") > command.indexOf(extraArgs.at(-1)));
+      assertFlag(command, "--config-dir", layout.configDir);
+      assertFlag(command, "--data-dir", layout.dataDir);
+      assertFlag(command, "--state-dir", layout.stateDir);
+      assertFlag(command, "--log-dir", layout.logDir);
+      assertFlag(command, "--port", "7076");
+    }
+
+    const webclient = getBuiltinService("agent-webclient");
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["deploy.sh"], "deploy"),
+      ["deploy.sh", "--extra-webclient-deploy"]
+    );
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["start.sh"], "start"),
+      ["start.sh"]
+    );
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["stop.sh"], "stop"),
+      ["stop.sh"]
+    );
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("service command runner strips legacy layout env from child process", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-env-scrub-"));
   try {

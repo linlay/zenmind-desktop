@@ -19,6 +19,10 @@ import { saveDesktopPetSettings } from "./assistant/pet/desktop-pet";
 import { saveMarketSettings } from "./marketplace/common";
 import { saveKanbanSettings } from "./kanban-runtime";
 import { saveTunnelHubSettings } from "./tunnel-hub-settings";
+import {
+  normalizeServiceLifecycleArgsConfig,
+  writeServiceLifecycleArgsConfig
+} from "./service-lifecycle-args";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -35,6 +39,7 @@ type BootstrapApplyResult = {
   tunnelHub: "applied" | "absent";
   webs: "applied" | "absent";
   assistant: "recorded" | "absent";
+  services: "applied" | "absent";
 };
 
 type DesktopInitBootstrapState = {
@@ -411,6 +416,19 @@ function applyWebsiteDefaults(app: App, webs: unknown, legacyWebsites: unknown):
   return "applied";
 }
 
+function applyServiceLifecycleArgsDefaults(
+  app: App,
+  serviceDefaults: unknown,
+  platform: NodeJS.Platform
+): BootstrapApplyResult["services"] {
+  const config = normalizeServiceLifecycleArgsConfig({ services: serviceDefaults }, platform);
+  if (!config) {
+    return "absent";
+  }
+  writeServiceLifecycleArgsConfig(app, config);
+  return "applied";
+}
+
 export function applyDesktopInitBootstrap(
   app: App,
   platform: NodeJS.Platform = process.platform
@@ -442,7 +460,8 @@ export function applyDesktopInitBootstrap(
       sso: applySsoDefaults(app, defaults.sso, platform),
       tunnelHub: applyTunnelHubDefaults(app, defaults.tunnelHub),
       webs: applyWebsiteDefaults(app, defaults.webs, defaults.websites),
-      assistant: writeAssistantDefaults(app, assistant)
+      assistant: writeAssistantDefaults(app, assistant),
+      services: applyServiceLifecycleArgsDefaults(app, defaults.services, platform)
     };
     removeDesktopInitFile(initPath);
     writeBootstrapState(app, {
@@ -475,5 +494,6 @@ export const __testInternals = {
   applyMarketDefaults,
   applySsoDefaults,
   applyTunnelHubDefaults,
-  applyWebsiteDefaults
+  applyWebsiteDefaults,
+  applyServiceLifecycleArgsDefaults
 };

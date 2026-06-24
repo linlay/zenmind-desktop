@@ -190,6 +190,10 @@ import {
   stopAgentWebclientHost
 } from "../agent-webclient-host";
 import { resolveDesktopCapability } from "./capabilities";
+import {
+  appendConfiguredServiceLifecycleArgs,
+  type ServiceLifecycleCommandKind
+} from "../../service-lifecycle-args";
 
 export { getInstallDir } from "./layout";
 export { fixShellScriptPermissions } from "./program-layout";
@@ -353,7 +357,7 @@ const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
 const AGENT_PLATFORM_LEGACY_PORT_ENV_KEY = "SERVER_PORT";
 const AGENT_PLATFORM_RUNTIME_CONFIG_RELATIVE_PATH = path.join("configs", "runtime.yml");
 
-type ServiceCommandKind = "start" | "deploy" | "stop";
+type ServiceCommandKind = ServiceLifecycleCommandKind;
 
 function isHostManagedService(service: ServiceDefinition) {
   return isHostManagedAgentWebclientService(service);
@@ -862,7 +866,12 @@ async function initializeServiceInternal(
         ensureAgentContainerHubDesktopConfig(layout);
       }
       if (service.deployCommand) {
-        const deployCommand = appendDesktopManagedLayoutFlags(service, service.deployCommand, layout, "deploy");
+        const deployCommand = appendDesktopManagedLayoutFlags(
+          service,
+          appendConfiguredServiceLifecycleArgs(app, service, service.deployCommand, "deploy"),
+          layout,
+          "deploy"
+        );
         await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, {
           env: buildDesktopServiceCommandEnv(app, service, layout, undefined)
         });
@@ -2215,9 +2224,15 @@ async function runServiceCommand(
     }
     const layout = getServiceLayout(app, service);
     prepareServiceExecutionLayout(service, layout);
-    const commandForExec = appendDesktopManagedLayoutFlags(
+    const commandWithConfiguredArgs = appendConfiguredServiceLifecycleArgs(
+      app,
       service,
       command,
+      options.commandKind ?? "start"
+    );
+    const commandForExec = appendDesktopManagedLayoutFlags(
+      service,
+      commandWithConfiguredArgs,
       layout,
       options.commandKind ?? "start"
     );
@@ -3501,6 +3516,7 @@ export const __testInternals = {
   getStartCommandEnvOverrides,
   buildDesktopServiceCommandEnv: buildDesktopServiceCommandEnvForTests,
   getDesktopStartCommand,
+  appendConfiguredServiceLifecycleArgs,
   appendDesktopManagedLayoutFlags,
   getDesktopStartCommandOptions,
   getPreparedStartupStartOptions,

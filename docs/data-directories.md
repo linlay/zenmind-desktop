@@ -165,6 +165,7 @@ CuteJ 品牌对应：
 - `config/desktop/pet.json`：保存桌宠设置，包括 enabled、selectedPetId、position 和窗口偏好；不保存 `boundAgentKey`。
 - `config/desktop/sso.json`：保存 Desktop SSO 登录配置。session/token 进入 `state/desktop/`。
 - `config/desktop/control.json`：保存控制类设置，目前包含 Kanban 远端控制配置。
+- `config/desktop/service-lifecycle-args.json`：保存从 `desktop-init.json` 拆出的基础服务脚本额外参数；`desktop-init.json` 被消费删除后，服务启动、初始化和停止从这里读取。
 - `data/pets/<pet-id>/pet.json`：用户导入 pet 的资产描述。内置 pet 使用 `builtin:<id>` 指向应用内置资源，用户 pet 使用 `user:<pet-id>` 指向该目录。
 - `config/webs/order.json`：网站/网站应用侧边栏排序 canonical 文件，条目使用 `website:<id>` 或 `webapp:<id>` entryKey。
 - `data/webs/websites/<website-id>/website.json`：外部 URL 网站 manifest。
