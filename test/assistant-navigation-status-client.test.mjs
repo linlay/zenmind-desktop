@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   applyAssistantNavigationPush,
+  readAssistantNavigationActivityAgentsFromPlatform,
   readAssistantCopilotAgentsFromPlatform,
 } = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
 
@@ -78,6 +79,56 @@ test("assistant copilot agents keep the copilot scope when it has results", asyn
   assert.deepEqual(requestedUrls.map((url) => new URL(url).searchParams.get("scope")), ["copilot"]);
   assert.equal(items.length, 1);
   assert.equal(items[0].agentKey, "sidekick");
+});
+
+test("assistant navigation activity agents include copilot-only chats for desktop pet state", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    requestedUrls.push({
+      scope: parsed.searchParams.get("scope"),
+      includeChats: parsed.searchParams.get("includeChats"),
+    });
+    const data = parsed.searchParams.get("scope") === "copilot"
+      ? [{
+          key: "net-yu",
+          name: "网驭智能体",
+          role: "网络协同",
+          stats: { unreadCount: 1 },
+          chats: [{
+            chatId: "copilot-chat-1",
+            agentKey: "net-yu",
+            chatName: "网络诊断",
+            lastRunContent: "已完成网络诊断",
+            isRead: false,
+            updatedAt: "2026-06-24T12:00:00.000Z",
+          }],
+        }]
+      : [{ key: "zenmi", name: "Zenmi" }];
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data };
+      },
+    };
+  };
+
+  const items = await readAssistantNavigationActivityAgentsFromPlatform("http://127.0.0.1:11789", "token");
+
+  assert.deepEqual(requestedUrls, [
+    { scope: "nav", includeChats: "5" },
+    { scope: "copilot", includeChats: "5" },
+  ]);
+  const copilotAgent = items.find((item) => item.agentKey === "net-yu");
+  assert.equal(copilotAgent?.displayName, "网驭智能体");
+  assert.equal(copilotAgent?.unreadCount, 1);
+  assert.equal(copilotAgent?.recentChats[0]?.chatId, "copilot-chat-1");
+  assert.equal(copilotAgent?.recentChats[0]?.lastRunContent, "已完成网络诊断");
 });
 
 test("assistant navigation run.started keeps a newly created chat title instead of writing Thinking", () => {

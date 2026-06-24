@@ -1283,6 +1283,44 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
   assert.equal(createDesktopPetMessagesFromNavigationSnapshot(snapshot)[0]?.awaitingCount, 2);
 });
 
+test("desktop pet reads copilot activity items when navigation items omit the agent", () => {
+  const snapshot = {
+    ok: true,
+    items: [],
+    activityItems: [{
+      agentKey: "net-yu",
+      displayName: "网驭智能体",
+      role: "网络协同",
+      unreadCount: 1,
+      unreadChatCount: 1,
+      chatCount: 1,
+      hasPendingAwaiting: false,
+      latestChatId: "copilot-chat-1",
+      latestPreview: "已完成网络诊断",
+      updatedAt: "2026-06-24T12:00:00.000Z",
+      recentChats: [{
+        chatId: "copilot-chat-1",
+        chatName: "网络诊断",
+        agentKey: "net-yu",
+        updatedAt: "2026-06-24T12:00:00.000Z",
+        lastRunId: "run-1",
+        lastRunContent: "已完成网络诊断",
+        isRead: false,
+        hasActiveRun: false,
+        hasPendingAwaiting: false
+      }]
+    }]
+  };
+
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].agentKey, "net-yu");
+  assert.equal(messages[0].agentDisplayName, "网驭智能体");
+  assert.equal(messages[0].preview, "已完成网络诊断");
+  assert.equal(messages[0].unread, true);
+});
+
 test("desktop pet visual arbitration lets manual signature surface over hover", () => {
   const {
     deriveDesktopPetVisualStatus

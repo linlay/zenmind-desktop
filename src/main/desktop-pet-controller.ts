@@ -72,6 +72,12 @@ type DesktopPetWindowModeStateLike = {
   messages?: unknown;
 };
 
+type DesktopPetNavigationSnapshotLike = {
+  ok?: unknown;
+  items?: unknown;
+  activityItems?: unknown;
+};
+
 type DesktopPetBoundsLike = {
   x: number;
   y: number;
@@ -244,15 +250,23 @@ function readDesktopPetAwaitingCount(chat: { awaitingCount?: unknown; hasPending
   return Math.max(1, Math.round(Number(chat.awaitingCount) || 0));
 }
 
+function readDesktopPetNavigationItems(snapshot: DesktopPetNavigationSnapshotLike | null | undefined) {
+  if (!snapshot?.ok) {
+    return null;
+  }
+  return Array.isArray(snapshot.activityItems) ? snapshot.activityItems : snapshot.items;
+}
+
 export function createDesktopPetActiveTasksFromNavigationSnapshot(
-  snapshot: { ok?: unknown; items?: unknown } | null | undefined
+  snapshot: DesktopPetNavigationSnapshotLike | null | undefined
 ): DesktopPetTaskItem[] {
-  if (!snapshot?.ok || !Array.isArray(snapshot.items)) {
+  const items = readDesktopPetNavigationItems(snapshot);
+  if (!Array.isArray(items)) {
     return [];
   }
 
   const tasksByChatId = new Map<string, DesktopPetTaskItem>();
-  for (const agent of snapshot.items as AssistantNavAgentItem[]) {
+  for (const agent of items as AssistantNavAgentItem[]) {
     const agentKey = toDesktopPetTaskText(agent?.agentKey);
     if (!agentKey || !Array.isArray(agent?.recentChats)) {
       continue;
@@ -363,13 +377,14 @@ export function createDesktopPetMessagesFromAgentStatus(
 // 把 recentChats 映射成桌宠"消息列表"：保留未读、运行中、待确认的会话（含已完成但未读的回复），
 // 每条 = 一个会话的最新一条 agent 回复，可在桌宠内回复（续聊）或关闭（标记已读）。
 export function createDesktopPetMessagesFromNavigationSnapshot(
-  snapshot: { ok?: unknown; items?: unknown } | null | undefined
+  snapshot: DesktopPetNavigationSnapshotLike | null | undefined
 ): DesktopPetMessageItem[] {
-  if (!snapshot?.ok || !Array.isArray(snapshot.items)) {
+  const items = readDesktopPetNavigationItems(snapshot);
+  if (!Array.isArray(items)) {
     return [];
   }
   const messagesByChatId = new Map<string, DesktopPetMessageItem>();
-  for (const agent of snapshot.items as AssistantNavAgentItem[]) {
+  for (const agent of items as AssistantNavAgentItem[]) {
     const agentKey = toDesktopPetTaskText(agent?.agentKey);
     if (!agentKey || !Array.isArray(agent?.recentChats)) {
       continue;

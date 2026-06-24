@@ -531,6 +531,75 @@ function sortNavigationAgents(items: AssistantNavAgentItem[]) {
   return [...items].sort(compareNavigationAgents);
 }
 
+function mergeNavigationChats(
+  primaryChats: AssistantNavChatItem[],
+  secondaryChats: AssistantNavChatItem[]
+) {
+  const chatsById = new Map<string, AssistantNavChatItem>();
+  for (const chat of [...primaryChats, ...secondaryChats]) {
+    const chatId = toText(chat.chatId);
+    if (!chatId) {
+      continue;
+    }
+    const existing = chatsById.get(chatId);
+    if (!existing || toTimestampMs(chat.updatedAt) > toTimestampMs(existing.updatedAt)) {
+      chatsById.set(chatId, chat);
+    }
+  }
+  return [...chatsById.values()].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
+}
+
+function pickLatestTimestamp(left: string, right: string) {
+  return toTimestampMs(right) > toTimestampMs(left) ? right : left;
+}
+
+function mergeNavigationAgentItem(
+  primary: AssistantNavAgentItem,
+  secondary: AssistantNavAgentItem
+): AssistantNavAgentItem {
+  const recentChats = mergeNavigationChats(primary.recentChats, secondary.recentChats);
+  const latestChat = recentChats[0] ?? null;
+  const unreadFromChats = recentChats.filter((chat) => !chat.isRead).length;
+  const unreadCount = Math.max(primary.unreadCount, secondary.unreadCount, unreadFromChats);
+  const unreadChatCount = Math.max(primary.unreadChatCount, secondary.unreadChatCount, unreadCount);
+  const latestPreview = latestChat
+    ? (latestChat.lastRunContent || latestChat.chatName).replace(/\s+/gu, " ").trim()
+    : primary.latestPreview || secondary.latestPreview;
+  return {
+    ...secondary,
+    ...primary,
+    role: primary.role || secondary.role,
+    ...(primary.icon !== undefined || secondary.icon !== undefined ? { icon: primary.icon ?? secondary.icon } : {}),
+    unreadCount,
+    unreadChatCount,
+    chatCount: Math.max(primary.chatCount, secondary.chatCount, recentChats.length),
+    hasPendingAwaiting: primary.hasPendingAwaiting || secondary.hasPendingAwaiting || recentChats.some((chat) => chat.hasPendingAwaiting),
+    latestChatId: latestChat?.chatId ?? primary.latestChatId ?? secondary.latestChatId,
+    latestPreview: latestPreview.slice(0, 120),
+    updatedAt: latestChat?.updatedAt ?? pickLatestTimestamp(primary.updatedAt, secondary.updatedAt),
+    recentChats,
+    agentType: primary.agentType ?? secondary.agentType,
+    mode: primary.mode ?? secondary.mode,
+    workspaceDir: primary.workspaceDir ?? secondary.workspaceDir,
+    workspaceDirExists: primary.workspaceDirExists ?? secondary.workspaceDirExists
+  };
+}
+
+function mergeNavigationAgentGroups(
+  primaryItems: AssistantNavAgentItem[],
+  secondaryItems: AssistantNavAgentItem[]
+) {
+  const agentsByKey = new Map<string, AssistantNavAgentItem>();
+  for (const agent of primaryItems) {
+    agentsByKey.set(agent.agentKey, agent);
+  }
+  for (const agent of secondaryItems) {
+    const existing = agentsByKey.get(agent.agentKey);
+    agentsByKey.set(agent.agentKey, existing ? mergeNavigationAgentItem(existing, agent) : agent);
+  }
+  return sortNavigationAgents([...agentsByKey.values()]);
+}
+
 function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): AssistantNavChatItem | null {
   const chatId = toText(chat.chatId) || toText(chat.id);
   if (!chatId) {
@@ -972,11 +1041,37 @@ export async function readAssistantNavigationAgentsFromPlatform(
   token: string,
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): Promise<AssistantNavAgentItem[]> {
-  const agents = await readApiJson<unknown[]>(
-    `${createApiUrl(baseUrl, "/api/agents")}?includeChats=${encodeURIComponent(String(includeChatLimit))}&scope=nav`,
+  const agents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "nav", includeChatLimit);
+  return buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
+}
+
+async function readAssistantNavigationAgentsFromPlatformScope(
+  baseUrl: string,
+  token: string,
+  scope: "nav" | "copilot",
+  includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
+): Promise<unknown[]> {
+  return await readApiJson<unknown[]>(
+    `${createApiUrl(baseUrl, "/api/agents")}?includeChats=${encodeURIComponent(String(includeChatLimit))}&scope=${scope}`,
     token
   );
-  return buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
+}
+
+export async function readAssistantNavigationActivityAgentsFromPlatform(
+  baseUrl: string,
+  token: string,
+  includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT,
+  navigationItems?: AssistantNavAgentItem[]
+): Promise<AssistantNavAgentItem[]> {
+  const navItems = navigationItems ?? await readAssistantNavigationAgentsFromPlatform(baseUrl, token, includeChatLimit);
+  let copilotItems: AssistantNavAgentItem[] = [];
+  try {
+    const copilotAgents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "copilot", includeChatLimit);
+    copilotItems = buildAssistantNavigationAgentsFromPlatformAgents(copilotAgents, includeChatLimit);
+  } catch {
+    copilotItems = [];
+  }
+  return mergeNavigationAgentGroups(navItems, copilotItems);
 }
 
 export async function readAssistantCopilotAgentsFromPlatform(
@@ -1005,6 +1100,7 @@ export class AssistantNavigationStatusClient {
   private latestResult: AssistantNavAgentItemsResult = {
     ok: false,
     items: [],
+    activityItems: [],
     message: t("assistant.navigationStatusUninitialized"),
     updatedAt: nowIso()
   };
@@ -1080,9 +1176,16 @@ export class AssistantNavigationStatusClient {
       }
 
       const items = await readAssistantNavigationAgentsFromPlatform(baseUrl, token);
+      const activityItems = await readAssistantNavigationActivityAgentsFromPlatform(
+        baseUrl,
+        token,
+        NAVIGATION_AGENT_CHAT_LIMIT,
+        items
+      );
       this.setSnapshot({
         ok: true,
         items,
+        activityItems,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowIso()
       });
@@ -1156,15 +1259,20 @@ export class AssistantNavigationStatusClient {
       status: toText(event.status) || null
     });
     const next = applyAssistantNavigationPush(this.latestResult.items, frame);
-    if (next.changed) {
+    const hasActivityItems = Array.isArray(this.latestResult.activityItems);
+    const nextActivity = hasActivityItems
+      ? applyAssistantNavigationPush(this.latestResult.activityItems ?? [], frame)
+      : next;
+    if (next.changed || nextActivity.changed) {
       this.setSnapshot({
         ok: true,
         items: next.items,
+        activityItems: nextActivity.items,
         message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowIso()
       });
     }
-    if (next.shouldRefresh) {
+    if (next.shouldRefresh || nextActivity.shouldRefresh) {
       this.scheduleRefresh();
     }
   }

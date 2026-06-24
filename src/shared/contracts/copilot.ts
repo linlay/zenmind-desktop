@@ -151,6 +151,7 @@ export interface AssistantNavAgentItem {
 export interface AssistantNavAgentItemsResult {
   ok: boolean;
   items: AssistantNavAgentItem[];
+  activityItems?: AssistantNavAgentItem[];
   message: string;
   updatedAt: string;
 }
