@@ -1,4 +1,3 @@
-export const DEFAULT_CODER_PROJECT_MODEL_KEY = "th-deepseek-v4-pro";
 const LEGACY_PAN_WEBCLIENT_PROJECT_NAME_PREFIX = "pan-webclient";
 const AGENT_WEBCLIENT_PROJECT_NAME_PREFIX = "agent-webclient";
 
@@ -36,9 +35,6 @@ export function buildCoderProjectAgentCreateRequest(
       mode: "CODER",
       icon: {
         name: "folder"
-      },
-      modelConfig: {
-        modelKey: DEFAULT_CODER_PROJECT_MODEL_KEY
       },
       workspace: {
         root: workspaceDir

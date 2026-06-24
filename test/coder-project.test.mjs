@@ -17,13 +17,6 @@ test("workspaceNameFromPath derives a project name from the selected directory",
   assert.equal(workspaceNameFromPath("/Users/jialin/Desktop/proxy-acp-claudecode"), "proxy-acp-claudecode");
 });
 
-test("buildCoderProjectAgentCreateRequest pins a valid default CODER model key", () => {
-  const request = buildCoderProjectAgentCreateRequest("/Users/jialin/Desktop/proxy-acp-claudecode");
-
-  assert.equal(request.definition.modelConfig.modelKey, "th-deepseek-v4-pro");
-  assert.notEqual(request.definition.modelConfig.modelKey, "deepseek-v4-pro");
-});
-
 test("buildCoderProjectAgentCreateRequest keeps an edited project name", () => {
   const request = buildCoderProjectAgentCreateRequest("/Users/jialin/Desktop/pan-webclient", {
     name: "agent-webclient1"
