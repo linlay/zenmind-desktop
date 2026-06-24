@@ -576,7 +576,6 @@ function appendDesktopManagedLayoutFlags(
     return [
       ...command,
       "--config-dir", layout.configDir,
-      "--runtime-dir", layout.dataDir,
       "--state-dir", layout.stateDir,
       "--log-dir", layout.logDir,
       "--port", String(getDesktopManagedCommandPort(service, layout))

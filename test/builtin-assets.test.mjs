@@ -347,7 +347,7 @@ test("syncBuiltinAssets tolerates agent-platform archives without the repairable
   );
 });
 
-test("syncBuiltinAssets rejects stale agent-platform public key deploy flag", async (t) => {
+test("syncBuiltinAssets patches stale agent-platform public key deploy flag", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-stale-key-flag-"));
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -382,12 +382,25 @@ test("syncBuiltinAssets rejects stale agent-platform public key deploy flag", as
   });
 
   const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-stale-key-flag-${Date.now()}`);
-  assert.throws(
-    () => syncBuiltinAssets(tempRoot, {
-      os: "darwin",
-      arch: "arm64",
-      brandId: "cutej"
-    }),
-    /--public-key-source-file.*--local-public-key-file/su
+  const manifest = syncBuiltinAssets(tempRoot, {
+    os: "darwin",
+    arch: "arm64",
+    brandId: "cutej"
+  });
+  const platform = manifest.find((service) => service.id === "agent-platform");
+  assert.ok(platform);
+
+  const programCommonPath = path.join(
+    tempRoot,
+    "build",
+    "resources",
+    "services",
+    "agent-platform",
+    platform.assetFileName,
+    "scripts",
+    "program-common.sh"
   );
+  const programCommon = fs.readFileSync(programCommonPath, "utf8");
+  assert.match(programCommon, /--public-key-source-file/u);
+  assert.doesNotMatch(programCommon, /--local-public-key-file/u);
 });

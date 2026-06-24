@@ -2397,7 +2397,7 @@ test("agent-platform deploy command uses deploy-only Desktop args after configur
 
     const startCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["start.sh"], layout, "start");
     assertFlag(startCommand, "--config-dir", layout.configDir);
-    assertFlag(startCommand, "--runtime-dir", layout.dataDir);
+    assert.equal(startCommand.includes("--runtime-dir"), false);
     assertFlag(startCommand, "--state-dir", layout.stateDir);
     assertFlag(startCommand, "--log-dir", layout.logDir);
     assertFlag(startCommand, "--port", String(fixture.ports.platform));

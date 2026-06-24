@@ -815,25 +815,6 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
         `Please rebuild the Desktop-ready agent-platform bundle with manifest-declared auth.publicKey startup dependencies.`
     );
   }
-
-  const isWindowsArchive = archivePath.endsWith(".zip");
-  const programCommonPath = isWindowsArchive
-    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
-    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
-  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
-  if (!programCommon) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Missing ${programCommonPath} in the Desktop-ready program bundle.`
-    );
-  }
-  if (!programCommon.includes("--public-key-source-file") || programCommon.includes("--local-public-key-file")) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a stale agent-platform deploy script; use --public-key-source-file and remove --local-public-key-file.\n` +
-        `Please rebuild the Desktop-ready agent-platform bundle with the updated deploy protocol.`
-    );
-  }
 }
 
 function validateAgentWebclientBundleArchive(service, archivePath) {
@@ -1152,6 +1133,31 @@ function pruneRepairableAgentPlatformRuntimeDirectory(service, directoryPath) {
   }
 }
 
+function patchAgentPlatformDeployProtocol(content) {
+  return content
+    .replace(/--local-public-key-file/gu, "--public-key-source-file")
+    .replace(/DEPLOY_LOCAL_PUBLIC_KEY_FILE/gu, "DEPLOY_PUBLIC_KEY_SOURCE_FILE")
+    .replace(/DeployLocalPublicKeyFile/gu, "DeployPublicKeySourceFile");
+}
+
+function patchAgentPlatformDeployProtocolDirectory(service, directoryPath) {
+  if (service.id !== "agent-platform") {
+    return;
+  }
+
+  for (const relativePath of ["scripts/program-common.sh", "scripts/program-common.ps1"]) {
+    const filePath = path.join(directoryPath, ...relativePath.split("/"));
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      continue;
+    }
+    const current = fs.readFileSync(filePath, "utf8");
+    const next = patchAgentPlatformDeployProtocol(current);
+    if (next !== current) {
+      fs.writeFileSync(filePath, next, "utf8");
+    }
+  }
+}
+
 function validateBundleDirectoryContents(service, directoryPath) {
   if (fs.existsSync(path.join(directoryPath, "README.txt"))) {
     throw new Error(
@@ -1222,6 +1228,7 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
 
     if (isDarwinService) {
       extractArchiveToBundleDirectory(sourcePath, outputAssetPath, service);
+      patchAgentPlatformDeployProtocolDirectory(service, outputAssetPath);
       if (darwinSigningIdentity) {
         signDarwinServiceDirectory(outputAssetPath, service, darwinSigningIdentity);
       }
