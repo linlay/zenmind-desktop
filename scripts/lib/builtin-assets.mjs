@@ -20,6 +20,7 @@ const DARWIN_CODESIGN_IDENTITY_ENV_KEYS = [
   "MACOS_CODESIGN_IDENTITY",
   "CSC_NAME"
 ];
+const REPAIRABLE_AGENT_PLATFORM_REQUIRED_DIRS = new Set(["runtime"]);
 const MACHO_MAGICS = new Set([
   0xfeedface,
   0xcefaedfe,
@@ -767,9 +768,25 @@ function compareBuiltinVersions(leftVersion, rightVersion) {
 
 export const builtinServices = discoverBuiltinServices();
 
+function normalizeRequiredPath(relativePath) {
+  return relativePath
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/u, "")
+    .replace(/\/+$/u, "");
+}
+
+function isRepairableRequiredDirectory(service, relativePath) {
+  return service.id === "agent-platform" &&
+    REPAIRABLE_AGENT_PLATFORM_REQUIRED_DIRS.has(normalizeRequiredPath(relativePath));
+}
+
 export function findMissingBundleEntries(service, entries) {
   return service.requiredBundleEntries.filter((relativePath) => {
-    const expectedPath = `${service.bundleTopLevelDir}/${relativePath}`;
+    if (isRepairableRequiredDirectory(service, relativePath)) {
+      return false;
+    }
+
+    const expectedPath = `${service.bundleTopLevelDir}/${normalizeRequiredPath(relativePath)}`;
     if (entries.has(expectedPath)) {
       return false;
     }
@@ -1076,9 +1093,44 @@ export function validateBundleArchive(service, archivePath) {
 
 function findMissingBundleDirectoryEntries(service, directoryPath) {
   return service.requiredBundleEntries.filter((relativePath) => {
-    const normalizedRelativePath = relativePath.replace(/\\/g, "/");
+    if (isRepairableRequiredDirectory(service, relativePath)) {
+      return false;
+    }
+
+    const normalizedRelativePath = normalizeRequiredPath(relativePath);
     return !fs.existsSync(path.join(directoryPath, ...normalizedRelativePath.split("/").filter(Boolean)));
   });
+}
+
+function isDirectoryTreeEmpty(directoryPath) {
+  const stack = [directoryPath];
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    for (const entry of readDirectoryEntries(currentPath)) {
+      const entryPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+function pruneRepairableAgentPlatformRuntimeDirectory(service, directoryPath) {
+  if (service.id !== "agent-platform") {
+    return;
+  }
+
+  const runtimeDir = path.join(directoryPath, "runtime");
+  if (!fs.existsSync(runtimeDir) || !fs.statSync(runtimeDir).isDirectory()) {
+    return;
+  }
+
+  if (isDirectoryTreeEmpty(runtimeDir)) {
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
 }
 
 function validateBundleDirectoryContents(service, directoryPath) {
@@ -1155,6 +1207,7 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
         signDarwinServiceDirectory(outputAssetPath, service, darwinSigningIdentity);
       }
       validateBundleDirectory(service, outputAssetPath);
+      pruneRepairableAgentPlatformRuntimeDirectory(service, outputAssetPath);
     } else {
       fs.copyFileSync(sourcePath, outputAssetPath);
       validateBundleArchive(service, outputAssetPath);

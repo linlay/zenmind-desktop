@@ -70,7 +70,10 @@ function writeText(filePath, content) {
   fs.writeFileSync(filePath, content, "utf8");
 }
 
-function writeDarwinCoreServiceArchive(sourceRoot, id) {
+function writeDarwinCoreServiceArchive(sourceRoot, id, {
+  includeAgentPlatformRuntime = true,
+  requireAgentPlatformRuntime = true
+} = {}) {
   const version = "v999.0.0";
   const assetFileName = `${id}-${version}-darwin-arm64.tar.gz`;
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), `zenmind-${id}-darwin-core-`));
@@ -123,8 +126,14 @@ function writeDarwinCoreServiceArchive(sourceRoot, id) {
 
   if (id === "agent-platform") {
     fs.mkdirSync(path.join(bundleRoot, "configs"), { recursive: true });
-    fs.mkdirSync(path.join(bundleRoot, "runtime"), { recursive: true });
-    manifest.runtime.requiredPaths.push("configs", "runtime");
+    manifest.runtime.requiredPaths.push("configs");
+    if (includeAgentPlatformRuntime) {
+      fs.mkdirSync(path.join(bundleRoot, "runtime", "registries", "providers"), { recursive: true });
+      fs.mkdirSync(path.join(bundleRoot, "runtime", "chats"), { recursive: true });
+    }
+    if (requireAgentPlatformRuntime) {
+      manifest.runtime.requiredPaths.push("runtime");
+    }
     manifest.desktop.capabilities.requires = [
       {
         phase: "preStart",
@@ -276,4 +285,52 @@ test("syncBuiltinAssets expands Darwin builtin service archives into directories
     assert.match(service.assetSignature, /^dir:/u);
     assert.equal(fs.existsSync(path.join(servicesRoot, service.id, `${service.assetFileName}.tar.gz`)), false);
   }
+
+  const platform = manifest.find((service) => service.id === "agent-platform");
+  assert.ok(platform);
+  assert.equal(
+    fs.existsSync(path.join(servicesRoot, "agent-platform", platform.assetFileName, "runtime")),
+    false
+  );
+});
+
+test("syncBuiltinAssets tolerates agent-platform archives without the repairable runtime directory", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-runtime-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
+    includeAgentPlatformRuntime: false,
+    requireAgentPlatformRuntime: true
+  });
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-no-runtime-${Date.now()}`);
+  const manifest = syncBuiltinAssets(tempRoot, {
+    os: "darwin",
+    arch: "arm64",
+    brandId: "cutej"
+  });
+  const servicesRoot = path.join(tempRoot, "build", "resources", "services");
+  const platform = manifest.find((service) => service.id === "agent-platform");
+
+  assert.ok(platform);
+  assert.equal(
+    fs.existsSync(path.join(servicesRoot, "agent-platform", platform.assetFileName, "runtime")),
+    false
+  );
 });
