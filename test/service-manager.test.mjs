@@ -2359,6 +2359,7 @@ test("agent-platform deploy command uses deploy-only Desktop args after configur
     await installBuiltinService(app, "agent-container-hub");
     const service = getBuiltinService("agent-platform");
     const publicKeyPath = path.join(getTestConfigDir(userDataRoot, service.id), "configs", "local-public-key.pem");
+    const identityCenterPublicKeyPath = path.join(getTestDataDir(userDataRoot, "identity-center"), "keys", "publicKey.pem");
     fs.mkdirSync(path.dirname(publicKeyPath), { recursive: true });
     fs.writeFileSync(publicKeyPath, "EXISTING_PUBLIC_KEY\n", "utf8");
     const envPath = writeTestEnv(userDataRoot, service.id, `SERVER_PORT=${fixture.ports.platform}\n`);
@@ -2388,9 +2389,11 @@ test("agent-platform deploy command uses deploy-only Desktop args after configur
     }
     assert.ok(command.indexOf("--output-dir") > command.indexOf(configuredArgs.at(-1)));
     assertFlag(command, "--output-dir", layout.configDir);
-    assertFlag(command, "--ap-runtime-dir", layout.dataDir);
+    assertFlag(command, "--ap-runtime-dir", getTestRuntimeRootForHome(app.getPath("home")));
     assertFlag(command, "--container-hub-base-url", `http://127.0.0.1:${fixture.ports.containerHub}`);
-    assertFlag(command, "--local-public-key-file", publicKeyPath);
+    assertFlag(command, "--public-key-source-file", identityCenterPublicKeyPath);
+    assert.equal(command.includes("--local-public-key-file"), false);
+    assert.notEqual(identityCenterPublicKeyPath, publicKeyPath);
 
     const startCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["start.sh"], layout, "start");
     assertFlag(startCommand, "--config-dir", layout.configDir);
@@ -2425,20 +2428,11 @@ test("agent-platform deploy public key source resolves auth capability when conf
     "keys",
     "publicKey.pem"
   );
-  const layout = {
-    programDir: getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version),
-    configDir: getTestConfigDir(userDataRoot, platformService.id),
-    dataDir: getTestDataDir(userDataRoot, platformService.id),
-    stateDir: getTestStateDir(userDataRoot, platformService.id),
-    logDir: getTestLogDir(userDataRoot, platformService.id),
-    envPath: getTestEnvPath(userDataRoot, platformService.id)
-  };
-
   try {
     await installBuiltinService(app, "identity-center");
     assert.equal(fs.existsSync(platformPublicKeyPath), false);
 
-    const publicKeySource = await __testInternals.resolveAgentPlatformDeployLocalPublicKeyFile(app, layout);
+    const publicKeySource = await __testInternals.resolveAgentPlatformDeployPublicKeySourceFile(app);
 
     assert.equal(publicKeySource, identityCenterPublicKeyPath);
     assert.equal(fs.readFileSync(publicKeySource, "utf8").replace(/\r\n/gu, "\n"), "IDENTITY_CENTER_PUBLIC_KEY\n");
@@ -2672,6 +2666,9 @@ test("patchProgramCommonForLayeredLayout repairs agent-platform deploy diagnosti
         "#!/usr/bin/env bash",
         'LOG_FILE="$LOG_DIR/$APP_NAME.log"',
         'PID_FILE="$RUN_DIR/$APP_NAME.pid"',
+        'DEPLOY_LOCAL_PUBLIC_KEY_FILE=""',
+        '      --local-public-key-file)',
+        '        DEPLOY_LOCAL_PUBLIC_KEY_FILE="$2"',
         "program_migrate_hitl_budget_config() {",
         "  if [[ -f \"$host_tools_file\" ]] && grep -Eq '^[[:space:]]*hitl-default-timeout-ms:' \"$host_tools_file\"; then",
         "    legacy_file=\"$host_tools_file\"",
@@ -2728,6 +2725,10 @@ test("patchProgramCommonForLayeredLayout repairs agent-platform deploy diagnosti
     assert.doesNotMatch(patched, /\n\s*return\n\s*fi/);
     assert.match(patched, /LOG_FILE="\$LOG_DIR\/agent-platform\.log"/);
     assert.match(patched, /PID_FILE="\$RUN_DIR\/agent-platform\.pid"/);
+    assert.match(patched, /--public-key-source-file/);
+    assert.match(patched, /DEPLOY_PUBLIC_KEY_SOURCE_FILE/);
+    assert.doesNotMatch(patched, /--local-public-key-file/);
+    assert.doesNotMatch(patched, /DEPLOY_LOCAL_PUBLIC_KEY_FILE/);
     assert.match(patchedDeploySh, /\[program-deploy\] validating bundle/);
     assert.match(patchedDeploySh, /\[program-deploy\] initializing config under \$CONFIG_DIR/);
     assert.match(patchedDeploySh, /\[program-deploy\] loading env: \$ENV_FILE/);

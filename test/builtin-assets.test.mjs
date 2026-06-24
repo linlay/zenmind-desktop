@@ -72,7 +72,18 @@ function writeText(filePath, content) {
 
 function writeDarwinCoreServiceArchive(sourceRoot, id, {
   includeAgentPlatformRuntime = true,
-  requireAgentPlatformRuntime = true
+  requireAgentPlatformRuntime = true,
+  agentPlatformProgramCommon = [
+    "#!/usr/bin/env bash",
+    "program_apply_deploy_flags() {",
+    "  while [[ $# -gt 0 ]]; do",
+    "    case \"$1\" in",
+    "      --public-key-source-file) shift 2 ;;",
+    "      *) shift ;;",
+    "    esac",
+    "  done",
+    "}"
+  ].join("\n") + "\n"
 } = {}) {
   const version = "v999.0.0";
   const assetFileName = `${id}-${version}-darwin-arm64.tar.gz`;
@@ -142,6 +153,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         target: "configs/local-public-key.pem"
       }
     ];
+    writeText(path.join(bundleRoot, "scripts", "program-common.sh"), agentPlatformProgramCommon);
   }
 
   if (id === "agent-webclient") {
@@ -332,5 +344,50 @@ test("syncBuiltinAssets tolerates agent-platform archives without the repairable
   assert.equal(
     fs.existsSync(path.join(servicesRoot, "agent-platform", platform.assetFileName, "runtime")),
     false
+  );
+});
+
+test("syncBuiltinAssets rejects stale agent-platform public key deploy flag", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-stale-key-flag-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
+    agentPlatformProgramCommon: [
+      "#!/usr/bin/env bash",
+      "program_apply_deploy_flags() {",
+      "  while [[ $# -gt 0 ]]; do",
+      "    case \"$1\" in",
+      "      --local-public-key-file) shift 2 ;;",
+      "      *) shift ;;",
+      "    esac",
+      "  done",
+      "}"
+    ].join("\n") + "\n"
+  });
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-stale-key-flag-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /--public-key-source-file.*--local-public-key-file/su
   );
 });

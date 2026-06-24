@@ -122,7 +122,6 @@ import {
 } from "./process-identity";
 import {
   AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY,
-  AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE,
   AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY,
   AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
@@ -160,6 +159,9 @@ import {
   isDesktopManagedHttpUrl,
   parsePort
 } from "./service-network";
+import {
+  resolvePreferredAgentPlatformRuntimeRoot
+} from "./runtime-paths";
 import {
   getManagedPidFilePaths,
   readManagedPidFile,
@@ -492,12 +494,7 @@ async function getDesktopManagedAgentPlatformContainerHubBaseUrl(app: App) {
   return `http://127.0.0.1:${hubPort || getService("agent-container-hub").web.defaultPort}`;
 }
 
-async function resolveAgentPlatformDeployLocalPublicKeyFile(app: App, layout: ServiceLayout) {
-  const managedPublicKeyPath = resolveConfigPath(layout, AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE);
-  if (fs.existsSync(managedPublicKeyPath) && fs.statSync(managedPublicKeyPath).isFile()) {
-    return managedPublicKeyPath;
-  }
-
+async function resolveAgentPlatformDeployPublicKeySourceFile(app: App) {
   const capability = await resolveDesktopCapability(app, "auth.publicKey", {
     ensureProviderInstall: async (providerService) => {
       await ensureMutableInstallDir(app, providerService);
@@ -512,16 +509,17 @@ async function resolveAgentPlatformDeployLocalPublicKeyFile(app: App, layout: Se
 
 function appendAgentPlatformDesktopDeployArgs(
   command: string[],
+  app: App,
   layout: ServiceLayout,
   containerHubBaseUrl: string,
-  localPublicKeyFile: string
+  publicKeySourceFile: string
 ) {
   return [
     ...command,
     "--output-dir", layout.configDir,
-    "--ap-runtime-dir", layout.dataDir,
+    "--ap-runtime-dir", resolvePreferredAgentPlatformRuntimeRoot(app),
     "--container-hub-base-url", containerHubBaseUrl,
-    "--local-public-key-file", localPublicKeyFile
+    "--public-key-source-file", publicKeySourceFile
   ];
 }
 
@@ -536,15 +534,16 @@ async function buildDesktopManagedDeployCommand(
     return appendDesktopManagedLayoutFlags(service, commandWithConfiguredArgs, layout, "deploy");
   }
 
-  const [containerHubBaseUrl, localPublicKeyFile] = await Promise.all([
+  const [containerHubBaseUrl, publicKeySourceFile] = await Promise.all([
     getDesktopManagedAgentPlatformContainerHubBaseUrl(app),
-    resolveAgentPlatformDeployLocalPublicKeyFile(app, layout)
+    resolveAgentPlatformDeployPublicKeySourceFile(app)
   ]);
   return appendAgentPlatformDesktopDeployArgs(
     commandWithConfiguredArgs,
+    app,
     layout,
     containerHubBaseUrl,
-    localPublicKeyFile
+    publicKeySourceFile
   );
 }
 
@@ -3599,7 +3598,7 @@ export const __testInternals = {
   appendDesktopManagedLayoutFlags,
   appendAgentPlatformDesktopDeployArgs,
   buildDesktopManagedDeployCommand,
-  resolveAgentPlatformDeployLocalPublicKeyFile,
+  resolveAgentPlatformDeployPublicKeySourceFile,
   getDesktopStartCommandOptions,
   getPreparedStartupStartOptions,
   resolveAcpCommandForDesktop,

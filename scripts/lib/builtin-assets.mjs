@@ -815,6 +815,25 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
         `Please rebuild the Desktop-ready agent-platform bundle with manifest-declared auth.publicKey startup dependencies.`
     );
   }
+
+  const isWindowsArchive = archivePath.endsWith(".zip");
+  const programCommonPath = isWindowsArchive
+    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
+    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
+  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  if (!programCommon) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing ${programCommonPath} in the Desktop-ready program bundle.`
+    );
+  }
+  if (!programCommon.includes("--public-key-source-file") || programCommon.includes("--local-public-key-file")) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected a stale agent-platform deploy script; use --public-key-source-file and remove --local-public-key-file.\n` +
+        `Please rebuild the Desktop-ready agent-platform bundle with the updated deploy protocol.`
+    );
+  }
 }
 
 function validateAgentWebclientBundleArchive(service, archivePath) {

@@ -26,12 +26,19 @@ export function fixShellScriptPermissions(rootDir: string) {
   }
 }
 
+function patchAgentPlatformPublicKeyDeployFlag(content: string) {
+  return content
+    .replace(/--local-public-key-file/gu, "--public-key-source-file")
+    .replace(/DEPLOY_LOCAL_PUBLIC_KEY_FILE/gu, "DEPLOY_PUBLIC_KEY_SOURCE_FILE")
+    .replace(/DeployLocalPublicKeyFile/gu, "DeployPublicKeySourceFile");
+}
+
 function patchAgentPlatformRuntimeNames(programDir: string) {
   const shellPath = path.join(programDir, "scripts", "program-common.sh");
   if (fs.existsSync(shellPath)) {
     let content = fs.readFileSync(shellPath, "utf8");
     const original = content;
-    content = content
+    content = patchAgentPlatformPublicKeyDeployFlag(content)
       .replace(/LOG_FILE="\$LOG_DIR\/\$APP_NAME\.log"/gu, 'LOG_FILE="$LOG_DIR/agent-platform.log"')
       .replace(/PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/gu, 'PID_FILE="$RUN_DIR/agent-platform.pid"')
       .replace(/(\n\s*else\n\s*)return(\n\s*fi\n\n\s*timeout_ms=)/u, "$1return 0$2");
@@ -89,7 +96,7 @@ function patchAgentPlatformRuntimeNames(programDir: string) {
   if (fs.existsSync(powerShellPath)) {
     let content = fs.readFileSync(powerShellPath, "utf8");
     const original = content;
-    content = content
+    content = patchAgentPlatformPublicKeyDeployFlag(content)
       .replace(
         /\$Script:LogFile\s*=\s*Join-Path\s+\$Script:LogDir\s+["']\$Script:AppName\.log["']/gu,
         '$Script:LogFile = Join-Path $Script:LogDir "agent-platform.log"'
