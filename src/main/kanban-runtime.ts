@@ -711,7 +711,7 @@ export class KanbanRuntime {
     }
     if (issue.automationId) {
       try {
-        await callAgentPlatform(this.options.app, "/api/admin/automations/delete", {
+        await callAgentPlatform(this.options.app, "/api/automation/delete", {
           method: "POST",
           body: { id: issue.automationId }
         });
@@ -1187,7 +1187,7 @@ export class KanbanRuntime {
     const currentUser = this.currentUser();
     if (!issue.automationEnabled) {
       if (issue.automationId) {
-        await callAgentPlatform(this.options.app, "/api/admin/automations/delete", {
+        await callAgentPlatform(this.options.app, "/api/automation/delete", {
           method: "POST",
           body: { id: issue.automationId }
         });
@@ -1220,11 +1220,11 @@ export class KanbanRuntime {
     }
     const payload = buildKanbanAutomationPayload(issue);
     const detail = issue.automationId
-      ? await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/update", {
+      ? await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/update", {
         method: "POST",
         body: { id: issue.automationId, ...payload }
       })
-      : await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/create", {
+      : await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/create", {
         method: "POST",
         body: payload
       });
@@ -1249,7 +1249,7 @@ export class KanbanRuntime {
     }
     if (!issue.automationEnabled) {
       if (issue.automationId) {
-        await this.options.callAgentPlatform(this.options.app, "/api/admin/automations/delete", {
+        await this.options.callAgentPlatform(this.options.app, "/api/automation/delete", {
           method: "POST",
           body: { id: issue.automationId }
         });
@@ -1275,11 +1275,11 @@ export class KanbanRuntime {
     }
     const automationPayload = buildKanbanAutomationPayload(issue);
     const detail = issue.automationId
-      ? await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/update", {
+      ? await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/update", {
         method: "POST",
         body: { id: issue.automationId, ...automationPayload }
       })
-      : await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/create", {
+      : await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/create", {
         method: "POST",
         body: automationPayload
       });

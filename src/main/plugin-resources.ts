@@ -13,7 +13,7 @@ export type PluginResourceDesiredStatus = "running" | "stopped";
 type PluginResourceOwnership = {
   webapps?: Record<string, { updatedAt: string }>;
   agents?: Record<string, { updatedAt: string }>;
-  automations?: Record<string, { updatedAt: string }>;
+  automations?: Record<string, { updatedAt: string; platformId?: string }>;
   desiredStatus?: PluginResourceDesiredStatus;
   pendingAgentPlatformSync?: boolean;
   pendingAgentPlatformRemoval?: boolean;
@@ -167,6 +167,18 @@ async function callAgentPlatform(app: App, endpoint: string, body: unknown) {
   return callAgentPlatformCallback(app, endpoint, { method: "POST", body });
 }
 
+function readPlatformAutomationId(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.id === "string" && record.id.trim()
+    ? record.id.trim()
+    : typeof record.scheduleId === "string" && record.scheduleId.trim()
+      ? record.scheduleId.trim()
+      : "";
+}
+
 async function upsertAgentResource(
   app: App,
   agent: ServiceDefinition["resources"]["agents"][number],
@@ -187,17 +199,22 @@ async function upsertAgentResource(
 async function upsertAutomationResource(
   app: App,
   automation: ServiceDefinition["resources"]["automations"][number],
-  owned: boolean
+  platformId: string
 ) {
   const payload = normalizeAutomationPayload(automation);
-  if (!owned) {
-    await callAgentPlatform(app, "/api/admin/automations/create", payload);
-    return;
+  if (!platformId) {
+    const detail = await callAgentPlatform(app, "/api/automation/create", payload);
+    return readPlatformAutomationId(detail) || automation.id;
   }
   try {
-    await callAgentPlatform(app, "/api/admin/automations/create", payload);
+    const detail = await callAgentPlatform(app, "/api/automation/update", {
+      ...payload,
+      id: platformId
+    });
+    return readPlatformAutomationId(detail) || platformId;
   } catch {
-    await callAgentPlatform(app, "/api/admin/automations/update", payload);
+    const detail = await callAgentPlatform(app, "/api/automation/create", payload);
+    return readPlatformAutomationId(detail) || platformId || automation.id;
   }
 }
 
@@ -212,8 +229,16 @@ async function syncAgentPlatformResources(app: App, service: ServiceDefinition) 
       ownership.agents[agent.key] = { updatedAt: nowIso() };
     }
     for (const automation of service.resources.automations) {
-      await upsertAutomationResource(app, automation, Boolean(ownership.automations[automation.id]));
-      ownership.automations[automation.id] = { updatedAt: nowIso() };
+      const ownedAutomation = ownership.automations[automation.id];
+      const platformId = await upsertAutomationResource(
+        app,
+        automation,
+        ownedAutomation?.platformId || (ownedAutomation ? automation.id : "")
+      );
+      ownership.automations[automation.id] = {
+        updatedAt: nowIso(),
+        ...(platformId ? { platformId } : {})
+      };
     }
     ownership.pendingAgentPlatformSync = false;
     ownership.pendingAgentPlatformRemoval = false;
@@ -230,8 +255,8 @@ async function removeAgentPlatformResources(app: App, service: ServiceDefinition
   const ownership = readOwnership(app, service.id);
   ownership.desiredStatus = "stopped";
   try {
-    for (const automationId of Object.keys(ownership.automations ?? {})) {
-      await callAgentPlatform(app, "/api/admin/automations/delete", { id: automationId });
+    for (const [automationId, record] of Object.entries(ownership.automations ?? {})) {
+      await callAgentPlatform(app, "/api/automation/delete", { id: record.platformId || automationId });
     }
     for (const agentKey of Object.keys(ownership.agents ?? {})) {
       await callAgentPlatform(app, "/api/admin/agents/delete", { key: agentKey });

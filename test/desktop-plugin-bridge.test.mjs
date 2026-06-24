@@ -920,7 +920,7 @@ test("plugin agent and automation resources use current admin routes", async () 
 
     assert.deepEqual(calls.map((call) => call.endpoint), [
       "/api/admin/agents/create",
-      "/api/admin/automations/create"
+      "/api/automation/create"
     ]);
     const ownershipPath = path.join(
       desktopRoot(root),
@@ -1021,7 +1021,7 @@ test("stopped resource plugin records pending agent-platform removal and retries
     await retryPendingPluginResourceSync(app);
 
     assert.deepEqual(calls.map((call) => call.endpoint), [
-      "/api/admin/automations/delete",
+      "/api/automation/delete",
       "/api/admin/agents/delete"
     ]);
     ownership = resourceInternals.readOwnership(app, "happy-agent");

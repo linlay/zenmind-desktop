@@ -233,7 +233,7 @@ export async function syncKanbanIssueAutomation<TApp extends AppPathProvider>(
 
   if (!issue.automationEnabled) {
     if (issue.automationId) {
-      await callAgentPlatform(app, "/api/admin/automations/delete", {
+      await callAgentPlatform(app, "/api/automation/delete", {
         method: "POST",
         body: { id: issue.automationId }
       });
@@ -268,11 +268,11 @@ export async function syncKanbanIssueAutomation<TApp extends AppPathProvider>(
 
   const payload = buildKanbanAutomationPayload(issue);
   const detail = issue.automationId
-    ? await callAgentPlatform<KanbanAutomationDetail>(app, "/api/admin/automations/update", {
+    ? await callAgentPlatform<KanbanAutomationDetail>(app, "/api/automation/update", {
       method: "POST",
       body: { id: issue.automationId, ...payload }
     })
-    : await callAgentPlatform<KanbanAutomationDetail>(app, "/api/admin/automations/create", {
+    : await callAgentPlatform<KanbanAutomationDetail>(app, "/api/automation/create", {
       method: "POST",
       body: payload
     });
@@ -299,7 +299,7 @@ export async function deleteKanbanIssueWithAutomation<TApp extends AppPathProvid
   const issue = currentIssues.find((candidate) => candidate.id === String(issueId ?? "").trim());
   if (issue?.automationId) {
     try {
-      await callAgentPlatform(app, "/api/admin/automations/delete", {
+      await callAgentPlatform(app, "/api/automation/delete", {
         method: "POST",
         body: { id: issue.automationId }
       });

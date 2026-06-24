@@ -4405,7 +4405,7 @@ test("resource plugin start-stop manages agent-platform resources and preserves 
     assert.equal(startResult.service.status, "running");
     assert.deepEqual(calls.map((call) => call.endpoint), [
       "/api/admin/agents/create",
-      "/api/admin/automations/create"
+      "/api/automation/create"
     ]);
 
     const stopResult = await stopService(app, "happy-agent");
@@ -4413,8 +4413,8 @@ test("resource plugin start-stop manages agent-platform resources and preserves 
     assert.equal(stopResult.service.status, "stopped");
     assert.deepEqual(calls.map((call) => call.endpoint), [
       "/api/admin/agents/create",
-      "/api/admin/automations/create",
-      "/api/admin/automations/delete",
+      "/api/automation/create",
+      "/api/automation/delete",
       "/api/admin/agents/delete"
     ]);
     const ownership = pluginResourceInternals.readOwnership(app, "happy-agent");

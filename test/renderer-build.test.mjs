@@ -3057,6 +3057,20 @@ test("assistant navigation agents stay empty before platform data is ready", () 
   assert.doesNotMatch(appShell, /catch\s*\{[\s\S]{0,220}?setAssistantNavAgents\(\[\]\)/);
 });
 
+test("main process automation callers use current platform automation routes", () => {
+  const sourceFiles = [
+    path.join(projectRoot, "src", "main", "plugin-resources.ts"),
+    path.join(projectRoot, "src", "main", "kanban-sync.ts"),
+    path.join(projectRoot, "src", "main", "kanban-runtime.ts")
+  ];
+  const combined = sourceFiles.map((filePath) => fs.readFileSync(filePath, "utf8")).join("\n");
+
+  assert.doesNotMatch(combined, /\/api\/admin\/automations\//);
+  assert.match(combined, /\/api\/automation\/create/);
+  assert.match(combined, /\/api\/automation\/update/);
+  assert.match(combined, /\/api\/automation\/delete/);
+});
+
 test("assistant navigation agents refresh immediately after startup services become ready", () => {
   const appShell = readAppShellSource();
 
