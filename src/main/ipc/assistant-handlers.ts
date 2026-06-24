@@ -194,12 +194,34 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return { ok: false, message: t("assistant.coderWorkspaceMissing") };
     }
     const request = buildCoderProjectAgentCreateRequest(workspaceDir, { name, acpProxyId });
+    const createdAgentName = String(request.definition.name || name).trim();
     try {
       const response = await callAgentPlatform?.(app, "/api/admin/agents/create", {
         method: "POST",
         body: request
       });
       const agentKey = String(response?.key || "").trim();
+      if (agentKey && createdAgentName) {
+        const responseDefinition = response?.definition;
+        const updateDefinition = {
+          ...(
+            typeof responseDefinition === "object" &&
+            responseDefinition !== null &&
+            !Array.isArray(responseDefinition)
+              ? responseDefinition
+              : request.definition
+          ),
+          key: agentKey,
+          name: createdAgentName
+        };
+        await callAgentPlatform?.(app, "/api/admin/agents/update", {
+          method: "POST",
+          body: {
+            key: agentKey,
+            definition: updateDefinition
+          }
+        });
+      }
       assistantNavigationStatusClient?.scheduleRefresh(0);
       return { ok: true, message: t("assistant.coderCreated"), agentKey, workspaceDir };
     } catch (error) {

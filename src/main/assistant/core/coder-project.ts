@@ -1,13 +1,26 @@
+export const DEFAULT_CODER_PROJECT_MODEL_KEY = "th-deepseek-v4-pro";
+const LEGACY_PAN_WEBCLIENT_PROJECT_NAME_PREFIX = "pan-webclient";
+const AGENT_WEBCLIENT_PROJECT_NAME_PREFIX = "agent-webclient";
+
 export function workspaceNameFromPath(workspaceDir: string): string {
   const normalized = String(workspaceDir || "").trim();
   return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
+}
+
+export function normalizeCoderProjectName(name: string): string {
+  const normalized = String(name || "").trim();
+  if (normalized.startsWith(LEGACY_PAN_WEBCLIENT_PROJECT_NAME_PREFIX)) {
+    return `${AGENT_WEBCLIENT_PROJECT_NAME_PREFIX}${normalized.slice(LEGACY_PAN_WEBCLIENT_PROJECT_NAME_PREFIX.length)}`;
+  }
+  return normalized;
 }
 
 export function buildCoderProjectAgentCreateRequest(
   workspaceDir: string,
   options: { name?: string; acpProxyId?: string } = {}
 ) {
-  const name = String(options.name || "").trim() || workspaceNameFromPath(workspaceDir);
+  const requestedName = String(options.name || "").trim();
+  const name = normalizeCoderProjectName(requestedName || workspaceNameFromPath(workspaceDir));
   const acpProxyId = String(options.acpProxyId || "").trim();
   const runtimeConfig: Record<string, string> = {
     workspaceRoot: workspaceDir
@@ -23,6 +36,9 @@ export function buildCoderProjectAgentCreateRequest(
       mode: "CODER",
       icon: {
         name: "folder"
+      },
+      modelConfig: {
+        modelKey: DEFAULT_CODER_PROJECT_MODEL_KEY
       },
       workspace: {
         root: workspaceDir
