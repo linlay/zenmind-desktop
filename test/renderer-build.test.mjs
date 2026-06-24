@@ -2746,6 +2746,7 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(contracts, /interface WebsiteUpdateInput/);
   assert.match(contracts, /update: \(id: string, input: WebsiteUpdateInput\) => Promise<WebsiteResult>/);
   assert.match(contracts, /add: \(input: WebsiteInput\) => Promise<WebsiteResult>/);
+  assert.match(contracts, /remove: \(id: string\) => Promise<WebsiteDeleteResult>/);
   assert.match(store, /export function updateWebsiteItem/);
   assert.match(store, /delete updated\.agentKey/);
   assert.match(store, /export function addWebsiteItem/);
@@ -2753,14 +2754,24 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(webHandlers, /ipcMain\.handle\("webs\.websites\.update"/);
   assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("webs\.websites\.update", id, input\)/);
   assert.match(preload, /add: \(input\) => ipcRenderer\.invoke\("webs\.websites\.add", input\)/);
+  assert.match(preload, /remove: \(id(?:: string)?\) => ipcRenderer\.invoke\("webs\.websites\.remove", id\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
   assert.match(appShell, /function createWebsiteItem\(input: WebsiteInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.add\(input\)/);
+  assert.match(appShell, /function updateWebsiteItem\(id: string, input: WebsiteUpdateInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.update\(id, input\)/);
+  assert.match(appShell, /function deleteWebsiteItem\(id: string\): Promise<WebsiteDeleteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.remove\(id\)/);
   assert.match(appShell, /onCreateWebsiteItem=\{createWebsiteItem\}/);
+  assert.match(appShell, /onUpdateWebsiteItem=\{updateWebsiteItem\}/);
+  assert.match(appShell, /onDeleteWebsiteItem=\{deleteWebsiteItem\}/);
   assert.match(appSidebar, /args\.groupId === "webs"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
+  assert.match(appSidebar, /className="sidebar-website-child-actions"/);
+  assert.match(appSidebar, /t\("sidebar\.website\.edit"\)/);
+  assert.match(appSidebar, /t\("sidebar\.website\.delete"\)/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
   assert.match(appSidebar, /t\("sidebar\.website\.name"\)[\s\S]*?t\("sidebar\.website\.url"\)[\s\S]*?t\("sidebar\.website\.sideAssistant"\)/);
   assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
+  assert.match(appSidebar, /onUpdateWebsiteItem\(websiteEditingItem\.id,[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}/);
+  assert.match(appSidebar, /onDeleteWebsiteItem\(item\.id\)/);
   assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
 });
 

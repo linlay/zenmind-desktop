@@ -7,6 +7,7 @@ import {
   type MouseEvent,
 } from "react";
 import {
+  DeleteOutlined,
   LeftOutlined,
   RightOutlined,
   SearchOutlined,
@@ -25,8 +26,11 @@ import type {
   DesktopSsoStatus,
   ServiceState,
   WebEntry,
+  WebsiteDeleteResult,
+  WebsiteEntry,
   WebsiteInput,
   WebsiteResult,
+  WebsiteUpdateInput,
 } from "../../../shared/contracts";
 import {
   createWebNavOrderKey,
@@ -44,6 +48,7 @@ import {
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
+import { BUILTIN_BROWSER_ROUTE } from "../../../shared/browser-surfaces";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
@@ -58,6 +63,7 @@ type SidebarNavItem = {
   label: string;
   collapsedLabel?: string;
   icon: SidebarIllustrationKind;
+  webItem?: WebEntry;
 };
 
 type SidebarToolItem = Omit<SidebarNavItem, "orderKey"> & {
@@ -743,6 +749,11 @@ type AppSidebarProps = {
   onCreateWebsiteItem?: (
     input: WebsiteInput,
   ) => Promise<WebsiteResult>;
+  onUpdateWebsiteItem?: (
+    id: string,
+    input: WebsiteUpdateInput,
+  ) => Promise<WebsiteResult>;
+  onDeleteWebsiteItem?: (id: string) => Promise<WebsiteDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
@@ -784,6 +795,8 @@ export function AppSidebar({
   onRefreshAssistantNavAgents,
   onRefreshCopilotAgentOptions,
   onCreateWebsiteItem,
+  onUpdateWebsiteItem,
+  onDeleteWebsiteItem,
   onRequestNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
@@ -815,6 +828,9 @@ export function AppSidebar({
   const [websiteAgentKey, setWebsiteAgentKey] = useState("");
   const [websiteCreatePending, setWebsiteCreatePending] = useState(false);
   const [websiteCreateError, setWebsiteCreateError] = useState("");
+  const [websiteEditingItem, setWebsiteEditingItem] =
+    useState<WebsiteEntry | null>(null);
+  const [websiteDeletePendingId, setWebsiteDeletePendingId] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
   const [assistantChatRenameDialog, setAssistantChatRenameDialog] =
@@ -882,6 +898,7 @@ export function AppSidebar({
         to: `/webs/${item.entryKey}`,
         label: item.label,
         icon: "website" as const,
+        webItem: item,
       }))
       .sort((left, right) => {
         const leftIndex =
@@ -956,7 +973,7 @@ export function AppSidebar({
 
     function handleDocumentKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && !websiteCreatePending) {
-        setWebsiteDialogOpen(false);
+        closeWebsiteDialog();
       }
     }
     document.addEventListener("keydown", handleDocumentKeyDown);
@@ -1295,46 +1312,119 @@ export function AppSidebar({
     }
   }
 
-  function openWebsiteDialog(event: MouseEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
+  function resetWebsiteDialogState() {
+    setWebsiteEditingItem(null);
     setWebsiteLabel("");
     setWebsiteUrl("");
     setWebsiteAgentKey("");
+    setWebsiteCreateError("");
+  }
+
+  function closeWebsiteDialog() {
+    setWebsiteDialogOpen(false);
+    resetWebsiteDialogState();
+  }
+
+  function openWebsiteDialog(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    resetWebsiteDialogState();
+    setWebsiteDialogOpen(true);
+    void onRefreshCopilotAgentOptions?.();
+  }
+
+  function openWebsiteEditDialog(
+    event: MouseEvent<HTMLElement>,
+    item: WebsiteEntry,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    setWebsiteEditingItem(item);
+    setWebsiteLabel(item.label);
+    setWebsiteUrl(item.url);
+    setWebsiteAgentKey(item.agentKey || "");
     setWebsiteCreateError("");
     setWebsiteDialogOpen(true);
     void onRefreshCopilotAgentOptions?.();
   }
 
-  async function handleCreateWebsite(event: FormEvent<HTMLFormElement>) {
+  async function handleSaveWebsite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (websiteCreatePending || !onCreateWebsiteItem) {
+    if (websiteCreatePending) {
       return;
     }
     setWebsiteCreatePending(true);
     setWebsiteCreateError("");
     try {
-      const result = await onCreateWebsiteItem({
-        label: websiteLabel,
-        url: websiteUrl,
-        agentKey: websiteAgentKey,
-      });
-      if (!result.ok || !result.item) {
-        setWebsiteCreateError(result.message || t("sidebar.website.addFailed"));
+      let result: WebsiteResult | null = null;
+      if (websiteEditingItem && onUpdateWebsiteItem) {
+        result = await onUpdateWebsiteItem(websiteEditingItem.id, {
+          label: websiteLabel,
+          url: websiteUrl,
+          agentKey: websiteAgentKey,
+        });
+      } else if (!websiteEditingItem && onCreateWebsiteItem) {
+        result = await onCreateWebsiteItem({
+          label: websiteLabel,
+          url: websiteUrl,
+          agentKey: websiteAgentKey,
+        });
+      }
+      if (!result) {
         return;
       }
-      setWebsiteDialogOpen(false);
-      setWebsiteLabel("");
-      setWebsiteUrl("");
-      setWebsiteAgentKey("");
+      if (!result.ok || !result.item) {
+        setWebsiteCreateError(
+          result.message ||
+            t(websiteEditingItem ? "sidebar.website.updateFailed" : "sidebar.website.addFailed"),
+        );
+        return;
+      }
+      closeWebsiteDialog();
       setSidebarGroupState((current) => ({ ...current, webs: true }));
-      requestNavigate(`/webs/${result.item.entryKey}`);
+      if (!websiteEditingItem) {
+        requestNavigate(`/webs/${result.item.entryKey}`);
+      }
     } catch (error) {
       setWebsiteCreateError(
         error instanceof Error ? error.message : String(error),
       );
     } finally {
       setWebsiteCreatePending(false);
+    }
+  }
+
+  async function handleDeleteWebsiteItem(
+    event: MouseEvent<HTMLElement>,
+    item: WebsiteEntry,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (websiteDeletePendingId || !onDeleteWebsiteItem) {
+      return;
+    }
+    if (!window.confirm(t("sidebar.website.deleteConfirm", { name: item.label }))) {
+      return;
+    }
+    setWebsiteDeletePendingId(item.id);
+    try {
+      const result = await onDeleteWebsiteItem(item.id);
+      if (!result.ok) {
+        window.alert(result.message || t("sidebar.website.deleteFailed"));
+        return;
+      }
+      if (
+        currentPathname === `/webs/${item.entryKey}` ||
+        pendingPath === `/webs/${item.entryKey}`
+      ) {
+        requestNavigate(BUILTIN_BROWSER_ROUTE);
+      }
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : t("sidebar.website.deleteFailed"),
+      );
+    } finally {
+      setWebsiteDeletePendingId("");
     }
   }
 
@@ -1678,6 +1768,72 @@ export function AppSidebar({
     const extraClassName = showIcon
       ? "sidebar-child-link"
       : "sidebar-child-link sidebar-custom-child-link";
+    const websiteItem = item.webItem?.kind === "website" ? item.webItem : null;
+    if (websiteItem) {
+      const deleting = websiteDeletePendingId === websiteItem.id;
+      return (
+        <div
+          key={item.to}
+          className={[
+            "sidebar-website-child-row",
+            deleting ? "is-deleting" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          <NavLink
+            to={item.to}
+            onClick={(event) => handleItemClick(event, item.to)}
+            aria-label={item.label}
+            title={item.label}
+            className={() => getSidebarLinkClassName(item.to, extraClassName)}
+          >
+            {showIcon ? (
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={item.icon} />
+              </span>
+            ) : null}
+            <span className="sidebar-link-label">{item.label}</span>
+            {item.status
+              ? renderStatusBadges(item.status, "sidebar-child-status")
+              : null}
+          </NavLink>
+          <span className="sidebar-website-child-actions">
+            <Tooltip content={t("sidebar.website.edit")}>
+              <button
+                type="button"
+                className="assistant-worker-icon-button sidebar-website-child-action"
+                aria-label={t("sidebar.website.edit")}
+                title={t("sidebar.website.edit")}
+                disabled={websiteCreatePending || deleting}
+                onClick={(event) => openWebsiteEditDialog(event, websiteItem)}
+              >
+                <EditSquareIcon width={14} />
+              </button>
+            </Tooltip>
+            <Tooltip content={t("sidebar.website.delete")}>
+              <button
+                type="button"
+                className="assistant-worker-icon-button sidebar-website-child-action is-danger"
+                aria-label={t("sidebar.website.delete")}
+                title={t("sidebar.website.delete")}
+                disabled={deleting || websiteCreatePending}
+                onClick={(event) => void handleDeleteWebsiteItem(event, websiteItem)}
+              >
+                {deleting ? (
+                  <span
+                    className="assistant-material-icon is-loading"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <DeleteOutlined aria-hidden="true" />
+                )}
+              </button>
+            </Tooltip>
+          </span>
+        </div>
+      );
+    }
     return (
       <NavLink
         key={item.to}
@@ -2754,6 +2910,17 @@ export function AppSidebar({
     if (!websiteDialogOpen || typeof document === "undefined") {
       return null;
     }
+    const websiteDialogEditing = Boolean(websiteEditingItem);
+    const websiteDialogTitle = websiteDialogEditing
+      ? t("sidebar.website.editTitle")
+      : t("sidebar.website.title");
+    const websiteSubmitLabel = websiteDialogEditing
+      ? websiteCreatePending
+        ? t("sidebar.website.saving")
+        : t("common.save")
+      : websiteCreatePending
+        ? t("sidebar.website.adding")
+        : t("sidebar.website.add");
 
     return createPortal(
       <div
@@ -2761,7 +2928,7 @@ export function AppSidebar({
         role="presentation"
         onMouseDown={() => {
           if (!websiteCreatePending) {
-            setWebsiteDialogOpen(false);
+            closeWebsiteDialog();
           }
         }}
       >
@@ -2770,17 +2937,17 @@ export function AppSidebar({
           role="dialog"
           aria-modal="true"
           aria-labelledby="sidebar-website-dialog-title"
-          onSubmit={(event) => void handleCreateWebsite(event)}
+          onSubmit={(event) => void handleSaveWebsite(event)}
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="sidebar-website-dialog-head">
-            <strong id="sidebar-website-dialog-title">{t("sidebar.website.title")}</strong>
+            <strong id="sidebar-website-dialog-title">{websiteDialogTitle}</strong>
             <button
               type="button"
               className="sidebar-website-dialog-close"
               aria-label={t("common.close")}
               disabled={websiteCreatePending}
-              onClick={() => setWebsiteDialogOpen(false)}
+              onClick={closeWebsiteDialog}
             >
               ×
             </button>
@@ -2830,7 +2997,7 @@ export function AppSidebar({
               type="button"
               className="sidebar-website-secondary-button"
               disabled={websiteCreatePending}
-              onClick={() => setWebsiteDialogOpen(false)}
+              onClick={closeWebsiteDialog}
             >
               {t("common.cancel")}
             </button>
@@ -2839,7 +3006,7 @@ export function AppSidebar({
               className="sidebar-website-primary-button"
               disabled={websiteCreatePending}
             >
-              {websiteCreatePending ? t("sidebar.website.adding") : t("sidebar.website.add")}
+              {websiteSubmitLabel}
             </button>
           </div>
         </form>
