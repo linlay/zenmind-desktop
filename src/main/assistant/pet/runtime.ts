@@ -43,7 +43,7 @@ import {
   readDesktopPetStoredState,
   resolveDesktopPetEdgeDock,
   resolveDesktopPetDisplayArea,
-  resolveDesktopPetPanelLayout,
+  resolveDesktopPetPanelWindowBounds,
   saveDesktopPetSettings,
   type DesktopPetLocalStatus,
   type DesktopPetWindowMode
@@ -108,7 +108,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   function getPanelWindowGap(_mode: DesktopPetWindowMode) {
-    return 8;
+    return 4;
   }
 
   function getPanelWindowSize(mode: DesktopPetWindowMode) {
@@ -558,10 +558,10 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       width: footprint.width,
       height: footprint.height
     };
-    return resolveDesktopPetPanelLayout({
+    return resolveDesktopPetPanelWindowBounds({
       displayArea,
       petRect,
-      panelSize: getPanelWindowSize(mode),
+      windowSize: getPanelWindowSize(mode),
       gap: getPanelWindowGap(mode)
     }).rect;
   }
