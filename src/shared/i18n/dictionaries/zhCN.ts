@@ -1104,7 +1104,7 @@ export const zhCNMessages = {
   "kanban.display.description": "描述",
   "kanban.display.assignee": "负责人",
   "kanban.display.priority": "优先级",
-  "kanban.status.backlog": "待整理",
+  "kanban.status.backlog": "需求池",
   "kanban.status.todo": "待办",
   "kanban.status.inProgress": "进行中",
   "kanban.status.inReview": "待审查",

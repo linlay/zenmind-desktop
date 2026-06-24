@@ -653,6 +653,22 @@ function formatKanbanPersonLabel(value: string | null | undefined, fallback: str
   return raw;
 }
 
+function getPersonInitials(label: string): string {
+  const raw = label.trim();
+  if (!raw) return "?";
+
+  const chars = Array.from(raw);
+  if (/^[\u4e00-\u9fa5]/.test(chars[0] ?? "")) {
+    return chars.length >= 2 ? chars.slice(0, 2).join("") : chars[0]!;
+  }
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
+  }
+  return raw.slice(0, 2).toUpperCase();
+}
+
 function getIssueCardWorkerPresentation(issue: KanbanIssue, t: TranslateFunction) {
   if (issue.workerType === "agent" && issue.workerAgent?.trim()) {
     const rawLabel = issue.workerAgent.trim();
@@ -2699,33 +2715,35 @@ const IssueCardContent = memo(function IssueCardContent({
   const canOpenIssueDetails = interactive;
   const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
+  const unassignedLabel = t("kanban.form.unassigned");
   const mainContent = (
     <>
-      <div className="issue-card-row issue-card-row-top">
-        <div className="issue-card-top-meta">
-          <span className="issue-card-chip issue-card-origin" title={issueOrigin.title}>
+      <div className="issue-card-header">
+        <div className="issue-card-header-meta">
+          <span className="issue-card-project" title={issueOrigin.title}>
             {issueOrigin.projectLabel}
           </span>
-          {display.priority ? <IssuePriorityBadge priority={issue.priority} t={t} /> : null}
-          <IssueSeverityBadge severity={severity} t={t} />
+          {stageLabel ? (
+            <>
+              <span className="issue-card-header-dot" aria-hidden="true" />
+              <span className="issue-card-stage-name" title={t("kanban.card.stage", { value: stageLabel })}>
+                {stageLabel}
+              </span>
+            </>
+          ) : null}
         </div>
         <span
-          className={`issue-card-status is-${cardStatus.tone}`}
+          className="issue-card-status"
           title={cardStatus.updatedTime ? `${cardStatus.label} · ${cardStatus.updatedTime}` : cardStatus.label}
         >
+          {cardStatus.tone !== "backlog" && cardStatus.tone !== "todo" ? (
+            <span className="issue-card-status-dot" aria-hidden="true" />
+          ) : null}
           <span className="issue-card-status-label">{cardStatus.label}</span>
-          {cardStatus.updatedTime ? <span className="issue-card-status-time">{cardStatus.updatedTime}</span> : null}
         </span>
       </div>
-      <div className="issue-card-row issue-card-row-title">
-        <span className="kanban-title-text" title={issue.title}>
-          {stageLabel ? (
-            <span className="issue-card-chip issue-card-stage" title={t("kanban.card.stage", { value: stageLabel })}>
-              {stageLabel}
-            </span>
-          ) : null}
-          <span className="kanban-title-body">{issue.title}</span>
-        </span>
+      <div className="issue-card-title-block" title={issue.title}>
+        {issue.title}
       </div>
       {description ? <p className="issue-card-description">{description}</p> : null}
     </>
@@ -2766,27 +2784,23 @@ const IssueCardContent = memo(function IssueCardContent({
         </div>
       ) : null}
       <footer className="issue-card-foot">
-        {display.assignee ? (
-          <div className="issue-card-people-line" title={peopleLine.title}>
-            <span className="issue-card-person">
-              <UserOutlined />
-              <span>{peopleLine.assigneeLabel}</span>
-            </span>
-            {peopleLine.worker ? (
-              <>
-                <ArrowRightOutlined className="issue-card-person-arrow" />
-                <span className="issue-card-person">
-                  {peopleLine.worker.icon}
-                  <span>{peopleLine.worker.label}</span>
+        <div className="issue-card-footer-badges">
+          {display.priority ? <IssueCardFooterPriorityBadge priority={issue.priority} t={t} /> : null}
+          <IssueCardFooterSeverityBadge severity={severity} t={t} />
+        </div>
+        <div className="issue-card-footer-end">
+          {display.assignee ? (
+            <div className="issue-card-assignee" title={peopleLine.title}>
+              {peopleLine.assigneeLabel !== unassignedLabel ? (
+                <span className="issue-card-assignee-avatar" aria-hidden="true">
+                  {getPersonInitials(peopleLine.assigneeLabel)}
                 </span>
-              </>
-            ) : null}
-          </div>
-        ) : (
-          <span className="issue-card-people-line" aria-hidden="true" />
-        )}
-        {interactive ? (
-          <span className="issue-card-actions">
+              ) : null}
+              <span className="issue-card-assignee-name">{peopleLine.assigneeLabel}</span>
+            </div>
+          ) : null}
+          {interactive ? (
+            <span className="issue-card-actions">
             <button
               type="button"
               className="issue-card-action"
@@ -2832,6 +2846,7 @@ const IssueCardContent = memo(function IssueCardContent({
             ) : null}
           </span>
         ) : null}
+        </div>
       </footer>
     </>
   );
@@ -3146,6 +3161,36 @@ function KanbanIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filt
     <svg className="kanban-icon" viewBox="0 0 20 20" aria-hidden="true">
       {paths[kind]}
     </svg>
+  );
+}
+
+function IssueCardFooterPriorityBadge({ priority, t }: { priority: KanbanPriority; t: TranslateFunction }) {
+  const meta = PRIORITY_META[priority];
+  const label = t(meta.labelKey);
+  const shortLabel = t(meta.shortLabelKey);
+  return (
+    <span
+      className={`issue-card-footer-badge issue-card-footer-badge-priority is-${priority}`}
+      title={t("kanban.card.priority", { value: label })}
+    >
+      <PriorityIcon priority={priority} width={12} height={12} />
+      <span>{shortLabel}</span>
+    </span>
+  );
+}
+
+function IssueCardFooterSeverityBadge({ severity, t }: { severity: KanbanSeverity; t: TranslateFunction }) {
+  const meta = SEVERITY_META[severity];
+  const label = t(meta.labelKey);
+  const shortLabel = t(meta.shortLabelKey);
+  return (
+    <span
+      className={`issue-card-footer-badge issue-card-footer-badge-severity is-${severity}`}
+      title={t("kanban.card.severity", { value: label })}
+    >
+      <ImportanceIcon severity={severity} width={12} height={12} />
+      <span>{shortLabel}</span>
+    </span>
   );
 }
 
