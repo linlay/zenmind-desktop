@@ -2989,8 +2989,12 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /proxy-acp-codex[\s\S]*?acpProxyId:\s*"codex"/);
   assert.match(appSidebar, /value="builtin"[\s\S]*?t\("sidebar\.project\.builtinCoding"\)/);
   assert.match(appSidebar, /value="acp"[\s\S]*?t\("sidebar\.project\.acpCoding"\)/);
+  assert.match(appSidebar, /value=\{coderAcpProjectDialog\.name\}[\s\S]*?name:\s*event\.target\.value/);
+  assert.doesNotMatch(appSidebar, /<input\s+value=\{coderAcpProjectDialog\.name\}\s+disabled\s*\/>/);
   assert.match(appSidebar, /if \(selectedAcpProxy\) \{[\s\S]*?createInput\.acpProxyId = selectedAcpProxy\.acpProxyId/);
   assert.match(appSidebar, /window\.electronAPI\.assistant\.createCoderProject\(createInput\)/);
+  assert.match(assistantHandlers, /\/api\/admin\/agents\/update/);
+  assert.match(assistantHandlers, /definition:\s*updateDefinition/);
   assert.doesNotMatch(appSidebar, /没有检测到正在运行的 ACP 工具/);
   assert.doesNotMatch(appSidebar, /使用本机 Claude Code 运行 CODER 助理/);
   assert.doesNotMatch(appSidebar, /使用本机 Codex CLI 运行 CODER 助理/);
