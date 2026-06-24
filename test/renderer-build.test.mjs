@@ -5046,6 +5046,13 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(sharedDesktopPet, /"pony"/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-image/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-button::before/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-signature\s+\.desktop-pet-button::after/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-signature\.has-signature-aura\s+\.desktop-pet-button::before/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-signature\.has-signature-aura\s+\.desktop-pet-button::after/);
+  assert.match(desktopPet, /import \{ BRAND_ID, PRODUCT_NAME \} from "..\/..\/..\/shared\/brand";/);
+  assert.match(desktopPet, /const hasSignatureAura = BRAND_ID === "cutej";/);
+  assert.match(desktopPet, /hasSignatureAura && visualStatus === "signature" \? "has-signature-aura" : ""/);
   assert.match(globalStyles, /\.desktop-pet-signature-sprite\s*\{[\s\S]{0,260}background-size:\s*calc\(96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 104px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-signature-animation\s+\.desktop-pet-signature-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-signature-frames var\(--desktop-pet-signature-duration,\s*5200ms\) steps\(var\(--desktop-pet-signature-frames,\s*30\),\s*end\) 1 both;/);
   assert.match(globalStyles, /@keyframes desktop-pet-signature-frames\s*\{[\s\S]*?background-position:\s*calc\(-96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 0;/);
