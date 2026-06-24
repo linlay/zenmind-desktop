@@ -117,7 +117,14 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     services: {
       "agent-platform": {
         lifecycleArgs: {
-          deploy: ["--platform-deploy"],
+          deploy: [
+            "--ai-vision-general-model-key", "th-minimax-m3",
+            "--ai-vision-ocr-model-key", "th-minimax-m3",
+            "--ai-web-fetch-model-key", "th-minimax-m3",
+            "--coder-model-key", "deepseek-v4-pro",
+            "--coder-reasoning-effort", "MEDIUM",
+            "--platform-deploy"
+          ],
           start: ["--platform-start", "alpha"],
           stop: ["--platform-stop"]
         },
@@ -198,7 +205,15 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     services: {
       "agent-platform": {
         lifecycleArgs: {
-          deploy: ["--platform-deploy", "--platform-deploy-darwin"],
+          deploy: [
+            "--ai-vision-general-model-key", "th-minimax-m3",
+            "--ai-vision-ocr-model-key", "th-minimax-m3",
+            "--ai-web-fetch-model-key", "th-minimax-m3",
+            "--coder-model-key", "deepseek-v4-pro",
+            "--coder-reasoning-effort", "MEDIUM",
+            "--platform-deploy",
+            "--platform-deploy-darwin"
+          ],
           start: ["--platform-start", "alpha", "--platform-start-darwin"],
           stop: ["--platform-stop", "--platform-stop-darwin"]
         }

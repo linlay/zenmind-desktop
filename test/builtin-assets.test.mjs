@@ -125,12 +125,6 @@ function writeDarwinCoreServiceArchive(sourceRoot, id) {
     fs.mkdirSync(path.join(bundleRoot, "configs"), { recursive: true });
     fs.mkdirSync(path.join(bundleRoot, "runtime"), { recursive: true });
     manifest.runtime.requiredPaths.push("configs", "runtime");
-    manifest.desktop.envBindings = [
-      {
-        key: "AUTH_LOCAL_PUBLIC_KEY_FILE",
-        value: "configs/local-public-key.pem"
-      }
-    ];
     manifest.desktop.capabilities.requires = [
       {
         phase: "preStart",

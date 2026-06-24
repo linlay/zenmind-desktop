@@ -780,43 +780,6 @@ export function findMissingBundleEntries(service, entries) {
 
 function validateAgentPlatformBundleArchive(service, archivePath) {
   const manifest = readManifestFromArchive(archivePath);
-  const disallowedLegacyEnvBindings = new Set([
-    "HOST_PORT",
-    "AGENT_WS_ENABLED",
-    "AGENT_CONTAINER_HUB_BASE_URL",
-    "AGENT_AUTH_ENABLED",
-    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE"
-  ]);
-  const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
-    ? manifest.desktop.envBindings
-      .map((binding) => (binding && typeof binding.key === "string" ? binding.key.trim() : ""))
-      .filter(Boolean)
-    : [];
-  const legacyEnvBinding = envBindingKeys.find((key) => disallowedLegacyEnvBindings.has(key));
-  if (legacyEnvBinding) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected legacy desktop env binding ${legacyEnvBinding} in manifest.json.\n` +
-      `This usually means a pre-runtime or stale agent-platform bundle was selected instead of the clean Desktop release bundle.`
-    );
-  }
-
-  const authPublicKeyBinding = Array.isArray(manifest?.desktop?.envBindings)
-    ? manifest.desktop.envBindings.find(
-      (binding) =>
-        binding &&
-        typeof binding.key === "string" &&
-        binding.key.trim() === "AUTH_LOCAL_PUBLIC_KEY_FILE"
-    )
-    : undefined;
-  if (!authPublicKeyBinding || authPublicKeyBinding.value !== "configs/local-public-key.pem") {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Missing desktop env binding AUTH_LOCAL_PUBLIC_KEY_FILE=configs/local-public-key.pem in manifest.json.\n` +
-        `Please rebuild the Desktop-ready agent-platform bundle with manifest-declared auth.publicKey startup dependencies.`
-    );
-  }
-
   const requirements = Array.isArray(manifest?.desktop?.capabilities?.requires)
     ? manifest.desktop.capabilities.requires
     : [];
@@ -833,30 +796,6 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Missing desktop capability requirement preStart auth.publicKey copyFile configs/local-public-key.pem in manifest.json.\n` +
         `Please rebuild the Desktop-ready agent-platform bundle with manifest-declared auth.publicKey startup dependencies.`
-    );
-  }
-
-  const entries = listArchiveEntries(archivePath);
-  if ([...entries].some((entry) => entry.includes("local-cli-acp-relay"))) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected legacy relay residue inside the agent-platform bundle.\n` +
-        `Please rebuild the clean Desktop release bundle where local-cli-acp-relay ships as a separate plugin.`
-    );
-  }
-
-  const programCommonPath = `${service.bundleTopLevelDir}/scripts/program-common.sh`;
-  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
-  const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
-  const envExample = readArchiveEntryText(archivePath, envExamplePath);
-  if (
-    (programCommon && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/u.test(programCommon)) ||
-    (envExample && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_|(^|\n)\s*HOST_PORT\s*=/u.test(envExample))
-  ) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected legacy relay or HOST_PORT residue in the bundled startup/config files.\n` +
-        `Please rebuild or reselect the clean Desktop release bundle where relay settings live in the standalone plugin and SERVER_PORT is the public port key.`
     );
   }
 }
@@ -1099,14 +1038,6 @@ function validateBundleContents(service, archivePath, entries) {
         `Please regenerate the upstream release bundle.`
     );
   }
-
-  if (service.id === "agent-platform" && entries.has(`${service.bundleTopLevelDir}/local-cli-acp-relay/README.md`)) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected non-runtime file local-cli-acp-relay/README.md in final bundle.\n` +
-        `Please regenerate the upstream release bundle.`
-    );
-  }
 }
 
 export function validateBundleArchive(service, archivePath) {
@@ -1155,14 +1086,6 @@ function validateBundleDirectoryContents(service, directoryPath) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
         `Unexpected non-runtime file README.txt in final bundle.\n` +
-        `Please regenerate the upstream release bundle.`
-    );
-  }
-
-  if (service.id === "agent-platform" && fs.existsSync(path.join(directoryPath, "local-cli-acp-relay", "README.md"))) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
-        `Unexpected non-runtime file local-cli-acp-relay/README.md in final bundle.\n` +
         `Please regenerate the upstream release bundle.`
     );
   }

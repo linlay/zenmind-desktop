@@ -121,6 +121,9 @@ import {
   pidMatchesInstallDir
 } from "./process-identity";
 import {
+  AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY,
+  AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE,
+  AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY,
   AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
   PROCESS_EXEC_PATH_PLACEHOLDER,
@@ -476,6 +479,75 @@ function getDesktopManagedContainerHubBindAddr(service: ServiceDefinition, layou
   return `127.0.0.1:${getDesktopManagedCommandPort(service, layout)}`;
 }
 
+function getAgentPlatformConfiguredContainerHubBaseUrl(env: Map<string, string>) {
+  return (
+    env.get(AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY)?.trim() ||
+    env.get(AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY)?.trim() ||
+    ""
+  );
+}
+
+async function getDesktopManagedAgentPlatformContainerHubBaseUrl(app: App) {
+  const hubPort = await getServicePortForEnvSync(app, "agent-container-hub");
+  return `http://127.0.0.1:${hubPort || getService("agent-container-hub").web.defaultPort}`;
+}
+
+async function resolveAgentPlatformDeployLocalPublicKeyFile(app: App, layout: ServiceLayout) {
+  const managedPublicKeyPath = resolveConfigPath(layout, AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE);
+  if (fs.existsSync(managedPublicKeyPath) && fs.statSync(managedPublicKeyPath).isFile()) {
+    return managedPublicKeyPath;
+  }
+
+  const capability = await resolveDesktopCapability(app, "auth.publicKey", {
+    ensureProviderInstall: async (providerService) => {
+      await ensureMutableInstallDir(app, providerService);
+    }
+  });
+  if (capability.filePath && fs.existsSync(capability.filePath) && fs.statSync(capability.filePath).isFile()) {
+    return capability.filePath;
+  }
+
+  throw new Error("auth.publicKey capability did not produce a usable local public key file.");
+}
+
+function appendAgentPlatformDesktopDeployArgs(
+  command: string[],
+  layout: ServiceLayout,
+  containerHubBaseUrl: string,
+  localPublicKeyFile: string
+) {
+  return [
+    ...command,
+    "--output-dir", layout.configDir,
+    "--ap-runtime-dir", layout.dataDir,
+    "--container-hub-base-url", containerHubBaseUrl,
+    "--local-public-key-file", localPublicKeyFile
+  ];
+}
+
+async function buildDesktopManagedDeployCommand(
+  app: App,
+  service: ServiceDefinition,
+  command: string[],
+  layout: ServiceLayout
+) {
+  const commandWithConfiguredArgs = appendConfiguredServiceLifecycleArgs(app, service, command, "deploy");
+  if (service.id !== "agent-platform") {
+    return appendDesktopManagedLayoutFlags(service, commandWithConfiguredArgs, layout, "deploy");
+  }
+
+  const [containerHubBaseUrl, localPublicKeyFile] = await Promise.all([
+    getDesktopManagedAgentPlatformContainerHubBaseUrl(app),
+    resolveAgentPlatformDeployLocalPublicKeyFile(app, layout)
+  ]);
+  return appendAgentPlatformDesktopDeployArgs(
+    commandWithConfiguredArgs,
+    layout,
+    containerHubBaseUrl,
+    localPublicKeyFile
+  );
+}
+
 function getServiceNetworkEnv(service: ServiceDefinition, layout: ServiceLayout, env: Map<string, string>) {
   if (service.id !== "agent-platform") {
     return env;
@@ -496,6 +568,9 @@ function appendDesktopManagedLayoutFlags(
   kind: ServiceCommandKind
 ) {
   if (service.id === "agent-platform") {
+    if (kind === "deploy") {
+      return command;
+    }
     if (kind === "stop") {
       return [...command, "--state-dir", layout.stateDir];
     }
@@ -861,20 +936,21 @@ async function initializeServiceInternal(
       fixShellScriptPermissions(installDir);
       patchProgramCommonForLayeredLayout(layout.programDir);
       prepareServiceExecutionLayout(service, layout);
-      ensureDefaultConfig(service, layout);
+      const deferDefaultConfigUntilAfterDeploy = service.id === "agent-platform" && Boolean(service.deployCommand);
+      if (!deferDefaultConfigUntilAfterDeploy) {
+        ensureDefaultConfig(service, layout);
+      }
       if (service.id === "agent-container-hub") {
         ensureAgentContainerHubDesktopConfig(layout);
       }
       if (service.deployCommand) {
-        const deployCommand = appendDesktopManagedLayoutFlags(
-          service,
-          appendConfiguredServiceLifecycleArgs(app, service, service.deployCommand, "deploy"),
-          layout,
-          "deploy"
-        );
+        const deployCommand = await buildDesktopManagedDeployCommand(app, service, service.deployCommand, layout);
         await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, {
           env: buildDesktopServiceCommandEnv(app, service, layout, undefined)
         });
+      }
+      if (deferDefaultConfigUntilAfterDeploy) {
+        ensureDefaultConfig(service, layout);
       }
       await ensureInitializationRequirements(app, service, layout);
       if (service.kind === "plugin" && service.serviceMode === "resource") {
@@ -1623,12 +1699,15 @@ async function syncAgentPlatformContainerHubUrl(
     return;
   }
 
-  const currentValue = getEnvValueWithUpdates(env, updates, "CONTAINER_HUB_BASE_URL");
+  const currentValue =
+    getEnvValueWithUpdates(env, updates, AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY) ||
+    env.get(AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY)?.trim() ||
+    "";
   if (!options.force && currentValue && !isDesktopManagedContainerHubUrl(currentValue)) {
     return;
   }
 
-  updates.set("CONTAINER_HUB_BASE_URL", `http://127.0.0.1:${hubPort}`);
+  updates.set(AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY, `http://127.0.0.1:${hubPort}`);
 }
 
 function syncAgentWebclientPlatformUrlsToPort(
@@ -1770,7 +1849,7 @@ async function ensureAgentPlatformContainerHubDependency(app: App, layout: Servi
   }
 
   const env = readEnvFile(layout.envPath);
-  const baseURL = env.get("CONTAINER_HUB_BASE_URL")?.trim() ?? "";
+  const baseURL = getAgentPlatformConfiguredContainerHubBaseUrl(env);
   if (!isDesktopManagedContainerHubUrl(baseURL)) {
     return;
   }
@@ -3518,6 +3597,9 @@ export const __testInternals = {
   getDesktopStartCommand,
   appendConfiguredServiceLifecycleArgs,
   appendDesktopManagedLayoutFlags,
+  appendAgentPlatformDesktopDeployArgs,
+  buildDesktopManagedDeployCommand,
+  resolveAgentPlatformDeployLocalPublicKeyFile,
   getDesktopStartCommandOptions,
   getPreparedStartupStartOptions,
   resolveAcpCommandForDesktop,

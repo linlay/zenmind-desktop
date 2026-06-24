@@ -179,7 +179,7 @@ function createCoreDesktopManifest(serviceId, assetFileName) {
       ...desktop,
       envBindings: [
         {
-          key: "CONTAINER_HUB_BASE_URL",
+          key: "AP_CONTAINER_HUB_BASE_URL",
           fromService: "agent-container-hub",
           template: "http://127.0.0.1:{{port}}",
           onlyIfDefault: true,
@@ -194,14 +194,6 @@ function createCoreDesktopManifest(serviceId, assetFileName) {
           key: "SERVER_PORT",
           value: "{{serviceDefaultPort}}",
           onlyIfDefault: true
-        },
-        {
-          key: "AUTH_ENABLED",
-          value: "true"
-        },
-        {
-          key: "AUTH_LOCAL_PUBLIC_KEY_FILE",
-          value: "configs/local-public-key.pem"
         }
       ],
       capabilities: {
@@ -629,7 +621,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       web: { routePath: "", portEnvKey: "SERVER_PORT", defaultPort: ports.platform },
       envExample: [
         `SERVER_PORT=${ports.platform}`,
-        "CONTAINER_HUB_BASE_URL=https://bundle-hub.example.test",
+        "AP_CONTAINER_HUB_BASE_URL=https://bundle-hub.example.test",
         "",
         "# Runtime directories",
         "# RUNTIME_DIR=./runtime",
@@ -2326,6 +2318,131 @@ test("desktop managed service commands insert configured lifecycle args before l
       __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["stop.sh"], "stop"),
       ["stop.sh"]
     );
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("agent-platform deploy command uses deploy-only Desktop args after configured args", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+
+  const assertFlag = (command, flag, value) => {
+    const index = command.indexOf(flag);
+    assert.notEqual(index, -1, `expected ${flag} in ${command.join(" ")}`);
+    assert.equal(command[index + 1], value);
+  };
+
+  try {
+    const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
+    const configuredArgs = [
+      "--ai-vision-general-model-key", "th-minimax-m3",
+      "--ai-vision-ocr-model-key", "th-minimax-m3",
+      "--ai-web-fetch-model-key", "th-minimax-m3",
+      "--coder-model-key", "deepseek-v4-pro",
+      "--coder-reasoning-effort", "MEDIUM"
+    ];
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "agent-platform": {
+          lifecycleArgs: {
+            deploy: configuredArgs
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+
+    await installBuiltinService(app, "agent-container-hub");
+    const service = getBuiltinService("agent-platform");
+    const publicKeyPath = path.join(getTestConfigDir(userDataRoot, service.id), "configs", "local-public-key.pem");
+    fs.mkdirSync(path.dirname(publicKeyPath), { recursive: true });
+    fs.writeFileSync(publicKeyPath, "EXISTING_PUBLIC_KEY\n", "utf8");
+    const envPath = writeTestEnv(userDataRoot, service.id, `SERVER_PORT=${fixture.ports.platform}\n`);
+    const layout = {
+      programDir: getTestServiceProgramDir(userDataRoot, service.id, service.version),
+      configDir: getTestConfigDir(userDataRoot, service.id),
+      dataDir: getTestDataDir(userDataRoot, service.id),
+      stateDir: getTestStateDir(userDataRoot, service.id),
+      logDir: getTestLogDir(userDataRoot, service.id),
+      envPath
+    };
+
+    const command = await __testInternals.buildDesktopManagedDeployCommand(
+      app,
+      service,
+      ["deploy.sh", "--manifest-arg"],
+      layout
+    );
+
+    assert.deepEqual(command.slice(0, 2 + configuredArgs.length), [
+      "deploy.sh",
+      "--manifest-arg",
+      ...configuredArgs
+    ]);
+    for (const forbidden of ["--config-dir", "--runtime-dir", "--state-dir", "--log-dir", "--port", "--daemon"]) {
+      assert.equal(command.includes(forbidden), false, `${forbidden} should not be passed to agent-platform deploy`);
+    }
+    assert.ok(command.indexOf("--output-dir") > command.indexOf(configuredArgs.at(-1)));
+    assertFlag(command, "--output-dir", layout.configDir);
+    assertFlag(command, "--ap-runtime-dir", layout.dataDir);
+    assertFlag(command, "--container-hub-base-url", `http://127.0.0.1:${fixture.ports.containerHub}`);
+    assertFlag(command, "--local-public-key-file", publicKeyPath);
+
+    const startCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["start.sh"], layout, "start");
+    assertFlag(startCommand, "--config-dir", layout.configDir);
+    assertFlag(startCommand, "--runtime-dir", layout.dataDir);
+    assertFlag(startCommand, "--state-dir", layout.stateDir);
+    assertFlag(startCommand, "--log-dir", layout.logDir);
+    assertFlag(startCommand, "--port", String(fixture.ports.platform));
+    const stopCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["stop.sh"], layout, "stop");
+    assert.deepEqual(stopCommand, ["stop.sh", "--state-dir", layout.stateDir]);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("agent-platform deploy public key source resolves auth capability when config key is missing", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const homeRoot = path.join(fixture.tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformPublicKeyPath = path.join(
+    getTestConfigDir(userDataRoot, platformService.id),
+    "configs",
+    "local-public-key.pem"
+  );
+  const identityCenterPublicKeyPath = path.join(
+    getTestDataDir(userDataRoot, "identity-center"),
+    "keys",
+    "publicKey.pem"
+  );
+  const layout = {
+    programDir: getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version),
+    configDir: getTestConfigDir(userDataRoot, platformService.id),
+    dataDir: getTestDataDir(userDataRoot, platformService.id),
+    stateDir: getTestStateDir(userDataRoot, platformService.id),
+    logDir: getTestLogDir(userDataRoot, platformService.id),
+    envPath: getTestEnvPath(userDataRoot, platformService.id)
+  };
+
+  try {
+    await installBuiltinService(app, "identity-center");
+    assert.equal(fs.existsSync(platformPublicKeyPath), false);
+
+    const publicKeySource = await __testInternals.resolveAgentPlatformDeployLocalPublicKeyFile(app, layout);
+
+    assert.equal(publicKeySource, identityCenterPublicKeyPath);
+    assert.equal(fs.readFileSync(publicKeySource, "utf8").replace(/\r\n/gu, "\n"), "IDENTITY_CENTER_PUBLIC_KEY\n");
+    assert.equal(fs.existsSync(platformPublicKeyPath), false);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -4383,9 +4500,9 @@ test("initializeService recreates Desktop defaults for core services after confi
     assertIdentityCenterDefaultBcryptEnv(identityCenterEnv);
     assert.doesNotMatch(platformEnv, /^SERVER_PORT=/m);
     assert.match(platformRuntimeConfig, /^  port: \d+$/m);
-    assert.match(platformEnv, /^AUTH_ENABLED=true$/m);
+    assert.doesNotMatch(platformEnv, /^AUTH_ENABLED=/m);
     assert.doesNotMatch(platformEnv, /^PROVIDER_APIKEY_KEY_PART=/m);
-    assert.match(platformEnv, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
+    assert.match(platformEnv, /^AP_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
     assert.doesNotMatch(platformEnv, /^RUNTIME_DIR=/m);
     assert.doesNotMatch(platformEnv, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(platformEnv, /^TOOLS_DIR=/m);
@@ -4638,7 +4755,8 @@ test("writeServiceConfig saves core env content without automatic port migration
     );
     let envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-    assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:117079$/m);
+    assert.match(envContent, /^AP_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:117079$/m);
+    assert.doesNotMatch(envContent, /^CONTAINER_HUB_BASE_URL=/m);
     assert.match(envContent, /^AUTH_ENABLED=false$/m);
 
     await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=18081\n");
@@ -5212,7 +5330,7 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
   }
 });
 
-test("ensurePreStartRequirements applies manifest agent platform auth public key path", async () => {
+test("ensurePreStartRequirements leaves legacy agent-platform auth env untouched", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const homeRoot = path.join(fixture.tempRoot, "home");
@@ -5237,9 +5355,9 @@ test("ensurePreStartRequirements applies manifest agent platform auth public key
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    assert.doesNotMatch(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
-    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
-    assert.match(envContent, /^AUTH_ENABLED=true$/m);
+    assert.match(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+    assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+    assert.doesNotMatch(envContent, /^AUTH_ENABLED=/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -5273,8 +5391,8 @@ test("ensurePreStartRequirements syncs agent-platform public key from identity-c
     assert.equal(fs.readFileSync(identityCenterPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "IDENTITY_CENTER_PUBLIC_KEY\n");
     assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "IDENTITY_CENTER_PUBLIC_KEY\n");
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    assert.match(envContent, /^AUTH_ENABLED=true$/m);
-    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+    assert.doesNotMatch(envContent, /^AUTH_ENABLED=/m);
+    assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
     assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
   } finally {
     restore();
