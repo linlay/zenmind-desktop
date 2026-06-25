@@ -955,49 +955,10 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
 
 function validateIdentityCenterBundleArchive(service, archivePath) {
   const manifest = readManifestFromArchive(archivePath);
-  const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
-  const envExample = readArchiveEntryText(archivePath, envExamplePath);
-  if (!envExample || !envExample.includes("FRONTEND_DIST_DIR=./frontend/dist")) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a stale identity-center env template without FRONTEND_DIST_DIR=./frontend/dist.\n` +
-        `Please rebuild or reselect the Desktop-ready program bundle.`
-    );
-  }
-
   const isWindowsArchive = archivePath.endsWith(".zip");
-  const programCommonPath = isWindowsArchive
-    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
-    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
-  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
-  if (!programCommon) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Missing ${programCommonPath} in the Desktop-ready program bundle.`
-    );
-  }
-
   if (isWindowsArchive) {
-    if (!programCommon.includes("Resolve-ProgramFrontendDistDir") || !programCommon.includes("$env:FRONTEND_DIST_DIR")) {
-      throw new Error(
-        `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-          `Detected a stale identity-center Windows launcher without FRONTEND_DIST_DIR handling.\n` +
-          `Please rebuild or reselect the Desktop-ready program bundle.`
-      );
-    }
     validateIdentityCenterAuthCapabilities(service, archivePath, manifest, "windowsCommand");
     return;
-  }
-
-  if (
-    !programCommon.includes('FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"') ||
-    !programCommon.includes('nohup "$BACKEND_BIN"')
-  ) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a stale identity-center launcher without Desktop compatibility markers.\n` +
-        `Please rebuild or reselect the Desktop-ready program bundle.`
-    );
   }
 
   const commandKey = manifest?.platform?.os === "linux" ? "linuxCommand" : "darwinCommand";

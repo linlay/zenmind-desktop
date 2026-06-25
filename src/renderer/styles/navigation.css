@@ -1052,13 +1052,26 @@
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.14);
 }
 
-.sidebar-coder-programming-mode {
+.sidebar-website-dialog-field > input:disabled,
+.sidebar-website-dialog-readonly-input {
+  background: color-mix(in srgb, var(--ink-muted) 8%, #fff);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+  -webkit-text-fill-color: var(--ink-muted);
+}
+
+:root[data-theme="dark"] .sidebar-website-dialog-field > input:disabled,
+:root[data-theme="dark"] .sidebar-website-dialog-readonly-input {
+  background: color-mix(in srgb, var(--ink-muted) 12%, #2a2b2f);
+}
+
+.sidebar-project-option-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.sidebar-coder-programming-mode label {
+.sidebar-project-option-grid label {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1073,26 +1086,43 @@
   font-weight: 600;
 }
 
-.sidebar-coder-programming-mode input {
+.sidebar-project-option-grid input,
+.sidebar-project-checkbox-row input {
   width: auto;
   min-height: 0;
   margin: 0;
   padding: 0;
 }
 
-.sidebar-coder-programming-mode label:has(input:checked) {
+.sidebar-project-option-grid label:has(input:checked) {
   border-color: #1677ff;
   background: rgba(22, 119, 255, 0.08);
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
 }
 
-.sidebar-coder-programming-mode label:has(input:disabled) {
+.sidebar-project-option-grid label:has(input:disabled) {
   cursor: default;
   opacity: 0.68;
 }
 
-:root[data-theme="dark"] .sidebar-coder-programming-mode label {
+:root[data-theme="dark"] .sidebar-project-option-grid label {
   background: #2a2b2f;
+}
+
+.sidebar-project-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-project-checkbox-row:has(input:disabled) {
+  cursor: default;
+  opacity: 0.68;
 }
 
 .sidebar-website-dialog-error {

@@ -607,8 +607,8 @@ function createStartupCoreAssetsFixture(options = {}) {
       frontend: { mode: "standalone", entry: "/admin/" },
       web: { routePath: "/admin/", portEnvKey: "SERVER_PORT", defaultPort: ports.identityCenter },
       envExample: [
-        `SERVER_PORT=${ports.identityCenter}`,
-        "FRONTEND_DIST_DIR=./frontend/dist",
+        "FRONTEND_PORT=11950",
+        "AUTH_ISSUER=https://zenmind.cc",
         `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_BCRYPT}'`,
         `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_BCRYPT}'`
       ].join("\n") + "\n",
@@ -884,13 +884,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         "utf8"
       );
       const programCommonContent = service.id === "identity-center"
-        ? [
-            "function Resolve-ProgramFrontendDistDir {",
-            "  param([string]$Value)",
-            "  return $Value",
-            "}",
-            "$env:FRONTEND_DIST_DIR = if ($env:FRONTEND_DIST_DIR) { $env:FRONTEND_DIST_DIR } else { './frontend/dist' }"
-          ].join("\r\n") + "\r\n"
+        ? "# fixture\r\n"
         : "# fixture\r\n";
       fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), programCommonContent, "utf8");
     } else {
@@ -1002,8 +996,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       const programCommonContent = service.id === "identity-center"
         ? [
             "#!/usr/bin/env bash",
-            'FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"',
-            'nohup "$BACKEND_BIN" >/dev/null 2>&1 &'
+            "# identity-center fixture"
           ].join("\n") + "\n"
         : service.id === "agent-webclient"
           ? [

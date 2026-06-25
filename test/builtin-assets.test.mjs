@@ -188,10 +188,17 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
 
   if (id === "identity-center") {
     writeText(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n");
-    writeText(path.join(bundleRoot, ".env.example"), "FRONTEND_DIST_DIR=./frontend/dist\n");
+    writeText(
+      path.join(bundleRoot, ".env.example"),
+      [
+        "FRONTEND_PORT=11950",
+        "AUTH_ISSUER=https://zenmind.cc",
+        ""
+      ].join("\n")
+    );
     writeText(
       path.join(bundleRoot, "scripts", "program-common.sh"),
-      "#!/usr/bin/env bash\nFRONTEND_DIST_DIR=\"${FRONTEND_DIST_DIR:-./frontend/dist}\"\nnohup \"$BACKEND_BIN\" >/dev/null 2>&1 &\n"
+      "#!/usr/bin/env bash\n"
     );
     manifest.frontend = {
       mode: "standalone"

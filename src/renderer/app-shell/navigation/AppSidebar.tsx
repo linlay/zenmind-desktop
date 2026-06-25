@@ -125,14 +125,17 @@ type RunningCoderAcpProxyOption = CoderAcpProxyOption & {
   statusLabel: string;
 };
 
-type CoderProjectProgrammingMode = "builtin" | "acp";
+type CreateProjectType = "coder" | "kbase";
+type KbaseVectorStore = "local" | "remote";
 
-type CoderAcpProjectDialogState = {
+type CreateProjectDialogState = {
   name: string;
   workspaceDir: string;
-  programmingMode: CoderProjectProgrammingMode;
+  projectType: CreateProjectType;
+  useAcp: boolean;
   options: RunningCoderAcpProxyOption[];
   selectedAcpProxyId: string;
+  kbaseVectorStore: KbaseVectorStore;
   pending: boolean;
   error: string;
 };
@@ -819,9 +822,9 @@ export function AppSidebar({
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
-  const [creatingCoderProject, setCreatingCoderProject] = useState(false);
-  const [coderAcpProjectDialog, setCoderAcpProjectDialog] =
-    useState<CoderAcpProjectDialogState | null>(null);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [createProjectDialog, setCreateProjectDialog] =
+    useState<CreateProjectDialogState | null>(null);
   const [websiteDialogOpen, setWebsiteDialogOpen] = useState(false);
   const [websiteLabel, setWebsiteLabel] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -1212,13 +1215,13 @@ export function AppSidebar({
     onNavigateItem?.();
   }
 
-  async function handleCreateCoderProject(event: MouseEvent<HTMLElement>) {
+  async function handleCreateProject(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (creatingCoderProject || coderAcpProjectDialog) {
+    if (creatingProject || createProjectDialog) {
       return;
     }
-    setCreatingCoderProject(true);
+    setCreatingProject(true);
     try {
       const selection =
         await window.electronAPI.desktopDialog.selectDirectory();
@@ -1232,52 +1235,61 @@ export function AppSidebar({
           t,
         );
       } catch (error) {
-        console.warn("[assistant] failed to list CODER ACP proxy services", error);
+        console.warn("[assistant] failed to list ACP proxy services", error);
       }
-      setCoderAcpProjectDialog({
+      setCreateProjectDialog({
         name: getWorkspaceNameFromPath(selection.path),
         workspaceDir: selection.path,
-        programmingMode: "builtin",
+        projectType: "coder",
+        useAcp: false,
         options: runningAcpProxies,
         selectedAcpProxyId: runningAcpProxies[0]?.acpProxyId ?? "",
+        kbaseVectorStore: "local",
         pending: false,
         error: "",
       });
     } catch (error) {
-      console.warn("[assistant] failed to prepare CODER project", error);
+      console.warn("[assistant] failed to prepare project", error);
     } finally {
-      setCreatingCoderProject(false);
+      setCreatingProject(false);
     }
   }
 
-  async function handleSubmitCoderAcpProject(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmitCreateProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const dialog = coderAcpProjectDialog;
+    const dialog = createProjectDialog;
     if (!dialog || dialog.pending) {
       return;
     }
     const name = dialog.name.trim();
     if (!name) {
-      setCoderAcpProjectDialog({
+      setCreateProjectDialog({
         ...dialog,
         error: t("sidebar.project.nameRequired"),
       });
       return;
     }
+    if (dialog.projectType === "kbase") {
+      setCreateProjectDialog({
+        ...dialog,
+        error: t("sidebar.project.kbaseNotImplemented"),
+      });
+      return;
+    }
     const selectedAcpProxy =
-      dialog.programmingMode === "acp" && dialog.selectedAcpProxyId
+      dialog.useAcp && dialog.selectedAcpProxyId
         ? dialog.options.find(
             (option) => option.acpProxyId === dialog.selectedAcpProxyId,
           )
         : null;
-    if (dialog.programmingMode === "acp" && !selectedAcpProxy) {
-      setCoderAcpProjectDialog({
+    if (dialog.useAcp && !selectedAcpProxy) {
+      setCreateProjectDialog({
         ...dialog,
         error: t("sidebar.project.acpRequired"),
       });
       return;
     }
-    setCoderAcpProjectDialog({ ...dialog, pending: true, error: "" });
+    setCreateProjectDialog({ ...dialog, pending: true, error: "" });
     try {
       const createInput: AssistantCreateCoderProjectRequest = {
         name,
@@ -1289,14 +1301,14 @@ export function AppSidebar({
       const result =
         await window.electronAPI.assistant.createCoderProject(createInput);
       if (!result.ok) {
-        setCoderAcpProjectDialog({
+        setCreateProjectDialog({
           ...dialog,
           pending: false,
           error: result.message || t("sidebar.project.createCoderFailed"),
         });
         return;
       }
-      setCoderAcpProjectDialog(null);
+      setCreateProjectDialog(null);
       await onRefreshAssistantNavAgents?.();
       if (result.agentKey) {
         setExpandedAssistantAgentKey(result.agentKey);
@@ -1304,7 +1316,7 @@ export function AppSidebar({
       }
     } catch (error) {
       console.warn("[assistant] failed to create CODER project", error);
-      setCoderAcpProjectDialog({
+      setCreateProjectDialog({
         ...dialog,
         pending: false,
         error: error instanceof Error ? error.message : String(error),
@@ -2238,10 +2250,10 @@ export function AppSidebar({
                   className="assistant-worker-icon-button sidebar-assistant-project-button"
                   aria-label={t("sidebar.project.new")}
                   title={t("sidebar.project.new")}
-                  disabled={creatingCoderProject || Boolean(coderAcpProjectDialog)}
-                  onClick={handleCreateCoderProject}
+                  disabled={creatingProject || Boolean(createProjectDialog)}
+                  onClick={handleCreateProject}
                 >
-                  {creatingCoderProject ? (
+                  {creatingProject ? (
                     <span
                       className="assistant-material-icon is-loading"
                       aria-hidden="true"
@@ -2749,8 +2761,8 @@ export function AppSidebar({
     );
   }
 
-  function renderCoderAcpProjectDialog() {
-    if (!coderAcpProjectDialog || typeof document === "undefined") {
+  function renderCreateProjectDialog() {
+    if (!createProjectDialog || typeof document === "undefined") {
       return null;
     }
 
@@ -2759,8 +2771,8 @@ export function AppSidebar({
         className="sidebar-website-dialog-layer"
         role="presentation"
         onMouseDown={() => {
-          if (!coderAcpProjectDialog.pending) {
-            setCoderAcpProjectDialog(null);
+          if (!createProjectDialog.pending) {
+            setCreateProjectDialog(null);
           }
         }}
       >
@@ -2768,18 +2780,18 @@ export function AppSidebar({
           className="sidebar-website-dialog"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="sidebar-coder-acp-dialog-title"
-          onSubmit={(event) => void handleSubmitCoderAcpProject(event)}
+          aria-labelledby="sidebar-create-project-dialog-title"
+          onSubmit={(event) => void handleSubmitCreateProject(event)}
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="sidebar-website-dialog-head">
-            <strong id="sidebar-coder-acp-dialog-title">{t("sidebar.project.createTitle")}</strong>
+            <strong id="sidebar-create-project-dialog-title">{t("sidebar.project.createTitle")}</strong>
             <button
               type="button"
               className="sidebar-website-dialog-close"
               aria-label={t("common.close")}
-              disabled={coderAcpProjectDialog.pending}
-              onClick={() => setCoderAcpProjectDialog(null)}
+              disabled={createProjectDialog.pending}
+              onClick={() => setCreateProjectDialog(null)}
             >
               ×
             </button>
@@ -2787,9 +2799,9 @@ export function AppSidebar({
           <label className="sidebar-website-dialog-field">
             <span>{t("sidebar.project.name")}</span>
             <input
-              value={coderAcpProjectDialog.name}
+              value={createProjectDialog.name}
               onChange={(event) =>
-                setCoderAcpProjectDialog((current) =>
+                setCreateProjectDialog((current) =>
                   current
                     ? {
                         ...current,
@@ -2799,76 +2811,107 @@ export function AppSidebar({
                     : current,
                 )
               }
-              disabled={coderAcpProjectDialog.pending}
+              disabled={createProjectDialog.pending}
               autoFocus
             />
           </label>
           <label className="sidebar-website-dialog-field">
             <span>{t("sidebar.project.directory")}</span>
-            <input value={coderAcpProjectDialog.workspaceDir} readOnly />
+            <input
+              className="sidebar-website-dialog-readonly-input"
+              value={createProjectDialog.workspaceDir}
+              readOnly
+              disabled
+              aria-disabled="true"
+            />
           </label>
           <div className="sidebar-website-dialog-field">
-            <span>{t("sidebar.project.codingMode")}</span>
+            <span>{t("sidebar.project.type")}</span>
             <div
-              className="sidebar-coder-programming-mode"
+              className="sidebar-project-option-grid"
               role="radiogroup"
-              aria-label={t("sidebar.project.codingMode")}
+              aria-label={t("sidebar.project.type")}
             >
               <label>
                 <input
                   type="radio"
-                  name="coder-programming-mode"
-                  value="builtin"
-                  checked={coderAcpProjectDialog.programmingMode === "builtin"}
+                  name="create-project-type"
+                  value="coder"
+                  checked={createProjectDialog.projectType === "coder"}
                   onChange={() =>
-                    setCoderAcpProjectDialog((current) =>
+                    setCreateProjectDialog((current) =>
                       current
                         ? {
                             ...current,
-                            programmingMode: "builtin",
+                            projectType: "coder",
                             error: "",
                           }
                         : current,
                     )
                   }
-                  disabled={coderAcpProjectDialog.pending}
+                  disabled={createProjectDialog.pending}
                 />
-                <span>{t("sidebar.project.builtinCoding")}</span>
+                <span>{t("sidebar.project.coder")}</span>
               </label>
               <label>
                 <input
                   type="radio"
-                  name="coder-programming-mode"
-                  value="acp"
-                  checked={coderAcpProjectDialog.programmingMode === "acp"}
+                  name="create-project-type"
+                  value="kbase"
+                  checked={createProjectDialog.projectType === "kbase"}
                   onChange={() =>
-                    setCoderAcpProjectDialog((current) =>
+                    setCreateProjectDialog((current) =>
                       current
                         ? {
                             ...current,
-                            programmingMode: "acp",
-                            selectedAcpProxyId:
-                              current.selectedAcpProxyId ||
-                              current.options[0]?.acpProxyId ||
-                              "",
+                            projectType: "kbase",
                             error: "",
                           }
                         : current,
                     )
                   }
-                  disabled={coderAcpProjectDialog.pending}
+                  disabled={createProjectDialog.pending}
                 />
-                <span>{t("sidebar.project.acpCoding")}</span>
+                <span>{t("sidebar.project.kbase")}</span>
               </label>
             </div>
           </div>
-          {coderAcpProjectDialog.programmingMode === "acp" ? (
+          {createProjectDialog.projectType === "coder" ? (
+            <div className="sidebar-website-dialog-field">
+              <label className="sidebar-project-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={createProjectDialog.useAcp}
+                  onChange={(event) => {
+                    const useAcp = event.target.checked;
+                    setCreateProjectDialog((current) =>
+                      current
+                        ? {
+                            ...current,
+                            useAcp,
+                            selectedAcpProxyId: useAcp
+                              ? current.selectedAcpProxyId ||
+                                current.options[0]?.acpProxyId ||
+                                ""
+                              : current.selectedAcpProxyId,
+                            error: "",
+                          }
+                        : current,
+                    );
+                  }}
+                  disabled={createProjectDialog.pending}
+                />
+                <span>{t("sidebar.project.useAcp")}</span>
+              </label>
+            </div>
+          ) : null}
+          {createProjectDialog.projectType === "coder" && createProjectDialog.useAcp ? (
             <label className="sidebar-website-dialog-field">
-              <span>{t("sidebar.project.acpTool")}</span>
+              <span>{t("sidebar.project.acpProxy")}</span>
               <select
-                value={coderAcpProjectDialog.selectedAcpProxyId}
+                value={createProjectDialog.selectedAcpProxyId}
                 onChange={(event) =>
-                  setCoderAcpProjectDialog((current) =>
+                  setCreateProjectDialog((current) =>
                     current
                       ? {
                           ...current,
@@ -2879,14 +2922,14 @@ export function AppSidebar({
                   )
                 }
                 disabled={
-                  coderAcpProjectDialog.pending ||
-                  coderAcpProjectDialog.options.length === 0
+                  createProjectDialog.pending ||
+                  createProjectDialog.options.length === 0
                 }
               >
-                {coderAcpProjectDialog.options.length === 0 ? (
+                {createProjectDialog.options.length === 0 ? (
                   <option value="">{t("sidebar.project.noRunningAcp")}</option>
                 ) : null}
-                {coderAcpProjectDialog.options.map((option) => (
+                {createProjectDialog.options.map((option) => (
                   <option value={option.acpProxyId} key={option.serviceId}>
                     {option.label} · {option.statusLabel}
                   </option>
@@ -2894,26 +2937,79 @@ export function AppSidebar({
               </select>
             </label>
           ) : null}
-          {coderAcpProjectDialog.error ? (
+          {createProjectDialog.projectType === "kbase" ? (
+            <div className="sidebar-website-dialog-field">
+              <span>{t("sidebar.project.vectorStore")}</span>
+              <div
+                className="sidebar-project-option-grid"
+                role="radiogroup"
+                aria-label={t("sidebar.project.vectorStore")}
+              >
+                <label>
+                  <input
+                    type="radio"
+                    name="kbase-vector-store"
+                    value="local"
+                    checked={createProjectDialog.kbaseVectorStore === "local"}
+                    onChange={() =>
+                      setCreateProjectDialog((current) =>
+                        current
+                          ? {
+                              ...current,
+                              kbaseVectorStore: "local",
+                              error: "",
+                            }
+                          : current,
+                      )
+                    }
+                    disabled={createProjectDialog.pending}
+                  />
+                  <span>{t("sidebar.project.localVectorStore")}</span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="kbase-vector-store"
+                    value="remote"
+                    checked={createProjectDialog.kbaseVectorStore === "remote"}
+                    onChange={() =>
+                      setCreateProjectDialog((current) =>
+                        current
+                          ? {
+                              ...current,
+                              kbaseVectorStore: "remote",
+                              error: "",
+                            }
+                          : current,
+                      )
+                    }
+                    disabled={createProjectDialog.pending}
+                  />
+                  <span>{t("sidebar.project.remoteVectorStore")}</span>
+                </label>
+              </div>
+            </div>
+          ) : null}
+          {createProjectDialog.error ? (
             <div className="sidebar-website-dialog-error" role="alert">
-              {coderAcpProjectDialog.error}
+              {createProjectDialog.error}
             </div>
           ) : null}
           <div className="sidebar-website-dialog-actions">
             <button
               type="button"
               className="sidebar-website-secondary-button"
-              disabled={coderAcpProjectDialog.pending}
-              onClick={() => setCoderAcpProjectDialog(null)}
+              disabled={createProjectDialog.pending}
+              onClick={() => setCreateProjectDialog(null)}
             >
               {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="sidebar-website-primary-button"
-              disabled={coderAcpProjectDialog.pending}
+              disabled={createProjectDialog.pending}
             >
-              {coderAcpProjectDialog.pending ? t("sidebar.project.creating") : t("sidebar.project.create")}
+              {createProjectDialog.pending ? t("sidebar.project.creating") : t("sidebar.project.create")}
             </button>
           </div>
         </form>
@@ -3271,7 +3367,7 @@ export function AppSidebar({
           {renderAssistantChatMenu()}
           {renderAssistantChatRenameDialog()}
           {renderAgentMenu()}
-          {renderCoderAcpProjectDialog()}
+          {renderCreateProjectDialog()}
           {renderWebsiteDialog()}
         </div>
       </div>
