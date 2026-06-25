@@ -2573,19 +2573,49 @@ test("service command runner strips legacy layout env from child process", async
   }
 });
 
-test("service command env injects DESKTOP_DEVICE_ID for builtin and plugin layouts without persisting it", () => {
+test("service command env injects DESKTOP_DEVICE_ID only for identity-center", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-device-env-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const app = createApp(userDataRoot);
-  const builtinEnvPath = writeTestEnv(userDataRoot, "agent-platform", "SERVER_PORT=7078\n");
+  const platformEnvPath = writeTestEnv(userDataRoot, "agent-platform", "SERVER_PORT=7078\n");
+  const identityEnvPath = writeTestEnv(userDataRoot, "identity-center", "SERVER_PORT=7076\n");
   const pluginEnvPath = writeTestEnv(userDataRoot, "test-plugin", "PORT=9090\n", "plugins");
-  const builtinLayout = {
+  const platformService = { id: "agent-platform", kind: "builtin" };
+  const identityService = { id: "identity-center", kind: "builtin" };
+  const pluginService = registerPlugin({
+    pluginApiVersion: 1,
+    id: "test-plugin",
+    name: "Test Plugin",
+    version: "v1.0.0",
+    description: "fixture plugin",
+    lifecycle: {
+      start: "start.sh",
+      stop: "stop.sh"
+    },
+    runtime: {
+      pidRelativePath: "run/test-plugin.pid",
+      logRelativePath: "run/test-plugin.log",
+      requiredPaths: ["manifest.json"]
+    },
+    service: {
+      ui: "none"
+    }
+  });
+  const platformLayout = {
     programDir: getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"),
     configDir: getTestConfigDir(userDataRoot, "agent-platform"),
     dataDir: getTestDataDir(userDataRoot, "agent-platform"),
     stateDir: getTestStateDir(userDataRoot, "agent-platform"),
     logDir: getTestLogDir(userDataRoot, "agent-platform"),
-    envPath: builtinEnvPath
+    envPath: platformEnvPath
+  };
+  const identityLayout = {
+    programDir: getTestServiceProgramDir(userDataRoot, "identity-center", "v1.0.0"),
+    configDir: getTestConfigDir(userDataRoot, "identity-center"),
+    dataDir: getTestDataDir(userDataRoot, "identity-center"),
+    stateDir: getTestStateDir(userDataRoot, "identity-center"),
+    logDir: getTestLogDir(userDataRoot, "identity-center"),
+    envPath: identityEnvPath
   };
   const pluginLayout = {
     programDir: getTestPluginProgramDir(userDataRoot, "test-plugin"),
@@ -2597,16 +2627,31 @@ test("service command env injects DESKTOP_DEVICE_ID for builtin and plugin layou
   };
 
   try {
-    const builtinEnv = __testInternals.buildDesktopServiceCommandEnv(app, builtinLayout, undefined);
-    const pluginEnv = __testInternals.buildDesktopServiceCommandEnv(app, pluginLayout, { NODE_BIN: "/tmp/node" });
+    const platformEnv = __testInternals.buildDesktopServiceCommandEnv(app, platformService, platformLayout, undefined);
+    const identityEnv = __testInternals.buildDesktopServiceCommandEnv(
+      app,
+      identityService,
+      identityLayout,
+      { DESKTOP_DEVICE_ID: "external-device" }
+    );
+    const pluginEnv = __testInternals.buildDesktopServiceCommandEnv(
+      app,
+      pluginService,
+      pluginLayout,
+      { NODE_BIN: "/tmp/node" }
+    );
 
-    assert.equal(typeof builtinEnv.DESKTOP_DEVICE_ID, "string");
-    assert.match(builtinEnv.DESKTOP_DEVICE_ID, /^[0-9a-f-]{36}$/i);
-    assert.equal(pluginEnv.DESKTOP_DEVICE_ID, builtinEnv.DESKTOP_DEVICE_ID);
+    assert.equal(platformEnv.DESKTOP_DEVICE_ID, undefined);
+    assert.equal(typeof identityEnv.DESKTOP_DEVICE_ID, "string");
+    assert.match(identityEnv.DESKTOP_DEVICE_ID, /^[0-9a-f-]{36}$/i);
+    assert.notEqual(identityEnv.DESKTOP_DEVICE_ID, "external-device");
+    assert.equal(pluginEnv.DESKTOP_DEVICE_ID, undefined);
     assert.equal(pluginEnv.NODE_BIN, "/tmp/node");
-    assert.equal(fs.readFileSync(builtinEnvPath, "utf8"), "SERVER_PORT=7078\n");
+    assert.equal(fs.readFileSync(platformEnvPath, "utf8"), "SERVER_PORT=7078\n");
+    assert.equal(fs.readFileSync(identityEnvPath, "utf8"), "SERVER_PORT=7076\n");
     assert.equal(fs.readFileSync(pluginEnvPath, "utf8"), "PORT=9090\n");
   } finally {
+    registryInternals.clearServices("plugin");
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });

@@ -2236,12 +2236,15 @@ function buildDesktopServiceCommandEnv(
   _layout: ServiceLayout,
   overrides: NodeJS.ProcessEnv | undefined
 ) {
-  return {
+  const env = {
     ...getPluginBridgeEnv(app, service),
     ...getPluginSettingsEnv(app, service),
-    ...(overrides ?? {}),
-    DESKTOP_DEVICE_ID: getDesktopDeviceId(app)
+    ...(overrides ?? {})
   };
+  if (service.id === "identity-center") {
+    env.DESKTOP_DEVICE_ID = getDesktopDeviceId(app);
+  }
+  return env;
 }
 
 function buildDesktopServiceCommandEnvForTests(
@@ -2252,8 +2255,7 @@ function buildDesktopServiceCommandEnvForTests(
 ) {
   if ("programDir" in serviceOrLayout) {
     return {
-      ...((layoutOrOverrides as NodeJS.ProcessEnv | undefined) ?? {}),
-      DESKTOP_DEVICE_ID: getDesktopDeviceId(app)
+      ...((layoutOrOverrides as NodeJS.ProcessEnv | undefined) ?? {})
     };
   }
   return buildDesktopServiceCommandEnv(
