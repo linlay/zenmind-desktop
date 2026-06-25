@@ -90,10 +90,16 @@ type WebviewAttachResult =
 type AttachedWebviewLike = {
   id: number;
   on(eventName: string, listener: (...args: any[]) => void): unknown;
+  copy(): void;
+  cut(): void;
   downloadURL(url: string): void;
   openDevTools(options: { mode: "detach" }): void;
+  paste(): void;
+  selectAll(): void;
   setWindowOpenHandler(handler: (details: { url: string }) => { action: "deny" }): void;
 };
+
+type WebviewEditCommand = "copy" | "cut" | "paste" | "selectAll";
 
 type AttachedWebviewOptions<TMainWindow> = {
   platform: DesktopPlatform;
@@ -441,6 +447,58 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
   return { ok: true };
 }
 
+function resolveWebviewEditShortcut(
+  platform: DesktopPlatform,
+  input: any
+): WebviewEditCommand | null {
+  if (input?.type && input.type !== "keyDown") {
+    return null;
+  }
+  if (input?.alt || input?.shift) {
+    return null;
+  }
+
+  const hasPlatformModifier = platform === "darwin"
+    ? input?.meta === true && input?.control !== true
+    : input?.control === true && input?.meta !== true;
+  if (!hasPlatformModifier) {
+    return null;
+  }
+
+  switch (String(input?.key || "").toLowerCase()) {
+    case "a":
+      return "selectAll";
+    case "c":
+      return "copy";
+    case "v":
+      return "paste";
+    case "x":
+      return "cut";
+    default:
+      return null;
+  }
+}
+
+function runWebviewEditCommand(
+  contents: AttachedWebviewLike,
+  command: WebviewEditCommand
+) {
+  switch (command) {
+    case "copy":
+      contents.copy();
+      return;
+    case "cut":
+      contents.cut();
+      return;
+    case "paste":
+      contents.paste();
+      return;
+    case "selectAll":
+      contents.selectAll();
+      return;
+  }
+}
+
 export function configureAttachedWebview<TMainWindow extends {
   isDestroyed(): boolean;
   webContents: {
@@ -459,6 +517,13 @@ export function configureAttachedWebview<TMainWindow extends {
   };
 
   contents.on("before-input-event", (event, input) => {
+    const editCommand = resolveWebviewEditShortcut(options.platform, input);
+    if (editCommand) {
+      event.preventDefault();
+      runWebviewEditCommand(contents, editCommand);
+      return;
+    }
+
     if (!options.isDevToolsShortcut(options.platform, input)) {
       return;
     }

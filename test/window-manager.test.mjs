@@ -129,6 +129,7 @@ class FakeWebContents extends EventEmitter {
   downloadedUrls = [];
   devtoolsOpenOptions = null;
   windowOpenHandler = null;
+  editCommands = [];
 
   constructor(id = 7) {
     super();
@@ -141,6 +142,22 @@ class FakeWebContents extends EventEmitter {
 
   openDevTools(options) {
     this.devtoolsOpenOptions = options;
+  }
+
+  copy() {
+    this.editCommands.push("copy");
+  }
+
+  cut() {
+    this.editCommands.push("cut");
+  }
+
+  paste() {
+    this.editCommands.push("paste");
+  }
+
+  selectAll() {
+    this.editCommands.push("selectAll");
   }
 
   setWindowOpenHandler(handler) {
@@ -277,11 +294,11 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.webPreferences.webviewTag, true);
   assert.equal(winOptions.titleBarStyle, "hidden");
   assert.deepEqual(winOptions.titleBarOverlay, {
-    color: "#F6F8FC",
-    symbolColor: "#475569",
+    color: "#FFFFFF",
+    symbolColor: "#1F2937",
     height: 44
   });
-  assert.equal(winOptions.backgroundColor, "#F6F8FC");
+  assert.equal(winOptions.backgroundColor, "#FFFFFF");
 });
 
 test("window manager includes initial locale arguments for renderer bootstrap", () => {
@@ -507,6 +524,57 @@ test("window manager wires webview preload validation and guest webview behavior
     }
   });
   assert.deepEqual(guest.devtoolsOpenOptions, { mode: "detach" });
+});
+
+test("attached webviews forward native edit shortcuts to the focused guest", () => {
+  const macGuest = new FakeWebContents(71);
+  const windowsGuest = new FakeWebContents(72);
+  const prevented = {
+    macCopy: false,
+    windowsSelectAll: false,
+    unrelated: false
+  };
+  const baseOptions = {
+    getMainWindow: () => null,
+    isDevToolsShortcut: () => false,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async () => {},
+    schedule: (callback) => callback()
+  };
+
+  configureAttachedWebview(macGuest, {
+    ...baseOptions,
+    platform: "darwin"
+  });
+  configureAttachedWebview(windowsGuest, {
+    ...baseOptions,
+    platform: "win32"
+  });
+
+  macGuest.emit("before-input-event", {
+    preventDefault: () => {
+      prevented.macCopy = true;
+    }
+  }, { type: "keyDown", key: "c", meta: true, control: false });
+  windowsGuest.emit("before-input-event", {
+    preventDefault: () => {
+      prevented.windowsSelectAll = true;
+    }
+  }, { type: "keyDown", key: "a", control: true, meta: false });
+  windowsGuest.emit("before-input-event", {
+    preventDefault: () => {
+      prevented.unrelated = true;
+    }
+  }, { type: "keyDown", key: "c", control: false, meta: false });
+
+  assert.equal(prevented.macCopy, true);
+  assert.equal(prevented.windowsSelectAll, true);
+  assert.equal(prevented.unrelated, false);
+  assert.deepEqual(macGuest.editCommands, ["copy"]);
+  assert.deepEqual(windowsGuest.editCommands, ["selectAll"]);
 });
 
 test("window manager grants media permissions only to the main or quick assistant window", async () => {
