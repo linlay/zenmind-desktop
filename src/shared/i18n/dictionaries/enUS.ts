@@ -316,7 +316,7 @@ export const enUSMessages = {
   "settings.market.noticeVisible": "Feature Market is enabled.",
   "settings.market.noticeHidden": "Feature Market is hidden.",
   "settings.control.label": "Control Center",
-  "settings.control.description": "Manage services, Desktop pairing, tunnel, and port exposure.",
+  "settings.control.description": "Manage services and Desktop pairing.",
   "settings.control.panelAria": "Control Center settings",
   "settings.control.cloudPanelAria": "Cloud board control settings",
   "settings.control.remoteControlTitle": "Cloud board remote control",

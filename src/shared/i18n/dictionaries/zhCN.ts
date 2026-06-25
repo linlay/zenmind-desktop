@@ -316,7 +316,7 @@ export const zhCNMessages = {
   "settings.market.noticeVisible": "功能市场已开启。",
   "settings.market.noticeHidden": "功能市场已隐藏。",
   "settings.control.label": "控制中心",
-  "settings.control.description": "管理服务、桌面端配对、隧道与端口穿透。",
+  "settings.control.description": "管理服务和桌面端配对。",
   "settings.control.panelAria": "控制中心设置",
   "settings.control.cloudPanelAria": "云看板控制设置",
   "settings.control.remoteControlTitle": "云看板远程控制",

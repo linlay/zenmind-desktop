@@ -2003,7 +2003,6 @@ export function AppSidebar({
                 <AgentIcon
                   icon={agent.icon}
                   className="worker-panel-icon"
-                  fallbackSeed={`${agent.agentKey}:${agent.displayName}`}
                   type="agent"
                 />
                 <span className="assistant-worker-main worker-panel-main">

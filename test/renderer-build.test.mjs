@@ -401,6 +401,11 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?position:\s*relative;/);
   assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-bg:\s*var\(--desktop-ui-bg\);[\s\S]*?--control-center-blue:\s*var\(--desktop-ui-primary\);[\s\S]*?--control-center-code:\s*var\(--desktop-ui-code-bg\);/);
   assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-card-radius:\s*8px;[\s\S]*?--control-center-control-radius:\s*6px;/);
+  assert.match(globalStyles, /\.control-center-shell\s*\{[\s\S]*?grid-template-columns:\s*minmax\(240px,\s*304px\) minmax\(0,\s*1fr\);/);
+  const controlCenterViewportMedia = globalStyles.match(/@media \(max-width: 1320px\)\s*\{(?<body>[\s\S]*?)^@media \(max-width: 1080px\)/m)?.groups?.body;
+  assert.ok(controlCenterViewportMedia);
+  assert.doesNotMatch(controlCenterViewportMedia, /\.control-center-shell\s*\{/);
+  assert.match(globalStyles, /@container control-center-page \(max-width: 920px\)\s*\{[\s\S]*?\.control-center-shell\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
   assert.match(globalStyles, /\.control-center-metric-card\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
   assert.match(globalStyles, /\.service-sider\.service-catalog\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
   assert.match(globalStyles, /\.control-center-service-hero\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
@@ -927,7 +932,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(newChatHandler, /requestNavigate\(\s*createAgentNewChatRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
   assert.match(sidebarSource, /className="assistant-worker-collapse-item"/);
   assert.match(sidebarSource, /className="assistant-worker-header-text"/);
-  assert.match(sidebarSource, /<AgentIcon[\s\S]*?icon=\{agent\.icon\}[\s\S]*?className="worker-panel-icon"[\s\S]*?fallbackSeed=\{`\$\{agent\.agentKey\}:\$\{agent\.displayName\}`\}[\s\S]*?type="agent"[\s\S]*?\/>/);
+  assert.match(sidebarSource, /<AgentIcon[\s\S]*?icon=\{agent\.icon\}[\s\S]*?className="worker-panel-icon"[\s\S]*?type="agent"[\s\S]*?\/>/);
   assert.doesNotMatch(sidebarSource, /renderAssistantAgentIcon/);
   assert.doesNotMatch(sidebarSource, /SidebarIllustration kind="agent"/);
   assert.match(sidebarSource, /worker-panel-header-body/);
@@ -1346,11 +1351,11 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /group:\s*"personal"/);
   assert.match(settingsSections, /group:\s*"integrations"/);
   assert.match(settingsSections, /group:\s*"system"/);
-  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"control"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"control"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"market"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"tunnelHub"[\s\S]*?group:\s*"integrations"/);
   assert.match(settingsSections, /id:\s*"usage"[\s\S]*?label:\s*"usage"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"control"[\s\S]*?label:\s*"control"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
-  assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*false/);
+  assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
@@ -1491,6 +1496,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.doesNotMatch(settingsPage, /settings-directory-nav/);
   assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
   assert.match(settingsStyles, /\.settings-content-panel/);
+  assert.match(settingsStyles, /\.settings-page-single\[data-settings-section="control"\]\s*\{[\s\S]*?padding-top:\s*0;/);
   assert.match(settingsStyles, /\.settings-page \.usage-summary-strip\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/);
   assert.match(settingsStyles, /\.settings-page \.usage-heatmap-grid\s*\{[\s\S]*?grid-template-rows:\s*repeat\(7, 10px\);/);
   assert.match(sidebarSource, /settings\.group\.personal/);
@@ -1757,7 +1763,12 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true;\s*\}/);
   assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "assistant"[\s\S]*handleToggleDesktopPet[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled/);
-  assert.doesNotMatch(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "tunnelHub"/);
+  const sectionHeaderActionBody = settingsPage.match(
+    /function renderSectionHeaderAction\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  function renderActiveSection/
+  )?.groups?.body ?? "";
+  assert.doesNotMatch(sectionHeaderActionBody, /case "tunnelHub"/);
+  assert.match(settingsPage, /const shouldShowSettingsPageHead = activeSection !== "control";/);
+  assert.match(settingsPage, /\{shouldShowSettingsPageHead \? \(\s*<div className="settings-page-head">/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
   assert.match(settingsStyles, /\.settings-page-head-action\s*\{[\s\S]*justify-content:\s*flex-end;/);
@@ -1792,7 +1803,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /moveSidebarNavOrderItem/);
 });
 
-test("settings page keeps Kanban separate while merging Tunnel into Control", () => {
+test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const settingsSections = readSourceFile("src", "renderer", "settingsPageSections.ts");
   const settingsRoutes = readSourceFile("src", "shared", "settings-routes.ts");
@@ -1806,14 +1817,24 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?settings\.kanban\.label/);
   assert.match(sharedSettingsSections, /"tunnelHub"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
-  assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*false/);
+  assert.match(settingsSections, /id:\s*"control"[\s\S]*id:\s*"kanban"[\s\S]*id:\s*"market"[\s\S]*id:\s*"tunnelHub"[\s\S]*id:\s*"websites"/);
+  assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*true/);
   assert.doesNotMatch(settingsRoutes, /kanban:\s*"control"/);
-  assert.match(settingsRoutes, /tunnelHub:\s*"control"/);
+  assert.doesNotMatch(settingsRoutes, /tunnelHub:\s*"control"/);
   assert.match(settingsPage, /case "kanban"[\s\S]*settings\.kanban\.panelAria[\s\S]*settings\.control\.remoteControlDescription/);
-  assert.doesNotMatch(settingsPage, /case "tunnelHub"/);
+  const controlCaseBody = settingsPage.match(
+    /case "control":[\s\S]*?(?=case "tunnelHub")/
+  )?.[0] ?? "";
+  const tunnelHubCaseBody = settingsPage.match(
+    /case "tunnelHub": \{[\s\S]*?(?=case "navigation")/
+  )?.[0] ?? "";
+  assert.match(tunnelHubCaseBody, /settings\.tunnelHub\.panelAria[\s\S]*settings\.tunnelHub\.connectionTitle[\s\S]*handleToggleTunnelHubEnabled[\s\S]*handleSaveTunnelHubSettings[\s\S]*settings\.tunnelHub\.relayUrl/);
+  assert.match(tunnelHubCaseBody, /settings\.mobilePairing\.title[\s\S]*settings\.mobilePairing\.targetMode[\s\S]*handleCreateAppPairingPayload[\s\S]*settings\.mobilePairing\.qrCode[\s\S]*handleCopyAppPairingPayload/);
   assert.doesNotMatch(settingsPage, /settings\.control\.cloudPanelAria/);
   assert.match(settingsPage, /import \{ ControlCenterPage \} from "\.\.\/control-center\/ControlCenterPage";/);
-  assert.match(settingsPage, /case "control"[\s\S]*<ControlCenterPage \/>[\s\S]*settings\.control\.tunnelTitle[\s\S]*settings\.mobilePairing\.title/);
+  assert.match(controlCaseBody, /<ControlCenterPage \/>/);
+  assert.doesNotMatch(controlCaseBody, /settings\.mobilePairing\.title/);
+  assert.doesNotMatch(controlCaseBody, /settings\.control\.tunnelTitle|settings\.tunnelHub\.panelAria/);
   assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.deviceId/);
   assert.doesNotMatch(settingsPage, /settings\.tunnelHub\.publicUrl|settings\.tunnelHub\.webSocketUrl/);
   assert.doesNotMatch(settingsPage, /rotateRelayToken|settings\.tunnelHub\.rotateRelayToken/);
@@ -1827,13 +1848,17 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.doesNotMatch(enUS, /Reconnect interval|settings\.tunnelHub\.reconnect/);
   assert.doesNotMatch(zhCN, /重连间隔|settings\.tunnelHub\.reconnect/);
   assert.match(settingsPage, /settings\.createAppPairingPayload/);
+  assert.match(settingsPage, /handleCreateAppPairingPayload[\s\S]*showSectionNotice\("tunnelHub"[\s\S]*setReadErrorSections\(\["tunnelHub"\]/);
+  assert.match(settingsPage, /handleCopyAppPairingPayload[\s\S]*showSectionNotice\("tunnelHub"/);
   assert.match(settingsPage, /window\.electronAPI\.agentAuth\.issueAccessToken\("missing"\)/);
   assert.match(settingsPage, /shouldReadControlData = activeSection === "kanban"/);
-  assert.match(settingsPage, /shouldReadTunnelHubData = activeSection === "control"/);
+  assert.match(settingsPage, /shouldReadTunnelHubData = activeSection === "tunnelHub"/);
   assert.match(settingsPage, /settings\.control\.remoteControlEnabled/);
   assert.match(settingsPage, /settings\.control\.remoteControlDescription/);
   assert.match(settingsPage, /handleToggleTunnelHubEnabled/);
-  assert.match(settingsPage, /settings\.control\.tunnelDescription/);
+  assert.match(settingsPage, /setReadErrorSections\(\["tunnelHub"\]/);
+  assert.match(settingsPage, /showSectionNotice\("tunnelHub"/);
+  assert.doesNotMatch(settingsPage, /settings\.control\.tunnelDescription/);
   assert.match(settingsPage, /window\.electronAPI\.kanban\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.kanban\.saveSettings/);
   assert.doesNotMatch(settingsPage, /window\.electronAPI\.kanban\.listOnlineDevices/);
@@ -1845,12 +1870,12 @@ test("settings page keeps Kanban separate while merging Tunnel into Control", ()
   assert.match(kanbanRuntime, /KANBAN_CONFIG_FILE = "kanban\.json"/);
   assert.match(zhCN, /"settings\.control\.label":\s*"控制中心"/);
   assert.match(zhCN, /"settings\.kanban\.label":\s*"看板"/);
-  assert.match(zhCN, /"settings\.control\.description":\s*"管理服务、桌面端配对、隧道与端口穿透。"/);
+  assert.match(zhCN, /"settings\.control\.description":\s*"管理服务和桌面端配对。"/);
   assert.match(zhCN, /"settings\.kanban\.description":\s*"管理看板云端 API 与远程控制权限。"/);
   assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
   assert.match(enUS, /"settings\.control\.label":\s*"Control Center"/);
   assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
-  assert.match(enUS, /"settings\.control\.description":\s*"Manage services, Desktop pairing, tunnel, and port exposure\."/);
+  assert.match(enUS, /"settings\.control\.description":\s*"Manage services and Desktop pairing\."/);
   assert.match(enUS, /"settings\.kanban\.description":\s*"Manage the Kanban cloud API and remote control permission\."/);
   assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, debugVisible, t \}\)/);
 });
@@ -1877,8 +1902,8 @@ test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () =
   assert.doesNotMatch(tunnelSettings, removedTunnelHubPatterns);
   assert.match(tunnelRuntime, /startTunnelHubRuntimeIfEnabled/);
   assert.doesNotMatch(tunnelRuntime, new RegExp(`startService|restartService|${removedTunnelHubPatterns.source}`));
-  assert.match(settingsPage, /case "control"[\s\S]*handleToggleTunnelHubEnabled/);
-  assert.match(settingsPage, /settings\.control\.tunnelPanelAria/);
+  assert.match(settingsPage, /case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /settings\.tunnelHub\.panelAria/);
 });
 
 test("settings page renderer text is routed through i18n", () => {

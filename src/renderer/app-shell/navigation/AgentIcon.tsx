@@ -36,7 +36,6 @@ import waveIcon from "../../assets/agent-icons/wave.svg";
 type AgentIconProps = {
   icon?: AssistantNavAgentIcon;
   className?: string;
-  fallbackSeed?: string;
   size?: number;
   type?: "agent" | "team";
 };
@@ -107,32 +106,6 @@ const IconMap: Record<(typeof AGENT_ICON_NAMES)[number], string> = {
   terminal: terminalIcon,
 };
 
-const FALLBACK_ICON_NAMES = AGENT_ICON_NAMES.filter(
-  (name) => name !== "terminal",
-);
-const PLACEHOLDER_ICON_NAMES = new Set(["terminal"]);
-
-function hashFallbackSeed(seed: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash ^= seed.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function resolveFallbackIcon(seed: string) {
-  const normalizedSeed = seed.trim().toLowerCase();
-  if (!normalizedSeed || FALLBACK_ICON_NAMES.length === 0) {
-    return defaultIcon;
-  }
-  const iconName =
-    FALLBACK_ICON_NAMES[
-      hashFallbackSeed(normalizedSeed) % FALLBACK_ICON_NAMES.length
-    ];
-  return IconMap[iconName] || defaultIcon;
-}
-
 function isImageIcon(value: string) {
   return /\.(png|jpe?g|webp|gif|svg)(?:[?#].*)?$/iu.test(value.trim());
 }
@@ -176,7 +149,6 @@ function renderImageIcon(
 export function AgentIcon({
   icon,
   className,
-  fallbackSeed = "",
   size = 32,
   type = "agent",
 }: AgentIconProps) {
@@ -193,13 +165,7 @@ export function AgentIcon({
 
   if (type === "agent") {
     const name = readIconName(icon);
-    const builtinIcon = PLACEHOLDER_ICON_NAMES.has(name)
-      ? ""
-      : IconMap[name as keyof typeof IconMap];
-    const iconSource =
-      builtinIcon ||
-      resolveFallbackIcon(fallbackSeed || name);
-    return renderImageIcon(iconSource, className, size);
+    return renderImageIcon(IconMap[name as keyof typeof IconMap] || defaultIcon, className, size);
   }
 
   const style: CSSProperties = {

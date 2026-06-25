@@ -2601,7 +2601,7 @@
 }
 
 .control-center-shell {
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 304px) minmax(0, 1fr);
   gap: 24px;
   align-items: stretch;
   flex: 1;
@@ -3969,11 +3969,6 @@
 }
 
 @media (max-width: 1320px) {
-  .control-center-shell {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-
   .service-sider.service-catalog {
     min-height: auto;
   }

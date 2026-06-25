@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Form, Input, Modal, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
+import { Button, Card, Form, Input, Modal, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import { ControlCenterPage } from "../control-center/ControlCenterPage";
@@ -2309,7 +2309,7 @@ export function SettingsPage({
   const shouldReadUsageProfile = activeSection === "usage";
   const shouldReadGeneralSettings = activeSection === "general";
   const shouldReadControlData = activeSection === "kanban";
-  const shouldReadTunnelHubData = activeSection === "control";
+  const shouldReadTunnelHubData = activeSection === "tunnelHub";
   const shouldReadMarketSettings = activeSection === "market";
   const shouldReadAssistantSettings = Boolean(
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
@@ -3641,10 +3641,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
       }
-      setReadErrorSections(["control"], "");
-      showSectionNotice("control", result.message, "success");
+      setReadErrorSections(["tunnelHub"], "");
+      showSectionNotice("tunnelHub", result.message, "success");
     } catch (reason) {
-      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setTunnelHubSaving(false);
     }
@@ -3669,14 +3669,14 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       if (!result.ok) {
         throw new Error(result.message || t("settings.tunnelHub.enableIncomplete"));
       }
-      setReadErrorSections(["control"], "");
+      setReadErrorSections(["tunnelHub"], "");
       showSectionNotice(
-        "control",
+        "tunnelHub",
         nextEnabled ? t("settings.tunnelHub.noticeEnabled") : t("settings.tunnelHub.noticeDisabled"),
         "success"
       );
     } catch (reason) {
-      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setTunnelHubSaving(false);
     }
@@ -3690,14 +3690,14 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       });
       setAppPairingResult(result);
       if (!result.ok) {
-        showSectionNotice("control", result.message || t("settings.mobilePairing.failed"), "error");
+        showSectionNotice("tunnelHub", result.message || t("settings.mobilePairing.failed"), "error");
         return;
       }
-      setReadErrorSections(["control"], "");
+      setReadErrorSections(["tunnelHub"], "");
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
       setAppPairingResult({ ok: false, message });
-      showSectionNotice("control", message, "error");
+      showSectionNotice("tunnelHub", message, "error");
     } finally {
       setAppPairingPending(false);
     }
@@ -3714,7 +3714,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     }
     const result = await window.electronAPI.clipboard.writeText(appPairingResult.payloadText);
     if (!result.ok) {
-      showSectionNotice("control", result.message || t("settings.mobilePairing.copyFailed"), "error");
+      showSectionNotice("tunnelHub", result.message || t("settings.mobilePairing.copyFailed"), "error");
     }
   }
 
@@ -4129,130 +4129,131 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
             </form>
           </div>
         );
-      case "control": {
+      case "control":
+        return (
+          <div className="settings-control-center-embed">
+            <ControlCenterPage />
+          </div>
+        );
+      case "tunnelHub": {
         const pairingPayloadResult = appPairingResult?.ok ? appPairingResult : null;
         const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
         return (
-          <>
-            <div className="settings-control-center-embed">
-              <ControlCenterPage />
-            </div>
-            <div className="settings-control-config-stack">
-              <div className="settings-item-card settings-control-card" aria-label={t("settings.control.tunnelPanelAria")}>
-                <div className="settings-item-header settings-mobile-pairing-header">
-                  <div className="settings-appearance-row-copy">
-                    <strong>{t("settings.control.tunnelTitle")}</strong>
-                    <span>{t("settings.control.tunnelDescription")}</span>
-                  </div>
-                  <Switch
-                    checked={tunnelHubSettings.enabled}
-                    aria-label={t("settings.control.tunnelTitle")}
-                    disabled={tunnelHubSaving}
-                    loading={tunnelHubSaving}
-                    onChange={() => void handleToggleTunnelHubEnabled()}
-                  />
+          <div className="settings-control-config-stack">
+            <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
+              <div className="settings-item-header settings-mobile-pairing-header">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.tunnelHub.connectionTitle")}</strong>
+                  <span>{t("settings.tunnelHub.description")}</span>
                 </div>
-                <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
-                  <label className="settings-control-field">
-                    <span>{t("settings.tunnelHub.relayUrl")}</span>
-                    <Input
-                      value={tunnelHubSettings.relayUrl}
-                      onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
-                      placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
-                    />
-                  </label>
-                  {tunnelHubSsoStatus && !tunnelHubSsoStatus.authenticated ? (
-                    <div className="settings-control-field settings-readonly-stack">
-                      <small>{t("settings.tunnelHub.loginRequired")}</small>
-                    </div>
-                  ) : null}
-                  {tunnelHubSettings.publicHost ? (
-                    <div className="settings-control-field settings-readonly-stack">
-                      <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
-                    </div>
-                  ) : null}
-                  <div className="settings-control-actions">
-                    <Button type="primary" htmlType="submit" disabled={tunnelHubSaving} loading={tunnelHubSaving}>
-                      {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}
-                    </Button>
-                  </div>
-                </form>
+                <Switch
+                  checked={tunnelHubSettings.enabled}
+                  aria-label={t("settings.tunnelHub.label")}
+                  disabled={tunnelHubSaving}
+                  loading={tunnelHubSaving}
+                  onChange={() => void handleToggleTunnelHubEnabled()}
+                />
               </div>
-              <div className="settings-item-card settings-mobile-pairing-card">
-                <div className="settings-item-header settings-mobile-pairing-header">
-                  <div className="settings-appearance-row-copy">
-                    <strong>{t("settings.mobilePairing.title")}</strong>
-                    <span>{t("settings.mobilePairing.description")}</span>
-                  </div>
-                  <div className="settings-mobile-pairing-actions">
-                    <Segmented<PairingTargetMode>
-                      aria-label={t("settings.mobilePairing.targetMode")}
-                      value={appPairingTargetMode}
-                      disabled={appPairingPending}
-                      onChange={handleAppPairingTargetModeChange}
-                      options={APP_PAIRING_TARGET_MODES.map((targetMode) => ({
-                        value: targetMode,
-                        label: getPairingTargetModeLabel(targetMode, t)
-                      }))}
-                    />
-                    <Button
-                      type="primary"
-                      disabled={appPairingPending}
-                      loading={appPairingPending}
-                      onClick={() => void handleCreateAppPairingPayload()}
-                    >
-                      {appPairingPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
-                    </Button>
-                  </div>
-                </div>
-                {pairingErrorMessage ? (
-                  <div className="settings-item-empty settings-mobile-pairing-error" role="alert">
-                    {pairingErrorMessage}
+              <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
+                <label className="settings-control-field">
+                  <span>{t("settings.tunnelHub.relayUrl")}</span>
+                  <Input
+                    value={tunnelHubSettings.relayUrl}
+                    onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
+                    placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
+                  />
+                </label>
+                {tunnelHubSsoStatus && !tunnelHubSsoStatus.authenticated ? (
+                  <div className="settings-control-field settings-readonly-stack">
+                    <small>{t("settings.tunnelHub.loginRequired")}</small>
                   </div>
                 ) : null}
-                {pairingPayloadResult ? (
-                  <div className="settings-mobile-pairing-body">
-                    <div className="settings-mobile-pairing-qr" aria-label={t("settings.mobilePairing.qrCode")}>
-                      <QRCode
-                        value={pairingPayloadResult.payloadText}
-                        size={196}
-                        bordered={false}
-                        errorLevel="M"
-                      />
+                {tunnelHubSettings.publicHost ? (
+                  <div className="settings-control-field settings-readonly-stack">
+                    <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
+                  </div>
+                ) : null}
+                <div className="settings-control-actions">
+                  <Button type="primary" htmlType="submit" disabled={tunnelHubSaving} loading={tunnelHubSaving}>
+                    {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}
+                  </Button>
+                </div>
+              </form>
+            </div>
+            <div className="settings-item-card settings-mobile-pairing-card">
+              <div className="settings-item-header settings-mobile-pairing-header">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.mobilePairing.title")}</strong>
+                  <span>{t("settings.mobilePairing.description")}</span>
+                </div>
+                <div className="settings-mobile-pairing-actions">
+                  <Segmented<PairingTargetMode>
+                    aria-label={t("settings.mobilePairing.targetMode")}
+                    value={appPairingTargetMode}
+                    disabled={appPairingPending}
+                    onChange={handleAppPairingTargetModeChange}
+                    options={APP_PAIRING_TARGET_MODES.map((targetMode) => ({
+                      value: targetMode,
+                      label: getPairingTargetModeLabel(targetMode, t)
+                    }))}
+                  />
+                  <Button
+                    type="primary"
+                    disabled={appPairingPending}
+                    loading={appPairingPending}
+                    onClick={() => void handleCreateAppPairingPayload()}
+                  >
+                    {appPairingPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
+                  </Button>
+                </div>
+              </div>
+              {pairingErrorMessage ? (
+                <div className="settings-item-empty settings-mobile-pairing-error" role="alert">
+                  {pairingErrorMessage}
+                </div>
+              ) : null}
+              {pairingPayloadResult ? (
+                <div className="settings-mobile-pairing-body">
+                  <div className="settings-mobile-pairing-qr" aria-label={t("settings.mobilePairing.qrCode")}>
+                    <QRCode
+                      value={pairingPayloadResult.payloadText}
+                      size={196}
+                      bordered={false}
+                      errorLevel="M"
+                    />
+                  </div>
+                  <div className="settings-mobile-pairing-details">
+                    <div className="settings-mobile-pairing-meta">
+                      <span>{t("settings.mobilePairing.targetMode")}</span>
+                      <code>{getPairingTargetModeLabel(pairingPayloadResult.display.targetMode, t)}</code>
                     </div>
-                    <div className="settings-mobile-pairing-details">
-                      <div className="settings-mobile-pairing-meta">
-                        <span>{t("settings.mobilePairing.targetMode")}</span>
-                        <code>{getPairingTargetModeLabel(pairingPayloadResult.display.targetMode, t)}</code>
-                      </div>
-                      <div className="settings-mobile-pairing-meta">
-                        <span>{t("settings.mobilePairing.wsUrl")}</span>
-                        <code>{pairingPayloadResult.display.wsUrl}</code>
-                      </div>
-                      <div className="settings-mobile-pairing-meta">
-                        <span>{t("settings.mobilePairing.expiresAt")}</span>
-                        <code>{formatPairingExpiresAt(pairingPayloadResult.display.expiresAt, locale)}</code>
-                      </div>
-                      <div className="settings-mobile-pairing-meta settings-mobile-pairing-payload">
-                        <span>{t("settings.mobilePairing.payload")}</span>
-                        <code>{maskPairingPayloadText(pairingPayloadResult.payloadText)}</code>
-                      </div>
-                      <div className="settings-control-actions">
-                        <Button
-                          type="primary"
-                          onClick={() => void handleCopyAppPairingPayload()}
-                        >
-                          {t("settings.mobilePairing.copy")}
-                        </Button>
-                      </div>
+                    <div className="settings-mobile-pairing-meta">
+                      <span>{t("settings.mobilePairing.wsUrl")}</span>
+                      <code>{pairingPayloadResult.display.wsUrl}</code>
+                    </div>
+                    <div className="settings-mobile-pairing-meta">
+                      <span>{t("settings.mobilePairing.expiresAt")}</span>
+                      <code>{formatPairingExpiresAt(pairingPayloadResult.display.expiresAt, locale)}</code>
+                    </div>
+                    <div className="settings-mobile-pairing-meta settings-mobile-pairing-payload">
+                      <span>{t("settings.mobilePairing.payload")}</span>
+                      <code>{maskPairingPayloadText(pairingPayloadResult.payloadText)}</code>
+                    </div>
+                    <div className="settings-control-actions">
+                      <Button
+                        type="primary"
+                        onClick={() => void handleCopyAppPairingPayload()}
+                      >
+                        {t("settings.mobilePairing.copy")}
+                      </Button>
                     </div>
                   </div>
-                ) : (
-                  <div className="settings-item-empty">{t("settings.mobilePairing.empty")}</div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="settings-item-empty">{t("settings.mobilePairing.empty")}</div>
+              )}
             </div>
-          </>
+          </div>
         );
       }
       case "navigation": {
@@ -4629,6 +4630,8 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     }
   }
 
+  const shouldShowSettingsPageHead = activeSection !== "control";
+
   return (
     <section
       className="settings-page settings-page-single"
@@ -4637,15 +4640,17 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     >
       <div className="settings-content-panel" ref={contentRef} style={settingsContentStyle}>
         <div className="settings-content-shell">
-          <div className="settings-page-head">
-            <div className="settings-page-head-copy">
-              <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
-              <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
+          {shouldShowSettingsPageHead ? (
+            <div className="settings-page-head">
+              <div className="settings-page-head-copy">
+                <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
+                <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
+              </div>
+              <div className="settings-page-head-action">
+                {renderSectionHeaderAction()}
+              </div>
             </div>
-            <div className="settings-page-head-action">
-              {renderSectionHeaderAction()}
-            </div>
-          </div>
+          ) : null}
 
           <div className="settings-section-body">
             {activeSectionNotice ? (

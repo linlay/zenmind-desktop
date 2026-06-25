@@ -12,6 +12,10 @@
   background: transparent;
 }
 
+.settings-page-single[data-settings-section="control"] {
+  padding-top: 0;
+}
+
 .settings-content-panel {
   min-width: 0;
   width: min(100%, var(--settings-content-max));

@@ -2,7 +2,6 @@ import type { SettingsSectionId } from "./settings-sections";
 
 const SETTINGS_ROUTE_PREFIX = "/settings";
 const LEGACY_SETTINGS_SECTION_ALIASES: Record<string, SettingsSectionId> = {
-  tunnelHub: "control",
   runtimeReset: "about"
 };
 

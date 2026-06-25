@@ -88,7 +88,7 @@ export function createSettingsSectionDefinitions({
       label: "tunnelHub",
       description: "",
       layout: "measure",
-      visible: false
+      visible: true
     },
     {
       id: "websites",
