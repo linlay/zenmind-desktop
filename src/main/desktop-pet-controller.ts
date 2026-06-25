@@ -8,6 +8,7 @@ import type {
   DesktopPetAgentOption,
   DesktopPetAppearanceOption,
   DesktopPetEdgeDock,
+  DesktopPetPanelPlacement,
   DesktopPetPreviewPanel,
   DesktopPetTaskItem,
   DesktopPetMessageItem,
@@ -450,6 +451,7 @@ export function computeDesktopPetStateRefresh(input: {
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
+  panelPlacement?: DesktopPetPanelPlacement;
 }) {
   const localStatus = input.patch && Object.keys(input.patch).length > 0
     ? {
@@ -469,7 +471,8 @@ export function computeDesktopPetStateRefresh(input: {
     appearanceOptions: input.appearanceOptions,
     previewPanel: input.previewPanel,
     runningTaskCount: input.runningTaskCount,
-    edgeDock: input.edgeDock
+    edgeDock: input.edgeDock,
+    panelPlacement: input.panelPlacement
   });
   const settingsPatch = input.settings.unreadCount !== state.unreadCount
     ? {

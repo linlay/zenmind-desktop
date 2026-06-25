@@ -11,6 +11,7 @@ import type {
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
   DesktopPetEdgeDock,
+  DesktopPetPanelPlacement,
   DesktopPetPreviewPanel,
   DesktopPetSettings,
   DesktopPetState,
@@ -895,6 +896,7 @@ export function createDesktopPetState(
     previewPanel?: DesktopPetPreviewPanel | null;
     runningTaskCount?: unknown;
     edgeDock?: DesktopPetEdgeDock;
+    panelPlacement?: DesktopPetPanelPlacement;
   } = {}
 ): DesktopPetState {
   const localStatus = options.localStatus ?? createDefaultDesktopPetLocalStatus(settings);
@@ -939,6 +941,7 @@ export function createDesktopPetState(
     previewPanel: options.previewPanel ?? null,
     runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
     edgeDock: options.edgeDock ?? null,
+    panelPlacement: options.panelPlacement ?? null,
     signature,
     updatedAt: new Date().toISOString()
   };

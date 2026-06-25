@@ -4,6 +4,7 @@ import type {
   AssistantWorkerOpenRequest,
   DesktopPetAgentOption,
   DesktopPetMessageItem,
+  DesktopPetPanelPlacement,
   DesktopPetTaskItem
 } from "../../../shared/contracts";
 import { PRODUCT_NAME } from "../../../shared/brand";
@@ -102,6 +103,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const desktopPetDismissedMessages = new Map<string, string>();
   const desktopPetMessageCache = new Map<string, DesktopPetMessageItem>();
   let destroyingPanelWindow = false;
+  let desktopPetPanelPlacement: DesktopPetPanelPlacement = null;
 
   function isPanelWindowMode(mode: DesktopPetWindowMode) {
     return mode !== "base" && mode !== "preview-collapsed";
@@ -466,26 +468,49 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       previewPanel: desktopPetPreviewController.getPanel(),
       runningTaskCount,
       windowMode: state.desktopPetRendererWindowMode,
-      edgeDock: getCurrentPetEdgeDock()
+      edgeDock: getCurrentPetEdgeDock(),
+      panelPlacement: isPanelWindowMode(state.desktopPetRendererWindowMode) ? desktopPetPanelPlacement : null
     });
     state.desktopPetLocalStatus = refresh.localStatus;
     state.desktopPetState = refresh.state;
     applyPetWindowBounds();
-    applyPanelWindowBounds();
+    applyPanelWindowBounds({ publishPlacement: false });
     if (refresh.settingsPatch) {
       state.desktopPetSettings = saveDesktopPetSettings(options.app, {
         unreadCount: refresh.settingsPatch.unreadCount
       }, options.platform);
     }
+    sendDesktopPetStateToWindows();
+    options.publishPluginAssistantActiveTasks(refresh.state.activeTasks, refresh.state.runningTaskCount);
+    options.refreshTrayContextMenu();
+    return state.desktopPetState;
+  }
+
+  function sendDesktopPetStateToWindows() {
     for (const targetWindow of [state.mainWindow, state.desktopPetWindow, state.desktopPetPanelWindow]) {
       if (!targetWindow || targetWindow.isDestroyed()) {
         continue;
       }
       targetWindow.webContents.send("desktopPet.state", state.desktopPetState);
     }
-    options.publishPluginAssistantActiveTasks(refresh.state.activeTasks, refresh.state.runningTaskCount);
-    options.refreshTrayContextMenu();
-    return state.desktopPetState;
+  }
+
+  function updatePanelPlacement(nextPlacement: DesktopPetPanelPlacement, publishPlacement: boolean) {
+    const normalizedPlacement = isPanelWindowMode(state.desktopPetRendererWindowMode) ? nextPlacement : null;
+    if (
+      desktopPetPanelPlacement === normalizedPlacement &&
+      state.desktopPetState.panelPlacement === normalizedPlacement
+    ) {
+      return;
+    }
+    desktopPetPanelPlacement = normalizedPlacement;
+    state.desktopPetState = {
+      ...state.desktopPetState,
+      panelPlacement: normalizedPlacement
+    };
+    if (publishPlacement) {
+      sendDesktopPetStateToWindows();
+    }
   }
 
   function scheduleIdleReset(timeoutMs = 4200, clearPreview = false) {
@@ -547,7 +572,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return resolveDesktopPetEdgeDock(getCurrentPetLogicalPosition(), displayArea);
   }
 
-  function getPanelBounds(mode: DesktopPetWindowMode) {
+  function getPanelLayout(mode: DesktopPetWindowMode) {
     const displayArea = getDisplayBounds(state.desktopPetSettings.position);
     const petBounds = getPetBounds();
     const edgeDock = getCurrentPetEdgeDock();
@@ -563,7 +588,11 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       petRect,
       windowSize: getPanelWindowSize(mode),
       gap: getPanelWindowGap(mode)
-    }).rect;
+    });
+  }
+
+  function getPanelBounds(mode: DesktopPetWindowMode) {
+    return getPanelLayout(mode).rect;
   }
 
   function clearProgrammaticBoundsGuard() {
@@ -638,10 +667,11 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return win;
   }
 
-  function hidePanelWindow(resetMode = false) {
+  function hidePanelWindow(resetMode = false, publishPlacement = true) {
     if (resetMode && state.desktopPetRendererWindowMode !== "base") {
       state.desktopPetRendererWindowMode = "base";
     }
+    updatePanelPlacement(null, publishPlacement);
     const panelWindow = state.desktopPetPanelWindow;
     if (panelWindow && !panelWindow.isDestroyed()) {
       destroyingPanelWindow = true;
@@ -651,7 +681,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }
   }
 
-  function applyPanelWindowBounds() {
+  function applyPanelWindowBounds(input: { publishPlacement?: boolean } = {}) {
+    const publishPlacement = input.publishPlacement ?? true;
     const mode = state.desktopPetRendererWindowMode;
     if (
       !isDesktopPetSupportedPlatform(options.platform) ||
@@ -662,15 +693,16 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       !state.desktopPetWindow.isVisible() ||
       desktopPetDragController.isDragging()
     ) {
-      hidePanelWindow(false);
+      hidePanelWindow(false, publishPlacement);
       return;
     }
     const panelWindow = createPanelWindow(mode);
     if (!panelWindow || panelWindow.isDestroyed()) {
       return;
     }
-    const bounds = getPanelBounds(mode);
-    panelWindow.setBounds(bounds, false);
+    const layout = getPanelLayout(mode);
+    updatePanelPlacement(layout.side, publishPlacement);
+    panelWindow.setBounds(layout.rect, false);
     if (!panelWindow.isVisible()) {
       panelWindow.showInactive();
     }

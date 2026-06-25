@@ -186,6 +186,18 @@ body.desktop-pet-body,
   --desktop-pet-task-panel-bottom: 10px;
 }
 
+.desktop-pet-root.is-panel-window.is-panel-placement-below.has-bubble,
+.desktop-pet-root.is-panel-window.is-panel-placement-left.has-bubble,
+.desktop-pet-root.is-panel-window.is-panel-placement-right.has-bubble {
+  --desktop-pet-task-panel-top: 10px;
+  --desktop-pet-task-panel-bottom: auto;
+}
+
+.desktop-pet-root.is-panel-window.is-panel-placement-above.has-bubble {
+  --desktop-pet-task-panel-top: auto;
+  --desktop-pet-task-panel-bottom: 10px;
+}
+
 .desktop-pet-root.is-panel-window.is-edge-dock-top.has-bubble {
   --desktop-pet-task-panel-top: 10px;
   --desktop-pet-task-panel-bottom: auto;

@@ -21,6 +21,13 @@ export type DesktopPetWindowMode =
   | "task-list-compact"
   | "task-list";
 
+export type DesktopPetPanelPlacement =
+  | "above"
+  | "below"
+  | "left"
+  | "right"
+  | null;
+
 export interface DesktopPetSettings {
   enabled: boolean;
   boundAgentKey: string;
@@ -189,6 +196,7 @@ export interface DesktopPetState {
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
+  panelPlacement: DesktopPetPanelPlacement;
   signature?: DesktopPetSignatureAction[];
   updatedAt: string;
 }

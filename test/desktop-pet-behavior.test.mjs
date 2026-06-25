@@ -323,6 +323,18 @@ test("desktop pet panel window inset does not add visual gap", () => {
   assert.equal(layout.rect.height, windowSize.height);
 });
 
+test("desktop pet bubble panel CSS pins below placement to the top of the panel window", () => {
+  const css = fs.readFileSync(
+    path.join(process.cwd(), "src/renderer/styles/pet-copilot.css"),
+    "utf8"
+  );
+
+  assert.match(
+    css,
+    /\.desktop-pet-root\.is-panel-window\.is-panel-placement-below\.has-bubble(?:\s*,[^{]*)?\s*{[^}]*--desktop-pet-task-panel-top:\s*10px;[^}]*--desktop-pet-task-panel-bottom:\s*auto;/s
+  );
+});
+
 test("desktop pet display area keeps full horizontal screen bounds when work area has side insets", () => {
   const { resolveDesktopPetDisplayArea } = __testInternals;
   assert.deepEqual(resolveDesktopPetDisplayArea({
@@ -408,6 +420,18 @@ test("desktop pet state exposes awaiting when the bound agent has a pending awai
 
   assert.equal(state.status, "awaiting");
   assert.equal(state.hint, "需要你确认计划");
+});
+
+test("desktop pet state exposes panel placement for detached panel rendering", () => {
+  const state = createDesktopPetState(createSettings(), {
+    supported: true,
+    visible: true,
+    windowMode: "bubble",
+    panelPlacement: "below",
+    localStatus: createDefaultDesktopPetLocalStatus()
+  });
+
+  assert.equal(state.panelPlacement, "below");
 });
 
 test("desktop pet builds a message history item from bound agent status when navigation messages are empty", () => {
