@@ -104,9 +104,13 @@ export function normalizeAssistantNavAgents(items: unknown): AssistantNavAgentIt
 export function normalizeAssistantNavAgentItemsResult(
   result: AssistantNavAgentItemsResult
 ): AssistantNavAgentItemsResult {
+  const activityItems = Array.isArray(result.activityItems)
+    ? normalizeAssistantNavAgents(result.activityItems)
+    : undefined;
   return {
     ...result,
-    items: normalizeAssistantNavAgents(result.items)
+    items: normalizeAssistantNavAgents(result.items),
+    ...(activityItems ? { activityItems } : {})
   };
 }
 

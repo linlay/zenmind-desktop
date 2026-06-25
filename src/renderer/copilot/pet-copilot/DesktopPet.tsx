@@ -67,6 +67,7 @@ function createFallbackDesktopPetState(): DesktopPetState {
     previewPanel: null,
     runningTaskCount: 0,
     edgeDock: null,
+    panelPlacement: null,
     signature: [],
     updatedAt: ""
   };
@@ -1391,6 +1392,7 @@ export function DesktopPet() {
 	        petState.edgeDock?.includes("right") ? "is-edge-dock-right" : "",
 	        petState.edgeDock?.includes("bottom") ? "is-edge-dock-bottom" : "",
 	        petState.edgeDock?.includes("left") ? "is-edge-dock-left" : "",
+        petState.panelPlacement ? `is-panel-placement-${petState.panelPlacement}` : "",
         isDragging ? "is-dragging" : "",
         visualStatus === "moving-left" && dragDirection === "right" && (visualAsset.asset?.mirror ?? true) ? "is-drag-mirror" : ""
       ].filter(Boolean).join(" ")}

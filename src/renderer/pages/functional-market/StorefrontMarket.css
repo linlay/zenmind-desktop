@@ -795,15 +795,35 @@
 
 /* ---------- detail dialog ---------- */
 
+.market-store-detail-modal {
+  --market-store-accent: #2563eb;
+  --market-store-accent-soft: #eff6ff;
+  --market-store-text: #18181b;
+  --market-store-muted: #667085;
+  --market-store-faint: #98a2b3;
+  --market-store-line: rgba(15, 23, 42, 0.1);
+  --market-store-surface: #ffffff;
+  --market-store-surface-soft: #f7faff;
+  --market-store-rose: #e11d48;
+  --market-store-rose-soft: rgba(225, 29, 72, 0.08);
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+}
+
 .market-store-detail-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
   overflow: hidden;
   border: 1px solid var(--market-store-line);
   border-radius: 10px;
   background: var(--market-store-surface);
+  background-clip: padding-box;
   box-shadow: 0 24px 70px -28px rgba(15, 23, 42, 0.42);
 }
 
 .market-store-detail-modal .ant-modal-header {
+  flex: none;
   margin: 0;
   padding: 18px 18px 0;
   background: transparent;
@@ -812,7 +832,11 @@
 .market-store-detail-modal .ant-modal-body {
   display: grid;
   gap: 12px;
+  min-height: 0;
+  overflow: auto;
   padding: 14px 18px 18px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.28) transparent;
 }
 
 .market-store-detail-modal .ant-modal-close {
@@ -1029,6 +1053,19 @@
   --market-store-danger: #fb7185;
   --market-store-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
   --market-store-shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="dark"] .market-store-detail-modal {
+  --market-store-accent: #6ea8ff;
+  --market-store-accent-soft: rgba(110, 168, 255, 0.14);
+  --market-store-text: #e7edf6;
+  --market-store-muted: #9aa8ba;
+  --market-store-faint: #718095;
+  --market-store-line: rgba(130, 151, 177, 0.18);
+  --market-store-surface: #17202a;
+  --market-store-surface-soft: #111821;
+  --market-store-rose: #fb7185;
+  --market-store-rose-soft: rgba(251, 113, 133, 0.12);
 }
 
 :root[data-theme="dark"] .market-store-search.ant-input-affix-wrapper,

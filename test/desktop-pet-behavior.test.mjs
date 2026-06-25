@@ -234,6 +234,107 @@ test("desktop pet panel layout follows the pet when a center position cannot fit
   );
 });
 
+test("desktop pet panel layout prefers below when the pet is in the upper half", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    resolveDesktopPetPanelLayout
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 800, height: 720 };
+  const panelSize = { width: 336, height: 210 };
+  const gap = 4;
+  const petRect = {
+    x: 352,
+    y: 220,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  };
+
+  const layout = resolveDesktopPetPanelLayout({
+    displayArea,
+    petRect,
+    panelSize,
+    gap
+  });
+
+  assert.equal(layout.side, "below");
+  assert.equal(layout.rect.y, petRect.y + petRect.height + gap);
+  assert.equal(
+    layout.rect.x + Math.round(layout.rect.width / 2),
+    petRect.x + Math.round(petRect.width / 2)
+  );
+});
+
+test("desktop pet panel layout clamps the adjacent side instead of centering", () => {
+  const {
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    resolveDesktopPetPanelLayout
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 500, height: 300 };
+  const panelSize = { width: 336, height: 210 };
+  const gap = 4;
+  const petRect = {
+    x: 202,
+    y: 95,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  };
+
+  const layout = resolveDesktopPetPanelLayout({
+    displayArea,
+    petRect,
+    panelSize,
+    gap
+  });
+
+  assert.equal(layout.side, "below");
+  assert.equal(layout.rect.y, displayArea.y + displayArea.height - panelSize.height);
+  assert.equal(
+    layout.rect.x + Math.round(layout.rect.width / 2),
+    petRect.x + Math.round(petRect.width / 2)
+  );
+});
+
+test("desktop pet panel window inset does not add visual gap", () => {
+  const {
+    DESKTOP_PET_PANEL_WINDOW_INSET_PX,
+    DESKTOP_PET_VISIBLE_FOOTPRINT,
+    resolveDesktopPetPanelWindowBounds
+  } = __testInternals;
+  const displayArea = { x: 0, y: 25, width: 800, height: 720 };
+  const windowSize = { width: 376, height: 334 };
+  const gap = 4;
+  const petRect = {
+    x: 352,
+    y: 84,
+    width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+    height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
+  };
+
+  const layout = resolveDesktopPetPanelWindowBounds({
+    displayArea,
+    petRect,
+    windowSize,
+    gap
+  });
+
+  assert.equal(layout.side, "below");
+  assert.equal(layout.panelRect.y, petRect.y + petRect.height + gap);
+  assert.equal(layout.rect.y, layout.panelRect.y - DESKTOP_PET_PANEL_WINDOW_INSET_PX);
+  assert.equal(layout.rect.height, windowSize.height);
+});
+
+test("desktop pet bubble panel CSS pins below placement to the top of the panel window", () => {
+  const css = fs.readFileSync(
+    path.join(process.cwd(), "src/renderer/styles/pet-copilot.css"),
+    "utf8"
+  );
+
+  assert.match(
+    css,
+    /\.desktop-pet-root\.is-panel-window\.is-panel-placement-below\.has-bubble(?:\s*,[^{]*)?\s*{[^}]*--desktop-pet-task-panel-top:\s*10px;[^}]*--desktop-pet-task-panel-bottom:\s*auto;/s
+  );
+});
+
 test("desktop pet display area keeps full horizontal screen bounds when work area has side insets", () => {
   const { resolveDesktopPetDisplayArea } = __testInternals;
   assert.deepEqual(resolveDesktopPetDisplayArea({
@@ -319,6 +420,18 @@ test("desktop pet state exposes awaiting when the bound agent has a pending awai
 
   assert.equal(state.status, "awaiting");
   assert.equal(state.hint, "需要你确认计划");
+});
+
+test("desktop pet state exposes panel placement for detached panel rendering", () => {
+  const state = createDesktopPetState(createSettings(), {
+    supported: true,
+    visible: true,
+    windowMode: "bubble",
+    panelPlacement: "below",
+    localStatus: createDefaultDesktopPetLocalStatus()
+  });
+
+  assert.equal(state.panelPlacement, "below");
 });
 
 test("desktop pet builds a message history item from bound agent status when navigation messages are empty", () => {
@@ -1281,6 +1394,44 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
 
   assert.equal(createDesktopPetActiveTasksFromNavigationSnapshot(snapshot)[0]?.awaitingCount, 2);
   assert.equal(createDesktopPetMessagesFromNavigationSnapshot(snapshot)[0]?.awaitingCount, 2);
+});
+
+test("desktop pet reads copilot activity items when navigation items omit the agent", () => {
+  const snapshot = {
+    ok: true,
+    items: [],
+    activityItems: [{
+      agentKey: "net-yu",
+      displayName: "网驭智能体",
+      role: "网络协同",
+      unreadCount: 1,
+      unreadChatCount: 1,
+      chatCount: 1,
+      hasPendingAwaiting: false,
+      latestChatId: "copilot-chat-1",
+      latestPreview: "已完成网络诊断",
+      updatedAt: "2026-06-24T12:00:00.000Z",
+      recentChats: [{
+        chatId: "copilot-chat-1",
+        chatName: "网络诊断",
+        agentKey: "net-yu",
+        updatedAt: "2026-06-24T12:00:00.000Z",
+        lastRunId: "run-1",
+        lastRunContent: "已完成网络诊断",
+        isRead: false,
+        hasActiveRun: false,
+        hasPendingAwaiting: false
+      }]
+    }]
+  };
+
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].agentKey, "net-yu");
+  assert.equal(messages[0].agentDisplayName, "网驭智能体");
+  assert.equal(messages[0].preview, "已完成网络诊断");
+  assert.equal(messages[0].unread, true);
 });
 
 test("desktop pet visual arbitration lets manual signature surface over hover", () => {
