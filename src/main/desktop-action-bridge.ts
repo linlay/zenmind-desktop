@@ -141,6 +141,11 @@ const PAGE_CONTROL_GRANT_TTL_MS = 10 * 60 * 1000;
 const PAGE_CONTROL_LOW_RISK_INTERACTIONS = new Set(["fill", "scroll", "focus", "select"]);
 const PAGE_CONTROL_HIGH_RISK_PATTERN =
   /(\u63d0\u4ea4|\u5220\u9664|\u79fb\u9664|\u6e05\u7a7a|\u652f\u4ed8|\u4ed8\u6b3e|\u8d2d\u4e70|\u4e0b\u5355|\u8ba2\u5355|\u786e\u8ba4\u8ba2\u5355|\u9000\u6b3e|\u8f6c\u8d26|\u6388\u6743|\u786e\u8ba4\u6388\u6743|\u540c\u610f\u6388\u6743|\u5b89\u88c5|\u5378\u8f7d|\u542f\u52a8|\u505c\u6b62|\u91cd\u542f|\u53d1\u5e03|\u53d1\u9001|\u4fdd\u5b58|\u767b\u5f55|\u6ce8\u518c|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
+const CONFIRMATION_ARG_MAX_KEYS = 8;
+const CONFIRMATION_ARG_MAX_NESTED_KEYS = 6;
+const CONFIRMATION_ARG_MAX_ARRAY_ITEMS = 4;
+const CONFIRMATION_ARG_VALUE_MAX_CHARS = 160;
+const CONFIRMATION_ARG_SUMMARY_MAX_CHARS = 1200;
 let activeServer: http.Server | null = null;
 
 function agentPlatformAuthFailureMessage() {
@@ -514,11 +519,168 @@ export async function callAgentPlatform<T>(
   });
 }
 
-async function confirmMutatingAction(action: string, args: Record<string, unknown>, owner: BrowserWindow | null) {
+function truncateConfirmationText(value: string, maxChars: number) {
+  const chars = Array.from(value.replace(/\s+/gu, " ").trim());
+  if (chars.length <= maxChars) {
+    return chars.join("");
+  }
+  return `${chars.slice(0, Math.max(0, maxChars - 1)).join("")}...`;
+}
+
+function isSensitiveConfirmationKey(key: string) {
+  const normalized = key.replace(/[\s._-]+/gu, "").toLowerCase();
+  return normalized.includes("token") ||
+    normalized.includes("secret") ||
+    normalized.includes("password") ||
+    normalized.includes("cookie") ||
+    normalized.includes("authorization") ||
+    normalized.includes("credential") ||
+    normalized.includes("apikey") ||
+    normalized.includes("accesstoken") ||
+    normalized.includes("refreshtoken") ||
+    normalized.includes("desktopauthcontext");
+}
+
+function sanitizeConfirmationUrl(value: string) {
+  const trimmed = value.trim();
+  if (!/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
+    return value;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.origin && url.origin !== "null") {
+      return `${url.origin}${url.pathname}`;
+    }
+    if (url.protocol === "file:") {
+      return `file://${url.host}${url.pathname}`;
+    }
+    if (url.host) {
+      return `${url.protocol}//${url.host}${url.pathname}`;
+    }
+    return `${url.protocol}${url.pathname}`;
+  } catch {
+    return value;
+  }
+}
+
+function sanitizeConfirmationUrlText(value: string) {
+  return value.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/giu, (match) => sanitizeConfirmationUrl(match));
+}
+
+function sanitizeConfirmationValue(value: unknown, key = "", depth = 0): unknown {
+  if (isSensitiveConfirmationKey(key)) {
+    return t("desktopAction.confirmDetailRedacted");
+  }
+  if (typeof value === "string") {
+    return sanitizeConfirmationUrlText(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null || value === undefined) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const items = value
+      .slice(0, CONFIRMATION_ARG_MAX_ARRAY_ITEMS)
+      .map((item) => sanitizeConfirmationValue(item, key, depth + 1));
+    return value.length > CONFIRMATION_ARG_MAX_ARRAY_ITEMS ? [...items, "..."] : items;
+  }
+  if (!value || typeof value !== "object") {
+    return String(value);
+  }
+  if (depth >= 2) {
+    return "[object]";
+  }
+  const record = value as Record<string, unknown>;
+  const entries = Object.entries(record)
+    .filter(([entryKey]) => entryKey !== "confirmationSummary")
+    .slice(0, CONFIRMATION_ARG_MAX_NESTED_KEYS);
+  const output: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of entries) {
+    output[entryKey] = sanitizeConfirmationValue(entryValue, entryKey, depth + 1);
+  }
+  const hiddenCount = Object.keys(record).filter((entryKey) => entryKey !== "confirmationSummary").length - entries.length;
+  if (hiddenCount > 0) {
+    output["..."] = t("desktopAction.confirmDetailMore", { count: hiddenCount });
+  }
+  return output;
+}
+
+function stringifyConfirmationArgValue(key: string, value: unknown) {
+  const sanitized = sanitizeConfirmationValue(value, key);
+  const text = typeof sanitized === "string" ? sanitized : JSON.stringify(sanitized);
+  return truncateConfirmationText(text ?? "", CONFIRMATION_ARG_VALUE_MAX_CHARS);
+}
+
+function summarizeConfirmationArgs(args: Record<string, unknown>) {
+  const entries = Object.entries(args).filter(([key]) => key !== "confirmationSummary");
+  if (entries.length === 0) {
+    return t("desktopAction.confirmDetailArgsEmpty");
+  }
+  const displayedEntries = entries.slice(0, CONFIRMATION_ARG_MAX_KEYS);
+  const lines = displayedEntries.map(([key, value]) => `${key}=${stringifyConfirmationArgValue(key, value)}`);
+  const hiddenCount = entries.length - displayedEntries.length;
+  if (hiddenCount > 0) {
+    lines.push(t("desktopAction.confirmDetailMore", { count: hiddenCount }));
+  }
+  const summary = lines.join("\n");
+  return Array.from(summary).length > CONFIRMATION_ARG_SUMMARY_MAX_CHARS
+    ? truncateConfirmationText(summary, CONFIRMATION_ARG_SUMMARY_MAX_CHARS)
+    : summary;
+}
+
+function summarizeConfirmationSource(source: DesktopActionSource | undefined) {
+  return [
+    `runId=${source?.runId?.trim() || "-"}`,
+    `chatId=${source?.chatId?.trim() || "-"}`,
+    `agentKey=${source?.agentKey?.trim() || "-"}`
+  ].join(", ");
+}
+
+function describeDesktopActionSnapshotTarget(snapshot: DesktopPageContextSnapshot | null) {
+  if (!snapshot) {
+    return "-";
+  }
+  const url = readSnapshotUrl(snapshot);
+  const safeUrl = url ? sanitizeConfirmationUrl(url) : "";
+  return [
+    snapshot.pageKind,
+    snapshot.surfaceLabel,
+    snapshot.pageContext?.title,
+    safeUrl
+  ].filter(Boolean).join(" | ") || "-";
+}
+
+function buildDesktopActionConfirmationDetail(
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>,
+  options: { permissionMode?: string; target?: string; prefixLines?: string[] } = {}
+) {
+  const action = request.action || "unknown";
+  const permissionMode = options.permissionMode || readRequestPermissionMode(request, args);
+  return [
+    ...(options.prefixLines?.filter(Boolean) ?? []),
+    ...(options.prefixLines?.length ? [""] : []),
+    t("desktopAction.confirmDetailIntro"),
+    t("desktopAction.confirmDetailAction", { action, permissionMode }),
+    t("desktopAction.confirmDetailRequest", { requestId: request.requestId?.trim() || "-" }),
+    t("desktopAction.confirmDetailSource", { source: summarizeConfirmationSource(request.source) }),
+    t("desktopAction.confirmDetailTarget", { target: sanitizeConfirmationUrlText(options.target?.trim() || "-") }),
+    t("desktopAction.confirmDetailArgs", { args: summarizeConfirmationArgs(args) }),
+    t("desktopAction.confirmDetailFooter")
+  ].join("\n");
+}
+
+async function confirmMutatingAction(
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>,
+  snapshot: DesktopPageContextSnapshot | null,
+  owner: BrowserWindow | null
+) {
+  const action = request.action;
   const providedSummary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
     : "";
   const summary = providedSummary || t("desktopAction.confirmSummary", { action });
+  const permissionMode = readRequestPermissionMode(request, args);
   const dialogOptions = {
     type: "question" as const,
     buttons: [t("desktopAction.confirmExecute"), t("common.cancel")],
@@ -526,7 +688,10 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
     cancelId: 1,
     title: t("desktopAction.confirmActionTitle"),
     message: summary,
-    detail: t("desktopAction.confirmActionDetail")
+    detail: buildDesktopActionConfirmationDetail(request, args, {
+      permissionMode,
+      target: describeDesktopActionSnapshotTarget(snapshot)
+    })
   };
   const result = owner && !owner.isDestroyed()
     ? await dialog.showMessageBox(owner, dialogOptions)
@@ -536,6 +701,7 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
 
 async function confirmPageControlAction(
   scope: PageControlGrantScope,
+  request: DesktopActionCallRequest,
   args: Record<string, unknown>,
   owner: BrowserWindow | null
 ): Promise<PageControlConfirmationDecision> {
@@ -550,11 +716,15 @@ async function confirmPageControlAction(
     cancelId: 2,
     title: t("desktopAction.pageControlTitle"),
     message: summary,
-    detail: [
-      t("desktopAction.pageControlTarget", { target: targetLabel }),
-      t("desktopAction.pageControlGrantDetail"),
-      t("desktopAction.pageControlHighRiskDetail")
-    ].join("\n")
+    detail: buildDesktopActionConfirmationDetail(request, args, {
+      permissionMode: readRequestPermissionMode(request, args),
+      target: targetLabel,
+      prefixLines: [
+        t("desktopAction.pageControlTarget", { target: targetLabel }),
+        t("desktopAction.pageControlGrantDetail"),
+        t("desktopAction.pageControlHighRiskDetail")
+      ]
+    })
   };
   const result = owner && !owner.isDestroyed()
     ? await dialog.showMessageBox(owner, dialogOptions)
@@ -718,7 +888,7 @@ async function confirmDesktopActionIfNeeded(
       return null;
     }
     if (scope) {
-      const decision = await confirmPageControlAction(scope, args, options.getMainWindow());
+      const decision = await confirmPageControlAction(scope, request, args, options.getMainWindow());
       if (decision === "grant") {
         pageControlGrantStore.grant(scope);
         return null;
@@ -734,7 +904,7 @@ async function confirmDesktopActionIfNeeded(
       };
     }
   }
-  const confirmed = await confirmMutatingAction(action, args, options.getMainWindow());
+  const confirmed = await confirmMutatingAction(request, args, snapshot, options.getMainWindow());
   if (confirmed) {
     return null;
   }
@@ -1261,5 +1431,8 @@ export function stopDesktopActionBridge() {
 }
 
 export const __testInternals = {
+  buildDesktopActionConfirmationDetail,
+  sanitizeConfirmationUrl,
+  summarizeConfirmationArgs,
   fetchAgentPlatformWithAuth
 };

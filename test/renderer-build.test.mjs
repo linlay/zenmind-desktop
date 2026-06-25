@@ -3236,6 +3236,10 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);
+  assert.match(bridge, /buildDesktopActionConfirmationDetail/);
+  assert.match(bridge, /summarizeConfirmationArgs/);
+  assert.match(bridge, /confirmDetailRedacted/);
+  assert.match(bridge, /confirmationSummary"\)/);
   assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)\.general\.desktopActionConfirmationEnabled/);
   assert.match(bridge, /PageControlGrantStore/);
   assert.match(bridge, /t\("desktopAction\.pageControlGrant"\)/);
@@ -3282,6 +3286,36 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(externalWebviewPage, /querySelector\(request/);
   assert.match(marketPage, /registerDesktopActionProvider/);
   assert.match(marketPage, /skillDownloadCommand/);
+});
+
+test("desktop action confirmation detail keeps debug context and redaction keys", () => {
+  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const zhCN = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "zhCN.ts"), "utf8");
+  const enUS = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "enUS.ts"), "utf8");
+
+  assert.match(bridge, /function buildDesktopActionConfirmationDetail/);
+  assert.match(bridge, /function summarizeConfirmationArgs/);
+  assert.match(bridge, /function sanitizeConfirmationUrl/);
+  assert.match(bridge, /entryKey\) => entryKey !== "confirmationSummary"/);
+  assert.match(bridge, /confirmMutatingAction\(\s*request,\s*args,\s*snapshot/);
+  assert.match(bridge, /confirmPageControlAction\(\s*scope,\s*request,\s*args/);
+  assert.match(bridge, /buildDesktopActionConfirmationDetail\(request, args/);
+  assert.match(bridge, /desktopAction\.confirmDetailRedacted/);
+  assert.match(bridge, /desktopAction\.confirmDetailMore/);
+  assert.match(bridge, /__testInternals[\s\S]*buildDesktopActionConfirmationDetail/);
+
+  for (const dictionary of [zhCN, enUS]) {
+    assert.match(dictionary, /desktopAction\.confirmDetailIntro/);
+    assert.match(dictionary, /desktopAction\.confirmDetailAction/);
+    assert.match(dictionary, /desktopAction\.confirmDetailRequest/);
+    assert.match(dictionary, /desktopAction\.confirmDetailSource/);
+    assert.match(dictionary, /desktopAction\.confirmDetailTarget/);
+    assert.match(dictionary, /desktopAction\.confirmDetailArgs/);
+    assert.match(dictionary, /desktopAction\.confirmDetailArgsEmpty/);
+    assert.match(dictionary, /desktopAction\.confirmDetailRedacted/);
+    assert.match(dictionary, /desktopAction\.confirmDetailMore/);
+    assert.match(dictionary, /desktopAction\.confirmDetailFooter/);
+  }
 });
 
 test("built index uses relative asset paths", (t) => {

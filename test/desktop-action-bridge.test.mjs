@@ -8,7 +8,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
-  handleDesktopActionRequest
+  handleDesktopActionRequest,
+  __testInternals
 } = require("../dist-electron/main/desktop-action-bridge.js");
 
 function createApp(homePath) {
@@ -137,4 +138,55 @@ test("desktop pet actions reject unknown local appearances and removed legacy na
     assert.equal(legacyResponse.ok, false, action);
     assert.equal(legacyResponse.error.code, "unknown_action", action);
   }
+});
+
+test("desktop action confirmation detail exposes debug context with redacted args", () => {
+  const detail = __testInternals.buildDesktopActionConfirmationDetail({
+    requestId: "request-123",
+    action: "desktop.web.navigate",
+    source: {
+      runId: "run-abc",
+      chatId: "chat-def",
+      agentKey: "zenmi"
+    }
+  }, {
+    url: "https://example.test/path/to/page?desktopAuthContext=secret#hash",
+    accessToken: "secret-token",
+    nested: {
+      password: "hidden-password",
+      href: "https://nested.test/safe/path?cookie=bad#fragment",
+      callback: "zenmind://auth/callback?token=secret#hash"
+    },
+    longText: "x".repeat(240),
+    confirmationSummary: "提醒主人喝水",
+    alpha: "a",
+    beta: "b",
+    gamma: "c",
+    delta: "d",
+    epsilon: "e",
+    zeta: "z"
+  }, {
+    permissionMode: "page_control",
+    target: "Agent Webclient | https://example.test/path/to/page?token=secret#fragment"
+  });
+
+  assert.match(detail, /desktop\.web\.navigate/u);
+  assert.match(detail, /request-123/u);
+  assert.match(detail, /page_control/u);
+  assert.match(detail, /run-abc/u);
+  assert.match(detail, /chat-def/u);
+  assert.match(detail, /zenmi/u);
+  assert.match(detail, /Agent Webclient/u);
+  assert.match(detail, /https:\/\/example\.test\/path\/to\/page/u);
+  assert.match(detail, /zenmind:\/\/auth\/callback/u);
+  assert.match(detail, /\[已隐藏\]/u);
+  assert.match(detail, /另有 2 项未显示/u);
+  assert.doesNotMatch(detail, /secret-token/u);
+  assert.doesNotMatch(detail, /hidden-password/u);
+  assert.doesNotMatch(detail, /desktopAuthContext/u);
+  assert.doesNotMatch(detail, /cookie=bad/u);
+  assert.doesNotMatch(detail, /token=secret/u);
+  assert.doesNotMatch(detail, /#fragment/u);
+  assert.doesNotMatch(detail, /提醒主人喝水/u);
+  assert.doesNotMatch(detail, new RegExp("x".repeat(200), "u"));
 });
