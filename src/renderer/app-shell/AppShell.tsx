@@ -140,9 +140,6 @@ function resolveThemePreference(preference: ThemePreference): ResolvedThemeMode 
   return preference;
 }
 
-const ControlCenterPage = lazy(() =>
-  import("../pages/control-center/ControlCenterPage").then((module) => ({ default: module.ControlCenterPage }))
-);
 const HelpPage = lazy(() =>
   import("../pages/HelpPage").then((module) => ({ default: module.HelpPage }))
 );
@@ -2776,7 +2773,7 @@ export function AppShell() {
                     : <RouteSuspense><KanbanPage hostTheme={resolvedTheme} /></RouteSuspense>
               }
             />
-            <Route path="/control-center" element={<RouteSuspense><ControlCenterPage /></RouteSuspense>} />
+            <Route path="/control-center" element={<Navigate to={buildSettingsSectionPath("control")} replace />} />
             <Route
               path="/settings"
               element={<Navigate to={getDefaultSettingsSectionPath(visibleSettingsSectionIds)} replace />}

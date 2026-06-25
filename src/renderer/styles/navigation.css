@@ -1713,9 +1713,38 @@
   justify-content: flex-start;
 }
 
+.sidebar-settings-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.sidebar-settings-tool-row .sidebar-tool-menu-item {
+  flex: 1 1 auto;
+}
+
+.sidebar-settings-help-link {
+  flex: 0 0 28px;
+  width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .sidebar-account-menu .sidebar-tool-menu-item:hover,
 .sidebar-account-menu .sidebar-tool-menu-item:focus-visible,
 .sidebar-account-menu .sidebar-tool-menu-item.sidebar-link-active,
+.sidebar-settings-help-link:hover,
+.sidebar-settings-help-link:focus-visible,
+.sidebar-settings-help-link.sidebar-link-active,
 .sidebar-account-menu-action:hover,
 .sidebar-account-menu-action:focus-visible {
   color: var(--ink);
@@ -1726,6 +1755,9 @@
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item:hover,
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item:focus-visible,
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item.sidebar-link-active,
+:root[data-theme="dark"] .sidebar-settings-help-link:hover,
+:root[data-theme="dark"] .sidebar-settings-help-link:focus-visible,
+:root[data-theme="dark"] .sidebar-settings-help-link.sidebar-link-active,
 :root[data-theme="dark"] .sidebar-account-menu-action:hover,
 :root[data-theme="dark"] .sidebar-account-menu-action:focus-visible {
   color: var(--ink);

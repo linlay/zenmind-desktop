@@ -607,8 +607,8 @@ function createStartupCoreAssetsFixture(options = {}) {
       frontend: { mode: "standalone", entry: "/admin/" },
       web: { routePath: "/admin/", portEnvKey: "SERVER_PORT", defaultPort: ports.identityCenter },
       envExample: [
-        "FRONTEND_PORT=11950",
-        "AUTH_ISSUER=https://zenmind.cc",
+        `FRONTEND_PORT=${ports.identityCenter}`,
+        "AUTH_ISSUER=https://identity.example.test",
         `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_BCRYPT}'`,
         `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_BCRYPT}'`
       ].join("\n") + "\n",

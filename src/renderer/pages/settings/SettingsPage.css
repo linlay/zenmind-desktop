@@ -461,6 +461,22 @@
   margin-top: 10px;
 }
 
+.settings-page .settings-control-center-embed {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-page .settings-control-center-embed .control-center-page {
+  width: 100%;
+  min-height: 0;
+  background: transparent;
+}
+
+.settings-page .settings-control-config-stack {
+  width: min(100%, var(--settings-control-config-max, 700px));
+  margin-top: 16px;
+}
+
 .settings-page .settings-mobile-pairing-header {
   align-items: flex-start;
 }

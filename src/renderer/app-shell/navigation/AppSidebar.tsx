@@ -194,10 +194,8 @@ const fixedToolRowsBase: Array<
         | "nav.agents"
         | "nav.archives"
         | "nav.registries"
-        | "nav.controlCenter"
         | "nav.market"
-        | "nav.settings"
-        | "nav.help";
+        | "nav.settings";
     }
   >
 > = [
@@ -229,19 +227,12 @@ const fixedToolRowsBase: Array<
   ],
   [
     {
-      orderKey: "control-center",
-      to: "/control-center",
-      labelKey: "nav.controlCenter",
-      icon: "control",
-    },
-    {
       orderKey: "settings",
       to: "/settings",
       labelKey: "nav.settings",
       icon: "settings",
     },
   ],
-  [{ orderKey: "help", to: "/help", labelKey: "nav.help", icon: "help" }],
 ];
 
 type AccountMenuAvatarProps = {
@@ -2360,6 +2351,37 @@ export function AppSidebar({
     );
   }
 
+  function renderSettingsToolRow(item: SidebarToolItem) {
+    const helpLabel = t("nav.help");
+    return (
+      <div
+        className="sidebar-settings-tool-row"
+        key={item.to}
+        role="group"
+        aria-label={item.label}
+      >
+        {renderToolLink(item)}
+        <NavLink
+          to="/help"
+          onClick={(event) => handleToolItemClick(event, "/help")}
+          aria-label={helpLabel}
+          title={helpLabel}
+          role="menuitem"
+          className={() =>
+            [
+              "sidebar-settings-help-link",
+              isFixedToolRouteActive("/help") ? "sidebar-link-active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")
+          }
+        >
+          <span aria-hidden="true">?</span>
+        </NavLink>
+      </div>
+    );
+  }
+
   function renderAccountMenuIcon(kind: "account") {
     return (
       <span
@@ -2504,10 +2526,6 @@ export function AppSidebar({
     const topToolItems = fixedToolItems.filter((item) =>
       item.to === "/agents" || item.to === "/archives" || item.to === "/registries" || item.to === "/market"
     );
-    const middleToolItems = fixedToolItems.filter((item) =>
-      item.to === "/control-center" || item.to === "/help"
-    );
-    const settingsToolItems = fixedToolItems.filter((item) => item.to === "/settings");
 
     return (
       <div
@@ -2531,9 +2549,7 @@ export function AppSidebar({
         ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {middleToolItems.map((item) => renderToolLink(item))}
-        <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {settingsToolItems.map((item) => renderToolLink(item))}
+        {settingsToolItem ? renderSettingsToolRow(settingsToolItem) : null}
       </div>
     );
   }
@@ -3235,7 +3251,7 @@ export function AppSidebar({
   const activeFixedToolItem = fixedToolItems.find((item) =>
     isFixedToolRouteActive(item.to),
   );
-  const settingsToolTriggerLabel = activeFixedToolItem?.label ?? t("nav.settings");
+  const settingsToolTriggerLabel = t("nav.settings");
 
   return (
     <aside className={shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>

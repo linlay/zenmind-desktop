@@ -59,6 +59,14 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "control",
+      group: "integrations",
+      label: "control",
+      description: "",
+      layout: "wide",
+      visible: true
+    },
+    {
       id: "kanban",
       group: "integrations",
       label: "kanban",
@@ -70,14 +78,6 @@ export function createSettingsSectionDefinitions({
       id: "market",
       group: "integrations",
       label: "market",
-      description: "",
-      layout: "measure",
-      visible: true
-    },
-    {
-      id: "control",
-      group: "integrations",
-      label: "control",
       description: "",
       layout: "measure",
       visible: true

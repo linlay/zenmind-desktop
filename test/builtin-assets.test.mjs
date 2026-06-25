@@ -191,8 +191,8 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
     writeText(
       path.join(bundleRoot, ".env.example"),
       [
-        "FRONTEND_PORT=11950",
-        "AUTH_ISSUER=https://zenmind.cc",
+        "FRONTEND_PORT=3000",
+        "AUTH_ISSUER=https://identity.example.test",
         ""
       ].join("\n")
     );
