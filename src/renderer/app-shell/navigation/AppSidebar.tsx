@@ -1466,7 +1466,7 @@ export function AppSidebar({
   }
 
   async function handleAssistantOpenChat(chat: AssistantNavChatItem) {
-    if (!chat.isRead) {
+    if (!chat.isRead && !chat.hasActiveRun) {
       const assistantApi = window.electronAPI.assistant as typeof window.electronAPI.assistant & {
         markChatRead?: (
           chatId: string,

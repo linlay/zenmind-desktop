@@ -2978,23 +2978,6 @@
   padding-top: var(--windows-titlebar-overlay-height);
 }
 
-.app-shell.is-mac-platform.has-plugin-surface .embedded-surface-page.embedded-surface-page-embedded {
-  box-sizing: border-box;
-  padding-top: var(--mac-embedded-titlebar-height);
-}
-
-.app-shell.is-mac-platform.has-plugin-surface .embedded-surface-page.embedded-surface-page-embedded::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 2;
-  height: var(--mac-embedded-titlebar-height);
-  background: var(--embedded-surface-shell-bg);
-  pointer-events: none;
-}
-
 /* ── 悬浮返回按钮样式 ── */
 .embedded-back-button {
   position: absolute;

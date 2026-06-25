@@ -28,7 +28,7 @@ test("assistant chat row selection exposes and invokes single-chat read marking"
   const openChatEnd = sidebar.indexOf("function handleAssistantOpenChatMenu", openChatStart);
   assert.notEqual(openChatEnd, -1);
   const openChatBlock = sidebar.slice(openChatStart, openChatEnd);
-  assert.match(openChatBlock, /if \(!chat\.isRead\)/);
+  assert.match(openChatBlock, /if \(!chat\.isRead && !chat\.hasActiveRun\)/);
   assert.match(openChatBlock, /const markChatRead = assistantApi\.markChatRead/);
   assert.match(openChatBlock, /markChatRead\(\s*chat\.chatId,\s*chat\.lastRunId \|\| undefined,?\s*\)/);
   assert.match(openChatBlock, /window\.electronAPI\.assistant\.markAgentChatsRead\(chat\.agentKey \|\| currentAgentKey\)/);

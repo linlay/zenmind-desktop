@@ -110,6 +110,7 @@ const IconMap: Record<(typeof AGENT_ICON_NAMES)[number], string> = {
 const FALLBACK_ICON_NAMES = AGENT_ICON_NAMES.filter(
   (name) => name !== "terminal",
 );
+const DEFAULT_ICON_NAMES = new Set(["default"]);
 const PLACEHOLDER_ICON_NAMES = new Set(["terminal"]);
 
 function hashFallbackSeed(seed: string) {
@@ -193,12 +194,15 @@ export function AgentIcon({
 
   if (type === "agent") {
     const name = readIconName(icon);
+    if (DEFAULT_ICON_NAMES.has(name)) {
+      return renderImageIcon(defaultIcon, className, size);
+    }
     const builtinIcon = PLACEHOLDER_ICON_NAMES.has(name)
       ? ""
       : IconMap[name as keyof typeof IconMap];
     const iconSource =
       builtinIcon ||
-      resolveFallbackIcon(fallbackSeed || name);
+      (name ? resolveFallbackIcon(fallbackSeed || name) : defaultIcon);
     return renderImageIcon(iconSource, className, size);
   }
 
