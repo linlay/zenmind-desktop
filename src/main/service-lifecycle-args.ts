@@ -17,7 +17,7 @@ export type ServiceLifecycleArgsConfig = {
 
 const CORE_SERVICE_LIFECYCLE_COMMANDS = {
   "agent-container-hub": ["deploy", "start", "stop"],
-  "identity-center": ["deploy", "start", "stop"],
+  "identity-center": ["deploy", "start"],
   "agent-platform": ["deploy", "start", "stop"],
   "agent-webclient": ["deploy"]
 } as const satisfies Record<string, readonly ServiceLifecycleCommandKind[]>;
@@ -52,6 +52,22 @@ function readLifecycleArgArray(
 
 function getAllowedLifecycleKinds(serviceId: string) {
   return CORE_SERVICE_LIFECYCLE_COMMANDS[serviceId as CoreLifecycleServiceId] ?? null;
+}
+
+function filterServiceLifecycleArgs(serviceId: ServiceId | string, args: string[]) {
+  if (serviceId === "agent-platform") {
+    const nextArgs: string[] = [];
+    for (let index = 0; index < args.length; index += 1) {
+      const arg = args[index]?.trim().toLowerCase();
+      if (AGENT_PLATFORM_REMOVED_VALUE_FLAGS.has(arg)) {
+        index += 1;
+        continue;
+      }
+      nextArgs.push(args[index]);
+    }
+    return nextArgs;
+  }
+  return args;
 }
 
 function readPlatformServiceDefaults(
@@ -89,10 +105,13 @@ function normalizeServiceLifecycleArgs(
     const commonArgs = readLifecycleArgArray(commonLifecycleArgs, kind);
     const platformArgs = readLifecycleArgArray(platformLifecycleArgs, kind);
     if (commonArgs || platformArgs) {
-      lifecycleArgs[kind] = [
+      const args = filterServiceLifecycleArgs(serviceId, [
         ...(commonArgs ?? []),
         ...(platformArgs ?? [])
-      ];
+      ]);
+      if (args.length > 0) {
+        lifecycleArgs[kind] = args;
+      }
     }
   }
 
@@ -153,19 +172,7 @@ export function getConfiguredServiceLifecycleArgs(
   platform: NodeJS.Platform = process.platform
 ) {
   const args = readServiceLifecycleArgsConfig(app, platform)?.services[serviceId]?.lifecycleArgs[kind] ?? [];
-  if (serviceId !== "agent-platform") {
-    return args;
-  }
-  const nextArgs: string[] = [];
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]?.trim().toLowerCase();
-    if (AGENT_PLATFORM_REMOVED_VALUE_FLAGS.has(arg)) {
-      index += 1;
-      continue;
-    }
-    nextArgs.push(args[index]);
-  }
-  return nextArgs;
+  return filterServiceLifecycleArgs(serviceId, args);
 }
 
 export function appendConfiguredServiceLifecycleArgs(

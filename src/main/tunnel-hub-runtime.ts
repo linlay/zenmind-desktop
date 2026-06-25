@@ -1,3 +1,4 @@
+import os from "node:os";
 import type { App } from "electron";
 import type {
   ServiceLogReadOptions,
@@ -33,19 +34,59 @@ type TunnelClientFactoryInput = {
   logger: Logger;
 };
 
+type TunnelClient = {
+  connect: () => Promise<void>;
+  close: () => void;
+  on: (event: "close" | "error", listener: (...args: any[]) => void) => unknown;
+};
+
 type TunnelHubRuntimeOptions = {
   app: App;
   desktopWsServerOptions: DesktopWsServerOptions;
   logger?: Logger;
-  createTunnelClient?: (input: TunnelClientFactoryInput) => {
-    connect: () => Promise<void>;
-    close: () => void;
-    on: (event: "close" | "error", listener: (...args: any[]) => void) => unknown;
-  };
+  createTunnelClient?: (input: TunnelClientFactoryInput) => TunnelClient;
+  readNetworkSignature?: () => string;
+  networkMonitorIntervalMs?: number;
 };
 
 const LOG_LIMIT_BYTES = 128 * 1024;
 const LOG_PATH = "memory://desktop-tunnel-hub";
+const DEFAULT_NETWORK_MONITOR_INTERVAL_MS = 5_000;
+const MIN_NETWORK_MONITOR_INTERVAL_MS = 10;
+
+function buildNetworkInterfaceSignature(platformLabel: string, interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>) {
+  const entries: string[] = [];
+  for (const [name, items] of Object.entries(interfaces)) {
+    for (const item of items ?? []) {
+      if (item.internal || !item.address) {
+        continue;
+      }
+      entries.push([
+        platformLabel,
+        name,
+        item.family,
+        item.address,
+        item.cidr ?? "",
+        item.mac,
+        item.scopeid ?? ""
+      ].join("|"));
+    }
+  }
+  return entries.sort().join("\n");
+}
+
+function readCurrentNetworkSignature() {
+  const interfaces = os.networkInterfaces();
+  const isWindows = process.platform === "win32";
+  const isMac = process.platform === "darwin";
+  if (isWindows) {
+    return buildNetworkInterfaceSignature("windows", interfaces);
+  }
+  if (isMac) {
+    return buildNetworkInterfaceSignature("mac", interfaces);
+  }
+  return buildNetworkInterfaceSignature("other", interfaces);
+}
 
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -75,7 +116,9 @@ export class TunnelHubRuntime {
   private lastError = "";
   private lastConnectedAt = "";
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private client: ReturnType<NonNullable<TunnelHubRuntimeOptions["createTunnelClient"]>> | null = null;
+  private networkMonitorTimer: ReturnType<typeof setInterval> | null = null;
+  private networkSignature = "";
+  private client: TunnelClient | null = null;
   private startPromise: Promise<TunnelHubRuntimeCommandResult> | null = null;
   private stopping = false;
   private logs = "";
@@ -122,9 +165,11 @@ export class TunnelHubRuntime {
   async stop(): Promise<TunnelHubRuntimeCommandResult> {
     this.stopping = true;
     this.clearReconnectTimer();
+    this.stopNetworkMonitor();
     this.setPhase("stopping");
-    this.client?.close();
+    const previousClient = this.client;
     this.client = null;
+    previousClient?.close();
     this.stopping = false;
     this.lastError = "";
     const settings = readTunnelHubSettings(this.options.app);
@@ -171,6 +216,7 @@ export class TunnelHubRuntime {
     clearLegacyTunnelHubRegistrationToken(this.options.app);
     const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled) {
+      this.stopNetworkMonitor();
       this.phase = "disabled";
       const message = readTunnelHubRegistrationBearerToken(this.options.app)
         ? "Tunnel Hub is disabled or incomplete."
@@ -179,8 +225,10 @@ export class TunnelHubRuntime {
     }
     this.stopping = false;
     this.clearReconnectTimer();
-    this.client?.close();
+    this.startNetworkMonitor();
+    const previousClient = this.client;
     this.client = null;
+    previousClient?.close();
     this.lastError = "";
     this.setPhase("starting");
     try {
@@ -219,20 +267,36 @@ export class TunnelHubRuntime {
       tlsInsecureSkipVerify: false,
       logger: this.options.logger ?? console
     });
-    client.on("close", () => this.handleClientClosed());
+    client.on("close", () => this.handleClientClosed(client));
     client.on("error", (error: unknown) => {
+      if (this.client !== client) {
+        return;
+      }
       this.lastError = messageFromError(error);
       this.log(`connection error: ${this.lastError}`);
     });
-    await client.connect();
     this.client = client;
+    try {
+      await client.connect();
+    } catch (error) {
+      if (this.client === client) {
+        this.client = null;
+      }
+      throw error;
+    }
+    if (this.client !== client) {
+      throw new Error("tunnel client closed during connect");
+    }
   }
 
   private createTunnelClient(input: TunnelClientFactoryInput) {
     return this.options.createTunnelClient?.(input) ?? new TunnelClientEndpoint(input);
   }
 
-  private handleClientClosed() {
+  private handleClientClosed(client: TunnelClient) {
+    if (this.client !== client) {
+      return;
+    }
     if (this.stopping) {
       return;
     }
@@ -244,6 +308,68 @@ export class TunnelHubRuntime {
     this.setPhase("reconnecting");
     this.log("connection closed; scheduling reconnect");
     this.scheduleReconnect();
+  }
+
+  private startNetworkMonitor() {
+    this.networkSignature = this.readNetworkSignature();
+    if (this.networkMonitorTimer) {
+      return;
+    }
+    const requestedIntervalMs = Number(this.options.networkMonitorIntervalMs);
+    const intervalMs = Math.max(
+      MIN_NETWORK_MONITOR_INTERVAL_MS,
+      Math.floor(Number.isFinite(requestedIntervalMs) ? requestedIntervalMs : DEFAULT_NETWORK_MONITOR_INTERVAL_MS)
+    );
+    this.networkMonitorTimer = setInterval(() => this.checkNetworkSignature(), intervalMs);
+    this.networkMonitorTimer.unref?.();
+  }
+
+  private stopNetworkMonitor() {
+    if (this.networkMonitorTimer) {
+      clearInterval(this.networkMonitorTimer);
+      this.networkMonitorTimer = null;
+    }
+    this.networkSignature = "";
+  }
+
+  private readNetworkSignature() {
+    try {
+      return this.options.readNetworkSignature?.() ?? readCurrentNetworkSignature();
+    } catch (error) {
+      this.options.logger?.warn?.(`[tunnel-hub] failed to read network state: ${messageFromError(error)}`);
+      return this.networkSignature;
+    }
+  }
+
+  private checkNetworkSignature() {
+    if (this.stopping || !readTunnelHubSettings(this.options.app).enabled) {
+      return;
+    }
+    const nextSignature = this.readNetworkSignature();
+    if (nextSignature === this.networkSignature) {
+      return;
+    }
+    this.networkSignature = nextSignature;
+    this.handleNetworkChanged();
+  }
+
+  private handleNetworkChanged() {
+    if (this.startPromise || this.stopping || !readTunnelHubSettings(this.options.app).enabled) {
+      return;
+    }
+    if (!this.client && !this.reconnectTimer) {
+      return;
+    }
+    this.log("network changed; reconnecting tunnel");
+    this.clearReconnectTimer();
+    const previousClient = this.client;
+    this.client = null;
+    this.setPhase("reconnecting");
+    previousClient?.close();
+    void this.start().catch((error) => {
+      this.lastError = messageFromError(error);
+      this.scheduleReconnect();
+    });
   }
 
   private scheduleReconnect() {

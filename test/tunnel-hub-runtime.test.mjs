@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -85,6 +86,21 @@ function listen(server) {
 
 function closeServer(server) {
   return new Promise((resolve) => server.close(() => resolve()));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(predicate, message, timeoutMs = 1000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) {
+      return;
+    }
+    await delay(10);
+  }
+  assert.fail(message);
 }
 
 function websocketAccept(key) {
@@ -531,6 +547,87 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(connectCalls[0].tlsInsecureSkipVerify, false);
   assert.equal(typeof connectCalls[0].desktopWsServerOptions.verifyToken, "undefined");
   assert.equal(readTunnelHubSettings(app).webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
+  await runtime.stop();
+});
+
+test("Tunnel Hub runtime reconnects tunnel when network signature changes", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-runtime-network-change-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const registrations = [];
+  const clients = [];
+  let networkSignature = "wifi";
+
+  class FakeTunnelClient extends EventEmitter {
+    closed = false;
+
+    async connect() {}
+
+    close() {
+      if (this.closed) {
+        return;
+      }
+      this.closed = true;
+      this.emit("close");
+    }
+  }
+
+  t.after(async () => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  writeSsoSiteToken(homePath, "runtime-network-change-secret");
+  assert.equal(saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    reconnectSeconds: 60
+  }).ok, true);
+
+  configureTunnelHubRegistrationController({
+    async fetch(url, init) {
+      registrations.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        async text() {
+          return JSON.stringify({
+            deviceId: "mac-mini-office",
+            relayUrl: "wss://relay.example.test/tunnel",
+            agentToken: `runtime-token-${registrations.length}`
+          });
+        }
+      };
+    },
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  const runtime = new TunnelHubRuntime({
+    app,
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    createTunnelClient() {
+      const client = new FakeTunnelClient();
+      clients.push(client);
+      return client;
+    },
+    readNetworkSignature: () => networkSignature,
+    networkMonitorIntervalMs: 10,
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  const result = await runtime.start();
+  assert.equal(result.ok, true);
+  assert.equal(result.status.phase, "connected");
+  assert.equal(clients.length, 1);
+
+  networkSignature = "ethernet";
+  await waitFor(
+    () => clients.length === 2 && clients[0].closed && runtime.getStatus().phase === "connected",
+    "expected tunnel runtime to reconnect after network signature changed"
+  );
+
+  assert.equal(registrations.length, 2);
   await runtime.stop();
 });
 

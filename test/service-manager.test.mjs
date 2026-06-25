@@ -2196,7 +2196,7 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
   }
 });
 
-test("desktop managed service commands append layout flags for container hub and identity-center", () => {
+test("desktop managed service commands append layout flags for container hub and identity-center start", () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2208,35 +2208,57 @@ test("desktop managed service commands append layout flags for container hub and
   };
 
   try {
-    for (const serviceId of ["agent-container-hub", "identity-center"]) {
-      const service = getBuiltinService(serviceId);
-      const envPath = writeTestEnv(
-        userDataRoot,
-        service.id,
-        service.id === "agent-container-hub" ? "BIND_ADDR=127.0.0.1:7079\n" : "SERVER_PORT=7076\n"
-      );
-      const layout = {
-        programDir: getTestServiceProgramDir(userDataRoot, service.id, service.version),
-        configDir: getTestConfigDir(userDataRoot, service.id),
-        dataDir: getTestDataDir(userDataRoot, service.id),
-        stateDir: getTestStateDir(userDataRoot, service.id),
-        logDir: getTestLogDir(userDataRoot, service.id),
-        envPath
-      };
+    const containerHub = getBuiltinService("agent-container-hub");
+    const containerHubEnvPath = writeTestEnv(userDataRoot, containerHub.id, "BIND_ADDR=127.0.0.1:7079\n");
+    const containerHubLayout = {
+      programDir: getTestServiceProgramDir(userDataRoot, containerHub.id, containerHub.version),
+      configDir: getTestConfigDir(userDataRoot, containerHub.id),
+      dataDir: getTestDataDir(userDataRoot, containerHub.id),
+      stateDir: getTestStateDir(userDataRoot, containerHub.id),
+      logDir: getTestLogDir(userDataRoot, containerHub.id),
+      envPath: containerHubEnvPath
+    };
 
-      for (const kind of ["start", "deploy", "stop"]) {
-        const command = __testInternals.appendDesktopManagedLayoutFlags(service, [`${kind}.sh`], layout, kind);
-        assertFlag(command, "--config-dir", layout.configDir);
-        assertFlag(command, "--data-dir", layout.dataDir);
-        assertFlag(command, "--state-dir", layout.stateDir);
-        assertFlag(command, "--log-dir", layout.logDir);
-        if (service.id === "agent-container-hub") {
-          assertFlag(command, "--bind-addr", "127.0.0.1:7079");
-        } else {
-          assertFlag(command, "--port", "7076");
-        }
-      }
+    for (const kind of ["start", "deploy", "stop"]) {
+      const command = __testInternals.appendDesktopManagedLayoutFlags(containerHub, [`${kind}.sh`], containerHubLayout, kind);
+      assertFlag(command, "--config-dir", containerHubLayout.configDir);
+      assertFlag(command, "--data-dir", containerHubLayout.dataDir);
+      assertFlag(command, "--state-dir", containerHubLayout.stateDir);
+      assertFlag(command, "--log-dir", containerHubLayout.logDir);
+      assertFlag(command, "--bind-addr", "127.0.0.1:7079");
     }
+
+    const identityCenter = getBuiltinService("identity-center");
+    const identityEnvPath = writeTestEnv(userDataRoot, identityCenter.id, "SERVER_PORT=7076\n");
+    const identityLayout = {
+      programDir: getTestServiceProgramDir(userDataRoot, identityCenter.id, identityCenter.version),
+      configDir: getTestConfigDir(userDataRoot, identityCenter.id),
+      dataDir: getTestDataDir(userDataRoot, identityCenter.id),
+      stateDir: getTestStateDir(userDataRoot, identityCenter.id),
+      logDir: getTestLogDir(userDataRoot, identityCenter.id),
+      envPath: identityEnvPath
+    };
+
+    const startCommand = __testInternals.appendDesktopManagedLayoutFlags(
+      identityCenter,
+      ["start.sh"],
+      identityLayout,
+      "start"
+    );
+    assertFlag(startCommand, "--config-dir", identityLayout.configDir);
+    assertFlag(startCommand, "--data-dir", identityLayout.dataDir);
+    assertFlag(startCommand, "--state-dir", identityLayout.stateDir);
+    assertFlag(startCommand, "--log-dir", identityLayout.logDir);
+    assertFlag(startCommand, "--port", "7076");
+
+    assert.deepEqual(
+      __testInternals.appendDesktopManagedLayoutFlags(identityCenter, ["deploy.sh"], identityLayout, "deploy"),
+      ["deploy.sh"]
+    );
+    assert.deepEqual(
+      __testInternals.appendDesktopManagedLayoutFlags(identityCenter, ["stop.sh"], identityLayout, "stop"),
+      ["stop.sh"]
+    );
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -2262,7 +2284,7 @@ test("desktop managed service commands insert configured lifecycle args before l
       services: {
         "identity-center": {
           lifecycleArgs: {
-            deploy: ["--extra-deploy"],
+            deploy: ["--auth-issuer", "https://zenmind.cc"],
             start: ["--extra-start", "alpha"],
             stop: ["--extra-stop"]
           }
@@ -2288,30 +2310,47 @@ test("desktop managed service commands insert configured lifecycle args before l
       envPath
     };
 
-    for (const [kind, extraArgs] of [
-      ["deploy", ["--extra-deploy"]],
-      ["start", ["--extra-start", "alpha"]],
-      ["stop", ["--extra-stop"]]
-    ]) {
-      const commandWithArgs = __testInternals.appendConfiguredServiceLifecycleArgs(
-        app,
-        service,
-        [`${kind}.sh`, "--manifest-arg"],
-        kind
-      );
-      const command = __testInternals.appendDesktopManagedLayoutFlags(service, commandWithArgs, layout, kind);
-      assert.deepEqual(command.slice(0, 2 + extraArgs.length), [
-        `${kind}.sh`,
-        "--manifest-arg",
-        ...extraArgs
-      ]);
-      assert.ok(command.indexOf("--config-dir") > command.indexOf(extraArgs.at(-1)));
-      assertFlag(command, "--config-dir", layout.configDir);
-      assertFlag(command, "--data-dir", layout.dataDir);
-      assertFlag(command, "--state-dir", layout.stateDir);
-      assertFlag(command, "--log-dir", layout.logDir);
-      assertFlag(command, "--port", "7076");
-    }
+    const deployCommandWithArgs = __testInternals.appendConfiguredServiceLifecycleArgs(
+      app,
+      service,
+      ["deploy.sh", "--manifest-arg"],
+      "deploy"
+    );
+    assert.deepEqual(
+      __testInternals.appendDesktopManagedLayoutFlags(service, deployCommandWithArgs, layout, "deploy"),
+      ["deploy.sh", "--manifest-arg", "--auth-issuer", "https://zenmind.cc"]
+    );
+
+    const startCommandWithArgs = __testInternals.appendConfiguredServiceLifecycleArgs(
+      app,
+      service,
+      ["start.sh", "--manifest-arg"],
+      "start"
+    );
+    const startCommand = __testInternals.appendDesktopManagedLayoutFlags(service, startCommandWithArgs, layout, "start");
+    assert.deepEqual(startCommand.slice(0, 4), [
+      "start.sh",
+      "--manifest-arg",
+      "--extra-start",
+      "alpha"
+    ]);
+    assert.ok(startCommand.indexOf("--config-dir") > startCommand.indexOf("alpha"));
+    assertFlag(startCommand, "--config-dir", layout.configDir);
+    assertFlag(startCommand, "--data-dir", layout.dataDir);
+    assertFlag(startCommand, "--state-dir", layout.stateDir);
+    assertFlag(startCommand, "--log-dir", layout.logDir);
+    assertFlag(startCommand, "--port", "7076");
+
+    const stopCommandWithArgs = __testInternals.appendConfiguredServiceLifecycleArgs(
+      app,
+      service,
+      ["stop.sh", "--manifest-arg"],
+      "stop"
+    );
+    assert.deepEqual(
+      __testInternals.appendDesktopManagedLayoutFlags(service, stopCommandWithArgs, layout, "stop"),
+      ["stop.sh", "--manifest-arg"]
+    );
 
     const webclient = getBuiltinService("agent-webclient");
     assert.deepEqual(
@@ -2502,6 +2541,47 @@ test("agent-platform lifecycle args drop legacy runtime-dir flags", () => {
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["deploy.sh"], "deploy"),
       ["deploy.sh", "--extra-deploy"]
+    );
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("identity-center lifecycle args only keep deploy and start commands", () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+
+  try {
+    const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "identity-center": {
+          lifecycleArgs: {
+            deploy: ["--auth-issuer", "https://zenmind.cc"],
+            start: ["--extra-start"],
+            stop: ["--extra-stop"]
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+
+    const service = getBuiltinService("identity-center");
+
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["deploy.sh"], "deploy"),
+      ["deploy.sh", "--auth-issuer", "https://zenmind.cc"]
+    );
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["start.sh"], "start"),
+      ["start.sh", "--extra-start"]
+    );
+    assert.deepEqual(
+      __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["stop.sh"], "stop"),
+      ["stop.sh"]
     );
   } finally {
     restore();

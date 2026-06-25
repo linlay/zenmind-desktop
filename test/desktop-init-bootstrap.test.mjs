@@ -599,6 +599,7 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
     services: {
       "identity-center": {
         lifecycleArgs: {
+          deploy: ["--auth-issuer", "https://zenmind.cc"],
           start: ["--identity-start"]
         },
         platforms: {
@@ -609,8 +610,7 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
           },
           win32: {
             lifecycleArgs: {
-              start: ["-IdentityStartWindows"],
-              stop: ["-IdentityStopWindows"]
+              start: ["-IdentityStartWindows"]
             }
           }
         }
@@ -628,8 +628,8 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
     services: {
       "identity-center": {
         lifecycleArgs: {
-          start: ["--identity-start", "-IdentityStartWindows"],
-          stop: ["-IdentityStopWindows"]
+          deploy: ["--auth-issuer", "https://zenmind.cc"],
+          start: ["--identity-start", "-IdentityStartWindows"]
         }
       }
     }

@@ -617,6 +617,9 @@ function appendDesktopManagedLayoutFlags(
   }
 
   if (service.id === "identity-center") {
+    if (kind === "deploy" || kind === "stop") {
+      return command;
+    }
     return [
       ...command,
       "--config-dir", layout.configDir,
