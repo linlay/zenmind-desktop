@@ -2,7 +2,7 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
-import { RootRouteRedirect, StartupLoadingScreen } from "./startup/StartupGate";
+import { StartupLoadingScreen, StartupRoutePlaceholder } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
 import { useServices } from "../services/ServicesContext";
@@ -24,11 +24,7 @@ import {
   resolveDesktopCopilotPreference,
   sanitizeDesktopCopilotPagePreferences
 } from "../../shared/page-copilot";
-import {
-  shouldAutoOpenAssistant,
-  shouldRedirectStartupFailureToControlCenter,
-  shouldShowStartupProgressCard
-} from "../../shared/startup-gate";
+import { shouldShowStartupProgressCard } from "../../shared/startup-gate";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -411,7 +407,6 @@ export function AppShell() {
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
-  const startupNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -645,8 +640,6 @@ export function AppShell() {
     () => normalizeWebGroupOrder(webGroupOrder, webItems),
     [webGroupOrder, webItems]
   );
-  const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded;
-
   async function refreshWebItems() {
     const result = await window.electronAPI.webs.list();
     if (result.ok) {
@@ -1114,50 +1107,6 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (
-      !navigationStateLoaded ||
-      !shouldAutoOpenAssistant(startupRestoreState, startupAllReady, location.pathname) ||
-      startupNavigationDoneRef.current
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    setStartupTimedOut(false);
-
-    void (async () => {
-      let targetPath = getKanbanAwareFallbackPath(kanbanEnabled);
-      try {
-        const result = await window.electronAPI.assistant.listNavigationAgents();
-        if (cancelled) {
-          return;
-        }
-        if (result.ok) {
-          const nextItems = normalizeAssistantNavAgents(result.items);
-          setAssistantNavAgentsLoaded(true);
-          setAssistantNavAgents(nextItems);
-          const firstAgentKey = nextItems.find((agent) => agent.agentKey.trim())?.agentKey.trim() ?? "";
-          if (firstAgentKey) {
-            targetPath = createStartupAgentRoute(firstAgentKey);
-          }
-        }
-      } catch {
-        // Keep bootstrap completion useful even if agent-platform has not returned navigation data yet.
-      }
-
-      if (cancelled) {
-        return;
-      }
-      startupNavigationDoneRef.current = true;
-      navigate(targetPath, { replace: true });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [kanbanEnabled, location.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState]);
-
-  useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
       setStartupCardDismissed(false);
       return;
@@ -1170,27 +1119,6 @@ export function AppShell() {
       setStartupCardDismissed(false);
     }
   }, [startupRestoreState]);
-
-  useEffect(() => {
-    if (
-      !startupRestoreState ||
-      !shouldRedirectStartupFailureToControlCenter(startupRestoreState, location.pathname)
-    ) {
-      return;
-    }
-
-    setStartupCardDismissed(true);
-    setStartupTimedOut(false);
-    navigate("/control-center", {
-      replace: true,
-      state: {
-        startupFailure: {
-          serviceId: startupRestoreState.failedServiceId,
-          message: startupRestoreState.message
-        }
-      }
-    });
-  }, [location.pathname, navigate, startupRestoreState]);
 
   useEffect(() => {
     refreshServicesRef.current = refreshServices;
@@ -2754,14 +2682,7 @@ export function AppShell() {
           <Routes>
             <Route
               path="/"
-              element={
-                <RootRouteRedirect
-                  startupRestoreState={startupRestoreState}
-                  startupAllReady={startupAllReady}
-                  kanbanEnabled={kanbanEnabled}
-                  navigationPreferencesLoaded={navigationStateLoaded}
-                />
-              }
+              element={<StartupRoutePlaceholder />}
             />
             <Route
               path="/kanban"
@@ -2910,7 +2831,6 @@ export function AppShell() {
           startupRestoreState={resolvedStartupRestoreState}
           timedOut={startupTimedOut}
           onRefresh={() => {
-            startupNavigationDoneRef.current = false;
             setStartupCardDismissed(false);
             void refreshServices();
             void refreshStartupRestoreState().catch(() => undefined);
@@ -2947,10 +2867,6 @@ function resolvePluginRouteId(pathname: string) {
   return matchPath("/service/:serviceId", pathname)?.params.serviceId ??
     matchPath("/plugin/:pluginId", pathname)?.params.pluginId ??
     null;
-}
-
-function createStartupAgentRoute(agentKey: string) {
-  return `/agent/${encodeURIComponent(agentKey)}`;
 }
 
 function resolveAgentWebclientRoute(

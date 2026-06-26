@@ -1034,7 +1034,6 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key: AgentWebclientRouteKey;/);
   assert.match(appShell, /kind: AgentWebclientRouteKind;/);
   assert.match(appShell, /mode: AgentWebclientRouteMode;/);
-  assert.match(appShell, /kanbanEnabled=\{kanbanEnabled\}/);
   assert.doesNotMatch(appShell, /kanbanEnabled=\{true\}/);
   assert.match(appShell, /path="\/kanban"[\s\S]*?!kanbanSettingsLoaded[\s\S]*?!kanbanEnabled[\s\S]*?<Navigate to="\/control-center" replace \/>[\s\S]*?<RouteSuspense><KanbanPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>/);
   assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
@@ -2120,14 +2119,15 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /window\.electronAPI\.onServicesChanged\(\(\) => \{[\s\S]*?void refreshMarketSettingsVisibility\(\);[\s\S]*?refreshWebItems\(\)\.catch\(\(\) => undefined\);[\s\S]*?void refreshAssistantNavAgents\(\);/);
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
-  assert.match(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
+  assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);
   assert.doesNotMatch(appShell, /preferences\?\.kanban/);
   assert.doesNotMatch(appShell, /onKanbanEnabledChange/);
   assert.match(settingsPage, /window\.electronAPI\.kanban\.saveSettings\(\{\s*enabled:\s*true,/);
   assert.match(appShell, /onMarketEnabledChange=\{setMarketEnabled\}/);
   assert.match(appShell, /marketEnabled=\{marketEnabled\}/);
-  assert.match(appShell, /kanbanEnabled=\{kanbanEnabled\}/);
+  assert.match(appShell, /resolveKanbanAwareNavigationPath\([\s\S]*?kanbanEnabled/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
   assert.match(appShell, /websiteNavOrder=\{normalizedWebGroupOrder\}/);
   assert.match(appShell, /webItems=\{webItems\}/);
@@ -3134,23 +3134,29 @@ test("assistant navigation agents refresh immediately after startup services bec
   assert.match(appShell, /if \(agentPlatformRunning\) \{[\s\S]*?refreshAssistantNavAgents\(\)/);
 });
 
-test("bootstrap success opens the first available navigation agent", () => {
+test("bootstrap startup completion keeps the root route empty", () => {
   const appShell = readAppShellSource();
-  const startupAutoOpenBlock = appShell.match(
-    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[kanbanEnabled, location\.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState\]\);/u
-  )?.[0] ?? "";
-
-  assert.match(startupAutoOpenBlock, /!navigationStateLoaded/);
-  assert.match(startupAutoOpenBlock, /getKanbanAwareFallbackPath\(kanbanEnabled\)/);
-  assert.match(startupAutoOpenBlock, /assistant\.listNavigationAgents\(\)/);
-  assert.match(startupAutoOpenBlock, /normalizeAssistantNavAgents\(result\.items\)/);
-  assert.match(startupAutoOpenBlock, /setAssistantNavAgents\(nextItems\)/);
-  assert.match(startupAutoOpenBlock, /createStartupAgentRoute\(firstAgentKey\)/);
-  assert.doesNotMatch(startupAutoOpenBlock, /navigate\("\/kanban",\s*\{\s*replace:\s*true\s*\}\)/);
-  assert.match(
-    appShell,
-    /function createStartupAgentRoute\(agentKey: string\)[\s\S]*?`\/agent\/\$\{encodeURIComponent\(agentKey\)\}`/
+  const startupGate = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "startup",
+    "StartupGate.tsx"
   );
+  const startupGateHelper = readSourceFile("src", "shared", "startup-gate.ts");
+
+  assert.match(startupGate, /function StartupRoutePlaceholder\(\)[\s\S]*?className="startup-route-placeholder"/);
+  assert.doesNotMatch(startupGate, /<Navigate\b/);
+  assert.doesNotMatch(startupGate, /resolveStartupRootPath/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
+  assert.doesNotMatch(appShell, /shouldAutoOpenAssistant/);
+  assert.doesNotMatch(appShell, /shouldRedirectStartupFailureToControlCenter/);
+  assert.doesNotMatch(appShell, /startupNavigationDoneRef/);
+  assert.doesNotMatch(appShell, /createStartupAgentRoute/);
+  assert.doesNotMatch(startupGateHelper, /shouldAutoOpenAssistant/);
+  assert.doesNotMatch(startupGateHelper, /shouldRedirectStartupFailureToControlCenter/);
+  assert.doesNotMatch(startupGateHelper, /resolveStartupRootPath/);
+  assert.match(appShell, /onOpenControlCenter=\{\(\) => \{[\s\S]*?navigate\("\/control-center", \{/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {

@@ -1,30 +1,9 @@
-import { Navigate } from "react-router-dom";
 import type { ServiceId, ServiceState, StartupRestoreServicePhase, StartupRestoreState } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
-import { resolveStartupRootPath } from "../../../shared/startup-gate";
 import { useI18n } from "../../i18n/useI18n";
 
-export function RootRouteRedirect({
-  startupRestoreState,
-  startupAllReady,
-  kanbanEnabled,
-  navigationPreferencesLoaded
-}: {
-  startupRestoreState: StartupRestoreState | null;
-  startupAllReady: boolean;
-  kanbanEnabled: boolean;
-  navigationPreferencesLoaded: boolean;
-}) {
-  if (!navigationPreferencesLoaded) {
-    return null;
-  }
-
-  const targetPath = resolveStartupRootPath(startupRestoreState, startupAllReady, kanbanEnabled);
-  if (!targetPath) {
-    return null;
-  }
-
-  return <Navigate to={targetPath} replace />;
+export function StartupRoutePlaceholder() {
+  return <div className="startup-route-placeholder" aria-hidden="true" />;
 }
 
 export function StartupLoadingScreen({
