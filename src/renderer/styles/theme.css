@@ -8,10 +8,7 @@
   --mac-traffic-light-safe-area: 88px;
   --mac-fullscreen-top-safe-area: 32px;
   --bg-base: #FFFFFF;
-  --bg-canvas:
-    radial-gradient(circle at 8% 0%, rgba(122, 201, 255, 0.48), transparent 28%),
-    radial-gradient(circle at 92% 100%, rgba(150, 210, 255, 0.42), transparent 32%),
-    linear-gradient(180deg, #4A9EDB 0%, #6CB1E4 26%, #A9D0F2 58%, #B6D8F4 100%);
+  --bg-canvas: transparent;
   --surface: rgba(255, 255, 255, 0.18);
   --surface-strong: rgba(255, 255, 255, 0.9);
   --surface-soft: rgba(255, 255, 255, 0.28);

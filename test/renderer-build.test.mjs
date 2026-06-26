@@ -628,15 +628,45 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
 
 test("embedded surfaces use theme-backed host colors instead of hard-coded light fallbacks", () => {
   const globalStyles = readRendererStyles();
+  const macPluginEmbeddedSelector = ".app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface";
+  const macPluginEmbeddedRule = globalStyles.match(
+    new RegExp(`^${escapeRegExp(macPluginEmbeddedSelector)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
+  )?.groups?.body ?? "";
+  const darkMacPluginEmbeddedRule = globalStyles.match(
+    new RegExp(`^:root\\[data-theme="dark"\\] ${escapeRegExp(macPluginEmbeddedSelector)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
+  )?.groups?.body ?? "";
+  const macPluginEmbeddedBeforeRule = globalStyles.match(
+    new RegExp(`^${escapeRegExp(`${macPluginEmbeddedSelector}::before`)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
+  )?.groups?.body ?? "";
 
   assert.match(globalStyles, /--embedded-surface-shell-bg:\s*#fff;/);
   assert.match(globalStyles, /--embedded-surface-dock-bg:\s*#fff;/);
+  assert.match(globalStyles, /:root\s*\{[\s\S]*?--bg-canvas:\s*transparent;/);
+  assert.doesNotMatch(globalStyles, /radial-gradient\(circle at 8% 0%,\s*rgba\(122,\s*201,\s*255,\s*0\.48\)/);
+  assert.doesNotMatch(globalStyles, /#4A9EDB|#6CB1E4|#A9D0F2|#B6D8F4/);
   assert.match(globalStyles, /:root\[data-theme="dark"\][\s\S]*?--embedded-surface-shell-bg:\s*#1f2329;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] body\.embedded-surface-body,\s*[\s\S]*?body\.embedded-surface-body\.mac-translucent-sidebar-body\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(macPluginEmbeddedRule, /background:\s*var\(--bg-canvas\);/);
+  assert.match(darkMacPluginEmbeddedRule, /background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.doesNotMatch(darkMacPluginEmbeddedRule, /background:\s*var\(--bg-canvas\);/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface::before\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(macPluginEmbeddedBeforeRule, /display:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,\s*[\s\S]*?\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.embedded-surface-frame-shell\s*\{[\s\S]*?background:\s*transparent;/
+  );
+  assert.match(
+    globalStyles,
+    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/
+  );
+  assert.match(
+    globalStyles,
+    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.embedded-surface-page,\s*[\s\S]*?background:\s*var\(--embedded-surface-page-bg\);/
+  );
+  assert.doesNotMatch(globalStyles, /^\.app-shell\.is-windows-platform[^{]*\{[^}]*background:\s*var\(--bg-canvas\);/m);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-dock-bg\);/);
   assert.match(globalStyles, /\.embedded-surface-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);

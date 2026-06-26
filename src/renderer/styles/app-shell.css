@@ -57,6 +57,15 @@
   background: var(--embedded-surface-shell-bg);
 }
 
+/* Mac plugin surfaces show the window canvas behind transparent host layers. */
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface {
+  background: var(--bg-canvas);
+}
+
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface {
+  background: var(--embedded-surface-shell-bg);
+}
+
 .app-shell.is-mac-translucent-sidebar {
   border-radius: 0;
   overflow: hidden;
@@ -86,6 +95,10 @@
   display: block;
 }
 
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface::before {
+  display: none;
+}
+
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar.has-embedded-surface::before {
   display: none;
 }
@@ -99,6 +112,23 @@
 .app-shell > * {
   position: relative;
   z-index: 1;
+}
+
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-content,
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-main,
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-page,
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-frame-shell {
+  background: transparent;
+}
+
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-content,
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-main {
+  background: var(--embedded-surface-shell-bg);
+}
+
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-page,
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-frame-shell {
+  background: var(--embedded-surface-page-bg);
 }
 
 .desktop-sso-login-modal-layer {
