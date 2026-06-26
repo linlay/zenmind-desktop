@@ -1364,7 +1364,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /function isSettingsRedirectRoute\(targetPath: string\)/);
   assert.match(appShell, /function getSettingsExitFallbackPath\(kanbanEnabled: boolean\)[\s\S]*?return kanbanEnabled \? "\/kanban" : ASSISTANT_TARGET_PATH;/);
   assert.match(appShell, /function resolveSettingsExitTargetPath\(targetPath: string, kanbanEnabled: boolean\)[\s\S]*?isSettingsRedirectRoute\(targetPath\)[\s\S]*?getSettingsExitFallbackPath\(kanbanEnabled\)/);
-  assert.match(appShell, /function handleExitSettingsMode\(\)[\s\S]*?resolveSettingsExitTargetPath\(/);
+  assert.match(appShell, /function removeSettingsRoutesFromHistory\(history: string\[\]\)[\s\S]*?matchSettingsRoute\(item\.split\("\?"\)\[0\] \|\| "\/"\)/);
+  assert.match(appShell, /function handleExitSettingsMode\(\)[\s\S]*?const targetPath = resolveSettingsExitTargetPath\(/);
+  assert.match(appShell, /function handleExitSettingsMode\(\)[\s\S]*?back:\s*removeSettingsRoutesFromHistory\(current\.back\)[\s\S]*?forward:\s*\[\]/);
+  assert.match(appShell, /function handleExitSettingsMode\(\)[\s\S]*?navigate\(targetPath,\s*\{\s*replace:\s*true\s*\}\)/);
   assert.match(appShell, /lastNonSettingsRouteRef\.current = resolveSettingsExitTargetPath\(currentRoute, kanbanEnabled\)/);
   assert.match(appShell, /buildSettingsSectionPath/);
   assert.match(appShell, /navigate\(normalizedSettingsPath, \{ replace: true \}\)/);

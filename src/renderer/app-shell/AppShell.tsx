@@ -255,6 +255,10 @@ function resolveSettingsExitTargetPath(targetPath: string, kanbanEnabled: boolea
   return targetPath;
 }
 
+function removeSettingsRoutesFromHistory(history: string[]) {
+  return history.filter((item) => !matchSettingsRoute(item.split("?")[0] || "/"));
+}
+
 function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
   return settings?.enabled === true;
 }
@@ -1658,12 +1662,26 @@ export function AppShell() {
   }
 
   function handleExitSettingsMode() {
-    requestSidebarNavigation(
-      resolveSettingsExitTargetPath(
-        lastNonSettingsRouteRef.current || getSettingsExitFallbackPath(kanbanEnabled),
-        kanbanEnabled
-      ),
+    const targetPath = resolveSettingsExitTargetPath(
+      lastNonSettingsRouteRef.current || getSettingsExitFallbackPath(kanbanEnabled),
+      kanbanEnabled
     );
+    if (targetPath === currentRoute) {
+      return;
+    }
+    setSidebarNavigationHistory((current) => ({
+      back: removeSettingsRoutesFromHistory(current.back),
+      forward: []
+    }));
+    setPendingSidebarNavigationPath(targetPath);
+    if (sidebarNavigationUnlockTimerRef.current !== null) {
+      window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
+    }
+    sidebarNavigationUnlockTimerRef.current = window.setTimeout(() => {
+      setPendingSidebarNavigationPath(null);
+      sidebarNavigationUnlockTimerRef.current = null;
+    }, SIDEBAR_NAVIGATION_LOCK_MS);
+    navigate(targetPath, { replace: true });
   }
 
   useEffect(() => {
