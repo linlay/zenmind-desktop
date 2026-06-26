@@ -16,9 +16,9 @@
   --kanban-column-tint: #f7faff;
   --kanban-column-border: rgba(148, 163, 184, 0.22);
   --kanban-status-backlog: #86909c;
-  --kanban-status-todo: #f7ba1e;
+  --kanban-status-todo: #facc15;
   --kanban-status-progress: #2663eb;
-  --kanban-status-review: #9acd32;
+  --kanban-status-review: #f97316;
   --kanban-status-completed: #00b42a;
   --kanban-column-gap: 0px;
   --kanban-column-min-width: 220px;
@@ -59,9 +59,9 @@
   --kanban-muted: #86909c;
   --kanban-border: rgba(255, 255, 255, 0.08);
   --kanban-status-backlog: #86909c;
-  --kanban-status-todo: #fadb14;
+  --kanban-status-todo: #fde047;
   --kanban-status-progress: #4f88ff;
-  --kanban-status-review: #b8e34a;
+  --kanban-status-review: #fb923c;
   --kanban-status-completed: #27c346;
   --kanban-shadow: 0 14px 28px rgba(0, 0, 0, 0.26);
   background:
@@ -1508,7 +1508,9 @@
   gap: 4px;
   padding: 2px 6px;
   border-radius: 6px;
-  border: 1px solid transparent;
+  border: 1px solid var(--issue-card-tag-border, var(--kanban-border));
+  background: var(--issue-card-tag-bg);
+  color: var(--issue-card-tag-color);
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
@@ -1520,62 +1522,6 @@
   width: 12px;
   height: 12px;
   flex-shrink: 0;
-}
-
-.issue-card-footer-badge-severity.is-critical,
-.issue-card-footer-badge-priority.is-urgent {
-  color: #dc2626;
-  background: #fef2f2;
-  border-color: #fee2e2;
-}
-
-.issue-card-footer-badge-severity.is-high,
-.issue-card-footer-badge-priority.is-high {
-  color: #ea580c;
-  background: #fff7ed;
-  border-color: #ffedd5;
-}
-
-.issue-card-footer-badge-severity.is-medium,
-.issue-card-footer-badge-priority.is-medium {
-  color: #d97706;
-  background: #fffbeb;
-  border-color: #fef3c7;
-}
-
-.issue-card-footer-badge-severity.is-low,
-.issue-card-footer-badge-priority.is-low {
-  color: #65a30d;
-  background: #f7fee7;
-  border-color: #ecfccb;
-}
-
-:root[data-theme="dark"] .issue-card-footer-badge-severity.is-critical,
-:root[data-theme="dark"] .issue-card-footer-badge-priority.is-urgent {
-  color: #f87171;
-  background: color-mix(in srgb, #dc2626 14%, transparent);
-  border-color: color-mix(in srgb, #dc2626 22%, transparent);
-}
-
-:root[data-theme="dark"] .issue-card-footer-badge-severity.is-high,
-:root[data-theme="dark"] .issue-card-footer-badge-priority.is-high {
-  color: #fb923c;
-  background: color-mix(in srgb, #ea580c 14%, transparent);
-  border-color: color-mix(in srgb, #ea580c 22%, transparent);
-}
-
-:root[data-theme="dark"] .issue-card-footer-badge-severity.is-medium,
-:root[data-theme="dark"] .issue-card-footer-badge-priority.is-medium {
-  color: #fbbf24;
-  background: color-mix(in srgb, #d97706 14%, transparent);
-  border-color: color-mix(in srgb, #d97706 22%, transparent);
-}
-
-:root[data-theme="dark"] .issue-card-footer-badge-severity.is-low,
-:root[data-theme="dark"] .issue-card-footer-badge-priority.is-low {
-  color: #a3e635;
-  background: color-mix(in srgb, #65a30d 14%, transparent);
-  border-color: color-mix(in srgb, #65a30d 22%, transparent);
 }
 
 .issue-card-footer-end {
