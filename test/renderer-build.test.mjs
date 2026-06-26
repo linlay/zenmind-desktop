@@ -455,6 +455,12 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.config-terminal-icon svg\s*\{/);
   assert.match(globalStyles, /\.config-title-file-select\s*\{[\s\S]*?width:\s*clamp\(150px,\s*16vw,\s*320px\);/);
   assert.match(globalStyles, /\.config-editor\s*\{[\s\S]*?padding:\s*22px 24px;/);
+  const configEditorRules = [...globalStyles.matchAll(/\.config-editor\s*\{(?<body>[\s\S]*?)^\}/gm)];
+  const controlCenterConfigEditorRule = configEditorRules.find((rule) =>
+    /padding:\s*22px 24px;/.test(rule.groups?.body ?? "")
+  )?.groups?.body;
+  assert.ok(controlCenterConfigEditorRule);
+  assert.match(controlCenterConfigEditorRule, /min-height:\s*360px;/);
   assert.doesNotMatch(globalStyles, /linear-gradient\(90deg,\s*var\(--control-center-code-line\)/);
   assert.match(globalStyles, /\.service-nav-card\.is-compact-service\s*\{[\s\S]*?min-height:\s*58px;/);
   assert.match(globalStyles, /\.service-nav-card\s*\{[\s\S]*?position:\s*relative;/);
