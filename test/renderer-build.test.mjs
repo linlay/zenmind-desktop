@@ -1331,6 +1331,11 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /path="\/settings\/:sectionId"/);
   assert.match(appShell, /path="\/control-center" element=\{<Navigate to=\{buildSettingsSectionPath\("control"\)\} replace \/>/);
   assert.match(appShell, /lastNonSettingsRouteRef/);
+  assert.match(appShell, /function isSettingsRedirectRoute\(targetPath: string\)/);
+  assert.match(appShell, /function getSettingsExitFallbackPath\(kanbanEnabled: boolean\)[\s\S]*?return kanbanEnabled \? "\/kanban" : ASSISTANT_TARGET_PATH;/);
+  assert.match(appShell, /function resolveSettingsExitTargetPath\(targetPath: string, kanbanEnabled: boolean\)[\s\S]*?isSettingsRedirectRoute\(targetPath\)[\s\S]*?getSettingsExitFallbackPath\(kanbanEnabled\)/);
+  assert.match(appShell, /function handleExitSettingsMode\(\)[\s\S]*?resolveSettingsExitTargetPath\(/);
+  assert.match(appShell, /lastNonSettingsRouteRef\.current = resolveSettingsExitTargetPath\(currentRoute, kanbanEnabled\)/);
   assert.match(appShell, /buildSettingsSectionPath/);
   assert.match(appShell, /navigate\(normalizedSettingsPath, \{ replace: true \}\)/);
   assert.match(appShell, /onSelectSettingsSection=\{handleSelectSettingsSection\}/);
