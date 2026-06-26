@@ -24,7 +24,7 @@ import {
   resolveDesktopCopilotPreference,
   sanitizeDesktopCopilotPagePreferences
 } from "../../shared/page-copilot";
-import { shouldShowStartupProgressCard } from "../../shared/startup-gate";
+import { shouldAutoOpenBootstrapAgent, shouldShowStartupProgressCard } from "../../shared/startup-gate";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -423,6 +423,7 @@ export function AppShell() {
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
+  const startupBootstrapNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -1123,7 +1124,50 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (
+      startupBootstrapNavigationDoneRef.current ||
+      !shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setStartupTimedOut(false);
+
+    void (async () => {
+      let nextAssistantSettings = assistantSettings;
+      let bootstrapAgentKey = nextAssistantSettings?.bootstrapAgentKey.trim() ?? "";
+      if (!bootstrapAgentKey) {
+        try {
+          nextAssistantSettings = await window.electronAPI.assistant.getSettings();
+        } catch {
+          if (!cancelled) {
+            startupBootstrapNavigationDoneRef.current = true;
+          }
+          return;
+        }
+        if (cancelled) {
+          return;
+        }
+        setAssistantSettings(nextAssistantSettings);
+        bootstrapAgentKey = nextAssistantSettings.bootstrapAgentKey.trim();
+      }
+
+      startupBootstrapNavigationDoneRef.current = true;
+      if (!bootstrapAgentKey) {
+        return;
+      }
+      navigate(createBootstrapAgentRoute(bootstrapAgentKey), { replace: true });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assistantSettings, location.pathname, navigate, startupAllReady, startupRestoreState]);
+
+  useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
+      startupBootstrapNavigationDoneRef.current = false;
       setStartupCardDismissed(false);
       return;
     }
@@ -1132,6 +1176,7 @@ export function AppShell() {
       startupRestoreState.phase === "idle" ||
       startupRestoreState.phase === "running"
     ) {
+      startupBootstrapNavigationDoneRef.current = false;
       setStartupCardDismissed(false);
     }
   }, [startupRestoreState]);
@@ -2883,6 +2928,10 @@ function resolvePluginRouteId(pathname: string) {
   return matchPath("/service/:serviceId", pathname)?.params.serviceId ??
     matchPath("/plugin/:pluginId", pathname)?.params.pluginId ??
     null;
+}
+
+function createBootstrapAgentRoute(agentKey: string) {
+  return `/agent/${encodeURIComponent(agentKey)}`;
 }
 
 function resolveAgentWebclientRoute(

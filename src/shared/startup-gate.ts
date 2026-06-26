@@ -57,3 +57,18 @@ export function shouldShowStartupProgressCard(
     startupRestoreState.phase === "failed"
   );
 }
+
+export function shouldAutoOpenBootstrapAgent(
+  startupRestoreState: StartupRestoreState | null,
+  startupAllReady: boolean,
+  currentPathname = "/"
+) {
+  return startupRestoreState?.mode === "bootstrap" &&
+    startupRestoreState.phase === "succeeded" &&
+    startupAllReady &&
+    isBootstrapOwnedRoute(currentPathname);
+}
+
+function isBootstrapOwnedRoute(currentPathname: string) {
+  return currentPathname === "/" || currentPathname === "/control-center" || currentPathname === "/kanban";
+}

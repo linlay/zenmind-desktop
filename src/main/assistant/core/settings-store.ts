@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import type { App } from "electron";
 import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../../shared/contracts";
 import {
@@ -18,6 +19,7 @@ import {
 } from "../../desktop-profile-store";
 
 const SETTINGS_FILE = DESKTOP_PROFILE_FILE;
+const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
 
 export type AssistantSettingsPrivate = {
   baseURL: string;
@@ -25,6 +27,7 @@ export type AssistantSettingsPrivate = {
   apiKey: string;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  bootstrapAgentKey: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
@@ -40,6 +43,28 @@ function getSettingsPath(rootDir: string) {
 
 function ensureRoot(rootDir: string) {
   fs.mkdirSync(rootDir, { recursive: true });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readBootstrapAgentKeyFromRoot(rootDir: string) {
+  try {
+    const parsed = JSON.parse(
+      fs.readFileSync(path.join(rootDir, DESKTOP_INIT_ASSISTANT_FILE), "utf8")
+    ) as unknown;
+    return isRecord(parsed) ? readText(parsed.bootstrapAgentKey) : "";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.warn(`[assistant] failed to read ${DESKTOP_INIT_ASSISTANT_FILE}:`, error);
+    }
+    return "";
+  }
 }
 
 function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
@@ -61,6 +86,7 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
       ? candidate.voiceCorrectionEnabled
       : DEFAULT_VOICE_CORRECTION_ENABLED,
     desktopHelperAgentKey,
+    bootstrapAgentKey: typeof candidate.bootstrapAgentKey === "string" ? candidate.bootstrapAgentKey.trim() : "",
     quickAssistantEnabled: typeof candidate.quickAssistantEnabled === "boolean"
       ? candidate.quickAssistantEnabled
       : DEFAULT_QUICK_ASSISTANT_ENABLED,
@@ -112,6 +138,7 @@ export function toPublicAssistantSettings(
     apiKeyConfigured,
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
+    bootstrapAgentKey: settings.bootstrapAgentKey,
     quickAssistantEnabled: settings.quickAssistantEnabled,
     quickAssistantAgentKey: settings.quickAssistantAgentKey,
     desktopCopilotPages: settings.desktopCopilotPages,
@@ -126,6 +153,7 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
   const settings = normalizeStoredSettings({
     voiceCorrectionEnabled: profile.assistant.voiceCorrectionEnabled,
     desktopHelperAgentKey: profile.assistant.copilot.agentKey,
+    bootstrapAgentKey: readBootstrapAgentKeyFromRoot(rootDir),
     quickAssistantEnabled: profile.assistant.quick.enabled,
     quickAssistantAgentKey: profile.assistant.quick.agentKey,
     desktopCopilotPages: profile.navigation.desktopCopilotPages
@@ -153,6 +181,7 @@ export function saveAssistantSettingsToRoot(
     desktopHelperAgentKey: typeof input.desktopHelperAgentKey === "string" && input.desktopHelperAgentKey.trim()
       ? input.desktopHelperAgentKey.trim()
       : current.desktopHelperAgentKey,
+    bootstrapAgentKey: current.bootstrapAgentKey,
     quickAssistantEnabled: typeof input.quickAssistantEnabled === "boolean"
       ? input.quickAssistantEnabled
       : current.quickAssistantEnabled,

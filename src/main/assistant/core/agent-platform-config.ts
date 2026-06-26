@@ -344,6 +344,7 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
     apiKey: resolveProviderAPIKey(provider.key || "minimax", provider.apiKey, location.env),
     voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
     desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
+    bootstrapAgentKey: localSettings.bootstrapAgentKey,
     quickAssistantEnabled: localSettings.quickAssistantEnabled,
     quickAssistantAgentKey: localSettings.quickAssistantAgentKey,
     desktopCopilotPages: localSettings.desktopCopilotPages
@@ -398,6 +399,7 @@ export function loadAgentPlatformProviderSettings(
     apiKey,
     voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
     desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
+    bootstrapAgentKey: localSettings.bootstrapAgentKey,
     quickAssistantEnabled: localSettings.quickAssistantEnabled,
     quickAssistantAgentKey: localSettings.quickAssistantAgentKey,
     desktopCopilotPages: localSettings.desktopCopilotPages

@@ -1664,6 +1664,7 @@ test("settings page configures desktop helper default agent separately from desk
     path.join(projectRoot, "src", "main", "assistant", "core", "settings-store.ts"),
     "utf8"
   );
+  const contracts = readSharedContractsSource();
   const globalStyles = readRendererStyles();
 
   assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
@@ -1672,6 +1673,12 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(sharedSettings, /DESKTOP_COPILOT_PAGE_KEYS/);
   assert.match(sharedSettings, /controlCenter/);
   assert.match(sharedSettings, /schedules/);
+  assert.match(contracts, /bootstrapAgentKey:\s*string/);
+  assert.match(settingsStore, /const DESKTOP_INIT_ASSISTANT_FILE = "assistant\.json"/);
+  assert.match(settingsStore, /function readBootstrapAgentKeyFromRoot\(rootDir: string\)/);
+  assert.match(settingsStore, /bootstrapAgentKey:\s*readBootstrapAgentKeyFromRoot\(rootDir\)/);
+  assert.match(settingsStore, /bootstrapAgentKey:\s*settings\.bootstrapAgentKey/);
+  assert.match(settingsStore, /bootstrapAgentKey:\s*current\.bootstrapAgentKey/);
   assert.match(settingsStore, /desktopHelperAgentKey:\s*settings\.desktopHelperAgentKey/);
   assert.match(settingsStore, /quickAssistantEnabled:\s*settings\.quickAssistantEnabled/);
   assert.match(settingsStore, /quickAssistantAgentKey:\s*settings\.quickAssistantAgentKey/);
@@ -3139,7 +3146,7 @@ test("assistant navigation agents refresh immediately after startup services bec
   assert.match(appShell, /if \(agentPlatformRunning\) \{[\s\S]*?refreshAssistantNavAgents\(\)/);
 });
 
-test("bootstrap startup completion keeps the root route empty", () => {
+test("bootstrap startup completion opens configured bootstrap agent", () => {
   const appShell = readAppShellSource();
   const startupGate = readSourceFile(
     "src",
@@ -3149,6 +3156,15 @@ test("bootstrap startup completion keeps the root route empty", () => {
     "StartupGate.tsx"
   );
   const startupGateHelper = readSourceFile("src", "shared", "startup-gate.ts");
+  const bootstrapAutoOpenGuardIndex = appShell.indexOf(
+    "shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)"
+  );
+  assert.notEqual(bootstrapAutoOpenGuardIndex, -1);
+  const bootstrapAutoOpenBlockStart = appShell.lastIndexOf("useEffect(() => {", bootstrapAutoOpenGuardIndex);
+  const bootstrapAutoOpenBlockEnd = appShell.indexOf("  useEffect(() => {\n    if (startupRestoreState?.mode", bootstrapAutoOpenGuardIndex);
+  assert.notEqual(bootstrapAutoOpenBlockStart, -1);
+  assert.notEqual(bootstrapAutoOpenBlockEnd, -1);
+  const bootstrapAutoOpenBlock = appShell.slice(bootstrapAutoOpenBlockStart, bootstrapAutoOpenBlockEnd);
 
   assert.match(startupGate, /function StartupRoutePlaceholder\(\)[\s\S]*?className="startup-route-placeholder"/);
   assert.doesNotMatch(startupGate, /<Navigate\b/);
@@ -3158,6 +3174,15 @@ test("bootstrap startup completion keeps the root route empty", () => {
   assert.doesNotMatch(appShell, /shouldRedirectStartupFailureToControlCenter/);
   assert.doesNotMatch(appShell, /startupNavigationDoneRef/);
   assert.doesNotMatch(appShell, /createStartupAgentRoute/);
+  assert.match(startupGateHelper, /function shouldAutoOpenBootstrapAgent\(/);
+  assert.match(bootstrapAutoOpenBlock, /startupBootstrapNavigationDoneRef\.current/);
+  assert.match(bootstrapAutoOpenBlock, /window\.electronAPI\.assistant\.getSettings\(\)/);
+  assert.match(bootstrapAutoOpenBlock, /nextAssistantSettings\.bootstrapAgentKey\.trim\(\)/);
+  assert.match(bootstrapAutoOpenBlock, /navigate\(createBootstrapAgentRoute\(bootstrapAgentKey\), \{ replace: true \}\)/);
+  assert.doesNotMatch(bootstrapAutoOpenBlock, /listNavigationAgents/);
+  assert.doesNotMatch(bootstrapAutoOpenBlock, /getKanbanAwareFallbackPath/);
+  assert.doesNotMatch(bootstrapAutoOpenBlock, /navigate\("\/control-center"/);
+  assert.match(appShell, /function createBootstrapAgentRoute\(agentKey: string\)[\s\S]*?encodeURIComponent\(agentKey\)/);
   assert.doesNotMatch(startupGateHelper, /shouldAutoOpenAssistant/);
   assert.doesNotMatch(startupGateHelper, /shouldRedirectStartupFailureToControlCenter/);
   assert.doesNotMatch(startupGateHelper, /resolveStartupRootPath/);

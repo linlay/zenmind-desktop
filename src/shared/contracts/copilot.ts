@@ -188,6 +188,7 @@ export interface AssistantSettingsPublic {
   apiKeyConfigured: boolean;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  bootstrapAgentKey: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
