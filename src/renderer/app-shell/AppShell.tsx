@@ -237,10 +237,26 @@ function getKanbanAwareFallbackPath(kanbanEnabled: boolean) {
   return kanbanEnabled ? "/kanban" : "/control-center";
 }
 
-function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boolean) {
-  return !kanbanEnabled && isKanbanNavigationPath(targetPath)
-    ? "/control-center"
-    : targetPath;
+function isSettingsRedirectRoute(targetPath: string) {
+  return (targetPath.split("?")[0] || "/") === "/control-center";
+}
+
+function getSettingsExitFallbackPath(kanbanEnabled: boolean) {
+  return kanbanEnabled ? "/kanban" : ASSISTANT_TARGET_PATH;
+}
+
+function resolveSettingsExitTargetPath(targetPath: string, kanbanEnabled: boolean) {
+  const fallbackPath = getSettingsExitFallbackPath(kanbanEnabled);
+  const targetPathname = targetPath.split("?")[0] || "/";
+  if (
+    !targetPath ||
+    isSettingsRedirectRoute(targetPath) ||
+    matchSettingsRoute(targetPathname) ||
+    (!kanbanEnabled && isKanbanNavigationPath(targetPath))
+  ) {
+    return fallbackPath;
+  }
+  return targetPath;
 }
 
 function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
@@ -1670,10 +1686,10 @@ export function AppShell() {
 
   function handleExitSettingsMode() {
     requestSidebarNavigation(
-      resolveKanbanAwareNavigationPath(
-        lastNonSettingsRouteRef.current || getKanbanAwareFallbackPath(kanbanEnabled),
+      resolveSettingsExitTargetPath(
+        lastNonSettingsRouteRef.current || getSettingsExitFallbackPath(kanbanEnabled),
         kanbanEnabled
-      )
+      ),
     );
   }
 
@@ -1681,8 +1697,8 @@ export function AppShell() {
     if (isSettingsRoute) {
       return;
     }
-    lastNonSettingsRouteRef.current = currentRoute;
-  }, [currentRoute, isSettingsRoute]);
+    lastNonSettingsRouteRef.current = resolveSettingsExitTargetPath(currentRoute, kanbanEnabled);
+  }, [currentRoute, isSettingsRoute, kanbanEnabled]);
 
   useEffect(() => {
     if (!isSettingsRoute || location.pathname !== "/settings") {
