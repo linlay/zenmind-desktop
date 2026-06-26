@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, QRCode, Segmented, Select, Space, Switch, Typography } from "antd";
+import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
+import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import { ControlCenterPage } from "../control-center/ControlCenterPage";
@@ -454,6 +454,21 @@ const defaultTunnelHubSettings: TunnelHubSettings = {
   tlsInsecureSkipVerify: false,
   reconnectSeconds: 3
 };
+
+function normalizeKanbanCloudConfig(config?: Partial<KanbanCloudConfig> | null): KanbanCloudConfig {
+  return {
+    ...defaultKanbanCloudConfig,
+    ...(config ?? {})
+  };
+}
+
+function normalizeTunnelHubSettings(settings?: Partial<TunnelHubSettings> | null): TunnelHubSettings {
+  return {
+    ...defaultTunnelHubSettings,
+    ...(settings ?? {})
+  };
+}
+
 function isMarketVisible(settings: MarketSettings) {
   return settings.enabled === true;
 }
@@ -2250,6 +2265,7 @@ export function SettingsPage({
   const [desktopDeviceInfo, setDesktopDeviceInfo] = useState<DesktopDeviceInfo | null>(null);
   const [desktopDeviceInfoLoading, setDesktopDeviceInfoLoading] = useState(false);
   const [generalSettingsSaving, setGeneralSettingsSaving] = useState(false);
+  const [deviceIdCopied, setDeviceIdCopied] = useState(false);
   const [websiteLabel, setWebsiteLabel] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [editingWebsiteId, setEditingWebsiteId] = useState("");
@@ -2273,12 +2289,15 @@ export function SettingsPage({
   const [desktopPetPending, setDesktopPetPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
   const [marketSettings, setMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
+  const [savedMarketSettings, setSavedMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
   const [marketSettingsSaving, setMarketSettingsSaving] = useState(false);
   const [controlCloudConfig, setControlCloudConfig] = useState<KanbanCloudConfig>(defaultKanbanCloudConfig);
+  const [savedControlCloudConfig, setSavedControlCloudConfig] = useState<KanbanCloudConfig>(defaultKanbanCloudConfig);
   const [controlCloudProjects, setControlCloudProjects] = useState<KanbanProject[]>([]);
   const [controlConnectionState, setControlConnectionState] = useState<KanbanConnectionState>("disabled");
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
+  const [savedTunnelHubSettings, setSavedTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
   const [appPairingPending, setAppPairingPending] = useState(false);
@@ -2290,6 +2309,10 @@ export function SettingsPage({
   const contentRef = useRef<HTMLDivElement>(null);
   const assistantSettingsLoadedRef = useRef(false);
   const desktopPetStateLoadedRef = useRef(false);
+  const deviceIdCopyTimerRef = useRef<number | null>(null);
+  const savedMarketSettingsRef = useRef<MarketSettings>({ enabled: false, apiBaseUrl: "" });
+  const savedControlCloudConfigRef = useRef<KanbanCloudConfig>(defaultKanbanCloudConfig);
+  const savedTunnelHubSettingsRef = useRef<TunnelHubSettings>(defaultTunnelHubSettings);
   const sectionDefinitions = useMemo(
     () => buildLocalizedSettingsSections({ isWindows, desktopPetSupported, debugVisible, t }),
     [debugVisible, desktopPetSupported, isWindows, t]
@@ -2335,6 +2358,26 @@ export function SettingsPage({
       label: getKanbanProjectOptionLabel(project)
     }))
   ], [controlProjectOptions, selectedControlProjectId, selectedControlProjectMissing, t]);
+  const controlConfigDirty =
+    controlCloudConfig.serverUrl !== savedControlCloudConfig.serverUrl ||
+    controlCloudConfig.selectedProjectId !== savedControlCloudConfig.selectedProjectId;
+  const marketSettingsDirty = marketSettings.apiBaseUrl !== savedMarketSettings.apiBaseUrl;
+  const tunnelHubSettingsDirty = tunnelHubSettings.relayUrl !== savedTunnelHubSettings.relayUrl;
+
+  function commitSavedMarketSettings(settings: MarketSettings) {
+    savedMarketSettingsRef.current = settings;
+    setSavedMarketSettings(settings);
+  }
+
+  function commitSavedControlCloudConfig(config: KanbanCloudConfig) {
+    savedControlCloudConfigRef.current = config;
+    setSavedControlCloudConfig(config);
+  }
+
+  function commitSavedTunnelHubSettings(settings: TunnelHubSettings) {
+    savedTunnelHubSettingsRef.current = settings;
+    setSavedTunnelHubSettings(settings);
+  }
 
   function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
     setSectionReadErrors((current) => {
@@ -2416,6 +2459,13 @@ export function SettingsPage({
     contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeSection]);
 
+  useEffect(() => () => {
+    if (deviceIdCopyTimerRef.current !== null) {
+      window.clearTimeout(deviceIdCopyTimerRef.current);
+      deviceIdCopyTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!shouldReadUsageProfile) {
       return;
@@ -2445,6 +2495,7 @@ export function SettingsPage({
         setGeneralSettings(nextSettings);
         setGeneralDeviceNameDraft(nextSettings.deviceName);
         setDesktopDeviceInfo(deviceInfo);
+        setDeviceIdCopied(false);
         setReadErrorSections(["general"], "");
       })
       .catch((reason) => {
@@ -2478,9 +2529,20 @@ export function SettingsPage({
         if (cancelled) {
           return;
         }
-        setControlCloudConfig({
-          ...defaultKanbanCloudConfig,
-          ...settingsResult.settings.cloud
+        const nextCloudConfig = normalizeKanbanCloudConfig(settingsResult.settings.cloud);
+        const savedCloudConfig = savedControlCloudConfigRef.current;
+        commitSavedControlCloudConfig(nextCloudConfig);
+        setControlCloudConfig((current) => {
+          const hasDraft =
+            current.serverUrl !== savedCloudConfig.serverUrl ||
+            current.selectedProjectId !== savedCloudConfig.selectedProjectId;
+          return hasDraft
+            ? {
+                ...nextCloudConfig,
+                serverUrl: current.serverUrl,
+                selectedProjectId: current.selectedProjectId
+              }
+            : nextCloudConfig;
         });
         setControlCloudProjects(issueResult.projects ?? []);
         setControlConnectionState(settingsResult.connectionState ?? issueResult.connectionState ?? "disabled");
@@ -2515,6 +2577,7 @@ export function SettingsPage({
           return;
         }
         setMarketSettings(settings);
+        commitSavedMarketSettings(settings);
         onMarketEnabledChange?.(isMarketVisible(settings));
         setReadErrorSections(["market"], "");
       })
@@ -2546,17 +2609,15 @@ export function SettingsPage({
         if (settingsResult.status !== "fulfilled") {
           throw settingsResult.reason;
         }
-        const settings = settingsResult.value;
-        setTunnelHubSettings({
-          ...defaultTunnelHubSettings,
-          ...settings
-        });
+        const settings = normalizeTunnelHubSettings(settingsResult.value);
+        setTunnelHubSettings(settings);
+        commitSavedTunnelHubSettings(settings);
         setTunnelHubSsoStatus(ssoResult.status === "fulfilled" ? ssoResult.value : null);
-        setReadErrorSections(["control"], "");
+        setReadErrorSections(["tunnelHub"], "");
       })
       .catch((reason) => {
         if (!cancelled) {
-          setReadErrorSections(["control"], reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["tunnelHub"], reason instanceof Error ? reason.message : String(reason));
         }
       });
 
@@ -3162,7 +3223,7 @@ export function SettingsPage({
     t
   ]);
 
-async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
+  async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const previousSettings = generalSettings;
     const nextSettings = {
@@ -3195,6 +3256,29 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       setGeneralSettingsSaving(false);
       setDesktopDeviceInfoLoading(false);
     }
+  }
+
+  async function handleCopyGeneralDeviceId() {
+    const deviceId = desktopDeviceInfo?.deviceId ?? "";
+    if (!deviceId) {
+      return;
+    }
+    const result = await window.electronAPI.clipboard.writeText(deviceId);
+    if (!result.ok) {
+      setDeviceIdCopied(false);
+      showSectionNotice("general", result.message || t("settings.general.deviceIdCopyFailed"), "error");
+      return;
+    }
+    setReadErrorSections(["general"], "");
+    setNotice((current) => (current?.sectionId === "general" ? null : current));
+    setDeviceIdCopied(true);
+    if (deviceIdCopyTimerRef.current !== null) {
+      window.clearTimeout(deviceIdCopyTimerRef.current);
+    }
+    deviceIdCopyTimerRef.current = window.setTimeout(() => {
+      setDeviceIdCopied(false);
+      deviceIdCopyTimerRef.current = null;
+    }, 1400);
   }
 
   async function handleTogglePreventSleepWhileRunning() {
@@ -3537,7 +3621,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     }
   }
 
-  async function saveControlCloudConfig(nextConfig: KanbanCloudConfig) {
+  async function saveControlCloudConfig(
+    nextConfig: KanbanCloudConfig,
+    options: { preserveDraftFields?: boolean } = {}
+  ) {
     setControlConfigSaving(true);
     try {
       const result = await window.electronAPI.kanban.saveSettings({
@@ -3547,9 +3634,20 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       if (!result.ok) {
         throw new Error(result.message || t("settings.kanban.saveFailed"));
       }
-      setControlCloudConfig({
-        ...defaultKanbanCloudConfig,
-        ...result.settings.cloud
+      const nextCloudConfig = normalizeKanbanCloudConfig(result.settings.cloud);
+      const previousSavedCloudConfig = savedControlCloudConfigRef.current;
+      commitSavedControlCloudConfig(nextCloudConfig);
+      setControlCloudConfig((current) => {
+        const hasDraft =
+          current.serverUrl !== previousSavedCloudConfig.serverUrl ||
+          current.selectedProjectId !== previousSavedCloudConfig.selectedProjectId;
+        return options.preserveDraftFields && hasDraft
+          ? {
+              ...nextCloudConfig,
+              serverUrl: current.serverUrl,
+              selectedProjectId: current.selectedProjectId
+            }
+          : nextCloudConfig;
       });
       setControlConnectionState(result.connectionState ?? "disabled");
       const issueResult = await window.electronAPI.kanban.listIssues();
@@ -3563,19 +3661,32 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     }
   }
 
+  async function handleSaveControlCloudConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveControlCloudConfig({
+      ...savedControlCloudConfigRef.current,
+      serverUrl: controlCloudConfig.serverUrl,
+      selectedProjectId: controlCloudConfig.selectedProjectId
+    });
+  }
+
   async function handleToggleControlRemoteControl() {
     await saveControlCloudConfig({
-      ...controlCloudConfig,
-      remoteControlEnabled: !controlCloudConfig.remoteControlEnabled
-    });
+      ...savedControlCloudConfigRef.current,
+      remoteControlEnabled: !savedControlCloudConfigRef.current.remoteControlEnabled
+    }, { preserveDraftFields: true });
   }
 
   async function handleSaveMarketSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMarketSettingsSaving(true);
     try {
-      const settings = await window.electronAPI.market.saveSettings(marketSettings);
+      const settings = await window.electronAPI.market.saveSettings({
+        ...savedMarketSettingsRef.current,
+        apiBaseUrl: marketSettings.apiBaseUrl
+      });
       setMarketSettings(settings);
+      commitSavedMarketSettings(settings);
       onMarketEnabledChange?.(isMarketVisible(settings));
       setReadErrorSections(["market"], "");
       showSectionNotice(
@@ -3592,6 +3703,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
 
   async function handleToggleMarketEnabled() {
     const previousSettings = marketSettings;
+    const previousSavedSettings = savedMarketSettingsRef.current;
     const nextEnabled = !marketSettings.enabled;
     if (!nextEnabled) {
       onMarketEnabledChange?.(false);
@@ -3599,10 +3711,19 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     setMarketSettingsSaving(true);
     try {
       const settings = await window.electronAPI.market.saveSettings({
-        ...marketSettings,
+        ...savedMarketSettingsRef.current,
         enabled: nextEnabled
       });
-      setMarketSettings(settings);
+      commitSavedMarketSettings(settings);
+      setMarketSettings((current) => {
+        const hasDraft = current.apiBaseUrl !== previousSavedSettings.apiBaseUrl;
+        return hasDraft
+          ? {
+              ...current,
+              enabled: settings.enabled
+            }
+          : settings;
+      });
       onMarketEnabledChange?.(isMarketVisible(settings));
       setReadErrorSections(["market"], "");
       if (nextEnabled && !isMarketVisible(settings)) {
@@ -3615,6 +3736,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
       );
     } catch (reason) {
       setMarketSettings(previousSettings);
+      commitSavedMarketSettings(previousSavedSettings);
       onMarketEnabledChange?.(isMarketVisible(previousSettings));
       showSectionNotice("market", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -3627,14 +3749,13 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
     setTunnelHubSaving(true);
     try {
       const result = await window.electronAPI.settings.saveTunnelHubSettings({
-        enabled: tunnelHubSettings.enabled,
+        enabled: savedTunnelHubSettingsRef.current.enabled,
         relayUrl: tunnelHubSettings.relayUrl,
-        deviceId: tunnelHubSettings.deviceId
+        deviceId: savedTunnelHubSettingsRef.current.deviceId
       });
-      setTunnelHubSettings({
-        ...defaultTunnelHubSettings,
-        ...result.settings
-      });
+      const nextSettings = normalizeTunnelHubSettings(result.settings);
+      commitSavedTunnelHubSettings(nextSettings);
+      setTunnelHubSettings(nextSettings);
       if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
         setAppPairingResult(null);
       }
@@ -3651,17 +3772,25 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
   }
 
   async function handleToggleTunnelHubEnabled() {
-    const nextEnabled = !tunnelHubSettings.enabled;
+    const nextEnabled = !savedTunnelHubSettingsRef.current.enabled;
+    const previousSavedSettings = savedTunnelHubSettingsRef.current;
     setTunnelHubSaving(true);
     try {
       const result = await window.electronAPI.settings.saveTunnelHubSettings({
         enabled: nextEnabled,
-        relayUrl: tunnelHubSettings.relayUrl,
-        deviceId: tunnelHubSettings.deviceId
+        relayUrl: savedTunnelHubSettingsRef.current.relayUrl,
+        deviceId: savedTunnelHubSettingsRef.current.deviceId
       });
-      setTunnelHubSettings({
-        ...defaultTunnelHubSettings,
-        ...result.settings
+      const nextSettings = normalizeTunnelHubSettings(result.settings);
+      commitSavedTunnelHubSettings(nextSettings);
+      setTunnelHubSettings((current) => {
+        const hasDraft = current.relayUrl !== previousSavedSettings.relayUrl;
+        return hasDraft
+          ? {
+              ...nextSettings,
+              relayUrl: current.relayUrl
+            }
+          : nextSettings;
       });
       if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
         setAppPairingResult(null);
@@ -3781,12 +3910,26 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
           label: t("settings.desktopPet.label"),
           onClick: () => void handleToggleDesktopPet()
         }) : null;
+      case "kanban":
+        return renderHeaderSwitch({
+          enabled: controlCloudConfig.remoteControlEnabled,
+          disabled: controlConfigSaving,
+          label: t("settings.control.remoteControlEnabled"),
+          onClick: () => void handleToggleControlRemoteControl()
+        });
       case "market":
         return renderHeaderSwitch({
           enabled: marketSettings.enabled,
           disabled: marketSettingsSaving,
           label: t("settings.market.enabled"),
           onClick: () => void handleToggleMarketEnabled()
+        });
+      case "tunnelHub":
+        return renderHeaderSwitch({
+          enabled: tunnelHubSettings.enabled,
+          disabled: tunnelHubSaving,
+          label: t("settings.tunnelHub.label"),
+          onClick: () => void handleToggleTunnelHubEnabled()
         });
       default:
         return null;
@@ -3807,16 +3950,11 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
           />
         );
       case "general": {
-        const deviceInfoRows: Array<{ label: TranslationKey; value: unknown }> = [
-          { label: "settings.general.desktopDeviceId", value: desktopDeviceInfo?.deviceId }
+        const deviceInfoRows: Array<{ label: TranslationKey; value: unknown; copyable?: boolean }> = [
+          { label: "settings.general.desktopDeviceId", value: desktopDeviceInfo?.deviceId, copyable: true }
         ];
         return (
           <div className="settings-appearance-panel" aria-label={t("settings.general.panelAria")}>
-            <div className="settings-appearance-row">
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.general.desktopInfoTitle")}</strong>
-              </div>
-            </div>
             <form className="settings-control-form settings-device-form" onSubmit={(event) => void handleSaveGeneralDeviceName(event)}>
               <div className="settings-device-name-row">
                 <label className="settings-control-field">
@@ -3833,12 +3971,33 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                 </Button>
               </div>
               <dl className="settings-device-info-list" aria-label={t("settings.general.desktopInfoReadonly")}>
-                {deviceInfoRows.map((row) => (
-                  <div key={row.label}>
-                    <dt>{t(row.label)}</dt>
-                    <dd>{formatDebugValue(row.value, desktopDeviceInfoLoading ? t("common.loading") : t("settings.debug.empty"))}</dd>
-                  </div>
-                ))}
+                {deviceInfoRows.map((row) => {
+                  const displayValue = formatDebugValue(row.value, desktopDeviceInfoLoading ? t("common.loading") : t("settings.debug.empty"));
+                  const copyLabel = deviceIdCopied ? t("settings.general.deviceIdCopied") : t("settings.general.copyDeviceId");
+                  return (
+                    <div key={row.label}>
+                      <dt>{t(row.label)}</dt>
+                      <dd className={row.copyable ? "settings-device-info-value is-copyable" : "settings-device-info-value"}>
+                        <span>{displayValue}</span>
+                        {row.copyable ? (
+                          <Tooltip title={copyLabel}>
+                            <span className="settings-device-copy-button-wrap">
+                              <Button
+                                type="text"
+                                size="small"
+                                className="settings-device-copy-button"
+                                aria-label={copyLabel}
+                                icon={deviceIdCopied ? <CheckOutlined /> : <CopyOutlined />}
+                                disabled={!desktopDeviceInfo?.deviceId || desktopDeviceInfoLoading}
+                                onClick={() => void handleCopyGeneralDeviceId()}
+                              />
+                            </span>
+                          </Tooltip>
+                        ) : null}
+                      </dd>
+                    </div>
+                  );
+                })}
               </dl>
             </form>
             <div className="settings-appearance-row">
@@ -3875,7 +4034,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
               <div className="settings-appearance-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("settings.appearance.theme")}</strong>
-                  <span>{t("settings.appearance.themeDescription")}</span>
                 </div>
                 <Segmented<ThemePreference>
                   aria-label={t("settings.appearance.theme")}
@@ -3901,11 +4059,10 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
               <div className="settings-appearance-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("settings.language.label")}</strong>
-                  <span>{t("settings.language.uiDescription")}</span>
                 </div>
                 <Select<SupportedLocale>
+                  className="settings-appearance-control"
                   classNames={SETTINGS_SELECT_CLASS_NAMES}
-                  style={{ minWidth: 148 }}
                   value={locale}
                   aria-label={t("settings.language.label")}
                   onChange={(value) => void handleLocaleChange(value)}
@@ -3913,6 +4070,60 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                     { value: "zh-CN", label: t("settings.language.zhCN") },
                     { value: "en-US", label: t("settings.language.enUS") }
                   ]}
+                />
+              </div>
+              <div className="settings-appearance-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.appearance.interfaceFont")}</strong>
+                </div>
+                <Select<string>
+                  className="settings-appearance-control"
+                  classNames={SETTINGS_SELECT_CLASS_NAMES}
+                  value="systemDefault"
+                  aria-label={t("settings.appearance.interfaceFont")}
+                  disabled
+                  options={[
+                    { value: "systemDefault", label: t("settings.appearance.systemDefaultFont") }
+                  ]}
+                />
+              </div>
+              <div className="settings-appearance-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.appearance.interfaceFontSize")}</strong>
+                </div>
+                <InputNumber
+                  className="settings-appearance-control"
+                  value={13}
+                  aria-label={t("settings.appearance.interfaceFontSize")}
+                  disabled
+                  controls={false}
+                />
+              </div>
+              <div className="settings-appearance-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.appearance.codeFont")}</strong>
+                </div>
+                <Select<string>
+                  className="settings-appearance-control"
+                  classNames={SETTINGS_SELECT_CLASS_NAMES}
+                  value="systemMono"
+                  aria-label={t("settings.appearance.codeFont")}
+                  disabled
+                  options={[
+                    { value: "systemMono", label: t("settings.appearance.systemMonoFont") }
+                  ]}
+                />
+              </div>
+              <div className="settings-appearance-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.appearance.codeFontSize")}</strong>
+                </div>
+                <InputNumber
+                  className="settings-appearance-control"
+                  value={13}
+                  aria-label={t("settings.appearance.codeFontSize")}
+                  disabled
+                  controls={false}
                 />
               </div>
             </div>
@@ -4034,62 +4245,28 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         );
       case "kanban":
         return (
-          <Card
-            className="settings-item-card settings-control-card settings-kanban-ant-card"
-            aria-label={t("settings.kanban.panelAria")}
-            styles={{ body: { padding: 0 } }}
-          >
-            <div className="settings-item-header settings-control-permission-row">
-              <span className="settings-control-app-icon" aria-hidden="true">
-                <span />
-              </span>
-              <Space className="settings-kanban-copy" direction="vertical" size={3}>
-                <Typography.Text strong>{t("settings.control.remoteControlEnabled")}</Typography.Text>
-                <Typography.Text type="secondary">{t("settings.control.remoteControlDescription")}</Typography.Text>
-                <Typography.Text className="settings-kanban-remote-state">
-                  {controlCloudConfig.remoteControlEnabled
-                    ? t("settings.control.remoteControlOn")
-                    : t("settings.control.remoteControlOff")}
-                </Typography.Text>
-              </Space>
-              <Switch
-                checked={controlCloudConfig.remoteControlEnabled}
-                aria-label={t("settings.control.remoteControlEnabled")}
-                disabled={controlConfigSaving}
-                loading={controlConfigSaving}
-                onChange={() => void handleToggleControlRemoteControl()}
-              />
-            </div>
-            <div className="settings-kanban-status">
-              <Space direction="vertical" size={4}>
-                <Typography.Text strong>{t("settings.control.statusTitle")}</Typography.Text>
-                <Typography.Text type="secondary">{getControlConnectionLabel(controlConnectionState)}</Typography.Text>
-              </Space>
-            </div>
-            <Form
-              className="settings-control-form settings-kanban-ant-form"
-              layout="vertical"
-              requiredMark={false}
-              onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
-            >
-              <Form.Item label={t("kanban.cloud.serverUrl")}>
+          <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
+            <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
+              <label className="settings-control-field">
+                <span>{t("kanban.cloud.serverUrl")}</span>
                 <Input
                   value={controlCloudConfig.serverUrl}
                   onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
                   placeholder="http://127.0.0.1:8080"
+                  disabled={controlConfigSaving}
                 />
-              </Form.Item>
-              <Form.Item
-                label={t("kanban.cloud.projectId")}
-                extra={controlProjectOptions.length > 0
+              </label>
+              <label className="settings-control-field">
+                <span>{t("kanban.cloud.projectId")}</span>
+                <small>{controlProjectOptions.length > 0
                   ? t("kanban.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                  : t("kanban.cloud.projectFallbackHelp")}
-              >
+                  : t("kanban.cloud.projectFallbackHelp")}</small>
                 {controlProjectOptions.length > 0 ? (
                   <Select
                     classNames={SETTINGS_SELECT_CLASS_NAMES}
                     value={controlCloudConfig.selectedProjectId}
                     options={controlProjectSelectOptions}
+                    disabled={controlConfigSaving}
                     onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
                   />
                 ) : (
@@ -4097,16 +4274,26 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                     value={controlCloudConfig.selectedProjectId}
                     onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
                     placeholder="default"
+                    disabled={controlConfigSaving}
                   />
                 )}
-              </Form.Item>
-              <Form.Item className="settings-control-actions settings-kanban-actions">
-                <Button type="primary" htmlType="submit" loading={controlConfigSaving} disabled={controlConfigSaving}>
-                  {t("settings.kanban.save")}
+              </label>
+              <div className="settings-control-readonly-row">
+                <span>{t("settings.control.statusTitle")}</span>
+                <strong>{getControlConnectionLabel(controlConnectionState)}</strong>
+              </div>
+              <div className="settings-control-actions">
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={controlConfigSaving}
+                  disabled={controlConfigSaving || !controlConfigDirty}
+                >
+                  {t("common.save")}
                 </Button>
-              </Form.Item>
-            </Form>
-          </Card>
+              </div>
+            </form>
+          </div>
         );
       case "market":
         return (
@@ -4118,12 +4305,17 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                   value={marketSettings.apiBaseUrl}
                   onChange={(event) => setMarketSettings((current) => ({ ...current, apiBaseUrl: event.target.value }))}
                   placeholder={t("settings.market.apiBaseUrlPlaceholder")}
+                  disabled={marketSettingsSaving}
                 />
-                <small>{t("settings.market.visibilityRule")}</small>
               </label>
               <div className="settings-control-actions">
-                <Button type="primary" htmlType="submit" disabled={marketSettingsSaving} loading={marketSettingsSaving}>
-                  {marketSettingsSaving ? t("settings.market.saving") : t("settings.market.save")}
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  disabled={marketSettingsSaving || !marketSettingsDirty}
+                  loading={marketSettingsSaving}
+                >
+                  {t("common.save")}
                 </Button>
               </div>
             </form>
@@ -4141,19 +4333,6 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
         return (
           <div className="settings-control-config-stack">
             <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
-              <div className="settings-item-header settings-mobile-pairing-header">
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.tunnelHub.connectionTitle")}</strong>
-                  <span>{t("settings.tunnelHub.description")}</span>
-                </div>
-                <Switch
-                  checked={tunnelHubSettings.enabled}
-                  aria-label={t("settings.tunnelHub.label")}
-                  disabled={tunnelHubSaving}
-                  loading={tunnelHubSaving}
-                  onChange={() => void handleToggleTunnelHubEnabled()}
-                />
-              </div>
               <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
                 <label className="settings-control-field">
                   <span>{t("settings.tunnelHub.relayUrl")}</span>
@@ -4161,6 +4340,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                     value={tunnelHubSettings.relayUrl}
                     onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
                     placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
+                    disabled={tunnelHubSaving}
                   />
                 </label>
                 {tunnelHubSsoStatus && !tunnelHubSsoStatus.authenticated ? (
@@ -4174,8 +4354,13 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
                   </div>
                 ) : null}
                 <div className="settings-control-actions">
-                  <Button type="primary" htmlType="submit" disabled={tunnelHubSaving} loading={tunnelHubSaving}>
-                    {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    disabled={tunnelHubSaving || !tunnelHubSettingsDirty}
+                    loading={tunnelHubSaving}
+                  >
+                    {t("common.save")}
                   </Button>
                 </div>
               </form>
@@ -4631,6 +4816,9 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
   }
 
   const shouldShowSettingsPageHead = activeSection !== "control";
+  const activeSectionDescription = activeSectionDefinition
+    ? activeSectionDefinition.description.trim()
+    : t("settings.description");
 
   return (
     <section
@@ -4644,7 +4832,7 @@ async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
             <div className="settings-page-head">
               <div className="settings-page-head-copy">
                 <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
-                <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
+                {activeSectionDescription ? <p className="page-copy">{activeSectionDescription}</p> : null}
               </div>
               <div className="settings-page-head-action">
                 {renderSectionHeaderAction()}

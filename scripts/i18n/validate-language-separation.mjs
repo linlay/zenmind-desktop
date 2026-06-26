@@ -8,6 +8,7 @@ const helpRoot = path.join(projectRoot, "help-content");
 
 const allowedLatinTerms = [
   /ZenMind/g,
+  /Codex/g,
   /Docker Desktop/g,
   /Desktop/g,
   /Application Support/g,

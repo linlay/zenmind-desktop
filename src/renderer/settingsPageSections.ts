@@ -55,7 +55,7 @@ export function createSettingsSectionDefinitions({
       group: "personal",
       label: "navigation",
       description: "",
-      layout: "wide",
+      layout: "measure",
       visible: true
     },
     {
@@ -127,11 +127,11 @@ export function getDefaultSettingsSectionId(definitions: SettingsSectionDefiniti
 
 const SETTINGS_SECTION_LABEL_KEYS: Record<
   SettingsSectionDefinition["id"],
-  { label: TranslationKey; description: TranslationKey }
+  { label: TranslationKey; description?: TranslationKey }
 > = {
   usage: { label: "settings.usage.label", description: "settings.usage.description" },
   general: { label: "settings.general.label", description: "settings.general.description" },
-  appearance: { label: "settings.appearance.label", description: "settings.appearance.description" },
+  appearance: { label: "settings.appearance.label" },
   kanban: { label: "settings.kanban.label", description: "settings.kanban.description" },
   assistant: { label: "settings.assistant.label", description: "settings.assistant.description" },
   market: { label: "settings.market.label", description: "settings.market.description" },
@@ -152,7 +152,7 @@ export function localizeSettingsSectionDefinitions(
     return {
       ...definition,
       label: t(keys.label),
-      description: t(keys.description)
+      description: keys.description ? t(keys.description) : ""
     };
   });
 }
