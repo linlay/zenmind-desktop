@@ -44,3 +44,16 @@ test("plugin page reports webview breadcrumbs for post-crash diagnosis", () => {
   assert.match(pluginPage, /reportPluginWebviewDiagnostic\("direct-route-load-url"/);
   assert.match(pluginPage, /reportPluginWebviewDiagnostic\("direct-route-load-failed"/);
 });
+
+test("plugin page falls back to loadURL when client-side route navigation misses the target", () => {
+  const pluginPage = readPluginPageSource();
+  const directRouteLoadBlock = pluginPage.slice(
+    pluginPage.indexOf("function requestDirectWebviewRouteLoad"),
+    pluginPage.indexOf("async function injectAgentWebclientAccessToken"),
+  );
+
+  assert.match(directRouteLoadBlock, /direct-route-client-navigation-mismatch/);
+  assert.match(directRouteLoadBlock, /clientNavigationResult/);
+  assert.match(directRouteLoadBlock, /resolvePluginCurrentUrl\(/);
+  assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(embeddedUrl\)/);
+});

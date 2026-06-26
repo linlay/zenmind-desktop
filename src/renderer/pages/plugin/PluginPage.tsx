@@ -956,7 +956,27 @@ export function PluginPage({
         void targetWebview.executeJavaScript(
           buildClientSideRouteNavigationScript(embeddedUrl),
           true,
-        ).catch((reason: unknown) => {
+        ).then((clientNavigationResult: unknown) => {
+          const resultRecord =
+            clientNavigationResult &&
+            typeof clientNavigationResult === "object" &&
+            !Array.isArray(clientNavigationResult)
+              ? clientNavigationResult as Record<string, unknown>
+              : {};
+          const resultHref =
+            typeof resultRecord.href === "string" ? resultRecord.href.trim() : "";
+          const resolvedResultUrl = resultHref
+            ? resolvePluginCurrentUrl(resultHref, embeddedUrl, webviewSrcUrl)
+            : "";
+          if (resolvedResultUrl === embeddedUrl) {
+            return;
+          }
+          reportPluginWebviewDiagnostic("direct-route-client-navigation-mismatch", {
+            href: resultHref,
+            targetUrl: embeddedUrl,
+          });
+          void targetWebview.loadURL(embeddedUrl);
+        }).catch((reason: unknown) => {
           reportPluginWebviewDiagnostic("direct-route-client-navigation-failed", {
             error: reason instanceof Error ? reason.message : String(reason),
           });

@@ -7,16 +7,19 @@ const require = createRequire(import.meta.url);
 
 const {
   PAGE_TO_PRELOAD_EVENT,
+  PRELOAD_TO_PAGE_EVENT,
   DESKTOP_WEBVIEW_BRIDGE_FLAG,
   LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG,
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
-  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE
+  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
 
 const LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
+const LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "zenmind:service-webview:route";
 
 function createStorage() {
   const values = new Map();
@@ -230,4 +233,31 @@ test("service webview main-world script keeps legacy screenshot bridge requests 
   window.postMessage(payload, "*");
 
   assert.deepEqual(captured, [payload]);
+});
+
+test("service webview main-world script emits route changes on current and legacy channels", () => {
+  const { window } = createFakeWindow();
+  const currentChannelPayloads = [];
+  const legacyChannelPayloads = [];
+  const payload = {
+    type: "desktopRouteChanged",
+    pathname: "/registries",
+    search: "?hostTheme=light"
+  };
+
+  runMainWorldScript(window);
+  window.electronAPI.onFromMain(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, nextPayload) => {
+    currentChannelPayloads.push(nextPayload);
+  });
+  window.electronAPI.onFromMain(LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, nextPayload) => {
+    legacyChannelPayloads.push(nextPayload);
+  });
+
+  window.dispatchEvent({
+    type: PRELOAD_TO_PAGE_EVENT,
+    detail: payload
+  });
+
+  assert.deepEqual(currentChannelPayloads, [payload]);
+  assert.deepEqual(legacyChannelPayloads, [payload]);
 });
