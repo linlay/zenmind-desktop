@@ -39,7 +39,7 @@ export function createSettingsSectionDefinitions({
       group: "personal",
       label: "usage",
       description: "",
-      layout: "wide",
+      layout: "measure",
       visible: true
     },
     {

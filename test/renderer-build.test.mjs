@@ -1395,7 +1395,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /group:\s*"integrations"/);
   assert.match(settingsSections, /group:\s*"system"/);
   assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"control"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"market"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"tunnelHub"[\s\S]*?group:\s*"integrations"/);
-  assert.match(settingsSections, /id:\s*"usage"[\s\S]*?label:\s*"usage"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
+  assert.match(settingsSections, /id:\s*"usage"[\s\S]*?label:\s*"usage"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"control"[\s\S]*?label:\s*"control"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*true/);
