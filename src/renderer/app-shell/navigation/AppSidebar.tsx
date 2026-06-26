@@ -7,7 +7,7 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  DeleteOutlined,
+  CloseOutlined,
   LeftOutlined,
   RightOutlined,
   SearchOutlined,
@@ -26,11 +26,9 @@ import type {
   DesktopSsoStatus,
   ServiceState,
   WebEntry,
-  WebsiteDeleteResult,
-  WebsiteEntry,
+  WebEntryKey,
   WebsiteInput,
   WebsiteResult,
-  WebsiteUpdateInput,
 } from "../../../shared/contracts";
 import {
   createWebNavOrderKey,
@@ -48,7 +46,6 @@ import {
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
-import { BUILTIN_BROWSER_ROUTE } from "../../../shared/browser-surfaces";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
@@ -743,11 +740,8 @@ type AppSidebarProps = {
   onCreateWebsiteItem?: (
     input: WebsiteInput,
   ) => Promise<WebsiteResult>;
-  onUpdateWebsiteItem?: (
-    id: string,
-    input: WebsiteUpdateInput,
-  ) => Promise<WebsiteResult>;
-  onDeleteWebsiteItem?: (id: string) => Promise<WebsiteDeleteResult>;
+  webOpenEntryKeys?: WebEntryKey[];
+  onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
   onRequestNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
@@ -789,8 +783,8 @@ export function AppSidebar({
   onRefreshAssistantNavAgents,
   onRefreshCopilotAgentOptions,
   onCreateWebsiteItem,
-  onUpdateWebsiteItem,
-  onDeleteWebsiteItem,
+  webOpenEntryKeys = [],
+  onCloseWebItem,
   onRequestNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
@@ -822,9 +816,7 @@ export function AppSidebar({
   const [websiteAgentKey, setWebsiteAgentKey] = useState("");
   const [websiteCreatePending, setWebsiteCreatePending] = useState(false);
   const [websiteCreateError, setWebsiteCreateError] = useState("");
-  const [websiteEditingItem, setWebsiteEditingItem] =
-    useState<WebsiteEntry | null>(null);
-  const [websiteDeletePendingId, setWebsiteDeletePendingId] = useState("");
+  const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
   const [assistantChatRenameDialog, setAssistantChatRenameDialog] =
@@ -1316,7 +1308,6 @@ export function AppSidebar({
   }
 
   function resetWebsiteDialogState() {
-    setWebsiteEditingItem(null);
     setWebsiteLabel("");
     setWebsiteUrl("");
     setWebsiteAgentKey("");
@@ -1336,19 +1327,11 @@ export function AppSidebar({
     void onRefreshCopilotAgentOptions?.();
   }
 
-  function openWebsiteEditDialog(
-    event: MouseEvent<HTMLElement>,
-    item: WebsiteEntry,
-  ) {
+  function openWebsitesSettings(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
-    setWebsiteEditingItem(item);
-    setWebsiteLabel(item.label);
-    setWebsiteUrl(item.url);
-    setWebsiteAgentKey(item.agentKey || "");
-    setWebsiteCreateError("");
-    setWebsiteDialogOpen(true);
-    void onRefreshCopilotAgentOptions?.();
+    onCloseAssistantDock?.();
+    requestNavigate(buildSettingsSectionPath("websites"));
   }
 
   async function handleSaveWebsite(event: FormEvent<HTMLFormElement>) {
@@ -1359,35 +1342,25 @@ export function AppSidebar({
     setWebsiteCreatePending(true);
     setWebsiteCreateError("");
     try {
-      let result: WebsiteResult | null = null;
-      if (websiteEditingItem && onUpdateWebsiteItem) {
-        result = await onUpdateWebsiteItem(websiteEditingItem.id, {
-          label: websiteLabel,
-          url: websiteUrl,
-          agentKey: websiteAgentKey,
-        });
-      } else if (!websiteEditingItem && onCreateWebsiteItem) {
-        result = await onCreateWebsiteItem({
-          label: websiteLabel,
-          url: websiteUrl,
-          agentKey: websiteAgentKey,
-        });
-      }
+      const result = onCreateWebsiteItem
+        ? await onCreateWebsiteItem({
+            label: websiteLabel,
+            url: websiteUrl,
+            agentKey: websiteAgentKey,
+          })
+        : null;
       if (!result) {
         return;
       }
       if (!result.ok || !result.item) {
         setWebsiteCreateError(
-          result.message ||
-            t(websiteEditingItem ? "sidebar.website.updateFailed" : "sidebar.website.addFailed"),
+          result.message || t("sidebar.website.addFailed"),
         );
         return;
       }
       closeWebsiteDialog();
       setSidebarGroupState((current) => ({ ...current, webs: true }));
-      if (!websiteEditingItem) {
-        requestNavigate(`/webs/${result.item.entryKey}`);
-      }
+      requestNavigate(`/webs/${result.item.entryKey}`);
     } catch (error) {
       setWebsiteCreateError(
         error instanceof Error ? error.message : String(error),
@@ -1397,37 +1370,24 @@ export function AppSidebar({
     }
   }
 
-  async function handleDeleteWebsiteItem(
+  async function handleCloseWebItem(
     event: MouseEvent<HTMLElement>,
-    item: WebsiteEntry,
+    item: WebEntry,
   ) {
     event.preventDefault();
     event.stopPropagation();
-    if (websiteDeletePendingId || !onDeleteWebsiteItem) {
+    if (webClosePendingEntryKey || !onCloseWebItem) {
       return;
     }
-    if (!window.confirm(t("sidebar.website.deleteConfirm", { name: item.label }))) {
-      return;
-    }
-    setWebsiteDeletePendingId(item.id);
+    setWebClosePendingEntryKey(item.entryKey);
     try {
-      const result = await onDeleteWebsiteItem(item.id);
-      if (!result.ok) {
-        window.alert(result.message || t("sidebar.website.deleteFailed"));
-        return;
-      }
-      if (
-        currentPathname === `/webs/${item.entryKey}` ||
-        pendingPath === `/webs/${item.entryKey}`
-      ) {
-        requestNavigate(BUILTIN_BROWSER_ROUTE);
-      }
+      await onCloseWebItem(item);
     } catch (error) {
       window.alert(
-        error instanceof Error ? error.message : t("sidebar.website.deleteFailed"),
+        error instanceof Error ? error.message : t("sidebar.website.closeFailed"),
       );
     } finally {
-      setWebsiteDeletePendingId("");
+      setWebClosePendingEntryKey("");
     }
   }
 
@@ -1787,15 +1747,17 @@ export function AppSidebar({
     const extraClassName = showIcon
       ? "sidebar-child-link"
       : "sidebar-child-link sidebar-custom-child-link";
-    const websiteItem = item.webItem?.kind === "website" ? item.webItem : null;
-    if (websiteItem) {
-      const deleting = websiteDeletePendingId === websiteItem.id;
+    const webItem = item.webItem ?? null;
+    if (webItem) {
+      const isOpen = webOpenEntryKeys.includes(webItem.entryKey);
+      const closing = webClosePendingEntryKey === webItem.entryKey;
       return (
         <div
           key={item.to}
           className={[
             "sidebar-website-child-row",
-            deleting ? "is-deleting" : "",
+            isOpen ? "is-open" : "",
+            closing ? "is-closing" : "",
           ]
             .filter(Boolean)
             .join(" ")}
@@ -1817,39 +1779,29 @@ export function AppSidebar({
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          <span className="sidebar-website-child-actions">
-            <Tooltip content={t("sidebar.website.edit")}>
-              <button
-                type="button"
-                className="assistant-worker-icon-button sidebar-website-child-action"
-                aria-label={t("sidebar.website.edit")}
-                title={t("sidebar.website.edit")}
-                disabled={websiteCreatePending || deleting}
-                onClick={(event) => openWebsiteEditDialog(event, websiteItem)}
-              >
-                <EditSquareIcon width={14} />
-              </button>
-            </Tooltip>
-            <Tooltip content={t("sidebar.website.delete")}>
-              <button
-                type="button"
-                className="assistant-worker-icon-button sidebar-website-child-action is-danger"
-                aria-label={t("sidebar.website.delete")}
-                title={t("sidebar.website.delete")}
-                disabled={deleting || websiteCreatePending}
-                onClick={(event) => void handleDeleteWebsiteItem(event, websiteItem)}
-              >
-                {deleting ? (
-                  <span
-                    className="assistant-material-icon is-loading"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <DeleteOutlined aria-hidden="true" />
-                )}
-              </button>
-            </Tooltip>
-          </span>
+          {isOpen ? (
+            <span className="sidebar-website-child-actions">
+              <Tooltip content={t("sidebar.website.close")}>
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-website-child-action"
+                  aria-label={t("sidebar.website.close")}
+                  title={t("sidebar.website.close")}
+                  disabled={Boolean(webClosePendingEntryKey)}
+                  onClick={(event) => void handleCloseWebItem(event, webItem)}
+                >
+                  {closing ? (
+                    <span
+                      className="assistant-material-icon is-loading"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <CloseOutlined aria-hidden="true" />
+                  )}
+                </button>
+              </Tooltip>
+            </span>
+          ) : null}
         </div>
       );
     }
@@ -2255,17 +2207,30 @@ export function AppSidebar({
               </Tooltip>
             ) : null}
             {args.groupId === "webs" ? (
-              <Tooltip content={t("sidebar.website.new")}>
-                <button
-                  type="button"
-                  className="assistant-worker-icon-button sidebar-website-add-button"
-                  aria-label={t("sidebar.website.new")}
-                  title={t("sidebar.website.new")}
-                  onClick={openWebsiteDialog}
-                >
-                  <AddIcon width={16} />
-                </button>
-              </Tooltip>
+              <>
+                <Tooltip content={t("sidebar.website.manage")}>
+                  <button
+                    type="button"
+                    className="assistant-worker-icon-button sidebar-website-manage-button"
+                    aria-label={t("sidebar.website.manage")}
+                    title={t("sidebar.website.manage")}
+                    onClick={openWebsitesSettings}
+                  >
+                    <EditSquareIcon width={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip content={t("sidebar.website.new")}>
+                  <button
+                    type="button"
+                    className="assistant-worker-icon-button sidebar-website-add-button"
+                    aria-label={t("sidebar.website.new")}
+                    title={t("sidebar.website.new")}
+                    onClick={openWebsiteDialog}
+                  >
+                    <AddIcon width={16} />
+                  </button>
+                </Tooltip>
+              </>
             ) : null}
           </button>
         }
@@ -3037,17 +3002,10 @@ export function AppSidebar({
     if (!websiteDialogOpen || typeof document === "undefined") {
       return null;
     }
-    const websiteDialogEditing = Boolean(websiteEditingItem);
-    const websiteDialogTitle = websiteDialogEditing
-      ? t("sidebar.website.editTitle")
-      : t("sidebar.website.title");
-    const websiteSubmitLabel = websiteDialogEditing
-      ? websiteCreatePending
-        ? t("sidebar.website.saving")
-        : t("common.save")
-      : websiteCreatePending
-        ? t("sidebar.website.adding")
-        : t("sidebar.website.add");
+    const websiteDialogTitle = t("sidebar.website.title");
+    const websiteSubmitLabel = websiteCreatePending
+      ? t("sidebar.website.adding")
+      : t("sidebar.website.add");
 
     return createPortal(
       <div

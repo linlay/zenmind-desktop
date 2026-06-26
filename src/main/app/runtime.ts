@@ -268,6 +268,7 @@ export function createMainProcessRuntime() {
   const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
   let startupEnvImportFailureMessage: string | null = null;
   let nonCoreDesktopRuntimeStarted = false;
+  let focusedWebviewDevToolsShortcutRegistered = false;
   function setStartupPhase(phase: StartupPhase) {
     if (appState.startupPhase === phase) {
       return;
@@ -740,12 +741,17 @@ export function createMainProcessRuntime() {
   }
   
   function registerFocusedWebviewDevToolsShortcut() {
+    if (focusedWebviewDevToolsShortcutRegistered) {
+      return;
+    }
     const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
       openFocusedWebviewDevTools(webContents.getFocusedWebContents());
     });
     if (!registered) {
       console.warn(`failed to register focused webview DevTools shortcut: ${FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT}`);
+      return;
     }
+    focusedWebviewDevToolsShortcutRegistered = true;
   }
   
   async function collectWebviewLoadDiagnostics(
@@ -937,7 +943,6 @@ export function createMainProcessRuntime() {
     runNonCoreStartupTask("app tray", () => createAppTray());
     runNonCoreStartupTask("application menu", () => buildApplicationMenu());
     runNonCoreStartupTask("quick assistant shortcut", () => registerQuickAssistantShortcut());
-    runNonCoreStartupTask("focused webview devtools shortcut", () => registerFocusedWebviewDevToolsShortcut());
     runNonCoreStartupTask("plugin desktop bridge", () => pluginBridgeRuntime.setDesktopReady());
     runNonCoreStartupTask("desktop ws server", () => {
       assistantBridgeRuntime.startDesktopWsServerIfEnabled(
@@ -1053,6 +1058,7 @@ export function createMainProcessRuntime() {
       captureAssistantScreenshot
     });
     configureAppMediaPermissions();
+    registerFocusedWebviewDevToolsShortcut();
     createWindow();
     setStartupPhase("shell-ready");
     startResourceDirectoryWatcher();

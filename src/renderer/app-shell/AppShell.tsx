@@ -13,7 +13,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteDeleteResult, WebsiteEntry, WebsiteInput, WebsiteResult, WebsiteUpdateInput } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
@@ -414,6 +414,9 @@ function resolveWindowDragTarget(target: Element | null) {
   if (!browserChrome || target?.closest(BROWSER_CHROME_DRAG_BLOCK_SELECTOR)) {
     return null;
   }
+  if (browserChrome.closest(".external-webview-page.is-inactive-surface")) {
+    return null;
+  }
 
   return browserChrome;
 }
@@ -476,6 +479,7 @@ export function AppShell() {
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
   const webappStartInFlightRef = useRef<Set<string>>(new Set());
+  const webappStopInFlightRef = useRef<Set<string>>(new Set());
   const websiteAgentSyncRequestRef = useRef("");
   const marketSettingsRefreshIdRef = useRef(0);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
@@ -625,6 +629,26 @@ export function AppShell() {
   );
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
   const activeWebEntry = activeWebEntryKey ? webItemMap.get(activeWebEntryKey) ?? null : null;
+  const webOpenEntryKeys = useMemo(() => {
+    const openKeys = new Set<WebEntryKey>(mountedWebEntryKeys);
+    if (activeWebEntryKey) {
+      openKeys.add(activeWebEntryKey);
+    }
+    for (const item of webItems) {
+      if (item.kind !== "webapp") {
+        continue;
+      }
+      const runtime = webappRuntimeById[item.id];
+      if (
+        runtime?.status === "starting" ||
+        runtime?.status === "running" ||
+        runtime?.status === "error"
+      ) {
+        openKeys.add(item.entryKey);
+      }
+    }
+    return [...openKeys];
+  }, [activeWebEntryKey, mountedWebEntryKeys, webItems, webappRuntimeById]);
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const websiteAgentKey = activeWebEntry?.agentKey || "";
   const resolvedCopilotAgentKey = websiteAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
@@ -675,22 +699,41 @@ export function AppShell() {
     return result;
   }
 
-  async function updateWebsiteItem(id: string, input: WebsiteUpdateInput): Promise<WebsiteResult> {
-    const result = await window.electronAPI.webs.websites.update(id, input);
-    await refreshWebItems().catch(() => undefined);
-    return result;
-  }
-
-  async function deleteWebsiteItem(id: string): Promise<WebsiteDeleteResult> {
-    const result = await window.electronAPI.webs.websites.remove(id);
-    await refreshWebItems().catch(() => undefined);
-    return result;
-  }
-
   function updateWebItems(items: WebEntry[]) {
     setWebItems(items);
     setWebItemsLoaded(true);
     setWebGroupOrder((currentOrder) => normalizeWebGroupOrder(currentOrder, items));
+  }
+
+  async function handleCloseWebEntry(item: WebEntry) {
+    if (activeWebEntryKey === item.entryKey) {
+      requestSidebarNavigation(BUILTIN_BROWSER_ROUTE);
+    }
+
+    if (item.kind === "webapp") {
+      webappStopInFlightRef.current.add(item.id);
+      try {
+        const result = await window.electronAPI.webs.webapps.stop(item.id);
+        setWebappRuntimeById((current) => ({
+          ...current,
+          [item.id]: {
+            status: result.ok ? "idle" : "error",
+            webUrl: result.state?.webUrl ?? "",
+            message: result.message,
+            state: result.state
+          }
+        }));
+        if (!result.ok) {
+          throw new Error(result.message);
+        }
+      } finally {
+        webappStopInFlightRef.current.delete(item.id);
+      }
+    }
+
+    setMountedWebEntryKeys((current) =>
+      current.filter((entryKey) => entryKey !== item.entryKey)
+    );
   }
 
   function handleCopilotSelectedAgentKeyChange(agentKey: string) {
@@ -1498,6 +1541,9 @@ export function AppShell() {
       return;
     }
     if (webappStartInFlightRef.current.has(item.id)) {
+      return;
+    }
+    if (webappStopInFlightRef.current.has(item.id)) {
       return;
     }
 
@@ -2686,6 +2732,7 @@ export function AppShell() {
           sidebarNavOrder={normalizedSidebarNavOrder}
           websiteNavOrder={normalizedWebGroupOrder}
           webItems={webItems}
+          webOpenEntryKeys={webOpenEntryKeys}
           assistantNavAgents={assistantNavAgents}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           copilotAgentOptions={copilotAgentOptions}
@@ -2705,8 +2752,7 @@ export function AppShell() {
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateWebsiteItem={createWebsiteItem}
-          onUpdateWebsiteItem={updateWebsiteItem}
-          onDeleteWebsiteItem={deleteWebsiteItem}
+          onCloseWebItem={handleCloseWebEntry}
           onRequestNavigate={requestSidebarNavigation}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}

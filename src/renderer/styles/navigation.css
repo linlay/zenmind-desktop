@@ -681,6 +681,10 @@
   min-width: 0;
 }
 
+.sidebar-website-child-row.is-open .sidebar-child-link .sidebar-link-label {
+  color: var(--ink);
+}
+
 .sidebar-website-child-actions {
   display: inline-flex;
   align-items: center;
@@ -692,7 +696,7 @@
 
 .sidebar-website-child-row:hover .sidebar-website-child-actions,
 .sidebar-website-child-row:focus-within .sidebar-website-child-actions,
-.sidebar-website-child-row.is-deleting .sidebar-website-child-actions {
+.sidebar-website-child-row.is-closing .sidebar-website-child-actions {
   opacity: 1;
 }
 
@@ -700,11 +704,6 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
-}
-
-.sidebar-website-child-action.is-danger:hover {
-  background: rgba(220, 38, 38, 0.12);
-  color: #dc2626;
 }
 
 /* ── Assistant Worker Navigation ── */
@@ -952,9 +951,18 @@
   margin-left: auto;
 }
 
+.sidebar-website-manage-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .sidebar-website-add-button {
   flex: 0 0 auto;
   margin-left: auto;
+}
+
+.sidebar-website-manage-button + .sidebar-website-add-button {
+  margin-left: 0;
 }
 
 .sidebar-website-dialog-layer {

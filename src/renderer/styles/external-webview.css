@@ -88,9 +88,17 @@
   height: 100%;
   margin: 0;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
   overflow: hidden;
   z-index: 0;
+}
+
+.external-webview-page.is-inactive-surface .external-webview-browser-chrome {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 :root[data-theme="dark"] .external-webview-page {

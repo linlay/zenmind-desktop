@@ -2822,6 +2822,12 @@ test("website agent association is exposed across webs desktop api layers", () =
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
+  const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
+  const closeWebEntryStart = appShell.indexOf("async function handleCloseWebEntry(item: WebEntry)");
+  const closeWebEntry = appShell.slice(
+    closeWebEntryStart,
+    appShell.indexOf("  function handleCopilotSelectedAgentKeyChange", closeWebEntryStart)
+  );
 
   assert.match(contracts, /agentKey\?: string/);
   assert.match(contracts, /interface WebsiteUpdateInput/);
@@ -2838,22 +2844,34 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(preload, /remove: \(id(?:: string)?\) => ipcRenderer\.invoke\("webs\.websites\.remove", id\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
   assert.match(appShell, /function createWebsiteItem\(input: WebsiteInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.add\(input\)/);
-  assert.match(appShell, /function updateWebsiteItem\(id: string, input: WebsiteUpdateInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.update\(id, input\)/);
-  assert.match(appShell, /function deleteWebsiteItem\(id: string\): Promise<WebsiteDeleteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.remove\(id\)/);
+  assert.notEqual(closeWebEntryStart, -1);
+  assert.match(appShell, /const webOpenEntryKeys = useMemo\(\(\) => \{/);
+  assert.match(appShell, /openKeys\.add\(activeWebEntryKey\)/);
+  assert.match(appShell, /mountedWebEntryKeys/);
+  assert.match(closeWebEntry, /requestSidebarNavigation\(BUILTIN_BROWSER_ROUTE\)/);
+  assert.match(closeWebEntry, /setMountedWebEntryKeys\(\(current\) =>[\s\S]*?current\.filter\(\(entryKey\) => entryKey !== item\.entryKey\)/);
+  assert.match(closeWebEntry, /window\.electronAPI\.webs\.webapps\.stop\(item\.id\)/);
+  assert.doesNotMatch(closeWebEntry, /webs\.websites\.remove/);
   assert.match(appShell, /onCreateWebsiteItem=\{createWebsiteItem\}/);
-  assert.match(appShell, /onUpdateWebsiteItem=\{updateWebsiteItem\}/);
-  assert.match(appShell, /onDeleteWebsiteItem=\{deleteWebsiteItem\}/);
+  assert.match(appShell, /webOpenEntryKeys=\{webOpenEntryKeys\}/);
+  assert.match(appShell, /onCloseWebItem=\{handleCloseWebEntry\}/);
   assert.match(appSidebar, /args\.groupId === "webs"/);
+  assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-manage-button"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /className="sidebar-website-child-actions"/);
-  assert.match(appSidebar, /t\("sidebar\.website\.edit"\)/);
-  assert.match(appSidebar, /t\("sidebar\.website\.delete"\)/);
+  assert.match(appSidebar, /requestNavigate\(buildSettingsSectionPath\("websites"\)\)/);
+  assert.match(appSidebar, /webOpenEntryKeys\.includes\(webItem\.entryKey\)/);
+  assert.match(appSidebar, /isOpen \? "is-open" : ""/);
+  assert.match(appSidebar, /t\("sidebar\.website\.manage"\)/);
+  assert.match(appSidebar, /t\("sidebar\.website\.close"\)/);
+  assert.doesNotMatch(appSidebar, /t\("sidebar\.website\.delete"\)/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
   assert.match(appSidebar, /t\("sidebar\.website\.name"\)[\s\S]*?t\("sidebar\.website\.url"\)[\s\S]*?t\("sidebar\.website\.sideAssistant"\)/);
   assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
-  assert.match(appSidebar, /onUpdateWebsiteItem\(websiteEditingItem\.id,[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}/);
-  assert.match(appSidebar, /onDeleteWebsiteItem\(item\.id\)/);
+  assert.match(appSidebar, /onCloseWebItem\(item\)/);
   assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
+  assert.match(navigationCss, /\.sidebar-website-child-row\.is-open \.sidebar-child-link \.sidebar-link-label\s*\{[\s\S]*?color:\s*var\(--ink\);/u);
+  assert.match(navigationCss, /\.sidebar-website-manage-button \+ \.sidebar-website-add-button\s*\{[\s\S]*?margin-left:\s*0;/u);
 });
 
 test("webapps expose desktop api and start from webs sidebar route", () => {
@@ -2891,17 +2909,23 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(webContracts, /export interface WebappEntry/);
   assert.match(contracts, /webs:\s*\{[\s\S]*list: \(\) => Promise<WebListResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*start: \(id: string\) => Promise<WebappCommandResult>/);
+  assert.match(contracts, /webapps:\s*\{[\s\S]*stop: \(id: string\) => Promise<WebappCommandResult>/);
   assert.match(preload, /webs:\s*\{[\s\S]*list: \(\) => ipcRenderer\.invoke\("webs\.list"\)/);
   assert.match(preload, /start: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.start", id\)/);
+  assert.match(preload, /stop: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.stop", id\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.start"[\s\S]*webappRuntime\.start\(app, id\)/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.stop"[\s\S]*webappRuntime\.stop\(app, id\)/);
   assert.match(appShell, /window\.electronAPI\.webs\.list\(\)/);
   assert.match(appShell, /item\.kind !== "webapp"/);
   assert.match(appShell, /chrome:\s*"app"/);
   assert.notEqual(webappStartEffectStart, -1);
   assert.match(appShell, /webappStartInFlightRef = useRef<Set<string>>\(new Set\(\)\)/);
+  assert.match(appShell, /webappStopInFlightRef = useRef<Set<string>>\(new Set\(\)\)/);
   assert.match(webappStartEffect, /webappStartInFlightRef\.current\.has\(item\.id\)/);
+  assert.match(webappStartEffect, /webappStopInFlightRef\.current\.has\(item\.id\)/);
   assert.match(webappStartEffect, /webappStartInFlightRef\.current\.add\(item\.id\)/);
   assert.match(webappStartEffect, /window\.electronAPI\.webs\.webapps\.start\(item\.id\)/);
+  assert.match(appShell, /async function handleCloseWebEntry\(item: WebEntry\)[\s\S]*?window\.electronAPI\.webs\.webapps\.stop\(item\.id\)/);
   assert.match(webappStartEffect, /\.finally\(\(\) => \{[\s\S]*?webappStartInFlightRef\.current\.delete\(item\.id\)/);
   assert.doesNotMatch(webappStartEffect, /let cancelled = false/);
   assert.match(externalWebviewPage, /chrome\?: "browser" \| "app"/);
@@ -2942,6 +2966,11 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const phaseDesktopStateReadyIndex = indexOfRequired(handleReadyBlock, 'setStartupPhase("desktop-state-ready")');
   const phaseShellReadyIndex = indexOfRequired(handleReadyBlock, 'setStartupPhase("shell-ready")');
   const startupPipelineRunIndex = indexOfRequired(handleReadyBlock, "startupPipeline.run()");
+  const focusedWebviewDevToolsShortcutIndex = indexOfRequired(
+    handleReadyBlock,
+    "registerFocusedWebviewDevToolsShortcut();"
+  );
+  const handleReadyCreateWindowCallIndex = indexOfRequired(handleReadyBlock, "createWindow();");
   assert.notEqual(initializeUserDataIndex, -1);
   assert.notEqual(initializeUserDataEndIndex, -1);
   assert.notEqual(ensureDataRootIndex, -1);
@@ -2961,6 +2990,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.equal(phaseRuntimeEnvReadyIndex < phaseDesktopStateReadyIndex, true);
   assert.equal(phaseDesktopStateReadyIndex < phaseShellReadyIndex, true);
   assert.equal(phaseShellReadyIndex < startupPipelineRunIndex, true);
+  assert.equal(focusedWebviewDevToolsShortcutIndex < handleReadyCreateWindowCallIndex, true);
   assert.doesNotMatch(handleReadyBlock, /createAppTray\(\);/);
   assert.doesNotMatch(handleReadyBlock, /showDesktopPetWindow\(\);/);
   assert.doesNotMatch(handleReadyBlock, /startDesktopWsServerIfEnabled/);
@@ -2970,6 +3000,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(nonCoreStartupBlock, /appState\.desktopPetSettings\?\.enabled === true/);
   assert.match(nonCoreStartupBlock, /createAppTray\(\)/);
   assert.match(nonCoreStartupBlock, /registerQuickAssistantShortcut\(\)/);
+  assert.doesNotMatch(nonCoreStartupBlock, /registerFocusedWebviewDevToolsShortcut/);
   assert.match(nonCoreStartupBlock, /pluginBridgeRuntime\.setDesktopReady\(\)/);
   assert.match(nonCoreStartupBlock, /startDesktopWsServerIfEnabled/);
   assert.match(nonCoreStartupBlock, /startTunnelHubRuntimeIfEnabled\(\)/);
@@ -3003,8 +3034,10 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   );
   assert.match(startupPipeline, /options\.setStartupPhase\("core-services-starting"\);[\s\S]*?options\.loadBuiltinServices\(options\.app\);[\s\S]*?options\.loadInstalledPlugins\(options\.app\);[\s\S]*?options\.notifyCoreServicesChanged\(\);/);
   assert.match(startupPipeline, /options\.setStartupPhase\("core-ready"\);\s*options\.startNonCoreRuntime\(\);/);
-  assert.match(desktopActions, /"desktop\.web\.webapps\.start"/);
-  assert.match(desktopActionBridge, /case "desktop\.web\.webapps\.restart"/);
+  assert.match(desktopActions, /"desktop\.web\.webapp\.start"/);
+  assert.match(desktopActions, /"desktop\.web\.webapp\.stop"/);
+  assert.match(desktopActionBridge, /case "desktop\.web\.webapp\.restart"/);
+  assert.match(desktopActionBridge, /case "desktop\.web\.webapp\.stop"/);
   assert.match(desktopActionBridge, /readWebappId\(args\)/);
 });
 
@@ -3885,6 +3918,8 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.match(appShell, /onPointerDownCapture=\{handleWindowDragPointerDownCapture\}/);
   assert.match(appShell, /target\?\.closest\("\.app-window-drag-region"\)/);
   assert.match(appShell, /target\?\.closest\("\.app-sidebar-shell"\)/);
+  assert.match(appShell, /target\?\.closest\("\.external-webview-browser-chrome"\)/);
+  assert.match(appShell, /browserChrome\.closest\("\.external-webview-page\.is-inactive-surface"\)/);
   assert.match(appShell, /SIDEBAR_DRAG_BLOCK_SELECTOR/);
   assert.doesNotMatch(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
   assert.match(appShell, /event\.button !== 0/);
@@ -5653,5 +5688,12 @@ test("persistent external webview surfaces hide without detaching the webview la
   assert.match(externalWebviewStyles, /\.external-webview-page\.is-inactive-surface\s*\{/u);
   assert.match(externalWebviewStyles, /\.external-webview-page\.is-inactive-surface\s*\{[\s\S]*?position:\s*absolute;/u);
   assert.match(externalWebviewStyles, /\.external-webview-page\.is-inactive-surface\s*\{[\s\S]*?opacity:\s*0;/u);
+  assert.match(externalWebviewStyles, /\.external-webview-page\.is-inactive-surface\s*\{[\s\S]*?visibility:\s*hidden;/u);
   assert.match(externalWebviewStyles, /\.external-webview-page\.is-inactive-surface\s*\{[\s\S]*?pointer-events:\s*none;/u);
+  assert.match(externalWebviewStyles, /\.external-webview-page\.is-inactive-surface\s*\{[\s\S]*?app-region:\s*no-drag;/u);
+  assert.match(externalWebviewStyles, /\.external-webview-page\.is-inactive-surface\s*\{[\s\S]*?-webkit-app-region:\s*no-drag;/u);
+  assert.match(
+    externalWebviewStyles,
+    /\.external-webview-page\.is-inactive-surface \.external-webview-browser-chrome\s*\{[\s\S]*?app-region:\s*no-drag;[\s\S]*?-webkit-app-region:\s*no-drag;/u
+  );
 });
