@@ -3981,7 +3981,13 @@ test("mac dev app uses a content-addressed icon filename to avoid stale Dock cac
   assert.match(darwinDev, /const sourceDockIconPath = path\.join\(iconRoot, "icon\.png"\);/);
   assert.match(darwinDev, /fs\.copyFileSync\(sourceDockIconPath, path\.join\(targetResourcesDir, "icon\.png"\)\);/);
   assert.match(darwinDev, /setPlistString\(plist,\s*"CFBundleIconFile",\s*targetIconFileName\)/);
+  assert.match(darwinDev, /function setPlistEnvironment\(plist,\s*env\)/);
+  assert.match(darwinDev, /VITE_DEV_SERVER_URL:\s*"http:\/\/127\.0\.0\.1:5173"/);
+  assert.match(darwinDev, /DESKTOP_BUILTIN_ASSETS_ROOT:\s*serviceAssetsRoot/);
+  assert.match(darwinDev, /BRAND:\s*brand\.id/);
+  assert.match(darwinDev, /spawn\("open",\s*\["-n",\s*"-W",\s*preparedApp\.appRoot,\s*"--args",\s*projectRoot\]/);
   assert.doesNotMatch(darwinDev, /const targetIconFileName = "icon\.icns";/);
+  assert.doesNotMatch(darwinDev, /spawn\(prepareDarwinDevElectronBinary\(electronBinary,\s*projectRoot,\s*brand\),\s*\["\."\]/);
 });
 
 test("external webview tabs use repeatable pointer reordering", () => {

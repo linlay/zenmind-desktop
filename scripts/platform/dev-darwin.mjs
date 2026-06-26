@@ -6,21 +6,59 @@ import { brandBuildRoot, brandIconDir, loadBrandConfig, resolveBrandId } from ".
 import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-metadata.mjs";
 import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
 
+function escapePlistText(value) {
+  return String(value)
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;");
+}
+
 function setPlistString(plist, key, value) {
   const pattern = new RegExp(`(<key>${key}</key>\\s*<string>)([^<]*)(</string>)`, "u");
+  const escapedValue = escapePlistText(value);
   if (pattern.test(plist)) {
-    return plist.replace(pattern, `$1${value}$3`);
+    return plist.replace(pattern, `$1${escapedValue}$3`);
   }
-  return plist.replace("</dict>", `<key>${key}</key><string>${value}</string></dict>`);
+  return plist.replace("</dict>", `<key>${key}</key><string>${escapedValue}</string></dict>`);
+}
+
+function plistEnvironmentEntry([key, value]) {
+  return `    <key>${escapePlistText(key)}</key>\n    <string>${escapePlistText(value)}</string>`;
+}
+
+function setPlistEnvironment(plist, env) {
+  const entries = Object.entries(env)
+    .filter(([, value]) => typeof value === "string" && value.length > 0)
+    .map(plistEnvironmentEntry)
+    .join("\n");
+  const replacement = `<key>LSEnvironment</key>\n  <dict>\n${entries}\n  </dict>`;
+  const pattern = /<key>LSEnvironment<\/key>\s*<dict>[\s\S]*?<\/dict>/u;
+  if (pattern.test(plist)) {
+    return plist.replace(pattern, replacement);
+  }
+  return plist.replace("</dict>", `${replacement}\n</dict>`);
 }
 
 function fileHashPrefix(filePath) {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex").slice(0, 12);
 }
 
-export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
+function buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot) {
+  return {
+    MallocNanoZone: process.env.MallocNanoZone || "0",
+    PATH: process.env.PATH || "",
+    BRAND: brand.id,
+    DESKTOP_BRAND_JSON: path.join(projectRoot, "build", "brands", brand.id, "generated", "brand.json"),
+    DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
+    DESKTOP_NODE_BIN: process.env.DESKTOP_NODE_BIN || process.execPath,
+    VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
+  };
+}
+
+export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
   const devAppName = brand.productName;
   const devAppId = `${brand.appId}.dev`;
+  const serviceAssetsRoot = desktopBuiltinServicesDir(projectRoot);
   const metadata = createDesktopBuildMetadata({
     productName: devAppName,
     version: readDesktopVersion(projectRoot)
@@ -62,20 +100,29 @@ export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, bran
   plist = setPlistString(plist, "CFBundleIconFile", targetIconFileName);
   plist = setPlistString(plist, "CFBundleShortVersionString", plistVersion);
   plist = setPlistString(plist, "CFBundleVersion", plistVersion);
+  plist = setPlistEnvironment(plist, buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot));
   fs.writeFileSync(targetPlistPath, plist);
 
-  return targetBinary;
+  return {
+    appRoot: targetAppRoot,
+    binaryPath: targetBinary,
+    bundleId: devAppId
+  };
+}
+
+export function prepareDarwinDevElectronBinary(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
+  return prepareDarwinDevElectronApp(electronBinary, projectRoot, brand).binaryPath;
 }
 
 export function spawnElectron(electronBinary, projectRoot, brand = loadBrandConfig(projectRoot, resolveBrandId())) {
-  const serviceAssetsRoot = desktopBuiltinServicesDir(projectRoot);
-  return spawn(prepareDarwinDevElectronBinary(electronBinary, projectRoot, brand), ["."], {
+  const preparedApp = prepareDarwinDevElectronApp(electronBinary, projectRoot, brand);
+  // LaunchServices is required for macOS to treat dev builds as foreground apps with Dock/menu identity.
+  return spawn("open", ["-n", "-W", preparedApp.appRoot, "--args", projectRoot], {
     cwd: projectRoot,
     stdio: "inherit",
     env: {
       ...process.env,
-      DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
-      VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
+      BRAND: brand.id
     }
   });
 }
