@@ -249,6 +249,92 @@
   letter-spacing: 0.2px;
 }
 
+.settings-page .settings-control-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(280px, 420px);
+  align-items: center;
+  gap: 16px;
+}
+
+.settings-page .settings-control-row-label {
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.settings-page .settings-control-row-select {
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-page .settings-control-row-control.ant-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+  color: var(--ink);
+  outline: none;
+  font-size: 12px;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.settings-page .settings-control-row-control.ant-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: var(--control-focus-ring);
+}
+
+.settings-page .settings-control-row-control.ant-input:disabled {
+  cursor: not-allowed;
+}
+
+.settings-page .settings-control-row-inline {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-page .settings-control-row-inline .settings-control-row-control.ant-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-page .settings-control-row-inline .ant-btn {
+  flex: 0 0 auto;
+  min-width: 74px;
+}
+
+.settings-page .settings-control-row-readonly {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+  color: var(--ink);
+  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-page .settings-control-row-readonly > span:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
 .settings-page .settings-control-readonly-row {
   display: flex;
   min-width: 0;
@@ -382,63 +468,8 @@
   border-top: none;
 }
 
-.settings-page .settings-device-name-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 10px;
-}
-
-.settings-page .settings-device-name-row .ant-btn {
-  min-width: 74px;
-}
-
 .settings-page .settings-device-form + .settings-appearance-row {
   border-top: 1px solid var(--line);
-}
-
-.settings-page .settings-device-info-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  margin: 0;
-}
-
-.settings-page .settings-device-info-list div {
-  min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
-}
-
-.settings-page .settings-device-info-list dt {
-  margin: 0 0 3px;
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.settings-page .settings-device-info-list dd {
-  margin: 0;
-  color: var(--ink);
-  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.settings-page .settings-device-info-value {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.settings-page .settings-device-info-value > span {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow-wrap: anywhere;
 }
 
 .settings-page .settings-device-copy-button-wrap {
@@ -568,7 +599,9 @@
 }
 
 :root[data-theme="dark"] .settings-page .settings-control-field input,
-:root[data-theme="dark"] .settings-page .settings-control-field select {
+:root[data-theme="dark"] .settings-page .settings-control-field select,
+:root[data-theme="dark"] .settings-page .settings-control-row-control.ant-input,
+:root[data-theme="dark"] .settings-page .settings-control-row-readonly {
   background: var(--control-select-bg);
   border-color: rgba(255, 255, 255, 0.12);
 }
@@ -1489,8 +1522,7 @@
   }
 
   .settings-debug-facts,
-  .settings-debug-probe-targets,
-  .settings-page .settings-device-info-list {
+  .settings-debug-probe-targets {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1538,8 +1570,13 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .settings-page .settings-device-name-row {
-    grid-template-columns: minmax(0, 1fr);
+  .settings-page .settings-control-row-inline {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-page .settings-control-row-inline .ant-btn {
+    align-self: flex-end;
   }
 
   .settings-page .usage-limit-percent {
@@ -2220,8 +2257,7 @@
 
 .settings-page .website-form label,
 .settings-page .navigation-order-grid-head,
-.settings-page .website-list-head,
-.settings-page .navigation-order-fixed-label {
+.settings-page .website-list-head {
   font-size: 12px;
 }
 
@@ -2273,6 +2309,12 @@
   .settings-appearance-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .settings-page .settings-control-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 7px;
   }
 
   .settings-page .settings-appearance-panel .ant-segmented,

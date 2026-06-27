@@ -1416,6 +1416,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsPage, /settingsContentStyle = activeSectionDefinition\?\.layout === "wide"[\s\S]*?"--settings-content-max": "var\(--workspace-wide-max\)"/);
   assert.match(settingsStyles, /\.settings-page \.settings-control-center-embed/);
+  assert.match(settingsStyles, /\.settings-page \.settings-control-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(140px, 1fr\) minmax\(280px, 420px\)/);
+  assert.match(settingsStyles, /@media \(max-width: 860px\)[\s\S]*?\.settings-page \.settings-control-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/);
 
   assert.match(sidebarSource, /isSettingsMode\?: boolean;/);
   assert.match(sidebarSource, /\{!isSettingsMode \? \([\s\S]*?sidebar-collapsed-toggle-button/);
@@ -1749,7 +1751,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /settings\.general\.desktopInfoTitle/);
   assert.match(settingsPage, /settings\.general\.desktopDeviceName/);
   assert.match(settingsPage, /window\.electronAPI\.settings\.getDesktopDeviceInfo\(\)/);
-  assert.match(settingsPage, /settings-device-info-list/);
+  assert.match(settingsPage, /settings-control-row-readonly/);
   assert.match(settingsPage, /CopyOutlined/);
   assert.match(settingsPage, /CheckOutlined/);
   assert.match(settingsPage, /handleCopyGeneralDeviceId/);
@@ -1757,7 +1759,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /settings\.general\.copyDeviceId/);
   assert.match(settingsPage, /settings-device-copy-button/);
   assert.match(settingsStyles, /\.settings-page \.settings-device-form\s*\{[\s\S]*?border-top:\s*none;/);
-  assert.match(settingsStyles, /\.settings-page \.settings-device-info-value\s*\{[\s\S]*?display:\s*flex;/);
+  assert.match(settingsStyles, /\.settings-page \.settings-control-row-readonly\s*\{[\s\S]*?display:\s*flex;/);
   assert.match(enUS, /"settings\.general\.description":\s*"App behavior and system settings\."/);
   assert.match(enUS, /"settings\.general\.preventSleepWhileRunning":\s*"Prevent sleep while running"/);
   assert.match(enUS, /"settings\.general\.desktopActionConfirmationDescription":\s*"Ask before local bridge actions make changes\."/);
@@ -1765,13 +1767,17 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(zhCN, /"settings\.general\.preventSleepWhileRunning":\s*"运行时防止休眠"/);
   assert.match(zhCN, /"settings\.general\.preventSleepWhileRunningDescription":\s*"在 Codex 运行聊天时，保持电脑唤醒。"/);
   assert.doesNotMatch(settingsPage, /<Input\.Password[\s\S]*kanban\.cloud\.tokenPlaceholder/);
-  assert.match(settingsPage, /<Select[\s\S]*options=\{controlProjectSelectOptions\}/);
+  assert.doesNotMatch(settingsPage, /controlProjectSelectOptions|controlProjectOptions|kanban\.cloud\.projectId|kanban\.cloud\.projectSelectHelp|kanban\.cloud\.projectFallbackHelp|selectedProjectId/);
+  assert.doesNotMatch(enUS, /kanban\.cloud\.projectId|kanban\.cloud\.projectSelectHelp|kanban\.cloud\.projectFallbackHelp/);
+  assert.doesNotMatch(zhCN, /kanban\.cloud\.projectId|kanban\.cloud\.projectSelectHelp|kanban\.cloud\.projectFallbackHelp/);
   assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*t\("common\.save"\)/);
   assert.match(settingsPage, /case "assistant"/);
   assert.match(settingsPage, /activeSection === "assistant"/);
   assert.match(settingsPage, /case "market"/);
   assert.match(settingsPage, /settings\.market\.apiBaseUrl/);
   assert.match(settingsPage, /window\.electronAPI\.market\.saveSettings/);
+  assert.match(enUS, /"settings\.market\.apiBaseUrl":\s*"API Address"/);
+  assert.match(zhCN, /"settings\.market\.apiBaseUrl":\s*"API 地址"/);
   assert.doesNotMatch(settingsPage, /handleToggleKanbanVisibility/);
   assert.match(settingsPage, /handleSaveControlCloudConfig/);
   assert.doesNotMatch(settingsPage, /saveNavigationPreferences\(\{\s*kanban/);
@@ -1849,20 +1855,18 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /visibleFixedNavigationTools = fixedNavigationTools\.filter\(\(tool\) => tool\.id !== "market" \|\| marketEnabled\)/);
   assert.match(sharedSettings, /controlCenter/);
   assert.match(settingsPage, /copilotPageKey:\s*"market"/);
-  assert.match(settingsPage, /navigation-order-fixed-label/);
+  assert.doesNotMatch(settingsPage, /navigation-order-fixed-label|navigation-order-actions|settings\.navigation\.itemIndex|settings\.navigation\.fixed"\)/);
   assert.doesNotMatch(settingsPage, /navigation-order-fixed-dot/);
   assert.match(settingsPage, /navigationSettingsOrder\.map/);
   assert.match(settingsPage, /\{visibleFixedNavigationTools\.map\(\(tool\) => renderFixedNavigationToolRow\(tool\)\)\}/);
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
-  assert.match(settingsPage, /settings-item-section-head website-list-head navigation-assistant-default-head/);
-  assert.match(settingsPage, /settings-item-form navigation-assistant-default/);
+  assert.match(settingsPage, /settings-control-row navigation-assistant-default/);
+  assert.match(settingsPage, /settings-control-row-select desktop-pet-agent-select-wrap navigation-assistant-default-select/);
   assert.match(settingsStyles, /\.settings-page \.navigation-order-row,[\s\S]*?\.settings-page \.navigation-order-title-cell,[\s\S]*?\.settings-page \.navigation-order-assistant-field,[\s\S]*?\.settings-page \.desktop-pet-agent-select-wrap\s*\{[\s\S]*?min-width:\s*0;/);
   assert.match(settingsStyles, /\.settings-page \.desktop-pet-agent-select-wrap\s*\{[\s\S]*?width:\s*100%;/);
-  assert.match(settingsPage, /settings\.navigation\.defaultAssistantDescription/);
-  assert.match(settingsPage, /settings\.navigation\.fixedMainDescription/);
-  assert.match(settingsPage, /settings\.navigation\.fixedToolsDescription/);
+  assert.doesNotMatch(settingsPage, /settings\.navigation\.defaultAssistantDescription|settings\.navigation\.fixedMainDescription|settings\.navigation\.fixedToolsDescription/);
   assert.match(settingsPage, /settings\.assistant\.panelAria/);
   assert.match(settingsPage, /settings\.navigation\.defaultAssistant/);
   assert.match(globalStyles, /grid-template-columns:\s*minmax\(140px,\s*1fr\)\s*minmax\(220px,\s*300px\)\s*124px/);
@@ -1896,6 +1900,8 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
     /case "tunnelHub": \{[\s\S]*?(?=case "navigation")/
   )?.[0] ?? "";
   assert.match(tunnelHubCaseBody, /settings\.tunnelHub\.panelAria[\s\S]*handleSaveTunnelHubSettings[\s\S]*settings\.tunnelHub\.relayUrl[\s\S]*t\("common\.save"\)/);
+  assert.match(tunnelHubCaseBody, /<label className="settings-control-row">[\s\S]*settings-control-row-label[\s\S]*settings\.tunnelHub\.relayUrl[\s\S]*className="settings-control-row-control"/);
+  assert.doesNotMatch(tunnelHubCaseBody, /settings\.tunnelHub\.loginRequired|tunnelHubSsoStatus/);
   assert.match(tunnelHubCaseBody, /settings\.mobilePairing\.title[\s\S]*settings\.mobilePairing\.targetMode[\s\S]*handleCreateAppPairingPayload[\s\S]*settings\.mobilePairing\.qrCode[\s\S]*handleCopyAppPairingPayload/);
   assert.doesNotMatch(settingsPage, /settings\.control\.cloudPanelAria/);
   assert.match(settingsPage, /import \{ ControlCenterPage \} from "\.\.\/control-center\/ControlCenterPage";/);
@@ -1914,6 +1920,8 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.doesNotMatch(zhCN, /跳过中继 TLS 校验|settings\.tunnelHub\.tlsInsecure/);
   assert.doesNotMatch(enUS, /Reconnect interval|settings\.tunnelHub\.reconnect/);
   assert.doesNotMatch(zhCN, /重连间隔|settings\.tunnelHub\.reconnect/);
+  assert.doesNotMatch(enUS, /Sign in to .* before enabling Tunnel|settings\.tunnelHub\.loginRequired/);
+  assert.doesNotMatch(zhCN, /请先登录 .*再开启隧道|settings\.tunnelHub\.loginRequired/);
   assert.match(settingsPage, /settings\.createAppPairingPayload/);
   assert.match(settingsPage, /handleCreateAppPairingPayload[\s\S]*showSectionNotice\("tunnelHub"[\s\S]*setReadErrorSections\(\["tunnelHub"\]/);
   assert.match(settingsPage, /handleCopyAppPairingPayload[\s\S]*showSectionNotice\("tunnelHub"/);
@@ -1931,6 +1939,7 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.doesNotMatch(settingsPage, /window\.electronAPI\.kanban\.listOnlineDevices/);
   assert.match(kanbanContracts, /interface KanbanSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?cloud:\s*KanbanCloudConfig;/);
   assert.match(kanbanContracts, /interface KanbanSettingsInput[\s\S]*?enabled\?:\s*boolean;[\s\S]*?cloud\?:\s*Partial<KanbanCloudConfig>;/);
+  assert.doesNotMatch(kanbanContracts, /selectedProjectId:\s*string/);
   assert.match(kanbanContracts, /remoteControlEnabled:\s*boolean/);
   assert.match(kanbanRuntime, /remoteControlEnabled/);
   assert.match(kanbanRuntime, /config\.remoteControlEnabled/);

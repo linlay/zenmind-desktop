@@ -304,7 +304,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       message: t("kanban.runtime.uninitialized"),
       settings: {
         enabled: false,
-        cloud: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" }
+        cloud: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" }
       },
       connectionState: "disabled"
     },
@@ -313,20 +313,20 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       message: t("kanban.runtime.uninitialized"),
       settings: {
         enabled: false,
-        cloud: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" }
+        cloud: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" }
       },
       connectionState: "disabled"
     },
     getKanbanCloudConfig: () => state.kanbanRuntime?.getCloudConfig() ?? {
       ok: false,
       message: t("kanban.runtime.uninitialized"),
-      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
+      config: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     saveKanbanCloudConfig: (_app: any, input: any) => state.kanbanRuntime?.saveCloudConfig(input) ?? {
       ok: false,
       message: t("kanban.runtime.uninitialized"),
-      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
+      config: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     createKanbanIssue: (_app: any, input: any) => state.kanbanRuntime?.createIssue(input) ?? {

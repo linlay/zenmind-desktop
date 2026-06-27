@@ -113,22 +113,17 @@ function normalizeKanbanDefaults(value: unknown) {
   const cloud: {
     serverUrl?: string;
     token?: string;
-    selectedProjectId?: string;
     remoteControlEnabled?: boolean;
     deviceAlias?: string;
   } = {};
   const serverUrl = readText(cloudDefaults.serverUrl);
   const token = readText(cloudDefaults.token);
-  const selectedProjectId = readText(cloudDefaults.selectedProjectId);
   const deviceAlias = readText(cloudDefaults.deviceAlias);
   if (serverUrl) {
     cloud.serverUrl = serverUrl;
   }
   if (token) {
     cloud.token = token;
-  }
-  if (selectedProjectId) {
-    cloud.selectedProjectId = selectedProjectId;
   }
   if (deviceAlias) {
     cloud.deviceAlias = deviceAlias;

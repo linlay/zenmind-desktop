@@ -29,7 +29,6 @@ import type {
   IdentityAccessTokenInspection,
   MarketSettings,
   KanbanCloudConfig,
-  KanbanProject,
   PairingTargetMode,
   TunnelDebugSnapshot,
   TunnelHubSettings
@@ -159,24 +158,6 @@ function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction
     default:
       return t("settings.debug.categories.other");
   }
-}
-
-function getKanbanProjectOptionLabel(project: KanbanProject) {
-  const path = project.path.trim();
-  if (path && path !== project.name) {
-    return `${project.name} · ${path}`;
-  }
-  return project.name;
-}
-
-function sortKanbanProjectOptions(projects: KanbanProject[]) {
-  return [...projects]
-    .filter((project) => project.id.trim())
-    .sort((left, right) => {
-      const leftLabel = left.path || left.name || left.id;
-      const rightLabel = right.path || right.name || right.id;
-      return leftLabel.localeCompare(rightLabel, "zh-Hans-CN");
-    });
 }
 
 function formatPairingExpiresAt(value: string, locale: SupportedLocale) {
@@ -418,7 +399,6 @@ const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
 const defaultKanbanCloudConfig: KanbanCloudConfig = {
   serverUrl: "",
   token: "",
-  selectedProjectId: "default",
   remoteControlEnabled: false,
   deviceAlias: ""
 };
@@ -2293,12 +2273,10 @@ export function SettingsPage({
   const [marketSettingsSaving, setMarketSettingsSaving] = useState(false);
   const [controlCloudConfig, setControlCloudConfig] = useState<KanbanCloudConfig>(defaultKanbanCloudConfig);
   const [savedControlCloudConfig, setSavedControlCloudConfig] = useState<KanbanCloudConfig>(defaultKanbanCloudConfig);
-  const [controlCloudProjects, setControlCloudProjects] = useState<KanbanProject[]>([]);
   const [controlConnectionState, setControlConnectionState] = useState<KanbanConnectionState>("disabled");
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [savedTunnelHubSettings, setSavedTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
-  const [tunnelHubSsoStatus, setTunnelHubSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
   const [appPairingPending, setAppPairingPending] = useState(false);
   const [appPairingTargetMode, setAppPairingTargetMode] = useState<PairingTargetMode>("local");
@@ -2338,29 +2316,7 @@ export function SettingsPage({
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
   );
   const shouldReadDesktopPetState = desktopPetSupported && activeSection === "assistant";
-  const controlProjectOptions = useMemo(
-    () => sortKanbanProjectOptions(controlCloudProjects),
-    [controlCloudProjects]
-  );
-  const selectedControlProjectId = controlCloudConfig.selectedProjectId.trim();
-  const selectedControlProjectMissing = Boolean(
-    selectedControlProjectId && !controlProjectOptions.some((project) => project.id === selectedControlProjectId)
-  );
-  const controlProjectSelectOptions = useMemo(() => [
-    ...(selectedControlProjectMissing
-      ? [{
-          value: selectedControlProjectId,
-          label: t("kanban.cloud.currentProject", { id: selectedControlProjectId })
-        }]
-      : []),
-    ...controlProjectOptions.map((project) => ({
-      value: project.id,
-      label: getKanbanProjectOptionLabel(project)
-    }))
-  ], [controlProjectOptions, selectedControlProjectId, selectedControlProjectMissing, t]);
-  const controlConfigDirty =
-    controlCloudConfig.serverUrl !== savedControlCloudConfig.serverUrl ||
-    controlCloudConfig.selectedProjectId !== savedControlCloudConfig.selectedProjectId;
+  const controlConfigDirty = controlCloudConfig.serverUrl !== savedControlCloudConfig.serverUrl;
   const marketSettingsDirty = marketSettings.apiBaseUrl !== savedMarketSettings.apiBaseUrl;
   const tunnelHubSettingsDirty = tunnelHubSettings.relayUrl !== savedTunnelHubSettings.relayUrl;
 
@@ -2522,10 +2478,7 @@ export function SettingsPage({
     let cancelled = false;
     async function refreshControlState() {
       try {
-        const [settingsResult, issueResult] = await Promise.all([
-          window.electronAPI.kanban.getSettings(),
-          window.electronAPI.kanban.listIssues()
-        ]);
+        const settingsResult = await window.electronAPI.kanban.getSettings();
         if (cancelled) {
           return;
         }
@@ -2533,19 +2486,15 @@ export function SettingsPage({
         const savedCloudConfig = savedControlCloudConfigRef.current;
         commitSavedControlCloudConfig(nextCloudConfig);
         setControlCloudConfig((current) => {
-          const hasDraft =
-            current.serverUrl !== savedCloudConfig.serverUrl ||
-            current.selectedProjectId !== savedCloudConfig.selectedProjectId;
+          const hasDraft = current.serverUrl !== savedCloudConfig.serverUrl;
           return hasDraft
             ? {
                 ...nextCloudConfig,
-                serverUrl: current.serverUrl,
-                selectedProjectId: current.selectedProjectId
+                serverUrl: current.serverUrl
               }
             : nextCloudConfig;
         });
-        setControlCloudProjects(issueResult.projects ?? []);
-        setControlConnectionState(settingsResult.connectionState ?? issueResult.connectionState ?? "disabled");
+        setControlConnectionState(settingsResult.connectionState ?? "disabled");
         setReadErrorSections(["kanban"], "");
       } catch (reason) {
         if (!cancelled) {
@@ -2598,21 +2547,14 @@ export function SettingsPage({
     }
 
     let cancelled = false;
-    Promise.allSettled([
-      window.electronAPI.settings.getTunnelHubSettings(),
-      window.electronAPI.sso.getStatus()
-    ])
-      .then(([settingsResult, ssoResult]) => {
+    window.electronAPI.settings.getTunnelHubSettings()
+      .then((settingsResult) => {
         if (cancelled) {
           return;
         }
-        if (settingsResult.status !== "fulfilled") {
-          throw settingsResult.reason;
-        }
-        const settings = normalizeTunnelHubSettings(settingsResult.value);
+        const settings = normalizeTunnelHubSettings(settingsResult);
         setTunnelHubSettings(settings);
         commitSavedTunnelHubSettings(settings);
-        setTunnelHubSsoStatus(ssoResult.status === "fulfilled" ? ssoResult.value : null);
         setReadErrorSections(["tunnelHub"], "");
       })
       .catch((reason) => {
@@ -3638,20 +3580,15 @@ export function SettingsPage({
       const previousSavedCloudConfig = savedControlCloudConfigRef.current;
       commitSavedControlCloudConfig(nextCloudConfig);
       setControlCloudConfig((current) => {
-        const hasDraft =
-          current.serverUrl !== previousSavedCloudConfig.serverUrl ||
-          current.selectedProjectId !== previousSavedCloudConfig.selectedProjectId;
+        const hasDraft = current.serverUrl !== previousSavedCloudConfig.serverUrl;
         return options.preserveDraftFields && hasDraft
           ? {
               ...nextCloudConfig,
-              serverUrl: current.serverUrl,
-              selectedProjectId: current.selectedProjectId
+              serverUrl: current.serverUrl
             }
           : nextCloudConfig;
       });
       setControlConnectionState(result.connectionState ?? "disabled");
-      const issueResult = await window.electronAPI.kanban.listIssues();
-      setControlCloudProjects(issueResult.projects ?? []);
       setReadErrorSections(["kanban"], "");
       showSectionNotice("kanban", result.message, "success");
     } catch (reason) {
@@ -3665,8 +3602,7 @@ export function SettingsPage({
     event.preventDefault();
     await saveControlCloudConfig({
       ...savedControlCloudConfigRef.current,
-      serverUrl: controlCloudConfig.serverUrl,
-      selectedProjectId: controlCloudConfig.selectedProjectId
+      serverUrl: controlCloudConfig.serverUrl
     });
   }
 
@@ -3950,55 +3886,49 @@ export function SettingsPage({
           />
         );
       case "general": {
-        const deviceInfoRows: Array<{ label: TranslationKey; value: unknown; copyable?: boolean }> = [
-          { label: "settings.general.desktopDeviceId", value: desktopDeviceInfo?.deviceId, copyable: true }
-        ];
+        const deviceIdDisplayValue = formatDebugValue(
+          desktopDeviceInfo?.deviceId,
+          desktopDeviceInfoLoading ? t("common.loading") : t("settings.debug.empty")
+        );
+        const copyDeviceIdLabel = deviceIdCopied ? t("settings.general.deviceIdCopied") : t("settings.general.copyDeviceId");
         return (
           <div className="settings-appearance-panel" aria-label={t("settings.general.panelAria")}>
             <form className="settings-control-form settings-device-form" onSubmit={(event) => void handleSaveGeneralDeviceName(event)}>
-              <div className="settings-device-name-row">
-                <label className="settings-control-field">
-                  <span>{t("settings.general.desktopDeviceName")}</span>
+              <div className="settings-control-row">
+                <span className="settings-control-row-label">{t("settings.general.desktopDeviceName")}</span>
+                <div className="settings-control-row-inline">
                   <Input
+                    className="settings-control-row-control"
                     value={generalDeviceNameDraft}
                     onChange={(event) => setGeneralDeviceNameDraft(event.target.value)}
                     placeholder={desktopDeviceInfo?.deviceName || t("settings.general.deviceNameFallback")}
                     disabled={generalSettingsSaving}
+                    aria-label={t("settings.general.desktopDeviceName")}
                   />
-                </label>
-                <Button type="primary" htmlType="submit" disabled={generalSettingsSaving} loading={generalSettingsSaving}>
-                  {generalSettingsSaving ? t("settings.general.savingDeviceName") : t("settings.general.saveDeviceName")}
-                </Button>
+                  <Button type="primary" htmlType="submit" disabled={generalSettingsSaving} loading={generalSettingsSaving}>
+                    {t("common.save")}
+                  </Button>
+                </div>
               </div>
-              <dl className="settings-device-info-list" aria-label={t("settings.general.desktopInfoReadonly")}>
-                {deviceInfoRows.map((row) => {
-                  const displayValue = formatDebugValue(row.value, desktopDeviceInfoLoading ? t("common.loading") : t("settings.debug.empty"));
-                  const copyLabel = deviceIdCopied ? t("settings.general.deviceIdCopied") : t("settings.general.copyDeviceId");
-                  return (
-                    <div key={row.label}>
-                      <dt>{t(row.label)}</dt>
-                      <dd className={row.copyable ? "settings-device-info-value is-copyable" : "settings-device-info-value"}>
-                        <span>{displayValue}</span>
-                        {row.copyable ? (
-                          <Tooltip title={copyLabel}>
-                            <span className="settings-device-copy-button-wrap">
-                              <Button
-                                type="text"
-                                size="small"
-                                className="settings-device-copy-button"
-                                aria-label={copyLabel}
-                                icon={deviceIdCopied ? <CheckOutlined /> : <CopyOutlined />}
-                                disabled={!desktopDeviceInfo?.deviceId || desktopDeviceInfoLoading}
-                                onClick={() => void handleCopyGeneralDeviceId()}
-                              />
-                            </span>
-                          </Tooltip>
-                        ) : null}
-                      </dd>
-                    </div>
-                  );
-                })}
-              </dl>
+              <div className="settings-control-row">
+                <span className="settings-control-row-label">{t("settings.general.desktopDeviceId")}</span>
+                <div className="settings-control-row-readonly">
+                  <span>{deviceIdDisplayValue}</span>
+                  <Tooltip title={copyDeviceIdLabel}>
+                    <span className="settings-device-copy-button-wrap">
+                      <Button
+                        type="text"
+                        size="small"
+                        className="settings-device-copy-button"
+                        aria-label={copyDeviceIdLabel}
+                        icon={deviceIdCopied ? <CheckOutlined /> : <CopyOutlined />}
+                        disabled={!desktopDeviceInfo?.deviceId || desktopDeviceInfoLoading}
+                        onClick={() => void handleCopyGeneralDeviceId()}
+                      />
+                    </span>
+                  </Tooltip>
+                </div>
+              </div>
             </form>
             <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
@@ -4247,36 +4177,15 @@ export function SettingsPage({
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
             <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
-              <label className="settings-control-field">
-                <span>{t("kanban.cloud.serverUrl")}</span>
+              <label className="settings-control-row">
+                <span className="settings-control-row-label">{t("kanban.cloud.serverUrl")}</span>
                 <Input
+                  className="settings-control-row-control"
                   value={controlCloudConfig.serverUrl}
                   onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
                   placeholder="http://127.0.0.1:8080"
                   disabled={controlConfigSaving}
                 />
-              </label>
-              <label className="settings-control-field">
-                <span>{t("kanban.cloud.projectId")}</span>
-                <small>{controlProjectOptions.length > 0
-                  ? t("kanban.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                  : t("kanban.cloud.projectFallbackHelp")}</small>
-                {controlProjectOptions.length > 0 ? (
-                  <Select
-                    classNames={SETTINGS_SELECT_CLASS_NAMES}
-                    value={controlCloudConfig.selectedProjectId}
-                    options={controlProjectSelectOptions}
-                    disabled={controlConfigSaving}
-                    onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
-                  />
-                ) : (
-                  <Input
-                    value={controlCloudConfig.selectedProjectId}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                    placeholder="default"
-                    disabled={controlConfigSaving}
-                  />
-                )}
               </label>
               <div className="settings-control-readonly-row">
                 <span>{t("settings.control.statusTitle")}</span>
@@ -4299,9 +4208,10 @@ export function SettingsPage({
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.market.panelAria")}>
             <form className="settings-control-form" onSubmit={(event) => void handleSaveMarketSettings(event)}>
-              <label className="settings-control-field">
-                <span>{t("settings.market.apiBaseUrl")}</span>
+              <label className="settings-control-row">
+                <span className="settings-control-row-label">{t("settings.market.apiBaseUrl")}</span>
                 <Input
+                  className="settings-control-row-control"
                   value={marketSettings.apiBaseUrl}
                   onChange={(event) => setMarketSettings((current) => ({ ...current, apiBaseUrl: event.target.value }))}
                   placeholder={t("settings.market.apiBaseUrlPlaceholder")}
@@ -4334,20 +4244,16 @@ export function SettingsPage({
           <div className="settings-control-config-stack">
             <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
               <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
-                <label className="settings-control-field">
-                  <span>{t("settings.tunnelHub.relayUrl")}</span>
+                <label className="settings-control-row">
+                  <span className="settings-control-row-label">{t("settings.tunnelHub.relayUrl")}</span>
                   <Input
+                    className="settings-control-row-control"
                     value={tunnelHubSettings.relayUrl}
                     onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
                     placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
                     disabled={tunnelHubSaving}
                   />
                 </label>
-                {tunnelHubSsoStatus && !tunnelHubSsoStatus.authenticated ? (
-                  <div className="settings-control-field settings-readonly-stack">
-                    <small>{t("settings.tunnelHub.loginRequired")}</small>
-                  </div>
-                ) : null}
                 {tunnelHubSettings.publicHost ? (
                   <div className="settings-control-field settings-readonly-stack">
                     <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
@@ -4463,11 +4369,11 @@ export function SettingsPage({
           const showUnavailableAgentOption = Boolean(selectedCopilotAgentKey && !selectedAgentAvailable);
           const assistantSelectValue = fixedAssistantLabel ? "__fixed__" : selectedCopilotAgentKey;
           return (
-            <div className="navigation-order-row navigation-order-row-fixed settings-item-row" role="listitem" key={tool.id}>
-              <div className="navigation-order-title-cell navigation-order-title-cell-fixed" title={t("settings.navigation.fixedEntry")}>
+            <div className="settings-control-row navigation-order-row navigation-order-row-fixed settings-item-row" role="listitem" key={tool.id}>
+              <div className="settings-control-row-label navigation-order-title-cell navigation-order-title-cell-fixed">
                 <span className="navigation-order-title">{toolLabel}</span>
               </div>
-              <label className="navigation-order-assistant-field">
+              <div className="settings-control-row-select navigation-order-assistant-field">
                 <span className="desktop-pet-agent-select-wrap">
                   <Select
                     classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -4496,21 +4402,15 @@ export function SettingsPage({
                     ]}
                   />
                 </span>
-              </label>
-              <div className="navigation-order-fixed-label">{t("settings.navigation.fixed")}</div>
+              </div>
             </div>
           );
         }
-          return (
+        return (
             <div className="settings-item-card navigation-settings-card" aria-label={t("settings.navigation.panelAria")}>
-              <div className="settings-item-section-head website-list-head navigation-assistant-default-head">
-                <div>
-                  <strong>{t("settings.navigation.defaultAssistant")}</strong>
-                  <span>{t("settings.navigation.defaultAssistantDescription")}</span>
-                </div>
-              </div>
-              <div className="settings-item-form navigation-assistant-default">
-                <span className="desktop-pet-agent-select-wrap navigation-assistant-default-select">
+              <div className="settings-control-row navigation-assistant-default">
+                <span className="settings-control-row-label">{t("settings.navigation.defaultAssistant")}</span>
+                <span className="settings-control-row-select desktop-pet-agent-select-wrap navigation-assistant-default-select">
                   <Select
                     classNames={SETTINGS_SELECT_CLASS_NAMES}
                     style={{ width: "100%" }}
@@ -4534,11 +4434,10 @@ export function SettingsPage({
               <div className="settings-item-section-head website-list-head">
                 <div>
                   <strong>{t("settings.navigation.fixedMain")}</strong>
-                  <span>{t("settings.navigation.fixedMainDescription")}</span>
                 </div>
               </div>
               <div className="settings-item-list navigation-order-list" role="list" aria-label={t("settings.navigation.fixedMainOrder")}>
-                {navigationSettingsOrder.map((itemKey, index) => {
+                {navigationSettingsOrder.map((itemKey) => {
                     const itemLabel = sidebarNavOrderLabels.get(itemKey) ?? itemKey;
                     const copilotPageKey = getCopilotPageKeyForSidebarNavOrderItem(itemKey);
                     const copilotPreference = copilotPageKey
@@ -4561,18 +4460,18 @@ export function SettingsPage({
                     );
                     return (
                       <div
-                        className="settings-item-row navigation-order-row"
+                        className="settings-control-row settings-item-row navigation-order-row"
                         data-sidebar-nav-order-key={itemKey}
                         key={itemKey}
                         role="listitem"
                       >
                         <div
-                          className="navigation-order-title-cell"
-                          title={t("settings.navigation.itemTitle", { index: index + 1 })}
+                          className="settings-control-row-label navigation-order-title-cell"
+                          title={itemLabel}
                         >
                           <span className="navigation-order-title">{itemLabel}</span>
                         </div>
-                        <label className="navigation-order-assistant-field">
+                        <div className="settings-control-row-select navigation-order-assistant-field">
                           <span className="desktop-pet-agent-select-wrap">
                             <Select
                               classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -4601,9 +4500,6 @@ export function SettingsPage({
                               ]}
                             />
                           </span>
-                        </label>
-                        <div className="navigation-order-actions">
-                          <span className="navigation-order-fixed-label">{t("settings.navigation.itemIndex", { index: index + 1 })}</span>
                         </div>
                       </div>
                     );
@@ -4612,7 +4508,6 @@ export function SettingsPage({
               <div className="settings-item-section-head website-list-head navigation-fixed-tools-head">
                 <div>
                   <strong>{t("settings.navigation.fixedTools")}</strong>
-                  <span>{t("settings.navigation.fixedToolsDescription")}</span>
                 </div>
               </div>
               <div className="settings-item-list navigation-order-list navigation-fixed-tool-list" role="list" aria-label={t("settings.navigation.fixedTools")}>

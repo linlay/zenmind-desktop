@@ -67,14 +67,12 @@ test("Kanban websocket config requires remote control and sso site token", (t) =
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
-    serverUrl: "http://127.0.0.1:8080",
-    selectedProjectId: "project-a"
+    serverUrl: "http://127.0.0.1:8080"
   });
   assert.equal(readKanbanWsConfig(app), null);
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
-    selectedProjectId: "project-a",
     remoteControlEnabled: true
   });
   assert.equal(readKanbanWsConfig(app), null);
@@ -83,7 +81,7 @@ test("Kanban websocket config requires remote control and sso site token", (t) =
   assert.deepEqual(readKanbanWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
     token,
-    selectedProjectId: "project-a"
+    selectedProjectId: "default"
   });
 
   process.env.DESKTOP_KANBAN_TOKEN = "env-token";
@@ -93,7 +91,7 @@ test("Kanban websocket config requires remote control and sso site token", (t) =
   assert.deepEqual(readKanbanWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
     token: "env-token",
-    selectedProjectId: "project-a"
+    selectedProjectId: "default"
   });
 });
 
@@ -135,6 +133,7 @@ test("Kanban server URL preserves explicit disabled setting", (t) => {
   const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", "kanban.json");
   const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(migrated.enabled, false);
+  assert.equal("selectedProjectId" in migrated.cloud, false);
 });
 
 test("Kanban settings read and save enabled plus cloud config", (t) => {
@@ -156,7 +155,6 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
     assert.deepEqual(initial.settings.cloud, {
       serverUrl: "",
       token: "",
-      selectedProjectId: "default",
       remoteControlEnabled: false,
       deviceAlias: ""
     });
@@ -165,7 +163,6 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
       enabled: true,
       cloud: {
         serverUrl: "http://127.0.0.1:3000",
-        selectedProjectId: "project-a",
         remoteControlEnabled: true,
         deviceAlias: "桌面 A"
       }
@@ -180,7 +177,6 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
       cloud: {
         serverUrl: "http://127.0.0.1:3000",
         token: "secret",
-        selectedProjectId: "project-a",
         remoteControlEnabled: true,
         deviceAlias: "桌面 A"
       }
@@ -276,7 +272,6 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -414,7 +409,6 @@ test("Kanban runtime applies paged issue event pulls and tombstones deleted issu
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -565,7 +559,6 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -706,7 +699,6 @@ test("Kanban runtime applies command.runIssue delivery, appends run event, then 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -855,7 +847,6 @@ test("Kanban runtime stores cloud dispatch issue without auto-starting", async (
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -984,7 +975,6 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "旧设备名"
   });
@@ -1003,7 +993,6 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true,
     deviceAlias: "牛家林"
   });
@@ -1093,7 +1082,6 @@ test("Kanban runtime ACKs slow remote startRun before bridge resolves", async (t
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true
   });
 
@@ -1226,7 +1214,6 @@ test("Kanban runtime falls back to local agents for remote listAgents", async (t
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true
   });
 
@@ -1318,7 +1305,6 @@ test("Kanban runtime lists installed agents when platform listAgents times out",
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
     token: "secret",
-    selectedProjectId: "project-1",
     remoteControlEnabled: true
   });
 

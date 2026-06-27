@@ -96,7 +96,6 @@ type KanbanDesktopConfigFile = {
   cloud?: unknown;
   serverUrl?: unknown;
   token?: unknown;
-  selectedProjectId?: unknown;
   remoteControlEnabled?: unknown;
   deviceAlias?: unknown;
 };
@@ -202,7 +201,6 @@ function normalizeKanbanCloudConfig(input: KanbanDesktopConfigFile): KanbanCloud
   return {
     serverUrl: readText(input.serverUrl),
     token: readText(input.token),
-    selectedProjectId: readText(input.selectedProjectId) || DEFAULT_SELECTED_PROJECT_ID,
     remoteControlEnabled: readBoolean(input.remoteControlEnabled),
     deviceAlias: readText(input.deviceAlias)
   };
@@ -211,9 +209,18 @@ function normalizeKanbanCloudConfig(input: KanbanDesktopConfigFile): KanbanCloud
 function hasKanbanCloudFields(input: KanbanDesktopConfigFile) {
   return "serverUrl" in input ||
     "token" in input ||
-    "selectedProjectId" in input ||
     "remoteControlEnabled" in input ||
     "deviceAlias" in input;
+}
+
+function hasLegacyKanbanSelectedProjectId(input: unknown) {
+  const owner = readKanbanOwnerConfig(input);
+  const cloudInput = isRecord(owner.cloud)
+    ? owner.cloud
+    : isRecord(owner.kanban)
+      ? owner.kanban
+      : owner;
+  return isRecord(cloudInput) && "selectedProjectId" in cloudInput;
 }
 
 function normalizeKanbanSettings(
@@ -259,7 +266,7 @@ export function readKanbanSettings(app: App): KanbanSettings {
     const raw = readJsonConfigFile(configPath);
     const parsed = readKanbanOwnerConfig(raw);
     const settings = normalizeKanbanSettings(parsed);
-    if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled) {
+    if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled || hasLegacyKanbanSelectedProjectId(raw)) {
       writeKanbanSettings(app, settings);
     }
     return settings;
@@ -286,7 +293,6 @@ export function readKanbanWsConfig(app: App): KanbanDesktopWsConfig | null {
     serverUrl,
     token,
     selectedProjectId: readText(process.env.DESKTOP_KANBAN_PROJECT_ID) ||
-      readText(config.selectedProjectId) ||
       DEFAULT_SELECTED_PROJECT_ID
   };
 }
@@ -591,8 +597,7 @@ export class KanbanRuntime {
 
   async listSyncLocalProjects(): Promise<KanbanDesktopSyncLocalProject[]> {
     const deviceId = getDesktopDeviceId(this.options.app);
-    const config = readKanbanCloudConfig(this.options.app);
-    const selectedProjectId = readText(config.selectedProjectId) || DEFAULT_SELECTED_PROJECT_ID;
+    const selectedProjectId = readText(process.env.DESKTOP_KANBAN_PROJECT_ID) || DEFAULT_SELECTED_PROJECT_ID;
     const result = this.listIssues();
     const bindings = (result.projectBindings ?? []).filter((binding) =>
       binding.deviceId === deviceId &&
@@ -923,7 +928,7 @@ export class KanbanRuntime {
 
     if (delivery.kind === "snapshot_reset") {
       const snapshot = await this.wsClient.request<KanbanCloudSnapshot>("snapshot.get", {
-        projectId: delivery.projectId || readKanbanCloudConfig(this.options.app).selectedProjectId || DEFAULT_SELECTED_PROJECT_ID,
+        projectId: delivery.projectId || DEFAULT_SELECTED_PROJECT_ID,
         deviceId: getDesktopDeviceId(this.options.app)
       });
       this.applySnapshot(snapshot);
@@ -996,7 +1001,7 @@ export class KanbanRuntime {
       deviceId,
       clientEventId: stableClientEventId(deviceId, input.clientEventParts),
       sourceDeliverySeq: input.sourceDeliverySeq ?? 0,
-      projectId: readText(input.projectId) || readKanbanCloudConfig(this.options.app).selectedProjectId || DEFAULT_SELECTED_PROJECT_ID,
+      projectId: readText(input.projectId) || DEFAULT_SELECTED_PROJECT_ID,
       issueId,
       runId: readText(input.runId) || undefined,
       chatId: readText(input.chatId) || undefined,

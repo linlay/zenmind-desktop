@@ -187,7 +187,6 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.deepEqual(kanban.cloud, {
     serverUrl: "https://kanban.example.test",
     token: "",
-    selectedProjectId: "default",
     remoteControlEnabled: false,
     deviceAlias: ""
   });
@@ -516,6 +515,7 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.equal(assistantConfig.bootstrapAgentKey, "bootstrap");
   assert.equal(kanban.enabled, false);
   assert.equal(kanban.cloud.serverUrl, "https://kanban.example.test");
+  assert.equal("selectedProjectId" in kanban.cloud, false);
   assert.equal(pet.enabled, false);
   assert.equal(pet.selectedPetId, DEFAULT_DESKTOP_PET_SELECTED_ID);
   assert.equal(market.enabled, true);

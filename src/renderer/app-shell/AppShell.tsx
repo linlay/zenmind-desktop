@@ -1873,7 +1873,6 @@ export function AppShell() {
       "pet.enabled",
       "pet.boundAgentKey",
       "pet.appearanceId",
-      "kanban.selectedProjectId",
       "web.websites.add",
       "web.websites.update",
       "web.websites.remove"
@@ -1900,7 +1899,7 @@ export function AppShell() {
       ["quick", new Set(["enabled", "agentKey"])],
       ["copilot", new Set(["desktopCopilotPages"])],
       ["pet", new Set(["enabled", "boundAgentKey", "appearanceId"])],
-      ["kanban", new Set(["selectedProjectId", "remoteControlEnabled", "deviceAlias"])],
+      ["kanban", new Set(["remoteControlEnabled", "deviceAlias"])],
       ["market", new Set(["enabled", "apiBaseUrl"])],
       ["control", new Set(["*"])],
       ["web", new Set(["websites"])],
@@ -1931,7 +1930,6 @@ export function AppShell() {
       const token = readString(cloud.token);
       return {
         serverUrl: readString(cloud.serverUrl),
-        selectedProjectId: readString(cloud.selectedProjectId),
         remoteControlEnabled: cloud.remoteControlEnabled === true,
         deviceAlias: readString(cloud.deviceAlias),
         hasToken: Boolean(token),
@@ -2110,7 +2108,6 @@ export function AppShell() {
                 cloud: sanitizeKanbanCloudConfig(asRecord(settingsResult.settings.cloud)),
                 connectionState: settingsResult.connectionState ?? issueResult.connectionState ?? "disabled",
                 projects: issueResult.projects ?? [],
-                selectedProjectId: settingsResult.settings.cloud.selectedProjectId,
                 remoteControlEnabled: settingsResult.settings.cloud.remoteControlEnabled,
                 deviceAlias: settingsResult.settings.cloud.deviceAlias ?? ""
               };
@@ -2286,15 +2283,6 @@ export function AppShell() {
       }
 
       const kanbanPatch = validateObjectSection("kanban");
-      if (hasOwn(kanbanPatch, "selectedProjectId")) {
-        const projectId = readString(kanbanPatch.selectedProjectId);
-        const projects = state.kanbanList.projects ?? [];
-        if (typeof kanbanPatch.selectedProjectId !== "string") {
-          addIssue("kanban.selectedProjectId", "kanban.selectedProjectId must be a string.", kanbanPatch.selectedProjectId);
-        } else if (projectId && projects.length > 0 && !projects.some((project) => project.id === projectId)) {
-          addIssue("kanban.selectedProjectId", "kanban.selectedProjectId was not found.", kanbanPatch.selectedProjectId);
-        }
-      }
       for (const readonlyField of ["remoteControlEnabled", "deviceAlias"]) {
         if (hasOwn(kanbanPatch, readonlyField)) {
           addIssue(`kanban.${readonlyField}`, `kanban.${readonlyField} is read-only.`, kanbanPatch[readonlyField]);
@@ -2408,14 +2396,6 @@ export function AppShell() {
           changes.push({ section: "pet", field, from: state.desktopPet[field as keyof typeof state.desktopPet], to: petPatch[field] });
         }
       }
-      if (hasOwn(kanbanPatch, "selectedProjectId")) {
-        changes.push({
-          section: "kanban",
-          field: "selectedProjectId",
-          from: state.kanbanSettings.settings.cloud.selectedProjectId,
-          to: kanbanPatch.selectedProjectId
-        });
-      }
       for (const item of websiteOperations.add) {
         changes.push({ section: "web", field: "websites.add", from: null, to: item });
       }
@@ -2494,14 +2474,6 @@ export function AppShell() {
           ...(typeof petPatch.appearanceId === "string" ? { appearanceId: petPatch.appearanceId.trim() } : {})
         });
         affectedSections.add("pet");
-      }
-      if (typeof kanbanPatch.selectedProjectId === "string") {
-        await window.electronAPI.kanban.saveSettings({
-          cloud: {
-            selectedProjectId: kanbanPatch.selectedProjectId.trim()
-          }
-        });
-        affectedSections.add("kanban");
       }
       for (const item of websiteOperations.add) {
         const result = await window.electronAPI.webs.websites.add({
