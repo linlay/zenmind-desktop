@@ -17,6 +17,11 @@ const {
   readWebappItems
 } = require("../dist-electron/main/webs/webapps/store.js");
 const {
+  listWebappItems,
+  removeWebappItem,
+  updateWebappItem
+} = require("../dist-electron/main/webs/webapps/actions.js");
+const {
   readWebItems
 } = require("../dist-electron/main/webs/store.js");
 const {
@@ -32,11 +37,20 @@ const {
   installBundledWebappTemplates
 } = require("../dist-electron/main/webs/webapps/template-installer.js");
 const {
+  readInstalledRecords,
+  upsertInstalledRecord
+} = require("../dist-electron/main/marketplace/common.js");
+const {
+  registerPlugin,
+  __testInternals: registryInternals
+} = require("../dist-electron/main/services/service-registry.js");
+const {
   createResourceDirectoryWatcher
 } = require("../dist-electron/main/resource-directory-watcher.js");
 const {
   getDesktopPetsDataRoot,
-  getPluginsRoot
+  getPluginsRoot,
+  getServiceStateRoot
 } = require("../dist-electron/main/user-paths.js");
 
 function createApp(homePath, appPath = process.cwd()) {
@@ -64,6 +78,10 @@ function websitesRoot(homePath) {
 
 function webappsRoot(homePath) {
   return path.join(desktopRoot(homePath), "data", "webs", "webapps");
+}
+
+function webappManifestPath(homePath, id) {
+  return path.join(webappsRoot(homePath), id, "webapp.json");
 }
 
 function writeJson(filePath, value) {
@@ -120,6 +138,7 @@ server.listen(port, host);
     id,
     kind: "webapp",
     label: options.label ?? "Local Demo",
+    agentKey: options.agentKey,
     frontend: {
       root: options.frontendRoot ?? "frontend",
       index: options.frontendIndex ?? "index.html",
@@ -138,6 +157,36 @@ server.listen(port, host);
     updatedAt: options.updatedAt ?? "2026-01-02T00:00:00.000Z"
   });
   return appDir;
+}
+
+function registerPluginWebappOwner(app, pluginId, webappId, name = "Owner Plugin") {
+  registerPlugin({
+    pluginApiVersion: 1,
+    id: pluginId,
+    name,
+    version: "v1",
+    description: "webapp owner",
+    lifecycle: {
+      start: "start.sh",
+      stop: "stop.sh"
+    },
+    runtime: {
+      requiredPaths: ["manifest.json"]
+    },
+    resources: {
+      webapps: [{
+        id: webappId,
+        source: "webapps/demo"
+      }]
+    }
+  });
+  writeJson(path.join(getServiceStateRoot(app, pluginId, "plugin"), "plugin-resources.json"), {
+    webapps: {
+      [webappId]: {
+        updatedAt: "2026-01-02T00:00:00.000Z"
+      }
+    }
+  });
 }
 
 function readUrl(target) {
@@ -279,6 +328,131 @@ test("webapp store rejects unsafe manifests", (t) => {
   assert.equal(items.some((item) => item.id === "bad-entry"), false);
   assert.equal(items.some((item) => item.id === "bad-frontend"), false);
   assert.equal(warnings.length, 3);
+});
+
+test("webapp items include source management metadata", (t) => {
+  registryInternals.clearServices();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapps-metadata-"));
+  t.after(() => {
+    registryInternals.clearServices();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+
+  const localDir = writeWebapp(webappsRoot(homePath), "local-demo", { label: "Local Demo" });
+  const marketDir = writeWebapp(webappsRoot(homePath), "market-demo", { label: "Market Demo" });
+  const pluginDir = writeWebapp(webappsRoot(homePath), "plugin-demo", { label: "Plugin Demo" });
+  const bundledDir = writeWebapp(webappsRoot(homePath), "demo-node-html", { label: "Bundled Demo" });
+
+  upsertInstalledRecord(app, {
+    id: "market-demo",
+    type: "website-app",
+    version: "1.0.0",
+    source: "cloud",
+    installPath: marketDir,
+    installedAt: "2026-01-02T00:00:00.000Z"
+  });
+  registerPluginWebappOwner(app, "owner-plugin", "plugin-demo", "Owner Plugin");
+
+  const items = listWebappItems(app).items;
+  const byId = Object.fromEntries(items.map((item) => [item.id, item]));
+
+  assert.equal(byId["local-demo"].sourceKind, "local");
+  assert.equal(byId["local-demo"].sourceLabel, "Local");
+  assert.equal(byId["local-demo"].installPath, localDir);
+  assert.equal(byId["local-demo"].removable, true);
+
+  assert.equal(byId["market-demo"].sourceKind, "market");
+  assert.equal(byId["market-demo"].sourceLabel, "Market");
+  assert.equal(byId["market-demo"].installPath, marketDir);
+  assert.equal(byId["market-demo"].removable, true);
+
+  assert.equal(byId["plugin-demo"].sourceKind, "plugin");
+  assert.equal(byId["plugin-demo"].sourceLabel, "Owner Plugin");
+  assert.equal(byId["plugin-demo"].sourceOwnerId, "owner-plugin");
+  assert.equal(byId["plugin-demo"].installPath, pluginDir);
+  assert.equal(byId["plugin-demo"].removable, false);
+
+  assert.equal(byId["demo-node-html"].sourceKind, "bundled");
+  assert.equal(byId["demo-node-html"].sourceLabel, "Bundled demo");
+  assert.equal(byId["demo-node-html"].installPath, bundledDir);
+  assert.equal(byId["demo-node-html"].removable, false);
+});
+
+test("webapps update rewrites preferences and preserves manifest runtime fields", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapps-update-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+
+  writeWebapp(webappsRoot(homePath), "prefs-demo", { label: "Before", agentKey: "old-agent" });
+  const before = JSON.parse(fs.readFileSync(webappManifestPath(homePath, "prefs-demo"), "utf8"));
+
+  const result = updateWebappItem(app, "prefs-demo", {
+    label: "After",
+    agentKey: "desktopAssistant"
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.item.label, "After");
+  assert.equal(result.item.agentKey, "desktopAssistant");
+
+  const after = JSON.parse(fs.readFileSync(webappManifestPath(homePath, "prefs-demo"), "utf8"));
+  assert.equal(after.label, "After");
+  assert.equal(after.agentKey, "desktopAssistant");
+  assert.notEqual(after.updatedAt, before.updatedAt);
+  assert.deepEqual(after.frontend, before.frontend);
+  assert.deepEqual(after.backend, before.backend);
+
+  const cleared = updateWebappItem(app, "prefs-demo", { agentKey: "" });
+  assert.equal(cleared.ok, true);
+  const clearedManifest = JSON.parse(fs.readFileSync(webappManifestPath(homePath, "prefs-demo"), "utf8"));
+  assert.equal(Object.hasOwn(clearedManifest, "agentKey"), false);
+  assert.deepEqual(clearedManifest.frontend, before.frontend);
+  assert.deepEqual(clearedManifest.backend, before.backend);
+});
+
+test("webapps remove deletes removable installs and rejects managed sources", async (t) => {
+  registryInternals.clearServices();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapps-remove-"));
+  t.after(async () => {
+    registryInternals.clearServices();
+    await webappRuntime.stopAll(createApp(path.join(root, "home")));
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+
+  const localDir = writeWebapp(webappsRoot(homePath), "local-remove", { label: "Local Remove" });
+  const marketDir = writeWebapp(webappsRoot(homePath), "market-remove", { label: "Market Remove" });
+  const pluginDir = writeWebapp(webappsRoot(homePath), "plugin-managed", { label: "Plugin Managed" });
+  const bundledDir = writeWebapp(webappsRoot(homePath), "demo-node-html", { label: "Bundled Demo" });
+  upsertInstalledRecord(app, {
+    id: "market-remove",
+    type: "website-app",
+    version: "1.0.0",
+    source: "cloud",
+    installPath: marketDir,
+    installedAt: "2026-01-02T00:00:00.000Z"
+  });
+  registerPluginWebappOwner(app, "managed-plugin", "plugin-managed", "Managed Plugin");
+
+  const localResult = await removeWebappItem(app, "local-remove");
+  assert.equal(localResult.ok, true);
+  assert.equal(fs.existsSync(localDir), false);
+
+  const marketResult = await removeWebappItem(app, "market-remove");
+  assert.equal(marketResult.ok, true);
+  assert.equal(fs.existsSync(marketDir), false);
+  assert.equal(readInstalledRecords(app).some((record) => record.id === "market-remove" && record.type === "website-app"), false);
+
+  const pluginResult = await removeWebappItem(app, "plugin-managed");
+  assert.equal(pluginResult.ok, false);
+  assert.equal(fs.existsSync(pluginDir), true);
+
+  const bundledResult = await removeWebappItem(app, "demo-node-html");
+  assert.equal(bundledResult.ok, false);
+  assert.equal(fs.existsSync(bundledDir), true);
 });
 
 test("resource directory watcher debounces and refreshes web, pet, and plugin domains", (t) => {

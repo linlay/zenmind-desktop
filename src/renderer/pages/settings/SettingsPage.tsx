@@ -94,7 +94,7 @@ type SettingsPageProps = {
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   webItems: WebEntry[];
-  onWebItemsRefresh: () => void | Promise<void>;
+  onWebItemsRefresh: () => void | Promise<unknown>;
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   debugVisible: boolean;

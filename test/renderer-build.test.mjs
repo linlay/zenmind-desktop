@@ -320,7 +320,7 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /group\.key === "plugins"[\s\S]*?className="service-catalog-import"/);
   assert.match(controlCenter, /services\.filter\(\(service\) => service\.kind === "plugin"\)/);
   assert.doesNotMatch(controlCenter, /controlCenter\.group\.market/);
-  assert.match(settingsPageSections, /id:\s*"tunnelHub"[\s\S]*?id:\s*"plugins"[\s\S]*?id:\s*"websites"/);
+  assert.match(settingsPageSections, /id:\s*"tunnelHub"[\s\S]*?id:\s*"plugins"[\s\S]*?id:\s*"websites"[\s\S]*?id:\s*"webapps"/);
   assert.doesNotMatch(controlCenter, /service-catalog-foot/);
   assert.doesNotMatch(controlCenter, /useState<ServiceGroupKey \| null>\(\s*"market",?\s*\)/);
   assert.match(controlCenter, /function ConfigTerminalIcon\(\)/);
@@ -1478,7 +1478,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /group:\s*"personal"/);
   assert.match(settingsSections, /group:\s*"integrations"/);
   assert.match(settingsSections, /group:\s*"system"/);
-  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"control"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"market"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"tunnelHub"[\s\S]*?group:\s*"integrations"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"control"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"market"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"tunnelHub"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"plugins"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"websites"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"webapps"[\s\S]*?group:\s*"integrations"/);
   assert.match(settingsSections, /id:\s*"usage"[\s\S]*?label:\s*"usage"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"control"[\s\S]*?label:\s*"control"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
@@ -1489,6 +1489,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"assistant"[\s\S]*?label:\s*"assistant"[\s\S]*?layout:\s*"measure"/);
   assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
   assert.match(settingsSections, /id:\s*"websites"[\s\S]*?label:\s*"websites"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"webapps"[\s\S]*?label:\s*"webapps"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsPage, /case "about"[\s\S]*?isWindows=\{isWindows\}/);
   assert.match(settingsPage, /AboutAppCard[\s\S]*?isWindows && <WindowsDataRootCard/);
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?visible:\s*true[\s\S]*?id:\s*"debug"[\s\S]*?visible:\s*debugVisible/);
@@ -1636,7 +1637,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.doesNotMatch(settingsPage, /settings-directory-nav/);
   assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
   assert.match(settingsStyles, /\.settings-content-panel/);
-  assert.match(settingsStyles, /\.settings-page-single\[data-settings-section="control"\],[\s\S]*?\.settings-page-single\[data-settings-section="plugins"\]\s*\{[\s\S]*?padding-top:\s*0;/);
+  assert.match(settingsStyles, /\.settings-page-single\[data-settings-section="control"\],[\s\S]*?\.settings-page-single\[data-settings-section="plugins"\],[\s\S]*?\.settings-page-single\[data-settings-section="websites"\],[\s\S]*?\.settings-page-single\[data-settings-section="webapps"\]\s*\{[\s\S]*?padding-top:\s*0;/);
   assert.match(settingsStyles, /\.settings-page \.usage-summary-strip\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/);
   assert.match(settingsStyles, /\.settings-page \.usage-heatmap-grid\s*\{[\s\S]*?grid-template-rows:\s*repeat\(7, 10px\);/);
   assert.match(sidebarSource, /settings\.group\.personal/);
@@ -1880,17 +1881,23 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /document\.addEventListener\("pointermove"/);
   assert.doesNotMatch(settingsPage, /navigation-order-drag-handle/);
   assert.match(settingsPageSections, /settings\.websites\.label/);
-  assert.match(settingsPage, /settings\.websites\.linkedAgentFor/);
-  assert.match(settingsPage, /handleUpdateWebsiteAgent/);
-  assert.match(settingsPage, /editingWebsiteId/);
-  assert.match(settingsPage, /handleStartEditWebsiteItem/);
-  assert.match(settingsPage, /handleUpdateWebsiteItem/);
+  assert.match(settingsPageSections, /settings\.webapps\.label/);
+  assert.match(settingsPage, /case "websites"[\s\S]*web-settings-shell[\s\S]*service-catalog web-settings-catalog[\s\S]*web-detail-form/);
+  assert.match(settingsPage, /case "webapps"[\s\S]*web-settings-shell[\s\S]*service-catalog web-settings-catalog[\s\S]*web-detail-form/);
+  assert.match(settingsPage, /const websiteItems = useMemo\([\s\S]*?webItems\.filter\(isWebsiteEntry\)/);
+  assert.match(settingsPage, /const webappItems = useMemo\([\s\S]*?webItems\.filter\(isWebappEntry\)/);
+  assert.match(settingsPage, /handleSaveWebsiteItem/);
+  assert.match(settingsPage, /handleSaveWebappItem/);
   assert.match(settingsPage, /label:\s*websiteLabel/);
   assert.match(settingsPage, /url:\s*websiteUrl/);
-  assert.match(settingsPage, /settings\.websites\.edit/);
+  assert.match(settingsPage, /settings\.websites\.agentEnhancement/);
   assert.match(settingsPage, /settings\.websites\.save/);
-  assert.match(settingsPage, /settings\.websites\.cancel/);
   assert.match(settingsPage, /window\.electronAPI\.webs\.websites\.update/);
+  assert.match(settingsPage, /window\.electronAPI\.webs\.webapps\.update/);
+  assert.match(settingsPage, /window\.electronAPI\.webs\.webapps\.remove/);
+  assert.match(settingsPage, /settings\.webapps\.runtimeTitle/);
+  assert.match(settingsPage, /settings\.webapps\.manifestTitle/);
+  assert.match(settingsPage, /settings\.webapps\.logsTitle/);
   assert.doesNotMatch(settingsPage, /自定义侧边栏/);
   assert.doesNotMatch(settingsPage, /添加到侧边栏/);
   assert.doesNotMatch(settingsPage, /已添加的入口/);
@@ -1924,7 +1931,7 @@ test("settings page configures desktop helper default agent separately from desk
     /function renderSectionHeaderAction\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  function renderActiveSection/
   )?.groups?.body ?? "";
   assert.match(sectionHeaderActionBody, /case "kanban"[\s\S]*case "tunnelHub"/);
-  assert.match(settingsPage, /const shouldShowSettingsPageHead = activeSection !== "control" && activeSection !== "plugins";/);
+  assert.match(settingsPage, /const shouldShowSettingsPageHead =[\s\S]*?activeSection !== "control" &&[\s\S]*?activeSection !== "plugins" &&[\s\S]*?activeSection !== "websites" &&[\s\S]*?activeSection !== "webapps";/);
   assert.match(settingsPage, /\{shouldShowSettingsPageHead \? \(\s*<div className="settings-page-head">/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
@@ -1974,7 +1981,7 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?settings\.kanban\.label/);
   assert.match(sharedSettingsSections, /"tunnelHub"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
-  assert.match(settingsSections, /id:\s*"control"[\s\S]*id:\s*"kanban"[\s\S]*id:\s*"market"[\s\S]*id:\s*"tunnelHub"[\s\S]*id:\s*"websites"/);
+  assert.match(settingsSections, /id:\s*"control"[\s\S]*id:\s*"kanban"[\s\S]*id:\s*"market"[\s\S]*id:\s*"tunnelHub"[\s\S]*id:\s*"plugins"[\s\S]*id:\s*"websites"[\s\S]*id:\s*"webapps"/);
   assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*true/);
   assert.doesNotMatch(settingsRoutes, /kanban:\s*"control"/);
   assert.doesNotMatch(settingsRoutes, /tunnelHub:\s*"control"/);
@@ -3025,12 +3032,25 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   );
 
   assert.match(webContracts, /export interface WebappEntry/);
+  assert.match(webContracts, /export type WebappSourceKind = "market" \| "local" \| "plugin" \| "bundled"/);
+  assert.match(webContracts, /sourceKind\?: WebappSourceKind/);
+  assert.match(webContracts, /removable\?: boolean/);
+  assert.match(webContracts, /export interface WebappUpdateInput/);
   assert.match(contracts, /webs:\s*\{[\s\S]*list: \(\) => Promise<WebListResult>/);
+  assert.match(contracts, /webapps:\s*\{[\s\S]*list: \(\) => Promise<WebappItemsResult>/);
+  assert.match(contracts, /webapps:\s*\{[\s\S]*update: \(id: string, input: WebappUpdateInput\) => Promise<WebappResult>/);
+  assert.match(contracts, /webapps:\s*\{[\s\S]*remove: \(id: string\) => Promise<WebappDeleteResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*start: \(id: string\) => Promise<WebappCommandResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*stop: \(id: string\) => Promise<WebappCommandResult>/);
   assert.match(preload, /webs:\s*\{[\s\S]*list: \(\) => ipcRenderer\.invoke\("webs\.list"\)/);
+  assert.match(preload, /list: \(\) => ipcRenderer\.invoke\("webs\.webapps\.list"\)/);
+  assert.match(preload, /update: \(id: string, input\) => ipcRenderer\.invoke\("webs\.webapps\.update", id, input\)/);
+  assert.match(preload, /remove: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.remove", id\)/);
   assert.match(preload, /start: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.start", id\)/);
   assert.match(preload, /stop: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.stop", id\)/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.list"[\s\S]*listWebappItems\(app\)/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.update"[\s\S]*updateWebappItem\(app, id, input\)/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.remove"[\s\S]*removeWebappItem\(app, id\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.start"[\s\S]*webappRuntime\.start\(app, id\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.stop"[\s\S]*webappRuntime\.stop\(app, id\)/);
   assert.match(appShell, /window\.electronAPI\.webs\.list\(\)/);
@@ -5777,7 +5797,7 @@ test("help page uses settings-aligned layout shell", () => {
   assert.match(themeStyles, /--help-content-max:\s*960px;/);
 });
 
-test("embedded websites use compact rows and inline edit", () => {
+test("websites and webapps settings use split workspace detail panes", () => {
   const settingsPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),
     "utf8"
@@ -5789,19 +5809,30 @@ test("embedded websites use compact rows and inline edit", () => {
 
   assert.match(settingsPage, /settings\.websites\.addTitle/);
   assert.match(settingsPage, /settings\.websites\.addDescription/);
-  assert.match(settingsPage, /settings\.websites\.addedDescription/);
-  assert.match(settingsPage, /website-add-head/);
-  assert.match(settingsPage, /website-row-edit-form/);
-  assert.match(settingsPage, /!editingWebsiteId \?/);
-  assert.match(settingsPage, /itemEditing \? \([\s\S]*?website-row-edit-form/);
-  assert.doesNotMatch(settingsPage, /website-editing-note/);
-  assert.doesNotMatch(settingsPage, /settings\.websites\.agentEnhancement/);
-  assert.match(settingsPage, /settings\.websites\.linkedAgentFor/);
-  assert.match(settingsPageCss, /\.settings-page \.website-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(140px,\s*1fr\)\s+minmax\(180px,\s*240px\)\s+auto;/u);
-  assert.match(settingsPageCss, /\.settings-page \.website-form input,[\s\S]*?\.settings-page \.website-row-edit-form input\s*\{[\s\S]*?border-radius:\s*8px;/u);
-  assert.match(settingsPageCss, /\.settings-page \.website-row-edit-form input:focus\s*\{[\s\S]*?box-shadow:\s*var\(--control-focus-ring\);/u);
-  assert.match(settingsPageCss, /\.settings-page \.website-add-form\s*\{[\s\S]*?padding:\s*10px 16px 14px;/u);
-  assert.match(settingsPageCss, /\.settings-page \.website-row-actions\s*\{[\s\S]*?flex-direction:\s*row;/u);
+  assert.match(settingsPage, /WEBSITE_NEW_ID/);
+  assert.match(settingsPage, /beginAddWebsiteItem/);
+  assert.match(settingsPage, /creatingWebsite \? t\("settings\.websites\.addTitle"\) : selectedWebsite\?\.label/);
+  assert.match(settingsPage, /case "websites"[\s\S]*className="control-center-shell web-settings-shell"[\s\S]*className="control-center-detail web-settings-detail"/);
+  assert.match(settingsPage, /window\.electronAPI\.webs\.websites\.add/);
+  assert.match(settingsPage, /window\.electronAPI\.webs\.websites\.update/);
+  assert.match(settingsPage, /window\.electronAPI\.webs\.websites\.remove/);
+  assert.match(settingsPage, /settings\.websites\.agentEnhancement/);
+  assert.match(settingsPage, /settings\.webapps\.runtimeTitle/);
+  assert.match(settingsPage, /settings\.webapps\.manifestTitle/);
+  assert.match(settingsPage, /settings\.webapps\.logsTitle/);
+  assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("start", selectedWebapp\)/);
+  assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("stop", selectedWebapp\)/);
+  assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("restart", selectedWebapp\)/);
+  assert.match(settingsPage, /case "webapps"[\s\S]*handleReadWebappLog\(selectedWebapp, "main"\)/);
+  assert.match(settingsPage, /selectedWebapp\.removable !== false/);
+  assert.doesNotMatch(settingsPage, /editingWebsiteId/);
+  assert.doesNotMatch(settingsPage, /handleUpdateWebsiteAgent/);
+  assert.match(settingsPageCss, /\.settings-page \.web-settings-page\s*\{/u);
+  assert.match(settingsPageCss, /\.settings-page \.web-settings-shell\s*\{/u);
+  assert.match(settingsPageCss, /\.settings-page \.web-settings-catalog\s*\{/u);
+  assert.match(settingsPageCss, /\.settings-page \.web-detail-form \.settings-control-row\s*\{/u);
+  assert.match(settingsPageCss, /\.settings-page \.web-detail-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/u);
+  assert.match(settingsPageCss, /\.settings-page \.web-log-preview\s*\{/u);
   assert.match(settingsPage, /desktop-pet-agent-select-wrap/);
 });
 
