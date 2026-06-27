@@ -40,6 +40,7 @@ export const enUSMessages = {
   "menu.file": "File",
   "menu.settings": "Settings",
   "menu.settingsEllipsis": "Settings...",
+  "menu.window": "Window",
   "menu.quit": "Quit {appName}",
 
   "quitConfirm.title": "Quit {appName}?",

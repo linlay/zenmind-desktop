@@ -4567,6 +4567,7 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
   const trayRuntimeOptions = runtime.match(/new AppTrayController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const appMenuRuntimeOptions = runtime.match(/installApplicationMenu\(\{[\s\S]*?\n    \}\);/u)?.[0] ?? "";
   const macQuitMenuItem = appMenu.match(/label: options\.t\("menu\.quit", \{ appName: options\.appName \}\),[\s\S]*?\n            \}/u)?.[0] ?? "";
+  const macWindowMenuItem = appMenu.match(/const windowMenuItem: MenuItemConstructorOptions = isMac[\s\S]*?\n    : \{ role: "windowMenu" \};/u)?.[0] ?? "";
 
   assert.match(trayOptions, /quitWithoutConfirmation:\s*\(\) => void;/);
   assert.match(trayQuitMenuItem, /click:\s*\(\) => this\.options\.quitWithoutConfirmation\(\)/);
@@ -4575,6 +4576,9 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
   assert.doesNotMatch(trayRuntimeOptions, /quit:\s*options\.requestAppQuit/);
 
   assert.match(appMenu, /quitWithoutConfirmation:\s*\(\) => void;/);
+  assert.match(macWindowMenuItem, /label:\s*options\.t\("menu\.window"\)/);
+  assert.match(macWindowMenuItem, /role:\s*"close"/);
+  assert.match(macWindowMenuItem, /accelerator:\s*"Command\+W"/);
   assert.match(macQuitMenuItem, /accelerator:\s*"Command\+Q"/);
   assert.match(macQuitMenuItem, /if \(event\.triggeredByAccelerator\)/);
   assert.match(macQuitMenuItem, /options\.requestQuit\(\);/);

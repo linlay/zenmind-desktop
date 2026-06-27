@@ -40,6 +40,7 @@ export const zhCNMessages = {
   "menu.file": "文件",
   "menu.settings": "设置",
   "menu.settingsEllipsis": "设置...",
+  "menu.window": "窗口",
   "menu.quit": "退出 {appName}",
 
   "quitConfirm.title": "退出 {appName}？",

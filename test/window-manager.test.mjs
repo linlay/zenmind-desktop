@@ -181,6 +181,42 @@ test("main window lifecycle hides Windows fullscreen windows without destroying 
   assert.equal(target.destroyed, false);
 });
 
+test("main window lifecycle hides macOS close requests without destroying the window", () => {
+  const target = new FakeWindow();
+  const controller = createMainWindowLifecycleController({
+    platform: "darwin",
+    getWindow: () => target,
+    createWindow: () => target,
+    clearWindow: () => {}
+  });
+  let prevented = false;
+  let quitStateChecks = 0;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "darwin",
+    lifecycle: controller,
+    isDevToolsShortcut: () => false,
+    isHandlingQuit: () => {
+      quitStateChecks += 1;
+      return false;
+    },
+    clearWindow: () => {},
+    isNativeDialogOpen: () => false,
+    hideQuickAssistantAfterOutsideFocus: () => {}
+  });
+
+  target.emit("close", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  });
+
+  assert.equal(quitStateChecks, 1);
+  assert.equal(prevented, true);
+  assert.equal(target.hidden, true);
+  assert.equal(target.destroyed, false);
+});
+
 test("main window lifecycle recreates macOS windows while fullscreen close is pending", () => {
   const oldWindow = new FakeWindow({ fullscreen: true });
   const newWindow = new FakeWindow();

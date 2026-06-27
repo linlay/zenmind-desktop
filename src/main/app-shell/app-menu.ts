@@ -25,6 +25,18 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
     accelerator: "CmdOrCtrl+,",
     click: () => options.openSettings()
   };
+  const windowMenuItem: MenuItemConstructorOptions = isMac
+    ? {
+        label: options.t("menu.window"),
+        submenu: [
+          { role: "close", accelerator: "Command+W" },
+          { role: "minimize" },
+          { role: "zoom" },
+          { type: "separator" },
+          { role: "front" }
+        ]
+      }
+    : { role: "windowMenu" };
 
   const template: MenuItemConstructorOptions[] = [
     isMac
@@ -60,7 +72,7 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
         },
     { role: "editMenu" },
     { role: "viewMenu" },
-    { role: "windowMenu" }
+    windowMenuItem
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
