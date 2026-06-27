@@ -30,16 +30,19 @@ const DESKTOP_INIT_BOOTSTRAP_STATE_FILE = "bootstrap.json";
 
 type AppPathReader = Pick<App, "getPath">;
 
+type BootstrapSectionResult = "applied" | "absent" | "failed";
+type BootstrapAssistantResult = "recorded" | "absent" | "failed";
+
 type BootstrapApplyResult = {
-  profile: "applied" | "absent";
-  kanban: "applied" | "absent";
-  pet: "applied" | "absent";
-  market: "applied" | "absent";
-  sso: "applied" | "absent";
-  tunnelHub: "applied" | "absent";
-  webs: "applied" | "absent";
-  assistant: "recorded" | "absent";
-  services: "applied" | "absent";
+  profile: BootstrapSectionResult;
+  kanban: BootstrapSectionResult;
+  pet: BootstrapSectionResult;
+  market: BootstrapSectionResult;
+  sso: BootstrapSectionResult;
+  tunnelHub: BootstrapSectionResult;
+  webs: BootstrapSectionResult;
+  assistant: BootstrapAssistantResult;
+  services: BootstrapSectionResult;
 };
 
 type DesktopInitBootstrapState = {
@@ -48,6 +51,8 @@ type DesktopInitBootstrapState = {
   sourcePath: string;
   consumed: boolean;
   appliedResult: BootstrapApplyResult;
+  failedSections: string[];
+  errors: Record<string, string>;
 };
 
 type DesktopInitAssistantDefaults = {
@@ -61,6 +66,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return Boolean(parsed.host) && (parsed.protocol === "http:" || parsed.protocol === "https:");
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHost(hostname: string) {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+}
+
+function isValidRelayUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    if (!parsed.host) {
+      return false;
+    }
+    if (parsed.protocol === "wss:") {
+      return true;
+    }
+    return parsed.protocol === "ws:" && isLoopbackHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isPlaceholderUrl(value: string) {
+  return !value || value === "http://" || value === "https://" || value === "ws://" || value === "wss://";
 }
 
 function readJsonFile(filePath: string) {
@@ -110,6 +152,7 @@ function normalizeKanbanDefaults(value: unknown) {
     return null;
   }
   const cloudDefaults = isRecord(value.cloud) ? value.cloud : value;
+  const enabled = typeof value.enabled === "boolean" ? value.enabled : undefined;
   const cloud: {
     serverUrl?: string;
     token?: string;
@@ -119,7 +162,7 @@ function normalizeKanbanDefaults(value: unknown) {
   const serverUrl = readText(cloudDefaults.serverUrl);
   const token = readText(cloudDefaults.token);
   const deviceAlias = readText(cloudDefaults.deviceAlias);
-  if (serverUrl) {
+  if (serverUrl && (enabled === true || isValidHttpUrl(serverUrl))) {
     cloud.serverUrl = serverUrl;
   }
   if (token) {
@@ -132,8 +175,8 @@ function normalizeKanbanDefaults(value: unknown) {
     cloud.remoteControlEnabled = cloudDefaults.remoteControlEnabled;
   }
   const settings: { enabled?: boolean; cloud?: typeof cloud } = {};
-  if (typeof value.enabled === "boolean") {
-    settings.enabled = value.enabled;
+  if (typeof enabled === "boolean") {
+    settings.enabled = enabled;
   }
   if (Object.keys(cloud).length > 0) {
     settings.cloud = cloud;
@@ -188,7 +231,7 @@ function normalizeDesktopCopilotPageDefaults(
 function writeAssistantDefaults(
   app: App,
   assistantDefaults: DesktopInitAssistantDefaults | null
-): BootstrapApplyResult["assistant"] {
+): BootstrapAssistantResult {
   if (!assistantDefaults) {
     return "absent";
   }
@@ -207,10 +250,9 @@ export function resolveDesktopInitPath(app: AppPathReader, platform: NodeJS.Plat
 
 function applyProfileDefaults(
   app: App,
-  profileDefaults: unknown,
-  assistantDefaults: DesktopInitAssistantDefaults | null
-): BootstrapApplyResult["profile"] {
-  if (!isRecord(profileDefaults) && !assistantDefaults?.defaultAgentKey) {
+  profileDefaults: unknown
+): Exclude<BootstrapSectionResult, "failed"> {
+  if (!isRecord(profileDefaults)) {
     return "absent";
   }
   const profileRoot = getDesktopConfigRoot(app);
@@ -223,14 +265,12 @@ function applyProfileDefaults(
   const legacyQuickAssistant = isRecord(legacyAssistant.quickAssistant) ? legacyAssistant.quickAssistant : {};
   const navigation = isRecord(profile.navigation) ? profile.navigation : {};
   const current = readDesktopProfileFromRoot(profileRoot);
-  const defaultAgentKey = readText(assistantDefaults?.defaultAgentKey) ||
-    readText(assistantCopilot.agentKey) ||
+  const defaultAgentKey = readText(assistantCopilot.agentKey) ||
     readText(legacyAssistant.desktopHelperAgentKey) ||
     current.assistant.copilot.agentKey ||
     DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const quickAgentKey = readText(assistantQuick.agentKey) ||
     readText(legacyQuickAssistant.agentKey) ||
-    readText(assistantDefaults?.defaultAgentKey) ||
     current.assistant.quick.agentKey ||
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
   updateDesktopProfileInRoot(profileRoot, {
@@ -276,7 +316,7 @@ function applyProfileDefaults(
         : Array.isArray(navigation.websiteOrder)
           ? navigation.websiteOrder.map(readText).filter(Boolean)
           : current.navigation.webOrder,
-      desktopCopilotPages: isRecord(navigation.desktopCopilotPages) || readText(assistantDefaults?.defaultAgentKey)
+      desktopCopilotPages: isRecord(navigation.desktopCopilotPages)
         ? normalizeDesktopCopilotPageDefaults(navigation.desktopCopilotPages, current.navigation.desktopCopilotPages, defaultAgentKey)
         : current.navigation.desktopCopilotPages
     }
@@ -286,12 +326,15 @@ function applyProfileDefaults(
 
 function applyKanbanDefaults(
   app: App,
-  kanbanDefaults: unknown,
-  profileDefaults: unknown
-): BootstrapApplyResult["kanban"] {
-  const settings = normalizeKanbanDefaults(kanbanDefaults) ?? readLegacyProfileKanbanDefaults(profileDefaults);
+  kanbanDefaults: unknown
+): Exclude<BootstrapSectionResult, "failed"> {
+  const settings = normalizeKanbanDefaults(kanbanDefaults);
   if (!settings) {
     return "absent";
+  }
+  const serverUrl = readText(settings.cloud?.serverUrl);
+  if (settings.enabled === true && (!serverUrl || !isValidHttpUrl(serverUrl))) {
+    throw new Error("Kanban server URL is invalid.");
   }
   saveKanbanSettings(app, settings);
   const deviceAlias = readText(settings.cloud?.deviceAlias);
@@ -309,7 +352,7 @@ function applyKanbanDefaults(
   return "applied";
 }
 
-function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platform): BootstrapApplyResult["pet"] {
+function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platform): Exclude<BootstrapSectionResult, "failed"> {
   if (!isRecord(petDefaults)) {
     return "absent";
   }
@@ -335,8 +378,11 @@ function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platf
   return "applied";
 }
 
-function applyMarketDefaults(app: App, marketDefaults: unknown): BootstrapApplyResult["market"] {
+function applyMarketDefaults(app: App, marketDefaults: unknown): Exclude<BootstrapSectionResult, "failed"> {
   if (!isRecord(marketDefaults)) {
+    return "absent";
+  }
+  if (marketDefaults.enabled !== true) {
     return "absent";
   }
   const apiBaseUrl = readText(marketDefaults.apiBaseUrl);
@@ -344,13 +390,13 @@ function applyMarketDefaults(app: App, marketDefaults: unknown): BootstrapApplyR
     return "absent";
   }
   saveMarketSettings(app, {
-    enabled: marketDefaults.enabled !== false,
+    enabled: true,
     apiBaseUrl
   });
   return "applied";
 }
 
-function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platform): BootstrapApplyResult["sso"] {
+function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platform): Exclude<BootstrapSectionResult, "failed"> {
   if (!isRecord(ssoDefaults)) {
     return "absent";
   }
@@ -359,13 +405,21 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
   return "applied";
 }
 
-function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): BootstrapApplyResult["tunnelHub"] {
+function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): Exclude<BootstrapSectionResult, "failed"> {
   if (!isRecord(tunnelHubDefaults)) {
     return "absent";
   }
-  saveTunnelHubSettings(app, {
+  const enabled = tunnelHubDefaults.enabled === true;
+  const relayUrl = readText(tunnelHubDefaults.relayUrl);
+  if (enabled && !isValidRelayUrl(relayUrl)) {
+    throw new Error("Tunnel Hub relay URL is invalid.");
+  }
+  const filteredRelayUrl = enabled || (relayUrl && !isPlaceholderUrl(relayUrl) && isValidRelayUrl(relayUrl))
+    ? relayUrl
+    : "";
+  const result = saveTunnelHubSettings(app, {
     enabled: tunnelHubDefaults.enabled === true,
-    relayUrl: readText(tunnelHubDefaults.relayUrl),
+    relayUrl: filteredRelayUrl,
     deviceId: readText(tunnelHubDefaults.deviceId),
     relayToken: readText(tunnelHubDefaults.relayToken),
     rotateRelayToken: tunnelHubDefaults.rotateRelayToken === true,
@@ -374,6 +428,9 @@ function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): Bootstrap
       ? tunnelHubDefaults.reconnectSeconds
       : 3
   });
+  if (!result.ok) {
+    throw new Error(result.message);
+  }
   return "applied";
 }
 
@@ -400,7 +457,7 @@ function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
   return [];
 }
 
-function applyWebsiteDefaults(app: App, webs: unknown, legacyWebsites: unknown): BootstrapApplyResult["webs"] {
+function applyWebsiteDefaults(app: App, webs: unknown, legacyWebsites: unknown): Exclude<BootstrapSectionResult, "failed"> {
   if (!hasWebsiteDefaults(webs, legacyWebsites)) {
     return "absent";
   }
@@ -415,13 +472,34 @@ function applyServiceLifecycleArgsDefaults(
   app: App,
   serviceDefaults: unknown,
   platform: NodeJS.Platform
-): BootstrapApplyResult["services"] {
+): Exclude<BootstrapSectionResult, "failed"> {
   const config = normalizeServiceLifecycleArgsConfig({ services: serviceDefaults }, platform);
   if (!config) {
     return "absent";
   }
   writeServiceLifecycleArgsConfig(app, config);
   return "applied";
+}
+
+function runBootstrapSection<T extends string>(
+  sectionId: keyof BootstrapApplyResult,
+  errors: Record<string, string>,
+  apply: () => T
+) {
+  try {
+    return apply();
+  } catch (error) {
+    const message = errorMessage(error);
+    errors[sectionId] = message;
+    console.warn(`[desktop-init] failed to apply ${String(sectionId)} defaults:`, error);
+    return "failed" as const;
+  }
+}
+
+function getFailedSections(result: BootstrapApplyResult) {
+  return Object.entries(result)
+    .filter(([, status]) => status === "failed")
+    .map(([sectionId]) => sectionId);
 }
 
 export function applyDesktopInitBootstrap(
@@ -446,34 +524,41 @@ export function applyDesktopInitBootstrap(
   }
   try {
     const assistant = normalizeDesktopInitAssistantDefaults(defaults.assistant);
+    const kanbanDefaults = isRecord(defaults.kanban)
+      ? defaults.kanban
+      : readLegacyProfileKanbanDefaults(defaults.profile);
+    const errors: Record<string, string> = {};
 
     const applied: BootstrapApplyResult = {
-      profile: applyProfileDefaults(app, defaults.profile, assistant),
-      kanban: applyKanbanDefaults(app, defaults.kanban, defaults.profile),
-      pet: applyPetDefaults(app, defaults.pet, platform),
-      market: applyMarketDefaults(app, defaults.market),
-      sso: applySsoDefaults(app, defaults.sso, platform),
-      tunnelHub: applyTunnelHubDefaults(app, defaults.tunnelHub),
-      webs: applyWebsiteDefaults(app, defaults.webs, defaults.websites),
-      assistant: writeAssistantDefaults(app, assistant),
-      services: applyServiceLifecycleArgsDefaults(app, defaults.services, platform)
+      profile: runBootstrapSection("profile", errors, () => applyProfileDefaults(app, defaults.profile)),
+      kanban: runBootstrapSection("kanban", errors, () => applyKanbanDefaults(app, kanbanDefaults)),
+      pet: runBootstrapSection("pet", errors, () => applyPetDefaults(app, defaults.pet, platform)),
+      market: runBootstrapSection("market", errors, () => applyMarketDefaults(app, defaults.market)),
+      sso: runBootstrapSection("sso", errors, () => applySsoDefaults(app, defaults.sso, platform)),
+      tunnelHub: runBootstrapSection("tunnelHub", errors, () => applyTunnelHubDefaults(app, defaults.tunnelHub)),
+      webs: runBootstrapSection("webs", errors, () => applyWebsiteDefaults(app, defaults.webs, defaults.websites)),
+      assistant: runBootstrapSection("assistant", errors, () => writeAssistantDefaults(app, assistant)),
+      services: runBootstrapSection("services", errors, () => applyServiceLifecycleArgsDefaults(app, defaults.services, platform))
     };
+    const failedSections = getFailedSections(applied);
     removeDesktopInitFile(initPath);
     writeBootstrapState(app, {
       schemaVersion: 1,
       appliedAt: new Date().toISOString(),
       sourcePath: initPath,
       consumed: true,
-      appliedResult: applied
+      appliedResult: applied,
+      failedSections,
+      errors
     });
-    return { ok: true, applied: true, appliedResult: applied };
+    return { ok: true, applied: true, appliedResult: applied, failedSections, errors };
   } catch (error) {
     console.warn(`[desktop-init] failed to apply ${DESKTOP_INIT_FILE}:`, error);
     return {
       ok: false,
       applied: false,
       reason: "invalid" as const,
-      message: error instanceof Error ? error.message : String(error)
+      message: errorMessage(error)
     };
   }
 }

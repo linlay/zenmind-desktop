@@ -1,69 +1,9 @@
-import type { CSSProperties } from "react";
-import { PRODUCT_NAME } from "../../../shared/brand";
 import type { ServiceId, ServiceState, StartupRestoreServicePhase, StartupRestoreState } from "../../../shared/contracts";
-import {
-  DEFAULT_DESKTOP_PET_APPEARANCE_ID,
-  DESKTOP_PET_APPEARANCE_OPTIONS,
-  getDesktopPetStateAsset
-} from "../../../shared/desktop-pet";
 import type { TranslateFunction } from "../../../shared/i18n";
 import { useI18n } from "../../i18n/useI18n";
 
-const STARTUP_PET_STATUS = "idle";
-const STARTUP_PET_APPEARANCE = DESKTOP_PET_APPEARANCE_OPTIONS.find((appearance) =>
-  appearance.id === DEFAULT_DESKTOP_PET_APPEARANCE_ID
-) ?? DESKTOP_PET_APPEARANCE_OPTIONS[0];
-const STARTUP_PET_IDLE_ASSET = getDesktopPetStateAsset(STARTUP_PET_APPEARANCE?.states, STARTUP_PET_STATUS);
-const STARTUP_PET_FRAME_COUNT = Math.max(1, Math.round(Number(STARTUP_PET_IDLE_ASSET?.frameCount) || 1));
-const STARTUP_PET_DURATION_MS = Math.max(100, Math.round(Number(STARTUP_PET_IDLE_ASSET?.durationMs) || 900));
-const STARTUP_PET_ASSET_PATH = STARTUP_PET_IDLE_ASSET
-  ? joinStartupPetAssetPath(STARTUP_PET_APPEARANCE?.assetBasePath ?? "./desktop-pet", STARTUP_PET_IDLE_ASSET.path)
-  : "";
-
-const STARTUP_PET_SPRITE_STYLE = {
-  "--startup-pet-state-duration": `${STARTUP_PET_DURATION_MS}ms`,
-  "--startup-pet-state-frames": String(STARTUP_PET_FRAME_COUNT),
-  backgroundImage: `url("${STARTUP_PET_ASSET_PATH}")`
-} as CSSProperties;
-
-type StartupRoutePlaceholderProps = {
-  showPetGreeting?: boolean;
-};
-
-export function StartupRoutePlaceholder({ showPetGreeting = false }: StartupRoutePlaceholderProps) {
-  return (
-    <div
-      className={[
-        "startup-route-placeholder",
-        showPetGreeting ? "has-pet-greeting" : ""
-      ].filter(Boolean).join(" ")}
-      aria-hidden={showPetGreeting ? undefined : true}
-    >
-      {showPetGreeting ? <StartupPetGreeting /> : null}
-    </div>
-  );
-}
-
-function StartupPetGreeting() {
-  const { t } = useI18n();
-  const greeting = t("startup.placeholderPetGreeting", { name: PRODUCT_NAME });
-  if (!STARTUP_PET_IDLE_ASSET || !STARTUP_PET_ASSET_PATH) {
-    return null;
-  }
-
-  return (
-    <section className="startup-pet-greeting" aria-label={greeting}>
-      <p className="startup-pet-greeting-bubble">{greeting}</p>
-      <div className="startup-pet-greeting-track" aria-hidden="true">
-        <span className="startup-pet-greeting-sprite" style={STARTUP_PET_SPRITE_STYLE} />
-      </div>
-    </section>
-  );
-}
-
-function joinStartupPetAssetPath(basePath: string, assetPath: string) {
-  const normalizedBasePath = basePath.endsWith("/") ? basePath : `${basePath}/`;
-  return `${normalizedBasePath}${assetPath.replace(/^\/+/u, "")}`;
+export function StartupRoutePlaceholder() {
+  return <div className="startup-route-placeholder" aria-hidden="true" />;
 }
 
 export function StartupLoadingScreen({

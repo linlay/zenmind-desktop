@@ -1438,7 +1438,6 @@ export const zhCNMessages = {
   "startup.phase.waiting": "等待启动",
   "startup.action.refresh": "重新检查",
   "startup.action.openControlCenter": "进入控制中心",
-  "startup.placeholderPetGreeting": "欢迎使用 {name}，希望给你的生活和工作提供帮助。",
   "startup.service.authentication": "认证服务",
   "startup.service.agentPlatform": "智能体平台",
   "startup.service.agentWebclient": "智能体网页客户端",

@@ -60,12 +60,11 @@ export function shouldShowStartupProgressCard(
 
 export function shouldAutoOpenBootstrapAgent(
   startupRestoreState: StartupRestoreState | null,
-  startupAllReady: boolean,
+  _startupAllReady: boolean,
   currentPathname = "/"
 ) {
   return startupRestoreState?.mode === "bootstrap" &&
     startupRestoreState.phase === "succeeded" &&
-    startupAllReady &&
     isBootstrapOwnedRoute(currentPathname);
 }
 

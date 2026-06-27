@@ -162,6 +162,7 @@ const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
+const BOOTSTRAP_NAVIGATION_RETRY_MS = 1500;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
 
@@ -464,6 +465,7 @@ export function AppShell() {
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
+  const [bootstrapNavigationRetryTick, setBootstrapNavigationRetryTick] = useState(0);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
@@ -1182,15 +1184,31 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    let retryTimer: number | null = null;
     if (
       startupBootstrapNavigationDoneRef.current ||
       !shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)
     ) {
-      return;
+      return () => {
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+        }
+      };
     }
 
     let cancelled = false;
     setStartupTimedOut(false);
+    const scheduleBootstrapNavigationRetry = () => {
+      if (cancelled || retryTimer !== null || startupBootstrapNavigationDoneRef.current) {
+        return;
+      }
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        if (!cancelled && !startupBootstrapNavigationDoneRef.current) {
+          setBootstrapNavigationRetryTick((tick) => tick + 1);
+        }
+      }, BOOTSTRAP_NAVIGATION_RETRY_MS);
+    };
 
     void (async () => {
       let nextAssistantSettings = assistantSettings;
@@ -1199,9 +1217,7 @@ export function AppShell() {
         try {
           nextAssistantSettings = await window.electronAPI.assistant.getSettings();
         } catch {
-          if (!cancelled) {
-            startupBootstrapNavigationDoneRef.current = true;
-          }
+          scheduleBootstrapNavigationRetry();
           return;
         }
         if (cancelled) {
@@ -1211,21 +1227,26 @@ export function AppShell() {
         bootstrapAgentKey = nextAssistantSettings.bootstrapAgentKey.trim();
       }
 
-      startupBootstrapNavigationDoneRef.current = true;
       if (!bootstrapAgentKey) {
+        scheduleBootstrapNavigationRetry();
         return;
       }
       navigate(createBootstrapAgentRoute(bootstrapAgentKey), { replace: true });
+      startupBootstrapNavigationDoneRef.current = true;
     })();
 
     return () => {
       cancelled = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
     };
-  }, [assistantSettings, location.pathname, navigate, startupAllReady, startupRestoreState]);
+  }, [assistantSettings, bootstrapNavigationRetryTick, location.pathname, navigate, startupAllReady, startupRestoreState]);
 
   useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
       startupBootstrapNavigationDoneRef.current = false;
+      setBootstrapNavigationRetryTick(0);
       setStartupCardDismissed(false);
       return;
     }
@@ -1235,6 +1256,7 @@ export function AppShell() {
       startupRestoreState.phase === "running"
     ) {
       startupBootstrapNavigationDoneRef.current = false;
+      setBootstrapNavigationRetryTick(0);
       setStartupCardDismissed(false);
     }
   }, [startupRestoreState]);
@@ -2790,7 +2812,7 @@ export function AppShell() {
           <Routes>
             <Route
               path="/"
-              element={<StartupRoutePlaceholder showPetGreeting={!showStartupCard} />}
+              element={<StartupRoutePlaceholder />}
             />
             <Route
               path="/kanban"

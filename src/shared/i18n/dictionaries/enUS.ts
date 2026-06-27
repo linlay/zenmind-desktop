@@ -1438,7 +1438,6 @@ export const enUSMessages = {
   "startup.phase.waiting": "Waiting to start",
   "startup.action.refresh": "Recheck",
   "startup.action.openControlCenter": "Open Control Center",
-  "startup.placeholderPetGreeting": "Welcome to {name}. I hope I can help with your life and work.",
   "startup.service.authentication": "Identity Center",
   "startup.service.agentPlatform": "Agent Platform",
   "startup.service.agentWebclient": "Agent Webclient",

@@ -239,6 +239,8 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.webs, "applied");
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
   assert.equal(bootstrapState.appliedResult.services, "applied");
+  assert.deepEqual(bootstrapState.failedSections, []);
+  assert.deepEqual(bootstrapState.errors, {});
   assert.match(bootstrapState.appliedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(fs.existsSync(initPath), false);
 
@@ -364,6 +366,153 @@ test("desktop-init bootstrap leaves market absent without a market API", (t) => 
   assert.equal(result.appliedResult.market, "absent");
   assert.equal(fs.existsSync(marketPath), false);
   assert.equal(fs.existsSync(legacyMarketPath), false);
+});
+
+test("desktop-init bootstrap filters disabled placeholder services without blocking SSO", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-placeholders-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    kanban: {
+      enabled: false,
+      cloud: {
+        serverUrl: "https://",
+        selectedProjectId: "default",
+        remoteControlEnabled: true
+      }
+    },
+    market: {
+      enabled: false,
+      apiBaseUrl: "https://"
+    },
+    sso: {
+      enabled: true,
+      providerLabel: "ZenMind",
+      issuer: "https://auth.zenmind.cc/application/o/zenmind-desktop/",
+      authorizeUrl: "https://auth.zenmind.cc/o/authorize/",
+      tokenUrl: "https://auth.zenmind.cc/application/o/token/",
+      clientId: "zenmind-desktop",
+      wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration"
+    },
+    tunnelHub: {
+      enabled: false,
+      relayUrl: "wss://",
+      reconnectSeconds: 3
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  const desktop = desktopRoot(homePath);
+  const sso = readJson(canonicalSsoPath(homePath));
+  const kanban = readJson(path.join(desktop, "config", "desktop", "kanban.json"));
+  const tunnelHub = readJson(path.join(desktop, "config", "desktop", "tunnel-hub.json"));
+  const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.market, "absent");
+  assert.equal(result.appliedResult.sso, "applied");
+  assert.equal(result.appliedResult.tunnelHub, "applied");
+  assert.equal(sso.enabled, true);
+  assert.equal(sso.providerLabel, "ZenMind");
+  assert.equal(kanban.enabled, false);
+  assert.equal(kanban.cloud.serverUrl, "");
+  assert.equal(tunnelHub.enabled, false);
+  assert.equal(tunnelHub.relayUrl, "");
+  assert.equal(fs.existsSync(path.join(desktop, "config", "desktop", "market.json")), false);
+  assert.deepEqual(result.failedSections, []);
+  assert.deepEqual(result.errors, {});
+  assert.deepEqual(bootstrapState.failedSections, []);
+  assert.deepEqual(bootstrapState.errors, {});
+});
+
+test("desktop-init bootstrap isolates enabled market URL failures from SSO", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-market-failed-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args);
+  t.after(() => {
+    console.warn = originalWarn;
+  });
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const initPath = writeDesktopInit(app, "darwin", {
+    market: {
+      enabled: true,
+      apiBaseUrl: "https://"
+    },
+    sso: {
+      enabled: true,
+      provider: "google",
+      authMode: "server"
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  const bootstrapState = readJson(path.join(desktopRoot(homePath), "state", "desktop", "bootstrap.json"));
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.market, "failed");
+  assert.equal(result.appliedResult.sso, "applied");
+  assert.deepEqual(result.failedSections, ["market"]);
+  assert.match(result.errors.market, /Market API address|API 地址|valid http or https URL/u);
+  assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "config", "desktop", "market.json")), false);
+  assert.equal(fs.existsSync(initPath), false);
+  assert.deepEqual(bootstrapState.failedSections, ["market"]);
+  assert.match(bootstrapState.errors.market, /Market API address|API 地址|valid http or https URL/u);
+  assert.equal(warnings.length, 1);
+});
+
+test("desktop-init bootstrap isolates enabled Tunnel Hub relay failures", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-tunnel-failed-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args);
+  t.after(() => {
+    console.warn = originalWarn;
+  });
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    profile: {
+      appearance: {
+        theme: "dark",
+        locale: "en-US"
+      }
+    },
+    tunnelHub: {
+      enabled: true,
+      relayUrl: "wss://"
+    },
+    sso: {
+      enabled: true,
+      provider: "google",
+      authMode: "server"
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  const desktop = desktopRoot(homePath);
+  const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.profile, "applied");
+  assert.equal(result.appliedResult.tunnelHub, "failed");
+  assert.equal(result.appliedResult.sso, "applied");
+  assert.deepEqual(result.failedSections, ["tunnelHub"]);
+  assert.match(result.errors.tunnelHub, /Tunnel Hub relay URL is invalid/u);
+  assert.equal(readJson(path.join(desktop, "config", "desktop", "profile.json")).appearance.theme, "dark");
+  assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
+  assert.equal(fs.existsSync(path.join(desktop, "config", "desktop", "tunnel-hub.json")), false);
+  assert.deepEqual(bootstrapState.failedSections, ["tunnelHub"]);
+  assert.match(bootstrapState.errors.tunnelHub, /Tunnel Hub relay URL is invalid/u);
+  assert.equal(warnings.length, 1);
 });
 
 test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling", (t) => {
@@ -506,11 +655,11 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.equal(result.appliedResult.market, "applied");
   assert.equal(profile.appearance.theme, "system");
   assert.equal(profile.appearance.locale, "zh-CN");
-  assert.equal(profile.assistant.copilot.agentKey, "cutej");
-  assert.equal(profile.assistant.quick.agentKey, "cutej");
+  assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
+  assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
   assert.deepEqual(profile.navigation.mainOrder, []);
   assert.deepEqual(profile.navigation.webOrder, []);
-  assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "cutej");
+  assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "desktopAssistant");
   assert.equal(assistantConfig.defaultAgentKey, "cutej");
   assert.equal(assistantConfig.bootstrapAgentKey, "bootstrap");
   assert.equal(kanban.enabled, false);
@@ -694,6 +843,7 @@ test("desktop-init bootstrap reads profile market and SSO from one init", (t) =>
       }
     },
     market: {
+      enabled: true,
       apiBaseUrl: "https://market.example.test/api/v1"
     },
     sso: {

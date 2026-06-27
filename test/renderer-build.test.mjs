@@ -2289,7 +2289,8 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /window\.electronAPI\.onServicesChanged\(\(\) => \{[\s\S]*?void refreshMarketSettingsVisibility\(\);[\s\S]*?refreshWebItems\(\)\.catch\(\(\) => undefined\);[\s\S]*?void refreshAssistantNavAgents\(\);/);
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
-  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder showPetGreeting=\{!showStartupCard\} \/>\}/);
+  assert.doesNotMatch(appShell, /showStartupPetGreeting/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
   assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);
   assert.doesNotMatch(appShell, /preferences\?\.kanban/);
@@ -3361,13 +3362,8 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   );
   const startupGateHelper = readSourceFile("src", "shared", "startup-gate.ts");
   const globalStyles = readRendererStyles();
-  const startupPetSpriteRule = globalStyles.match(
-    /\.startup-route-placeholder\.has-pet-greeting \.startup-pet-greeting-sprite\s*\{(?<body>[\s\S]*?)^\}/m
-  )?.groups?.body ?? "";
-  const zhDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
-  const enDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const bootstrapAutoOpenGuardIndex = appShell.indexOf(
-    "shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)"
+    "startupBootstrapNavigationDoneRef.current ||\n      !shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)"
   );
   assert.notEqual(bootstrapAutoOpenGuardIndex, -1);
   const bootstrapAutoOpenBlockStart = appShell.lastIndexOf("useEffect(() => {", bootstrapAutoOpenGuardIndex);
@@ -3375,49 +3371,44 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.notEqual(bootstrapAutoOpenBlockStart, -1);
   assert.notEqual(bootstrapAutoOpenBlockEnd, -1);
   const bootstrapAutoOpenBlock = appShell.slice(bootstrapAutoOpenBlockStart, bootstrapAutoOpenBlockEnd);
+  const bootstrapSettingsCatchBlock = bootstrapAutoOpenBlock.match(/catch \{(?<body>[\s\S]*?)\n        \}/)?.groups?.body ?? "";
+  const bootstrapEmptyKeyBlock = bootstrapAutoOpenBlock.match(/if \(!bootstrapAgentKey\) \{(?<body>[\s\S]*?)\n      \}\n      navigate/)?.groups?.body ?? "";
 
-  assert.match(startupGate, /type StartupRoutePlaceholderProps = \{[\s\S]*?showPetGreeting\?: boolean;/);
-  assert.match(startupGate, /function StartupRoutePlaceholder\(\{ showPetGreeting = false \}: StartupRoutePlaceholderProps\)/);
-  assert.match(startupGate, /showPetGreeting \? "has-pet-greeting" : ""/);
-  assert.match(startupGate, /showPetGreeting \? <StartupPetGreeting \/> : null/);
-  assert.match(startupGate, /import \{ PRODUCT_NAME \} from "\.\.\/\.\.\/\.\.\/shared\/brand";/);
-  assert.match(startupGate, /const STARTUP_PET_STATUS = "idle";/);
-  assert.match(startupGate, /DEFAULT_DESKTOP_PET_APPEARANCE_ID/);
-  assert.match(startupGate, /getDesktopPetStateAsset\(STARTUP_PET_APPEARANCE\?\.states, STARTUP_PET_STATUS\)/);
-  assert.doesNotMatch(startupGate, /moving-left|STARTUP_PET_CAN_MIRROR|can-mirror|startup-pet-greeting-runner/);
-  assert.match(startupGate, /"--startup-pet-state-duration"/);
-  assert.match(startupGate, /"--startup-pet-state-frames"/);
-  assert.match(startupGate, /const greeting = t\("startup\.placeholderPetGreeting", \{ name: PRODUCT_NAME \}\);/);
-  assert.match(startupGate, /className="startup-pet-greeting-sprite" style=\{STARTUP_PET_SPRITE_STYLE\}/);
+  assert.match(startupGate, /function StartupRoutePlaceholder\(\) \{[\s\S]*?className="startup-route-placeholder"[\s\S]*?aria-hidden="true"/);
+  assert.doesNotMatch(startupGate, /StartupRoutePlaceholderProps|showPetGreeting|StartupPetGreeting/);
+  assert.doesNotMatch(startupGate, /desktop-pet|DEFAULT_DESKTOP_PET|STARTUP_PET|PRODUCT_NAME|placeholderPetGreeting/);
   assert.doesNotMatch(startupGate, /from "\.\.\/\.\.\/copilot\/pet-copilot\/DesktopPet"|<DesktopPet\b/);
   assert.doesNotMatch(startupGate, /useEffect|setInterval|window\.electronAPI\.desktopPet|onStateChanged/);
-  assert.match(
-    globalStyles,
-    /\.startup-route-placeholder\.has-pet-greeting \.startup-pet-greeting-track\s*\{[\s\S]*?display:\s*grid;[\s\S]*?place-items:\s*center;/
-  );
-  assert.match(startupPetSpriteRule, /background-size:\s*calc\(96px \* var\(--startup-pet-state-frames, 1\)\) 104px;/);
-  assert.match(startupPetSpriteRule, /background-position:\s*0 0;/);
-  assert.match(
-    startupPetSpriteRule,
-    /animation:\s*desktop-pet-state-frames var\(--startup-pet-state-duration, 900ms\) steps\(var\(--startup-pet-state-frames, 1\), end\) infinite;/
-  );
-  assert.match(startupPetSpriteRule, /will-change:\s*background-position;/);
-  assert.doesNotMatch(globalStyles, /startup-route-pet-walk|can-mirror|--startup-pet-travel|startup-pet-greeting-runner/);
-  assert.doesNotMatch(globalStyles, /(^|\n)\.startup-pet-greeting-sprite\s*\{/);
-  assert.match(zhDictionary, /"startup\.placeholderPetGreeting": "欢迎使用 \{name\}，希望给你的生活和工作提供帮助。"/);
-  assert.match(enDictionary, /"startup\.placeholderPetGreeting": "Welcome to \{name\}\. I hope I can help with your life and work\."/);
+  assert.doesNotMatch(globalStyles, /has-pet-greeting|startup-pet-greeting|startup-route-pet-walk|can-mirror|--startup-pet|desktop-pet-state-frames var\(--startup-pet/);
   assert.doesNotMatch(startupGate, /<Navigate\b/);
   assert.doesNotMatch(startupGate, /resolveStartupRootPath/);
-  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder showPetGreeting=\{!showStartupCard\} \/>\}/);
+  assert.doesNotMatch(appShell, /showStartupPetGreeting/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
   assert.doesNotMatch(appShell, /shouldAutoOpenAssistant/);
   assert.doesNotMatch(appShell, /shouldRedirectStartupFailureToControlCenter/);
   assert.doesNotMatch(appShell, /startupNavigationDoneRef/);
   assert.doesNotMatch(appShell, /createStartupAgentRoute/);
   assert.match(startupGateHelper, /function shouldAutoOpenBootstrapAgent\(/);
+  assert.match(startupGateHelper, /_startupAllReady: boolean/);
+  assert.match(startupGateHelper, /startupRestoreState\?\.mode === "bootstrap"[\s\S]*?startupRestoreState\.phase === "succeeded"[\s\S]*?isBootstrapOwnedRoute\(currentPathname\)/);
+  assert.doesNotMatch(startupGateHelper.match(/function shouldAutoOpenBootstrapAgent\([\s\S]*?\n\}/)?.[0] ?? "", /startupAllReady &&/);
+  assert.match(startupGateHelper, /currentPathname === "\/"/);
+  assert.match(appShell, /const \[bootstrapNavigationRetryTick, setBootstrapNavigationRetryTick\] = useState\(0\)/);
+  assert.match(appShell, /const BOOTSTRAP_NAVIGATION_RETRY_MS = 1500;/);
   assert.match(bootstrapAutoOpenBlock, /startupBootstrapNavigationDoneRef\.current/);
+  assert.match(bootstrapAutoOpenBlock, /let retryTimer: number \| null = null;/);
+  assert.match(bootstrapAutoOpenBlock, /const scheduleBootstrapNavigationRetry = \(\) => \{/);
+  assert.match(bootstrapAutoOpenBlock, /window\.setTimeout\(\(\) => \{[\s\S]*?setBootstrapNavigationRetryTick\(\(tick\) => tick \+ 1\)/);
   assert.match(bootstrapAutoOpenBlock, /window\.electronAPI\.assistant\.getSettings\(\)/);
   assert.match(bootstrapAutoOpenBlock, /nextAssistantSettings\.bootstrapAgentKey\.trim\(\)/);
   assert.match(bootstrapAutoOpenBlock, /navigate\(createBootstrapAgentRoute\(bootstrapAgentKey\), \{ replace: true \}\)/);
+  assert.match(bootstrapAutoOpenBlock, /navigate\(createBootstrapAgentRoute\(bootstrapAgentKey\), \{ replace: true \}\);[\s\S]*?startupBootstrapNavigationDoneRef\.current = true;/);
+  assert.match(bootstrapSettingsCatchBlock, /scheduleBootstrapNavigationRetry\(\);/);
+  assert.doesNotMatch(bootstrapSettingsCatchBlock, /startupBootstrapNavigationDoneRef\.current = true/);
+  assert.match(bootstrapEmptyKeyBlock, /scheduleBootstrapNavigationRetry\(\);/);
+  assert.doesNotMatch(bootstrapEmptyKeyBlock, /startupBootstrapNavigationDoneRef\.current = true/);
+  assert.match(appShell, /startupRestoreState\?\.mode !== "bootstrap"[\s\S]*?startupBootstrapNavigationDoneRef\.current = false;[\s\S]*?setBootstrapNavigationRetryTick\(0\)/);
+  assert.match(appShell, /startupRestoreState\.phase === "idle"[\s\S]*?startupRestoreState\.phase === "running"[\s\S]*?startupBootstrapNavigationDoneRef\.current = false;[\s\S]*?setBootstrapNavigationRetryTick\(0\)/);
   assert.doesNotMatch(bootstrapAutoOpenBlock, /listNavigationAgents/);
   assert.doesNotMatch(bootstrapAutoOpenBlock, /getKanbanAwareFallbackPath/);
   assert.doesNotMatch(bootstrapAutoOpenBlock, /navigate\("\/control-center"/);
