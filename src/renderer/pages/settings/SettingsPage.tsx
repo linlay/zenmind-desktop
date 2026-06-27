@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
-import { ControlCenterPage } from "../control-center/ControlCenterPage";
+import { ControlCenterPage, PluginsPage } from "../control-center/ControlCenterPage";
 import "./SettingsPage.css";
 import type {
   AssistantNavAgentItem,
   AssistantSettingsPublic,
+  WebEntry,
+  WebappEntry,
+  WebappLogTarget,
+  WebappRuntimeState,
   WebsiteEntry,
   DesktopAppPairingPayloadResult,
   DesktopAppInfo,
@@ -89,8 +93,9 @@ type SettingsPageProps = {
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
-  websiteItems: WebsiteEntry[];
-  onWebsiteItemsChange: (items: WebsiteEntry[]) => void;
+  webItems: WebEntry[];
+  onWebItemsRefresh: () => void | Promise<void>;
+  onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   debugVisible: boolean;
 };
@@ -133,6 +138,15 @@ const DEFAULT_WS_ACTION_DEBUG_COMMAND = {
   }
 };
 const APP_PAIRING_TARGET_MODES: PairingTargetMode[] = ["local", "lan", "tunnel"];
+const WEBSITE_NEW_ID = "__new__";
+
+function isWebsiteEntry(item: WebEntry): item is WebsiteEntry {
+  return item.kind === "website";
+}
+
+function isWebappEntry(item: WebEntry): item is WebappEntry {
+  return item.kind === "webapp";
+}
 
 function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunction) {
   switch (themeMode) {
@@ -393,7 +407,8 @@ const SETTINGS_ACTION_PATCH_FIELDS = [
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "navigation",
   "assistant",
-  "websites"
+  "websites",
+  "webapps"
 ];
 
 const defaultKanbanCloudConfig: KanbanCloudConfig = {
@@ -2224,8 +2239,9 @@ export function SettingsPage({
   onSidebarNavOrderChange,
   marketEnabled,
   onMarketEnabledChange,
-  websiteItems,
-  onWebsiteItemsChange,
+  webItems,
+  onWebItemsRefresh,
+  onWebappRuntimeStateChange,
   onAssistantSettingsChange,
   debugVisible
 }: SettingsPageProps) {
@@ -2246,13 +2262,23 @@ export function SettingsPage({
   const [desktopDeviceInfoLoading, setDesktopDeviceInfoLoading] = useState(false);
   const [generalSettingsSaving, setGeneralSettingsSaving] = useState(false);
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
+  const [selectedWebsiteId, setSelectedWebsiteId] = useState("");
   const [websiteLabel, setWebsiteLabel] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
-  const [editingWebsiteId, setEditingWebsiteId] = useState("");
+  const [websiteAgentKey, setWebsiteAgentKey] = useState("");
   const [websitePending, setWebsitePending] = useState(false);
   const [websiteTransferPending, setWebsiteTransferPending] = useState("");
-  const [websiteAgentPendingId, setWebsiteAgentPendingId] = useState("");
   const [deletingWebsiteId, setDeletingWebsiteId] = useState("");
+  const [selectedWebappId, setSelectedWebappId] = useState("");
+  const [webappLabel, setWebappLabel] = useState("");
+  const [webappAgentKey, setWebappAgentKey] = useState("");
+  const [webappPending, setWebappPending] = useState(false);
+  const [webappDeletingId, setWebappDeletingId] = useState("");
+  const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
+  const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
+  const [webappLogTarget, setWebappLogTarget] = useState<WebappLogTarget>("main");
+  const [webappLogContent, setWebappLogContent] = useState("");
+  const [webappLogPending, setWebappLogPending] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantAgentOptions, setAssistantAgentOptions] = useState<DesktopPetAgentOption[]>([]);
   const [desktopHelperAgentKey, setDesktopHelperAgentKey] = useState(DEFAULT_DESKTOP_HELPER_AGENT_KEY);
@@ -2307,6 +2333,20 @@ export function SettingsPage({
     `/settings/${sectionIdParam ?? ""}`,
     visibleSectionIds
   );
+  const websiteItems = useMemo(
+    () => webItems.filter(isWebsiteEntry),
+    [webItems]
+  );
+  const webappItems = useMemo(
+    () => webItems.filter(isWebappEntry),
+    [webItems]
+  );
+  const selectedWebsite = selectedWebsiteId === WEBSITE_NEW_ID
+    ? null
+    : websiteItems.find((item) => item.id === selectedWebsiteId) ?? null;
+  const selectedWebapp = selectedWebappId
+    ? webappItems.find((item) => item.id === selectedWebappId) ?? null
+    : null;
   const shouldReadUsageProfile = activeSection === "usage";
   const shouldReadGeneralSettings = activeSection === "general";
   const shouldReadControlData = activeSection === "kanban";
@@ -2319,6 +2359,57 @@ export function SettingsPage({
   const controlConfigDirty = controlCloudConfig.serverUrl !== savedControlCloudConfig.serverUrl;
   const marketSettingsDirty = marketSettings.apiBaseUrl !== savedMarketSettings.apiBaseUrl;
   const tunnelHubSettingsDirty = tunnelHubSettings.relayUrl !== savedTunnelHubSettings.relayUrl;
+
+  useEffect(() => {
+    if (activeSection !== "websites") {
+      return;
+    }
+    if (selectedWebsiteId === WEBSITE_NEW_ID) {
+      return;
+    }
+    if (selectedWebsite) {
+      setWebsiteLabel(selectedWebsite.label);
+      setWebsiteUrl(selectedWebsite.url);
+      setWebsiteAgentKey(selectedWebsite.agentKey || "");
+      return;
+    }
+    const firstWebsite = websiteItems[0] ?? null;
+    if (firstWebsite) {
+      setSelectedWebsiteId(firstWebsite.id);
+    } else {
+      setSelectedWebsiteId(WEBSITE_NEW_ID);
+      setWebsiteLabel("");
+      setWebsiteUrl("");
+      setWebsiteAgentKey("");
+    }
+  }, [activeSection, selectedWebsite, selectedWebsiteId, websiteItems]);
+
+  useEffect(() => {
+    if (activeSection !== "webapps") {
+      return;
+    }
+    if (selectedWebapp) {
+      setWebappLabel(selectedWebapp.label);
+      setWebappAgentKey(selectedWebapp.agentKey || "");
+      return;
+    }
+    const firstWebapp = webappItems[0] ?? null;
+    if (firstWebapp) {
+      setSelectedWebappId(firstWebapp.id);
+    } else {
+      setSelectedWebappId("");
+      setWebappLabel("");
+      setWebappAgentKey("");
+      setWebappLogContent("");
+    }
+  }, [activeSection, selectedWebapp, webappItems]);
+
+  useEffect(() => {
+    if (activeSection !== "webapps" || !selectedWebapp) {
+      return;
+    }
+    void refreshSelectedWebappStatus(selectedWebapp.id);
+  }, [activeSection, selectedWebapp?.id]);
 
   function commitSavedMarketSettings(settings: MarketSettings) {
     savedMarketSettingsRef.current = settings;
@@ -3283,56 +3374,49 @@ export function SettingsPage({
     }
   }
 
-  async function handleAddWebsiteItem(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    setWebsitePending(true);
-    try {
-      const result = await window.electronAPI.webs.websites.add({
-        label: websiteLabel,
-        url: websiteUrl
-      });
-      showSectionResultNotice("websites", result);
-      onWebsiteItemsChange(result.items);
-      if (result.ok) {
-        setWebsiteLabel("");
-        setWebsiteUrl("");
-      }
-    } catch (reason) {
-      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setWebsitePending(false);
-    }
+  async function refreshWebItemsFromSettings() {
+    await onWebItemsRefresh();
   }
 
-  function resetWebsiteForm() {
-    setEditingWebsiteId("");
+  function beginAddWebsiteItem() {
+    setSelectedWebsiteId(WEBSITE_NEW_ID);
     setWebsiteLabel("");
     setWebsiteUrl("");
-  }
-
-  function handleStartEditWebsiteItem(item: WebsiteEntry) {
-    setEditingWebsiteId(item.id);
-    setWebsiteLabel(item.label);
-    setWebsiteUrl(item.url);
+    setWebsiteAgentKey("");
     setNotice((current) => current?.sectionId === "websites" ? null : current);
   }
 
-  function handleCancelEditWebsiteItem() {
-    resetWebsiteForm();
+  function handleSelectWebsiteItem(item: WebsiteEntry) {
+    setSelectedWebsiteId(item.id);
+    setWebsiteLabel(item.label);
+    setWebsiteUrl(item.url);
+    setWebsiteAgentKey(item.agentKey || "");
+    setNotice((current) => current?.sectionId === "websites" ? null : current);
   }
 
-  async function handleUpdateWebsiteItem(itemId: string) {
+  async function handleSaveWebsiteItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const creating = selectedWebsiteId === WEBSITE_NEW_ID || !selectedWebsite;
     setWebsitePending(true);
     try {
-      const result = await window.electronAPI.webs.websites.update(itemId, {
-        label: websiteLabel,
-        url: websiteUrl
-      });
+      const result = creating
+        ? await window.electronAPI.webs.websites.add({
+            label: websiteLabel,
+            url: websiteUrl,
+            agentKey: websiteAgentKey
+          })
+        : await window.electronAPI.webs.websites.update(selectedWebsite.id, {
+            label: websiteLabel,
+            url: websiteUrl,
+            agentKey: websiteAgentKey
+          });
       showSectionResultNotice("websites", result);
-      onWebsiteItemsChange(result.items);
       if (result.ok) {
-        resetWebsiteForm();
+        const nextSelectedId = result.item?.id || selectedWebsite?.id || "";
+        if (nextSelectedId) {
+          setSelectedWebsiteId(nextSelectedId);
+        }
+        await refreshWebItemsFromSettings();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3346,9 +3430,10 @@ export function SettingsPage({
     try {
       const result = await window.electronAPI.webs.websites.remove(item.id);
       showSectionResultNotice("websites", result);
-      onWebsiteItemsChange(result.items);
-      if (editingWebsiteId === item.id) {
-        resetWebsiteForm();
+      if (result.ok) {
+        const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
+        setSelectedWebsiteId(nextItem?.id ?? WEBSITE_NEW_ID);
+        await refreshWebItemsFromSettings();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3357,26 +3442,15 @@ export function SettingsPage({
     }
   }
 
-  async function handleUpdateWebsiteAgent(itemId: string, agentKey: string) {
-    setWebsiteAgentPendingId(itemId);
-    try {
-      const result = await window.electronAPI.webs.websites.update(itemId, { agentKey });
-      showSectionResultNotice("websites", result);
-      onWebsiteItemsChange(result.items);
-    } catch (reason) {
-      showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setWebsiteAgentPendingId("");
-    }
-  }
-
   async function handleImportWebsiteItems() {
     setWebsiteTransferPending("import");
     try {
       const result = await window.electronAPI.webs.websites.import();
       showSectionResultNotice("websites", result);
-      onWebsiteItemsChange(result.items);
-      resetWebsiteForm();
+      if (result.ok) {
+        setSelectedWebsiteId(result.items[0]?.id ?? WEBSITE_NEW_ID);
+        await refreshWebItemsFromSettings();
+      }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -3393,11 +3467,116 @@ export function SettingsPage({
         result.path ? `${result.message} ${result.path}` : result.message,
         result.ok ? "success" : "error"
       );
-      onWebsiteItemsChange(result.items);
+      if (result.ok) {
+        await refreshWebItemsFromSettings();
+      }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setWebsiteTransferPending("");
+    }
+  }
+
+  async function refreshSelectedWebappStatus(webappId = selectedWebapp?.id ?? "") {
+    const id = webappId.trim();
+    if (!id) {
+      return;
+    }
+    try {
+      const result = await window.electronAPI.webs.webapps.getStatus(id);
+      setWebappRuntimeById((current) => ({
+        ...current,
+        [id]: result.state
+      }));
+      onWebappRuntimeStateChange?.(id, result.state, result.message);
+    } catch (reason) {
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+    }
+  }
+
+  function handleSelectWebappItem(item: WebappEntry) {
+    setSelectedWebappId(item.id);
+    setWebappLabel(item.label);
+    setWebappAgentKey(item.agentKey || "");
+    setWebappLogContent("");
+    setNotice((current) => current?.sectionId === "webapps" ? null : current);
+  }
+
+  async function handleSaveWebappItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWebapp) {
+      return;
+    }
+    setWebappPending(true);
+    try {
+      const result = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
+        label: webappLabel,
+        agentKey: webappAgentKey
+      });
+      showSectionResultNotice("webapps", result);
+      if (result.ok) {
+        await refreshWebItemsFromSettings();
+      }
+    } catch (reason) {
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setWebappPending(false);
+    }
+  }
+
+  async function handleWebappRuntimeAction(action: "start" | "stop" | "restart" | "refresh", item: WebappEntry) {
+    const pendingKey = `${action}:${item.id}`;
+    setWebappRuntimePendingId(pendingKey);
+    try {
+      const result = action === "refresh"
+        ? await window.electronAPI.webs.webapps.getStatus(item.id)
+        : action === "start"
+          ? await window.electronAPI.webs.webapps.start(item.id)
+          : action === "stop"
+            ? await window.electronAPI.webs.webapps.stop(item.id)
+            : await window.electronAPI.webs.webapps.restart(item.id);
+      setWebappRuntimeById((current) => ({
+        ...current,
+        [item.id]: result.state
+      }));
+      onWebappRuntimeStateChange?.(item.id, result.state, result.message);
+      showSectionResultNotice("webapps", result);
+    } catch (reason) {
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setWebappRuntimePendingId("");
+    }
+  }
+
+  async function handleReadWebappLog(item: WebappEntry, target: WebappLogTarget) {
+    setWebappLogTarget(target);
+    setWebappLogPending(true);
+    try {
+      const result = await window.electronAPI.webs.webapps.readLog(item.id, target, { limitBytes: 32_000 });
+      setWebappLogContent(result.exists ? result.content : t("settings.webapps.logMissing"));
+    } catch (reason) {
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setWebappLogPending(false);
+    }
+  }
+
+  async function handleDeleteWebappItem(item: WebappEntry) {
+    setWebappDeletingId(item.id);
+    try {
+      const result = await window.electronAPI.webs.webapps.remove(item.id);
+      showSectionResultNotice("webapps", result);
+      if (result.ok) {
+        onWebappRuntimeStateChange?.(item.id, null, result.message);
+        const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
+        setSelectedWebappId(nextItem?.id ?? "");
+        setWebappLogContent("");
+        await refreshWebItemsFromSettings();
+      }
+    } catch (reason) {
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setWebappDeletingId("");
     }
   }
 
@@ -3872,6 +4051,75 @@ export function SettingsPage({
     }
   }
 
+  function renderAgentSelectOptions(currentAgentKey: string) {
+    const agentKnown = !currentAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === currentAgentKey);
+    return [
+      { value: "", label: t("settings.defaultAssistant") },
+      ...(currentAgentKey && !agentKnown ? [{
+        value: currentAgentKey,
+        label: t("settings.navigation.unavailableAgent", { agentKey: currentAgentKey })
+      }] : []),
+      ...assistantAgentOptions.map((agent) => ({
+        value: agent.agentKey,
+        label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
+      }))
+    ];
+  }
+
+  function getWebappSourceLabel(item: WebappEntry) {
+    if (item.sourceLabel) {
+      return item.sourceLabel;
+    }
+    switch (item.sourceKind) {
+      case "market":
+        return t("settings.webapps.sourceMarket");
+      case "plugin":
+        return t("settings.webapps.sourcePlugin");
+      case "bundled":
+        return t("settings.webapps.sourceBundled");
+      default:
+        return t("settings.webapps.sourceLocal");
+    }
+  }
+
+  function getWebappRuntimeStatusLabel(state: WebappRuntimeState | null | undefined) {
+    switch (state?.status) {
+      case "running":
+        return t("settings.webapps.statusRunning");
+      case "starting":
+        return t("settings.webapps.statusStarting");
+      case "error":
+        return t("settings.webapps.statusError");
+      case "stopped":
+        return t("settings.webapps.statusStopped");
+      default:
+        return t("settings.webapps.statusUnknown");
+    }
+  }
+
+  function getWebappRuntimeStatusClass(state: WebappRuntimeState | null | undefined) {
+    switch (state?.status) {
+      case "running":
+        return "running";
+      case "starting":
+        return "loading";
+      case "error":
+        return "danger";
+      default:
+        return "idle";
+    }
+  }
+
+  function renderWebDetailRow(label: string, value: ReactNode) {
+    const renderedValue = value === null || value === undefined || value === "" ? "-" : value;
+    return (
+      <div className="web-detail-row">
+        <span>{label}</span>
+        <strong>{renderedValue}</strong>
+      </div>
+    );
+  }
+
   function renderActiveSection() {
     switch (activeSection) {
       case "usage":
@@ -4177,16 +4425,19 @@ export function SettingsPage({
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
             <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
-              <label className="settings-control-row">
-                <span className="settings-control-row-label">{t("kanban.cloud.serverUrl")}</span>
+              <div className="settings-appearance-row settings-kanban-server-url-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("kanban.cloud.serverUrl")}</strong>
+                </div>
                 <Input
-                  className="settings-control-row-control"
+                  className="settings-appearance-control settings-control-row-control settings-kanban-server-url-input"
+                  aria-label={t("kanban.cloud.serverUrl")}
                   value={controlCloudConfig.serverUrl}
                   onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
                   placeholder="http://127.0.0.1:8080"
                   disabled={controlConfigSaving}
                 />
-              </label>
+              </div>
               <div className="settings-control-readonly-row">
                 <span>{t("settings.control.statusTitle")}</span>
                 <strong>{getControlConnectionLabel(controlConnectionState)}</strong>
@@ -4235,6 +4486,12 @@ export function SettingsPage({
         return (
           <div className="settings-control-center-embed">
             <ControlCenterPage />
+          </div>
+        );
+      case "plugins":
+        return (
+          <div className="settings-control-center-embed settings-plugins-embed">
+            <PluginsPage />
           </div>
         );
       case "tunnelHub": {
@@ -4517,181 +4774,411 @@ export function SettingsPage({
           );
       }
 
-      case "websites":
+      case "websites": {
+        const creatingWebsite = selectedWebsiteId === WEBSITE_NEW_ID || !selectedWebsite;
         return (
-          <div className="settings-item-card website-card">
-            {!editingWebsiteId ? (
-              <>
-                <div className="settings-item-section-head website-list-head website-add-head">
-                  <div>
-                    <strong>{t("settings.websites.addTitle")}</strong>
-                    <span>{t("settings.websites.addDescription")}</span>
+          <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-websites">
+            <div className="page-head control-center-hero">
+              <div className="control-center-hero-copy">
+                <h1>{t("settings.websites.label")}</h1>
+                <p>{t("settings.websites.description")}</p>
+              </div>
+              <div className="control-center-dashboard-metrics" aria-label={t("settings.websites.metricsAria")}>
+                <div className="control-center-metric-card">
+                  <span className="summary-kicker">{t("settings.websites.metricEntries")}</span>
+                  <div className="control-center-metric-value">
+                    <strong>{websiteItems.length}</strong>
+                    <span className="control-center-metric-chip">{t("settings.websites.metricPinned")}</span>
                   </div>
                 </div>
-                <div className="settings-item-form website-add-form">
-                  <form className="website-form" onSubmit={(event) => void handleAddWebsiteItem(event)}>
-                    <label>
-                      <span>{t("settings.websites.displayName")}</span>
+              </div>
+            </div>
+
+            <div className="control-center-shell web-settings-shell">
+              <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.websites.catalogAria")}>
+                <div className="service-accordion">
+                  <section className="service-group is-open">
+                    <div className="service-group-head">
+                      <div className="service-group-trigger" aria-expanded="true">
+                        <div className="service-group-copy">
+                          <h2>{t("settings.websites.addedTitle")}</h2>
+                          <span>{t("settings.websites.listSubtitle", { count: websiteItems.length })}</span>
+                        </div>
+                      </div>
+                      <button type="button" className="service-catalog-import" onClick={beginAddWebsiteItem}>
+                        <span aria-hidden="true">+</span>
+                        {t("settings.websites.addShort")}
+                      </button>
+                    </div>
+                    <div className="web-catalog-actions">
+                      <Button type="link" onClick={() => void handleImportWebsiteItems()} disabled={websiteTransferPending !== ""}>
+                        {websiteTransferPending === "import" ? t("settings.websites.importing") : t("settings.websites.import")}
+                      </Button>
+                      <Button type="link" onClick={() => void handleExportWebsiteItems()} disabled={websiteTransferPending !== ""}>
+                        {websiteTransferPending === "export" ? t("settings.websites.exporting") : t("settings.websites.export")}
+                      </Button>
+                    </div>
+                    <div className="service-nav-list" role="list" aria-label={t("settings.websites.addedTitle")}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className={`service-nav-card is-compact-service web-nav-card${creatingWebsite ? " is-active" : ""}`}
+                        onClick={beginAddWebsiteItem}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            beginAddWebsiteItem();
+                          }
+                        }}
+                        aria-pressed={creatingWebsite}
+                      >
+                        <div className="service-nav-card-head">
+                          <div className="service-nav-title-row">
+                            <h3>{t("settings.websites.addTitle")}</h3>
+                          </div>
+                          <span className="service-nav-version-status">
+                            <span className="status-dot idle" aria-hidden="true" />
+                            <span className="service-nav-status-label">{t("settings.websites.newEntry")}</span>
+                          </span>
+                        </div>
+                      </div>
+                      {websiteItems.length === 0 ? (
+                        <div className="service-group-empty">{t("settings.websites.empty")}</div>
+                      ) : websiteItems.map((item) => (
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          className={`service-nav-card is-compact-service web-nav-card${selectedWebsiteId === item.id ? " is-active" : ""}`}
+                          key={item.id}
+                          onClick={() => handleSelectWebsiteItem(item)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleSelectWebsiteItem(item);
+                            }
+                          }}
+                          aria-pressed={selectedWebsiteId === item.id}
+                        >
+                          <div className="service-nav-card-head">
+                            <div className="service-nav-title-row">
+                              <h3>{item.label}</h3>
+                            </div>
+                            <span className="service-nav-version-status" title={item.url}>
+                              <span className="status-dot running" aria-hidden="true" />
+                              <span className="service-nav-status-label">{new URL(item.url).hostname}</span>
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              </aside>
+
+              <article className="control-center-detail web-settings-detail">
+                <section className="service-card control-center-service-hero web-detail-card">
+                  <div className="control-center-service-head">
+                    <div className="control-center-service-main">
+                      <div className="service-hero-icon web-hero-icon" aria-hidden="true"><span /></div>
+                      <div className="service-hero-copy">
+                        <div className="service-hero-title-line">
+                          <h2>{creatingWebsite ? t("settings.websites.addTitle") : selectedWebsite?.label}</h2>
+                        </div>
+                        <p>{creatingWebsite ? t("settings.websites.addDescription") : selectedWebsite?.url}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <form className="web-detail-form" onSubmit={(event) => void handleSaveWebsiteItem(event)}>
+                    <label className="settings-control-row">
+                      <span className="settings-control-row-label">{t("settings.websites.displayName")}</span>
                       <Input
+                        className="settings-control-row-control"
                         value={websiteLabel}
                         onChange={(event) => setWebsiteLabel(event.target.value)}
                         placeholder={t("settings.websites.displayNamePlaceholder")}
                         maxLength={24}
+                        required
                       />
                     </label>
-                    <label>
-                      <span>{t("settings.websites.url")}</span>
+                    <label className="settings-control-row">
+                      <span className="settings-control-row-label">{t("settings.websites.url")}</span>
                       <Input
+                        className="settings-control-row-control"
                         value={websiteUrl}
                         onChange={(event) => setWebsiteUrl(event.target.value)}
                         placeholder={t("settings.websites.urlPlaceholder")}
                         required
                       />
                     </label>
-                    <div className="website-submit-wrap">
-                      <Button type="link" htmlType="submit" className="website-submit" disabled={websitePending} loading={websitePending}>
-                        {websitePending ? t("settings.websites.adding") : t("settings.websites.add")}
+                    <label className="settings-control-row">
+                      <span className="settings-control-row-label">{t("settings.websites.agentEnhancement")}</span>
+                      <span className="settings-control-row-select desktop-pet-agent-select-wrap">
+                        <Select
+                          classNames={SETTINGS_SELECT_CLASS_NAMES}
+                          style={{ width: "100%" }}
+                          value={websiteAgentKey}
+                          onChange={setWebsiteAgentKey}
+                          disabled={assistantAgentOptions.length === 0}
+                          aria-label={t("settings.websites.agentEnhancement")}
+                          options={renderAgentSelectOptions(websiteAgentKey)}
+                        />
+                      </span>
+                    </label>
+                    <div className="web-detail-actions">
+                      <Button type="primary" htmlType="submit" disabled={websitePending} loading={websitePending}>
+                        {websitePending
+                          ? (creatingWebsite ? t("settings.websites.adding") : t("settings.websites.updating"))
+                          : (creatingWebsite ? t("settings.websites.add") : t("settings.websites.save"))}
                       </Button>
+                      {!creatingWebsite && selectedWebsite ? (
+                        <Button
+                          danger
+                          disabled={deletingWebsiteId === selectedWebsite.id || websitePending}
+                          loading={deletingWebsiteId === selectedWebsite.id}
+                          onClick={() => void handleDeleteWebsiteItem(selectedWebsite)}
+                        >
+                          {deletingWebsiteId === selectedWebsite.id ? t("settings.websites.deleting") : t("settings.websites.delete")}
+                        </Button>
+                      ) : null}
                     </div>
                   </form>
-                </div>
-              </>
-            ) : null}
+                </section>
+              </article>
+            </div>
+          </section>
+        );
+      }
 
-            <div className="settings-item-section-head website-list-head website-added-head">
-              <div>
-                <strong>{t("settings.websites.addedTitle")}</strong>
-                <span>{t("settings.websites.addedDescription")}</span>
+      case "webapps": {
+        const runtimeState = selectedWebapp ? webappRuntimeById[selectedWebapp.id] : null;
+        return (
+          <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-webapps">
+            <div className="page-head control-center-hero">
+              <div className="control-center-hero-copy">
+                <h1>{t("settings.webapps.label")}</h1>
+                <p>{t("settings.webapps.description")}</p>
               </div>
-              <div className="settings-item-section-actions">
-                <Button
-                  type="link"
-                  onClick={() => void handleImportWebsiteItems()}
-                  disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
-                >
-                  {websiteTransferPending === "import" ? t("settings.websites.importing") : t("settings.websites.import")}
-                </Button>
-                <Button
-                  type="link"
-                  onClick={() => void handleExportWebsiteItems()}
-                  disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
-                >
-                  {websiteTransferPending === "export" ? t("settings.websites.exporting") : t("settings.websites.export")}
-                </Button>
+              <div className="control-center-dashboard-metrics" aria-label={t("settings.webapps.metricsAria")}>
+                <div className="control-center-metric-card">
+                  <span className="summary-kicker">{t("settings.webapps.metricInstalled")}</span>
+                  <div className="control-center-metric-value">
+                    <strong>{webappItems.length}</strong>
+                    <span className="control-center-metric-chip">{t("settings.webapps.metricLocal")}</span>
+                  </div>
+                </div>
               </div>
             </div>
-            {websiteItems.length === 0 ? (
-              <div className="settings-item-empty website-empty">{t("settings.websites.empty")}</div>
-            ) : (
-              <div className="settings-item-list website-list" role="list" aria-label={t("settings.websites.addedTitle")}>
-                {websiteItems.map((item) => {
-                  const itemAgentKey = item.agentKey || "";
-                  const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
-                  const itemAgentPending = websiteAgentPendingId === item.id;
-                  const itemEditing = editingWebsiteId === item.id;
-                  return (
-                    <div
-                      className={itemEditing ? "settings-item-row website-row is-editing" : "settings-item-row website-row"}
-                      key={item.id}
-                      role="listitem"
-                    >
-                      {itemEditing ? (
-                        <form
-                          className="website-row-edit-form"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void handleUpdateWebsiteItem(item.id);
-                          }}
-                        >
-                          <label>
-                            <span>{t("settings.websites.displayName")}</span>
-                            <Input
-                              value={websiteLabel}
-                              onChange={(event) => setWebsiteLabel(event.target.value)}
-                              placeholder={t("settings.websites.displayNamePlaceholder")}
-                              maxLength={24}
-                              required
-                            />
-                          </label>
-                          <label>
-                            <span>{t("settings.websites.url")}</span>
-                            <Input
-                              value={websiteUrl}
-                              onChange={(event) => setWebsiteUrl(event.target.value)}
-                              placeholder={t("settings.websites.urlPlaceholder")}
-                              required
-                            />
-                          </label>
-                          <div className="website-row-actions">
-                            <Button type="link" htmlType="submit" disabled={websitePending} loading={websitePending}>
-                              {websitePending ? t("settings.websites.updating") : t("settings.websites.save")}
-                            </Button>
-                            <Button
-                              type="link"
-                              onClick={handleCancelEditWebsiteItem}
-                              disabled={websitePending}
-                            >
-                              {t("settings.websites.cancel")}
-                            </Button>
-                          </div>
-                        </form>
-                      ) : (
-                        <>
-                          <div className="website-site-cell">
-                            <strong>{item.label}</strong>
-                            <span className="website-site-url" title={item.url}>
-                              {item.url}
-                            </span>
-                          </div>
-                          <label className="website-agent-field">
-                            <span className="desktop-pet-agent-select-wrap">
-                              <Select
-                                classNames={SETTINGS_SELECT_CLASS_NAMES}
-                                style={{ width: "100%" }}
-                                value={itemAgentKey}
-                                onChange={(value) => void handleUpdateWebsiteAgent(item.id, value)}
-                                disabled={assistantAgentOptions.length === 0 || itemAgentPending || Boolean(editingWebsiteId)}
-                                aria-label={t("settings.websites.linkedAgentFor", { label: item.label })}
-                                options={[
-                                  { value: "", label: t("settings.defaultAssistant") },
-                                  ...(itemAgentKey && !itemAgentKnown ? [{
-                                    value: itemAgentKey,
-                                    label: t("settings.navigation.unavailableAgent", { agentKey: itemAgentKey })
-                                  }] : []),
-                                  ...assistantAgentOptions.map((agent) => ({
-                                    value: agent.agentKey,
-                                    label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
-                                  }))
-                                ]}
-                              />
-                            </span>
-                          </label>
-                          <div className="website-row-actions">
-                            <Button
-                              type="link"
-                              onClick={() => handleStartEditWebsiteItem(item)}
-                              disabled={websitePending || deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
-                            >
-                              {t("settings.websites.edit")}
-                            </Button>
-                            <Button
-                              type="link"
-                              danger
-                              onClick={() => void handleDeleteWebsiteItem(item)}
-                              disabled={deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
-                            >
-                              {deletingWebsiteId === item.id ? t("settings.websites.deleting") : t("settings.websites.delete")}
-                            </Button>
-                          </div>
-                        </>
-                      )}
+
+            <div className="control-center-shell web-settings-shell">
+              <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.webapps.catalogAria")}>
+                <div className="service-accordion">
+                  <section className="service-group is-open">
+                    <div className="service-group-head">
+                      <div className="service-group-trigger" aria-expanded="true">
+                        <div className="service-group-copy">
+                          <h2>{t("settings.webapps.installedTitle")}</h2>
+                          <span>{t("settings.webapps.listSubtitle", { count: webappItems.length })}</span>
+                        </div>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    <div className="service-nav-list" role="list" aria-label={t("settings.webapps.installedTitle")}>
+                      {webappItems.length === 0 ? (
+                        <div className="service-group-empty">{t("settings.webapps.empty")}</div>
+                      ) : webappItems.map((item) => {
+                        const itemState = webappRuntimeById[item.id];
+                        return (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            className={`service-nav-card is-compact-service web-nav-card${selectedWebappId === item.id ? " is-active" : ""}`}
+                            key={item.id}
+                            onClick={() => handleSelectWebappItem(item)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                handleSelectWebappItem(item);
+                              }
+                            }}
+                            aria-pressed={selectedWebappId === item.id}
+                          >
+                            <div className="service-nav-card-head">
+                              <div className="service-nav-title-row">
+                                <h3>{item.label}</h3>
+                              </div>
+                              <span className="service-nav-version-status">
+                                <span className={`status-dot ${getWebappRuntimeStatusClass(itemState)}`} aria-hidden="true" />
+                                <span className="service-nav-status-label">{getWebappRuntimeStatusLabel(itemState)}</span>
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+              </aside>
+
+              {selectedWebapp ? (
+                <article className="control-center-detail web-settings-detail">
+                  <section className="service-card control-center-service-hero web-detail-card">
+                    <div className="control-center-service-head">
+                      <div className="control-center-service-main">
+                        <div className="service-hero-icon web-hero-icon" aria-hidden="true"><span /></div>
+                        <div className="service-hero-copy">
+                          <div className="service-hero-title-line">
+                            <h2>{selectedWebapp.label}</h2>
+                          </div>
+                          <p>{getWebappSourceLabel(selectedWebapp)}</p>
+                        </div>
+                      </div>
+                      <div className="service-title-actions service-primary-actions">
+                        <Button
+                          type="primary"
+                          disabled={webappRuntimePendingId !== ""}
+                          loading={webappRuntimePendingId === `start:${selectedWebapp.id}`}
+                          onClick={() => void handleWebappRuntimeAction("start", selectedWebapp)}
+                        >
+                          {t("settings.webapps.start")}
+                        </Button>
+                        <Button
+                          disabled={webappRuntimePendingId !== ""}
+                          loading={webappRuntimePendingId === `stop:${selectedWebapp.id}`}
+                          onClick={() => void handleWebappRuntimeAction("stop", selectedWebapp)}
+                        >
+                          {t("settings.webapps.stop")}
+                        </Button>
+                        <Button
+                          disabled={webappRuntimePendingId !== ""}
+                          loading={webappRuntimePendingId === `restart:${selectedWebapp.id}`}
+                          onClick={() => void handleWebappRuntimeAction("restart", selectedWebapp)}
+                        >
+                          {t("settings.webapps.restart")}
+                        </Button>
+                      </div>
+                    </div>
+                    <form className="web-detail-form" onSubmit={(event) => void handleSaveWebappItem(event)}>
+                      <label className="settings-control-row">
+                        <span className="settings-control-row-label">{t("settings.websites.displayName")}</span>
+                        <Input
+                          className="settings-control-row-control"
+                          value={webappLabel}
+                          onChange={(event) => setWebappLabel(event.target.value)}
+                          placeholder={t("settings.websites.displayNamePlaceholder")}
+                          maxLength={24}
+                          required
+                        />
+                      </label>
+                      <label className="settings-control-row">
+                        <span className="settings-control-row-label">{t("settings.websites.agentEnhancement")}</span>
+                        <span className="settings-control-row-select desktop-pet-agent-select-wrap">
+                          <Select
+                            classNames={SETTINGS_SELECT_CLASS_NAMES}
+                            style={{ width: "100%" }}
+                            value={webappAgentKey}
+                            onChange={setWebappAgentKey}
+                            disabled={assistantAgentOptions.length === 0}
+                            aria-label={t("settings.websites.agentEnhancement")}
+                            options={renderAgentSelectOptions(webappAgentKey)}
+                          />
+                        </span>
+                      </label>
+                      <div className="web-detail-actions">
+                        <Button type="primary" htmlType="submit" disabled={webappPending} loading={webappPending}>
+                          {webappPending ? t("settings.websites.updating") : t("settings.websites.save")}
+                        </Button>
+                        <Button
+                          onClick={() => void handleWebappRuntimeAction("refresh", selectedWebapp)}
+                          disabled={webappRuntimePendingId !== ""}
+                          loading={webappRuntimePendingId === `refresh:${selectedWebapp.id}`}
+                        >
+                          {t("settings.webapps.refreshStatus")}
+                        </Button>
+                        {selectedWebapp.removable !== false ? (
+                          <Button
+                            danger
+                            disabled={webappDeletingId === selectedWebapp.id || webappPending}
+                            loading={webappDeletingId === selectedWebapp.id}
+                            onClick={() => void handleDeleteWebappItem(selectedWebapp)}
+                          >
+                            {webappDeletingId === selectedWebapp.id ? t("settings.webapps.removing") : t("settings.webapps.remove")}
+                          </Button>
+                        ) : (
+                          <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
+                        )}
+                      </div>
+                    </form>
+                  </section>
+
+                  <section className="config-panel web-detail-card">
+                    <div className="config-head">
+                      <div className="config-title-main">
+                        <div className="service-hero-copy">
+                          <h3>{t("settings.webapps.runtimeTitle")}</h3>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="web-detail-grid">
+                      {renderWebDetailRow(t("settings.webapps.status"), getWebappRuntimeStatusLabel(runtimeState))}
+                      {renderWebDetailRow(t("settings.webapps.webUrl"), runtimeState?.webUrl)}
+                      {renderWebDetailRow(t("settings.webapps.backendUrl"), runtimeState?.backendUrl)}
+                      {renderWebDetailRow(t("settings.webapps.frontendPort"), runtimeState?.frontendPort)}
+                      {renderWebDetailRow(t("settings.webapps.backendPort"), runtimeState?.backendPort)}
+                      {renderWebDetailRow(t("settings.webapps.pid"), runtimeState?.pid)}
+                      {renderWebDetailRow(t("settings.webapps.message"), runtimeState?.message)}
+                    </div>
+                  </section>
+
+                  <section className="config-panel web-detail-card">
+                    <div className="config-head">
+                      <div className="config-title-main">
+                        <div className="service-hero-copy">
+                          <h3>{t("settings.webapps.manifestTitle")}</h3>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="web-detail-grid">
+                      {renderWebDetailRow(t("settings.webapps.source"), getWebappSourceLabel(selectedWebapp))}
+                      {renderWebDetailRow(t("settings.webapps.installPath"), selectedWebapp.installPath)}
+                      {renderWebDetailRow(t("settings.webapps.frontendRoot"), selectedWebapp.frontend.root)}
+                      {renderWebDetailRow(t("settings.webapps.frontendIndex"), selectedWebapp.frontend.index)}
+                      {renderWebDetailRow(t("settings.webapps.frontendSpa"), selectedWebapp.frontend.spa ? t("common.yes") : t("common.no"))}
+                      {renderWebDetailRow(t("settings.webapps.apiPrefix"), selectedWebapp.frontend.apiPrefix)}
+                      {renderWebDetailRow(t("settings.webapps.backendRuntime"), selectedWebapp.backend.runtime)}
+                      {renderWebDetailRow(t("settings.webapps.backendEntry"), selectedWebapp.backend.entry)}
+                      {renderWebDetailRow(t("settings.webapps.backendArgs"), selectedWebapp.backend.args.join(" "))}
+                      {renderWebDetailRow(t("settings.webapps.backendPortSetting"), selectedWebapp.backend.port)}
+                      {renderWebDetailRow(t("settings.webapps.healthPath"), selectedWebapp.backend.healthPath)}
+                    </div>
+                  </section>
+
+                  <section className="config-panel web-detail-card">
+                    <div className="config-head">
+                      <div className="config-title-main">
+                        <div className="service-hero-copy">
+                          <h3>{t("settings.webapps.logsTitle")}</h3>
+                        </div>
+                      </div>
+                      <div className="service-title-actions">
+                        <Button disabled={webappLogPending} loading={webappLogPending && webappLogTarget === "main"} onClick={() => void handleReadWebappLog(selectedWebapp, "main")}>
+                          {t("settings.webapps.mainLog")}
+                        </Button>
+                        <Button disabled={webappLogPending} loading={webappLogPending && webappLogTarget === "error"} onClick={() => void handleReadWebappLog(selectedWebapp, "error")}>
+                          {t("settings.webapps.errorLog")}
+                        </Button>
+                      </div>
+                    </div>
+                    <pre className="web-log-preview">{webappLogContent || t("settings.webapps.logEmpty")}</pre>
+                  </section>
+                </article>
+              ) : (
+                <article className="service-card control-center-detail control-center-empty">
+                  <div className="loading-box control-center-empty">{t("settings.webapps.empty")}</div>
+                </article>
+              )}
+            </div>
+          </section>
         );
+      }
       case "about":
         return (
           <AboutAppCard
@@ -4710,7 +5197,11 @@ export function SettingsPage({
     }
   }
 
-  const shouldShowSettingsPageHead = activeSection !== "control";
+  const shouldShowSettingsPageHead =
+    activeSection !== "control" &&
+    activeSection !== "plugins" &&
+    activeSection !== "websites" &&
+    activeSection !== "webapps";
   const activeSectionDescription = activeSectionDefinition
     ? activeSectionDefinition.description.trim()
     : t("settings.description");

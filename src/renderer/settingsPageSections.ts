@@ -91,9 +91,25 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "plugins",
+      group: "integrations",
+      label: "plugins",
+      description: "",
+      layout: "wide",
+      visible: true
+    },
+    {
       id: "websites",
       group: "integrations",
       label: "websites",
+      description: "",
+      layout: "wide",
+      visible: true
+    },
+    {
+      id: "webapps",
+      group: "integrations",
+      label: "webapps",
       description: "",
       layout: "wide",
       visible: true
@@ -137,8 +153,10 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   market: { label: "settings.market.label", description: "settings.market.description" },
   control: { label: "settings.control.label", description: "settings.control.description" },
   tunnelHub: { label: "settings.tunnelHub.label", description: "settings.tunnelHub.description" },
+  plugins: { label: "settings.plugins.label", description: "settings.plugins.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
   websites: { label: "settings.websites.label", description: "settings.websites.description" },
+  webapps: { label: "settings.webapps.label", description: "settings.webapps.description" },
   about: { label: "settings.about.label", description: "settings.about.description" },
   debug: { label: "settings.debug.label", description: "settings.debug.description" }
 };

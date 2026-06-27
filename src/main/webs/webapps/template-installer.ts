@@ -7,7 +7,7 @@ import { t } from "../../i18n/main-i18n";
 const DEMO_RESOURCES_ROOT_NAME = "demo";
 const DEMO_MANIFEST_FILE_NAME = "manifest.json";
 const TEMPLATE_ROOT_NAME = "webapp-templates";
-const BUNDLED_DEMO_ID = "demo-node-html";
+export const BUNDLED_DEMO_ID = "demo-node-html";
 
 type AppWithPath = Pick<App, "getPath"> & Partial<Pick<App, "getAppPath" | "isPackaged">>;
 

@@ -305,8 +305,11 @@ test("control center keeps service operations in the prototype dashboard layout"
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
     "utf8"
   );
+  const settingsPageSections = readSourceFile("src", "renderer", "settingsPageSections.ts");
   const globalStyles = readRendererStyles();
 
+  assert.match(controlCenter, /export function ControlCenterPage\(\)[\s\S]*?<ServiceWorkspacePage kind="control" \/>/);
+  assert.match(controlCenter, /export function PluginsPage\(\)[\s\S]*?<ServiceWorkspacePage kind="plugins" \/>/);
   assert.match(controlCenter, /control-center-dashboard-metrics/);
   assert.match(controlCenter, /service-catalog/);
   assert.match(controlCenter, /control-center-service-hero/);
@@ -314,9 +317,12 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /config-status-dot/);
   assert.doesNotMatch(controlCenter, /<h2>服务目录<\/h2>/);
   assert.match(controlCenter, /group\.key === "core"[\s\S]*?className="service-catalog-quick-start"/);
-  assert.match(controlCenter, /group\.key === "market"[\s\S]*?className="service-catalog-import"/);
+  assert.match(controlCenter, /group\.key === "plugins"[\s\S]*?className="service-catalog-import"/);
+  assert.match(controlCenter, /services\.filter\(\(service\) => service\.kind === "plugin"\)/);
+  assert.doesNotMatch(controlCenter, /controlCenter\.group\.market/);
+  assert.match(settingsPageSections, /id:\s*"tunnelHub"[\s\S]*?id:\s*"plugins"[\s\S]*?id:\s*"websites"/);
   assert.doesNotMatch(controlCenter, /service-catalog-foot/);
-  assert.match(controlCenter, /useState<ServiceGroupKey \| null>\(\s*"market",?\s*\)/);
+  assert.doesNotMatch(controlCenter, /useState<ServiceGroupKey \| null>\(\s*"market",?\s*\)/);
   assert.match(controlCenter, /function ConfigTerminalIcon\(\)/);
   assert.match(controlCenter, /<ConfigTerminalIcon \/>/);
   assert.match(controlCenter, /function SelectChevronIcon\(\)/);
@@ -353,7 +359,7 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /service-nav-help-button/);
   assert.match(controlCenter, /type HelpTipState/);
   assert.match(controlCenter, /const pageRef = useRef<HTMLElement \| null>\(null\);/);
-  assert.match(controlCenter, /<section ref=\{pageRef\} className="control-center-page workspace-wide">/);
+  assert.match(controlCenter, /className=\{`control-center-page workspace-wide service-workspace-page is-\$\{kind\}`\}/);
   assert.match(controlCenter, /service-nav-help-tip/);
   assert.match(controlCenter, /service-nav-help-tip-portal/);
   assert.match(controlCenter, /role="tooltip"/);
@@ -398,29 +404,23 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.control-center-dashboard-metrics\s*\{/);
   assert.match(globalStyles, /:root\s*\{[\s\S]*?--desktop-ui-bg:\s*#ffffff;[\s\S]*?--desktop-ui-card:\s*#ffffff;[\s\S]*?--desktop-ui-primary:\s*#0052d9;[\s\S]*?--desktop-ui-code-bg:\s*#0d1117;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--desktop-ui-bg:\s*#181818;[\s\S]*?--desktop-ui-card:\s*#181818;[\s\S]*?--desktop-ui-primary:\s*#5790ff;[\s\S]*?--desktop-ui-code-bg:\s*#090c11;/);
-  assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?position:\s*relative;/);
-  assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-bg:\s*var\(--desktop-ui-bg\);[\s\S]*?--control-center-blue:\s*var\(--desktop-ui-primary\);[\s\S]*?--control-center-code:\s*var\(--desktop-ui-code-bg\);/);
-  assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-card-radius:\s*8px;[\s\S]*?--control-center-control-radius:\s*6px;/);
+  assert.match(globalStyles, /\.control-center-page\.workspace-wide,\s*\.control-center-page\s*\{[\s\S]*?--control-center-card:\s*var\(--surface-soft\);[\s\S]*?--control-center-card-muted:\s*var\(--control-select-bg\);[\s\S]*?--control-center-border:\s*var\(--line\);/);
+  assert.match(globalStyles, /\.control-center-page\.workspace-wide,\s*\.control-center-page\s*\{[\s\S]*?--control-center-radius:\s*8px;/);
   assert.match(globalStyles, /\.control-center-shell\s*\{[\s\S]*?grid-template-columns:\s*minmax\(240px,\s*304px\) minmax\(0,\s*1fr\);/);
   const controlCenterViewportMedia = globalStyles.match(/@media \(max-width: 1320px\)\s*\{(?<body>[\s\S]*?)^@media \(max-width: 1080px\)/m)?.groups?.body;
   assert.ok(controlCenterViewportMedia);
   assert.doesNotMatch(controlCenterViewportMedia, /\.control-center-shell\s*\{/);
   assert.match(globalStyles, /@container control-center-page \(max-width: 920px\)\s*\{[\s\S]*?\.control-center-shell\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
-  assert.match(globalStyles, /\.control-center-metric-card\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
-  assert.match(globalStyles, /\.service-sider\.service-catalog\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
-  assert.match(globalStyles, /\.control-center-service-hero\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
-  assert.match(globalStyles, /\.config-panel\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-metric-card\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-sider\.service-catalog\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-service-hero\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.config-panel\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.config-head\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
-  assert.match(globalStyles, /\.config-file-select-trigger\s*\{[\s\S]*?padding:\s*0 40px 0 12px;/);
-  assert.match(globalStyles, /\.config-file-select-trigger svg\s*\{[\s\S]*?right:\s*14px;/);
+  assert.match(globalStyles, /\.control-center-metric-card\s*\{[\s\S]*?border-radius:\s*var\(--control-center-radius\);/);
+  assert.match(globalStyles, /\.service-sider\.service-catalog\s*\{[\s\S]*?border-radius:\s*var\(--control-center-radius\);/);
+  assert.match(globalStyles, /\.control-center-service-hero,\s*\.config-panel,[\s\S]*?\.control-center-empty\s*\{[\s\S]*?border-radius:\s*var\(--control-center-radius\);/);
+  assert.match(globalStyles, /\.control-center-metric-card\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
+  assert.match(globalStyles, /\.service-sider\.service-catalog\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
+  assert.match(globalStyles, /\.config-file-select-trigger\s*\{[\s\S]*?padding:\s*0 34px 0 10px;/);
+  assert.match(globalStyles, /\.config-file-select-trigger svg\s*\{[\s\S]*?right:\s*10px;/);
   assert.match(globalStyles, /\.config-file-select-panel\s*\{[\s\S]*?top:\s*calc\(100% \+ 6px\);/);
-  assert.match(globalStyles, /\.config-file-select-trigger\s*\{[\s\S]*?background:\s*var\(--control-center-bg\);/);
-  assert.match(globalStyles, /\.config-file-select-panel\s*\{[\s\S]*?background:\s*var\(--control-center-bg\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-file-select-trigger\s*\{[\s\S]*?background:\s*var\(--control-center-bg\);/);
+  assert.match(globalStyles, /\.config-file-select-trigger\s*\{[\s\S]*?background:\s*var\(--control-center-card-muted\);/);
+  assert.match(globalStyles, /\.config-file-select-panel\s*\{[\s\S]*?background:\s*var\(--surface-strong\);/);
   assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.control-center-metric-card\s*\{[\s\S]*?linear-gradient\(180deg,\s*#202631/);
   assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.service-sider\.service-catalog\s*\{[\s\S]*?linear-gradient\(180deg,\s*#1f2530/);
   assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.control-center-service-hero\s*\{[\s\S]*?linear-gradient\(180deg,\s*#202731/);
@@ -438,45 +438,41 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.doesNotMatch(globalStyles, /\.service-catalog-foot\s*\{/);
   assert.match(globalStyles, /\.service-group-head\s*\{[\s\S]*?justify-content:\s*space-between;/);
   assert.match(globalStyles, /\.service-catalog-import\s*\{[\s\S]*?min-height:\s*32px;/);
-  assert.match(globalStyles, /\.service-group-copy h2\s*\{[\s\S]*?font-size:\s*15px;[\s\S]*?font-weight:\s*900;/);
-  assert.match(globalStyles, /\.service-nav-card\.is-compact-service h3\s*\{[\s\S]*?font-size:\s*14px;[\s\S]*?font-weight:\s*800;/);
-  assert.match(globalStyles, /\.control-center-service-hero\s*\{/);
+  assert.match(globalStyles, /\.service-group-copy h2\s*\{[\s\S]*?font-size:\s*13px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(globalStyles, /\.service-nav-card h3\s*\{[\s\S]*?font-size:\s*13px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(globalStyles, /\.control-center-service-hero,\s*\.config-panel,/);
   assert.match(globalStyles, /\.service-detail-metadata\s*\{[\s\S]*?grid-template-columns:\s*minmax\(88px,\s*0\.55fr\) minmax\(112px,\s*0\.65fr\) minmax\(92px,\s*0\.55fr\) minmax\(220px,\s*1\.6fr\)\s*;/);
   assert.match(globalStyles, /\.service-detail-log-actions\s*\{/);
-  assert.match(globalStyles, /\.service-detail-log-action\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border:\s*0;/);
-  assert.match(globalStyles, /\.service-detail-log-action svg\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;/);
+  assert.match(globalStyles, /\.service-detail-log-action,[\s\S]*?\.control-center-link-action\.icon-link-action\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border:\s*1px solid var\(--control-center-border\);/);
+  assert.match(globalStyles, /\.service-action-button svg,[\s\S]*?\.service-detail-log-action svg,[\s\S]*?\.config-terminal-icon svg\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.config-status-dot\s*\{/);
-  assert.match(globalStyles, /\.config-title-label\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?gap:\s*6px;/);
-  assert.match(globalStyles, /\.config-terminal-icon\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;[\s\S]*?color:\s*#64748b;/);
+  assert.match(globalStyles, /\.config-title-label\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?gap:\s*8px;/);
+  assert.match(globalStyles, /\.config-terminal-icon\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;[\s\S]*?color:\s*var\(--control-center-subtle\);/);
   const configTerminalIconRule = globalStyles.match(/\.config-terminal-icon\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
   assert.ok(configTerminalIconRule);
   assert.doesNotMatch(configTerminalIconRule, /background:/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.config-terminal-icon\s*\{[\s\S]*?color:\s*#9aa8bd;/);
   assert.match(globalStyles, /\.config-terminal-icon svg\s*\{/);
-  assert.match(globalStyles, /\.config-title-file-select\s*\{[\s\S]*?width:\s*clamp\(150px,\s*16vw,\s*320px\);/);
-  assert.match(globalStyles, /\.config-editor\s*\{[\s\S]*?padding:\s*22px 24px;/);
+  assert.match(globalStyles, /\.config-title-file-select\s*\{[\s\S]*?width:\s*clamp\(160px,\s*20vw,\s*320px\);/);
+  assert.match(globalStyles, /\.config-editor\s*\{[\s\S]*?padding:\s*14px 16px;/);
   const configEditorRules = [...globalStyles.matchAll(/\.config-editor\s*\{(?<body>[\s\S]*?)^\}/gm)];
   const controlCenterConfigEditorRule = configEditorRules.find((rule) =>
-    /padding:\s*22px 24px;/.test(rule.groups?.body ?? "")
+    /padding:\s*14px 16px;/.test(rule.groups?.body ?? "")
   )?.groups?.body;
   assert.ok(controlCenterConfigEditorRule);
   assert.match(controlCenterConfigEditorRule, /min-height:\s*360px;/);
   assert.doesNotMatch(globalStyles, /linear-gradient\(90deg,\s*var\(--control-center-code-line\)/);
-  assert.match(globalStyles, /\.service-nav-card\.is-compact-service\s*\{[\s\S]*?min-height:\s*58px;/);
-  assert.match(globalStyles, /\.service-nav-card\s*\{[\s\S]*?position:\s*relative;/);
+  assert.match(globalStyles, /\.service-nav-card\.is-compact-service\s*\{[\s\S]*?min-height:\s*40px;/);
+  assert.match(globalStyles, /\.service-nav-help-wrap\s*\{[\s\S]*?position:\s*relative;/);
   assert.doesNotMatch(globalStyles, /\.service-nav-card\.is-help-open\s*\{/);
   assert.match(globalStyles, /\.service-nav-help-button\s*\{/);
   assert.match(globalStyles, /\.service-nav-help-button svg\s*\{/);
-  assert.match(globalStyles, /\.service-nav-help-wrap\s*\{[\s\S]*?z-index:\s*25;/);
-  assert.match(globalStyles, /\.service-nav-help-tip\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*120;[\s\S]*?max-width:\s*260px;[\s\S]*?border:\s*1px solid var\(--control-center-border\);[\s\S]*?background:\s*var\(--control-center-card\);[\s\S]*?font-size:\s*12px;/);
+  assert.match(globalStyles, /\.service-nav-help-tip\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*120;[\s\S]*?max-width:\s*260px;[\s\S]*?border:\s*1px solid var\(--control-center-border\);[\s\S]*?background:\s*var\(--surface-strong\);[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.service-nav-help-tip\s*\{[\s\S]*?transform:\s*translateY\(-50%\);/);
   assert.match(globalStyles, /\.service-nav-help-tip::before\s*\{[\s\S]*?top:\s*50%;[\s\S]*?left:\s*-5px;[\s\S]*?transform:\s*translateY\(-50%\) rotate\(45deg\);/);
   const serviceNavHelpTipRule = globalStyles.match(/\.service-nav-help-tip\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
-  const darkServiceNavHelpTipRule = globalStyles.match(/:root\[data-theme="dark"\] \.service-nav-help-tip\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
   assert.ok(serviceNavHelpTipRule);
-  assert.ok(darkServiceNavHelpTipRule);
   assert.doesNotMatch(serviceNavHelpTipRule, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);/);
-  assert.doesNotMatch(darkServiceNavHelpTipRule, /background:\s*#20242b;/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.service-nav-help-tip\s*\{[\s\S]*?background:\s*#20242b;/);
   assert.match(controlCenter, /aria-label=\{t\("controlCenter\.help\.viewServiceDescription"/);
   assert.match(controlCenter, /data-tooltip=\{t\("controlCenter\.actions\.openFrontend"\)\}/);
   assert.match(controlCenter, /activeDetailService\.serviceMode === "service" \|\|[\s\S]*?activeDetailService\.serviceMode === "resource" \? \(/);
@@ -489,32 +485,32 @@ test("control center keeps service operations in the prototype dashboard layout"
     /title="(?:查看说明|重新安装|启动服务|停止|重启|打开前端|安装|卸载插件)"/
   );
   assert.doesNotMatch(controlCenter, /title=\{activeDetailService\.status === "initialization-required"/);
-  assert.match(globalStyles, /\.service-nav-version-inline\s*\{/);
+  assert.match(globalStyles, /\.service-nav-status-label,\s*\.service-nav-version-inline,/);
   assert.match(globalStyles, /\.service-action-button,[\s\S]*?\.service-title-text-button\.service-action-button\s*\{[\s\S]*?border:\s*0;/);
-  assert.match(globalStyles, /\.service-action-button,[\s\S]*?\.service-title-text-button\.service-action-button\s*\{[\s\S]*?flex:\s*0 0 36px;[\s\S]*?height:\s*36px;[\s\S]*?max-width:\s*36px;/);
-  assert.match(globalStyles, /\.service-action-button \.service-action-icon\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;/);
+  assert.match(globalStyles, /\.service-action-button,[\s\S]*?\.service-title-text-button\.service-action-button\s*\{[\s\S]*?flex:\s*0 0 32px;[\s\S]*?height:\s*32px;[\s\S]*?max-width:\s*32px;/);
+  assert.match(globalStyles, /\.service-action-button svg,[\s\S]*?\.service-action-button \.service-action-icon,[\s\S]*?\.config-terminal-icon svg\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(controlCenter, /<circle cx="12" cy="6\.75" r="2\.15" \/>/);
   assert.match(controlCenter, /<path d="M10\.55 10\.05h2\.9v9\.2h-2\.9z" \/>/);
-  assert.match(globalStyles, /\.service-action-button \.service-action-icon-info\s*\{[\s\S]*?fill:\s*currentColor;[\s\S]*?stroke:\s*none;[\s\S]*?transform:\s*translateY\(0\.5px\);/);
+  assert.match(globalStyles, /\.service-action-button \.service-action-icon-restart,\s*\.service-action-button \.service-action-icon-info\s*\{[\s\S]*?fill:\s*currentColor;[\s\S]*?stroke:\s*none;/);
   assert.match(globalStyles, /\.service-action-button\[data-tooltip\]::after\s*\{[\s\S]*?opacity:\s*0;/);
   assert.match(
     globalStyles,
     /\.service-action-button\[data-tooltip\]:hover:not\(:disabled\)::after,[\s\S]*?transition-delay:\s*0\.12s;/
   );
   const unifiedServiceActionToneRule = globalStyles.match(
-    /\.service-action-button\.is-primary,[\s\S]*?\.service-title-text-button\.service-action-button\.is-warning\s*\{(?<body>[\s\S]*?)^\}/m
+    /\.service-action-button\.is-primary,[\s\S]*?\.service-title-text-button\.service-action-button\.is-danger\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body;
   assert.ok(unifiedServiceActionToneRule);
-  assert.match(unifiedServiceActionToneRule, /background:\s*#f8fafc;/);
-  assert.match(unifiedServiceActionToneRule, /color:\s*var\(--control-center-muted\);/);
+  assert.match(unifiedServiceActionToneRule, /background:\s*var\(--control-center-card-muted\);/);
+  assert.match(unifiedServiceActionToneRule, /color:\s*var\(--control-center-subtle\);/);
   assert.doesNotMatch(unifiedServiceActionToneRule, /var\(--control-center-blue\)|var\(--danger\)|#d88911|#ffad4f/);
-  assert.match(globalStyles, /\.control-center-link-action\.icon-link-action\s*\{[\s\S]*?border:\s*0;/);
-  assert.match(globalStyles, /\.config-save-button\s*\{[\s\S]*?border:\s*0;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-action-button,[\s\S]*?:root\[data-theme="dark"\] \.service-title-text-button\.service-action-button\s*\{/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-hero-icon\s*\{/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-file-select-panel\s*\{/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-editor\s*\{/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
+  assert.match(globalStyles, /\.service-detail-log-action,[\s\S]*?\.control-center-link-action\.icon-link-action\s*\{[\s\S]*?border:\s*1px solid var\(--control-center-border\);/);
+  assert.match(globalStyles, /\.config-save-button\s*\{[\s\S]*?min-height:\s*32px;/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.service-action-button,[\s\S]*?:root\[data-theme="dark"\] \.service-title-text-button\.service-action-button\s*\{/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.service-hero-icon\s*\{/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-file-select-panel\s*\{/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-editor\s*\{/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
 });
 
 test("control center internal endpoint opens service frontend entrypoints", () => {
@@ -579,7 +575,7 @@ test("desktop custom theme tokens are shared by control center and log viewer", 
 
   assert.match(globalStyles, /:root\s*\{[\s\S]*?--desktop-ui-bg:\s*#ffffff;[\s\S]*?--desktop-ui-card:\s*#ffffff;[\s\S]*?--desktop-ui-primary:\s*#0052d9;[\s\S]*?--desktop-ui-code-bg:\s*#0d1117;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--desktop-ui-bg:\s*#181818;[\s\S]*?--desktop-ui-card:\s*#181818;[\s\S]*?--desktop-ui-primary:\s*#5790ff;[\s\S]*?--desktop-ui-code-bg:\s*#090c11;/);
-  assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-bg:\s*var\(--desktop-ui-bg\);[\s\S]*?--control-center-blue:\s*var\(--desktop-ui-primary\);[\s\S]*?--control-center-code:\s*var\(--desktop-ui-code-bg\);/);
+  assert.match(globalStyles, /\.control-center-page\.workspace-wide,\s*\.control-center-page\s*\{[\s\S]*?--control-center-card:\s*var\(--surface-soft\);[\s\S]*?--control-center-card-muted:\s*var\(--control-select-bg\);[\s\S]*?--control-center-border:\s*var\(--line\);/);
   assert.match(globalStyles, /\.log-viewer-page\s*\{[\s\S]*?background:\s*var\(--desktop-ui-bg\);[\s\S]*?color:\s*var\(--desktop-ui-text\);/);
   assert.match(globalStyles, /\.log-viewer-body\s*\{[\s\S]*?background:\s*var\(--desktop-ui-code-bg\);/);
   assert.match(globalStyles, /\.log-viewer-content\s*\{[\s\S]*?color:\s*var\(--desktop-ui-code-text\);/);
@@ -641,6 +637,12 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   const darkMacPluginEmbeddedRule = globalStyles.match(
     new RegExp(`^:root\\[data-theme="dark"\\] ${escapeRegExp(macPluginEmbeddedSelector)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
   )?.groups?.body ?? "";
+  const appShellBeforeRule = globalStyles.match(
+    /^\.app-shell::before\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+  const darkAppShellBeforeRule = globalStyles.match(
+    /^:root\[data-theme="dark"\] \.app-shell::before\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
   const macPluginEmbeddedBeforeRule = globalStyles.match(
     new RegExp(`^${escapeRegExp(`${macPluginEmbeddedSelector}::before`)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
   )?.groups?.body ?? "";
@@ -649,6 +651,8 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.match(globalStyles, /--embedded-surface-dock-bg:\s*#fff;/);
   assert.match(globalStyles, /:root\s*\{[\s\S]*?--bg-canvas:\s*transparent;/);
   assert.doesNotMatch(globalStyles, /radial-gradient\(circle at 8% 0%,\s*rgba\(122,\s*201,\s*255,\s*0\.48\)/);
+  assert.doesNotMatch(globalStyles, /radial-gradient\(circle at 8% 6%,\s*rgba\(255,\s*255,\s*255,\s*0\.42\)/);
+  assert.doesNotMatch(globalStyles, /rgba\(196,\s*225,\s*252,\s*0\.(?:28|78)\)/);
   assert.doesNotMatch(globalStyles, /#4A9EDB|#6CB1E4|#A9D0F2|#B6D8F4/);
   assert.match(globalStyles, /:root\[data-theme="dark"\][\s\S]*?--embedded-surface-shell-bg:\s*#1f2329;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] body\.embedded-surface-body,\s*[\s\S]*?body\.embedded-surface-body\.mac-translucent-sidebar-body\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
@@ -657,6 +661,8 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.match(macPluginEmbeddedRule, /background:\s*var\(--bg-canvas\);/);
   assert.match(darkMacPluginEmbeddedRule, /background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.doesNotMatch(darkMacPluginEmbeddedRule, /background:\s*var\(--bg-canvas\);/);
+  assert.match(appShellBeforeRule, /background:\s*transparent;/);
+  assert.match(darkAppShellBeforeRule, /background:\s*transparent;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface::before\s*\{[\s\S]*?display:\s*none;/);
   assert.match(macPluginEmbeddedBeforeRule, /display:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
@@ -1630,7 +1636,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.doesNotMatch(settingsPage, /settings-directory-nav/);
   assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
   assert.match(settingsStyles, /\.settings-content-panel/);
-  assert.match(settingsStyles, /\.settings-page-single\[data-settings-section="control"\]\s*\{[\s\S]*?padding-top:\s*0;/);
+  assert.match(settingsStyles, /\.settings-page-single\[data-settings-section="control"\],[\s\S]*?\.settings-page-single\[data-settings-section="plugins"\]\s*\{[\s\S]*?padding-top:\s*0;/);
   assert.match(settingsStyles, /\.settings-page \.usage-summary-strip\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/);
   assert.match(settingsStyles, /\.settings-page \.usage-heatmap-grid\s*\{[\s\S]*?grid-template-rows:\s*repeat\(7, 10px\);/);
   assert.match(sidebarSource, /settings\.group\.personal/);
@@ -1824,6 +1830,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /settings-kanban-ant-card|settings-kanban-ant-form/);
   assert.match(settingsPage, /renderHeaderSwitch[\s\S]*?handleToggleControlRemoteControl/);
   assert.match(settingsPage, /<form className="settings-control-form" onSubmit=\{\(event\) => void handleSaveControlCloudConfig\(event\)\}/);
+  assert.match(settingsPage, /settings-appearance-row settings-kanban-server-url-row[\s\S]*settings-appearance-row-copy[\s\S]*kanban\.cloud\.serverUrl[\s\S]*settings-appearance-control settings-control-row-control settings-kanban-server-url-input/);
+  assert.match(settingsStyles, /\.settings-page \.settings-kanban-server-url-input\.ant-input\s*\{[\s\S]*?flex:\s*0 1 420px;/);
   assert.match(settingsPage, /settings-control-readonly-row/);
   assert.doesNotMatch(settingsPage, /kanban\.cloud\.deviceAliasPlaceholder/);
   assert.doesNotMatch(settingsPage, /settings\.general\.desktopInfoTitle/);
@@ -1916,7 +1924,7 @@ test("settings page configures desktop helper default agent separately from desk
     /function renderSectionHeaderAction\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  function renderActiveSection/
   )?.groups?.body ?? "";
   assert.match(sectionHeaderActionBody, /case "kanban"[\s\S]*case "tunnelHub"/);
-  assert.match(settingsPage, /const shouldShowSettingsPageHead = activeSection !== "control";/);
+  assert.match(settingsPage, /const shouldShowSettingsPageHead = activeSection !== "control" && activeSection !== "plugins";/);
   assert.match(settingsPage, /\{shouldShowSettingsPageHead \? \(\s*<div className="settings-page-head">/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
@@ -1982,7 +1990,7 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.doesNotMatch(tunnelHubCaseBody, /settings\.tunnelHub\.loginRequired|tunnelHubSsoStatus/);
   assert.match(tunnelHubCaseBody, /settings\.mobilePairing\.title[\s\S]*settings\.mobilePairing\.targetMode[\s\S]*handleCreateAppPairingPayload[\s\S]*settings\.mobilePairing\.qrCode[\s\S]*handleCopyAppPairingPayload/);
   assert.doesNotMatch(settingsPage, /settings\.control\.cloudPanelAria/);
-  assert.match(settingsPage, /import \{ ControlCenterPage \} from "\.\.\/control-center\/ControlCenterPage";/);
+  assert.match(settingsPage, /import \{[^}]*\bControlCenterPage\b[^}]*\} from "\.\.\/control-center\/ControlCenterPage";/);
   assert.match(controlCaseBody, /<ControlCenterPage \/>/);
   assert.doesNotMatch(controlCaseBody, /settings\.mobilePairing\.title/);
   assert.doesNotMatch(controlCaseBody, /settings\.control\.tunnelTitle|settings\.tunnelHub\.panelAria/);
@@ -2274,7 +2282,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /window\.electronAPI\.onServicesChanged\(\(\) => \{[\s\S]*?void refreshMarketSettingsVisibility\(\);[\s\S]*?refreshWebItems\(\)\.catch\(\(\) => undefined\);[\s\S]*?void refreshAssistantNavAgents\(\);/);
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
-  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder showPetGreeting=\{!showStartupCard\} \/>\}/);
   assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);
   assert.doesNotMatch(appShell, /preferences\?\.kanban/);
@@ -3332,6 +3340,12 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
     "StartupGate.tsx"
   );
   const startupGateHelper = readSourceFile("src", "shared", "startup-gate.ts");
+  const globalStyles = readRendererStyles();
+  const startupPetSpriteRule = globalStyles.match(
+    /\.startup-route-placeholder\.has-pet-greeting \.startup-pet-greeting-sprite\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+  const zhDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const bootstrapAutoOpenGuardIndex = appShell.indexOf(
     "shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)"
   );
@@ -3342,10 +3356,39 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.notEqual(bootstrapAutoOpenBlockEnd, -1);
   const bootstrapAutoOpenBlock = appShell.slice(bootstrapAutoOpenBlockStart, bootstrapAutoOpenBlockEnd);
 
-  assert.match(startupGate, /function StartupRoutePlaceholder\(\)[\s\S]*?className="startup-route-placeholder"/);
+  assert.match(startupGate, /type StartupRoutePlaceholderProps = \{[\s\S]*?showPetGreeting\?: boolean;/);
+  assert.match(startupGate, /function StartupRoutePlaceholder\(\{ showPetGreeting = false \}: StartupRoutePlaceholderProps\)/);
+  assert.match(startupGate, /showPetGreeting \? "has-pet-greeting" : ""/);
+  assert.match(startupGate, /showPetGreeting \? <StartupPetGreeting \/> : null/);
+  assert.match(startupGate, /import \{ PRODUCT_NAME \} from "\.\.\/\.\.\/\.\.\/shared\/brand";/);
+  assert.match(startupGate, /const STARTUP_PET_STATUS = "idle";/);
+  assert.match(startupGate, /DEFAULT_DESKTOP_PET_APPEARANCE_ID/);
+  assert.match(startupGate, /getDesktopPetStateAsset\(STARTUP_PET_APPEARANCE\?\.states, STARTUP_PET_STATUS\)/);
+  assert.doesNotMatch(startupGate, /moving-left|STARTUP_PET_CAN_MIRROR|can-mirror|startup-pet-greeting-runner/);
+  assert.match(startupGate, /"--startup-pet-state-duration"/);
+  assert.match(startupGate, /"--startup-pet-state-frames"/);
+  assert.match(startupGate, /const greeting = t\("startup\.placeholderPetGreeting", \{ name: PRODUCT_NAME \}\);/);
+  assert.match(startupGate, /className="startup-pet-greeting-sprite" style=\{STARTUP_PET_SPRITE_STYLE\}/);
+  assert.doesNotMatch(startupGate, /from "\.\.\/\.\.\/copilot\/pet-copilot\/DesktopPet"|<DesktopPet\b/);
+  assert.doesNotMatch(startupGate, /useEffect|setInterval|window\.electronAPI\.desktopPet|onStateChanged/);
+  assert.match(
+    globalStyles,
+    /\.startup-route-placeholder\.has-pet-greeting \.startup-pet-greeting-track\s*\{[\s\S]*?display:\s*grid;[\s\S]*?place-items:\s*center;/
+  );
+  assert.match(startupPetSpriteRule, /background-size:\s*calc\(96px \* var\(--startup-pet-state-frames, 1\)\) 104px;/);
+  assert.match(startupPetSpriteRule, /background-position:\s*0 0;/);
+  assert.match(
+    startupPetSpriteRule,
+    /animation:\s*desktop-pet-state-frames var\(--startup-pet-state-duration, 900ms\) steps\(var\(--startup-pet-state-frames, 1\), end\) infinite;/
+  );
+  assert.match(startupPetSpriteRule, /will-change:\s*background-position;/);
+  assert.doesNotMatch(globalStyles, /startup-route-pet-walk|can-mirror|--startup-pet-travel|startup-pet-greeting-runner/);
+  assert.doesNotMatch(globalStyles, /(^|\n)\.startup-pet-greeting-sprite\s*\{/);
+  assert.match(zhDictionary, /"startup\.placeholderPetGreeting": "欢迎使用 \{name\}，希望给你的生活和工作提供帮助。"/);
+  assert.match(enDictionary, /"startup\.placeholderPetGreeting": "Welcome to \{name\}\. I hope I can help with your life and work\."/);
   assert.doesNotMatch(startupGate, /<Navigate\b/);
   assert.doesNotMatch(startupGate, /resolveStartupRootPath/);
-  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder showPetGreeting=\{!showStartupCard\} \/>\}/);
   assert.doesNotMatch(appShell, /shouldAutoOpenAssistant/);
   assert.doesNotMatch(appShell, /shouldRedirectStartupFailureToControlCenter/);
   assert.doesNotMatch(appShell, /startupNavigationDoneRef/);

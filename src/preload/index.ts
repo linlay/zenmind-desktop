@@ -514,6 +514,9 @@ const api: DesktopApi = {
       export: () => ipcRenderer.invoke("webs.websites.export")
     },
     webapps: {
+      list: () => ipcRenderer.invoke("webs.webapps.list"),
+      update: (id: string, input) => ipcRenderer.invoke("webs.webapps.update", id, input),
+      remove: (id: string) => ipcRenderer.invoke("webs.webapps.remove", id),
       start: (id: string) => ipcRenderer.invoke("webs.webapps.start", id),
       stop: (id: string) => ipcRenderer.invoke("webs.webapps.stop", id),
       restart: (id: string) => ipcRenderer.invoke("webs.webapps.restart", id),

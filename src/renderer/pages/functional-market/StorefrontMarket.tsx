@@ -23,6 +23,7 @@ import { Alert, Button, Card, Empty, Input, Modal, Tag } from "antd";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
+import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import { getServiceDisplayName } from "../../service-display";
 import { useI18n } from "../../i18n/useI18n";
 import { useServices } from "../../services/ServicesContext";
@@ -674,7 +675,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       navigate(`/service/${item.id}`);
       return;
     }
-    navigate("/control-center", {
+    navigate(buildSettingsSectionPath("plugins"), {
       state: {
         selectedServiceId: item.id
       }

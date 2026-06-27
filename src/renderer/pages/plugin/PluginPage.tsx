@@ -18,6 +18,7 @@ import {
 } from "../../../shared/service-webview-bridge";
 import { handleServiceWebviewBridgeMessage } from "../../services/serviceWebviewBridgeHost";
 import { getServiceDisplayName } from "../../service-display";
+import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import type {
   AssistantPageContext,
   DesktopPageContextSnapshot,
@@ -419,6 +420,13 @@ export function PluginPage({
   const serviceDisplayName =
     surfaceLabel ||
     (service ? getServiceDisplayName(service.id, service.name, t) : "");
+  const controlCenterPath = "/control-center";
+  const pluginsSettingsPath = buildSettingsSectionPath("plugins");
+  const serviceManagementPath = service?.kind === "plugin" ? pluginsSettingsPath : controlCenterPath;
+  const serviceOpenManagementLabel =
+    service?.kind === "plugin" ? t("pluginPage.openPlugins") : t("pluginPage.openControlCenter");
+  const serviceBackManagementLabel =
+    service?.kind === "plugin" ? t("pluginPage.backToPlugins") : t("pluginPage.backToControlCenter");
   const surfaceRoute = location.pathname;
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -1513,7 +1521,7 @@ export function PluginPage({
         <section className="empty-state" {...surfaceVisibilityProps}>
           <h1>{t("pluginPage.agentServiceMissingTitle")}</h1>
           <p>{t("pluginPage.agentServiceMissingDescription")}</p>
-          <Link className="primary-link" to="/control-center">
+          <Link className="primary-link" to={controlCenterPath}>
             {t("pluginPage.openControlCenter")}
           </Link>
         </section>
@@ -1524,8 +1532,8 @@ export function PluginPage({
       <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>{t("pluginPage.serviceMissingTitle")}</h1>
         <p>{t("pluginPage.serviceMissingDescription", { pluginId })}</p>
-        <Link className="primary-link" to="/control-center">
-          {t("pluginPage.backToControlCenter")}
+        <Link className="primary-link" to={pluginsSettingsPath}>
+          {t("pluginPage.backToPlugins")}
         </Link>
       </section>
     );
@@ -1537,8 +1545,8 @@ export function PluginPage({
         <p className="eyebrow">PLUGIN</p>
         <h1>{t("pluginPage.notReadyTitle", { name: serviceDisplayName })}</h1>
         <p>{service.message}</p>
-        <Link className="primary-link" to="/control-center">
-          {t("pluginPage.openControlCenter")}
+        <Link className="primary-link" to={serviceManagementPath}>
+          {serviceOpenManagementLabel}
         </Link>
       </section>
     );
@@ -1553,8 +1561,8 @@ export function PluginPage({
       <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>{serviceDisplayName}</h1>
         <p>{t("pluginPage.noFrontend")}</p>
-        <Link className="primary-link" to="/control-center">
-          {t("pluginPage.backToControlCenter")}
+        <Link className="primary-link" to={serviceManagementPath}>
+          {serviceBackManagementLabel}
         </Link>
       </section>
     );
@@ -1566,8 +1574,8 @@ export function PluginPage({
         <p className="eyebrow">PLUGIN</p>
         <h1>{serviceDisplayName}</h1>
         <p>{t("pluginPage.authBridgeFailed", { message: bridgeError })}</p>
-        <Link className="primary-link" to="/control-center">
-          {t("pluginPage.backToControlCenter")}
+        <Link className="primary-link" to={serviceManagementPath}>
+          {serviceBackManagementLabel}
         </Link>
       </section>
     );

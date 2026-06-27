@@ -9,6 +9,11 @@ import {
   removeWebsiteItem,
   updateWebsiteItem
 } from "../webs/websites/actions";
+import {
+  listWebappItems,
+  removeWebappItem,
+  updateWebappItem
+} from "../webs/webapps/actions";
 import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
 import { webappRuntime } from "../webs/webapps/runtime";
@@ -115,6 +120,13 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
 
   ipcMain.handle("webs.webapps.start", async (_event: any, id: string) =>
     webappRuntime.start(app, id)
+  );
+  ipcMain.handle("webs.webapps.list", async () => listWebappItems(app));
+  ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) =>
+    updateWebappItem(app, id, input)
+  );
+  ipcMain.handle("webs.webapps.remove", async (_event: any, id: string) =>
+    removeWebappItem(app, id)
   );
   ipcMain.handle("webs.webapps.stop", async (_event: any, id: string) =>
     webappRuntime.stop(app, id)

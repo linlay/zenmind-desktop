@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useServices } from "../../services/ServicesContext";
 import { getServiceDisplayName } from "../../service-display";
 import { useI18n } from "../../i18n/useI18n";
+import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import {
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
@@ -28,6 +29,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
   const { services } = useServices();
   const service = services.find((item) => item.id === pluginId);
   const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name, t) : pluginId;
+  const pluginsSettingsPath = buildSettingsSectionPath("plugins");
   const [settingsUrl, setSettingsUrl] = useState("");
   const [preloadUrl, setPreloadUrl] = useState("");
   const [error, setError] = useState("");
@@ -124,7 +126,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
       <section className="empty-state">
         <h1>{t("pluginSettingsPage.pluginMissingTitle")}</h1>
         <p>{t("pluginSettingsPage.pluginMissingMessage", { pluginId })}</p>
-        <Link className="primary-link" to="/control-center">{t("pluginSettingsPage.back")}</Link>
+        <Link className="primary-link" to={pluginsSettingsPath}>{t("pluginSettingsPage.back")}</Link>
       </section>
     );
   }
@@ -145,7 +147,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
         <p className="eyebrow">PLUGIN SETTINGS</p>
         <h1>{serviceDisplayName}</h1>
         <p>{error || t("pluginSettingsPage.unavailable")}</p>
-        <Link className="primary-link" to="/control-center">{t("pluginSettingsPage.back")}</Link>
+        <Link className="primary-link" to={pluginsSettingsPath}>{t("pluginSettingsPage.back")}</Link>
       </section>
     );
   }

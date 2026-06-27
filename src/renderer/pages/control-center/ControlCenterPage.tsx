@@ -96,7 +96,8 @@ type ConfigCache = Record<ServiceId, Record<string, string>>;
 type ConfigMetaCache = Record<ServiceId, Record<string, ConfigMeta>>;
 type PluginSettingsCache = Record<ServiceId, PluginSettingsReadResult>;
 type PluginSettingsDraftCache = Record<ServiceId, PluginSettingsValues>;
-type ServiceGroupKey = "core" | "market";
+type ServiceWorkspaceKind = "control" | "plugins";
+type ServiceGroupKey = "core" | "plugins";
 type HelpTipState = {
   serviceId: ServiceId;
   label: string;
@@ -530,6 +531,14 @@ function SelectChevronIcon() {
 }
 
 export function ControlCenterPage() {
+  return <ServiceWorkspacePage kind="control" />;
+}
+
+export function PluginsPage() {
+  return <ServiceWorkspacePage kind="plugins" />;
+}
+
+function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
   const {
     services,
     loading,
@@ -560,9 +569,6 @@ export function ControlCenterPage() {
   } | null>(null);
   const [feedback, setFeedback] = useState("");
   const [isBatchStarting, setIsBatchStarting] = useState(false);
-  const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>(
-    "market",
-  );
   const [configCache, setConfigCache] = useState<ConfigCache>({});
   const [configOriginalCache, setConfigOriginalCache] = useState<ConfigCache>(
     {},
@@ -605,10 +611,11 @@ export function ControlCenterPage() {
         .filter((service): service is ServiceState => Boolean(service)),
     [coreModules],
   );
-  const marketServices = useMemo(
+  const pluginServices = useMemo(
     () => services.filter((service) => service.kind === "plugin"),
     [services],
   );
+  const workspaceServices = kind === "plugins" ? pluginServices : coreServices;
   const navigationState = location.state as {
     startupFailure?: {
       serviceId: ServiceId | null;
@@ -621,8 +628,9 @@ export function ControlCenterPage() {
 
   useEffect(() => {
     const currentGroupIds = [
-      ...coreModules.map((module) => module.id),
-      ...marketServices.map((service) => service.id),
+      ...(kind === "plugins"
+        ? pluginServices.map((service) => service.id)
+        : coreModules.map((module) => module.id)),
     ];
 
     if (currentGroupIds.length === 0) {
@@ -635,7 +643,7 @@ export function ControlCenterPage() {
         ? current
         : currentGroupIds[0],
     );
-  }, [coreModules, marketServices]);
+  }, [coreModules, kind, pluginServices, selectedServiceId]);
 
   useEffect(() => {
     if (!startupFailure) {
@@ -785,20 +793,25 @@ export function ControlCenterPage() {
   }, [selectedServiceId, serviceById]);
 
   const serviceCounts = {
-    total: services.length,
-    running: services.filter((service) => service.status === "running")
+    total: workspaceServices.length,
+    running: workspaceServices.filter((service) => service.status === "running")
       .length,
   };
   const selectedCoreModule =
-    coreModules.find((module) => module.id === selectedServiceId) ??
-    coreModules[0] ??
-    null;
-  const selectedMarketService =
-    marketServices.find((service) => service.id === selectedServiceId) ??
-    null;
+    kind === "control"
+      ? coreModules.find((module) => module.id === selectedServiceId) ??
+      coreModules[0] ??
+      null
+      : null;
+  const selectedPluginService =
+    kind === "plugins"
+      ? pluginServices.find((service) => service.id === selectedServiceId) ??
+      pluginServices[0] ??
+      null
+      : null;
   const activeDetailService =
-    selectedMarketService ?? selectedCoreModule?.service ?? null;
-  const activeCoreModule = selectedMarketService ? null : selectedCoreModule;
+    selectedPluginService ?? selectedCoreModule?.service ?? null;
+  const activeCoreModule = kind === "control" && !selectedPluginService ? selectedCoreModule : null;
   const selectedConfigKey = activeDetailService
     ? activeConfigKeyByService[activeDetailService.id]
     : undefined;
@@ -1220,35 +1233,6 @@ export function ControlCenterPage() {
     });
   }
 
-  function toggleGroup(group: ServiceGroupKey) {
-    if (group === "core") {
-      const nextSelectedCore =
-        coreModules.find((module) => module.id === selectedServiceId) ??
-        coreModules[0] ??
-        null;
-      if (nextSelectedCore) {
-        setSelectedServiceId(nextSelectedCore.id);
-      }
-      return;
-    }
-
-    setExpandedGroup((current) => {
-      const nextExpanded = current === "market" ? null : "market";
-      if (nextExpanded === "market") {
-        const nextSelectedMarket =
-          marketServices.find(
-            (service) => service.id === selectedServiceId,
-          ) ??
-          marketServices[0] ??
-          null;
-        if (nextSelectedMarket) {
-          setSelectedServiceId(nextSelectedMarket.id);
-        }
-      }
-      return nextExpanded;
-    });
-  }
-
   async function runAction(
     serviceId: ServiceId,
     scope: ActionScope,
@@ -1294,11 +1278,13 @@ export function ControlCenterPage() {
   }
 
   async function handleQuickStart() {
+    setIsBatchStarting(true);
     const orderedServices = QUICK_START_ORDER.map((serviceId) =>
       serviceById.get(serviceId),
     ).filter((service): service is ServiceState => Boolean(service));
 
     if (orderedServices.length === 0) {
+      setIsBatchStarting(false);
       setFeedback(t("controlCenter.feedback.noQuickStartServices"));
       return;
     }
@@ -1528,13 +1514,54 @@ export function ControlCenterPage() {
     serviceCounts.running > 0
       ? t("controlCenter.metrics.running")
       : t("controlCenter.metrics.standby");
+  const pageTitle = kind === "plugins"
+    ? t("pluginsPage.title")
+    : t("controlCenter.title");
+  const pageCopy = kind === "plugins"
+    ? t("pluginsPage.copy")
+    : t("controlCenter.copy");
+  const catalogAriaLabel = kind === "plugins"
+    ? t("pluginsPage.catalog.ariaLabel")
+    : t("controlCenter.catalog.ariaLabel");
+  const emptyWorkspaceMessage = kind === "plugins"
+    ? t("pluginsPage.empty.noImportedPlugins")
+    : t("controlCenter.empty.noRegisteredServices");
+  const catalogGroups: Array<{
+    key: ServiceGroupKey;
+    title: string;
+    subtitle: string;
+    services: Array<CoreModuleEntry | ServiceState>;
+    empty: string;
+  }> = kind === "plugins"
+    ? [
+      {
+        key: "plugins",
+        title: t("pluginsPage.group.plugins"),
+        subtitle: t("pluginsPage.group.pluginsSubtitle", {
+          count: pluginServices.length,
+        }),
+        services: pluginServices,
+        empty: t("pluginsPage.empty.noImportedPlugins"),
+      },
+    ]
+    : [
+      {
+        key: "core",
+        title: t("controlCenter.group.core"),
+        subtitle: t("controlCenter.group.coreSubtitle", {
+          count: coreModules.length,
+        }),
+        services: coreModules,
+        empty: t("controlCenter.group.coreEmpty"),
+      },
+    ];
 
   return (
-    <section ref={pageRef} className="control-center-page workspace-wide">
+    <section ref={pageRef} className={`control-center-page workspace-wide service-workspace-page is-${kind}`}>
       <div className="page-head control-center-hero">
         <div className="control-center-hero-copy">
-          <h1>{t("controlCenter.title")}</h1>
-          <p>{t("controlCenter.copy")}</p>
+          <h1>{pageTitle}</h1>
+          <p>{pageCopy}</p>
         </div>
         <div
           className="control-center-dashboard-metrics"
@@ -1598,53 +1625,24 @@ export function ControlCenterPage() {
       <div className="control-center-shell">
         <aside
           className="service-sider service-catalog"
-          aria-label={t("controlCenter.catalog.ariaLabel")}
+          aria-label={catalogAriaLabel}
         >
           <div className="service-accordion">
-            {[
-              {
-                key: "core" as const,
-                title: t("controlCenter.group.core"),
-                subtitle: t("controlCenter.group.coreSubtitle", {
-                  count: coreModules.length,
-                }),
-                services: coreModules,
-                empty: t("controlCenter.group.coreEmpty"),
-              },
-              {
-                key: "market" as const,
-                title: t("controlCenter.group.market"),
-                subtitle: t("controlCenter.group.marketSubtitle", {
-                  count: marketServices.length,
-                }),
-                services: marketServices,
-                empty: t("controlCenter.group.marketEmpty"),
-              },
-            ].map((group) => {
-              const isOpen =
-                group.key === "core"
-                  ? true
-                  : expandedGroup === group.key;
-
-              return (
+            {catalogGroups.map((group) => (
                 <section
                   key={group.key}
-                  className={`service-group${isOpen ? " is-open" : ""}`}
+                  className="service-group is-open"
                 >
                   <div className="service-group-head">
-                    <button
-                      type="button"
+                    <div
                       className="service-group-trigger"
-                      onClick={() =>
-                        toggleGroup(group.key)
-                      }
-                      aria-expanded={isOpen}
+                      aria-expanded="true"
                     >
                       <div className="service-group-copy">
                         <h2>{group.title}</h2>
                         <span>{group.subtitle}</span>
                       </div>
-                    </button>
+                    </div>
                     {group.key === "core" ? (
                       <button
                         type="button"
@@ -1659,7 +1657,7 @@ export function ControlCenterPage() {
                           : t("controlCenter.quickStart")}
                       </button>
                     ) : null}
-                    {group.key === "market" ? (
+                    {group.key === "plugins" ? (
                       <button
                         type="button"
                         className="service-catalog-import"
@@ -1670,15 +1668,14 @@ export function ControlCenterPage() {
                         <span aria-hidden="true">
                           +
                         </span>
-                        {t("controlCenter.importPlugin")}
+                        {t("pluginsPage.importPlugin")}
                       </button>
                     ) : null}
                   </div>
 
-                  {isOpen ? (
-                    <div className="service-nav-list">
-                      {group.services.length > 0 ? (
-                        group.services.map((item) => {
+                  <div className="service-nav-list">
+                    {group.services.length > 0 ? (
+                      group.services.map((item) => {
                           const service =
                             "service" in item
                               ? item.service
@@ -1843,10 +1840,8 @@ export function ControlCenterPage() {
                         </div>
                       )}
                     </div>
-                  ) : null}
                 </section>
-              );
-            })}
+              ))}
           </div>
         </aside>
 
@@ -2693,7 +2688,7 @@ export function ControlCenterPage() {
           </article>
         ) : (
           <div className="loading-box control-center-empty">
-            {t("controlCenter.empty.noRegisteredServices")}
+            {emptyWorkspaceMessage}
           </div>
         )}
       </div>

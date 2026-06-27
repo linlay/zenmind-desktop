@@ -7,8 +7,10 @@ export type SettingsSectionId =
   | "market"
   | "control"
   | "tunnelHub"
+  | "plugins"
   | "navigation"
   | "websites"
+  | "webapps"
   | "about"
   | "debug";
 

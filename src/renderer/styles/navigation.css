@@ -2995,6 +2995,70 @@
   min-height: 100%;
 }
 
+.startup-route-placeholder.has-pet-greeting {
+  position: relative;
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint;
+}
+
+.startup-route-placeholder.has-pet-greeting .startup-pet-greeting {
+  width: min(58vw, 460px);
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.startup-route-placeholder.has-pet-greeting .startup-pet-greeting-bubble {
+  max-width: min(100%, 320px);
+  margin: 0;
+  padding: 10px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--ink);
+  box-shadow:
+    0 12px 26px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.56);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  backdrop-filter: blur(16px) saturate(132%);
+  -webkit-backdrop-filter: blur(16px) saturate(132%);
+}
+
+.startup-route-placeholder.has-pet-greeting .startup-pet-greeting-track {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 104px;
+}
+
+.startup-route-placeholder.has-pet-greeting .startup-pet-greeting-sprite {
+  display: block;
+  width: 96px;
+  height: 104px;
+  background-repeat: no-repeat;
+  background-size: calc(96px * var(--startup-pet-state-frames, 1)) 104px;
+  background-position: 0 0;
+  animation: desktop-pet-state-frames var(--startup-pet-state-duration, 900ms) steps(var(--startup-pet-state-frames, 1), end) infinite;
+  will-change: background-position;
+}
+
+:root[data-theme="dark"] .startup-route-placeholder.has-pet-greeting .startup-pet-greeting-bubble {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(31, 35, 42, 0.68);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
 .app-error-screen {
   min-height: 100%;
   display: grid;

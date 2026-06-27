@@ -290,10 +290,6 @@ function normalizeWebGroupOrder(
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS: readonly ExternalExperimentalItem[] = [];
 
-function isWebsiteEntry(item: WebEntry): item is WebsiteEntry {
-  return item.kind === "website";
-}
-
 function mergeWebsiteItems(currentItems: WebEntry[], nextWebsiteItems: WebsiteEntry[]) {
   const nextWebsiteByEntryKey = new Map(nextWebsiteItems.map((item) => [item.entryKey, item]));
   const mergedItems: WebEntry[] = [];
@@ -623,10 +619,6 @@ export function AppShell() {
       return [item.entryKey, item] as const;
     }));
   }, [webItems, webappRuntimeById]);
-  const externalWebItems = useMemo(
-    () => webItems.filter(isWebsiteEntry),
-    [webItems]
-  );
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
   const activeWebEntry = activeWebEntryKey ? webItemMap.get(activeWebEntryKey) ?? null : null;
   const webOpenEntryKeys = useMemo(() => {
@@ -777,8 +769,27 @@ export function AppShell() {
       });
   }
 
-  function handleExternalWebItemsChange(_items: WebsiteEntry[]) {
-    refreshWebItems().catch(() => undefined);
+  function handleSettingsWebappRuntimeStateChange(id: string, state: WebappRuntimeState | null, message = "") {
+    const webappId = id.trim();
+    if (!webappId) {
+      return;
+    }
+    setWebappRuntimeById((current) => {
+      if (!state) {
+        const next = { ...current };
+        delete next[webappId];
+        return next;
+      }
+      return {
+        ...current,
+        [webappId]: {
+          status: state.status === "stopped" ? "idle" : state.status,
+          webUrl: state.webUrl,
+          message: message || state.message,
+          state
+        }
+      };
+    });
   }
 
   async function refreshAssistantNavAgents() {
@@ -2779,7 +2790,7 @@ export function AppShell() {
           <Routes>
             <Route
               path="/"
-              element={<StartupRoutePlaceholder />}
+              element={<StartupRoutePlaceholder showPetGreeting={!showStartupCard} />}
             />
             <Route
               path="/kanban"
@@ -2810,8 +2821,9 @@ export function AppShell() {
                     onSidebarNavOrderChange={setSidebarNavOrder}
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
-                    websiteItems={externalWebItems}
-                    onWebsiteItemsChange={handleExternalWebItemsChange}
+                    webItems={webItems}
+                    onWebItemsRefresh={refreshWebItems}
+                    onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
                     onAssistantSettingsChange={setAssistantSettings}
                     debugVisible={debugSettingsUnlocked}
                   />

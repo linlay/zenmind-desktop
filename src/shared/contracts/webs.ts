@@ -4,6 +4,7 @@ export type WebKind = "website" | "webapp";
 export type WebEntryKey = `website:${string}` | `webapp:${string}`;
 export type WebappRuntimeStatus = "stopped" | "starting" | "running" | "error";
 export type WebappLogTarget = "main" | "error";
+export type WebappSourceKind = "market" | "local" | "plugin" | "bundled";
 
 export interface WebappFrontendConfig {
   root: string;
@@ -42,6 +43,11 @@ export interface WebappEntry extends WebEntryBase {
   entryKey: `webapp:${string}`;
   frontend: WebappFrontendConfig;
   backend: WebappBackendConfig;
+  sourceKind?: WebappSourceKind;
+  sourceLabel?: string;
+  sourceOwnerId?: string;
+  installPath?: string;
+  removable?: boolean;
 }
 
 export type WebEntry = WebsiteEntry | WebappEntry;
@@ -111,6 +117,31 @@ export interface WebsiteTransferResult {
   ok: boolean;
   items: WebsiteEntry[];
   path: string;
+  message: string;
+}
+
+export interface WebappUpdateInput {
+  label?: string;
+  agentKey?: string;
+}
+
+export interface WebappItemsResult {
+  ok: boolean;
+  items: WebappEntry[];
+  message: string;
+}
+
+export interface WebappResult {
+  ok: boolean;
+  item: WebappEntry | null;
+  items: WebappEntry[];
+  message: string;
+}
+
+export interface WebappDeleteResult {
+  ok: boolean;
+  item: WebappEntry | null;
+  items: WebappEntry[];
   message: string;
 }
 

@@ -3855,9 +3855,13 @@ export function AppSidebar({
         return "control";
       case "tunnelHub":
         return "service";
+      case "plugins":
+        return "market";
       case "navigation":
         return "sidebar-assistant-closed";
       case "websites":
+        return "website";
+      case "webapps":
         return "website";
       case "about":
         return "about";

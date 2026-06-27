@@ -16,8 +16,10 @@ import {
   realpathInsideRoot,
   resolveWebappRelativePath,
   sortWebEntries,
+  toIsoTimestamp,
   toTimestamp
 } from "../common";
+import { withWebappManagementMetadata } from "./metadata";
 
 export const WEBAPP_FILE = "webapp.json";
 
@@ -142,7 +144,7 @@ function sanitizeWebappItems(items: WebappEntry[]) {
 }
 
 export function readWebappItems(app: App) {
-  return readWebappItemsWithoutMigration(app);
+  return readWebappItemsWithoutMigration(app).map((item) => withWebappManagementMetadata(app, item));
 }
 
 export function readWebappItemsWithoutMigration(app: App) {
@@ -169,4 +171,45 @@ export function readWebappItemsWithoutMigration(app: App) {
 
 export function isWebappFile(value: unknown) {
   return isRecord(value) && (value.kind === "webapp" || value.kind === "local-app" || value.schemaVersion === 2);
+}
+
+export function writeWebappPreferenceFields(
+  app: App,
+  id: string,
+  input: {
+    label?: string;
+    agentKey?: string;
+  }
+) {
+  const webappPath = getWebappPath(app, id);
+  const raw = readWebappManifestFile(path.dirname(webappPath));
+  if (!isRecord(raw)) {
+    throw new Error("webapp.json must contain an object.");
+  }
+
+  const item = readWebappItemFromDir(path.dirname(webappPath), id);
+  if (!item) {
+    throw new Error("webapp.json is invalid.");
+  }
+
+  const updatedAt = Date.now();
+  const next: Record<string, unknown> = {
+    ...raw,
+    updatedAt: toIsoTimestamp(updatedAt)
+  };
+
+  if (typeof input.label === "string") {
+    next.label = normalizeWebsiteLabel(input.label, item.id);
+  }
+  if (typeof input.agentKey === "string") {
+    const agentKey = normalizeAgentKey(input.agentKey);
+    if (agentKey) {
+      next.agentKey = agentKey;
+    } else {
+      delete next.agentKey;
+    }
+  }
+
+  fs.writeFileSync(webappPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return withWebappManagementMetadata(app, readWebappItemFromDir(path.dirname(webappPath), id)!);
 }

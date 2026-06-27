@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MarketItem, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
+import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import { getServiceDisplayName } from "../../service-display";
 import { useI18n } from "../../i18n/useI18n";
 import { useServices } from "../../services/ServicesContext";
@@ -130,7 +131,7 @@ export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
       navigate(`/service/${item.id}`);
       return;
     }
-    navigate("/control-center", {
+    navigate(buildSettingsSectionPath("plugins"), {
       state: {
         selectedServiceId: item.id
       }
