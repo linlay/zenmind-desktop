@@ -13,6 +13,12 @@
 - For compatibility-sensitive code, clarity is more important than clever abstraction.
 - If platform behavior is intentionally different, keep the branching explicit in code and explain the reason briefly in comments when it is not obvious.
 
+## Kanban Issue Protocol
+
+- Treat cloud Kanban issues as a read-only cache in Desktop UI/runtime surfaces.
+- Do not call removed public issue endpoints such as `issue.transition`, `issue.assignRun`, `issue.dispatchDesktop`, `issue.label.set`, `issue.dependency.*`, `issueLabel.*`, `review.*`, or `review.comment.*`.
+- Keep `run.event.append` as the Desktop runtime synchronization protocol for run state, `chatId`, and `runId`; it is not public issue CRUD.
+
 <!-- xgraph:start -->
 ## Project Context
 

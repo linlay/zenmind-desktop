@@ -146,7 +146,6 @@ const ISSUE_EVENT_TYPES = new Set([
   "issue.created",
   "issue.updated",
   "issue.deleted",
-  "issue.transitioned",
   "issue.moved"
 ]);
 
