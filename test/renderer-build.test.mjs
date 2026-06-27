@@ -871,6 +871,84 @@ test("fixed sidebar settings trigger keeps Settings label and exposes Help affor
   );
 });
 
+test("sidebar primary navigation uses roving tabindex", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(sidebarSource, /const \[sidebarNavFocusId,\s*setSidebarNavFocusId\] = useState\(""\);/);
+  assert.match(sidebarSource, /const resolvedSidebarNavFocusId =\s*sidebarNavFocusId \|\| defaultSidebarNavFocusId;/);
+  assert.match(sidebarSource, /function getSidebarRovingItemProps\(id: string, enabled = true\)/);
+  assert.match(sidebarSource, /tabIndex:\s*resolvedSidebarNavFocusId === id \? 0 : -1/);
+  assert.match(sidebarSource, /data-sidebar-roving-container=\{!isSettingsMode \? "true" : undefined\}/);
+  assert.match(sidebarSource, /onKeyDown=\{handleSidebarNavKeyDown\}/);
+  assert.match(sidebarSource, /event\.key === "ArrowDown"[\s\S]*?moveSidebarRovingFocus\(currentElement, "next"\)/);
+  assert.match(sidebarSource, /event\.key === "ArrowUp"[\s\S]*?moveSidebarRovingFocus\(currentElement, "previous"\)/);
+  assert.match(sidebarSource, /event\.key === "Home"[\s\S]*?moveSidebarRovingFocus\(currentElement, "first"\)/);
+  assert.match(sidebarSource, /event\.key === "End"[\s\S]*?moveSidebarRovingFocus\(currentElement, "last"\)/);
+  assert.match(sidebarSource, /event\.key === "ArrowRight"[\s\S]*?handleSidebarRovingArrowRight\(currentElement\)/);
+  assert.match(sidebarSource, /event\.key === "ArrowLeft"[\s\S]*?handleSidebarRovingArrowLeft\(currentElement\)/);
+  assert.match(sidebarSource, /event\.key === "ContextMenu" \|\| \(event\.shiftKey && event\.key === "F10"\)/);
+});
+
+test("sidebar collapse headers separate trigger and actions", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const collapseSource = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "Collapse",
+    "index.tsx"
+  );
+  const collapseStyles = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "Collapse",
+    "index.css"
+  );
+
+  assert.match(collapseSource, /headerActions\?: React\.ReactNode;/);
+  assert.match(collapseSource, /headerButtonProps\?: CollapseHeaderButtonProps;/);
+  assert.match(collapseSource, /<div className="Collapse-header">[\s\S]*?<button[\s\S]*?className=\{\["Collapse-trigger"/);
+  assert.match(collapseSource, /<div className="Collapse-headerActions">\{headerActions\}<\/div>/);
+  assert.doesNotMatch(collapseSource, /className="Collapse-header"[\s\S]{0,160}onClick=\{handleToggle\}/);
+  assert.match(collapseStyles, /\.Collapse-trigger\s*\{/);
+  assert.match(collapseStyles, /\.Collapse-headerActions\s*\{/);
+  assert.match(sidebarSource, /headerButtonProps=\{\{[\s\S]*?className: "assistant-worker-header"[\s\S]*?headerActions=\{/);
+  assert.match(sidebarSource, /headerButtonProps=\{\{[\s\S]*?className: groupTriggerClassName[\s\S]*?headerActions=\{/);
+  assert.doesNotMatch(sidebarSource, /header=\{\s*<button/);
+});
+
+test("sidebar row action buttons stay out of default tab order", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(sidebarSource, /className="assistant-worker-chat-menu-button"[\s\S]{0,220}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-manage-button"[\s\S]{0,240}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /function openSidebarRovingContextMenu\(element: HTMLElement\)/);
+  assert.match(sidebarSource, /function renderWebItemMenu\(\)/);
+  assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
+});
+
 test("sidebar renders Kanban and section groups above the fixed tool menu", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
@@ -1270,8 +1348,8 @@ test("assistant sidebar active chats use loading status instead of thinking text
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-panel-time-label,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,120}display: inline-flex;/);
   assert.match(globalStyles, /\.sidebar-assistant-preview-loading\s*\{[\s\S]{0,120}color: var\(--ink-muted\);/);
-  assert.match(globalStyles, /\.assistant-worker-chat-item:hover \.assistant-worker-chat-action:not\(\[data-action="loading"\]\):not\(\[data-action="awaiting"\]\)/);
-  assert.match(globalStyles, /\.assistant-worker-chat-item:hover \.assistant-worker-chat-action:not\(\[data-action="loading"\]\):not\(\[data-action="awaiting"\]\) ~ \.assistant-worker-chat-menu-button/);
+  assert.match(globalStyles, /\.assistant-worker-chat-row:hover \.assistant-worker-chat-action:not\(\[data-action="loading"\]\):not\(\[data-action="awaiting"\]\),\s*\.assistant-worker-chat-row:focus-within \.assistant-worker-chat-action:not\(\[data-action="loading"\]\):not\(\[data-action="awaiting"\]\)/);
+  assert.match(globalStyles, /\.assistant-worker-chat-row:hover \.assistant-worker-chat-menu-button,\s*\.assistant-worker-chat-row:focus-within \.assistant-worker-chat-menu-button/);
   assert.match(globalStyles, /@keyframes assistant-worker-chat-spin\s*\{[\s\S]*?translateY\(-50%\) rotate\(360deg\)/);
 });
 

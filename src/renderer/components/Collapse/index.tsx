@@ -7,11 +7,17 @@ import React, {
 } from "react";
 import "./index.css";
 
+type CollapseHeaderButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
+  Partial<Record<`data-${string}`, string | undefined>>;
+
 export interface CollapseProps {
   className?: string;
   expanded: boolean;
   onExpand: (expanded: boolean) => void;
   header: React.ReactNode;
+  headerActions?: React.ReactNode;
+  headerButtonProps?: CollapseHeaderButtonProps;
+  headerButtonRef?: React.Ref<HTMLButtonElement>;
   children: React.ReactNode;
 }
 
@@ -20,6 +26,9 @@ export const Collapse: React.FC<CollapseProps> = ({
   expanded,
   onExpand,
   header,
+  headerActions,
+  headerButtonProps,
+  headerButtonRef,
   children,
 }) => {
   const contentId = useId();
@@ -52,18 +61,41 @@ export const Collapse: React.FC<CollapseProps> = ({
   const handleToggle = () => {
     onExpand(!expanded);
   };
+  const {
+    className: headerButtonClassName,
+    onClick: onHeaderButtonClick,
+    ...restHeaderButtonProps
+  } = headerButtonProps ?? {};
 
   return (
-    <div className={`${expanded ? "is-expanded" : ""} Collapse ${className}`}>
-      <button
-        type="button"
-        className="Collapse-header"
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        onClick={handleToggle}
-      >
-        {header}
-      </button>
+    <div
+      className={["Collapse", expanded ? "is-expanded" : "", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className="Collapse-header">
+        <button
+          {...restHeaderButtonProps}
+          ref={headerButtonRef}
+          type="button"
+          className={["Collapse-trigger", headerButtonClassName]
+            .filter(Boolean)
+            .join(" ")}
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={(event) => {
+            onHeaderButtonClick?.(event);
+            if (!event.defaultPrevented) {
+              handleToggle();
+            }
+          }}
+        >
+          {header}
+        </button>
+        {headerActions ? (
+          <div className="Collapse-headerActions">{headerActions}</div>
+        ) : null}
+      </div>
       <div
         id={contentId}
         className="Collapse-content"

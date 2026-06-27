@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
 } from "react";
 import {
@@ -93,6 +94,18 @@ type AssistantNavSortMode = "byName" | "byTime";
 
 type AssistantChatMenuState = {
   chat: AssistantNavChatItem;
+  x: number;
+  y: number;
+};
+
+type SidebarWebItemMenuState = {
+  item: WebEntry;
+  x: number;
+  y: number;
+};
+
+type SidebarGroupActionMenuState = {
+  groupId: SidebarGroupId;
   x: number;
   y: number;
 };
@@ -631,6 +644,42 @@ function getAssistantAttentionChat(agent: AssistantNavAgentItem) {
   );
 }
 
+function createSidebarLinkFocusId(orderKey: SidebarNavOrderItemKey | string) {
+  return `link:${orderKey}`;
+}
+
+function createSidebarGroupFocusId(groupId: SidebarGroupId) {
+  return `group:${groupId}`;
+}
+
+function createSidebarAgentFocusId(agentKey: string) {
+  return `agent:${agentKey}`;
+}
+
+function createSidebarAgentMoreFocusId(agentKey: string) {
+  return `agent-more:${agentKey}`;
+}
+
+function createSidebarChatFocusId(chatId: string) {
+  return `chat:${chatId}`;
+}
+
+function createSidebarWebFocusId(entryKey: WebEntryKey | string) {
+  return `web:${entryKey}`;
+}
+
+function getMenuPositionFromElement(
+  element: HTMLElement,
+  width: number,
+  height: number,
+) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: Math.min(window.innerWidth - width, Math.max(8, rect.right - width + 10)),
+    y: Math.min(window.innerHeight - height, Math.max(8, rect.bottom + 4)),
+  };
+}
+
 type SidebarCollapseToggleVariant = "compact" | "nav";
 
 type SidebarCollapseToggleProps = {
@@ -803,6 +852,7 @@ export function AppSidebar({
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
+  const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
@@ -819,6 +869,10 @@ export function AppSidebar({
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
+  const [webItemMenu, setWebItemMenu] =
+    useState<SidebarWebItemMenuState | null>(null);
+  const [groupActionMenu, setGroupActionMenu] =
+    useState<SidebarGroupActionMenuState | null>(null);
   const [assistantChatRenameDialog, setAssistantChatRenameDialog] =
     useState<AssistantChatRenameDialogState | null>(null);
   const [agentMenu, setAgentMenu] = useState<{
@@ -828,9 +882,12 @@ export function AppSidebar({
   } | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
+  const sidebarNavRef = useRef<HTMLElement | null>(null);
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
+  const webItemMenuRef = useRef<HTMLDivElement | null>(null);
+  const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
   const agentMenuRef = useRef<HTMLDivElement | null>(null);
   const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
   const pendingRouteAgentInfo = pendingPath
@@ -929,6 +986,65 @@ export function AppSidebar({
     "sidebar-chrome-toolbar",
     isMac ? "is-mac" : isWindows ? "is-windows" : "is-default",
   ].join(" ");
+  const defaultSidebarNavFocusId = useMemo(() => {
+    if (isSettingsMode) {
+      return "";
+    }
+
+    const activeTopLevelItem = navItems.find((item) => {
+      if (item.entryType) {
+        return false;
+      }
+      return isRouteActive(item.to);
+    });
+    if (activeTopLevelItem) {
+      return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
+    }
+
+    if (isAssistantGroupActive()) {
+      if (
+        !isCollapsed &&
+        sidebarGroupState.assistants &&
+        activeSidebarAgentKey
+      ) {
+        return createSidebarAgentFocusId(activeSidebarAgentKey);
+      }
+      return createSidebarGroupFocusId("assistants");
+    }
+
+    if (isWebsiteGroupActive()) {
+      const activeWebItem = webNavItems.find((item) => isRouteActive(item.to));
+      if (!isCollapsed && sidebarGroupState.webs && activeWebItem?.webItem) {
+        return createSidebarWebFocusId(activeWebItem.webItem.entryKey);
+      }
+      return createSidebarGroupFocusId("webs");
+    }
+
+    const firstItem = navItems[0];
+    if (!firstItem) {
+      return "";
+    }
+    if (firstItem.entryType === "assistants") {
+      return createSidebarGroupFocusId("assistants");
+    }
+    if (firstItem.entryType === "webs") {
+      return createSidebarGroupFocusId("webs");
+    }
+    return createSidebarLinkFocusId(firstItem.orderKey);
+  }, [
+    activeSidebarAgentKey,
+    currentPathname,
+    currentRoute,
+    isCollapsed,
+    isSettingsMode,
+    navItems,
+    pendingPath,
+    sidebarGroupState.assistants,
+    sidebarGroupState.webs,
+    webNavItems,
+  ]);
+  const resolvedSidebarNavFocusId =
+    sidebarNavFocusId || defaultSidebarNavFocusId;
 
   useEffect(() => {
     try {
@@ -1037,6 +1153,88 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [agentMenu]);
+
+  useEffect(() => {
+    if (!webItemMenu) {
+      return undefined;
+    }
+    function handleDocumentPointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && webItemMenuRef.current?.contains(target)) {
+        return;
+      }
+      setWebItemMenu(null);
+    }
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setWebItemMenu(null);
+      }
+    }
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [webItemMenu]);
+
+  useEffect(() => {
+    if (!groupActionMenu) {
+      return undefined;
+    }
+    function handleDocumentPointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        groupActionMenuRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setGroupActionMenu(null);
+    }
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setGroupActionMenu(null);
+      }
+    }
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [groupActionMenu]);
+
+  useEffect(() => {
+    if (isSettingsMode) {
+      if (sidebarNavFocusId) {
+        setSidebarNavFocusId("");
+      }
+      return;
+    }
+
+    const visibleItems = getVisibleSidebarRovingElements();
+    if (visibleItems.length === 0) {
+      return;
+    }
+    const hasResolvedItem = visibleItems.some(
+      (item) => item.dataset.sidebarNavId === resolvedSidebarNavFocusId,
+    );
+    if (!hasResolvedItem) {
+      setSidebarNavFocusId(visibleItems[0].dataset.sidebarNavId || "");
+    }
+  }, [
+    expandedAssistantAgentKey,
+    isCollapsed,
+    isSettingsMode,
+    navItems,
+    resolvedSidebarNavFocusId,
+    sidebarGroupState.assistants,
+    sidebarGroupState.webs,
+    sidebarNavFocusId,
+    sortedAssistantNavAgents,
+    webNavItems,
+  ]);
 
   useEffect(() => {
     const previousRouteAgentInfo = lastRouteAgentInfoRef.current;
@@ -1198,9 +1396,315 @@ export function AppSidebar({
     onNavigateItem?.();
   }
 
-  async function handleCreateProject(event: MouseEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
+  function getSidebarRovingItemProps(id: string, enabled = true) {
+    if (!enabled || isSettingsMode) {
+      return {};
+    }
+    return {
+      "data-sidebar-roving-item": "true",
+      "data-sidebar-nav-id": id,
+      tabIndex: resolvedSidebarNavFocusId === id ? 0 : -1,
+      onFocus: () => setSidebarNavFocusId(id),
+    };
+  }
+
+  function getVisibleSidebarRovingElements() {
+    const sidebarNav = sidebarNavRef.current;
+    if (!sidebarNav) {
+      return [];
+    }
+    return Array.from(
+      sidebarNav.querySelectorAll<HTMLElement>(
+        '[data-sidebar-roving-item="true"]',
+      ),
+    ).filter((element) => {
+      if (element.closest('[aria-hidden="true"]')) {
+        return false;
+      }
+      if (element instanceof HTMLButtonElement && element.disabled) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function focusSidebarRovingElement(element: HTMLElement) {
+    const focusId = element.dataset.sidebarNavId;
+    if (focusId) {
+      setSidebarNavFocusId(focusId);
+    }
+    element.focus();
+  }
+
+  function focusSidebarRovingItemById(focusId: string) {
+    const element = getVisibleSidebarRovingElements().find(
+      (item) => item.dataset.sidebarNavId === focusId,
+    );
+    if (!element) {
+      return false;
+    }
+    focusSidebarRovingElement(element);
+    return true;
+  }
+
+  function moveSidebarRovingFocus(
+    currentElement: HTMLElement,
+    direction: "first" | "last" | "next" | "previous",
+  ) {
+    const items = getVisibleSidebarRovingElements();
+    if (items.length === 0) {
+      return;
+    }
+    const currentIndex = items.indexOf(currentElement);
+    let nextIndex = currentIndex >= 0 ? currentIndex : 0;
+    if (direction === "first") {
+      nextIndex = 0;
+    } else if (direction === "last") {
+      nextIndex = items.length - 1;
+    } else if (direction === "next") {
+      nextIndex = currentIndex >= 0 ? (currentIndex + 1) % items.length : 0;
+    } else {
+      nextIndex =
+        currentIndex >= 0
+          ? (currentIndex - 1 + items.length) % items.length
+          : items.length - 1;
+    }
+    focusSidebarRovingElement(items[nextIndex]);
+  }
+
+  function readSidebarGroupId(value: string | undefined): SidebarGroupId | null {
+    return value === "assistants" || value === "webs" ? value : null;
+  }
+
+  function findAssistantNavAgent(agentKey: string) {
+    return assistantNavAgents.find((agent) => agent.agentKey === agentKey) || null;
+  }
+
+  function findAssistantNavChat(chatId: string) {
+    for (const agent of assistantNavAgents) {
+      const chat = getAssistantNavAgentRecentChats(agent).find(
+        (item) => item.chatId === chatId,
+      );
+      if (chat) {
+        return chat;
+      }
+    }
+    return null;
+  }
+
+  function findWebItem(entryKey: string) {
+    return webItems.find((item) => item.entryKey === entryKey) || null;
+  }
+
+  function openAssistantChatMenuAtElement(
+    element: HTMLElement,
+    chat: AssistantNavChatItem,
+  ) {
+    const position = getMenuPositionFromElement(element, 180, 172);
+    setAssistantChatMenu({ chat, ...position });
+  }
+
+  function openAgentMenuAtElement(
+    element: HTMLElement,
+    agent: AssistantNavAgentItem,
+  ) {
+    const position = getMenuPositionFromElement(element, 180, 140);
+    setAgentMenu({ agent, ...position });
+  }
+
+  function openWebItemMenuAtElement(element: HTMLElement, item: WebEntry) {
+    const position = getMenuPositionFromElement(element, 180, 82);
+    setWebItemMenu({ item, ...position });
+  }
+
+  function openGroupActionMenuAtElement(
+    element: HTMLElement,
+    groupId: SidebarGroupId,
+  ) {
+    const position = getMenuPositionFromElement(element, 196, 156);
+    setGroupActionMenu({ groupId, ...position });
+  }
+
+  function openSidebarRovingContextMenu(element: HTMLElement) {
+    const kind = element.dataset.sidebarNavKind;
+    if (kind === "group") {
+      const groupId = readSidebarGroupId(element.dataset.sidebarGroupId);
+      if (!groupId) {
+        return false;
+      }
+      openGroupActionMenuAtElement(element, groupId);
+      return true;
+    }
+    if (kind === "agent") {
+      const agent = findAssistantNavAgent(element.dataset.sidebarAgentKey || "");
+      if (!agent) {
+        return false;
+      }
+      openAgentMenuAtElement(element, agent);
+      return true;
+    }
+    if (kind === "chat") {
+      const chat = findAssistantNavChat(element.dataset.sidebarChatId || "");
+      if (!chat) {
+        return false;
+      }
+      openAssistantChatMenuAtElement(element, chat);
+      return true;
+    }
+    if (kind === "web") {
+      const item = findWebItem(element.dataset.sidebarWebEntryKey || "");
+      if (!item || !webOpenEntryKeys.includes(item.entryKey)) {
+        return false;
+      }
+      openWebItemMenuAtElement(element, item);
+      return true;
+    }
+    return false;
+  }
+
+  function handleSidebarRovingArrowRight(element: HTMLElement) {
+    const kind = element.dataset.sidebarNavKind;
+    if (kind === "group") {
+      const groupId = readSidebarGroupId(element.dataset.sidebarGroupId);
+      if (!groupId) {
+        return false;
+      }
+      if (isCollapsed) {
+        element.click();
+        return true;
+      }
+      if (!sidebarGroupState[groupId]) {
+        setSidebarGroupState((current) => ({ ...current, [groupId]: true }));
+        return true;
+      }
+      moveSidebarRovingFocus(element, "next");
+      return true;
+    }
+    if (kind === "agent") {
+      const agentKey = element.dataset.sidebarAgentKey || "";
+      if (!agentKey) {
+        return false;
+      }
+      if (expandedAssistantAgentKey !== agentKey) {
+        const agent = findAssistantNavAgent(agentKey);
+        if (agent) {
+          handleAssistantAgentExpand(agent, true);
+        } else {
+          setExpandedAssistantAgentKey(agentKey);
+        }
+        return true;
+      }
+      moveSidebarRovingFocus(element, "next");
+      return true;
+    }
+    return false;
+  }
+
+  function handleSidebarRovingArrowLeft(element: HTMLElement) {
+    const kind = element.dataset.sidebarNavKind;
+    if (kind === "group") {
+      const groupId = readSidebarGroupId(element.dataset.sidebarGroupId);
+      if (groupId && !isCollapsed && sidebarGroupState[groupId]) {
+        setSidebarGroupState((current) => ({ ...current, [groupId]: false }));
+        return true;
+      }
+      return false;
+    }
+    if (kind === "agent") {
+      const agentKey = element.dataset.sidebarAgentKey || "";
+      if (agentKey && expandedAssistantAgentKey === agentKey) {
+        setExpandedAssistantAgentKey("");
+        return true;
+      }
+      return false;
+    }
+    if (kind === "chat" || kind === "agent-more") {
+      const agentKey = element.dataset.sidebarAgentKey || "";
+      return agentKey ? focusSidebarRovingItemById(createSidebarAgentFocusId(agentKey)) : false;
+    }
+    if (kind === "web") {
+      return focusSidebarRovingItemById(createSidebarGroupFocusId("webs"));
+    }
+    return false;
+  }
+
+  function getSidebarRovingEventElement(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) {
+      return null;
+    }
+    const element = target.closest<HTMLElement>(
+      '[data-sidebar-roving-item="true"]',
+    );
+    if (!element || !sidebarNavRef.current?.contains(element)) {
+      return null;
+    }
+    return element;
+  }
+
+  function handleSidebarNavKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (isSettingsMode) {
+      return;
+    }
+    const currentElement = getSidebarRovingEventElement(event.target);
+    if (!currentElement) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      setAssistantSortMenuOpen(false);
+      setToolMenuOpen(false);
+      setAssistantChatMenu(null);
+      setAgentMenu(null);
+      setWebItemMenu(null);
+      setGroupActionMenu(null);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveSidebarRovingFocus(currentElement, "next");
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSidebarRovingFocus(currentElement, "previous");
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      moveSidebarRovingFocus(currentElement, "first");
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      moveSidebarRovingFocus(currentElement, "last");
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      if (handleSidebarRovingArrowRight(currentElement)) {
+        event.preventDefault();
+      }
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      if (handleSidebarRovingArrowLeft(currentElement)) {
+        event.preventDefault();
+      }
+      return;
+    }
+    if (event.key === " " && currentElement instanceof HTMLAnchorElement) {
+      event.preventDefault();
+      currentElement.click();
+      return;
+    }
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+      if (openSidebarRovingContextMenu(currentElement)) {
+        event.preventDefault();
+      }
+    }
+  }
+
+  async function beginCreateProject() {
     if (creatingProject || createProjectDialog) {
       return;
     }
@@ -1236,6 +1740,12 @@ export function AppSidebar({
     } finally {
       setCreatingProject(false);
     }
+  }
+
+  async function handleCreateProject(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    await beginCreateProject();
   }
 
   async function handleSubmitCreateProject(event: FormEvent<HTMLFormElement>) {
@@ -1319,19 +1829,27 @@ export function AppSidebar({
     resetWebsiteDialogState();
   }
 
-  function openWebsiteDialog(event: MouseEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
+  function showWebsiteDialog() {
     resetWebsiteDialogState();
     setWebsiteDialogOpen(true);
     void onRefreshCopilotAgentOptions?.();
   }
 
+  function openWebsiteDialog(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    showWebsiteDialog();
+  }
+
+  function navigateWebsitesSettings() {
+    onCloseAssistantDock?.();
+    requestNavigate(buildSettingsSectionPath("websites"));
+  }
+
   function openWebsitesSettings(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
-    onCloseAssistantDock?.();
-    requestNavigate(buildSettingsSectionPath("websites"));
+    navigateWebsitesSettings();
   }
 
   async function handleSaveWebsite(event: FormEvent<HTMLFormElement>) {
@@ -1370,12 +1888,7 @@ export function AppSidebar({
     }
   }
 
-  async function handleCloseWebItem(
-    event: MouseEvent<HTMLElement>,
-    item: WebEntry,
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
+  async function closeWebItem(item: WebEntry) {
     if (webClosePendingEntryKey || !onCloseWebItem) {
       return;
     }
@@ -1389,6 +1902,27 @@ export function AppSidebar({
     } finally {
       setWebClosePendingEntryKey("");
     }
+  }
+
+  async function handleCloseWebItem(
+    event: MouseEvent<HTMLElement>,
+    item: WebEntry,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    await closeWebItem(item);
+  }
+
+  function handleWebItemContextMenu(
+    event: MouseEvent<HTMLElement>,
+    item: WebEntry,
+  ) {
+    if (!webOpenEntryKeys.includes(item.entryKey)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    openWebItemMenuAtElement(event.currentTarget, item);
   }
 
   function handleAssistantAgentExpand(
@@ -1456,12 +1990,16 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    const rect = event.currentTarget.getBoundingClientRect();
-    setAssistantChatMenu({
-      chat,
-      x: Math.min(window.innerWidth - 180, Math.max(8, rect.right - 170)),
-      y: Math.min(window.innerHeight - 172, Math.max(8, rect.bottom + 4)),
-    });
+    openAssistantChatMenuAtElement(event.currentTarget, chat);
+  }
+
+  function handleAssistantChatContextMenu(
+    event: MouseEvent<HTMLElement>,
+    chat: AssistantNavChatItem,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    openAssistantChatMenuAtElement(event.currentTarget, chat);
   }
 
   async function handleAssistantExportChat(chat: AssistantNavChatItem) {
@@ -1559,6 +2097,15 @@ export function AppSidebar({
       ...current,
       [groupId]: !current[groupId],
     }));
+  }
+
+  function handleSidebarGroupContextMenu(
+    event: MouseEvent<HTMLElement>,
+    groupId: SidebarGroupId,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    openGroupActionMenuAtElement(event.currentTarget, groupId);
   }
 
   function getActiveSidebarAgentKey() {
@@ -1665,7 +2212,7 @@ export function AppSidebar({
     );
   }
 
-  function renderAssistantSortButton() {
+  function renderAssistantSortButton(options: { tabIndex?: number } = {}) {
     return (
       <Popover
         open={assistantSortMenuOpen}
@@ -1678,6 +2225,7 @@ export function AppSidebar({
           className="assistant-worker-icon-button sidebar-assistant-sort-button"
           aria-label={t("sidebar.assistants.sort")}
           title={assistantNavSortLabel}
+          tabIndex={options.tabIndex}
           onClick={(event) => event.stopPropagation()}
         >
           <SortAscendingOutlined aria-hidden="true" />
@@ -1723,6 +2271,7 @@ export function AppSidebar({
   function renderSidebarLink(item: SidebarNavItem, extraClassName = "") {
     const visibleLabel =
       isCollapsed && item.collapsedLabel ? item.collapsedLabel : item.label;
+    const focusId = createSidebarLinkFocusId(item.orderKey);
     return (
       <NavLink
         key={item.to}
@@ -1730,6 +2279,8 @@ export function AppSidebar({
         onClick={(event) => handleItemClick(event, item.to)}
         aria-label={item.label}
         title={item.label}
+        {...getSidebarRovingItemProps(focusId)}
+        data-sidebar-nav-kind="link"
         className={() => getSidebarLinkClassName(item.to, extraClassName)}
       >
         <span className="sidebar-link-icon">
@@ -1742,7 +2293,9 @@ export function AppSidebar({
 
   function renderSidebarChildLink(
     item: SidebarNavItem & { status?: SidebarStatusSummary },
+    options: { roving?: boolean } = {},
   ) {
+    const roving = options.roving ?? true;
     const showIcon = !item.orderKey.startsWith("custom:");
     const extraClassName = showIcon
       ? "sidebar-child-link"
@@ -1765,8 +2318,15 @@ export function AppSidebar({
           <NavLink
             to={item.to}
             onClick={(event) => handleItemClick(event, item.to)}
+            onContextMenu={(event) => handleWebItemContextMenu(event, webItem)}
             aria-label={item.label}
             title={item.label}
+            {...getSidebarRovingItemProps(
+              createSidebarWebFocusId(webItem.entryKey),
+              roving,
+            )}
+            data-sidebar-nav-kind={roving ? "web" : undefined}
+            data-sidebar-web-entry-key={roving ? webItem.entryKey : undefined}
             className={() => getSidebarLinkClassName(item.to, extraClassName)}
           >
             {showIcon ? (
@@ -1787,6 +2347,7 @@ export function AppSidebar({
                   className="assistant-worker-icon-button sidebar-website-child-action"
                   aria-label={t("sidebar.website.close")}
                   title={t("sidebar.website.close")}
+                  tabIndex={-1}
                   disabled={Boolean(webClosePendingEntryKey)}
                   onClick={(event) => void handleCloseWebItem(event, webItem)}
                 >
@@ -1812,6 +2373,11 @@ export function AppSidebar({
         onClick={(event) => handleItemClick(event, item.to)}
         aria-label={item.label}
         title={item.label}
+        {...getSidebarRovingItemProps(
+          createSidebarLinkFocusId(item.orderKey),
+          roving,
+        )}
+        data-sidebar-nav-kind={roving ? "link" : undefined}
         className={() => getSidebarLinkClassName(item.to, extraClassName)}
       >
         {showIcon ? (
@@ -1830,7 +2396,9 @@ export function AppSidebar({
   function renderAssistantChatRow(
     chat: AssistantNavChatItem,
     activeChatId: string,
+    options: { roving?: boolean } = {},
   ) {
+    const roving = options.roving ?? true;
     const isActive = activeChatId === chat.chatId;
     const action = chat.hasPendingAwaiting
       ? "awaiting"
@@ -1842,65 +2410,79 @@ export function AppSidebar({
         ? chat.chatName || t("sidebar.chat.noPreview")
         : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
     return (
-      <button
-        type="button"
+      <div
         key={chat.chatId}
-        className={[
-          "assistant-worker-chat-item",
-          isActive ? "is-active" : "",
-          !chat.isRead ? "is-unread" : "",
-          chat.hasPendingAwaiting ? "has-awaiting" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-current={isActive ? "page" : undefined}
-        onClick={() => handleAssistantOpenChat(chat)}
+        className="assistant-worker-chat-row"
+        onContextMenu={(event) => handleAssistantChatContextMenu(event, chat)}
       >
-        <span className="worker-chat-item-head">
-          <span
-            className={[
-              "assistant-worker-unread-dot",
-              "chat-unread-dot",
-              !chat.isRead ? "is-unread" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
-            aria-hidden={chat.isRead ? "true" : undefined}
-          />
-          <span className="worker-chat-name">{previewText}</span>
-          {chat.hasPendingAwaiting ? (
-            <span className="chat-awaiting-status">
-              {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
-            </span>
-          ) : null}
-          <span className="assistant-worker-chat-action" data-action={action}>
-            <span className="worker-panel-time-label">
-              {formatAssistantChatTime(chat.updatedAt)}
-            </span>
+        <button
+          type="button"
+          className={[
+            "assistant-worker-chat-item",
+            isActive ? "is-active" : "",
+            !chat.isRead ? "is-unread" : "",
+            chat.hasPendingAwaiting ? "has-awaiting" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-current={isActive ? "page" : undefined}
+          onClick={() => handleAssistantOpenChat(chat)}
+          {...getSidebarRovingItemProps(createSidebarChatFocusId(chat.chatId), roving)}
+          data-sidebar-nav-kind={roving ? "chat" : undefined}
+          data-sidebar-agent-key={roving ? chat.agentKey || currentAgentKey : undefined}
+          data-sidebar-chat-id={roving ? chat.chatId : undefined}
+        >
+          <span className="worker-chat-item-head">
             <span
-              className="worker-chat-loading assistant-material-icon is-loading"
-              aria-hidden="true"
+              className={[
+                "assistant-worker-unread-dot",
+                "chat-unread-dot",
+                !chat.isRead ? "is-unread" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
+              aria-hidden={chat.isRead ? "true" : undefined}
             />
+            <span className="worker-chat-name">{previewText}</span>
+            {chat.hasPendingAwaiting ? (
+              <span className="chat-awaiting-status">
+                {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
+              </span>
+            ) : null}
+            <span className="assistant-worker-chat-action" data-action={action}>
+              <span className="worker-panel-time-label">
+                {formatAssistantChatTime(chat.updatedAt)}
+              </span>
+              <span
+                className="worker-chat-loading assistant-material-icon is-loading"
+                aria-hidden="true"
+              />
+            </span>
           </span>
-          <button
-            type="button"
-            className="assistant-worker-chat-menu-button"
-            aria-label={t("sidebar.chat.moreActions")}
-            title={t("common.more")}
-            onClick={(event) => handleAssistantOpenChatMenu(event, chat)}
-          >
-            <span
-              className="assistant-material-icon is-more"
-              aria-hidden="true"
-            />
-          </button>
-        </span>
-      </button>
+        </button>
+        <button
+          type="button"
+          className="assistant-worker-chat-menu-button"
+          aria-label={t("sidebar.chat.moreActions")}
+          title={t("common.more")}
+          tabIndex={-1}
+          onClick={(event) => handleAssistantOpenChatMenu(event, chat)}
+        >
+          <span
+            className="assistant-material-icon is-more"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
     );
   }
 
-  function renderAssistantAgent(agent: AssistantNavAgentItem) {
+  function renderAssistantAgent(
+    agent: AssistantNavAgentItem,
+    options: { roving?: boolean } = {},
+  ) {
+    const roving = options.roving ?? true;
     const expanded = expandedAssistantAgentKey === agent.agentKey;
     const selected = getActiveSidebarAgentKey() === agent.agentKey;
     const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
@@ -1940,9 +2522,18 @@ export function AppSidebar({
         className="assistant-worker-collapse-item"
         expanded={expanded}
         onExpand={(val) => handleAssistantAgentExpand(agent, val)}
+        headerButtonProps={{
+          className: "assistant-worker-header",
+          onContextMenu: (event) => handleAgentContextMenu(event, agent),
+          ...getSidebarRovingItemProps(
+            createSidebarAgentFocusId(agent.agentKey),
+            roving,
+          ),
+          "data-sidebar-nav-kind": roving ? "agent" : undefined,
+          "data-sidebar-agent-key": roving ? agent.agentKey : undefined,
+        }}
         header={
-          <div className="assistant-worker-header">
-            <span className="assistant-worker-header-text">
+          <span className="assistant-worker-header-text">
               <span
                 className={[
                   "worker-panel-header",
@@ -1972,50 +2563,6 @@ export function AppSidebar({
                         {formatUnreadCount(unreadCount)}
                       </span>
                     ) : null}
-                    <span className="assistant-worker-actions">
-                      {unreadCount > 0 ? (
-                        <Tooltip content={t("sidebar.agent.markAllRead")}>
-                          <button
-                            type="button"
-                            className="assistant-worker-icon-button"
-                            aria-label={t("sidebar.agent.markAllReadFor", { name: agent.displayName })}
-                            onClick={(event) =>
-                              void handleAssistantMarkAllRead(event, agent)
-                            }
-                          >
-                            <span
-                              className="assistant-material-icon is-done-all"
-                              aria-hidden="true"
-                            />
-                          </button>
-                        </Tooltip>
-                      ) : null}
-                      <Tooltip content={t("sidebar.agent.newChat")}>
-                        <button
-                          type="button"
-                          className="assistant-worker-icon-button"
-                          aria-label={t("sidebar.agent.newChatFor", { name: agent.displayName })}
-                          onClick={(event) =>
-                            handleAssistantNewChat(event, agent)
-                          }
-                        >
-                          <EditSquareIcon width={16} />
-                        </button>
-                      </Tooltip>
-                      <Tooltip content={t("sidebar.agent.moreActions")}>
-                        <button
-                          type="button"
-                          className="assistant-worker-icon-button"
-                          aria-label={t("sidebar.agent.moreActionsFor", { name: agent.displayName })}
-                          onClick={(event) => handleOpenAgentMenu(event, agent)}
-                        >
-                          <span
-                            className="assistant-material-icon is-more"
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </Tooltip>
-                    </span>
                   </span>
                   <span className="worker-panel-preview">
                     <span className="assistant-worker-preview">
@@ -2047,14 +2594,60 @@ export function AppSidebar({
                 </span>
               </span>
             </span>
-          </div>
+        }
+        headerActions={
+          <span className="assistant-worker-actions">
+            {unreadCount > 0 ? (
+              <Tooltip content={t("sidebar.agent.markAllRead")}>
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button"
+                  aria-label={t("sidebar.agent.markAllReadFor", { name: agent.displayName })}
+                  tabIndex={-1}
+                  onClick={(event) =>
+                    void handleAssistantMarkAllRead(event, agent)
+                  }
+                >
+                  <span
+                    className="assistant-material-icon is-done-all"
+                    aria-hidden="true"
+                  />
+                </button>
+              </Tooltip>
+            ) : null}
+            <Tooltip content={t("sidebar.agent.newChat")}>
+              <button
+                type="button"
+                className="assistant-worker-icon-button"
+                aria-label={t("sidebar.agent.newChatFor", { name: agent.displayName })}
+                tabIndex={-1}
+                onClick={(event) => handleAssistantNewChat(event, agent)}
+              >
+                <EditSquareIcon width={16} />
+              </button>
+            </Tooltip>
+            <Tooltip content={t("sidebar.agent.moreActions")}>
+              <button
+                type="button"
+                className="assistant-worker-icon-button"
+                aria-label={t("sidebar.agent.moreActionsFor", { name: agent.displayName })}
+                tabIndex={-1}
+                onClick={(event) => handleOpenAgentMenu(event, agent)}
+              >
+                <span
+                  className="assistant-material-icon is-more"
+                  aria-hidden="true"
+                />
+              </button>
+            </Tooltip>
+          </span>
         }
       >
         <div className="worker-chat-preview-list">
           <div className="worker-chat-divider"></div>
           {recentChats.length > 0 ? (
             recentChats.map((chat) =>
-              renderAssistantChatRow(chat, activeChatId),
+              renderAssistantChatRow(chat, activeChatId, { roving }),
             )
           ) : chatCount === 0 ? (
             <div className="status-line">{t("sidebar.agent.noChats")}</div>
@@ -2063,6 +2656,12 @@ export function AppSidebar({
             <button
               type="button"
               className="worker-chat-more assistant-worker-more"
+              {...getSidebarRovingItemProps(
+                createSidebarAgentMoreFocusId(agent.agentKey),
+                roving,
+              )}
+              data-sidebar-nav-kind={roving ? "agent-more" : undefined}
+              data-sidebar-agent-key={roving ? agent.agentKey : undefined}
               onClick={(event) => {
                 event.stopPropagation();
                 requestNavigate(createAgentHistoryRoute(agent.agentKey), {
@@ -2129,7 +2728,7 @@ export function AppSidebar({
                 </div>
                 {sortedAssistantNavAgents.length > 0 ? (
                   sortedAssistantNavAgents.map((agent) =>
-                    renderAssistantAgent(agent),
+                    renderAssistantAgent(agent, { roving: false }),
                   )
                 ) : assistantNavAgentsLoaded ? (
                   <div className="status-line">
@@ -2138,12 +2737,25 @@ export function AppSidebar({
                 ) : null}
               </div>
             ) : (
-              args.children.map((item) => renderSidebarChildLink(item))
+              args.children.map((item) =>
+                renderSidebarChildLink(item, { roving: false }),
+              )
             )}
           </div>
         }
       >
-        <button className={groupTriggerClassName}>
+        <button
+          type="button"
+          className={groupTriggerClassName}
+          onContextMenu={(event) =>
+            handleSidebarGroupContextMenu(event, args.groupId)
+          }
+          {...getSidebarRovingItemProps(
+            createSidebarGroupFocusId(args.groupId),
+          )}
+          data-sidebar-nav-kind="group"
+          data-sidebar-group-id={args.groupId}
+        >
           <span className="sidebar-group-heading-main">
             <span className="sidebar-link-icon">
               <SidebarIllustration kind={args.icon} />
@@ -2163,27 +2775,35 @@ export function AppSidebar({
         className={["sidebar-nav-group", args.active ? "is-active" : ""]
           .filter(Boolean)
           .join(" ")}
+        headerButtonProps={{
+          className: groupTriggerClassName,
+          "aria-label": args.label,
+          title: args.label,
+          onContextMenu: (event) =>
+            handleSidebarGroupContextMenu(event, args.groupId),
+          ...getSidebarRovingItemProps(
+            createSidebarGroupFocusId(args.groupId),
+          ),
+          "data-sidebar-nav-kind": "group",
+          "data-sidebar-group-id": args.groupId,
+        }}
         header={
-          <button
-            type="button"
-            className={groupTriggerClassName}
-            aria-expanded={!isCollapsed && expanded}
-            aria-label={args.label}
-            title={args.label}
-          >
-            <span className="sidebar-group-heading-main">
-              <span className="sidebar-link-label">{args.label}</span>
-              <ArrowIcon
-                className="sidebar-group-heading-arrow"
-                expanded={expanded}
-                width={18}
-              />
-              {args.status && !expanded
-                ? renderStatusBadges(args.status, "sidebar-group-status")
-                : null}
-            </span>
+          <span className="sidebar-group-heading-main">
+            <span className="sidebar-link-label">{args.label}</span>
+            <ArrowIcon
+              className="sidebar-group-heading-arrow"
+              expanded={expanded}
+              width={18}
+            />
+            {args.status && !expanded
+              ? renderStatusBadges(args.status, "sidebar-group-status")
+              : null}
+          </span>
+        }
+        headerActions={
+          <>
             {args.groupId === "assistants" ? (
-              renderAssistantSortButton()
+              renderAssistantSortButton({ tabIndex: -1 })
             ) : null}
             {args.groupId === "assistants" ? (
               <Tooltip content={t("sidebar.project.new")}>
@@ -2192,6 +2812,7 @@ export function AppSidebar({
                   className="assistant-worker-icon-button sidebar-assistant-project-button"
                   aria-label={t("sidebar.project.new")}
                   title={t("sidebar.project.new")}
+                  tabIndex={-1}
                   disabled={creatingProject || Boolean(createProjectDialog)}
                   onClick={handleCreateProject}
                 >
@@ -2214,6 +2835,7 @@ export function AppSidebar({
                     className="assistant-worker-icon-button sidebar-website-manage-button"
                     aria-label={t("sidebar.website.manage")}
                     title={t("sidebar.website.manage")}
+                    tabIndex={-1}
                     onClick={openWebsitesSettings}
                   >
                     <EditSquareIcon width={16} />
@@ -2225,6 +2847,7 @@ export function AppSidebar({
                     className="assistant-worker-icon-button sidebar-website-add-button"
                     aria-label={t("sidebar.website.new")}
                     title={t("sidebar.website.new")}
+                    tabIndex={-1}
                     onClick={openWebsiteDialog}
                   >
                     <AddIcon width={16} />
@@ -2232,7 +2855,7 @@ export function AppSidebar({
                 </Tooltip>
               </>
             ) : null}
-          </button>
+          </>
         }
       >
         <div
@@ -2518,18 +3141,132 @@ export function AppSidebar({
     );
   }
 
+  function renderGroupActionMenu() {
+    if (!groupActionMenu || typeof document === "undefined") {
+      return null;
+    }
+    const groupId = groupActionMenu.groupId;
+    return createPortal(
+      <div
+        ref={groupActionMenuRef}
+        className="assistant-chat-actions-menu sidebar-group-actions-menu"
+        style={{ left: groupActionMenu.x, top: groupActionMenu.y }}
+        role="menu"
+        aria-label={
+          groupId === "assistants" ? t("nav.assistants") : t("nav.websites")
+        }
+      >
+        {groupId === "assistants" ? (
+          <>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={assistantNavSortMode === "byTime"}
+              onClick={() => {
+                setAssistantNavSortMode("byTime");
+                setGroupActionMenu(null);
+              }}
+            >
+              <span>{t("sidebar.assistants.sortByTime")}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={assistantNavSortMode === "byName"}
+              onClick={() => {
+                setAssistantNavSortMode("byName");
+                setGroupActionMenu(null);
+              }}
+            >
+              <span>{t("sidebar.assistants.sortByName")}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={creatingProject || Boolean(createProjectDialog)}
+              onClick={() => {
+                setGroupActionMenu(null);
+                void beginCreateProject();
+              }}
+            >
+              <span>{t("sidebar.project.new")}</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setGroupActionMenu(null);
+                navigateWebsitesSettings();
+              }}
+            >
+              <span>{t("sidebar.website.manage")}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setGroupActionMenu(null);
+                showWebsiteDialog();
+              }}
+            >
+              <span>{t("sidebar.website.new")}</span>
+            </button>
+          </>
+        )}
+      </div>,
+      document.body,
+    );
+  }
+
+  function renderWebItemMenu() {
+    if (!webItemMenu || typeof document === "undefined") {
+      return null;
+    }
+    const item = webItemMenu.item;
+    const isOpen = webOpenEntryKeys.includes(item.entryKey);
+    return createPortal(
+      <div
+        ref={webItemMenuRef}
+        className="assistant-chat-actions-menu sidebar-web-item-actions-menu"
+        style={{ left: webItemMenu.x, top: webItemMenu.y }}
+        role="menu"
+        aria-label={t("sidebar.website.close")}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!isOpen || Boolean(webClosePendingEntryKey)}
+          onClick={() => {
+            setWebItemMenu(null);
+            void closeWebItem(item);
+          }}
+        >
+          <span>{t("sidebar.website.close")}</span>
+        </button>
+      </div>,
+      document.body,
+    );
+  }
+
   function handleOpenAgentMenu(
     event: MouseEvent<HTMLButtonElement>,
     agent: AssistantNavAgentItem,
   ) {
     event.preventDefault();
     event.stopPropagation();
-    const rect = event.currentTarget.getBoundingClientRect();
-    setAgentMenu({
-      agent,
-      x: Math.min(window.innerWidth - 180, Math.max(8, rect.right - 170)),
-      y: Math.min(window.innerHeight - 140, Math.max(8, rect.bottom + 4)),
-    });
+    openAgentMenuAtElement(event.currentTarget, agent);
+  }
+
+  function handleAgentContextMenu(
+    event: MouseEvent<HTMLElement>,
+    agent: AssistantNavAgentItem,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    openAgentMenuAtElement(event.currentTarget, agent);
   }
 
   function getOpenWorkspaceDisabledReason(agent: AssistantNavAgentItem) {
@@ -3289,7 +4026,13 @@ export function AppSidebar({
         </div>
       </div>
 
-      <nav className="sidebar-nav" aria-label="Primary Navigation">
+      <nav
+        ref={sidebarNavRef}
+        className="sidebar-nav"
+        aria-label="Primary Navigation"
+        data-sidebar-roving-container={!isSettingsMode ? "true" : undefined}
+        onKeyDown={handleSidebarNavKeyDown}
+      >
         {isSettingsMode ? renderSettingsNav() : navItems.map((item) => renderPrimaryNavEntry(item))}
       </nav>
 
@@ -3338,6 +4081,8 @@ export function AppSidebar({
             </Popover>
           </div>
           {renderAssistantChatMenu()}
+          {renderWebItemMenu()}
+          {renderGroupActionMenu()}
           {renderAssistantChatRenameDialog()}
           {renderAgentMenu()}
           {renderCreateProjectDialog()}

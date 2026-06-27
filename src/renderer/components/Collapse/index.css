@@ -10,6 +10,12 @@
   width: 100%;
   min-width: 0;
   align-items: center;
+}
+
+.Collapse-trigger {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
   border: 0;
   padding: 0;
   color: inherit;
@@ -19,9 +25,16 @@
   cursor: pointer;
 }
 
-.Collapse-header:focus-visible {
+.Collapse-trigger:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
+}
+
+.Collapse-headerActions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
 }
 
 .Collapse-content {

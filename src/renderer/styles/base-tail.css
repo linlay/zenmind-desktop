@@ -109,17 +109,12 @@ code {
   .data-root-actions,
   .settings-theme-actions,
   .website-form,
-  .config-head,
   .inline-actions,
-  .service-card-head,
-  .service-nav-card-head,
   .app-header {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .control-center-shell,
-  .service-grid,
   .summary-strip {
     grid-template-columns: 1fr;
   }
@@ -161,71 +156,6 @@ code {
 
   .website-submit {
     width: 100%;
-  }
-
-  .control-center-hero {
-    padding: 18px;
-  }
-
-  .config-select-wrap {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .config-file-select {
-    width: 100%;
-  }
-
-  .service-detail-dialog {
-    max-height: calc(100vh - 32px);
-  }
-
-  .service-detail-list-item {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .service-detail-config-file {
-    grid-template-columns: 1fr;
-  }
-
-  .control-center-hero-panel {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .control-center-summary-strip div {
-    min-height: 62px;
-  }
-
-  .control-center-import {
-    align-self: stretch;
-  }
-
-  .control-center-hero-actions {
-    width: 100%;
-    flex-direction: column;
-  }
-
-  .service-sider,
-  .control-center-detail,
-  .control-center-empty,
-  .service-nav-list {
-    max-height: none;
-  }
-
-  .service-group-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .service-sider.service-catalog .service-group-head {
-    align-items: center;
-    flex-direction: row;
-  }
-
-  .service-group-action {
-    align-self: flex-start;
   }
 
   .log-viewer-head,
