@@ -140,6 +140,52 @@ test("desktop pet actions reject unknown local appearances and removed legacy na
   }
 });
 
+test("desktop website add accepts item payloads and name alias", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.web.website.add",
+    permissionMode: "full_access",
+    args: {
+      items: [{
+        description: "全球天气资讯与预报",
+        icon: "https://weather.com/favicon.ico",
+        name: "Weather.com",
+        url: "https://weather.com"
+      }]
+    }
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.result.ok, true, response.result.message);
+  assert.equal(response.result.item.label, "Weather.com");
+  assert.equal(response.result.item.url, "https://weather.com/");
+  assert.equal(response.result.items.length, 1);
+});
+
+test("desktop website add returns detailed input issues", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.web.website.add",
+    permissionMode: "full_access",
+    args: {
+      items: [{
+        name: "Weather.com"
+      }]
+    }
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.result.ok, false);
+  assert.match(response.result.message, /url|网站地址/u);
+  assert.equal(response.result.issues.length, 1);
+  assert.equal(response.result.issues[0].field, "url");
+  assert.match(response.result.issues[0].message, /Website address is required|网站地址不能为空/u);
+  assert.equal(response.result.issues[0].expected, "non-empty string");
+  assert.equal(response.result.issues[0].received, "missing");
+});
+
 test("desktop action confirmation detail exposes debug context with redacted args", () => {
   const detail = __testInternals.buildDesktopActionConfirmationDetail({
     requestId: "request-123",

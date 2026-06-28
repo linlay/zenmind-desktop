@@ -304,6 +304,53 @@ function readActionInput(args: Record<string, unknown>) {
   return hasObjectKeys(input) ? input : hasObjectKeys(patch) ? patch : args;
 }
 
+function firstRecordItem(value: unknown) {
+  return Array.isArray(value) ? asRecord(value[0]) : {};
+}
+
+function hasWebsiteInputFields(value: Record<string, unknown>) {
+  return ["id", "url", "label", "name", "agentKey"].some((field) => field in value);
+}
+
+function normalizeWebsiteInputAliases(input: Record<string, unknown>) {
+  const normalized = { ...input };
+  if (typeof normalized.label !== "string" && typeof normalized.name === "string") {
+    normalized.label = normalized.name;
+  }
+  return normalized;
+}
+
+function selectWebsiteInputCandidate(value: Record<string, unknown>) {
+  if (hasWebsiteInputFields(value)) {
+    return value;
+  }
+  const item = asRecord(value.item);
+  if (hasObjectKeys(item)) {
+    return item;
+  }
+  const website = asRecord(value.website);
+  if (hasObjectKeys(website)) {
+    return website;
+  }
+  const firstItem = firstRecordItem(value.items);
+  if (hasObjectKeys(firstItem)) {
+    return firstItem;
+  }
+  return value;
+}
+
+function readWebsiteActionInput(args: Record<string, unknown>) {
+  const input = asRecord(args.input);
+  if (hasObjectKeys(input)) {
+    return normalizeWebsiteInputAliases(selectWebsiteInputCandidate(input));
+  }
+  const patch = asRecord(args.patch);
+  if (hasObjectKeys(patch)) {
+    return normalizeWebsiteInputAliases(selectWebsiteInputCandidate(patch));
+  }
+  return normalizeWebsiteInputAliases(selectWebsiteInputCandidate(args));
+}
+
 function readKanbanIssueId(args: Record<string, unknown>) {
   return readString(args, "id");
 }
@@ -986,10 +1033,10 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     return ok(action, listWebsiteItems(options.app));
   }
   if (action === "desktop.web.website.add") {
-    return ok(action, addWebsiteItem(options.app, readActionInput(args) as any));
+    return ok(action, addWebsiteItem(options.app, readWebsiteActionInput(args) as any));
   }
   if (action === "desktop.web.website.update") {
-    return ok(action, updateWebsiteItem(options.app, readWebsiteId(args), readActionInput(args) as any));
+    return ok(action, updateWebsiteItem(options.app, readWebsiteId(args), readWebsiteActionInput(args) as any));
   }
   if (action === "desktop.web.website.remove") {
     return ok(action, removeWebsiteItem(options.app, readWebsiteId(args)));

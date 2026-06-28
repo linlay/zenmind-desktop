@@ -72,8 +72,8 @@ export function normalizeWebEntryKey(value: unknown): WebEntryKey | null {
   return raw ? createWebsiteEntryKey(raw) : null;
 }
 
-export function normalizeWebsiteUrl(inputUrl: string) {
-  const raw = inputUrl.trim();
+export function normalizeWebsiteUrl(inputUrl: unknown) {
+  const raw = readString(inputUrl);
   if (!raw) {
     throw new Error(t("website.urlRequired"));
   }

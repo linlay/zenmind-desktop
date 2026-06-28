@@ -1,5 +1,5 @@
 import type { App } from "electron";
-import type { WebsiteEntry, WebsiteInput, WebsiteUpdateInput } from "../../../shared/contracts";
+import type { WebsiteEntry, WebsiteInput, WebsiteInputIssue, WebsiteUpdateInput } from "../../../shared/contracts";
 import {
   createWebsiteItem,
   readWebsiteItems,
@@ -10,11 +10,13 @@ import {
   normalizeAgentKey,
   normalizeWebId,
   normalizeWebsiteLabel,
-  normalizeWebsiteUrl
+  normalizeWebsiteUrl,
+  readString
 } from "../common";
 import { t } from "../../i18n/main-i18n";
 
 const MAX_WEBSITE_ITEMS = 14;
+const WEBSITE_ADD_EXPECTED_INPUT = "object with url as a non-empty string, plus optional label and agentKey strings";
 
 type StoredWebsiteItems = {
   items: WebsiteEntry[];
@@ -77,6 +79,69 @@ function parseItemsFileContent(content: string) {
   return sanitizeItems(parseItemsPayload(parsed));
 }
 
+function describeReceivedValue(value: unknown) {
+  if (value === undefined) {
+    return "missing";
+  }
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  return typeof value;
+}
+
+function describeInputKeys(value: unknown) {
+  return isRecord(value) ? Object.keys(value).sort().join(", ") || "(none)" : describeReceivedValue(value);
+}
+
+function websiteInputIssue(
+  field: string,
+  message: string,
+  expected: string,
+  received: unknown
+): WebsiteInputIssue {
+  return {
+    field,
+    message,
+    expected,
+    received: describeReceivedValue(received)
+  };
+}
+
+function validateWebsiteAddInput(input: unknown) {
+  const issues: WebsiteInputIssue[] = [];
+  if (!isRecord(input)) {
+    issues.push(websiteInputIssue("input", t("website.inputMustBeObject"), WEBSITE_ADD_EXPECTED_INPUT, input));
+    return issues;
+  }
+
+  if (typeof input.url !== "string" || !readString(input.url)) {
+    issues.push(websiteInputIssue("url", t("website.urlRequired"), "non-empty string", input.url));
+  }
+  if ("label" in input && input.label !== undefined && typeof input.label !== "string") {
+    issues.push(websiteInputIssue("label", t("website.labelInvalid"), "string", input.label));
+  }
+  if ("agentKey" in input && input.agentKey !== undefined && typeof input.agentKey !== "string") {
+    issues.push(websiteInputIssue("agentKey", t("website.agentKeyInvalid"), "string", input.agentKey));
+  }
+  return issues;
+}
+
+function invalidWebsiteInputResult(items: WebsiteEntry[], input: unknown, issues: WebsiteInputIssue[]) {
+  return {
+    ok: false,
+    item: null,
+    items,
+    message: t("website.inputInvalid", {
+      fields: issues.map((issue) => issue.field).join(", ") || "input",
+      keys: describeInputKeys(input)
+    }),
+    issues
+  };
+}
+
 export function listWebsiteItems(app: App) {
   return {
     ok: true,
@@ -94,6 +159,11 @@ export function addWebsiteItem(app: App, input: WebsiteInput) {
       items,
       message: t("website.maxItems", { count: MAX_WEBSITE_ITEMS })
     };
+  }
+
+  const inputIssues = validateWebsiteAddInput(input);
+  if (inputIssues.length > 0) {
+    return invalidWebsiteInputResult(items, input, inputIssues);
   }
 
   try {

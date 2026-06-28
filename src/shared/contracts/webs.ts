@@ -94,6 +94,13 @@ export interface WebsiteUpdateInput {
   agentKey?: string;
 }
 
+export interface WebsiteInputIssue {
+  field: string;
+  message: string;
+  expected?: string;
+  received?: string;
+}
+
 export interface WebsiteItemsResult {
   ok: boolean;
   items: WebsiteEntry[];
@@ -105,6 +112,7 @@ export interface WebsiteResult {
   item: WebsiteEntry | null;
   items: WebsiteEntry[];
   message: string;
+  issues?: WebsiteInputIssue[];
 }
 
 export interface WebsiteDeleteResult {
