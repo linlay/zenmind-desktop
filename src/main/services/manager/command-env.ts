@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 let shellPathEntriesCache: string[] | null = null;
 const LEGACY_LAYOUT_ENV_KEYS = ["CONFIG", "DATA", "STATE", "LOG"].map((name) => `SERVICE_${name}_DIR`);
 const LEGACY_LAYOUT_ENV_KEY_SET = new Set(LEGACY_LAYOUT_ENV_KEYS);
+const HOST_INHERITED_ENV_KEYS = ["__CFBundleIdentifier", "PWD"] as const;
 
 function listExistingDirs(paths: string[]) {
   return paths.filter((dirPath) => {
@@ -124,6 +125,9 @@ function getShellPathEntries() {
 
 export function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
+  for (const key of HOST_INHERITED_ENV_KEYS) {
+    delete env[key];
+  }
   for (const key of LEGACY_LAYOUT_ENV_KEYS) {
     delete env[key];
   }

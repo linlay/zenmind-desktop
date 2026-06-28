@@ -209,17 +209,6 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
         "http://127.0.0.1:117079",
         "http://localhost:117079",
         "http://host.docker.internal:117079"
-      ],
-      CONTAINER_HUB_BASE_URL: [
-        "",
-        "http://127.0.0.1:7079",
-        "http://localhost:7079",
-        "http://127.0.0.1:11960",
-        "http://localhost:11960",
-        "http://host.docker.internal:11960",
-        "http://127.0.0.1:117079",
-        "http://localhost:117079",
-        "http://host.docker.internal:117079"
       ]
     }
   },

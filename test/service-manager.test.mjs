@@ -50,6 +50,7 @@ const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_IDENTITY_CENTER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
 const LEGACY_LAYOUT_ENV_KEYS = ["CONFIG", "DATA", "STATE", "LOG"].map((name) => `SERVICE_${name}_DIR`);
+const HOST_INHERITED_ENV_KEYS = ["__CFBundleIdentifier", "PWD"];
 
 async function withLegacyLayoutEnv(callback) {
   const previous = new Map(LEGACY_LAYOUT_ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -624,7 +625,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         "AP_CONTAINER_HUB_BASE_URL=https://bundle-hub.example.test",
         "",
         "# Runtime directories",
-        "# RUNTIME_DIR=./runtime",
+        "# AP_RUNTIME_DIR=./runtime",
         "# REGISTRIES_DIR=./runtime/registries",
         "# OWNER_DIR=./runtime/owner",
         "# AGENTS_DIR=./runtime/agents",
@@ -1913,11 +1914,11 @@ test("applyAgentPlatformWindowsHostShellDefaults skips non-Windows platforms", (
   assert.equal(updates.size, 0);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime migrates RUNTIME_DIR to AP_RUNTIME_DIR", () => {
+test("normalizeAgentPlatformEnvContentForRuntime preserves AP_RUNTIME_DIR while removing managed child dirs", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
-      "RUNTIME_DIR=/tmp/agent-runtime",
+      "AP_RUNTIME_DIR=/tmp/agent-runtime",
       "REGISTRIES_DIR=/tmp/agent-runtime/registries",
       "MEMORY_DIR=/tmp/agent-runtime/memory",
       "CHATS_DIR=/tmp/custom-chats"
@@ -1925,25 +1926,23 @@ test("normalizeAgentPlatformEnvContentForRuntime migrates RUNTIME_DIR to AP_RUNT
   );
 
   assert.match(next, /^AP_RUNTIME_DIR=\/tmp\/agent-runtime$/m);
-  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
+  assert.doesNotMatch(next, /^SERVER_PORT=/m);
   assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(next, /^MEMORY_DIR=/m);
   assert.doesNotMatch(next, /^CHATS_DIR=/m);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime preserves AP_RUNTIME_DIR over legacy RUNTIME_DIR", () => {
+test("normalizeAgentPlatformEnvContentForRuntime preserves canonical runtime root", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
-      "AP_RUNTIME_DIR=/tmp/current-runtime",
-      "RUNTIME_DIR=/tmp/legacy-runtime"
+      "AP_RUNTIME_DIR=/tmp/current-runtime"
     ].join("\n")
   );
 
   assert.match(next, /^AP_RUNTIME_DIR=\/tmp\/current-runtime$/m);
-  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dirs without inferring RUNTIME_DIR", () => {
+test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dirs without inferring AP_RUNTIME_DIR", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
@@ -1954,7 +1953,7 @@ test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dirs with
   );
 
   assert.doesNotMatch(next, /^SERVER_PORT=/m);
-  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
+  assert.doesNotMatch(next, /^AP_RUNTIME_DIR=/m);
   assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(next, /^AGENTS_DIR=/m);
   assert.doesNotMatch(next, /^PAN_DIR=/m);
@@ -2646,6 +2645,40 @@ test("service command runner strips legacy layout env from child process", async
   }
 });
 
+test("service command runner strips host-only inherited env from child process", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-host-env-scrub-"));
+  const previous = new Map(HOST_INHERITED_ENV_KEYS.map((key) => [key, process.env[key]]));
+  try {
+    process.env.__CFBundleIdentifier = "cc.zenmind.desktop";
+    process.env.PWD = "/host/leaked/path";
+    const result = await __testInternals.runExecFile(
+      process.execPath,
+      [
+        "-e",
+        [
+          `const keys = ${JSON.stringify(HOST_INHERITED_ENV_KEYS)};`,
+          "const found = Object.fromEntries(keys.map((key) => [key, process.env[key] ?? null]));",
+          "process.stdout.write(JSON.stringify(found));"
+        ].join("")
+      ],
+      tempRoot
+    );
+    assert.deepEqual(JSON.parse(result.stdout), {
+      __CFBundleIdentifier: null,
+      PWD: null
+    });
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("service command env injects DESKTOP_DEVICE_ID only for identity-center", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-device-env-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -2967,7 +3000,7 @@ test("patchProgramCommonForLayeredLayout repairs agent-platform deploy diagnosti
   }
 });
 
-test("patchProgramCommonForLayeredLayout prepares agent-platform runtime dirs under RUNTIME_DIR", () => {
+test("patchProgramCommonForLayeredLayout prepares agent-platform runtime dirs under AP_RUNTIME_DIR", () => {
   const programDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-root-"));
   const scriptPath = path.join(programDir, "scripts", "program-common.sh");
   const powerShellPath = path.join(programDir, "scripts", "program-common.ps1");
@@ -3016,7 +3049,7 @@ test("patchProgramCommonForLayeredLayout prepares agent-platform runtime dirs un
         env: {
           ...process.env,
           HOME: homeRoot,
-          RUNTIME_DIR: "~/.zenmind"
+          AP_RUNTIME_DIR: "~/.zenmind"
         }
       });
       assert.equal(fs.existsSync(path.join(homeRoot, ".zenmind", "tools")), true);
@@ -4729,7 +4762,7 @@ test("initializeService recreates Desktop defaults for core services after confi
     assert.doesNotMatch(platformEnv, /^AUTH_ENABLED=/m);
     assert.doesNotMatch(platformEnv, /^PROVIDER_APIKEY_KEY_PART=/m);
     assert.match(platformEnv, /^AP_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
-    assert.doesNotMatch(platformEnv, /^RUNTIME_DIR=/m);
+    assert.doesNotMatch(platformEnv, /^AP_RUNTIME_DIR=/m);
     assert.doesNotMatch(platformEnv, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(platformEnv, /^TOOLS_DIR=/m);
     assert.doesNotMatch(platformEnv, /^PAN_DIR=/m);
@@ -4975,14 +5008,13 @@ test("writeServiceConfig saves core env content without automatic port migration
       "env",
       [
         "SERVER_PORT=117078",
-        "CONTAINER_HUB_BASE_URL=http://127.0.0.1:117079",
+        "AP_CONTAINER_HUB_BASE_URL=http://127.0.0.1:117079",
         "AUTH_ENABLED=false"
       ].join("\n") + "\n"
     );
     let envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
     assert.match(envContent, /^AP_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:117079$/m);
-    assert.doesNotMatch(envContent, /^CONTAINER_HUB_BASE_URL=/m);
     assert.match(envContent, /^AUTH_ENABLED=false$/m);
 
     await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=18081\n");
@@ -5641,7 +5673,7 @@ test("startService starts agent-platform when desktop-managed container hub is u
     const platformInstallDir = getInstallDir(app, platformService);
     fs.appendFileSync(
       getTestEnvPath(userDataRoot, platformService.id),
-      "CONTAINER_HUB_BASE_URL=http://127.0.0.1:11960\n",
+      "AP_CONTAINER_HUB_BASE_URL=http://127.0.0.1:11960\n",
       "utf8"
     );
 
@@ -5667,7 +5699,7 @@ test("startService starts agent-platform when desktop-managed container hub is u
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.doesNotMatch(
       envContent,
-      new RegExp(`^RUNTIME_DIR=${getTestDataDir(userDataRoot, "agent-platform").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
+      new RegExp(`^AP_RUNTIME_DIR=${getTestDataDir(userDataRoot, "agent-platform").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
     );
   } finally {
     childProcess.spawnSync = previousSpawnSync;
@@ -5883,7 +5915,7 @@ test("ensurePreStartRequirements fills default desktop ACP command for the local
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements leaves agent-platform runtime path migration to the service", async () => {
+test("ensurePreStartRequirements preserves canonical agent-platform runtime root", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const tempRoot = fixture.tempRoot;
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -5894,7 +5926,7 @@ test("ensurePreStartRequirements leaves agent-platform runtime path migration to
   });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const legacyRuntimeRoot = path.join(tempRoot, "legacy-runtime");
+  const runtimeRoot = path.join(tempRoot, "custom-runtime");
 
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
   fs.mkdirSync(path.join(homeRoot, "zenmind", "registries"), { recursive: true });
@@ -5902,7 +5934,7 @@ test("ensurePreStartRequirements leaves agent-platform runtime path migration to
   writeTestEnv(
     userDataRoot,
     platformService.id,
-    `SERVER_PORT=11949\nRUNTIME_DIR=${legacyRuntimeRoot}\n`,
+    `SERVER_PORT=11949\nAP_RUNTIME_DIR=${runtimeRoot}\n`,
   );
 
   const previousHome = process.env.HOME;
@@ -5919,8 +5951,7 @@ test("ensurePreStartRequirements leaves agent-platform runtime path migration to
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-  assert.match(envContent, new RegExp(`^AP_RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
-  assert.doesNotMatch(envContent, /^RUNTIME_DIR=/m);
+  assert.match(envContent, new RegExp(`^AP_RUNTIME_DIR=${runtimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
 
@@ -5990,7 +6021,7 @@ test("ensurePreStartRequirements ignores stale legacy desktop runtime paths and 
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-  assert.doesNotMatch(envContent, /^RUNTIME_DIR=/m);
+  assert.doesNotMatch(envContent, /^AP_RUNTIME_DIR=/m);
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
@@ -6054,7 +6085,7 @@ test("ensurePreStartRequirements ignores legacy resolved desktop runtime paths",
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-  assert.doesNotMatch(envContent, /^RUNTIME_DIR=/m);
+  assert.doesNotMatch(envContent, /^AP_RUNTIME_DIR=/m);
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
@@ -6118,7 +6149,7 @@ test("ensurePreStartRequirements ignores hidden desktop legacy runtime roots", a
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-  assert.doesNotMatch(envContent, /^RUNTIME_DIR=/m);
+  assert.doesNotMatch(envContent, /^AP_RUNTIME_DIR=/m);
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 

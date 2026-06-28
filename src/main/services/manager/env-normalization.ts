@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { App } from "electron";
 import type { ServiceDefinition } from "../../manifest-utils";
-import { parseEnvFileContent, readEnvFile } from "../../env-file";
+import { readEnvFile } from "../../env-file";
 import {
   resolveConfigPath,
   type ServiceLayout
@@ -31,9 +31,6 @@ const AGENT_BASH_SHELL_ARGS_KEY = "AGENT_BASH_SHELL_ARGS";
 const WINDOWS_AGENT_BASH_SHELL_EXECUTABLE = "powershell.exe";
 const WINDOWS_AGENT_BASH_SHELL_ARGS = "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}";
 export const AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY = "AP_CONTAINER_HUB_BASE_URL";
-export const AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY = "CONTAINER_HUB_BASE_URL";
-const AGENT_PLATFORM_RUNTIME_DIR_KEY = "AP_RUNTIME_DIR";
-const AGENT_PLATFORM_LEGACY_RUNTIME_DIR_KEY = "RUNTIME_DIR";
 const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
   "LOCAL_CLI_ACP_RELAY_ENABLED",
   "LOCAL_CLI_ACP_RELAY_USER_ENABLED",
@@ -221,48 +218,6 @@ function removeDesktopManagedAgentPlatformEnvContent(content: string) {
   return removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS);
 }
 
-function migrateAgentPlatformContainerHubBaseUrl(content: string) {
-  const env = parseEnvFileContent(content);
-  const canonicalValue = env.get(AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY)?.trim() ?? "";
-  const legacyValue = env.get(AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY)?.trim() ?? "";
-  if (!legacyValue) {
-    return content;
-  }
-
-  const withoutLegacyKey = removeEnvKeysFromContent(content, [
-    AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY
-  ]);
-  if (canonicalValue) {
-    return withoutLegacyKey;
-  }
-  return upsertEnvFileContent(
-    withoutLegacyKey,
-    new Map([[AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY, legacyValue]]),
-    { uncommentExisting: true }
-  );
-}
-
-function migrateAgentPlatformRuntimeDir(content: string) {
-  const env = parseEnvFileContent(content);
-  const canonicalValue = env.get(AGENT_PLATFORM_RUNTIME_DIR_KEY)?.trim() ?? "";
-  const legacyValue = env.get(AGENT_PLATFORM_LEGACY_RUNTIME_DIR_KEY)?.trim() ?? "";
-  if (!legacyValue) {
-    return content;
-  }
-
-  const withoutLegacyKey = removeEnvKeysFromContent(content, [
-    AGENT_PLATFORM_LEGACY_RUNTIME_DIR_KEY
-  ]);
-  if (canonicalValue) {
-    return withoutLegacyKey;
-  }
-  return upsertEnvFileContent(
-    withoutLegacyKey,
-    new Map([[AGENT_PLATFORM_RUNTIME_DIR_KEY, legacyValue]]),
-    { uncommentExisting: true }
-  );
-}
-
 export function normalizeAgentWebclientEnvContentForDesktop(content: string) {
   return upsertEnvFileContent(
     removeAgentWebclientManagedNodeBinPlaceholder(content),
@@ -276,7 +231,7 @@ export function normalizeAgentPlatformEnvContentForRuntime(content: string, _lay
   return removeDesktopManagedAgentPlatformEnvContent(
     removeEnvKeysFromContent(
       removeEnvKeysFromContent(
-        migrateAgentPlatformRuntimeDir(migrateAgentPlatformContainerHubBaseUrl(content)),
+        content,
         AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS
       ),
       removedRuntimePathKeys

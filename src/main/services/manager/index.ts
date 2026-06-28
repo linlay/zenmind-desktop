@@ -122,7 +122,6 @@ import {
 } from "./process-identity";
 import {
   AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY,
-  AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY,
   AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
   PROCESS_EXEC_PATH_PLACEHOLDER,
@@ -489,11 +488,7 @@ function getDesktopManagedContainerHubBindAddr(service: ServiceDefinition, layou
 }
 
 function getAgentPlatformConfiguredContainerHubBaseUrl(env: Map<string, string>) {
-  return (
-    env.get(AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY)?.trim() ||
-    env.get(AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY)?.trim() ||
-    ""
-  );
+  return env.get(AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY)?.trim() || "";
 }
 
 async function getDesktopManagedAgentPlatformContainerHubBaseUrl(app: App) {
@@ -1725,7 +1720,6 @@ async function syncAgentPlatformContainerHubUrl(
 
   const currentValue =
     getEnvValueWithUpdates(env, updates, AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY) ||
-    env.get(AGENT_PLATFORM_LEGACY_CONTAINER_HUB_BASE_URL_KEY)?.trim() ||
     "";
   if (!options.force && currentValue && !isDesktopManagedContainerHubUrl(currentValue)) {
     return;

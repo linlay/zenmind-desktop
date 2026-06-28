@@ -17,6 +17,8 @@ export const agentPlatformDesktopRuntimePaths = [
   ["SKILLS_MARKET_DIR", "skills-market"]
 ] as const;
 
+const AGENT_PLATFORM_RUNTIME_DIR_KEY = "AP_RUNTIME_DIR";
+
 export function resolveHomeDir(app?: App | null) {
   try {
     const homePath = app?.getPath("home")?.trim();
@@ -92,7 +94,7 @@ export function resolveAgentPlatformAgentsDir(env: Map<string, string>, desktopR
   if (configuredAgentsDir) {
     return configuredAgentsDir;
   }
-  const configuredRuntimeRoot = env.get("RUNTIME_DIR")?.trim();
+  const configuredRuntimeRoot = env.get(AGENT_PLATFORM_RUNTIME_DIR_KEY)?.trim();
   if (configuredRuntimeRoot) {
     return path.join(configuredRuntimeRoot, "agents");
   }
@@ -106,5 +108,5 @@ export function resolveAgentPlatformAgentsDir(env: Map<string, string>, desktopR
 }
 
 export function hasConfiguredAgentPlatformRuntimePath(env: Map<string, string>) {
-  return Boolean(env.get("RUNTIME_DIR")?.trim());
+  return Boolean(env.get(AGENT_PLATFORM_RUNTIME_DIR_KEY)?.trim());
 }

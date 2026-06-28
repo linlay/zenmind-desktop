@@ -68,8 +68,8 @@ function patchAgentPlatformRuntimeNames(programDir: string) {
         "}",
         "",
         "program_resolve_runtime_root() {",
-        '  if [[ -n "${RUNTIME_DIR:-}" ]]; then',
-        '    RUNTIME_ROOT="$(program_expand_runtime_path "$RUNTIME_DIR")"',
+        '  if [[ -n "${AP_RUNTIME_DIR:-}" ]]; then',
+        '    RUNTIME_ROOT="$(program_expand_runtime_path "$AP_RUNTIME_DIR")"',
         "  fi",
         "}"
       ].join("\n");
@@ -126,8 +126,8 @@ function patchAgentPlatformRuntimeNames(programDir: string) {
         "}",
         "",
         "function Resolve-ProgramRuntimeRoot {",
-        "  if ($env:RUNTIME_DIR) {",
-        "    $Script:RuntimeRoot = Resolve-ProgramRuntimePath $env:RUNTIME_DIR",
+        "  if ($env:AP_RUNTIME_DIR) {",
+        "    $Script:RuntimeRoot = Resolve-ProgramRuntimePath $env:AP_RUNTIME_DIR",
         "  }",
         "}"
       ].join("\r\n");

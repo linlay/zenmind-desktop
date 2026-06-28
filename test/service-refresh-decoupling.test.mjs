@@ -144,8 +144,8 @@ test("agent-platform bundled directory tolerates missing empty runtime dir only"
 
 test("agent-platform env normalization keeps only Desktop-owned cleanup", () => {
   const output = normalizeAgentPlatformEnvContentForRuntime([
-    "RUNTIME_DIR=/legacy/runtime",
-    "AGENTS_DIR=/legacy/agents",
+    "AP_RUNTIME_DIR=/custom/runtime",
+    "AGENTS_DIR=/custom/agents",
     "LOCAL_CLI_ACP_RELAY_PORT=3220",
     "AGENT_WS_ENABLED=true",
     "GATEWAY_USER_ID=user-1",
@@ -154,7 +154,7 @@ test("agent-platform env normalization keeps only Desktop-owned cleanup", () => 
     ""
   ].join("\n"));
 
-  assert.match(output, /^RUNTIME_DIR=\/legacy\/runtime$/m);
+  assert.match(output, /^AP_RUNTIME_DIR=\/custom\/runtime$/m);
   assert.doesNotMatch(output, /^AGENTS_DIR=/m);
   assert.doesNotMatch(output, /^LOCAL_CLI_ACP_RELAY_PORT=/m);
   assert.doesNotMatch(output, /^AGENT_WS_ENABLED=/m);
