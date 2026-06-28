@@ -3442,7 +3442,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   );
   const marketPage = [
     readSourceFile("src", "renderer", "pages", "functional-market", "index.tsx"),
-    readSourceFile("src", "renderer", "pages", "functional-market", "SkillMarket.tsx"),
+    readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx"),
     readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
   ].join("\n");
   const petActionBlock = bridge.match(/async function executePetAction[\s\S]*?\n}\n\nasync function executeAction/)?.[0] ?? "";
@@ -3551,7 +3551,8 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(externalWebviewPage, /desktop\.web\.closeTab/);
   assert.doesNotMatch(externalWebviewPage, /querySelector\(request/);
   assert.match(marketPage, /registerDesktopActionProvider/);
-  assert.match(marketPage, /skillDownloadCommand/);
+  assert.match(marketPage, /getMarketMethod\("importSkill"\)/);
+  assert.match(marketPage, /getMarketMethod\("importSandboxImage"\)/);
 });
 
 test("desktop action confirmation detail keeps debug context and redaction keys", () => {
@@ -3616,39 +3617,36 @@ test("built index uses relative asset paths", (t) => {
 
 test("plugin market guards stale preload market api before skill import", () => {
   const marketPage = [
-    readSourceFile("src", "renderer", "pages", "functional-market", "SkillMarket.tsx"),
+    readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx"),
     readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
   ].join("\n");
   const marketStyles = [
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    readSourceFile("src", "renderer", "pages", "functional-market", "SkillMarket.css")
+    readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.css")
   ].join("\n");
 
   assert.match(marketPage, /function getMarketApi\(/);
   assert.match(marketPage, /function getPluginApi\(/);
   assert.match(marketPage, /t\("market\.error\.marketApiUnavailable"/);
   assert.match(marketPage, /t\("market\.error\.pluginApiUnavailable"/);
-  assert.match(marketPage, /getMarketMethod\("importSkillFromCommand"\)/);
-  assert.match(marketPage, /market-command-input/);
-  assert.match(marketPage, /t\("market\.skill\.cloudDownload\.run"\)/);
-  assert.match(marketPage, /const skillMarketOffline = Boolean\(next\.skillOffline\)/);
-  assert.match(marketPage, /setMarketFeedback\(skillMarketOffline \? next\.skillMessage \?\? "" : ""\)/);
-  assert.match(marketPage, /marketOffline=\{Boolean\(marketResult\.skillOffline\)\}/);
-  assert.match(marketPage, /console\.warn\("\[skill-market\] failed to load market data"/);
+  assert.match(marketPage, /getMarketMethod\("importSkill"\)/);
+  assert.match(marketPage, /getPluginMethod\("install"\)/);
+  assert.match(marketPage, /getMarketMethod\("importSandboxImage"\)/);
+  assert.match(marketPage, /function marketMessageForTab/);
+  assert.match(marketPage, /function marketOfflineForTab/);
+  assert.match(marketPage, /marketOfflineForTab\(marketResult,\s*activeTab\)/);
+  assert.match(marketPage, /console\.warn\("\[market-storefront\] failed to load market data"/);
   assert.doesNotMatch(marketPage, /window\.electronAPI\.market\.importSkill\(\)/);
   assert.doesNotMatch(marketPage, /installPlugin\(\)/);
   assert.doesNotMatch(marketPage, /market-feedback/);
   assert.doesNotMatch(marketStyles, /\.market-feedback/);
-  assert.match(marketStyles, /\.market-command-input/);
+  assert.match(marketStyles, /\.market-store-toolbar-button/);
   assert.match(marketStyles, /\.market-status/);
 });
 
 test("functional market renderer text is routed through i18n", () => {
   const marketFiles = [
     "MarketPageFrame.tsx",
-    "PluginMarket.tsx",
-    "SkillMarket.tsx",
-    "SandboxImageMarket.tsx",
     "StorefrontMarket.tsx",
     "marketDisplay.tsx",
     "marketPageApi.ts",
@@ -3712,23 +3710,23 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.doesNotMatch(storefront, /market-store-metric/);
   assert.doesNotMatch(storefront, /market-store-compatibility/);
   assert.match(storefrontStyles, /\.market-store-scroll\s*\{[\s\S]*?container-type:\s*inline-size;/);
-  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(300px,\s*1fr\)\);/);
-  assert.match(storefrontStyles, /@container\s*\(max-width:\s*640px\)\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(storefrontStyles, /--market-card-min:\s*320px;/);
+  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(100%,\s*var\(--market-card-min\)\),\s*1fr\)\);/);
   assert.doesNotMatch(storefrontStyles, /620px/);
-  assert.match(storefrontStyles, /\.market-store-card\s*\{[\s\S]*?border-radius:\s*16px;/);
-  assert.match(storefrontStyles, /\.market-store-card-head\s*\{[\s\S]*?grid-template-columns:\s*40px minmax\(0,\s*1fr\);/);
-  assert.match(storefrontStyles, /\.market-store-item-icon\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?background:\s*var\(--glyph-bg/);
-  assert.match(storefrontStyles, /\.market-store-item-icon svg\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;/);
+  assert.match(storefrontStyles, /\.market-store-card\.ant-card\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(storefrontStyles, /\.market-store-card-head\s*\{[\s\S]*?grid-template-columns:\s*30px minmax\(0,\s*1fr\);/);
+  assert.match(storefrontStyles, /\.market-store-item-icon\s*\{[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px;[\s\S]*?background:\s*var\(--glyph-bg/);
+  assert.match(storefrontStyles, /\.market-store-item-icon svg\s*\{[\s\S]*?width:\s*15px;[\s\S]*?height:\s*15px;/);
   assert.doesNotMatch(storefrontStyles, /--glyph-grad/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-item-icon::after/);
   assert.doesNotMatch(storefrontStyles, /market-store-platform-chip/);
   assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
   assert.match(storefrontStyles, /\.market-store-description\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
   assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid var\(--market-store-line\);/);
-  assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px,\s*1fr\)\s*160px\s*160px\s*auto;/);
+  assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(280px,\s*520px\)\s*auto;/);
   assert.match(storefrontStyles, /\.market-store-toolbar-actions\s*\{[\s\S]*?justify-content:\s*flex-end;/);
-  assert.match(storefrontStyles, /\.market-store-toolbar-button\s*\{[\s\S]*?border-radius:\s*11px;/);
-  assert.match(storefrontStyles, /\.market-store-action\.is-primary\s*\{[\s\S]*?background:\s*var\(--market-store-purple-grad\);/);
+  assert.match(storefrontStyles, /\.market-store-toolbar-button\.ant-btn\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(storefrontStyles, /\.market-store-action\.is-primary\.ant-btn\s*\{[\s\S]*?background:\s*var\(--market-store-accent\);/);
   assert.match(storefront, /width=\{680\}/);
   assert.match(storefrontStyles, /\.market-store-detail-category-pill/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-category-pill/);
@@ -3758,19 +3756,16 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(serviceDisplay, /serviceId === "identity-center"[\s\S]*?t\("service\.display\.identityCenter"\)/);
 });
 
-test("sandbox image market is a local image management surface", () => {
-  const sandboxMarket = readSourceFile(
-    "src",
-    "renderer",
-    "pages",
-    "functional-market",
-    "SandboxImageMarket.tsx"
-  );
+test("storefront market keeps sandbox image tab wired to local image import", () => {
+  const storefront = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const storefrontStyles = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
   const marketModel = readSourceFile("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
   const marketFrame = readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.tsx");
   const marketStyles = readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css");
+  const marketDisplay = readSourceFile("src", "renderer", "pages", "functional-market", "marketDisplay.tsx");
 
   assert.match(marketModel, /market\.tab\.sandboxImages\.subtitle/);
+  assert.match(marketModel, /sandboxImages:\s*"sandbox-image"/);
   assert.doesNotMatch(marketModel, /market\.tab\.[^.]+\.meta/);
   assert.match(marketFrame, /function marketTabIcon\(tab: MarketTab\)/);
   assert.match(marketFrame, /AppstoreOutlined/);
@@ -3783,62 +3778,19 @@ test("sandbox image market is a local image management surface", () => {
   assert.match(marketFrame, /market-tab-icon/);
   assert.match(marketFrame, /market-tab-text/);
   assert.doesNotMatch(marketFrame, /market-tab-meta/);
-  assert.match(sandboxMarket, /PageFeedbackStack/);
-  assert.match(sandboxMarket, /sandboxImageDescription/);
-  assert.match(sandboxMarket, /description === t\("market\.sandbox\.localDescription"\) \? "" : description/);
-  assert.match(sandboxMarket, /getMarketMethod\("importSandboxImage"\)/);
-  assert.match(sandboxMarket, /SandboxImageImportProgressEvent/);
-  assert.match(sandboxMarket, /importProgressEvents/);
-  assert.match(sandboxMarket, /getMarketMethod\("onSandboxImageImportProgress"\)/);
-  assert.match(sandboxMarket, /onDismissImportProgress/);
-  assert.match(sandboxMarket, /market-import-progress-backdrop/);
-  assert.match(sandboxMarket, /market-import-progress-panel/);
-  assert.match(sandboxMarket, /role="dialog"/);
-  assert.match(sandboxMarket, /aria-modal="true"/);
-  assert.match(sandboxMarket, /market-import-progress-close/);
-  assert.match(sandboxMarket, /market-import-progress-log/);
-  assert.match(sandboxMarket, /latest\.stage !== "done"/);
-  assert.match(sandboxMarket, /getMarketMethod\("exportSandboxImage"\)/);
-  assert.match(sandboxMarket, /getMarketMethod\("deleteSandboxImage"\)/);
-  assert.match(sandboxMarket, /market-image-detail-dialog/);
-  assert.match(sandboxMarket, /market-image-action-button/);
-  assert.match(sandboxMarket, /sandbox-image-panel/);
-  assert.doesNotMatch(sandboxMarket, /market-provider-dot/);
-  assert.match(sandboxMarket, /t\("market\.sandbox\.confirmDelete"/);
-  assert.match(sandboxMarket, /Docker \/ Podman/);
-  assert.match(readSourceFile("src", "renderer", "pages", "functional-market", "marketDisplay.tsx"), /market-sandbox-image-symbol/);
-  assert.match(
-    marketStyles,
-    /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(320px,\s*1fr\)\)/
-  );
-  assert.match(
-    marketStyles,
-    /\.sandbox-image-panel\s*\{[\s\S]*?align-items:\s*start;/
-  );
-  assert.match(
-    marketStyles,
-    /\.market-skill-card\.sandbox-image-card\s*\{[\s\S]*?min-height:\s*100px;[\s\S]*?padding:\s*10px 12px;/
-  );
-  assert.match(
-    marketStyles,
-    /\.sandbox-image-card\s+\.market-plugin-meta\s*\{[\s\S]*?margin-top:\s*4px;[\s\S]*?padding-top:\s*7px;/
-  );
-  assert.match(
-    marketStyles,
-    /\.sandbox-image-card\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?box-shadow:\s*0 2px 6px rgba\(15,\s*23,\s*42,\s*0\.08\);/
-  );
-  assert.match(
-    marketStyles,
-    /:root\[data-theme="dark"\]\s+\.sandbox-image-card\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?box-shadow:\s*none;/
-  );
-  assert.match(
-    marketStyles,
-    /\.sandbox-image-card\s+\.market-card-icon,[\s\S]*?\.market-image-detail-title\s+\.market-card-icon\s*\{[\s\S]*?background:\s*#e9eefc;[\s\S]*?color:\s*var\(--market-control-blue\);/
-  );
-  assert.match(
-    marketStyles,
-    /:root\[data-theme="dark"\]\s+\.sandbox-image-card\s+\.market-card-icon,[\s\S]*?:root\[data-theme="dark"\]\s+\.market-image-detail-title\s+\.market-card-icon\s*\{[\s\S]*?background:\s*rgba\(87,\s*144,\s*255,\s*0\.15\);[\s\S]*?color:\s*#7facff;/
-  );
+  assert.match(storefront, /case "sandbox-image":\s*return t\("market\.type\.sandboxImage"\)/);
+  assert.match(storefront, /case "sandbox-image":\s*return <ApiOutlined \/>/);
+  assert.match(storefront, /activeTab === "sandboxImages"[\s\S]*?t\("market\.sandbox\.import"\)/);
+  assert.match(storefront, /getMarketMethod\("importSandboxImage"\)/);
+  assert.match(storefront, /className=\{`market-store-card is-\$\{item\.type\}`\}/);
+  assert.match(storefront, /className=\{`market-store-item-icon is-\$\{item\.type\}`\}/);
+  assert.match(storefront, /market-store-toolbar-button is-primary/);
+  assert.doesNotMatch(storefront, /getMarketMethod\("buildSandboxImage"\)/);
+  assert.doesNotMatch(storefront, /onBuildSandboxImage/);
+  assert.match(marketDisplay, /market-sandbox-image-symbol/);
+  assert.match(storefrontStyles, /\.market-store-card\.is-sandbox-image/);
+  assert.match(storefrontStyles, /\.market-store-item-icon\.is-sandbox-image/);
+  assert.match(storefrontStyles, /:root\[data-theme="dark"\]\s+\.market-store-item-icon\.is-sandbox-image/);
   assert.match(
     marketStyles,
     /\.market-topbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/
@@ -3853,54 +3805,21 @@ test("sandbox image market is a local image management surface", () => {
   );
   assert.match(
     marketStyles,
-    /\.market-tabs \.market-tab-label\s*\{[\s\S]*?min-height:\s*38px/
+    /\.market-tabs \.market-tab-label\s*\{[\s\S]*?min-height:\s*30px/
   );
   assert.match(
     marketStyles,
-    /\.market-tab-icon\s*\{[\s\S]*?font-size:\s*15px;/
+    /\.market-tab-icon\s*\{[\s\S]*?font-size:\s*13px;/
   );
   assert.match(
     marketStyles,
     /\.market-tab-text\s*\{[\s\S]*?text-overflow:\s*ellipsis;/
   );
-  assert.doesNotMatch(
-    marketStyles,
-    /\.market-tab-meta/
-  );
+  assert.doesNotMatch(marketStyles, /\.market-tab-meta/);
   assert.match(
     marketStyles,
-    /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.045\)[\s\S]*?box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.04\)/
+    /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*#121821;[\s\S]*?box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.035\)/
   );
-  assert.doesNotMatch(marketStyles, /\.market-tab\.is-active/);
-  assert.match(
-    marketStyles,
-    /\.market-empty-state\s*\{[\s\S]*?align-self:\s*center;/
-  );
-  assert.match(
-    marketStyles,
-    /\.market-import-progress-backdrop\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*90;[\s\S]*?backdrop-filter:\s*blur\(8px\);/
-  );
-  assert.match(
-    marketStyles,
-    /\.market-import-progress-panel\s*\{[\s\S]*?width:\s*min\(520px,\s*100%\);[\s\S]*?max-height:\s*min\(520px,\s*calc\(100vh - 48px\)\);/
-  );
-  assert.match(
-    marketStyles,
-    /\.market-import-progress-panel\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);[\s\S]*?box-shadow:\s*0 24px 70px rgba\(15,\s*23,\s*42,\s*0\.24\);/
-  );
-  assert.match(
-    marketStyles,
-    /\.market-import-progress-close\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/
-  );
-  assert.match(
-    marketStyles,
-    /\.market-import-progress-log\s*\{[\s\S]*?font-family:\s*ui-monospace/
-  );
-  assert.match(sandboxMarket, /t\("market\.sandbox\.action\.view"/);
-  assert.match(sandboxMarket, /t\("market\.sandbox\.action\.export"/);
-  assert.match(sandboxMarket, /t\("market\.sandbox\.action\.delete"/);
-  assert.doesNotMatch(sandboxMarket, /getMarketMethod\("buildSandboxImage"\)/);
-  assert.doesNotMatch(sandboxMarket, /onBuildSandboxImage/);
 });
 
 test("sandbox image import progress is exposed across desktop api layers", () => {
@@ -4299,12 +4218,6 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   );
   const serviceWebviewMainWorld = readSourceFile("src", "preload", "service-webview-main-world.ts");
   const serviceWebviewBridgeHost = readSourceFile("src", "renderer", "services", "serviceWebviewBridgeHost.ts");
-  const serviceWebviewBridgeReserved = readSourceFile(
-    "src",
-    "renderer",
-    "services",
-    "serviceWebviewBridgeReservedCapabilities.ts"
-  );
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
   const mainProcess = readMainProcessRuntimeSource();
   const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
@@ -4406,12 +4319,13 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeHost, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
-  assert.match(serviceWebviewBridgeReserved, /media\.microphone/);
-  assert.match(serviceWebviewBridgeReserved, /media\.camera/);
-  assert.doesNotMatch(serviceWebviewBridgeReserved, /screen\.capture/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /ServiceWebviewBridgeReservedCapability/);
+  assert.match(serviceWebviewBridgeContracts, /media\.microphone/);
+  assert.match(serviceWebviewBridgeContracts, /media\.camera/);
+  assert.match(serviceWebviewBridgeContracts, /screen\.capture/);
   assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
