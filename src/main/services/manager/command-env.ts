@@ -3,10 +3,36 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-let shellPathEntriesCache: string[] | null = null;
+type ShellPathProbeResult = {
+  entries: string[];
+  succeeded: boolean;
+};
+
+type ShellPathSpawnSyncResult = {
+  status: number | null;
+  error?: Error;
+  stdout: string;
+};
+
+type ShellPathSpawnSync = (
+  command: string,
+  args: string[],
+  options: {
+    encoding: BufferEncoding;
+    env: NodeJS.ProcessEnv;
+    timeout: number;
+  }
+) => ShellPathSpawnSyncResult;
+
+let shellPathEntriesCache: ShellPathProbeResult | null = null;
 const LEGACY_LAYOUT_ENV_KEYS = ["CONFIG", "DATA", "STATE", "LOG"].map((name) => `SERVICE_${name}_DIR`);
 const LEGACY_LAYOUT_ENV_KEY_SET = new Set(LEGACY_LAYOUT_ENV_KEYS);
 const HOST_INHERITED_ENV_KEYS = ["__CFBundleIdentifier", "PWD"] as const;
+const SHELL_PATH_PROBE_TIMEOUT_MS = 3000;
+const DEFAULT_SHELL_PROBE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+const SHELL_PATH_BEGIN_MARKER = "__ZENMIND_PATH_BEGIN__";
+const SHELL_PATH_END_MARKER = "__ZENMIND_PATH_END__";
+const RAW_PATH_PRINT_COMMAND = "printf '%s' \"$PATH\"";
 
 function listExistingDirs(paths: string[]) {
   return paths.filter((dirPath) => {
@@ -85,42 +111,131 @@ function getStaticServicePaths() {
   ];
 }
 
-function getShellPathEntries() {
-  if (process.platform === "win32") {
-    return [];
+function splitPathEntries(value: string) {
+  return value.split(path.delimiter).filter(Boolean);
+}
+
+function getMarkedPathPrintCommand() {
+  return `printf '%s%s%s' '${SHELL_PATH_BEGIN_MARKER}' "$PATH" '${SHELL_PATH_END_MARKER}'`;
+}
+
+function extractMarkedShellPath(output: string) {
+  const beginIndex = output.indexOf(SHELL_PATH_BEGIN_MARKER);
+  if (beginIndex < 0) {
+    return null;
   }
+  const valueStart = beginIndex + SHELL_PATH_BEGIN_MARKER.length;
+  const endIndex = output.indexOf(SHELL_PATH_END_MARKER, valueStart);
+  if (endIndex < 0) {
+    return null;
+  }
+  return output.slice(valueStart, endIndex);
+}
+
+function resolveProbeShellPath(env: NodeJS.ProcessEnv, existsSyncImpl: (candidatePath: string) => boolean) {
+  return env.SHELL
+    || (existsSyncImpl("/bin/zsh") ? "/bin/zsh" : "")
+    || (existsSyncImpl("/bin/bash") ? "/bin/bash" : "");
+}
+
+function isZshShell(shellPath: string) {
+  return path.basename(shellPath).toLowerCase() === "zsh";
+}
+
+function runShellPathProbe(
+  shellPath: string,
+  args: string[],
+  parseStdout: (stdout: string) => string | null,
+  env: NodeJS.ProcessEnv,
+  spawnSyncImpl: ShellPathSpawnSync
+) {
+  try {
+    const result = spawnSyncImpl(shellPath, args, {
+      encoding: "utf8",
+      env: {
+        ...env,
+        PATH: env.PATH ?? DEFAULT_SHELL_PROBE_PATH
+      },
+      timeout: SHELL_PATH_PROBE_TIMEOUT_MS
+    });
+    if (result.status !== 0 || result.error) {
+      return null;
+    }
+    const shellPathValue = parseStdout(result.stdout);
+    if (!shellPathValue) {
+      return null;
+    }
+    const entries = splitPathEntries(shellPathValue);
+    return entries.length > 0 ? entries : null;
+  } catch {
+    return null;
+  }
+}
+
+function probeShellPathEntries(options: {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  existsSyncImpl?: (candidatePath: string) => boolean;
+  spawnSyncImpl?: ShellPathSpawnSync;
+} = {}): ShellPathProbeResult {
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
+    return { entries: [], succeeded: false };
+  }
+
+  const env = options.env ?? process.env;
+  const existsSyncImpl = options.existsSyncImpl ?? fs.existsSync;
+  const spawnSyncImpl = options.spawnSyncImpl ?? spawnSync;
+  const shellPath = resolveProbeShellPath(env, existsSyncImpl);
+  if (!shellPath) {
+    return { entries: [], succeeded: false };
+  }
+
+  if (isZshShell(shellPath)) {
+    const interactiveEntries = runShellPathProbe(
+      shellPath,
+      ["-ilc", getMarkedPathPrintCommand()],
+      extractMarkedShellPath,
+      env,
+      spawnSyncImpl
+    );
+    if (interactiveEntries) {
+      return { entries: interactiveEntries, succeeded: true };
+    }
+  }
+
+  const loginEntries = runShellPathProbe(
+    shellPath,
+    ["-lc", RAW_PATH_PRINT_COMMAND],
+    (stdout) => stdout,
+    env,
+    spawnSyncImpl
+  );
+  if (loginEntries) {
+    return { entries: loginEntries, succeeded: true };
+  }
+
+  return { entries: [], succeeded: false };
+}
+
+function getShellPathEntries() {
   if (shellPathEntriesCache) {
     return shellPathEntriesCache;
   }
 
-  const shellPath =
-    process.env.SHELL
-    || (fs.existsSync("/bin/zsh") ? "/bin/zsh" : "")
-    || (fs.existsSync("/bin/bash") ? "/bin/bash" : "");
-  if (!shellPath) {
-    shellPathEntriesCache = [];
-    return shellPathEntriesCache;
-  }
-
-  try {
-    const result = spawnSync(shellPath, ["-lc", "printf '%s' \"$PATH\""], {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-      },
-      timeout: 1500
-    });
-    if (result.status === 0 && !result.error) {
-      shellPathEntriesCache = result.stdout.split(path.delimiter).filter(Boolean);
-      return shellPathEntriesCache;
-    }
-  } catch {
-    // Fall back to the static service paths when the login shell cannot be probed.
-  }
-
-  shellPathEntriesCache = [];
+  shellPathEntriesCache = probeShellPathEntries();
   return shellPathEntriesCache;
+}
+
+function mergeServicePathEntries(
+  inheritedPaths: string[],
+  staticPaths: string[],
+  shellPathResult: ShellPathProbeResult
+) {
+  const pathEntries = shellPathResult.succeeded
+    ? [...shellPathResult.entries, ...staticPaths, ...inheritedPaths]
+    : [...inheritedPaths, ...staticPaths];
+  return [...new Set(pathEntries)];
 }
 
 export function buildServiceEnv(): NodeJS.ProcessEnv {
@@ -138,12 +253,13 @@ export function buildServiceEnv(): NodeJS.ProcessEnv {
       }
     }
   }
-  const extraPaths = [...getStaticServicePaths(), ...getShellPathEntries()];
-  if (extraPaths.length === 0) {
+  const staticPaths = getStaticServicePaths();
+  const shellPathResult = getShellPathEntries();
+  const current = splitPathEntries(env.PATH ?? env.Path ?? "");
+  const merged = mergeServicePathEntries(current, staticPaths, shellPathResult);
+  if (merged.length === 0) {
     return env;
   }
-  const current = (env.PATH ?? env.Path ?? "").split(path.delimiter).filter(Boolean);
-  const merged = [...new Set([...current, ...extraPaths])];
   env.PATH = merged.join(path.delimiter);
   if (process.platform === "win32") {
     env.Path = env.PATH;
@@ -210,3 +326,18 @@ export function resolveCommandBin(command: string) {
 export function isCommandBasenameMatch(command: string, expected: string) {
   return path.basename(command).toLowerCase() === expected.toLowerCase();
 }
+
+export const __testInternals = {
+  SHELL_PATH_BEGIN_MARKER,
+  SHELL_PATH_END_MARKER,
+  extractMarkedShellPath,
+  mergeServicePathEntries,
+  probeShellPathEntries,
+  resetShellPathEntriesCache() {
+    shellPathEntriesCache = null;
+  },
+  setShellPathEntriesCacheForTests(result: ShellPathProbeResult) {
+    shellPathEntriesCache = result;
+  },
+  splitPathEntries
+};

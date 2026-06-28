@@ -1730,6 +1730,10 @@ function withSpawnSyncMock(mockImplementation, run) {
   const previousSpawnSync = childProcess.spawnSync;
   const previousShell = process.env.SHELL;
   __testInternals.clearContainerEngineProbeCache();
+  __testInternals.commandEnv.setShellPathEntriesCacheForTests({
+    entries: [],
+    succeeded: false
+  });
   childProcess.spawnSync = mockImplementation;
   delete process.env.SHELL;
 
@@ -1738,6 +1742,7 @@ function withSpawnSyncMock(mockImplementation, run) {
   } finally {
     childProcess.spawnSync = previousSpawnSync;
     __testInternals.clearContainerEngineProbeCache();
+    __testInternals.commandEnv.resetShellPathEntriesCache();
     if (previousShell === undefined) {
       delete process.env.SHELL;
     } else {
@@ -2677,6 +2682,123 @@ test("service command runner strips host-only inherited env from child process",
     }
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("service shell PATH probe extracts zsh interactive output through markers", () => {
+  const commandEnv = __testInternals.commandEnv;
+  const shellPath = ["/zsh/bin", "/usr/bin"].join(path.delimiter);
+  const calls = [];
+  const result = commandEnv.probeShellPathEntries({
+    platform: "darwin",
+    env: {
+      SHELL: "/bin/zsh",
+      PATH: "/launchd/bin"
+    },
+    existsSyncImpl: () => false,
+    spawnSyncImpl: (command, args, options) => {
+      calls.push({ command, args, options });
+      return createSpawnSyncResult(0, {
+        stdout: [
+          "loading zsh plugin",
+          `${commandEnv.SHELL_PATH_BEGIN_MARKER}${shellPath}${commandEnv.SHELL_PATH_END_MARKER}`,
+          "after hook"
+        ].join("\n")
+      });
+    }
+  });
+
+  assert.deepEqual(result, {
+    entries: ["/zsh/bin", "/usr/bin"],
+    succeeded: true
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, "/bin/zsh");
+  assert.equal(calls[0].args[0], "-ilc");
+  assert.match(calls[0].args[1], /__ZENMIND_PATH_BEGIN__/u);
+  assert.equal(calls[0].options.timeout, 3000);
+});
+
+test("service shell PATH probe falls back to login shell when zsh interactive output is unusable", () => {
+  const commandEnv = __testInternals.commandEnv;
+  const calls = [];
+  const result = commandEnv.probeShellPathEntries({
+    platform: "darwin",
+    env: {
+      SHELL: "/bin/zsh",
+      PATH: "/launchd/bin"
+    },
+    existsSyncImpl: () => false,
+    spawnSyncImpl: (command, args, options) => {
+      calls.push({ command, args, options });
+      if (args[0] === "-ilc") {
+        return createSpawnSyncResult(0, { stdout: "zshrc noise without markers" });
+      }
+      return createSpawnSyncResult(0, {
+        stdout: ["/login/bin", "/usr/bin"].join(path.delimiter)
+      });
+    }
+  });
+
+  assert.deepEqual(result, {
+    entries: ["/login/bin", "/usr/bin"],
+    succeeded: true
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].args[0], "-ilc");
+  assert.equal(calls[1].args[0], "-lc");
+  assert.equal(calls[1].args[1], "printf '%s' \"$PATH\"");
+});
+
+test("service PATH merge prefers successful shell PATH before static and inherited entries", () => {
+  const merged = __testInternals.commandEnv.mergeServicePathEntries(
+    ["/desktop/bin", "/usr/bin"],
+    ["/opt/homebrew/bin", "/desktop/bin"],
+    {
+      entries: ["/zsh/bin", "/usr/bin"],
+      succeeded: true
+    }
+  );
+
+  assert.deepEqual(merged, [
+    "/zsh/bin",
+    "/usr/bin",
+    "/opt/homebrew/bin",
+    "/desktop/bin"
+  ]);
+});
+
+test("service PATH merge keeps inherited PATH first when shell probe fails", () => {
+  const merged = __testInternals.commandEnv.mergeServicePathEntries(
+    ["/desktop/bin", "/usr/bin"],
+    ["/opt/homebrew/bin", "/desktop/bin"],
+    {
+      entries: [],
+      succeeded: false
+    }
+  );
+
+  assert.deepEqual(merged, [
+    "/desktop/bin",
+    "/usr/bin",
+    "/opt/homebrew/bin"
+  ]);
+});
+
+test("service shell PATH probe skips shell execution on Windows", () => {
+  const result = __testInternals.commandEnv.probeShellPathEntries({
+    platform: "win32",
+    env: {
+      SHELL: "/bin/zsh",
+      PATH: "C:\\DesktopBin"
+    },
+    existsSyncImpl: () => assert.fail("Windows should not resolve a Unix shell"),
+    spawnSyncImpl: () => assert.fail("Windows should not probe shell PATH")
+  });
+
+  assert.deepEqual(result, {
+    entries: [],
+    succeeded: false
+  });
 });
 
 test("service command env injects DESKTOP_DEVICE_ID only for identity-center", () => {

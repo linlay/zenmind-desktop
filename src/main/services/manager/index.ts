@@ -61,7 +61,8 @@ import {
   serviceInstallNeedsRefresh
 } from "./install-refresh";
 import {
-  resolveNodeBin
+  resolveNodeBin,
+  __testInternals as commandEnvTestInternals
 } from "./command-env";
 import { ensureProviderRegisterApiKey } from "../../provider-register";
 import { getDesktopDeviceId } from "../../device-identity";
@@ -3603,6 +3604,7 @@ export const __testInternals = {
   getWebUrl,
   containerEngineAvailable,
   probeContainerEngines,
+  commandEnv: commandEnvTestInternals,
   fixShellScriptPermissions,
   patchProgramCommonForLayeredLayout,
   listMissingRuntimeFiles,
