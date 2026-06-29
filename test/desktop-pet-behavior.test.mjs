@@ -781,6 +781,71 @@ test("desktop pet drag starts from the main-process cursor point instead of rend
   assert.deepEqual(controller.endDrag(), { ok: true, moved: false });
 });
 
+test("desktop pet drag controller exposes movement direction from main-process cursor deltas", () => {
+  const displayArea = { x: 0, y: 0, width: 1440, height: 900 };
+  let bounds = { x: 320, y: 240, width: 176, height: 198 };
+  let cursorPoint = { x: 402, y: 346 };
+  const refreshSnapshots = [];
+  let intervalCallback = null;
+  const fakeWindow = {
+    isDestroyed: () => false,
+    getBounds: () => ({ ...bounds }),
+    setBounds: (nextBounds) => {
+      bounds = { ...nextBounds };
+    },
+    moveTop: () => {}
+  };
+
+  const controller = createDesktopPetDragController({
+    platform: "darwin",
+    getWindow: () => fakeWindow,
+    getSettings: () => ({}),
+    saveSettings: () => {},
+    getMode: () => "base",
+    getCursorScreenPoint: () => ({ ...cursorPoint }),
+    getDisplayBounds: () => displayArea,
+    getPointDisplayBounds: () => displayArea,
+    persistPosition: () => {},
+    refreshState: () => {
+      refreshSnapshots.push({
+        direction: controller.getDragDirection(),
+        moved: controller.hasDragMovement()
+      });
+    },
+    setInterval: (callback) => {
+      intervalCallback = callback;
+      return 1;
+    },
+    clearInterval: () => {},
+    forceEndMs: 100000
+  });
+
+  assert.deepEqual(controller.beginDrag({}), { ok: true });
+  assert.equal(controller.getDragDirection(), null);
+  assert.equal(controller.hasDragMovement(), false);
+
+  cursorPoint = { x: 402, y: 354 };
+  intervalCallback();
+  assert.equal(controller.getDragDirection(), null);
+  assert.equal(controller.hasDragMovement(), true);
+
+  cursorPoint = { x: 392, y: 354 };
+  intervalCallback();
+  assert.equal(controller.getDragDirection(), "left");
+  assert.equal(controller.hasDragMovement(), true);
+
+  cursorPoint = { x: 410, y: 354 };
+  intervalCallback();
+  assert.equal(controller.getDragDirection(), "right");
+  assert.equal(controller.hasDragMovement(), true);
+  assert.deepEqual(refreshSnapshots, [
+    { direction: null, moved: false },
+    { direction: null, moved: true },
+    { direction: "left", moved: true },
+    { direction: "right", moved: true }
+  ]);
+});
+
 test("desktop pet drag clamps the pet body instead of the expanded panel window", () => {
   const {
     DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS,
@@ -1649,7 +1714,7 @@ test("user desktop pet appearances reject legacy manifest fields and state names
   }
 });
 
-test("desktop pet visual keeps drag hold stable and maps movement onto the walking state", () => {
+test("desktop pet visual shows takeoff while drag is held and maps movement onto walking", () => {
   const {
     deriveDesktopPetVisualStatus
   } = require("../dist-electron/shared/desktop-pet-visual.js");
@@ -1658,6 +1723,7 @@ test("desktop pet visual keeps drag hold stable and maps movement onto the walki
     displayStatus: "idle",
     isDragging: true,
     dragDirection: null,
+    hasDragMovement: false,
     activeStandardAction: null,
     hasActiveSignature: false,
     canShowHoverReaction: false,
@@ -1666,7 +1732,8 @@ test("desktop pet visual keeps drag hold stable and maps movement onto the walki
     isKeyboardFocused: false
   };
 
-  assert.equal(deriveDesktopPetVisualStatus(base), "idle");
+  assert.equal(deriveDesktopPetVisualStatus(base), "dragging");
+  assert.equal(deriveDesktopPetVisualStatus({ ...base, hasDragMovement: true }), "moving-left");
   assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "left" }), "moving-left");
   assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "right" }), "moving-left");
 });

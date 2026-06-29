@@ -469,7 +469,9 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       runningTaskCount,
       windowMode: state.desktopPetRendererWindowMode,
       edgeDock: getCurrentPetEdgeDock(),
-      panelPlacement: isPanelWindowMode(state.desktopPetRendererWindowMode) ? desktopPetPanelPlacement : null
+      panelPlacement: isPanelWindowMode(state.desktopPetRendererWindowMode) ? desktopPetPanelPlacement : null,
+      dragDirection: desktopPetDragController.getDragDirection(),
+      dragMoved: desktopPetDragController.hasDragMovement()
     });
     state.desktopPetLocalStatus = refresh.localStatus;
     state.desktopPetState = refresh.state;

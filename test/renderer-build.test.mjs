@@ -5244,7 +5244,11 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /desktopPet\.onSignatureRequested\(\(signatureId\) => \{[\s\S]{0,120}startSignature\(signatureId,\s*"manual"\);/);
   assert.match(desktopPet, /if \(trigger !== "manual" && currentStatus !== "idle"\) \{[\s\S]{0,80}return;/);
   assert.match(desktopPet, /function shouldInterruptSignature\(nextState: DesktopPetState\)[\s\S]{0,360}currentSignature\?\.trigger === "manual"[\s\S]{0,80}return false;/);
-  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,80}return input\.dragDirection \? "moving-left" : "idle"/);
+  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,120}return input\.dragDirection \|\| input\.hasDragMovement \? "moving-left" : "dragging"/);
+  assert.match(contracts, /dragMoved\?:\s*boolean;/);
+  assert.match(desktopPet, /const hasDragMovement = isDragging && \(Boolean\(petState\.dragMoved\) \|\| Boolean\(effectiveDragDirection\)\);/);
+  assert.match(desktopPet, /hasDragMovement,/);
+  assert.match(petRuntime, /dragMoved:\s*desktopPetDragController\.hasDragMovement\(\)/);
   assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
   assert.match(desktopPet, /shouldShowSignatureSpriteAnimation[\s\S]{0,220}activeSignature\.assetPath/);
   assert.match(sharedDesktopPet, /export function resolveDesktopPetSignatureActions/);
@@ -5365,7 +5369,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(globalStyles, /@keyframes desktop-pet-signature-frames\s*\{[\s\S]*?background-position:\s*calc\(-96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-awaiting\s+\.desktop-pet-image[\s\S]{0,120}desktop-pet-awaiting/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image\s*\{[\s\S]{0,120}animation:\s*none;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.is-idle\.is-dragging\.has-state-animation\s+\.desktop-pet-state-sprite\s*\{[\s\S]{0,160}background-position:\s*0 0;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-dragging\.has-state-animation\s+\.desktop-pet-state-sprite\s*\{[\s\S]{0,160}animation:\s*none;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-jumping\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-running\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-review\s+\.desktop-pet-image/);

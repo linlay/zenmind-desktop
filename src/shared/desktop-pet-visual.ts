@@ -1,11 +1,12 @@
 import type {
   DesktopPetMessageItem,
+  DesktopPetDragDirection,
   DesktopPetSignatureTrigger,
   DesktopPetStatus,
   DesktopPetTaskItem
 } from "./contracts/pet-copilot";
 
-export type DesktopPetDragDirection = "left" | "right" | null;
+export type { DesktopPetDragDirection } from "./contracts/pet-copilot";
 
 export type DesktopPetVisualStatus =
   | DesktopPetStatus
@@ -20,6 +21,7 @@ export type DesktopPetVisualStatusInput = {
   displayStatus: DesktopPetStatus;
   isDragging: boolean;
   dragDirection: DesktopPetDragDirection;
+  hasDragMovement?: boolean;
   activeStandardAction?: "jumping" | null;
   hasActiveSignature: boolean;
   activeSignatureTrigger?: DesktopPetSignatureTrigger | null;
@@ -69,7 +71,7 @@ function setAwaitingBadgeCount(countsByKey: Map<string, number>, key: string, co
 
 export function deriveDesktopPetVisualStatus(input: DesktopPetVisualStatusInput): DesktopPetVisualStatus {
   if (input.isDragging) {
-    return input.dragDirection ? "moving-left" : "idle";
+    return input.dragDirection || input.hasDragMovement ? "moving-left" : "dragging";
   }
   if (input.hasActiveSignature && input.activeSignatureTrigger === "manual") {
     return "signature";

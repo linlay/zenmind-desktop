@@ -68,6 +68,8 @@ function createFallbackDesktopPetState(): DesktopPetState {
     runningTaskCount: 0,
     edgeDock: null,
     panelPlacement: null,
+    dragDirection: null,
+    dragMoved: false,
     signature: [],
     updatedAt: ""
   };
@@ -901,6 +903,14 @@ export function DesktopPet() {
   const previewPanelSummary = previewPanel ? formatPreviewPanelSummary(previewPanel, t) : "";
   const hasMessageReaction = displayStatus === "idle" && !isDragging && (messagePreview.length > 0 || unreadCount > 0);
   const isReviewing = displayStatus === "running" && shouldShowReviewAction(previewPanel);
+  const stateDragDirection: DesktopPetDragDirection =
+    petState.dragDirection === "left" || petState.dragDirection === "right"
+      ? petState.dragDirection
+      : null;
+  const effectiveDragDirection: DesktopPetDragDirection = isDragging
+    ? stateDragDirection ?? dragDirection
+    : null;
+  const hasDragMovement = isDragging && (Boolean(petState.dragMoved) || Boolean(effectiveDragDirection));
   const appearanceId = useMemo(
     () => normalizeDesktopPetAppearanceId(petState.appearanceId),
     [petState.appearanceId]
@@ -909,7 +919,8 @@ export function DesktopPet() {
   const visualStatus: DesktopPetVisualStatus = deriveDesktopPetVisualStatus({
     displayStatus,
     isDragging,
-    dragDirection,
+    dragDirection: effectiveDragDirection,
+    hasDragMovement,
     activeStandardAction: activeStandardAction?.actionId ?? null,
     hasActiveSignature: Boolean(activeSignature),
     activeSignatureTrigger: activeSignature?.trigger ?? null,
@@ -1394,7 +1405,7 @@ export function DesktopPet() {
 	        petState.edgeDock?.includes("left") ? "is-edge-dock-left" : "",
         petState.panelPlacement ? `is-panel-placement-${petState.panelPlacement}` : "",
         isDragging ? "is-dragging" : "",
-        visualStatus === "moving-left" && dragDirection === "right" && (visualAsset.asset?.mirror ?? true) ? "is-drag-mirror" : ""
+        visualStatus === "moving-left" && effectiveDragDirection === "right" && (visualAsset.asset?.mirror ?? true) ? "is-drag-mirror" : ""
       ].filter(Boolean).join(" ")}
       style={rootStyle}
       aria-label={t("desktopPet.ariaLabel", { appName: PRODUCT_NAME })}

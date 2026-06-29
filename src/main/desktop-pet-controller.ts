@@ -7,6 +7,7 @@ import type {
   AssistantNavChatItem,
   DesktopPetAgentOption,
   DesktopPetAppearanceOption,
+  DesktopPetDragDirection,
   DesktopPetEdgeDock,
   DesktopPetPanelPlacement,
   DesktopPetPreviewPanel,
@@ -452,6 +453,8 @@ export function computeDesktopPetStateRefresh(input: {
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
   panelPlacement?: DesktopPetPanelPlacement;
+  dragDirection?: DesktopPetDragDirection;
+  dragMoved?: unknown;
 }) {
   const localStatus = input.patch && Object.keys(input.patch).length > 0
     ? {
@@ -472,7 +475,9 @@ export function computeDesktopPetStateRefresh(input: {
     previewPanel: input.previewPanel,
     runningTaskCount: input.runningTaskCount,
     edgeDock: input.edgeDock,
-    panelPlacement: input.panelPlacement
+    panelPlacement: input.panelPlacement,
+    dragDirection: input.dragDirection ?? null,
+    dragMoved: input.dragMoved
   });
   const settingsPatch = input.settings.unreadCount !== state.unreadCount
     ? {
@@ -650,6 +655,8 @@ export interface DesktopPetDragControllerOptions {
 
 export interface DesktopPetDragController {
   isDragging(): boolean;
+  getDragDirection(): DesktopPetDragDirection;
+  hasDragMovement(): boolean;
   beginDrag(point: { x?: unknown; y?: unknown }): { ok: boolean };
   endDrag(): { ok: boolean; moved: boolean };
   moveWindowBy(delta: { x?: unknown; y?: unknown }): { ok: boolean };
@@ -667,6 +674,7 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     startedAt: number;
     lastMovedAt: number;
     mode: DesktopPetWindowMode;
+    direction: DesktopPetDragDirection;
   } | null = null;
   let lastRequestedDragAnchor: {
     position: { x: number; y: number };
@@ -681,6 +689,14 @@ export function createDesktopPetDragController(options: DesktopPetDragController
 
   function isDragging() {
     return Boolean(dragState);
+  }
+
+  function getDragDirection(): DesktopPetDragDirection {
+    return dragState?.direction ?? null;
+  }
+
+  function hasDragMovement() {
+    return dragState?.moved ?? false;
   }
 
   function clearTimer() {
@@ -840,7 +856,8 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       moved: false,
       startedAt,
       lastMovedAt: startedAt,
-      mode: initialMode
+      mode: initialMode,
+      direction: null
     };
     prepareWindowForDrag(initialMode);
     options.refreshState();
@@ -864,8 +881,16 @@ export function createDesktopPetDragController(options: DesktopPetDragController
 
       const deltaX = cursorPoint.x - dragState.lastPoint.x;
       const deltaY = cursorPoint.y - dragState.lastPoint.y;
+      const wasMoved = dragState.moved;
       dragState.moved = true;
       dragState.lastPoint = cursorPoint;
+      const nextDirection = Math.abs(deltaX) >= 3
+        ? deltaX < 0 ? "left" : "right"
+        : dragState.direction;
+      if (!wasMoved || nextDirection !== dragState.direction) {
+        dragState.direction = nextDirection;
+        options.refreshState();
+      }
       if (deltaX !== 0 || deltaY !== 0) {
         dragState.lastMovedAt = Date.now();
         moveWindowToLogicalPosition({
@@ -906,6 +931,8 @@ export function createDesktopPetDragController(options: DesktopPetDragController
 
   return {
     isDragging,
+    getDragDirection,
+    hasDragMovement,
     beginDrag,
     endDrag,
     moveWindowBy,

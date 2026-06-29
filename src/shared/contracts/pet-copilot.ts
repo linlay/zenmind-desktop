@@ -20,6 +20,7 @@ export type DesktopPetWindowMode =
   | "preview-expanded"
   | "task-list-compact"
   | "task-list";
+export type DesktopPetDragDirection = "left" | "right" | null;
 
 export type DesktopPetPanelPlacement =
   | "above"
@@ -197,6 +198,8 @@ export interface DesktopPetState {
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
   panelPlacement: DesktopPetPanelPlacement;
+  dragDirection?: DesktopPetDragDirection;
+  dragMoved?: boolean;
   signature?: DesktopPetSignatureAction[];
   updatedAt: string;
 }

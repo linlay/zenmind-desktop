@@ -10,6 +10,7 @@ import type {
   DesktopPetMessageItem,
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
+  DesktopPetDragDirection,
   DesktopPetEdgeDock,
   DesktopPetPanelPlacement,
   DesktopPetPreviewPanel,
@@ -59,6 +60,10 @@ export {
 export const sanitizeDesktopPetAppearanceId = normalizeDesktopPetAppearanceId;
 export const sanitizeDesktopPetBoundAgentKey = normalizeDesktopPetBoundAgentKey;
 export type { DesktopPetWindowMode } from "../../../shared/contracts";
+
+function normalizeDesktopPetDragDirection(value: unknown): DesktopPetDragDirection {
+  return value === "left" || value === "right" ? value : null;
+}
 
 export const DESKTOP_PET_WINDOW_SIZE = {
   width: 176,
@@ -897,6 +902,8 @@ export function createDesktopPetState(
     runningTaskCount?: unknown;
     edgeDock?: DesktopPetEdgeDock;
     panelPlacement?: DesktopPetPanelPlacement;
+    dragDirection?: DesktopPetDragDirection;
+    dragMoved?: unknown;
   } = {}
 ): DesktopPetState {
   const localStatus = options.localStatus ?? createDefaultDesktopPetLocalStatus(settings);
@@ -942,6 +949,8 @@ export function createDesktopPetState(
     runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
     edgeDock: options.edgeDock ?? null,
     panelPlacement: options.panelPlacement ?? null,
+    dragDirection: normalizeDesktopPetDragDirection(options.dragDirection),
+    dragMoved: Boolean(options.dragMoved),
     signature,
     updatedAt: new Date().toISOString()
   };

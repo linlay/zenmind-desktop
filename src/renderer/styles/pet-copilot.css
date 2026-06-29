@@ -468,13 +468,6 @@ body.desktop-pet-body,
   animation: desktop-pet-state-frames var(--desktop-pet-state-duration, 900ms) steps(var(--desktop-pet-state-frames, 1), end) var(--desktop-pet-state-loop-count, infinite);
 }
 
-.desktop-pet-root.is-idle.is-dragging.has-state-animation .desktop-pet-state-sprite {
-  animation: none;
-  background-position: 0 0;
-  transform: none;
-  will-change: auto;
-}
-
 .desktop-pet-root.has-state-animation.is-drag-mirror .desktop-pet-state-sprite {
   transform: scaleX(-1);
 }

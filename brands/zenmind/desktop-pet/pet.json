@@ -2,7 +2,7 @@
   "id": "zenmi",
   "displayName": "小禅",
   "version": "1.0.0",
-  "description": "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
+  "description": "戴圆眼镜、赭黄袍和斜挎包的 3D 玩具风小和尚桌面宠物。",
   "tags": [
     "desktop-pet",
     "zen",
@@ -12,13 +12,13 @@
   "states": {
     "idle": {
       "path": "idle.webp",
-      "frameCount": 4,
+      "frameCount": 6,
       "durationMs": 6000,
       "loop": true
     },
     "jumping": {
       "path": "jumping.webp",
-      "frameCount": 4,
+      "frameCount": 5,
       "durationMs": 1000,
       "loop": false
     },
@@ -31,39 +31,39 @@
     },
     "dragging": {
       "path": "dragging.webp",
-      "frameCount": 4,
+      "frameCount": 8,
       "durationMs": 900,
       "loop": true
     },
     "done": {
       "path": "done.webp",
-      "frameCount": 6,
+      "frameCount": 5,
       "durationMs": 1200,
       "loop": false,
       "holdMs": 2500
     },
     "failed": {
       "path": "failed.webp",
-      "frameCount": 4,
+      "frameCount": 8,
       "durationMs": 1000,
       "loop": false,
       "holdMs": 3000
     },
     "running": {
       "path": "running.webp",
-      "frameCount": 8,
+      "frameCount": 6,
       "durationMs": 1600,
       "loop": true
     },
     "awaiting": {
       "path": "awaiting.webp",
-      "frameCount": 4,
+      "frameCount": 6,
       "durationMs": 1200,
       "loop": true
     },
     "review": {
       "path": "review.webp",
-      "frameCount": 4,
+      "frameCount": 6,
       "durationMs": 1400,
       "loop": true
     }
