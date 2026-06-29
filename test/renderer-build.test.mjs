@@ -4328,6 +4328,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /screen\.capture/);
   assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
@@ -4345,6 +4346,9 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
+  assert.match(serviceWebviewMainWorld, /LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
+  assert.match(serviceWebviewMainWorld, /emitFromMain\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*payload\)/);
+  assert.match(serviceWebviewMainWorld, /emitFromMain\(LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*payload\)/);
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
