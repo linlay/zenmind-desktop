@@ -88,6 +88,22 @@
   padding: 14px 16px;
 }
 
+.settings-page .desktop-pet-agent-field.ant-form-item {
+  margin: 0;
+}
+
+.settings-page .desktop-pet-agent-field .ant-form-item-label {
+  padding: 0 0 6px;
+}
+
+.settings-page .desktop-pet-agent-field .ant-form-item-label > label {
+  height: auto;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .settings-item-section-head,
 .settings-page .website-list-head {
   display: flex;
@@ -196,8 +212,11 @@
 }
 
 .settings-page .navigation-assistant-default {
-  display: block;
-  padding: 0 16px 14px;
+  display: grid;
+  grid-template-columns: minmax(150px, 0.36fr) minmax(260px, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -210,6 +229,11 @@
 .settings-page .navigation-assistant-default-select {
   display: block;
   width: 100%;
+  justify-self: stretch;
+}
+
+.settings-page .navigation-assistant-default-select .ant-select {
+  width: 100%;
 }
 
 .settings-page .settings-control-form {
@@ -217,6 +241,10 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 14px 16px;
+}
+
+.settings-page .settings-control-form.ant-form {
+  margin: 0;
 }
 
 .settings-page .settings-control-field {
@@ -531,17 +559,21 @@
 
 .settings-page .web-settings-shell {
   align-items: stretch;
+  gap: 12px;
 }
 
 .settings-page .web-settings-catalog {
   max-height: calc(100vh - 154px);
 }
 
+.settings-page .web-settings-catalog .service-nav-list {
+  padding: 0 12px 12px;
+}
+
 .settings-page .web-catalog-actions {
   display: flex;
   gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--control-center-border);
+  padding: 0 16px 12px;
 }
 
 .settings-page .web-catalog-actions .ant-btn {
@@ -549,12 +581,95 @@
   padding-inline: 8px;
 }
 
+.settings-page .web-nav-card.ant-btn {
+  display: flex;
+  align-items: center;
+  justify-content: stretch;
+  height: auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  line-height: 1.35;
+  text-align: left;
+  box-shadow: none;
+}
+
+.settings-page .web-nav-card.ant-btn:hover,
+.settings-page .web-nav-card.ant-btn:focus-visible {
+  background: var(--accent-fill-subtle);
+  color: var(--control-center-text);
+}
+
+.settings-page .web-nav-card.ant-btn.is-active {
+  background:
+    linear-gradient(90deg, var(--accent-fill-soft), var(--accent-fill-subtle));
+  color: var(--control-center-text);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    0 0 0 1px var(--accent-border-faint);
+}
+
+.settings-page .web-nav-card.ant-btn.is-active:hover,
+.settings-page .web-nav-card.ant-btn.is-active:focus-visible {
+  background:
+    linear-gradient(90deg, var(--accent-fill-strong), var(--accent-fill-muted));
+  color: var(--control-center-text);
+}
+
+.settings-page .web-nav-card.ant-btn + .web-nav-card.ant-btn {
+  margin-top: 8px;
+}
+
+.settings-page .web-nav-card.ant-btn .service-nav-card-head {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
 .settings-page .web-nav-card .service-nav-card-head {
   min-height: 42px;
 }
 
-.settings-page .web-nav-card h3 {
+.settings-page .web-nav-card h3,
+.settings-page .web-nav-card .service-nav-card-title {
+  min-width: 0;
+  margin: 0;
+  color: currentColor;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   max-width: 100%;
+}
+
+.settings-page .web-nav-card.is-active .service-nav-card-title {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.settings-page .web-nav-card.is-active .service-nav-version-status {
+  color: var(--accent-strong);
+}
+
+:root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:hover,
+:root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+:root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active {
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow:
+    inset 3px 0 0 rgba(var(--accent-rgb), 0.84),
+    0 0 0 1px rgba(255, 255, 255, 0.065);
+}
+
+:root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:hover,
+:root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:focus-visible {
+  background: rgba(255, 255, 255, 0.095);
+}
+
+:root[data-theme="dark"] .settings-page .web-nav-card.is-active .service-nav-version-status {
+  color: var(--ink-soft);
 }
 
 .settings-page .web-settings-detail {
@@ -579,6 +694,54 @@
   flex-direction: column;
   gap: 0;
   padding: 0;
+}
+
+.settings-page .web-detail-form.ant-form {
+  margin: 0;
+}
+
+.settings-page .web-detail-form-item.ant-form-item {
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--control-center-border);
+  background: transparent;
+}
+
+.settings-page .web-detail-form-item.ant-form-item:first-child {
+  border-top: 0;
+}
+
+.settings-page .web-detail-form-item .ant-form-item-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.28fr) minmax(280px, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.settings-page .web-detail-form-item .ant-form-item-label {
+  padding: 0;
+  overflow: visible;
+  text-align: left;
+}
+
+.settings-page .web-detail-form-item .ant-form-item-label > label {
+  height: auto;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.settings-page .web-detail-form-item .ant-form-item-control,
+.settings-page .web-detail-form-item .ant-form-item-control-input,
+.settings-page .web-detail-form-item .ant-form-item-control-input-content {
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-page .web-detail-form-item .ant-form-item-control-input {
+  min-height: 38px;
 }
 
 .settings-page .web-detail-form .settings-control-row {
@@ -865,6 +1028,27 @@
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-input-clear-icon:hover,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select-clear:hover {
   color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-btn:disabled:not(.ant-btn-link):not(.ant-btn-text),
+:root[data-theme="dark"] .settings-page .ant-btn.ant-btn-disabled:not(.ant-btn-link):not(.ant-btn-text),
+:root[data-theme="dark"] .settings-debug-modal .ant-btn:disabled:not(.ant-btn-link):not(.ant-btn-text),
+:root[data-theme="dark"] .settings-debug-modal .ant-btn.ant-btn-disabled:not(.ant-btn-link):not(.ant-btn-text) {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: var(--ink-muted) !important;
+  text-shadow: none !important;
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .settings-page .navigation-assistant-default-select .ant-select-selector {
+  border-color: rgba(255, 255, 255, 0.095) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+}
+
+:root[data-theme="dark"] .settings-page .navigation-assistant-default-select .ant-select:not(.ant-select-disabled):hover .ant-select-selector {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
 }
 
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented {
@@ -1482,11 +1666,32 @@
   overflow-wrap: anywhere;
 }
 
-.settings-debug-field {
+.settings-debug-field.ant-form-item {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 6px;
+  margin: 0;
+}
+
+.settings-debug-field .ant-form-item-row,
+.settings-debug-field .ant-form-item-control,
+.settings-debug-field .ant-form-item-control-input,
+.settings-debug-field .ant-form-item-control-input-content {
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-debug-field .ant-form-item-label {
+  padding: 0;
+}
+
+.settings-debug-field .ant-form-item-label > label {
+  height: auto;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .settings-debug-field span {
@@ -1495,7 +1700,7 @@
   font-weight: 700;
 }
 
-.settings-debug-field textarea {
+.settings-debug-field .settings-debug-textarea.ant-input {
   width: 100%;
   min-height: 120px;
   resize: vertical;
@@ -1542,8 +1747,9 @@
   gap: 6px;
 }
 
-.settings-debug-nav-item {
+.settings-debug-nav-item.ant-btn {
   width: 100%;
+  height: auto;
   min-height: 34px;
   padding: 8px 10px;
   border: 1px solid transparent;
@@ -1556,15 +1762,16 @@
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
+  box-shadow: none;
 }
 
-.settings-debug-nav-item:hover {
+.settings-debug-nav-item.ant-btn:hover {
   border-color: var(--line);
   background: var(--control-select-bg);
   color: var(--ink);
 }
 
-.settings-debug-nav-item.is-selected {
+.settings-debug-nav-item.ant-btn.is-selected {
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -1603,7 +1810,7 @@
   gap: 12px;
 }
 
-.settings-debug-dialog-grid .settings-debug-field textarea {
+.settings-debug-dialog-grid .settings-debug-field .settings-debug-textarea.ant-input {
   min-height: 260px;
 }
 

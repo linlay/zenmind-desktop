@@ -385,6 +385,7 @@
   gap: 12px;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   flex: 1 1 auto;
 }
 
@@ -501,7 +502,13 @@
     color 0.16s ease;
 }
 
-.service-catalog-import span {
+.service-catalog-import.ant-btn {
+  height: auto;
+  line-height: 1.35;
+  box-shadow: none;
+}
+
+.service-catalog-import .anticon {
   color: inherit;
   font-size: 15px;
   line-height: 1;
@@ -702,6 +709,7 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
 }
 
 .control-center-service-hero,
@@ -1136,6 +1144,7 @@
 
 .config-panel {
   flex: 1 1 auto;
+  min-height: 0;
 }
 
 .config-head {
@@ -1325,7 +1334,8 @@
   display: block;
   width: 100%;
   flex: 1 1 auto;
-  min-height: 360px;
+  height: clamp(420px, calc(100dvh - 320px), 760px);
+  min-height: 420px;
   box-sizing: border-box;
   margin: 0;
   padding: 14px 16px;
@@ -1803,6 +1813,7 @@
   }
 
   .config-editor {
+    height: clamp(320px, calc(100dvh - 260px), 560px);
     min-height: 320px;
   }
 

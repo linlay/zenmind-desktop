@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
+import type { CSSProperties, ReactNode } from "react";
+import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, SunOutlined } from "@ant-design/icons";
+import { Button, Form, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import { ControlCenterPage, PluginsPage } from "../control-center/ControlCenterPage";
@@ -118,6 +118,13 @@ type AboutAppCardProps = {
   onResetRuntimeEnv: () => void | Promise<void>;
 };
 
+type SettingsDebugTextAreaFieldProps = {
+  label: ReactNode;
+  value: string;
+  readOnly?: boolean;
+  onChange?: (value: string) => void;
+};
+
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
 const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "logs", "wsServer", "authTokens", "other"];
 const SETTINGS_SELECT_CLASS_NAMES = {
@@ -139,6 +146,20 @@ const DEFAULT_WS_ACTION_DEBUG_COMMAND = {
 };
 const APP_PAIRING_TARGET_MODES: PairingTargetMode[] = ["local", "lan", "tunnel"];
 const WEBSITE_NEW_ID = "__new__";
+
+function SettingsDebugTextAreaField({ label, value, readOnly = false, onChange }: SettingsDebugTextAreaFieldProps) {
+  return (
+    <Form.Item className="settings-debug-field" label={label} colon={false} layout="vertical">
+      <Input.TextArea
+        className="settings-debug-textarea"
+        value={value}
+        readOnly={readOnly}
+        spellCheck={false}
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+      />
+    </Form.Item>
+  );
+}
 
 function isWebsiteEntry(item: WebEntry): item is WebsiteEntry {
   return item.kind === "website";
@@ -1322,14 +1343,16 @@ function DesktopActionDebugDialog({
           </div>
         ) : null}
         <div className="settings-debug-dialog-grid">
-          <label className="settings-debug-field">
-            <span>{t("settings.debug.desktopActions.request")}</span>
-            <textarea value={requestText} onChange={(event) => setRequestText(event.target.value)} spellCheck={false} />
-          </label>
-          <label className="settings-debug-field">
-            <span>{t("settings.debug.desktopActions.response")}</span>
-            <textarea value={responseText} readOnly spellCheck={false} />
-          </label>
+          <SettingsDebugTextAreaField
+            label={t("settings.debug.desktopActions.request")}
+            value={requestText}
+            onChange={setRequestText}
+          />
+          <SettingsDebugTextAreaField
+            label={t("settings.debug.desktopActions.response")}
+            value={responseText}
+            readOnly
+          />
         </div>
       </div>
     </Modal>
@@ -1497,10 +1520,11 @@ function WsServerDebugDialog({
             {message}
           </div>
         ) : null}
-        <label className="settings-debug-field">
-          <span>{t("settings.debug.wsConsole.command")}</span>
-          <textarea value={commandText} onChange={(event) => setCommandText(event.target.value)} spellCheck={false} />
-        </label>
+        <SettingsDebugTextAreaField
+          label={t("settings.debug.wsConsole.command")}
+          value={commandText}
+          onChange={setCommandText}
+        />
         <div className="settings-debug-dialog-actions">
           <Button type="primary" disabled={!connected} onClick={() => handleSend()}>
             {t("settings.debug.wsConsole.send")}
@@ -1613,10 +1637,11 @@ function DeviceIdentityDebugCard() {
               </div>
             ))}
           </dl>
-          <label className="settings-debug-field">
-            <span>{t("settings.debug.device.json")}</span>
-            <textarea value={identityJson} readOnly spellCheck={false} />
-          </label>
+          <SettingsDebugTextAreaField
+            label={t("settings.debug.device.json")}
+            value={identityJson}
+            readOnly
+          />
         </div>
       ) : null}
     </div>
@@ -1772,18 +1797,21 @@ function IdentityTokenDebugCard() {
               <dd>{inspection.claims.expired ? t("common.yes") : t("common.no")}</dd>
             </div>
           </dl>
-          <label className="settings-debug-field">
-            <span>{t("settings.debug.identity.token")}</span>
-            <textarea value={inspection.token} readOnly spellCheck={false} />
-          </label>
-          <label className="settings-debug-field">
-            <span>{t("settings.debug.identity.header")}</span>
-            <textarea value={headerJson} readOnly spellCheck={false} />
-          </label>
-          <label className="settings-debug-field">
-            <span>{t("settings.debug.identity.payload")}</span>
-            <textarea value={payloadJson} readOnly spellCheck={false} />
-          </label>
+          <SettingsDebugTextAreaField
+            label={t("settings.debug.identity.token")}
+            value={inspection.token}
+            readOnly
+          />
+          <SettingsDebugTextAreaField
+            label={t("settings.debug.identity.header")}
+            value={headerJson}
+            readOnly
+          />
+          <SettingsDebugTextAreaField
+            label={t("settings.debug.identity.payload")}
+            value={payloadJson}
+            readOnly
+          />
         </div>
       ) : null}
     </div>
@@ -1885,10 +1913,11 @@ function TunnelDebugCard() {
         </div>
       ) : null}
       {probeResult ? (
-        <label className="settings-debug-field">
-          <span>{t("settings.debug.tunnel.probeResult")}</span>
-          <textarea value={formatDebugJson(probeResult)} readOnly spellCheck={false} />
-        </label>
+        <SettingsDebugTextAreaField
+          label={t("settings.debug.tunnel.probeResult")}
+          value={formatDebugJson(probeResult)}
+          readOnly
+        />
       ) : null}
     </div>
   );
@@ -1926,15 +1955,16 @@ function DebugSettingsPanel() {
         {DEBUG_CATEGORY_IDS.map((categoryId) => {
           const selected = categoryId === activeCategoryId;
           return (
-            <button
+            <Button
               key={categoryId}
-              type="button"
+              type="text"
+              block
               className={`settings-debug-nav-item${selected ? " is-selected" : ""}`}
               aria-current={selected ? "page" : undefined}
               onClick={() => setActiveCategoryId(categoryId)}
             >
               {getDebugCategoryLabel(categoryId, t)}
-            </button>
+            </Button>
           );
         })}
       </nav>
@@ -3256,8 +3286,7 @@ export function SettingsPage({
     t
   ]);
 
-  async function handleSaveGeneralDeviceName(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveGeneralDeviceName() {
     const previousSettings = generalSettings;
     const nextSettings = {
       ...generalSettings,
@@ -3394,8 +3423,7 @@ export function SettingsPage({
     setNotice((current) => current?.sectionId === "websites" ? null : current);
   }
 
-  async function handleSaveWebsiteItem(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveWebsiteItem() {
     const creating = selectedWebsiteId === WEBSITE_NEW_ID || !selectedWebsite;
     setWebsitePending(true);
     try {
@@ -3502,8 +3530,7 @@ export function SettingsPage({
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
 
-  async function handleSaveWebappItem(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveWebappItem() {
     if (!selectedWebapp) {
       return;
     }
@@ -3777,8 +3804,7 @@ export function SettingsPage({
     }
   }
 
-  async function handleSaveControlCloudConfig(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveControlCloudConfig() {
     await saveControlCloudConfig({
       ...savedControlCloudConfigRef.current,
       serverUrl: controlCloudConfig.serverUrl
@@ -3792,8 +3818,7 @@ export function SettingsPage({
     }, { preserveDraftFields: true });
   }
 
-  async function handleSaveMarketSettings(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveMarketSettings() {
     setMarketSettingsSaving(true);
     try {
       const settings = await window.electronAPI.market.saveSettings({
@@ -3859,8 +3884,7 @@ export function SettingsPage({
     }
   }
 
-  async function handleSaveTunnelHubSettings(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSaveTunnelHubSettings() {
     setTunnelHubSaving(true);
     try {
       const result = await window.electronAPI.settings.saveTunnelHubSettings({
@@ -4141,7 +4165,11 @@ export function SettingsPage({
         const copyDeviceIdLabel = deviceIdCopied ? t("settings.general.deviceIdCopied") : t("settings.general.copyDeviceId");
         return (
           <div className="settings-appearance-panel" aria-label={t("settings.general.panelAria")}>
-            <form className="settings-control-form settings-device-form" onSubmit={(event) => void handleSaveGeneralDeviceName(event)}>
+            <Form
+              className="settings-control-form settings-device-form"
+              requiredMark={false}
+              onFinish={() => void handleSaveGeneralDeviceName()}
+            >
               <div className="settings-control-row">
                 <span className="settings-control-row-label">{t("settings.general.desktopDeviceName")}</span>
                 <div className="settings-control-row-inline">
@@ -4177,7 +4205,7 @@ export function SettingsPage({
                   </Tooltip>
                 </div>
               </div>
-            </form>
+            </Form>
             <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
                 <strong>{t("settings.general.preventSleepWhileRunning")}</strong>
@@ -4390,8 +4418,12 @@ export function SettingsPage({
                 />
               </div>
               <div className="settings-item-form desktop-pet-agent-form">
-                <label className="desktop-pet-agent-field">
-                  <span>{t("settings.quickAssistant.defaultAgent")}</span>
+                <Form.Item
+                  className="desktop-pet-agent-field"
+                  label={t("settings.quickAssistant.defaultAgent")}
+                  colon={false}
+                  layout="vertical"
+                >
                   <span className="desktop-pet-agent-select-wrap">
                     <Select
                       classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -4416,7 +4448,7 @@ export function SettingsPage({
                       ]}
                     />
                   </span>
-                </label>
+                </Form.Item>
               </div>
             </div>
           </>
@@ -4424,7 +4456,11 @@ export function SettingsPage({
       case "kanban":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
-            <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
+            <Form
+              className="settings-control-form"
+              requiredMark={false}
+              onFinish={() => void handleSaveControlCloudConfig()}
+            >
               <div className="settings-appearance-row settings-kanban-server-url-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("kanban.cloud.serverUrl")}</strong>
@@ -4452,14 +4488,18 @@ export function SettingsPage({
                   {t("common.save")}
                 </Button>
               </div>
-            </form>
+            </Form>
           </div>
         );
       case "market":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.market.panelAria")}>
-            <form className="settings-control-form" onSubmit={(event) => void handleSaveMarketSettings(event)}>
-              <label className="settings-control-row">
+            <Form
+              className="settings-control-form"
+              requiredMark={false}
+              onFinish={() => void handleSaveMarketSettings()}
+            >
+              <div className="settings-control-row">
                 <span className="settings-control-row-label">{t("settings.market.apiBaseUrl")}</span>
                 <Input
                   className="settings-control-row-control"
@@ -4468,7 +4508,7 @@ export function SettingsPage({
                   placeholder={t("settings.market.apiBaseUrlPlaceholder")}
                   disabled={marketSettingsSaving}
                 />
-              </label>
+              </div>
               <div className="settings-control-actions">
                 <Button
                   type="primary"
@@ -4479,7 +4519,7 @@ export function SettingsPage({
                   {t("common.save")}
                 </Button>
               </div>
-            </form>
+            </Form>
           </div>
         );
       case "control":
@@ -4500,8 +4540,12 @@ export function SettingsPage({
         return (
           <div className="settings-control-config-stack">
             <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
-              <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
-                <label className="settings-control-row">
+              <Form
+                className="settings-control-form"
+                requiredMark={false}
+                onFinish={() => void handleSaveTunnelHubSettings()}
+              >
+                <div className="settings-control-row">
                   <span className="settings-control-row-label">{t("settings.tunnelHub.relayUrl")}</span>
                   <Input
                     className="settings-control-row-control"
@@ -4510,7 +4554,7 @@ export function SettingsPage({
                     placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
                     disabled={tunnelHubSaving}
                   />
-                </label>
+                </div>
                 {tunnelHubSettings.publicHost ? (
                   <div className="settings-control-field settings-readonly-stack">
                     <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
@@ -4526,7 +4570,7 @@ export function SettingsPage({
                     {t("common.save")}
                   </Button>
                 </div>
-              </form>
+              </Form>
             </div>
             <div className="settings-item-card settings-mobile-pairing-card">
               <div className="settings-item-header settings-mobile-pairing-header">
@@ -4805,10 +4849,9 @@ export function SettingsPage({
                           <span>{t("settings.websites.listSubtitle", { count: websiteItems.length })}</span>
                         </div>
                       </div>
-                      <button type="button" className="service-catalog-import" onClick={beginAddWebsiteItem}>
-                        <span aria-hidden="true">+</span>
+                      <Button type="text" className="service-catalog-import" icon={<PlusOutlined />} onClick={beginAddWebsiteItem}>
                         {t("settings.websites.addShort")}
-                      </button>
+                      </Button>
                     </div>
                     <div className="web-catalog-actions">
                       <Button type="link" onClick={() => void handleImportWebsiteItems()} disabled={websiteTransferPending !== ""}>
@@ -4819,56 +4862,46 @@ export function SettingsPage({
                       </Button>
                     </div>
                     <div className="service-nav-list" role="list" aria-label={t("settings.websites.addedTitle")}>
-                      <div
-                        role="button"
-                        tabIndex={0}
+                      <Button
+                        type="text"
+                        block
+                        autoInsertSpace={false}
                         className={`service-nav-card is-compact-service web-nav-card${creatingWebsite ? " is-active" : ""}`}
                         onClick={beginAddWebsiteItem}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            beginAddWebsiteItem();
-                          }
-                        }}
                         aria-pressed={creatingWebsite}
                       >
-                        <div className="service-nav-card-head">
-                          <div className="service-nav-title-row">
-                            <h3>{t("settings.websites.addTitle")}</h3>
-                          </div>
+                        <span className="service-nav-card-head">
+                          <span className="service-nav-title-row">
+                            <span className="service-nav-card-title">{t("settings.websites.addTitle")}</span>
+                          </span>
                           <span className="service-nav-version-status">
                             <span className="status-dot idle" aria-hidden="true" />
                             <span className="service-nav-status-label">{t("settings.websites.newEntry")}</span>
                           </span>
-                        </div>
-                      </div>
+                        </span>
+                      </Button>
                       {websiteItems.length === 0 ? (
                         <div className="service-group-empty">{t("settings.websites.empty")}</div>
                       ) : websiteItems.map((item) => (
-                        <div
-                          role="button"
-                          tabIndex={0}
+                        <Button
+                          type="text"
+                          block
+                          autoInsertSpace={false}
                           className={`service-nav-card is-compact-service web-nav-card${selectedWebsiteId === item.id ? " is-active" : ""}`}
                           key={item.id}
                           onClick={() => handleSelectWebsiteItem(item)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              handleSelectWebsiteItem(item);
-                            }
-                          }}
                           aria-pressed={selectedWebsiteId === item.id}
                         >
-                          <div className="service-nav-card-head">
-                            <div className="service-nav-title-row">
-                              <h3>{item.label}</h3>
-                            </div>
+                          <span className="service-nav-card-head">
+                            <span className="service-nav-title-row">
+                              <span className="service-nav-card-title">{item.label}</span>
+                            </span>
                             <span className="service-nav-version-status" title={item.url}>
                               <span className="status-dot running" aria-hidden="true" />
                               <span className="service-nav-status-label">{new URL(item.url).hostname}</span>
                             </span>
-                          </div>
-                        </div>
+                          </span>
+                        </Button>
                       ))}
                     </div>
                   </section>
@@ -4888,30 +4921,48 @@ export function SettingsPage({
                       </div>
                     </div>
                   </div>
-                  <form className="web-detail-form" onSubmit={(event) => void handleSaveWebsiteItem(event)}>
-                    <label className="settings-control-row">
-                      <span className="settings-control-row-label">{t("settings.websites.displayName")}</span>
+                  <Form
+                    className="web-detail-form"
+                    layout="vertical"
+                    requiredMark={false}
+                    onFinish={() => void handleSaveWebsiteItem()}
+                  >
+                    <Form.Item
+                      className="web-detail-form-item"
+                      label={t("settings.websites.displayName")}
+                      colon={false}
+                      required
+                    >
                       <Input
                         className="settings-control-row-control"
                         value={websiteLabel}
                         onChange={(event) => setWebsiteLabel(event.target.value)}
                         placeholder={t("settings.websites.displayNamePlaceholder")}
+                        aria-label={t("settings.websites.displayName")}
                         maxLength={24}
                         required
                       />
-                    </label>
-                    <label className="settings-control-row">
-                      <span className="settings-control-row-label">{t("settings.websites.url")}</span>
+                    </Form.Item>
+                    <Form.Item
+                      className="web-detail-form-item"
+                      label={t("settings.websites.url")}
+                      colon={false}
+                      required
+                    >
                       <Input
                         className="settings-control-row-control"
                         value={websiteUrl}
                         onChange={(event) => setWebsiteUrl(event.target.value)}
                         placeholder={t("settings.websites.urlPlaceholder")}
+                        aria-label={t("settings.websites.url")}
                         required
                       />
-                    </label>
-                    <label className="settings-control-row">
-                      <span className="settings-control-row-label">{t("settings.websites.agentEnhancement")}</span>
+                    </Form.Item>
+                    <Form.Item
+                      className="web-detail-form-item"
+                      label={t("settings.websites.agentEnhancement")}
+                      colon={false}
+                    >
                       <span className="settings-control-row-select desktop-pet-agent-select-wrap">
                         <Select
                           classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -4923,7 +4974,7 @@ export function SettingsPage({
                           options={renderAgentSelectOptions(websiteAgentKey)}
                         />
                       </span>
-                    </label>
+                    </Form.Item>
                     <div className="web-detail-actions">
                       <Button type="primary" htmlType="submit" disabled={websitePending} loading={websitePending}>
                         {websitePending
@@ -4941,7 +4992,7 @@ export function SettingsPage({
                         </Button>
                       ) : null}
                     </div>
-                  </form>
+                  </Form>
                 </section>
               </article>
             </div>
@@ -4987,30 +5038,25 @@ export function SettingsPage({
                       ) : webappItems.map((item) => {
                         const itemState = webappRuntimeById[item.id];
                         return (
-                          <div
-                            role="button"
-                            tabIndex={0}
+                          <Button
+                            type="text"
+                            block
+                            autoInsertSpace={false}
                             className={`service-nav-card is-compact-service web-nav-card${selectedWebappId === item.id ? " is-active" : ""}`}
                             key={item.id}
                             onClick={() => handleSelectWebappItem(item)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                handleSelectWebappItem(item);
-                              }
-                            }}
                             aria-pressed={selectedWebappId === item.id}
                           >
-                            <div className="service-nav-card-head">
-                              <div className="service-nav-title-row">
-                                <h3>{item.label}</h3>
-                              </div>
+                            <span className="service-nav-card-head">
+                              <span className="service-nav-title-row">
+                                <span className="service-nav-card-title">{item.label}</span>
+                              </span>
                               <span className="service-nav-version-status">
                                 <span className={`status-dot ${getWebappRuntimeStatusClass(itemState)}`} aria-hidden="true" />
                                 <span className="service-nav-status-label">{getWebappRuntimeStatusLabel(itemState)}</span>
                               </span>
-                            </div>
-                          </div>
+                            </span>
+                          </Button>
                         );
                       })}
                     </div>
@@ -5056,20 +5102,33 @@ export function SettingsPage({
                         </Button>
                       </div>
                     </div>
-                    <form className="web-detail-form" onSubmit={(event) => void handleSaveWebappItem(event)}>
-                      <label className="settings-control-row">
-                        <span className="settings-control-row-label">{t("settings.websites.displayName")}</span>
+                    <Form
+                      className="web-detail-form"
+                      layout="vertical"
+                      requiredMark={false}
+                      onFinish={() => void handleSaveWebappItem()}
+                    >
+                      <Form.Item
+                        className="web-detail-form-item"
+                        label={t("settings.websites.displayName")}
+                        colon={false}
+                        required
+                      >
                         <Input
                           className="settings-control-row-control"
                           value={webappLabel}
                           onChange={(event) => setWebappLabel(event.target.value)}
                           placeholder={t("settings.websites.displayNamePlaceholder")}
+                          aria-label={t("settings.websites.displayName")}
                           maxLength={24}
                           required
                         />
-                      </label>
-                      <label className="settings-control-row">
-                        <span className="settings-control-row-label">{t("settings.websites.agentEnhancement")}</span>
+                      </Form.Item>
+                      <Form.Item
+                        className="web-detail-form-item"
+                        label={t("settings.websites.agentEnhancement")}
+                        colon={false}
+                      >
                         <span className="settings-control-row-select desktop-pet-agent-select-wrap">
                           <Select
                             classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -5081,7 +5140,7 @@ export function SettingsPage({
                             options={renderAgentSelectOptions(webappAgentKey)}
                           />
                         </span>
-                      </label>
+                      </Form.Item>
                       <div className="web-detail-actions">
                         <Button type="primary" htmlType="submit" disabled={webappPending} loading={webappPending}>
                           {webappPending ? t("settings.websites.updating") : t("settings.websites.save")}
@@ -5106,7 +5165,7 @@ export function SettingsPage({
                           <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
                         )}
                       </div>
-                    </form>
+                    </Form>
                   </section>
 
                   <section className="config-panel web-detail-card">
