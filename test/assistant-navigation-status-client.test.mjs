@@ -5,8 +5,10 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   applyAssistantNavigationPush,
+  buildAssistantNavigationAgentsFromPlatformAgents,
   readAssistantNavigationActivityAgentsFromPlatform,
   readAssistantCopilotAgentsFromPlatform,
+  readAssistantNavigationAgentsFromPlatform,
 } = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
 
 function createAgent(overrides = {}) {
@@ -121,14 +123,140 @@ test("assistant navigation activity agents include copilot-only chats for deskto
   const items = await readAssistantNavigationActivityAgentsFromPlatform("http://127.0.0.1:11789", "token");
 
   assert.deepEqual(requestedUrls, [
-    { scope: "nav", includeChats: "5" },
-    { scope: "copilot", includeChats: "5" },
+    { scope: "nav", includeChats: "50" },
+    { scope: "copilot", includeChats: "50" },
   ]);
   const copilotAgent = items.find((item) => item.agentKey === "net-yu");
   assert.equal(copilotAgent?.displayName, "网驭智能体");
   assert.equal(copilotAgent?.unreadCount, 1);
   assert.equal(copilotAgent?.recentChats[0]?.chatId, "copilot-chat-1");
   assert.equal(copilotAgent?.recentChats[0]?.lastRunContent, "已完成网络诊断");
+});
+
+test("assistant navigation requests enough chat history for sidebar attention priority", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url));
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          code: 0,
+          data: [{ key: "zenmi", name: "Zenmi", chats: [] }],
+        };
+      },
+    };
+  };
+
+  await readAssistantNavigationAgentsFromPlatform("http://127.0.0.1:11789", "token");
+
+  assert.equal(new URL(requestedUrls[0]).searchParams.get("includeChats"), "50");
+});
+
+test("assistant navigation keeps nested read state for desktop sidebar history", () => {
+  const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "Zenmi",
+      stats: { totalCount: 2 },
+      chats: [
+        {
+          chatId: "read-object-unread",
+          agentKey: "zenmi",
+          chatName: "Unread from read object",
+          updatedAt: "2026-06-20T01:00:00.000Z",
+          read: { isRead: false, readAt: 456, readRunId: "run_1" },
+        },
+        {
+          chatId: "read-object-read",
+          agentKey: "zenmi",
+          chatName: "Read from read object",
+          updatedAt: "2026-06-20T00:00:00.000Z",
+          read: { isRead: true },
+        },
+      ],
+    },
+  ], 50);
+
+  assert.equal(agent.unreadCount, 1);
+  assert.equal(agent.unreadChatCount, 1);
+  assert.equal(agent.recentChats.find((chat) => chat.chatId === "read-object-unread")?.isRead, false);
+  assert.equal(agent.recentChats.find((chat) => chat.chatId === "read-object-read")?.isRead, true);
+});
+
+test("assistant navigation trusts stats unread count when present", () => {
+  const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "Zenmi",
+      stats: { totalCount: 3, unreadCount: 3 },
+      chats: [
+        {
+          chatId: "read-newer",
+          agentKey: "zenmi",
+          updatedAt: "2026-06-20T03:00:00.000Z",
+          read: { isRead: true },
+        },
+        {
+          chatId: "unread-middle",
+          agentKey: "zenmi",
+          updatedAt: "2026-06-20T02:00:00.000Z",
+          read: { isRead: false },
+        },
+        {
+          chatId: "read-older",
+          agentKey: "zenmi",
+          updatedAt: "2026-06-20T01:00:00.000Z",
+          read: { isRead: true },
+        },
+      ],
+    },
+  ], 50);
+
+  assert.equal(agent.chatCount, 3);
+  assert.equal(agent.recentChats.length, 3);
+  assert.equal(agent.unreadCount, 3);
+  assert.equal(agent.unreadChatCount, 3);
+});
+
+test("assistant navigation counts row read states when stats unread count is absent", () => {
+  const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "Zenmi",
+      stats: { totalCount: 3 },
+      chats: [
+        {
+          chatId: "read-newer",
+          agentKey: "zenmi",
+          updatedAt: "2026-06-20T03:00:00.000Z",
+          read: { isRead: true },
+        },
+        {
+          chatId: "unread-middle",
+          agentKey: "zenmi",
+          updatedAt: "2026-06-20T02:00:00.000Z",
+          read: { isRead: false },
+        },
+        {
+          chatId: "read-older",
+          agentKey: "zenmi",
+          updatedAt: "2026-06-20T01:00:00.000Z",
+          read: { isRead: true },
+        },
+      ],
+    },
+  ], 50);
+
+  assert.equal(agent.chatCount, 3);
+  assert.equal(agent.recentChats.length, 3);
+  assert.equal(agent.unreadCount, 1);
+  assert.equal(agent.unreadChatCount, 1);
 });
 
 test("assistant navigation run.started keeps a newly created chat title instead of writing Thinking", () => {

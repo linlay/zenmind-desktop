@@ -138,8 +138,8 @@ export type AssistantNavigationApplyResult = {
 };
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
-const NAVIGATION_AGENT_CHAT_LIMIT = 5;
 const NAVIGATION_AGENT_HISTORY_LIMIT = 50;
+const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 const NAVIGATION_UNAVAILABLE_RETRY_MS = 12_000;
 const NAVIGATION_RECONNECT_MS = 10_000;
@@ -214,6 +214,13 @@ function toFiniteNumber(value: unknown) {
 
 function toNonNegativeInteger(value: unknown) {
   return Math.max(0, Math.round(toFiniteNumber(value)));
+}
+
+function toOptionalNonNegativeInteger(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0
+    ? Math.max(0, Math.round(numeric))
+    : undefined;
 }
 
 function isFinishedAwaitingStatus(value: string) {
@@ -511,7 +518,7 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
 }
 
 function readAgentLatestChatTime(agent: AssistantNavAgentItem) {
-  return toTimestampMs(agent.recentChats[0]?.updatedAt);
+  return toTimestampMs(agent.updatedAt || agent.recentChats[0]?.updatedAt);
 }
 
 function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
@@ -549,6 +556,13 @@ function mergeNavigationChats(
   return [...chatsById.values()].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
 }
 
+function resolveNavigationUnreadCount(options: {
+  statsUnreadCount: number | undefined;
+  unreadFromChats: number;
+}) {
+  return options.statsUnreadCount ?? options.unreadFromChats;
+}
+
 function pickLatestTimestamp(left: string, right: string) {
   return toTimestampMs(right) > toTimestampMs(left) ? right : left;
 }
@@ -560,8 +574,12 @@ function mergeNavigationAgentItem(
   const recentChats = mergeNavigationChats(primary.recentChats, secondary.recentChats);
   const latestChat = recentChats[0] ?? null;
   const unreadFromChats = recentChats.filter((chat) => !chat.isRead).length;
-  const unreadCount = Math.max(primary.unreadCount, secondary.unreadCount, unreadFromChats);
-  const unreadChatCount = Math.max(primary.unreadChatCount, secondary.unreadChatCount, unreadCount);
+  const chatCount = Math.max(primary.chatCount, secondary.chatCount, recentChats.length);
+  const unreadCount = resolveNavigationUnreadCount({
+    statsUnreadCount: Math.max(primary.unreadCount, secondary.unreadCount),
+    unreadFromChats,
+  });
+  const unreadChatCount = unreadCount;
   const latestPreview = latestChat
     ? (latestChat.lastRunContent || latestChat.chatName).replace(/\s+/gu, " ").trim()
     : primary.latestPreview || secondary.latestPreview;
@@ -572,7 +590,7 @@ function mergeNavigationAgentItem(
     ...(primary.icon !== undefined || secondary.icon !== undefined ? { icon: primary.icon ?? secondary.icon } : {}),
     unreadCount,
     unreadChatCount,
-    chatCount: Math.max(primary.chatCount, secondary.chatCount, recentChats.length),
+    chatCount,
     hasPendingAwaiting: primary.hasPendingAwaiting || secondary.hasPendingAwaiting || recentChats.some((chat) => chat.hasPendingAwaiting),
     latestChatId: latestChat?.chatId ?? primary.latestChatId ?? secondary.latestChatId,
     latestPreview: latestPreview.slice(0, 120),
@@ -656,9 +674,13 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
   const recentChats = chats.slice(0, includeChatLimit);
   const latestChat = recentChats[0] ?? null;
   const totalCount = toNonNegativeInteger(agent.stats?.totalCount);
-  const statsUnreadCount = toNonNegativeInteger(agent.stats?.unreadCount);
+  const statsUnreadCount = toOptionalNonNegativeInteger(agent.stats?.unreadCount);
   const unreadFromChats = chats.filter((chat) => !chat.isRead).length;
-  const unreadCount = Math.max(statsUnreadCount, unreadFromChats);
+  const chatCount = Math.max(totalCount, chats.length);
+  const unreadCount = resolveNavigationUnreadCount({
+    statsUnreadCount,
+    unreadFromChats,
+  });
   const latestPreview = latestChat
     ? (latestChat.lastRunContent || latestChat.chatName).replace(/\s+/gu, " ").trim()
     : "";
@@ -669,7 +691,7 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
     ...(readAgentIcon(agent) ? { icon: readAgentIcon(agent) } : {}),
     unreadCount,
     unreadChatCount: unreadCount,
-    chatCount: Math.max(totalCount, chats.length),
+    chatCount,
     hasPendingAwaiting: chats.some((chat) => chat.hasPendingAwaiting),
     latestChatId: latestChat?.chatId ?? null,
     latestPreview: latestPreview.slice(0, 120),
@@ -913,7 +935,10 @@ function refreshAgentDerivedFields(agent: AssistantNavAgentItem): AssistantNavAg
   const recentChats = [...agent.recentChats].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
   const latestChat = recentChats[0] ?? null;
   const unreadFromChats = recentChats.filter((chat) => !chat.isRead).length;
-  const unreadCount = Math.max(agent.unreadCount, unreadFromChats);
+  const unreadCount = resolveNavigationUnreadCount({
+    statsUnreadCount: agent.unreadCount,
+    unreadFromChats,
+  });
   const latestPreview = latestChat
     ? (latestChat.lastRunContent || latestChat.chatName).replace(/\s+/gu, " ").trim()
     : "";

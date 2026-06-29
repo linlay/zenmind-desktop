@@ -961,6 +961,10 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
+  const assistantNavigationSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "assistantNavigation.ts"),
+    "utf8"
+  );
   const pluginPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
     "utf8"
@@ -990,12 +994,18 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /createAgentNewChatRoute\(agent\.agentKey\)/);
   assert.match(sidebarSource, /type AgentSelectionOptions = \{\s*preferNewChat\?: boolean;\s*\};/);
   assert.match(sidebarSource, /function createAgentSelectionRoute\(\s*agent: AssistantNavAgentItem,\s*options: AgentSelectionOptions = \{\},\s*\)/);
-  assert.match(sidebarSource, /function getAssistantAttentionChat\(agent: AssistantNavAgentItem\)/);
-  assert.match(sidebarSource, /getAssistantNavAgentRecentChats\(agent\)\.slice\(0, 5\)/);
-  assert.match(sidebarSource, /recentChats\.find\(\(chat\) => chat\.hasPendingAwaiting === true\)/);
-  assert.match(sidebarSource, /recentChats\.find\(\(chat\) => chat\.hasActiveRun === true\)/);
-  assert.match(sidebarSource, /recentChats\.find\(\(chat\) => chat\.isRead === false\)/);
-  assert.match(sidebarSource, /const attentionChat = getAssistantAttentionChat\(agent\);/);
+  assert.match(assistantNavigationSource, /function readAssistantNavChatIsRead\(record: Record<string, unknown>\)/);
+  assert.match(assistantNavigationSource, /isObjectRecord\(record\.read\) && typeof record\.read\.isRead === "boolean"/);
+  assert.match(assistantNavigationSource, /export function getAssistantNavAgentPreviewChats/);
+  assert.match(assistantNavigationSource, /export function getAssistantNavAgentSortedChats/);
+  assert.match(assistantNavigationSource, /return getAssistantNavAgentSortedChats\(agent\)\.slice\(0, normalizedLimit\);/);
+  assert.match(assistantNavigationSource, /export function getAssistantNavAgentAttentionChat/);
+  assert.match(assistantNavigationSource, /const runningChat = chats\.find\(\(chat\) => chat\.hasActiveRun === true\);/);
+  assert.match(assistantNavigationSource, /latestChat\.hasPendingAwaiting === true/);
+  assert.match(assistantNavigationSource, /latestChat\.isRead === false/);
+  assert.match(sidebarSource, /getAssistantNavAgentPreviewChats\(agent\)/);
+  assert.match(sidebarSource, /getAssistantNavAgentSortedChats\(agent\)/);
+  assert.match(sidebarSource, /const attentionChat = getAssistantNavAgentAttentionChat\(agent\);/);
   assert.match(sidebarSource, /if \(attentionChatId\) \{\s*return createAgentChatRoute\(agent\.agentKey, attentionChatId\);/);
   assert.match(sidebarSource, /if \(!options\.preferNewChat\) \{\s*return createAgentDefaultRoute\(agent\);/);
   assert.match(sidebarSource, /return createAgentNewChatRoute\(agent\.agentKey\);/);
@@ -1012,19 +1022,24 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /function dispatchAgentRouteActionToActiveWebview\(targetPath: string\)/);
   assert.match(sidebarSource, /"agent:start-new-conversation"/);
   assert.match(sidebarSource, /"agent:load-chat"/);
+  assert.match(sidebarSource, /params\.set\("newChat", "1"\)/);
+  assert.match(sidebarSource, /params\.set\("newChatRequest", String\(Date\.now\(\)\)\)/);
+  assert.match(sidebarSource, /newChatRequested: url\.searchParams\.get\("newChat"\)\?\.trim\(\) === "1"/);
+  assert.match(sidebarSource, /if \(!newChatRequested\) \{\s*return false;\s*\}/);
   assert.match(sidebarSource, /webview\.executeJavaScript\(script, true\)/);
+  assert.match(sidebarSource, /targetAgentInfo\.newChatRequested/);
   assert.match(sidebarSource, /function handleAssistantAgentExpand\(\s*agent: AssistantNavAgentItem,\s*expanded: boolean,\s*\) \{[\s\S]*?if \(!expanded\) \{[\s\S]*?return;[\s\S]*?createAgentSelectionRoute\(agent, \{ preferNewChat: !isCollapsed \}\)[\s\S]*?retriggerAgentRoute: true/);
   assert.match(sidebarSource, /onExpand=\{\(val\) => handleAssistantAgentExpand\(agent, val\)\}/);
   assert.doesNotMatch(sidebarSource, /handleAssistantAgentHeaderClick/);
   assert.match(sidebarSource, /currentPathname\.startsWith\("\/agent\/"\)/);
   assert.match(sidebarSource, /pendingPath\?\.startsWith\("\/agent\/"\)/);
-  assert.doesNotMatch(sidebarSource, /newChat=1/);
   assert.doesNotMatch(sidebarSource, /nonce=/);
   assert.doesNotMatch(sidebarSource, /AssistantHistoryState/);
   assert.doesNotMatch(sidebarSource, /assistantHistory/);
   assert.doesNotMatch(sidebarSource, /renderAssistantHistory/);
-  assert.match(sidebarSource, /const recentChats = getAssistantNavAgentRecentChats\(agent\)\.slice\(0, 5\);/);
-  assert.match(sidebarSource, /const chatCount = Math\.max\(\s*0,\s*getAssistantNavAgentNonNegativeInteger\(agent\.chatCount\),\s*recentChats\.length,?\s*\);/);
+  assert.match(sidebarSource, /const recentChats = getAssistantNavAgentPreviewChats\(agent\);/);
+  assert.match(sidebarSource, /const chatCount = Math\.max\(\s*0,\s*getAssistantNavAgentNonNegativeInteger\(agent\.chatCount\),\s*allRecentChats\.length,?\s*\);/);
+  assert.match(sidebarSource, /const rowUnreadCount = allRecentChats\.filter\(\(chat\) => !chat\.isRead\)\.length;/);
   assert.match(sidebarSource, /recentChats\.length > 0 \? \(/);
   assert.match(sidebarSource, /agent\.latestPreview \|\| \(chatCount > 0 \? "" : t\("sidebar\.agent\.noChats"\)\)/);
   assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
@@ -1037,6 +1052,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /previousRouteAgentInfo\.historyRequested/);
   assert.match(sidebarSource, /setExpandedAssistantAgentKey\(""\)/);
   assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
+  assert.match(sidebarSource, /unread:\s*rowUnreadCount > 0 \? t\("sidebar\.chat\.unreadSuffix", \{ count: rowUnreadCount \}\) : ""/);
   assert.match(sidebarSource, /<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无相关会话/);
   assert.doesNotMatch(sidebarSource, /Math\.max\(agent\.chatCount, recentChats\.length\) > 5/);
@@ -1050,7 +1066,13 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   const newChatHandler = sidebarSource.slice(newChatHandlerStart, markAllReadHandlerStart);
   assert.doesNotMatch(newChatHandler, /preferNewChat|createAgentSelectionRoute/);
   assert.match(newChatHandler, /requestNavigate\(\s*createAgentNewChatRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
-  assert.match(sidebarSource, /className="assistant-worker-collapse-item"/);
+  const activeChatIdStart = sidebarSource.indexOf("function getActiveSidebarChatId");
+  const routeActiveStart = sidebarSource.indexOf("function isRouteActive", activeChatIdStart);
+  assert.ok(activeChatIdStart >= 0);
+  assert.ok(routeActiveStart > activeChatIdStart);
+  const activeChatIdBlock = sidebarSource.slice(activeChatIdStart, routeActiveStart);
+  assert.match(activeChatIdBlock, /if \(routeChatId\) \{\s*return routeChatId;\s*\}\s*return "";/);
+  assert.match(sidebarSource, /"assistant-worker-collapse-item"/);
   assert.match(sidebarSource, /className="assistant-worker-header-text"/);
   assert.match(sidebarSource, /<AgentIcon[\s\S]*?icon=\{agent\.icon\}[\s\S]*?className="worker-panel-icon"[\s\S]*?type="agent"[\s\S]*?\/>/);
   assert.doesNotMatch(sidebarSource, /renderAssistantAgentIcon/);
@@ -1197,7 +1219,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest"\]\)/);
+  assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest", "newChat", "newChatRequest"\]\)/);
   assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.match(appShell, /labelKey:\s*embedPath\.startsWith\("\/agent\/"\) \? "nav\.assistants" : "nav\.agents"/);
   assert.match(appShell, /activeEmbeddedAgentWebclientRoute[\s\S]*?\? AGENT_WEBCLIENT_SERVICE_ID[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
@@ -1284,6 +1306,7 @@ test("assistant sidebar chat history selection follows pending navigation", () =
     "navigation",
     "AppSidebar.tsx"
   );
+  const globalStyles = readRendererStyles();
 
   assert.match(sidebarSource, /const pendingChatId = pendingRouteAgentInfo\.chatId;/);
   assert.match(sidebarSource, /const activeSidebarAgentKey = pendingPath \? pendingAgentKey : currentAgentKey;/);
@@ -1298,6 +1321,19 @@ test("assistant sidebar chat history selection follows pending navigation", () =
   assert.match(sidebarSource, /const selected =\s*getActiveSidebarAgentKey\(\) === agent\.agentKey;/);
   assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey\);/);
   assert.doesNotMatch(sidebarSource, /const activeChatId = currentChatId \|\| "";/);
+  assert.match(sidebarSource, /selected \? "is-selected" : ""/);
+  assert.match(sidebarSource, /selected \? "is-active" : ""/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-selected>\.Collapse-header/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item>\.Collapse-header \.Collapse-trigger\s*\{[\s\S]{0,120}flex:\s*1 1 0;/);
+  assert.match(globalStyles, /\.assistant-worker-header-text\s*\{[\s\S]{0,160}width:\s*100%;/);
+  assert.match(globalStyles, /\.worker-panel-header\s*\{[\s\S]{0,180}width:\s*100%;/);
+  assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]{0,180}width:\s*100%;/);
+  assert.match(globalStyles, /\.worker-panel-preview>\.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left:\s*auto;/);
+  assert.match(globalStyles, /\.assistant-worker-badge\s*\{[\s\S]{0,120}margin-left:\s*auto;/);
+  assert.match(globalStyles, /\.assistant-worker-header\.is-active/);
+  assert.match(globalStyles, /\.assistant-worker-chat-item\.is-active\s*\{[\s\S]{0,120}background:\s*transparent;/);
+  assert.doesNotMatch(globalStyles, /\.assistant-worker-collapse-item\.is-selected\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\.is-selected\s*\{/);
 });
 
 test("assistant sidebar awaiting chats use a right-side loading status", () => {
@@ -1311,6 +1347,7 @@ test("assistant sidebar awaiting chats use a right-side loading status", () => {
   const globalStyles = readRendererStyles();
 
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"/);
+  assert.match(sidebarSource, /action === "awaiting" \|\| action === "loading" \? "has-status-action" : ""/);
   assert.match(sidebarSource, /chat\.hasPendingAwaiting \? "has-awaiting" : ""/);
   assert.match(sidebarSource, /getAssistantAwaitingStatusKey\(chat\.awaitingMode\)/);
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
@@ -1328,6 +1365,7 @@ test("assistant sidebar awaiting chats use a right-side loading status", () => {
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*#b45309;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.chat-awaiting-status \+ \.sidebar-assistant-preview-loading,\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\],\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*#facc15;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-row\.has-status-action:hover \.assistant-worker-chat-menu-button,\s*\.assistant-worker-chat-row\.has-status-action:focus-within \.assistant-worker-chat-menu-button\s*\{[\s\S]{0,60}display:\s*none;/);
 });
 
 test("assistant sidebar active chats use loading status instead of thinking text", () => {

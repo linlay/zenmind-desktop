@@ -42,8 +42,11 @@ import { Tooltip } from "../../components/Tooltip";
 import { Popover } from "../../components/Popover";
 import { useI18n } from "../../i18n/useI18n";
 import {
+  getAssistantNavAgentAttentionChat,
   getAssistantNavAgentNonNegativeInteger,
+  getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
+  getAssistantNavAgentSortedChats,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
@@ -404,7 +407,7 @@ function getRouteEmbedPath(route: string) {
 function readAgentInfoFromWebclientPath(pathWithQuery: string) {
   const normalized = pathWithQuery.trim();
   if (!normalized) {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
   }
   try {
     const url = new URL(normalized, "http://agent-webclient.local");
@@ -413,9 +416,10 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string) {
       agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
       historyRequested: url.searchParams.get("history")?.trim() === "1",
+      newChatRequested: url.searchParams.get("newChat")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
   }
 }
 
@@ -430,7 +434,7 @@ function readAgentRouteInfo(route: string) {
   }
   const queryIndex = route.indexOf("?");
   if (queryIndex < 0) {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
   }
   try {
     const searchParams = new URLSearchParams(route.slice(queryIndex + 1));
@@ -438,9 +442,10 @@ function readAgentRouteInfo(route: string) {
       agentKey: searchParams.get("agentKey")?.trim() ?? "",
       chatId: searchParams.get("chatId")?.trim() ?? "",
       historyRequested: searchParams.get("history")?.trim() === "1",
+      newChatRequested: searchParams.get("newChat")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
   }
 }
 
@@ -455,12 +460,15 @@ function createAgentChatRoute(agentKey: string, chatId: string) {
 }
 
 function createAgentNewChatRoute(agentKey: string) {
-  return createAgentRoute(agentKey);
+  const params = new URLSearchParams();
+  params.set("newChat", "1");
+  params.set("newChatRequest", String(Date.now()));
+  return `${createAgentRoute(agentKey)}?${params.toString()}`;
 }
 
 function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
   const firstChatId =
-    getAssistantNavAgentRecentChats(agent)[0]?.chatId ||
+    getAssistantNavAgentSortedChats(agent)[0]?.chatId ||
     agent.latestChatId ||
     "";
   return firstChatId
@@ -472,7 +480,7 @@ function createAgentSelectionRoute(
   agent: AssistantNavAgentItem,
   options: AgentSelectionOptions = {},
 ) {
-  const attentionChat = getAssistantAttentionChat(agent);
+  const attentionChat = getAssistantNavAgentAttentionChat(agent);
   const attentionChatId = attentionChat?.chatId.trim() ?? "";
   if (attentionChatId) {
     return createAgentChatRoute(agent.agentKey, attentionChatId);
@@ -573,7 +581,7 @@ function toAssistantSortTimestamp(value: string | undefined) {
 }
 
 function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
-  const latestChat = getAssistantNavAgentRecentChats(agent)[0];
+  const latestChat = getAssistantNavAgentSortedChats(agent)[0];
   if (latestChat) {
     return toAssistantSortTimestamp(latestChat.updatedAt);
   }
@@ -632,16 +640,6 @@ function getAssistantAwaitingStatusKey(
     default:
       return "kanban.run.awaitingApproval";
   }
-}
-
-function getAssistantAttentionChat(agent: AssistantNavAgentItem) {
-  const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
-  return (
-    recentChats.find((chat) => chat.hasPendingAwaiting === true) ||
-    recentChats.find((chat) => chat.hasActiveRun === true) ||
-    recentChats.find((chat) => chat.isRead === false) ||
-    null
-  );
 }
 
 function createSidebarLinkFocusId(orderKey: SidebarNavOrderItemKey | string) {
@@ -1327,7 +1325,7 @@ export function AppSidebar({
   }
 
   function dispatchAgentRouteActionToActiveWebview(targetPath: string) {
-    const { agentKey, chatId, historyRequested } = readAgentRouteInfo(targetPath);
+    const { agentKey, chatId, historyRequested, newChatRequested } = readAgentRouteInfo(targetPath);
     if (!agentKey) {
       return false;
     }
@@ -1349,6 +1347,12 @@ export function AppSidebar({
         return true;
       } catch (error) {
         console.warn("[assistant] failed to open agent history", error);
+        return false;
+      }
+    }
+
+    if (!chatId) {
+      if (!newChatRequested) {
         return false;
       }
     }
@@ -1382,7 +1386,11 @@ export function AppSidebar({
   function requestNavigate(targetPath: string, options: NavigateOptions = {}) {
     if (options.retriggerAgentRoute) {
       const targetAgentInfo = readAgentRouteInfo(targetPath);
-      if (targetPath === currentRoute || targetAgentInfo.historyRequested) {
+      if (
+        targetPath === currentRoute ||
+        targetAgentInfo.historyRequested ||
+        targetAgentInfo.newChatRequested
+      ) {
         dispatchAgentRouteActionToActiveWebview(targetPath);
       }
     }
@@ -2121,8 +2129,7 @@ export function AppSidebar({
     if (routeChatId) {
       return routeChatId;
     }
-    const agent = assistantNavAgents.find((item) => item.agentKey === agentKey);
-    return agent?.latestChatId || getAssistantNavAgentRecentChats(agent)[0]?.chatId || "";
+    return "";
   }
 
   function isRouteActive(targetPath: string) {
@@ -2412,7 +2419,12 @@ export function AppSidebar({
     return (
       <div
         key={chat.chatId}
-        className="assistant-worker-chat-row"
+        className={[
+          "assistant-worker-chat-row",
+          action === "awaiting" || action === "loading" ? "has-status-action" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onContextMenu={(event) => handleAssistantChatContextMenu(event, chat)}
       >
         <button
@@ -2485,21 +2497,23 @@ export function AppSidebar({
     const roving = options.roving ?? true;
     const expanded = expandedAssistantAgentKey === agent.agentKey;
     const selected = getActiveSidebarAgentKey() === agent.agentKey;
-    const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
+    const allRecentChats = getAssistantNavAgentSortedChats(agent);
+    const recentChats = getAssistantNavAgentPreviewChats(agent);
     const chatCount = Math.max(
       0,
       getAssistantNavAgentNonNegativeInteger(agent.chatCount),
-      recentChats.length,
+      allRecentChats.length,
     );
     const unreadCount = Math.max(
       0,
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
-    const awaitingChat = recentChats.find(
+    const rowUnreadCount = allRecentChats.filter((chat) => !chat.isRead).length;
+    const awaitingChat = allRecentChats.find(
       (chat) => chat.hasPendingAwaiting === true,
     );
-    const activeRunChat = recentChats.find(
+    const activeRunChat = allRecentChats.find(
       (chat) => chat.hasActiveRun === true,
     );
     const previewChat = awaitingChat || activeRunChat || recentChats[0] || null;
@@ -2519,11 +2533,21 @@ export function AppSidebar({
     return (
       <Collapse
         key={agent.agentKey}
-        className="assistant-worker-collapse-item"
+        className={[
+          "assistant-worker-collapse-item",
+          selected ? "is-selected" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         expanded={expanded}
         onExpand={(val) => handleAssistantAgentExpand(agent, val)}
         headerButtonProps={{
-          className: "assistant-worker-header",
+          className: [
+            "assistant-worker-header",
+            selected ? "is-active" : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
           onContextMenu: (event) => handleAgentContextMenu(event, agent),
           ...getSidebarRovingItemProps(
             createSidebarAgentFocusId(agent.agentKey),
@@ -2671,7 +2695,7 @@ export function AppSidebar({
             >
               {t("sidebar.chat.viewMore", {
                 count: chatCount,
-                unread: unreadCount > 0 ? t("sidebar.chat.unreadSuffix", { count: unreadCount }) : ""
+                unread: rowUnreadCount > 0 ? t("sidebar.chat.unreadSuffix", { count: rowUnreadCount }) : ""
               })}
             </button>
           ) : null}
