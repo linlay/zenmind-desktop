@@ -51,6 +51,7 @@ playwright-report/
 
 # Local assistant files
 agent.md
+!.doc/rules/agent.md
 .agents/skills/
 skills-lock.json
 .codegraph/

@@ -1,192 +1,103 @@
-# ZenMind
+# ZenMind Desktop
 
-## 1. 项目简介
-`zenmind-desktop` 是 ZenMind 的应用壳项目，基于 Electron、React 和 Vite 构建。它负责把内置服务打包进桌面应用，并提供统一的安装、配置、启动、停止、重启和日志查看入口。
+## 1. 项目概览
 
-当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
-- 内置服务从按平台生成的 `.tar.gz` / `.zip` 资源包里的 `manifest.json` 自动发现。
-- 插件从平台程序数据目录自动扫描注册；程序数据根目录按品牌隔离，例如 ZenMind 使用 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/`、Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，CuteJ 使用 macOS `~/Library/Application Support/CuteJ/plugins/<plugin-id>/<version>/`、Windows `%APPDATA%\CuteJ\plugins\<plugin-id>\<version>\`。
-- Desktop 不再随安装包内置任何插件，插件统一通过导入 `.zip` archive 的方式接入。
-- 插件导入后需要在控制中心执行一次初始化；Desktop 会补齐模板配置并执行 `scripts.deploy`。
-- Desktop 不再在 `service-registry.ts` 中硬编码任何内置服务结构。
+`zenmind-desktop` 是 ZenMind 的 Electron 应用壳，基于 Electron、React、Vite 和 TypeScript 构建。它负责把内置服务、插件、市场资源、网站入口、本地网站应用、智能助理和桌面协议能力组织成统一的桌面体验。
 
-当前仓库重点覆盖两类服务：
-- `agent-container-hub`：宿主机容器服务，为后续智能体运行时提供沙箱能力。
-- `agent-platform`：智能体运行时服务。
-- `agent-webclient`：智能助理前端，作为内置服务随 Desktop 分发。
-- `identity-center`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
+当前 Desktop 以 `manifest.json` 为服务发现和安装事实源：
 
-桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 webview 直接访问对应 `healthMeta.webUrl`。需要认证的服务（如 `agent-webclient`）通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
+- 内置服务从 `build/resources/services` 或打包后的 `resources/services` 自动发现。
+- 插件统一通过 `.zip` 导入，安装到品牌隔离的平台程序数据目录。
+- 桌面运行数据按品牌隔离在 `~/.zenmind/.desktop`、`~/.cutej/.desktop` 等目录。
+- 渲染层 webview 直接访问服务或本地网站应用的 `webUrl`，需要认证的嵌入页通过 Desktop bridge 获取 token。
 
-## 2. 快速开始
-### 前置要求
+核心内置服务：
+
+- `identity-center`：认证、OIDC、JWK 与 App access token。
+- `agent-platform`：智能体运行时。
+- `agent-webclient`：智能助理前端。
+- `agent-container-hub`：宿主机容器与沙箱能力。
+
+## 2. 技术栈
+
+- Electron main / preload / renderer
+- React 18 + Vite
+- TypeScript
+- Node.js 标准库文件系统、进程、HTTP、SQLite 能力
+- electron-builder 打包 macOS DMG 与 Windows NSIS
+
+## 3. 快速开始
+
+前置要求：
+
 - Node.js 18 及以上
 - npm 9 及以上
 - macOS arm64 或 Windows x64 开发环境
-- `zip` / `unzip` 和 `tar` 命令可用
+- `zip` / `unzip` / `tar`
 - 如需启动 `agent-container-hub`，本机需要 Docker 或 Podman
 
-### 安装依赖
+常用命令：
+
 ```bash
 npm install
-```
-
-### 本地开发
-```bash
 npm run dev
-```
-
-开发模式会先同步内置资源、编译 Electron 主进程，再启动 Vite 和 Electron。默认会使用 `http://127.0.0.1:5173` 作为渲染进程开发地址。
-
-### 构建
-```bash
 npm run build
-```
-
-该命令会依次执行：
-- `npm run build:main`：编译 Electron 主进程与 preload
-- `npm run build:renderer`：构建 React 渲染层
-
-### 测试
-```bash
 npm test
 ```
 
-测试会先执行完整构建，再运行 `test/*.test.mjs` 下的 Node 测试。
+开发模式会同步品牌与内置资源、编译 Electron 主进程、启动 Vite 和 Electron。测试入口 `npm test` 会先执行 i18n 检查和完整构建，再运行 `test/*.test.mjs`。
 
-## 3. 调试面板
+## 4. 目录结构
 
-桌面应用在开发模式和打包后的正式版本中，都支持通过快捷键打开或关闭 Chromium DevTools 调试面板。
+```text
+.
+├── brands/                 # 品牌配置、图标和文案
+├── build/                  # 生成的品牌配置、资源和打包中间产物
+├── docs/                   # 中文专题文档
+├── scripts/                # 开发、同步、打包和验证脚本
+├── src/
+│   ├── main/               # Electron 主进程
+│   ├── preload/            # webview / renderer preload
+│   ├── renderer/           # React 渲染层
+│   └── shared/             # main / preload / renderer 共享契约
+├── test/                   # Node 测试
+├── AGENTS.md
+├── CLAUDE.md
+├── package.json
+└── VERSION
+```
+
+## 5. 调试面板
 
 | 平台 | 快捷键 | 效果 |
-|------|--------|------|
-| macOS | `Cmd + Option + I` | 打开/关闭 DevTools 调试面板 |
-| Windows | `Ctrl + Shift + I` | 打开/关闭 DevTools 调试面板 |
+| --- | --- | --- |
+| macOS | `Cmd + Option + I` | 打开或关闭 DevTools |
+| Windows | `Ctrl + Shift + I` | 打开或关闭 DevTools |
 
-DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面运行时状态，便于排查桌面端和嵌入页面的问题。
+## 6. 专题文档索引
 
-## 4. 配置说明
-### 内置资源目录
-- 开发环境默认从 `build/resources/services` 读取内置服务资源包。
-- 打包后默认从应用资源目录下的 `services` 读取。
-- 如需覆盖资源目录，可设置环境变量 `DESKTOP_BUILTIN_ASSETS_ROOT`。
-- 每个内置资源包都必须在根目录包含 `manifest.json`，Desktop 会从中读取 `kind`、`scripts`、`runtime`、`web` 和 `desktop` 扩展字段。
+- [架构与模块边界](docs/架构与模块边界.md)：进程、模块、服务和前端边界。
+- [配置化与品牌](docs/配置化与品牌.md)：`BRAND`、品牌生成物、环境变量与配置来源。
+- [数据目录](docs/数据目录.md)：桌面数据根、程序数据根、服务/插件/webs 数据分层。
+- [内置资源与Manifest](docs/内置资源与Manifest.md)：内置服务资源包、manifest 字段和同步脚本。
+- [启动初始化与恢复](docs/启动初始化与恢复.md)：启动阶段、首启 bootstrap、核心服务恢复顺序。
+- [服务生命周期](docs/服务生命周期.md)：安装、初始化、启动、停止、日志和健康检查。
+- [前端嵌入与导航](docs/前端嵌入与导航.md)：webview、独立/内嵌前端、导航入口和路由同步。
+- [鉴权SSO与TokenBridge](docs/鉴权SSO与TokenBridge.md)：identity-center、OIDC、JWK、access token 与 postMessage bridge。
+- [插件开发](docs/插件开发.md)：插件包、manifest、脚本、初始化和卸载。
+- [市场系统](docs/市场系统.md)：市场 catalog、安装记录、下载缓存和各资源分区。
+- [外部网站](docs/外部网站.md)：URL 网站入口、排序、agentKey 和数据文件。
+- [本地网站应用](docs/本地网站应用.md)：webapp 包结构、Node 后端、静态前端代理、运行状态。
+- [智能助理集成](docs/智能助理集成.md)：agent-platform bridge、聊天、附件、quick/copilot。
+- [桌宠系统](docs/桌宠系统.md)：桌宠设置、资产、窗口、状态和 agent 绑定。
+- [看板与云同步](docs/看板与云同步.md)：本地 SQLite、云只读缓存、远端控制和 automation。
+- [桌面协议与动作桥](docs/桌面协议与动作桥.md)：Desktop WebSocket、HTTP action bridge 和动作命名。
+- [版本化打包与卸载](docs/版本化打包与卸载.md)：macOS/Windows 打包、env/demo 资源和卸载。
+- [手工测试用例](docs/手工测试用例.md)：文档化手工回归路径。
 
-### 前端访问模式
-- `frontendMode: "none"`：无前端，仅在控制中心管理。
-- `frontendMode: "embedded"`：前端由服务自身进程托管，可在详情页打开，但不会出现在顶部导航。
-- `frontendMode: "standalone"`：前端由服务自身端口直接提供，详情页可打开，运行中会出现在顶部导航。
-- webview 直接访问服务状态里的 `healthMeta.webUrl`，例如 `http://127.0.0.1:11950/admin/`。
-- 需要认证的服务（如 `agent-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
+## 7. 开发约束
 
-### 服务配置文件
-- 新安装的 Desktop 配置与运行数据根目录按品牌 id 派生：`BRAND=zenmind` 为 macOS `~/.zenmind/.desktop`、Windows `%USERPROFILE%\.zenmind\.desktop`；`BRAND=cutej` 为 macOS `~/.cutej/.desktop`、Windows `%USERPROFILE%\.cutej\.desktop`。目录按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
-- 首次启动导入 `env.zip` 时，解压生成的环境目录为品牌运行根目录，例如 `~/.zenmind` 或 `~/.cutej`，不放在 AppData 下。
-- 服务程序安装到品牌对应的平台程序数据目录：ZenMind 使用 macOS `~/Library/Application Support/ZenMind/services/<service-id>/<version>/`、Windows `%APPDATA%\ZenMind\services\<service-id>\<version>\`；CuteJ 使用 macOS `~/Library/Application Support/CuteJ/services/<service-id>/<version>/`、Windows `%APPDATA%\CuteJ\services\<service-id>\<version>\`。服务配置保存到 Desktop 配置根目录的 `config/services/<service-id>/`，运行数据保存到 `data/services/<service-id>/`。
-- 每个内置服务会在安装时自动完成初始化；缺失的 `.env` 会从 `.env.example` 复制生成，随后由桌面端进行读写。
-- 插件程序安装到同一品牌程序数据目录的 `plugins/<plugin-id>/<version>/` 下，插件配置保存到 Desktop 配置根目录的 `config/plugins/<plugin-id>/`。
-- 插件导入只负责解包和注册；点击控制中心中的“初始化”后，Desktop 才会补齐缺失配置、修复脚本权限并执行 `scripts.deploy`。
-
-### 敏感信息管理
-- 真实密钥、证书和本地环境差异配置不提交到仓库。
-- agent-platform 使用 `identity-center` 的 JWK；Desktop 本地凭据存储在 `secrets/` 下。
-- `.env.local`、编辑器配置和构建产物应由 `.gitignore` 管理。
-- 示例配置应保留在随服务分发的模板文件中，不要把真实值写入文档。
-
-## 5. 部署
-### 桌面构建
-```bash
-npm run build
-```
-
-构建完成后，渲染层产物位于 `dist-renderer/`，Electron 主进程产物位于 `dist-electron/`。
-
-### macOS 打包
-```bash
-npm run dist:mac
-```
-
-使用 `electron-builder` 输出 DMG 安装包，目标 arm64 架构，并使用当前 macOS 签名环境完成签名。打包配置会关闭 electron-builder 对 `.app` 的自动公证；如果配置了 Apple 公证环境变量，`dist:mac` 会在最终 DMG 生成后提交该 DMG 并把票据 staple 到 DMG 上。支持 `APPLE_KEYCHAIN_PROFILE` / `APPLE_KEYCHAIN`、`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`、`APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`，也可以设置 `SKIP_NOTARIZE=1` 跳过公证。
-如需把首启环境包内置进应用，可传入 `ENV_ZIP`；如需同时内置 demo，可设置 `DEMO=1` 或 `DEMO=true`：
-
-```bash
-BRAND=cutej ENV_ZIP=/path/to/env.zip DEMO=1 npm run dist:mac
-```
-
-`ENV_ZIP` 必须是标准环境包：解压后只能有一个顶层 `env/` 目录，实际运行内容位于 `env/VERSION`、`env/agents/`、`env/registries/` 等路径下。Desktop 首启导入只复制缺失文件；已存在的 agent、provider、owner 等文件会跳过，不会覆盖、迁移或自动修复旧 seed。
-`DEMO` 默认不包含 demo；支持 `1/true/yes/on` 和 `0/false/no/off`，非法值会终止打包。当前 demo 只包含 webapp 模板，启动时会在 `.desktop` 目录生成后、`ENV_ZIP` 导入前复制到 `data/webs/webapps/`。
-
-也可以使用 Makefile 入口：
-
-```bash
-make release
-```
-
-在 macOS 上，`make release` 会重新生成图标并执行 macOS arm64 DMG 打包。
-
-### Windows 打包
-```bash
-npm run dist:win
-```
-
-Windows 主机上会直接使用 `electron-builder` 输出 NSIS 安装包，目标 x64 架构。
-如需内置同一份首启环境包，可使用：
-
-```bash
-BRAND=cutej ENV_ZIP=/path/to/env.zip DEMO=true npm run dist:win
-```
-
-在 macOS 或 Linux 主机上，请改用：
-
-```bash
-npm run dist:win-docker
-```
-
-该命令会先在宿主机执行 `npm run sync:assets -- --os=windows --arch=amd64`，把内置服务资源同步到 `build/resources/services/`，随后再通过 Docker 启动官方 `electronuserland/builder:wine` 镜像生成 Windows NSIS 包。这样可以规避宿主 macOS 生成损坏 NSIS 卸载器、在 Windows 上卸载时报 `Installer integrity check has failed` 的问题，同时避免容器内访问不到 monorepo 其他项目产物。
-
-非 Windows 主机执行该命令前需要满足：
-- 已安装并启动 Docker Desktop 或其他兼容 Docker 的运行时
-- 容器可以访问 npm registry 以安装依赖
-
-如果机器上已经残留旧的 per-user/per-machine 双安装记录，建议先手动清理旧版本，再验证新包的安装和卸载。
-
-### 卸载
-- macOS：运行 `/Applications/<ProductName>.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除当前品牌应用包，并弹窗询问是否清理当前品牌数据目录（例如 `~/.zenmind/.desktop` 或 `~/.cutej/.desktop`）和品牌程序数据目录（例如 `~/Library/Application Support/ZenMind` 或 `~/Library/Application Support/CuteJ`）；默认保留数据。
-- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会删除安装目录，并询问是否清理当前品牌的 `%APPDATA%\<ProductName>`；默认保留数据。
-
-### 打包资源约定
-- `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
-- `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
-- `build.extraResources` 会把 `build/resources/env` 复制进应用包；设置 `ENV_ZIP=/path/to/env.zip` 打包时会生成 `build/resources/env/env.zip`，首启缺少运行环境时优先自动导入。`sync:env` 会拒绝当前品牌运行根包装目录（如 `.zenmind/`、`.cutej/`）、历史 `zenmind-env/`、裸顶层文件或嵌套 `env/env/` 结构。
-- `build.extraResources` 会把 `build/resources/demo` 复制进应用包；设置 `DEMO=1` 或 `DEMO=true` 打包时会把 `public/webapp-templates/` 同步为内置 demo，未设置时只写 manifest 且不包含 demo 资源。
-- `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
-- `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
-- `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.tar.gz` / `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。
-- 如设置 `DESKTOP_BUILTIN_ASSETS_SOURCE`，`sync:assets` 会优先从该目录扫描 `<service-id>/<archive-file>` 结构的预收集产物，再 fallback 到工作区自动发现。
-- Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
-- 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
-- 如需覆盖已有品牌运行环境（例如 `~/.zenmind` 或 `~/.cutej`），使用 env 包内的显式脚本 `env/scripts/overwrite-env.sh` 或 `env/scripts/overwrite-env.ps1`。Desktop 不会自动调用覆盖脚本，也不提供自动覆盖入口。
-
-## 6. 运维
-### 常用命令
-```bash
-npm run sync:assets
-npm run dev
-npm run build
-npm test
-make release
-npm run dist:mac
-npm run dist:win
-npm run dist:win-docker
-```
-
-### 日志与运行状态
-- 桌面端通过主进程统一管理服务运行状态。
-- 每个服务都会维护 PID 文件和日志文件路径，并在控制中心中展示。
-- 服务实际程序目录位于品牌程序数据根目录的 `services/<service-id>/<version>/` 下，例如 ZenMind 为 Application Support 的 `ZenMind/services/<service-id>/<version>/`，CuteJ 为 `CuteJ/services/<service-id>/<version>/`；配置、状态和日志分别位于 Desktop 配置根目录的 `config/services/`、`state/services/`、`logs/services/`。
-
-### 常见排查
-- 启动失败时，先检查控制中心展示的状态文案、日志文件路径和 PID 文件路径。
-- `agent-container-hub` 无法启动时，优先检查 Docker 或 Podman 是否可用。
-- `agent-platform` 认证使用 `identity-center` 的 JWK public key；Desktop 启动前会 bootstrap identity-center JWK、同步 public key，并通过 identity-center 签发 access token。
-- 若测试失败，请先确认 `build/resources/services` 中的内置资源已同步完成。
+- 平台差异必须显式区分 macOS / Windows，不依赖隐式 fallback。
+- 文件系统和用户目录优先使用 Electron `app.getPath("home")`、`app.getPath("desktop")`、`app.getPath("appData")`。
+- cloud Kanban issue 在 Desktop UI/runtime 中是只读缓存；运行状态同步继续使用 `run.event.append`。
+- 真实 token、私钥、证书、`.env.local` 和本地配置不得提交。
