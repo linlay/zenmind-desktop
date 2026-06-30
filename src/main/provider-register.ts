@@ -50,7 +50,7 @@ type ProviderYaml = {
 };
 
 export type ProviderRegisterResult =
-  | { status: "skipped"; reason: "missing" | "disabled" }
+  | { status: "skipped"; reason: "missing" | "disabled" | "unchanged" }
   | { status: "applied"; providers: string[]; updatedProviders: string[] };
 
 export type ProviderRegisterOptions = {
@@ -399,6 +399,12 @@ export async function ensureProviderRegisterApiKey(
     }
   } else {
     targets = readProviderTargets({ app, providers, platform });
+  }
+  if (!targets.some((target) => target.needsUpdate)) {
+    if (config.enabled === true) {
+      safetyCleanRegister(registerPath, config, platform);
+    }
+    return { status: "skipped", reason: "unchanged" };
   }
 
   const endpoint = normalizeEndpoint(config.endpoint);

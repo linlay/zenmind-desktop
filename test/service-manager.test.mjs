@@ -5710,6 +5710,75 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
   }
 });
 
+test("ensurePreStartRequirements skips provider-register request when provider keys already exist", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-provider-register-existing-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
+  const providersRoot = path.join(getTestRuntimeRootForHome(homeRoot), "registries", "providers");
+  const registerPath = path.join(getTestRuntimeRootForHome(homeRoot), "provider-register.json");
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(providersRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(providersRoot, "th-deepseek.yml"),
+    "key: th-deepseek\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: dk_existing_deepseek_key\ndefaultModel: th-deepseek-v4-flash\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(providersRoot, "th-minimax.yml"),
+    "key: th-minimax\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: dk_existing_minimax_key\ndefaultModel: th-minimax-m3\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    registerPath,
+    `${JSON.stringify({
+      version: 1,
+      enabled: true,
+      endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
+      grant: { type: "jwt", token: "jwt-token" },
+      providers: ["th-deepseek", "th-minimax"]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  writeTestEnv(userDataRoot, platformService.id, "SERVER_PORT=11949\n");
+
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("provider-register should not request apiKey when provider keys already exist");
+  };
+
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+
+    assert.equal(fetchCalls, 0);
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-deepseek.yml"), "utf8"),
+      /^apiKey: dk_existing_deepseek_key$/m
+    );
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
+      /^apiKey: dk_existing_minimax_key$/m
+    );
+    assert.equal(fs.existsSync(registerPath), false);
+  } finally {
+    if (originalFetch === undefined) {
+      delete globalThis.fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements leaves legacy agent-platform auth env untouched", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
