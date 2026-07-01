@@ -23,6 +23,10 @@ import {
   normalizeServiceLifecycleArgsConfig,
   writeServiceLifecycleArgsConfig
 } from "./service-lifecycle-args";
+import {
+  normalizeServicePortDefaultsConfig,
+  writeServicePortDefaultsConfig
+} from "./service-port-defaults";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -468,16 +472,22 @@ function applyWebsiteDefaults(app: App, webs: unknown, legacyWebsites: unknown):
   return "applied";
 }
 
-function applyServiceLifecycleArgsDefaults(
+function applyServiceDefaults(
   app: App,
   serviceDefaults: unknown,
   platform: NodeJS.Platform
 ): Exclude<BootstrapSectionResult, "failed"> {
-  const config = normalizeServiceLifecycleArgsConfig({ services: serviceDefaults }, platform);
-  if (!config) {
+  const lifecycleArgsConfig = normalizeServiceLifecycleArgsConfig({ services: serviceDefaults }, platform);
+  const portDefaultsConfig = normalizeServicePortDefaultsConfig({ services: serviceDefaults }, platform);
+  if (!lifecycleArgsConfig && !portDefaultsConfig) {
     return "absent";
   }
-  writeServiceLifecycleArgsConfig(app, config);
+  if (lifecycleArgsConfig) {
+    writeServiceLifecycleArgsConfig(app, lifecycleArgsConfig);
+  }
+  if (portDefaultsConfig) {
+    writeServicePortDefaultsConfig(app, portDefaultsConfig);
+  }
   return "applied";
 }
 
@@ -538,7 +548,7 @@ export function applyDesktopInitBootstrap(
       tunnelHub: runBootstrapSection("tunnelHub", errors, () => applyTunnelHubDefaults(app, defaults.tunnelHub)),
       webs: runBootstrapSection("webs", errors, () => applyWebsiteDefaults(app, defaults.webs, defaults.websites)),
       assistant: runBootstrapSection("assistant", errors, () => writeAssistantDefaults(app, assistant)),
-      services: runBootstrapSection("services", errors, () => applyServiceLifecycleArgsDefaults(app, defaults.services, platform))
+      services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform))
     };
     const failedSections = getFailedSections(applied);
     removeDesktopInitFile(initPath);
@@ -575,5 +585,5 @@ export const __testInternals = {
   applySsoDefaults,
   applyTunnelHubDefaults,
   applyWebsiteDefaults,
-  applyServiceLifecycleArgsDefaults
+  applyServiceDefaults
 };

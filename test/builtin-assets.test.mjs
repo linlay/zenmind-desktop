@@ -309,11 +309,11 @@ test("syncBuiltinAssets expands Darwin builtin service archives into directories
   assert.ok(platform);
   assert.equal(
     fs.existsSync(path.join(servicesRoot, "agent-platform", platform.assetFileName, "runtime")),
-    false
+    true
   );
 });
 
-test("syncBuiltinAssets tolerates agent-platform archives without the repairable runtime directory", async (t) => {
+test("syncBuiltinAssets rejects agent-platform archives without required runtime directory", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-runtime-"));
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -339,22 +339,17 @@ test("syncBuiltinAssets tolerates agent-platform archives without the repairable
   });
 
   const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-no-runtime-${Date.now()}`);
-  const manifest = syncBuiltinAssets(tempRoot, {
-    os: "darwin",
-    arch: "arm64",
-    brandId: "cutej"
-  });
-  const servicesRoot = path.join(tempRoot, "build", "resources", "services");
-  const platform = manifest.find((service) => service.id === "agent-platform");
-
-  assert.ok(platform);
-  assert.equal(
-    fs.existsSync(path.join(servicesRoot, "agent-platform", platform.assetFileName, "runtime")),
-    false
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /Missing required entries: runtime/u
   );
 });
 
-test("syncBuiltinAssets patches stale agent-platform public key deploy flag", async (t) => {
+test("syncBuiltinAssets rejects stale agent-platform public key deploy flag", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-stale-key-flag-"));
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -389,25 +384,12 @@ test("syncBuiltinAssets patches stale agent-platform public key deploy flag", as
   });
 
   const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-stale-key-flag-${Date.now()}`);
-  const manifest = syncBuiltinAssets(tempRoot, {
-    os: "darwin",
-    arch: "arm64",
-    brandId: "cutej"
-  });
-  const platform = manifest.find((service) => service.id === "agent-platform");
-  assert.ok(platform);
-
-  const programCommonPath = path.join(
-    tempRoot,
-    "build",
-    "resources",
-    "services",
-    "agent-platform",
-    platform.assetFileName,
-    "scripts",
-    "program-common.sh"
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /Detected stale deploy protocol marker "--local-public-key-file"/u
   );
-  const programCommon = fs.readFileSync(programCommonPath, "utf8");
-  assert.match(programCommon, /--public-key-source-file/u);
-  assert.doesNotMatch(programCommon, /--local-public-key-file/u);
 });

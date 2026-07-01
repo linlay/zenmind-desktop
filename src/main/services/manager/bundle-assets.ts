@@ -17,20 +17,6 @@ type SyncedAssetManifestService = {
   assetSignature?: unknown;
 };
 
-const REPAIRABLE_AGENT_PLATFORM_REQUIRED_DIRS = new Set(["runtime"]);
-
-function normalizeRequiredPath(relativePath: string) {
-  return relativePath
-    .replace(/\\/g, "/")
-    .replace(/^\.\/+/u, "")
-    .replace(/\/+$/u, "");
-}
-
-function isRepairableRequiredDirectory(service: ServiceDefinition, relativePath: string) {
-  return service.id === "agent-platform" &&
-    REPAIRABLE_AGENT_PLATFORM_REQUIRED_DIRS.has(normalizeRequiredPath(relativePath));
-}
-
 function getAssetPath(app: App, service: ServiceDefinition) {
   if (!service.desktop.assetFileName) {
     throw new Error(t("service.assetFileNameMissing", { serviceId: service.id }));
@@ -176,7 +162,6 @@ export function readBuiltinAssetSignature(app: App, service: ServiceDefinition) 
 
 export function listMissingRuntimeFiles(service: ServiceDefinition, installDir: string) {
   return service.runtime.requiredPaths.filter((relativePath) =>
-    !isRepairableRequiredDirectory(service, relativePath) &&
     !fs.existsSync(path.join(installDir, relativePath))
   );
 }
@@ -199,9 +184,6 @@ export function listMissingBundleEntries(service: ServiceDefinition, archivePath
 
   const entries = listTarEntries(archivePath);
   const missingEntries = service.runtime.requiredPaths.filter((relativePath) => {
-    if (isRepairableRequiredDirectory(service, relativePath)) {
-      return false;
-    }
     const normalizedRelativePath = relativePath.replace(/\\/g, "/");
     const expectedPath = `${service.desktop.bundleTopLevelDir}/${normalizedRelativePath}`;
     if (entries.has(expectedPath) || entries.has(`${expectedPath}/`)) {
@@ -226,9 +208,6 @@ export function listMissingBundleEntries(service: ServiceDefinition, archivePath
 
 export function listMissingBundleDirectoryEntries(service: ServiceDefinition, directoryPath: string) {
   return service.runtime.requiredPaths.filter((relativePath) => {
-    if (isRepairableRequiredDirectory(service, relativePath)) {
-      return false;
-    }
     const normalizedRelativePath = relativePath.replace(/\\/g, "/");
     return !fs.existsSync(path.join(directoryPath, ...normalizedRelativePath.split("/").filter(Boolean)));
   });

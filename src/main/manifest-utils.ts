@@ -100,6 +100,7 @@ export interface ServiceDefinition extends Manifest {
 export interface NormalizeManifestOptions {
   defaultKind?: ServiceKind;
   desktop?: Partial<ManifestDesktop>;
+  coreServiceDefaultPorts?: Record<string, number>;
 }
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -190,7 +191,15 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
       {
         key: "BIND_ADDR",
         value: "127.0.0.1:{{serviceDefaultPort}}",
-        defaults: ["", "127.0.0.1:11960", "localhost:11960", "127.0.0.1:117079", "localhost:117079"]
+        defaults: [
+          "",
+          "127.0.0.1:7079",
+          "localhost:7079",
+          "127.0.0.1:11960",
+          "localhost:11960",
+          "127.0.0.1:117079",
+          "localhost:117079"
+        ]
       }
     ]
   },
@@ -219,7 +228,7 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
       {
         key: "PORT",
         value: "{{serviceDefaultPort}}",
-        defaults: ["", "11948", "18082", "117080"]
+        defaults: ["", "7080", "11948", "18082", "117080"]
       }
     ],
     urlBindingDefaults: {
@@ -247,7 +256,7 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
       {
         key: "SERVER_PORT",
         value: "{{serviceDefaultPort}}",
-        defaults: ["", "11950", "18080", "9000", "117076"]
+        defaults: ["", "7076", "11950", "18080", "9000", "117076"]
       }
     ]
   }
@@ -294,29 +303,56 @@ function applyTestCoreServicePortBase(
   }));
 }
 
-function getCoreServicePortOverrides(): Record<string, CoreServicePortOverride> {
-  // The defaults are currently shared, but builtin service manifests are platform-specific.
-  if (process.platform === "win32") {
-    return applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
-  }
-
-  if (process.platform === "darwin") {
-    return applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
-  }
-
-  return applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
+function isValidTcpPort(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 65535;
 }
 
-function getCoreServicePortOverride(serviceId: string) {
-  return getCoreServicePortOverrides()[serviceId];
+function applyConfiguredCoreServiceDefaultPorts(
+  overrides: Record<string, CoreServicePortOverride>,
+  defaultPorts: Record<string, number> | undefined
+) {
+  if (!defaultPorts) {
+    return overrides;
+  }
+
+  return Object.fromEntries(Object.entries(overrides).map(([serviceId, override]) => {
+    const defaultPort = defaultPorts[serviceId];
+    return [
+      serviceId,
+      isValidTcpPort(defaultPort)
+        ? {
+            ...override,
+            defaultPort
+          }
+        : override
+    ];
+  }));
+}
+
+function getCoreServicePortOverrides(options: NormalizeManifestOptions = {}): Record<string, CoreServicePortOverride> {
+  // The defaults are currently shared, but builtin service manifests are platform-specific.
+  let overrides: Record<string, CoreServicePortOverride>;
+  if (process.platform === "win32") {
+    overrides = applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
+  } else if (process.platform === "darwin") {
+    overrides = applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
+  } else {
+    overrides = applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
+  }
+
+  return applyConfiguredCoreServiceDefaultPorts(overrides, options.coreServiceDefaultPorts);
+}
+
+function getCoreServicePortOverride(serviceId: string, options: NormalizeManifestOptions = {}) {
+  return getCoreServicePortOverrides(options)[serviceId];
 }
 
 function mergeStringList(left: readonly string[] = [], right: readonly string[] = []) {
   return [...new Set([...left, ...right])];
 }
 
-function applyCoreServiceWebOverride(serviceId: string, web: ManifestWeb) {
-  const override = getCoreServicePortOverride(serviceId);
+function applyCoreServiceWebOverride(serviceId: string, web: ManifestWeb, options: NormalizeManifestOptions) {
+  const override = getCoreServicePortOverride(serviceId, options);
   if (!override) {
     return web;
   }
@@ -328,8 +364,13 @@ function applyCoreServiceWebOverride(serviceId: string, web: ManifestWeb) {
   } satisfies ManifestWeb;
 }
 
-function applyCoreServiceEnvBindingOverrides(serviceId: string, envBindings: ManifestEnvBinding[]) {
-  const override = getCoreServicePortOverride(serviceId);
+function applyCoreServiceEnvBindingOverrides(
+  serviceId: string,
+  envBindings: ManifestEnvBinding[],
+  options: NormalizeManifestOptions,
+  originalWeb: ManifestWeb
+) {
+  const override = getCoreServicePortOverride(serviceId, options);
   if (!override) {
     return envBindings;
   }
@@ -340,11 +381,19 @@ function applyCoreServiceEnvBindingOverrides(serviceId: string, envBindings: Man
     const portBinding = portBindingsByKey.get(binding.key);
     if (portBinding) {
       seenPortBindings.add(binding.key);
+      const originalPortDefault = originalWeb.defaultPort > 0
+        ? portBinding.value.replace("{{serviceDefaultPort}}", String(originalWeb.defaultPort))
+        : "";
       return {
         ...binding,
         value: portBinding.value,
         onlyIfDefault: true,
-        defaults: mergeStringList(binding.defaults, portBinding.defaults)
+        defaults: mergeStringList(
+          binding.defaults,
+          originalPortDefault
+            ? mergeStringList(portBinding.defaults, [originalPortDefault])
+            : portBinding.defaults
+        )
       } satisfies ManifestEnvBinding;
     }
 
@@ -364,11 +413,16 @@ function applyCoreServiceEnvBindingOverrides(serviceId: string, envBindings: Man
     if (seenPortBindings.has(binding.key)) {
       continue;
     }
+    const originalPortDefault = originalWeb.defaultPort > 0
+      ? binding.value.replace("{{serviceDefaultPort}}", String(originalWeb.defaultPort))
+      : "";
     nextBindings.push({
       key: binding.key,
       value: binding.value,
       onlyIfDefault: true,
-      defaults: binding.defaults
+      defaults: originalPortDefault
+        ? mergeStringList(binding.defaults, [originalPortDefault])
+        : binding.defaults
     });
   }
 
@@ -1143,8 +1197,9 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
   const frontend = resolveFrontend(raw);
   const settings = resolvePluginSettings(raw);
   const desktop = resolveDesktop(raw, options, id, frontend, settings);
-  const web = applyCoreServiceWebOverride(id, resolveWeb(raw));
-  const envBindings = applyCoreServiceEnvBindingOverrides(id, desktop.envBindings);
+  const resolvedWeb = resolveWeb(raw);
+  const web = applyCoreServiceWebOverride(id, resolvedWeb, options);
+  const envBindings = applyCoreServiceEnvBindingOverrides(id, desktop.envBindings, options, resolvedWeb);
   const pluginApiVersion = asNumber(raw.pluginApiVersion) ?? 0;
 
   return {

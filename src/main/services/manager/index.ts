@@ -92,8 +92,7 @@ import {
   writeLastRunningServices
 } from "./state-files";
 import {
-  fixShellScriptPermissions,
-  patchProgramCommonForLayeredLayout
+  fixShellScriptPermissions
 } from "./program-layout";
 import {
   computeAssetSignature,
@@ -123,17 +122,14 @@ import {
 } from "./process-identity";
 import {
   AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY,
-  AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
   PROCESS_EXEC_PATH_PLACEHOLDER,
-  applyAgentPlatformWindowsHostShellDefaults,
   ensureLocalCliAcpRelayDesktopConfig,
   normalizeAgentContainerHubEnvContentForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
   normalizeAgentWebclientEnvContentForDesktop,
   normalizePreservedBuiltinEnvForInstall,
-  normalizeShellSourcedAgentPlatformEnvUpdates,
   resolveAcpCommandForDesktop
 } from "./env-normalization";
 import {
@@ -168,10 +164,6 @@ import {
   resolveRuntimePath,
   writeManagedPidFiles
 } from "./pid-files";
-import {
-  normalizeIdentityCenterEnvContentForDesktop,
-  syncIdentityCenterDesktopEnv
-} from "./identity-center-env";
 import {
   captureManagedProcessCleanupSnapshot,
   collectManagedRootPids,
@@ -210,13 +202,6 @@ export {
 const startedThisSession = new Set<ServiceId>();
 const inFlightBuiltinInstalls = new Map<string, Promise<string>>();
 const backgroundStartupPreparationTasks = new Set<Promise<void>>();
-const AGENT_PLATFORM_DEPLOY_DEFAULT_VALUE_ARGS = [
-  ["--ai-vision-general-model-key", "th-minimax-m3"],
-  ["--ai-vision-ocr-model-key", "th-minimax-m3"],
-  ["--ai-web-fetch-model-key", "th-minimax-m3"],
-  ["--coder-model-key", "deepseek-v4-pro"],
-  ["--coder-reasoning-effort", "MEDIUM"]
-] as const;
 
 type ServiceLogStreamCallback = (event: ServiceLogStreamEvent) => void;
 
@@ -366,6 +351,7 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
 ]);
 const MAX_TCP_PORT = 65535;
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
+const AGENT_WEBCLIENT_DESKTOP_ENV_BINDING_KEYS = new Set<string>(["PORT", ...AGENT_WEBCLIENT_PLATFORM_URL_KEYS]);
 const AGENT_PLATFORM_LEGACY_PORT_ENV_KEY = "SERVER_PORT";
 const AGENT_PLATFORM_RUNTIME_CONFIG_RELATIVE_PATH = path.join("configs", "runtime.yml");
 
@@ -436,40 +422,21 @@ function writeAgentPlatformRuntimeServerPort(layout: ServiceLayout, port: number
   fs.writeFileSync(configPath, yaml.dump(nextConfig, { lineWidth: 120, noRefs: true }), "utf8");
 }
 
-function removeEnvFileKeys(content: string, keys: readonly string[]) {
-  const blocked = new Set(keys);
-  const nextLines = content
-    .split(/\r?\n/u)
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        return true;
-      }
-      const separatorIndex = trimmed.indexOf("=");
-      if (separatorIndex <= 0) {
-        return true;
-      }
-      const key = trimmed.slice(0, separatorIndex).trim();
-      return !blocked.has(key);
-    });
-
-  if (nextLines.length === 0) {
-    return "";
-  }
-  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+function isDesktopManagedPlatformPort(port: number | null | undefined) {
+  return Boolean(port && DESKTOP_MANAGED_PLATFORM_URL_PORTS.has(String(port)));
 }
 
-function migrateAgentPlatformLegacyServerPort(
-  layout: ServiceLayout,
-  content: string,
-  options: { overwriteRuntimePort?: boolean } = {}
-) {
-  const env = parseEnvFileContent(content);
-  const legacyPort = parseTcpPortValue(env.get(AGENT_PLATFORM_LEGACY_PORT_ENV_KEY) ?? "");
-  if (legacyPort && (options.overwriteRuntimePort || !readAgentPlatformRuntimeServerPort(layout))) {
-    writeAgentPlatformRuntimeServerPort(layout, legacyPort);
+function syncAgentPlatformDefaultRuntimeServerPort(service: ServiceDefinition, layout: ServiceLayout) {
+  if (service.id !== "agent-platform") {
+    return;
   }
-  return removeEnvFileKeys(content, [AGENT_PLATFORM_LEGACY_PORT_ENV_KEY]);
+  const currentPort = readAgentPlatformRuntimeServerPort(layout);
+  if (currentPort === service.web.defaultPort) {
+    return;
+  }
+  if (!currentPort || isDesktopManagedPlatformPort(currentPort)) {
+    writeAgentPlatformRuntimeServerPort(layout, service.web.defaultPort);
+  }
 }
 
 function getDesktopManagedCommandPort(service: ServiceDefinition, layout: ServiceLayout) {
@@ -510,21 +477,6 @@ async function resolveAgentPlatformDeployPublicKeySourceFile(app: App) {
   throw new Error("auth.publicKey capability did not produce a usable local public key file.");
 }
 
-function appendMissingValueArgs(command: string[], defaults: ReadonlyArray<readonly [string, string]>) {
-  const presentFlags = new Set(
-    command
-      .map((arg) => arg.trim().toLowerCase())
-      .filter((arg) => arg.startsWith("--"))
-  );
-  const nextCommand = [...command];
-  for (const [flag, value] of defaults) {
-    if (!presentFlags.has(flag.toLowerCase())) {
-      nextCommand.push(flag, value);
-    }
-  }
-  return nextCommand;
-}
-
 function appendAgentPlatformDesktopDeployArgs(
   command: string[],
   app: App,
@@ -532,9 +484,8 @@ function appendAgentPlatformDesktopDeployArgs(
   containerHubBaseUrl: string,
   publicKeySourceFile: string
 ) {
-  const commandWithDeployDefaults = appendMissingValueArgs(command, AGENT_PLATFORM_DEPLOY_DEFAULT_VALUE_ARGS);
   return [
-    ...commandWithDeployDefaults,
+    ...command,
     "--output-dir", layout.configDir,
     "--ap-runtime-dir", resolvePreferredAgentPlatformRuntimeRoot(app),
     "--container-hub-base-url", containerHubBaseUrl,
@@ -874,7 +825,6 @@ async function installBuiltinServiceInternal(
       }
       fs.rmSync(finalInstallDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       moveExtractedBuiltinRoot(extractedRoot, finalInstallDir);
-      patchProgramCommonForLayeredLayout(finalInstallDir);
       if (preservedEnv.content) {
         ensureDir(path.dirname(layout.envPath));
         fs.writeFileSync(layout.envPath, preservedEnv.content, "utf8");
@@ -954,7 +904,6 @@ async function initializeServiceInternal(
 
     try {
       fixShellScriptPermissions(installDir);
-      patchProgramCommonForLayeredLayout(layout.programDir);
       prepareServiceExecutionLayout(service, layout);
       const deferDefaultConfigUntilAfterDeploy = service.id === "agent-platform" && Boolean(service.deployCommand);
       if (!deferDefaultConfigUntilAfterDeploy) {
@@ -1553,7 +1502,7 @@ function resolveEnvBindingLiteralValue(app: App, service: ServiceDefinition, val
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
   for (const binding of service.desktop.envBindings) {
     const bindingKey = binding.key;
-    if (service.id === "agent-webclient" && AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS.has(bindingKey)) {
+    if (service.id === "agent-webclient" && !AGENT_WEBCLIENT_DESKTOP_ENV_BINDING_KEYS.has(bindingKey)) {
       continue;
     }
     if (service.id === "agent-platform" && bindingKey === AGENT_PLATFORM_LEGACY_PORT_ENV_KEY) {
@@ -1657,6 +1606,9 @@ function syncCoreServiceDefaultPortEnv(
   if (service.id === "agent-platform") {
     return;
   }
+  if (service.id === "identity-center") {
+    return;
+  }
 
   for (const key of getServicePortEnvKeys(service)) {
     const currentValue = getEnvValueWithUpdates(env, updates, key);
@@ -1696,6 +1648,17 @@ function isDesktopManagedPlatformUrl(
 }
 
 async function getServicePortForEnvSync(app: App, serviceId: ServiceId) {
+  if (serviceId === "agent-platform") {
+    try {
+      const platformService = getService(serviceId);
+      const platformPort = readAgentPlatformRuntimeServerPort(getServiceLayout(app, platformService));
+      if (platformPort) {
+        return platformPort;
+      }
+    } catch {
+      // Fall through to the generic service state lookup.
+    }
+  }
   try {
     const state = await getServiceState(app, serviceId);
     return state.healthMeta.port ?? getService(serviceId).web.defaultPort;
@@ -1760,26 +1723,56 @@ async function syncAgentWebclientPlatformUrls(
   syncAgentWebclientPlatformUrlsToPort(env, updates, platformPort, [], options);
 }
 
-async function syncIdentityCenterAPUpstream(
+function normalizeAgentWebclientEnvFile(layout: ServiceLayout) {
+  const currentContent = fs.existsSync(layout.envPath) ? fs.readFileSync(layout.envPath, "utf8") : "";
+  const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(currentContent);
+  if (normalizedContent !== currentContent) {
+    ensureDir(path.dirname(layout.envPath));
+    fs.writeFileSync(layout.envPath, normalizedContent, "utf8");
+  }
+  return normalizedContent;
+}
+
+async function syncAgentWebclientPlatformUrlsForLayout(
   app: App,
-  env: Map<string, string>,
-  updates: Map<string, string>
+  layout: ServiceLayout,
+  options: { force?: boolean } = {}
 ) {
-  const webclientPort = await getServicePortForEnvSync(app, "agent-webclient");
-  if (!webclientPort) {
-    return;
+  const content = normalizeAgentWebclientEnvFile(layout);
+  const env = parseEnvFileContent(content);
+  const updates = new Map<string, string>();
+  await syncAgentWebclientPlatformUrls(app, env, updates, options);
+
+  for (const [key, value] of updates) {
+    if ((env.get(key) ?? "") === value) {
+      updates.delete(key);
+    }
   }
-  const upstreamBaseURL = `http://127.0.0.1:${webclientPort}`;
-  const upstreamWSURL = `${upstreamBaseURL}/ws`;
-  if (getEnvValueWithUpdates(env, updates, "AP_UPSTREAM_BASE_URL") !== upstreamBaseURL) {
-    updates.set("AP_UPSTREAM_BASE_URL", upstreamBaseURL);
+
+  if (updates.size === 0) {
+    return false;
   }
-  if (getEnvValueWithUpdates(env, updates, "CHAT_WS_UPSTREAM_URL") !== upstreamWSURL) {
-    updates.set("CHAT_WS_UPSTREAM_URL", upstreamWSURL);
+
+  writeEnvFileUpdates(layout.envPath, updates);
+  return true;
+}
+
+async function syncInstalledAgentWebclientPlatformUrls(
+  app: App,
+  options: { force?: boolean } = {}
+) {
+  let webclientService: ServiceDefinition;
+  try {
+    webclientService = getService("agent-webclient");
+  } catch {
+    return false;
   }
-  if (getEnvValueWithUpdates(env, updates, "AP_UPSTREAM_ACCESS_TOKEN")) {
-    updates.set("AP_UPSTREAM_ACCESS_TOKEN", "");
+
+  const webclientLayout = getServiceLayout(app, webclientService);
+  if (!fs.existsSync(webclientLayout.envPath)) {
+    return false;
   }
+  return syncAgentWebclientPlatformUrlsForLayout(app, webclientLayout, options);
 }
 
 async function syncCoreServiceDesktopInitializationConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
@@ -1806,31 +1799,19 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
     }
   }
   if (service.id === "agent-platform") {
-    const migratedContent = migrateAgentPlatformLegacyServerPort(layout, content);
-    const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(migratedContent, layout);
+    const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(content, layout);
     if (normalizedContent !== content) {
       ensureDir(path.dirname(envPath));
       fs.writeFileSync(envPath, normalizedContent, "utf8");
       content = normalizedContent;
     }
+    syncAgentPlatformDefaultRuntimeServerPort(service, layout);
   }
-  if (service.id === "identity-center") {
-    const normalizedContent = normalizeIdentityCenterEnvContentForDesktop(content);
-    if (normalizedContent !== content) {
-      ensureDir(path.dirname(envPath));
-      fs.writeFileSync(envPath, normalizedContent, "utf8");
-      content = normalizedContent;
-    }
-  }
-
   const env = parseEnvFileContent(content);
   const updates = new Map<string, string>();
-  await applyEnvBindings(app, service, env, updates);
-  syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
-
-  if (service.id === "identity-center") {
-    syncIdentityCenterDesktopEnv(layout, content, updates);
-    await syncIdentityCenterAPUpstream(app, env, updates);
+  if (service.id !== "identity-center") {
+    await applyEnvBindings(app, service, env, updates);
+    syncCoreServiceDefaultPortEnv(service, env, updates);
   }
 
   if (service.id === "agent-platform") {
@@ -2096,8 +2077,7 @@ async function collectDesktopCapabilityRequirementIssues(
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
   const envPath = layout.envPath;
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-  const migratedContent = migrateAgentPlatformLegacyServerPort(layout, currentContent);
-  const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(migratedContent, layout);
+  const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent, layout);
   if (normalizedContent !== currentContent) {
     ensureDir(path.dirname(envPath));
     fs.writeFileSync(envPath, normalizedContent, "utf8");
@@ -2108,10 +2088,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   await applyEnvBindings(app, service, env, updates);
   await syncAgentPlatformContainerHubUrl(app, env, updates);
 
-  applyAgentPlatformWindowsHostShellDefaults(env, updates);
-
   if (updates.size > 0) {
-    normalizeShellSourcedAgentPlatformEnvUpdates(updates);
     writeEnvFileUpdates(envPath, updates);
   }
 }
@@ -2119,7 +2096,6 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
   const layout = getServiceLayout(app, service);
   prepareServiceExecutionLayout(service, layout);
-  patchProgramCommonForLayeredLayout(layout.programDir);
 
   if (service.id === "agent-platform") {
     await ensureAgentPlatformDesktopConfig(app, service, layout);
@@ -2131,33 +2107,8 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
-  if (service.id === "identity-center") {
-    const envPath = layout.envPath;
-    const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-    const content = normalizeIdentityCenterEnvContentForDesktop(currentContent);
-    if (content !== currentContent) {
-      ensureDir(path.dirname(envPath));
-      fs.writeFileSync(envPath, content, "utf8");
-    }
-    const env = parseEnvFileContent(content);
-    const updates = new Map<string, string>();
-    syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
-    syncIdentityCenterDesktopEnv(layout, content, updates);
-    await syncIdentityCenterAPUpstream(app, env, updates);
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
-    }
-  }
-
   if (service.id === "agent-webclient") {
-    const envPath = layout.envPath;
-    const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-    const env = parseEnvFileContent(content);
-    const updates = new Map<string, string>();
-    await syncAgentWebclientPlatformUrls(app, env, updates, { force: true });
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
-    }
+    await syncAgentWebclientPlatformUrlsForLayout(app, layout, { force: true });
   }
 
   await applyDesktopCapabilityRequirements(app, service, layout, "preStart");
@@ -2702,14 +2653,23 @@ export async function writeServiceConfig(
   const layout = getServiceLayout(app, service);
 
   const filePath = resolveConfigPath(layout, configFile.relativePath);
-  const nextContent = service.id === "agent-platform" && key === "env"
-    ? normalizeAgentPlatformEnvContentForSave(
-      migrateAgentPlatformLegacyServerPort(layout, content, { overwriteRuntimePort: true })
-    )
-    : content;
+  let nextContent = content;
+  if (service.id === "agent-platform" && key === "env") {
+    nextContent = normalizeAgentPlatformEnvContentForSave(content);
+  }
+  if (service.id === "agent-webclient" && key === "env") {
+    nextContent = normalizeAgentWebclientEnvContentForDesktop(content);
+  }
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, nextContent, "utf8");
   prepareServiceExecutionLayout(service, layout);
+
+  if (service.id === "agent-platform" && key === "env") {
+    await syncInstalledAgentWebclientPlatformUrls(app, { force: true });
+  }
+  if (service.id === "agent-webclient" && key === "env") {
+    await syncAgentWebclientPlatformUrlsForLayout(app, layout, { force: true });
+  }
 
   const message =
     key === "env" && CORE_SERVICE_IDS.has(service.id)
@@ -3606,7 +3566,6 @@ export const __testInternals = {
   probeContainerEngines,
   commandEnv: commandEnvTestInternals,
   fixShellScriptPermissions,
-  patchProgramCommonForLayeredLayout,
   listMissingRuntimeFiles,
   isInstallHealthy,
   listMissingBundleEntries,
@@ -3629,7 +3588,6 @@ export const __testInternals = {
   normalizeAgentPlatformEnvContentForSave,
   normalizeAgentContainerHubEnvContentForDesktop,
   normalizeAgentWebclientEnvContentForDesktop,
-  applyAgentPlatformWindowsHostShellDefaults,
   parseProcessTreeRowsFromPs,
   parseProcessTreeRowsFromPowerShell: parseProcessTreeRowsFromWindowsPowerShell,
   buildProcessTreePids,

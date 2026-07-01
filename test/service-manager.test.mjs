@@ -649,7 +649,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       web: { routePath: "/", portEnvKey: "PORT", defaultPort: ports.webclient },
       envExample: [
         `PORT=${ports.webclient}`,
-        "# DESKTOP_APP=true",
+        "DESKTOP_APP=true",
         "BASE_URL=https://bundle-platform.example.test",
         "# VOICE_BASE_URL=https://bundle-platform.example.test"
       ].join("\n") + "\n",
@@ -1356,7 +1356,7 @@ function createApp(userDataRoot, options = {}) {
 function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
   const previousAssetsRoot = process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
   const previousTestCorePortBase = process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE;
-  const { testCoreServicePortBase, ...createAppOptions } = appOptions;
+  const { servicePortDefaults, testCoreServicePortBase, ...createAppOptions } = appOptions;
   const generatedAssets = assetsRoot ? null : createCurrentPlatformAssetsFixture();
   process.env.DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot ?? generatedAssets.assetsRoot;
   if (testCoreServicePortBase !== undefined) {
@@ -1365,6 +1365,17 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
 
   registryInternals.clearServices();
   const app = createApp(userDataRoot, createAppOptions);
+  if (servicePortDefaults) {
+    const configPath = path.join(getDesktopConfigRoot(app), "service-port-defaults.json");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: Object.fromEntries(Object.entries(servicePortDefaults).map(([serviceId, defaultPort]) => [
+        serviceId,
+        { defaultPort }
+      ]))
+    }, null, 2)}\n`, "utf8");
+  }
   loadBuiltinServices(app);
 
   return {
@@ -1801,18 +1812,28 @@ test("normalizeAgentPlatformEnvContentForSave strips legacy relay settings", () 
   const next = __testInternals.normalizeAgentPlatformEnvContentForSave(
     [
       "SERVER_PORT=11949",
+      "AP_RUNTIME_DIR=/tmp/agent-runtime",
+      "REGISTRIES_DIR=/tmp/agent-runtime/registries",
+      "AUTH_ENABLED=true",
+      "AUTH_LOCAL_PUBLIC_KEY_FILE=/tmp/public-key.pem",
       "LOCAL_CLI_ACP_RELAY_ENABLED=true",
       "LOCAL_CLI_ACP_RELAY_PORT=4555",
       "CLAUDE_CODE_ACP_COMMAND=/custom/bin/claude-code-acp",
-      "CLAUDE_CODE_ACP_ARGS=--stdio"
+      "CLAUDE_CODE_ACP_ARGS=--stdio",
+      "CUSTOM=value"
     ].join("\n")
   );
 
   assert.doesNotMatch(next, /^SERVER_PORT=/m);
+  assert.doesNotMatch(next, /^AP_RUNTIME_DIR=/m);
+  assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
+  assert.doesNotMatch(next, /^AUTH_ENABLED=/m);
+  assert.doesNotMatch(next, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
   assert.doesNotMatch(next, /^LOCAL_CLI_ACP_RELAY_ENABLED=/m);
   assert.doesNotMatch(next, /^LOCAL_CLI_ACP_RELAY_PORT=/m);
   assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_COMMAND=/m);
   assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_ARGS=/m);
+  assert.match(next, /^CUSTOM=value$/m);
 });
 
 test("normalizeAgentWebclientEnvContentForDesktop writes desktop mode without stripping existing keys", () => {
@@ -1820,7 +1841,11 @@ test("normalizeAgentWebclientEnvContentForDesktop writes desktop mode without st
     [
       "PORT=11948",
       "# DESKTOP_APP=true",
+      "NODE_BIN={{processExecPath}}",
+      "NODE_BIN=",
       "NODE_BIN=/tmp/node",
+      "WS_BASE_URL=http://127.0.0.1:11949",
+      "VOICE_BASE_URL=http://127.0.0.1:11953",
       "NODE_ENV=production",
       "DEV_SERVER_ALLOWED_HOSTS=all",
       "BASE_URL=http://127.0.0.1:11949"
@@ -1834,8 +1859,48 @@ test("normalizeAgentWebclientEnvContentForDesktop writes desktop mode without st
   assert.ok(next.indexOf("DESKTOP_APP=true") < next.indexOf("NODE_BIN=/tmp/node"));
   assert.match(next, /^BASE_URL=http:\/\/127\.0\.0\.1:11949$/m);
   assert.match(next, /^NODE_BIN=\/tmp\/node$/m);
+  assert.doesNotMatch(next, /^NODE_BIN=\{\{processExecPath\}\}$/m);
+  assert.doesNotMatch(next, /^NODE_BIN=$/m);
+  assert.doesNotMatch(next, /^WS_BASE_URL=/m);
+  assert.match(next, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:11953$/m);
   assert.match(next, /^NODE_ENV=production$/m);
   assert.match(next, /^DEV_SERVER_ALLOWED_HOSTS=all$/m);
+});
+
+test("agent-webclient env bindings ignore stale NODE_BIN processExecPath defaults", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
+  const webclientService = getBuiltinService("agent-webclient");
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    await installBuiltinService(app, "agent-webclient");
+    webclientService.desktop.envBindings.push({
+      key: "NODE_BIN",
+      value: "{{processExecPath}}"
+    });
+    writeTestEnv(
+      userDataRoot,
+      "agent-webclient",
+      [
+        `PORT=${fixture.ports.webclient}`,
+        `BASE_URL=http://127.0.0.1:${fixture.ports.platform}`,
+        ""
+      ].join("\n")
+    );
+
+    const result = await initializeService(app, "agent-webclient");
+    assert.equal(result.ok, true, result.message);
+
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8");
+    assert.match(envContent, /^DESKTOP_APP=true$/m);
+    assert.match(envContent, new RegExp(`^BASE_URL=http://127\\.0\\.0\\.1:${fixture.ports.platform}$`, "m"));
+    assert.doesNotMatch(envContent, /^NODE_BIN=/m);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("normalizeAgentContainerHubEnvContentForDesktop removes stale relative desktop-managed paths", () => {
@@ -1883,43 +1948,7 @@ test("normalizeAgentContainerHubEnvContentForDesktop removes custom absolute des
   assert.match(next, /^ENGINE=podman$/m);
 });
 
-test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
-  const updates = new Map();
-  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
-    new Map([["SERVER_PORT", "11949"]]),
-    updates,
-    true
-  );
-
-  assert.equal(changed, true);
-  assert.equal(updates.get("AGENT_BASH_SHELL_EXECUTABLE"), "powershell.exe");
-  assert.equal(updates.get("AGENT_BASH_SHELL_ARGS"), "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}");
-});
-
-test("applyAgentPlatformWindowsHostShellDefaults preserves explicit host shell settings", () => {
-  const updates = new Map();
-  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
-    new Map([
-      ["AGENT_BASH_SHELL_EXECUTABLE", "cmd.exe"],
-      ["AGENT_BASH_SHELL_ARGS", "/d,/s,/c,{{command}}"]
-    ]),
-    updates,
-    true
-  );
-
-  assert.equal(changed, false);
-  assert.equal(updates.size, 0);
-});
-
-test("applyAgentPlatformWindowsHostShellDefaults skips non-Windows platforms", () => {
-  const updates = new Map();
-  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(new Map(), updates, false);
-
-  assert.equal(changed, false);
-  assert.equal(updates.size, 0);
-});
-
-test("normalizeAgentPlatformEnvContentForRuntime preserves AP_RUNTIME_DIR while removing managed child dirs", () => {
+test("normalizeAgentPlatformEnvContentForRuntime removes runtime root and managed child dirs", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
@@ -1930,21 +1959,21 @@ test("normalizeAgentPlatformEnvContentForRuntime preserves AP_RUNTIME_DIR while 
     ].join("\n")
   );
 
-  assert.match(next, /^AP_RUNTIME_DIR=\/tmp\/agent-runtime$/m);
   assert.doesNotMatch(next, /^SERVER_PORT=/m);
+  assert.doesNotMatch(next, /^AP_RUNTIME_DIR=/m);
   assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(next, /^MEMORY_DIR=/m);
   assert.doesNotMatch(next, /^CHATS_DIR=/m);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime preserves canonical runtime root", () => {
+test("normalizeAgentPlatformEnvContentForRuntime removes canonical runtime root", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "AP_RUNTIME_DIR=/tmp/current-runtime"
     ].join("\n")
   );
 
-  assert.match(next, /^AP_RUNTIME_DIR=\/tmp\/current-runtime$/m);
+  assert.doesNotMatch(next, /^AP_RUNTIME_DIR=/m);
 });
 
 test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dirs without inferring AP_RUNTIME_DIR", () => {
@@ -2072,6 +2101,31 @@ test("parsePort reads Desktop core service ports from their config keys", () => 
   assert.equal(platformBadPort, fixture.ports.platform);
   restore();
   fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+});
+
+test("loadBuiltinServices applies configured core service default ports", () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const configuredPorts = {
+    "agent-container-hub": 39079,
+    "agent-platform": 39078,
+    "agent-webclient": 39080,
+    "identity-center": 39076
+  };
+  const { restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
+    servicePortDefaults: configuredPorts
+  });
+
+  try {
+    for (const [serviceId, defaultPort] of Object.entries(configuredPorts)) {
+      assert.equal(getBuiltinService(serviceId).web.defaultPort, defaultPort);
+    }
+    assert.equal(getBuiltinService("agent-container-hub").web.portEnvKey, "BIND_ADDR");
+    assert.equal(getBuiltinService("agent-platform").web.portEnvKey, "SERVER_PORT");
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("desktop capability resolution prefers identity-center over legacy auth providers", async () => {
@@ -2375,7 +2429,7 @@ test("desktop managed service commands insert configured lifecycle args before l
   }
 });
 
-test("agent-platform deploy command includes default deploy args before Desktop args", async () => {
+test("agent-platform deploy command only appends Desktop required args", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2387,14 +2441,6 @@ test("agent-platform deploy command includes default deploy args before Desktop 
   };
 
   try {
-    const defaultDeployArgs = [
-      "--ai-vision-general-model-key", "th-minimax-m3",
-      "--ai-vision-ocr-model-key", "th-minimax-m3",
-      "--ai-web-fetch-model-key", "th-minimax-m3",
-      "--coder-model-key", "deepseek-v4-pro",
-      "--coder-reasoning-effort", "MEDIUM"
-    ];
-
     await installBuiltinService(app, "agent-container-hub");
     const service = getBuiltinService("agent-platform");
     const publicKeyPath = path.join(getTestConfigDir(userDataRoot, service.id), "configs", "local-public-key.pem");
@@ -2418,15 +2464,26 @@ test("agent-platform deploy command includes default deploy args before Desktop 
       layout
     );
 
-    assert.deepEqual(command.slice(0, 2 + defaultDeployArgs.length), [
+    assert.deepEqual(command.slice(0, 2), [
       "deploy.sh",
-      "--manifest-arg",
-      ...defaultDeployArgs
+      "--manifest-arg"
     ]);
-    for (const forbidden of ["--config-dir", "--runtime-dir", "--state-dir", "--log-dir", "--port", "--daemon"]) {
+    for (const forbidden of [
+      "--config-dir",
+      "--runtime-dir",
+      "--state-dir",
+      "--log-dir",
+      "--port",
+      "--daemon",
+      "--ai-vision-general-model-key",
+      "--ai-vision-ocr-model-key",
+      "--ai-web-fetch-model-key",
+      "--coder-model-key",
+      "--coder-reasoning-effort"
+    ]) {
       assert.equal(command.includes(forbidden), false, `${forbidden} should not be passed to agent-platform deploy`);
     }
-    assert.ok(command.indexOf("--output-dir") > command.indexOf(defaultDeployArgs.at(-1)));
+    assert.equal(command.indexOf("--output-dir"), 2);
     assertFlag(command, "--output-dir", layout.configDir);
     assertFlag(command, "--ap-runtime-dir", getTestRuntimeRootForHome(app.getPath("home")));
     assertFlag(command, "--container-hub-base-url", `http://127.0.0.1:${fixture.ports.containerHub}`);
@@ -2448,7 +2505,7 @@ test("agent-platform deploy command includes default deploy args before Desktop 
   }
 });
 
-test("agent-platform deploy defaults do not override configured lifecycle args", async () => {
+test("agent-platform deploy passes explicit lifecycle args without backfilling model defaults", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2505,11 +2562,11 @@ test("agent-platform deploy defaults do not override configured lifecycle args",
       ...configuredArgs
     ]);
     assert.deepEqual(findFlagValues(command, "--coder-reasoning-effort"), ["HIGH"]);
-    assert.deepEqual(findFlagValues(command, "--ai-vision-general-model-key"), ["th-minimax-m3"]);
-    assert.deepEqual(findFlagValues(command, "--ai-vision-ocr-model-key"), ["th-minimax-m3"]);
+    assert.deepEqual(findFlagValues(command, "--ai-vision-general-model-key"), []);
+    assert.deepEqual(findFlagValues(command, "--ai-vision-ocr-model-key"), []);
     assert.deepEqual(findFlagValues(command, "--ai-web-fetch-model-key"), ["custom-web-fetch"]);
-    assert.deepEqual(findFlagValues(command, "--coder-model-key"), ["deepseek-v4-pro"]);
-    assert.ok(command.indexOf("--output-dir") > command.indexOf("--coder-model-key"));
+    assert.deepEqual(findFlagValues(command, "--coder-model-key"), []);
+    assert.ok(command.indexOf("--output-dir") > command.indexOf("HIGH"));
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -2714,7 +2771,7 @@ test("service shell PATH probe extracts zsh interactive output through markers",
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, "/bin/zsh");
   assert.equal(calls[0].args[0], "-ilc");
-  assert.match(calls[0].args[1], /__ZENMIND_PATH_BEGIN__/u);
+  assert.equal(calls[0].args[1].includes(commandEnv.SHELL_PATH_BEGIN_MARKER), true);
   assert.equal(calls[0].options.timeout, 3000);
 });
 
@@ -3025,166 +3082,6 @@ test("fixShellScriptPermissions marks shell scripts executable", () => {
 
   assert.equal(fs.statSync(shellPath).mode & 0o777, 0o755);
   assert.equal(fs.statSync(textPath).mode & 0o777, 0o644);
-});
-
-test("patchProgramCommonForLayeredLayout repairs agent-platform deploy diagnostics and no-op HITL migration", () => {
-  const programDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-patch-"));
-  const scriptPath = path.join(programDir, "scripts", "program-common.sh");
-  const deployShPath = path.join(programDir, "deploy.sh");
-  const deployPs1Path = path.join(programDir, "deploy.ps1");
-
-  try {
-    fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
-    fs.writeFileSync(
-      path.join(programDir, "manifest.json"),
-      `${JSON.stringify({ id: "agent-platform" }, null, 2)}\n`,
-      "utf8"
-    );
-    fs.writeFileSync(
-      scriptPath,
-      [
-        "#!/usr/bin/env bash",
-        'LOG_FILE="$LOG_DIR/$APP_NAME.log"',
-        'PID_FILE="$RUN_DIR/$APP_NAME.pid"',
-        'DEPLOY_LOCAL_PUBLIC_KEY_FILE=""',
-        '      --local-public-key-file)',
-        '        DEPLOY_LOCAL_PUBLIC_KEY_FILE="$2"',
-        "program_migrate_hitl_budget_config() {",
-        "  if [[ -f \"$host_tools_file\" ]] && grep -Eq '^[[:space:]]*hitl-default-timeout-ms:' \"$host_tools_file\"; then",
-        "    legacy_file=\"$host_tools_file\"",
-        "  elif [[ -f \"$runtime_file\" ]] && grep -Eq '^[[:space:]]*hitl-default-timeout-ms:' \"$runtime_file\"; then",
-        "    legacy_file=\"$runtime_file\"",
-        "  else",
-        "    return",
-        "  fi",
-        "",
-        "  timeout_ms=\"600000\"",
-        "}"
-      ].join("\n") + "\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      deployShPath,
-      [
-        "#!/usr/bin/env bash",
-        'cd "$SCRIPT_DIR"',
-        "program_validate_bundle",
-        "program_initialize_config",
-        "program_load_env",
-        "program_prepare_runtime_dirs",
-        "",
-        'echo "[program-deploy] bundle validated"',
-        'echo "[program-deploy] backend binary: $BACKEND_BIN"',
-        'echo "[program-deploy] runtime directories prepared under $RUNTIME_ROOT and $RUN_DIR"'
-      ].join("\n") + "\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      deployPs1Path,
-      [
-        "$ErrorActionPreference = 'Stop'",
-        "Set-Location $ScriptDir",
-        "Test-ProgramBundle",
-        "Initialize-ProgramConfig",
-        "Import-ProgramEnv",
-        "Initialize-ProgramRuntime",
-        "",
-        "Write-Host '[program-deploy] bundle validated'",
-        'Write-Host ("[program-deploy] backend binary: {0}" -f $Script:BackendBin)',
-        'Write-Host ("[program-deploy] runtime directories prepared under {0} and {1}" -f $Script:RuntimeRoot, $Script:RunDir)'
-      ].join("\r\n") + "\r\n",
-      "utf8"
-    );
-
-    __testInternals.patchProgramCommonForLayeredLayout(programDir);
-
-    const patched = fs.readFileSync(scriptPath, "utf8");
-    const patchedDeploySh = fs.readFileSync(deployShPath, "utf8");
-    const patchedDeployPs1 = fs.readFileSync(deployPs1Path, "utf8");
-    assert.match(patched, /return 0/);
-    assert.doesNotMatch(patched, /\n\s*return\n\s*fi/);
-    assert.match(patched, /LOG_FILE="\$LOG_DIR\/agent-platform\.log"/);
-    assert.match(patched, /PID_FILE="\$RUN_DIR\/agent-platform\.pid"/);
-    assert.match(patched, /--public-key-source-file/);
-    assert.match(patched, /DEPLOY_PUBLIC_KEY_SOURCE_FILE/);
-    assert.doesNotMatch(patched, /--local-public-key-file/);
-    assert.doesNotMatch(patched, /DEPLOY_LOCAL_PUBLIC_KEY_FILE/);
-    assert.match(patchedDeploySh, /\[program-deploy\] validating bundle/);
-    assert.match(patchedDeploySh, /\[program-deploy\] initializing config under \$CONFIG_DIR/);
-    assert.match(patchedDeploySh, /\[program-deploy\] loading env: \$ENV_FILE/);
-    assert.match(patchedDeploySh, /\[program-deploy\] deploy complete/);
-    assert.match(patchedDeployPs1, /\[program-deploy\] validating bundle/);
-    assert.match(patchedDeployPs1, /\[program-deploy\] initializing config under \{0\}/);
-    assert.match(patchedDeployPs1, /\[program-deploy\] loading env: \{0\}/);
-    assert.match(patchedDeployPs1, /\[program-deploy\] deploy complete/);
-  } finally {
-    fs.rmSync(programDir, { recursive: true, force: true });
-  }
-});
-
-test("patchProgramCommonForLayeredLayout prepares agent-platform runtime dirs under AP_RUNTIME_DIR", () => {
-  const programDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-root-"));
-  const scriptPath = path.join(programDir, "scripts", "program-common.sh");
-  const powerShellPath = path.join(programDir, "scripts", "program-common.ps1");
-  const homeRoot = path.join(programDir, "home");
-  const serviceDataRoot = path.join(programDir, "service-data");
-
-  try {
-    fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
-    fs.writeFileSync(
-      path.join(programDir, "manifest.json"),
-      `${JSON.stringify({ id: "agent-platform" }, null, 2)}\n`,
-      "utf8"
-    );
-    fs.writeFileSync(
-      scriptPath,
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        'BUNDLE_ROOT="$PWD"',
-        'RUNTIME_ROOT="$BUNDLE_ROOT/runtime"',
-        "program_prepare_runtime_dirs() {",
-        '  mkdir -p "$RUNTIME_ROOT/registries/providers" "$RUNTIME_ROOT/tools"',
-        "}"
-      ].join("\n") + "\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      powerShellPath,
-      [
-        "$Script:BundleRoot = $PSScriptRoot",
-        '$Script:RuntimeRoot = Join-Path $Script:BundleRoot "runtime"',
-        "function Initialize-ProgramRuntime {",
-        '  New-Item -ItemType Directory -Path (Join-Path $Script:RuntimeRoot "tools") -Force | Out-Null',
-        "}"
-      ].join("\r\n") + "\r\n",
-      "utf8"
-    );
-
-    __testInternals.patchProgramCommonForLayeredLayout(programDir);
-
-    const patched = fs.readFileSync(scriptPath, "utf8");
-    assert.match(patched, /program_resolve_runtime_root\(\)/);
-    assert.match(patched, /program_prepare_runtime_dirs\(\) \{\n  program_resolve_runtime_root/);
-    if (process.platform !== "win32") {
-      execFileSync("bash", ["-c", '. "$1"; program_prepare_runtime_dirs', "bash", scriptPath], {
-        env: {
-          ...process.env,
-          HOME: homeRoot,
-          AP_RUNTIME_DIR: "~/.zenmind"
-        }
-      });
-      assert.equal(fs.existsSync(path.join(homeRoot, ".zenmind", "tools")), true);
-      assert.equal(fs.existsSync(path.join(serviceDataRoot, "tools")), false);
-    }
-
-    const patchedPowerShell = fs.readFileSync(powerShellPath, "utf8");
-    assert.match(patchedPowerShell, /function Resolve-ProgramRuntimeRoot/);
-    assert.match(patchedPowerShell, /function Initialize-ProgramRuntime \{\r?\n  Resolve-ProgramRuntimeRoot/);
-    assert.match(patchedPowerShell, /\[System\.IO\.Path\]::IsPathRooted\(\$trimmed\)/);
-  } finally {
-    fs.rmSync(programDir, { recursive: true, force: true });
-  }
 });
 
 test("buildProcessTreePids returns descendants before the root process", () => {
@@ -3758,7 +3655,7 @@ test("listMissingRuntimeFiles detects damaged install directories", () => {
 test("installBuiltinService repairs damaged install and preserves env", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-repair-install-"));
   const envContent = "BIND_ADDR=127.0.0.1:12000\n";
-  const desktopEnvContent = "BIND_ADDR=127.0.0.1:7079\n";
+  const desktopEnvContent = envContent;
   const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
 
   fs.mkdirSync(installDir, { recursive: true });
@@ -4036,7 +3933,7 @@ test("installBuiltinService removes stale container hub relative path env during
   await installBuiltinService(app, service.id);
 
   const nextEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
-  assert.match(nextEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
+  assert.match(nextEnv, /^BIND_ADDR=127\.0\.0\.1:12000$/m);
   assert.match(nextEnv, /^ENGINE=auto$/m);
   assert.doesNotMatch(nextEnv, /^STATE_DB_PATH=/m);
   assert.doesNotMatch(nextEnv, /^CONFIG_ROOT=/m);
@@ -4068,7 +3965,7 @@ test("installBuiltinService removes custom absolute container hub path env", asy
   await installBuiltinService(app, service.id);
 
   const nextEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
-  assert.match(nextEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
+  assert.match(nextEnv, /^BIND_ADDR=127\.0\.0\.1:12000$/m);
   assert.doesNotMatch(nextEnv, /^STATE_DB_PATH=/m);
   assert.doesNotMatch(nextEnv, /^CONFIG_ROOT=/m);
   assert.doesNotMatch(nextEnv, /^ROOTFS_ROOT=/m);
@@ -4082,7 +3979,7 @@ test("installBuiltinService removes custom absolute container hub path env", asy
 test("installBuiltinService migrates env from sibling version directories and removes stale versions", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sibling-install-migrate-"));
   const envContent = "BIND_ADDR=127.0.0.1:13000\n";
-  const desktopEnvContent = "BIND_ADDR=127.0.0.1:7079\n";
+  const desktopEnvContent = envContent;
   const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
   const siblingInstallDir = getTestServiceProgramDir(userDataRoot, "agent-container-hub", "v9.9.9");
 
@@ -4595,7 +4492,7 @@ test("installBuiltinService force reinstalls healthy install and preserves env",
   const archiveStartScript = "#!/usr/bin/env bash\necho archived start\n";
   const existingStartScript = "#!/usr/bin/env bash\necho existing start\n";
   const envContent = "BIND_ADDR=127.0.0.1:12000\n";
-  const desktopEnvContent = "BIND_ADDR=127.0.0.1:7079\n";
+  const desktopEnvContent = envContent;
   const { assetsRoot, userDataRoot, installDir, tarBundleRoot } = createContainerHubBundleFixture(tempRoot, {
     startScriptContent: archiveStartScript
   });
@@ -4876,9 +4773,11 @@ test("initializeService recreates Desktop defaults for core services after confi
     );
 
     assert.match(hubEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
-    assert.match(identityCenterEnv, /^SERVER_PORT=7076$/m);
+    assert.doesNotMatch(identityCenterEnv, /^SERVER_PORT=/m);
     assert.doesNotMatch(identityCenterEnv, /^AUTH_DB_PATH=/m);
-    assertIdentityCenterDefaultBcryptEnv(identityCenterEnv);
+    assert.match(identityCenterEnv, /^AUTH_ISSUER=https:\/\/identity\.example\.test$/m);
+    assert.doesNotMatch(identityCenterEnv, /^AP_UPSTREAM_BASE_URL=/m);
+    assert.doesNotMatch(identityCenterEnv, /^CHAT_WS_UPSTREAM_URL=/m);
     assert.doesNotMatch(platformEnv, /^SERVER_PORT=/m);
     assert.match(platformRuntimeConfig, /^  port: \d+$/m);
     assert.doesNotMatch(platformEnv, /^AUTH_ENABLED=/m);
@@ -4915,40 +4814,135 @@ test("initializeService recreates Desktop defaults for core services after confi
   }
 });
 
-test("initializeService repairs partial identity-center env with bcrypt defaults", async () => {
+test("initializeService applies configured core service default ports", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+  const configuredPorts = {
+    "agent-container-hub": 39179,
+    "agent-platform": 39178,
+    "agent-webclient": 39180,
+    "identity-center": 39176
+  };
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
+    servicePortDefaults: configuredPorts
+  });
+  const serviceIds = ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"];
 
   try {
-    await installBuiltinService(app, "identity-center");
-    writeTestEnv(
-      userDataRoot,
-      "identity-center",
-      [
-        "SERVER_PORT=18080",
-        "AUTH_DB_PATH=./data/auth.db",
-        ""
-      ].join("\n")
+    writeTestEnv(userDataRoot, "agent-container-hub", "BIND_ADDR=127.0.0.1:7079\n");
+    writeTestEnv(userDataRoot, "identity-center", "SERVER_PORT=7076\n");
+    writeTestEnv(userDataRoot, "agent-platform", "SERVER_PORT=7078\n");
+    writeTestEnv(userDataRoot, "agent-webclient", "PORT=7080\nBASE_URL=http://127.0.0.1:7078\n");
+
+    for (const serviceId of serviceIds) {
+      await installBuiltinService(app, serviceId);
+      const result = await initializeService(app, serviceId);
+      assert.equal(result.ok, true, `${serviceId} should initialize with configured default ports: ${result.message}`);
+    }
+
+    const hubEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
+    const identityCenterEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
+    const platformEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-platform"), "utf8");
+    const platformRuntimeConfig = fs.readFileSync(
+      path.join(getTestConfigDir(userDataRoot, "agent-platform"), "configs", "runtime.yml"),
+      "utf8"
     );
+    const webclientEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8");
 
-    const result = await initializeService(app, "identity-center");
-    assert.equal(result.ok, true);
-
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
-    assert.match(envContent, /^SERVER_PORT=7076$/m);
-    assert.doesNotMatch(envContent, /^AUTH_DB_PATH=/m);
-    assertIdentityCenterDefaultBcryptEnv(envContent);
-    assert.match(envContent, /^AP_UPSTREAM_BASE_URL=http:\/\/127\.0\.0\.1:\d+$/m);
-    assert.match(envContent, /^CHAT_WS_UPSTREAM_URL=http:\/\/127\.0\.0\.1:\d+\/ws$/m);
-    assert.doesNotMatch(envContent, /^AP_UPSTREAM_ACCESS_TOKEN=.+$/m);
+    assert.match(hubEnv, /^BIND_ADDR=127\.0\.0\.1:39179$/m);
+    assert.match(identityCenterEnv, /^SERVER_PORT=7076$/m);
+    assert.doesNotMatch(platformEnv, /^SERVER_PORT=/m);
+    assert.match(platformRuntimeConfig, /^  port: 39178$/m);
+    assert.match(platformEnv, /^AP_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:39179$/m);
+    assert.match(webclientEnv, /^PORT=39180$/m);
+    assert.match(webclientEnv, /^BASE_URL=http:\/\/127\.0\.0\.1:39178$/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 
-test("ensurePreStartRequirements replaces unsafe identity-center bcrypt values", async () => {
+test("initializeService preserves custom core service ports when defaults are configured", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
+    servicePortDefaults: {
+      "agent-container-hub": 39279,
+      "agent-platform": 39278,
+      "agent-webclient": 39280,
+      "identity-center": 39276
+    }
+  });
+  const serviceIds = ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"];
+
+  try {
+    writeTestEnv(userDataRoot, "agent-container-hub", "BIND_ADDR=127.0.0.1:39379\n");
+    writeTestEnv(userDataRoot, "identity-center", "SERVER_PORT=39376\n");
+    writeTestEnv(userDataRoot, "agent-webclient", "PORT=39380\nBASE_URL=https://platform.example.test\n");
+    const runtimePath = path.join(getTestConfigDir(userDataRoot, "agent-platform"), "configs", "runtime.yml");
+    fs.mkdirSync(path.dirname(runtimePath), { recursive: true });
+    fs.writeFileSync(runtimePath, "server:\n  port: 39378\n", "utf8");
+
+    for (const serviceId of serviceIds) {
+      await installBuiltinService(app, serviceId);
+      const result = await initializeService(app, serviceId);
+      assert.equal(result.ok, true, `${serviceId} should preserve custom ports: ${result.message}`);
+    }
+
+    assert.match(
+      fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8"),
+      /^BIND_ADDR=127\.0\.0\.1:39379$/m
+    );
+    assert.match(
+      fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8"),
+      /^SERVER_PORT=39376$/m
+    );
+    assert.match(fs.readFileSync(runtimePath, "utf8"), /^  port: 39378$/m);
+    assert.match(
+      fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8"),
+      /^PORT=39380$/m
+    );
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("initializeService leaves existing identity-center env untouched", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+
+  try {
+    await installBuiltinService(app, "identity-center");
+    const originalContent = [
+      "AUTH_DB_PATH=./data/auth.db",
+      "AP_UPSTREAM_ACCESS_TOKEN=keep-existing-token",
+      ""
+    ].join("\n");
+    writeTestEnv(
+      userDataRoot,
+      "identity-center",
+      originalContent
+    );
+
+    const result = await initializeService(app, "identity-center");
+    assert.equal(result.ok, true);
+
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
+    assert.equal(envContent, originalContent);
+    assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
+    assert.doesNotMatch(envContent, /^AUTH_ADMIN_PASSWORD_BCRYPT=/m);
+    assert.doesNotMatch(envContent, /^AUTH_APP_MASTER_PASSWORD_BCRYPT=/m);
+    assert.doesNotMatch(envContent, /^AP_UPSTREAM_BASE_URL=/m);
+    assert.doesNotMatch(envContent, /^CHAT_WS_UPSTREAM_URL=/m);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("ensurePreStartRequirements leaves identity-center env untouched", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
@@ -4956,52 +4950,54 @@ test("ensurePreStartRequirements replaces unsafe identity-center bcrypt values",
 
   try {
     await installBuiltinService(app, service.id);
+    const originalContent = [
+      "SERVER_PORT=18080",
+      "AUTH_DB_PATH=./data/auth.db",
+      `AUTH_ADMIN_PASSWORD_BCRYPT=${TEST_IDENTITY_CENTER_BCRYPT}`,
+      "AUTH_APP_MASTER_PASSWORD_BCRYPT=not-a-bcrypt-hash",
+      "AP_UPSTREAM_BASE_URL=https://existing-upstream.example.test",
+      "CHAT_WS_UPSTREAM_URL=wss://existing-upstream.example.test/ws",
+      ""
+    ].join("\n");
     writeTestEnv(
       userDataRoot,
       service.id,
-      [
-        "SERVER_PORT=18080",
-        `AUTH_ADMIN_PASSWORD_BCRYPT=${TEST_IDENTITY_CENTER_BCRYPT}`,
-        "AUTH_APP_MASTER_PASSWORD_BCRYPT=not-a-bcrypt-hash",
-        ""
-      ].join("\n")
+      originalContent
     );
 
     await __testInternals.ensurePreStartRequirements(app, service);
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
-    assertIdentityCenterDefaultBcryptEnv(envContent);
-    assert.doesNotMatch(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT=${escapeRegExp(TEST_IDENTITY_CENTER_BCRYPT)}$`, "m"));
+    assert.equal(envContent, originalContent);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 
-test("initializeService preserves custom valid identity-center bcrypt values", async () => {
+test("initializeService preserves custom identity-center bcrypt values without adding missing defaults", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
 
   try {
     await installBuiltinService(app, "identity-center");
+    const originalContent = [
+      `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_CUSTOM_BCRYPT}'`,
+      ""
+    ].join("\n");
     writeTestEnv(
       userDataRoot,
       "identity-center",
-      [
-        "SERVER_PORT=18080",
-        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_CUSTOM_BCRYPT}'`,
-        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_IDENTITY_CENTER_CUSTOM_BCRYPT}'`,
-        ""
-      ].join("\n")
+      originalContent
     );
 
     const result = await initializeService(app, "identity-center");
     assert.equal(result.ok, true);
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "identity-center"), "utf8");
-    assert.match(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_CUSTOM_BCRYPT)}'$`, "m"));
-    assert.match(envContent, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_IDENTITY_CENTER_CUSTOM_BCRYPT)}'$`, "m"));
+    assert.equal(envContent, originalContent);
+    assert.doesNotMatch(envContent, /^AUTH_APP_MASTER_PASSWORD_BCRYPT=/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -5029,42 +5025,43 @@ test("readServiceConfig returns template content without creating target file", 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("writeServiceConfig migrates agent-platform SERVER_PORT into runtime config", async () => {
+test("writeServiceConfig removes agent-platform SERVER_PORT without migrating runtime config", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
   const platformService = getBuiltinService("agent-platform");
+  const runtimePath = path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "runtime.yml");
 
   try {
     await installBuiltinService(app, "agent-platform");
+    fs.mkdirSync(path.dirname(runtimePath), { recursive: true });
+    fs.writeFileSync(runtimePath, "server:\n  port: 7900\n", "utf8");
     const result = await writeServiceConfig(
       app,
       "agent-platform",
       "env",
-      "SERVER_PORT=7901\nAUTH_ENABLED=true\n"
+      "SERVER_PORT=7901\nAUTH_ENABLED=true\nCUSTOM=value\n"
     );
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    const runtimeContent = fs.readFileSync(
-      path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "runtime.yml"),
-      "utf8"
-    );
+    const runtimeContent = fs.readFileSync(runtimePath, "utf8");
 
-    assert.equal(result.service.healthMeta.port, 7901);
-    assert.equal(result.service.healthMeta.webUrl, "http://127.0.0.1:7901");
-    assert.equal(envContent, "AUTH_ENABLED=true\n");
-    assert.match(runtimeContent, /^  port: 7901$/m);
+    assert.equal(result.service.healthMeta.port, 7900);
+    assert.equal(result.service.healthMeta.webUrl, "http://127.0.0.1:7900");
+    assert.equal(envContent, "CUSTOM=value\n");
+    assert.match(runtimeContent, /^  port: 7900$/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 
-test("writeServiceConfig does not sync agent webclient upstream urls after agent platform port save", async () => {
+test("writeServiceConfig ignores removed agent-platform SERVER_PORT when syncing webclient BASE_URL", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
   const webclientService = getBuiltinService("agent-webclient");
   const webclientEnvPath = getTestEnvPath(userDataRoot, webclientService.id);
+  const platformUrl = `http://127.0.0.1:${fixture.ports.platform}`;
 
   try {
     await installBuiltinService(app, "agent-platform");
@@ -5083,14 +5080,15 @@ test("writeServiceConfig does not sync agent webclient upstream urls after agent
 
     await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=7901\n");
     let envContent = fs.readFileSync(webclientEnvPath, "utf8");
-    assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
-    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
+    assert.match(envContent, /^DESKTOP_APP=true$/m);
+    assert.match(envContent, new RegExp(`^BASE_URL=${escapeRegExp(platformUrl)}$`, "m"));
+    assert.doesNotMatch(envContent, /^WS_BASE_URL=/m);
     assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
 
     await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=7903\n");
     envContent = fs.readFileSync(webclientEnvPath, "utf8");
-    assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
-    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
+    assert.match(envContent, new RegExp(`^BASE_URL=${escapeRegExp(platformUrl)}$`, "m"));
+    assert.doesNotMatch(envContent, /^WS_BASE_URL=/m);
     assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
 
     await writeServiceConfig(
@@ -5101,13 +5099,19 @@ test("writeServiceConfig does not sync agent webclient upstream urls after agent
         "PORT=7080",
         "BASE_URL=https://platform.example.test",
         "WS_BASE_URL=http://127.0.0.1:7903",
-        "VOICE_BASE_URL=http://127.0.0.1:9999"
+        "VOICE_BASE_URL=http://127.0.0.1:9999",
+        "NODE_BIN={{processExecPath}}"
       ].join("\n") + "\n"
     );
+    envContent = fs.readFileSync(webclientEnvPath, "utf8");
+    assert.match(envContent, new RegExp(`^BASE_URL=${escapeRegExp(platformUrl)}$`, "m"));
+    assert.doesNotMatch(envContent, /^WS_BASE_URL=/m);
+    assert.doesNotMatch(envContent, /^NODE_BIN=/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:9999$/m);
+
     await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=7904\n");
     envContent = fs.readFileSync(webclientEnvPath, "utf8");
-    assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
-    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
+    assert.match(envContent, new RegExp(`^BASE_URL=${escapeRegExp(platformUrl)}$`, "m"));
     assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:9999$/m);
   } finally {
     restore();
@@ -5121,6 +5125,7 @@ test("writeServiceConfig saves core env content without automatic port migration
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
   const platformService = getBuiltinService("agent-platform");
   const webclientService = getBuiltinService("agent-webclient");
+  const platformRuntimePath = path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "runtime.yml");
 
   try {
     await installBuiltinService(app, "agent-platform");
@@ -5137,16 +5142,10 @@ test("writeServiceConfig saves core env content without automatic port migration
     let envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
     assert.match(envContent, /^AP_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:117079$/m);
-    assert.match(envContent, /^AUTH_ENABLED=false$/m);
+    assert.doesNotMatch(envContent, /^AUTH_ENABLED=/m);
 
-    await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=18081\n");
-    envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    const runtimeContent = fs.readFileSync(
-      path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "runtime.yml"),
-      "utf8"
-    );
-    assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-    assert.match(runtimeContent, /^  port: 18081$/m);
+    fs.mkdirSync(path.dirname(platformRuntimePath), { recursive: true });
+    fs.writeFileSync(platformRuntimePath, "server:\n  port: 18081\n", "utf8");
 
     await installBuiltinService(app, "agent-webclient");
     const result = await writeServiceConfig(
@@ -5167,8 +5166,9 @@ test("writeServiceConfig saves core env content without automatic port migration
     assert.equal(result.service.healthMeta.port, 7902);
     assert.match(result.message, /重启服务后生效/u);
     assert.match(envContent, /^PORT=7902$/m);
-    assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
-    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:117078$/m);
+    assert.match(envContent, /^DESKTOP_APP=true$/m);
+    assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:18081$/m);
+    assert.doesNotMatch(envContent, /^WS_BASE_URL=/m);
     assert.match(envContent, /^VOICE_BASE_URL=http:\/\/localhost:11949$/m);
     assert.match(envContent, /^NODE_BIN=\/tmp\/stale-node$/m);
     assert.match(envContent, /^NODE_ENV=development$/m);
@@ -5779,7 +5779,7 @@ test("ensurePreStartRequirements skips provider-register request when provider k
   }
 });
 
-test("ensurePreStartRequirements leaves legacy agent-platform auth env untouched", async () => {
+test("ensurePreStartRequirements removes legacy agent-platform auth env", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const homeRoot = path.join(fixture.tempRoot, "home");
@@ -5789,6 +5789,7 @@ test("ensurePreStartRequirements leaves legacy agent-platform auth env untouched
   });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
+  const platformPublicKeyPath = path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "local-public-key.pem");
   const customPublicKeyPath = path.join(fixture.tempRoot, "custom", "public-key.pem");
 
   await installBuiltinService(app, "identity-center");
@@ -5797,16 +5798,18 @@ test("ensurePreStartRequirements leaves legacy agent-platform auth env untouched
   writeTestEnv(
     userDataRoot,
     platformService.id,
-    `SERVER_PORT=11949\nAUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath}\n`,
+    `SERVER_PORT=11949\nAUTH_ENABLED=true\nAUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath}\nCUSTOM=value\n`,
   );
 
   try {
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    assert.match(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
-    assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+    assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
+    assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
     assert.doesNotMatch(envContent, /^AUTH_ENABLED=/m);
+    assert.match(envContent, /^CUSTOM=value$/m);
+    assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "IDENTITY_CENTER_PUBLIC_KEY\n");
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -5975,11 +5978,6 @@ test("initializeService does not migrate legacy relay settings into the local-cl
   assert.doesNotMatch(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
   assert.match(relayEnvContent, /^NODE_BIN=$/m);
 
-  const platformEnvContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.match(platformEnvContent, /^LOCAL_CLI_ACP_RELAY_PORT=4555$/m);
-  assert.match(platformEnvContent, /^CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp$/m);
-  assert.match(platformEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
-
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
@@ -6106,7 +6104,7 @@ test("ensurePreStartRequirements fills default desktop ACP command for the local
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements preserves canonical agent-platform runtime root", async () => {
+test("ensurePreStartRequirements removes legacy agent-platform runtime root", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const tempRoot = fixture.tempRoot;
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -6142,7 +6140,7 @@ test("ensurePreStartRequirements preserves canonical agent-platform runtime root
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.doesNotMatch(envContent, /^SERVER_PORT=/m);
-  assert.match(envContent, new RegExp(`^AP_RUNTIME_DIR=${runtimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  assert.doesNotMatch(envContent, /^AP_RUNTIME_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
 
@@ -7234,20 +7232,21 @@ test("runStartupPreparation prepares packaged first-launch core services in para
   }
 });
 
-test("runStartupPreparation repairs partial identity-center env preserved before packaged bootstrap", async () => {
+test("runStartupPreparation preserves partial identity-center env before packaged bootstrap", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
 
   try {
+    const originalContent = [
+      "SERVER_PORT=18080",
+      "AUTH_DB_PATH=./data/auth.db",
+      ""
+    ].join("\n");
     writeTestEnv(
       userDataRoot,
       "identity-center",
-      [
-        "SERVER_PORT=18080",
-        "AUTH_DB_PATH=./data/auth.db",
-        ""
-      ].join("\n")
+      originalContent
     );
 
     const result = await runStartupPreparation(app);
@@ -7257,9 +7256,7 @@ test("runStartupPreparation repairs partial identity-center env preserved before
     assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["identity-center", "agent-platform", "agent-webclient"]);
-    assert.match(identityCenterEnv, new RegExp(`^SERVER_PORT=${fixture.ports.identityCenter}$`, "m"));
-    assert.doesNotMatch(identityCenterEnv, /^AUTH_DB_PATH=/m);
-    assertIdentityCenterDefaultBcryptEnv(identityCenterEnv);
+    assert.equal(identityCenterEnv, originalContent);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();

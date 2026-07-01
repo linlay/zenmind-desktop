@@ -106,7 +106,7 @@ test("runtime.requiredPaths still drives generic install health", (t) => {
   assert.equal(isInstallHealthy(service, installDir), false);
 });
 
-test("agent-platform runtime directory is repairable when app packaging drops empty dirs", (t) => {
+test("agent-platform runtime directory is required when manifest declares it", (t) => {
   const installDir = createTempDir(t, "zenmind-platform-runtime-dir-health-");
   const service = {
     id: "agent-platform",
@@ -118,11 +118,11 @@ test("agent-platform runtime directory is repairable when app packaging drops em
   writeText(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\n");
 
   assert.equal(fs.existsSync(path.join(installDir, "runtime")), false);
-  assert.deepEqual(listMissingRuntimeFiles(service, installDir), []);
-  assert.equal(isInstallHealthy(service, installDir), true);
+  assert.deepEqual(listMissingRuntimeFiles(service, installDir), ["runtime"]);
+  assert.equal(isInstallHealthy(service, installDir), false);
 });
 
-test("agent-platform bundled directory tolerates missing empty runtime dir only", (t) => {
+test("agent-platform bundled directory requires manifest runtime dir", (t) => {
   const bundleDir = createTempDir(t, "zenmind-platform-bundle-dir-health-");
   const service = {
     id: "agent-platform",
@@ -137,9 +137,9 @@ test("agent-platform bundled directory tolerates missing empty runtime dir only"
   fs.mkdirSync(path.join(bundleDir, "configs"), { recursive: true });
 
   assert.equal(fs.existsSync(path.join(bundleDir, "runtime")), false);
-  assert.deepEqual(listMissingBundleDirectoryEntries(service, bundleDir), []);
+  assert.deepEqual(listMissingBundleDirectoryEntries(service, bundleDir), ["runtime"]);
   fs.rmSync(path.join(bundleDir, "backend"), { recursive: true, force: true });
-  assert.deepEqual(listMissingBundleDirectoryEntries(service, bundleDir), ["backend/agent-platform"]);
+  assert.deepEqual(listMissingBundleDirectoryEntries(service, bundleDir), ["backend/agent-platform", "runtime"]);
 });
 
 test("agent-platform env normalization keeps only Desktop-owned cleanup", () => {
@@ -154,7 +154,7 @@ test("agent-platform env normalization keeps only Desktop-owned cleanup", () => 
     ""
   ].join("\n"));
 
-  assert.match(output, /^AP_RUNTIME_DIR=\/custom\/runtime$/m);
+  assert.doesNotMatch(output, /^AP_RUNTIME_DIR=/m);
   assert.doesNotMatch(output, /^AGENTS_DIR=/m);
   assert.doesNotMatch(output, /^LOCAL_CLI_ACP_RELAY_PORT=/m);
   assert.doesNotMatch(output, /^AGENT_WS_ENABLED=/m);

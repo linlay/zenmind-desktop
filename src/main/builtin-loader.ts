@@ -6,6 +6,7 @@ import { readManifestFile, readManifestFromArchive } from "./manifest-utils";
 import { clearServices, registerService } from "./services/service-registry";
 import { beginStartupTiming } from "./startup-timing";
 import { getServicesRoot } from "./user-paths";
+import { readServicePortDefaultsConfig } from "./service-port-defaults";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
 
@@ -210,7 +211,7 @@ function listInstalledBuiltinManifestPaths(app: App) {
   return manifestPaths.sort((left, right) => left.localeCompare(right));
 }
 
-function loadInstalledBuiltinServices(app: App) {
+function loadInstalledBuiltinServices(app: App, coreServiceDefaultPorts: Record<string, number> | undefined) {
   const latestByServiceId = new Map<string, { manifestPath: string; manifest: Manifest }>();
 
   for (const manifestPath of listInstalledBuiltinManifestPaths(app)) {
@@ -237,7 +238,10 @@ function loadInstalledBuiltinServices(app: App) {
   const loaded = [];
   for (const { manifestPath, manifest } of latestByServiceId.values()) {
     try {
-      loaded.push(registerService(manifest, { defaultKind: "builtin" }));
+      loaded.push(registerService(manifest, {
+        defaultKind: "builtin",
+        coreServiceDefaultPorts
+      }));
     } catch (error) {
       console.warn(`[builtin-loader] failed to register installed builtin manifest ${manifestPath}`, error);
     }
@@ -253,8 +257,15 @@ export function loadBuiltinServices(app: App) {
     clearServices("builtin");
 
     const builtinAssetsRoot = getBuiltinAssetsRoot(app);
+    const portDefaultsConfig = readServicePortDefaultsConfig(app);
+    const coreServiceDefaultPorts = portDefaultsConfig
+      ? Object.fromEntries(Object.entries(portDefaultsConfig.services).map(([serviceId, config]) => [
+          serviceId,
+          config.defaultPort
+        ]))
+      : undefined;
     const registeredByServiceId = new Map(
-      loadInstalledBuiltinServices(app).map((definition) => [definition.id, definition])
+      loadInstalledBuiltinServices(app, coreServiceDefaultPorts).map((definition) => [definition.id, definition])
     );
     const assetIndex = readBuiltinAssetIndex(builtinAssetsRoot);
 
@@ -272,6 +283,7 @@ export function loadBuiltinServices(app: App) {
       }
       const definition = registerService(manifest, {
         defaultKind: "builtin",
+        coreServiceDefaultPorts,
         desktop: {
           assetFileName
         }

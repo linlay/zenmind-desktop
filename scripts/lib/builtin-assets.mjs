@@ -20,7 +20,11 @@ const DARWIN_CODESIGN_IDENTITY_ENV_KEYS = [
   "MACOS_CODESIGN_IDENTITY",
   "CSC_NAME"
 ];
-const REPAIRABLE_AGENT_PLATFORM_REQUIRED_DIRS = new Set(["runtime"]);
+const STALE_AGENT_PLATFORM_DEPLOY_PROTOCOL_MARKERS = [
+  "--local-public-key-file",
+  "DEPLOY_LOCAL_PUBLIC_KEY_FILE",
+  "DeployLocalPublicKeyFile"
+];
 const MACHO_MAGICS = new Set([
   0xfeedface,
   0xcefaedfe,
@@ -775,17 +779,8 @@ function normalizeRequiredPath(relativePath) {
     .replace(/\/+$/u, "");
 }
 
-function isRepairableRequiredDirectory(service, relativePath) {
-  return service.id === "agent-platform" &&
-    REPAIRABLE_AGENT_PLATFORM_REQUIRED_DIRS.has(normalizeRequiredPath(relativePath));
-}
-
 export function findMissingBundleEntries(service, entries) {
   return service.requiredBundleEntries.filter((relativePath) => {
-    if (isRepairableRequiredDirectory(service, relativePath)) {
-      return false;
-    }
-
     const expectedPath = `${service.bundleTopLevelDir}/${normalizeRequiredPath(relativePath)}`;
     if (entries.has(expectedPath)) {
       return false;
@@ -793,6 +788,34 @@ export function findMissingBundleEntries(service, entries) {
     const normalizedPrefix = expectedPath.endsWith("/") ? expectedPath : `${expectedPath}/`;
     return ![...entries].some((entry) => entry.startsWith(normalizedPrefix));
   });
+}
+
+function findStaleAgentPlatformDeployProtocolMarker(content) {
+  if (!content) {
+    return "";
+  }
+  return STALE_AGENT_PLATFORM_DEPLOY_PROTOCOL_MARKERS.find((marker) => content.includes(marker)) || "";
+}
+
+function validateAgentPlatformDeployProtocolText(service, sourceLabel, relativePath, content) {
+  const staleMarker = findStaleAgentPlatformDeployProtocolMarker(content);
+  if (!staleMarker) {
+    return;
+  }
+  throw new Error(
+    `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+      `Detected stale deploy protocol marker ${JSON.stringify(staleMarker)} in ${relativePath}.\n` +
+      `Please rebuild the Desktop-ready agent-platform bundle with --public-key-source-file launcher support.`
+  );
+}
+
+function validateAgentPlatformArchiveDeployProtocol(service, archivePath) {
+  const isWindowsArchive = archivePath.endsWith(".zip");
+  const programCommonPath = isWindowsArchive
+    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
+    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
+  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  validateAgentPlatformDeployProtocolText(service, archivePath, programCommonPath, programCommon);
 }
 
 function validateAgentPlatformBundleArchive(service, archivePath) {
@@ -815,6 +838,7 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
         `Please rebuild the Desktop-ready agent-platform bundle with manifest-declared auth.publicKey startup dependencies.`
     );
   }
+  validateAgentPlatformArchiveDeployProtocol(service, archivePath);
 }
 
 function validateAgentWebclientBundleArchive(service, archivePath) {
@@ -838,10 +862,10 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
 
   const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
   const envExample = readArchiveEntryText(archivePath, envExamplePath);
-  if (!/\bDESKTOP_APP\s*=/u.test(envExample)) {
+  if (!/^DESKTOP_APP\s*=\s*true\s*$/mu.test(envExample)) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Missing DESKTOP_APP in ${envExamplePath}.\n` +
+        `Missing active DESKTOP_APP=true in ${envExamplePath}.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle.`
     );
   }
@@ -1054,54 +1078,22 @@ export function validateBundleArchive(service, archivePath) {
 
 function findMissingBundleDirectoryEntries(service, directoryPath) {
   return service.requiredBundleEntries.filter((relativePath) => {
-    if (isRepairableRequiredDirectory(service, relativePath)) {
-      return false;
-    }
-
     const normalizedRelativePath = normalizeRequiredPath(relativePath);
     return !fs.existsSync(path.join(directoryPath, ...normalizedRelativePath.split("/").filter(Boolean)));
   });
 }
 
-function isDirectoryTreeEmpty(directoryPath) {
-  const stack = [directoryPath];
-  while (stack.length > 0) {
-    const currentPath = stack.pop();
-    for (const entry of readDirectoryEntries(currentPath)) {
-      const entryPath = path.join(currentPath, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(entryPath);
-        continue;
-      }
-      return false;
-    }
-  }
-  return true;
-}
-
-function pruneRepairableAgentPlatformRuntimeDirectory(service, directoryPath) {
-  if (service.id !== "agent-platform") {
-    return;
-  }
-
-  const runtimeDir = path.join(directoryPath, "runtime");
-  if (!fs.existsSync(runtimeDir) || !fs.statSync(runtimeDir).isDirectory()) {
-    return;
-  }
-
-  if (isDirectoryTreeEmpty(runtimeDir)) {
-    fs.rmSync(runtimeDir, { recursive: true, force: true });
+function validateBundleDirectoryContents(service, directoryPath) {
+  if (fs.existsSync(path.join(directoryPath, "README.txt"))) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
+        `Unexpected non-runtime file README.txt in final bundle.\n` +
+        `Please regenerate the upstream release bundle.`
+    );
   }
 }
 
-function patchAgentPlatformDeployProtocol(content) {
-  return content
-    .replace(/--local-public-key-file/gu, "--public-key-source-file")
-    .replace(/DEPLOY_LOCAL_PUBLIC_KEY_FILE/gu, "DEPLOY_PUBLIC_KEY_SOURCE_FILE")
-    .replace(/DeployLocalPublicKeyFile/gu, "DeployPublicKeySourceFile");
-}
-
-function patchAgentPlatformDeployProtocolDirectory(service, directoryPath) {
+function validateAgentPlatformBundleDirectory(service, directoryPath) {
   if (service.id !== "agent-platform") {
     return;
   }
@@ -1111,20 +1103,11 @@ function patchAgentPlatformDeployProtocolDirectory(service, directoryPath) {
     if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
       continue;
     }
-    const current = fs.readFileSync(filePath, "utf8");
-    const next = patchAgentPlatformDeployProtocol(current);
-    if (next !== current) {
-      fs.writeFileSync(filePath, next, "utf8");
-    }
-  }
-}
-
-function validateBundleDirectoryContents(service, directoryPath) {
-  if (fs.existsSync(path.join(directoryPath, "README.txt"))) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${directoryPath}\n` +
-        `Unexpected non-runtime file README.txt in final bundle.\n` +
-        `Please regenerate the upstream release bundle.`
+    validateAgentPlatformDeployProtocolText(
+      service,
+      directoryPath,
+      relativePath,
+      fs.readFileSync(filePath, "utf8")
     );
   }
 }
@@ -1159,6 +1142,7 @@ export function validateBundleDirectory(service, directoryPath) {
   }
 
   validateBundleDirectoryContents(service, directoryPath);
+  validateAgentPlatformBundleDirectory(service, directoryPath);
 }
 
 export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
@@ -1189,12 +1173,10 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
 
     if (isDarwinService) {
       extractArchiveToBundleDirectory(sourcePath, outputAssetPath, service);
-      patchAgentPlatformDeployProtocolDirectory(service, outputAssetPath);
       if (darwinSigningIdentity) {
         signDarwinServiceDirectory(outputAssetPath, service, darwinSigningIdentity);
       }
       validateBundleDirectory(service, outputAssetPath);
-      pruneRepairableAgentPlatformRuntimeDirectory(service, outputAssetPath);
     } else {
       fs.copyFileSync(sourcePath, outputAssetPath);
       validateBundleArchive(service, outputAssetPath);

@@ -1,9 +1,7 @@
-import path from "node:path";
 import type { App } from "electron";
 import type { ServiceDefinition } from "../../manifest-utils";
 import { readEnvFile } from "../../env-file";
 import {
-  resolveConfigPath,
   type ServiceLayout
 } from "./layout";
 import {
@@ -12,24 +10,18 @@ import {
 } from "./env-content";
 import {
   agentPlatformDesktopRuntimePaths,
-  normalizeConfigPath,
   resolveDesktopDir
 } from "./runtime-paths";
 import {
   isCommandBasenameMatch,
   resolveCommandBin
 } from "./command-env";
-import { IS_WINDOWS } from "./command-runner";
 
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
 export const LOCAL_CLI_ACP_RELAY_PLUGIN_ID = "local-cli-acp-relay";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
 const DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS = "60000";
 const DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS = "600000";
-const AGENT_BASH_SHELL_EXECUTABLE_KEY = "AGENT_BASH_SHELL_EXECUTABLE";
-const AGENT_BASH_SHELL_ARGS_KEY = "AGENT_BASH_SHELL_ARGS";
-const WINDOWS_AGENT_BASH_SHELL_EXECUTABLE = "powershell.exe";
-const WINDOWS_AGENT_BASH_SHELL_ARGS = "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}";
 export const AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY = "AP_CONTAINER_HUB_BASE_URL";
 const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
   "LOCAL_CLI_ACP_RELAY_ENABLED",
@@ -45,13 +37,15 @@ const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
 ] as const;
 const AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS = [
   "AGENT_WS_ENABLED",
+  "AP_RUNTIME_DIR",
+  "AUTH_ENABLED",
+  "AUTH_LOCAL_PUBLIC_KEY_FILE",
   "SERVER_PORT"
 ] as const;
 
 export const PROCESS_EXEC_PATH_PLACEHOLDER = "{{processExecPath}}";
-export const AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS = new Set(["WS_BASE_URL", "VOICE_BASE_URL"]);
 const AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES = new Map([["DESKTOP_APP", "true"]]);
-export const AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE = path.join("configs", "local-public-key.pem").replace(/\\/gu, "/");
+const AGENT_WEBCLIENT_DESKTOP_REMOVED_ENV_KEYS = ["WS_BASE_URL"] as const;
 
 export function resolveAcpCommandForDesktop(env: Map<string, string>) {
   const currentAcpCommand = env.get("CLAUDE_CODE_ACP_COMMAND") ?? "";
@@ -85,27 +79,6 @@ export function resolveAcpCommandForDesktop(env: Map<string, string>) {
     );
   }
   return null;
-}
-
-export function applyAgentPlatformWindowsHostShellDefaults(
-  env: Map<string, string>,
-  updates: Map<string, string>,
-  isWindows = IS_WINDOWS
-) {
-  if (!isWindows) {
-    return false;
-  }
-  const hasExplicitShell =
-    Boolean(env.get(AGENT_BASH_SHELL_EXECUTABLE_KEY)?.trim()) ||
-    Boolean(env.get(AGENT_BASH_SHELL_ARGS_KEY)?.trim()) ||
-    updates.has(AGENT_BASH_SHELL_EXECUTABLE_KEY) ||
-    updates.has(AGENT_BASH_SHELL_ARGS_KEY);
-  if (hasExplicitShell) {
-    return false;
-  }
-  updates.set(AGENT_BASH_SHELL_EXECUTABLE_KEY, WINDOWS_AGENT_BASH_SHELL_EXECUTABLE);
-  updates.set(AGENT_BASH_SHELL_ARGS_KEY, WINDOWS_AGENT_BASH_SHELL_ARGS);
-  return true;
 }
 
 function shellQuoteEnvValue(value: string) {
@@ -172,7 +145,7 @@ function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
-function removeAgentWebclientManagedNodeBinPlaceholder(content: string) {
+function removeAgentWebclientManagedNodeBinEnv(content: string) {
   const nextLines = content
     .split(/\r?\n/u)
     .filter((line) => {
@@ -187,7 +160,7 @@ function removeAgentWebclientManagedNodeBinPlaceholder(content: string) {
 
       const key = trimmed.slice(0, separatorIndex).trim();
       const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/gu, "");
-      return key !== "NODE_BIN" || value !== PROCESS_EXEC_PATH_PLACEHOLDER;
+      return key !== "NODE_BIN" || (value !== "" && value !== PROCESS_EXEC_PATH_PLACEHOLDER);
     });
 
   if (nextLines.length === 0) {
@@ -196,31 +169,16 @@ function removeAgentWebclientManagedNodeBinPlaceholder(content: string) {
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
-export function isManagedAgentPlatformAuthLocalPublicKeyPath(value: string, layout?: ServiceLayout) {
-  const unquoted = value.trim().replace(/^['"]|['"]$/gu, "");
-  const normalized = normalizeConfigPath(unquoted);
-  if (
-    normalized === AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE ||
-    normalized === "local-public-key.pem"
-  ) {
-    return true;
-  }
-
-  if (!layout) {
-    return false;
-  }
-
-  const managedPath = normalizeConfigPath(resolveConfigPath(layout, AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE));
-  return normalized === managedPath;
-}
-
 function removeDesktopManagedAgentPlatformEnvContent(content: string) {
   return removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS);
 }
 
 export function normalizeAgentWebclientEnvContentForDesktop(content: string) {
   return upsertEnvFileContent(
-    removeAgentWebclientManagedNodeBinPlaceholder(content),
+    removeEnvKeysFromContent(
+      removeAgentWebclientManagedNodeBinEnv(content),
+      AGENT_WEBCLIENT_DESKTOP_REMOVED_ENV_KEYS
+    ),
     AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES,
     { uncommentExisting: true }
   );

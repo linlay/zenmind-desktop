@@ -115,14 +115,21 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
       }
     ],
     services: {
+      "agent-container-hub": {
+        defaultPort: 7909
+      },
+      "identity-center": {
+        defaultPort: 7906
+      },
       "agent-platform": {
+        defaultPort: 7908,
         lifecycleArgs: {
           deploy: [
-            "--ai-vision-general-model-key", "th-minimax-m3",
-            "--ai-vision-ocr-model-key", "th-minimax-m3",
-            "--ai-web-fetch-model-key", "th-minimax-m3",
-            "--coder-model-key", "deepseek-v4-pro",
-            "--coder-reasoning-effort", "MEDIUM",
+            "--ai-vision-general-model-key", "explicit-vision-general",
+            "--ai-vision-ocr-model-key", "explicit-vision-ocr",
+            "--ai-web-fetch-model-key", "explicit-web-fetch",
+            "--coder-model-key", "explicit-coder-model",
+            "--coder-reasoning-effort", "HIGH",
             "--platform-deploy"
           ],
           start: ["--platform-start", "alpha"],
@@ -130,6 +137,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         },
         platforms: {
           darwin: {
+            defaultPort: 7918,
             lifecycleArgs: {
               deploy: ["--platform-deploy-darwin"],
               start: ["--platform-start-darwin", ""],
@@ -144,6 +152,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         }
       },
       "agent-webclient": {
+        defaultPort: "7910",
         lifecycleArgs: {
           deploy: ["--webclient-deploy"],
           start: ["--ignored-webclient-start"],
@@ -151,9 +160,13 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         }
       },
       "unknown-service": {
+        defaultPort: 7901,
         lifecycleArgs: {
           start: ["--ignored"]
         }
+      },
+      "agent-container-hub-invalid": {
+        defaultPort: 0
       }
     }
   });
@@ -169,6 +182,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
   const serviceLifecycleArgs = readJson(path.join(desktop, "config", "desktop", "service-lifecycle-args.json"));
+  const servicePortDefaults = readJson(path.join(desktop, "config", "desktop", "service-port-defaults.json"));
   const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
   const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
 
@@ -205,11 +219,11 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
       "agent-platform": {
         lifecycleArgs: {
           deploy: [
-            "--ai-vision-general-model-key", "th-minimax-m3",
-            "--ai-vision-ocr-model-key", "th-minimax-m3",
-            "--ai-web-fetch-model-key", "th-minimax-m3",
-            "--coder-model-key", "deepseek-v4-pro",
-            "--coder-reasoning-effort", "MEDIUM",
+            "--ai-vision-general-model-key", "explicit-vision-general",
+            "--ai-vision-ocr-model-key", "explicit-vision-ocr",
+            "--ai-web-fetch-model-key", "explicit-web-fetch",
+            "--coder-model-key", "explicit-coder-model",
+            "--coder-reasoning-effort", "HIGH",
             "--platform-deploy",
             "--platform-deploy-darwin"
           ],
@@ -221,6 +235,23 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         lifecycleArgs: {
           deploy: ["--webclient-deploy"]
         }
+      }
+    }
+  });
+  assert.deepEqual(servicePortDefaults, {
+    schemaVersion: 1,
+    services: {
+      "agent-container-hub": {
+        defaultPort: 7909
+      },
+      "identity-center": {
+        defaultPort: 7906
+      },
+      "agent-platform": {
+        defaultPort: 7918
+      },
+      "agent-webclient": {
+        defaultPort: 7910
       }
     }
   });
@@ -747,6 +778,7 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
   writeDesktopInit(app, "win32", {
     services: {
       "identity-center": {
+        defaultPort: 7906,
         lifecycleArgs: {
           deploy: ["--auth-issuer", "https://zenmind.cc"],
           start: ["--identity-start"]
@@ -758,17 +790,22 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
             }
           },
           win32: {
+            defaultPort: 7907,
             lifecycleArgs: {
               start: ["-IdentityStartWindows"]
             }
           }
         }
+      },
+      "agent-webclient": {
+        defaultPort: 70000
       }
     }
   });
 
   const result = applyDesktopInitBootstrap(app, "win32");
   const serviceLifecycleArgs = readJson(path.join(desktopRoot(homePath), "config", "desktop", "service-lifecycle-args.json"));
+  const servicePortDefaults = readJson(path.join(desktopRoot(homePath), "config", "desktop", "service-port-defaults.json"));
 
   assert.equal(result.applied, true);
   assert.equal(result.appliedResult.services, "applied");
@@ -780,6 +817,14 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
           deploy: ["--auth-issuer", "https://zenmind.cc"],
           start: ["--identity-start", "-IdentityStartWindows"]
         }
+      }
+    }
+  });
+  assert.deepEqual(servicePortDefaults, {
+    schemaVersion: 1,
+    services: {
+      "identity-center": {
+        defaultPort: 7907
       }
     }
   });
