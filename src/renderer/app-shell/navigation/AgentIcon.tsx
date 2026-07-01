@@ -18,6 +18,7 @@ import folderIcon from "../../assets/agent-icons/folder.svg";
 import horizonIcon from "../../assets/agent-icons/horizon.svg";
 import ideIcon from "../../assets/agent-icons/ide.svg";
 import identityIcon from "../../assets/agent-icons/identity.svg";
+import kbaseIcon from "../../assets/agent-icons/kbase.svg";
 import libraryIcon from "../../assets/agent-icons/library.svg";
 import lunaIcon from "../../assets/agent-icons/luna.svg";
 import peaksIcon from "../../assets/agent-icons/peaks.svg";
@@ -47,6 +48,7 @@ export const AGENT_ICON_NAMES = [
   "focus",
   "library",
   "coder",
+  "kbase",
   "canvas",
   "ide",
   "fast",
@@ -80,6 +82,7 @@ const IconMap: Record<(typeof AGENT_ICON_NAMES)[number], string> = {
   focus: focusIcon,
   library: libraryIcon,
   coder: coderIcon,
+  kbase: kbaseIcon,
   canvas: canvasIcon,
   ide: ideIcon,
   fast: fastIcon,

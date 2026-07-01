@@ -1161,8 +1161,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.worker-panel-icon\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(agentIconSource, /defaultIcon from "\.\.\/\.\.\/assets\/agent-icons\/default\.svg"/);
+  assert.match(agentIconSource, /kbaseIcon from "\.\.\/\.\.\/assets\/agent-icons\/kbase\.svg"/);
   assert.match(agentIconSource, /const IconMap/);
-  assert.match(agentIconSource, /AGENT_ICON_NAMES[\s\S]*"folder"[\s\S]*"coder"[\s\S]*"terminal"/);
+  assert.match(agentIconSource, /AGENT_ICON_NAMES[\s\S]*"folder"[\s\S]*"coder"[\s\S]*"kbase"[\s\S]*"terminal"/);
   assert.doesNotMatch(agentIconSource, /BUILTIN_ICON_CONFIGS/);
   assert.doesNotMatch(agentIconSource, /ledger/);
   assert.match(agentIconSource, /isImageIcon/);
