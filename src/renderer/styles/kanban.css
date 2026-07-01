@@ -42,7 +42,9 @@
 }
 
 :root[data-theme="dark"] .kanban-page {
-  --kanban-bg: #0d0e10;
+  --kanban-bg: #111418;
+  background:
+    linear-gradient(180deg, #121316 0%, #0d0e10 44%, var(--kanban-bg) 100%);
   --issue-card: #161719;
   --issue-card-border: rgba(255, 255, 255, 0.08);
   --issue-card-tag-bg: rgba(255, 255, 255, 0.04);
@@ -64,8 +66,6 @@
   --kanban-status-review: #fb923c;
   --kanban-status-completed: #27c346;
   --kanban-shadow: 0 14px 28px rgba(0, 0, 0, 0.26);
-  background:
-    linear-gradient(180deg, #121316 0%, #0d0e10 44%, var(--kanban-bg) 100%);
 }
 
 .kanban-breadcrumb {
@@ -88,7 +88,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 12px 4px 7px;
+  padding: 12px 28px 7px;
   overflow: visible;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   background: rgba(255, 255, 255, 0.76);
@@ -1078,6 +1078,7 @@
 .issue-card {
   position: relative;
   --issue-status-color: var(--kanban-muted);
+  padding: 12px;
   flex: 0 0 auto;
   width: 100%;
   min-height: 96px;
@@ -1091,7 +1092,6 @@
   background: var(--issue-card);
   box-shadow: var(--issue-card-shadow);
   height: auto;
-  padding: 12px 12px 6px;
   cursor: grab;
   touch-action: pan-y;
   transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
@@ -1390,6 +1390,10 @@
 
 .issue-card.is-in_progress {
   --issue-status-color: var(--kanban-status-progress);
+}
+
+.issue-card.is-in_progress .issue-card-status-dot {
+  color: var(--kanban-status-progress);
 }
 
 .issue-card.is-in_review {

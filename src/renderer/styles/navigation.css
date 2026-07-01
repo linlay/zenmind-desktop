@@ -322,6 +322,13 @@
   padding-left: 4px !important;
 }
 
+.settings-page .navigation-order-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(220px, 300px) 124px;
+  align-items: center;
+  gap: 12px;
+}
+
 /* ── Sidebar Nav ── */
 
 .sidebar-nav {

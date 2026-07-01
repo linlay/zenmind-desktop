@@ -27,6 +27,7 @@ import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import { getServiceDisplayName } from "../../service-display";
 import { useI18n } from "../../i18n/useI18n";
 import { useServices } from "../../services/ServicesContext";
+import { registerDesktopActionProvider } from "../../services/desktopActionRegistry";
 import { MarketPageFrame } from "./MarketPageFrame";
 import {
   createMissingMarketApiError,
@@ -569,6 +570,39 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     await refreshServices();
     await loadMarket(force);
   }
+
+  useEffect(() => {
+    return registerDesktopActionProvider(async (request) => {
+      if (request.action !== "desktop.market.importSkill" && request.action !== "desktop.market.importSandboxImage") {
+        return null;
+      }
+      const methodName = request.action === "desktop.market.importSkill" ? "importSkill" : "importSandboxImage";
+      setIsImporting(true);
+      try {
+        const command = getMarketMethod(methodName);
+        if (!command) {
+          throw createMissingMarketApiError(methodName, t);
+        }
+        const result = await command();
+        setFeedback(result.message);
+        await refreshEverything(true);
+        return { ok: true, result };
+      } catch (reason) {
+        console.warn(`[market-storefront] ${methodName} desktop action failed`, reason);
+        const message = normalizeError(reason);
+        setFeedback(message);
+        return {
+          ok: false,
+          error: {
+            code: "market_action_failed",
+            message
+          }
+        };
+      } finally {
+        setIsImporting(false);
+      }
+    });
+  }, [t]);
 
   async function runMarketAction(item: MarketItem, actionName: "install" | "update" | "uninstall") {
     setBusyItemId(item.id);

@@ -502,7 +502,7 @@ export class KanbanDesktopWsClient {
       this.issueEventsReady = true;
       await this.flushQueuedIssueEvents();
       await this.flushQueuedDeliveries();
-      await this.pullCommandDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
+      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
       this.options.onConnected?.();
     } catch (error) {
       this.snapshotReady = wasSnapshotReady;
@@ -650,7 +650,7 @@ export class KanbanDesktopWsClient {
       this.issueEventsReady = true;
       await this.flushQueuedIssueEvents();
       await this.flushQueuedDeliveries();
-      await this.pullCommandDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
+      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
       this.options.onConnected?.();
     } catch (error) {
       this.options.onDebug?.(errorMessage(error));
@@ -816,7 +816,7 @@ export class KanbanDesktopWsClient {
     });
   }
 
-  private async pullCommandDeliveries(afterDeliverySeq: number) {
+  private async pullDeliveries(afterDeliverySeq: number) {
     let nextAfter = Math.max(0, Math.floor(afterDeliverySeq));
     for (;;) {
       const result = await this.request<{ items?: unknown[]; hasMore?: boolean; nextDeliverySeq?: number }>("sync.pull", {

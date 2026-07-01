@@ -2723,9 +2723,9 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.moveIssue"/);
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.syncIssueAutomation"/);
   assert.match(kanbanSync, /syncKanbanIssueAutomation/);
-  assert.match(kanbanSync, /\/api\/admin\/automations\/create/);
-  assert.match(kanbanSync, /\/api\/admin\/automations\/update/);
-  assert.match(kanbanSync, /\/api\/admin\/automations\/delete/);
+  assert.match(kanbanSync, /\/api\/automation\/create/);
+  assert.match(kanbanSync, /\/api\/automation\/update/);
+  assert.match(kanbanSync, /\/api\/automation\/delete/);
   assert.doesNotMatch(kanbanSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(assistantRuntime, /createKanbanRuntime/);
   assert.match(assistantRuntime, /state\.kanbanRuntime\?\.sendAssistantEvent\(event\)/);

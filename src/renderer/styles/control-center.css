@@ -1334,8 +1334,8 @@
   display: block;
   width: 100%;
   flex: 1 1 auto;
-  height: clamp(420px, calc(100dvh - 320px), 760px);
-  min-height: 420px;
+  height: clamp(360px, calc(100dvh - 320px), 760px);
+  min-height: 360px;
   box-sizing: border-box;
   margin: 0;
   padding: 14px 16px;

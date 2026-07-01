@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, SunOutlined } from "@ant-design/icons";
-import { Button, Form, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
+import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import { ControlCenterPage, PluginsPage } from "../control-center/ControlCenterPage";
@@ -149,7 +149,8 @@ const WEBSITE_NEW_ID = "__new__";
 
 function SettingsDebugTextAreaField({ label, value, readOnly = false, onChange }: SettingsDebugTextAreaFieldProps) {
   return (
-    <Form.Item className="settings-debug-field" label={label} colon={false} layout="vertical">
+    <label className="settings-debug-field">
+      <span>{label}</span>
       <Input.TextArea
         className="settings-debug-textarea"
         value={value}
@@ -157,7 +158,7 @@ function SettingsDebugTextAreaField({ label, value, readOnly = false, onChange }
         spellCheck={false}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
       />
-    </Form.Item>
+    </label>
   );
 }
 
@@ -3286,7 +3287,8 @@ export function SettingsPage({
     t
   ]);
 
-  async function handleSaveGeneralDeviceName() {
+  async function handleSaveGeneralDeviceName(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     const previousSettings = generalSettings;
     const nextSettings = {
       ...generalSettings,
@@ -3423,7 +3425,8 @@ export function SettingsPage({
     setNotice((current) => current?.sectionId === "websites" ? null : current);
   }
 
-  async function handleSaveWebsiteItem() {
+  async function handleSaveWebsiteItem(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     const creating = selectedWebsiteId === WEBSITE_NEW_ID || !selectedWebsite;
     setWebsitePending(true);
     try {
@@ -3530,7 +3533,8 @@ export function SettingsPage({
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
 
-  async function handleSaveWebappItem() {
+  async function handleSaveWebappItem(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     if (!selectedWebapp) {
       return;
     }
@@ -3804,7 +3808,8 @@ export function SettingsPage({
     }
   }
 
-  async function handleSaveControlCloudConfig() {
+  async function handleSaveControlCloudConfig(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     await saveControlCloudConfig({
       ...savedControlCloudConfigRef.current,
       serverUrl: controlCloudConfig.serverUrl
@@ -3818,7 +3823,8 @@ export function SettingsPage({
     }, { preserveDraftFields: true });
   }
 
-  async function handleSaveMarketSettings() {
+  async function handleSaveMarketSettings(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     setMarketSettingsSaving(true);
     try {
       const settings = await window.electronAPI.market.saveSettings({
@@ -3884,7 +3890,8 @@ export function SettingsPage({
     }
   }
 
-  async function handleSaveTunnelHubSettings() {
+  async function handleSaveTunnelHubSettings(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     setTunnelHubSaving(true);
     try {
       const result = await window.electronAPI.settings.saveTunnelHubSettings({
@@ -4165,10 +4172,9 @@ export function SettingsPage({
         const copyDeviceIdLabel = deviceIdCopied ? t("settings.general.deviceIdCopied") : t("settings.general.copyDeviceId");
         return (
           <div className="settings-appearance-panel" aria-label={t("settings.general.panelAria")}>
-            <Form
+            <form
               className="settings-control-form settings-device-form"
-              requiredMark={false}
-              onFinish={() => void handleSaveGeneralDeviceName()}
+              onSubmit={(event) => void handleSaveGeneralDeviceName(event)}
             >
               <div className="settings-control-row">
                 <span className="settings-control-row-label">{t("settings.general.desktopDeviceName")}</span>
@@ -4205,7 +4211,7 @@ export function SettingsPage({
                   </Tooltip>
                 </div>
               </div>
-            </Form>
+            </form>
             <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
                 <strong>{t("settings.general.preventSleepWhileRunning")}</strong>
@@ -4418,12 +4424,8 @@ export function SettingsPage({
                 />
               </div>
               <div className="settings-item-form desktop-pet-agent-form">
-                <Form.Item
-                  className="desktop-pet-agent-field"
-                  label={t("settings.quickAssistant.defaultAgent")}
-                  colon={false}
-                  layout="vertical"
-                >
+                <label className="desktop-pet-agent-field">
+                  <span>{t("settings.quickAssistant.defaultAgent")}</span>
                   <span className="desktop-pet-agent-select-wrap">
                     <Select
                       classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -4448,7 +4450,7 @@ export function SettingsPage({
                       ]}
                     />
                   </span>
-                </Form.Item>
+                </label>
               </div>
             </div>
           </>
@@ -4456,11 +4458,7 @@ export function SettingsPage({
       case "kanban":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
-            <Form
-              className="settings-control-form"
-              requiredMark={false}
-              onFinish={() => void handleSaveControlCloudConfig()}
-            >
+            <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
               <div className="settings-appearance-row settings-kanban-server-url-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("kanban.cloud.serverUrl")}</strong>
@@ -4488,16 +4486,15 @@ export function SettingsPage({
                   {t("common.save")}
                 </Button>
               </div>
-            </Form>
+            </form>
           </div>
         );
       case "market":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.market.panelAria")}>
-            <Form
+            <form
               className="settings-control-form"
-              requiredMark={false}
-              onFinish={() => void handleSaveMarketSettings()}
+              onSubmit={(event) => void handleSaveMarketSettings(event)}
             >
               <div className="settings-control-row">
                 <span className="settings-control-row-label">{t("settings.market.apiBaseUrl")}</span>
@@ -4519,7 +4516,7 @@ export function SettingsPage({
                   {t("common.save")}
                 </Button>
               </div>
-            </Form>
+            </form>
           </div>
         );
       case "control":
@@ -4540,12 +4537,11 @@ export function SettingsPage({
         return (
           <div className="settings-control-config-stack">
             <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
-              <Form
+              <form
                 className="settings-control-form"
-                requiredMark={false}
-                onFinish={() => void handleSaveTunnelHubSettings()}
+                onSubmit={(event) => void handleSaveTunnelHubSettings(event)}
               >
-                <div className="settings-control-row">
+                <label className="settings-control-row">
                   <span className="settings-control-row-label">{t("settings.tunnelHub.relayUrl")}</span>
                   <Input
                     className="settings-control-row-control"
@@ -4554,7 +4550,7 @@ export function SettingsPage({
                     placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
                     disabled={tunnelHubSaving}
                   />
-                </div>
+                </label>
                 {tunnelHubSettings.publicHost ? (
                   <div className="settings-control-field settings-readonly-stack">
                     <small>{t("settings.tunnelHub.publicHost")}: <code>{tunnelHubSettings.publicHost}</code></small>
@@ -4570,7 +4566,7 @@ export function SettingsPage({
                     {t("common.save")}
                   </Button>
                 </div>
-              </Form>
+              </form>
             </div>
             <div className="settings-item-card settings-mobile-pairing-card">
               <div className="settings-item-header settings-mobile-pairing-header">
@@ -4921,18 +4917,12 @@ export function SettingsPage({
                       </div>
                     </div>
                   </div>
-                  <Form
+                  <form
                     className="web-detail-form"
-                    layout="vertical"
-                    requiredMark={false}
-                    onFinish={() => void handleSaveWebsiteItem()}
+                    onSubmit={(event) => void handleSaveWebsiteItem(event)}
                   >
-                    <Form.Item
-                      className="web-detail-form-item"
-                      label={t("settings.websites.displayName")}
-                      colon={false}
-                      required
-                    >
+                    <label className="web-detail-form-item">
+                      <span>{t("settings.websites.displayName")}</span>
                       <Input
                         className="settings-control-row-control"
                         value={websiteLabel}
@@ -4942,13 +4932,9 @@ export function SettingsPage({
                         maxLength={24}
                         required
                       />
-                    </Form.Item>
-                    <Form.Item
-                      className="web-detail-form-item"
-                      label={t("settings.websites.url")}
-                      colon={false}
-                      required
-                    >
+                    </label>
+                    <label className="web-detail-form-item">
+                      <span>{t("settings.websites.url")}</span>
                       <Input
                         className="settings-control-row-control"
                         value={websiteUrl}
@@ -4957,12 +4943,9 @@ export function SettingsPage({
                         aria-label={t("settings.websites.url")}
                         required
                       />
-                    </Form.Item>
-                    <Form.Item
-                      className="web-detail-form-item"
-                      label={t("settings.websites.agentEnhancement")}
-                      colon={false}
-                    >
+                    </label>
+                    <label className="web-detail-form-item">
+                      <span>{t("settings.websites.agentEnhancement")}</span>
                       <span className="settings-control-row-select desktop-pet-agent-select-wrap">
                         <Select
                           classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -4974,7 +4957,7 @@ export function SettingsPage({
                           options={renderAgentSelectOptions(websiteAgentKey)}
                         />
                       </span>
-                    </Form.Item>
+                    </label>
                     <div className="web-detail-actions">
                       <Button type="primary" htmlType="submit" disabled={websitePending} loading={websitePending}>
                         {websitePending
@@ -4992,7 +4975,7 @@ export function SettingsPage({
                         </Button>
                       ) : null}
                     </div>
-                  </Form>
+                  </form>
                 </section>
               </article>
             </div>
@@ -5102,18 +5085,12 @@ export function SettingsPage({
                         </Button>
                       </div>
                     </div>
-                    <Form
+                    <form
                       className="web-detail-form"
-                      layout="vertical"
-                      requiredMark={false}
-                      onFinish={() => void handleSaveWebappItem()}
+                      onSubmit={(event) => void handleSaveWebappItem(event)}
                     >
-                      <Form.Item
-                        className="web-detail-form-item"
-                        label={t("settings.websites.displayName")}
-                        colon={false}
-                        required
-                      >
+                      <label className="web-detail-form-item">
+                        <span>{t("settings.websites.displayName")}</span>
                         <Input
                           className="settings-control-row-control"
                           value={webappLabel}
@@ -5123,12 +5100,9 @@ export function SettingsPage({
                           maxLength={24}
                           required
                         />
-                      </Form.Item>
-                      <Form.Item
-                        className="web-detail-form-item"
-                        label={t("settings.websites.agentEnhancement")}
-                        colon={false}
-                      >
+                      </label>
+                      <label className="web-detail-form-item">
+                        <span>{t("settings.websites.agentEnhancement")}</span>
                         <span className="settings-control-row-select desktop-pet-agent-select-wrap">
                           <Select
                             classNames={SETTINGS_SELECT_CLASS_NAMES}
@@ -5140,7 +5114,7 @@ export function SettingsPage({
                             options={renderAgentSelectOptions(webappAgentKey)}
                           />
                         </span>
-                      </Form.Item>
+                      </label>
                       <div className="web-detail-actions">
                         <Button type="primary" htmlType="submit" disabled={webappPending} loading={webappPending}>
                           {webappPending ? t("settings.websites.updating") : t("settings.websites.save")}
@@ -5165,7 +5139,7 @@ export function SettingsPage({
                           <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
                         )}
                       </div>
-                    </Form>
+                    </form>
                   </section>
 
                   <section className="config-panel web-detail-card">

@@ -21,6 +21,11 @@ export const DESKTOP_ACTION_DEFINITIONS = [
 
   { name: "desktop.web.listSurfaces", kind: "read", category: "web", description: "List Desktop web surfaces." },
   { name: "desktop.web.getActiveSurface", kind: "read", category: "web", description: "Read the active Desktop web surface." },
+  { name: "desktop.web.getPageContext", kind: "read", category: "web", description: "Read the current Desktop web page context." },
+  { name: "desktop.web.readPageData", kind: "read", category: "web", description: "Read structured content from the current Desktop web page." },
+  { name: "desktop.web.extractStructured", kind: "read", category: "web", description: "Extract structured data from the current Desktop web page." },
+  { name: "desktop.web.interactElement", kind: "execute", category: "web", description: "Interact with an element in the current Desktop web page." },
+  { name: "desktop.web.executeScript", kind: "execute", category: "web", description: "Execute a script in the current Desktop web page." },
   { name: "desktop.web.activateSurface", kind: "execute", category: "web", description: "Activate a Desktop web surface." },
   { name: "desktop.web.navigate", kind: "execute", category: "web", description: "Navigate a Desktop web tab to a URL." },
   { name: "desktop.web.reload", kind: "execute", category: "web", description: "Reload a Desktop web tab." },
@@ -38,6 +43,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.webapp.stop", kind: "execute", category: "web", description: "Stop a local webapp." },
   { name: "desktop.web.webapp.restart", kind: "execute", category: "web", description: "Restart a local webapp." },
   { name: "desktop.web.webapp.open", kind: "execute", category: "web", description: "Start and open a local webapp." },
+  { name: "desktop.web.webapps.installAndOpen", kind: "execute", category: "web", description: "Install and open a website app." },
   { name: "desktop.web.webapp.installAndOpen", kind: "execute", category: "web", description: "Install and open a website app." },
 
   { name: "desktop.controlCenter.listServices", kind: "read", category: "controlCenter", description: "List Desktop services." },

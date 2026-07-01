@@ -30,8 +30,8 @@ const LEGACY_LAYOUT_ENV_KEY_SET = new Set(LEGACY_LAYOUT_ENV_KEYS);
 const HOST_INHERITED_ENV_KEYS = ["__CFBundleIdentifier", "PWD"] as const;
 const SHELL_PATH_PROBE_TIMEOUT_MS = 3000;
 const DEFAULT_SHELL_PROBE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
-const SHELL_PATH_BEGIN_MARKER = "__ZENMIND_PATH_BEGIN__";
-const SHELL_PATH_END_MARKER = "__ZENMIND_PATH_END__";
+const SHELL_PATH_BEGIN_MARKER = "__DESKTOP_PATH_BEGIN__";
+const SHELL_PATH_END_MARKER = "__DESKTOP_PATH_END__";
 const RAW_PATH_PRINT_COMMAND = "printf '%s' \"$PATH\"";
 
 function listExistingDirs(paths: string[]) {

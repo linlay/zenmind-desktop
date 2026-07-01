@@ -2542,12 +2542,7 @@ export function AppSidebar({
         expanded={expanded}
         onExpand={(val) => handleAssistantAgentExpand(agent, val)}
         headerButtonProps={{
-          className: [
-            "assistant-worker-header",
-            selected ? "is-active" : "",
-          ]
-            .filter(Boolean)
-            .join(" "),
+          className: "assistant-worker-header",
           onContextMenu: (event) => handleAgentContextMenu(event, agent),
           ...getSidebarRovingItemProps(
             createSidebarAgentFocusId(agent.agentKey),

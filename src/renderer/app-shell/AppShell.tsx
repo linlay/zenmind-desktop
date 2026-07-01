@@ -234,6 +234,10 @@ function getKanbanAwareFallbackPath(kanbanEnabled: boolean) {
   return kanbanEnabled ? "/kanban" : "/control-center";
 }
 
+function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boolean) {
+  return !kanbanEnabled && isKanbanNavigationPath(targetPath) ? "/control-center" : targetPath;
+}
+
 function isSettingsRedirectRoute(targetPath: string) {
   return (targetPath.split("?")[0] || "/") === "/control-center";
 }
@@ -1659,6 +1663,7 @@ export function AppShell() {
   }
 
   function requestSidebarNavigation(targetPath: string) {
+    targetPath = resolveKanbanAwareNavigationPath(targetPath, kanbanEnabled);
     if (targetPath === currentRoute) {
       return false;
     }
@@ -1680,6 +1685,7 @@ export function AppShell() {
   }
 
   function navigateWithSidebarHistory(targetPath: string, direction: "back" | "forward") {
+    targetPath = resolveKanbanAwareNavigationPath(targetPath, kanbanEnabled);
     if (targetPath === currentRoute) {
       return;
     }
