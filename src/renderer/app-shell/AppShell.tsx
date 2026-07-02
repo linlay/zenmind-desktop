@@ -945,6 +945,12 @@ export function AppShell() {
     setAssistantDockOpenPath(location.pathname);
   }
 
+  function closeAssistantDock() {
+    setAssistantDockOpenPath(null);
+    setAssistantDockOpenRequest(null);
+    assistantDockOpenRequestPathRef.current = null;
+  }
+
   async function handleEnvImport() {
     setEnvImportBusy(true);
     setEnvImportError("");
@@ -2752,11 +2758,7 @@ export function AppShell() {
           sidebarNavigationCanGoBack={sidebarNavigationHistory.back.length > 0}
           sidebarNavigationCanGoForward={sidebarNavigationHistory.forward.length > 0}
           onOpenAssistantDock={() => openAssistantDock()}
-          onCloseAssistantDock={() => {
-            setAssistantDockOpenPath(null);
-            setAssistantDockOpenRequest(null);
-            assistantDockOpenRequestPathRef.current = null;
-          }}
+          onCloseAssistantDock={closeAssistantDock}
           onDesktopSsoLogin={handleDesktopSsoLogin}
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
@@ -2807,6 +2809,7 @@ export function AppShell() {
             mounted={shouldMountBuiltinBrowserSurface}
             assistantDockOpen={assistantCopilotOpen}
             onOpenAssistantDock={() => openAssistantDock()}
+            onCloseAssistantDock={closeAssistantDock}
           />
           <WebSurfaceHost
             activeEntryKey={activeWebEntryKey}
@@ -2814,6 +2817,7 @@ export function AppShell() {
             mountedEntryKeys={mountedWebEntryKeys}
             assistantDockOpen={assistantCopilotOpen}
             onOpenAssistantDock={() => openAssistantDock()}
+            onCloseAssistantDock={closeAssistantDock}
           />
           <Routes>
             <Route
@@ -2887,6 +2891,7 @@ export function AppShell() {
                   itemMap={experimentalItemMap}
                   assistantDockOpen={assistantCopilotOpen}
                   onOpenAssistantDock={() => openAssistantDock()}
+                  onCloseAssistantDock={closeAssistantDock}
                 />
               }
             />
@@ -2918,11 +2923,6 @@ export function AppShell() {
         nativeDialogVisible={nativeDialogVisible}
         openRequest={assistantDockOpenRequest}
         resolvedAgentKey={resolvedCopilotAgentKey}
-        onClose={() => {
-          setAssistantDockOpenPath(null);
-          setAssistantDockOpenRequest(null);
-          assistantDockOpenRequestPathRef.current = null;
-        }}
         onRunningRunIdChange={setAssistantRunningRunId}
         onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
       />

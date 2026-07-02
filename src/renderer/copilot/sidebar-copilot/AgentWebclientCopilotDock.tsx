@@ -75,7 +75,6 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible,
   openRequest,
   resolvedAgentKey,
-  onClose,
   onRunningRunIdChange,
   onSelectedAgentKeyChange
 }: {
@@ -84,7 +83,6 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible: boolean;
   openRequest: AssistantWorkerOpenRequest | null;
   resolvedAgentKey: string;
-  onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
   onSelectedAgentKeyChange?: (agentKey: string) => void;
 }) {
@@ -141,15 +139,6 @@ export function AgentWebclientCopilotDock({
           />
         </Suspense>
       ) : null}
-      <button
-        type="button"
-        className="agent-webclient-copilot-close"
-        onClick={onClose}
-        aria-label={t("copilotDock.closeAssistant")}
-        title={t("common.close")}
-      >
-        <span aria-hidden="true" />
-      </button>
     </aside>
   );
 }

@@ -46,49 +46,6 @@
   min-height: 0;
 }
 
-.agent-webclient-copilot-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 36;
-  display: inline-flex;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--ink-soft);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-  cursor: pointer;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.agent-webclient-copilot-close span,
-.agent-webclient-copilot-close span::before {
-  display: block;
-  width: 13px;
-  height: 1.5px;
-  border-radius: 999px;
-  background: currentColor;
-  content: "";
-}
-
-.agent-webclient-copilot-close span {
-  transform: rotate(45deg);
-}
-
-.agent-webclient-copilot-close span::before {
-  transform: rotate(90deg);
-}
-
-.agent-webclient-copilot-close:hover {
-  color: var(--accent);
-  border-color: rgba(38, 99, 235, 0.28);
-}
-
 .assistant-history-popover {
   position: absolute;
   top: calc(100% + 10px);
@@ -1659,11 +1616,6 @@
 :root[data-theme="dark"] .agent-webclient-copilot-dock {
   background: var(--embedded-surface-dock-bg);
   box-shadow: var(--embedded-surface-dock-shadow);
-}
-
-:root[data-theme="dark"] .agent-webclient-copilot-close {
-  background: rgba(35, 37, 40, 0.86);
-  border-color: rgba(255, 255, 255, 0.12);
 }
 
 :root[data-theme="dark"] .assistant-message-text,

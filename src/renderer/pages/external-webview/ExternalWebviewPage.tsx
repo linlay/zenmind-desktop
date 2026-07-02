@@ -48,6 +48,7 @@ type ExternalWebviewPageProps = {
   partition?: string;
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
+  onCloseAssistantDock?: () => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -474,7 +475,8 @@ export function ExternalWebviewPage({
   chrome = "browser",
   partition,
   assistantDockOpen = false,
-  onOpenAssistantDock
+  onOpenAssistantDock,
+  onCloseAssistantDock
 }: ExternalWebviewPageProps) {
   const { t } = useI18n();
   const location = useLocation();
@@ -1458,6 +1460,14 @@ export function ExternalWebviewPage({
     event.currentTarget.select();
   };
 
+  const handleAssistantDockToggle = () => {
+    if (assistantDockOpen) {
+      onCloseAssistantDock?.();
+      return;
+    }
+    onOpenAssistantDock?.();
+  };
+
   return (
     <>
     <section className={surfaceClassName} {...surfaceVisibilityProps}>
@@ -1601,8 +1611,10 @@ export function ExternalWebviewPage({
             <button
               type="button"
               className={`external-webview-copilot-button${assistantDockOpen ? " is-active" : ""}`}
-              onClick={() => onOpenAssistantDock()}
-              aria-label={t("sidebar.copilot.open", { appName: PRODUCT_NAME })}
+              onClick={handleAssistantDockToggle}
+              aria-label={assistantDockOpen
+                ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
+                : t("sidebar.copilot.open", { appName: PRODUCT_NAME })}
               aria-expanded={assistantDockOpen}
               title={t("sidebar.copilot.title")}
             >

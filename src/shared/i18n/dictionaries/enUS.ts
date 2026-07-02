@@ -2012,7 +2012,6 @@ export const enUSMessages = {
   "dialog.exportEmbeddedWebsites.title": "Export embedded website config",
 
   "copilotDock.surfaceLabel": "Assistant",
-  "copilotDock.closeAssistant": "Close assistant",
   "quickCopilot.notReady": "Assistant is not ready yet",
   "quickCopilot.starting": "Starting assistant",
   "quickCopilot.restoring": "{appName} is restoring auth, Agent Platform, and Web Copilot services.",

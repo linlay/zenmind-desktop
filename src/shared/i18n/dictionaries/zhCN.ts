@@ -2012,7 +2012,6 @@ export const zhCNMessages = {
   "dialog.exportEmbeddedWebsites.title": "导出内嵌网站配置",
 
   "copilotDock.surfaceLabel": "助手",
-  "copilotDock.closeAssistant": "关闭助手",
   "quickCopilot.notReady": "智能助理暂未就绪",
   "quickCopilot.starting": "正在启动智能助理",
   "quickCopilot.restoring": "{appName} 正在恢复认证、智能体平台和 Web Copilot 服务。",
