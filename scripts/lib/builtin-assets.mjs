@@ -697,6 +697,38 @@ export function assertRequiredDesktopCoreServices(services, platform = {}) {
   );
 }
 
+function serviceFromBundleManifest(manifest, assetPath) {
+  const requiredBundleEntries = Array.isArray(manifest.runtime?.requiredPaths)
+    ? manifest.runtime.requiredPaths.filter((entry) => typeof entry === "string" && entry.trim())
+    : [];
+  if (requiredBundleEntries.length === 0) {
+    throw new Error(`builtin manifest missing runtime.requiredPaths: ${assetPath}`);
+  }
+
+  return {
+    id: manifest.id,
+    sourceDir: path.dirname(assetPath),
+    assetFileName: path.basename(assetPath),
+    bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? manifest.id,
+    version: manifest.version,
+    platform: {
+      os: manifest.platform?.os ?? "",
+      arch: manifest.platform?.arch ?? ""
+    },
+    requiredBundleEntries
+  };
+}
+
+function matchesTargetPlatform(manifest, { os, arch } = {}) {
+  if (os && manifest.platform?.os && manifest.platform.os !== os) {
+    return false;
+  }
+  if (arch && manifest.platform?.arch && manifest.platform.arch !== arch) {
+    return false;
+  }
+  return true;
+}
+
 export function discoverBuiltinServices({ os, arch } = {}) {
   const services = [];
 
@@ -711,32 +743,11 @@ export function discoverBuiltinServices({ os, arch } = {}) {
       continue;
     }
 
-    if (os && manifest.platform?.os && manifest.platform.os !== os) {
-      continue;
-    }
-    if (arch && manifest.platform?.arch && manifest.platform.arch !== arch) {
+    if (!matchesTargetPlatform(manifest, { os, arch })) {
       continue;
     }
 
-    const requiredBundleEntries = Array.isArray(manifest.runtime?.requiredPaths)
-      ? manifest.runtime.requiredPaths.filter((entry) => typeof entry === "string" && entry.trim())
-      : [];
-    if (requiredBundleEntries.length === 0) {
-      throw new Error(`builtin manifest missing runtime.requiredPaths: ${archivePath}`);
-    }
-
-    services.push({
-      id: manifest.id,
-      sourceDir: path.dirname(archivePath),
-      assetFileName: path.basename(archivePath),
-      bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? manifest.id,
-      version: manifest.version,
-      platform: {
-        os: manifest.platform?.os ?? "",
-        arch: manifest.platform?.arch ?? ""
-      },
-      requiredBundleEntries
-    });
+    services.push(serviceFromBundleManifest(manifest, archivePath));
   }
 
   const latestByServiceKey = new Map();
@@ -753,6 +764,77 @@ export function discoverBuiltinServices({ os, arch } = {}) {
     const rightKey = `${right.id}|${right.assetFileName}`;
     return leftKey.localeCompare(rightKey);
   });
+}
+
+function readDirectoryAssetManifest(assetPath) {
+  const manifestPath = path.join(assetPath, "manifest.json");
+  if (!fs.existsSync(manifestPath) || !fs.statSync(manifestPath).isFile()) {
+    return null;
+  }
+  const raw = fs.readFileSync(manifestPath, "utf8");
+  const stripped = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+  return JSON.parse(stripped);
+}
+
+function readSyncedAssetManifest(outputRoot) {
+  const manifestPath = path.join(outputRoot, "manifest.json");
+  if (!fs.existsSync(manifestPath) || !fs.statSync(manifestPath).isFile()) {
+    return null;
+  }
+  const raw = fs.readFileSync(manifestPath, "utf8");
+  const stripped = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+  return JSON.parse(stripped);
+}
+
+function validateExistingSyncedAssets(projectRoot, platform = {}) {
+  const outputRoot = desktopBuiltinServicesDir(projectRoot);
+  const manifest = readSyncedAssetManifest(outputRoot);
+  if (!manifest || !Array.isArray(manifest.services)) {
+    return null;
+  }
+
+  const services = [];
+  const selectedEntries = [];
+  for (const entry of manifest.services) {
+    if (!entry || typeof entry.id !== "string" || typeof entry.assetFileName !== "string") {
+      continue;
+    }
+
+    const assetPath = path.join(outputRoot, entry.id, entry.assetFileName);
+    if (!fs.existsSync(assetPath)) {
+      throw new Error(`synced builtin asset is missing for ${entry.id}: ${assetPath}`);
+    }
+
+    const assetStat = fs.statSync(assetPath);
+    const assetManifest = assetStat.isDirectory()
+      ? readDirectoryAssetManifest(assetPath)
+      : readManifestFromArchive(assetPath);
+    if (!assetManifest || assetManifest.kind !== "builtin") {
+      throw new Error(`synced builtin asset manifest is invalid for ${entry.id}: ${assetPath}`);
+    }
+    if (!matchesTargetPlatform(assetManifest, platform)) {
+      continue;
+    }
+
+    const service = serviceFromBundleManifest(assetManifest, assetPath);
+    services.push(service);
+    if (assetStat.isDirectory()) {
+      validateBundleDirectory(service, assetPath);
+    } else {
+      validateBundleArchive(service, assetPath);
+    }
+
+    selectedEntries.push({
+      id: service.id,
+      version: service.version,
+      assetFileName: path.basename(assetPath),
+      assetType: assetStat.isDirectory() ? "directory" : "archive",
+      assetSignature: computeAssetSignature(assetPath)
+    });
+  }
+
+  assertRequiredDesktopCoreServices(services, platform);
+  return selectedEntries;
 }
 
 function normalizeBuiltinVersion(version) {
@@ -1239,9 +1321,21 @@ export function validateBundleDirectory(service, directoryPath) {
 }
 
 export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
-  const { os, arch, signDarwin = false } = options;
+  const { os, arch, signDarwin = false, useExisting = false } = options;
   const outputRoot = desktopBuiltinServicesDir(projectRoot);
   const platform = { os, arch };
+  if (useExisting) {
+    const existingManifest = validateExistingSyncedAssets(projectRoot, platform);
+    if (existingManifest) {
+      return existingManifest;
+    }
+    throw new Error(
+      `missing current Desktop builtin service assets for ${formatPlatformLabel(platform)}: ${outputRoot}\n` +
+        `Run scripts/build-all-dist.sh${os ? ` --sync-os ${os}` : ""}${arch ? ` --sync-arch ${arch}` : ""} to build and sync them, ` +
+        `or set ${BUILTIN_ASSETS_SOURCE_ENV} to a directory containing the complete release assets.`
+    );
+  }
+
   const services = discoverBuiltinServices(platform);
   const darwinSigningIdentity = signDarwin && services.some((service) => service.platform.os === "darwin")
     ? resolveDarwinDeveloperIdApplicationIdentity()

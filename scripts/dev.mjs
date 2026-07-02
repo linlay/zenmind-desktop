@@ -74,7 +74,12 @@ process.on("SIGTERM", () => shutdown(0));
 const syncOs = syncOsLabel();
 const syncArch = hostArch();
 try {
-  await runAndWait("node", ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`], brandProcessOptions({
+  await runAndWait("node", [
+    "./scripts/sync-builtin-assets.mjs",
+    "--use-existing",
+    `--os=${syncOs}`,
+    `--arch=${syncArch}`
+  ], brandProcessOptions({
     cwd: projectRoot
   }));
 } catch (error) {

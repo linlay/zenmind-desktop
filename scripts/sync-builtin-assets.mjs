@@ -10,6 +10,10 @@ for (let index = 0; index < args.length; index += 1) {
     platform.signDarwin = true;
     continue;
   }
+  if (key === "--use-existing") {
+    platform.useExisting = true;
+    continue;
+  }
   if (key === "--os") {
     platform.os = nextValue;
     if (inlineValue === undefined) {
@@ -27,7 +31,8 @@ for (let index = 0; index < args.length; index += 1) {
 
 try {
   const manifest = syncBuiltinAssets(process.cwd(), platform);
-  console.log(`synced ${manifest.length} builtin service assets${platform.os ? ` (${platform.os}/${platform.arch ?? "*"})` : ""}`);
+  const action = platform.useExisting ? "validated existing" : "synced";
+  console.log(`${action} ${manifest.length} builtin service assets${platform.os ? ` (${platform.os}/${platform.arch ?? "*"})` : ""}`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);

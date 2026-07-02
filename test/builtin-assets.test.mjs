@@ -352,6 +352,87 @@ test("syncBuiltinAssets expands Darwin builtin service archives into directories
   );
 });
 
+test("syncBuiltinAssets can reuse current project builtin asset directories", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-reuse-current-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
+    writeDarwinCoreServiceArchive(sourceRoot, serviceId);
+  }
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-reuse-current-${Date.now()}`);
+  syncBuiltinAssets(tempRoot, {
+    os: "darwin",
+    arch: "arm64"
+  });
+
+  const staleArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-stale-source-stage-"));
+  execFileSync("tar", ["-xzf", staleArchive, "-C", stagingRoot]);
+  writeText(
+    path.join(stagingRoot, "agent-container-hub", "deploy.sh"),
+    [
+      "#!/usr/bin/env bash",
+      "case \"$1\" in",
+      "  --output-dir) shift 2 ;;",
+      "esac",
+      "program_prepare_runtime_dirs"
+    ].join("\n") + "\n"
+  );
+  execFileSync("tar", ["-czf", staleArchive, "-C", stagingRoot, "agent-container-hub"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  const manifest = syncBuiltinAssets(tempRoot, {
+    os: "darwin",
+    arch: "arm64",
+    useExisting: true
+  });
+
+  assert.equal(manifest.every((service) => service.assetType === "directory"), true);
+  assert.equal(manifest.some((service) => service.id === "agent-container-hub"), true);
+});
+
+test("syncBuiltinAssets use-existing mode does not scan workspace releases", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-use-existing-missing-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-use-existing-missing-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      useExisting: true
+    }),
+    /missing current Desktop builtin service assets/u
+  );
+});
+
 test("syncBuiltinAssets allows agent-container-hub runtime helpers outside deploy scripts", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-start-helpers-"));
   t.after(() => {
