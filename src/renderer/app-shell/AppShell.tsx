@@ -13,7 +13,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
@@ -704,6 +704,34 @@ export function AppShell() {
     } else {
       await refreshWebItems().catch(() => undefined);
     }
+    return result;
+  }
+
+  async function removeWebappItem(item: WebEntry): Promise<WebappDeleteResult> {
+    if (item.kind !== "webapp") {
+      return {
+        ok: false,
+        item: null,
+        items: [],
+        message: t("webapp.notFound")
+      };
+    }
+
+    const result = await window.electronAPI.webs.webapps.remove(item.id);
+    if (result.ok) {
+      if (activeWebEntryKey === item.entryKey) {
+        requestSidebarNavigation(BUILTIN_BROWSER_ROUTE);
+      }
+      setMountedWebEntryKeys((current) =>
+        current.filter((entryKey) => entryKey !== item.entryKey)
+      );
+      setWebappRuntimeById((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+    }
+    await refreshWebItems().catch(() => undefined);
     return result;
   }
 
@@ -2777,6 +2805,7 @@ export function AppShell() {
           onCreateWebsiteItem={createWebsiteItem}
           onImportWebappItem={importWebappItem}
           onCloseWebItem={handleCloseWebEntry}
+          onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}

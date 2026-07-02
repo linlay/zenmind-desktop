@@ -3068,6 +3068,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
+  const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const webappStartEffectStart = appShell.indexOf(
     "const item = webItems.find((candidate) => candidate.entryKey === activeWebEntryKey);"
   );
@@ -3120,6 +3123,15 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(webappStartEffect, /webappStartInFlightRef\.current\.add\(item\.id\)/);
   assert.match(webappStartEffect, /window\.electronAPI\.webs\.webapps\.start\(item\.id\)/);
   assert.match(appShell, /async function handleCloseWebEntry\(item: WebEntry\)[\s\S]*?window\.electronAPI\.webs\.webapps\.stop\(item\.id\)/);
+  assert.match(appShell, /async function removeWebappItem\(item: WebEntry\): Promise<WebappDeleteResult>[\s\S]*?window\.electronAPI\.webs\.webapps\.remove\(item\.id\)/);
+  assert.match(appShell, /onRemoveWebappItem=\{removeWebappItem\}/);
+  assert.match(appSidebar, /onRemoveWebappItem\?: \(item: WebEntry\) => Promise<WebappDeleteResult>/);
+  assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<MoreOutlined aria-hidden="true" \/>/);
+  assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
+  assert.match(appSidebar, /void removeWebappItem\(item\)/);
+  assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
+  assert.match(zhCN, /"sidebar\.webapp\.remove": "卸载 WebApp"/);
+  assert.match(enUS, /"sidebar\.webapp\.remove": "Uninstall WebApp"/);
   assert.match(webappStartEffect, /\.finally\(\(\) => \{[\s\S]*?webappStartInFlightRef\.current\.delete\(item\.id\)/);
   assert.doesNotMatch(webappStartEffect, /let cancelled = false/);
   assert.match(externalWebviewPage, /chrome\?: "browser" \| "app"/);

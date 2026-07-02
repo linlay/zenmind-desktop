@@ -10,6 +10,7 @@ import {
 import {
   CloseOutlined,
   LeftOutlined,
+  MoreOutlined,
   RightOutlined,
   SearchOutlined,
   SortAscendingOutlined,
@@ -28,6 +29,7 @@ import type {
   ServiceState,
   WebEntry,
   WebEntryKey,
+  WebappDeleteResult,
   WebappImportResult,
   WebsiteInput,
   WebsiteResult,
@@ -783,6 +785,7 @@ type AppSidebarProps = {
   onImportWebappItem?: () => Promise<WebappImportResult>;
   webOpenEntryKeys?: WebEntryKey[];
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
+  onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
@@ -827,6 +830,7 @@ export function AppSidebar({
   onImportWebappItem,
   webOpenEntryKeys = [],
   onCloseWebItem,
+  onRemoveWebappItem,
   onRequestNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
@@ -860,6 +864,7 @@ export function AppSidebar({
   const [websiteCreatePending, setWebsiteCreatePending] = useState(false);
   const [websiteCreateError, setWebsiteCreateError] = useState("");
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
+  const [webItemRemovePendingId, setWebItemRemovePendingId] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
   const [webItemMenu, setWebItemMenu] =
@@ -1516,7 +1521,11 @@ export function AppSidebar({
   }
 
   function openWebItemMenuAtElement(element: HTMLElement, item: WebEntry) {
-    const position = getMenuPositionFromElement(element, 180, 82);
+    const position = getMenuPositionFromElement(
+      element,
+      180,
+      item.kind === "webapp" ? 126 : 82,
+    );
     setWebItemMenu({ item, ...position });
   }
 
@@ -1556,7 +1565,7 @@ export function AppSidebar({
     }
     if (kind === "web") {
       const item = findWebItem(element.dataset.sidebarWebEntryKey || "");
-      if (!item || !webOpenEntryKeys.includes(item.entryKey)) {
+      if (!item) {
         return false;
       }
       openWebItemMenuAtElement(element, item);
@@ -1915,13 +1924,39 @@ export function AppSidebar({
     await closeWebItem(item);
   }
 
+  async function removeWebappItem(item: WebEntry) {
+    if (item.kind !== "webapp" || webItemRemovePendingId) {
+      return;
+    }
+    if (item.removable === false) {
+      window.alert(t("sidebar.webapp.managedNotRemovable", { name: item.label }));
+      return;
+    }
+    if (!window.confirm(t("sidebar.webapp.removeConfirm", { name: item.label }))) {
+      return;
+    }
+    if (!onRemoveWebappItem) {
+      window.alert(t("sidebar.webapp.removeFailed"));
+      return;
+    }
+
+    setWebItemRemovePendingId(item.id);
+    try {
+      const result = await onRemoveWebappItem(item);
+      if (!result.ok) {
+        window.alert(result.message || t("sidebar.webapp.removeFailed"));
+      }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : t("sidebar.webapp.removeFailed"));
+    } finally {
+      setWebItemRemovePendingId("");
+    }
+  }
+
   function handleWebItemContextMenu(
     event: MouseEvent<HTMLElement>,
     item: WebEntry,
   ) {
-    if (!webOpenEntryKeys.includes(item.entryKey)) {
-      return;
-    }
     event.preventDefault();
     event.stopPropagation();
     openWebItemMenuAtElement(event.currentTarget, item);
@@ -2305,6 +2340,13 @@ export function AppSidebar({
     if (webItem) {
       const isOpen = webOpenEntryKeys.includes(webItem.entryKey);
       const closing = webClosePendingEntryKey === webItem.entryKey;
+      const removePending =
+        webItem.kind === "webapp" && webItemRemovePendingId === webItem.id;
+      const showWebAction = isOpen || webItem.kind === "webapp";
+      const webActionLabel =
+        webItem.kind === "webapp"
+          ? t("sidebar.webapp.actions")
+          : t("sidebar.website.close");
       return (
         <div
           key={item.to}
@@ -2340,23 +2382,37 @@ export function AppSidebar({
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {isOpen ? (
+          {showWebAction ? (
             <span className="sidebar-website-child-actions">
-              <Tooltip content={t("sidebar.website.close")}>
+              <Tooltip content={webActionLabel}>
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-website-child-action"
-                  aria-label={t("sidebar.website.close")}
-                  title={t("sidebar.website.close")}
+                  aria-label={webActionLabel}
+                  title={webActionLabel}
                   tabIndex={-1}
-                  disabled={Boolean(webClosePendingEntryKey)}
-                  onClick={(event) => void handleCloseWebItem(event, webItem)}
+                  disabled={
+                    webItem.kind === "webapp"
+                      ? Boolean(webItemRemovePendingId || webClosePendingEntryKey)
+                      : Boolean(webClosePendingEntryKey)
+                  }
+                  onClick={(event) => {
+                    if (webItem.kind === "webapp") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openWebItemMenuAtElement(event.currentTarget, webItem);
+                      return;
+                    }
+                    void handleCloseWebItem(event, webItem);
+                  }}
                 >
-                  {closing ? (
+                  {closing || removePending ? (
                     <span
                       className="assistant-material-icon is-loading"
                       aria-hidden="true"
                     />
+                  ) : webItem.kind === "webapp" ? (
+                    <MoreOutlined aria-hidden="true" />
                   ) : (
                     <CloseOutlined aria-hidden="true" />
                   )}
@@ -3259,13 +3315,16 @@ export function AppSidebar({
     }
     const item = webItemMenu.item;
     const isOpen = webOpenEntryKeys.includes(item.entryKey);
+    const isWebapp = item.kind === "webapp";
+    const canRemoveWebapp = isWebapp && item.removable !== false;
+    const removePending = isWebapp && webItemRemovePendingId === item.id;
     return createPortal(
       <div
         ref={webItemMenuRef}
         className="assistant-chat-actions-menu sidebar-web-item-actions-menu"
         style={{ left: webItemMenu.x, top: webItemMenu.y }}
         role="menu"
-        aria-label={t("sidebar.website.close")}
+        aria-label={isWebapp ? t("sidebar.webapp.actions") : t("sidebar.website.close")}
       >
         <button
           type="button"
@@ -3278,6 +3337,28 @@ export function AppSidebar({
         >
           <span>{t("sidebar.website.close")}</span>
         </button>
+        {isWebapp ? (
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!canRemoveWebapp || Boolean(webItemRemovePendingId)}
+            title={
+              canRemoveWebapp
+                ? t("sidebar.webapp.remove")
+                : t("sidebar.webapp.managedNotRemovable", { name: item.label })
+            }
+            onClick={() => {
+              setWebItemMenu(null);
+              void removeWebappItem(item);
+            }}
+          >
+            <span>
+              {removePending
+                ? t("sidebar.webapp.removing")
+                : t("sidebar.webapp.remove")}
+            </span>
+          </button>
+        ) : null}
       </div>,
       document.body,
     );
