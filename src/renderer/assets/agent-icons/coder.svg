@@ -1,10 +1,15 @@
 <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs><linearGradient id="g-coder" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#2DD4BF"/><stop offset="100%" stop-color="#0D9488"/></linearGradient></defs>
-  <path d="M7 14 L24 6 L41 14 V34 L24 42 L7 34 Z" fill="url(#g-coder)" opacity="0.18"/>
-  <path d="M9 15 L24 8 L39 15 L24 22 Z" fill="url(#g-coder)" opacity="0.8"/>
-  <path d="M9 15 V32 L24 40 V22 Z" fill="url(#g-coder)" opacity="0.66"/>
-  <path d="M24 22 L39 15 V32 L24 40 Z" fill="url(#g-coder)" opacity="0.42"/>
-  <path d="M16 23 L11 27 L16 31" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
-  <path d="M32 23 L37 27 L32 31" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
-  <path d="M27 22 L21 34" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" opacity="0.92"/>
+  <defs>
+    <linearGradient id="g-coder-agent" x1="7" y1="6" x2="41" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FDE047"/>
+      <stop offset="0.48" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#EA580C"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="10" width="36" height="28" rx="5.5" stroke="url(#g-coder-agent)" stroke-width="3"/>
+  <rect x="2.5" y="20.5" width="4.5" height="11" rx="2.25" fill="url(#g-coder-agent)" opacity="0.58"/>
+  <rect x="41" y="20.5" width="4.5" height="11" rx="2.25" fill="url(#g-coder-agent)" opacity="0.58"/>
+  <path d="M17.9 18.8L12.8 24L17.9 29.2" stroke="#FB923C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30.1 18.8L35.2 24L30.1 29.2" stroke="#FB923C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M25.6 18.2L22.4 29.8" stroke="#FB923C" stroke-width="3.2" stroke-linecap="round"/>
 </svg>

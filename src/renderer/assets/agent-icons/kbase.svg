@@ -1,15 +1,19 @@
 <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs><linearGradient id="g-kbase" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#38BDF8"/><stop offset="100%" stop-color="#4F46E5"/></linearGradient></defs>
-  <path d="M9 18 C14 16 19 17 23 20 V38 C19 34 14 33 9 35 Z" fill="url(#g-kbase)" opacity="0.84"/>
-  <path d="M25 20 C29 17 34 16 39 18 V35 C34 33 29 34 25 38 Z" fill="url(#g-kbase)" opacity="0.58"/>
-  <path d="M23 20 V38" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.72"/>
-  <path d="M13 23 C16 22 19 22 21 24" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.72"/>
-  <path d="M13 28 C16 27 19 27 21 29" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.56"/>
-  <path d="M27 24 C30 22 33 22 36 23" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.72"/>
-  <path d="M27 29 C30 27 33 27 36 28" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.56"/>
-  <line x1="17" y1="12" x2="24" y2="8" stroke="url(#g-kbase)" stroke-width="2" opacity="0.55"/>
-  <line x1="24" y1="8" x2="32" y2="12" stroke="url(#g-kbase)" stroke-width="2" opacity="0.55"/>
-  <circle cx="17" cy="12" r="3.2" fill="url(#g-kbase)" opacity="0.72"/>
-  <circle cx="24" cy="8" r="3.6" fill="url(#g-kbase)" opacity="0.95"/>
-  <circle cx="32" cy="12" r="3.2" fill="url(#g-kbase)" opacity="0.72"/>
+  <defs>
+    <linearGradient id="g-kbase-agent" x1="7" y1="6" x2="41" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="0.48" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="10" width="36" height="28" rx="5.5" stroke="url(#g-kbase-agent)" stroke-width="3"/>
+  <rect x="2.5" y="20.5" width="4.5" height="11" rx="2.25" fill="url(#g-kbase-agent)" opacity="0.56"/>
+  <rect x="41" y="20.5" width="4.5" height="11" rx="2.25" fill="url(#g-kbase-agent)" opacity="0.56"/>
+  <path d="M12.4 18.4C17.2 16.9 21.2 18.1 23.7 21.4V34.6C20.8 31.8 16.9 31.1 12.4 32.8V18.4Z" stroke="#60A5FA" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M35.6 18.4C30.8 16.9 26.8 18.1 24.3 21.4V34.6C27.2 31.8 31.1 31.1 35.6 32.8V18.4Z" stroke="#60A5FA" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 21.6V34.6" stroke="#60A5FA" stroke-width="2.3" stroke-linecap="round"/>
+  <path d="M15.6 23.4C17.6 22.8 19.9 23.2 21.4 24.5" stroke="#93C5FD" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M15.6 27C17.6 26.4 19.9 26.8 21.4 28.1" stroke="#93C5FD" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M26.6 24.5C28.1 23.2 30.4 22.8 32.4 23.4" stroke="#93C5FD" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M26.6 28.1C28.1 26.8 30.4 26.4 32.4 27" stroke="#93C5FD" stroke-width="1.7" stroke-linecap="round"/>
 </svg>
