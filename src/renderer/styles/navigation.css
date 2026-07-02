@@ -549,6 +549,14 @@
   background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
 }
 
+.sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="webs"].is-active,
+.sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="assistants"].is-active {
+  background: transparent;
+  border-color: transparent;
+}
+
 .sidebar-group-heading:hover .sidebar-link-label {
   color: var(--ink);
 }
@@ -2059,6 +2067,14 @@
 :root[data-theme="dark"] .sidebar-group-heading.is-active {
   color: #f5f5f5;
   background: rgba(255, 255, 255, 0.055);
+}
+
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active {
+  background: transparent;
+  border-color: transparent;
 }
 
 :root[data-theme="dark"] .assistant-worker-collapse-item {

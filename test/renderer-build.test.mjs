@@ -982,6 +982,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /label:\s*t\("nav\.assistants"\)/);
   assert.match(sidebarSource, /label:\s*t\("nav\.websites"\)/);
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
+  assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{\s*assistants: true,\s*webs: true,/);
+  assert.match(sidebarSource, /"data-sidebar-group-id": args\.groupId/);
   assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
   assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(assistantNavAgents, assistantNavSortMode\)/);
@@ -1142,6 +1144,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?flex-direction:\s*column;/);
   assert.match(globalStyles, /\.sidebar-settings-help-link\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
+  assert.match(globalStyles, /\.sidebar-group-heading:hover\s*\{[\s\S]*?background:\s*color-mix\(in srgb,\s*var\(--ink-muted\)\s*10%,\s*transparent\);[\s\S]*?\}/);
+  assert.match(globalStyles, /\.sidebar-group-heading\[data-sidebar-group-id="webs"\]:hover,[\s\S]*?\.sidebar-group-heading\[data-sidebar-group-id="webs"\]\.is-active,[\s\S]*?\.sidebar-group-heading\[data-sidebar-group-id="assistants"\]:hover,[\s\S]*?\.sidebar-group-heading\[data-sidebar-group-id="assistants"\]\.is-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border-color:\s*transparent;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="webs"\]:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="webs"\]\.is-active,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="assistants"\]:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="assistants"\]\.is-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border-color:\s*transparent;/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?\.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active,[\s\S]*?\.app-sidebar\.is-collapsed \.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
