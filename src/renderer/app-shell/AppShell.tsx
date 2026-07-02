@@ -13,7 +13,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappEntry, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
@@ -693,6 +693,44 @@ export function AppShell() {
 
   async function createWebsiteItem(input: WebsiteInput): Promise<WebsiteResult> {
     const result = await window.electronAPI.webs.websites.add(input);
+    await refreshWebItems().catch(() => undefined);
+    return result;
+  }
+
+  async function importWebappItem(): Promise<WebappImportResult> {
+    const result = await window.electronAPI.webs.webapps.import();
+    if (result.ok) {
+      updateWebItems(result.items);
+    } else {
+      await refreshWebItems().catch(() => undefined);
+    }
+    return result;
+  }
+
+  async function removeWebappItem(item: WebEntry): Promise<WebappDeleteResult> {
+    if (item.kind !== "webapp") {
+      return {
+        ok: false,
+        item: null,
+        items: [],
+        message: t("webapp.notFound")
+      };
+    }
+
+    const result = await window.electronAPI.webs.webapps.remove(item.id);
+    if (result.ok) {
+      if (activeWebEntryKey === item.entryKey) {
+        requestSidebarNavigation(BUILTIN_BROWSER_ROUTE);
+      }
+      setMountedWebEntryKeys((current) =>
+        current.filter((entryKey) => entryKey !== item.entryKey)
+      );
+      setWebappRuntimeById((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+    }
     await refreshWebItems().catch(() => undefined);
     return result;
   }
@@ -2765,7 +2803,9 @@ export function AppShell() {
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateWebsiteItem={createWebsiteItem}
+          onImportWebappItem={importWebappItem}
           onCloseWebItem={handleCloseWebEntry}
+          onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
