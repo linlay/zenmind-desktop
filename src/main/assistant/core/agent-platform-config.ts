@@ -5,7 +5,7 @@ import type { App } from "electron";
 import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../../shared/contracts";
 import { APP_BRAND } from "../../../shared/brand";
-import { getServiceConfigRoot, getServicesRoot } from "../../user-paths";
+import { getServiceConfigRoot } from "../../user-paths";
 import { t } from "../../i18n/main-i18n";
 import type { AssistantSettingsPrivate } from "./settings-store";
 import { readAssistantSettings, toPublicAssistantSettings } from "./settings-store";
@@ -83,17 +83,6 @@ function getPathOrFallback(app: App, name: "home", fallback: string) {
   }
 }
 
-function expandHomeShortcut(value: string, homeDir: string) {
-  const trimmed = value.trim();
-  if (trimmed === "~") {
-    return homeDir;
-  }
-  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-    return path.join(homeDir, trimmed.slice(2));
-  }
-  return trimmed;
-}
-
 const PROVIDER_API_KEY_ENV_PART = "PROVIDER_APIKEY_KEY_PART";
 const PROVIDER_API_KEY_CODE_PART = `${APP_BRAND.storageNamespace}:provider`;
 const DEFAULT_PROVIDER_API_KEY_ENV_PART = "0.1.0";
@@ -114,57 +103,18 @@ export type AgentPlatformUsageProviderCandidate = {
   sourcePath: string;
 };
 
-function getPathMtimeMs(filePath: string) {
-  try {
-    return fs.statSync(filePath).mtimeMs;
-  } catch {
-    return 0;
-  }
-}
-
-function listInstalledAgentPlatformEnvPaths(app: App) {
-  const serviceRoot = path.join(getServicesRoot(app), "agent-platform");
-  try {
-    return fs.readdirSync(serviceRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(serviceRoot, entry.name, ".env"))
-      .filter((envPath) => fs.existsSync(envPath))
-      .sort((left, right) => getPathMtimeMs(right) - getPathMtimeMs(left));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
-}
-
 function readAgentPlatformEnv(app: App) {
-  const envPaths = [
-    path.join(getServiceConfigRoot(app, "agent-platform", "builtin"), ".env"),
-    ...listInstalledAgentPlatformEnvPaths(app)
-  ];
-  const merged = new Map<string, string>();
-  for (const envPath of [...new Set(envPaths)].reverse()) {
-    for (const [key, value] of parseEnv(readTextIfExists(envPath))) {
-      merged.set(key, value);
-    }
+  const envPath = path.join(getServiceConfigRoot(app, "agent-platform", "builtin"), ".env");
+  const env = new Map<string, string>();
+  for (const [key, value] of parseEnv(readTextIfExists(envPath))) {
+    env.set(key, value);
   }
-  return merged;
+  return env;
 }
 
-function resolveRegistriesDirs(app: App, env: Map<string, string>) {
+function resolveRegistriesDirs(app: App, _env: Map<string, string>) {
   const homePath = getPathOrFallback(app, "home", process.env.HOME || "");
-  const candidates: string[] = [];
-  const envRegistriesDir = process.env.REGISTRIES_DIR || process.env.AGENT_PLATFORM_REGISTRIES_DIR;
-  if (envRegistriesDir) {
-    candidates.push(expandHomeShortcut(envRegistriesDir, homePath));
-  }
-  const configuredRegistriesDir = env.get("REGISTRIES_DIR");
-  if (configuredRegistriesDir) {
-    candidates.push(expandHomeShortcut(configuredRegistriesDir, homePath));
-  }
-  candidates.push(path.join(homePath, APP_BRAND.paths.runtimeRootDirName, "registries"));
-  return [...new Set(candidates)];
+  return [path.join(homePath, APP_BRAND.paths.runtimeRootDirName, "registries")];
 }
 
 function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string, string>) {

@@ -20,7 +20,6 @@ import { readEnvFile } from "../env-file";
 import type { ServiceLayout } from "./manager/layout";
 
 const HOST = "127.0.0.1";
-const DEFAULT_BASE_URL = "http://127.0.0.1:11949";
 const DEV_CORS_ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:5173",
   "http://localhost:5173"
@@ -186,8 +185,7 @@ function getEnvValue(record: AgentWebclientHostRecord, env: Map<string, string>,
 }
 
 function resolveRouteTarget(record: AgentWebclientHostRecord, route: ManifestDesktopProxyRoute) {
-  const fallback = route.targetEnv === "BASE_URL" ? DEFAULT_BASE_URL : undefined;
-  return normalizeEnvUrl(record.env.get(route.targetEnv), fallback);
+  return normalizeEnvUrl(record.env.get(route.targetEnv));
 }
 
 function resolveRouteTargetFromEnv(
@@ -195,8 +193,7 @@ function resolveRouteTargetFromEnv(
   route: ManifestDesktopProxyRoute,
   env: Map<string, string>
 ) {
-  const fallback = route.targetEnv === "BASE_URL" ? DEFAULT_BASE_URL : undefined;
-  return normalizeEnvUrl(getEnvValue(record, env, route.targetEnv), fallback);
+  return normalizeEnvUrl(getEnvValue(record, env, route.targetEnv));
 }
 
 function isVoiceEnabled(record: AgentWebclientHostRecord, env: Map<string, string>) {

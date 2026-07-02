@@ -84,7 +84,7 @@ function buildIdentityCenterAuthScriptEnv(
 function readIdentityCenterAuthSettings(layout: IdentityCenterAuthLayout) {
   const env = readIdentityCenterEnv(layout);
   const service = getService(IDENTITY_CENTER_SERVICE_ID);
-  const port = env.get("SERVER_PORT")?.trim() || String(service.web.defaultPort);
+  const port = String(service.web.defaultPort);
   return {
     dbPath: env.get("AUTH_DB_PATH")?.trim() || path.join(layout.dataDir, "auth.db"),
     issuer: env.get("AUTH_ISSUER")?.trim() || `http://127.0.0.1:${port}`,

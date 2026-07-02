@@ -35,30 +35,6 @@ export function listBuiltinSiblingInstallDirs(app: App, service: ServiceDefiniti
     .filter((installDir) => path.normalize(installDir) !== path.normalize(currentInstallDir));
 }
 
-export function readPreservedEnvFromSiblingInstallDirs(siblingInstallDirs: string[]) {
-  const candidates = siblingInstallDirs
-    .map((installDir) => {
-      const envPath = path.join(installDir, ".env");
-      if (!fs.existsSync(envPath)) {
-        return null;
-      }
-
-      try {
-        return {
-          envPath,
-          content: fs.readFileSync(envPath, "utf8"),
-          mtimeMs: fs.statSync(envPath).mtimeMs
-        };
-      } catch {
-        return null;
-      }
-    })
-    .filter((item): item is { envPath: string; content: string; mtimeMs: number } => Boolean(item))
-    .sort((left, right) => right.mtimeMs - left.mtimeMs);
-
-  return candidates[0]?.content ?? "";
-}
-
 export async function stopBuiltinInstallDir(service: ServiceDefinition, installDir: string) {
   const stopCommand = service.stopCommand;
   if (stopCommand.length > 0) {

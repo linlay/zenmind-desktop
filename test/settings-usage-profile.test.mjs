@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { getDesktopUsageProfile } = require("../dist-electron/main/usage-profile.js");
+const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 function createTempDir(t, prefix) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -31,25 +32,6 @@ function createMockApp(homeDir) {
   };
 }
 
-function withRegistriesDir(t, registriesDir) {
-  const previousRegistriesDir = process.env.REGISTRIES_DIR;
-  const previousAgentPlatformRegistriesDir = process.env.AGENT_PLATFORM_REGISTRIES_DIR;
-  process.env.REGISTRIES_DIR = registriesDir;
-  delete process.env.AGENT_PLATFORM_REGISTRIES_DIR;
-  t.after(() => {
-    if (previousRegistriesDir === undefined) {
-      delete process.env.REGISTRIES_DIR;
-    } else {
-      process.env.REGISTRIES_DIR = previousRegistriesDir;
-    }
-    if (previousAgentPlatformRegistriesDir === undefined) {
-      delete process.env.AGENT_PLATFORM_REGISTRIES_DIR;
-    } else {
-      process.env.AGENT_PLATFORM_REGISTRIES_DIR = previousAgentPlatformRegistriesDir;
-    }
-  });
-}
-
 function startTransitHubMock(t, handler) {
   const server = http.createServer(handler);
   return new Promise((resolve, reject) => {
@@ -70,8 +52,7 @@ function jsonResponse(response, statusCode, payload) {
 
 test("usage profile loads Transit Hub self-inspection data without exposing api keys", async (t) => {
   const root = createTempDir(t, "zenmind-usage-profile-");
-  const registriesDir = path.join(root, "registries");
-  withRegistriesDir(t, registriesDir);
+  const registriesDir = path.join(root, APP_BRAND.paths.runtimeRootDirName, "registries");
 
   const requestedPaths = [];
   const transitBaseUrl = await startTransitHubMock(t, (request, response) => {
@@ -289,8 +270,6 @@ test("usage profile loads Transit Hub self-inspection data without exposing api 
 
 test("usage profile returns a clear empty state when no provider is configured", async (t) => {
   const root = createTempDir(t, "zenmind-usage-profile-empty-");
-  const registriesDir = path.join(root, "registries");
-  withRegistriesDir(t, registriesDir);
 
   const result = await getDesktopUsageProfile(createMockApp(root), {
     now: new Date("2026-06-20T12:00:00Z"),

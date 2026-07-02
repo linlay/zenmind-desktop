@@ -170,95 +170,22 @@ function asStringRecord(value: unknown) {
   return result;
 }
 
-type CorePortEnvBinding = {
-  key: string;
-  value: string;
-  defaults: string[];
-};
-
 type CoreServicePortOverride = {
-  portEnvKey: string;
   defaultPort: number;
-  portBindings: CorePortEnvBinding[];
-  urlBindingDefaults?: Record<string, string[]>;
 };
 
 const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = {
   "agent-container-hub": {
-    portEnvKey: "BIND_ADDR",
-    defaultPort: 7079,
-    portBindings: [
-      {
-        key: "BIND_ADDR",
-        value: "127.0.0.1:{{serviceDefaultPort}}",
-        defaults: [
-          "",
-          "127.0.0.1:7079",
-          "localhost:7079",
-          "127.0.0.1:11960",
-          "localhost:11960",
-          "127.0.0.1:117079",
-          "localhost:117079"
-        ]
-      }
-    ]
+    defaultPort: 7079
   },
   "agent-platform": {
-    portEnvKey: "SERVER_PORT",
-    defaultPort: 7078,
-    portBindings: [],
-    urlBindingDefaults: {
-      AP_CONTAINER_HUB_BASE_URL: [
-        "",
-        "http://127.0.0.1:7079",
-        "http://localhost:7079",
-        "http://127.0.0.1:11960",
-        "http://localhost:11960",
-        "http://host.docker.internal:11960",
-        "http://127.0.0.1:117079",
-        "http://localhost:117079",
-        "http://host.docker.internal:117079"
-      ]
-    }
+    defaultPort: 7078
   },
   "agent-webclient": {
-    portEnvKey: "PORT",
-    defaultPort: 7080,
-    portBindings: [
-      {
-        key: "PORT",
-        value: "{{serviceDefaultPort}}",
-        defaults: ["", "7080", "11948", "18082", "117080"]
-      }
-    ],
-    urlBindingDefaults: {
-      BASE_URL: [
-        "",
-        "http://127.0.0.1:7078",
-        "http://localhost:7078",
-        "http://127.0.0.1:11949",
-        "http://localhost:11949",
-        "http://127.0.0.1:18081",
-        "http://localhost:18081",
-        "http://127.0.0.1:117078",
-        "http://localhost:117078",
-        "http://127.0.0.1:7200",
-        "http://localhost:7200",
-        "http://127.0.0.1:7000",
-        "http://localhost:7000"
-      ]
-    }
+    defaultPort: 7080
   },
   "identity-center": {
-    portEnvKey: "SERVER_PORT",
-    defaultPort: 7076,
-    portBindings: [
-      {
-        key: "SERVER_PORT",
-        value: "{{serviceDefaultPort}}",
-        defaults: ["", "7076", "11950", "18080", "9000", "117076"]
-      }
-    ]
+    defaultPort: 7076
   }
 };
 
@@ -347,10 +274,6 @@ function getCoreServicePortOverride(serviceId: string, options: NormalizeManifes
   return getCoreServicePortOverrides(options)[serviceId];
 }
 
-function mergeStringList(left: readonly string[] = [], right: readonly string[] = []) {
-  return [...new Set([...left, ...right])];
-}
-
 function applyCoreServiceWebOverride(serviceId: string, web: ManifestWeb, options: NormalizeManifestOptions) {
   const override = getCoreServicePortOverride(serviceId, options);
   if (!override) {
@@ -359,74 +282,8 @@ function applyCoreServiceWebOverride(serviceId: string, web: ManifestWeb, option
 
   return {
     ...web,
-    portEnvKey: override.portEnvKey,
     defaultPort: override.defaultPort
   } satisfies ManifestWeb;
-}
-
-function applyCoreServiceEnvBindingOverrides(
-  serviceId: string,
-  envBindings: ManifestEnvBinding[],
-  options: NormalizeManifestOptions,
-  originalWeb: ManifestWeb
-) {
-  const override = getCoreServicePortOverride(serviceId, options);
-  if (!override) {
-    return envBindings;
-  }
-
-  const portBindingsByKey = new Map(override.portBindings.map((binding) => [binding.key, binding]));
-  const seenPortBindings = new Set<string>();
-  const nextBindings = envBindings.map((binding) => {
-    const portBinding = portBindingsByKey.get(binding.key);
-    if (portBinding) {
-      seenPortBindings.add(binding.key);
-      const originalPortDefault = originalWeb.defaultPort > 0
-        ? portBinding.value.replace("{{serviceDefaultPort}}", String(originalWeb.defaultPort))
-        : "";
-      return {
-        ...binding,
-        value: portBinding.value,
-        onlyIfDefault: true,
-        defaults: mergeStringList(
-          binding.defaults,
-          originalPortDefault
-            ? mergeStringList(portBinding.defaults, [originalPortDefault])
-            : portBinding.defaults
-        )
-      } satisfies ManifestEnvBinding;
-    }
-
-    const urlDefaults = override.urlBindingDefaults?.[binding.key];
-    if (urlDefaults) {
-      return {
-        ...binding,
-        onlyIfDefault: true,
-        defaults: mergeStringList(binding.defaults, urlDefaults)
-      } satisfies ManifestEnvBinding;
-    }
-
-    return binding;
-  });
-
-  for (const binding of override.portBindings) {
-    if (seenPortBindings.has(binding.key)) {
-      continue;
-    }
-    const originalPortDefault = originalWeb.defaultPort > 0
-      ? binding.value.replace("{{serviceDefaultPort}}", String(originalWeb.defaultPort))
-      : "";
-    nextBindings.push({
-      key: binding.key,
-      value: binding.value,
-      onlyIfDefault: true,
-      defaults: originalPortDefault
-        ? mergeStringList(binding.defaults, [originalPortDefault])
-        : binding.defaults
-    });
-  }
-
-  return nextBindings;
 }
 
 function isFrontendMode(value: unknown): value is FrontendMode {
@@ -1199,7 +1056,6 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
   const desktop = resolveDesktop(raw, options, id, frontend, settings);
   const resolvedWeb = resolveWeb(raw);
   const web = applyCoreServiceWebOverride(id, resolvedWeb, options);
-  const envBindings = applyCoreServiceEnvBindingOverrides(id, desktop.envBindings, options, resolvedWeb);
   const pluginApiVersion = asNumber(raw.pluginApiVersion) ?? 0;
 
   return {
@@ -1228,7 +1084,7 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
     prerequisites: asStringArray(raw.prerequisites),
     desktop: {
       ...desktop,
-      envBindings
+      envBindings: desktop.envBindings
     },
     hooks: resolvePluginHooks(raw),
     bridge: resolvePluginBridge(raw),

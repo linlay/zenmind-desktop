@@ -75,6 +75,10 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
   requireAgentPlatformRuntime = true,
   agentPlatformProgramCommon = [
     "#!/usr/bin/env bash",
+    "program_sync_deploy_env_values() {",
+    "  program_set_env_value \"$ENV_FILE\" \"AP_RUNTIME_DIR\" \"$DEPLOY_AP_RUNTIME_DIR\"",
+    "  program_set_env_value \"$ENV_FILE\" \"AP_CONTAINER_HUB_BASE_URL\" \"$DEPLOY_CONTAINER_HUB_BASE_URL\"",
+    "}",
     "program_apply_deploy_flags() {",
     "  while [[ $# -gt 0 ]]; do",
     "    case \"$1\" in",
@@ -132,6 +136,23 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
 
   if (id === "agent-container-hub") {
     writeText(path.join(bundleRoot, "backend", "agent-container-hub"), "fixture\n");
+    writeText(
+      path.join(bundleRoot, "deploy.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "program_apply_deploy_args() {",
+        "  while [[ $# -gt 0 ]]; do",
+        "    case \"$1\" in",
+        "      --output-dir|--data-dir|--state-dir|--log-dir|--bind-addr) shift 2 ;;",
+        "      --config-dir|--daemon) echo 'start/runtime argument' >&2; exit 1 ;;",
+        "      *) echo \"unsupported deploy argument: $1\" >&2; exit 1 ;;",
+        "    esac",
+        "  done",
+        "}",
+        "program_apply_deploy_args \"$@\""
+      ].join("\n") + "\n"
+    );
     manifest.runtime.requiredPaths.push("backend/agent-container-hub");
   }
 
@@ -145,20 +166,25 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
     if (requireAgentPlatformRuntime) {
       manifest.runtime.requiredPaths.push("runtime");
     }
-    manifest.desktop.capabilities.requires = [
-      {
-        phase: "preStart",
-        capability: "auth.publicKey",
-        action: "copyFile",
-        target: "configs/local-public-key.pem"
-      }
-    ];
     writeText(path.join(bundleRoot, "scripts", "program-common.sh"), agentPlatformProgramCommon);
   }
 
   if (id === "agent-webclient") {
     writeText(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n");
     writeText(path.join(bundleRoot, ".env.example"), "DESKTOP_APP=true\nBASE_URL=http://127.0.0.1:11949\n");
+    writeText(
+      path.join(bundleRoot, "deploy.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "while [[ $# -gt 0 ]]; do",
+        "  case \"$1\" in",
+        "    --output-dir|--base-url|--port) shift 2 ;;",
+        "    *) shift ;;",
+        "  esac",
+        "done"
+      ].join("\n") + "\n"
+    );
     manifest.frontend = {
       mode: "standalone",
       hostManaged: true
@@ -188,6 +214,19 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
 
   if (id === "identity-center") {
     writeText(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n");
+    writeText(
+      path.join(bundleRoot, "deploy.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "while [[ $# -gt 0 ]]; do",
+        "  case \"$1\" in",
+        "    --output-dir|--auth-issuer) shift 2 ;;",
+        "    *) shift ;;",
+        "  esac",
+        "done"
+      ].join("\n") + "\n"
+    );
     writeText(
       path.join(bundleRoot, ".env.example"),
       [
@@ -391,5 +430,131 @@ test("syncBuiltinAssets rejects stale agent-platform public key deploy flag", as
       brandId: "cutej"
     }),
     /Detected stale deploy protocol marker "--local-public-key-file"/u
+  );
+});
+
+test("syncBuiltinAssets rejects identity-center deploy scripts without output-dir support", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-identity-old-deploy-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const oldArchive = path.join(sourceRoot, "identity-center-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-identity-old-deploy-stage-"));
+  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
+  writeText(path.join(stagingRoot, "identity-center", "deploy.sh"), "#!/usr/bin/env bash\n# old deploy\n");
+  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "identity-center"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-identity-old-deploy-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /identity-center[\s\S]*Missing lifecycle contract marker "--output-dir"/u
+  );
+});
+
+test("syncBuiltinAssets rejects agent-container-hub deploy scripts that reuse start layout args", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-old-deploy-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const oldArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-old-deploy-stage-"));
+  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
+  writeText(
+    path.join(stagingRoot, "agent-container-hub", "deploy.sh"),
+    "#!/usr/bin/env bash\nprogram_apply_layout_args \"$@\"\n"
+  );
+  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "agent-container-hub"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-hub-old-deploy-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /agent-container-hub[\s\S]*(Missing lifecycle contract marker "--output-dir"|program_apply_layout_args)/u
+  );
+});
+
+test("syncBuiltinAssets rejects no-op agent-webclient deploy scripts", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-webclient-noop-deploy-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const oldArchive = path.join(sourceRoot, "agent-webclient-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webclient-noop-stage-"));
+  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
+  writeText(
+    path.join(stagingRoot, "agent-webclient", "deploy.sh"),
+    "#!/usr/bin/env bash\n# Desktop hosts agent-webclient directly; deploy is intentionally a no-op.\n:\n"
+  );
+  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "agent-webclient"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-webclient-noop-deploy-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /agent-webclient[\s\S]*(Missing lifecycle contract marker "--output-dir"|deploy is intentionally a no-op)/u
   );
 });

@@ -19,9 +19,6 @@ const {
   listMissingRuntimeFiles
 } = require("../dist-electron/main/services/manager/bundle-assets.js");
 const envNormalization = require("../dist-electron/main/services/manager/env-normalization.js");
-const {
-  normalizeAgentPlatformEnvContentForRuntime
-} = envNormalization;
 
 function createTempDir(t, prefix) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -142,44 +139,10 @@ test("agent-platform bundled directory requires manifest runtime dir", (t) => {
   assert.deepEqual(listMissingBundleDirectoryEntries(service, bundleDir), ["backend/agent-platform", "runtime"]);
 });
 
-test("agent-platform env normalization keeps only Desktop-owned cleanup", () => {
-  const output = normalizeAgentPlatformEnvContentForRuntime([
-    "AP_RUNTIME_DIR=/custom/runtime",
-    "AGENTS_DIR=/custom/agents",
-    "LOCAL_CLI_ACP_RELAY_PORT=3220",
-    "AGENT_WS_ENABLED=true",
-    "GATEWAY_USER_ID=user-1",
-    "PROVIDER_APIKEY_KEY_PART=0.1.0",
-    "CUSTOM=value",
-    ""
-  ].join("\n"));
-
-  assert.doesNotMatch(output, /^AP_RUNTIME_DIR=/m);
-  assert.doesNotMatch(output, /^AGENTS_DIR=/m);
-  assert.doesNotMatch(output, /^LOCAL_CLI_ACP_RELAY_PORT=/m);
-  assert.doesNotMatch(output, /^AGENT_WS_ENABLED=/m);
-  assert.match(output, /^GATEWAY_USER_ID=user-1$/m);
-  assert.match(output, /^PROVIDER_APIKEY_KEY_PART=0.1.0$/m);
-  assert.match(output, /^CUSTOM=value$/m);
-});
-
-test("agent-platform YAML migration helpers are no longer exported by Desktop", () => {
+test("agent-platform config and env migration helpers are no longer exported by Desktop", () => {
+  assert.equal("normalizeAgentPlatformEnvContentForRuntime" in envNormalization, false);
   assert.equal("normalizeAgentPlatformDeprecatedConfigFiles" in envNormalization, false);
   assert.equal("normalizeAgentPlatformBashConfigContent" in envNormalization, false);
   assert.equal("normalizeAgentPlatformFileToolsConfigContent" in envNormalization, false);
   assert.equal("normalizeAgentPlatformDurationConfigContent" in envNormalization, false);
-});
-
-test("agent-platform provider registry is not used to infer provider key env", (t) => {
-  const root = createTempDir(t, "desktop-provider-registry-");
-  writeText(path.join(root, "registries", "providers", "openai.yml"), "apiKey: AES(ciphertext)\n");
-
-  const output = normalizeAgentPlatformEnvContentForRuntime([
-    `REGISTRIES_DIR=${path.join(root, "registries")}`,
-    "CUSTOM=value",
-    ""
-  ].join("\n"));
-
-  assert.doesNotMatch(output, /^PROVIDER_APIKEY_KEY_PART=/m);
-  assert.match(output, /^CUSTOM=value$/m);
 });
