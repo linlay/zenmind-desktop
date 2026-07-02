@@ -21,7 +21,7 @@ import {
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
 import type {
-  AssistantCreateCoderProjectRequest,
+  AssistantCreateProjectRequest,
   AssistantNavAgentItem,
   AssistantNavChatItem,
   DesktopSsoStatus,
@@ -139,16 +139,13 @@ type RunningCoderAcpProxyOption = CoderAcpProxyOption & {
 };
 
 type CreateProjectType = "coder" | "kbase";
-type KbaseVectorStore = "local" | "remote";
 
 type CreateProjectDialogState = {
-  name: string;
   workspaceDir: string;
   projectType: CreateProjectType;
   useAcp: boolean;
   options: RunningCoderAcpProxyOption[];
   selectedAcpProxyId: string;
-  kbaseVectorStore: KbaseVectorStore;
   pending: boolean;
   error: string;
 };
@@ -377,11 +374,6 @@ function getRunningCoderAcpProxyOptions(
       },
     ];
   });
-}
-
-function getWorkspaceNameFromPath(workspaceDir: string) {
-  const normalized = String(workspaceDir || "").trim();
-  return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
 }
 
 function getRoutePathname(route: string) {
@@ -1733,13 +1725,11 @@ export function AppSidebar({
         console.warn("[assistant] failed to list ACP proxy services", error);
       }
       setCreateProjectDialog({
-        name: getWorkspaceNameFromPath(selection.path),
         workspaceDir: selection.path,
         projectType: "coder",
         useAcp: false,
         options: runningAcpProxies,
         selectedAcpProxyId: runningAcpProxies[0]?.acpProxyId ?? "",
-        kbaseVectorStore: "local",
         pending: false,
         error: "",
       });
@@ -1762,28 +1752,13 @@ export function AppSidebar({
     if (!dialog || dialog.pending) {
       return;
     }
-    const name = dialog.name.trim();
-    if (!name) {
-      setCreateProjectDialog({
-        ...dialog,
-        error: t("sidebar.project.nameRequired"),
-      });
-      return;
-    }
-    if (dialog.projectType === "kbase") {
-      setCreateProjectDialog({
-        ...dialog,
-        error: t("sidebar.project.kbaseNotImplemented"),
-      });
-      return;
-    }
     const selectedAcpProxy =
-      dialog.useAcp && dialog.selectedAcpProxyId
+      dialog.projectType === "coder" && dialog.useAcp && dialog.selectedAcpProxyId
         ? dialog.options.find(
             (option) => option.acpProxyId === dialog.selectedAcpProxyId,
           )
         : null;
-    if (dialog.useAcp && !selectedAcpProxy) {
+    if (dialog.projectType === "coder" && dialog.useAcp && !selectedAcpProxy) {
       setCreateProjectDialog({
         ...dialog,
         error: t("sidebar.project.acpRequired"),
@@ -1792,20 +1767,20 @@ export function AppSidebar({
     }
     setCreateProjectDialog({ ...dialog, pending: true, error: "" });
     try {
-      const createInput: AssistantCreateCoderProjectRequest = {
-        name,
+      const createInput: AssistantCreateProjectRequest = {
+        projectType: dialog.projectType,
         workspaceDir: dialog.workspaceDir,
       };
       if (selectedAcpProxy) {
         createInput.acpProxyId = selectedAcpProxy.acpProxyId;
       }
       const result =
-        await window.electronAPI.assistant.createCoderProject(createInput);
+        await window.electronAPI.assistant.createProject(createInput);
       if (!result.ok) {
         setCreateProjectDialog({
           ...dialog,
           pending: false,
-          error: result.message || t("sidebar.project.createCoderFailed"),
+          error: result.message || t("sidebar.project.createFailed"),
         });
         return;
       }
@@ -1816,7 +1791,7 @@ export function AppSidebar({
         requestNavigate(createAgentRoute(result.agentKey));
       }
     } catch (error) {
-      console.warn("[assistant] failed to create CODER project", error);
+      console.warn("[assistant] failed to create project", error);
       setCreateProjectDialog({
         ...dialog,
         pending: false,
@@ -3533,25 +3508,6 @@ export function AppSidebar({
             </button>
           </div>
           <label className="sidebar-website-dialog-field">
-            <span>{t("sidebar.project.name")}</span>
-            <input
-              value={createProjectDialog.name}
-              onChange={(event) =>
-                setCreateProjectDialog((current) =>
-                  current
-                    ? {
-                        ...current,
-                        name: event.target.value,
-                        error: "",
-                      }
-                    : current,
-                )
-              }
-              disabled={createProjectDialog.pending}
-              autoFocus
-            />
-          </label>
-          <label className="sidebar-website-dialog-field">
             <span>{t("sidebar.project.directory")}</span>
             <input
               className="sidebar-website-dialog-readonly-input"
@@ -3574,6 +3530,7 @@ export function AppSidebar({
                   name="create-project-type"
                   value="coder"
                   checked={createProjectDialog.projectType === "coder"}
+                  autoFocus
                   onChange={() =>
                     setCreateProjectDialog((current) =>
                       current
@@ -3672,59 +3629,6 @@ export function AppSidebar({
                 ))}
               </select>
             </label>
-          ) : null}
-          {createProjectDialog.projectType === "kbase" ? (
-            <div className="sidebar-website-dialog-field">
-              <span>{t("sidebar.project.vectorStore")}</span>
-              <div
-                className="sidebar-project-option-grid"
-                role="radiogroup"
-                aria-label={t("sidebar.project.vectorStore")}
-              >
-                <label>
-                  <input
-                    type="radio"
-                    name="kbase-vector-store"
-                    value="local"
-                    checked={createProjectDialog.kbaseVectorStore === "local"}
-                    onChange={() =>
-                      setCreateProjectDialog((current) =>
-                        current
-                          ? {
-                              ...current,
-                              kbaseVectorStore: "local",
-                              error: "",
-                            }
-                          : current,
-                      )
-                    }
-                    disabled={createProjectDialog.pending}
-                  />
-                  <span>{t("sidebar.project.localVectorStore")}</span>
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="kbase-vector-store"
-                    value="remote"
-                    checked={createProjectDialog.kbaseVectorStore === "remote"}
-                    onChange={() =>
-                      setCreateProjectDialog((current) =>
-                        current
-                          ? {
-                              ...current,
-                              kbaseVectorStore: "remote",
-                              error: "",
-                            }
-                          : current,
-                      )
-                    }
-                    disabled={createProjectDialog.pending}
-                  />
-                  <span>{t("sidebar.project.remoteVectorStore")}</span>
-                </label>
-              </div>
-            </div>
           ) : null}
           {createProjectDialog.error ? (
             <div className="sidebar-website-dialog-error" role="alert">

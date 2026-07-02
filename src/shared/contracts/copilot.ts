@@ -156,18 +156,28 @@ export interface AssistantNavAgentItemsResult {
   updatedAt: string;
 }
 
+export type AssistantCreateProjectType = "coder" | "kbase";
+
+export interface AssistantCreateProjectRequest {
+  projectType: AssistantCreateProjectType;
+  workspaceDir: string;
+  acpProxyId?: string;
+}
+
 export interface AssistantCreateCoderProjectRequest {
   name?: string;
   workspaceDir: string;
   acpProxyId?: string;
 }
 
-export interface AssistantCreateCoderProjectResult {
+export interface AssistantCreateProjectResult {
   ok: boolean;
   message: string;
   agentKey?: string;
   workspaceDir?: string;
 }
+
+export type AssistantCreateCoderProjectResult = AssistantCreateProjectResult;
 
 export interface AssistantNavActionResult {
   ok: boolean;

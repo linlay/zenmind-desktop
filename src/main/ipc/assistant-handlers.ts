@@ -4,7 +4,7 @@ import {
   getAssistantExportDefaultPath,
   getAvailableFilePath
 } from "../download-paths";
-import { buildCoderProjectAgentCreateRequest } from "../assistant/core/coder-project";
+import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
 import { t } from "../i18n/main-i18n";
 
@@ -145,6 +145,40 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // ---------------------------------------------------------------------------
   // assistant — agents
   // ---------------------------------------------------------------------------
+  async function createProject(input: any): Promise<any> {
+    const projectTypeValue = String(input?.projectType || "").trim().toLowerCase();
+    const projectType: ProjectCreateType | null =
+      projectTypeValue === "coder" || projectTypeValue === "kbase"
+        ? projectTypeValue
+        : null;
+    const workspaceDir = String(input?.workspaceDir || "").trim();
+    const acpProxyId = String(input?.acpProxyId || "").trim();
+    if (!projectType) {
+      return { ok: false, message: t("assistant.projectTypeUnsupported") };
+    }
+    if (!workspaceDir) {
+      return { ok: false, message: t("assistant.projectWorkspaceMissing") };
+    }
+
+    const request = buildProjectAgentCreateRequest(projectType, workspaceDir, { acpProxyId });
+    try {
+      const response = await callAgentPlatform?.(app, "/api/admin/agents/create", {
+        method: "POST",
+        body: request
+      });
+      const agentKey = String(response?.key || "").trim();
+      assistantNavigationStatusClient?.scheduleRefresh(0);
+      return { ok: true, message: t("assistant.projectCreated"), agentKey, workspaceDir };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        agentKey: "",
+        workspaceDir
+      };
+    }
+  }
+
   ipcMain.handle("assistant.listAgents", async () => {
     try {
       return await assistantBridge.listAgents();
@@ -186,53 +220,20 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     }
   });
 
-  ipcMain.handle("assistant.createCoderProject", async (_event: any, input: any): Promise<any> => {
-    const name = String(input?.name || "").trim();
-    const workspaceDir = String(input?.workspaceDir || "").trim();
-    const acpProxyId = String(input?.acpProxyId || "").trim();
-    if (!workspaceDir) {
-      return { ok: false, message: t("assistant.coderWorkspaceMissing") };
-    }
-    const request = buildCoderProjectAgentCreateRequest(workspaceDir, { name, acpProxyId });
-    const createdAgentName = String(request.definition.name || name).trim();
-    try {
-      const response = await callAgentPlatform?.(app, "/api/admin/agents/create", {
-        method: "POST",
-        body: request
-      });
-      const agentKey = String(response?.key || "").trim();
-      if (agentKey && createdAgentName) {
-        const responseDefinition = response?.definition;
-        const updateDefinition = {
-          ...(
-            typeof responseDefinition === "object" &&
-            responseDefinition !== null &&
-            !Array.isArray(responseDefinition)
-              ? responseDefinition
-              : request.definition
-          ),
-          key: agentKey,
-          name: createdAgentName
-        };
-        await callAgentPlatform?.(app, "/api/admin/agents/update", {
-          method: "POST",
-          body: {
-            key: agentKey,
-            definition: updateDefinition
-          }
-        });
-      }
-      assistantNavigationStatusClient?.scheduleRefresh(0);
-      return { ok: true, message: t("assistant.coderCreated"), agentKey, workspaceDir };
-    } catch (error) {
-      return {
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-        agentKey: "",
-        workspaceDir
-      };
-    }
-  });
+  ipcMain.handle("assistant.createProject", async (_event: any, input: any): Promise<any> =>
+    createProject(input)
+  );
+
+  ipcMain.handle("assistant.createCoderProject", async (_event: any, input: any): Promise<any> =>
+    createProject({
+      ...(
+        input && typeof input === "object" && !Array.isArray(input)
+          ? input
+          : {}
+      ),
+      projectType: "coder"
+    })
+  );
 
   // ---------------------------------------------------------------------------
   // assistant — memory (legacy stub + bridge delegates)

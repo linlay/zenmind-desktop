@@ -6,40 +6,21 @@ const require = createRequire(import.meta.url);
 
 const {
   buildCoderProjectAgentCreateRequest,
-  normalizeCoderProjectName,
-  workspaceNameFromPath
+  buildProjectAgentCreateRequest
 } = require("../dist-electron/main/assistant/core/coder-project.js");
 const {
   registerAssistantIpcHandlers
 } = require("../dist-electron/main/ipc/assistant-handlers.js");
 
-test("workspaceNameFromPath derives a project name from the selected directory", () => {
-  assert.equal(workspaceNameFromPath("/Users/jialin/Desktop/proxy-acp-claudecode"), "proxy-acp-claudecode");
-});
-
-test("buildCoderProjectAgentCreateRequest keeps an edited project name", () => {
-  const request = buildCoderProjectAgentCreateRequest("/Users/jialin/Desktop/pan-webclient", {
-    name: "agent-webclient1"
-  });
-
-  assert.equal(request.definition.name, "agent-webclient1");
-  assert.equal(request.definition.runtimeConfig.workspaceRoot, "/Users/jialin/Desktop/pan-webclient");
-});
-
-test("normalizeCoderProjectName maps legacy pan webclient names to agent webclient names", () => {
-  assert.equal(normalizeCoderProjectName("pan-webclient"), "agent-webclient");
-  assert.equal(normalizeCoderProjectName("pan-webclient1"), "agent-webclient1");
-  assert.equal(normalizeCoderProjectName("agent-platform"), "agent-platform");
-});
-
-test("assistant.createCoderProject writes the edited project name back after platform creation", async () => {
+function registerProjectHandlers() {
   const handlers = new Map();
+  const calls = [];
   const ipcMain = {
     handle(channel, handler) {
       handlers.set(channel, handler);
     }
   };
-  const calls = [];
+
   registerAssistantIpcHandlers(ipcMain, {
     assistantBridge: {},
     assistantNavigationStatusClient: {
@@ -60,20 +41,7 @@ test("assistant.createCoderProject writes the edited project name back after pla
       calls.push({ path: endpoint, options });
       if (endpoint === "/api/admin/agents/create") {
         return {
-          key: "coder-test",
-          definition: {
-            key: "coder-test",
-            name: "pan-webclient",
-            mode: "CODER",
-            runtimeConfig: {
-              workspaceRoot: "/Users/jialin/Desktop/pan-webclient"
-            }
-          }
-        };
-      }
-      if (endpoint === "/api/admin/agents/update") {
-        return {
-          key: "coder-test",
+          key: "created-agent",
           definition: options.body.definition
         };
       }
@@ -93,20 +61,153 @@ test("assistant.createCoderProject writes the edited project name back after pla
     platform: "darwin"
   });
 
-  const handler = handlers.get("assistant.createCoderProject");
+  return { calls, handlers };
+}
+
+test("buildProjectAgentCreateRequest builds a minimal CODER project create request", () => {
+  const request = buildProjectAgentCreateRequest("coder", "/Users/demo/Project/agent-coder");
+
+  assert.deepEqual(request, {
+    definition: {
+      mode: "CODER",
+      runtimeConfig: {
+        workspaceRoot: "/Users/demo/Project/agent-coder"
+      }
+    }
+  });
+  assert.equal(JSON.stringify(request).includes("coderBackend"), false);
+  assert.equal(Object.hasOwn(request.definition, "name"), false);
+  assert.equal(Object.hasOwn(request.definition, "icon"), false);
+  assert.equal(Object.hasOwn(request.definition, "workspace"), false);
+  assert.equal(Object.hasOwn(request.definition, "visibility"), false);
+});
+
+test("buildProjectAgentCreateRequest includes ACP only for CODER projects", () => {
+  const request = buildProjectAgentCreateRequest("coder", "/Users/demo/Project/acp-coder", {
+    acpProxyId: "codex"
+  });
+
+  assert.deepEqual(request, {
+    definition: {
+      mode: "CODER",
+      runtimeConfig: {
+        workspaceRoot: "/Users/demo/Project/acp-coder",
+        acpProxyId: "codex"
+      }
+    }
+  });
+  assert.equal(JSON.stringify(request).includes("coderBackend"), false);
+});
+
+test("buildProjectAgentCreateRequest builds a minimal KBASE project create request", () => {
+  const request = buildProjectAgentCreateRequest("kbase", "/Users/demo/Knowledge/my-project", {
+    acpProxyId: "codex"
+  });
+
+  assert.deepEqual(request, {
+    definition: {
+      mode: "KBASE",
+      runtimeConfig: {
+        workspaceRoot: "/Users/demo/Knowledge/my-project"
+      }
+    }
+  });
+  assert.equal(Object.hasOwn(request.definition, "name"), false);
+  assert.equal(Object.hasOwn(request.definition, "icon"), false);
+  assert.equal(Object.hasOwn(request.definition, "workspace"), false);
+  assert.equal(Object.hasOwn(request.definition, "kbaseConfig"), false);
+  assert.equal(JSON.stringify(request).includes("openai"), false);
+});
+
+test("legacy buildCoderProjectAgentCreateRequest delegates to the minimal CODER request", () => {
+  const request = buildCoderProjectAgentCreateRequest("/Users/demo/Project/agent-coder", {
+    acpProxyId: "claude"
+  });
+
+  assert.deepEqual(request, {
+    definition: {
+      mode: "CODER",
+      runtimeConfig: {
+        workspaceRoot: "/Users/demo/Project/agent-coder",
+        acpProxyId: "claude"
+      }
+    }
+  });
+});
+
+test("assistant.createProject creates a KBASE project without updating generated defaults", async () => {
+  const { calls, handlers } = registerProjectHandlers();
+  const handler = handlers.get("assistant.createProject");
   assert.equal(typeof handler, "function");
 
   const result = await handler(null, {
-    name: "pan-webclient1",
-    workspaceDir: "/Users/jialin/Desktop/pan-webclient"
+    projectType: "kbase",
+    workspaceDir: "/Users/demo/Knowledge/my-project"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.agentKey, "created-agent");
+  assert.equal(calls[0].path, "/api/admin/agents/create");
+  assert.deepEqual(calls[0].options.body, {
+    definition: {
+      mode: "KBASE",
+      runtimeConfig: {
+        workspaceRoot: "/Users/demo/Knowledge/my-project"
+      }
+    }
+  });
+  assert.deepEqual(calls[1], { path: "scheduleRefresh", delay: 0 });
+  assert.equal(calls.some((call) => call.path === "/api/admin/agents/update"), false);
+});
+
+test("assistant.createProject creates a CODER ACP project with the simplified payload", async () => {
+  const { calls, handlers } = registerProjectHandlers();
+  const handler = handlers.get("assistant.createProject");
+  assert.equal(typeof handler, "function");
+
+  const result = await handler(null, {
+    projectType: "coder",
+    workspaceDir: "/Users/demo/Project/acp-coder",
+    acpProxyId: "codex"
   });
 
   assert.equal(result.ok, true);
   assert.equal(calls[0].path, "/api/admin/agents/create");
-  assert.equal(calls[0].options.body.definition.name, "agent-webclient1");
-  assert.equal(calls[1].path, "/api/admin/agents/update");
-  assert.equal(calls[1].options.body.key, "coder-test");
-  assert.equal(calls[1].options.body.definition.name, "agent-webclient1");
-  assert.equal(calls[1].options.body.definition.runtimeConfig.workspaceRoot, "/Users/jialin/Desktop/pan-webclient");
-  assert.deepEqual(calls[2], { path: "scheduleRefresh", delay: 0 });
+  assert.deepEqual(calls[0].options.body, {
+    definition: {
+      mode: "CODER",
+      runtimeConfig: {
+        workspaceRoot: "/Users/demo/Project/acp-coder",
+        acpProxyId: "codex"
+      }
+    }
+  });
+  assert.deepEqual(calls[1], { path: "scheduleRefresh", delay: 0 });
+  assert.equal(calls.some((call) => call.path === "/api/admin/agents/update"), false);
+});
+
+test("assistant.createCoderProject remains a compatibility alias for CODER creation", async () => {
+  const { calls, handlers } = registerProjectHandlers();
+  const handler = handlers.get("assistant.createCoderProject");
+  assert.equal(typeof handler, "function");
+
+  const result = await handler(null, {
+    name: "ignored-name",
+    workspaceDir: "/Users/demo/Project/legacy-coder",
+    acpProxyId: "claude"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].path, "/api/admin/agents/create");
+  assert.deepEqual(calls[0].options.body, {
+    definition: {
+      mode: "CODER",
+      runtimeConfig: {
+        workspaceRoot: "/Users/demo/Project/legacy-coder",
+        acpProxyId: "claude"
+      }
+    }
+  });
+  assert.deepEqual(calls[1], { path: "scheduleRefresh", delay: 0 });
+  assert.equal(calls.some((call) => call.path === "/api/admin/agents/update"), false);
 });

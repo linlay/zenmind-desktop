@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
   AssistantCreateCoderProjectRequest,
+  AssistantCreateProjectRequest,
   AssistantEventListener,
   AssistantNavigationAgentsChangedListener,
   AssistantAttachmentProgressListener,
@@ -130,6 +131,8 @@ const api: DesktopApi = {
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: () => ipcRenderer.invoke("assistant.listNavigationAgents"),
     listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
+    createProject: (input: AssistantCreateProjectRequest) =>
+      ipcRenderer.invoke("assistant.createProject", input),
     createCoderProject: (input: AssistantCreateCoderProjectRequest) =>
       ipcRenderer.invoke("assistant.createCoderProject", input),
     openMemoryDirectory: () => ipcRenderer.invoke("assistant.openMemoryDirectory"),
