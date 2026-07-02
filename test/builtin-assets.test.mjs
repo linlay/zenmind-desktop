@@ -144,8 +144,8 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         "program_apply_deploy_args() {",
         "  while [[ $# -gt 0 ]]; do",
         "    case \"$1\" in",
-        "      --output-dir|--data-dir|--state-dir|--log-dir|--bind-addr) shift 2 ;;",
-        "      --config-dir|--daemon) echo 'start/runtime argument' >&2; exit 1 ;;",
+        "      --output-dir) shift 2 ;;",
+        "      --config-dir|--data-dir|--state-dir|--log-dir|--bind-addr|--daemon) echo 'start/runtime argument' >&2; exit 1 ;;",
         "      *) echo \"unsupported deploy argument: $1\" >&2; exit 1 ;;",
         "    esac",
         "  done",
@@ -488,10 +488,20 @@ test("syncBuiltinAssets rejects agent-container-hub deploy scripts that reuse st
   const oldArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-old-deploy-stage-"));
   execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
-  writeText(
-    path.join(stagingRoot, "agent-container-hub", "deploy.sh"),
-    "#!/usr/bin/env bash\nprogram_apply_layout_args \"$@\"\n"
-  );
+	  writeText(
+	    path.join(stagingRoot, "agent-container-hub", "deploy.sh"),
+	    [
+	      "#!/usr/bin/env bash",
+	      "set -euo pipefail",
+	      "while [[ $# -gt 0 ]]; do",
+	      "  case \"$1\" in",
+	      "    --output-dir) config_dir=\"$2\"; shift 2 ;;",
+	      "    --data-dir) data_dir=\"$2\"; shift 2 ;;",
+	      "    *) shift ;;",
+	      "  esac",
+	      "done"
+	    ].join("\n") + "\n"
+	  );
   execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "agent-container-hub"]);
   fs.rmSync(stagingRoot, { recursive: true, force: true });
 
@@ -512,7 +522,56 @@ test("syncBuiltinAssets rejects agent-container-hub deploy scripts that reuse st
       arch: "arm64",
       brandId: "cutej"
     }),
-    /agent-container-hub[\s\S]*(Missing lifecycle contract marker "--output-dir"|program_apply_layout_args)/u
+	    /agent-container-hub[\s\S]*Detected deploy-time start layout argument "--data-dir"/u
+	  );
+	});
+
+test("syncBuiltinAssets rejects agent-container-hub deploy scripts that prepare runtime dirs", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-runtime-deploy-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const oldArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-runtime-deploy-stage-"));
+  execFileSync("tar", ["-xzf", oldArchive, "-C", stagingRoot]);
+  writeText(
+    path.join(stagingRoot, "agent-container-hub", "deploy.sh"),
+    [
+      "#!/usr/bin/env bash",
+      "case \"$1\" in",
+      "  --output-dir) shift 2 ;;",
+      "esac",
+      "program_prepare_runtime_dirs"
+    ].join("\n") + "\n"
+  );
+  execFileSync("tar", ["-czf", oldArchive, "-C", stagingRoot, "agent-container-hub"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-hub-runtime-deploy-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /agent-container-hub[\s\S]*program_prepare_runtime_dirs/u
   );
 });
 

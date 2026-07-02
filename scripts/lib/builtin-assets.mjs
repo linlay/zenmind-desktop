@@ -32,7 +32,12 @@ const LIFECYCLE_DEPLOY_PROTOCOLS = {
   },
   "agent-container-hub": {
     required: ["--output-dir"],
-    forbidden: ['program_apply_layout_args "$@"', "Set-ProgramLayoutArgs $args"],
+    forbidden: [
+      "program_prepare_runtime_dirs",
+      "Prepare-ProgramRuntimeDirs",
+      'program_apply_layout_args "$@"',
+      "Set-ProgramLayoutArgs $args"
+    ],
     message: "Please rebuild the Desktop-ready agent-container-hub bundle with deploy-only --output-dir support."
   },
   "agent-webclient": {
@@ -813,6 +818,36 @@ function findStaleAgentPlatformDeployProtocolMarker(content) {
   return STALE_AGENT_PLATFORM_DEPLOY_PROTOCOL_MARKERS.find((marker) => content.includes(marker)) || "";
 }
 
+function findAgentContainerHubAcceptedDeployLayoutArg(content) {
+  const text = content || "";
+  const layoutFlags = [
+    "--config-dir",
+    "--data-dir",
+    "--state-dir",
+    "--log-dir",
+    "--bind-addr",
+    "--daemon"
+  ];
+  const lines = text.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const flag = layoutFlags.find((candidate) => line.includes(candidate));
+    if (!flag) {
+      continue;
+    }
+    const block = lines.slice(index, index + 8).join("\n");
+    if (/(?:throw\b|exit\s+[1-9]\d*|return\s+[1-9]\d*|unsupported deploy argument|start\/runtime argument)/iu.test(block)) {
+      continue;
+    }
+    if (
+      /(?:\b(?:config|data|state|log|bind|daemon)[A-Za-z0-9_]*\s*=|\$(?:configDir|dataDir|stateDir|logDir|bindAddr|daemon)\s*=|\$i\+\+|shift\s+2)/u.test(block)
+    ) {
+      return flag;
+    }
+  }
+  return "";
+}
+
 function validateAgentPlatformDeployProtocolText(service, sourceLabel, relativePath, content) {
   const staleMarker = findStaleAgentPlatformDeployProtocolMarker(content);
   if (!staleMarker) {
@@ -873,6 +908,16 @@ function validateLifecycleDeployProtocolText(service, sourceLabel, relativePath,
       throw new Error(
         `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
           `Detected stale lifecycle contract marker ${JSON.stringify(marker)} in ${relativePath}.\n` +
+          protocol.message
+      );
+    }
+  }
+  if (service.id === "agent-container-hub") {
+    const marker = findAgentContainerHubAcceptedDeployLayoutArg(text);
+    if (marker) {
+      throw new Error(
+        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+          `Detected deploy-time start layout argument ${JSON.stringify(marker)} in ${relativePath}.\n` +
           protocol.message
       );
     }
@@ -1054,17 +1099,7 @@ function validateIdentityCenterAuthCapabilities(service, archivePath, manifest, 
 function validateAgentContainerHubBundleArchive(service, archivePath) {
   const deployScriptPath = lifecycleDeployScriptPathForArchive(service, archivePath);
   const deployScript = readArchiveEntryText(archivePath, deployScriptPath);
-  const isWindowsArchive = archivePath.endsWith(".zip");
-  const programCommonPath = isWindowsArchive
-    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
-    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
-  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
-  validateLifecycleDeployProtocolText(
-    service,
-    archivePath,
-    `${deployScriptPath} + ${programCommonPath}`,
-    `${deployScript}\n${programCommon}`
-  );
+  validateLifecycleDeployProtocolText(service, archivePath, deployScriptPath, deployScript);
 }
 
 function validateBundleContents(service, archivePath, entries) {

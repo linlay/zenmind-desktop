@@ -54,7 +54,14 @@ function getAllowedLifecycleKinds(serviceId: string) {
   return CORE_SERVICE_LIFECYCLE_COMMANDS[serviceId as CoreLifecycleServiceId] ?? null;
 }
 
-function filterServiceLifecycleArgs(serviceId: ServiceId | string, args: string[]) {
+function filterServiceLifecycleArgs(
+  serviceId: ServiceId | string,
+  args: string[],
+  kind?: ServiceLifecycleCommandKind
+) {
+  if (serviceId === "agent-container-hub" && kind === "deploy") {
+    return [];
+  }
   if (serviceId === "agent-platform") {
     const nextArgs: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
@@ -108,7 +115,7 @@ function normalizeServiceLifecycleArgs(
       const args = filterServiceLifecycleArgs(serviceId, [
         ...(commonArgs ?? []),
         ...(platformArgs ?? [])
-      ]);
+      ], kind);
       if (args.length > 0) {
         lifecycleArgs[kind] = args;
       }
@@ -172,7 +179,7 @@ export function getConfiguredServiceLifecycleArgs(
   platform: NodeJS.Platform = process.platform
 ) {
   const args = readServiceLifecycleArgsConfig(app, platform)?.services[serviceId]?.lifecycleArgs[kind] ?? [];
-  return filterServiceLifecycleArgs(serviceId, args);
+  return filterServiceLifecycleArgs(serviceId, args, kind);
 }
 
 export function appendConfiguredServiceLifecycleArgs(

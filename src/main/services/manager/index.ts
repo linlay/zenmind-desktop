@@ -385,16 +385,11 @@ function appendAgentPlatformDesktopDeployArgs(
 
 function appendAgentContainerHubDesktopDeployArgs(
   command: string[],
-  service: ServiceDefinition,
   layout: ServiceLayout
 ) {
   return [
     ...command,
-    "--output-dir", layout.configDir,
-    "--data-dir", layout.dataDir,
-    "--state-dir", layout.stateDir,
-    "--log-dir", layout.logDir,
-    "--bind-addr", getDesktopManagedContainerHubBindAddr(service)
+    "--output-dir", layout.configDir
   ];
 }
 
@@ -440,7 +435,7 @@ async function buildDesktopManagedDeployCommand(
     );
   }
   if (service.id === "agent-container-hub") {
-    return appendAgentContainerHubDesktopDeployArgs(commandWithConfiguredArgs, service, layout);
+    return appendAgentContainerHubDesktopDeployArgs(commandWithConfiguredArgs, layout);
   }
   if (service.id === "identity-center") {
     return appendIdentityCenterDesktopDeployArgs(commandWithConfiguredArgs, layout);
