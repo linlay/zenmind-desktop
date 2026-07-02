@@ -352,6 +352,63 @@ test("syncBuiltinAssets expands Darwin builtin service archives into directories
   );
 });
 
+test("syncBuiltinAssets allows agent-container-hub runtime helpers outside deploy scripts", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-start-helpers-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const hubArchive = path.join(sourceRoot, "agent-container-hub-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hub-start-helpers-stage-"));
+  execFileSync("tar", ["-xzf", hubArchive, "-C", stagingRoot]);
+  writeText(
+    path.join(stagingRoot, "agent-container-hub", "scripts", "program-common.sh"),
+    [
+      "#!/usr/bin/env bash",
+      "program_prepare_runtime_dirs() {",
+      "  mkdir -p \"$DATA_DIR\" \"$RUN_DIR\" \"$LOG_DIR\"",
+      "}"
+    ].join("\n") + "\n"
+  );
+  writeText(
+    path.join(stagingRoot, "agent-container-hub", "start.sh"),
+    [
+      "#!/usr/bin/env bash",
+      ". \"$(dirname \"$0\")/scripts/program-common.sh\"",
+      "program_prepare_runtime_dirs"
+    ].join("\n") + "\n"
+  );
+  execFileSync("tar", ["-czf", hubArchive, "-C", stagingRoot, "agent-container-hub"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-hub-start-helpers-${Date.now()}`);
+  const manifest = syncBuiltinAssets(tempRoot, {
+    os: "darwin",
+    arch: "arm64",
+    brandId: "cutej"
+  });
+
+  const hub = manifest.find((service) => service.id === "agent-container-hub");
+  assert.ok(hub);
+  assert.equal(hub.assetType, "directory");
+});
+
 test("syncBuiltinAssets rejects agent-platform archives without required runtime directory", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-runtime-"));
   t.after(() => {

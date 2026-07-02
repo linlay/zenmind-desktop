@@ -1228,28 +1228,7 @@ export function validateBundleDirectory(service, directoryPath) {
   validateBundleDirectoryContents(service, directoryPath);
   validateAgentPlatformBundleDirectory(service, directoryPath);
   if (service.id === "agent-container-hub") {
-    const deployTexts = ["deploy.sh", "deploy.ps1"]
-      .map((relativePath) => {
-        const filePath = path.join(directoryPath, relativePath);
-        return fs.existsSync(filePath) && fs.statSync(filePath).isFile()
-          ? fs.readFileSync(filePath, "utf8")
-          : "";
-      })
-      .join("\n");
-    const programCommonTexts = ["scripts/program-common.sh", "scripts/program-common.ps1"]
-      .map((relativePath) => {
-        const filePath = path.join(directoryPath, ...relativePath.split("/"));
-        return fs.existsSync(filePath) && fs.statSync(filePath).isFile()
-          ? fs.readFileSync(filePath, "utf8")
-          : "";
-      })
-      .join("\n");
-    validateLifecycleDeployProtocolText(
-      service,
-      directoryPath,
-      "deploy + scripts/program-common",
-      `${deployTexts}\n${programCommonTexts}`
-    );
+    validateBundleDirectoryDeployProtocol(service, directoryPath);
   }
   if (service.id === "agent-webclient") {
     validateBundleDirectoryDeployProtocol(service, directoryPath);
