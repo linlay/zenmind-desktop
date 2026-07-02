@@ -28,6 +28,7 @@ import type {
   ServiceState,
   WebEntry,
   WebEntryKey,
+  WebappImportResult,
   WebsiteInput,
   WebsiteResult,
 } from "../../../shared/contracts";
@@ -779,6 +780,7 @@ type AppSidebarProps = {
   onCreateWebsiteItem?: (
     input: WebsiteInput,
   ) => Promise<WebsiteResult>;
+  onImportWebappItem?: () => Promise<WebappImportResult>;
   webOpenEntryKeys?: WebEntryKey[];
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
   onRequestNavigate?: (targetPath: string) => boolean;
@@ -822,6 +824,7 @@ export function AppSidebar({
   onRefreshAssistantNavAgents,
   onRefreshCopilotAgentOptions,
   onCreateWebsiteItem,
+  onImportWebappItem,
   webOpenEntryKeys = [],
   onCloseWebItem,
   onRequestNavigate,
@@ -1871,6 +1874,22 @@ export function AppSidebar({
     }
   }
 
+  async function handleImportWebapp() {
+    if (!onImportWebappItem) {
+      return;
+    }
+    try {
+      const result = await onImportWebappItem();
+      if (!result.ok || !result.item) {
+        return;
+      }
+      setSidebarGroupState((current) => ({ ...current, webs: true }));
+      requestNavigate(`/webs/${result.item.entryKey}`);
+    } catch {
+      // The import dialog reports failures through the native result surface.
+    }
+  }
+
   async function closeWebItem(item: WebEntry) {
     if (webClosePendingEntryKey || !onCloseWebItem) {
       return;
@@ -2835,14 +2854,17 @@ export function AppSidebar({
                     <EditSquareIcon width={16} />
                   </button>
                 </Tooltip>
-                <Tooltip content={t("sidebar.website.new")}>
+                <Tooltip content={t("sidebar.website.actions")}>
                   <button
                     type="button"
                     className="assistant-worker-icon-button sidebar-website-add-button"
-                    aria-label={t("sidebar.website.new")}
-                    title={t("sidebar.website.new")}
+                    aria-label={t("sidebar.website.actions")}
+                    title={t("sidebar.website.actions")}
                     tabIndex={-1}
-                    onClick={openWebsiteDialog}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openGroupActionMenuAtElement(event.currentTarget, "webs");
+                    }}
                   >
                     <AddIcon width={16} />
                   </button>
@@ -3142,74 +3164,90 @@ export function AppSidebar({
     const groupId = groupActionMenu.groupId;
     return createPortal(
       <div
-        ref={groupActionMenuRef}
-        className="assistant-chat-actions-menu sidebar-group-actions-menu"
-        style={{ left: groupActionMenu.x, top: groupActionMenu.y }}
-        role="menu"
-        aria-label={
-          groupId === "assistants" ? t("nav.assistants") : t("nav.websites")
-        }
+        className="sidebar-group-actions-menu-layer"
+        onPointerDown={() => setGroupActionMenu(null)}
       >
-        {groupId === "assistants" ? (
-          <>
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={assistantNavSortMode === "byTime"}
-              onClick={() => {
-                setAssistantNavSortMode("byTime");
-                setGroupActionMenu(null);
-              }}
-            >
-              <span>{t("sidebar.assistants.sortByTime")}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={assistantNavSortMode === "byName"}
-              onClick={() => {
-                setAssistantNavSortMode("byName");
-                setGroupActionMenu(null);
-              }}
-            >
-              <span>{t("sidebar.assistants.sortByName")}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={creatingProject || Boolean(createProjectDialog)}
-              onClick={() => {
-                setGroupActionMenu(null);
-                void beginCreateProject();
-              }}
-            >
-              <span>{t("sidebar.project.new")}</span>
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setGroupActionMenu(null);
-                navigateWebsitesSettings();
-              }}
-            >
-              <span>{t("sidebar.website.manage")}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setGroupActionMenu(null);
-                showWebsiteDialog();
-              }}
-            >
-              <span>{t("sidebar.website.new")}</span>
-            </button>
-          </>
-        )}
+        <div
+          ref={groupActionMenuRef}
+          className="assistant-chat-actions-menu sidebar-group-actions-menu"
+          style={{ left: groupActionMenu.x, top: groupActionMenu.y }}
+          role="menu"
+          aria-label={
+            groupId === "assistants" ? t("nav.assistants") : t("nav.websites")
+          }
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {groupId === "assistants" ? (
+            <>
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={assistantNavSortMode === "byTime"}
+                onClick={() => {
+                  setAssistantNavSortMode("byTime");
+                  setGroupActionMenu(null);
+                }}
+              >
+                <span>{t("sidebar.assistants.sortByTime")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={assistantNavSortMode === "byName"}
+                onClick={() => {
+                  setAssistantNavSortMode("byName");
+                  setGroupActionMenu(null);
+                }}
+              >
+                <span>{t("sidebar.assistants.sortByName")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={creatingProject || Boolean(createProjectDialog)}
+                onClick={() => {
+                  setGroupActionMenu(null);
+                  void beginCreateProject();
+                }}
+              >
+                <span>{t("sidebar.project.new")}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setGroupActionMenu(null);
+                  navigateWebsitesSettings();
+                }}
+              >
+                <span>{t("sidebar.website.manage")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setGroupActionMenu(null);
+                  showWebsiteDialog();
+                }}
+              >
+                <span>{t("sidebar.website.new")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setGroupActionMenu(null);
+                  void handleImportWebapp();
+                }}
+              >
+                <span>{t("sidebar.webapp.import")}</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>,
       document.body,
     );

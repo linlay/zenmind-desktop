@@ -17,6 +17,7 @@ import {
 import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
 import { webappRuntime } from "../webs/webapps/runtime";
+import { installWebsiteAppArchiveFromPath } from "../marketplace/website-app-market";
 import { t } from "../i18n/main-i18n";
 
 export interface WebIpcHandlerOptions {
@@ -122,6 +123,51 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     webappRuntime.start(app, id)
   );
   ipcMain.handle("webs.webapps.list", async () => listWebappItems(app));
+  ipcMain.handle("webs.webapps.import", async () => {
+    const result = await showFileDialog({
+      title: t("dialog.importWebapp.title"),
+      properties: ["openFile"],
+      filters: [{ name: "WebApp Archive", extensions: ["zip", "tgz", "tar.gz"] }]
+    });
+
+    const currentItems = listWebEntries(app).items;
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        item: null,
+        items: currentItems,
+        path: "",
+        message: t("webapp.importCancelled")
+      };
+    }
+
+    const importPath = result.filePaths[0];
+    try {
+      const installResult = await installWebsiteAppArchiveFromPath(app, importPath, {
+        source: "local"
+      });
+      const nextItems = listWebEntries(app).items;
+      const item = nextItems.find((candidate) =>
+        candidate.kind === "webapp" && candidate.id === installResult.itemId
+      ) ?? null;
+      return {
+        ok: installResult.ok,
+        item,
+        items: nextItems,
+        path: importPath,
+        message: installResult.message,
+        ...(installResult.installPath ? { installPath: installResult.installPath } : {})
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        item: null,
+        items: listWebEntries(app).items,
+        path: importPath,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
   ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) =>
     updateWebappItem(app, id, input)
   );

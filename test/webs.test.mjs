@@ -7,6 +7,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const JSZip = require("jszip");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 const {
@@ -32,6 +33,9 @@ const {
 const {
   webappRuntime
 } = require("../dist-electron/main/webs/webapps/runtime.js");
+const {
+  registerWebIpcHandlers
+} = require("../dist-electron/main/ipc/web-handlers.js");
 const {
   __testInternals: webappTemplateInstallerInternals,
   installBundledWebappTemplates
@@ -82,6 +86,22 @@ function webappsRoot(homePath) {
 
 function webappManifestPath(homePath, id) {
   return path.join(webappsRoot(homePath), id, "webapp.json");
+}
+
+function createIpcMain() {
+  const handlers = new Map();
+  return {
+    handle(channel, handler) {
+      handlers.set(channel, handler);
+    },
+    invoke(channel, ...args) {
+      const handler = handlers.get(channel);
+      if (!handler) {
+        throw new Error(`missing ipc handler: ${channel}`);
+      }
+      return handler({}, ...args);
+    }
+  };
 }
 
 function writeJson(filePath, value) {
@@ -157,6 +177,41 @@ server.listen(port, host);
     updatedAt: options.updatedAt ?? "2026-01-02T00:00:00.000Z"
   });
   return appDir;
+}
+
+async function writeWebappArchive(root, options = {}) {
+  const webappId = options.id ?? "local-webapp";
+  const archivePath = path.join(root, `${webappId}.zip`);
+  const zip = new JSZip();
+  zip.file(
+    `${webappId}/webapp.json`,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      id: webappId,
+      kind: "webapp",
+      label: options.label ?? "Local WebApp",
+      frontend: {
+        root: "frontend",
+        index: "index.html",
+        spa: true,
+        apiPrefix: "/api"
+      },
+      backend: {
+        runtime: "node",
+        entry: "backend/server.mjs",
+        args: [],
+        env: {},
+        port: 0,
+        healthPath: "/api/health"
+      },
+      createdAt: "2026-01-02T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z"
+    }, null, 2)}\n`
+  );
+  zip.file(`${webappId}/frontend/index.html`, "<!doctype html><div id=\"app\">local webapp</div>");
+  zip.file(`${webappId}/backend/server.mjs`, "console.log('local webapp')\n");
+  fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
+  return archivePath;
 }
 
 function registerPluginWebappOwner(app, pluginId, webappId, name = "Owner Plugin") {
@@ -453,6 +508,42 @@ test("webapps remove deletes removable installs and rejects managed sources", as
   const bundledResult = await removeWebappItem(app, "demo-node-html");
   assert.equal(bundledResult.ok, false);
   assert.equal(fs.existsSync(bundledDir), true);
+});
+
+test("webapp ipc import installs local archive and returns refreshed web entries", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-ipc-import-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const archivePath = await writeWebappArchive(root, {
+    id: "reg-report-excelx-webapp",
+    label: "监管报表与 Excel 工具"
+  });
+  writeWebsite(websitesRoot(homePath), "docs");
+
+  const ipcMain = createIpcMain();
+  registerWebIpcHandlers(ipcMain, {
+    app,
+    showFileDialog: async (options) => {
+      assert.equal(options.properties.includes("openFile"), true);
+      assert.equal(options.filters.some((filter) => filter.extensions.includes("zip")), true);
+      return { canceled: false, filePaths: [archivePath] };
+    },
+    showSaveDialog: async () => assert.fail("save dialog should not be opened"),
+    getDataRoot: () => desktopRoot(homePath)
+  });
+
+  const result = await ipcMain.invoke("webs.webapps.import");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.item?.id, "reg-report-excelx-webapp");
+  assert.equal(result.item?.entryKey, "webapp:reg-report-excelx-webapp");
+  assert.equal(result.path, archivePath);
+  assert.equal(fs.existsSync(webappManifestPath(homePath, "reg-report-excelx-webapp")), true);
+  assert.deepEqual(result.items.map((item) => item.entryKey), [
+    "website:docs",
+    "webapp:reg-report-excelx-webapp"
+  ]);
 });
 
 test("resource directory watcher debounces and refreshes web, pet, and plugin domains", (t) => {

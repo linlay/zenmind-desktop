@@ -1552,6 +1552,17 @@
   background: var(--desktop-ui-card-soft);
 }
 
+.sidebar-group-actions-menu-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: transparent;
+}
+
+.sidebar-group-actions-menu-layer .sidebar-group-actions-menu {
+  z-index: 90;
+}
+
 .assistant-chat-actions-menu button {
   display: flex;
   align-items: center;
