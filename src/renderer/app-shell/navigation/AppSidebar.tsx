@@ -3,9 +3,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
+  type Ref,
 } from "react";
 import {
   CloseOutlined,
@@ -153,8 +155,31 @@ type CreateProjectDialogState = {
   error: string;
 };
 
+type BootstrapGuideFloatingBubble = {
+  id: "agent" | "tool-help" | "settings-help";
+  messageKey: TranslationKey;
+  side: "left" | "right";
+  style: CSSProperties;
+};
+
+type BootstrapGuideDismissedBubbles = {
+  agent: boolean;
+  help: boolean;
+};
+
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
 const SIDEBAR_ASSISTANT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-assistant-sort`;
+const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
+const BOOTSTRAP_GUIDE_BUBBLE_GAP = 12;
+const BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000;
+const BOOTSTRAP_GUIDE_BUBBLE_VIEWPORT_MARGIN = 12;
+
+function createInitialBootstrapGuideDismissedBubbles(): BootstrapGuideDismissedBubbles {
+  return {
+    agent: false,
+    help: false,
+  };
+}
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
@@ -770,6 +795,8 @@ type AppSidebarProps = {
   copilotAgentOptions?: AssistantNavAgentItem[];
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
+  bootstrapGuideActive?: boolean;
+  bootstrapAgentKey?: string;
   sidebarNavigationCanGoBack?: boolean;
   sidebarNavigationCanGoForward?: boolean;
   onOpenAssistantDock?: () => void;
@@ -817,6 +844,8 @@ export function AppSidebar({
   copilotAgentOptions = [],
   desktopSsoStatus = null,
   desktopSsoBusy = false,
+  bootstrapGuideActive = false,
+  bootstrapAgentKey = "",
   sidebarNavigationCanGoBack = false,
   sidebarNavigationCanGoForward = false,
   onOpenAssistantDock,
@@ -851,6 +880,14 @@ export function AppSidebar({
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
+    useState<BootstrapGuideFloatingBubble[]>([]);
+  const [
+    bootstrapGuideDismissedBubbles,
+    setBootstrapGuideDismissedBubbles,
+  ] = useState<BootstrapGuideDismissedBubbles>(
+    createInitialBootstrapGuideDismissedBubbles,
+  );
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
@@ -883,6 +920,11 @@ export function AppSidebar({
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
+  const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
+  const bootstrapGuideAgentAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(null);
+  const bootstrapGuideSettingsHelpAnchorRef =
+    useRef<HTMLAnchorElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
   const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -896,6 +938,7 @@ export function AppSidebar({
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
   const pendingChatId = pendingRouteAgentInfo.chatId;
   const activeSidebarAgentKey = pendingPath ? pendingAgentKey : currentAgentKey;
+  const normalizedBootstrapAgentKey = bootstrapGuideActive ? bootstrapAgentKey.trim() : "";
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
@@ -980,6 +1023,12 @@ export function AppSidebar({
     .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
   const settingsToolItem = fixedToolItems.find((item) => item.to === "/settings");
+  const helpToolItem: SidebarToolItem = {
+    orderKey: "help",
+    to: "/help",
+    label: t("nav.help"),
+    icon: "help",
+  };
   const chromeToolbarClassName = [
     "sidebar-chrome-toolbar",
     isMac ? "is-mac" : isWindows ? "is-windows" : "is-default",
@@ -1127,6 +1176,74 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [assistantChatMenu]);
+
+  useEffect(() => {
+    if (!bootstrapGuideActive) {
+      bootstrapGuideToolMenuAutoOpenedRef.current = false;
+      setBootstrapGuideDismissedBubbles((current) =>
+        current.agent || current.help
+          ? createInitialBootstrapGuideDismissedBubbles()
+          : current,
+      );
+      return;
+    }
+    if (!isSettingsMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
+      bootstrapGuideToolMenuAutoOpenedRef.current = true;
+      setToolMenuOpen(true);
+    }
+  }, [bootstrapGuideActive, isSettingsMode]);
+
+  useEffect(() => {
+    if (!bootstrapGuideActive || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setBootstrapGuideDismissedBubbles({
+        agent: true,
+        help: true,
+      });
+      setBootstrapGuideFloatingBubbles([]);
+    }, BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [bootstrapGuideActive, normalizedBootstrapAgentKey]);
+
+  useEffect(() => {
+    if (!bootstrapGuideActive || typeof window === "undefined") {
+      setBootstrapGuideFloatingBubbles([]);
+      return undefined;
+    }
+
+    let frameId = 0;
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        setBootstrapGuideFloatingBubbles(getBootstrapGuideFloatingBubbles());
+      });
+    };
+
+    scheduleUpdate();
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+
+    return () => {
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [
+    bootstrapGuideActive,
+    bootstrapGuideDismissedBubbles.agent,
+    bootstrapGuideDismissedBubbles.help,
+    isCollapsed,
+    isSettingsMode,
+    normalizedBootstrapAgentKey,
+    sortedAssistantNavAgents.length,
+    toolMenuOpen,
+  ]);
 
   useEffect(() => {
     if (!agentMenu) {
@@ -1320,8 +1437,11 @@ export function AppSidebar({
     event: MouseEvent<HTMLAnchorElement>,
     targetPath: string,
   ) {
+    if (targetPath === "/help") {
+      dismissBootstrapGuideBubble("help");
+    }
     handleItemClick(event, targetPath);
-    setToolMenuOpen(false);
+    closeToolMenu();
   }
 
   function dispatchAgentRouteActionToActiveWebview(targetPath: string) {
@@ -1664,7 +1784,7 @@ export function AppSidebar({
 
     if (event.key === "Escape") {
       setAssistantSortMenuOpen(false);
-      setToolMenuOpen(false);
+      closeToolMenu();
       setAssistantChatMenu(null);
       setAgentMenu(null);
       setWebItemMenu(null);
@@ -1966,6 +2086,12 @@ export function AppSidebar({
     agent: AssistantNavAgentItem,
     expanded: boolean,
   ) {
+    if (
+      normalizedBootstrapAgentKey &&
+      agent.agentKey === normalizedBootstrapAgentKey
+    ) {
+      dismissBootstrapGuideBubble("agent");
+    }
     setExpandedAssistantAgentKey(expanded ? agent.agentKey : "");
     if (!expanded) {
       return;
@@ -2580,12 +2706,19 @@ export function AppSidebar({
           ? "running"
           : "";
     const activeChatId = getActiveSidebarChatId(agent.agentKey);
+    const bootstrapGuideAgent = Boolean(
+      normalizedBootstrapAgentKey &&
+      agent.agentKey === normalizedBootstrapAgentKey,
+    );
+    const showBootstrapGuideAgent =
+      bootstrapGuideAgent && !bootstrapGuideDismissedBubbles.agent;
     return (
       <Collapse
         key={agent.agentKey}
         className={[
           "assistant-worker-collapse-item",
           selected ? "is-selected" : "",
+          showBootstrapGuideAgent ? "is-bootstrap-guide" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -2601,6 +2734,9 @@ export function AppSidebar({
           "data-sidebar-nav-kind": roving ? "agent" : undefined,
           "data-sidebar-agent-key": roving ? agent.agentKey : undefined,
         }}
+        headerButtonRef={
+          showBootstrapGuideAgent ? bootstrapGuideAgentAnchorRef : undefined
+        }
         header={
           <span className="assistant-worker-header-text">
               <span
@@ -2980,10 +3116,14 @@ export function AppSidebar({
     return renderSidebarLink(item);
   }
 
-  function renderToolLink(item: SidebarToolItem) {
+  function renderToolLink(
+    item: SidebarToolItem,
+    options: { bootstrapGuide?: boolean; anchorRef?: Ref<HTMLAnchorElement> } = {},
+  ) {
     return (
       <NavLink
         key={item.to}
+        ref={options.anchorRef}
         to={item.to}
         onClick={(event) => handleToolItemClick(event, item.to)}
         aria-label={item.label}
@@ -2994,6 +3134,7 @@ export function AppSidebar({
             "sidebar-link",
             "sidebar-tool-menu-item",
             isFixedToolRouteActive(item.to) ? "sidebar-link-active" : "",
+            options.bootstrapGuide ? "is-bootstrap-guide" : "",
           ]
             .filter(Boolean)
             .join(" ")
@@ -3010,35 +3151,171 @@ export function AppSidebar({
     );
   }
 
-  function renderSettingsToolRow(item: SidebarToolItem) {
+  function renderSettingsHelpLink() {
     const helpLabel = t("nav.help");
     return (
-      <div
-        className="sidebar-settings-tool-row"
-        key={item.to}
-        role="group"
-        aria-label={item.label}
+      <NavLink
+        ref={bootstrapGuideSettingsHelpAnchorRef}
+        to="/help"
+        onClick={(event) => {
+          dismissBootstrapGuideBubble("help");
+          handleItemClick(event, "/help");
+        }}
+        aria-label={helpLabel}
+        title={helpLabel}
+        className={({ isActive: routeActive }) =>
+          [
+            "sidebar-link",
+            "sidebar-link-utility",
+            "sidebar-settings-help-link",
+            routeActive || isFixedToolRouteActive("/help") ? "sidebar-link-active" : "",
+            bootstrapGuideActive && !bootstrapGuideDismissedBubbles.help
+              ? "is-bootstrap-guide"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        }
       >
-        {renderToolLink(item)}
-        <NavLink
-          to="/help"
-          onClick={(event) => handleToolItemClick(event, "/help")}
-          aria-label={helpLabel}
-          title={helpLabel}
-          role="menuitem"
-          className={() =>
-            [
-              "sidebar-settings-help-link",
-              isFixedToolRouteActive("/help") ? "sidebar-link-active" : "",
+        <span className="sidebar-link-icon" aria-hidden="true">
+          <SidebarIllustration kind="help" />
+        </span>
+        <span className="sidebar-link-label">{helpLabel}</span>
+      </NavLink>
+    );
+  }
+
+  function renderBootstrapGuideFloatingBubbles() {
+    if (
+      !bootstrapGuideActive ||
+      typeof document === "undefined" ||
+      bootstrapGuideFloatingBubbles.length === 0
+    ) {
+      return null;
+    }
+
+    return createPortal(
+      <div className="sidebar-bootstrap-guide-layer" aria-live="polite">
+        {bootstrapGuideFloatingBubbles.map((bubble) => (
+          <div
+            key={bubble.id}
+            className={[
+              "sidebar-bootstrap-guide-bubble",
+              `is-${bubble.id}`,
+              `is-${bubble.side}`,
             ]
               .filter(Boolean)
-              .join(" ")
-          }
-        >
-          <span aria-hidden="true">?</span>
-        </NavLink>
-      </div>
+              .join(" ")}
+            style={bubble.style}
+            role="note"
+          >
+            {t(bubble.messageKey)}
+          </div>
+        ))}
+      </div>,
+      document.body,
     );
+  }
+
+  function getBootstrapGuideFloatingBubbles(): BootstrapGuideFloatingBubble[] {
+    const bubbles: BootstrapGuideFloatingBubble[] = [];
+    if (!bootstrapGuideDismissedBubbles.agent) {
+      const agentBubble = createBootstrapGuideFloatingBubble(
+        bootstrapGuideAgentAnchorRef.current,
+        "agent",
+        "sidebar.bootstrapGuide.agentMessage",
+      );
+      if (agentBubble) {
+        bubbles.push(agentBubble);
+      }
+    }
+
+    if (!bootstrapGuideDismissedBubbles.help) {
+      const helpAnchor = isSettingsMode
+        ? bootstrapGuideSettingsHelpAnchorRef.current
+        : toolMenuOpen
+          ? bootstrapGuideToolHelpAnchorRef.current
+          : null;
+      const helpBubble = createBootstrapGuideFloatingBubble(
+        helpAnchor,
+        isSettingsMode ? "settings-help" : "tool-help",
+        "sidebar.bootstrapGuide.helpMessage",
+      );
+      if (helpBubble) {
+        bubbles.push(helpBubble);
+      }
+    }
+
+    return bubbles;
+  }
+
+  function dismissBootstrapGuideBubble(
+    bubble: keyof BootstrapGuideDismissedBubbles,
+  ) {
+    setBootstrapGuideFloatingBubbles((current) =>
+      current.filter((item) =>
+        bubble === "agent"
+          ? item.id !== "agent"
+          : item.id !== "tool-help" && item.id !== "settings-help",
+      ),
+    );
+    setBootstrapGuideDismissedBubbles((current) =>
+      current[bubble]
+        ? current
+        : {
+            ...current,
+            [bubble]: true,
+          },
+    );
+  }
+
+  function createBootstrapGuideFloatingBubble(
+    anchor: HTMLElement | null,
+    id: BootstrapGuideFloatingBubble["id"],
+    messageKey: TranslationKey,
+  ): BootstrapGuideFloatingBubble | null {
+    if (!anchor?.isConnected || typeof window === "undefined") {
+      return null;
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const margin = BOOTSTRAP_GUIDE_BUBBLE_VIEWPORT_MARGIN;
+    const availableWidth = Math.max(160, viewportWidth - margin * 2);
+    const width = Math.min(BOOTSTRAP_GUIDE_BUBBLE_WIDTH, availableWidth);
+    const fitsRight =
+      rect.right + BOOTSTRAP_GUIDE_BUBBLE_GAP + width <= viewportWidth - margin;
+    const fitsLeft =
+      rect.left - BOOTSTRAP_GUIDE_BUBBLE_GAP - width >= margin;
+    const side: BootstrapGuideFloatingBubble["side"] =
+      fitsRight || !fitsLeft ? "right" : "left";
+    const left =
+      side === "right"
+        ? Math.min(
+            rect.right + BOOTSTRAP_GUIDE_BUBBLE_GAP,
+            viewportWidth - width - margin,
+          )
+        : Math.max(margin, rect.left - width - BOOTSTRAP_GUIDE_BUBBLE_GAP);
+    const top = Math.min(
+      Math.max(rect.top + rect.height / 2, margin + 44),
+      viewportHeight - margin - 44,
+    );
+
+    return {
+      id,
+      messageKey,
+      side,
+      style: {
+        left: Math.round(left),
+        top: Math.round(top),
+        width,
+      },
+    };
   }
 
   function renderAccountMenuIcon(kind: "account") {
@@ -3139,9 +3416,13 @@ export function AppSidebar({
       : t("sidebar.sso.signIn");
   }
 
+  function closeToolMenu() {
+    setToolMenuOpen(false);
+  }
+
   function handleDesktopSsoMenuActionClick() {
     onDesktopSsoLogin?.();
-    setToolMenuOpen(false);
+    closeToolMenu();
   }
 
   function handleDesktopSsoLogoutClick(event: MouseEvent<HTMLButtonElement>) {
@@ -3154,14 +3435,14 @@ export function AppSidebar({
       return;
     }
     onDesktopSsoLogout?.();
-    setToolMenuOpen(false);
+    closeToolMenu();
   }
 
   function handleToolMenuOpenChange(open: boolean) {
     const requestId = toolMenuOpenRequestIdRef.current + 1;
     toolMenuOpenRequestIdRef.current = requestId;
     if (!open) {
-      setToolMenuOpen(false);
+      closeToolMenu();
       return;
     }
 
@@ -3191,6 +3472,7 @@ export function AppSidebar({
         className={[
           "sidebar-tool-menu",
           "sidebar-account-menu",
+          bootstrapGuideActive ? "has-bootstrap-guide" : "",
           isCollapsed
             ? "is-from-collapsed-sidebar"
             : "is-from-expanded-sidebar",
@@ -3208,7 +3490,12 @@ export function AppSidebar({
         ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {settingsToolItem ? renderSettingsToolRow(settingsToolItem) : null}
+        {renderToolLink(helpToolItem, {
+          anchorRef: bootstrapGuideToolHelpAnchorRef,
+          bootstrapGuide:
+            bootstrapGuideActive && !bootstrapGuideDismissedBubbles.help,
+        })}
+        {settingsToolItem ? renderToolLink(settingsToolItem) : null}
       </div>
     );
   }
@@ -3927,6 +4214,7 @@ export function AppSidebar({
           </span>
           <span className="sidebar-link-label">{t("settings.backToApp")}</span>
         </button>
+        {renderSettingsHelpLink()}
         <label className="sidebar-settings-search" aria-label={t("settings.searchAriaLabel")}>
           <span className="sidebar-settings-search-icon" aria-hidden="true">
             <SearchOutlined />
@@ -3994,6 +4282,7 @@ export function AppSidebar({
   const settingsToolTriggerLabel = t("nav.settings");
 
   return (
+    <>
     <aside className={shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
         <div className={chromeToolbarClassName}>
@@ -4137,6 +4426,8 @@ export function AppSidebar({
       </div>
       ) : null}
     </aside>
+    {renderBootstrapGuideFloatingBubbles()}
+    </>
   );
 }
 

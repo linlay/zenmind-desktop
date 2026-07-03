@@ -1,5 +1,16 @@
 # ZenMind Desktop Project Conventions
 
+## Design Docs First
+
+- Treat `docs/` as the design-plan source for Desktop behavior. Before changing code, read `README.md` section `6. 专题文档索引`, then open the `docs/` topic documents that match the task.
+- Start with `docs/架构与模块边界.md` whenever a change crosses Electron main/preload/renderer, built-in services, plugins, webviews, or shared contracts.
+- For startup, recovery, built-in services, resources, packaging, or uninstall flows, read `docs/启动初始化与恢复.md`, `docs/服务生命周期.md`, `docs/内置资源与Manifest.md`, and `docs/版本化打包与卸载.md` as applicable.
+- For frontend embedding, navigation, authentication, SSO, token bridges, desktop protocols, or action dispatch, read `docs/前端嵌入与导航.md`, `docs/鉴权SSO与TokenBridge.md`, and `docs/桌面协议与动作桥.md` as applicable.
+- For plugins, market resources, external websites, local web apps, pets, data layout, Kanban sync, or assistant integration, read the matching topic docs under `docs/` before editing the related modules.
+- Use `docs/手工测试用例.md` as the manual regression checklist for user-visible workflow changes.
+- Treat migration stubs such as `docs/plugin-development.md`, `docs/data-directories.md`, and `docs/bootstrap-startup-order.md` as pointers only; follow them to the current Chinese topic documents.
+- If code must intentionally diverge from a design doc, update the doc in the same change or call out the mismatch explicitly.
+
 ## Platform Compatibility
 
 - Whenever a feature, path, script, runtime behavior, packaging flow, or UI interaction may differ between platforms, handle it explicitly with platform branches such as `if (isWindows) { ... }` and `if (isMac) { ... }`.
@@ -25,16 +36,3 @@
 - Treat cloud Kanban issues as a read-only cache in Desktop UI/runtime surfaces.
 - Do not call removed public issue endpoints such as `issue.transition`, `issue.assignRun`, `issue.dispatchDesktop`, `issue.label.set`, `issue.dependency.*`, `issueLabel.*`, `review.*`, or `review.comment.*`.
 - Keep `run.event.append` as the Desktop runtime synchronization protocol for run state, `chatId`, and `runId`; it is not public issue CRUD.
-
-<!-- xgraph:start -->
-## Project Context
-
-Before work, read `.doc/index.json`.
-
-Follow its `readOrder` progressively. Start from the catalog paths declared by the index, then inspect related task, flow, rule, and module cards only as needed.
-
-Keep this entry file short; use `.doc/rules/agent.md` for detailed behavior.
-
-When an agent lifecycle hook is installed, let it run `xgraph finish`; otherwise run `xgraph sync` before finishing.
-
-<!-- xgraph:end -->

@@ -3265,6 +3265,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const globalStyles = readRendererStyles();
+  const i18nEn = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const i18nZh = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
   assert.match(contracts, /interface AssistantNavAgentItem/);
   assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
@@ -3327,6 +3329,16 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /proxy-acp-codex[\s\S]*?acpProxyId:\s*"codex"/);
   assert.match(appSidebar, /value="coder"[\s\S]*?t\("sidebar\.project\.coder"\)/);
   assert.match(appSidebar, /value="kbase"[\s\S]*?t\("sidebar\.project\.kbase"\)/);
+  assert.match(i18nZh, /"sidebar\.project\.coder": "代码助手"/);
+  assert.match(i18nZh, /"sidebar\.project\.kbase": "知识库"/);
+  assert.doesNotMatch(i18nZh, /"sidebar\.project\.coder": "CODER"/);
+  assert.doesNotMatch(i18nZh, /"sidebar\.project\.kbase": "KBASE"/);
+  assert.match(i18nEn, /"sidebar\.project\.coder": "Coder"/);
+  assert.match(i18nEn, /"sidebar\.project\.kbase": "Knowledge Base"/);
+  assert.match(i18nZh, /"sidebar\.project\.useAcp": "使用 ACP"/);
+  assert.match(i18nZh, /"sidebar\.project\.acpProxy": "ACP 代理"/);
+  assert.match(i18nEn, /"sidebar\.project\.useAcp": "Use ACP"/);
+  assert.match(i18nEn, /"sidebar\.project\.acpProxy": "ACP proxy"/);
   assert.doesNotMatch(appSidebar, /createProjectDialog\.name/);
   assert.doesNotMatch(appSidebar, /t\("sidebar\.project\.name"\)/);
   assert.match(appSidebar, /className="sidebar-website-dialog-readonly-input"[\s\S]*?readOnly[\s\S]*?disabled/);

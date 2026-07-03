@@ -2802,6 +2802,11 @@ export function AppShell() {
           copilotAgentOptions={copilotAgentOptions}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
+          bootstrapGuideActive={
+            startupRestoreState?.mode === "bootstrap" &&
+            startupRestoreState.phase === "succeeded"
+          }
+          bootstrapAgentKey={assistantSettings?.bootstrapAgentKey ?? ""}
           sidebarNavigationCanGoBack={sidebarNavigationHistory.back.length > 0}
           sidebarNavigationCanGoForward={sidebarNavigationHistory.forward.length > 0}
           onOpenAssistantDock={() => openAssistantDock()}
