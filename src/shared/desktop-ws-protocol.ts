@@ -206,10 +206,13 @@ function parseLegacyPairingPayload(record: Record<string, unknown>): LegacyPairi
 
 function parseDesktopWsPairingPayload(record: Record<string, unknown>): MobilePairingPayloadV2 {
   const expiresAtMs = Number(record.expiresAtMs);
+  if (record.targetMode !== "tunnel") {
+    throw new Error(MISSING_DESKTOP_WS_PAIRING_MESSAGE);
+  }
   const payload: MobilePairingPayloadV2 = {
     v: 2,
     kind: "desktop-ws",
-    targetMode: record.targetMode === "lan" || record.targetMode === "tunnel" ? record.targetMode : "local",
+    targetMode: "tunnel",
     wsUrl: normalizeDesktopWsUrlInput(record.wsUrl),
     tokenMode: normalizeDesktopWsTokenMode(record.tokenMode),
     token: readText(record.token),

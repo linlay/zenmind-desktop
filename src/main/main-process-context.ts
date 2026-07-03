@@ -449,6 +449,7 @@ export interface SettingsIpcHandlerContextDependencies {
   startDesktopWsServer?: (...args: any[]) => unknown;
   stopDesktopWsServer?: (...args: any[]) => unknown;
   applyTunnelHubSettings?: (...args: any[]) => unknown;
+  getTunnelHubRuntimeStatus?: (...args: any[]) => unknown;
 }
 
 export function createSettingsIpcHandlerOptions(
@@ -478,6 +479,7 @@ export function createSettingsIpcHandlerOptions(
     getDesktopWsServerRuntimeState: dependencies.getDesktopWsServerRuntimeState,
     startDesktopWsServer: dependencies.startDesktopWsServer,
     stopDesktopWsServer: dependencies.stopDesktopWsServer,
-    applyTunnelHubSettings: dependencies.applyTunnelHubSettings
+    applyTunnelHubSettings: dependencies.applyTunnelHubSettings,
+    getTunnelHubRuntimeStatus: dependencies.getTunnelHubRuntimeStatus
   };
 }

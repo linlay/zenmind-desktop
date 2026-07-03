@@ -2046,7 +2046,8 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.match(tunnelHubCaseBody, /settings\.tunnelHub\.panelAria[\s\S]*handleSaveTunnelHubSettings[\s\S]*settings\.tunnelHub\.relayUrl[\s\S]*t\("common\.save"\)/);
   assert.match(tunnelHubCaseBody, /<label className="settings-control-row">[\s\S]*settings-control-row-label[\s\S]*settings\.tunnelHub\.relayUrl[\s\S]*className="settings-control-row-control"/);
   assert.doesNotMatch(tunnelHubCaseBody, /settings\.tunnelHub\.loginRequired|tunnelHubSsoStatus/);
-  assert.match(tunnelHubCaseBody, /settings\.mobilePairing\.title[\s\S]*settings\.mobilePairing\.targetMode[\s\S]*handleCreateAppPairingPayload[\s\S]*settings\.mobilePairing\.qrCode[\s\S]*handleCopyAppPairingPayload/);
+  assert.match(tunnelHubCaseBody, /settings\.mobilePairing\.title[\s\S]*handleCreateAppPairingPayload[\s\S]*settings\.mobilePairing\.qrCode[\s\S]*handleCopyAppPairingPayload/);
+  assert.doesNotMatch(tunnelHubCaseBody, /settings\.mobilePairing\.targetMode|APP_PAIRING_TARGET_MODES|appPairingTargetMode/);
   assert.doesNotMatch(settingsPage, /settings\.control\.cloudPanelAria/);
   assert.match(settingsPage, /import \{[^}]*\bControlCenterPage\b[^}]*\} from "\.\.\/control-center\/ControlCenterPage";/);
   assert.match(controlCaseBody, /<ControlCenterPage \/>/);

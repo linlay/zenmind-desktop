@@ -1,12 +1,12 @@
 import type {
   DesktopGeneralSettings,
   DesktopGeneralSettingsInput,
-  DesktopAppPairingPayloadRequest,
   DesktopUsageProfileResult,
   DesktopWsServerStartOptions,
   DesktopWsServerState,
   TunnelHubSettingsInput,
-  TunnelHubSettingsResult
+  TunnelHubSettingsResult,
+  TunnelHubRuntimeStatus
 } from "../../shared/contracts";
 import {
   DESKTOP_WS_HOST,
@@ -43,9 +43,8 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance?: () => void;
   emitLocaleChanged: (settings: any) => void;
-  createAppPairingPayload?: (app: any, input?: DesktopAppPairingPayloadRequest, options?: {
-    getDesktopWsServerRuntimeState?: () => Omit<DesktopWsServerState, "enabled">;
-    startDesktopWsServer?: (options?: DesktopWsServerStartOptions) => Promise<Omit<DesktopWsServerState, "enabled">>;
+  createAppPairingPayload?: (app: any, options?: {
+    getTunnelHubRuntimeStatus?: () => TunnelHubRuntimeStatus;
   }) => Promise<any>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
@@ -53,6 +52,7 @@ export interface SettingsIpcHandlerOptions {
   startDesktopWsServer?: (options?: DesktopWsServerStartOptions) => Promise<Omit<DesktopWsServerState, "enabled">>;
   stopDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
   applyTunnelHubSettings?: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
+  getTunnelHubRuntimeStatus?: () => TunnelHubRuntimeStatus;
 }
 
 export function setNativeThemeSource(nativeTheme: { themeSource: string }, themeMode: string) {
@@ -120,7 +120,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     getDesktopWsServerRuntimeState,
     startDesktopWsServer,
     stopDesktopWsServer,
-    applyTunnelHubSettings
+    applyTunnelHubSettings,
+    getTunnelHubRuntimeStatus
   } = options;
 
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
@@ -302,13 +303,12 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     emitLocaleChanged(settings);
     return settings;
   });
-  ipcMain.handle("settings.createAppPairingPayload", async (_event: any, input?: DesktopAppPairingPayloadRequest) => {
+  ipcMain.handle("settings.createAppPairingPayload", async () => {
     if (!createAppPairingPayload) {
       return { ok: false, message: t("settings.mobilePairing.unavailable") };
     }
-    return createAppPairingPayload(app, input, {
-      getDesktopWsServerRuntimeState,
-      startDesktopWsServer
+    return createAppPairingPayload(app, {
+      getTunnelHubRuntimeStatus
     });
   });
 }
