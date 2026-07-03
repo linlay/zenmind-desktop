@@ -43,8 +43,8 @@ export const zhCNMessages = {
   "menu.window": "窗口",
   "menu.quit": "退出 {appName}",
 
-  "quitConfirm.title": "退出 {appName}？",
-  "quitConfirm.detail": "本机正在运行的任务和服务将会中断，{appName} 关闭期间已启用的自动化不会运行。",
+  "quitConfirm.title": "确认退出？",
+  "quitConfirm.detail": "退出后，本机正在运行的任务和服务将中断；已启用的自动化在应用关闭期间不会运行。",
   "quitConfirm.quit": "退出",
 
   "tray.chatWithApp": "和 {appName} 聊天",

@@ -105,7 +105,6 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   });
   const quitConfirmationController = createQuitConfirmationController({
     platform: options.platform,
-    appName: options.productName,
     t: options.t,
     getOwnerWindow: () => options.state.mainWindow,
     showMessageBox: (dialogOptions, ownerWindow) => nativeDialogController.showMessageBox(dialogOptions, ownerWindow),

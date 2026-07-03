@@ -12,7 +12,6 @@ type QuitConfirmationShowMessageBox = (
 
 export type QuitConfirmationControllerOptions = {
   platform: NodeJS.Platform;
-  appName: string;
   t: TranslateFunction;
   getOwnerWindow: () => BrowserWindow | null;
   showMessageBox: QuitConfirmationShowMessageBox;
@@ -20,10 +19,9 @@ export type QuitConfirmationControllerOptions = {
 };
 
 export function buildQuitConfirmationDialogOptions(options: {
-  appName: string;
   t: TranslateFunction;
 }): MessageBoxOptions {
-  const title = options.t("quitConfirm.title", { appName: options.appName });
+  const title = options.t("quitConfirm.title");
   return {
     type: "warning",
     buttons: [
@@ -35,7 +33,7 @@ export function buildQuitConfirmationDialogOptions(options: {
     noLink: true,
     title,
     message: title,
-    detail: options.t("quitConfirm.detail", { appName: options.appName })
+    detail: options.t("quitConfirm.detail")
   };
 }
 
@@ -63,7 +61,6 @@ export function createQuitConfirmationController(options: QuitConfirmationContro
     const ownerWindow = options.getOwnerWindow();
     const result = await options.showMessageBox(
       buildQuitConfirmationDialogOptions({
-        appName: options.appName,
         t: options.t
       }),
       ownerWindow && !ownerWindow.isDestroyed() ? ownerWindow : null

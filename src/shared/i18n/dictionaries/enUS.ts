@@ -43,8 +43,8 @@ export const enUSMessages = {
   "menu.window": "Window",
   "menu.quit": "Quit {appName}",
 
-  "quitConfirm.title": "Quit {appName}?",
-  "quitConfirm.detail": "Active local tasks and services on this machine will be interrupted, and enabled automations won't run while {appName} is closed.",
+  "quitConfirm.title": "Quit now?",
+  "quitConfirm.detail": "Quitting will interrupt active local tasks and services. Enabled automations will not run while the app is closed.",
   "quitConfirm.quit": "Quit",
 
   "tray.chatWithApp": "Chat with {appName}",

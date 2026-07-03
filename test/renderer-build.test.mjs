@@ -4544,13 +4544,33 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
   const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const appMenu = readSourceFile("src", "main", "app-shell", "app-menu.ts");
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const quitConfirmation = readSourceFile("src", "main", "app-shell", "quit-confirmation.ts");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const beforeQuitHandler = appEvents.match(/options\.app\.on\("before-quit", \(event\) => \{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const trayOptions = trayController.match(/export type AppTrayControllerOptions = \{[\s\S]*?\n\};/u)?.[0] ?? "";
   const trayQuitMenuItem = trayController.match(/label: t\("tray\.quit"\),[\s\S]*?\n      \}/u)?.[0] ?? "";
   const trayRuntimeOptions = runtime.match(/new AppTrayController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const appMenuRuntimeOptions = runtime.match(/installApplicationMenu\(\{[\s\S]*?\n    \}\);/u)?.[0] ?? "";
+  const quitConfirmationRuntimeOptions = runtime.match(/createQuitConfirmationController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
+  const quitConfirmationOptions = quitConfirmation.match(/export type QuitConfirmationControllerOptions = \{[\s\S]*?\n\};/u)?.[0] ?? "";
+  const quitDialogBuilder = quitConfirmation.match(/export function buildQuitConfirmationDialogOptions[\s\S]*?export function createQuitConfirmationController/u)?.[0] ?? "";
+  const zhQuitConfirmCopy = zhCN.match(/"quitConfirm\.(?:title|detail)": .*$/gmu)?.join("\n") ?? "";
+  const enQuitConfirmCopy = enUS.match(/"quitConfirm\.(?:title|detail)": .*$/gmu)?.join("\n") ?? "";
   const macQuitMenuItem = appMenu.match(/label: options\.t\("menu\.quit", \{ appName: options\.appName \}\),[\s\S]*?\n            \}/u)?.[0] ?? "";
   const macWindowMenuItem = appMenu.match(/const windowMenuItem: MenuItemConstructorOptions = isMac[\s\S]*?\n    : \{ role: "windowMenu" \};/u)?.[0] ?? "";
+
+  assert.match(zhCN, /"quitConfirm\.title": "确认退出？"/);
+  assert.match(zhCN, /"quitConfirm\.detail": "退出后，本机正在运行的任务和服务将中断；已启用的自动化在应用关闭期间不会运行。"/);
+  assert.match(enUS, /"quitConfirm\.title": "Quit now\?"/);
+  assert.match(enUS, /"quitConfirm\.detail": "Quitting will interrupt active local tasks and services\. Enabled automations will not run while the app is closed\."/);
+  assert.doesNotMatch(zhQuitConfirmCopy, /\{appName\}/);
+  assert.doesNotMatch(enQuitConfirmCopy, /\{appName\}/);
+  assert.match(quitDialogBuilder, /const title = options\.t\("quitConfirm\.title"\);/);
+  assert.match(quitDialogBuilder, /detail:\s*options\.t\("quitConfirm\.detail"\)/);
+  assert.doesNotMatch(quitDialogBuilder, /quitConfirm\.(?:title|detail)"\s*,\s*\{ appName:/);
+  assert.doesNotMatch(quitConfirmationOptions, /appName:\s*string;/);
+  assert.doesNotMatch(quitConfirmationRuntimeOptions, /appName:\s*options\.productName/);
 
   assert.match(trayOptions, /quitWithoutConfirmation:\s*\(\) => void;/);
   assert.match(trayQuitMenuItem, /click:\s*\(\) => this\.options\.quitWithoutConfirmation\(\)/);
