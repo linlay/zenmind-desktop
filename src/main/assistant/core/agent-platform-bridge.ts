@@ -8,6 +8,9 @@ import type {
   AssistantAwaitingMode,
   AssistantChatDetail,
   AssistantChatMessage,
+  AssistantChatSearchRequest,
+  AssistantChatSearchResponse,
+  AssistantChatSearchResult,
   AssistantChatSummary,
   AssistantEvent,
   AssistantMemoryItem,
@@ -108,6 +111,12 @@ type PlatformChatDetail = {
   chatName?: string;
   events?: Array<Record<string, unknown>>;
   runs?: PlatformRunSummary[];
+};
+
+type PlatformChatSearchResponse = {
+  query?: string;
+  count?: number;
+  results?: unknown;
 };
 
 type PlatformMemoryRecord = {
@@ -576,6 +585,44 @@ function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary {
   };
 }
 
+function mapChatSearchResult(value: unknown): AssistantChatSearchResult | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const chatId = readString(record.chatId).trim();
+  if (!chatId) {
+    return null;
+  }
+  const agentKey = readString(record.agentKey).trim();
+  const runId = readString(record.runId).trim();
+  const role = readString(record.role).trim();
+  return {
+    chatId,
+    chatName: readString(record.chatName),
+    ...(agentKey ? { agentKey } : {}),
+    ...(runId ? { runId } : {}),
+    kind: readString(record.kind),
+    ...(role ? { role } : {}),
+    timestamp: readNumber(record.timestamp),
+    snippet: readString(record.snippet),
+    score: readNumber(record.score)
+  };
+}
+
+function mapChatSearchResponse(payload: PlatformChatSearchResponse | null | undefined, fallbackQuery: string): AssistantChatSearchResponse {
+  const results = Array.isArray(payload?.results)
+    ? payload.results.map(mapChatSearchResult).filter((item): item is AssistantChatSearchResult => Boolean(item))
+    : [];
+  const rawCount = Number(payload?.count);
+  const hasCount = payload && typeof payload === "object" && "count" in payload && Number.isFinite(rawCount);
+  return {
+    query: readString(payload?.query) || fallbackQuery,
+    count: hasCount ? rawCount : results.length,
+    results
+  };
+}
+
 function readChatAgentKey(summary: PlatformChatSummary) {
   return readString(summary.agentKey) || readString(summary.workerKey);
 }
@@ -901,6 +948,36 @@ export class AgentPlatformAssistantBridge {
       messages,
       events
     };
+  }
+
+  async searchChats(request: AssistantChatSearchRequest): Promise<AssistantChatSearchResponse> {
+    const query = request?.query?.trim() ?? "";
+    if (!query) {
+      return { query: "", count: 0, results: [] };
+    }
+    const limit = Number.isFinite(Number(request.limit)) && Number(request.limit) > 0
+      ? Math.floor(Number(request.limit))
+      : undefined;
+    const agentKey = request.agentKey?.trim() ?? "";
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      throw new Error(availability.message);
+    }
+    const body = {
+      query,
+      ...(limit ? { limit } : {}),
+      ...(agentKey ? { agentKey } : {})
+    };
+    const response = await this.platformFetch(availability.baseUrl, "/api/chats/search", {
+      method: "POST",
+      headers: this.jsonHeaders(availability.token),
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorText(response));
+    }
+    const payload = unwrapApiResponse<PlatformChatSearchResponse>(await response.json());
+    return mapChatSearchResponse(payload, query);
   }
 
   async deleteChat(chatId: string) {

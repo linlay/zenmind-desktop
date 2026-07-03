@@ -53,19 +53,6 @@
   background: transparent;
 }
 
-:root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
-  background: var(--embedded-surface-shell-bg);
-}
-
-/* Mac plugin surfaces show the window canvas behind transparent host layers. */
-.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface {
-  background: var(--bg-canvas);
-}
-
-:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface {
-  background: var(--embedded-surface-shell-bg);
-}
-
 .app-shell.is-mac-translucent-sidebar {
   border-radius: 0;
   overflow: hidden;
@@ -299,4 +286,255 @@
 
 .app-content::before {
   display: none;
+}
+
+.desktop-global-search-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 76px 18px 18px;
+  background: rgba(15, 23, 42, 0.28);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-global-search-panel {
+  width: min(720px, 100%);
+  max-height: min(720px, calc(100vh - 112px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+  color: #0f172a;
+}
+
+.desktop-global-search-input-shell {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.desktop-global-search-input-icon {
+  color: #475569;
+  font-size: 16px;
+}
+
+.desktop-global-search-input-shell input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.desktop-global-search-input-shell input::placeholder {
+  color: #64748b;
+}
+
+.desktop-global-search-input-shell kbd {
+  min-width: 54px;
+  padding: 4px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.desktop-global-search-results {
+  flex: 1;
+  min-height: 220px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.desktop-global-search-section + .desktop-global-search-section {
+  margin-top: 10px;
+}
+
+.desktop-global-search-section-title {
+  padding: 8px 10px 5px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.desktop-global-search-row {
+  width: 100%;
+  min-height: 50px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 132px);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.desktop-global-search-row.is-action,
+.desktop-global-search-row.is-agent {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.desktop-global-search-row.is-active {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(239, 246, 255, 0.95);
+}
+
+.desktop-global-search-row-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: #f1f5f9;
+  color: #2563eb;
+  font-size: 15px;
+}
+
+.desktop-global-search-row-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.desktop-global-search-row-title,
+.desktop-global-search-row-detail,
+.desktop-global-search-row-agent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-global-search-row-title {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+.desktop-global-search-row-detail {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.desktop-global-search-row-agent {
+  justify-self: end;
+  max-width: 132px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.desktop-global-search-empty {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #64748b;
+  text-align: center;
+}
+
+.desktop-global-search-status {
+  min-height: 30px;
+  padding: 7px 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  color: #475569;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.desktop-global-search-status.is-error {
+  color: #b42318;
+}
+
+:root[data-theme="dark"] .desktop-global-search-layer {
+  background: rgba(2, 6, 23, 0.44);
+}
+
+:root[data-theme="dark"] .desktop-global-search-panel {
+  border-color: rgba(71, 85, 105, 0.7);
+  background: rgba(15, 23, 42, 0.96);
+  color: #e2e8f0;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
+}
+
+:root[data-theme="dark"] .desktop-global-search-input-shell {
+  border-bottom-color: rgba(71, 85, 105, 0.65);
+}
+
+:root[data-theme="dark"] .desktop-global-search-input-icon,
+:root[data-theme="dark"] .desktop-global-search-input-shell input::placeholder,
+:root[data-theme="dark"] .desktop-global-search-section-title,
+:root[data-theme="dark"] .desktop-global-search-row-detail,
+:root[data-theme="dark"] .desktop-global-search-empty,
+:root[data-theme="dark"] .desktop-global-search-status {
+  color: #94a3b8;
+}
+
+:root[data-theme="dark"] .desktop-global-search-input-shell input,
+:root[data-theme="dark"] .desktop-global-search-row-title {
+  color: #f8fafc;
+}
+
+:root[data-theme="dark"] .desktop-global-search-input-shell kbd,
+:root[data-theme="dark"] .desktop-global-search-row-icon {
+  border-color: rgba(71, 85, 105, 0.72);
+  background: #1e293b;
+  color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .desktop-global-search-row.is-active {
+  border-color: rgba(96, 165, 250, 0.48);
+  background: rgba(30, 58, 138, 0.36);
+}
+
+:root[data-theme="dark"] .desktop-global-search-row-agent {
+  color: #cbd5e1;
+}
+
+@media (max-width: 680px) {
+  .desktop-global-search-layer {
+    padding: 52px 10px 10px;
+  }
+
+  .desktop-global-search-panel {
+    max-height: calc(100vh - 72px);
+  }
+
+  .desktop-global-search-row {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .desktop-global-search-row-agent {
+    display: none;
+  }
 }

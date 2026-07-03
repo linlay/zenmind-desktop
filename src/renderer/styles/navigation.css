@@ -137,11 +137,7 @@
 }
 
 .app-shell.has-translucent-sidebar .app-sidebar {
-  background:
-    linear-gradient(180deg,
-      rgba(255, 255, 255, 0.08) 0%,
-      rgba(255, 255, 255, 0.05) 46%,
-      rgba(255, 255, 255, 0.03) 100%);
+  background: rgba(255, 255, 255, 0.05);
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.32),
@@ -149,7 +145,7 @@
 }
 
 :root[data-theme="dark"] .app-shell.has-translucent-sidebar .app-sidebar {
-  background: #202020;
+  background: rgba(0, 0, 0, 0.15);
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.035),
@@ -157,11 +153,7 @@
 }
 
 .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background:
-    linear-gradient(180deg,
-      rgba(255, 255, 255, 0.08) 0%,
-      rgba(255, 255, 255, 0.05) 46%,
-      rgba(255, 255, 255, 0.03) 100%);
+  background: rgba(255, 255, 255, 0.05);
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.32),
@@ -171,7 +163,7 @@
 }
 
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background: #202020;
+  background: rgba(0, 0, 0, 0.15);
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.035),
@@ -752,7 +744,7 @@
 
 .assistant-worker-collapse-item {
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
   color: var(--ink-soft);
   transform: translateY(0) scale(1);
@@ -790,15 +782,35 @@
   background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
 }
 
-.assistant-worker-collapse-item.is-selected>.Collapse-header {
-  background: color-mix(in srgb, var(--ink-muted) 6%, transparent);
+.assistant-worker-collapse-item.is-selected {
+  background: rgba(var(--accent-rgb), 0.08);
+  border-color: rgba(var(--accent-rgb), 0.14);
+}
+
+.assistant-worker-collapse-item.is-selected:hover:not(.is-expanded) {
+  background: rgba(var(--accent-rgb), 0.08);
 }
 
 .assistant-worker-collapse-item.is-expanded {
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.15);
   border-color: var(--line);
   box-shadow: var(--panel-shadow);
   transform: translateY(-1px) scale(1.012);
+}
+
+.assistant-worker-collapse-item.is-selected.is-expanded {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(var(--accent-rgb), 0.18);
+  box-shadow: 0 10px 24px rgba(var(--accent-rgb), 0.08);
+}
+
+.assistant-worker-collapse-item.is-selected>.Collapse-header,
+.assistant-worker-collapse-item.is-selected .assistant-worker-header,
+.assistant-worker-collapse-item.is-selected .assistant-worker-chat-item,
+.assistant-worker-collapse-item.is-selected .assistant-worker-chat-item:hover,
+.assistant-worker-collapse-item.is-selected .assistant-worker-chat-item.is-active,
+.assistant-worker-collapse-item.is-selected .assistant-worker-icon-button:hover {
+  background: transparent;
 }
 
 .assistant-worker-header {
@@ -2096,14 +2108,25 @@
   background: rgba(255, 255, 255, 0.045);
 }
 
-:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected>.Collapse-header {
-  background: rgba(255, 255, 255, 0.035);
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.2);
+}
+
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected:hover:not(.is-expanded) {
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 :root[data-theme="dark"] .assistant-worker-collapse-item.is-expanded {
-  background: #1a1a1a;
+  background: rgba(0, 0, 0, 0.15);
   border-color: rgba(255, 255, 255, 0.055);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26);
+}
+
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected.is-expanded {
+  background: rgba(0, 0, 0, 0.15);
+  border-color: rgba(var(--accent-rgb), 0.24);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
 }
 
 :root[data-theme="dark"] .assistant-worker-header.is-active {
@@ -2142,6 +2165,15 @@
 :root[data-theme="dark"] .assistant-worker-chat-item.is-active {
   background: transparent;
   color: #f5f5f5;
+}
+
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected>.Collapse-header,
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-header,
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-chat-item,
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-chat-item:hover,
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-chat-item.is-active,
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-icon-button:hover {
+  background: transparent;
 }
 
 :root[data-theme="dark"] .assistant-worker-icon-button,
@@ -2504,12 +2536,15 @@
 .app-shell.is-mac-overlay-sidebar .app-sidebar {
   min-height: 100%;
   padding: 92px 14px 14px;
-  background:
-    linear-gradient(180deg, rgba(248, 252, 255, 0.78) 0%, rgba(223, 242, 252, 0.74) 100%);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: inherit;
   backdrop-filter: blur(26px) saturate(150%);
   -webkit-backdrop-filter: blur(26px) saturate(150%);
   pointer-events: auto;
+}
+
+:root[data-theme="dark"] .app-shell.is-mac-overlay-sidebar .app-sidebar {
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar.is-collapsed {

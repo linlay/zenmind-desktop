@@ -482,6 +482,38 @@ test("window manager wires DevTools shortcuts and close lifecycle events", () =>
   ]);
 });
 
+test("window manager opens Desktop global search from the main window shortcut", () => {
+  const target = new FakeWindow();
+  let prevented = false;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "darwin",
+    lifecycle: {
+      applyAppearance: () => {},
+      hideForClose: () => {},
+      cancelPendingClose: () => {}
+    },
+    isDevToolsShortcut: () => false,
+    isGlobalSearchShortcut: (_platform, input) => input.key === "k",
+    isHandlingQuit: () => false,
+    clearWindow: () => {},
+    isNativeDialogOpen: () => false,
+    hideQuickAssistantAfterOutsideFocus: () => {}
+  });
+
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  }, { type: "keyDown", key: "k", meta: true });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(target.webContents.sentMessages, [
+    { channel: "app.openGlobalSearch", payload: { source: "main" } }
+  ]);
+  assert.equal(target.webContents.toggleDevToolsCount, 0);
+});
+
 test("window manager reports main renderer webContents failures", () => {
   const target = new FakeWindow();
   const reports = [];
@@ -611,6 +643,37 @@ test("attached webviews forward native edit shortcuts to the focused guest", () 
   assert.equal(prevented.unrelated, false);
   assert.deepEqual(macGuest.editCommands, ["copy"]);
   assert.deepEqual(windowsGuest.editCommands, ["selectAll"]);
+});
+
+test("attached webviews open Desktop global search without opening DevTools", () => {
+  const target = new FakeWindow();
+  const guest = new FakeWebContents(81);
+  let prevented = false;
+
+  configureAttachedWebview(guest, {
+    platform: "win32",
+    getMainWindow: () => target,
+    isDevToolsShortcut: () => false,
+    isGlobalSearchShortcut: (_platform, input) => input.key === "k",
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async () => {},
+    schedule: (callback) => callback()
+  });
+
+  guest.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  }, { type: "keyDown", key: "k", control: true });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(target.webContents.sentMessages, [
+    { channel: "app.openGlobalSearch", payload: { source: "webview", guestId: 81 } }
+  ]);
+  assert.equal(guest.devtoolsOpenOptions, null);
 });
 
 test("window manager grants media permissions only to the main or quick assistant window", async () => {

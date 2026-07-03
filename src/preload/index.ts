@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
+  AssistantChatSearchRequest,
   AssistantCreateCoderProjectRequest,
   AssistantCreateProjectRequest,
   AssistantEventListener,
@@ -141,6 +142,7 @@ const api: DesktopApi = {
     clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
+    searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),
     addPastedImage: (chatId: string | null | undefined, input: AssistantPastedImageInput) =>
@@ -556,6 +558,16 @@ const api: DesktopApi = {
     ipcRenderer.on("services.startupRestoreState", handleStartupRestoreState);
     return () => {
       ipcRenderer.off("services.startupRestoreState", handleStartupRestoreState);
+    };
+  },
+  onOpenGlobalSearch: (listener: () => void) => {
+    const handleOpenGlobalSearch = () => {
+      listener();
+    };
+
+    ipcRenderer.on("app.openGlobalSearch", handleOpenGlobalSearch);
+    return () => {
+      ipcRenderer.off("app.openGlobalSearch", handleOpenGlobalSearch);
     };
   },
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {

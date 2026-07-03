@@ -1,6 +1,7 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { StartupLoadingScreen, StartupRoutePlaceholder } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
@@ -472,6 +473,7 @@ export function AppShell() {
   const [bootstrapNavigationRetryTick, setBootstrapNavigationRetryTick] = useState(0);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -1122,6 +1124,12 @@ export function AppShell() {
       navigate(targetPath);
     });
   }, [navigate]);
+
+  useEffect(() => {
+    return window.electronAPI.onOpenGlobalSearch(() => {
+      setGlobalSearchOpen(true);
+    });
+  }, []);
 
   useEffect(() => {
     return window.electronAPI.onOpenAssistantWorker((request) => {
@@ -2743,6 +2751,7 @@ export function AppShell() {
   const appShellStyle = {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`
   } as CSSProperties;
+  const globalSearchShortcutLabel = isMac ? "Cmd+K" : isWindows ? "Ctrl+K" : "";
 
   return (
     <div
@@ -3036,6 +3045,15 @@ export function AppShell() {
           onImport={handleEnvImport}
         />
       ) : null}
+      <DesktopGlobalSearchOverlay
+        open={globalSearchOpen}
+        agents={assistantNavAgents}
+        currentRoute={currentRoute}
+        shortcutLabel={globalSearchShortcutLabel}
+        t={t}
+        onClose={() => setGlobalSearchOpen(false)}
+        onNavigate={requestSidebarNavigation}
+      />
     </div>
   );
 }

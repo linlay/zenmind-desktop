@@ -105,6 +105,7 @@ type AttachedWebviewOptions<TMainWindow> = {
   platform: DesktopPlatform;
   getMainWindow(): TMainWindow | null;
   isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
+  isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
   shouldDownloadUrl(url: string): boolean;
   resolveOpenDisposition(url: string): "download" | "tab" | "external";
   collectLoadDiagnostics(contents: AttachedWebviewLike, validatedUrl: string): Promise<Record<string, unknown>>;
@@ -207,6 +208,7 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
       cancelPendingClose(): void;
     };
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
+    isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isHandlingQuit(): boolean;
     clearWindow(targetWindow: TWindow): void;
     isNativeDialogOpen(): boolean;
@@ -247,6 +249,12 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
   });
 
   targetWindow.webContents.on("before-input-event", (event, input) => {
+    if (options.isGlobalSearchShortcut?.(options.platform, input)) {
+      event.preventDefault();
+      targetWindow.webContents.send("app.openGlobalSearch", { source: "main" });
+      return;
+    }
+
     if (!options.isDevToolsShortcut(options.platform, input)) {
       return;
     }
@@ -284,6 +292,7 @@ export function configureMainWindowWebContents<
     servicePreloadUrl: string;
     isSafeServiceUrl(value: string): unknown;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
+    isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     shouldDownloadUrl(url: string): boolean;
     resolveOpenDisposition(url: string): "download" | "tab" | "external";
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
@@ -343,6 +352,7 @@ export function configureMainWindowWebContents<
       platform: options.platform,
       getMainWindow: options.getMainWindow,
       isDevToolsShortcut: options.isDevToolsShortcut,
+      isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       shouldDownloadUrl: options.shouldDownloadUrl,
       resolveOpenDisposition: options.resolveOpenDisposition,
       collectLoadDiagnostics: options.collectLoadDiagnostics,
@@ -521,6 +531,16 @@ export function configureAttachedWebview<TMainWindow extends {
     if (editCommand) {
       event.preventDefault();
       runWebviewEditCommand(contents, editCommand);
+      return;
+    }
+
+    if (options.isGlobalSearchShortcut?.(options.platform, input)) {
+      event.preventDefault();
+      const mainWindow = options.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send("app.openGlobalSearch", { source: "webview", guestId: contents.id });
       return;
     }
 

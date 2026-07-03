@@ -129,6 +129,56 @@ test("agent platform assistant bridge returns a clear error when platform is una
   assert.match(result.message, /platform stopped/u);
 });
 
+test("agent platform assistant bridge proxies global chat search with bearer token", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  const requests = [];
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify({
+      query: "deploy",
+      count: 1,
+      results: [
+        {
+          chatId: "chat-1",
+          chatName: "Deploy notes",
+          agentKey: "coder",
+          runId: "run-1",
+          kind: "message",
+          role: "assistant",
+          timestamp: 1710000000000,
+          snippet: "deploy snippet",
+          score: 18
+        }
+      ]
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const result = await bridge.searchChats({ query: "  deploy  ", limit: 30 });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chats/search");
+    assert.equal(requests[0].init.method, "POST");
+    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
+    assert.deepEqual(JSON.parse(String(requests[0].init.body)), {
+      query: "deploy",
+      limit: 30
+    });
+    assert.equal("teamId" in JSON.parse(String(requests[0].init.body)), false);
+    assert.equal("agentKey" in JSON.parse(String(requests[0].init.body)), false);
+    assert.deepEqual(result.results.map((item) => [item.chatId, item.agentKey, item.snippet]), [
+      ["chat-1", "coder", "deploy snippet"]
+    ]);
+    assert.equal(result.count, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge does not acquire wake lock for rejected starts", async () => {
   const emptyWakeLock = makeWakeLockRecorder();
   const empty = makeBridge({ wakeLock: emptyWakeLock.wakeLock });

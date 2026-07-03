@@ -1,4 +1,5 @@
 - `Cmd` + `R` / `Ctrl` + `R`：刷新当前页面
+- `Cmd` + `K` / `Ctrl` + `K`：打开 Desktop 综合搜索，搜索动作、智能体和会话
 - `Cmd` + `Option` + `I` / `Ctrl` + `Shift` + `I`：打开当前焦点的 DevTools
 - `Cmd` + `Shift` + `D` / `Ctrl` + `Shift` + `D`：焦点在内嵌网页时，打开该 webview 的独立 DevTools；焦点不在内嵌网页时不执行操作。
 - 焦点在主界面时，使用 `Cmd` + `Option` + `I` / `Ctrl` + `Shift` + `I` 调试 {{productName}} React 外壳；焦点在内嵌网页时调试该 webview 的网页内容。

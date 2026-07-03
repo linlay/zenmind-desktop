@@ -267,6 +267,10 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     assistantBridge?.getChat(chatId)
   );
 
+  ipcMain.handle("assistant.searchChats", async (_event: any, request: any) =>
+    assistantBridge?.searchChats(request)
+  );
+
   ipcMain.handle("assistant.deleteChat", async (_event: any, chatId: string) => {
     const result = await assistantBridge.deleteChat(chatId);
     if (result.ok) {

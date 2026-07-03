@@ -110,6 +110,30 @@ export interface AssistantChatSummary {
   messageCount: number;
 }
 
+export interface AssistantChatSearchRequest {
+  query: string;
+  limit?: number;
+  agentKey?: string;
+}
+
+export interface AssistantChatSearchResult {
+  chatId: string;
+  chatName: string;
+  agentKey?: string;
+  runId?: string;
+  kind: string;
+  role?: string;
+  timestamp: number;
+  snippet: string;
+  score: number;
+}
+
+export interface AssistantChatSearchResponse {
+  query: string;
+  count: number;
+  results: AssistantChatSearchResult[];
+}
+
 export type AssistantNavAgentIcon = string | {
   color?: string;
   name?: string;

@@ -113,6 +113,7 @@ import { createStartupRestoreController } from "../startup-restore";
 import {
   getFocusedWebviewDevToolsShortcut,
   isDevToolsShortcut,
+  isGlobalSearchShortcut,
 } from "../platform-adapter";
 import { configureSystemIdentity } from "./system-identity";
 import { openFocusedWebviewDevTools } from "../focused-webview-devtools";
@@ -358,6 +359,7 @@ export function createMainProcessRuntime() {
     loadRendererRoute,
     parseSafeLoopbackWebUrl,
     isDevToolsShortcut,
+    isGlobalSearchShortcut,
     isMediaPermissionAllowed: isQuickAssistantMediaPermissionAllowed,
     handleDesktopSsoWebviewNavigation,
     collectWebviewLoadDiagnostics,

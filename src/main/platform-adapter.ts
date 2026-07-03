@@ -10,7 +10,7 @@ export function applyPlatformAppInit(platform: DesktopPlatform, app: AppIdentity
   }
 }
 
-type DevToolsShortcutInput = {
+type KeyboardShortcutInput = {
   type: string;
   key: string;
   meta?: boolean;
@@ -20,7 +20,7 @@ type DevToolsShortcutInput = {
   isAutoRepeat?: boolean;
 };
 
-export function isDevToolsShortcut(platform: DesktopPlatform, input: DevToolsShortcutInput) {
+export function isDevToolsShortcut(platform: DesktopPlatform, input: KeyboardShortcutInput) {
   if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "i") {
     return false;
   }
@@ -28,6 +28,19 @@ export function isDevToolsShortcut(platform: DesktopPlatform, input: DevToolsSho
     return Boolean(input.meta && input.alt && !input.control && !input.shift);
   }
   return Boolean(input.control && input.shift && !input.meta && !input.alt);
+}
+
+export function isGlobalSearchShortcut(platform: DesktopPlatform, input: KeyboardShortcutInput) {
+  if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "k") {
+    return false;
+  }
+  if (platform === "darwin") {
+    return Boolean(input.meta && !input.control && !input.alt && !input.shift);
+  }
+  if (platform === "win32") {
+    return Boolean(input.control && !input.meta && !input.alt && !input.shift);
+  }
+  return false;
 }
 
 export function getFocusedWebviewDevToolsShortcut(platform: DesktopPlatform) {

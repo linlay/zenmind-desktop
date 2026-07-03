@@ -3377,6 +3377,46 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 
+test("desktop global search contract is wired across main preload renderer and help", () => {
+  const contracts = readSharedContractsSource();
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const bridge = readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts");
+  const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const overlay = readSourceFile("src", "renderer", "app-shell", "search", "DesktopGlobalSearchOverlay.tsx");
+  const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
+  const helpEn = readSourceFile("help-content", "en-US", "shortcuts", "global-shortcuts.md");
+  const helpZh = readSourceFile("help-content", "zh-CN", "shortcuts", "global-shortcuts.md");
+
+  assert.match(contracts, /interface AssistantChatSearchRequest/);
+  assert.match(contracts, /interface AssistantChatSearchResponse/);
+  assert.match(contracts, /searchChats: \(request: AssistantChatSearchRequest\) => Promise<AssistantChatSearchResponse>/);
+  assert.match(contracts, /onOpenGlobalSearch: \(listener: \(\) => void\) => \(\) => void/);
+  assert.match(preload, /searchChats: \(request: AssistantChatSearchRequest\) => ipcRenderer\.invoke\("assistant\.searchChats", request\)/);
+  assert.match(preload, /ipcRenderer\.on\("app\.openGlobalSearch"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.searchChats"/);
+  assert.match(bridge, /async searchChats\(request: AssistantChatSearchRequest\): Promise<AssistantChatSearchResponse>/);
+  assert.match(bridge, /"\/api\/chats\/search"/);
+  assert.match(platformAdapter, /export function isGlobalSearchShortcut/);
+  assert.match(platformAdapter, /platform === "darwin"[\s\S]*?input\.meta/);
+  assert.match(platformAdapter, /platform === "win32"[\s\S]*?input\.control/);
+  assert.match(windowManager, /app\.openGlobalSearch/);
+  assert.match(appRuntime, /isGlobalSearchShortcut/);
+  assert.match(appShellRuntime, /isGlobalSearchShortcut/);
+  assert.match(appShell, /onOpenGlobalSearch/);
+  assert.match(appShell, /<DesktopGlobalSearchOverlay/);
+  assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
+  assert.match(rows, /mergeQueryChatRows/);
+  assert.match(rows, /if \(!chatId \|\| !agentKey\) \{/);
+  assert.match(rows, /snippet: result\.snippet \|\| localRow\?\.snippet/);
+  assert.match(helpEn, /Cmd` \+ `K` \/ `Ctrl` \+ `K`/);
+  assert.match(helpZh, /Cmd` \+ `K` \/ `Ctrl` \+ `K`/);
+});
+
 test("assistant navigation agents stay empty before platform data is ready", () => {
   const appShell = readAppShellSource();
 

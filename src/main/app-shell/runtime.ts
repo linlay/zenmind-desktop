@@ -53,6 +53,7 @@ export type AppShellRuntimeOptions = {
   loadRendererRoute: (targetWindow: BrowserWindow, routePath: string) => Promise<unknown>;
   parseSafeLoopbackWebUrl: (value: string) => unknown;
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isMediaPermissionAllowed: (input: {
     permission: string;
     contentsId: number;
@@ -199,6 +200,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       servicePreloadUrl: getServiceWebviewPreloadUrl(),
       isSafeServiceUrl: options.parseSafeLoopbackWebUrl,
       isDevToolsShortcut: options.isDevToolsShortcut,
+      isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       shouldDownloadUrl: shouldDownloadUrlFromWebview,
       resolveOpenDisposition: resolveWebviewOpenDisposition,
       collectLoadDiagnostics: options.collectWebviewLoadDiagnostics,
@@ -218,6 +220,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       lifecycle: mainWindowLifecycle,
       isDevToolsShortcut: options.isDevToolsShortcut,
+      isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isHandlingQuit: () => options.state.isHandlingQuit,
       clearWindow: (windowToClear) => {
         if (options.state.mainWindow === windowToClear) {
