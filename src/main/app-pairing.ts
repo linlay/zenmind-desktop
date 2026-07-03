@@ -1,38 +1,21 @@
-import os from "node:os";
 import type { App } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
-import { readTunnelHubSettings } from "./tunnel-hub-settings";
 import { t } from "./i18n/main-i18n";
 import type {
   AgentAuthIssueResult,
   AgentAuthRefreshReason,
-  DesktopAppPairingPayloadRequest,
   DesktopAppPairingPayloadResult,
-  DesktopWsServerStartOptions,
-  DesktopWsServerState,
   MobilePairingPayloadV2,
-  PairingTargetMode
+  TunnelHubRuntimeStatus
 } from "../shared/contracts";
-import {
-  DESKTOP_WS_HOST,
-  DESKTOP_WS_LAN_BIND_HOST,
-  DESKTOP_WS_PATH,
-  DESKTOP_WS_PORT
-} from "../shared/desktop-ws";
 import {
   encodePairingPayloadV2,
   normalizeDesktopWsUrlInput
 } from "../shared/desktop-ws-protocol";
 
-const MAX_TCP_PORT = 65535;
-const DEFAULT_TARGET_MODE: PairingTargetMode = "local";
-
-export type AppPairingRuntimeState = Omit<DesktopWsServerState, "enabled" | "message">;
-
 export type AppPairingRuntimeOptions = {
   issueAccessToken?: (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
-  getDesktopWsServerRuntimeState?: () => AppPairingRuntimeState;
-  startDesktopWsServer?: (options?: DesktopWsServerStartOptions) => Promise<AppPairingRuntimeState>;
+  getTunnelHubRuntimeStatus?: () => TunnelHubRuntimeStatus;
 };
 
 type TokenClaims = {
@@ -40,27 +23,10 @@ type TokenClaims = {
   expiresAtMs: number;
 };
 
-type PairingTargetPreflight =
-  | { targetMode: "local" }
-  | { targetMode: "lan"; host: string }
-  | { targetMode: "tunnel"; wsUrl: string };
+const PAIRING_TARGET_MODE = "tunnel";
 
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeTargetMode(value: unknown): PairingTargetMode {
-  return value === "lan" || value === "tunnel" || value === "local" ? value : DEFAULT_TARGET_MODE;
-}
-
-function normalizePort(value: unknown) {
-  const port = typeof value === "number" ? value : Number(value);
-  return Number.isInteger(port) && port > 0 && port <= MAX_TCP_PORT ? port : DESKTOP_WS_PORT;
-}
-
-function normalizePath(value: unknown) {
-  const pathname = readText(value);
-  return pathname.startsWith("/") ? pathname : DESKTOP_WS_PATH;
 }
 
 function decodeJwtPayload(token: string) {
@@ -100,88 +66,12 @@ function readPairingTokenClaims(token: string): TokenClaims {
   return { deviceId, expiresAtMs };
 }
 
-function isPrivateIPv4(address: string) {
-  if (/^10\./u.test(address) || /^192\.168\./u.test(address)) {
-    return true;
+function readConnectedTunnelWsUrl(options: AppPairingRuntimeOptions) {
+  const status = options.getTunnelHubRuntimeStatus?.();
+  if (!status?.enabled || !status.connected) {
+    throw new Error(t("settings.mobilePairing.tunnelDisconnected"));
   }
-  const match172 = address.match(/^172\.(\d{1,2})\./u);
-  if (!match172) {
-    return false;
-  }
-  const second = Number.parseInt(match172[1] ?? "", 10);
-  return second >= 16 && second <= 31;
-}
-
-function listExternalIPv4(interfaces = os.networkInterfaces()) {
-  const addresses: string[] = [];
-  for (const items of Object.values(interfaces)) {
-    for (const item of items ?? []) {
-      if (item.family === "IPv4" && !item.internal && item.address) {
-        addresses.push(item.address);
-      }
-    }
-  }
-  return addresses;
-}
-
-function selectLanPairingHost(interfaces = os.networkInterfaces()) {
-  return listExternalIPv4(interfaces).find(isPrivateIPv4) ?? "";
-}
-
-function preflightPairingTarget(app: App, targetMode: PairingTargetMode): PairingTargetPreflight {
-  if (targetMode === "lan") {
-    const host = selectLanPairingHost();
-    if (!host) {
-      throw new Error(t("settings.mobilePairing.lanUnavailable"));
-    }
-    return { targetMode, host };
-  }
-
-  if (targetMode === "tunnel") {
-    const wsUrl = readTunnelHubSettings(app).webSocketUrl.trim();
-    if (!wsUrl) {
-      throw new Error(t("settings.mobilePairing.tunnelUnavailable"));
-    }
-    return { targetMode, wsUrl };
-  }
-
-  return { targetMode: "local" };
-}
-
-async function ensureDesktopWsRuntime(
-  target: PairingTargetPreflight,
-  options: AppPairingRuntimeOptions
-): Promise<AppPairingRuntimeState> {
-  const startOptions = target.targetMode === "lan" ? { host: DESKTOP_WS_LAN_BIND_HOST } : undefined;
-  if (!startOptions) {
-    const current = options.getDesktopWsServerRuntimeState?.();
-    if (current?.running) {
-      return current;
-    }
-  }
-  if (!options.startDesktopWsServer) {
-    throw new Error(t("settings.mobilePairing.serverUnavailable"));
-  }
-  const next = await options.startDesktopWsServer(startOptions);
-  if (!next.running) {
-    throw new Error(t("settings.mobilePairing.serverUnavailable"));
-  }
-  return next;
-}
-
-function buildWsUrl(target: PairingTargetPreflight, runtimeState: AppPairingRuntimeState) {
-  const port = normalizePort(runtimeState.port);
-  const pathname = normalizePath(runtimeState.path);
-
-  if (target.targetMode === "local") {
-    return `ws://${DESKTOP_WS_HOST}:${port}${pathname}`;
-  }
-
-  if (target.targetMode === "lan") {
-    return `ws://${target.host}:${port}${pathname}`;
-  }
-
-  const normalizedTunnelUrl = normalizeDesktopWsUrlInput(target.wsUrl);
+  const normalizedTunnelUrl = normalizeDesktopWsUrlInput(status.webSocketUrl);
   if (!normalizedTunnelUrl) {
     throw new Error(t("settings.mobilePairing.tunnelUnavailable"));
   }
@@ -190,13 +80,10 @@ function buildWsUrl(target: PairingTargetPreflight, runtimeState: AppPairingRunt
 
 export async function createAppPairingPayload(
   app: App,
-  request: DesktopAppPairingPayloadRequest = {},
   options: AppPairingRuntimeOptions = {}
 ): Promise<DesktopAppPairingPayloadResult> {
   try {
-    const targetMode = normalizeTargetMode(request?.targetMode);
-    const target = preflightPairingTarget(app, targetMode);
-    const runtimeState = await ensureDesktopWsRuntime(target, options);
+    const wsUrl = readConnectedTunnelWsUrl(options);
     const tokenResult = await (options.issueAccessToken ?? issueAgentAccessToken)(app, "missing");
     const token = readText(tokenResult.token);
     if (!tokenResult.ok || !token) {
@@ -204,11 +91,10 @@ export async function createAppPairingPayload(
     }
 
     const claims = readPairingTokenClaims(token);
-    const wsUrl = buildWsUrl(target, runtimeState);
     const payload: MobilePairingPayloadV2 = {
       v: 2,
       kind: "desktop-ws",
-      targetMode,
+      targetMode: PAIRING_TARGET_MODE,
       wsUrl,
       tokenMode: "query",
       token,
@@ -221,7 +107,7 @@ export async function createAppPairingPayload(
       payload,
       payloadText: encodePairingPayloadV2(payload),
       display: {
-        targetMode,
+        targetMode: PAIRING_TARGET_MODE,
         wsUrl,
         expiresAt: new Date(claims.expiresAtMs).toISOString()
       }

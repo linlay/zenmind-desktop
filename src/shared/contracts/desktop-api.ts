@@ -369,16 +369,10 @@ export interface DesktopWsServerStartOptions {
   host?: string;
 }
 
-export type PairingTargetMode = "local" | "lan" | "tunnel";
-
-export interface DesktopAppPairingPayloadRequest {
-  targetMode?: PairingTargetMode;
-}
-
 export interface MobilePairingPayloadV2 {
   v: 2;
   kind: "desktop-ws";
-  targetMode: PairingTargetMode;
+  targetMode: "tunnel";
   wsUrl: string;
   tokenMode: "query" | "subprotocol";
   token: string;
@@ -387,7 +381,7 @@ export interface MobilePairingPayloadV2 {
 }
 
 export interface DesktopAppPairingDisplay {
-  targetMode: PairingTargetMode;
+  targetMode: "tunnel";
   wsUrl: string;
   expiresAt: string;
 }
@@ -622,7 +616,7 @@ export interface DesktopApi {
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
     setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;
-    createAppPairingPayload: (request?: DesktopAppPairingPayloadRequest) => Promise<DesktopAppPairingPayloadResult>;
+    createAppPairingPayload: () => Promise<DesktopAppPairingPayloadResult>;
     onLocaleChanged: (listener: LocaleChangedListener) => () => void;
     onDesktopConfigChanged: (listener: DesktopConfigChangedListener) => () => void;
   };

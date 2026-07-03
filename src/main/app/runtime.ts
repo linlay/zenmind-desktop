@@ -15,7 +15,6 @@ import {
   webContents,
 } from "electron";
 import { issueAgentAccessToken } from "../agent-auth";
-import { createAppPairingPayload } from "../app-pairing";
 import {
   cancelDesktopSsoLogin,
   completeDesktopSsoCookieLogin,

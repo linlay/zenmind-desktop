@@ -33,8 +33,8 @@ import type {
   IdentityAccessTokenInspection,
   MarketSettings,
   KanbanCloudConfig,
-  PairingTargetMode,
   TunnelDebugSnapshot,
+  TunnelHubRuntimeStatus,
   TunnelHubSettings
 } from "../../../shared/contracts";
 import {
@@ -144,7 +144,6 @@ const DEFAULT_WS_ACTION_DEBUG_COMMAND = {
     args: {}
   }
 };
-const APP_PAIRING_TARGET_MODES: PairingTargetMode[] = ["local", "lan", "tunnel"];
 const WEBSITE_NEW_ID = "__new__";
 
 function SettingsDebugTextAreaField({ label, value, readOnly = false, onChange }: SettingsDebugTextAreaFieldProps) {
@@ -207,17 +206,6 @@ function formatPairingExpiresAt(value: string, locale: SupportedLocale) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(timestamp);
-}
-
-function getPairingTargetModeLabel(targetMode: PairingTargetMode, t: TranslateFunction) {
-  switch (targetMode) {
-    case "lan":
-      return t("settings.mobilePairing.targetModeLan");
-    case "tunnel":
-      return t("settings.mobilePairing.targetModeTunnel");
-    default:
-      return t("settings.mobilePairing.targetModeLocal");
-  }
 }
 
 function maskPairingPayloadText(value: string) {
@@ -2334,9 +2322,9 @@ export function SettingsPage({
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
   const [savedTunnelHubSettings, setSavedTunnelHubSettings] = useState<TunnelHubSettings>(defaultTunnelHubSettings);
+  const [tunnelHubRuntimeStatus, setTunnelHubRuntimeStatus] = useState<TunnelHubRuntimeStatus | null>(null);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
   const [appPairingPending, setAppPairingPending] = useState(false);
-  const [appPairingTargetMode, setAppPairingTargetMode] = useState<PairingTargetMode>("local");
   const [appPairingResult, setAppPairingResult] = useState<DesktopAppPairingPayloadResult | null>(null);
   const [runtimeResetPending, setRuntimeResetPending] = useState(false);
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
@@ -2390,6 +2378,8 @@ export function SettingsPage({
   const controlConfigDirty = controlCloudConfig.serverUrl !== savedControlCloudConfig.serverUrl;
   const marketSettingsDirty = marketSettings.apiBaseUrl !== savedMarketSettings.apiBaseUrl;
   const tunnelHubSettingsDirty = tunnelHubSettings.relayUrl !== savedTunnelHubSettings.relayUrl;
+  const appPairingDisabled =
+    appPairingPending || tunnelHubSaving || tunnelHubSettingsDirty || !tunnelHubRuntimeStatus?.connected;
 
   useEffect(() => {
     if (activeSection !== "websites") {
@@ -2669,14 +2659,18 @@ export function SettingsPage({
     }
 
     let cancelled = false;
-    window.electronAPI.settings.getTunnelHubSettings()
-      .then((settingsResult) => {
+    Promise.all([
+      window.electronAPI.settings.getTunnelHubSettings(),
+      window.electronAPI.tunnelHub.getStatus()
+    ])
+      .then(([settingsResult, runtimeStatus]) => {
         if (cancelled) {
           return;
         }
         const settings = normalizeTunnelHubSettings(settingsResult);
         setTunnelHubSettings(settings);
         commitSavedTunnelHubSettings(settings);
+        setTunnelHubRuntimeStatus(runtimeStatus);
         setReadErrorSections(["tunnelHub"], "");
       })
       .catch((reason) => {
@@ -3902,6 +3896,9 @@ export function SettingsPage({
       const nextSettings = normalizeTunnelHubSettings(result.settings);
       commitSavedTunnelHubSettings(nextSettings);
       setTunnelHubSettings(nextSettings);
+      if (result.runtimeStatus) {
+        setTunnelHubRuntimeStatus(result.runtimeStatus);
+      }
       if (result.settings.webSocketUrl !== tunnelHubSettings.webSocketUrl) {
         setAppPairingResult(null);
       }
@@ -3929,6 +3926,9 @@ export function SettingsPage({
       });
       const nextSettings = normalizeTunnelHubSettings(result.settings);
       commitSavedTunnelHubSettings(nextSettings);
+      if (result.runtimeStatus) {
+        setTunnelHubRuntimeStatus(result.runtimeStatus);
+      }
       setTunnelHubSettings((current) => {
         const hasDraft = current.relayUrl !== previousSavedSettings.relayUrl;
         return hasDraft
@@ -3960,9 +3960,7 @@ export function SettingsPage({
   async function handleCreateAppPairingPayload() {
     setAppPairingPending(true);
     try {
-      const result = await window.electronAPI.settings.createAppPairingPayload({
-        targetMode: appPairingTargetMode
-      });
+      const result = await window.electronAPI.settings.createAppPairingPayload();
       setAppPairingResult(result);
       if (!result.ok) {
         showSectionNotice("tunnelHub", result.message || t("settings.mobilePairing.failed"), "error");
@@ -3976,11 +3974,6 @@ export function SettingsPage({
     } finally {
       setAppPairingPending(false);
     }
-  }
-
-  function handleAppPairingTargetModeChange(value: PairingTargetMode) {
-    setAppPairingTargetMode(value);
-    setAppPairingResult(null);
   }
 
   async function handleCopyAppPairingPayload() {
@@ -4575,19 +4568,9 @@ export function SettingsPage({
                   <span>{t("settings.mobilePairing.description")}</span>
                 </div>
                 <div className="settings-mobile-pairing-actions">
-                  <Segmented<PairingTargetMode>
-                    aria-label={t("settings.mobilePairing.targetMode")}
-                    value={appPairingTargetMode}
-                    disabled={appPairingPending}
-                    onChange={handleAppPairingTargetModeChange}
-                    options={APP_PAIRING_TARGET_MODES.map((targetMode) => ({
-                      value: targetMode,
-                      label: getPairingTargetModeLabel(targetMode, t)
-                    }))}
-                  />
                   <Button
                     type="primary"
-                    disabled={appPairingPending}
+                    disabled={appPairingDisabled}
                     loading={appPairingPending}
                     onClick={() => void handleCreateAppPairingPayload()}
                   >
@@ -4611,10 +4594,6 @@ export function SettingsPage({
                     />
                   </div>
                   <div className="settings-mobile-pairing-details">
-                    <div className="settings-mobile-pairing-meta">
-                      <span>{t("settings.mobilePairing.targetMode")}</span>
-                      <code>{getPairingTargetModeLabel(pairingPayloadResult.display.targetMode, t)}</code>
-                    </div>
                     <div className="settings-mobile-pairing-meta">
                       <span>{t("settings.mobilePairing.wsUrl")}</span>
                       <code>{pairingPayloadResult.display.wsUrl}</code>

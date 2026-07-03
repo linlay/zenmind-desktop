@@ -74,7 +74,7 @@ import {
 import { t, initializeMainI18n, setMainLocale } from "../i18n/main-i18n";
 import { isSupportedLocale } from "../../shared/i18n";
 import { DESKTOP_ACTION_DEFINITIONS } from "../../shared/desktop-actions";
-import { applyTunnelHubSettings, stopTunnelHubRuntime } from "../tunnel-hub-runtime";
+import { applyTunnelHubSettings, getTunnelHubRuntimeStatus, stopTunnelHubRuntime } from "../tunnel-hub-runtime";
 import {
   createAssistantIpcHandlerOptions,
   createDesktopPetIpcHandlerOptions,
@@ -401,6 +401,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     getDesktopWsServerRuntimeState: assistantBridgeRuntime.getDesktopWsServerRuntimeStateForSettings,
     startDesktopWsServer: assistantBridgeRuntime.startDesktopWsServerForSettings,
     stopDesktopWsServer: assistantBridgeRuntime.stopDesktopWsServerForSettings,
-    applyTunnelHubSettings
+    applyTunnelHubSettings,
+    getTunnelHubRuntimeStatus
   }));
 }

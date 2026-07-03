@@ -1,0 +1,6481 @@
+{
+  "schemaVersion": "1.0",
+  "modules": [
+    {
+      "id": "contracts",
+      "path": ".doc/modules/contracts.json",
+      "ownedPaths": [
+        "src/shared/contracts/**"
+      ],
+      "tests": [],
+      "dependsOn": [
+        "i18n"
+      ],
+      "dependedBy": [],
+      "recentChanges": [],
+      "tokens": [
+        "access",
+        "action",
+        "agent",
+        "agents",
+        "api",
+        "apikey",
+        "app",
+        "appearance",
+        "approval",
+        "asset",
+        "assets",
+        "assistant",
+        "attachment",
+        "attachments",
+        "audit",
+        "auth",
+        "automation",
+        "awaiting",
+        "backend",
+        "balance",
+        "base",
+        "binding",
+        "boundary",
+        "bridge",
+        "bucket",
+        "call",
+        "cancel",
+        "capabilities",
+        "capability",
+        "catalog",
+        "change",
+        "changed",
+        "chat",
+        "claims",
+        "cloud",
+        "coder",
+        "command",
+        "config",
+        "confirmed",
+        "context",
+        "contracts",
+        "copilot",
+        "correction",
+        "create",
+        "current",
+        "debug",
+        "default",
+        "definition",
+        "delete",
+        "dependency",
+        "desired",
+        "desktop",
+        "detail",
+        "detect",
+        "device",
+        "diagnostic",
+        "dialog",
+        "direction",
+        "disabled",
+        "dispatch",
+        "display",
+        "dock",
+        "document",
+        "drag",
+        "during",
+        "edge",
+        "embedded",
+        "entry",
+        "env",
+        "event",
+        "failure",
+        "favorite",
+        "field",
+        "file",
+        "form",
+        "format",
+        "frame",
+        "frontend",
+        "general",
+        "global",
+        "health",
+        "hooks",
+        "hosting",
+        "hub",
+        "icon",
+        "identity",
+        "image",
+        "import",
+        "info",
+        "init",
+        "input",
+        "inspection",
+        "install",
+        "issue",
+        "item",
+        "items",
+        "kanban",
+        "key",
+        "keys",
+        "kind",
+        "legacy",
+        "level",
+        "lifecycle",
+        "limit",
+        "limits",
+        "list",
+        "listener",
+        "local",
+        "locale",
+        "log",
+        "login",
+        "logout",
+        "logs",
+        "machine",
+        "manifest",
+        "market",
+        "marketplace",
+        "match",
+        "memory",
+        "message",
+        "meta",
+        "mobile",
+        "mode",
+        "module",
+        "move",
+        "native",
+        "nav",
+        "navigate",
+        "navigation",
+        "open",
+        "option",
+        "options",
+        "origin",
+        "output",
+        "page",
+        "pairing",
+        "panel",
+        "pasted",
+        "path",
+        "paths",
+        "payload",
+        "permission",
+        "pet",
+        "phase",
+        "pick",
+        "placement",
+        "platform",
+        "plugin",
+        "presence",
+        "preview",
+        "price",
+        "priorities",
+        "priority",
+        "probe",
+        "profile",
+        "progress",
+        "project",
+        "provider",
+        "proxy",
+        "public",
+        "question",
+        "rate",
+        "read",
+        "reason",
+        "refresh",
+        "renderer",
+        "report",
+        "request",
+        "requested",
+        "requirement",
+        "reset",
+        "resource",
+        "resources",
+        "response",
+        "restore",
+        "result",
+        "reveal",
+        "role",
+        "route",
+        "run",
+        "runtime",
+        "sandbox",
+        "script",
+        "scripts",
+        "section",
+        "server",
+        "service",
+        "services",
+        "session",
+        "setting",
+        "settings",
+        "shared",
+        "shortcut",
+        "signature",
+        "site",
+        "snapshot",
+        "source",
+        "spec",
+        "src",
+        "sso",
+        "stage",
+        "start",
+        "startup",
+        "state",
+        "states",
+        "stats",
+        "status",
+        "statuses",
+        "stop",
+        "storage",
+        "stream",
+        "submit",
+        "summary",
+        "sync",
+        "tab",
+        "target",
+        "task",
+        "terminal",
+        "token",
+        "traffic",
+        "transcription",
+        "transfer",
+        "trigger",
+        "tunnel",
+        "type",
+        "types",
+        "update",
+        "upsert",
+        "usage",
+        "user",
+        "value",
+        "values",
+        "variant",
+        "verification",
+        "viewer",
+        "visibility",
+        "voice",
+        "web",
+        "webapp",
+        "webclient",
+        "webs",
+        "website",
+        "webview",
+        "window",
+        "worker",
+        "write",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "copilot",
+      "path": ".doc/modules/copilot.json",
+      "ownedPaths": [
+        "dist-electron/shared/copilot/**"
+      ],
+      "tests": [],
+      "dependsOn": [],
+      "dependedBy": [],
+      "recentChanges": [],
+      "tokens": [
+        "assistant",
+        "boundary",
+        "confirmed",
+        "copilot",
+        "dist",
+        "during",
+        "electron",
+        "init",
+        "module",
+        "page",
+        "pet",
+        "settings",
+        "shared",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "desktop-actions",
+      "path": ".doc/modules/desktop-actions.json",
+      "ownedPaths": [
+        "dist-electron/shared/desktop-actions/**"
+      ],
+      "tests": [],
+      "dependsOn": [],
+      "dependedBy": [],
+      "recentChanges": [],
+      "tokens": [
+        "actions",
+        "boundary",
+        "confirmed",
+        "desktop",
+        "dist",
+        "during",
+        "electron",
+        "index",
+        "init",
+        "module",
+        "shared",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "generated",
+      "path": ".doc/modules/generated.json",
+      "ownedPaths": [
+        "src/shared/generated/**"
+      ],
+      "tests": [],
+      "dependsOn": [],
+      "dependedBy": [],
+      "recentChanges": [],
+      "tokens": [
+        "app",
+        "arg",
+        "args",
+        "boundary",
+        "brand",
+        "confirmed",
+        "description",
+        "during",
+        "generated",
+        "init",
+        "installer",
+        "legacy",
+        "module",
+        "name",
+        "namespace",
+        "package",
+        "product",
+        "shared",
+        "shutdown",
+        "src",
+        "storage",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "i18n",
+      "path": ".doc/modules/i18n.json",
+      "ownedPaths": [
+        "src/shared/i18n/**"
+      ],
+      "tests": [],
+      "dependsOn": [],
+      "dependedBy": [
+        "contracts"
+      ],
+      "recentChanges": [],
+      "tokens": [
+        "args",
+        "arguments",
+        "argv",
+        "base",
+        "boundary",
+        "cnmessages",
+        "confirmed",
+        "create",
+        "default",
+        "dictionaries",
+        "dictionary",
+        "during",
+        "format",
+        "from",
+        "function",
+        "get",
+        "i18",
+        "i18n",
+        "index",
+        "init",
+        "initial",
+        "key",
+        "keys",
+        "locale",
+        "locales",
+        "message",
+        "messages",
+        "module",
+        "normalize",
+        "params",
+        "read",
+        "settings",
+        "shared",
+        "src",
+        "supported",
+        "translate",
+        "translation",
+        "translator",
+        "types",
+        "usmessages",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "manager",
+      "path": ".doc/modules/manager.json",
+      "ownedPaths": [
+        "src/main/services/manager/**"
+      ],
+      "tests": [],
+      "dependsOn": [],
+      "dependedBy": [],
+      "recentChanges": [],
+      "tokens": [
+        "acp",
+        "agent",
+        "agents",
+        "archive",
+        "asset",
+        "assets",
+        "auto",
+        "available",
+        "base",
+        "basename",
+        "bin",
+        "blocking",
+        "boundary",
+        "build",
+        "builtin",
+        "bundle",
+        "bytes",
+        "cache",
+        "capabilities",
+        "capability",
+        "capture",
+        "center",
+        "cleanup",
+        "clear",
+        "cli",
+        "collect",
+        "command",
+        "compute",
+        "config",
+        "configured",
+        "confirmed",
+        "container",
+        "content",
+        "decode",
+        "default",
+        "delay",
+        "desktop",
+        "detect",
+        "dir",
+        "directory",
+        "dirs",
+        "during",
+        "empty",
+        "engine",
+        "engines",
+        "ensure",
+        "entries",
+        "env",
+        "exec",
+        "expand",
+        "extracted",
+        "failure",
+        "file",
+        "files",
+        "fix",
+        "for",
+        "force",
+        "format",
+        "from",
+        "get",
+        "has",
+        "healthy",
+        "home",
+        "hosts",
+        "http",
+        "hub",
+        "identity",
+        "ids",
+        "import",
+        "index",
+        "init",
+        "initialization",
+        "initialize",
+        "install",
+        "internals",
+        "interval",
+        "key",
+        "keys",
+        "last",
+        "layout",
+        "list",
+        "listening",
+        "local",
+        "log",
+        "logs",
+        "main",
+        "managed",
+        "manager",
+        "match",
+        "matches",
+        "merge",
+        "meta",
+        "missing",
+        "module",
+        "move",
+        "needs",
+        "network",
+        "node",
+        "non",
+        "normalization",
+        "normalize",
+        "offset",
+        "only",
+        "optional",
+        "options",
+        "order",
+        "parse",
+        "path",
+        "paths",
+        "payload",
+        "permissions",
+        "pid",
+        "pids",
+        "placeholder",
+        "platform",
+        "plugin",
+        "poll",
+        "port",
+        "ports",
+        "power",
+        "preferred",
+        "preparation",
+        "preserved",
+        "probe",
+        "probes",
+        "process",
+        "processes",
+        "program",
+        "range",
+        "read",
+        "reconcile",
+        "refresh",
+        "relay",
+        "remove",
+        "resolve",
+        "responsive",
+        "restart",
+        "restore",
+        "result",
+        "root",
+        "row",
+        "rows",
+        "run",
+        "runner",
+        "running",
+        "runtime",
+        "save",
+        "script",
+        "service",
+        "services",
+        "shell",
+        "shortcut",
+        "shutdown",
+        "sibling",
+        "signature",
+        "snapshot",
+        "sourced",
+        "src",
+        "start",
+        "started",
+        "startup",
+        "state",
+        "stop",
+        "stopped",
+        "stream",
+        "target",
+        "targets",
+        "template",
+        "terminate",
+        "test",
+        "timeout",
+        "tree",
+        "unique",
+        "updates",
+        "upsert",
+        "url",
+        "verification",
+        "verify",
+        "version",
+        "watch",
+        "web",
+        "webclient",
+        "window",
+        "windows",
+        "write",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "navigation",
+      "path": ".doc/modules/navigation.json",
+      "ownedPaths": [
+        "dist-electron/shared/navigation/**"
+      ],
+      "tests": [],
+      "dependsOn": [],
+      "dependedBy": [],
+      "recentChanges": [],
+      "tokens": [
+        "boundary",
+        "confirmed",
+        "custom",
+        "dist",
+        "during",
+        "electron",
+        "icons",
+        "init",
+        "layout",
+        "module",
+        "navigation",
+        "shared",
+        "sidebar",
+        "xgraph"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "initialize-project-context",
+      "path": ".doc/tasks/initialize-project-context.json",
+      "modules": null,
+      "likelyFiles": [
+        ".xgraph.json",
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "tokens": [
+        "adding",
+        "agents",
+        "changing",
+        "claude",
+        "context",
+        "directory",
+        "entry",
+        "existing",
+        "files",
+        "first",
+        "init",
+        "initialize",
+        "json",
+        "new",
+        "onboard",
+        "project",
+        "repository",
+        "task",
+        "this",
+        "use",
+        "when",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "modify-module-code",
+      "path": ".doc/tasks/modify-module-code.json",
+      "modules": null,
+      "likelyFiles": [],
+      "tokens": [
+        "affected",
+        "after",
+        "bugfix",
+        "change",
+        "code",
+        "confirmed",
+        "feature",
+        "files",
+        "for",
+        "implementation",
+        "modify",
+        "module",
+        "modules",
+        "ordinary",
+        "refactor",
+        "resolving",
+        "task",
+        "this",
+        "use",
+        "work"
+      ]
+    },
+    {
+      "id": "update-agent-protocol",
+      "path": ".doc/tasks/update-agent-protocol.json",
+      "modules": null,
+      "likelyFiles": [
+        ".gitignore",
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "tokens": [
+        "agent",
+        "agents",
+        "block",
+        "blocks",
+        "changing",
+        "claude",
+        "context",
+        "entry",
+        "files",
+        "gitignore",
+        "hook",
+        "hooks",
+        "lifecycle",
+        "managed",
+        "protocol",
+        "reading",
+        "rules",
+        "task",
+        "this",
+        "update",
+        "use",
+        "when"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "code-change-sync",
+      "path": ".doc/flows/code-change-sync.json",
+      "modules": [
+        "change-tracking",
+        "change-tracking",
+        "cli",
+        "cli"
+      ],
+      "files": [
+        "internal/cli/knowledge.go",
+        "internal/cli/sync.go",
+        "internal/cli/update.go"
+      ],
+      "tokens": [
+        "appear",
+        "broader",
+        "change",
+        "code",
+        "context",
+        "deterministic",
+        "doc",
+        "drift",
+        "facts",
+        "files",
+        "from",
+        "generated",
+        "json",
+        "make",
+        "modify",
+        "module",
+        "modules",
+        "overlapping",
+        "project",
+        "refresh",
+        "should",
+        "source",
+        "sync",
+        "than",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "context-initialization",
+      "path": ".doc/flows/context-initialization.json",
+      "modules": [
+        "agent-rules",
+        "agent-rules",
+        "cli",
+        "cli",
+        "xgraph",
+        "xgraph"
+      ],
+      "files": [
+        "internal/cli/knowledge.go",
+        "internal/cli/managed_blocks.go",
+        "internal/cli/scanner.go"
+      ],
+      "tokens": [
+        "agent",
+        "config",
+        "connected",
+        "context",
+        "detected",
+        "doc",
+        "entry",
+        "entrypoints",
+        "files",
+        "first",
+        "for",
+        "generated",
+        "index",
+        "initialization",
+        "initialize",
+        "json",
+        "languages",
+        "names",
+        "omits",
+        "point",
+        "project",
+        "protocol",
+        "repository",
+        "stale",
+        "the",
+        "time",
+        "update",
+        "xgraph"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "agent-starts-from-index",
+      "path": ".doc/rules.json",
+      "modules": [],
+      "tokens": [
+        "agent",
+        "agents",
+        "and",
+        "before",
+        "behavior",
+        "card",
+        "cards",
+        "choose",
+        "closest",
+        "code",
+        "context",
+        "detailed",
+        "doc",
+        "editing",
+        "flow",
+        "from",
+        "index",
+        "inspect",
+        "json",
+        "keep",
+        "loading",
+        "module",
+        "not",
+        "progressive",
+        "read",
+        "related",
+        "replace",
+        "repository",
+        "route",
+        "rule",
+        "scanning",
+        "short",
+        "starts",
+        "task",
+        "the",
+        "then",
+        "through",
+        "whole",
+        "with",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "managed-blocks-only",
+      "path": ".doc/rules.json",
+      "modules": [],
+      "tokens": [
+        "and",
+        "around",
+        "asks",
+        "authored",
+        "blocks",
+        "commands",
+        "content",
+        "discard",
+        "edits",
+        "entry",
+        "explicitly",
+        "files",
+        "for",
+        "gitignore",
+        "hook",
+        "hooks",
+        "idempotent",
+        "init",
+        "inside",
+        "install",
+        "managed",
+        "may",
+        "must",
+        "never",
+        "only",
+        "preserve",
+        "repeated",
+        "text",
+        "the",
+        "unless",
+        "updated",
+        "user",
+        "wider",
+        "xgraph"
+      ]
+    },
+    {
+      "id": "semantic-memory-needs-confirmation",
+      "path": ".doc/rules.json",
+      "modules": [],
+      "tokens": [
+        "and",
+        "ask",
+        "before",
+        "catalogs",
+        "changing",
+        "confirmation",
+        "confirmed",
+        "curated",
+        "deterministic",
+        "explicit",
+        "facts",
+        "generated",
+        "may",
+        "memory",
+        "module",
+        "needs",
+        "partitions",
+        "project",
+        "rebuilt",
+        "require",
+        "risk",
+        "rules",
+        "semantic",
+        "summaries",
+        "user",
+        "xgraph"
+      ]
+    }
+  ],
+  "sourceFiles": [
+    "dist-electron/main/agent-auth.js",
+    "dist-electron/main/agent-platform-channels.js",
+    "dist-electron/main/agent-platform-pet-status.js",
+    "dist-electron/main/agent-platform-pet-stream.js",
+    "dist-electron/main/app-metadata.js",
+    "dist-electron/main/app-pairing.js",
+    "dist-electron/main/app-server-auth.js",
+    "dist-electron/main/app-shell/agent-platform-monitor-window.js",
+    "dist-electron/main/app-shell/app-menu.js",
+    "dist-electron/main/app-shell/debug-viewer-window.js",
+    "dist-electron/main/app-shell/log-viewer-window.js",
+    "dist-electron/main/app-shell/native-dialogs.js",
+    "dist-electron/main/app-shell/quit-confirmation.js",
+    "dist-electron/main/app-shell/runtime.js",
+    "dist-electron/main/app-shell/tray.js",
+    "dist-electron/main/app-state.js",
+    "dist-electron/main/app/app-events.js",
+    "dist-electron/main/app/runtime.js",
+    "dist-electron/main/app/startup-environment.js",
+    "dist-electron/main/app/system-identity.js",
+    "dist-electron/main/archive-utils.js",
+    "dist-electron/main/assistant/agent-platform-bridge.js",
+    "dist-electron/main/assistant/agent-platform-config.js",
+    "dist-electron/main/assistant/attachment-store.js",
+    "dist-electron/main/assistant/attachment-worker.js",
+    "dist-electron/main/assistant/attachments/attachment-store.js",
+    "dist-electron/main/assistant/attachments/attachment-worker.js",
+    "dist-electron/main/assistant/attachments/document-extract.js",
+    "dist-electron/main/assistant/audio-conversion.js",
+    "dist-electron/main/assistant/browser-intent.js",
+    "dist-electron/main/assistant/browser-runtime.js",
+    "dist-electron/main/assistant/browser-use.js",
+    "dist-electron/main/assistant/capability-broker.js",
+    "dist-electron/main/assistant/chat-store.js",
+    "dist-electron/main/assistant/container-hub.js",
+    "dist-electron/main/assistant/copilot/screenshot.js",
+    "dist-electron/main/assistant/core/agent-platform-bridge.js",
+    "dist-electron/main/assistant/core/agent-platform-config.js",
+    "dist-electron/main/assistant/core/assistant-navigation-status-client.js",
+    "dist-electron/main/assistant/core/coder-project.js",
+    "dist-electron/main/assistant/core/container-hub.js",
+    "dist-electron/main/assistant/core/settings-store.js",
+    "dist-electron/main/assistant/desktop-tools.js",
+    "dist-electron/main/assistant/document-extract.js",
+    "dist-electron/main/assistant/host-startup-items.js",
+    "dist-electron/main/assistant/memory-store.js",
+    "dist-electron/main/assistant/model-provider.js",
+    "dist-electron/main/assistant/office-tools.js",
+    "dist-electron/main/assistant/page-agent-bridge.iife.js",
+    "dist-electron/main/assistant/page-agent-bridge.js",
+    "dist-electron/main/assistant/page-agent-proxy.js",
+    "dist-electron/main/assistant/pet/agent-platform-api.js",
+    "dist-electron/main/assistant/pet/desktop-pet-preview.js",
+    "dist-electron/main/assistant/pet/desktop-pet.js",
+    "dist-electron/main/assistant/pet/pet-asset-protocol.js",
+    "dist-electron/main/assistant/pet/pet-status-client.js",
+    "dist-electron/main/assistant/pet/pet-stream-client.js",
+    "dist-electron/main/assistant/pet/runtime.js",
+    "dist-electron/main/assistant/pet/window.js",
+    "dist-electron/main/assistant/prompt-builder.js",
+    "dist-electron/main/assistant/quick/dismiss-layer.js",
+    "dist-electron/main/assistant/quick/ipc.js",
+    "dist-electron/main/assistant/quick/quick-copilot.js",
+    "dist-electron/main/assistant/quick/routing.js",
+    "dist-electron/main/assistant/quick/shortcut.js",
+    "dist-electron/main/assistant/quick/window.js",
+    "dist-electron/main/assistant/runtime.js",
+    "dist-electron/main/assistant/settings-store.js",
+    "dist-electron/main/assistant/sse-parser.js",
+    "dist-electron/main/assistant/system-chrome.js",
+    "dist-electron/main/assistant/vision-provider.js",
+    "dist-electron/main/bridge-registrar.js",
+    "dist-electron/main/bridge/assistant-runtime.js",
+    "dist-electron/main/bridge/assistant-wake-lock.js",
+    "dist-electron/main/bridge/plugin-clipboard.js",
+    "dist-electron/main/bridge/plugin-runtime.js",
+    "dist-electron/main/browser-surface-registry.js",
+    "dist-electron/main/builtin-loader.js",
+    "dist-electron/main/cdp-integration.js",
+    "dist-electron/main/container-engine.js",
+    "dist-electron/main/copilot/attachments/attachment-store.js",
+    "dist-electron/main/copilot/attachments/attachment-worker.js",
+    "dist-electron/main/copilot/attachments/document-extract.js",
+    "dist-electron/main/copilot/core/agent-platform-bridge.js",
+    "dist-electron/main/copilot/core/agent-platform-config.js",
+    "dist-electron/main/copilot/core/assistant-navigation-status-client.js",
+    "dist-electron/main/copilot/core/coder-project.js",
+    "dist-electron/main/copilot/core/container-hub.js",
+    "dist-electron/main/copilot/core/settings-store.js",
+    "dist-electron/main/copilot/pet-copilot/agent-platform-api.js",
+    "dist-electron/main/copilot/pet-copilot/desktop-pet-preview.js",
+    "dist-electron/main/copilot/pet-copilot/desktop-pet.js",
+    "dist-electron/main/copilot/pet-copilot/pet-asset-protocol.js",
+    "dist-electron/main/copilot/pet-copilot/pet-status-client.js",
+    "dist-electron/main/copilot/pet-copilot/pet-stream-client.js",
+    "dist-electron/main/copilot/pet-copilot/window.js",
+    "dist-electron/main/copilot/quick-copilot/dismiss-layer.js",
+    "dist-electron/main/copilot/quick-copilot/ipc.js",
+    "dist-electron/main/copilot/quick-copilot/quick-copilot.js",
+    "dist-electron/main/copilot/quick-copilot/routing.js",
+    "dist-electron/main/copilot/quick-copilot/shortcut.js",
+    "dist-electron/main/copilot/quick-copilot/window.js",
+    "dist-electron/main/copilot/sidebar-copilot/screenshot.js",
+    "dist-electron/main/current-page-cdp-executor.js",
+    "dist-electron/main/custom-sidebar-store.js",
+    "dist-electron/main/debug/debug-events.js",
+    "dist-electron/main/debug/surface-registration.js",
+    "dist-electron/main/debug/webview-debug-manager.js",
+    "dist-electron/main/desktop-action-bridge.js",
+    "dist-electron/main/desktop-action-renderer.js",
+    "dist-electron/main/desktop-default-bootstrap.js",
+    "dist-electron/main/desktop-device-info.js",
+    "dist-electron/main/desktop-diagnostics.js",
+    "dist-electron/main/desktop-init-bootstrap.js",
+    "dist-electron/main/desktop-pet-controller.js",
+    "dist-electron/main/desktop-pet-preview.js",
+    "dist-electron/main/desktop-pet.js",
+    "dist-electron/main/desktop-profile-store.js",
+    "dist-electron/main/desktop-register.js",
+    "dist-electron/main/desktop-ws-server.js",
+    "dist-electron/main/device-identity.js",
+    "dist-electron/main/download-paths.js",
+    "dist-electron/main/electron-bundle-paths.js",
+    "dist-electron/main/embedded-cdp-gateway.js",
+    "dist-electron/main/env-bootstrap.js",
+    "dist-electron/main/env-file.js",
+    "dist-electron/main/focused-webview-devtools.js",
+    "dist-electron/main/i18n/desktop-locale-store.js",
+    "dist-electron/main/i18n/main-i18n.js",
+    "dist-electron/main/identity-center-auth.js",
+    "dist-electron/main/index.js",
+    "dist-electron/main/ipc/agent-platform-handlers.js",
+    "dist-electron/main/ipc/assistant-handlers.js",
+    "dist-electron/main/ipc/debug-handlers.js",
+    "dist-electron/main/ipc/desktop-pet-handlers.js",
+    "dist-electron/main/ipc/kanban-handlers.js",
+    "dist-electron/main/ipc/marketplace-handlers.js",
+    "dist-electron/main/ipc/register.js",
+    "dist-electron/main/ipc/services-handlers.js",
+    "dist-electron/main/ipc/settings-handlers.js",
+    "dist-electron/main/ipc/shell-handlers.js",
+    "dist-electron/main/ipc/sso-handlers.js",
+    "dist-electron/main/ipc/task-board-handlers.js",
+    "dist-electron/main/ipc/tunnel-hub-handlers.js",
+    "dist-electron/main/ipc/web-handlers.js",
+    "dist-electron/main/ipc/webview-devtools-handlers.js",
+    "dist-electron/main/kanban-cloud-sync.js",
+    "dist-electron/main/kanban-db.js",
+    "dist-electron/main/kanban-desktop-ws-client.js",
+    "dist-electron/main/kanban-local-projects.js",
+    "dist-electron/main/kanban-local-store.js",
+    "dist-electron/main/kanban-runtime.js",
+    "dist-electron/main/kanban-store.js",
+    "dist-electron/main/kanban-sync.js",
+    "dist-electron/main/lifecycle/shutdown.js",
+    "dist-electron/main/lifecycle/single-instance.js",
+    "dist-electron/main/lifecycle/startup-phases.js",
+    "dist-electron/main/lifecycle/startup.js",
+    "dist-electron/main/logs/desktop.js",
+    "dist-electron/main/logs/runtime.js",
+    "dist-electron/main/logs/subscriptions.js",
+    "dist-electron/main/logs/viewer-window.js",
+    "dist-electron/main/loopback-url.js",
+    "dist-electron/main/main-process-context.js",
+    "dist-electron/main/main-process-runtime.js",
+    "dist-electron/main/manifest-utils.js",
+    "dist-electron/main/marketplace.js",
+    "dist-electron/main/marketplace/catalog-only-market.js",
+    "dist-electron/main/marketplace/cli-market.js",
+    "dist-electron/main/marketplace/common.js",
+    "dist-electron/main/marketplace/pet-market.js",
+    "dist-electron/main/marketplace/plugin-market.js",
+    "dist-electron/main/marketplace/sandbox-image-market.js",
+    "dist-electron/main/marketplace/skill-market.js",
+    "dist-electron/main/marketplace/website-app-market.js",
+    "dist-electron/main/navigation/custom-sidebar-store.js",
+    "dist-electron/main/oidc-sso.js",
+    "dist-electron/main/pan-auth.js",
+    "dist-electron/main/platform-adapter.js",
+    "dist-electron/main/plugin-actions.js",
+    "dist-electron/main/plugin-bridge.js",
+    "dist-electron/main/plugin-desktop-effects.js",
+    "dist-electron/main/plugin-global-shortcuts.js",
+    "dist-electron/main/plugin-loader.js",
+    "dist-electron/main/plugin-resources.js",
+    "dist-electron/main/plugin-settings.js",
+    "dist-electron/main/plugin-uninstall.js",
+    "dist-electron/main/port-conflict.js",
+    "dist-electron/main/program-data-cleanup.js",
+    "dist-electron/main/provider-register.js",
+    "dist-electron/main/quick-assistant.js",
+    "dist-electron/main/renderer-route.js",
+    "dist-electron/main/resource-directory-watcher.js",
+    "dist-electron/main/retired-plugins.js",
+    "dist-electron/main/reveal-path.js",
+    "dist-electron/main/safe-console.js",
+    "dist-electron/main/service-lifecycle-args.js",
+    "dist-electron/main/service-manager.js",
+    "dist-electron/main/service-port-defaults.js",
+    "dist-electron/main/service-registry.js",
+    "dist-electron/main/services/agent-webclient-host.js",
+    "dist-electron/main/services/manager/app-server-env.js",
+    "dist-electron/main/services/manager/builtin-install.js",
+    "dist-electron/main/services/manager/bundle-assets.js",
+    "dist-electron/main/services/manager/capabilities.js",
+    "dist-electron/main/services/manager/command-env.js",
+    "dist-electron/main/services/manager/command-runner.js",
+    "dist-electron/main/services/manager/container-engine.js",
+    "dist-electron/main/services/manager/env-content.js",
+    "dist-electron/main/services/manager/env-normalization.js",
+    "dist-electron/main/services/manager/identity-center-env.js",
+    "dist-electron/main/services/manager/index.js",
+    "dist-electron/main/services/manager/install-refresh.js",
+    "dist-electron/main/services/manager/layout.js",
+    "dist-electron/main/services/manager/logs.js",
+    "dist-electron/main/services/manager/managed-cleanup.js",
+    "dist-electron/main/services/manager/pid-files.js",
+    "dist-electron/main/services/manager/process-cleanup.js",
+    "dist-electron/main/services/manager/process-identity.js",
+    "dist-electron/main/services/manager/process-tree.js",
+    "dist-electron/main/services/manager/program-layout.js",
+    "dist-electron/main/services/manager/runtime-paths.js",
+    "dist-electron/main/services/manager/service-network.js",
+    "dist-electron/main/services/manager/service-probes.js",
+    "dist-electron/main/services/manager/state-files.js",
+    "dist-electron/main/services/port-conflict.js",
+    "dist-electron/main/services/runtime.js",
+    "dist-electron/main/services/service-registry.js",
+    "dist-electron/main/settings/runtime.js",
+    "dist-electron/main/shutdown-cleanup.js",
+    "dist-electron/main/skill-installer.js",
+    "dist-electron/main/sso-chrome.js",
+    "dist-electron/main/sso-controller.js",
+    "dist-electron/main/sso-site-token.js",
+    "dist-electron/main/startup-restore.js",
+    "dist-electron/main/startup-timing.js",
+    "dist-electron/main/static-site-host-manager.js",
+    "dist-electron/main/task-board-cloud-sync.js",
+    "dist-electron/main/task-board-db.js",
+    "dist-electron/main/task-board-local-projects.js",
+    "dist-electron/main/task-board-local-store.js",
+    "dist-electron/main/task-board-runtime.js",
+    "dist-electron/main/task-board-store.js",
+    "dist-electron/main/task-board-sync.js",
+    "dist-electron/main/tunnel-client-endpoint.js",
+    "dist-electron/main/tunnel-hub-agent-settings.js",
+    "dist-electron/main/tunnel-hub-registration.js",
+    "dist-electron/main/tunnel-hub-runtime.js",
+    "dist-electron/main/tunnel-hub-settings.js",
+    "dist-electron/main/tunnel-hub-websocket-client.js",
+    "dist-electron/main/tunnel-hub-yamux.js",
+    "dist-electron/main/usage-profile.js",
+    "dist-electron/main/user-paths.js",
+    "dist-electron/main/webs/common.js",
+    "dist-electron/main/webs/migration.js",
+    "dist-electron/main/webs/order-store.js",
+    "dist-electron/main/webs/store.js",
+    "dist-electron/main/webs/surface-runtime.js",
+    "dist-electron/main/webs/web-common.js",
+    "dist-electron/main/webs/web-migration.js",
+    "dist-electron/main/webs/web-order-store.js",
+    "dist-electron/main/webs/web-store.js",
+    "dist-electron/main/webs/webapp-runtime.js",
+    "dist-electron/main/webs/webapp-store.js",
+    "dist-electron/main/webs/webapp-template-installer.js",
+    "dist-electron/main/webs/webapps/actions.js",
+    "dist-electron/main/webs/webapps/metadata.js",
+    "dist-electron/main/webs/webapps/runtime.js",
+    "dist-electron/main/webs/webapps/store.js",
+    "dist-electron/main/webs/webapps/template-installer.js",
+    "dist-electron/main/webs/website-actions.js",
+    "dist-electron/main/webs/website-store.js",
+    "dist-electron/main/webs/websites/actions.js",
+    "dist-electron/main/webs/websites/store.js",
+    "dist-electron/main/webview-open-tab.js",
+    "dist-electron/main/window-manager.js",
+    "dist-electron/preload/index.js",
+    "dist-electron/preload/service-webview-main-world.js",
+    "dist-electron/preload/service-webview.js",
+    "dist-electron/shared/agent-webclient-auth-injection.js",
+    "dist-electron/shared/agent-webclient-routes.js",
+    "dist-electron/shared/app-icon-assets.js",
+    "dist-electron/shared/assistant-awaiting.js",
+    "dist-electron/shared/assistant-capabilities.js",
+    "dist-electron/shared/assistant-markdown.js",
+    "dist-electron/shared/assistant-settings.js",
+    "dist-electron/shared/auth-bridge.js",
+    "dist-electron/shared/brand.js",
+    "dist-electron/shared/browser-surfaces.js",
+    "dist-electron/shared/contracts.js",
+    "dist-electron/shared/contracts/attachments.js",
+    "dist-electron/shared/contracts/copilot.js",
+    "dist-electron/shared/contracts/debug.js",
+    "dist-electron/shared/contracts/desktop-api.js",
+    "dist-electron/shared/contracts/index.js",
+    "dist-electron/shared/contracts/kanban.js",
+    "dist-electron/shared/contracts/manifest.js",
+    "dist-electron/shared/contracts/marketplace.js",
+    "dist-electron/shared/contracts/navigation.js",
+    "dist-electron/shared/contracts/pet-copilot.js",
+    "dist-electron/shared/contracts/services.js",
+    "dist-electron/shared/contracts/startup.js",
+    "dist-electron/shared/contracts/task-board.js",
+    "dist-electron/shared/contracts/webs.js",
+    "dist-electron/shared/copilot/assistant-settings.js",
+    "dist-electron/shared/copilot/page-copilot.js",
+    "dist-electron/shared/copilot/pet-copilot.js",
+    "dist-electron/shared/custom-sidebar-icons.js",
+    "dist-electron/shared/desktop-actions.js",
+    "dist-electron/shared/desktop-actions/index.js",
+    "dist-electron/shared/desktop-pet-visual.js",
+    "dist-electron/shared/desktop-pet.js",
+    "dist-electron/shared/desktop-ws-protocol.js",
+    "dist-electron/shared/desktop-ws.js",
+    "dist-electron/shared/embedded-cdp.js",
+    "dist-electron/shared/embedded-web-scripts.js",
+    "dist-electron/shared/external-webview-bookmarks.js",
+    "dist-electron/shared/generated/brand.js",
+    "dist-electron/shared/i18n/dictionaries/enUS.js",
+    "dist-electron/shared/i18n/dictionaries/zhCN.js",
+    "dist-electron/shared/i18n/format.js",
+    "dist-electron/shared/i18n/index.js",
+    "dist-electron/shared/i18n/initial-locale-args.js",
+    "dist-electron/shared/i18n/keys.js",
+    "dist-electron/shared/i18n/locales.js",
+    "dist-electron/shared/i18n/messages.js",
+    "dist-electron/shared/i18n/types.js",
+    "dist-electron/shared/navigation/custom-sidebar-icons.js",
+    "dist-electron/shared/navigation/sidebar-layout.js",
+    "dist-electron/shared/page-copilot.js",
+    "dist-electron/shared/service-webview-bridge.js",
+    "dist-electron/shared/service-webview-ws-monitor.js",
+    "dist-electron/shared/settings-routes.js",
+    "dist-electron/shared/settings-sections.js",
+    "dist-electron/shared/sidebar-layout.js",
+    "dist-electron/shared/sso.js",
+    "dist-electron/shared/startup-gate.js",
+    "dist-electron/shared/startup-status.js",
+    "public/webapp-templates/demo-node-html/backend/server.mjs",
+    "public/webapp-templates/demo-node-html/frontend/app.js",
+    "scripts/build-main-bundle.mjs",
+    "scripts/dev.mjs",
+    "scripts/dist-mac.mjs",
+    "scripts/dist-win.mjs",
+    "scripts/fix-mac-sign.js",
+    "scripts/generate-app-icons.mjs",
+    "scripts/i18n/scan-hardcoded-text.mjs",
+    "scripts/i18n/validate-dictionaries.mjs",
+    "scripts/i18n/validate-language-separation.mjs",
+    "scripts/lib/brand-config.mjs",
+    "scripts/lib/build-metadata.mjs",
+    "scripts/lib/builtin-assets.mjs",
+    "scripts/lib/desktop-resources.mjs",
+    "scripts/lib/electron-installation.mjs",
+    "scripts/lib/mac-notarize.mjs",
+    "scripts/platform/detect.mjs",
+    "scripts/platform/dev-darwin.mjs",
+    "scripts/platform/dev-unix.mjs",
+    "scripts/platform/dev-windows.mjs",
+    "scripts/platform/dist-win-docker.mjs",
+    "scripts/platform/dist-win-host.mjs",
+    "scripts/platform/spawn.mjs",
+    "scripts/stage-app.mjs",
+    "scripts/sync-brand.mjs",
+    "scripts/sync-builtin-assets.mjs",
+    "scripts/sync-demo-assets.mjs",
+    "scripts/sync-env-zip.mjs",
+    "scripts/sync-package-version.mjs",
+    "scripts/verify-mac-services-signing.js",
+    "scripts/verify-win-package.mjs",
+    "src/main/agent-auth.ts",
+    "src/main/app-metadata.ts",
+    "src/main/app-pairing.ts",
+    "src/main/app-shell/agent-platform-monitor-window.ts",
+    "src/main/app-shell/app-menu.ts",
+    "src/main/app-shell/native-dialogs.ts",
+    "src/main/app-shell/quit-confirmation.ts",
+    "src/main/app-shell/runtime.ts",
+    "src/main/app-shell/tray.ts",
+    "src/main/app-state.ts",
+    "src/main/app/app-events.ts",
+    "src/main/app/runtime.ts",
+    "src/main/app/startup-environment.ts",
+    "src/main/app/system-identity.ts",
+    "src/main/archive-utils.ts",
+    "src/main/assistant/attachments/attachment-store.ts",
+    "src/main/assistant/attachments/attachment-worker.ts",
+    "src/main/assistant/attachments/document-extract.ts",
+    "src/main/assistant/copilot/screenshot.ts",
+    "src/main/assistant/core/agent-platform-bridge.ts",
+    "src/main/assistant/core/agent-platform-config.ts",
+    "src/main/assistant/core/assistant-navigation-status-client.ts",
+    "src/main/assistant/core/coder-project.ts",
+    "src/main/assistant/core/container-hub.ts",
+    "src/main/assistant/core/settings-store.ts",
+    "src/main/assistant/pet/agent-platform-api.ts",
+    "src/main/assistant/pet/desktop-pet-preview.ts",
+    "src/main/assistant/pet/desktop-pet.ts",
+    "src/main/assistant/pet/pet-asset-protocol.ts",
+    "src/main/assistant/pet/pet-status-client.ts",
+    "src/main/assistant/pet/pet-stream-client.ts",
+    "src/main/assistant/pet/runtime.ts",
+    "src/main/assistant/pet/window.ts",
+    "src/main/assistant/quick/dismiss-layer.ts",
+    "src/main/assistant/quick/ipc.ts",
+    "src/main/assistant/quick/quick-copilot.ts",
+    "src/main/assistant/quick/routing.ts",
+    "src/main/assistant/quick/shortcut.ts",
+    "src/main/assistant/quick/window.ts",
+    "src/main/bridge/assistant-runtime.ts",
+    "src/main/bridge/assistant-wake-lock.ts",
+    "src/main/bridge/plugin-clipboard.ts",
+    "src/main/bridge/plugin-runtime.ts",
+    "src/main/browser-surface-registry.ts",
+    "src/main/builtin-loader.ts",
+    "src/main/cdp-integration.ts",
+    "src/main/container-engine.ts",
+    "src/main/current-page-cdp-executor.ts",
+    "src/main/desktop-action-bridge.ts",
+    "src/main/desktop-action-renderer.ts",
+    "src/main/desktop-device-info.ts",
+    "src/main/desktop-diagnostics.ts",
+    "src/main/desktop-init-bootstrap.ts",
+    "src/main/desktop-pet-controller.ts",
+    "src/main/desktop-profile-store.ts",
+    "src/main/desktop-ws-server.ts",
+    "src/main/device-identity.ts",
+    "src/main/download-paths.ts",
+    "src/main/electron-bundle-paths.ts",
+    "src/main/embedded-cdp-gateway.ts",
+    "src/main/env-bootstrap.ts",
+    "src/main/env-file.ts",
+    "src/main/focused-webview-devtools.ts",
+    "src/main/i18n/desktop-locale-store.ts",
+    "src/main/i18n/main-i18n.ts",
+    "src/main/identity-center-auth.ts",
+    "src/main/index.ts",
+    "src/main/ipc/assistant-handlers.ts",
+    "src/main/ipc/desktop-pet-handlers.ts",
+    "src/main/ipc/kanban-handlers.ts",
+    "src/main/ipc/marketplace-handlers.ts",
+    "src/main/ipc/register.ts",
+    "src/main/ipc/services-handlers.ts",
+    "src/main/ipc/settings-handlers.ts",
+    "src/main/ipc/shell-handlers.ts",
+    "src/main/ipc/sso-handlers.ts",
+    "src/main/ipc/tunnel-hub-handlers.ts",
+    "src/main/ipc/web-handlers.ts",
+    "src/main/kanban-cloud-sync.ts",
+    "src/main/kanban-db.ts",
+    "src/main/kanban-desktop-ws-client.ts",
+    "src/main/kanban-local-projects.ts",
+    "src/main/kanban-local-store.ts",
+    "src/main/kanban-runtime.ts",
+    "src/main/kanban-store.ts",
+    "src/main/kanban-sync.ts",
+    "src/main/lifecycle/shutdown.ts",
+    "src/main/lifecycle/single-instance.ts",
+    "src/main/lifecycle/startup-phases.ts",
+    "src/main/lifecycle/startup.ts",
+    "src/main/logs/desktop.ts",
+    "src/main/logs/runtime.ts",
+    "src/main/logs/subscriptions.ts",
+    "src/main/logs/viewer-window.ts",
+    "src/main/loopback-url.ts",
+    "src/main/main-process-context.ts",
+    "src/main/main-process-runtime.ts",
+    "src/main/manifest-utils.ts",
+    "src/main/marketplace.ts",
+    "src/main/marketplace/catalog-only-market.ts",
+    "src/main/marketplace/cli-market.ts",
+    "src/main/marketplace/common.ts",
+    "src/main/marketplace/pet-market.ts",
+    "src/main/marketplace/plugin-market.ts",
+    "src/main/marketplace/sandbox-image-market.ts",
+    "src/main/marketplace/skill-market.ts",
+    "src/main/marketplace/website-app-market.ts",
+    "src/main/oidc-sso.ts",
+    "src/main/platform-adapter.ts",
+    "src/main/plugin-actions.ts",
+    "src/main/plugin-bridge.ts",
+    "src/main/plugin-desktop-effects.ts",
+    "src/main/plugin-global-shortcuts.ts",
+    "src/main/plugin-loader.ts",
+    "src/main/plugin-resources.ts",
+    "src/main/plugin-settings.ts",
+    "src/main/plugin-uninstall.ts",
+    "src/main/program-data-cleanup.ts",
+    "src/main/provider-register.ts",
+    "src/main/renderer-route.ts",
+    "src/main/resource-directory-watcher.ts",
+    "src/main/retired-plugins.ts",
+    "src/main/reveal-path.ts",
+    "src/main/safe-console.ts",
+    "src/main/service-lifecycle-args.ts",
+    "src/main/service-port-defaults.ts",
+    "src/main/services/agent-webclient-host.ts",
+    "src/main/services/manager/builtin-install.ts",
+    "src/main/services/manager/bundle-assets.ts",
+    "src/main/services/manager/capabilities.ts",
+    "src/main/services/manager/command-env.ts",
+    "src/main/services/manager/command-runner.ts",
+    "src/main/services/manager/container-engine.ts",
+    "src/main/services/manager/env-content.ts",
+    "src/main/services/manager/env-normalization.ts",
+    "src/main/services/manager/index.ts",
+    "src/main/services/manager/install-refresh.ts",
+    "src/main/services/manager/layout.ts",
+    "src/main/services/manager/logs.ts",
+    "src/main/services/manager/managed-cleanup.ts",
+    "src/main/services/manager/pid-files.ts",
+    "src/main/services/manager/process-cleanup.ts",
+    "src/main/services/manager/process-identity.ts",
+    "src/main/services/manager/process-tree.ts",
+    "src/main/services/manager/program-layout.ts",
+    "src/main/services/manager/runtime-paths.ts",
+    "src/main/services/manager/service-network.ts",
+    "src/main/services/manager/service-probes.ts",
+    "src/main/services/manager/state-files.ts",
+    "src/main/services/port-conflict.ts",
+    "src/main/services/runtime.ts",
+    "src/main/services/service-registry.ts",
+    "src/main/settings/runtime.ts",
+    "src/main/shutdown-cleanup.ts",
+    "src/main/skill-installer.ts",
+    "src/main/sso-controller.ts",
+    "src/main/sso-site-token.ts",
+    "src/main/startup-restore.ts",
+    "src/main/startup-timing.ts",
+    "src/main/static-site-host-manager.ts",
+    "src/main/tunnel-client-endpoint.ts",
+    "src/main/tunnel-hub-registration.ts",
+    "src/main/tunnel-hub-runtime.ts",
+    "src/main/tunnel-hub-settings.ts",
+    "src/main/tunnel-hub-websocket-client.ts",
+    "src/main/tunnel-hub-yamux.ts",
+    "src/main/usage-profile.ts",
+    "src/main/user-paths.ts",
+    "src/main/webs/common.ts",
+    "src/main/webs/order-store.ts",
+    "src/main/webs/store.ts",
+    "src/main/webs/surface-runtime.ts",
+    "src/main/webs/webapps/actions.ts",
+    "src/main/webs/webapps/metadata.ts",
+    "src/main/webs/webapps/runtime.ts",
+    "src/main/webs/webapps/store.ts",
+    "src/main/webs/webapps/template-installer.ts",
+    "src/main/webs/websites/actions.ts",
+    "src/main/webs/websites/store.ts",
+    "src/main/webview-open-tab.ts",
+    "src/main/window-manager.ts",
+    "src/preload/index.ts",
+    "src/preload/service-webview-main-world.ts",
+    "src/preload/service-webview.ts",
+    "src/renderer/App.tsx",
+    "src/renderer/AppErrorBoundary.tsx",
+    "src/renderer/app-shell/AppShell.tsx",
+    "src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx",
+    "src/renderer/app-shell/navigation/AgentIcon.tsx",
+    "src/renderer/app-shell/navigation/AppSidebar.tsx",
+    "src/renderer/app-shell/navigation/sidebarNavOrder.ts",
+    "src/renderer/app-shell/startup/EnvImportOverlay.tsx",
+    "src/renderer/app-shell/startup/StartupGate.tsx",
+    "src/renderer/assistantNavigation.ts",
+    "src/renderer/components/BrandMark.tsx",
+    "src/renderer/components/Collapse/index.tsx",
+    "src/renderer/components/PageFeedbackStack.tsx",
+    "src/renderer/components/Popover/index.tsx",
+    "src/renderer/components/Tooltip/index.tsx",
+    "src/renderer/copilot/page-context/assistantPageContext.ts",
+    "src/renderer/copilot/page-context/webActions.ts",
+    "src/renderer/copilot/pet-copilot/DesktopPet.tsx",
+    "src/renderer/copilot/quick-copilot/QuickCopilotRoute.tsx",
+    "src/renderer/copilot/sidebar-copilot/AgentWebclientCopilotDock.tsx",
+    "src/renderer/global.d.ts",
+    "src/renderer/help/MarkdownContent.tsx",
+    "src/renderer/help/helpContent.ts",
+    "src/renderer/i18n/I18nProvider.tsx",
+    "src/renderer/i18n/i18n-context.ts",
+    "src/renderer/i18n/useI18n.ts",
+    "src/renderer/main.tsx",
+    "src/renderer/pages/HelpPage.tsx",
+    "src/renderer/pages/LogViewerPage.tsx",
+    "src/renderer/pages/PlaceholderPage.tsx",
+    "src/renderer/pages/control-center/ControlCenterPage.tsx",
+    "src/renderer/pages/external-webview/ExternalWebviewPage.tsx",
+    "src/renderer/pages/functional-market/MarketPageFrame.tsx",
+    "src/renderer/pages/functional-market/StorefrontMarket.tsx",
+    "src/renderer/pages/functional-market/index.tsx",
+    "src/renderer/pages/functional-market/marketDisplay.tsx",
+    "src/renderer/pages/functional-market/marketPageApi.ts",
+    "src/renderer/pages/functional-market/marketPageModel.ts",
+    "src/renderer/pages/functional-market/marketViewRegistry.tsx",
+    "src/renderer/pages/kanban/KanbanPage.tsx",
+    "src/renderer/pages/kanban/StatusIcons.tsx",
+    "src/renderer/pages/kanban/kanbanProjectTree.ts",
+    "src/renderer/pages/plugin/PluginPage.tsx",
+    "src/renderer/pages/plugin/PluginSettingsPage.tsx",
+    "src/renderer/pages/settings/SettingsPage.tsx",
+    "src/renderer/service-display.ts",
+    "src/renderer/services/ServicesContext.tsx",
+    "src/renderer/services/currentPageContext.ts",
+    "src/renderer/services/desktopActionRegistry.ts",
+    "src/renderer/services/pluginSurfaceWebviewRefs.ts",
+    "src/renderer/services/serviceWebviewBridgeHost.ts",
+    "src/renderer/settings/settingsRoutes.ts",
+    "src/renderer/settingsPageSections.ts",
+    "src/shared/agent-webclient-auth-injection.ts",
+    "src/shared/agent-webclient-routes.ts",
+    "src/shared/app-icon-assets.ts",
+    "src/shared/assistant-settings.ts",
+    "src/shared/auth-bridge.ts",
+    "src/shared/brand.ts",
+    "src/shared/browser-surfaces.ts",
+    "src/shared/contracts.ts",
+    "src/shared/contracts/attachments.ts",
+    "src/shared/contracts/copilot.ts",
+    "src/shared/contracts/desktop-api.ts",
+    "src/shared/contracts/kanban.ts",
+    "src/shared/contracts/manifest.ts",
+    "src/shared/contracts/marketplace.ts",
+    "src/shared/contracts/navigation.ts",
+    "src/shared/contracts/pet-copilot.ts",
+    "src/shared/contracts/services.ts",
+    "src/shared/contracts/startup.ts",
+    "src/shared/contracts/webs.ts",
+    "src/shared/desktop-actions.ts",
+    "src/shared/desktop-pet-visual.ts",
+    "src/shared/desktop-pet.ts",
+    "src/shared/desktop-ws-protocol.ts",
+    "src/shared/desktop-ws.ts",
+    "src/shared/embedded-cdp.ts",
+    "src/shared/embedded-web-scripts.ts",
+    "src/shared/generated/brand.ts",
+    "src/shared/i18n/dictionaries/enUS.ts",
+    "src/shared/i18n/dictionaries/zhCN.ts",
+    "src/shared/i18n/format.ts",
+    "src/shared/i18n/index.ts",
+    "src/shared/i18n/initial-locale-args.ts",
+    "src/shared/i18n/keys.ts",
+    "src/shared/i18n/locales.ts",
+    "src/shared/i18n/messages.ts",
+    "src/shared/i18n/types.ts",
+    "src/shared/page-copilot.ts",
+    "src/shared/service-webview-bridge.ts",
+    "src/shared/service-webview-ws-monitor.ts",
+    "src/shared/settings-routes.ts",
+    "src/shared/settings-sections.ts",
+    "src/shared/sidebar-layout.ts",
+    "src/shared/sso.ts",
+    "src/shared/startup-gate.ts",
+    "src/shared/startup-status.ts",
+    "test/agent-icon-fallback.test.mjs",
+    "test/agent-platform-assistant-bridge.test.mjs",
+    "test/agent-webclient-auth-injection.test.mjs",
+    "test/app-pairing.test.mjs",
+    "test/archive-utils.test.mjs",
+    "test/assistant-chat-read-route.test.mjs",
+    "test/assistant-navigation-renderer.test.mjs",
+    "test/assistant-navigation-status-client.test.mjs",
+    "test/brand-runtime-paths.test.mjs",
+    "test/builtin-assets.test.mjs",
+    "test/coder-project.test.mjs",
+    "test/desktop-action-bridge.test.mjs",
+    "test/desktop-diagnostics.test.mjs",
+    "test/desktop-init-bootstrap.test.mjs",
+    "test/desktop-logs.test.mjs",
+    "test/desktop-pet-asset-protocol.test.mjs",
+    "test/desktop-pet-behavior.test.mjs",
+    "test/desktop-plugin-bridge.test.mjs",
+    "test/desktop-profile-store.test.mjs",
+    "test/desktop-ws-protocol.test.mjs",
+    "test/desktop-ws-server.test.mjs",
+    "test/device-identity.test.mjs",
+    "test/electron-bundle-paths.test.mjs",
+    "test/env-bootstrap.test.mjs",
+    "test/kanban-desktop-ws-client.test.mjs",
+    "test/kanban-project-tree.test.mjs",
+    "test/kanban-runtime.test.mjs",
+    "test/kanban-sync.test.mjs",
+    "test/mac-notarize.test.mjs",
+    "test/marketplace.test.mjs",
+    "test/oidc-sso.test.mjs",
+    "test/plugin-page-route-sync.test.mjs",
+    "test/program-data-cleanup.test.mjs",
+    "test/renderer-build.test.mjs",
+    "test/service-manager.test.mjs",
+    "test/service-refresh-decoupling.test.mjs",
+    "test/service-webview-main-world.test.mjs",
+    "test/settings-desktop-ws-server.test.mjs",
+    "test/settings-usage-profile.test.mjs",
+    "test/sso-handlers.test.mjs",
+    "test/tunnel-hub-registration.test.mjs",
+    "test/tunnel-hub-runtime.test.mjs",
+    "test/tunnel-hub-settings.test.mjs",
+    "test/webs.test.mjs",
+    "test/window-manager.test.mjs",
+    "vite.config.ts"
+  ],
+  "fileToModule": {
+    "dist-electron/shared/copilot/assistant-settings.js": "copilot",
+    "dist-electron/shared/copilot/page-copilot.js": "copilot",
+    "dist-electron/shared/copilot/pet-copilot.js": "copilot",
+    "dist-electron/shared/desktop-actions/index.js": "desktop-actions",
+    "dist-electron/shared/navigation/custom-sidebar-icons.js": "navigation",
+    "dist-electron/shared/navigation/sidebar-layout.js": "navigation",
+    "src/main/services/manager/builtin-install.ts": "manager",
+    "src/main/services/manager/bundle-assets.ts": "manager",
+    "src/main/services/manager/capabilities.ts": "manager",
+    "src/main/services/manager/command-env.ts": "manager",
+    "src/main/services/manager/command-runner.ts": "manager",
+    "src/main/services/manager/container-engine.ts": "manager",
+    "src/main/services/manager/env-content.ts": "manager",
+    "src/main/services/manager/env-normalization.ts": "manager",
+    "src/main/services/manager/index.ts": "manager",
+    "src/main/services/manager/install-refresh.ts": "manager",
+    "src/main/services/manager/layout.ts": "manager",
+    "src/main/services/manager/logs.ts": "manager",
+    "src/main/services/manager/managed-cleanup.ts": "manager",
+    "src/main/services/manager/pid-files.ts": "manager",
+    "src/main/services/manager/process-cleanup.ts": "manager",
+    "src/main/services/manager/process-identity.ts": "manager",
+    "src/main/services/manager/process-tree.ts": "manager",
+    "src/main/services/manager/program-layout.ts": "manager",
+    "src/main/services/manager/runtime-paths.ts": "manager",
+    "src/main/services/manager/service-network.ts": "manager",
+    "src/main/services/manager/service-probes.ts": "manager",
+    "src/main/services/manager/state-files.ts": "manager",
+    "src/shared/contracts/attachments.ts": "contracts",
+    "src/shared/contracts/copilot.ts": "contracts",
+    "src/shared/contracts/desktop-api.ts": "contracts",
+    "src/shared/contracts/kanban.ts": "contracts",
+    "src/shared/contracts/manifest.ts": "contracts",
+    "src/shared/contracts/marketplace.ts": "contracts",
+    "src/shared/contracts/navigation.ts": "contracts",
+    "src/shared/contracts/pet-copilot.ts": "contracts",
+    "src/shared/contracts/services.ts": "contracts",
+    "src/shared/contracts/startup.ts": "contracts",
+    "src/shared/contracts/webs.ts": "contracts",
+    "src/shared/generated/brand.ts": "generated",
+    "src/shared/i18n/dictionaries/enUS.ts": "i18n",
+    "src/shared/i18n/dictionaries/zhCN.ts": "i18n",
+    "src/shared/i18n/format.ts": "i18n",
+    "src/shared/i18n/index.ts": "i18n",
+    "src/shared/i18n/initial-locale-args.ts": "i18n",
+    "src/shared/i18n/keys.ts": "i18n",
+    "src/shared/i18n/locales.ts": "i18n",
+    "src/shared/i18n/messages.ts": "i18n",
+    "src/shared/i18n/types.ts": "i18n"
+  },
+  "tokenToRefs": {
+    "access": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "acp": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "action": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "actions": [
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      }
+    ],
+    "adding": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "affected": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "after": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "agent": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "agents": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "and": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "api": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "apikey": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "app": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "appear": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      }
+    ],
+    "appearance": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "approval": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "archive": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "arg": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "args": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "arguments": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "argv": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "around": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "ask": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "asks": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "asset": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "assets": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "assistant": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      }
+    ],
+    "attachment": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "attachments": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "audit": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "auth": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "authored": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "auto": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "automation": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "available": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "awaiting": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "backend": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "balance": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "base": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "basename": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "before": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "behavior": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "bin": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "binding": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "block": [
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "blocking": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "blocks": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "boundary": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "brand": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "bridge": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "broader": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      }
+    ],
+    "bucket": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "bugfix": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "build": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "builtin": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "bundle": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "bytes": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "cache": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "call": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "cancel": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "capabilities": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "capability": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "capture": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "card": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "cards": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "catalog": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "catalogs": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "center": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "change": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "changed": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "changing": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "chat": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "choose": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "claims": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "claude": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "cleanup": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "clear": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "cli": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "closest": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "cloud": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "cnmessages": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "code": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "coder": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "collect": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "command": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "commands": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "compute": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "config": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "configured": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "confirmation": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "confirmed": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "connected": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "container": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "content": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "context": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "contracts": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "copilot": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      }
+    ],
+    "correction": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "create": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "curated": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "current": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "custom": [
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "debug": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "decode": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "default": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "definition": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "delay": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "delete": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "dependency": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "description": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "desired": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "desktop": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "detail": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "detailed": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "detect": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "detected": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "deterministic": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "device": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "diagnostic": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "dialog": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "dictionaries": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "dictionary": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "dir": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "direction": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "directory": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "dirs": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "disabled": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "discard": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "dispatch": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "display": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "dist": [
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "doc": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "dock": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "document": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "drag": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "drift": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      }
+    ],
+    "during": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "edge": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "editing": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "edits": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "electron": [
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "embedded": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "empty": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "engine": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "engines": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "ensure": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "entries": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "entry": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "entrypoints": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "env": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "event": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "exec": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "existing": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "expand": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "explicit": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "explicitly": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "extracted": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "facts": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "failure": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "favorite": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "feature": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "field": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "file": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "files": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "first": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "fix": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "flow": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "for": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "force": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "form": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "format": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "frame": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "from": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "frontend": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "function": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "general": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "generated": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "get": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "gitignore": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "global": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "has": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "health": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "healthy": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "home": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "hook": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "hooks": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "hosting": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "hosts": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "http": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "hub": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "i18": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "i18n": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "icon": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "icons": [
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "idempotent": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "identity": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "ids": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "image": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "implementation": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "import": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "index": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "info": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "init": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "initial": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "initialization": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "initialize": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "input": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "inside": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "inspect": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "inspection": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "install": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "installer": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "internals": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "interval": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "issue": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "item": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "items": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "json": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "kanban": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "keep": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "key": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "keys": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "kind": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "languages": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "last": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "layout": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "legacy": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "level": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "lifecycle": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "limit": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "limits": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "list": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "listener": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "listening": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "loading": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "local": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "locale": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "locales": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "log": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "login": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "logout": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "logs": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "machine": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "main": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "make": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      }
+    ],
+    "managed": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "manager": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "manifest": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "market": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "marketplace": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "match": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "matches": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "may": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "memory": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "merge": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "message": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "messages": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "meta": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "missing": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "mobile": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "mode": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "modify": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "module": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "modules": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "move": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "must": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "name": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "names": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "namespace": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "native": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "nav": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "navigate": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "navigation": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "needs": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "network": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "never": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "new": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "node": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "non": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "normalization": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "normalize": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "not": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "offset": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "omits": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "onboard": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "only": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "open": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "option": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "optional": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "options": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "order": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "ordinary": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "origin": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "output": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "overlapping": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      }
+    ],
+    "package": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "page": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      }
+    ],
+    "pairing": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "panel": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "params": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "parse": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "partitions": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "pasted": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "path": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "paths": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "payload": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "permission": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "permissions": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "pet": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      }
+    ],
+    "phase": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "pick": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "pid": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "pids": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "placeholder": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "placement": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "platform": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "plugin": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "point": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "poll": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "port": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "ports": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "power": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "preferred": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "preparation": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "presence": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "preserve": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "preserved": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "preview": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "price": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "priorities": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "priority": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "probe": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "probes": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "process": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "processes": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "product": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "profile": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "program": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "progress": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "progressive": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "project": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "protocol": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "provider": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "proxy": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "public": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "question": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "range": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "rate": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "read": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "reading": [
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "reason": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "rebuilt": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "reconcile": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "refactor": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "refresh": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "related": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "relay": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "remove": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "renderer": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "repeated": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "replace": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "report": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "repository": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ],
+    "request": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "requested": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "require": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "requirement": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "reset": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "resolve": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "resolving": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "resource": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "resources": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "response": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "responsive": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "restart": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "restore": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "result": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "reveal": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "risk": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "role": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "root": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "route": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "row": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "rows": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "rule": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "rules": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "run": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "runner": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "running": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "runtime": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "sandbox": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "save": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "scanning": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "script": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "scripts": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "section": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "semantic": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "server": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "service": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "services": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "session": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "setting": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "settings": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "shared": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "shell": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "short": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "shortcut": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "should": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      }
+    ],
+    "shutdown": [
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "sibling": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "sidebar": [
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      }
+    ],
+    "signature": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "site": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "snapshot": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "source": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "sourced": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "spec": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "src": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "sso": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "stage": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "stale": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "start": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "started": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "starts": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "startup": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "state": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "states": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "stats": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "status": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "statuses": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "stop": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "stopped": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "storage": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      }
+    ],
+    "stream": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "submit": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "summaries": [
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "summary": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "supported": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "sync": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "tab": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "target": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "targets": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "task": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "template": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "terminal": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "terminate": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "test": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "text": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "than": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      }
+    ],
+    "the": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "then": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "this": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "through": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "time": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      }
+    ],
+    "timeout": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "token": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "traffic": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "transcription": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "transfer": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "translate": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "translation": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "translator": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "tree": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "trigger": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "tunnel": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "type": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "types": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "unique": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "unless": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "update": [
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "updated": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "updates": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "upsert": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "url": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "usage": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "use": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "user": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "usmessages": [
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      }
+    ],
+    "value": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "values": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "variant": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "verification": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "verify": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "version": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "viewer": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "visibility": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "voice": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "watch": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "web": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "webapp": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "webclient": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "webs": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "website": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "webview": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "when": [
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      },
+      {
+        "kind": "task",
+        "id": "update-agent-protocol",
+        "path": ".doc/tasks/update-agent-protocol.json"
+      }
+    ],
+    "whole": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "wider": [
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "window": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "windows": [
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "with": [
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      }
+    ],
+    "work": [
+      {
+        "kind": "task",
+        "id": "modify-module-code",
+        "path": ".doc/tasks/modify-module-code.json"
+      }
+    ],
+    "worker": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      }
+    ],
+    "write": [
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      }
+    ],
+    "xgraph": [
+      {
+        "kind": "flow",
+        "id": "code-change-sync",
+        "path": ".doc/flows/code-change-sync.json"
+      },
+      {
+        "kind": "flow",
+        "id": "context-initialization",
+        "path": ".doc/flows/context-initialization.json"
+      },
+      {
+        "kind": "module",
+        "id": "contracts",
+        "path": ".doc/modules/contracts.json"
+      },
+      {
+        "kind": "module",
+        "id": "copilot",
+        "path": ".doc/modules/copilot.json"
+      },
+      {
+        "kind": "module",
+        "id": "desktop-actions",
+        "path": ".doc/modules/desktop-actions.json"
+      },
+      {
+        "kind": "module",
+        "id": "generated",
+        "path": ".doc/modules/generated.json"
+      },
+      {
+        "kind": "module",
+        "id": "i18n",
+        "path": ".doc/modules/i18n.json"
+      },
+      {
+        "kind": "module",
+        "id": "manager",
+        "path": ".doc/modules/manager.json"
+      },
+      {
+        "kind": "module",
+        "id": "navigation",
+        "path": ".doc/modules/navigation.json"
+      },
+      {
+        "kind": "rule",
+        "id": "agent-starts-from-index",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "managed-blocks-only",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "rule",
+        "id": "semantic-memory-needs-confirmation",
+        "path": ".doc/rules.json"
+      },
+      {
+        "kind": "task",
+        "id": "initialize-project-context",
+        "path": ".doc/tasks/initialize-project-context.json"
+      }
+    ]
+  },
+  "generated": {
+    "moduleCount": 7,
+    "taskCount": 3,
+    "flowCount": 2,
+    "ruleCount": 3,
+    "sourceFileCount": 698
+  }
+}

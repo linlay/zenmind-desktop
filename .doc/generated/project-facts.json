@@ -24,13 +24,17 @@
   ],
   "entrypoints": [],
   "testFiles": [
+    "test/agent-icon-fallback.test.mjs",
     "test/agent-platform-assistant-bridge.test.mjs",
     "test/agent-webclient-auth-injection.test.mjs",
     "test/app-pairing.test.mjs",
     "test/archive-utils.test.mjs",
+    "test/assistant-chat-read-route.test.mjs",
+    "test/assistant-navigation-renderer.test.mjs",
     "test/assistant-navigation-status-client.test.mjs",
     "test/brand-runtime-paths.test.mjs",
     "test/builtin-assets.test.mjs",
+    "test/coder-project.test.mjs",
     "test/desktop-action-bridge.test.mjs",
     "test/desktop-diagnostics.test.mjs",
     "test/desktop-init-bootstrap.test.mjs",
@@ -45,6 +49,7 @@
     "test/electron-bundle-paths.test.mjs",
     "test/env-bootstrap.test.mjs",
     "test/kanban-desktop-ws-client.test.mjs",
+    "test/kanban-project-tree.test.mjs",
     "test/kanban-runtime.test.mjs",
     "test/kanban-sync.test.mjs",
     "test/mac-notarize.test.mjs",
@@ -261,10 +266,13 @@
     "dist-electron/main/provider-register.js",
     "dist-electron/main/quick-assistant.js",
     "dist-electron/main/renderer-route.js",
+    "dist-electron/main/resource-directory-watcher.js",
     "dist-electron/main/retired-plugins.js",
     "dist-electron/main/reveal-path.js",
     "dist-electron/main/safe-console.js",
+    "dist-electron/main/service-lifecycle-args.js",
     "dist-electron/main/service-manager.js",
+    "dist-electron/main/service-port-defaults.js",
     "dist-electron/main/service-registry.js",
     "dist-electron/main/services/agent-webclient-host.js",
     "dist-electron/main/services/manager/app-server-env.js",
@@ -331,6 +339,8 @@
     "dist-electron/main/webs/webapp-runtime.js",
     "dist-electron/main/webs/webapp-store.js",
     "dist-electron/main/webs/webapp-template-installer.js",
+    "dist-electron/main/webs/webapps/actions.js",
+    "dist-electron/main/webs/webapps/metadata.js",
     "dist-electron/main/webs/webapps/runtime.js",
     "dist-electron/main/webs/webapps/store.js",
     "dist-electron/main/webs/webapps/template-installer.js",
@@ -558,6 +568,8 @@
     "src/main/retired-plugins.ts",
     "src/main/reveal-path.ts",
     "src/main/safe-console.ts",
+    "src/main/service-lifecycle-args.ts",
+    "src/main/service-port-defaults.ts",
     "src/main/services/agent-webclient-host.ts",
     "src/main/services/manager/builtin-install.ts",
     "src/main/services/manager/bundle-assets.ts",
@@ -567,7 +579,6 @@
     "src/main/services/manager/container-engine.ts",
     "src/main/services/manager/env-content.ts",
     "src/main/services/manager/env-normalization.ts",
-    "src/main/services/manager/identity-center-env.ts",
     "src/main/services/manager/index.ts",
     "src/main/services/manager/install-refresh.ts",
     "src/main/services/manager/layout.ts",
@@ -605,6 +616,8 @@
     "src/main/webs/order-store.ts",
     "src/main/webs/store.ts",
     "src/main/webs/surface-runtime.ts",
+    "src/main/webs/webapps/actions.ts",
+    "src/main/webs/webapps/metadata.ts",
     "src/main/webs/webapps/runtime.ts",
     "src/main/webs/webapps/store.ts",
     "src/main/webs/webapps/template-installer.ts",
@@ -625,11 +638,8 @@
     "src/renderer/app-shell/startup/EnvImportOverlay.tsx",
     "src/renderer/app-shell/startup/StartupGate.tsx",
     "src/renderer/assistantNavigation.ts",
-    "src/renderer/components/AttachmentImagePreview.tsx",
     "src/renderer/components/BrandMark.tsx",
     "src/renderer/components/Collapse/index.tsx",
-    "src/renderer/components/Flex/index.tsx",
-    "src/renderer/components/Header.tsx",
     "src/renderer/components/PageFeedbackStack.tsx",
     "src/renderer/components/Popover/index.tsx",
     "src/renderer/components/Tooltip/index.tsx",
@@ -651,9 +661,6 @@
     "src/renderer/pages/control-center/ControlCenterPage.tsx",
     "src/renderer/pages/external-webview/ExternalWebviewPage.tsx",
     "src/renderer/pages/functional-market/MarketPageFrame.tsx",
-    "src/renderer/pages/functional-market/PluginMarket.tsx",
-    "src/renderer/pages/functional-market/SandboxImageMarket.tsx",
-    "src/renderer/pages/functional-market/SkillMarket.tsx",
     "src/renderer/pages/functional-market/StorefrontMarket.tsx",
     "src/renderer/pages/functional-market/index.tsx",
     "src/renderer/pages/functional-market/marketDisplay.tsx",
@@ -661,6 +668,8 @@
     "src/renderer/pages/functional-market/marketPageModel.ts",
     "src/renderer/pages/functional-market/marketViewRegistry.tsx",
     "src/renderer/pages/kanban/KanbanPage.tsx",
+    "src/renderer/pages/kanban/StatusIcons.tsx",
+    "src/renderer/pages/kanban/kanbanProjectTree.ts",
     "src/renderer/pages/plugin/PluginPage.tsx",
     "src/renderer/pages/plugin/PluginSettingsPage.tsx",
     "src/renderer/pages/settings/SettingsPage.tsx",
@@ -670,7 +679,6 @@
     "src/renderer/services/desktopActionRegistry.ts",
     "src/renderer/services/pluginSurfaceWebviewRefs.ts",
     "src/renderer/services/serviceWebviewBridgeHost.ts",
-    "src/renderer/services/serviceWebviewBridgeReservedCapabilities.ts",
     "src/renderer/settings/settingsRoutes.ts",
     "src/renderer/settingsPageSections.ts",
     "src/shared/agent-webclient-auth-injection.ts",
@@ -718,13 +726,17 @@
     "src/shared/sso.ts",
     "src/shared/startup-gate.ts",
     "src/shared/startup-status.ts",
+    "test/agent-icon-fallback.test.mjs",
     "test/agent-platform-assistant-bridge.test.mjs",
     "test/agent-webclient-auth-injection.test.mjs",
     "test/app-pairing.test.mjs",
     "test/archive-utils.test.mjs",
+    "test/assistant-chat-read-route.test.mjs",
+    "test/assistant-navigation-renderer.test.mjs",
     "test/assistant-navigation-status-client.test.mjs",
     "test/brand-runtime-paths.test.mjs",
     "test/builtin-assets.test.mjs",
+    "test/coder-project.test.mjs",
     "test/desktop-action-bridge.test.mjs",
     "test/desktop-diagnostics.test.mjs",
     "test/desktop-init-bootstrap.test.mjs",
@@ -739,6 +751,7 @@
     "test/electron-bundle-paths.test.mjs",
     "test/env-bootstrap.test.mjs",
     "test/kanban-desktop-ws-client.test.mjs",
+    "test/kanban-project-tree.test.mjs",
     "test/kanban-runtime.test.mjs",
     "test/kanban-sync.test.mjs",
     "test/mac-notarize.test.mjs",
@@ -1551,6 +1564,14 @@
                     "type": "directory",
                     "children": [
                       {
+                        "name": "actions.js",
+                        "type": "file"
+                      },
+                      {
+                        "name": "metadata.js",
+                        "type": "file"
+                      },
+                      {
                         "name": "runtime.js",
                         "type": "file"
                       },
@@ -1901,6 +1922,10 @@
                 "type": "file"
               },
               {
+                "name": "resource-directory-watcher.js",
+                "type": "file"
+              },
+              {
                 "name": "retired-plugins.js",
                 "type": "file"
               },
@@ -1913,7 +1938,15 @@
                 "type": "file"
               },
               {
+                "name": "service-lifecycle-args.js",
+                "type": "file"
+              },
+              {
                 "name": "service-manager.js",
+                "type": "file"
+              },
+              {
+                "name": "service-port-defaults.js",
                 "type": "file"
               },
               {
@@ -2913,10 +2946,6 @@
                         "type": "file"
                       },
                       {
-                        "name": "identity-center-env.ts",
-                        "type": "file"
-                      },
-                      {
                         "name": "index.ts",
                         "type": "file"
                       },
@@ -3010,6 +3039,14 @@
                     "name": "webapps",
                     "type": "directory",
                     "children": [
+                      {
+                        "name": "actions.ts",
+                        "type": "file"
+                      },
+                      {
+                        "name": "metadata.ts",
+                        "type": "file"
+                      },
                       {
                         "name": "runtime.ts",
                         "type": "file"
@@ -3285,6 +3322,14 @@
                 "type": "file"
               },
               {
+                "name": "service-lifecycle-args.ts",
+                "type": "file"
+              },
+              {
+                "name": "service-port-defaults.ts",
+                "type": "file"
+              },
+              {
                 "name": "shutdown-cleanup.ts",
                 "type": "file"
               },
@@ -3443,16 +3488,6 @@
                     ]
                   },
                   {
-                    "name": "Flex",
-                    "type": "directory",
-                    "children": [
-                      {
-                        "name": "index.tsx",
-                        "type": "file"
-                      }
-                    ]
-                  },
-                  {
                     "name": "Popover",
                     "type": "directory",
                     "children": [
@@ -3473,15 +3508,7 @@
                     ]
                   },
                   {
-                    "name": "AttachmentImagePreview.tsx",
-                    "type": "file"
-                  },
-                  {
                     "name": "BrandMark.tsx",
-                    "type": "file"
-                  },
-                  {
-                    "name": "Header.tsx",
                     "type": "file"
                   },
                   {
@@ -3605,18 +3632,6 @@
                         "type": "file"
                       },
                       {
-                        "name": "PluginMarket.tsx",
-                        "type": "file"
-                      },
-                      {
-                        "name": "SandboxImageMarket.tsx",
-                        "type": "file"
-                      },
-                      {
-                        "name": "SkillMarket.tsx",
-                        "type": "file"
-                      },
-                      {
                         "name": "StorefrontMarket.tsx",
                         "type": "file"
                       },
@@ -3648,6 +3663,14 @@
                     "children": [
                       {
                         "name": "KanbanPage.tsx",
+                        "type": "file"
+                      },
+                      {
+                        "name": "StatusIcons.tsx",
+                        "type": "file"
+                      },
+                      {
+                        "name": "kanbanProjectTree.ts",
                         "type": "file"
                       }
                     ]
@@ -3712,10 +3735,6 @@
                   },
                   {
                     "name": "serviceWebviewBridgeHost.ts",
-                    "type": "file"
-                  },
-                  {
-                    "name": "serviceWebviewBridgeReservedCapabilities.ts",
                     "type": "file"
                   }
                 ]
@@ -3977,6 +3996,10 @@
         "type": "directory",
         "children": [
           {
+            "name": "agent-icon-fallback.test.mjs",
+            "type": "file"
+          },
+          {
             "name": "agent-platform-assistant-bridge.test.mjs",
             "type": "file"
           },
@@ -3993,6 +4016,14 @@
             "type": "file"
           },
           {
+            "name": "assistant-chat-read-route.test.mjs",
+            "type": "file"
+          },
+          {
+            "name": "assistant-navigation-renderer.test.mjs",
+            "type": "file"
+          },
+          {
             "name": "assistant-navigation-status-client.test.mjs",
             "type": "file"
           },
@@ -4002,6 +4033,10 @@
           },
           {
             "name": "builtin-assets.test.mjs",
+            "type": "file"
+          },
+          {
+            "name": "coder-project.test.mjs",
             "type": "file"
           },
           {
@@ -4058,6 +4093,10 @@
           },
           {
             "name": "kanban-desktop-ws-client.test.mjs",
+            "type": "file"
+          },
+          {
+            "name": "kanban-project-tree.test.mjs",
             "type": "file"
           },
           {
@@ -4189,7 +4228,6 @@
       "src/main/services/manager/container-engine.ts",
       "src/main/services/manager/env-content.ts",
       "src/main/services/manager/env-normalization.ts",
-      "src/main/services/manager/identity-center-env.ts",
       "src/main/services/manager/index.ts",
       "src/main/services/manager/install-refresh.ts",
       "src/main/services/manager/layout.ts",
@@ -4225,7 +4263,6 @@
     "src/main/services/manager/container-engine.ts": "manager",
     "src/main/services/manager/env-content.ts": "manager",
     "src/main/services/manager/env-normalization.ts": "manager",
-    "src/main/services/manager/identity-center-env.ts": "manager",
     "src/main/services/manager/index.ts": "manager",
     "src/main/services/manager/install-refresh.ts": "manager",
     "src/main/services/manager/layout.ts": "manager",
@@ -4473,10 +4510,12 @@
       "buildAssistantCopilotAgentsFromPlatformAgents",
       "buildAssistantNavigationAgentsFromPlatformAgents",
       "readAssistantCopilotAgentsFromPlatform",
+      "readAssistantNavigationActivityAgentsFromPlatform",
       "readAssistantNavigationAgentsFromPlatform"
     ],
     "dist-electron/main/assistant/core/coder-project.js": [
       "buildCoderProjectAgentCreateRequest",
+      "normalizeCoderProjectName",
       "workspaceNameFromPath"
     ],
     "dist-electron/main/assistant/core/container-hub.js": [
@@ -4597,6 +4636,7 @@
       "DEFAULT_DESKTOP_PET_SELECTED_ID",
       "DESKTOP_PET_APPEARANCE_OPTIONS",
       "DESKTOP_PET_EDGE_SNAP_DISTANCE_PX",
+      "DESKTOP_PET_PANEL_WINDOW_INSET_PX",
       "DESKTOP_PET_VISIBLE_FOOTPRINT",
       "DESKTOP_PET_WINDOW_SIZE",
       "DESKTOP_PET_WINDOW_SIZES",
@@ -4621,6 +4661,7 @@
       "resolveDesktopPetDisplayArea",
       "resolveDesktopPetEdgeDock",
       "resolveDesktopPetPanelLayout",
+      "resolveDesktopPetPanelWindowBounds",
       "resolveDesktopPetRunningTaskCount",
       "sanitizeDesktopPetAppearanceId",
       "sanitizeDesktopPetBoundAgentKey",
@@ -5501,6 +5542,10 @@
       "getRendererRouteUrl",
       "loadRendererRoute"
     ],
+    "dist-electron/main/resource-directory-watcher.js": [
+      "__testInternals",
+      "createResourceDirectoryWatcher"
+    ],
     "dist-electron/main/retired-plugins.js": [
       "RETIRED_PLUGIN_IDS",
       "__testInternals",
@@ -5516,7 +5561,24 @@
       "safeConsoleError",
       "writeSafeConsoleError"
     ],
+    "dist-electron/main/service-lifecycle-args.js": [
+      "SERVICE_LIFECYCLE_ARGS_FILE",
+      "appendConfiguredServiceLifecycleArgs",
+      "getConfiguredServiceLifecycleArgs",
+      "getServiceLifecycleArgsConfigPath",
+      "normalizeServiceLifecycleArgsConfig",
+      "readServiceLifecycleArgsConfig",
+      "writeServiceLifecycleArgsConfig"
+    ],
     "dist-electron/main/service-manager.js": null,
+    "dist-electron/main/service-port-defaults.js": [
+      "SERVICE_PORT_DEFAULTS_FILE",
+      "getConfiguredServiceDefaultPort",
+      "getServicePortDefaultsConfigPath",
+      "normalizeServicePortDefaultsConfig",
+      "readServicePortDefaultsConfig",
+      "writeServicePortDefaultsConfig"
+    ],
     "dist-electron/main/service-registry.js": null,
     "dist-electron/main/services/agent-webclient-host.js": [
       "__testInternals",
@@ -5553,6 +5615,7 @@
       "resolveDesktopCapability"
     ],
     "dist-electron/main/services/manager/command-env.js": [
+      "__testInternals",
       "buildServiceEnv",
       "isCommandBasenameMatch",
       "resolveCommandBin",
@@ -5575,13 +5638,10 @@
       "writeEnvFileUpdates"
     ],
     "dist-electron/main/services/manager/env-normalization.js": [
-      "AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE",
-      "AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS",
+      "AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY",
       "LOCAL_CLI_ACP_RELAY_PLUGIN_ID",
       "PROCESS_EXEC_PATH_PLACEHOLDER",
-      "applyAgentPlatformWindowsHostShellDefaults",
       "ensureLocalCliAcpRelayDesktopConfig",
-      "isManagedAgentPlatformAuthLocalPublicKeyPath",
       "normalizeAgentContainerHubEnvContentForDesktop",
       "normalizeAgentPlatformEnvContentForRuntime",
       "normalizeAgentPlatformEnvContentForSave",
@@ -5592,6 +5652,7 @@
     ],
     "dist-electron/main/services/manager/identity-center-env.js": [
       "__testInternals",
+      "normalizeIdentityCenterEnvContentForDesktop",
       "syncIdentityCenterDesktopEnv"
     ],
     "dist-electron/main/services/manager/index.js": [
@@ -5628,7 +5689,6 @@
       "serviceInstallNeedsRefresh"
     ],
     "dist-electron/main/services/manager/layout.js": [
-      "buildServiceLayoutEnv",
       "getBuiltinServiceVersionRoot",
       "getInitializationStatePath",
       "getInstallDir",
@@ -5685,8 +5745,7 @@
       "parseProcessTreeRowsFromWindowsPowerShell"
     ],
     "dist-electron/main/services/manager/program-layout.js": [
-      "fixShellScriptPermissions",
-      "patchProgramCommonForLayeredLayout"
+      "fixShellScriptPermissions"
     ],
     "dist-electron/main/services/manager/runtime-paths.js": [
       "agentPlatformDesktopRuntimePaths",
@@ -5965,10 +6024,6 @@
       "getDesktopWebsitesConfigRoot",
       "getDesktopWebsitesDataRoot",
       "getElectronUserDataRoot",
-      "getLegacyDesktopWebsitesConfigRoot",
-      "getLegacyDesktopWebsitesDataRoot",
-      "getLegacyDesktopWebsitesLogsRoot",
-      "getLegacyDesktopWebsitesStateRoot",
       "getLogsRoot",
       "getMarketplaceCacheRoot",
       "getMarketplaceConfigRoot",
@@ -6080,6 +6135,15 @@
       "__testInternals",
       "installBundledWebappTemplates"
     ],
+    "dist-electron/main/webs/webapps/actions.js": [
+      "listWebappItems",
+      "removeWebappItem",
+      "updateWebappItem"
+    ],
+    "dist-electron/main/webs/webapps/metadata.js": [
+      "resolveWebappManagementMetadata",
+      "withWebappManagementMetadata"
+    ],
     "dist-electron/main/webs/webapps/runtime.js": [
       "WebappRuntime",
       "__testInternals",
@@ -6094,9 +6158,11 @@
       "normalizeWebappManifest",
       "readWebappItemFromDir",
       "readWebappItems",
-      "readWebappItemsWithoutMigration"
+      "readWebappItemsWithoutMigration",
+      "writeWebappPreferenceFields"
     ],
     "dist-electron/main/webs/webapps/template-installer.js": [
+      "BUNDLED_DEMO_ID",
       "__testInternals",
       "installBundledWebappTemplates"
     ],
@@ -6468,6 +6534,8 @@
       "LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE",
       "LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE",
       "LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE",
+      "LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL",
+      "LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL",
       "PLUGIN_SETTINGS_READ_REQUEST_TYPE",
       "PLUGIN_SETTINGS_READ_RESPONSE_TYPE",
       "PLUGIN_SETTINGS_WRITE_REQUEST_TYPE",
@@ -6511,9 +6579,7 @@
     "dist-electron/shared/startup-gate.js": [
       "getStartupBlockingService",
       "isStartupServiceWaiting",
-      "resolveStartupRootPath",
-      "shouldAutoOpenAssistant",
-      "shouldRedirectStartupFailureToControlCenter",
+      "shouldAutoOpenBootstrapAgent",
       "shouldShowStartupProgressCard"
     ],
     "dist-electron/shared/startup-status.js": [
@@ -6626,6 +6692,7 @@
       "syncOsLabel"
     ],
     "scripts/platform/dev-darwin.mjs": [
+      "prepareDarwinDevElectronApp",
       "prepareDarwinDevElectronBinary",
       "spawnElectron"
     ],
@@ -6685,7 +6752,6 @@
     ],
     "src/main/app-pairing.ts": [
       "AppPairingRuntimeOptions",
-      "AppPairingRuntimeState",
       "createAppPairingPayload"
     ],
     "src/main/app-shell/agent-platform-monitor-window.ts": [
@@ -6798,10 +6864,12 @@
       "buildAssistantCopilotAgentsFromPlatformAgents",
       "buildAssistantNavigationAgentsFromPlatformAgents",
       "readAssistantCopilotAgentsFromPlatform",
+      "readAssistantNavigationActivityAgentsFromPlatform",
       "readAssistantNavigationAgentsFromPlatform"
     ],
     "src/main/assistant/core/coder-project.ts": [
       "buildCoderProjectAgentCreateRequest",
+      "normalizeCoderProjectName",
       "workspaceNameFromPath"
     ],
     "src/main/assistant/core/container-hub.ts": [
@@ -6848,6 +6916,7 @@
       "DEFAULT_DESKTOP_PET_SELECTED_ID",
       "DESKTOP_PET_APPEARANCE_OPTIONS",
       "DESKTOP_PET_EDGE_SNAP_DISTANCE_PX",
+      "DESKTOP_PET_PANEL_WINDOW_INSET_PX",
       "DESKTOP_PET_VISIBLE_FOOTPRINT",
       "DESKTOP_PET_WINDOW_SIZE",
       "DESKTOP_PET_WINDOW_SIZES",
@@ -6878,6 +6947,7 @@
       "resolveDesktopPetDisplayArea",
       "resolveDesktopPetEdgeDock",
       "resolveDesktopPetPanelLayout",
+      "resolveDesktopPetPanelWindowBounds",
       "resolveDesktopPetRunningTaskCount",
       "sanitizeDesktopPetAppearanceId",
       "sanitizeDesktopPetBoundAgentKey",
@@ -7637,6 +7707,26 @@
       "safeConsoleError",
       "writeSafeConsoleError"
     ],
+    "src/main/service-lifecycle-args.ts": [
+      "SERVICE_LIFECYCLE_ARGS_FILE",
+      "ServiceLifecycleArgsConfig",
+      "ServiceLifecycleCommandKind",
+      "appendConfiguredServiceLifecycleArgs",
+      "getConfiguredServiceLifecycleArgs",
+      "getServiceLifecycleArgsConfigPath",
+      "normalizeServiceLifecycleArgsConfig",
+      "readServiceLifecycleArgsConfig",
+      "writeServiceLifecycleArgsConfig"
+    ],
+    "src/main/service-port-defaults.ts": [
+      "SERVICE_PORT_DEFAULTS_FILE",
+      "ServicePortDefaultsConfig",
+      "getConfiguredServiceDefaultPort",
+      "getServicePortDefaultsConfigPath",
+      "normalizeServicePortDefaultsConfig",
+      "readServicePortDefaultsConfig",
+      "writeServicePortDefaultsConfig"
+    ],
     "src/main/services/agent-webclient-host.ts": [
       "__testInternals",
       "getAgentWebclientHostState",
@@ -7669,6 +7759,7 @@
       "resolveDesktopCapability"
     ],
     "src/main/services/manager/command-env.ts": [
+      "__testInternals",
       "buildServiceEnv",
       "isCommandBasenameMatch",
       "resolveCommandBin",
@@ -7693,13 +7784,10 @@
       "writeEnvFileUpdates"
     ],
     "src/main/services/manager/env-normalization.ts": [
-      "AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE",
-      "AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS",
+      "AGENT_PLATFORM_CONTAINER_HUB_BASE_URL_KEY",
       "LOCAL_CLI_ACP_RELAY_PLUGIN_ID",
       "PROCESS_EXEC_PATH_PLACEHOLDER",
-      "applyAgentPlatformWindowsHostShellDefaults",
       "ensureLocalCliAcpRelayDesktopConfig",
-      "isManagedAgentPlatformAuthLocalPublicKeyPath",
       "normalizeAgentContainerHubEnvContentForDesktop",
       "normalizeAgentPlatformEnvContentForRuntime",
       "normalizeAgentPlatformEnvContentForSave",
@@ -7707,10 +7795,6 @@
       "normalizePreservedBuiltinEnvForInstall",
       "normalizeShellSourcedAgentPlatformEnvUpdates",
       "resolveAcpCommandForDesktop"
-    ],
-    "src/main/services/manager/identity-center-env.ts": [
-      "__testInternals",
-      "syncIdentityCenterDesktopEnv"
     ],
     "src/main/services/manager/index.ts": [
       "__testInternals",
@@ -7747,7 +7831,6 @@
     ],
     "src/main/services/manager/layout.ts": [
       "ServiceLayout",
-      "buildServiceLayoutEnv",
       "getBuiltinServiceVersionRoot",
       "getInitializationStatePath",
       "getInstallDir",
@@ -7812,8 +7895,7 @@
       "parseProcessTreeRowsFromWindowsPowerShell"
     ],
     "src/main/services/manager/program-layout.ts": [
-      "fixShellScriptPermissions",
-      "patchProgramCommonForLayeredLayout"
+      "fixShellScriptPermissions"
     ],
     "src/main/services/manager/runtime-paths.ts": [
       "agentPlatformDesktopRuntimePaths",
@@ -8089,6 +8171,15 @@
       "WebSurfaceRuntimeOptions",
       "createWebSurfaceRuntime"
     ],
+    "src/main/webs/webapps/actions.ts": [
+      "listWebappItems",
+      "removeWebappItem",
+      "updateWebappItem"
+    ],
+    "src/main/webs/webapps/metadata.ts": [
+      "resolveWebappManagementMetadata",
+      "withWebappManagementMetadata"
+    ],
     "src/main/webs/webapps/runtime.ts": [
       "WebappRuntime",
       "__testInternals",
@@ -8103,9 +8194,11 @@
       "normalizeWebappManifest",
       "readWebappItemFromDir",
       "readWebappItems",
-      "readWebappItemsWithoutMigration"
+      "readWebappItemsWithoutMigration",
+      "writeWebappPreferenceFields"
     ],
     "src/main/webs/webapps/template-installer.ts": [
+      "BUNDLED_DEMO_ID",
       "__testInternals",
       "installBundledWebappTemplates"
     ],
@@ -8203,18 +8296,18 @@
       "EnvImportOverlay"
     ],
     "src/renderer/app-shell/startup/StartupGate.tsx": [
-      "RootRouteRedirect",
-      "StartupLoadingScreen"
+      "StartupLoadingScreen",
+      "StartupRoutePlaceholder"
     ],
     "src/renderer/assistantNavigation.ts": [
+      "getAssistantNavAgentAttentionChat",
       "getAssistantNavAgentNonNegativeInteger",
+      "getAssistantNavAgentPreviewChats",
       "getAssistantNavAgentRecentChats",
+      "getAssistantNavAgentSortedChats",
       "normalizeAssistantNavAgent",
       "normalizeAssistantNavAgentItemsResult",
       "normalizeAssistantNavAgents"
-    ],
-    "src/renderer/components/AttachmentImagePreview.tsx": [
-      "AttachmentImagePreview"
     ],
     "src/renderer/components/BrandMark.tsx": [
       "BrandMark",
@@ -8224,12 +8317,6 @@
     "src/renderer/components/Collapse/index.tsx": [
       "Collapse",
       "CollapseProps"
-    ],
-    "src/renderer/components/Flex/index.tsx": [
-      "Flex"
-    ],
-    "src/renderer/components/Header.tsx": [
-      "Header"
     ],
     "src/renderer/components/PageFeedbackStack.tsx": [
       "PageFeedbackItem",
@@ -8300,27 +8387,14 @@
       "PlaceholderPage"
     ],
     "src/renderer/pages/control-center/ControlCenterPage.tsx": [
-      "ControlCenterPage"
+      "ControlCenterPage",
+      "PluginsPage"
     ],
     "src/renderer/pages/external-webview/ExternalWebviewPage.tsx": [
       "ExternalWebviewPage"
     ],
     "src/renderer/pages/functional-market/MarketPageFrame.tsx": [
       "MarketPageFrame"
-    ],
-    "src/renderer/pages/functional-market/PluginMarket.tsx": [
-      "PluginMarket",
-      "PluginMarketSection",
-      "PluginMarketToolbar"
-    ],
-    "src/renderer/pages/functional-market/SandboxImageMarket.tsx": [
-      "SandboxImageMarket",
-      "SandboxImageMarketSection"
-    ],
-    "src/renderer/pages/functional-market/SkillMarket.tsx": [
-      "SkillMarket",
-      "SkillMarketSection",
-      "SkillMarketToolbar"
     ],
     "src/renderer/pages/functional-market/StorefrontMarket.tsx": [
       "StorefrontMarket"
@@ -8371,6 +8445,16 @@
     "src/renderer/pages/kanban/KanbanPage.tsx": [
       "KanbanPage"
     ],
+    "src/renderer/pages/kanban/StatusIcons.tsx": [
+      "ImportanceIcon",
+      "PriorityIcon"
+    ],
+    "src/renderer/pages/kanban/kanbanProjectTree.ts": [
+      "KANBAN_AGGREGATE_PROJECT_ID",
+      "KanbanProjectTreeItem",
+      "flattenKanbanProjectTree",
+      "isKanbanAggregateProject"
+    ],
     "src/renderer/pages/plugin/PluginPage.tsx": [
       "PluginPage"
     ],
@@ -8420,10 +8504,6 @@
     "src/renderer/services/serviceWebviewBridgeHost.ts": [
       "ServiceWebviewBridgeHostContext",
       "handleServiceWebviewBridgeMessage"
-    ],
-    "src/renderer/services/serviceWebviewBridgeReservedCapabilities.ts": [
-      "RESERVED_SERVICE_WEBVIEW_BRIDGE_CAPABILITIES",
-      "ReservedServiceWebviewBridgeCapability"
     ],
     "src/renderer/settings/settingsRoutes.ts": [
       "buildSettingsSectionPath",
@@ -8590,7 +8670,6 @@
       "DesktopApi",
       "DesktopAppInfo",
       "DesktopAppPairingDisplay",
-      "DesktopAppPairingPayloadRequest",
       "DesktopAppPairingPayloadResult",
       "DesktopConfigChangedEvent",
       "DesktopConfigChangedListener",
@@ -8632,7 +8711,6 @@
       "LocaleChangedListener",
       "MobilePairingPayloadV2",
       "NativeDialogVisibilityListener",
-      "PairingTargetMode",
       "RendererDiagnosticReport",
       "SandboxImageImportProgressListener",
       "TunnelDebugSnapshot"
@@ -8748,9 +8826,11 @@
       "DesktopPetAgentOption",
       "DesktopPetAgentPresence",
       "DesktopPetAppearanceOption",
+      "DesktopPetDragDirection",
       "DesktopPetEdgeDock",
       "DesktopPetMessageItem",
       "DesktopPetMessageStatus",
+      "DesktopPetPanelPlacement",
       "DesktopPetPreviewAwaiting",
       "DesktopPetPreviewItem",
       "DesktopPetPreviewItemKind",
@@ -8832,19 +8912,25 @@
       "WebListResult",
       "WebappBackendConfig",
       "WebappCommandResult",
+      "WebappDeleteResult",
       "WebappEntry",
       "WebappFrontendConfig",
+      "WebappItemsResult",
       "WebappLogReadOptions",
       "WebappLogReadResult",
       "WebappLogTarget",
+      "WebappResult",
       "WebappRuntimeState",
       "WebappRuntimeStatus",
+      "WebappSourceKind",
       "WebappStatusResult",
+      "WebappUpdateInput",
       "WebsChangedEvent",
       "WebsChangedListener",
       "WebsiteDeleteResult",
       "WebsiteEntry",
       "WebsiteInput",
+      "WebsiteInputIssue",
       "WebsiteItemsResult",
       "WebsiteResult",
       "WebsiteTransferResult",
@@ -8868,7 +8954,6 @@
       "isDesktopActionName"
     ],
     "src/shared/desktop-pet-visual.ts": [
-      "DesktopPetDragDirection",
       "DesktopPetUnreadBadgeCounts",
       "DesktopPetUnreadBadgeCountsInput",
       "DesktopPetUnreadBadgeTone",
@@ -9042,6 +9127,8 @@
       "LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE",
       "LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE",
       "LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE",
+      "LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL",
+      "LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL",
       "PLUGIN_SETTINGS_READ_REQUEST_TYPE",
       "PLUGIN_SETTINGS_READ_RESPONSE_TYPE",
       "PLUGIN_SETTINGS_WRITE_REQUEST_TYPE",
@@ -9094,23 +9181,25 @@
     "src/shared/startup-gate.ts": [
       "getStartupBlockingService",
       "isStartupServiceWaiting",
-      "resolveStartupRootPath",
-      "shouldAutoOpenAssistant",
-      "shouldRedirectStartupFailureToControlCenter",
+      "shouldAutoOpenBootstrapAgent",
       "shouldShowStartupProgressCard"
     ],
     "src/shared/startup-status.ts": [
       "formatStartupStatusText"
     ],
+    "test/agent-icon-fallback.test.mjs": null,
     "test/agent-platform-assistant-bridge.test.mjs": null,
     "test/agent-webclient-auth-injection.test.mjs": null,
     "test/app-pairing.test.mjs": null,
     "test/archive-utils.test.mjs": [
       "ok"
     ],
+    "test/assistant-chat-read-route.test.mjs": null,
+    "test/assistant-navigation-renderer.test.mjs": null,
     "test/assistant-navigation-status-client.test.mjs": null,
     "test/brand-runtime-paths.test.mjs": null,
     "test/builtin-assets.test.mjs": null,
+    "test/coder-project.test.mjs": null,
     "test/desktop-action-bridge.test.mjs": null,
     "test/desktop-diagnostics.test.mjs": null,
     "test/desktop-init-bootstrap.test.mjs": null,
@@ -9125,6 +9214,7 @@
     "test/electron-bundle-paths.test.mjs": null,
     "test/env-bootstrap.test.mjs": null,
     "test/kanban-desktop-ws-client.test.mjs": null,
+    "test/kanban-project-tree.test.mjs": null,
     "test/kanban-runtime.test.mjs": null,
     "test/kanban-sync.test.mjs": null,
     "test/mac-notarize.test.mjs": null,
@@ -9137,16 +9227,23 @@
       "AppTrayControllerOptions",
       "AssistantAwaitingMode",
       "BuiltinBrowserSurfaceHost",
+      "ControlCenterPage",
       "DESKTOP_SSO_WEBVIEW_PARTITION",
       "DesktopWindowState",
       "DesktopWsServerState",
       "PageFeedbackStack",
+      "PluginsPage",
       "SandboxImageImportProgressEvent",
       "SidebarNavOrderItemKey",
       "WebappEntry",
+      "WebappSourceKind",
+      "WebappUpdateInput",
       "addWebsiteItem",
       "getAppTrayIconCandidatePaths",
       "getAssistantExportDefaultPath",
+      "getAssistantNavAgentAttentionChat",
+      "getAssistantNavAgentPreviewChats",
+      "getAssistantNavAgentSortedChats",
       "getAvailableFilePath",
       "getDesktopDownloadDefaultPath",
       "handleDesktopCdpRequest",
@@ -9193,12 +9290,9 @@
       "node:path"
     ],
     "dist-electron/main/app-pairing.js": [
-      "../shared/desktop-ws",
       "../shared/desktop-ws-protocol",
       "./agent-auth",
-      "./i18n/main-i18n",
-      "./tunnel-hub-settings",
-      "node:os"
+      "./i18n/main-i18n"
     ],
     "dist-electron/main/app-server-auth.js": [
       "../shared/generated/brand",
@@ -9300,6 +9394,7 @@
       "../plugin-resources",
       "../program-data-cleanup",
       "../renderer-route",
+      "../resource-directory-watcher",
       "../retired-plugins",
       "../reveal-path",
       "../safe-console",
@@ -9434,7 +9529,8 @@
       "../../../shared/page-copilot",
       "../../desktop-profile-store",
       "../../user-paths",
-      "node:fs"
+      "node:fs",
+      "node:path"
     ],
     "dist-electron/main/assistant/desktop-tools.js": [
       "./agent-platform-config",
@@ -9614,6 +9710,7 @@
     ],
     "dist-electron/main/builtin-loader.js": [
       "./manifest-utils",
+      "./service-port-defaults",
       "./services/service-registry",
       "./startup-timing",
       "./user-paths",
@@ -9812,6 +9909,8 @@
       "./kanban-runtime",
       "./marketplace/common",
       "./oidc-sso",
+      "./service-lifecycle-args",
+      "./service-port-defaults",
       "./tunnel-hub-settings",
       "./user-paths",
       "./webs/websites/actions",
@@ -10007,6 +10106,7 @@
       "../i18n/main-i18n",
       "../webs/order-store",
       "../webs/store",
+      "../webs/webapps/actions",
       "../webs/webapps/runtime",
       "../webs/websites/actions",
       "node:fs",
@@ -10304,6 +10404,11 @@
     "dist-electron/main/renderer-route.js": [
       "node:path"
     ],
+    "dist-electron/main/resource-directory-watcher.js": [
+      "./user-paths",
+      "node:fs",
+      "node:path"
+    ],
     "dist-electron/main/retired-plugins.js": [
       "../shared/brand",
       "./i18n/main-i18n",
@@ -10318,8 +10423,18 @@
       "node:path"
     ],
     "dist-electron/main/safe-console.js": null,
+    "dist-electron/main/service-lifecycle-args.js": [
+      "./user-paths",
+      "node:fs",
+      "node:path"
+    ],
     "dist-electron/main/service-manager.js": [
       "./services/manager"
+    ],
+    "dist-electron/main/service-port-defaults.js": [
+      "./user-paths",
+      "node:fs",
+      "node:path"
     ],
     "dist-electron/main/service-registry.js": [
       "./services/service-registry"
@@ -10398,11 +10513,8 @@
     "dist-electron/main/services/manager/env-normalization.js": [
       "../../env-file",
       "./command-env",
-      "./command-runner",
       "./env-content",
-      "./layout",
-      "./runtime-paths",
-      "node:path"
+      "./runtime-paths"
     ],
     "dist-electron/main/services/manager/identity-center-env.js": [
       "./layout",
@@ -10419,6 +10531,7 @@
       "../../plugin-resources",
       "../../plugin-settings",
       "../../provider-register",
+      "../../service-lifecycle-args",
       "../../startup-timing",
       "../agent-webclient-host",
       "../service-registry",
@@ -10430,7 +10543,6 @@
       "./container-engine",
       "./env-content",
       "./env-normalization",
-      "./identity-center-env",
       "./install-refresh",
       "./layout",
       "./logs",
@@ -10444,6 +10556,7 @@
       "./service-network",
       "./service-probes",
       "./state-files",
+      "js-yaml",
       "node:fs",
       "node:os",
       "node:path"
@@ -10647,7 +10760,8 @@
     "dist-electron/main/tunnel-hub-runtime.js": [
       "./tunnel-client-endpoint",
       "./tunnel-hub-registration",
-      "./tunnel-hub-settings"
+      "./tunnel-hub-settings",
+      "node:os"
     ],
     "dist-electron/main/tunnel-hub-settings.js": [
       "./device-identity",
@@ -10692,7 +10806,6 @@
       "../desktop-profile-store",
       "../user-paths",
       "./common",
-      "./migration",
       "node:fs",
       "node:path"
     ],
@@ -10758,6 +10871,22 @@
       "node:fs",
       "node:path"
     ],
+    "dist-electron/main/webs/webapps/actions.js": [
+      "../../i18n/main-i18n",
+      "../../marketplace/common",
+      "./runtime",
+      "./store",
+      "node:fs"
+    ],
+    "dist-electron/main/webs/webapps/metadata.js": [
+      "../../marketplace/common",
+      "../../services/service-registry",
+      "../../user-paths",
+      "../common",
+      "./template-installer",
+      "node:fs",
+      "node:path"
+    ],
     "dist-electron/main/webs/webapps/runtime.js": [
       "../../i18n/main-i18n",
       "../../services/manager/command-env",
@@ -10776,7 +10905,7 @@
     "dist-electron/main/webs/webapps/store.js": [
       "../../user-paths",
       "../common",
-      "../migration",
+      "./metadata",
       "node:fs",
       "node:path"
     ],
@@ -10806,7 +10935,6 @@
     "dist-electron/main/webs/websites/store.js": [
       "../../user-paths",
       "../common",
-      "../migration",
       "node:fs",
       "node:path"
     ],
@@ -11140,13 +11268,10 @@
     ],
     "src/main/app-pairing.ts": [
       "../shared/contracts",
-      "../shared/desktop-ws",
       "../shared/desktop-ws-protocol",
       "./agent-auth",
       "./i18n/main-i18n",
-      "./tunnel-hub-settings",
-      "electron",
-      "node:os"
+      "electron"
     ],
     "src/main/app-shell/agent-platform-monitor-window.ts": [
       "../../shared/brand",
@@ -11207,7 +11332,6 @@
       "../../shared/brand",
       "../../shared/contracts",
       "../agent-auth",
-      "../app-pairing",
       "../app-shell/runtime",
       "../app-state",
       "../assistant/copilot/screenshot",
@@ -11362,7 +11486,8 @@
       "../../desktop-profile-store",
       "../../user-paths",
       "electron",
-      "node:fs"
+      "node:fs",
+      "node:path"
     ],
     "src/main/assistant/pet/agent-platform-api.ts": null,
     "src/main/assistant/pet/desktop-pet-preview.ts": [
@@ -11477,6 +11602,7 @@
     "src/main/builtin-loader.ts": [
       "../shared/contracts",
       "./manifest-utils",
+      "./service-port-defaults",
       "./services/service-registry",
       "./startup-timing",
       "./user-paths",
@@ -11558,6 +11684,8 @@
       "./kanban-runtime",
       "./marketplace/common",
       "./oidc-sso",
+      "./service-lifecycle-args",
+      "./service-port-defaults",
       "./tunnel-hub-settings",
       "./user-paths",
       "./webs/websites/actions",
@@ -11759,6 +11887,7 @@
       "../i18n/main-i18n",
       "../webs/order-store",
       "../webs/store",
+      "../webs/webapps/actions",
       "../webs/webapps/runtime",
       "../webs/websites/actions",
       "electron",
@@ -12117,6 +12246,20 @@
       "node:path"
     ],
     "src/main/safe-console.ts": null,
+    "src/main/service-lifecycle-args.ts": [
+      "../shared/contracts",
+      "./user-paths",
+      "electron",
+      "node:fs",
+      "node:path"
+    ],
+    "src/main/service-port-defaults.ts": [
+      "../shared/contracts",
+      "./user-paths",
+      "electron",
+      "node:fs",
+      "node:path"
+    ],
     "src/main/services/agent-webclient-host.ts": [
       "../../shared/contracts",
       "../env-file",
@@ -12196,17 +12339,10 @@
       "../../env-file",
       "../../manifest-utils",
       "./command-env",
-      "./command-runner",
       "./env-content",
       "./layout",
       "./runtime-paths",
-      "electron",
-      "node:path"
-    ],
-    "src/main/services/manager/identity-center-env.ts": [
-      "./layout",
-      "node:fs",
-      "node:path"
+      "electron"
     ],
     "src/main/services/manager/index.ts": [
       "../../../shared/contracts",
@@ -12220,6 +12356,7 @@
       "../../plugin-resources",
       "../../plugin-settings",
       "../../provider-register",
+      "../../service-lifecycle-args",
       "../../startup-timing",
       "../agent-webclient-host",
       "../service-registry",
@@ -12231,7 +12368,6 @@
       "./container-engine",
       "./env-content",
       "./env-normalization",
-      "./identity-center-env",
       "./install-refresh",
       "./layout",
       "./logs",
@@ -12246,6 +12382,7 @@
       "./service-probes",
       "./state-files",
       "electron",
+      "js-yaml",
       "node:fs",
       "node:os",
       "node:path"
@@ -12420,7 +12557,8 @@
       "./tunnel-client-endpoint",
       "./tunnel-hub-registration",
       "./tunnel-hub-settings",
-      "electron"
+      "electron",
+      "node:os"
     ],
     "src/main/tunnel-hub-settings.ts": [
       "../shared/contracts",
@@ -12485,6 +12623,26 @@
       "./webapps/runtime",
       "electron"
     ],
+    "src/main/webs/webapps/actions.ts": [
+      "../../../shared/contracts",
+      "../../i18n/main-i18n",
+      "../../marketplace/common",
+      "./runtime",
+      "./store",
+      "electron",
+      "node:fs"
+    ],
+    "src/main/webs/webapps/metadata.ts": [
+      "../../../shared/contracts",
+      "../../marketplace/common",
+      "../../services/service-registry",
+      "../../user-paths",
+      "../common",
+      "./template-installer",
+      "electron",
+      "node:fs",
+      "node:path"
+    ],
     "src/main/webs/webapps/runtime.ts": [
       "../../../shared/contracts",
       "../../i18n/main-i18n",
@@ -12507,6 +12665,7 @@
       "../../../shared/contracts",
       "../../user-paths",
       "../common",
+      "./metadata",
       "electron",
       "node:fs",
       "node:path"
@@ -12630,6 +12789,7 @@
       "../../assets/agent-icons/horizon.svg",
       "../../assets/agent-icons/ide.svg",
       "../../assets/agent-icons/identity.svg",
+      "../../assets/agent-icons/kbase.svg",
       "../../assets/agent-icons/library.svg",
       "../../assets/agent-icons/luna.svg",
       "../../assets/agent-icons/peaks.svg",
@@ -12676,18 +12836,10 @@
     "src/renderer/app-shell/startup/StartupGate.tsx": [
       "../../../shared/contracts",
       "../../../shared/i18n",
-      "../../../shared/startup-gate",
-      "../../i18n/useI18n",
-      "react-router-dom"
+      "../../i18n/useI18n"
     ],
     "src/renderer/assistantNavigation.ts": [
       "../shared/contracts"
-    ],
-    "src/renderer/components/AttachmentImagePreview.tsx": [
-      "../../shared/contracts",
-      "../i18n/useI18n",
-      "react",
-      "react-dom"
     ],
     "src/renderer/components/BrandMark.tsx": [
       "../../shared/app-icon-assets",
@@ -12714,17 +12866,6 @@
     "src/renderer/components/Collapse/index.tsx": [
       "./index.css",
       "react"
-    ],
-    "src/renderer/components/Flex/index.tsx": [
-      "./index.module.css",
-      "react"
-    ],
-    "src/renderer/components/Header.tsx": [
-      "../../shared/brand",
-      "../i18n/useI18n",
-      "../service-display",
-      "../services/ServicesContext",
-      "react-router-dom"
     ],
     "src/renderer/components/PageFeedbackStack.tsx": [
       "../i18n/useI18n"
@@ -12847,46 +12988,13 @@
       "antd",
       "react"
     ],
-    "src/renderer/pages/functional-market/PluginMarket.tsx": [
-      "../../i18n/useI18n",
-      "../../service-display",
-      "../../services/ServicesContext",
-      "./MarketPageFrame",
-      "./PluginMarket.css",
-      "./marketDisplay",
-      "./marketPageApi",
-      "./marketPageModel",
-      "@shared/contracts",
-      "react",
-      "react-router-dom"
-    ],
-    "src/renderer/pages/functional-market/SandboxImageMarket.tsx": [
-      "../../components/PageFeedbackStack",
-      "../../i18n/useI18n",
-      "./MarketPageFrame",
-      "./marketDisplay",
-      "./marketPageApi",
-      "./marketPageModel",
-      "@shared/contracts",
-      "react"
-    ],
-    "src/renderer/pages/functional-market/SkillMarket.tsx": [
-      "../../i18n/useI18n",
-      "../../services/ServicesContext",
-      "../../services/desktopActionRegistry",
-      "./MarketPageFrame",
-      "./SkillMarket.css",
-      "./marketDisplay",
-      "./marketPageApi",
-      "./marketPageModel",
-      "@shared/contracts",
-      "react"
-    ],
     "src/renderer/pages/functional-market/StorefrontMarket.tsx": [
       "../../../shared/brand",
       "../../i18n/useI18n",
       "../../service-display",
       "../../services/ServicesContext",
+      "../../services/desktopActionRegistry",
+      "../../settings/settingsRoutes",
       "./MarketPageFrame",
       "./StorefrontMarket.css",
       "./marketDisplay",
@@ -12924,16 +13032,23 @@
     "src/renderer/pages/kanban/KanbanPage.tsx": [
       "../../../shared/contracts",
       "../../../shared/i18n",
-      "../../app-shell/navigation/AgentIcon",
       "../../assistantNavigation",
       "../../i18n/useI18n",
       "../plugin/PluginPage",
+      "./StatusIcons",
+      "./kanbanProjectTree",
       "@ant-design/icons",
       "@dnd-kit/core",
       "@dnd-kit/sortable",
       "@dnd-kit/utilities",
       "react",
       "react-dom"
+    ],
+    "src/renderer/pages/kanban/StatusIcons.tsx": [
+      "../../../shared/contracts"
+    ],
+    "src/renderer/pages/kanban/kanbanProjectTree.ts": [
+      "../../../shared/contracts"
     ],
     "src/renderer/pages/plugin/PluginPage.tsx": [
       "../../../shared/agent-webclient-auth-injection",
@@ -12952,6 +13067,7 @@
       "../../services/desktopActionRegistry",
       "../../services/pluginSurfaceWebviewRefs",
       "../../services/serviceWebviewBridgeHost",
+      "../../settings/settingsRoutes",
       "react",
       "react-router-dom"
     ],
@@ -12962,6 +13078,7 @@
       "../../service-display",
       "../../services/ServicesContext",
       "../../services/serviceWebviewBridgeHost",
+      "../../settings/settingsRoutes",
       "react",
       "react-router-dom"
     ],
@@ -12981,6 +13098,7 @@
       "../../services/desktopActionRegistry",
       "../../settings/settingsRoutes",
       "../../settingsPageSections",
+      "../control-center/ControlCenterPage",
       "./SettingsPage.css",
       "@ant-design/icons",
       "antd",
@@ -13009,9 +13127,6 @@
     "src/renderer/services/serviceWebviewBridgeHost.ts": [
       "../../shared/auth-bridge",
       "../../shared/contracts",
-      "../../shared/service-webview-bridge"
-    ],
-    "src/renderer/services/serviceWebviewBridgeReservedCapabilities.ts": [
       "../../shared/service-webview-bridge"
     ],
     "src/renderer/settings/settingsRoutes.ts": [
@@ -13152,6 +13267,12 @@
       "./contracts"
     ],
     "src/shared/startup-status.ts": null,
+    "test/agent-icon-fallback.test.mjs": [
+      "node:assert/strict",
+      "node:fs",
+      "node:path",
+      "node:test"
+    ],
     "test/agent-platform-assistant-bridge.test.mjs": [
       "../dist-electron/main/assistant/core/agent-platform-bridge.js",
       "../dist-electron/shared/brand.js",
@@ -13172,12 +13293,8 @@
     ],
     "test/app-pairing.test.mjs": [
       "../dist-electron/main/app-pairing.js",
-      "../dist-electron/shared/desktop-ws.js",
       "node:assert/strict",
-      "node:fs",
       "node:module",
-      "node:os",
-      "node:path",
       "node:test"
     ],
     "test/archive-utils.test.mjs": [
@@ -13190,6 +13307,20 @@
       "node:os",
       "node:path",
       "node:test"
+    ],
+    "test/assistant-chat-read-route.test.mjs": [
+      "node:assert/strict",
+      "node:fs",
+      "node:path",
+      "node:test"
+    ],
+    "test/assistant-navigation-renderer.test.mjs": [
+      "node:assert/strict",
+      "node:fs",
+      "node:module",
+      "node:path",
+      "node:test",
+      "typescript"
     ],
     "test/assistant-navigation-status-client.test.mjs": [
       "../dist-electron/main/assistant/core/assistant-navigation-status-client.js",
@@ -13223,6 +13354,13 @@
       "node:path",
       "node:test",
       "node:url"
+    ],
+    "test/coder-project.test.mjs": [
+      "../dist-electron/main/assistant/core/coder-project.js",
+      "../dist-electron/main/ipc/assistant-handlers.js",
+      "node:assert/strict",
+      "node:module",
+      "node:test"
     ],
     "test/desktop-action-bridge.test.mjs": [
       "../dist-electron/main/desktop-action-bridge.js",
@@ -13360,6 +13498,14 @@
       "node:assert/strict",
       "node:test"
     ],
+    "test/kanban-project-tree.test.mjs": [
+      "node:assert/strict",
+      "node:fs",
+      "node:path",
+      "node:test",
+      "node:vm",
+      "typescript"
+    ],
     "test/kanban-runtime.test.mjs": [
       "node:assert/strict",
       "node:fs",
@@ -13425,8 +13571,10 @@
       "node:test"
     ],
     "test/renderer-build.test.mjs": [
+      "..\\/..\\/..\\/shared\\/brand",
       "@ant-design\\/icons",
       "\\.\\.\\/\\.\\.\\/components\\/BrandMark",
+      "\\.\\.\\/control-center\\/ControlCenterPage",
       "\\.\\.\\/plugin\\/PluginPage",
       "antd",
       "node:assert/strict",
@@ -13527,6 +13675,7 @@
       "../dist-electron/shared/brand.js",
       "node:assert/strict",
       "node:crypto",
+      "node:events",
       "node:fs",
       "node:http",
       "node:module",
@@ -13542,10 +13691,13 @@
       "node:test"
     ],
     "test/webs.test.mjs": [
+      "../dist-electron/main/marketplace/common.js",
       "../dist-electron/main/resource-directory-watcher.js",
+      "../dist-electron/main/services/service-registry.js",
       "../dist-electron/main/user-paths.js",
       "../dist-electron/main/webs/order-store.js",
       "../dist-electron/main/webs/store.js",
+      "../dist-electron/main/webs/webapps/actions.js",
       "../dist-electron/main/webs/webapps/runtime.js",
       "../dist-electron/main/webs/webapps/store.js",
       "../dist-electron/main/webs/webapps/template-installer.js",
@@ -13592,9 +13744,7 @@
     "dist-electron/main/app-pairing.js": [
       "dist-electron/main/agent-auth.js",
       "dist-electron/main/i18n/main-i18n.js",
-      "dist-electron/main/tunnel-hub-settings.js",
-      "dist-electron/shared/desktop-ws-protocol.js",
-      "dist-electron/shared/desktop-ws.js"
+      "dist-electron/shared/desktop-ws-protocol.js"
     ],
     "dist-electron/main/app-server-auth.js": [
       "dist-electron/main/env-file.js",
@@ -13683,6 +13833,7 @@
       "dist-electron/main/plugin-resources.js",
       "dist-electron/main/program-data-cleanup.js",
       "dist-electron/main/renderer-route.js",
+      "dist-electron/main/resource-directory-watcher.js",
       "dist-electron/main/retired-plugins.js",
       "dist-electron/main/reveal-path.js",
       "dist-electron/main/safe-console.js",
@@ -13914,6 +14065,7 @@
     ],
     "dist-electron/main/builtin-loader.js": [
       "dist-electron/main/manifest-utils.js",
+      "dist-electron/main/service-port-defaults.js",
       "dist-electron/main/services/service-registry.js",
       "dist-electron/main/startup-timing.js",
       "dist-electron/main/user-paths.js"
@@ -14066,6 +14218,8 @@
       "dist-electron/main/kanban-runtime.js",
       "dist-electron/main/marketplace/common.js",
       "dist-electron/main/oidc-sso.js",
+      "dist-electron/main/service-lifecycle-args.js",
+      "dist-electron/main/service-port-defaults.js",
       "dist-electron/main/tunnel-hub-settings.js",
       "dist-electron/main/user-paths.js",
       "dist-electron/main/webs/websites/actions.js",
@@ -14225,6 +14379,7 @@
       "dist-electron/main/i18n/main-i18n.js",
       "dist-electron/main/webs/order-store.js",
       "dist-electron/main/webs/store.js",
+      "dist-electron/main/webs/webapps/actions.js",
       "dist-electron/main/webs/webapps/runtime.js",
       "dist-electron/main/webs/websites/actions.js"
     ],
@@ -14446,6 +14601,9 @@
       "dist-electron/main/copilot/quick-copilot/quick-copilot.js"
     ],
     "dist-electron/main/renderer-route.js": null,
+    "dist-electron/main/resource-directory-watcher.js": [
+      "dist-electron/main/user-paths.js"
+    ],
     "dist-electron/main/retired-plugins.js": [
       "dist-electron/main/i18n/main-i18n.js",
       "dist-electron/main/marketplace/common.js",
@@ -14456,8 +14614,14 @@
       "dist-electron/main/i18n/main-i18n.js"
     ],
     "dist-electron/main/safe-console.js": null,
+    "dist-electron/main/service-lifecycle-args.js": [
+      "dist-electron/main/user-paths.js"
+    ],
     "dist-electron/main/service-manager.js": [
       "dist-electron/main/services/manager/index.js"
+    ],
+    "dist-electron/main/service-port-defaults.js": [
+      "dist-electron/main/user-paths.js"
     ],
     "dist-electron/main/service-registry.js": [
       "dist-electron/main/services/service-registry.js"
@@ -14506,9 +14670,7 @@
     "dist-electron/main/services/manager/env-normalization.js": [
       "dist-electron/main/env-file.js",
       "dist-electron/main/services/manager/command-env.js",
-      "dist-electron/main/services/manager/command-runner.js",
       "dist-electron/main/services/manager/env-content.js",
-      "dist-electron/main/services/manager/layout.js",
       "dist-electron/main/services/manager/runtime-paths.js"
     ],
     "dist-electron/main/services/manager/identity-center-env.js": [
@@ -14524,6 +14686,7 @@
       "dist-electron/main/plugin-resources.js",
       "dist-electron/main/plugin-settings.js",
       "dist-electron/main/provider-register.js",
+      "dist-electron/main/service-lifecycle-args.js",
       "dist-electron/main/services/agent-webclient-host.js",
       "dist-electron/main/services/manager/builtin-install.js",
       "dist-electron/main/services/manager/bundle-assets.js",
@@ -14533,7 +14696,6 @@
       "dist-electron/main/services/manager/container-engine.js",
       "dist-electron/main/services/manager/env-content.js",
       "dist-electron/main/services/manager/env-normalization.js",
-      "dist-electron/main/services/manager/identity-center-env.js",
       "dist-electron/main/services/manager/install-refresh.js",
       "dist-electron/main/services/manager/layout.js",
       "dist-electron/main/services/manager/logs.js",
@@ -14718,8 +14880,7 @@
     "dist-electron/main/webs/order-store.js": [
       "dist-electron/main/desktop-profile-store.js",
       "dist-electron/main/user-paths.js",
-      "dist-electron/main/webs/common.js",
-      "dist-electron/main/webs/migration.js"
+      "dist-electron/main/webs/common.js"
     ],
     "dist-electron/main/webs/store.js": [
       "dist-electron/main/webs/webapps/store.js",
@@ -14769,6 +14930,19 @@
       "dist-electron/main/i18n/main-i18n.js",
       "dist-electron/main/user-paths.js"
     ],
+    "dist-electron/main/webs/webapps/actions.js": [
+      "dist-electron/main/i18n/main-i18n.js",
+      "dist-electron/main/marketplace/common.js",
+      "dist-electron/main/webs/webapps/runtime.js",
+      "dist-electron/main/webs/webapps/store.js"
+    ],
+    "dist-electron/main/webs/webapps/metadata.js": [
+      "dist-electron/main/marketplace/common.js",
+      "dist-electron/main/services/service-registry.js",
+      "dist-electron/main/user-paths.js",
+      "dist-electron/main/webs/common.js",
+      "dist-electron/main/webs/webapps/template-installer.js"
+    ],
     "dist-electron/main/webs/webapps/runtime.js": [
       "dist-electron/main/i18n/main-i18n.js",
       "dist-electron/main/services/manager/command-env.js",
@@ -14783,7 +14957,7 @@
     "dist-electron/main/webs/webapps/store.js": [
       "dist-electron/main/user-paths.js",
       "dist-electron/main/webs/common.js",
-      "dist-electron/main/webs/migration.js"
+      "dist-electron/main/webs/webapps/metadata.js"
     ],
     "dist-electron/main/webs/webapps/template-installer.js": [
       "dist-electron/main/i18n/main-i18n.js",
@@ -14806,8 +14980,7 @@
     ],
     "dist-electron/main/webs/websites/store.js": [
       "dist-electron/main/user-paths.js",
-      "dist-electron/main/webs/common.js",
-      "dist-electron/main/webs/migration.js"
+      "dist-electron/main/webs/common.js"
     ],
     "dist-electron/main/webview-open-tab.js": null,
     "dist-electron/main/window-manager.js": [
@@ -15038,10 +15211,8 @@
     "src/main/app-pairing.ts": [
       "src/main/agent-auth.ts",
       "src/main/i18n/main-i18n.ts",
-      "src/main/tunnel-hub-settings.ts",
       "src/shared/contracts.ts",
-      "src/shared/desktop-ws-protocol.ts",
-      "src/shared/desktop-ws.ts"
+      "src/shared/desktop-ws-protocol.ts"
     ],
     "src/main/app-shell/agent-platform-monitor-window.ts": [
       "src/shared/brand.ts"
@@ -15088,7 +15259,6 @@
     ],
     "src/main/app/runtime.ts": [
       "src/main/agent-auth.ts",
-      "src/main/app-pairing.ts",
       "src/main/app-shell/runtime.ts",
       "src/main/app-state.ts",
       "src/main/app/app-events.ts",
@@ -15304,6 +15474,7 @@
     ],
     "src/main/builtin-loader.ts": [
       "src/main/manifest-utils.ts",
+      "src/main/service-port-defaults.ts",
       "src/main/services/service-registry.ts",
       "src/main/startup-timing.ts",
       "src/main/user-paths.ts",
@@ -15365,6 +15536,8 @@
       "src/main/kanban-runtime.ts",
       "src/main/marketplace/common.ts",
       "src/main/oidc-sso.ts",
+      "src/main/service-lifecycle-args.ts",
+      "src/main/service-port-defaults.ts",
       "src/main/tunnel-hub-settings.ts",
       "src/main/user-paths.ts",
       "src/main/webs/websites/actions.ts",
@@ -15521,6 +15694,7 @@
       "src/main/i18n/main-i18n.ts",
       "src/main/webs/order-store.ts",
       "src/main/webs/store.ts",
+      "src/main/webs/webapps/actions.ts",
       "src/main/webs/webapps/runtime.ts",
       "src/main/webs/websites/actions.ts",
       "src/shared/contracts.ts"
@@ -15776,6 +15950,14 @@
       "src/shared/contracts.ts"
     ],
     "src/main/safe-console.ts": null,
+    "src/main/service-lifecycle-args.ts": [
+      "src/main/user-paths.ts",
+      "src/shared/contracts.ts"
+    ],
+    "src/main/service-port-defaults.ts": [
+      "src/main/user-paths.ts",
+      "src/shared/contracts.ts"
+    ],
     "src/main/services/agent-webclient-host.ts": [
       "src/main/env-file.ts",
       "src/main/manifest-utils.ts",
@@ -15824,13 +16006,9 @@
       "src/main/env-file.ts",
       "src/main/manifest-utils.ts",
       "src/main/services/manager/command-env.ts",
-      "src/main/services/manager/command-runner.ts",
       "src/main/services/manager/env-content.ts",
       "src/main/services/manager/layout.ts",
       "src/main/services/manager/runtime-paths.ts"
-    ],
-    "src/main/services/manager/identity-center-env.ts": [
-      "src/main/services/manager/layout.ts"
     ],
     "src/main/services/manager/index.ts": [
       "src/main/agent-auth.ts",
@@ -15843,6 +16021,7 @@
       "src/main/plugin-resources.ts",
       "src/main/plugin-settings.ts",
       "src/main/provider-register.ts",
+      "src/main/service-lifecycle-args.ts",
       "src/main/services/agent-webclient-host.ts",
       "src/main/services/manager/builtin-install.ts",
       "src/main/services/manager/bundle-assets.ts",
@@ -15852,7 +16031,6 @@
       "src/main/services/manager/container-engine.ts",
       "src/main/services/manager/env-content.ts",
       "src/main/services/manager/env-normalization.ts",
-      "src/main/services/manager/identity-center-env.ts",
       "src/main/services/manager/install-refresh.ts",
       "src/main/services/manager/layout.ts",
       "src/main/services/manager/logs.ts",
@@ -16031,6 +16209,21 @@
       "src/main/webs/webapps/runtime.ts",
       "src/shared/browser-surfaces.ts"
     ],
+    "src/main/webs/webapps/actions.ts": [
+      "src/main/i18n/main-i18n.ts",
+      "src/main/marketplace/common.ts",
+      "src/main/webs/webapps/runtime.ts",
+      "src/main/webs/webapps/store.ts",
+      "src/shared/contracts.ts"
+    ],
+    "src/main/webs/webapps/metadata.ts": [
+      "src/main/marketplace/common.ts",
+      "src/main/services/service-registry.ts",
+      "src/main/user-paths.ts",
+      "src/main/webs/common.ts",
+      "src/main/webs/webapps/template-installer.ts",
+      "src/shared/contracts.ts"
+    ],
     "src/main/webs/webapps/runtime.ts": [
       "src/main/i18n/main-i18n.ts",
       "src/main/services/manager/command-env.ts",
@@ -16046,6 +16239,7 @@
     "src/main/webs/webapps/store.ts": [
       "src/main/user-paths.ts",
       "src/main/webs/common.ts",
+      "src/main/webs/webapps/metadata.ts",
       "src/shared/contracts.ts"
     ],
     "src/main/webs/webapps/template-installer.ts": [
@@ -16149,6 +16343,7 @@
       "src/renderer/assets/agent-icons/horizon.svg",
       "src/renderer/assets/agent-icons/ide.svg",
       "src/renderer/assets/agent-icons/identity.svg",
+      "src/renderer/assets/agent-icons/kbase.svg",
       "src/renderer/assets/agent-icons/library.svg",
       "src/renderer/assets/agent-icons/luna.svg",
       "src/renderer/assets/agent-icons/peaks.svg",
@@ -16191,14 +16386,9 @@
     "src/renderer/app-shell/startup/StartupGate.tsx": [
       "src/renderer/i18n/useI18n.ts",
       "src/shared/contracts.ts",
-      "src/shared/i18n/index.ts",
-      "src/shared/startup-gate.ts"
+      "src/shared/i18n/index.ts"
     ],
     "src/renderer/assistantNavigation.ts": [
-      "src/shared/contracts.ts"
-    ],
-    "src/renderer/components/AttachmentImagePreview.tsx": [
-      "src/renderer/i18n/useI18n.ts",
       "src/shared/contracts.ts"
     ],
     "src/renderer/components/BrandMark.tsx": [
@@ -16225,15 +16415,6 @@
     ],
     "src/renderer/components/Collapse/index.tsx": [
       "src/renderer/components/Collapse/index.css"
-    ],
-    "src/renderer/components/Flex/index.tsx": [
-      "src/renderer/components/Flex/index.module.css"
-    ],
-    "src/renderer/components/Header.tsx": [
-      "src/renderer/i18n/useI18n.ts",
-      "src/renderer/service-display.ts",
-      "src/renderer/services/ServicesContext.tsx",
-      "src/shared/brand.ts"
     ],
     "src/renderer/components/PageFeedbackStack.tsx": [
       "src/renderer/i18n/useI18n.ts"
@@ -16326,34 +16507,6 @@
       "src/renderer/pages/functional-market/MarketPageFrame.css",
       "src/renderer/pages/functional-market/marketPageModel.ts"
     ],
-    "src/renderer/pages/functional-market/PluginMarket.tsx": [
-      "src/renderer/i18n/useI18n.ts",
-      "src/renderer/pages/functional-market/MarketPageFrame.tsx",
-      "src/renderer/pages/functional-market/PluginMarket.css",
-      "src/renderer/pages/functional-market/marketDisplay.tsx",
-      "src/renderer/pages/functional-market/marketPageApi.ts",
-      "src/renderer/pages/functional-market/marketPageModel.ts",
-      "src/renderer/service-display.ts",
-      "src/renderer/services/ServicesContext.tsx"
-    ],
-    "src/renderer/pages/functional-market/SandboxImageMarket.tsx": [
-      "src/renderer/components/PageFeedbackStack.tsx",
-      "src/renderer/i18n/useI18n.ts",
-      "src/renderer/pages/functional-market/MarketPageFrame.tsx",
-      "src/renderer/pages/functional-market/marketDisplay.tsx",
-      "src/renderer/pages/functional-market/marketPageApi.ts",
-      "src/renderer/pages/functional-market/marketPageModel.ts"
-    ],
-    "src/renderer/pages/functional-market/SkillMarket.tsx": [
-      "src/renderer/i18n/useI18n.ts",
-      "src/renderer/pages/functional-market/MarketPageFrame.tsx",
-      "src/renderer/pages/functional-market/SkillMarket.css",
-      "src/renderer/pages/functional-market/marketDisplay.tsx",
-      "src/renderer/pages/functional-market/marketPageApi.ts",
-      "src/renderer/pages/functional-market/marketPageModel.ts",
-      "src/renderer/services/ServicesContext.tsx",
-      "src/renderer/services/desktopActionRegistry.ts"
-    ],
     "src/renderer/pages/functional-market/StorefrontMarket.tsx": [
       "src/renderer/i18n/useI18n.ts",
       "src/renderer/pages/functional-market/MarketPageFrame.tsx",
@@ -16363,6 +16516,8 @@
       "src/renderer/pages/functional-market/marketPageModel.ts",
       "src/renderer/service-display.ts",
       "src/renderer/services/ServicesContext.tsx",
+      "src/renderer/services/desktopActionRegistry.ts",
+      "src/renderer/settings/settingsRoutes.ts",
       "src/shared/brand.ts"
     ],
     "src/renderer/pages/functional-market/index.tsx": [
@@ -16379,12 +16534,19 @@
       "src/renderer/pages/functional-market/marketPageModel.ts"
     ],
     "src/renderer/pages/kanban/KanbanPage.tsx": [
-      "src/renderer/app-shell/navigation/AgentIcon.tsx",
       "src/renderer/assistantNavigation.ts",
       "src/renderer/i18n/useI18n.ts",
+      "src/renderer/pages/kanban/StatusIcons.tsx",
+      "src/renderer/pages/kanban/kanbanProjectTree.ts",
       "src/renderer/pages/plugin/PluginPage.tsx",
       "src/shared/contracts.ts",
       "src/shared/i18n/index.ts"
+    ],
+    "src/renderer/pages/kanban/StatusIcons.tsx": [
+      "src/shared/contracts.ts"
+    ],
+    "src/renderer/pages/kanban/kanbanProjectTree.ts": [
+      "src/shared/contracts.ts"
     ],
     "src/renderer/pages/plugin/PluginPage.tsx": [
       "src/renderer/copilot/page-context/assistantPageContext.ts",
@@ -16396,6 +16558,7 @@
       "src/renderer/services/desktopActionRegistry.ts",
       "src/renderer/services/pluginSurfaceWebviewRefs.ts",
       "src/renderer/services/serviceWebviewBridgeHost.ts",
+      "src/renderer/settings/settingsRoutes.ts",
       "src/shared/agent-webclient-auth-injection.ts",
       "src/shared/auth-bridge.ts",
       "src/shared/brand.ts",
@@ -16409,6 +16572,7 @@
       "src/renderer/service-display.ts",
       "src/renderer/services/ServicesContext.tsx",
       "src/renderer/services/serviceWebviewBridgeHost.ts",
+      "src/renderer/settings/settingsRoutes.ts",
       "src/shared/brand.ts",
       "src/shared/service-webview-bridge.ts"
     ],
@@ -16417,6 +16581,7 @@
       "src/renderer/components/PageFeedbackStack.tsx",
       "src/renderer/copilot/page-context/assistantPageContext.ts",
       "src/renderer/i18n/useI18n.ts",
+      "src/renderer/pages/control-center/ControlCenterPage.tsx",
       "src/renderer/pages/settings/SettingsPage.css",
       "src/renderer/services/currentPageContext.ts",
       "src/renderer/services/desktopActionRegistry.ts",
@@ -16447,9 +16612,6 @@
     "src/renderer/services/serviceWebviewBridgeHost.ts": [
       "src/shared/auth-bridge.ts",
       "src/shared/contracts.ts",
-      "src/shared/service-webview-bridge.ts"
-    ],
-    "src/renderer/services/serviceWebviewBridgeReservedCapabilities.ts": [
       "src/shared/service-webview-bridge.ts"
     ],
     "src/renderer/settings/settingsRoutes.ts": [
@@ -16590,6 +16752,7 @@
       "src/shared/contracts.ts"
     ],
     "src/shared/startup-status.ts": null,
+    "test/agent-icon-fallback.test.mjs": null,
     "test/agent-platform-assistant-bridge.test.mjs": [
       "dist-electron/main/assistant/core/agent-platform-bridge.js",
       "dist-electron/shared/brand.js"
@@ -16599,13 +16762,14 @@
       "dist-electron/shared/auth-bridge.js"
     ],
     "test/app-pairing.test.mjs": [
-      "dist-electron/main/app-pairing.js",
-      "dist-electron/shared/desktop-ws.js"
+      "dist-electron/main/app-pairing.js"
     ],
     "test/archive-utils.test.mjs": [
       "dist-electron/main/archive-utils.js",
       "dist-electron/main/manifest-utils.js"
     ],
+    "test/assistant-chat-read-route.test.mjs": null,
+    "test/assistant-navigation-renderer.test.mjs": null,
     "test/assistant-navigation-status-client.test.mjs": [
       "dist-electron/main/assistant/core/assistant-navigation-status-client.js"
     ],
@@ -16618,6 +16782,10 @@
       "scripts/sync-env-zip.mjs"
     ],
     "test/builtin-assets.test.mjs": null,
+    "test/coder-project.test.mjs": [
+      "dist-electron/main/assistant/core/coder-project.js",
+      "dist-electron/main/ipc/assistant-handlers.js"
+    ],
     "test/desktop-action-bridge.test.mjs": [
       "dist-electron/main/desktop-action-bridge.js"
     ],
@@ -16675,6 +16843,7 @@
     "test/electron-bundle-paths.test.mjs": null,
     "test/env-bootstrap.test.mjs": null,
     "test/kanban-desktop-ws-client.test.mjs": null,
+    "test/kanban-project-tree.test.mjs": null,
     "test/kanban-runtime.test.mjs": null,
     "test/kanban-sync.test.mjs": null,
     "test/mac-notarize.test.mjs": [
@@ -16745,9 +16914,13 @@
     ],
     "test/tunnel-hub-settings.test.mjs": null,
     "test/webs.test.mjs": [
+      "dist-electron/main/marketplace/common.js",
+      "dist-electron/main/resource-directory-watcher.js",
+      "dist-electron/main/services/service-registry.js",
       "dist-electron/main/user-paths.js",
       "dist-electron/main/webs/order-store.js",
       "dist-electron/main/webs/store.js",
+      "dist-electron/main/webs/webapps/actions.js",
       "dist-electron/main/webs/webapps/runtime.js",
       "dist-electron/main/webs/webapps/store.js",
       "dist-electron/main/webs/webapps/template-installer.js",
@@ -16953,10 +17126,13 @@
     "dist-electron/main/provider-register.js",
     "dist-electron/main/quick-assistant.js",
     "dist-electron/main/renderer-route.js",
+    "dist-electron/main/resource-directory-watcher.js",
     "dist-electron/main/retired-plugins.js",
     "dist-electron/main/reveal-path.js",
     "dist-electron/main/safe-console.js",
+    "dist-electron/main/service-lifecycle-args.js",
     "dist-electron/main/service-manager.js",
+    "dist-electron/main/service-port-defaults.js",
     "dist-electron/main/service-registry.js",
     "dist-electron/main/services/agent-webclient-host.js",
     "dist-electron/main/services/manager/app-server-env.js",
@@ -17023,6 +17199,8 @@
     "dist-electron/main/webs/webapp-runtime.js",
     "dist-electron/main/webs/webapp-store.js",
     "dist-electron/main/webs/webapp-template-installer.js",
+    "dist-electron/main/webs/webapps/actions.js",
+    "dist-electron/main/webs/webapps/metadata.js",
     "dist-electron/main/webs/webapps/runtime.js",
     "dist-electron/main/webs/webapps/store.js",
     "dist-electron/main/webs/webapps/template-installer.js",
@@ -17244,6 +17422,8 @@
     "src/main/retired-plugins.ts",
     "src/main/reveal-path.ts",
     "src/main/safe-console.ts",
+    "src/main/service-lifecycle-args.ts",
+    "src/main/service-port-defaults.ts",
     "src/main/services/agent-webclient-host.ts",
     "src/main/services/port-conflict.ts",
     "src/main/services/runtime.ts",
@@ -17268,6 +17448,8 @@
     "src/main/webs/order-store.ts",
     "src/main/webs/store.ts",
     "src/main/webs/surface-runtime.ts",
+    "src/main/webs/webapps/actions.ts",
+    "src/main/webs/webapps/metadata.ts",
     "src/main/webs/webapps/runtime.ts",
     "src/main/webs/webapps/store.ts",
     "src/main/webs/webapps/template-installer.ts",
@@ -17288,11 +17470,8 @@
     "src/renderer/app-shell/startup/EnvImportOverlay.tsx",
     "src/renderer/app-shell/startup/StartupGate.tsx",
     "src/renderer/assistantNavigation.ts",
-    "src/renderer/components/AttachmentImagePreview.tsx",
     "src/renderer/components/BrandMark.tsx",
     "src/renderer/components/Collapse/index.tsx",
-    "src/renderer/components/Flex/index.tsx",
-    "src/renderer/components/Header.tsx",
     "src/renderer/components/PageFeedbackStack.tsx",
     "src/renderer/components/Popover/index.tsx",
     "src/renderer/components/Tooltip/index.tsx",
@@ -17314,9 +17493,6 @@
     "src/renderer/pages/control-center/ControlCenterPage.tsx",
     "src/renderer/pages/external-webview/ExternalWebviewPage.tsx",
     "src/renderer/pages/functional-market/MarketPageFrame.tsx",
-    "src/renderer/pages/functional-market/PluginMarket.tsx",
-    "src/renderer/pages/functional-market/SandboxImageMarket.tsx",
-    "src/renderer/pages/functional-market/SkillMarket.tsx",
     "src/renderer/pages/functional-market/StorefrontMarket.tsx",
     "src/renderer/pages/functional-market/index.tsx",
     "src/renderer/pages/functional-market/marketDisplay.tsx",
@@ -17324,6 +17500,8 @@
     "src/renderer/pages/functional-market/marketPageModel.ts",
     "src/renderer/pages/functional-market/marketViewRegistry.tsx",
     "src/renderer/pages/kanban/KanbanPage.tsx",
+    "src/renderer/pages/kanban/StatusIcons.tsx",
+    "src/renderer/pages/kanban/kanbanProjectTree.ts",
     "src/renderer/pages/plugin/PluginPage.tsx",
     "src/renderer/pages/plugin/PluginSettingsPage.tsx",
     "src/renderer/pages/settings/SettingsPage.tsx",
@@ -17333,7 +17511,6 @@
     "src/renderer/services/desktopActionRegistry.ts",
     "src/renderer/services/pluginSurfaceWebviewRefs.ts",
     "src/renderer/services/serviceWebviewBridgeHost.ts",
-    "src/renderer/services/serviceWebviewBridgeReservedCapabilities.ts",
     "src/renderer/settings/settingsRoutes.ts",
     "src/renderer/settingsPageSections.ts",
     "src/shared/agent-webclient-auth-injection.ts",
@@ -17360,13 +17537,17 @@
     "src/shared/sso.ts",
     "src/shared/startup-gate.ts",
     "src/shared/startup-status.ts",
+    "test/agent-icon-fallback.test.mjs",
     "test/agent-platform-assistant-bridge.test.mjs",
     "test/agent-webclient-auth-injection.test.mjs",
     "test/app-pairing.test.mjs",
     "test/archive-utils.test.mjs",
+    "test/assistant-chat-read-route.test.mjs",
+    "test/assistant-navigation-renderer.test.mjs",
     "test/assistant-navigation-status-client.test.mjs",
     "test/brand-runtime-paths.test.mjs",
     "test/builtin-assets.test.mjs",
+    "test/coder-project.test.mjs",
     "test/desktop-action-bridge.test.mjs",
     "test/desktop-diagnostics.test.mjs",
     "test/desktop-init-bootstrap.test.mjs",
@@ -17381,6 +17562,7 @@
     "test/electron-bundle-paths.test.mjs",
     "test/env-bootstrap.test.mjs",
     "test/kanban-desktop-ws-client.test.mjs",
+    "test/kanban-project-tree.test.mjs",
     "test/kanban-runtime.test.mjs",
     "test/kanban-sync.test.mjs",
     "test/mac-notarize.test.mjs",

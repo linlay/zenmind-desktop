@@ -17,8 +17,8 @@ test("desktop ws protocol helper encodes and parses pairing v2 payloads", () => 
   const payload = {
     v: 2,
     kind: "desktop-ws",
-    targetMode: "local",
-    wsUrl: "ws://127.0.0.1:7082/debug?token=old&source=qr#debug",
+    targetMode: "tunnel",
+    wsUrl: "wss://desktop.example.test/debug?token=old&source=qr#debug",
     tokenMode: "query",
     token: "desktop-token",
     expiresAtMs: Date.now() + 600_000,
@@ -29,9 +29,28 @@ test("desktop ws protocol helper encodes and parses pairing v2 payloads", () => 
 
   assert.equal(parsed.transportKind, "desktop-ws");
   assert.equal(parsed.payload.kind, "desktop-ws");
-  assert.equal(parsed.payload.wsUrl, "ws://127.0.0.1:7082/ws");
+  assert.equal(parsed.payload.targetMode, "tunnel");
+  assert.equal(parsed.payload.wsUrl, "wss://desktop.example.test/ws");
   assert.equal(parsed.payload.token, "desktop-token");
   assert.equal(parsed.payload.desktopDeviceId, "desktop-device-1");
+});
+
+test("desktop ws protocol helper rejects non-tunnel v2 pairing payloads", () => {
+  const payload = {
+    v: 2,
+    kind: "desktop-ws",
+    targetMode: "local",
+    wsUrl: "ws://127.0.0.1:7082/ws",
+    tokenMode: "query",
+    token: "desktop-token",
+    expiresAtMs: Date.now() + 600_000,
+    desktopDeviceId: "desktop-device-1"
+  };
+
+  assert.throws(
+    () => parsePairingPayload(encodePairingPayloadV2(payload)),
+    /Desktop WS 配对字段|Desktop WS/u
+  );
 });
 
 test("desktop ws protocol helper keeps legacy v1 parsing compatible", () => {
