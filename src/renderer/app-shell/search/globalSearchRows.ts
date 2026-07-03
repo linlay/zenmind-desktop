@@ -6,7 +6,7 @@ import type {
 import type { TranslateFunction } from "../../../shared/i18n";
 
 export type DesktopGlobalSearchActionId = "newChat" | "agents" | "controlCenter" | "settings";
-export type DesktopGlobalSearchSectionId = "actions" | "agents" | "chats";
+export type DesktopGlobalSearchSectionId = "awaiting" | "unread" | "actions" | "agents" | "chats";
 
 export type DesktopGlobalSearchRow =
   | {
@@ -37,6 +37,7 @@ export type DesktopGlobalSearchRow =
       score: number;
       hasActiveRun: boolean;
       hasPendingAwaiting: boolean;
+      isUnread: boolean;
     };
 
 export type DesktopGlobalSearchSection = {
@@ -55,6 +56,7 @@ export type BuildDesktopGlobalSearchRowsInput = {
 
 const EMPTY_AGENT_LIMIT = 8;
 const EMPTY_CHAT_LIMIT = 12;
+const EMPTY_ATTENTION_LIMIT = 10;
 const QUERY_AGENT_LIMIT = 10;
 const QUERY_CHAT_LIMIT = 30;
 
@@ -87,20 +89,49 @@ export function buildDesktopGlobalSearchSections(input: BuildDesktopGlobalSearch
     .filter((row) => !normalizedQuery || rowMatches(row, normalizedQuery))
     .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
     .slice(0, normalizedQuery ? QUERY_AGENT_LIMIT : EMPTY_AGENT_LIMIT);
-  const localChatRows = createLocalChatRows(input.agents, input.t)
+  const allLocalChatRows = createLocalChatRows(input.agents, input.t);
+  const localChatRows = allLocalChatRows
     .filter((row) => !normalizedQuery || rowMatches(row, normalizedQuery));
   const chatRows = normalizedQuery
-    ? mergeQueryChatRows(localChatRows, input.remoteResults ?? [], agentByKey, input.t)
+    ? mergeQueryChatRows(localChatRows, input.remoteResults ?? [], agentByKey, allLocalChatRows, input.t)
       .sort(compareQueryChatRows)
       .slice(0, QUERY_CHAT_LIMIT)
-    : localChatRows
-      .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
-      .slice(0, EMPTY_CHAT_LIMIT);
+    : [];
+
+  if (normalizedQuery) {
+    return [
+      createSection("actions", input.t("desktop.globalSearch.group.actions"), actions),
+      createSection("agents", input.t("desktop.globalSearch.group.agents"), agentRows),
+      createSection("chats", input.t("desktop.globalSearch.group.chats"), chatRows)
+    ].filter((section): section is DesktopGlobalSearchSection => Boolean(section));
+  }
+
+  const attentionChatIds = new Set<string>();
+  const awaitingRows = allLocalChatRows
+    .filter((row) => row.hasPendingAwaiting)
+    .sort(compareAttentionChatRows)
+    .slice(0, EMPTY_ATTENTION_LIMIT);
+  for (const row of awaitingRows) {
+    attentionChatIds.add(row.chatId);
+  }
+  const unreadRows = allLocalChatRows
+    .filter((row) => row.isUnread && !attentionChatIds.has(row.chatId))
+    .sort(compareAttentionChatRows)
+    .slice(0, EMPTY_ATTENTION_LIMIT);
+  for (const row of unreadRows) {
+    attentionChatIds.add(row.chatId);
+  }
+  const recentChatRows = allLocalChatRows
+    .filter((row) => !attentionChatIds.has(row.chatId))
+    .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+    .slice(0, EMPTY_CHAT_LIMIT);
 
   return [
+    createSection("awaiting", input.t("desktop.globalSearch.group.awaiting"), awaitingRows),
+    createSection("unread", input.t("desktop.globalSearch.group.unread"), unreadRows),
     createSection("actions", input.t("desktop.globalSearch.group.actions"), actions),
     createSection("agents", input.t("desktop.globalSearch.group.agents"), agentRows),
-    createSection("chats", input.t("desktop.globalSearch.group.chats"), chatRows)
+    createSection("chats", input.t("desktop.globalSearch.group.chats"), recentChatRows)
   ].filter((section): section is DesktopGlobalSearchSection => Boolean(section));
 }
 
@@ -212,7 +243,8 @@ function createLocalChatRow(
     source: "local",
     score: 0,
     hasActiveRun: chat.hasActiveRun,
-    hasPendingAwaiting: chat.hasPendingAwaiting
+    hasPendingAwaiting: chat.hasPendingAwaiting,
+    isUnread: chat.isRead === false
   };
 }
 
@@ -220,16 +252,18 @@ function mergeQueryChatRows(
   localRows: Array<Extract<DesktopGlobalSearchRow, { kind: "chat" }>>,
   remoteResults: AssistantChatSearchResult[],
   agentByKey: Map<string, AssistantNavAgentItem>,
+  allLocalRows: Array<Extract<DesktopGlobalSearchRow, { kind: "chat" }>>,
   t: TranslateFunction
 ) {
   const chatById = new Map(localRows.map((row) => [row.chatId, row]));
+  const localById = new Map(allLocalRows.map((row) => [row.chatId, row]));
   for (const result of remoteResults) {
     const chatId = result.chatId?.trim() ?? "";
     const agentKey = result.agentKey?.trim() ?? "";
     if (!chatId || !agentKey) {
       continue;
     }
-    const localRow = chatById.get(chatId);
+    const localRow = localById.get(chatId) ?? chatById.get(chatId);
     const agent = agentByKey.get(agentKey);
     const fallbackLabel = localRow?.label || result.chatName || t("assistant.newChat");
     chatById.set(chatId, {
@@ -244,16 +278,32 @@ function mergeQueryChatRows(
       source: "remote",
       score: result.score,
       hasActiveRun: localRow?.hasActiveRun ?? false,
-      hasPendingAwaiting: localRow?.hasPendingAwaiting ?? false
+      hasPendingAwaiting: localRow?.hasPendingAwaiting ?? false,
+      isUnread: localRow?.isUnread ?? false
     });
   }
   return [...chatById.values()];
+}
+
+function compareAttentionChatRows(
+  left: Extract<DesktopGlobalSearchRow, { kind: "chat" }>,
+  right: Extract<DesktopGlobalSearchRow, { kind: "chat" }>
+) {
+  if (right.updatedAtMs !== left.updatedAtMs) {
+    return right.updatedAtMs - left.updatedAtMs;
+  }
+  return left.chatId.localeCompare(right.chatId);
 }
 
 function compareQueryChatRows(
   left: Extract<DesktopGlobalSearchRow, { kind: "chat" }>,
   right: Extract<DesktopGlobalSearchRow, { kind: "chat" }>
 ) {
+  const leftPriority = getQueryChatPriority(left);
+  const rightPriority = getQueryChatPriority(right);
+  if (rightPriority !== leftPriority) {
+    return rightPriority - leftPriority;
+  }
   if (right.score !== left.score) {
     return right.score - left.score;
   }
@@ -261,6 +311,19 @@ function compareQueryChatRows(
     return right.source === "remote" ? 1 : -1;
   }
   return right.updatedAtMs - left.updatedAtMs;
+}
+
+function getQueryChatPriority(row: Extract<DesktopGlobalSearchRow, { kind: "chat" }>) {
+  if (row.hasPendingAwaiting) {
+    return 3;
+  }
+  if (row.isUnread) {
+    return 2;
+  }
+  if (row.hasActiveRun) {
+    return 1;
+  }
+  return 0;
 }
 
 function rowMatches(row: DesktopGlobalSearchRow, normalizedQuery: string) {

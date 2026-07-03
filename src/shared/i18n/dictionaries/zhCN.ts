@@ -2199,12 +2199,14 @@ export const zhCNMessages = {
   "assistant.attachmentFilter.all": "所有文件",
 
   "desktop.globalSearch.title": "Desktop 综合搜索",
-  "desktop.globalSearch.placeholder": "搜索动作、智能体和会话",
+  "desktop.globalSearch.placeholder": "搜索智能体、会话或运行命令",
   "desktop.globalSearch.shortcutHint": "打开 Desktop 综合搜索",
   "desktop.globalSearch.results": "搜索结果",
   "desktop.globalSearch.searching": "正在搜索会话...",
   "desktop.globalSearch.empty.default": "暂无最近智能体或会话。",
   "desktop.globalSearch.empty.query": "没有匹配的动作、智能体或会话。",
+  "desktop.globalSearch.group.awaiting": "等待中",
+  "desktop.globalSearch.group.unread": "未读聊天",
   "desktop.globalSearch.group.actions": "动作",
   "desktop.globalSearch.group.agents": "智能体",
   "desktop.globalSearch.group.chats": "会话",
@@ -2217,6 +2219,7 @@ export const zhCNMessages = {
   "desktop.globalSearch.action.settings": "打开设置",
   "desktop.globalSearch.action.settings.description": "调整 Desktop 偏好",
   "desktop.globalSearch.status.awaiting": "等待输入",
+  "desktop.globalSearch.status.unread": "未读",
   "desktop.globalSearch.status.running": "运行中",
 
   "logViewer.titleFallback": "日志",

@@ -32,6 +32,8 @@ const {
 
 const messages = {
   "assistant.newChat": "New chat",
+  "desktop.globalSearch.group.awaiting": "Awaiting",
+  "desktop.globalSearch.group.unread": "Unread chats",
   "desktop.globalSearch.group.actions": "Actions",
   "desktop.globalSearch.group.agents": "Agents",
   "desktop.globalSearch.group.chats": "Chats",
@@ -102,12 +104,62 @@ test("desktop global search resolves the current agent and default sections", ()
   assert.equal(rowsOfKind(sections, "chat")[0].chatId, "chat-1");
 });
 
-test("desktop global search filters rows and prefers remote chat snippets", () => {
+test("desktop global search prioritizes awaiting and unread chats in the empty state", () => {
   const sections = buildDesktopGlobalSearchSections({
     agents: [
       agent({
         recentChats: [
-          chat({ chatId: "chat-1", chatName: "Deploy plan", lastRunContent: "local deploy snippet" }),
+          chat({
+            chatId: "chat-awaiting",
+            chatName: "Needs input",
+            isRead: false,
+            hasPendingAwaiting: true,
+            updatedAt: "1710000001000",
+          }),
+          chat({
+            chatId: "chat-unread",
+            chatName: "Unread design notes",
+            isRead: false,
+            updatedAt: "1710000002000",
+          }),
+          chat({
+            chatId: "chat-recent",
+            chatName: "Recent sync",
+            lastRunContent: "recent local snippet",
+            updatedAt: "1710000003000",
+          }),
+        ],
+      }),
+    ],
+    query: "",
+    currentAgentKey: "coder",
+    t,
+  });
+
+  assert.deepEqual(sections.map((section) => section.id), ["awaiting", "unread", "actions", "agents", "chats"]);
+
+  const awaitingRows = sections.find((section) => section.id === "awaiting").rows;
+  const unreadRows = sections.find((section) => section.id === "unread").rows;
+  const recentRows = sections.find((section) => section.id === "chats").rows;
+
+  assert.deepEqual(awaitingRows.map((row) => row.chatId), ["chat-awaiting"]);
+  assert.deepEqual(unreadRows.map((row) => row.chatId), ["chat-unread"]);
+  assert.equal(recentRows.some((row) => row.chatId === "chat-awaiting" || row.chatId === "chat-unread"), false);
+  assert.deepEqual(recentRows.map((row) => row.chatId), ["chat-recent"]);
+});
+
+test("desktop global search filters rows, boosts local attention state, and prefers remote chat snippets", () => {
+  const sections = buildDesktopGlobalSearchSections({
+    agents: [
+      agent({
+        recentChats: [
+          chat({
+            chatId: "chat-1",
+            chatName: "Deploy plan",
+            lastRunContent: "local deploy snippet",
+            isRead: false,
+            hasPendingAwaiting: true,
+          }),
           chat({ chatId: "chat-2", chatName: "Meeting notes", lastRunContent: "unrelated" }),
         ],
       }),
@@ -124,7 +176,18 @@ test("desktop global search filters rows and prefers remote chat snippets", () =
         role: "assistant",
         timestamp: 1710000005000,
         snippet: "remote deploy snippet",
-        score: 99,
+        score: 1,
+      },
+      {
+        chatId: "chat-remote",
+        chatName: "Remote-only deploy plan",
+        agentKey: "coder",
+        runId: "run-remote-only",
+        kind: "message",
+        role: "assistant",
+        timestamp: 1710000008000,
+        snippet: "higher scoring remote deploy snippet",
+        score: 100,
       },
       {
         chatId: "chat-missing-agent",
@@ -140,10 +203,13 @@ test("desktop global search filters rows and prefers remote chat snippets", () =
 
   const chatRows = rowsOfKind(sections, "chat");
 
-  assert.equal(chatRows.length, 1);
+  assert.equal(chatRows.length, 2);
   assert.equal(chatRows[0].chatId, "chat-1");
   assert.equal(chatRows[0].label, "Remote deploy plan");
   assert.equal(chatRows[0].snippet, "remote deploy snippet");
   assert.equal(chatRows[0].source, "remote");
+  assert.equal(chatRows[0].hasPendingAwaiting, true);
+  assert.equal(chatRows[0].isUnread, true);
+  assert.equal(chatRows[1].chatId, "chat-remote");
   assert.equal(chatRows.some((row) => row.chatId === "chat-missing-agent"), false);
 });

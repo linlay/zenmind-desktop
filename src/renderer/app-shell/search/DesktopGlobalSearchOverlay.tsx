@@ -200,6 +200,8 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                     className={[
                       "desktop-global-search-row",
                       `is-${row.kind}`,
+                      row.kind === "chat" && row.hasPendingAwaiting ? "is-awaiting" : "",
+                      row.kind === "chat" && row.isUnread ? "is-unread" : "",
                       rowIndex === activeIndex ? "is-active" : ""
                     ].filter(Boolean).join(" ")}
                     onMouseEnter={() => setActiveIndex(rowIndex)}
@@ -214,10 +216,15 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                     </span>
                     <span className="desktop-global-search-row-body">
                       <span className="desktop-global-search-row-title">{row.label}</span>
-                      <span className="desktop-global-search-row-detail">{renderRowDetail(row, props.t)}</span>
+                      {row.kind !== "action" ? (
+                        <span className="desktop-global-search-row-detail">{renderRowDetail(row)}</span>
+                      ) : null}
                     </span>
                     {row.kind === "chat" ? (
-                      <span className="desktop-global-search-row-agent">{row.agentLabel}</span>
+                      <span className="desktop-global-search-row-meta">
+                        {renderChatStatus(row, props.t)}
+                        <span className="desktop-global-search-row-agent">{row.agentLabel}</span>
+                      </span>
                     ) : null}
                   </button>
                 );
@@ -280,6 +287,9 @@ function renderRowIcon(row: DesktopGlobalSearchRow) {
     return <UserOutlined />;
   }
   if (row.kind === "chat") {
+    if (row.isUnread && !row.hasPendingAwaiting) {
+      return <span className="desktop-global-search-unread-dot" />;
+    }
     return row.source === "remote" ? <MessageOutlined /> : <ClockCircleOutlined />;
   }
   if (row.actionId === "newChat") {
@@ -294,15 +304,34 @@ function renderRowIcon(row: DesktopGlobalSearchRow) {
   return <SettingOutlined />;
 }
 
-function renderRowDetail(row: DesktopGlobalSearchRow, t: TranslateFunction) {
+function renderRowDetail(row: DesktopGlobalSearchRow) {
   if (row.kind === "chat") {
-    if (row.hasPendingAwaiting) {
-      return `${t("desktop.globalSearch.status.awaiting")} · ${row.snippet}`;
-    }
-    if (row.hasActiveRun) {
-      return `${t("desktop.globalSearch.status.running")} · ${row.snippet}`;
-    }
     return row.snippet;
   }
   return row.description;
+}
+
+function renderChatStatus(row: Extract<DesktopGlobalSearchRow, { kind: "chat" }>, t: TranslateFunction) {
+  if (row.hasPendingAwaiting) {
+    return (
+      <span className="desktop-global-search-row-status is-awaiting">
+        {t("desktop.globalSearch.status.awaiting")}
+      </span>
+    );
+  }
+  if (row.isUnread) {
+    return (
+      <span className="desktop-global-search-row-status is-unread">
+        {t("desktop.globalSearch.status.unread")}
+      </span>
+    );
+  }
+  if (row.hasActiveRun) {
+    return (
+      <span className="desktop-global-search-row-status is-running">
+        {t("desktop.globalSearch.status.running")}
+      </span>
+    );
+  }
+  return null;
 }

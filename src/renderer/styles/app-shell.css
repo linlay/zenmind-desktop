@@ -295,37 +295,38 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 76px 18px 18px;
-  background: rgba(15, 23, 42, 0.28);
+  padding: 48px 16px 16px;
+  background: rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
 .desktop-global-search-panel {
-  width: min(720px, 100%);
-  max-height: min(720px, calc(100vh - 112px));
+  width: min(640px, 100%);
+  max-height: min(680px, calc(100vh - 72px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 54px rgba(15, 23, 42, 0.2);
   color: #0f172a;
 }
 
 .desktop-global-search-input-shell {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  min-height: 58px;
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px 18px 8px;
 }
 
 .desktop-global-search-input-icon {
-  color: #475569;
+  color: #64748b;
   font-size: 16px;
 }
 
@@ -336,8 +337,8 @@
   outline: none;
   background: transparent;
   color: #0f172a;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 17px;
+  line-height: 26px;
 }
 
 .desktop-global-search-input-shell input::placeholder {
@@ -345,49 +346,48 @@
 }
 
 .desktop-global-search-input-shell kbd {
-  min-width: 54px;
-  padding: 4px 7px;
-  border: 1px solid rgba(148, 163, 184, 0.38);
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #475569;
+  min-width: 48px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #64748b;
   font-size: 12px;
   font-family: inherit;
-  line-height: 16px;
+  line-height: 18px;
   text-align: center;
   white-space: nowrap;
 }
 
 .desktop-global-search-results {
   flex: 1;
-  min-height: 220px;
+  min-height: 180px;
   overflow: auto;
-  padding: 8px;
+  padding: 4px 10px 12px;
 }
 
 .desktop-global-search-section + .desktop-global-search-section {
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 .desktop-global-search-section-title {
-  padding: 8px 10px 5px;
+  padding: 9px 6px 4px;
   color: #64748b;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 14px;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
 }
 
 .desktop-global-search-row {
   width: 100%;
-  min-height: 50px;
+  min-height: 36px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 132px);
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border: 1px solid transparent;
-  border-radius: 7px;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 12px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -396,31 +396,30 @@
 
 .desktop-global-search-row.is-action,
 .desktop-global-search-row.is-agent {
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
 }
 
 .desktop-global-search-row.is-active {
-  border-color: rgba(37, 99, 235, 0.28);
-  background: rgba(239, 246, 255, 0.95);
+  background: rgba(15, 23, 42, 0.07);
 }
 
 .desktop-global-search-row-icon {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 7px;
-  background: #f1f5f9;
-  color: #2563eb;
-  font-size: 15px;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
 }
 
 .desktop-global-search-row-body {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .desktop-global-search-row-title,
@@ -435,26 +434,65 @@
 .desktop-global-search-row-title {
   color: #0f172a;
   font-size: 14px;
-  font-weight: 650;
-  line-height: 18px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 .desktop-global-search-row-detail {
   color: #64748b;
   font-size: 12px;
-  line-height: 16px;
+  line-height: 18px;
+}
+
+.desktop-global-search-row-meta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .desktop-global-search-row-agent {
   justify-self: end;
-  max-width: 132px;
-  color: #475569;
+  max-width: 128px;
+  color: #64748b;
   font-size: 12px;
+  line-height: 18px;
+}
+
+.desktop-global-search-row-status {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: rgba(15, 23, 42, 0.07);
+  color: #475569;
+  font-size: 11px;
   line-height: 16px;
 }
 
+.desktop-global-search-row-status.is-awaiting {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+}
+
+.desktop-global-search-row-status.is-unread {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+
+.desktop-global-search-unread-dot {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  border-radius: 999px;
+  background: #3b82f6;
+}
+
 .desktop-global-search-empty {
-  min-height: 180px;
+  min-height: 140px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -464,10 +502,9 @@
 }
 
 .desktop-global-search-status {
-  min-height: 30px;
-  padding: 7px 14px;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
-  color: #475569;
+  min-height: 28px;
+  padding: 6px 18px 10px;
+  color: #64748b;
   font-size: 12px;
   line-height: 16px;
 }
@@ -477,18 +514,14 @@
 }
 
 :root[data-theme="dark"] .desktop-global-search-layer {
-  background: rgba(2, 6, 23, 0.44);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 :root[data-theme="dark"] .desktop-global-search-panel {
-  border-color: rgba(71, 85, 105, 0.7);
-  background: rgba(15, 23, 42, 0.96);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(42, 42, 42, 0.96);
   color: #e2e8f0;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
-}
-
-:root[data-theme="dark"] .desktop-global-search-input-shell {
-  border-bottom-color: rgba(71, 85, 105, 0.65);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.36);
 }
 
 :root[data-theme="dark"] .desktop-global-search-input-icon,
@@ -497,33 +530,46 @@
 :root[data-theme="dark"] .desktop-global-search-row-detail,
 :root[data-theme="dark"] .desktop-global-search-empty,
 :root[data-theme="dark"] .desktop-global-search-status {
-  color: #94a3b8;
+  color: #a3a3a3;
 }
 
 :root[data-theme="dark"] .desktop-global-search-input-shell input,
 :root[data-theme="dark"] .desktop-global-search-row-title {
-  color: #f8fafc;
+  color: #eeeeee;
 }
 
 :root[data-theme="dark"] .desktop-global-search-input-shell kbd,
 :root[data-theme="dark"] .desktop-global-search-row-icon {
-  border-color: rgba(71, 85, 105, 0.72);
-  background: #1e293b;
-  color: #bfdbfe;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4d4d4;
 }
 
 :root[data-theme="dark"] .desktop-global-search-row.is-active {
-  border-color: rgba(96, 165, 250, 0.48);
-  background: rgba(30, 58, 138, 0.36);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 :root[data-theme="dark"] .desktop-global-search-row-agent {
-  color: #cbd5e1;
+  color: #a3a3a3;
+}
+
+:root[data-theme="dark"] .desktop-global-search-row-status {
+  background: rgba(255, 255, 255, 0.09);
+  color: #d4d4d4;
+}
+
+:root[data-theme="dark"] .desktop-global-search-row-status.is-awaiting {
+  background: rgba(217, 119, 6, 0.18);
+  color: #f4bf75;
+}
+
+:root[data-theme="dark"] .desktop-global-search-row-status.is-unread {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
 }
 
 @media (max-width: 680px) {
   .desktop-global-search-layer {
-    padding: 52px 10px 10px;
+    padding: 42px 10px 10px;
   }
 
   .desktop-global-search-panel {
@@ -532,6 +578,16 @@
 
   .desktop-global-search-row {
     grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .desktop-global-search-row-body {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .desktop-global-search-row-meta {
+    display: none;
   }
 
   .desktop-global-search-row-agent {

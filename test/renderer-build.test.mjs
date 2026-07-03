@@ -3389,6 +3389,8 @@ test("desktop global search contract is wired across main preload renderer and h
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const overlay = readSourceFile("src", "renderer", "app-shell", "search", "DesktopGlobalSearchOverlay.tsx");
   const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
+  const i18nEn = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const i18nZh = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const helpEn = readSourceFile("help-content", "en-US", "shortcuts", "global-shortcuts.md");
   const helpZh = readSourceFile("help-content", "zh-CN", "shortcuts", "global-shortcuts.md");
 
@@ -3410,9 +3412,20 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appShell, /onOpenGlobalSearch/);
   assert.match(appShell, /<DesktopGlobalSearchOverlay/);
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
+  assert.match(overlay, /row\.kind !== "action" \?/);
+  assert.match(overlay, /renderChatStatus/);
+  assert.match(overlay, /desktop\.globalSearch\.status\.unread/);
+  assert.match(rows, /DesktopGlobalSearchSectionId = "awaiting" \| "unread" \| "actions" \| "agents" \| "chats"/);
   assert.match(rows, /mergeQueryChatRows/);
   assert.match(rows, /if \(!chatId \|\| !agentKey\) \{/);
   assert.match(rows, /snippet: result\.snippet \|\| localRow\?\.snippet/);
+  assert.match(rows, /getQueryChatPriority/);
+  assert.match(rows, /row\.hasPendingAwaiting/);
+  assert.match(rows, /row\.isUnread/);
+  assert.match(i18nEn, /"desktop\.globalSearch\.group\.awaiting": "Awaiting"/);
+  assert.match(i18nEn, /"desktop\.globalSearch\.group\.unread": "Unread chats"/);
+  assert.match(i18nZh, /"desktop\.globalSearch\.group\.awaiting": "等待中"/);
+  assert.match(i18nZh, /"desktop\.globalSearch\.group\.unread": "未读聊天"/);
   assert.match(helpEn, /Cmd` \+ `K` \/ `Ctrl` \+ `K`/);
   assert.match(helpZh, /Cmd` \+ `K` \/ `Ctrl` \+ `K`/);
 });

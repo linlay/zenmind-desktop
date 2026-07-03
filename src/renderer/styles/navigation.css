@@ -1820,17 +1820,21 @@
 }
 
 .sidebar-tool-menu.sidebar-account-menu {
+  --sidebar-account-menu-bg: rgba(255, 255, 255, 0.6);
+  --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.6);
+  --sidebar-account-menu-avatar-bg: rgba(255, 255, 255, 0.6);
+  --sidebar-account-menu-divider-bg: rgba(255, 255, 255, 0.18);
   gap: 2px;
   width: clamp(240px, 34vw, 280px);
   min-width: 240px;
   padding: 6px;
   overflow: hidden;
-  border: 1px solid var(--line-strong);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 16px;
-  background: var(--surface-strong);
+  background: var(--sidebar-account-menu-bg);
   box-shadow:
-    var(--panel-shadow-hover),
-    inset 0 1px 0 var(--surface-soft);
+    0 18px 44px rgba(60, 60, 67, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
   backdrop-filter: blur(18px) saturate(135%);
   -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
@@ -1918,7 +1922,7 @@
 .sidebar-account-menu-action:hover,
 .sidebar-account-menu-action:focus-visible {
   color: var(--ink);
-  background: rgba(136, 151, 172, 0.1);
+  background: var(--sidebar-account-menu-layer-bg);
   outline: none;
 }
 
@@ -1931,7 +1935,7 @@
 :root[data-theme="dark"] .sidebar-account-menu-action:hover,
 :root[data-theme="dark"] .sidebar-account-menu-action:focus-visible {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--sidebar-account-menu-layer-bg);
 }
 
 .sidebar-account-menu-item.is-disabled {
@@ -1960,7 +1964,7 @@
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: rgba(22, 119, 255, 0.1);
+  background: var(--sidebar-account-menu-avatar-bg);
   color: var(--accent);
   font-size: 11px;
   line-height: 1;
@@ -2024,14 +2028,14 @@
 
 .sidebar-account-menu-logout:hover,
 .sidebar-account-menu-logout:focus-visible {
-  background: rgba(136, 151, 172, 0.1);
+  background: var(--sidebar-account-menu-layer-bg);
   color: var(--ink);
   outline: none;
 }
 
 :root[data-theme="dark"] .sidebar-account-menu-logout:hover,
 :root[data-theme="dark"] .sidebar-account-menu-logout:focus-visible {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--sidebar-account-menu-layer-bg);
   color: var(--ink);
 }
 
@@ -2043,7 +2047,7 @@
 .sidebar-account-menu-divider {
   height: 1px;
   margin: 2px 8px;
-  background: var(--line);
+  background: var(--sidebar-account-menu-divider-bg);
 }
 
 .sidebar-account-menu .sidebar-link-icon,
@@ -2214,11 +2218,15 @@
 }
 
 :root[data-theme="dark"] .sidebar-tool-menu.sidebar-account-menu {
-  background: var(--surface-strong);
-  border-color: var(--line-strong);
+  --sidebar-account-menu-bg: rgba(0, 0, 0, 0.6);
+  --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-account-menu-avatar-bg: rgba(0, 0, 0, 0.6);
+  --sidebar-account-menu-divider-bg: rgba(255, 255, 255, 0.08);
+  background: var(--sidebar-account-menu-bg);
+  border-color: rgba(255, 255, 255, 0.08);
   box-shadow:
-    var(--panel-shadow-hover),
-    inset 0 1px 0 var(--surface-soft);
+    0 20px 42px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ── Sidebar Collapsed ── */
