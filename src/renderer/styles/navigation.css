@@ -1820,9 +1820,9 @@
 }
 
 .sidebar-tool-menu.sidebar-account-menu {
-  --sidebar-account-menu-bg: rgba(255, 255, 255, 0.6);
-  --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.6);
-  --sidebar-account-menu-avatar-bg: rgba(255, 255, 255, 0.6);
+  --sidebar-account-menu-bg: rgba(255, 255, 255, 0.8);
+  --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.8);
+  --sidebar-account-menu-avatar-bg: rgba(255, 255, 255, 0.8);
   --sidebar-account-menu-divider-bg: rgba(255, 255, 255, 0.18);
   gap: 2px;
   width: clamp(240px, 34vw, 280px);
@@ -2218,9 +2218,9 @@
 }
 
 :root[data-theme="dark"] .sidebar-tool-menu.sidebar-account-menu {
-  --sidebar-account-menu-bg: rgba(0, 0, 0, 0.6);
+  --sidebar-account-menu-bg: rgba(0, 0, 0, 0.8);
   --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.08);
-  --sidebar-account-menu-avatar-bg: rgba(0, 0, 0, 0.6);
+  --sidebar-account-menu-avatar-bg: rgba(0, 0, 0, 0.8);
   --sidebar-account-menu-divider-bg: rgba(255, 255, 255, 0.08);
   background: var(--sidebar-account-menu-bg);
   border-color: rgba(255, 255, 255, 0.08);
