@@ -287,8 +287,12 @@ export function removeWebsiteItem(app: App, id: string) {
   };
 }
 
-export function importWebsiteItems(app: App, fileContent: string) {
-  const currentItems = readWebsiteItems(app);
+export function importWebsiteItems(
+  app: App,
+  fileContent: string,
+  platform: NodeJS.Platform = process.platform
+) {
+  const currentItems = readWebsiteItems(app, platform);
 
   try {
     const importedItems = parseItemsFileContent(fileContent);
@@ -316,7 +320,7 @@ export function importWebsiteItems(app: App, fileContent: string) {
       };
     }
 
-    writeWebsiteItems(app, nextItems);
+    writeWebsiteItems(app, nextItems, platform);
     return {
       ok: true,
       items: nextItems,

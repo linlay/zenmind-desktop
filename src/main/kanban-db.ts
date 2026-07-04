@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { KanbanIssue } from "../shared/contracts";
-import { APP_BRAND } from "../shared/brand";
+import { getDataRoot } from "./user-paths";
 
 type AppPathProvider = {
   getPath(name: "home"): string;
@@ -33,11 +33,7 @@ type KanbanIssueRow = {
 const KANBAN_DATABASE_FILENAME = "kanban.db";
 
 export function getKanbanRoot(app: AppPathProvider) {
-  return path.join(
-    app.getPath("home"),
-    APP_BRAND.paths.runtimeRootDirName,
-    APP_BRAND.paths.desktopDataSubdir
-  );
+  return getDataRoot(app as Parameters<typeof getDataRoot>[0]);
 }
 
 export function getKanbanDatabasePath(app: AppPathProvider) {

@@ -41,15 +41,19 @@ function writeDesktopInit(app, platform, value) {
 }
 
 function canonicalSsoPath(homePath) {
-  return path.join(desktopRoot(homePath), "config", "desktop", "sso.json");
+  return path.join(desktopRoot(homePath, "darwin"), "config", "desktop", "sso.json");
 }
 
 function runtimeRoot(homePath) {
   return path.join(homePath, RUNTIME_ROOT_DIR_NAME);
 }
 
-function desktopRoot(homePath) {
-  return path.join(runtimeRoot(homePath), ".desktop");
+function runtimeRootForPlatform(homePath, platform = "darwin") {
+  return runtimeRoot(homePath);
+}
+
+function desktopRoot(homePath, platform = "darwin") {
+  return path.join(runtimeRootForPlatform(homePath, platform), ".desktop");
 }
 
 function readJson(filePath) {
@@ -756,7 +760,9 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
   });
   assert.equal(sso.userInfo.url, "https://auth.zenmind.cc/application/o/userinfo/");
   assert.equal(sso.siteTokenBridge.startUrl, "https://www.zenmind.cc/api/auth/desktop-sso/start");
-  assert.equal(fs.statSync(ssoPath).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(ssoPath).mode & 0o777, 0o600);
+  }
   assert.equal(bootstrapState.appliedResult.sso, "applied");
 });
 
@@ -765,7 +771,7 @@ test("desktop-init bootstrap uses explicit Windows path branches", () => {
 
   assert.equal(
     resolveDesktopInitPath(app, "win32"),
-    path.win32.join("C:\\Users\\tester", RUNTIME_ROOT_DIR_NAME, "desktop-init.json")
+    path.win32.join("C:\\Users\\tester", APP_BRAND.paths.runtimeRootDirName, "desktop-init.json")
   );
 });
 
@@ -804,8 +810,8 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
   });
 
   const result = applyDesktopInitBootstrap(app, "win32");
-  const serviceLifecycleArgs = readJson(path.join(desktopRoot(homePath), "config", "desktop", "service-lifecycle-args.json"));
-  const servicePortDefaults = readJson(path.join(desktopRoot(homePath), "config", "desktop", "service-port-defaults.json"));
+  const serviceLifecycleArgs = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "service-lifecycle-args.json"));
+  const servicePortDefaults = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "service-port-defaults.json"));
 
   assert.equal(result.applied, true);
   assert.equal(result.appliedResult.services, "applied");

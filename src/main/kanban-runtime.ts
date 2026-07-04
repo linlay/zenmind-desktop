@@ -24,11 +24,11 @@ import type {
   KanbanSettingsResult,
   KanbanStatus
 } from "../shared/contracts";
-import { APP_BRAND } from "../shared/brand";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { getDesktopDeviceId } from "./device-identity";
 import { getDesktopSsoStatus } from "./oidc-sso";
 import { readDesktopSsoSiteAccessToken, readDesktopSsoSiteTokenUser } from "./sso-site-token";
+import { resolveRuntimeRoot } from "./env-bootstrap";
 import { buildKanbanAutomationPayload, resolveKanbanRunStateFromAssistantEvent, resolveKanbanStatusFromAssistantEvent } from "./kanban-sync";
 import {
   applyDesktopKanbanCloudSnapshot,
@@ -144,8 +144,8 @@ function readBoolean(value: unknown) {
   return value === true;
 }
 
-function getKanbanConfigPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), KANBAN_CONFIG_FILE);
+function getKanbanConfigPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopConfigRoot(app, platform), KANBAN_CONFIG_FILE);
 }
 
 
@@ -159,7 +159,7 @@ function readKanbanOwnerConfig(input: unknown): KanbanDesktopConfigFile {
 }
 
 function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
-  const agentsRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, "agents");
+  const agentsRoot = path.join(resolveRuntimeRoot(app), "agents");
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(agentsRoot, { withFileTypes: true });
@@ -260,20 +260,20 @@ function readJsonConfigFile(filePath: string) {
 }
 
 
-export function readKanbanSettings(app: App): KanbanSettings {
-  const configPath = getKanbanConfigPath(app);
+export function readKanbanSettings(app: App, platform: NodeJS.Platform = process.platform): KanbanSettings {
+  const configPath = getKanbanConfigPath(app, platform);
   if (fs.existsSync(configPath)) {
     const raw = readJsonConfigFile(configPath);
     const parsed = readKanbanOwnerConfig(raw);
     const settings = normalizeKanbanSettings(parsed);
     if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled || hasLegacyKanbanSelectedProjectId(raw)) {
-      writeKanbanSettings(app, settings);
+      writeKanbanSettings(app, settings, platform);
     }
     return settings;
   }
 
   const settings = normalizeKanbanSettings({});
-  writeKanbanSettings(app, settings);
+  writeKanbanSettings(app, settings, platform);
   return settings;
 }
 
@@ -301,12 +301,16 @@ function readKanbanCloudConfig(app: App): KanbanCloudConfig {
   return readKanbanSettings(app).cloud;
 }
 
-function writeKanbanSettings(app: App, input: KanbanSettings): KanbanSettings {
+function writeKanbanSettings(
+  app: App,
+  input: KanbanSettings,
+  platform: NodeJS.Platform = process.platform
+): KanbanSettings {
   const settings = normalizeKanbanSettings({
     enabled: input.enabled,
     cloud: input.cloud
   });
-  const configPath = getKanbanConfigPath(app);
+  const configPath = getKanbanConfigPath(app, platform);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify({
     schemaVersion: 1,
@@ -316,15 +320,19 @@ function writeKanbanSettings(app: App, input: KanbanSettings): KanbanSettings {
   return settings;
 }
 
-export function saveKanbanSettings(app: App, input: KanbanSettingsInput): KanbanSettings {
-  const current = readKanbanSettings(app);
+export function saveKanbanSettings(
+  app: App,
+  input: KanbanSettingsInput,
+  platform: NodeJS.Platform = process.platform
+): KanbanSettings {
+  const current = readKanbanSettings(app, platform);
   return writeKanbanSettings(app, {
     enabled: typeof input.enabled === "boolean" ? input.enabled : current.enabled,
     cloud: normalizeKanbanCloudConfig({
       ...current.cloud,
       ...(isRecord(input.cloud) ? input.cloud : {})
     })
-  });
+  }, platform);
 }
 
 function writeKanbanCloudConfig(app: App, input: KanbanDesktopConfigFile): KanbanCloudConfig {

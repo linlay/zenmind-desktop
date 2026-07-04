@@ -30,6 +30,7 @@ import { desktopBuiltinServicesRelativePath } from "../scripts/lib/desktop-resou
 import { renderAppIconToPng, renderBrandMarkToPng } from "../scripts/generate-app-icons.mjs";
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
 import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
+import { ensureWindowsLatestAliases } from "../scripts/platform/dist-win-host.mjs";
 import { removeRendererWebappTemplatesFromStage } from "../scripts/stage-app.mjs";
 
 const require = createRequire(import.meta.url);
@@ -664,8 +665,19 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(electronBuilderConfig.mac.timestamp, undefined);
   assert.equal(electronBuilderConfig.win.icon, brandBuildRelativePath(brand, "icons", "icon.ico"));
   assert.equal(electronBuilderConfig.nsis.include, brandBuildRelativePath(brand, "installer", "installer.nsh"));
-  assert.match(installerInclude, /%APPDATA%\\CuteJ/u);
-  assert.doesNotMatch(installerInclude, /%USERPROFILE%\\\.cutej/u);
+  assert.equal(electronBuilderConfig.nsis.allowToChangeInstallationDirectory, false);
+  assert.equal(electronBuilderConfig.nsis.perMachine, false);
+  assert.equal(electronBuilderConfig.nsis.allowElevation, false);
+  assert.match(installerInclude, /StrCpy \$isForceCurrentInstall "1"/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$PROFILE\\\.cutej"/u);
+  assert.match(installerInclude, /Function un\.CuteJEnsureDataRootDefault/u);
+  assert.match(installerInclude, /Call un\.CuteJEnsureDataRootDefault/u);
+  assert.match(installerInclude, /\$DesktopDataRoot\\programs/u);
+  assert.match(installerInclude, /customPageAfterChangeDir/u);
+  assert.match(installerInclude, /CuteJDataDirectoryPage/u);
+  assert.match(installerInclude, /nsDialogs::SelectFolderDialog/u);
+  assert.match(installerInclude, /WriteRegStr HKCU "Software\\cutej-desktop" "DataRoot"/u);
+  assert.doesNotMatch(installerInclude, /\$APPDATA\\CuteJ/u);
   assert.doesNotMatch(installerInclude, /\\.desktop\\state/u);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/CuteJ"/u);
@@ -720,7 +732,15 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), sourcePackageBefore);
   assert.equal(fs.readFileSync(path.join(root, "index.html"), "utf8"), sourceIndexBefore);
   assert.equal(fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8"), sourceUninstallBefore);
-  assert.match(installerInclude, /%APPDATA%\\ZenMind/u);
+  assert.match(installerInclude, /StrCpy \$isForceCurrentInstall "1"/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$PROFILE\\\.zenmind"/u);
+  assert.match(installerInclude, /Function un\.ZenMindEnsureDataRootDefault/u);
+  assert.match(installerInclude, /Call un\.ZenMindEnsureDataRootDefault/u);
+  assert.match(installerInclude, /\$DesktopDataRoot\\programs/u);
+  assert.match(installerInclude, /customPageAfterChangeDir/u);
+  assert.match(installerInclude, /ZenMindDataDirectoryPage/u);
+  assert.match(installerInclude, /WriteRegStr HKCU "Software\\zenmind-desktop" "DataRoot"/u);
+  assert.doesNotMatch(installerInclude, /\$APPDATA\\ZenMind/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*zenmind-pet:/u);
@@ -915,28 +935,46 @@ test("stage-app removes renderer webapp templates from staged app", (t) => {
   assert.equal(fs.existsSync(path.join(root, "dist-renderer", "webapp-templates")), false);
 });
 
-test("critical runtime path modules read APP_BRAND runtimeRootDirName", () => {
-  const files = [
-    "src/main/kanban-db.ts",
-    "src/main/kanban-runtime.ts",
-    "src/main/assistant/core/agent-platform-config.ts",
-    "src/main/assistant/core/agent-platform-bridge.ts"
+test("Windows dist latest metadata aliases spaced installer artifacts", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-win-alias-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const outputDir = path.join(root, "dist", "cutej");
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(path.join(outputDir, "CuteJ Setup 0.3.10.exe"), "installer", "utf8");
+  fs.writeFileSync(path.join(outputDir, "CuteJ Setup 0.3.10.exe.blockmap"), "blockmap", "utf8");
+  fs.writeFileSync(
+    path.join(outputDir, "latest.yml"),
+    "files:\n  - url: CuteJ-Setup-0.3.10.exe\npath: CuteJ-Setup-0.3.10.exe\n",
+    "utf8"
+  );
+
+  ensureWindowsLatestAliases({ id: "cutej", productName: "CuteJ" }, root);
+
+  assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.10.exe"), "utf8"), "installer");
+  assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.10.exe.blockmap"), "utf8"), "blockmap");
+});
+
+test("critical runtime path modules use shared brand-aware roots", () => {
+  const expectations = [
+    ["src/main/kanban-db.ts", /getDataRoot/u],
+    ["src/main/kanban-runtime.ts", /resolveRuntimeRoot/u],
+    ["src/main/assistant/core/agent-platform-config.ts", /resolveRuntimeRoot/u],
+    ["src/main/assistant/core/agent-platform-bridge.ts", /resolveRuntimeRoot/u]
   ];
 
-  for (const relativePath of files) {
+  for (const [relativePath, pattern] of expectations) {
     const content = fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
-    assert.match(content, /APP_BRAND\.paths\.runtimeRootDirName/u, relativePath);
+    assert.match(content, pattern, relativePath);
     assert.doesNotMatch(content, /["'`]\.zenmind["'`]/u, relativePath);
   }
 });
 
-test("skill installer keeps legacy runtime roots gated to the ZenMind brand", () => {
+test("skill installer uses shared runtime root on Windows before legacy ZenMind fallbacks", () => {
   const content = fs.readFileSync(path.join(projectRoot, "src/main/skill-installer.ts"), "utf8");
 
-  assert.match(
-    content,
-    /const preferredRuntimeRoot = path\.join\(homeDir, APP_BRAND\.paths\.runtimeRootDirName\);/u
-  );
+  assert.match(content, /import \{ resolveRuntimeRootPath \} from "\.\/runtime-root";/u);
+  assert.match(content, /const preferredRuntimeRoot = resolveRuntimeRootPath\(/u);
+  assert.match(content, /if \(process\.platform === "win32"\) \{\s*return preferredRuntimeRoot;\s*\}/u);
   assert.match(content, /if \(String\(APP_BRAND\.id\) === "zenmind"\) \{/u);
   assert.match(content, /return preferredRuntimeRoot;/u);
   assert.equal([...content.matchAll(/path\.join\([^)]*"\.zenmind"[^)]*\)/gu)].length, 2);

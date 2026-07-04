@@ -35,7 +35,6 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
-import { APP_BRAND } from "../../../shared/brand";
 import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
 import { DesktopPetSseParser } from "../pet/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
@@ -44,6 +43,7 @@ import {
   readAssistantNavigationAgentsFromPlatform
 } from "./assistant-navigation-status-client";
 import { t } from "../../i18n/main-i18n";
+import { resolveRuntimeRoot } from "../../env-bootstrap";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
@@ -479,7 +479,7 @@ function readFinalAssistantTextFromMessages(messages: unknown): string {
 function resolvePlatformChatFile(app: App, chatId: string): string {
   const safeChatId = /^[A-Za-z0-9_-]+$/u.test(chatId) ? chatId : "";
   return safeChatId
-    ? path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, "chats", `${safeChatId}.jsonl`)
+    ? path.join(resolveRuntimeRoot(app), "chats", `${safeChatId}.jsonl`)
     : "";
 }
 

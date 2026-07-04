@@ -18,6 +18,9 @@ function createTempApp(t) {
       if (name === "home") {
         return homeRoot;
       }
+      if (name === "appData") {
+        return path.join(tempRoot, "app-data");
+      }
       assert.fail(`unexpected app.getPath(${name})`);
     }
   };
@@ -27,14 +30,22 @@ function createTempApp(t) {
   return app;
 }
 
+function desktopRoot(app) {
+  return path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
+}
+
+function runtimeRoot(app) {
+  return path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName);
+}
+
 function writeKanbanConfig(app, config) {
-  const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", "kanban.json");
+  const configPath = path.join(desktopRoot(app), "config", "desktop", "kanban.json");
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 function writeDesktopConfig(app, fileName, value) {
-  const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", fileName);
+  const configPath = path.join(desktopRoot(app), "config", "desktop", fileName);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   return configPath;
@@ -57,7 +68,7 @@ function createSiteJwt(payload = {}) {
 function writeSsoSiteToken(app, payload = {}, options = {}) {
   const token = options.token || createSiteJwt(payload);
   const fieldName = options.fieldName || "accessToken";
-  const tokenPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "secrets", "sso-site-token.json");
+  const tokenPath = path.join(desktopRoot(app), "secrets", "sso-site-token.json");
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
   fs.writeFileSync(tokenPath, `${JSON.stringify({ [fieldName]: token }, null, 2)}\n`, "utf8");
   return token;
@@ -130,7 +141,7 @@ test("Kanban server URL preserves explicit disabled setting", (t) => {
   assert.equal(readKanbanSettings(app).enabled, false);
   assert.equal(readKanbanWsConfig(app), null);
 
-  const configPath = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir, "config", "desktop", "kanban.json");
+  const configPath = path.join(desktopRoot(app), "config", "desktop", "kanban.json");
   const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(migrated.enabled, false);
   assert.equal("selectedProjectId" in migrated.cloud, false);
@@ -1277,7 +1288,7 @@ test("Kanban runtime lists installed agents when platform listAgents times out",
   });
 
   const app = createTempApp(t);
-  const agentsRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, "agents");
+  const agentsRoot = path.join(runtimeRoot(app), "agents");
   fs.mkdirSync(path.join(agentsRoot, "bootstrap"), { recursive: true });
   fs.writeFileSync(path.join(agentsRoot, "bootstrap", "agent.yml"), "key: bootstrap\nname: 初始化\nrole: 初次引导配置\n", "utf8");
   fs.mkdirSync(path.join(agentsRoot, "cutej"), { recursive: true });

@@ -6,6 +6,7 @@ import type { App } from "electron";
 import JSZip from "jszip";
 import { APP_BRAND } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
+import { resolveRuntimeRootPath } from "./runtime-root";
 
 export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
 
@@ -93,6 +94,9 @@ function pathApiForResolvedRoot(platform: NodeJS.Platform | undefined, rootPath:
     return path.win32;
   }
   if (platform === "darwin") {
+    if (path.win32.isAbsolute(rootPath) && !path.posix.isAbsolute(rootPath)) {
+      return path.win32;
+    }
     return path.posix;
   }
   return path.posix;
@@ -112,8 +116,7 @@ function getHomePath(app: AppPathReader) {
 
 export function resolveRuntimeRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   const homePath = getHomePath(app);
-  const pathApi = pathApiForResolvedRoot(platform, homePath);
-  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
+  return resolveRuntimeRootPath({ platform, homePath });
 }
 
 export function runtimeRootExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {

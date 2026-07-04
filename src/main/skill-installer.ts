@@ -11,6 +11,7 @@ import { getService } from "./services/service-registry";
 import { getInstallDir, getServiceState } from "./services/manager";
 import { getServiceConfigRoot } from "./user-paths";
 import { t } from "./i18n/main-i18n";
+import { resolveRuntimeRootPath } from "./runtime-root";
 
 type SkillMetadata = {
   id: string;
@@ -129,7 +130,13 @@ function scoreRuntimeRoot(runtimeRoot: string) {
 
 function resolveDesktopRuntimeRoot(app: App) {
   const homeDir = resolveHomeDir(app);
-  const preferredRuntimeRoot = path.join(homeDir, APP_BRAND.paths.runtimeRootDirName);
+  const preferredRuntimeRoot = resolveRuntimeRootPath({
+    platform: process.platform,
+    homePath: homeDir
+  });
+  if (process.platform === "win32") {
+    return preferredRuntimeRoot;
+  }
   const desktopDir = resolveDesktopDir(app, homeDir);
   const legacyDesktopDir = path.join(homeDir, "Desktop");
   const candidates = [preferredRuntimeRoot];

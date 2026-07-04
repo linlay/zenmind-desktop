@@ -88,12 +88,16 @@ export function normalizeServicePortDefaultsConfig(
     : null;
 }
 
-export function getServicePortDefaultsConfigPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), SERVICE_PORT_DEFAULTS_FILE);
+export function getServicePortDefaultsConfigPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopConfigRoot(app, platform), SERVICE_PORT_DEFAULTS_FILE);
 }
 
-export function writeServicePortDefaultsConfig(app: App, config: ServicePortDefaultsConfig) {
-  const filePath = getServicePortDefaultsConfigPath(app);
+export function writeServicePortDefaultsConfig(
+  app: App,
+  config: ServicePortDefaultsConfig,
+  platform: NodeJS.Platform = process.platform
+) {
+  const filePath = getServicePortDefaultsConfigPath(app, platform);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }

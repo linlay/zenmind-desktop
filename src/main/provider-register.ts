@@ -1,11 +1,10 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import yaml from "js-yaml";
 import { getDesktopDeviceId } from "./device-identity";
-import { APP_BRAND } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
+import { resolveRuntimeRoot } from "./env-bootstrap";
 
 const PROVIDER_REGISTER_FILE = "provider-register.json";
 const DEFAULT_ENDPOINT = "";
@@ -58,47 +57,18 @@ export type ProviderRegisterOptions = {
   fetchImpl?: ProviderRegisterFetch;
 };
 
-function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
-  return platform === "win32" ? path.win32 : path.posix;
-}
-
-function getHomePath(app: AppPathReader) {
-  try {
-    const homePath = app.getPath("home");
-    if (typeof homePath === "string" && homePath.trim()) {
-      return homePath;
-    }
-  } catch {
-    // Fall back to Node's user home when Electron cannot provide one yet.
-  }
-  return process.env.HOME || os.homedir();
-}
-
 export function resolveProviderRegisterPath(
   app: AppPathReader,
   platform: NodeJS.Platform = process.platform
 ) {
-  const pathApi = pathApiForPlatform(platform);
-  const homePath = getHomePath(app);
-  if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, PROVIDER_REGISTER_FILE));
-  }
-  if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, PROVIDER_REGISTER_FILE));
-  }
-  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, PROVIDER_REGISTER_FILE));
+  return path.join(resolveRuntimeRoot(app, platform), PROVIDER_REGISTER_FILE);
 }
 
-function resolveRuntimeRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  const pathApi = pathApiForPlatform(platform);
-  const homePath = getHomePath(app);
+function pathApiForRuntimeRoot(platform: NodeJS.Platform, runtimeRoot: string) {
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
+    return runtimeRoot.includes("/") && !runtimeRoot.includes("\\") ? path.posix : path.win32;
   }
-  if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
-  }
-  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
+  return path.posix;
 }
 
 function readRegisterConfig(registerPath: string) {
@@ -303,8 +273,8 @@ function readProviderTargets(input: {
   providers: string[];
   platform: NodeJS.Platform;
 }) {
-  const pathApi = pathApiForPlatform(input.platform);
   const runtimeRoot = resolveRuntimeRoot(input.app, input.platform);
+  const pathApi = pathApiForRuntimeRoot(input.platform, runtimeRoot);
   return input.providers.map((providerKey) => {
     const providerPath = pathApi.join(runtimeRoot, "registries", "providers", `${providerKey}.yml`);
     if (!fs.existsSync(providerPath)) {
