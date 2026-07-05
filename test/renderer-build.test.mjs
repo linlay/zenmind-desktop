@@ -566,7 +566,7 @@ test("startup loading screen uses localized copy", () => {
   assert.doesNotMatch(startupGate, /getServiceDisplayName/);
   assert.doesNotMatch(
     startupGate,
-    /"(?:正在启动|服务未就绪|启动较慢|已就绪|安装中\.\.\.|初始化中\.\.\.|启动中\.\.\.|等待前序服务|等待启动|重新检查|进入控制中心|认证服务|智能体平台|智能体网页客户端)"/
+    /"(?:正在启动|服务未就绪|启动较慢|已就绪|安装中\.\.\.|初始化中\.\.\.|启动中\.\.\.|等待前序服务|等待启动|重新检查|进入控制中心|认证服务|智能体平台|智能体客户端)"/
   );
 });
 
@@ -3887,10 +3887,10 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(zhCN, /"market\.tab\.sandboxImages\.label":\s*"沙箱"/);
   assert.match(zhCN, /"controlCenter\.service\.authentication\.name":\s*"认证服务"/);
   assert.match(zhCN, /"startup\.service\.authentication":\s*"认证服务"/);
-  assert.match(zhCN, /"startup\.service\.agentWebclient":\s*"智能体网页客户端"/);
-  assert.match(zhCN, /"service\.agentWebclientDisplayName":\s*"智能体网页客户端"/);
+  assert.match(zhCN, /"startup\.service\.agentWebclient":\s*"智能体客户端"/);
+  assert.match(zhCN, /"service\.agentWebclientDisplayName":\s*"智能体客户端"/);
   assert.match(zhCN, /"service\.display\.identityCenter":\s*"认证服务"/);
-  assert.match(zhCN, /"service\.display\.agentWebclient":\s*"智能体网页客户端"/);
+  assert.match(zhCN, /"service\.display\.agentWebclient":\s*"智能体客户端"/);
   assert.doesNotMatch(zhCN, /"market\.tab\.sandboxImages\.meta"/);
   assert.match(serviceDisplay, /serviceId === "identity-center"[\s\S]*?t\("service\.display\.identityCenter"\)/);
 });
