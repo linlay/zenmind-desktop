@@ -57,28 +57,28 @@ function ensureDir(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
 }
 
-function getSettingsPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), "tunnel-hub.json");
+function getSettingsPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopConfigRoot(app, platform), "tunnel-hub.json");
 }
 
-function getTokenPath(app: App) {
-  return path.join(getSecretsRoot(app), "tunnel-hub-token");
+function getTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getSecretsRoot(app, platform), "tunnel-hub-token");
 }
 
-function getRegistrationTokenPath(app: App) {
-  return path.join(getSecretsRoot(app), "tunnel-hub-registration-token");
+function getRegistrationTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getSecretsRoot(app, platform), "tunnel-hub-registration-token");
 }
 
-function getSsoSiteTokenPath(app: App) {
-  return path.join(getSecretsRoot(app), SSO_SITE_TOKEN_FILE_NAME);
+function getSsoSiteTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getSecretsRoot(app, platform), SSO_SITE_TOKEN_FILE_NAME);
 }
 
-function getDeviceSecretPath(app: App) {
-  return path.join(getSecretsRoot(app), "tunnel-hub-device-secret");
+function getDeviceSecretPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getSecretsRoot(app, platform), "tunnel-hub-device-secret");
 }
 
-function readStoredSettings(app: App): StoredTunnelHubSettings {
-  const settingsPath = getSettingsPath(app);
+function readStoredSettings(app: App, platform: NodeJS.Platform = process.platform): StoredTunnelHubSettings {
+  const settingsPath = getSettingsPath(app, platform);
   if (!fs.existsSync(settingsPath)) {
     return {};
   }
@@ -225,16 +225,16 @@ function readSecretFile(secretPath: string) {
   }
 }
 
-function readTokenFile(app: App) {
-  return readSecretFile(getTokenPath(app));
+function readTokenFile(app: App, platform: NodeJS.Platform = process.platform) {
+  return readSecretFile(getTokenPath(app, platform));
 }
 
-export function readTunnelHubRelayToken(app: App) {
-  return readTokenFile(app);
+export function readTunnelHubRelayToken(app: App, platform: NodeJS.Platform = process.platform) {
+  return readTokenFile(app, platform);
 }
 
-export function clearLegacyTunnelHubRegistrationToken(app: App) {
-  writeSecretFile(getRegistrationTokenPath(app), "");
+export function clearLegacyTunnelHubRegistrationToken(app: App, platform: NodeJS.Platform = process.platform) {
+  writeSecretFile(getRegistrationTokenPath(app, platform), "");
 }
 
 function readJwtExpiresAtMs(token: string) {
@@ -251,8 +251,8 @@ function readJwtExpiresAtMs(token: string) {
   }
 }
 
-function readSsoSiteToken(app: App) {
-  const siteTokenPath = getSsoSiteTokenPath(app);
+function readSsoSiteToken(app: App, platform: NodeJS.Platform = process.platform) {
+  const siteTokenPath = getSsoSiteTokenPath(app, platform);
   if (!fs.existsSync(siteTokenPath)) {
     return "";
   }
@@ -277,17 +277,17 @@ function readSsoSiteToken(app: App) {
   }
 }
 
-export function readTunnelHubRegistrationBearerToken(app: App) {
-  return readSsoSiteToken(app);
+export function readTunnelHubRegistrationBearerToken(app: App, platform: NodeJS.Platform = process.platform) {
+  return readSsoSiteToken(app, platform);
 }
 
-export function ensureTunnelHubDeviceSecret(app: App) {
-  const current = readSecretFile(getDeviceSecretPath(app));
+export function ensureTunnelHubDeviceSecret(app: App, platform: NodeJS.Platform = process.platform) {
+  const current = readSecretFile(getDeviceSecretPath(app, platform));
   if (current) {
     return current;
   }
   const deviceSecret = crypto.randomBytes(32).toString("base64url");
-  writeSecretFile(getDeviceSecretPath(app), deviceSecret);
+  writeSecretFile(getDeviceSecretPath(app, platform), deviceSecret);
   return deviceSecret;
 }
 
@@ -301,10 +301,13 @@ function previewToken(token: string) {
   return `****${token.slice(-4)}`;
 }
 
-export function readTunnelHubSettings(app: App): TunnelHubSettings {
-  const stored = readStoredSettings(app);
-  const token = readTunnelHubRelayToken(app);
-  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app);
+export function readTunnelHubSettings(
+  app: App,
+  platform: NodeJS.Platform = process.platform
+): TunnelHubSettings {
+  const stored = readStoredSettings(app, platform);
+  const token = readTunnelHubRelayToken(app, platform);
+  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app, platform);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
   const publicHost = readStoredPublicHost(stored);
@@ -370,9 +373,10 @@ export function validateTunnelHubSettingsInput(input: TunnelHubSettingsInput) {
 
 function writeStoredSettings(
   app: App,
-  settings: WritableTunnelHubSettings
+  settings: WritableTunnelHubSettings,
+  platform: NodeJS.Platform = process.platform
 ) {
-  const settingsPath = getSettingsPath(app);
+  const settingsPath = getSettingsPath(app, platform);
   ensureDir(path.dirname(settingsPath));
   fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
@@ -395,27 +399,32 @@ function writeSecretFile(secretPath: string, token: string) {
   }
 }
 
-function writeToken(app: App, token: string) {
-  writeSecretFile(getTokenPath(app), token);
+function writeToken(app: App, token: string, platform: NodeJS.Platform = process.platform) {
+  writeSecretFile(getTokenPath(app, platform), token);
 }
 
-export function writeTunnelHubRelayToken(app: App, token: string) {
-  writeToken(app, token.trim());
+export function writeTunnelHubRelayToken(
+  app: App,
+  token: string,
+  platform: NodeJS.Platform = process.platform
+) {
+  writeToken(app, token.trim(), platform);
 }
 
 export function saveTunnelHubSettings(
   app: App,
-  input: TunnelHubSettingsInput
+  input: TunnelHubSettingsInput,
+  platform: NodeJS.Platform = process.platform
 ): TunnelHubSettingsResult {
-  clearLegacyTunnelHubRegistrationToken(app);
-  const current = readTunnelHubSettings(app);
+  clearLegacyTunnelHubRegistrationToken(app, platform);
+  const current = readTunnelHubSettings(app, platform);
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
   const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
     ? normalizeTunnelHubDeviceId(input.deviceId)
     : current.deviceId || createDefaultDeviceId(app);
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
-  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app);
+  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app, platform);
   const issues: string[] = [];
   if (!isValidTunnelHubDeviceId(deviceId)) {
     issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
@@ -440,14 +449,14 @@ export function saveTunnelHubSettings(
     tlsInsecureSkipVerify: false,
     reconnectSeconds
   };
-  writeStoredSettings(app, nextSettings);
+  writeStoredSettings(app, nextSettings, platform);
 
   if (input.clearRelayToken === true) {
-    writeToken(app, "");
+    writeToken(app, "", platform);
   } else if (typeof input.relayToken === "string") {
     const token = input.relayToken.trim();
     if (token) {
-      writeToken(app, token);
+      writeToken(app, token, platform);
     }
   }
   if (issues.length > 0) {

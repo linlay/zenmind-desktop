@@ -19,6 +19,9 @@ function createTempApp(t) {
       if (name === "home") {
         return homeRoot;
       }
+      if (name === "appData") {
+        return path.join(tempRoot, "app-data");
+      }
       assert.fail(`unexpected app.getPath(${name})`);
     }
   };

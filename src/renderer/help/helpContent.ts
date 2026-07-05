@@ -126,20 +126,21 @@ function modulePathForLocale(locale: SupportedLocale, file: string) {
 }
 
 function getHelpTemplateVariables(isWindows: boolean): HelpTemplateVariables {
+  const windowsRuntimeRoot = `%USERPROFILE%\\${APP_BRAND.paths.runtimeRootDirName}`;
   const sharedRuntimePath = isWindows
-    ? `%USERPROFILE%\\${APP_BRAND.paths.runtimeRootDirName}\\${APP_BRAND.paths.desktopDataSubdir}\\`
+    ? `${windowsRuntimeRoot}\\${APP_BRAND.paths.desktopDataSubdir}\\`
     : `~/${APP_BRAND.paths.runtimeRootDirName}/${APP_BRAND.paths.desktopDataSubdir}/`;
   const sharedProgramDataPath = isWindows
-    ? `%APPDATA%\\${APP_BRAND.paths.programDataDirName}\\`
+    ? `${windowsRuntimeRoot}\\programs\\`
     : `~/Library/Application Support/${APP_BRAND.paths.programDataDirName}/`;
   const commonVariables = {
     productName: PRODUCT_NAME,
     runtimeDataPath: sharedRuntimePath,
     programDataPath: sharedProgramDataPath,
     runtimeDataPathMac: `~/${APP_BRAND.paths.runtimeRootDirName}/${APP_BRAND.paths.desktopDataSubdir}/`,
-    runtimeDataPathWindows: `%USERPROFILE%\\${APP_BRAND.paths.runtimeRootDirName}\\${APP_BRAND.paths.desktopDataSubdir}\\`,
+    runtimeDataPathWindows: `${windowsRuntimeRoot}\\${APP_BRAND.paths.desktopDataSubdir}\\`,
     programDataPathMac: `~/Library/Application Support/${APP_BRAND.paths.programDataDirName}/`,
-    programDataPathWindows: `%APPDATA%\\${APP_BRAND.paths.programDataDirName}\\`
+    programDataPathWindows: `${windowsRuntimeRoot}\\programs\\`
   };
   return {
     pluginArchiveLabel: ".zip",

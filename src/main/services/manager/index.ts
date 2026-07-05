@@ -354,6 +354,16 @@ async function getDesktopManagedAgentWebclientPlatformBaseUrl(app: App) {
   return `http://127.0.0.1:${platformPort || getService("agent-platform").web.defaultPort}`;
 }
 
+async function ensureAgentWebclientBaseUrlEnv(app: App, layout: ServiceLayout, env: Map<string, string>) {
+  if (env.get("BASE_URL")?.trim()) {
+    return env;
+  }
+  const baseUrl = await getDesktopManagedAgentWebclientPlatformBaseUrl(app);
+  writeEnvFileUpdates(layout.envPath, new Map([["BASE_URL", baseUrl]]));
+  env.set("BASE_URL", baseUrl);
+  return env;
+}
+
 async function resolveAgentPlatformDeployPublicKeySourceFile(app: App) {
   const capability = await resolveDesktopCapability(app, "auth.publicKey", {
     ensureProviderInstall: async (providerService) => {
@@ -1971,7 +1981,9 @@ async function startServiceInternal(
     } else {
       if (isHostManagedService(service)) {
         const layout = getServiceLayout(app, service);
-        const env = readEnvFile(layout.envPath);
+        const env = service.id === "agent-webclient"
+          ? await ensureAgentWebclientBaseUrlEnv(app, layout, readEnvFile(layout.envPath))
+          : readEnvFile(layout.envPath);
         const port = parsePort(service, env);
         await startAgentWebclientHost({
           service,

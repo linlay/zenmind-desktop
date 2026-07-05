@@ -149,12 +149,16 @@ export function normalizeServiceLifecycleArgsConfig(
     : null;
 }
 
-export function getServiceLifecycleArgsConfigPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), SERVICE_LIFECYCLE_ARGS_FILE);
+export function getServiceLifecycleArgsConfigPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopConfigRoot(app, platform), SERVICE_LIFECYCLE_ARGS_FILE);
 }
 
-export function writeServiceLifecycleArgsConfig(app: App, config: ServiceLifecycleArgsConfig) {
-  const filePath = getServiceLifecycleArgsConfigPath(app);
+export function writeServiceLifecycleArgsConfig(
+  app: App,
+  config: ServiceLifecycleArgsConfig,
+  platform: NodeJS.Platform = process.platform
+) {
+  const filePath = getServiceLifecycleArgsConfigPath(app, platform);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }

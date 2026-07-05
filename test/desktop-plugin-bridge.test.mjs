@@ -367,7 +367,7 @@ test("plugin bridge filters hooks and requests by manifest declarations", () => 
 });
 
 test("plugin bridge rejects undeclared agentPlatform.query requests", async () => {
-  const root = fs.mkdtempSync("/tmp/zm-query-undeclared-");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zm-query-undeclared-"));
   try {
     const app = createApp(root);
     fs.mkdirSync(path.join(root, "tmp"), { recursive: true });
@@ -397,7 +397,7 @@ test("plugin bridge rejects undeclared agentPlatform.query requests", async () =
 });
 
 test("plugin bridge handles declared agentPlatform.query through Desktop callback", async () => {
-  const root = fs.mkdtempSync("/tmp/zm-query-declared-");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zm-query-declared-"));
   try {
     const app = createApp(root);
     fs.mkdirSync(path.join(root, "tmp"), { recursive: true });
@@ -709,7 +709,7 @@ test("plugin custom settings page is served from loopback and rejects escaping p
         }
       }
     });
-    const installDir = path.join(root, "app-data", APP_BRAND.paths.programDataDirName, "plugins", service.id, service.version);
+    const installDir = getPluginInstallDir(app, service.id, service.version);
     fs.mkdirSync(path.join(installDir, "settings"), { recursive: true });
     fs.writeFileSync(path.join(installDir, "settings", "index.html"), "<!doctype html><title>Settings</title>", "utf8");
 

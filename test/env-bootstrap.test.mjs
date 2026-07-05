@@ -15,6 +15,26 @@ const {
   runtimeEnvExists,
   runtimeEnvNeedsBundledSeedRefresh
 } = require(path.join(__dirname, "..", "dist-electron", "main", "env-bootstrap.js"));
+const {
+  WINDOWS_RUNTIME_ROOT_REGISTRY_KEY,
+  WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE,
+  __testInternals: runtimeRootInternals
+} = require(path.join(__dirname, "..", "dist-electron", "main", "runtime-root.js"));
+const { APP_BRAND } = require(path.join(__dirname, "..", "dist-electron", "shared", "brand.js"));
+
+function createPathApp(root) {
+  return {
+    getPath(name) {
+      if (name === "home") {
+        return path.join(root, "home");
+      }
+      if (name === "appData") {
+        return path.join(root, "app-data");
+      }
+      assert.fail(`unexpected app.getPath(${name})`);
+    }
+  };
+}
 
 test("bundled env.zip falls back to the packaged app resources directory", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-packaged-resources-"));
@@ -45,12 +65,8 @@ test("runtime env does not treat empty runtime directories as initialized", (t) 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-empty-runtime-env-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const app = {
-    getPath(name) {
-      assert.equal(name, "home");
-      return root;
-    }
-  };
+  const app = createPathApp(root);
+  assert.equal(resolveRuntimeRoot(app, "win32"), path.join(root, "home", APP_BRAND.paths.runtimeRootDirName));
   const runtimeRoot = resolveRuntimeRoot(app, "win32");
   for (const dirName of ["agents", "registries", "teams", "chats", "skills-market"]) {
     fs.mkdirSync(path.join(runtimeRoot, dirName), { recursive: true });
@@ -62,16 +78,36 @@ test("runtime env does not treat empty runtime directories as initialized", (t) 
   assert.equal(runtimeEnvExists(app, "win32"), true);
 });
 
+test("Windows runtime root can come from the installer selected data directory", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-runtime-root-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const selectedRoot = path.join(root, "selected-data");
+
+  assert.equal(WINDOWS_RUNTIME_ROOT_REGISTRY_KEY, `Software\\${APP_BRAND.storageNamespace}`);
+  assert.equal(WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE, "DataRoot");
+  assert.equal(
+    runtimeRootInternals.resolveRuntimeRootPath({
+      platform: "win32",
+      homePath: path.join(root, "home"),
+      registryDataRootPath: selectedRoot
+    }),
+    selectedRoot
+  );
+});
+
+test("macOS runtime env keeps the existing home runtime root", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-mac-runtime-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createPathApp(root);
+  assert.equal(resolveRuntimeRoot(app, "darwin"), path.join(root, "home", APP_BRAND.paths.runtimeRootDirName));
+});
+
 test("runtime env marker still marks the runtime as initialized", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-marker-runtime-env-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const app = {
-    getPath(name) {
-      assert.equal(name, "home");
-      return root;
-    }
-  };
+  const app = createPathApp(root);
   const markerPath = path.join(
     resolveRuntimeRoot(app, "win32"),
     ".desktop",
@@ -90,12 +126,7 @@ test("runtime env requests bundled seed refresh when generated data exists witho
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-seed-refresh-runtime-env-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const app = {
-    getPath(name) {
-      assert.equal(name, "home");
-      return root;
-    }
-  };
+  const app = createPathApp(root);
   const runtimeRoot = resolveRuntimeRoot(app, "win32");
   fs.mkdirSync(path.join(runtimeRoot, "chats"), { recursive: true });
   fs.writeFileSync(path.join(runtimeRoot, "chats", "chats.db"), "sqlite", "utf8");

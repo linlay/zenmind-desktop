@@ -20,12 +20,12 @@ import {
 
 export const WEBSITE_FILE = "website.json";
 
-export function getWebsiteDir(app: App, id: string) {
-  return path.join(getDesktopWebsitesDataRoot(app), normalizeWebId(id));
+export function getWebsiteDir(app: App, id: string, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopWebsitesDataRoot(app, platform), normalizeWebId(id));
 }
 
-export function getWebsitePath(app: App, id: string) {
-  return path.join(getWebsiteDir(app, id), WEBSITE_FILE);
+export function getWebsitePath(app: App, id: string, platform: NodeJS.Platform = process.platform) {
+  return path.join(getWebsiteDir(app, id, platform), WEBSITE_FILE);
 }
 
 export function normalizeWebsiteManifest(value: unknown, fallbackId = ""): WebsiteEntry | null {
@@ -61,12 +61,12 @@ export function readWebsiteItemFromDir(websiteDir: string, fallbackId = "") {
   return normalizeWebsiteManifest(readWebsiteManifestFile(websiteDir), fallbackId || path.basename(websiteDir));
 }
 
-export function readWebsiteItems(app: App) {
-  return readWebsiteItemsWithoutMigration(app);
+export function readWebsiteItems(app: App, platform: NodeJS.Platform = process.platform) {
+  return readWebsiteItemsWithoutMigration(app, platform);
 }
 
-export function readWebsiteItemsWithoutMigration(app: App) {
-  const root = getDesktopWebsitesDataRoot(app);
+export function readWebsiteItemsWithoutMigration(app: App, platform: NodeJS.Platform = process.platform) {
+  const root = getDesktopWebsitesDataRoot(app, platform);
   if (!fs.existsSync(root)) {
     return [];
   }
@@ -87,12 +87,20 @@ export function readWebsiteItemsWithoutMigration(app: App) {
   return sortWebEntries(sanitizeWebsiteItems(items));
 }
 
-export function writeWebsiteItems(app: App, items: WebsiteEntry[]) {
-  return writeWebsiteItemsWithoutMigration(app, items);
+export function writeWebsiteItems(
+  app: App,
+  items: WebsiteEntry[],
+  platform: NodeJS.Platform = process.platform
+) {
+  return writeWebsiteItemsWithoutMigration(app, items, platform);
 }
 
-export function writeWebsiteItemsWithoutMigration(app: App, items: WebsiteEntry[]) {
-  const root = getDesktopWebsitesDataRoot(app);
+export function writeWebsiteItemsWithoutMigration(
+  app: App,
+  items: WebsiteEntry[],
+  platform: NodeJS.Platform = process.platform
+) {
+  const root = getDesktopWebsitesDataRoot(app, platform);
   fs.mkdirSync(root, { recursive: true });
   const normalizedItems = sanitizeWebsiteItems(items);
   const expectedDirs = new Set(normalizedItems.map((item) => normalizeWebId(item.id)));
@@ -113,7 +121,7 @@ export function writeWebsiteItemsWithoutMigration(app: App, items: WebsiteEntry[
 
   for (const item of normalizedItems) {
     const websiteId = normalizeWebId(item.id);
-    const targetPath = getWebsitePath(app, websiteId);
+    const targetPath = getWebsitePath(app, websiteId, platform);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, `${JSON.stringify({
       schemaVersion: 1,

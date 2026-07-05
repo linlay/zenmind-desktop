@@ -4,6 +4,7 @@ import path from "node:path";
 import type { App } from "electron";
 import type { ServiceId, ServiceKind } from "../shared/contracts";
 import { APP_BRAND } from "../shared/brand";
+import { resolveRuntimeRootPath } from "./runtime-root";
 
 const DESKTOP_DIRS = [
   "config",
@@ -14,45 +15,55 @@ const DESKTOP_DIRS = [
   "secrets",
   "profiles"
 ] as const;
+const PROGRAMS_DIR_NAME = "programs";
 
 type DesktopRootOptions = {
   platform?: NodeJS.Platform;
   homePath: string;
+  registryDataRootPath?: string;
 };
 
 type ApplicationSupportRootOptions = {
   platform?: NodeJS.Platform;
   appDataPath: string;
+  homePath: string;
+  registryDataRootPath?: string;
 };
 
-function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
-  return platform === "win32" ? path.win32 : path.posix;
+function pathApiForRoot(platform: NodeJS.Platform | undefined, rootPath: string) {
+  if (platform === "win32") {
+    return path.posix.isAbsolute(rootPath) ? path.posix : path.win32;
+  }
+  if (path.win32.isAbsolute(rootPath) && !path.posix.isAbsolute(rootPath)) {
+    return path.win32;
+  }
+  return path.posix;
 }
 
 function resolveDesktopRoot({
   platform = process.platform,
-  homePath
+  homePath,
+  registryDataRootPath
 }: DesktopRootOptions) {
-  const pathApi = pathApiForPlatform(platform);
-  const runtimeRootDirName = APP_BRAND.paths.runtimeRootDirName;
+  const rootPath = resolveRuntimeRootPath({ platform, homePath, registryDataRootPath });
+  const pathApi = pathApiForRoot(platform, rootPath);
   const desktopDataSubdir = APP_BRAND.paths.desktopDataSubdir;
-  if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(homePath, runtimeRootDirName, desktopDataSubdir));
-  }
-  if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(homePath, runtimeRootDirName, desktopDataSubdir));
-  }
-  return pathApi.resolve(pathApi.join(homePath, runtimeRootDirName, desktopDataSubdir));
+  return pathApi.resolve(pathApi.join(rootPath, desktopDataSubdir));
 }
 
 function resolveApplicationSupportRoot({
   platform = process.platform,
-  appDataPath
+  appDataPath,
+  homePath,
+  registryDataRootPath
 }: ApplicationSupportRootOptions) {
-  const pathApi = pathApiForPlatform(platform);
+  const rootPath = platform === "win32"
+    ? resolveRuntimeRootPath({ platform, homePath, registryDataRootPath })
+    : appDataPath;
+  const pathApi = pathApiForRoot(platform, rootPath);
   const programDataDirName = APP_BRAND.paths.programDataDirName;
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(appDataPath, programDataDirName));
+    return pathApi.resolve(pathApi.join(rootPath, PROGRAMS_DIR_NAME));
   }
   if (platform === "darwin") {
     return pathApi.resolve(pathApi.join(appDataPath, programDataDirName));
@@ -88,9 +99,9 @@ function getAppDataPath(app: Pick<App, "getPath">) {
   return path.join(homePath, ".config");
 }
 
-function getDesktopRootPath(app: Pick<App, "getPath">) {
+function getDesktopRootPath(app: Pick<App, "getPath">, platform: NodeJS.Platform = process.platform) {
   return resolveDesktopRoot({
-    platform: process.platform,
+    platform,
     homePath: getHomePath(app)
   });
 }
@@ -132,8 +143,8 @@ function kindDirectoryName(kind: ServiceKind) {
   return kind === "plugin" ? "plugins" : "services";
 }
 
-export function getDataRoot(app: App) {
-  const dataRoot = getDesktopRootPath(app);
+export function getDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  const dataRoot = getDesktopRootPath(app, platform);
   ensureDirectory(dataRoot);
   return dataRoot;
 }
@@ -168,36 +179,36 @@ export function getConfigRoot(app: App) {
   return path.join(getDataRoot(app), "config");
 }
 
-export function getDesktopConfigRoot(app: App) {
-  return path.join(getDataRoot(app), "config", "desktop");
+export function getDesktopConfigRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "config", "desktop");
 }
 
-export function getDesktopPetSettingsPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), "pet.json");
+export function getDesktopPetSettingsPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopConfigRoot(app, platform), "pet.json");
 }
 
-export function getAssistantSettingsRoot(app: App) {
-  return getDesktopConfigRoot(app);
+export function getAssistantSettingsRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return getDesktopConfigRoot(app, platform);
 }
 
 export function getServiceConfigRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
   return path.join(getDataRoot(app), "config", kindDirectoryName(kind), serviceId);
 }
 
-export function getRuntimeDataRoot(app: App) {
-  return path.join(getDataRoot(app), "data");
+export function getRuntimeDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "data");
 }
 
-export function getDesktopPetsDataRoot(app: App) {
-  return path.join(getRuntimeDataRoot(app), "pets");
+export function getDesktopPetsDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getRuntimeDataRoot(app, platform), "pets");
 }
 
-export function getDesktopWebsDataRoot(app: App) {
-  return path.join(getRuntimeDataRoot(app), "webs");
+export function getDesktopWebsDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getRuntimeDataRoot(app, platform), "webs");
 }
 
-export function getDesktopWebsitesDataRoot(app: App) {
-  return path.join(getDesktopWebsDataRoot(app), "websites");
+export function getDesktopWebsitesDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopWebsDataRoot(app, platform), "websites");
 }
 
 export function getDesktopWebappsDataRoot(app: App) {
@@ -236,8 +247,8 @@ export function getDesktopWebappLogsRoot(app: App, webappId: string) {
   return path.join(getDesktopWebappsLogsRoot(app), webappId);
 }
 
-export function getDesktopInitialEnvDataRoot(app: App) {
-  return path.join(getRuntimeDataRoot(app), "env-initial");
+export function getDesktopInitialEnvDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getRuntimeDataRoot(app, platform), "env-initial");
 }
 
 export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
@@ -247,7 +258,8 @@ export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: Service
 export function getApplicationSupportRoot(app: App) {
   const applicationSupportRoot = resolveApplicationSupportRoot({
     platform: process.platform,
-    appDataPath: getAppDataPath(app)
+    appDataPath: getAppDataPath(app),
+    homePath: getHomePath(app)
   });
   ensureDirectory(applicationSupportRoot);
   return applicationSupportRoot;
@@ -258,12 +270,12 @@ export function getAssistantTempRoot(app: App) {
   return path.join(tempRoot, APP_BRAND.packageName, "assistant");
 }
 
-export function getStateRoot(app: App) {
-  return path.join(getDataRoot(app), "state");
+export function getStateRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "state");
 }
 
-export function getDesktopStateRoot(app: App) {
-  return path.join(getDataRoot(app), "state", "desktop");
+export function getDesktopStateRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "state", "desktop");
 }
 
 export function getServiceStateRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
@@ -286,16 +298,16 @@ export function getMarketplaceCacheRoot(app: App) {
   return path.join(getDataRoot(app), "cache", "marketplace");
 }
 
-export function getMarketplaceConfigRoot(app: App) {
-  return path.join(getDataRoot(app), "config", "marketplace");
+export function getMarketplaceConfigRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "config", "marketplace");
 }
 
 export function getMarketplaceStateRoot(app: App) {
   return path.join(getDataRoot(app), "state", "marketplace");
 }
 
-export function getSecretsRoot(app: App) {
-  return path.join(getDataRoot(app), "secrets");
+export function getSecretsRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "secrets");
 }
 
 export const getCredentialsRoot = getSecretsRoot;
@@ -310,6 +322,7 @@ export function getElectronUserDataRoot(app: App) {
 
 export const __testInternals = {
   DESKTOP_DIRS,
+  PROGRAMS_DIR_NAME,
   resolveDesktopRoot,
   resolveApplicationSupportRoot
 };

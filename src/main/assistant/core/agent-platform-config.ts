@@ -5,6 +5,7 @@ import type { App } from "electron";
 import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../../shared/contracts";
 import { APP_BRAND } from "../../../shared/brand";
+import { resolveRuntimeRoot } from "../../env-bootstrap";
 import { getServiceConfigRoot } from "../../user-paths";
 import { t } from "../../i18n/main-i18n";
 import type { AssistantSettingsPrivate } from "./settings-store";
@@ -75,14 +76,6 @@ function endpointToBaseURL(baseURL: string, endpointPath: string) {
   return endpoint.replace(/\/chat\/completions$/u, "");
 }
 
-function getPathOrFallback(app: App, name: "home", fallback: string) {
-  try {
-    return app.getPath(name);
-  } catch {
-    return fallback;
-  }
-}
-
 const PROVIDER_API_KEY_ENV_PART = "PROVIDER_APIKEY_KEY_PART";
 const PROVIDER_API_KEY_CODE_PART = `${APP_BRAND.storageNamespace}:provider`;
 const DEFAULT_PROVIDER_API_KEY_ENV_PART = "0.1.0";
@@ -113,8 +106,7 @@ function readAgentPlatformEnv(app: App) {
 }
 
 function resolveRegistriesDirs(app: App, _env: Map<string, string>) {
-  const homePath = getPathOrFallback(app, "home", process.env.HOME || "");
-  return [path.join(homePath, APP_BRAND.paths.runtimeRootDirName, "registries")];
+  return [path.join(resolveRuntimeRoot(app), "registries")];
 }
 
 function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string, string>) {

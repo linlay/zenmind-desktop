@@ -1109,7 +1109,9 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
     },
     nsis: {
       oneClick: false,
-      allowToChangeInstallationDirectory: true,
+      perMachine: false,
+      allowElevation: false,
+      allowToChangeInstallationDirectory: false,
       include: brandBuildRelativePath(brand, "installer", "installer.nsh")
     }
   };
@@ -1123,17 +1125,116 @@ function escapeNsisText(value) {
   return String(value).replace(/\$/gu, "$$").replace(/"/gu, "$\\\"");
 }
 
+function nsisIdentifier(value) {
+  const normalized = String(value).replace(/[^A-Za-z0-9_]/gu, "");
+  return normalized || "Desktop";
+}
+
 function writeInstallerInclude(rootDir, brand) {
   const productName = escapeNsisText(brand.productName);
-  const programRoot = `%APPDATA%\\${brand.paths.programDataDirName}`;
+  const dataRegistryKey = `Software\\${brand.storageNamespace}`;
+  const nsisPrefix = nsisIdentifier(brand.productName);
   const shutdownArg = brand.installer.shutdownArg;
-  const content = `!macro stopManagedServiceProcesses
+  const content = `!include nsDialogs.nsh
+
+Var /GLOBAL DesktopDataRoot
+!ifndef BUILD_UNINSTALLER
+Var /GLOBAL DesktopDataRootInput
+Var /GLOBAL DesktopDataRootBrowseButton
+!endif
+
+!ifndef BUILD_UNINSTALLER
+Function ${nsisPrefix}EnsureDataRootDefault
+  \${if} $DesktopDataRoot == ""
+    ReadRegStr $DesktopDataRoot HKCU "${dataRegistryKey}" "DataRoot"
+  \${endif}
+  \${if} $DesktopDataRoot == ""
+    StrCpy $DesktopDataRoot "$PROFILE\\${brand.paths.runtimeRootDirName}"
+  \${endif}
+FunctionEnd
+!endif
+
+!ifdef BUILD_UNINSTALLER
+Function un.${nsisPrefix}EnsureDataRootDefault
+  \${if} $DesktopDataRoot == ""
+    ReadRegStr $DesktopDataRoot HKCU "${dataRegistryKey}" "DataRoot"
+  \${endif}
+  \${if} $DesktopDataRoot == ""
+    StrCpy $DesktopDataRoot "$PROFILE\\${brand.paths.runtimeRootDirName}"
+  \${endif}
+FunctionEnd
+!endif
+
+!ifndef BUILD_UNINSTALLER
+Function ${nsisPrefix}BrowseDataDirectory
+  \${NSD_GetText} $DesktopDataRootInput $DesktopDataRoot
+  nsDialogs::SelectFolderDialog "Select ${productName} data directory" "$DesktopDataRoot"
+  Pop $0
+  \${if} $0 != "error"
+    StrCpy $DesktopDataRoot "$0"
+    \${NSD_SetText} $DesktopDataRootInput "$DesktopDataRoot"
+  \${endif}
+FunctionEnd
+!endif
+
+!ifndef BUILD_UNINSTALLER
+Function ${nsisPrefix}DataDirectoryPage
+  \${if} \${Silent}
+    Abort
+  \${endif}
+  Call ${nsisPrefix}EnsureDataRootDefault
+  nsDialogs::Create 1018
+  Pop $0
+  \${if} $0 == "error"
+    Abort
+  \${endif}
+  \${NSD_CreateLabel} 0 0 100% 24u "Choose where ${productName} should store desktop data, service files, credentials, logs, caches, and plugins."
+  Pop $0
+  \${NSD_CreateDirRequest} 0 35u 74% 12u "$DesktopDataRoot"
+  Pop $DesktopDataRootInput
+  \${NSD_CreateBrowseButton} 78% 34u 22% 14u "Browse..."
+  Pop $DesktopDataRootBrowseButton
+  \${NSD_OnClick} $DesktopDataRootBrowseButton ${nsisPrefix}BrowseDataDirectory
+  nsDialogs::Show
+FunctionEnd
+
+Function ${nsisPrefix}DataDirectoryPageLeave
+  \${NSD_GetText} $DesktopDataRootInput $DesktopDataRoot
+  \${if} $DesktopDataRoot == ""
+    MessageBox MB_ICONEXCLAMATION "Please choose a ${productName} data directory."
+    Abort
+  \${endif}
+  CreateDirectory "$DesktopDataRoot"
+  IfErrors ${nsisPrefix}DataDirectoryCreateFailed ${nsisPrefix}DataDirectoryReady
+${nsisPrefix}DataDirectoryCreateFailed:
+  MessageBox MB_ICONEXCLAMATION "The selected ${productName} data directory could not be created. Please choose another directory."
+  Abort
+${nsisPrefix}DataDirectoryReady:
+FunctionEnd
+!endif
+
+!macro customInstallMode
+  StrCpy $isForceCurrentInstall "1"
+!macroend
+
+!ifndef BUILD_UNINSTALLER
+!macro customPageAfterChangeDir
+  Page custom ${nsisPrefix}DataDirectoryPage ${nsisPrefix}DataDirectoryPageLeave
+!macroend
+!endif
+
+!macro stopManagedServiceProcesses
   DetailPrint "Stopping ${productName} managed service processes..."
-  nsExec::ExecToLog \`%SYSTEMROOT%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; function Stop-DesktopManagedProcesses { $$programRoot = [Environment]::ExpandEnvironmentVariables('${programRoot}'); if (Test-Path -LiteralPath $$programRoot) { $$normalizedRoot = [System.IO.Path]::GetFullPath($$programRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar); Get-CimInstance Win32_Process | Where-Object { $$path = [string]$$_.ExecutablePath; $$line = [string]$$_.CommandLine; ($$path -and $$path.StartsWith($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$line -and $$line.IndexOf($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue } } }; Stop-DesktopManagedProcesses"\`
+  nsExec::ExecToLog \`%SYSTEMROOT%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; function Stop-DesktopManagedProcesses { $$programRoot = [Environment]::ExpandEnvironmentVariables('$DesktopDataRoot\\programs'); if (Test-Path -LiteralPath $$programRoot) { $$normalizedRoot = [System.IO.Path]::GetFullPath($$programRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar); Get-CimInstance Win32_Process | Where-Object { $$path = [string]$$_.ExecutablePath; $$line = [string]$$_.CommandLine; ($$path -and $$path.StartsWith($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$line -and $$line.IndexOf($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue } } }; Stop-DesktopManagedProcesses"\`
   Pop $R2
 !macroend
 
 !macro customCheckAppRunning
+  !ifdef BUILD_UNINSTALLER
+    Call un.${nsisPrefix}EnsureDataRootDefault
+  !else
+    Call ${nsisPrefix}EnsureDataRootDefault
+  !endif
   !insertmacro FIND_PROCESS "\${APP_EXECUTABLE_FILENAME}" $R0
   \${if} $R0 == 0
     DetailPrint "Requesting ${productName} to exit before installing..."
@@ -1170,13 +1271,26 @@ function writeInstallerInclude(rootDir, brand) {
   !insertmacro stopManagedServiceProcesses
 !macroend
 
+!ifndef BUILD_UNINSTALLER
+!macro customInstall
+  Call ${nsisPrefix}EnsureDataRootDefault
+  WriteRegStr HKCU "${dataRegistryKey}" "DataRoot" "$DesktopDataRoot"
+!macroend
+!endif
+
 !macro customUnInstall
   SetOutPath $TEMP
   SetShellVarContext current
-  MessageBox MB_YESNO|MB_ICONQUESTION "Do you also want to delete ${productName} app data?$\\r$\\n$\\r$\\nThis removes ${programRoot}, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles." /SD IDNO IDYES removeDesktopData IDNO doneDataCleanup
+  ReadRegStr $DesktopDataRoot HKCU "${dataRegistryKey}" "DataRoot"
+  \${if} $DesktopDataRoot == ""
+    StrCpy $DesktopDataRoot "$PROFILE\\${brand.paths.runtimeRootDirName}"
+  \${endif}
+  MessageBox MB_YESNO|MB_ICONQUESTION "Do you also want to delete ${productName} app data?$\\r$\\n$\\r$\\nThis removes $DesktopDataRoot, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles." /SD IDNO IDYES removeDesktopData IDNO doneDataCleanup
 
 removeDesktopData:
-  RMDir /r "$APPDATA\\${brand.paths.programDataDirName}"
+  RMDir /r "$DesktopDataRoot"
+  DeleteRegValue HKCU "${dataRegistryKey}" "DataRoot"
+  DeleteRegKey /ifempty HKCU "${dataRegistryKey}"
 
 doneDataCleanup:
 !macroend

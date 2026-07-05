@@ -227,24 +227,24 @@ const DESKTOP_PET_STATE_FILE = "pet-state.json";
 const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 24;
 export const DESKTOP_PET_EDGE_SNAP_DISTANCE_PX = 96;
 
-function getDesktopPetRoot(app: App) {
-  return path.dirname(getDesktopPetSettingsPath(app));
+function getDesktopPetRoot(app: App, platform: Platform = process.platform) {
+  return path.dirname(getDesktopPetSettingsPath(app, platform));
 }
 
-function getDesktopPetSettingsPath(app: App) {
-  return resolveDesktopPetSettingsPath(app);
+function getDesktopPetSettingsPath(app: App, platform: Platform = process.platform) {
+  return resolveDesktopPetSettingsPath(app, platform as NodeJS.Platform);
 }
 
-function getDesktopPetStatePath(app: App) {
-  return path.join(getDesktopStateRoot(app), DESKTOP_PET_STATE_FILE);
+function getDesktopPetStatePath(app: App, platform: Platform = process.platform) {
+  return path.join(getDesktopStateRoot(app, platform as NodeJS.Platform), DESKTOP_PET_STATE_FILE);
 }
 
-function ensureDesktopPetRoot(app: App) {
-  fs.mkdirSync(getDesktopPetRoot(app), { recursive: true });
+function ensureDesktopPetRoot(app: App, platform: Platform = process.platform) {
+  fs.mkdirSync(getDesktopPetRoot(app, platform), { recursive: true });
 }
 
-function ensureDesktopPetStateRoot(app: App) {
-  fs.mkdirSync(path.dirname(getDesktopPetStatePath(app)), { recursive: true });
+function ensureDesktopPetStateRoot(app: App, platform: Platform = process.platform) {
+  fs.mkdirSync(path.dirname(getDesktopPetStatePath(app, platform)), { recursive: true });
 }
 
 export function getDesktopPetContextMenuItems(
@@ -675,9 +675,9 @@ export function readDesktopPetStoredState(
     return sanitizeDesktopPetStoredState(null, supported);
   }
 
-  ensureDesktopPetRoot(app);
-  const settingsPath = getDesktopPetSettingsPath(app);
-  const statePath = getDesktopPetStatePath(app);
+  ensureDesktopPetRoot(app, platform);
+  const settingsPath = getDesktopPetSettingsPath(app, platform);
+  const statePath = getDesktopPetStatePath(app, platform);
   const parsed = readJsonFile(settingsPath);
   if (parsed) {
     return sanitizeDesktopPetStoredState(
@@ -701,10 +701,10 @@ export function writeDesktopPetStoredState(
     return sanitized;
   }
 
-  ensureDesktopPetRoot(app);
-  ensureDesktopPetStateRoot(app);
-  fs.writeFileSync(getDesktopPetSettingsPath(app), `${JSON.stringify(toDesktopPetConfigFile(sanitized), null, 2)}\n`, "utf8");
-  fs.writeFileSync(getDesktopPetStatePath(app), `${JSON.stringify(toDesktopPetStateFile(sanitized), null, 2)}\n`, "utf8");
+  ensureDesktopPetRoot(app, platform);
+  ensureDesktopPetStateRoot(app, platform);
+  fs.writeFileSync(getDesktopPetSettingsPath(app, platform), `${JSON.stringify(toDesktopPetConfigFile(sanitized), null, 2)}\n`, "utf8");
+  fs.writeFileSync(getDesktopPetStatePath(app, platform), `${JSON.stringify(toDesktopPetStateFile(sanitized), null, 2)}\n`, "utf8");
   return sanitized;
 }
 

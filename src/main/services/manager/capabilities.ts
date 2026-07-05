@@ -150,7 +150,7 @@ function buildTemplateValues(
   const auth = readAuthSettings(service, layout);
   const desktopDeviceName = getDesktopDeviceInfo(app).deviceName;
   const outputPath = provider.outputPath
-    ? renderTemplate(provider.outputPath, {
+    ? path.normalize(renderTemplate(provider.outputPath, {
       "provider.programDir": layout.programDir,
       "provider.configDir": layout.configDir,
       "provider.dataDir": layout.dataDir,
@@ -161,7 +161,7 @@ function buildTemplateValues(
       "auth.username": auth.username,
       "desktop.deviceId": getDesktopDeviceId(app),
       "desktop.deviceName": desktopDeviceName
-    })
+    }))
     : "";
 
   const values: Record<string, string> = {

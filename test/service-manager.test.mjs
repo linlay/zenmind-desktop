@@ -269,10 +269,23 @@ function powershellSingleQuoted(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+function powershellCommandPath() {
+  if (process.platform !== "win32") {
+    return "powershell";
+  }
+  return path.join(
+    process.env.SystemRoot || "C:\\Windows",
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe"
+  );
+}
+
 function writeDirectoryArchive(root, archivePath, entryName) {
   if (archivePath.toLowerCase().endsWith(".zip")) {
     execFileSync(
-      "powershell",
+      powershellCommandPath(),
       [
         "-NoProfile",
         "-ExecutionPolicy",
@@ -840,11 +853,13 @@ function createStartupCoreAssetsFixture(options = {}) {
                 "  $lines = @()",
                 "  if (Test-Path -LiteralPath $envPath -PathType Leaf) { $lines = @(Get-Content -LiteralPath $envPath) }",
                 "  $found = $false",
-                "  $next = foreach ($line in $lines) {",
-                "    if ($line -match ('^' + [regex]::Escape($Key) + '=')) { $found = $true; \"$Key=$Value\" } else { $line }",
-                "  }",
+                "  $next = @(",
+                "    foreach ($line in $lines) {",
+                "      if ($line -match ('^' + [regex]::Escape($Key) + '=')) { $found = $true; \"$Key=$Value\" } else { $line }",
+                "    }",
+                "  )",
                 "  if (-not $found) { $next += \"$Key=$Value\" }",
-                "  Set-Content -LiteralPath $envPath -Value $next",
+                "  Set-Content -LiteralPath $envPath -Value $next -Encoding UTF8",
                 "}",
                 "Upsert-Env 'AP_RUNTIME_DIR' $apRuntimeDir",
                 "Upsert-Env 'AP_CONTAINER_HUB_BASE_URL' $containerHubBaseUrl",
@@ -858,11 +873,13 @@ function createStartupCoreAssetsFixture(options = {}) {
                 "  $lines = @()",
                 "  if (Test-Path -LiteralPath $envPath -PathType Leaf) { $lines = @(Get-Content -LiteralPath $envPath) }",
                 "  $found = $false",
-                "  $next = foreach ($line in $lines) {",
-                "    if ($line -match ('^' + [regex]::Escape($Key) + '=')) { $found = $true; \"$Key=$Value\" } else { $line }",
-                "  }",
+                "  $next = @(",
+                "    foreach ($line in $lines) {",
+                "      if ($line -match ('^' + [regex]::Escape($Key) + '=')) { $found = $true; \"$Key=$Value\" } else { $line }",
+                "    }",
+                "  )",
                 "  if (-not $found) { $next += \"$Key=$Value\" }",
-                "  Set-Content -LiteralPath $envPath -Value $next",
+                "  Set-Content -LiteralPath $envPath -Value $next -Encoding UTF8",
                 "}",
                 "Upsert-Env 'PORT' $servicePort",
                 "Upsert-Env 'DESKTOP_APP' 'true'",
@@ -1223,15 +1240,15 @@ async function waitForLogStreamEvent(events, predicate) {
 }
 
 function getTestDesktopRoot(userDataRoot) {
-  return path.join(
-    getTestHomeRoot(userDataRoot),
-    APP_BRAND.paths.runtimeRootDirName,
-    APP_BRAND.paths.desktopDataSubdir
-  );
+  return path.join(getTestRuntimeRoot(userDataRoot), APP_BRAND.paths.desktopDataSubdir);
 }
 
 function getTestRuntimeRootForHome(homeRoot) {
   return path.join(homeRoot, APP_BRAND.paths.runtimeRootDirName);
+}
+
+function getTestRuntimeRoot(userDataRoot) {
+  return getTestRuntimeRootForHome(getTestHomeRoot(userDataRoot));
 }
 
 function getExpectedDefaultRuntimeDir(homeRoot) {
@@ -1247,7 +1264,7 @@ function getTestHomeRoot(userDataRoot) {
 }
 
 function getTestProgramsRoot(userDataRoot) {
-  return path.join(userDataRoot, "app-data", APP_BRAND.paths.programDataDirName);
+  return path.join(getTestRuntimeRoot(userDataRoot), "programs");
 }
 
 function getTestServiceProgramDir(userDataRoot, serviceId, version) {
@@ -2498,7 +2515,7 @@ test("agent-platform deploy command only appends Desktop required args", async (
     }
     assert.equal(command.indexOf("--output-dir"), 2);
     assertFlag(command, "--output-dir", layout.configDir);
-    assertFlag(command, "--ap-runtime-dir", getTestRuntimeRootForHome(app.getPath("home")));
+    assertFlag(command, "--ap-runtime-dir", getTestRuntimeRoot(userDataRoot));
     assertFlag(
       command,
       "--container-hub-base-url",
@@ -3097,8 +3114,10 @@ test("fixShellScriptPermissions marks shell scripts executable", () => {
 
   __testInternals.fixShellScriptPermissions(root);
 
-  assert.equal(fs.statSync(shellPath).mode & 0o777, 0o755);
-  assert.equal(fs.statSync(textPath).mode & 0o777, 0o644);
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(shellPath).mode & 0o777, 0o755);
+    assert.equal(fs.statSync(textPath).mode & 0o777, 0o644);
+  }
 });
 
 test("buildProcessTreePids returns descendants before the root process", () => {
@@ -4799,7 +4818,7 @@ test("initializeService lets core service deploy scripts recreate config after d
       platformEnv,
       new RegExp(`^AP_CONTAINER_HUB_BASE_URL=http://127\\.0\\.0\\.1:${DEFAULT_CONTAINER_HUB_FIXTURE_PORT}$`, "m")
     );
-    assert.match(platformEnv, new RegExp(`^AP_RUNTIME_DIR=${escapeRegExp(getTestRuntimeRootForHome(homeRoot))}$`, "m"));
+    assert.match(platformEnv, new RegExp(`^AP_RUNTIME_DIR=${escapeRegExp(getTestRuntimeRoot(userDataRoot))}$`, "m"));
     assert.doesNotMatch(platformEnv, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(platformEnv, /^TOOLS_DIR=/m);
     assert.doesNotMatch(platformEnv, /^PAN_DIR=/m);
@@ -5637,8 +5656,8 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
   });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const providersRoot = path.join(getTestRuntimeRootForHome(homeRoot), "registries", "providers");
-  const registerPath = path.join(getTestRuntimeRootForHome(homeRoot), "provider-register.json");
+  const providersRoot = path.join(getTestRuntimeRoot(userDataRoot), "registries", "providers");
+  const registerPath = path.join(getTestRuntimeRoot(userDataRoot), "provider-register.json");
   const originalFetch = globalThis.fetch;
   const issuedKey = "dk_ProviderRegisterIntegrationKey";
   let requestBody = null;
@@ -5717,8 +5736,8 @@ test("ensurePreStartRequirements skips provider-register request when provider k
   });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const providersRoot = path.join(getTestRuntimeRootForHome(homeRoot), "registries", "providers");
-  const registerPath = path.join(getTestRuntimeRootForHome(homeRoot), "provider-register.json");
+  const providersRoot = path.join(getTestRuntimeRoot(userDataRoot), "registries", "providers");
+  const registerPath = path.join(getTestRuntimeRoot(userDataRoot), "provider-register.json");
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;
 
@@ -7024,8 +7043,8 @@ test("runStartupPreparation applies provider-register before preparing builtin s
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const homeRoot = getTestHomeRoot(userDataRoot);
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
-  const providersRoot = path.join(getTestRuntimeRootForHome(homeRoot), "registries", "providers");
-  const registerPath = path.join(getTestRuntimeRootForHome(homeRoot), "provider-register.json");
+  const providersRoot = path.join(getTestRuntimeRoot(userDataRoot), "registries", "providers");
+  const registerPath = path.join(getTestRuntimeRoot(userDataRoot), "provider-register.json");
   const originalFetch = globalThis.fetch;
   const issuedKey = "dk_RunStartupPreparationKey";
   let requestBody = null;

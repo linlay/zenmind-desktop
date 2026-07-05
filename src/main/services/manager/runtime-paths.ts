@@ -1,7 +1,6 @@
 import os from "node:os";
-import path from "node:path";
 import type { App } from "electron";
-import { APP_BRAND } from "../../../shared/brand";
+import { resolveRuntimeRootPath } from "../../runtime-root";
 
 export function resolveHomeDir(app?: App | null) {
   try {
@@ -16,5 +15,8 @@ export function resolveHomeDir(app?: App | null) {
 }
 
 export function resolvePreferredAgentPlatformRuntimeRoot(app?: App | null) {
-  return path.join(resolveHomeDir(app), APP_BRAND.paths.runtimeRootDirName);
+  return resolveRuntimeRootPath({
+    platform: process.platform,
+    homePath: resolveHomeDir(app)
+  });
 }

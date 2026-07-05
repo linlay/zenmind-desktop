@@ -94,8 +94,8 @@ function installedRecordsPath(app: App) {
   return path.join(ensureMarketplaceRoots(app).stateRoot, "marketplace-installed.json");
 }
 
-function marketplaceSettingsPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), "market.json");
+function marketplaceSettingsPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopConfigRoot(app, platform), "market.json");
 }
 
 function downloadsRoot(app: App) {
@@ -557,13 +557,17 @@ export function getMarketSettings(app: App): MarketSettings {
   }
 }
 
-export function saveMarketSettings(app: App, input: MarketSettingsInput): MarketSettings {
+export function saveMarketSettings(
+  app: App,
+  input: MarketSettingsInput,
+  platform: NodeJS.Platform = process.platform
+): MarketSettings {
   const apiBaseUrl = normalizeMarketApiBaseUrl(input.apiBaseUrl);
   const settings = {
     enabled: input.enabled === true,
     apiBaseUrl
   };
-  writeJsonFile(marketplaceSettingsPath(app), settings);
+  writeJsonFile(marketplaceSettingsPath(app, platform), settings);
   return settings;
 }
 

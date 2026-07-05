@@ -125,8 +125,12 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
-function writeBootstrapState(app: App, state: DesktopInitBootstrapState) {
-  writeJsonFile(path.join(getDesktopStateRoot(app), DESKTOP_INIT_BOOTSTRAP_STATE_FILE), state);
+function writeBootstrapState(
+  app: App,
+  state: DesktopInitBootstrapState,
+  platform: NodeJS.Platform = process.platform
+) {
+  writeJsonFile(path.join(getDesktopStateRoot(app, platform), DESKTOP_INIT_BOOTSTRAP_STATE_FILE), state);
 }
 
 function removeDesktopInitFile(initPath: string) {
@@ -146,6 +150,9 @@ function pathApiForRuntimeRoot(platform: NodeJS.Platform, runtimeRoot: string) {
     return path.win32;
   }
   if (platform === "darwin") {
+    if (path.win32.isAbsolute(runtimeRoot) && !path.posix.isAbsolute(runtimeRoot)) {
+      return path.win32;
+    }
     return path.posix;
   }
   return path.posix;
@@ -234,12 +241,13 @@ function normalizeDesktopCopilotPageDefaults(
 
 function writeAssistantDefaults(
   app: App,
-  assistantDefaults: DesktopInitAssistantDefaults | null
+  assistantDefaults: DesktopInitAssistantDefaults | null,
+  platform: NodeJS.Platform = process.platform
 ): BootstrapAssistantResult {
   if (!assistantDefaults) {
     return "absent";
   }
-  writeJsonFile(path.join(getDesktopConfigRoot(app), DESKTOP_INIT_ASSISTANT_FILE), {
+  writeJsonFile(path.join(getDesktopConfigRoot(app, platform), DESKTOP_INIT_ASSISTANT_FILE), {
     schemaVersion: 1,
     ...assistantDefaults
   });
@@ -254,12 +262,13 @@ export function resolveDesktopInitPath(app: AppPathReader, platform: NodeJS.Plat
 
 function applyProfileDefaults(
   app: App,
-  profileDefaults: unknown
+  profileDefaults: unknown,
+  platform: NodeJS.Platform = process.platform
 ): Exclude<BootstrapSectionResult, "failed"> {
   if (!isRecord(profileDefaults)) {
     return "absent";
   }
-  const profileRoot = getDesktopConfigRoot(app);
+  const profileRoot = getDesktopConfigRoot(app, platform);
   const profile = isRecord(profileDefaults) ? profileDefaults : {};
   const general = isRecord(profile.general) ? profile.general : {};
   const appearance = isRecord(profile.appearance) ? profile.appearance : {};
@@ -330,7 +339,8 @@ function applyProfileDefaults(
 
 function applyKanbanDefaults(
   app: App,
-  kanbanDefaults: unknown
+  kanbanDefaults: unknown,
+  platform: NodeJS.Platform = process.platform
 ): Exclude<BootstrapSectionResult, "failed"> {
   const settings = normalizeKanbanDefaults(kanbanDefaults);
   if (!settings) {
@@ -340,10 +350,10 @@ function applyKanbanDefaults(
   if (settings.enabled === true && (!serverUrl || !isValidHttpUrl(serverUrl))) {
     throw new Error("Kanban server URL is invalid.");
   }
-  saveKanbanSettings(app, settings);
+  saveKanbanSettings(app, settings, platform);
   const deviceAlias = readText(settings.cloud?.deviceAlias);
   if (deviceAlias) {
-    const profileRoot = getDesktopConfigRoot(app);
+    const profileRoot = getDesktopConfigRoot(app, platform);
     const current = readDesktopProfileFromRoot(profileRoot);
     if (!current.general.deviceName) {
       updateDesktopProfileInRoot(profileRoot, {
@@ -382,7 +392,11 @@ function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platf
   return "applied";
 }
 
-function applyMarketDefaults(app: App, marketDefaults: unknown): Exclude<BootstrapSectionResult, "failed"> {
+function applyMarketDefaults(
+  app: App,
+  marketDefaults: unknown,
+  platform: NodeJS.Platform = process.platform
+): Exclude<BootstrapSectionResult, "failed"> {
   if (!isRecord(marketDefaults)) {
     return "absent";
   }
@@ -396,7 +410,7 @@ function applyMarketDefaults(app: App, marketDefaults: unknown): Exclude<Bootstr
   saveMarketSettings(app, {
     enabled: true,
     apiBaseUrl
-  });
+  }, platform);
   return "applied";
 }
 
@@ -409,7 +423,11 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
   return "applied";
 }
 
-function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): Exclude<BootstrapSectionResult, "failed"> {
+function applyTunnelHubDefaults(
+  app: App,
+  tunnelHubDefaults: unknown,
+  platform: NodeJS.Platform = process.platform
+): Exclude<BootstrapSectionResult, "failed"> {
   if (!isRecord(tunnelHubDefaults)) {
     return "absent";
   }
@@ -431,7 +449,7 @@ function applyTunnelHubDefaults(app: App, tunnelHubDefaults: unknown): Exclude<B
     reconnectSeconds: typeof tunnelHubDefaults.reconnectSeconds === "number"
       ? tunnelHubDefaults.reconnectSeconds
       : 3
-  });
+  }, platform);
   if (!result.ok) {
     throw new Error(result.message);
   }
@@ -461,13 +479,18 @@ function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
   return [];
 }
 
-function applyWebsiteDefaults(app: App, webs: unknown, legacyWebsites: unknown): Exclude<BootstrapSectionResult, "failed"> {
+function applyWebsiteDefaults(
+  app: App,
+  webs: unknown,
+  legacyWebsites: unknown,
+  platform: NodeJS.Platform = process.platform
+): Exclude<BootstrapSectionResult, "failed"> {
   if (!hasWebsiteDefaults(webs, legacyWebsites)) {
     return "absent";
   }
   const items = normalizeWebsiteDefaults(webs, legacyWebsites);
   if (items.length > 0) {
-    importWebsiteItems(app, JSON.stringify({ items }));
+    importWebsiteItems(app, JSON.stringify({ items }), platform);
   }
   return "applied";
 }
@@ -483,10 +506,10 @@ function applyServiceDefaults(
     return "absent";
   }
   if (lifecycleArgsConfig) {
-    writeServiceLifecycleArgsConfig(app, lifecycleArgsConfig);
+    writeServiceLifecycleArgsConfig(app, lifecycleArgsConfig, platform);
   }
   if (portDefaultsConfig) {
-    writeServicePortDefaultsConfig(app, portDefaultsConfig);
+    writeServicePortDefaultsConfig(app, portDefaultsConfig, platform);
   }
   return "applied";
 }
@@ -540,14 +563,14 @@ export function applyDesktopInitBootstrap(
     const errors: Record<string, string> = {};
 
     const applied: BootstrapApplyResult = {
-      profile: runBootstrapSection("profile", errors, () => applyProfileDefaults(app, defaults.profile)),
-      kanban: runBootstrapSection("kanban", errors, () => applyKanbanDefaults(app, kanbanDefaults)),
+      profile: runBootstrapSection("profile", errors, () => applyProfileDefaults(app, defaults.profile, platform)),
+      kanban: runBootstrapSection("kanban", errors, () => applyKanbanDefaults(app, kanbanDefaults, platform)),
       pet: runBootstrapSection("pet", errors, () => applyPetDefaults(app, defaults.pet, platform)),
-      market: runBootstrapSection("market", errors, () => applyMarketDefaults(app, defaults.market)),
+      market: runBootstrapSection("market", errors, () => applyMarketDefaults(app, defaults.market, platform)),
       sso: runBootstrapSection("sso", errors, () => applySsoDefaults(app, defaults.sso, platform)),
-      tunnelHub: runBootstrapSection("tunnelHub", errors, () => applyTunnelHubDefaults(app, defaults.tunnelHub)),
-      webs: runBootstrapSection("webs", errors, () => applyWebsiteDefaults(app, defaults.webs, defaults.websites)),
-      assistant: runBootstrapSection("assistant", errors, () => writeAssistantDefaults(app, assistant)),
+      tunnelHub: runBootstrapSection("tunnelHub", errors, () => applyTunnelHubDefaults(app, defaults.tunnelHub, platform)),
+      webs: runBootstrapSection("webs", errors, () => applyWebsiteDefaults(app, defaults.webs, defaults.websites, platform)),
+      assistant: runBootstrapSection("assistant", errors, () => writeAssistantDefaults(app, assistant, platform)),
       services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform))
     };
     const failedSections = getFailedSections(applied);
@@ -560,7 +583,7 @@ export function applyDesktopInitBootstrap(
       appliedResult: applied,
       failedSections,
       errors
-    });
+    }, platform);
     return { ok: true, applied: true, appliedResult: applied, failedSections, errors };
   } catch (error) {
     console.warn(`[desktop-init] failed to apply ${DESKTOP_INIT_FILE}:`, error);

@@ -11,7 +11,12 @@ const {
   __testInternals,
   cleanupProgramDataForVersion
 } = require("../dist-electron/main/program-data-cleanup.js");
+const { getProgramsRoot, __testInternals: userPathInternals } = require("../dist-electron/main/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
+
+function expectedWindowsDataBaseRoot(root) {
+  return path.join(root, "home", APP_BRAND.paths.runtimeRootDirName);
+}
 
 function createMockApp(root) {
   return {
@@ -37,9 +42,9 @@ function createFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-program-data-cleanup-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const app = createMockApp(root);
-  const programRoot = path.join(root, "app-data", APP_BRAND.paths.programDataDirName);
+  const programRoot = path.join(expectedWindowsDataBaseRoot(root), "programs");
   const pluginsRoot = path.join(programRoot, "plugins");
-  const runtimeRoot = path.join(root, "home", APP_BRAND.paths.runtimeRootDirName);
+  const runtimeRoot = path.join(expectedWindowsDataBaseRoot(root), APP_BRAND.paths.desktopDataSubdir);
   fs.mkdirSync(pluginsRoot, { recursive: true });
   return { app, root, programRoot, pluginsRoot, runtimeRoot };
 }
@@ -67,6 +72,32 @@ test("program data cleanup keeps plugins and writes root VERSION when install ve
   assert.equal(fs.readFileSync(path.join(programRoot, PROGRAM_DATA_VERSION_FILE), "utf8"), "v0.3.5\n");
   assert.equal(fs.readFileSync(path.join(pluginsRoot, "user-plugin", "v1", "manifest.json"), "utf8"), "plugin");
   assert.equal(fs.existsSync(runtimeRoot), false);
+});
+
+test("Windows program data root lives under the unified runtime root", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-program-root-win-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createMockApp(root);
+
+  assert.equal(
+    getProgramsRoot(app),
+    path.join(expectedWindowsDataBaseRoot(root), "programs")
+  );
+  assert.equal(fs.existsSync(path.join(root, "app-data", APP_BRAND.paths.programDataDirName)), false);
+});
+
+test("macOS keeps desktop data under the home runtime root and programs in Application Support", () => {
+  const homePath = "/Users/tester";
+  const appDataPath = "/Users/tester/Library/Application Support";
+
+  assert.equal(
+    userPathInternals.resolveDesktopRoot({ platform: "darwin", homePath, appDataPath }),
+    path.posix.join(homePath, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir)
+  );
+  assert.equal(
+    userPathInternals.resolveApplicationSupportRoot({ platform: "darwin", appDataPath, homePath }),
+    path.posix.join(appDataPath, APP_BRAND.paths.programDataDirName)
+  );
 });
 
 test("program data cleanup treats missing VERSION as a fresh install marker", (t) => {
