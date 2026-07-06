@@ -15,7 +15,7 @@ identity-center prepare
   -> issueAgentAccessToken()
   -> PluginPage / service-webview preload
   -> agent-webclient postMessage request
-  -> desktop:agent-app-auth:response
+  -> desktop:agent-auth:response
 ```
 
 OIDC SSO：
@@ -47,13 +47,15 @@ Desktop WebSocket 鉴权：
 
 Token bridge 类型：
 
-- request：`desktop:agent-app-auth:request`。
-- response：`desktop:agent-app-auth:response`。
+- request：`desktop:agent-auth:request`。
+- response：`desktop:agent-auth:response`。
+- 兼容旧协议：`desktop:agent-app-auth:*`、`zenmind:agent-app-auth:*`。Desktop 收到旧 request 时返回同族旧 response，避免 Desktop 与 agent-webclient 版本错位时丢失 token 刷新能力。
 - storage key：`agent-webclient.appAccessToken`、`agent-webclient.appAuthContext`。
 
 ## 约束与注意事项
 
 - Desktop 本地凭据写入 `secrets/` 或 `state/`，不要进入 `config/` 文档示例。
+- `identity-center` 是 token 签发与校验基础，不进入 webview bridge 协议名称；嵌入页只依赖 Desktop agent auth bridge。
 - token cache 会根据 JWT `exp` 和刷新原因复用或失效；`unauthorized` 会强制丢弃缓存。
 - Windows 身份脚本走 PowerShell，macOS / Linux 优先走 `.sh`，需要显式平台分支。
 - webview 内页面只能通过 bridge 获取 token，不直接访问主进程 API。
@@ -69,4 +71,3 @@ Token bridge 类型：
 - `src/preload/service-webview-main-world.ts`
 - `test/oidc-sso.test.mjs`
 - `test/agent-webclient-auth-injection.test.mjs`
-

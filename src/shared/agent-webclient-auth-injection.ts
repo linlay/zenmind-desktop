@@ -1,6 +1,6 @@
 import {
-  AGENT_APP_AUTH_REQUEST_TYPE,
-  AGENT_APP_AUTH_RESPONSE_TYPE
+  AGENT_AUTH_REQUEST_TYPE,
+  AGENT_AUTH_RESPONSE_TYPE
 } from "./auth-bridge";
 
 export function buildAgentWebclientAccessTokenInjectionScript(
@@ -15,8 +15,8 @@ export function buildAgentWebclientAccessTokenInjectionScript(
     const bridgeFlag = "__DESKTOP_WEBVIEW_BRIDGE__";
     const fallbackFlag = "__DESKTOP_AGENT_WEBCLIENT_AUTH_FALLBACK__";
     const fallbackTokenKey = "__DESKTOP_AGENT_WEBCLIENT_FALLBACK_TOKEN__";
-    const authRequestType = ${JSON.stringify(AGENT_APP_AUTH_REQUEST_TYPE)};
-    const authResponseType = ${JSON.stringify(AGENT_APP_AUTH_RESPONSE_TYPE)};
+    const authRequestType = ${JSON.stringify(AGENT_AUTH_REQUEST_TYPE)};
+    const authResponseType = ${JSON.stringify(AGENT_AUTH_RESPONSE_TYPE)};
     let tokenBefore = "";
     try {
       tokenBefore = window.sessionStorage.getItem(accessTokenStorageKey) || "";

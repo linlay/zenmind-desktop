@@ -599,6 +599,13 @@ function optionalNestedString(manifest, group, key) {
   return value.trim();
 }
 
+function defaultMacUsageDescriptions(productName) {
+  return {
+    microphoneUsageDescription: `${productName} 使用麦克风将你的语音输入转成文字。`,
+    speechRecognitionUsageDescription: `${productName} 使用系统语音识别将你的语音输入转成文字。`
+  };
+}
+
 function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet) {
   const id = requireString(manifest, "id").toLowerCase();
   if (!BRAND_ID_PATTERN.test(id)) {
@@ -633,8 +640,12 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
   }
   const desktopDataSubdir = requireNestedString(manifest, "paths", "desktopDataSubdir");
   const programDataDirName = requireNestedString(manifest, "paths", "programDataDirName");
-  const microphoneUsageDescription = requireNestedString(manifest, "mac", "microphoneUsageDescription");
-  const speechRecognitionUsageDescription = requireNestedString(manifest, "mac", "speechRecognitionUsageDescription");
+  const defaultMac = defaultMacUsageDescriptions(productName);
+  const microphoneUsageDescription =
+    optionalNestedString(manifest, "mac", "microphoneUsageDescription") ?? defaultMac.microphoneUsageDescription;
+  const speechRecognitionUsageDescription =
+    optionalNestedString(manifest, "mac", "speechRecognitionUsageDescription") ??
+    defaultMac.speechRecognitionUsageDescription;
 
   return {
     id,

@@ -611,6 +611,8 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(brand.packageName, "desktop");
   assert.equal(brand.storageNamespace, "cutej-desktop");
   assert.equal(brand.paths.programDataDirName, "CuteJ");
+  assert.equal(brand.mac.microphoneUsageDescription, "CuteJ 使用麦克风将你的语音输入转成文字。");
+  assert.equal(brand.mac.speechRecognitionUsageDescription, "CuteJ 使用系统语音识别将你的语音输入转成文字。");
   assert.deepEqual(brand.desktopPet, expectedPet);
   assert.equal(generatedBrand.paths.runtimeRootDirName, ".cutej");
   assert.equal(generatedBrand.storageNamespace, "cutej-desktop");
@@ -661,6 +663,8 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
     true
   );
   assert.equal(electronBuilderConfig.mac.icon, brandBuildRelativePath(brand, "icons", "icon.icns"));
+  assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "CuteJ 使用麦克风将你的语音输入转成文字。");
+  assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "CuteJ 使用系统语音识别将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.notarize, false);
   assert.equal(electronBuilderConfig.mac.timestamp, undefined);
   assert.equal(electronBuilderConfig.win.icon, brandBuildRelativePath(brand, "icons", "icon.ico"));
@@ -713,6 +717,7 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
   const expectedPet = readBrandDesktopPetManifest(root, "zenmind");
   const generatedBrand = readJson(path.join(brandGeneratedDir(root, brand), "brand.json"));
+  const electronBuilderConfig = readJson(electronBuilderConfigPath(root, brand.id));
   const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
   const uninstallScript = fs.readFileSync(path.join(brandInstallerDir(root, brand), "uninstall.sh"), "utf8");
   const rendererIndex = renderRendererIndexHtml(fs.readFileSync(path.join(root, "index.html"), "utf8"), brand);
@@ -721,6 +726,8 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.equal(brand.packageName, "desktop");
   assert.equal(brand.storageNamespace, "zenmind-desktop");
   assert.equal(brand.paths.programDataDirName, "ZenMind");
+  assert.equal(brand.mac.microphoneUsageDescription, "ZenMind 使用麦克风将你的语音输入转成文字。");
+  assert.equal(brand.mac.speechRecognitionUsageDescription, "ZenMind 使用系统语音识别将你的语音输入转成文字。");
   assert.deepEqual(brand.desktopPet, expectedPet);
   assert.equal(generatedBrand.storageNamespace, "zenmind-desktop");
   assert.equal(generatedBrand.paths.programDataDirName, "ZenMind");
@@ -742,6 +749,8 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\zenmind-desktop" "DataRoot"/u);
   assert.doesNotMatch(installerInclude, /\$APPDATA\\ZenMind/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
+  assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "ZenMind 使用麦克风将你的语音输入转成文字。");
+  assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 使用系统语音识别将你的语音输入转成文字。");
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*zenmind-pet:/u);
   assert.doesNotMatch(rendererIndex, /cutej-pet:/u);
@@ -815,6 +824,25 @@ test("brand manifest rejects mismatched explicit runtimeRootDirName", (t) => {
     () => loadBrandConfig(root, "cutej"),
     /paths\.runtimeRootDirName" must be "\.cutej"/u
   );
+});
+
+test("brand manifest keeps explicit mac privacy usage descriptions when provided", (t) => {
+  const root = createBrandFixture(t);
+  writeBrandManifest(root, "zenmind", (manifest) => ({
+    ...manifest,
+    mac: {
+      microphoneUsageDescription: "ZenMind 需要麦克风权限用于语音输入。",
+      speechRecognitionUsageDescription: "ZenMind 需要系统语音识别权限用于转写语音。"
+    }
+  }));
+
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
+  const electronBuilderConfig = readJson(electronBuilderConfigPath(root, brand.id));
+
+  assert.equal(brand.mac.microphoneUsageDescription, "ZenMind 需要麦克风权限用于语音输入。");
+  assert.equal(brand.mac.speechRecognitionUsageDescription, "ZenMind 需要系统语音识别权限用于转写语音。");
+  assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "ZenMind 需要麦克风权限用于语音输入。");
+  assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 需要系统语音识别权限用于转写语音。");
 });
 
 test("sync-env rejects current brand and legacy env wrapper directories", async (t) => {

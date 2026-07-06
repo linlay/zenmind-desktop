@@ -3,13 +3,13 @@ export type PluginAuthBridgeProtocol = {
   responseType: string;
 };
 
-export const AGENT_APP_AUTH_REQUEST_TYPE = "desktop:agent-app-auth:request";
-export const AGENT_APP_AUTH_RESPONSE_TYPE = "desktop:agent-app-auth:response";
+export const AGENT_AUTH_REQUEST_TYPE = "desktop:agent-auth:request";
+export const AGENT_AUTH_RESPONSE_TYPE = "desktop:agent-auth:response";
 
 const AUTH_BRIDGE_PROTOCOLS: Record<string, PluginAuthBridgeProtocol> = {
   "agent-webclient": {
-    requestType: AGENT_APP_AUTH_REQUEST_TYPE,
-    responseType: AGENT_APP_AUTH_RESPONSE_TYPE
+    requestType: AGENT_AUTH_REQUEST_TYPE,
+    responseType: AGENT_AUTH_RESPONSE_TYPE
   }
 };
 

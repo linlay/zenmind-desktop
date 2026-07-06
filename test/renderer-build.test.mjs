@@ -4455,6 +4455,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.match(pluginPage, /agent_webclient_seed_/);
   assert.match(pluginPage, /handleServiceWebviewBridgeMessage/);
+  assert.match(serviceWebviewBridgeHost, /resolvePluginAuthBridgeResponseType\(bridgeProtocol,\s*payload\.type\)/);
   assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
@@ -4930,6 +4931,9 @@ test("agent-platform monitor opens inside the service preview surface", () => {
 
   assert.match(authBridge, /serviceId === "agent-platform"[\s\S]{0,180}url\.pathname = "\/monitor"/);
   assert.match(authBridge, /accessToken[\s\S]{0,180}searchParams\.set\("access_token"/);
+  assert.match(authBridge, /desktop:agent-auth:request/);
+  assert.match(authBridge, /desktop:agent-app-auth:request/);
+  assert.match(authBridge, /zenmind:agent-app-auth:request/);
   assert.match(embeddedSurfaceHosts, /pluginId === "identity-center" \|\| pluginId === "agent-platform"/);
   assert.match(pluginPage, /service\.id !== "agent-platform"/);
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);

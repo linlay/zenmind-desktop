@@ -2,14 +2,12 @@ import {
   SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
   SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES,
-  LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
-  LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE
 } from "../shared/service-webview-bridge";
 import {
-  AGENT_APP_AUTH_REQUEST_TYPE,
-  AGENT_APP_AUTH_RESPONSE_TYPE
+  AGENT_AUTH_REQUEST_TYPE,
+  AGENT_AUTH_RESPONSE_TYPE
 } from "../shared/auth-bridge";
 import { resolveServiceWebviewWsMonitorUrl } from "../shared/service-webview-ws-monitor";
 
@@ -17,7 +15,6 @@ export const PAGE_TO_PRELOAD_EVENT = "__desktopServiceWebviewBridgeMessage";
 export const PRELOAD_TO_PAGE_EVENT = "__desktopServiceWebviewBridgeDeliver";
 export const PRELOAD_TO_PAGE_ACTION_EVENT = "__desktopServiceWebviewBridgeAction";
 export const DESKTOP_WEBVIEW_BRIDGE_FLAG = "__DESKTOP_WEBVIEW_BRIDGE__";
-export const LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
 const DESKTOP_WS_MONITOR_WRAPPED_FLAG = "__DESKTOP_WS_MONITOR_WRAPPED__";
 export const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = "agent-webclient.appAccessToken";
 export const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = "agent-webclient.appAuthContext";
@@ -29,22 +26,18 @@ export function buildServiceWebviewMainWorldScript() {
   const PRELOAD_TO_PAGE_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_EVENT)};
   const PRELOAD_TO_PAGE_ACTION_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_ACTION_EVENT)};
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
-  const LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
-  const LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
-  const LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG)};
   const DESKTOP_WS_MONITOR_WRAPPED_FLAG = ${JSON.stringify(DESKTOP_WS_MONITOR_WRAPPED_FLAG)};
   const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = ${JSON.stringify(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY)};
   const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = ${JSON.stringify(AGENT_APP_AUTH_CONTEXT_STORAGE_KEY)};
-  const AUTH_REQUEST_TYPES = new Set([
-    ${JSON.stringify(AGENT_APP_AUTH_REQUEST_TYPE)}
-  ]);
+  const AGENT_AUTH_REQUEST_TYPE = ${JSON.stringify(AGENT_AUTH_REQUEST_TYPE)};
+  const AGENT_AUTH_RESPONSE_TYPE = ${JSON.stringify(AGENT_AUTH_RESPONSE_TYPE)};
   const BRIDGE_REQUEST_TYPES = new Set([
     ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES)}
   ]);
   const BRIDGE_RESPONSE_TYPES = new Set([
-    ${JSON.stringify(AGENT_APP_AUTH_RESPONSE_TYPE)},
+    AGENT_AUTH_RESPONSE_TYPE,
     ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)}
   ]);
   const resolveServiceWebviewWsMonitorUrl = ${resolveServiceWebviewWsMonitorUrl.toString()};
@@ -120,13 +113,12 @@ export function buildServiceWebviewMainWorldScript() {
   }
 
   defineWindowFlag(DESKTOP_WEBVIEW_BRIDGE_FLAG);
-  defineWindowFlag(LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG);
 
   function isDesktopBridgeRequest(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return false;
     }
-    if (AUTH_REQUEST_TYPES.has(value.type)) {
+    if (value.type === AGENT_AUTH_REQUEST_TYPE) {
       return value.action === "getAccessToken" || value.action === "refreshAccessToken";
     }
     return BRIDGE_REQUEST_TYPES.has(value.type);
@@ -228,7 +220,7 @@ export function buildServiceWebviewMainWorldScript() {
   function seedAgentAppAccessToken(payload) {
     if (
       !payload ||
-      payload.type !== ${JSON.stringify(AGENT_APP_AUTH_RESPONSE_TYPE)}
+      payload.type !== AGENT_AUTH_RESPONSE_TYPE
     ) {
       return;
     }
@@ -265,7 +257,6 @@ export function buildServiceWebviewMainWorldScript() {
     seedAgentAppAccessToken(payload);
     if (payload.type === ${JSON.stringify(DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE)}) {
       emitFromMain(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, payload);
-      emitFromMain(LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, payload);
     }
     window.dispatchEvent(new MessageEvent("message", {
       data: payload,
@@ -280,7 +271,6 @@ export function buildServiceWebviewMainWorldScript() {
       return;
     }
     emitFromMain(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, payload);
-    emitFromMain(LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, payload);
     window.dispatchEvent(new MessageEvent("message", {
       data: payload,
       origin: location.origin,

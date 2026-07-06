@@ -17,6 +17,14 @@ const {
   LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
+const {
+  AGENT_AUTH_REQUEST_TYPE,
+  AGENT_AUTH_RESPONSE_TYPE,
+  LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
+  LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE,
+  LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE,
+  LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
+} = require("../dist-electron/shared/auth-bridge.js");
 
 const LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
 const LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "zenmind:service-webview:route";
@@ -233,6 +241,58 @@ test("service webview main-world script keeps legacy screenshot bridge requests 
   window.postMessage(payload, "*");
 
   assert.deepEqual(captured, [payload]);
+});
+
+test("service webview main-world script dispatches current and legacy auth bridge requests", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  const requestTypes = [
+    AGENT_AUTH_REQUEST_TYPE,
+    LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
+    LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE
+  ];
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+
+  for (const requestType of requestTypes) {
+    window.postMessage({
+      type: requestType,
+      requestId: `auth-${captured.length + 1}`,
+      action: "getAccessToken",
+      reason: "missing"
+    }, "*");
+  }
+
+  assert.deepEqual(captured.map((payload) => payload.type), requestTypes);
+});
+
+test("service webview main-world script seeds tokens from current and legacy auth responses", () => {
+  const { window } = createFakeWindow();
+  const responseTypes = [
+    AGENT_AUTH_RESPONSE_TYPE,
+    LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE,
+    LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
+  ];
+
+  runMainWorldScript(window);
+
+  for (const [index, responseType] of responseTypes.entries()) {
+    const token = `token-${index + 1}`;
+    window.dispatchEvent({
+      type: PRELOAD_TO_PAGE_EVENT,
+      detail: {
+        type: responseType,
+        requestId: `auth-${index + 1}`,
+        token
+      }
+    });
+
+    assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), token);
+    assert.equal(window.__AGENT_APP_ACCESS_TOKEN, token);
+  }
 });
 
 test("service webview main-world script emits route changes on current and legacy channels", () => {

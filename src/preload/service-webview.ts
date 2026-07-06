@@ -1,7 +1,7 @@
 import { ipcRenderer, webFrame } from "electron";
 import {
-  AGENT_APP_AUTH_REQUEST_TYPE,
-  AGENT_APP_AUTH_RESPONSE_TYPE,
+  AGENT_AUTH_REQUEST_TYPE,
+  AGENT_AUTH_RESPONSE_TYPE
 } from "../shared/auth-bridge";
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -29,6 +29,14 @@ function isBridgeMessage(value: unknown): value is ServiceWebviewBridgeMessage {
 const BRIDGE_REQUEST_DEDUPE_WINDOW_MS = 5_000;
 const recentForwardedBridgeRequestKeys = new Map<string, number>();
 
+function isAgentAuthRequestType(type: string | undefined | null) {
+  return type === AGENT_AUTH_REQUEST_TYPE;
+}
+
+function isAgentAuthResponseType(type: string | undefined | null) {
+  return type === AGENT_AUTH_RESPONSE_TYPE;
+}
+
 function sendBridgeDebug(stage: string, message = "") {
   try {
     ipcRenderer.sendToHost(SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL, {
@@ -49,7 +57,7 @@ function isDesktopBridgeRequest(value: ServiceWebviewBridgeMessage) {
   }
   return Boolean(
     value.requestId &&
-      value.type === AGENT_APP_AUTH_REQUEST_TYPE &&
+      isAgentAuthRequestType(value.type) &&
       (value.action === "getAccessToken" || value.action === "refreshAccessToken")
   );
 }
@@ -88,7 +96,7 @@ function isDesktopBridgeDeliver(value: ServiceWebviewBridgeMessage) {
   return isServiceWebviewBridgeResponseType(value.type) ||
     value.type === DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE ||
     value.type === DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE ||
-    value.type === AGENT_APP_AUTH_RESPONSE_TYPE;
+    isAgentAuthResponseType(value.type);
 }
 
 webFrame.executeJavaScriptInIsolatedWorld(0, [{
@@ -123,7 +131,7 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, (_event, payload: Service
     return;
   }
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_EVENT, { detail: payload }));
-  if (payload.type === AGENT_APP_AUTH_RESPONSE_TYPE) {
+  if (isAgentAuthResponseType(payload.type)) {
     sendBridgeDebug("auth-response-seeded");
   }
 });

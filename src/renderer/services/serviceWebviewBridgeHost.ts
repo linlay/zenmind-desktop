@@ -11,14 +11,10 @@ import {
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
-  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
-  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
-  LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE,
-  LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE,
@@ -56,19 +52,6 @@ function sendFailure(
     ok: false,
     message
   });
-}
-
-function isAgentAppClipboardRequestType(type: string | undefined | null) {
-  return (
-    isServiceWebviewBridgeMessageType(type, AGENT_APP_CLIPBOARD_REQUEST_TYPE) ||
-    isServiceWebviewBridgeMessageType(type, LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE)
-  );
-}
-
-function resolveAgentAppClipboardResponseType(type: string | undefined | null) {
-  return isServiceWebviewBridgeMessageType(type, LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE)
-    ? LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE
-    : AGENT_APP_CLIPBOARD_RESPONSE_TYPE;
 }
 
 export function handleServiceWebviewBridgeMessage(
@@ -109,8 +92,8 @@ export function handleServiceWebviewBridgeMessage(
     return true;
   }
 
-  if (isAgentAppClipboardRequestType(payload.type)) {
-    const responseType = resolveAgentAppClipboardResponseType(payload.type);
+  if (isServiceWebviewBridgeMessageType(payload.type, AGENT_APP_CLIPBOARD_REQUEST_TYPE)) {
+    const responseType = AGENT_APP_CLIPBOARD_RESPONSE_TYPE;
     void window.electronAPI.clipboard
       .writeText(typeof payload.text === "string" ? payload.text : "")
       .then((result) => {
@@ -188,16 +171,8 @@ export function handleServiceWebviewBridgeMessage(
     return true;
   }
 
-  if (
-    isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE) ||
-    isServiceWebviewBridgeMessageType(payload.type, LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE)
-  ) {
-    const responseType = isServiceWebviewBridgeMessageType(
-      payload.type,
-      LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE
-    )
-      ? LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE
-      : DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE;
+  if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE)) {
+    const responseType = DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE;
     void window.electronAPI.desktopScreenshot
       .capture()
       .then((result) => {

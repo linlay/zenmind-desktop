@@ -9,8 +9,12 @@ const {
   buildAgentWebclientAccessTokenInjectionScript
 } = require("../dist-electron/shared/agent-webclient-auth-injection.js");
 const {
-  AGENT_APP_AUTH_REQUEST_TYPE,
-  AGENT_APP_AUTH_RESPONSE_TYPE
+  AGENT_AUTH_REQUEST_TYPE,
+  AGENT_AUTH_RESPONSE_TYPE,
+  LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
+  LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE,
+  LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE,
+  LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
 } = require("../dist-electron/shared/auth-bridge.js");
 
 function createStorage() {
@@ -136,14 +140,14 @@ test("agent-webclient token fallback responds through message listener and updat
   runInjectionScript(window, "token-one");
   runInjectionScript(window, "token-two");
   window.addEventListener("message", (event) => {
-    if (event.data?.type === AGENT_APP_AUTH_RESPONSE_TYPE) {
+    if (event.data?.type === AGENT_AUTH_RESPONSE_TYPE) {
       responses.push(event.data);
     }
   });
 
   window.dispatchEvent({
     data: {
-      type: AGENT_APP_AUTH_REQUEST_TYPE,
+      type: AGENT_AUTH_REQUEST_TYPE,
       requestId: "request-1",
       action: "getAccessToken"
     },
@@ -158,9 +162,54 @@ test("agent-webclient token fallback responds through message listener and updat
   assert.equal(listenerCount("message"), 2);
   assert.deepEqual(toPlainJson(responses), [
     {
-      type: AGENT_APP_AUTH_RESPONSE_TYPE,
+      type: AGENT_AUTH_RESPONSE_TYPE,
       requestId: "request-1",
       token: "token-two"
     }
   ]);
+});
+
+test("agent-webclient token fallback replies with the matching auth response protocol", () => {
+  const { window } = createFakeWindow();
+  const responses = [];
+  const protocolPairs = [
+    [
+      AGENT_AUTH_REQUEST_TYPE,
+      AGENT_AUTH_RESPONSE_TYPE
+    ],
+    [
+      LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
+      LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE
+    ],
+    [
+      LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE,
+      LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
+    ]
+  ];
+
+  runInjectionScript(window, "token-one");
+  window.addEventListener("message", (event) => {
+    if (protocolPairs.some(([, responseType]) => event.data?.type === responseType)) {
+      responses.push(event.data);
+    }
+  });
+
+  for (const [requestType] of protocolPairs) {
+    window.dispatchEvent({
+      data: {
+        type: requestType,
+        requestId: `request-${responses.length + 1}`,
+        action: "getAccessToken"
+      },
+      origin: window.location.origin,
+      source: window,
+      type: "message"
+    });
+  }
+
+  assert.deepEqual(toPlainJson(responses), protocolPairs.map(([, responseType], index) => ({
+    type: responseType,
+    requestId: `request-${index + 1}`,
+    token: "token-one"
+  })));
 });
