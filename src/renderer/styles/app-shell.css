@@ -45,7 +45,6 @@
 
 .app-shell.is-mac-platform.is-window-fullscreen {
   --app-window-drag-height: 0px;
-  padding-top: var(--mac-fullscreen-top-safe-area);
 }
 
 .app-shell.is-mac-translucent-sidebar,

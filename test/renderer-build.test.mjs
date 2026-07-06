@@ -4173,6 +4173,9 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
   const globalStyles = readRendererStyles();
+  const macFullscreenRule = globalStyles.match(
+    /^\.app-shell\.is-mac-platform\.is-window-fullscreen\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
 
   assert.match(appState, /mainWindowSidebarTranslucencyEnabled:\s*initialState\.mainWindowSidebarTranslucencyEnabled \?\? true/);
   assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => options\.state\.mainWindowSidebarTranslucencyEnabled/);
@@ -4196,8 +4199,11 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(appShell, /desktopShell\.getWindowState\(\)/);
   assert.match(appShell, /desktopShell\.onWindowStateChanged/);
   assert.match(appShell, /windowFullScreen \? "is-window-fullscreen" : ""/);
-  assert.match(globalStyles, /--mac-fullscreen-top-safe-area:\s*32px;/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-window-fullscreen\s*\{[\s\S]*?padding-top:\s*var\(--mac-fullscreen-top-safe-area\);/);
+  assert.match(macFullscreenRule, /--app-window-drag-height:\s*0px;/);
+  assert.doesNotMatch(macFullscreenRule, /padding-top:/);
+  assert.doesNotMatch(globalStyles, /--mac-fullscreen-top-safe-area/u);
+  assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*44px;/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[\s\S]*?padding-top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 12px\);/);
 });
 
 test("main process keeps app identity visible in platform program bars", () => {
