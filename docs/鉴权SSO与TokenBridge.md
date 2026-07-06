@@ -49,7 +49,6 @@ Token bridge 类型：
 
 - request：`desktop:agent-auth:request`。
 - response：`desktop:agent-auth:response`。
-- 兼容旧协议：`desktop:agent-app-auth:*`、`zenmind:agent-app-auth:*`。Desktop 收到旧 request 时返回同族旧 response，避免 Desktop 与 agent-webclient 版本错位时丢失 token 刷新能力。
 - storage key：`agent-webclient.appAccessToken`、`agent-webclient.appAuthContext`。
 
 ## 约束与注意事项

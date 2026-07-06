@@ -9,25 +9,24 @@ const {
   PAGE_TO_PRELOAD_EVENT,
   PRELOAD_TO_PAGE_EVENT,
   DESKTOP_WEBVIEW_BRIDGE_FLAG,
-  LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG,
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
-  LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
 const {
   AGENT_AUTH_REQUEST_TYPE,
-  AGENT_AUTH_RESPONSE_TYPE,
-  LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
-  LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE,
-  LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE,
-  LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
+  AGENT_AUTH_RESPONSE_TYPE
 } = require("../dist-electron/shared/auth-bridge.js");
 
-const LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
-const LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "zenmind:service-webview:route";
+function removedBridgeFlagName() {
+  return `__${["ZENMIND", "DESKTOP", "WEBVIEW", "BRIDGE"].join("_")}__`;
+}
+
+function removedProtocol(...parts) {
+  return parts.join(":");
+}
 
 function createStorage() {
   const values = new Map();
@@ -167,7 +166,7 @@ test("service webview main-world script does not overwrite window postMessage", 
 
   assert.equal(window.postMessage, originalWindowPostMessage);
   assert.equal(window[DESKTOP_WEBVIEW_BRIDGE_FLAG], true);
-  assert.equal(window[LEGACY_DESKTOP_WEBVIEW_BRIDGE_FLAG], true);
+  assert.equal(window[removedBridgeFlagName()], undefined);
 });
 
 test("service webview main-world script forwards ordinary postMessage calls", () => {
@@ -208,13 +207,50 @@ test("service webview main-world script dispatches desktop bridge requests from 
   assert.deepEqual(captured, [payload]);
 });
 
-test("service webview main-world script keeps legacy clipboard bridge requests working", () => {
+test("service webview main-world script ignores removed legacy bridge requests", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  const payloads = [
+    {
+      type: removedProtocol("zenmind", "agent-app-clipboard", "request"),
+      requestId: "clipboard-legacy-1",
+      text: "hello"
+    },
+    {
+      type: removedProtocol("zenmind", "desktop-screenshot", "capture"),
+      requestId: "screenshot-legacy-1"
+    },
+    {
+      type: removedProtocol("zenmind", "agent-app-auth", "request"),
+      requestId: "auth-legacy-1",
+      action: "getAccessToken"
+    },
+    {
+      type: removedProtocol("desktop", "agent-app-auth", "request"),
+      requestId: "auth-legacy-2",
+      action: "getAccessToken"
+    }
+  ];
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+  for (const payload of payloads) {
+    window.postMessage(payload, "*");
+  }
+
+  assert.deepEqual(captured, []);
+});
+
+test("service webview main-world script dispatches auth bridge requests", () => {
   const { window } = createFakeWindow();
   const captured = [];
   const payload = {
-    type: LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE,
-    requestId: "clipboard-legacy-1",
-    text: "hello"
+    type: AGENT_AUTH_REQUEST_TYPE,
+    requestId: "auth-1",
+    action: "getAccessToken",
+    reason: "missing"
   };
 
   runMainWorldScript(window);
@@ -226,79 +262,48 @@ test("service webview main-world script keeps legacy clipboard bridge requests w
   assert.deepEqual(captured, [payload]);
 });
 
-test("service webview main-world script keeps legacy screenshot bridge requests working", () => {
+test("service webview main-world script seeds tokens from auth responses", () => {
   const { window } = createFakeWindow();
-  const captured = [];
-  const payload = {
-    type: LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
-    requestId: "screenshot-legacy-1"
-  };
 
   runMainWorldScript(window);
-  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
-    captured.push(event.detail);
-  });
-  window.postMessage(payload, "*");
-
-  assert.deepEqual(captured, [payload]);
-});
-
-test("service webview main-world script dispatches current and legacy auth bridge requests", () => {
-  const { window } = createFakeWindow();
-  const captured = [];
-  const requestTypes = [
-    AGENT_AUTH_REQUEST_TYPE,
-    LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
-    LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE
-  ];
-
-  runMainWorldScript(window);
-  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
-    captured.push(event.detail);
+  window.dispatchEvent({
+    type: PRELOAD_TO_PAGE_EVENT,
+    detail: {
+      type: AGENT_AUTH_RESPONSE_TYPE,
+      requestId: "auth-1",
+      token: "token-1"
+    }
   });
 
-  for (const requestType of requestTypes) {
-    window.postMessage({
-      type: requestType,
-      requestId: `auth-${captured.length + 1}`,
-      action: "getAccessToken",
-      reason: "missing"
-    }, "*");
-  }
-
-  assert.deepEqual(captured.map((payload) => payload.type), requestTypes);
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-1");
+  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-1");
 });
 
-test("service webview main-world script seeds tokens from current and legacy auth responses", () => {
+test("service webview main-world script ignores removed legacy auth responses", () => {
   const { window } = createFakeWindow();
-  const responseTypes = [
-    AGENT_AUTH_RESPONSE_TYPE,
-    LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE,
-    LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
-  ];
+  const received = [];
 
   runMainWorldScript(window);
+  window.addEventListener("message", (event) => {
+    received.push(event.data);
+  });
+  window.dispatchEvent({
+    type: PRELOAD_TO_PAGE_EVENT,
+    detail: {
+      type: removedProtocol("zenmind", "agent-app-auth", "response"),
+      requestId: "auth-legacy-1",
+      token: "token-legacy"
+    }
+  });
 
-  for (const [index, responseType] of responseTypes.entries()) {
-    const token = `token-${index + 1}`;
-    window.dispatchEvent({
-      type: PRELOAD_TO_PAGE_EVENT,
-      detail: {
-        type: responseType,
-        requestId: `auth-${index + 1}`,
-        token
-      }
-    });
-
-    assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), token);
-    assert.equal(window.__AGENT_APP_ACCESS_TOKEN, token);
-  }
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), null);
+  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, undefined);
+  assert.deepEqual(received, []);
 });
 
-test("service webview main-world script emits route changes on current and legacy channels", () => {
+test("service webview main-world script emits route changes on current channel", () => {
   const { window } = createFakeWindow();
   const currentChannelPayloads = [];
-  const legacyChannelPayloads = [];
   const payload = {
     type: "desktopRouteChanged",
     pathname: "/registries",
@@ -309,9 +314,6 @@ test("service webview main-world script emits route changes on current and legac
   window.electronAPI.onFromMain(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, nextPayload) => {
     currentChannelPayloads.push(nextPayload);
   });
-  window.electronAPI.onFromMain(LEGACY_SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, nextPayload) => {
-    legacyChannelPayloads.push(nextPayload);
-  });
 
   window.dispatchEvent({
     type: PRELOAD_TO_PAGE_EVENT,
@@ -319,5 +321,4 @@ test("service webview main-world script emits route changes on current and legac
   });
 
   assert.deepEqual(currentChannelPayloads, [payload]);
-  assert.deepEqual(legacyChannelPayloads, [payload]);
 });

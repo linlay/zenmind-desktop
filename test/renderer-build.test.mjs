@@ -30,6 +30,18 @@ function escapeRegExp(value) {
   return String(value).replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
 }
 
+function removedSymbolPattern(...parts) {
+  return new RegExp(parts.map(escapeRegExp).join("_"));
+}
+
+function removedProtocolPattern(...parts) {
+  return new RegExp(parts.map(escapeRegExp).join(":"));
+}
+
+const REMOVED_DESKTOP_WEBVIEW_BRIDGE_FLAG_PATTERN = new RegExp(
+  `__${["ZENMIND", "DESKTOP", "WEBVIEW", "BRIDGE"].map(escapeRegExp).join("_")}__`
+);
+
 function readCssWithImports(filePath, visited = new Set()) {
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
   if (visited.has(absolutePath)) {
@@ -4455,17 +4467,17 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.match(pluginPage, /agent_webclient_seed_/);
   assert.match(pluginPage, /handleServiceWebviewBridgeMessage/);
-  assert.match(serviceWebviewBridgeHost, /resolvePluginAuthBridgeResponseType\(bridgeProtocol,\s*payload\.type\)/);
+  assert.match(serviceWebviewBridgeHost, /resolvePluginAuthBridgeResponseType\(bridgeProtocol\)/);
   assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
-  assert.match(serviceWebviewBridgeHost, /LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
+  assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
-  assert.match(serviceWebviewBridgeHost, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
-  assert.match(serviceWebviewBridgeHost, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
+  assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "REQUEST", "TYPE"));
+  assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
@@ -4473,13 +4485,13 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /media\.microphone/);
   assert.match(serviceWebviewBridgeContracts, /media\.camera/);
   assert.match(serviceWebviewBridgeContracts, /screen\.capture/);
-  assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
-  assert.match(serviceWebviewBridgeContracts, /LEGACY_AGENT_APP_CLIPBOARD_RESPONSE_TYPE/);
-  assert.match(serviceWebviewBridgeContracts, /LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
+  assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
+  assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "RESPONSE", "TYPE"));
+  assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL"));
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
-  assert.match(serviceWebviewBridgeContracts, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
-  assert.match(serviceWebviewBridgeContracts, /LEGACY_DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
+  assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "REQUEST", "TYPE"));
+  assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewPreload, /sendToHost/);
   assert.doesNotMatch(serviceWebviewPreload, /contextBridge\.exposeInMainWorld/);
   assert.doesNotMatch(serviceWebviewPreload, /sendToMain/);
@@ -4493,11 +4505,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
-  assert.match(serviceWebviewMainWorld, /LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
+  assert.doesNotMatch(serviceWebviewMainWorld, removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL"));
   assert.match(serviceWebviewMainWorld, /emitFromMain\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*payload\)/);
-  assert.match(serviceWebviewMainWorld, /emitFromMain\(LEGACY_SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*payload\)/);
+  assert.doesNotMatch(serviceWebviewMainWorld, new RegExp(`emitFromMain\\(${removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL").source},\\s*payload\\)`));
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
-  assert.match(serviceWebviewMainWorld, /__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__/);
+  assert.doesNotMatch(serviceWebviewMainWorld, REMOVED_DESKTOP_WEBVIEW_BRIDGE_FLAG_PATTERN);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
@@ -4932,8 +4944,8 @@ test("agent-platform monitor opens inside the service preview surface", () => {
   assert.match(authBridge, /serviceId === "agent-platform"[\s\S]{0,180}url\.pathname = "\/monitor"/);
   assert.match(authBridge, /accessToken[\s\S]{0,180}searchParams\.set\("access_token"/);
   assert.match(authBridge, /desktop:agent-auth:request/);
-  assert.match(authBridge, /desktop:agent-app-auth:request/);
-  assert.match(authBridge, /zenmind:agent-app-auth:request/);
+  assert.doesNotMatch(authBridge, removedProtocolPattern("desktop", "agent-app-auth", "request"));
+  assert.doesNotMatch(authBridge, removedProtocolPattern("zenmind", "agent-app-auth", "request"));
   assert.match(embeddedSurfaceHosts, /pluginId === "identity-center" \|\| pluginId === "agent-platform"/);
   assert.match(pluginPage, /service\.id !== "agent-platform"/);
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);

@@ -10,11 +10,7 @@ const {
 } = require("../dist-electron/shared/agent-webclient-auth-injection.js");
 const {
   AGENT_AUTH_REQUEST_TYPE,
-  AGENT_AUTH_RESPONSE_TYPE,
-  LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
-  LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE,
-  LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE,
-  LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
+  AGENT_AUTH_RESPONSE_TYPE
 } = require("../dist-electron/shared/auth-bridge.js");
 
 function createStorage() {
@@ -114,6 +110,10 @@ function toPlainJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function removedProtocol(...parts) {
+  return parts.join(":");
+}
+
 test("agent-webclient token fallback does not overwrite window postMessage", () => {
   const { listenerCount, window } = createFakeWindow();
   const originalPostMessage = window.postMessage;
@@ -169,32 +169,22 @@ test("agent-webclient token fallback responds through message listener and updat
   ]);
 });
 
-test("agent-webclient token fallback replies with the matching auth response protocol", () => {
+test("agent-webclient token fallback ignores removed legacy auth request protocols", () => {
   const { window } = createFakeWindow();
   const responses = [];
-  const protocolPairs = [
-    [
-      AGENT_AUTH_REQUEST_TYPE,
-      AGENT_AUTH_RESPONSE_TYPE
-    ],
-    [
-      LEGACY_DESKTOP_AGENT_APP_AUTH_REQUEST_TYPE,
-      LEGACY_DESKTOP_AGENT_APP_AUTH_RESPONSE_TYPE
-    ],
-    [
-      LEGACY_ZENMIND_AGENT_APP_AUTH_REQUEST_TYPE,
-      LEGACY_ZENMIND_AGENT_APP_AUTH_RESPONSE_TYPE
-    ]
+  const legacyRequestTypes = [
+    removedProtocol("desktop", "agent-app-auth", "request"),
+    removedProtocol("zenmind", "agent-app-auth", "request")
   ];
 
   runInjectionScript(window, "token-one");
   window.addEventListener("message", (event) => {
-    if (protocolPairs.some(([, responseType]) => event.data?.type === responseType)) {
+    if (event.data?.type === AGENT_AUTH_RESPONSE_TYPE) {
       responses.push(event.data);
     }
   });
 
-  for (const [requestType] of protocolPairs) {
+  for (const requestType of legacyRequestTypes) {
     window.dispatchEvent({
       data: {
         type: requestType,
@@ -207,9 +197,5 @@ test("agent-webclient token fallback replies with the matching auth response pro
     });
   }
 
-  assert.deepEqual(toPlainJson(responses), protocolPairs.map(([, responseType], index) => ({
-    type: responseType,
-    requestId: `request-${index + 1}`,
-    token: "token-one"
-  })));
+  assert.deepEqual(toPlainJson(responses), []);
 });
