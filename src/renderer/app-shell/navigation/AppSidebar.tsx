@@ -14,7 +14,6 @@ import {
   LeftOutlined,
   MoreOutlined,
   RightOutlined,
-  SearchOutlined,
   SortAscendingOutlined,
 } from "@ant-design/icons";
 import { createPortal } from "react-dom";
@@ -45,6 +44,7 @@ import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
 import { Popover } from "../../components/Popover";
+import { SettingsSidebarIcon } from "./SettingsSidebarIcon";
 import { useI18n } from "../../i18n/useI18n";
 import {
   getAssistantNavAgentAttentionChat,
@@ -156,7 +156,7 @@ type CreateProjectDialogState = {
 };
 
 type BootstrapGuideFloatingBubble = {
-  id: "agent" | "tool-help" | "settings-help";
+  id: "agent" | "tool-help";
   messageKey: TranslationKey;
   side: "left" | "right";
   style: CSSProperties;
@@ -923,8 +923,6 @@ export function AppSidebar({
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const bootstrapGuideAgentAnchorRef = useRef<HTMLButtonElement | null>(null);
   const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(null);
-  const bootstrapGuideSettingsHelpAnchorRef =
-    useRef<HTMLAnchorElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
   const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -3151,40 +3149,6 @@ export function AppSidebar({
     );
   }
 
-  function renderSettingsHelpLink() {
-    const helpLabel = t("nav.help");
-    return (
-      <NavLink
-        ref={bootstrapGuideSettingsHelpAnchorRef}
-        to="/help"
-        onClick={(event) => {
-          dismissBootstrapGuideBubble("help");
-          handleItemClick(event, "/help");
-        }}
-        aria-label={helpLabel}
-        title={helpLabel}
-        className={({ isActive: routeActive }) =>
-          [
-            "sidebar-link",
-            "sidebar-link-utility",
-            "sidebar-settings-help-link",
-            routeActive || isFixedToolRouteActive("/help") ? "sidebar-link-active" : "",
-            bootstrapGuideActive && !bootstrapGuideDismissedBubbles.help
-              ? "is-bootstrap-guide"
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ")
-        }
-      >
-        <span className="sidebar-link-icon" aria-hidden="true">
-          <SidebarIllustration kind="help" />
-        </span>
-        <span className="sidebar-link-label">{helpLabel}</span>
-      </NavLink>
-    );
-  }
-
   function renderBootstrapGuideFloatingBubbles() {
     if (
       !bootstrapGuideActive ||
@@ -3230,15 +3194,10 @@ export function AppSidebar({
       }
     }
 
-    if (!bootstrapGuideDismissedBubbles.help) {
-      const helpAnchor = isSettingsMode
-        ? bootstrapGuideSettingsHelpAnchorRef.current
-        : toolMenuOpen
-          ? bootstrapGuideToolHelpAnchorRef.current
-          : null;
+    if (!bootstrapGuideDismissedBubbles.help && !isSettingsMode && toolMenuOpen) {
       const helpBubble = createBootstrapGuideFloatingBubble(
-        helpAnchor,
-        isSettingsMode ? "settings-help" : "tool-help",
+        bootstrapGuideToolHelpAnchorRef.current,
+        "tool-help",
         "sidebar.bootstrapGuide.helpMessage",
       );
       if (helpBubble) {
@@ -3256,7 +3215,7 @@ export function AppSidebar({
       current.filter((item) =>
         bubble === "agent"
           ? item.id !== "agent"
-          : item.id !== "tool-help" && item.id !== "settings-help",
+          : item.id !== "tool-help",
       ),
     );
     setBootstrapGuideDismissedBubbles((current) =>
@@ -3318,12 +3277,11 @@ export function AppSidebar({
     };
   }
 
-  function renderAccountMenuIcon(kind: "account") {
+  function renderAccountMenuIcon(kind: "login" | "logout") {
     return (
-      <span
-        className={`sidebar-account-menu-icon is-${kind}`}
-        aria-hidden="true"
-      />
+      <span className={`sidebar-account-menu-icon is-${kind}`} aria-hidden="true">
+        <SidebarIllustration kind={kind} />
+      </span>
     );
   }
 
@@ -3386,7 +3344,7 @@ export function AppSidebar({
         aria-label={desktopSsoActionLabel}
         title={desktopSsoActionLabel}
       >
-        {renderAccountMenuIcon("account")}
+        {renderAccountMenuIcon(desktopSsoStatus?.authenticated ? "login" : "logout")}
         <span className="sidebar-account-menu-label">
           {desktopSsoBusy ? t("sidebar.sso.busy") : desktopSsoUserLabel}
         </span>
@@ -4166,41 +4124,6 @@ export function AppSidebar({
     );
   }
 
-  function getSettingsSectionIcon(sectionId: SettingsSectionId): SidebarIllustrationKind {
-    switch (sectionId) {
-      case "usage":
-        return "settings";
-      case "general":
-        return "settings";
-      case "appearance":
-        return "appearance";
-      case "kanban":
-        return "futures";
-      case "assistant":
-        return "assistant";
-      case "market":
-        return "market";
-      case "control":
-        return "control";
-      case "tunnelHub":
-        return "service";
-      case "plugins":
-        return "market";
-      case "navigation":
-        return "sidebar-assistant-closed";
-      case "websites":
-        return "website";
-      case "webapps":
-        return "website";
-      case "about":
-        return "about";
-      case "debug":
-        return "settings";
-      default:
-        return "settings";
-    }
-  }
-
   function renderSettingsNav() {
     return (
       <div className="sidebar-settings-nav">
@@ -4210,14 +4133,13 @@ export function AppSidebar({
           onClick={() => onExitSettingsMode?.()}
         >
           <span className="sidebar-link-icon" aria-hidden="true">
-            <LeftOutlined />
+            <SettingsSidebarIcon kind="back" />
           </span>
           <span className="sidebar-link-label">{t("settings.backToApp")}</span>
         </button>
-        {renderSettingsHelpLink()}
         <label className="sidebar-settings-search" aria-label={t("settings.searchAriaLabel")}>
           <span className="sidebar-settings-search-icon" aria-hidden="true">
-            <SearchOutlined />
+            <SettingsSidebarIcon kind="search" />
           </span>
           <input
             type="search"
@@ -4256,7 +4178,7 @@ export function AppSidebar({
                         }}
                       >
                         <span className="sidebar-link-icon" aria-hidden="true">
-                          <SidebarIllustration kind={getSettingsSectionIcon(section.id)} />
+                          <SettingsSidebarIcon kind={section.id} />
                         </span>
                         <span className="sidebar-link-label">{section.label}</span>
                       </NavLink>

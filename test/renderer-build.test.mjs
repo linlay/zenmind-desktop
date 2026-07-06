@@ -871,10 +871,18 @@ test("fixed sidebar settings trigger keeps Settings label and exposes Help affor
   );
   assert.match(
     sidebarSource,
-    /function renderToolLink\(item: SidebarToolItem\)[\s\S]*?isFixedToolRouteActive\(item\.to\) \? "sidebar-link-active" : ""/
+    /function renderToolLink\([\s\S]*?item: SidebarToolItem[\s\S]*?isFixedToolRouteActive\(item\.to\) \? "sidebar-link-active" : ""/
   );
-  assert.match(sidebarSource, /function renderSettingsToolRow\(item: SidebarToolItem\)/);
-  assert.match(sidebarSource, /to="\/help"[\s\S]*?className=\{\(\) =>[\s\S]*?sidebar-settings-help-link/);
+  assert.match(
+    sidebarSource,
+    /const helpToolItem: SidebarToolItem = \{[\s\S]*?orderKey: "help"[\s\S]*?to: "\/help"[\s\S]*?label: t\("nav\.help"\)[\s\S]*?icon: "help"/
+  );
+  assert.match(
+    sidebarSource,
+    /renderToolLink\(helpToolItem,\s*\{[\s\S]*?anchorRef: bootstrapGuideToolHelpAnchorRef/
+  );
+  assert.doesNotMatch(sidebarSource, /function renderSettingsHelpLink\(/);
+  assert.doesNotMatch(sidebarSource, /sidebar-settings-help-link/);
   assert.match(
     sidebarSource,
     /activeFixedToolItem[\s\S]{0,80}\? "sidebar-link-active"\s*:\s*""/
@@ -986,6 +994,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AgentIcon.tsx"),
     "utf8"
   );
+  const fixedToolRowsBaseSource =
+    sidebarSource.match(/const fixedToolRowsBase[\s\S]*?\n\];/)?.[0] ?? "";
 
   assert.match(sidebarSource, /kanbanNavItemBase[\s\S]*?orderKey:\s*"kanban"[\s\S]*?to:\s*"\/kanban"/);
   assert.match(sidebarSource, /assistantGroupNavItemBase[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?entryType:\s*"assistants"/);
@@ -1130,14 +1140,17 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
-  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
-  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
-  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"/);
-  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/help"/);
-  assert.match(sidebarSource, /renderSettingsToolRow\(settingsToolItem\)/);
-  assert.match(sidebarSource, /"sidebar-settings-help-link"/);
-  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/automations"/);
+  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
+  assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
+  assert.match(fixedToolRowsBaseSource, /to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
+  assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/control-center"/);
+  assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/help"/);
+  assert.match(sidebarSource, /const helpToolItem: SidebarToolItem = \{[\s\S]*?to:\s*"\/help"/);
+  assert.match(sidebarSource, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?anchorRef: bootstrapGuideToolHelpAnchorRef/);
+  assert.match(sidebarSource, /settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
+  assert.doesNotMatch(sidebarSource, /"settings-help"/);
+  assert.doesNotMatch(sidebarSource, /"sidebar-settings-help-link"/);
+  assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/automations"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.fixedTools"\)\}/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}/);
@@ -1154,7 +1167,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
   assert.match(sidebarSource, /label:\s*t\("nav\.kanban"\)[\s\S]*?label:\s*t\("nav\.schedules"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.websites"\)/);
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?flex-direction:\s*column;/);
-  assert.match(globalStyles, /\.sidebar-settings-help-link\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-settings-help-link/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-heading:hover\s*\{[\s\S]*?background:\s*color-mix\(in srgb,\s*var\(--ink-muted\)\s*10%,\s*transparent\);[\s\S]*?\}/);
   assert.match(globalStyles, /\.sidebar-group-heading\[data-sidebar-group-id="webs"\]:hover,[\s\S]*?\.sidebar-group-heading\[data-sidebar-group-id="webs"\]\.is-active,[\s\S]*?\.sidebar-group-heading\[data-sidebar-group-id="assistants"\]:hover,[\s\S]*?\.sidebar-group-heading\[data-sidebar-group-id="assistants"\]\.is-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border-color:\s*transparent;/);
@@ -1163,8 +1176,15 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?\.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active,[\s\S]*?\.app-sidebar\.is-collapsed \.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
-  assert.match(globalStyles, /\.sidebar-link:not\(\.sidebar-link-active\) \.sidebar-link-icon svg,[\s\S]*?filter:\s*grayscale\(1\) saturate\(0\);/);
-  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-link-icon svg,[\s\S]*?filter:\s*none;/);
+  assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?color:\s*#94a3b8;/);
+  assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#475569;/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-link-icon,[\s\S]*?\.sidebar-group-heading\.is-active \.sidebar-link-icon\s*\{[\s\S]*?color:\s*#1e293b;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#e2e8f0;/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-kanban \.sidebar-illustration-kanban-frame,[\s\S]*?\.sidebar-link-active \.sidebar-illustration-automation \.sidebar-illustration-automation-ring\s*\{[\s\S]*?stroke:\s*var\(--sidebar-special-icon-active-frame\);/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-kanban \.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?stroke:\s*#3b82f6;/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-automation \.sidebar-illustration-automation-hand\s*\{[\s\S]*?stroke:\s*#06b6d4;/);
+  assert.match(globalStyles, /\.sidebar-tool-menu \.sidebar-tool-menu-item \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-link(?:[\s\S]{0,120})\.sidebar-link-icon(?:[\s\S]{0,120})filter:\s*grayscale/);
   assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
   assert.doesNotMatch(globalStyles, /--sidebar-group-child-indent/);
   assert.doesNotMatch(globalStyles, /--sidebar-group-child-pill-padding/);
@@ -1501,6 +1521,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
     path.join(projectRoot, "src", "renderer", "components", "BrandMark.tsx"),
     "utf8"
   );
+  const settingsSidebarIconSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "SettingsSidebarIcon.tsx"),
+    "utf8"
+  );
   const enUS = fs.readFileSync(
     path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "enUS.ts"),
     "utf8"
@@ -1530,9 +1554,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /debugSettingsUnlocked/);
   assert.match(appShell, /debugVisible:\s*debugSettingsUnlocked/);
   assert.match(appShell, /debugVisible=\{debugSettingsUnlocked\}/);
-  assert.match(brandMarkSource, /archiveIcon from "\.\.\/assets\/sidebar-icons\/archive\.svg"/);
+  assert.doesNotMatch(brandMarkSource, /assets\/sidebar-icons/);
+  assert.match(brandMarkSource, /function createSidebarIconProps/);
   assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*\| "archive"/);
-  assert.match(brandMarkSource, /archive:\s*archiveIcon/);
+  assert.match(brandMarkSource, /case "archive":[\s\S]*?<rect x="3" y="4" width="18" height="5" rx="1\.5" \/>/);
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
   assert.match(settingsSections, /debugVisible = false/);
@@ -1580,19 +1605,21 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /section\.description/);
   assert.match(sidebarSource, /settings\.backToApp/);
   assert.match(sidebarSource, /onExitSettingsMode/);
-  assert.match(sidebarSource, /case "usage"[\s\S]*?return "settings"/);
-  assert.match(sidebarSource, /case "general"[\s\S]*?return "settings"/);
-  assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
-  assert.match(sidebarSource, /case "kanban"[\s\S]*?return "futures"/);
-  assert.match(sidebarSource, /case "assistant"[\s\S]*?return "assistant"/);
-  assert.match(sidebarSource, /case "market"[\s\S]*?return "market"/);
-  assert.match(sidebarSource, /case "control"[\s\S]*?return "control"/);
-  assert.match(sidebarSource, /case "tunnelHub"[\s\S]*?return "service"/);
+  assert.match(sidebarSource, /import \{ SettingsSidebarIcon \} from "\.\/SettingsSidebarIcon";/);
+  assert.match(sidebarSource, /<SettingsSidebarIcon kind="back" \/>/);
+  assert.match(sidebarSource, /<SettingsSidebarIcon kind="search" \/>/);
+  assert.match(sidebarSource, /<SettingsSidebarIcon kind=\{section\.id\} \/>/);
+  assert.doesNotMatch(sidebarSource, /function getSettingsSectionIcon/);
+  assert.doesNotMatch(sidebarSource, /SearchOutlined/);
+  assert.match(settingsSidebarIconSource, /export type SettingsSidebarIconKind = SettingsSectionId \| "back" \| "search"/);
+  assert.match(settingsSidebarIconSource, /case "navigation":[\s\S]*?<rect x="3" y="3" width="18" height="18" rx="2" \/>[\s\S]*?<path d="M9 3v18M13 8h4M13 12h4M13 16h2" \/>/);
+  assert.match(settingsSidebarIconSource, /case "tunnelHub":[\s\S]*?<circle cx="12" cy="12" r="9" \/>[\s\S]*?<circle cx="12" cy="12" r="5" \/>/);
+  assert.match(settingsSidebarIconSource, /case "debug":[\s\S]*?case "general":[\s\S]*?<circle cx="12" cy="12" r="3" \/>/);
+  assert.match(settingsSidebarIconSource, /case "usage":[\s\S]*?<path d="M21 12a9 9 0 1 0-18 0" \/>/);
+  assert.match(settingsSidebarIconSource, /case "webapps":[\s\S]*?<rect x="3" y="3" width="18" height="18" rx="2" \/>/);
   assert.doesNotMatch(sidebarSource, /case "runtimeReset"/);
-  assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
-  assert.match(sidebarSource, /case "debug"[\s\S]*?return "settings"/);
-  assert.match(brandMarkSource, /about:\s*aboutIcon/);
-  assert.match(brandMarkSource, /appearance:\s*appearanceIcon/);
+  assert.match(brandMarkSource, /case "about":[\s\S]*?<circle cx="12" cy="12" r="10" \/>/);
+  assert.match(brandMarkSource, /case "appearance":[\s\S]*?<circle cx="12" cy="12" r="9" \/>/);
 
   assert.match(settingsPage, /useParams\(\)/);
   assert.match(settingsPage, /resolveSettingsSectionId/);
@@ -5697,11 +5724,13 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /const settingsToolItems = fixedToolItems\.filter/);
   assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\(\(item\) => item\.to === "\/settings"\);/);
   assert.match(sidebarSource, /shouldRenderDesktopSsoAccount \? \([\s\S]*?\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?\) : null/);
-  assert.match(sidebarSource, /\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?settingsToolItem \? renderSettingsToolRow\(settingsToolItem\) : null/);
+  assert.match(sidebarSource, /\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?renderToolLink\(helpToolItem,[\s\S]*?settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
   assert.match(sidebarSource, /className="sidebar-tool-menu-popover"/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
   assert.match(sidebarSource, /avatarUrl=\{desktopSsoStatus\.user\?\.avatarUrl\}/);
+  assert.match(sidebarSource, /renderAccountMenuIcon\(desktopSsoStatus\?\.authenticated \? "login" : "logout"\)/);
+  assert.match(sidebarSource, /<SidebarIllustration kind=\{kind\} \/>/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout-label"/);
   assert.match(sidebarSource, /window\.confirm\(t\("sidebar\.sso\.confirmSignOut"\)\)/);
