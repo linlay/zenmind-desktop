@@ -6,7 +6,7 @@ import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
 const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
-const MAC_TRAFFIC_LIGHT_POSITION = { x: 18, y: 16 };
+const MAC_TRAFFIC_LIGHT_POSITION = { x: 10, y: 16 };
 const WINDOWS_TITLEBAR_OVERLAY_HEIGHT = 44;
 const WINDOWS_TITLEBAR_LIGHT = {
   color: "#FFFFFF",
