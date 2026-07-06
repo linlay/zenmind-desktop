@@ -111,6 +111,13 @@ type SettingsNotice = {
 
 type SectionReadErrorMap = Partial<Record<SettingsSectionId, string>>;
 
+type WebsiteDraftSnapshot = {
+  id: string;
+  label: string;
+  url: string;
+  agentKey: string;
+};
+
 type AboutAppCardProps = {
   isWindows: boolean;
   runtimeResetPending: boolean;
@@ -163,6 +170,22 @@ function SettingsDebugTextAreaField({ label, value, readOnly = false, onChange }
 
 function isWebsiteEntry(item: WebEntry): item is WebsiteEntry {
   return item.kind === "website";
+}
+
+function createWebsiteDraftSnapshot(item: WebsiteEntry): WebsiteDraftSnapshot {
+  return {
+    id: item.id,
+    label: item.label,
+    url: item.url,
+    agentKey: item.agentKey || ""
+  };
+}
+
+function areWebsiteDraftSnapshotsEqual(left: WebsiteDraftSnapshot, right: WebsiteDraftSnapshot) {
+  return left.id === right.id &&
+    left.label === right.label &&
+    left.url === right.url &&
+    left.agentKey === right.agentKey;
 }
 
 function isWebappEntry(item: WebEntry): item is WebappEntry {
@@ -2330,6 +2353,9 @@ export function SettingsPage({
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
+  const websiteDraftSourceRef = useRef<WebsiteDraftSnapshot | null>(null);
+  const pendingWebsiteSelectionIdRef = useRef("");
+  const pendingWebsiteSnapshotRef = useRef<WebsiteDraftSnapshot | null>(null);
   const assistantSettingsLoadedRef = useRef(false);
   const desktopPetStateLoadedRef = useRef(false);
   const deviceIdCopyTimerRef = useRef<number | null>(null);
@@ -2381,6 +2407,25 @@ export function SettingsPage({
   const appPairingDisabled =
     appPairingPending || tunnelHubSaving || tunnelHubSettingsDirty || !tunnelHubRuntimeStatus?.connected;
 
+  function applyWebsiteDraftSnapshot(snapshot: WebsiteDraftSnapshot) {
+    setWebsiteLabel(snapshot.label);
+    setWebsiteUrl(snapshot.url);
+    setWebsiteAgentKey(snapshot.agentKey);
+  }
+
+  function applyWebsiteDraftFromItem(item: WebsiteEntry) {
+    const snapshot = createWebsiteDraftSnapshot(item);
+    websiteDraftSourceRef.current = snapshot;
+    applyWebsiteDraftSnapshot(snapshot);
+  }
+
+  function clearWebsiteDraft() {
+    websiteDraftSourceRef.current = null;
+    setWebsiteLabel("");
+    setWebsiteUrl("");
+    setWebsiteAgentKey("");
+  }
+
   useEffect(() => {
     if (activeSection !== "websites") {
       return;
@@ -2389,9 +2434,32 @@ export function SettingsPage({
       return;
     }
     if (selectedWebsite) {
-      setWebsiteLabel(selectedWebsite.label);
-      setWebsiteUrl(selectedWebsite.url);
-      setWebsiteAgentKey(selectedWebsite.agentKey || "");
+      const nextSnapshot = createWebsiteDraftSnapshot(selectedWebsite);
+      const pendingSnapshot = pendingWebsiteSnapshotRef.current;
+      if (
+        pendingSnapshot?.id === selectedWebsite.id &&
+        !areWebsiteDraftSnapshotsEqual(pendingSnapshot, nextSnapshot)
+      ) {
+        return;
+      }
+      if (pendingWebsiteSelectionIdRef.current === selectedWebsite.id) {
+        pendingWebsiteSelectionIdRef.current = "";
+        pendingWebsiteSnapshotRef.current = null;
+      }
+      const previousSnapshot = websiteDraftSourceRef.current;
+      const sameSource = previousSnapshot?.id === selectedWebsite.id;
+      const hasDraft = sameSource && (
+        websiteLabel !== previousSnapshot.label ||
+        websiteUrl !== previousSnapshot.url ||
+        websiteAgentKey !== previousSnapshot.agentKey
+      );
+      if (!sameSource || !hasDraft) {
+        applyWebsiteDraftSnapshot(nextSnapshot);
+      }
+      websiteDraftSourceRef.current = nextSnapshot;
+      return;
+    }
+    if (selectedWebsiteId && pendingWebsiteSelectionIdRef.current === selectedWebsiteId) {
       return;
     }
     const firstWebsite = websiteItems[0] ?? null;
@@ -2399,11 +2467,9 @@ export function SettingsPage({
       setSelectedWebsiteId(firstWebsite.id);
     } else {
       setSelectedWebsiteId(WEBSITE_NEW_ID);
-      setWebsiteLabel("");
-      setWebsiteUrl("");
-      setWebsiteAgentKey("");
+      clearWebsiteDraft();
     }
-  }, [activeSection, selectedWebsite, selectedWebsiteId, websiteItems]);
+  }, [activeSection, selectedWebsite, selectedWebsiteId, websiteAgentKey, websiteItems, websiteLabel, websiteUrl]);
 
   useEffect(() => {
     if (activeSection !== "webapps") {
@@ -3404,18 +3470,18 @@ export function SettingsPage({
   }
 
   function beginAddWebsiteItem() {
+    pendingWebsiteSelectionIdRef.current = "";
+    pendingWebsiteSnapshotRef.current = null;
     setSelectedWebsiteId(WEBSITE_NEW_ID);
-    setWebsiteLabel("");
-    setWebsiteUrl("");
-    setWebsiteAgentKey("");
+    clearWebsiteDraft();
     setNotice((current) => current?.sectionId === "websites" ? null : current);
   }
 
   function handleSelectWebsiteItem(item: WebsiteEntry) {
+    pendingWebsiteSelectionIdRef.current = "";
+    pendingWebsiteSnapshotRef.current = null;
     setSelectedWebsiteId(item.id);
-    setWebsiteLabel(item.label);
-    setWebsiteUrl(item.url);
-    setWebsiteAgentKey(item.agentKey || "");
+    applyWebsiteDraftFromItem(item);
     setNotice((current) => current?.sectionId === "websites" ? null : current);
   }
 
@@ -3438,7 +3504,12 @@ export function SettingsPage({
       showSectionResultNotice("websites", result);
       if (result.ok) {
         const nextSelectedId = result.item?.id || selectedWebsite?.id || "";
+        if (result.item) {
+          pendingWebsiteSnapshotRef.current = createWebsiteDraftSnapshot(result.item);
+          applyWebsiteDraftFromItem(result.item);
+        }
         if (nextSelectedId) {
+          pendingWebsiteSelectionIdRef.current = nextSelectedId;
           setSelectedWebsiteId(nextSelectedId);
         }
         await refreshWebItemsFromSettings();
@@ -3457,7 +3528,14 @@ export function SettingsPage({
       showSectionResultNotice("websites", result);
       if (result.ok) {
         const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
+        pendingWebsiteSelectionIdRef.current = "";
+        pendingWebsiteSnapshotRef.current = null;
         setSelectedWebsiteId(nextItem?.id ?? WEBSITE_NEW_ID);
+        if (nextItem) {
+          applyWebsiteDraftFromItem(nextItem);
+        } else {
+          clearWebsiteDraft();
+        }
         await refreshWebItemsFromSettings();
       }
     } catch (reason) {
@@ -3473,7 +3551,15 @@ export function SettingsPage({
       const result = await window.electronAPI.webs.websites.import();
       showSectionResultNotice("websites", result);
       if (result.ok) {
-        setSelectedWebsiteId(result.items[0]?.id ?? WEBSITE_NEW_ID);
+        const nextItem = result.items[0] ?? null;
+        pendingWebsiteSelectionIdRef.current = "";
+        pendingWebsiteSnapshotRef.current = null;
+        setSelectedWebsiteId(nextItem?.id ?? WEBSITE_NEW_ID);
+        if (nextItem) {
+          applyWebsiteDraftFromItem(nextItem);
+        } else {
+          clearWebsiteDraft();
+        }
         await refreshWebItemsFromSettings();
       }
     } catch (reason) {

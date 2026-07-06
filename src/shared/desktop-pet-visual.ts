@@ -112,11 +112,10 @@ export function resolveDesktopPetUnreadBadgeCounts(input: DesktopPetUnreadBadgeC
   const visibleMessages = input.visibleMessages ?? [];
   const usesVisibleMessages = visibleMessages.length > 0;
   const messageSource = usesVisibleMessages ? visibleMessages : input.messages ?? [];
-  const unreadOnly = !usesVisibleMessages;
-  const completedMessageCount = countBadgeMessages(messageSource, "done", unreadOnly);
+  const completedMessageCount = countBadgeMessages(messageSource, "done", true);
   const awaitingCountsByKey = new Map<string, number>();
   messageSource.forEach((message, index) => {
-    if (message.status !== "awaiting" || (unreadOnly && !message.unread)) {
+    if (message.status !== "awaiting" || !message.unread) {
       return;
     }
     setAwaitingBadgeCount(

@@ -1410,6 +1410,24 @@ test("desktop pet unread badge counts render awaiting and completed badges separ
   });
 
   assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
+    displayStatus: "idle",
+    unreadCount: 2,
+    visibleMessages: [
+      { status: "done", unread: false },
+      { status: "done", unread: true },
+      { status: "done", unread: false },
+      { status: "done", unread: false },
+      { status: "done", unread: true },
+      { status: "done", unread: false },
+      { status: "done", unread: false },
+      { status: "done", unread: false }
+    ]
+  }), {
+    awaitingCount: 0,
+    completedCount: 2
+  });
+
+  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
     displayStatus: "awaiting",
     unreadCount: 2,
     visibleMessages: []
