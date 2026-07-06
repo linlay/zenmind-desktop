@@ -398,10 +398,6 @@
   height: 16px;
 }
 
-.external-webview-copilot-button:not(.is-active) .external-webview-copilot-button-icon {
-  filter: grayscale(1) saturate(0) opacity(0.76);
-}
-
 .external-webview-toolbar-location {
   min-width: 0;
   flex: 1;

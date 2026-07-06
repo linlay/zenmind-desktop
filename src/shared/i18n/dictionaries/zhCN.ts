@@ -1409,6 +1409,7 @@ export const zhCNMessages = {
   "externalWebview.addressPlaceholder": "搜索或输入网址",
   "externalWebview.name": "名称",
   "externalWebview.back": "后退",
+  "externalWebview.forward": "前进",
   "externalWebview.refresh": "刷新",
   "externalWebview.error.scriptTooLarge": "脚本超过内嵌网站执行大小限制。",
   "externalWebview.error.tabUnavailable": "目标内嵌网站标签页不可用。",

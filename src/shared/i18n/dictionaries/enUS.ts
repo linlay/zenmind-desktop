@@ -1409,6 +1409,7 @@ export const enUSMessages = {
   "externalWebview.addressPlaceholder": "Search or enter URL",
   "externalWebview.name": "Name",
   "externalWebview.back": "Back",
+  "externalWebview.forward": "Forward",
   "externalWebview.refresh": "Refresh",
   "externalWebview.error.scriptTooLarge": "Script exceeds the embedded website execution size limit.",
   "externalWebview.error.tabUnavailable": "Target embedded website tab is unavailable.",

@@ -23,7 +23,7 @@ import {
   registerCurrentPageExecutor,
   registerDesktopActionProviderForScope
 } from "../../services/desktopActionRegistry";
-import { SidebarIllustration } from "../../components/BrandMark";
+import { SidebarActionIcon } from "../../components/BrandMark";
 import { useI18n } from "../../i18n/useI18n";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
@@ -72,6 +72,7 @@ type ExternalWebviewTabState = {
   userAgent?: string;
   guestId: number | null;
   canGoBack: boolean;
+  canGoForward: boolean;
   isLoading: boolean;
 };
 
@@ -82,7 +83,7 @@ type ExternalWebviewBrowserState = {
 
 type ExternalWebviewTabPatch = Partial<Pick<
   ExternalWebviewTabState,
-  "title" | "currentUrl" | "faviconUrl" | "guestId" | "canGoBack" | "isLoading"
+  "title" | "currentUrl" | "faviconUrl" | "guestId" | "canGoBack" | "canGoForward" | "isLoading"
 >>;
 
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
@@ -250,14 +251,6 @@ function moveItemByIdToIndex<T extends { id: string }>(items: T[], movedId: stri
   return nextItems;
 }
 
-function ArrowLeftIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M11.75 4.75 6.5 10l5.25 5.25" />
-    </svg>
-  );
-}
-
 function RefreshIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -382,6 +375,12 @@ function ExternalWebviewPane({
         nextPatch.canGoBack = webview.canGoBack();
       } catch {
         nextPatch.canGoBack = false;
+      }
+
+      try {
+        nextPatch.canGoForward = webview.canGoForward();
+      } catch {
+        nextPatch.canGoForward = false;
       }
 
       try {
@@ -513,6 +512,7 @@ export function ExternalWebviewPage({
       userAgent: options.userAgent,
       guestId: null,
       canGoBack: false,
+      canGoForward: false,
       isLoading: true
     } satisfies ExternalWebviewTabState;
   };
@@ -784,6 +784,7 @@ export function ExternalWebviewPage({
           nextTab.faviconUrl === tab.faviconUrl &&
           nextTab.guestId === tab.guestId &&
           nextTab.canGoBack === tab.canGoBack &&
+          nextTab.canGoForward === tab.canGoForward &&
           nextTab.isLoading === tab.isLoading;
         if (sameTab) {
           return tab;
@@ -898,6 +899,7 @@ export function ExternalWebviewPage({
     faviconUrl: tab.faviconUrl,
     guestId: tab.guestId,
     canGoBack: tab.canGoBack,
+    canGoForward: tab.canGoForward,
     isLoading: tab.isLoading
   });
 
@@ -1409,6 +1411,25 @@ export function ExternalWebviewPage({
     }
   };
 
+  const handleGoForward = () => {
+    if (!activeTab?.canGoForward) {
+      return;
+    }
+
+    const activeWebview = webviewRefs.current.get(activeTab.id);
+    if (!activeWebview) {
+      return;
+    }
+
+    try {
+      if (activeWebview.canGoForward()) {
+        activeWebview.goForward();
+      }
+    } catch {
+      // Ignore transient guest-content errors while the active webview updates.
+    }
+  };
+
   const handleReload = () => {
     if (!activeTab) {
       return;
@@ -1562,7 +1583,17 @@ export function ExternalWebviewPage({
               aria-label={t("externalWebview.back")}
               title={t("externalWebview.back")}
             >
-              <ArrowLeftIcon />
+              <SidebarActionIcon kind="back" />
+            </button>
+            <button
+              type="button"
+              className="external-webview-toolbar-button"
+              onClick={handleGoForward}
+              disabled={!activeTab?.canGoForward}
+              aria-label={t("externalWebview.forward")}
+              title={t("externalWebview.forward")}
+            >
+              <SidebarActionIcon kind="forward" />
             </button>
             <button
               type="button"
@@ -1618,8 +1649,8 @@ export function ExternalWebviewPage({
               aria-expanded={assistantDockOpen}
               title={t("sidebar.copilot.title")}
             >
-              <SidebarIllustration
-                kind={assistantDockOpen ? "sidebar-assistant-open" : "sidebar-assistant-closed"}
+              <SidebarActionIcon
+                kind="sidebar_right"
                 className="external-webview-copilot-button-icon"
               />
             </button>

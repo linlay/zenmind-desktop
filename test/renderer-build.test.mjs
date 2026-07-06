@@ -699,7 +699,7 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.match(globalStyles, /\.external-webview-frame\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
 });
 
-test("sidebar collapse toggle moves into the top chrome with expanded and collapsed variants", () => {
+test("sidebar collapse toggle moves into the top chrome with the outline sidebar icon", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
@@ -746,11 +746,10 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(sidebarSource, /className=\{\[\s*"app-sidebar-collapse-button",[\s\S]*?"is-compact" : "is-nav"/);
   assert.match(sidebarSource, /aria-expanded=\{!isCollapsed\}/);
   assert.match(sidebarSource, /app-sidebar-collapse-button-icon-panel/);
-  assert.match(sidebarSource, /app-sidebar-collapse-button-icon-chevron/);
-  assert.match(collapseToggleIconSource, /className="app-sidebar-collapse-button-icon-chevron"[\s\S]*?viewBox="0 -960 960 960"/);
-  assert.match(collapseToggleIconSource, /className="app-sidebar-collapse-button-icon-panel"[\s\S]*?viewBox="0 -960 960 960"/);
-  assert.match(collapseToggleIconSource, /fill="currentColor"/);
-  assert.match(sidebarSource, /<SidebarCollapseToggleIcon isCollapsed=\{isCollapsed\} \/>/);
+  assert.doesNotMatch(sidebarSource, /app-sidebar-collapse-button-icon-chevron/);
+  assert.match(collapseToggleIconSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
+  assert.doesNotMatch(collapseToggleIconSource, /viewBox="0 -960 960 960"/);
+  assert.match(sidebarSource, /<SidebarCollapseToggleIcon \/>/);
   assert.match(sidebarSource, /<div className="sidebar-chrome">/);
   assert.doesNotMatch(sidebarSource, /sidebar-chrome-drag-region/);
   assert.match(sidebarSource, /className=\{chromeToolbarClassName\}/);
@@ -794,14 +793,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-resize-overlay\s*\{/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-compact\s*\{[\s\S]*?width:\s*24px;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-nav\s*\{[\s\S]*?width:\s*var\(--sidebar-collapse-toggle-nav-width, 48px\);/);
-  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron::before/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  const collapsedToggleIconSource = sidebarSource.match(
-    /className="app-sidebar-collapse-button-icon-chevron"[\s\S]*?<\/svg>/
-  )?.[0] ?? "";
-  assert.ok(collapsedToggleIconSource, "missing collapsed sidebar toggle icon source");
-  assert.match(collapsedToggleIconSource, /fill="currentColor"/);
+  assert.doesNotMatch(globalStyles, /\.app-sidebar-collapse-button-icon-chevron/);
   assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar button[\s\S]*?\{[\s\S]*?app-region:\s*no-drag;/);
 });
 
@@ -989,6 +982,10 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
     "utf8"
   );
+  const brandMarkSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "BrandMark.tsx"),
+    "utf8"
+  );
   const globalStyles = readRendererStyles();
   const agentIconSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AgentIcon.tsx"),
@@ -1011,6 +1008,19 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(assistantNavAgents, assistantNavSortMode\)/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
+  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "website_open"[\s\S]*\| "website_closed"/);
+  assert.match(brandMarkSource, /export function SidebarActionIcon/);
+  assert.match(brandMarkSource, /statusColor = kind === "website_open" \? "#10B981" : "#EF4444"/);
+  assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="sort" \/>/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="new_project" \/>/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="double_check" \/>/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="more_actions" \/>/);
+  assert.match(sidebarSource, /const webIconKind = isOpen \? "website_open" : "website_closed"/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind=\{webIconKind\} \/>/);
+  assert.doesNotMatch(sidebarSource, /CloseOutlined|LeftOutlined|RightOutlined|MoreOutlined|SortAscendingOutlined|EditSquareIcon|AddIcon/);
+  assert.doesNotMatch(sidebarSource, /assistant-material-icon is-(?:more|done-all|add)/);
   assert.doesNotMatch(sidebarSource, /assistantHomeNavItem/);
   assert.doesNotMatch(sidebarSource, /智能助理首页|智能助手首页/);
   assert.match(sidebarSource, /createAgentRoute\(agent\.agentKey\)/);
@@ -1176,14 +1186,23 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?\.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active,[\s\S]*?\.app-sidebar\.is-collapsed \.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
-  assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?color:\s*#94a3b8;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-top-actions\s*\{[\s\S]*?top:\s*12px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{[\s\S]*?top:\s*38px;/);
+  assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;[\s\S]*?color:\s*#94a3b8;/);
+  assert.match(globalStyles, /\.sidebar-action-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#475569;/);
   assert.match(globalStyles, /\.sidebar-link-active \.sidebar-link-icon,[\s\S]*?\.sidebar-group-heading\.is-active \.sidebar-link-icon\s*\{[\s\S]*?color:\s*#1e293b;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#e2e8f0;/);
   assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-kanban \.sidebar-illustration-kanban-frame,[\s\S]*?\.sidebar-link-active \.sidebar-illustration-automation \.sidebar-illustration-automation-ring\s*\{[\s\S]*?stroke:\s*var\(--sidebar-special-icon-active-frame\);/);
   assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-kanban \.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?stroke:\s*#3b82f6;/);
-  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-automation \.sidebar-illustration-automation-hand\s*\{[\s\S]*?stroke:\s*#06b6d4;/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-automation \.sidebar-illustration-automation-hand\s*\{[\s\S]*?stroke:\s*#3b82f6;/);
+  assert.match(globalStyles, /\.sidebar-group-heading \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(globalStyles, /\.sidebar-child-link \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-tool-menu \.sidebar-tool-menu-item \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-link-icon,[\s\S]*?\.sidebar-account-menu-icon\s*\{[\s\S]*?flex:\s*0 0 16px;[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-group-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.doesNotMatch(globalStyles, /\.sidebar-link(?:[\s\S]{0,120})\.sidebar-link-icon(?:[\s\S]{0,120})filter:\s*grayscale/);
   assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
   assert.doesNotMatch(globalStyles, /--sidebar-group-child-indent/);
@@ -1193,15 +1212,16 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?font-weight:\s*400;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*13px;/);
-  assert.match(globalStyles, /\.assistant-worker-collapse-item>\.Collapse-header\s*\{[\s\S]*?align-items:\s*stretch;[\s\S]*?min-height:\s*48px;/);
-  assert.match(globalStyles, /\.assistant-worker-collapse-item>\.Collapse-header \.Collapse-headerActions\s*\{[\s\S]*?align-self:\s*stretch;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?min-height:\s*48px;/);
-  assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?min-height:\s*48px;[\s\S]*?padding:\s*6px 10px;/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item>\.Collapse-header\s*\{[\s\S]*?align-items:\s*stretch;[\s\S]*?min-height:\s*36px;/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item>\.Collapse-header \.Collapse-headerActions\s*\{[\s\S]*?align-self:\s*stretch;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?gap:\s*4px;[\s\S]*?min-height:\s*36px;/);
+  assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?min-height:\s*36px;[\s\S]*?padding:\s*6px 8px;/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded \.assistant-worker-header\s*\{[\s\S]*?padding:\s*2px 8px;/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\s*\{[\s\S]*?transition:[\s\S]*?transform 0\.2s ease-in-out;/);
-  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\s*\{[\s\S]*?background:\s*var\(--surface\);[\s\S]*?box-shadow:\s*var\(--panel-shadow\);[\s\S]*?transform:\s*translateY\(-1px\) scale\(1\.012\);/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.15\);[\s\S]*?box-shadow:\s*var\(--panel-shadow\);[\s\S]*?transform:\s*none;/);
   assert.match(globalStyles, /\.worker-panel-header\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;/);
   assert.match(globalStyles, /\.worker-panel-icon\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;[\s\S]*?transition:\s*transform 0\.2s ease-in-out;/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded \.worker-panel-icon\s*\{[\s\S]*?transform:\s*scale\(0\.8\);/);
-  assert.match(globalStyles, /\.assistant-worker-actions\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?gap:\s*6px;[\s\S]*?height:\s*28px;/);
+  assert.match(globalStyles, /\.assistant-worker-actions\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?gap:\s*4px;[\s\S]*?height:\s*28px;/);
   assert.match(globalStyles, /\.assistant-worker-icon-button\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*6px;/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(agentIconSource, /defaultIcon from "\.\.\/\.\.\/assets\/agent-icons\/default\.svg"/);
@@ -2486,10 +2506,8 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
-  assert.match(
-    sidebarSource,
-    /assistantDockOpen[\s\S]*?\? "sidebar-assistant-open"[\s\S]*?: "sidebar-assistant-closed"/
-  );
+  assert.match(sidebarSource, /<SidebarActionIcon kind="sidebar_right" \/>/);
+  assert.doesNotMatch(sidebarSource, /sidebar-assistant-open[\s\S]*sidebar-assistant-closed/);
   assert.match(sidebarSource, /if \(assistantDockOpen\) \{\s*onCloseAssistantDock\?\.\(\);\s*\} else \{\s*onOpenAssistantDock\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
   assert.doesNotMatch(sidebarSource, /!assistantDockOpen && \(isActive \|\| pendingPath === "\/settings"\)/);
@@ -2500,7 +2518,10 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-switch/);
   assert.match(sidebarSource, /disabled=\{assistantLauncherDisabled\}/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-launcher\.is-open/);
-  assert.match(globalStyles, /\.sidebar-assistant-top-button:not\(\.is-assistant-open\)/);
+  assert.match(globalStyles, /\.sidebar-assistant-top-button-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;[\s\S]*?color:\s*#94a3b8;/);
+  assert.match(globalStyles, /\.sidebar-assistant-top-button\.is-assistant-open \.sidebar-assistant-top-button-icon\s*\{[\s\S]*?color:\s*#1e293b;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-assistant-top-button\.is-assistant-open \.sidebar-assistant-top-button-icon\s*\{[\s\S]*?color:\s*#e2e8f0;/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-assistant-top-button:not\(\.is-assistant-open\)[\s\S]*?filter:\s*grayscale/);
   assert.match(globalStyles, /\.sidebar-assistant-top-button\.is-disabled/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
 });
@@ -3082,6 +3103,9 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appSidebar, /className="sidebar-website-child-actions"/);
   assert.match(appSidebar, /requestNavigate\(buildSettingsSectionPath\("websites"\)\)/);
   assert.match(appSidebar, /webOpenEntryKeys\.includes\(webItem\.entryKey\)/);
+  assert.match(appSidebar, /const webIconKind = isOpen \? "website_open" : "website_closed"/);
+  assert.match(appSidebar, /<SidebarActionIcon kind=\{webIconKind\} \/>/);
+  assert.match(appSidebar, /<SidebarActionIcon kind="website_closed" \/>/);
   assert.match(appSidebar, /isOpen \? "is-open" : ""/);
   assert.match(appSidebar, /t\("sidebar\.website\.manage"\)/);
   assert.match(appSidebar, /t\("sidebar\.website\.close"\)/);
@@ -3166,7 +3190,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appShell, /async function removeWebappItem\(item: WebEntry\): Promise<WebappDeleteResult>[\s\S]*?window\.electronAPI\.webs\.webapps\.remove\(item\.id\)/);
   assert.match(appShell, /onRemoveWebappItem=\{removeWebappItem\}/);
   assert.match(appSidebar, /onRemoveWebappItem\?: \(item: WebEntry\) => Promise<WebappDeleteResult>/);
-  assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<MoreOutlined aria-hidden="true" \/>/);
+  assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
   assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
   assert.match(appSidebar, /void removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
@@ -4335,7 +4359,13 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.match(externalWebviewPage, /external-webview-copilot-button/);
   assert.match(externalWebviewPage, /const handleAssistantDockToggle = \(\) => \{[\s\S]*?if \(assistantDockOpen\) \{[\s\S]*?onCloseAssistantDock\?\.\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?onOpenAssistantDock\?\.\(\);/);
   assert.match(externalWebviewPage, /onClick=\{handleAssistantDockToggle\}/);
-  assert.match(externalWebviewPage, /SidebarIllustration[\s\S]*?sidebar-assistant-open[\s\S]*?sidebar-assistant-closed/);
+  assert.match(externalWebviewPage, /canGoForward:\s*boolean/);
+  assert.match(externalWebviewPage, /nextPatch\.canGoForward = webview\.canGoForward\(\)/);
+  assert.match(externalWebviewPage, /const handleGoForward = \(\) => \{[\s\S]*?activeWebview\.goForward\(\)/);
+  assert.match(externalWebviewPage, /disabled=\{!activeTab\?\.canGoForward\}[\s\S]*?<SidebarActionIcon kind="forward" \/>/);
+  assert.match(externalWebviewPage, /<SidebarActionIcon[\s\S]*?kind="sidebar_right"[\s\S]*?className="external-webview-copilot-button-icon"/);
+  assert.doesNotMatch(externalWebviewPage, /SidebarIllustration[\s\S]*?sidebar-assistant-open[\s\S]*?sidebar-assistant-closed/);
+  assert.doesNotMatch(externalWebviewStyles, /filter:\s*grayscale/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.open", \{ appName: PRODUCT_NAME \}\)/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);

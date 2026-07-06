@@ -9,16 +9,10 @@ import {
   type MouseEvent,
   type Ref,
 } from "react";
-import {
-  CloseOutlined,
-  LeftOutlined,
-  MoreOutlined,
-  RightOutlined,
-  SortAscendingOutlined,
-} from "@ant-design/icons";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
+  SidebarActionIcon,
   SidebarIllustration,
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
@@ -708,36 +702,12 @@ type SidebarCollapseToggleProps = {
   t: TranslateFunction;
 };
 
-function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
-  if (isCollapsed) {
-    return (
-      <svg
-        className="app-sidebar-collapse-button-icon-chevron"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 -960 960 960"
-        width="16px"
-        height="16px"
-      >
-        <path
-          d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm200-80h360v-560H400v560Z"
-          fill="currentColor"
-        />
-      </svg>
-    );
-  }
-
+function SidebarCollapseToggleIcon() {
   return (
-    <svg
+    <SidebarActionIcon
+      kind="sidebar_left"
       className="app-sidebar-collapse-button-icon-panel"
-      viewBox="0 -960 960 960"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z"
-        fill="currentColor"
-      />
-    </svg>
+    />
   );
 }
 
@@ -764,7 +734,7 @@ function SidebarCollapseToggle({
       aria-expanded={!isCollapsed}
       onClick={onToggleCollapsed}
     >
-      <SidebarCollapseToggleIcon isCollapsed={isCollapsed} />
+      <SidebarCollapseToggleIcon />
     </button>
   );
 }
@@ -2388,7 +2358,7 @@ export function AppSidebar({
           tabIndex={options.tabIndex}
           onClick={(event) => event.stopPropagation()}
         >
-          <SortAscendingOutlined aria-hidden="true" />
+          <SidebarActionIcon kind="sort" />
         </button>
       </Popover>
     );
@@ -2467,6 +2437,7 @@ export function AppSidebar({
       const removePending =
         webItem.kind === "webapp" && webItemRemovePendingId === webItem.id;
       const showWebAction = isOpen || webItem.kind === "webapp";
+      const webIconKind = isOpen ? "website_open" : "website_closed";
       const webActionLabel =
         webItem.kind === "webapp"
           ? t("sidebar.webapp.actions")
@@ -2498,7 +2469,7 @@ export function AppSidebar({
           >
             {showIcon ? (
               <span className="sidebar-link-icon">
-                <SidebarIllustration kind={item.icon} />
+                <SidebarActionIcon kind={webIconKind} />
               </span>
             ) : null}
             <span className="sidebar-link-label">{item.label}</span>
@@ -2536,9 +2507,9 @@ export function AppSidebar({
                       aria-hidden="true"
                     />
                   ) : webItem.kind === "webapp" ? (
-                    <MoreOutlined aria-hidden="true" />
+                    <SidebarActionIcon kind="more_actions" />
                   ) : (
-                    <CloseOutlined aria-hidden="true" />
+                    <SidebarActionIcon kind="website_closed" />
                   )}
                 </button>
               </Tooltip>
@@ -2655,10 +2626,7 @@ export function AppSidebar({
           tabIndex={-1}
           onClick={(event) => handleAssistantOpenChatMenu(event, chat)}
         >
-          <span
-            className="assistant-material-icon is-more"
-            aria-hidden="true"
-          />
+          <SidebarActionIcon kind="more_actions" />
         </button>
       </div>
     );
@@ -2811,10 +2779,7 @@ export function AppSidebar({
                     void handleAssistantMarkAllRead(event, agent)
                   }
                 >
-                  <span
-                    className="assistant-material-icon is-done-all"
-                    aria-hidden="true"
-                  />
+                  <SidebarActionIcon kind="double_check" />
                 </button>
               </Tooltip>
             ) : null}
@@ -2826,7 +2791,7 @@ export function AppSidebar({
                 tabIndex={-1}
                 onClick={(event) => handleAssistantNewChat(event, agent)}
               >
-                <EditSquareIcon width={16} />
+                <SidebarActionIcon kind="new_chat" />
               </button>
             </Tooltip>
             <Tooltip content={t("sidebar.agent.moreActions")}>
@@ -2837,10 +2802,7 @@ export function AppSidebar({
                 tabIndex={-1}
                 onClick={(event) => handleOpenAgentMenu(event, agent)}
               >
-                <span
-                  className="assistant-material-icon is-more"
-                  aria-hidden="true"
-                />
+                <SidebarActionIcon kind="more_actions" />
               </button>
             </Tooltip>
           </span>
@@ -3025,7 +2987,7 @@ export function AppSidebar({
                       aria-hidden="true"
                     />
                   ) : (
-                    <AddIcon width={16} />
+                    <SidebarActionIcon kind="new_project" />
                   )}
                 </button>
               </Tooltip>
@@ -3041,7 +3003,7 @@ export function AppSidebar({
                     tabIndex={-1}
                     onClick={openWebsitesSettings}
                   >
-                    <EditSquareIcon width={16} />
+                    <SidebarActionIcon kind="new_chat" />
                   </button>
                 </Tooltip>
                 <Tooltip content={t("sidebar.website.actions")}>
@@ -3056,7 +3018,7 @@ export function AppSidebar({
                       openGroupActionMenuAtElement(event.currentTarget, "webs");
                     }}
                   >
-                    <AddIcon width={16} />
+                    <SidebarActionIcon kind="new_project" />
                   </button>
                 </Tooltip>
               </>
@@ -4228,7 +4190,7 @@ export function AppSidebar({
                 disabled={!sidebarNavigationCanGoBack}
                 onClick={onSidebarNavigateBack}
               >
-                <LeftOutlined aria-hidden="true" />
+                <SidebarActionIcon kind="back" />
               </button>
               <button
                 type="button"
@@ -4238,7 +4200,7 @@ export function AppSidebar({
                 disabled={!sidebarNavigationCanGoForward}
                 onClick={onSidebarNavigateForward}
               >
-                <RightOutlined aria-hidden="true" />
+                <SidebarActionIcon kind="forward" />
               </button>
             </div>
             ) : null}
@@ -4269,13 +4231,7 @@ export function AppSidebar({
                 title={t("sidebar.copilot.title")}
               >
                 <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
-                  <SidebarIllustration
-                    kind={
-                      assistantDockOpen
-                        ? "sidebar-assistant-open"
-                        : "sidebar-assistant-closed"
-                    }
-                  />
+                  <SidebarActionIcon kind="sidebar_right" />
                 </span>
               </button>
             ) : null}
@@ -4372,36 +4328,6 @@ const ArrowIcon: React.FC<
       }}
     >
       <path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z" />
-    </svg>
-  );
-};
-
-const EditSquareIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      height="24px"
-      viewBox="0 -960 960 960"
-      width="24px"
-      fill="currentColor"
-      {...props}
-    >
-      <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h357l-80 80H200v560h560v-278l80-80v358q0 33-23.5 56.5T760-120H200Zm280-360ZM360-360v-170l367-367q12-12 27-18t30-6q16 0 30.5 6t26.5 18l56 57q11 12 17 26.5t6 29.5q0 15-5.5 29.5T897-728L530-360H360Zm481-424-56-56 56 56ZM440-440h56l232-232-28-28-29-28-231 231v57Zm260-260-29-28 29 28 28 28-28-28Z" />
-    </svg>
-  );
-};
-
-const AddIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      height="24px"
-      viewBox="0 -960 960 960"
-      width="24px"
-      fill="currentColor"
-      {...props}
-    >
-      <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z" />
     </svg>
   );
 };
