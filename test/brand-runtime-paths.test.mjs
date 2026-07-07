@@ -676,12 +676,12 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$PROFILE\\\.cutej"/u);
   assert.match(installerInclude, /Function un\.CuteJEnsureDataRootDefault/u);
   assert.match(installerInclude, /Call un\.CuteJEnsureDataRootDefault/u);
-  assert.match(installerInclude, /\$DesktopDataRoot\\programs/u);
+  assert.match(installerInclude, /\$APPDATA\\CuteJ/u);
+  assert.doesNotMatch(installerInclude, /\$DesktopDataRoot\\programs/u);
   assert.match(installerInclude, /customPageAfterChangeDir/u);
   assert.match(installerInclude, /CuteJDataDirectoryPage/u);
   assert.match(installerInclude, /nsDialogs::SelectFolderDialog/u);
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\cutej-desktop" "DataRoot"/u);
-  assert.doesNotMatch(installerInclude, /\$APPDATA\\CuteJ/u);
   assert.doesNotMatch(installerInclude, /\\.desktop\\state/u);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/CuteJ"/u);
@@ -743,11 +743,11 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$PROFILE\\\.zenmind"/u);
   assert.match(installerInclude, /Function un\.ZenMindEnsureDataRootDefault/u);
   assert.match(installerInclude, /Call un\.ZenMindEnsureDataRootDefault/u);
-  assert.match(installerInclude, /\$DesktopDataRoot\\programs/u);
+  assert.match(installerInclude, /\$APPDATA\\ZenMind/u);
+  assert.doesNotMatch(installerInclude, /\$DesktopDataRoot\\programs/u);
   assert.match(installerInclude, /customPageAfterChangeDir/u);
   assert.match(installerInclude, /ZenMindDataDirectoryPage/u);
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\zenmind-desktop" "DataRoot"/u);
-  assert.doesNotMatch(installerInclude, /\$APPDATA\\ZenMind/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
   assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "ZenMind 使用麦克风将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 使用系统语音识别将你的语音输入转成文字。");
@@ -980,6 +980,37 @@ test("Windows dist latest metadata aliases spaced installer artifacts", (t) => {
 
   assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.10.exe"), "utf8"), "installer");
   assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.10.exe.blockmap"), "utf8"), "blockmap");
+});
+
+test("Windows dist latest metadata refreshes stale installer aliases", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-win-stale-alias-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const outputDir = path.join(root, "dist", "cutej");
+  fs.mkdirSync(outputDir, { recursive: true });
+  const installer = "installer-with-env";
+  const sha512 = createHash("sha512").update(installer).digest("base64");
+  fs.writeFileSync(path.join(outputDir, "CuteJ Setup 0.3.12.exe"), installer, "utf8");
+  fs.writeFileSync(path.join(outputDir, "CuteJ Setup 0.3.12.exe.blockmap"), "fresh-blockmap", "utf8");
+  fs.writeFileSync(path.join(outputDir, "CuteJ-Setup-0.3.12.exe"), "stale-installer", "utf8");
+  fs.writeFileSync(path.join(outputDir, "CuteJ-Setup-0.3.12.exe.blockmap"), "stale-blockmap", "utf8");
+  fs.writeFileSync(
+    path.join(outputDir, "latest.yml"),
+    [
+      "files:",
+      "  - url: CuteJ-Setup-0.3.12.exe",
+      `    sha512: ${sha512}`,
+      `    size: ${Buffer.byteLength(installer)}`,
+      "path: CuteJ-Setup-0.3.12.exe",
+      `sha512: ${sha512}`,
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  ensureWindowsLatestAliases({ id: "cutej", productName: "CuteJ" }, root);
+
+  assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.12.exe"), "utf8"), installer);
+  assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.12.exe.blockmap"), "utf8"), "fresh-blockmap");
 });
 
 test("Windows installer data directory page clears stale NSIS errors before first create check", () => {

@@ -1146,6 +1146,7 @@ function writeInstallerInclude(rootDir, brand) {
   const dataRegistryKey = `Software\\${brand.storageNamespace}`;
   const nsisPrefix = nsisIdentifier(brand.productName);
   const shutdownArg = brand.installer.shutdownArg;
+  const programDataDirName = escapeNsisText(brand.paths.programDataDirName);
   const content = `!include nsDialogs.nsh
 
 Var /GLOBAL DesktopDataRoot
@@ -1199,7 +1200,7 @@ Function ${nsisPrefix}DataDirectoryPage
   \${if} $0 == "error"
     Abort
   \${endif}
-  \${NSD_CreateLabel} 0 0 100% 24u "Choose where ${productName} should store desktop data, service files, credentials, logs, caches, and plugins."
+  \${NSD_CreateLabel} 0 0 100% 24u "Choose where ${productName} should store desktop data, service config, credentials, logs, caches, and browser profiles."
   Pop $0
   \${NSD_CreateDirRequest} 0 35u 74% 12u "$DesktopDataRoot"
   Pop $DesktopDataRootInput
@@ -1238,7 +1239,7 @@ FunctionEnd
 
 !macro stopManagedServiceProcesses
   DetailPrint "Stopping ${productName} managed service processes..."
-  nsExec::ExecToLog \`%SYSTEMROOT%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; function Stop-DesktopManagedProcesses { $$programRoot = [Environment]::ExpandEnvironmentVariables('$DesktopDataRoot\\programs'); if (Test-Path -LiteralPath $$programRoot) { $$normalizedRoot = [System.IO.Path]::GetFullPath($$programRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar); Get-CimInstance Win32_Process | Where-Object { $$path = [string]$$_.ExecutablePath; $$line = [string]$$_.CommandLine; ($$path -and $$path.StartsWith($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$line -and $$line.IndexOf($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue } } }; Stop-DesktopManagedProcesses"\`
+  nsExec::ExecToLog \`%SYSTEMROOT%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; function Stop-DesktopManagedProcesses { $$programRoot = [Environment]::ExpandEnvironmentVariables('$APPDATA\\${programDataDirName}'); if (Test-Path -LiteralPath $$programRoot) { $$normalizedRoot = [System.IO.Path]::GetFullPath($$programRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar); Get-CimInstance Win32_Process | Where-Object { $$path = [string]$$_.ExecutablePath; $$line = [string]$$_.CommandLine; ($$path -and $$path.StartsWith($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$line -and $$line.IndexOf($$normalizedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue } } }; Stop-DesktopManagedProcesses"\`
   Pop $R2
 !macroend
 
@@ -1298,10 +1299,11 @@ FunctionEnd
   \${if} $DesktopDataRoot == ""
     StrCpy $DesktopDataRoot "$PROFILE\\${brand.paths.runtimeRootDirName}"
   \${endif}
-  MessageBox MB_YESNO|MB_ICONQUESTION "Do you also want to delete ${productName} app data?$\\r$\\n$\\r$\\nThis removes $DesktopDataRoot, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles." /SD IDNO IDYES removeDesktopData IDNO doneDataCleanup
+  MessageBox MB_YESNO|MB_ICONQUESTION "Do you also want to delete ${productName} app data?$\\r$\\n$\\r$\\nThis removes $DesktopDataRoot and $APPDATA\\${programDataDirName}, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles." /SD IDNO IDYES removeDesktopData IDNO doneDataCleanup
 
 removeDesktopData:
   RMDir /r "$DesktopDataRoot"
+  RMDir /r "$APPDATA\\${programDataDirName}"
   DeleteRegValue HKCU "${dataRegistryKey}" "DataRoot"
   DeleteRegKey /ifempty HKCU "${dataRegistryKey}"
 

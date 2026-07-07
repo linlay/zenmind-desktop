@@ -174,7 +174,9 @@ function runPowerShellScript(scriptPath: string, args: string[], cwd: string, op
     os.tmpdir(),
     `desktop-powershell-wrapper-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`
   );
-  fs.writeFileSync(wrapperScriptPath, buildPowerShellWrapperScript(scriptPath, args), "utf8");
+  // Windows PowerShell 5.1 treats UTF-8 scripts without a BOM as ANSI, which
+  // corrupts non-ASCII install/data paths before Get-Command sees them.
+  fs.writeFileSync(wrapperScriptPath, `\uFEFF${buildPowerShellWrapperScript(scriptPath, args)}`, "utf8");
   const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   return new Promise<ExecResult>((resolve, reject) => {
     const child = spawn(windowsPowerShellPath(), ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wrapperScriptPath], {

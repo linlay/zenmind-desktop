@@ -22,6 +22,13 @@ const {
   __testInternals: runtimeRootInternals
 } = require(path.join(__dirname, "..", "dist-electron", "main", "runtime-root.js"));
 const { APP_BRAND } = require(path.join(__dirname, "..", "dist-electron", "shared", "brand.js"));
+const { __testInternals: userPathInternals } = require(path.join(
+  __dirname,
+  "..",
+  "dist-electron",
+  "main",
+  "user-paths.js"
+));
 
 function createPathApp(root) {
   return {
@@ -93,6 +100,22 @@ test("Windows runtime root can come from the installer selected data directory",
       registryDataRootPath: selectedRoot
     }),
     selectedRoot
+  );
+});
+
+test("Windows program root stays under roaming app data when data root is selected", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-program-root-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const selectedRoot = path.join(root, "selected-data");
+
+  assert.equal(
+    userPathInternals.resolveApplicationSupportRoot({
+      platform: "win32",
+      appDataPath: path.join(root, "AppData", "Roaming"),
+      homePath: path.join(root, "home"),
+      registryDataRootPath: selectedRoot
+    }),
+    path.join(root, "AppData", "Roaming", APP_BRAND.paths.programDataDirName)
   );
 });
 

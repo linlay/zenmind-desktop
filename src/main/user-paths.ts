@@ -15,8 +15,6 @@ const DESKTOP_DIRS = [
   "secrets",
   "profiles"
 ] as const;
-const PROGRAMS_DIR_NAME = "programs";
-
 type DesktopRootOptions = {
   platform?: NodeJS.Platform;
   homePath: string;
@@ -26,8 +24,6 @@ type DesktopRootOptions = {
 type ApplicationSupportRootOptions = {
   platform?: NodeJS.Platform;
   appDataPath: string;
-  homePath: string;
-  registryDataRootPath?: string;
 };
 
 function pathApiForRoot(platform: NodeJS.Platform | undefined, rootPath: string) {
@@ -53,17 +49,12 @@ function resolveDesktopRoot({
 
 function resolveApplicationSupportRoot({
   platform = process.platform,
-  appDataPath,
-  homePath,
-  registryDataRootPath
+  appDataPath
 }: ApplicationSupportRootOptions) {
-  const rootPath = platform === "win32"
-    ? resolveRuntimeRootPath({ platform, homePath, registryDataRootPath })
-    : appDataPath;
-  const pathApi = pathApiForRoot(platform, rootPath);
+  const pathApi = pathApiForRoot(platform, appDataPath);
   const programDataDirName = APP_BRAND.paths.programDataDirName;
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(rootPath, PROGRAMS_DIR_NAME));
+    return pathApi.resolve(pathApi.join(appDataPath, programDataDirName));
   }
   if (platform === "darwin") {
     return pathApi.resolve(pathApi.join(appDataPath, programDataDirName));
@@ -258,8 +249,7 @@ export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: Service
 export function getApplicationSupportRoot(app: App) {
   const applicationSupportRoot = resolveApplicationSupportRoot({
     platform: process.platform,
-    appDataPath: getAppDataPath(app),
-    homePath: getHomePath(app)
+    appDataPath: getAppDataPath(app)
   });
   ensureDirectory(applicationSupportRoot);
   return applicationSupportRoot;
@@ -322,7 +312,6 @@ export function getElectronUserDataRoot(app: App) {
 
 export const __testInternals = {
   DESKTOP_DIRS,
-  PROGRAMS_DIR_NAME,
   resolveDesktopRoot,
   resolveApplicationSupportRoot
 };

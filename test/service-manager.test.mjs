@@ -7707,7 +7707,7 @@ test("runExecFile resolves when a daemon child keeps stdout open", async () => {
     fs.writeFileSync(
       scriptPath,
       [
-        "$proc = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','Start-Sleep -Seconds 3' -PassThru",
+        "$proc = Start-Process -FilePath powershell -WorkingDirectory $env:TEMP -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','Start-Sleep -Seconds 3' -PassThru",
         "$proc.Id | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'daemon.pid')",
         "Write-Output 'started'"
       ].join("\r\n"),
@@ -7740,7 +7740,48 @@ test("runExecFile resolves when a daemon child keeps stdout open", async () => {
   } catch {
     // Process may already be gone on a slow host.
   }
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+  await waitForPidExit(pid);
+  fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+});
+
+test("runExecFile preserves non-ASCII Windows PowerShell script paths", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows PowerShell path decoding is only used on Windows.");
+    return;
+  }
+
+  const nonAsciiSegment = "\u4e2d\u6587";
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `zenmind-run-exec-${nonAsciiSegment}-`));
+  const scriptPath = path.join(tempRoot, "deploy.ps1");
+  fs.writeFileSync(scriptPath, "Write-Output 'program-dir-ok'\r\n", "utf8");
+
+  try {
+    const result = await __testInternals.runExecFile("./deploy.ps1", [], tempRoot, { timeoutMs: 10_000 });
+    assert.equal(result.stdout.trim(), "program-dir-ok");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runExecFile preserves non-ASCII Windows PowerShell arguments", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows PowerShell argument decoding is only used on Windows.");
+    return;
+  }
+
+  const nonAsciiSegment = "\u6570\u636e\u76ee\u5f55";
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-run-exec-args-"));
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), `zenmind-${nonAsciiSegment}-`));
+  const scriptPath = path.join(tempRoot, "deploy.ps1");
+  fs.writeFileSync(scriptPath, "Write-Output $args[0]\r\n", "utf8");
+
+  try {
+    const result = await __testInternals.runExecFile("./deploy.ps1", [dataRoot], tempRoot, { timeoutMs: 10_000 });
+    assert.equal(result.stdout.trim(), dataRoot);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(dataRoot, { recursive: true, force: true });
+  }
 });
 
 test("stopRunningServicesForShutdown returns quickly when a stop script times out and force cleanup releases the process", async (t) => {

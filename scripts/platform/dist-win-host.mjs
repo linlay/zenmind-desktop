@@ -1,6 +1,7 @@
 import process from "node:process";
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { electronBuilderConfigPath, syncBrandArtifacts, resolveBrandId } from "../lib/brand-config.mjs";
 import { npmCmd, runAndWait, withBrandEnv } from "./spawn.mjs";
 
@@ -16,23 +17,39 @@ function unquoteYamlScalar(value) {
   return String(value ?? "").trim().replace(/^['"]|['"]$/gu, "");
 }
 
-function readLatestInstallerNames(latestYmlPath) {
+function readLatestInstallerEntries(latestYmlPath) {
   if (!fs.existsSync(latestYmlPath)) {
     return [];
   }
-  const names = new Set();
+  const entries = new Map();
   const content = fs.readFileSync(latestYmlPath, "utf8");
+  let currentEntry = null;
   for (const line of content.split(/\r?\n/u)) {
-    const match = line.match(/^\s*(?:url|path):\s*(.+?)\s*$/u);
-    if (!match) {
+    const nameMatch = line.match(/^\s*(?:-\s*)?(?:url|path):\s*(.+?)\s*$/u);
+    if (nameMatch) {
+      const value = unquoteYamlScalar(nameMatch[1]);
+      if (!value.toLowerCase().endsWith(".exe")) {
+        currentEntry = null;
+        continue;
+      }
+      const name = path.basename(value);
+      currentEntry = entries.get(name) ?? { name, size: null, sha512: null };
+      entries.set(name, currentEntry);
       continue;
     }
-    const value = unquoteYamlScalar(match[1]);
-    if (value.toLowerCase().endsWith(".exe")) {
-      names.add(path.basename(value));
+
+    const sizeMatch = line.match(/^\s*size:\s*(\d+)\s*$/u);
+    if (sizeMatch && currentEntry && currentEntry.size == null) {
+      currentEntry.size = Number(sizeMatch[1]);
+      continue;
+    }
+
+    const shaMatch = line.match(/^\s*sha512:\s*(.+?)\s*$/u);
+    if (shaMatch && currentEntry && currentEntry.sha512 == null) {
+      currentEntry.sha512 = unquoteYamlScalar(shaMatch[1]);
     }
   }
-  return [...names];
+  return [...entries.values()];
 }
 
 function installerAliasCandidates(brand, targetName) {
@@ -48,27 +65,49 @@ function installerAliasCandidates(brand, targetName) {
   return candidates;
 }
 
+function fileSha512(filePath) {
+  return createHash("sha512").update(fs.readFileSync(filePath)).digest("base64");
+}
+
+function fileMatchesLatestEntry(filePath, entry) {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  if (entry.size != null && fs.statSync(filePath).size !== entry.size) {
+    return false;
+  }
+  if (entry.sha512 && fileSha512(filePath) !== entry.sha512) {
+    return false;
+  }
+  return true;
+}
+
 export function ensureWindowsLatestAliases(brand, rootDir = projectRoot) {
   const outputDir = path.join(rootDir, "dist", brand.id);
   const latestYmlPath = path.join(outputDir, "latest.yml");
-  for (const targetName of readLatestInstallerNames(latestYmlPath)) {
-    const targetPath = path.join(outputDir, targetName);
-    if (fs.existsSync(targetPath)) {
+  for (const entry of readLatestInstallerEntries(latestYmlPath)) {
+    const targetPath = path.join(outputDir, entry.name);
+    if (fileMatchesLatestEntry(targetPath, entry)) {
       continue;
     }
 
-    const sourceName = installerAliasCandidates(brand, targetName)
-      .find((candidate) => fs.existsSync(path.join(outputDir, candidate)));
+    const sourceName = installerAliasCandidates(brand, entry.name)
+      .find((candidate) => fileMatchesLatestEntry(path.join(outputDir, candidate), entry))
+      ?? installerAliasCandidates(brand, entry.name)
+        .find((candidate) => fs.existsSync(path.join(outputDir, candidate)));
     if (!sourceName) {
-      throw new Error(`latest.yml references missing Windows installer: ${targetName}`);
+      throw new Error(`latest.yml references missing Windows installer: ${entry.name}`);
     }
 
     const sourcePath = path.join(outputDir, sourceName);
+    if (!fileMatchesLatestEntry(sourcePath, entry)) {
+      throw new Error(`latest.yml references Windows installer ${entry.name}, but ${sourceName} does not match its metadata`);
+    }
     fs.copyFileSync(sourcePath, targetPath);
 
     const sourceBlockmapPath = `${sourcePath}.blockmap`;
     const targetBlockmapPath = `${targetPath}.blockmap`;
-    if (fs.existsSync(sourceBlockmapPath) && !fs.existsSync(targetBlockmapPath)) {
+    if (fs.existsSync(sourceBlockmapPath)) {
       fs.copyFileSync(sourceBlockmapPath, targetBlockmapPath);
     }
   }
