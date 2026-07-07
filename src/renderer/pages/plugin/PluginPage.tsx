@@ -1,4 +1,11 @@
-import { createElement, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation, useParams, useNavigate } from "react-router-dom";
 import { useServices } from "../../services/ServicesContext";
 import { registerAssistantPageContextProvider } from "../../copilot/page-context/assistantPageContext";
@@ -433,6 +440,7 @@ export function PluginPage({
   const [webviewRetryNonce, setWebviewRetryNonce] = useState(0);
   const [webviewLoadError, setWebviewLoadError] = useState(false);
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
+  const [webviewSnapshotNonce, setWebviewSnapshotNonce] = useState(0);
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
     useState("");
@@ -451,6 +459,16 @@ export function PluginPage({
   useEffect(() => {
     return registerPluginSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
+
+  const handleWebviewRef = useCallback((node: Electron.WebviewTag | null): void => {
+    if (webviewRef.current === node) {
+      return;
+    }
+    webviewRef.current = node;
+    if (node) {
+      setWebviewSnapshotNonce((current) => current + 1);
+    }
+  }, []);
 
   useEffect(() => {
     onCurrentUrlChangeRef.current = onCurrentUrlChange;
@@ -612,6 +630,10 @@ export function PluginPage({
     }
     lastReportedCurrentUrlRef.current = nextUrl;
     onCurrentUrlChangeRef.current?.(nextUrl);
+  }
+
+  function refreshCurrentPageSnapshotTarget() {
+    setWebviewSnapshotNonce((current) => current + 1);
   }
 
   async function readPluginPageContext() {
@@ -1148,12 +1170,14 @@ export function PluginPage({
     const handleDomReady = () => {
       reportPluginWebviewDiagnostic("dom-ready");
       syncWebviewState();
+      refreshCurrentPageSnapshotTarget();
       sendPluginRouteToWebview(embeddedUrl, "initial");
       seedAgentWebclientAccessToken();
     };
     const handleDidFinishLoad = () => {
       reportPluginWebviewDiagnostic("did-finish-load");
       syncWebviewState();
+      refreshCurrentPageSnapshotTarget();
       sendPluginRouteToWebview(embeddedUrl, "route-sync");
       seedAgentWebclientAccessToken();
     };
@@ -1361,6 +1385,7 @@ export function PluginPage({
     serviceDisplayName,
     skipContextRegistration,
     webviewCurrentUrl,
+    webviewSnapshotNonce,
     webUrl,
   ]);
 
@@ -1628,9 +1653,7 @@ export function PluginPage({
             ) : null}
             {createElement("webview", {
               key: webviewRenderKey,
-              ref: (node: Electron.WebviewTag | null): void => {
-                webviewRef.current = node;
-              },
+              ref: handleWebviewRef,
               src: webviewSrcUrl,
               title: serviceDisplayName,
               className: "embedded-surface-frame",

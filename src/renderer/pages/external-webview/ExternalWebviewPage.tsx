@@ -1184,7 +1184,18 @@ export function ExternalWebviewPage({
     return () => {
       cancelled = true;
     };
-  }, [active, activeTab?.id, currentRoute, surfaceId, surfaceLabel, title, url]);
+  }, [
+    active,
+    activeTab?.currentUrl,
+    activeTab?.guestId,
+    activeTab?.id,
+    activeTab?.title,
+    currentRoute,
+    surfaceId,
+    surfaceLabel,
+    title,
+    url
+  ]);
 
   useEffect(() => {
     if (active === false || !activeTab) {

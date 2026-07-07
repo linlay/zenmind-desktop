@@ -59,10 +59,14 @@ export function buildCurrentPageContextSnapshot(
 export function publishCurrentPageContextSnapshot(
   input: CurrentPageContextSnapshotInput
 ) {
-  if (currentSnapshot?.pageKey === input.pageKey) {
+  const nextSnapshot = buildCurrentPageContextSnapshot(input);
+  if (
+    currentSnapshot?.pageKey === nextSnapshot.pageKey &&
+    currentSnapshot.webContentsId === nextSnapshot.webContentsId
+  ) {
     return currentSnapshot;
   }
-  currentSnapshot = buildCurrentPageContextSnapshot(input);
+  currentSnapshot = nextSnapshot;
   void window.electronAPI.currentPage.publishSnapshot(currentSnapshot).catch(() => undefined);
   notifyListeners();
   return currentSnapshot;

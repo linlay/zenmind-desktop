@@ -3240,6 +3240,10 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
     handleReadyBlock,
     "registerFocusedWebviewDevToolsShortcut();"
   );
+  const currentWebviewDevToolsIndex = indexOfRequired(
+    mainProcess,
+    "openCurrentWebviewDevTools({"
+  );
   const handleReadyCreateWindowCallIndex = indexOfRequired(handleReadyBlock, "createWindow();");
   assert.notEqual(initializeUserDataIndex, -1);
   assert.notEqual(initializeUserDataEndIndex, -1);
@@ -3261,6 +3265,8 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.equal(phaseDesktopStateReadyIndex < phaseShellReadyIndex, true);
   assert.equal(phaseShellReadyIndex < startupPipelineRunIndex, true);
   assert.equal(focusedWebviewDevToolsShortcutIndex < handleReadyCreateWindowCallIndex, true);
+  assert.notEqual(currentWebviewDevToolsIndex, -1);
+  assert.match(mainProcess, /currentPageSnapshot:\s*appState\.currentPageSnapshot/);
   assert.doesNotMatch(handleReadyBlock, /createAppTray\(\);/);
   assert.doesNotMatch(handleReadyBlock, /showDesktopPetWindow\(\);/);
   assert.doesNotMatch(handleReadyBlock, /startDesktopWsServerIfEnabled/);

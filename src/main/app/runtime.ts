@@ -115,7 +115,7 @@ import {
   isGlobalSearchShortcut,
 } from "../platform-adapter";
 import { configureSystemIdentity } from "./system-identity";
-import { openFocusedWebviewDevTools } from "../focused-webview-devtools";
+import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
 import { createDesktopSsoController } from "../sso-controller";
 import { createCdpIntegration } from "../cdp-integration";
 import { createWebSurfaceRuntime } from "../webs/surface-runtime";
@@ -746,7 +746,10 @@ export function createMainProcessRuntime() {
       return;
     }
     const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
-      openFocusedWebviewDevTools(webContents.getFocusedWebContents());
+      openCurrentWebviewDevTools({
+        currentPageSnapshot: appState.currentPageSnapshot,
+        webContents,
+      });
     });
     if (!registered) {
       console.warn(`failed to register focused webview DevTools shortcut: ${FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT}`);
