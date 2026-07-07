@@ -3488,6 +3488,8 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appShell, /onOpenGlobalSearch/);
   assert.match(appShell, /<DesktopGlobalSearchOverlay/);
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
+  assert.match(overlay, /params\.set\("newChat", "1"\)/);
+  assert.match(overlay, /params\.set\("newChatRequest", String\(Date\.now\(\)\)\)/);
   assert.match(overlay, /row\.kind !== "action" \?/);
   assert.match(overlay, /renderChatStatus/);
   assert.match(overlay, /desktop\.globalSearch\.status\.unread/);
