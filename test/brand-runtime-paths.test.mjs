@@ -982,6 +982,19 @@ test("Windows dist latest metadata aliases spaced installer artifacts", (t) => {
   assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.10.exe.blockmap"), "utf8"), "blockmap");
 });
 
+test("Windows installer data directory page clears stale NSIS errors before first create check", () => {
+  const installerInclude = fs.readFileSync(
+    path.join(projectRoot, "build", "brands", "cutej", "installer", "installer.nsh"),
+    "utf8"
+  );
+  const createDirectoryIndex = installerInclude.indexOf('CreateDirectory "$DesktopDataRoot"');
+  assert.notEqual(createDirectoryIndex, -1);
+  const beforeCreateDirectory = installerInclude.slice(Math.max(0, createDirectoryIndex - 200), createDirectoryIndex);
+
+  assert.match(beforeCreateDirectory, /IfFileExists "\$DesktopDataRoot\\\*" .*DataDirectoryReady/u);
+  assert.match(beforeCreateDirectory, /ClearErrors/u);
+});
+
 test("critical runtime path modules use shared brand-aware roots", () => {
   const expectations = [
     ["src/main/kanban-db.ts", /getDataRoot/u],
