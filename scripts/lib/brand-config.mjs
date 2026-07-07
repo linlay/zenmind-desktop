@@ -1215,6 +1215,8 @@ Function ${nsisPrefix}DataDirectoryPageLeave
     MessageBox MB_ICONEXCLAMATION "Please choose a ${productName} data directory."
     Abort
   \${endif}
+  IfFileExists "$DesktopDataRoot\\*" ${nsisPrefix}DataDirectoryReady 0
+  ClearErrors
   CreateDirectory "$DesktopDataRoot"
   IfErrors ${nsisPrefix}DataDirectoryCreateFailed ${nsisPrefix}DataDirectoryReady
 ${nsisPrefix}DataDirectoryCreateFailed:

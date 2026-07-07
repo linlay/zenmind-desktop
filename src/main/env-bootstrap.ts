@@ -741,7 +741,7 @@ export function shouldPromptEnvRootConflict(input: {
   bundledEnvZipExists: boolean;
   runtimeRootExistedAtStartup: boolean;
 }): boolean {
-  if (input.platform !== "darwin" && input.platform !== "win32") {
+  if (input.platform !== "darwin") {
     return false;
   }
   if (!input.isFirstDesktopInstall) {

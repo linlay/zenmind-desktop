@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const {
   resolveRuntimeRoot,
   resolveBundledEnvZipPath,
+  shouldPromptEnvRootConflict,
   runtimeEnvExists,
   runtimeEnvNeedsBundledSeedRefresh
 } = require(path.join(__dirname, "..", "dist-electron", "main", "env-bootstrap.js"));
@@ -92,6 +93,18 @@ test("Windows runtime root can come from the installer selected data directory",
       registryDataRootPath: selectedRoot
     }),
     selectedRoot
+  );
+});
+
+test("Windows first install uses an existing selected data directory without old-data migration prompt", () => {
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "win32",
+      isFirstDesktopInstall: true,
+      bundledEnvZipExists: true,
+      runtimeRootExistedAtStartup: true
+    }),
+    false
   );
 });
 
