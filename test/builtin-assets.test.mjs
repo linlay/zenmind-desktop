@@ -8,6 +8,15 @@ import { pathToFileURL } from "node:url";
 
 const projectRoot = process.cwd();
 
+test("dist:mac validates existing builtin assets instead of scanning workspace releases", () => {
+  const distMacScript = fs.readFileSync(path.join(projectRoot, "scripts", "dist-mac.mjs"), "utf8");
+
+  assert.match(
+    distMacScript,
+    /const syncBuiltinAssetArgs = \[\s*"(\.\/)?scripts\/sync-builtin-assets\.mjs",\s*"--use-existing",\s*"--os=darwin",\s*"--arch=arm64"\s*\]/u
+  );
+});
+
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -430,6 +439,45 @@ test("syncBuiltinAssets use-existing mode does not scan workspace releases", asy
       useExisting: true
     }),
     /missing current Desktop builtin service assets/u
+  );
+});
+
+test("syncBuiltinAssets use-existing signing refuses existing Darwin archives", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-use-existing-darwin-archive-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  const servicesRoot = path.join(tempRoot, "build", "resources", "services");
+  const services = [];
+  for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
+    const archivePath = writeDarwinCoreServiceArchive(sourceRoot, serviceId);
+    const assetFileName = path.basename(archivePath);
+    fs.mkdirSync(path.join(servicesRoot, serviceId), { recursive: true });
+    fs.copyFileSync(archivePath, path.join(servicesRoot, serviceId, assetFileName));
+    services.push({
+      id: serviceId,
+      version: "v999.0.0",
+      assetFileName,
+      assetType: "archive",
+      assetSignature: "fixture-signature"
+    });
+  }
+  writeJson(path.join(servicesRoot, "manifest.json"), {
+    generatedAt: "2026-07-08T00:00:00.000Z",
+    services
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-use-existing-archive-sign-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      useExisting: true,
+      signDarwin: true
+    }),
+    /cannot sign existing Darwin builtin archive/u
   );
 });
 

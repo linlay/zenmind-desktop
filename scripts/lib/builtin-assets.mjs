@@ -786,7 +786,15 @@ function readSyncedAssetManifest(outputRoot) {
   return JSON.parse(stripped);
 }
 
-function validateExistingSyncedAssets(projectRoot, platform = {}) {
+function writeSyncedAssetManifest(outputRoot, services) {
+  fs.writeFileSync(
+    path.join(outputRoot, "manifest.json"),
+    `${JSON.stringify({ generatedAt: new Date().toISOString(), services }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+function validateExistingSyncedAssets(projectRoot, platform = {}, options = {}) {
   const outputRoot = desktopBuiltinServicesDir(projectRoot);
   const manifest = readSyncedAssetManifest(outputRoot);
   if (!manifest || !Array.isArray(manifest.services)) {
@@ -794,7 +802,7 @@ function validateExistingSyncedAssets(projectRoot, platform = {}) {
   }
 
   const services = [];
-  const selectedEntries = [];
+  const selectedAssets = [];
   for (const entry of manifest.services) {
     if (!entry || typeof entry.id !== "string" || typeof entry.assetFileName !== "string") {
       continue;
@@ -818,23 +826,51 @@ function validateExistingSyncedAssets(projectRoot, platform = {}) {
 
     const service = serviceFromBundleManifest(assetManifest, assetPath);
     services.push(service);
+    const assetType = assetStat.isDirectory() ? "directory" : "archive";
     if (assetStat.isDirectory()) {
       validateBundleDirectory(service, assetPath);
     } else {
       validateBundleArchive(service, assetPath);
     }
 
-    selectedEntries.push({
-      id: service.id,
-      version: service.version,
-      assetFileName: path.basename(assetPath),
-      assetType: assetStat.isDirectory() ? "directory" : "archive",
-      assetSignature: computeAssetSignature(assetPath)
+    selectedAssets.push({
+      entry,
+      service,
+      assetPath,
+      assetType
     });
   }
 
   assertRequiredDesktopCoreServices(services, platform);
-  return selectedEntries;
+  if (options.signDarwin) {
+    const darwinAssets = selectedAssets.filter(({ service }) => service.platform.os === "darwin");
+    if (darwinAssets.length > 0) {
+      const archivedAsset = darwinAssets.find((asset) => asset.assetType !== "directory");
+      if (archivedAsset) {
+        throw new Error(
+          `cannot sign existing Darwin builtin archive for ${archivedAsset.service.id}: ${archivedAsset.assetPath}\n` +
+            "Run scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64 to sync Darwin services as directories."
+        );
+      }
+
+      const darwinSigningIdentity = resolveDarwinDeveloperIdApplicationIdentity();
+      for (const asset of darwinAssets) {
+        signDarwinServiceDirectory(asset.assetPath, asset.service, darwinSigningIdentity);
+        validateBundleDirectory(asset.service, asset.assetPath);
+        asset.entry.assetSignature = computeAssetSignature(asset.assetPath);
+        asset.entry.assetType = asset.assetType;
+      }
+      writeSyncedAssetManifest(outputRoot, manifest.services);
+    }
+  }
+
+  return selectedAssets.map(({ service, assetPath, assetType }) => ({
+    id: service.id,
+    version: service.version,
+    assetFileName: path.basename(assetPath),
+    assetType,
+    assetSignature: computeAssetSignature(assetPath)
+  }));
 }
 
 function normalizeBuiltinVersion(version) {
@@ -1325,7 +1361,7 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
   const outputRoot = desktopBuiltinServicesDir(projectRoot);
   const platform = { os, arch };
   if (useExisting) {
-    const existingManifest = validateExistingSyncedAssets(projectRoot, platform);
+    const existingManifest = validateExistingSyncedAssets(projectRoot, platform, { signDarwin });
     if (existingManifest) {
       return existingManifest;
     }
@@ -1378,11 +1414,7 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
     };
   });
 
-  fs.writeFileSync(
-    path.join(outputRoot, "manifest.json"),
-    `${JSON.stringify({ generatedAt: new Date().toISOString(), services: manifest }, null, 2)}\n`,
-    "utf8"
-  );
+  writeSyncedAssetManifest(outputRoot, manifest);
 
   cleanupLegacyBrandScopedServiceAssets(projectRoot);
 
