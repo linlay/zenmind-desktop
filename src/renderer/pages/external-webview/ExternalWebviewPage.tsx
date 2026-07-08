@@ -1,6 +1,6 @@
 import { createElement, useEffect, useRef, useState } from "react";
 import type {
-  MouseEvent as ReactMouseEvent,
+  FocusEvent as ReactFocusEvent,
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent
 } from "react";
@@ -525,6 +525,10 @@ export function ExternalWebviewPage({
     } satisfies ExternalWebviewBrowserState;
   };
 
+  function createBlankTab() {
+    return createTab(BLANK_EXTERNAL_WEBVIEW_URL, "");
+  }
+
   const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(() => createInitialBrowserState());
   const [addressInputValue, setAddressInputValue] = useState(() => url);
   const [addressInputUnlocked, setAddressInputUnlocked] = useState(false);
@@ -746,7 +750,11 @@ export function ExternalWebviewPage({
     webviewRefs.current.delete(tabId);
     setBrowserState((currentState) => {
       if (currentState.tabs.length <= 1) {
-        return currentState;
+        const blankTab = createBlankTab();
+        return {
+          tabs: [blankTab],
+          activeTabId: blankTab.id
+        };
       }
 
       const closingIndex = currentState.tabs.findIndex((tab) => tab.id === tabId);
@@ -1330,16 +1338,21 @@ export function ExternalWebviewPage({
         case "desktop.web.closeTab": {
           const tabId = readTargetTabId(args);
           const currentState = browserStateRef.current;
-          if (currentState.tabs.length <= 1) {
-            return embeddedError("last_tab", t("externalWebview.error.lastTab"), { tabId });
-          }
           if (!currentState.tabs.some((tab) => tab.id === tabId)) {
             return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });
           }
           setBrowserState((state) => {
             const targetIndex = state.tabs.findIndex((tab) => tab.id === tabId);
-            if (targetIndex === -1 || state.tabs.length <= 1) {
+            if (targetIndex === -1) {
               return state;
+            }
+            if (state.tabs.length <= 1) {
+              const blankTab = createBlankTab();
+              webviewRefs.current.delete(tabId);
+              return {
+                tabs: [blankTab],
+                activeTabId: blankTab.id
+              };
             }
             const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
             const nextActiveTabId = state.activeTabId === tabId
@@ -1368,8 +1381,11 @@ export function ExternalWebviewPage({
   }, [active, activeTab?.id, surfaceId, surfaceLabel, t, title, url]);
 
   useEffect(() => {
+    if (addressInputUnlocked) {
+      return;
+    }
     setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
-  }, [activeTab?.id, activeTab?.currentUrl, url]);
+  }, [activeTab?.id, activeTab?.currentUrl, addressInputUnlocked, url]);
 
   useEffect(() => {
     const tabsStrip = tabsStripRef.current;
@@ -1459,7 +1475,7 @@ export function ExternalWebviewPage({
   };
 
   const handleNavigateToInputUrl = () => {
-    if (!activeTab || !addressInputUnlocked) {
+    if (!activeTab) {
       return;
     }
 
@@ -1482,13 +1498,12 @@ export function ExternalWebviewPage({
     });
   };
 
-  const handleAddressInputClick = (event: ReactMouseEvent<HTMLInputElement>) => {
-    if (event.detail < 3) {
+  const handleAddressInputFocus = (event: ReactFocusEvent<HTMLInputElement>) => {
+    if (addressInputUnlocked) {
       return;
     }
 
     setAddressInputUnlocked(true);
-    event.currentTarget.focus();
     event.currentTarget.select();
   };
 
@@ -1518,7 +1533,7 @@ export function ExternalWebviewPage({
           >
             {browserState.tabs.map((tab) => {
               const isActive = tab.id === browserState.activeTabId;
-              const canClose = browserState.tabs.length > 1;
+              const canClose = true;
               return (
                 <div
                   key={tab.id}
@@ -1625,23 +1640,20 @@ export function ExternalWebviewPage({
               className="external-webview-toolbar-location-input"
               value={addressInputValue}
               onChange={(event) => {
-                if (!addressInputUnlocked) {
-                  return;
-                }
                 setAddressInputValue(event.target.value);
               }}
-              onClick={handleAddressInputClick}
+              onFocus={handleAddressInputFocus}
               onBlur={() => {
+                setAddressInputUnlocked(false);
                 setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
               }}
               onKeyDown={(event) => {
-                if (!addressInputUnlocked || event.key !== "Enter") {
+                if (event.key !== "Enter") {
                   return;
                 }
                 event.preventDefault();
                 handleNavigateToInputUrl();
               }}
-              readOnly={!addressInputUnlocked}
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="none"

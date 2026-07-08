@@ -877,6 +877,117 @@
   overflow: visible;
 }
 
+.sidebar-bootstrap-guide-card {
+  box-sizing: border-box;
+  margin: 0 12px 10px;
+  padding: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 8px;
+  background: rgba(255, 251, 235, 0.78);
+  box-shadow: 0 8px 18px rgba(120, 53, 15, 0.08);
+  color: #7c2d12;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-bootstrap-guide-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sidebar-bootstrap-guide-card-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #78350f;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-bootstrap-guide-card-dismiss {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #92400e;
+  cursor: pointer;
+}
+
+.sidebar-bootstrap-guide-card-dismiss:hover {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.sidebar-bootstrap-guide-steps {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.sidebar-bootstrap-guide-steps li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  min-width: 0;
+  color: #7c2d12;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.42;
+}
+
+.sidebar-bootstrap-guide-steps li > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sidebar-bootstrap-guide-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.sidebar-bootstrap-guide-actions button {
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #7c2d12;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-bootstrap-guide-actions button:hover {
+  border-color: rgba(245, 158, 11, 0.48);
+  background: rgba(255, 255, 255, 0.82);
+}
+
 .assistant-worker-collapse-item.is-bootstrap-guide > .Collapse-header,
 .sidebar-tool-menu-item.is-bootstrap-guide {
   position: relative;
@@ -967,6 +1078,38 @@
   background: rgba(69, 42, 12, 0.96);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
   color: #fde68a;
+}
+
+:root[data-theme="dark"] .sidebar-bootstrap-guide-card {
+  border-color: rgba(245, 158, 11, 0.38);
+  background: rgba(69, 42, 12, 0.74);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .sidebar-bootstrap-guide-card-head strong,
+:root[data-theme="dark"] .sidebar-bootstrap-guide-steps li,
+:root[data-theme="dark"] .sidebar-bootstrap-guide-actions button {
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .sidebar-bootstrap-guide-card-dismiss {
+  color: #fcd34d;
+}
+
+:root[data-theme="dark"] .sidebar-bootstrap-guide-card-dismiss:hover,
+:root[data-theme="dark"] .sidebar-bootstrap-guide-actions button:hover {
+  background: rgba(245, 158, 11, 0.16);
+}
+
+:root[data-theme="dark"] .sidebar-bootstrap-guide-steps li > span {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fcd34d;
+}
+
+:root[data-theme="dark"] .sidebar-bootstrap-guide-actions button {
+  border-color: rgba(245, 158, 11, 0.38);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -6,6 +6,7 @@
   color-scheme: light;
   --window-radius: 18px;
   --mac-traffic-light-safe-area: 88px;
+  --mac-fullscreen-top-safe-area: 32px;
   --bg-base: #FFFFFF;
   --bg-canvas: transparent;
   --surface: rgba(255, 255, 255, 0.18);

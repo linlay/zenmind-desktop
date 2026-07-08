@@ -372,7 +372,8 @@ export function createMainProcessRuntime() {
     getDesktopPetEnabled: () => appState.desktopPetSettings?.enabled === true,
     isDesktopPetSupported: () => isDesktopPetSupportedPlatform(mainProcessContext.platform),
     showDesktopPetWindow,
-    hideDesktopPetWindow
+    hideDesktopPetWindow,
+    restoreDesktopPetWindowLayering
   });
   const startupEnvironmentRuntime = createStartupEnvironmentRuntime({
     app,
@@ -623,6 +624,10 @@ export function createMainProcessRuntime() {
   
   function showDesktopPetWindow() {
     return petRuntime.showWindow();
+  }
+
+  function restoreDesktopPetWindowLayering() {
+    return petRuntime.restoreWindowLayering();
   }
   
   function ingestDesktopPetAgentEvent(event: unknown, meta: { source?: string; transportMode?: string } = {}) {

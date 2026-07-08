@@ -1,6 +1,35 @@
 import { BrowserWindow, type Rectangle } from "electron";
 import { PRODUCT_NAME } from "../../../shared/brand";
 
+type DesktopPetLayeredWindow = Pick<
+  BrowserWindow,
+  "isDestroyed" | "moveTop" | "setAlwaysOnTop" | "setVisibleOnAllWorkspaces"
+>;
+
+export function applyDesktopPetBrowserWindowLayering(
+  win: DesktopPetLayeredWindow | null | undefined,
+  platform: NodeJS.Platform | string,
+  options: { preserveProcessType?: boolean; moveTop?: boolean } = {}
+) {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  if (platform === "darwin") {
+    win.setAlwaysOnTop(true, "screen-saver");
+    win.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      ...(options.preserveProcessType ? { skipTransformProcessType: true } : {})
+    });
+  } else if (platform === "win32") {
+    win.setAlwaysOnTop(true);
+  }
+
+  if (options.moveTop) {
+    win.moveTop();
+  }
+}
+
 export function createDesktopPetBrowserWindow(options: {
   bounds: Rectangle;
   platform: NodeJS.Platform | string;
@@ -8,7 +37,6 @@ export function createDesktopPetBrowserWindow(options: {
   focusable?: boolean;
   onClosed: () => void;
 }) {
-  const isMac = options.platform === "darwin";
   const isWindows = options.platform === "win32";
 
   const win = new BrowserWindow({
@@ -35,12 +63,7 @@ export function createDesktopPetBrowserWindow(options: {
     }
   });
 
-  if (isMac) {
-    win.setAlwaysOnTop(true, "screen-saver");
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  } else if (isWindows) {
-    win.setAlwaysOnTop(true);
-  }
+  applyDesktopPetBrowserWindowLayering(win, options.platform);
 
   win.on("closed", options.onClosed);
   return win;

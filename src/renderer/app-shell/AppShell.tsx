@@ -15,7 +15,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
@@ -105,6 +105,13 @@ type ExternalExperimentalItem = {
   runtimeStatus?: WebappRuntimeViewState["status"];
   runtimeMessage?: string;
 };
+
+const EMPTY_WEB_SURFACE_ROUTE = "/webs";
+
+function resolveAssistantNavDisplayItems(result: AssistantNavAgentItemsResult) {
+  const activityItems = Array.isArray(result.activityItems) ? result.activityItems : [];
+  return activityItems.length > 0 ? activityItems : result.items;
+}
 
 function isThemePreference(value: unknown): value is ThemePreference {
   return value === "light" || value === "dark" || value === "system";
@@ -538,6 +545,7 @@ export function AppShell() {
     location.pathname.startsWith("/plugin-settings/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
+    location.pathname === EMPTY_WEB_SURFACE_ROUTE ||
     location.pathname.startsWith("/webs/");
   const usesBuiltinBrowserSurface = location.pathname === BUILTIN_BROWSER_ROUTE;
   const shouldMountBuiltinBrowserSurface = builtinBrowserSurfaceMounted || usesBuiltinBrowserSurface;
@@ -726,7 +734,7 @@ export function AppShell() {
     const result = await window.electronAPI.webs.webapps.remove(item.id);
     if (result.ok) {
       if (activeWebEntryKey === item.entryKey) {
-        requestSidebarNavigation(BUILTIN_BROWSER_ROUTE);
+        requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
       }
       setMountedWebEntryKeys((current) =>
         current.filter((entryKey) => entryKey !== item.entryKey)
@@ -749,7 +757,7 @@ export function AppShell() {
 
   async function handleCloseWebEntry(item: WebEntry) {
     if (activeWebEntryKey === item.entryKey) {
-      requestSidebarNavigation(BUILTIN_BROWSER_ROUTE);
+      requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
     }
 
     if (item.kind === "webapp") {
@@ -851,7 +859,7 @@ export function AppShell() {
         if (!result.ok) {
           return;
         }
-        const nextItems = normalizeAssistantNavAgents(result.items);
+        const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(result));
         setAssistantNavAgentsLoaded(true);
         setAssistantNavAgents(nextItems);
       }
@@ -890,7 +898,7 @@ export function AppShell() {
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
       setAssistantNavAgentsLoaded(true);
-      setAssistantNavAgents(nextResult.items);
+      setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
     });
 
     return () => {
@@ -2785,6 +2793,16 @@ export function AppShell() {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`
   } as CSSProperties;
   const globalSearchShortcutLabel = isMac ? "Cmd+K" : isWindows ? "Ctrl+K" : "";
+  const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
+  const bootstrapGuideAgentVisible = Boolean(
+    normalizedBootstrapAgentKey &&
+    (!assistantNavAgentsLoaded ||
+      assistantNavAgents.some((agent) => agent.agentKey === normalizedBootstrapAgentKey))
+  );
+  const bootstrapGuideActive =
+    startupRestoreState?.mode === "bootstrap" &&
+    startupRestoreState.phase === "succeeded" &&
+    bootstrapGuideAgentVisible;
 
   return (
     <div
@@ -2835,11 +2853,8 @@ export function AppShell() {
           copilotAgentOptions={copilotAgentOptions}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
-          bootstrapGuideActive={
-            startupRestoreState?.mode === "bootstrap" &&
-            startupRestoreState.phase === "succeeded"
-          }
-          bootstrapAgentKey={assistantSettings?.bootstrapAgentKey ?? ""}
+          bootstrapGuideActive={bootstrapGuideActive}
+          bootstrapAgentKey={normalizedBootstrapAgentKey}
           sidebarNavigationCanGoBack={sidebarNavigationHistory.back.length > 0}
           sidebarNavigationCanGoForward={sidebarNavigationHistory.forward.length > 0}
           onOpenAssistantDock={() => openAssistantDock()}
@@ -2983,6 +2998,7 @@ export function AppShell() {
               }
             />
             <Route path={BUILTIN_BROWSER_ROUTE} element={null} />
+            <Route path={EMPTY_WEB_SURFACE_ROUTE} element={null} />
             <Route path="/webs/:entryKey" element={<WebRouteFallback itemMap={webItemMap} />} />
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />

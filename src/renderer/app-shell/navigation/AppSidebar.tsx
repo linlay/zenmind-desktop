@@ -193,6 +193,11 @@ const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
   },
 ];
 
+const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
+  "desktopAssistant",
+  "webOperator",
+]);
+
 const kanbanNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "kanban",
   to: "/kanban",
@@ -527,6 +532,10 @@ function summarizeAgentStatus(
   };
 }
 
+function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
+  return !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim());
+}
+
 function formatUnreadCount(value: number) {
   if (value <= 0) {
     return "";
@@ -858,6 +867,7 @@ export function AppSidebar({
   ] = useState<BootstrapGuideDismissedBubbles>(
     createInitialBootstrapGuideDismissedBubbles,
   );
+  const [bootstrapGuideCardDismissed, setBootstrapGuideCardDismissed] = useState(false);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
@@ -907,13 +917,19 @@ export function AppSidebar({
   const pendingChatId = pendingRouteAgentInfo.chatId;
   const activeSidebarAgentKey = pendingPath ? pendingAgentKey : currentAgentKey;
   const normalizedBootstrapAgentKey = bootstrapGuideActive ? bootstrapAgentKey.trim() : "";
-  const assistantStatusSummary = useMemo(
-    () => summarizeAgentStatus(assistantNavAgents),
+  const showBootstrapGuideCard =
+    bootstrapGuideActive && !bootstrapGuideCardDismissed && !isSettingsMode && !isCollapsed;
+  const primaryAssistantNavAgents = useMemo(
+    () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
   );
+  const assistantStatusSummary = useMemo(
+    () => summarizeAgentStatus(primaryAssistantNavAgents),
+    [primaryAssistantNavAgents],
+  );
   const sortedAssistantNavAgents = useMemo(
-    () => sortAssistantNavAgentsForMode(assistantNavAgents, assistantNavSortMode),
-    [assistantNavAgents, assistantNavSortMode],
+    () => sortAssistantNavAgentsForMode(primaryAssistantNavAgents, assistantNavSortMode),
+    [primaryAssistantNavAgents, assistantNavSortMode],
   );
   const assistantNavSortLabel =
     assistantNavSortMode === "byName"
@@ -1148,6 +1164,7 @@ export function AppSidebar({
   useEffect(() => {
     if (!bootstrapGuideActive) {
       bootstrapGuideToolMenuAutoOpenedRef.current = false;
+      setBootstrapGuideCardDismissed(false);
       setBootstrapGuideDismissedBubbles((current) =>
         current.agent || current.help
           ? createInitialBootstrapGuideDismissedBubbles()
@@ -1409,6 +1426,22 @@ export function AppSidebar({
       dismissBootstrapGuideBubble("help");
     }
     handleItemClick(event, targetPath);
+    closeToolMenu();
+  }
+
+  function handleBootstrapGuideOpenAgent() {
+    if (!normalizedBootstrapAgentKey) {
+      return;
+    }
+    dismissBootstrapGuideBubble("agent");
+    requestNavigate(createAgentRoute(normalizedBootstrapAgentKey), {
+      retriggerAgentRoute: true,
+    });
+  }
+
+  function handleBootstrapGuideOpenHelp() {
+    dismissBootstrapGuideBubble("help");
+    requestNavigate("/help");
     closeToolMenu();
   }
 
@@ -3143,6 +3176,54 @@ export function AppSidebar({
     );
   }
 
+  function renderBootstrapGuideCard() {
+    if (!showBootstrapGuideCard) {
+      return null;
+    }
+
+    return (
+      <section
+        className="sidebar-bootstrap-guide-card"
+        aria-label={t("sidebar.bootstrapGuide.title")}
+      >
+        <div className="sidebar-bootstrap-guide-card-head">
+          <strong>{t("sidebar.bootstrapGuide.title")}</strong>
+          <button
+            type="button"
+            className="sidebar-bootstrap-guide-card-dismiss"
+            aria-label={t("sidebar.bootstrapGuide.dismiss")}
+            title={t("sidebar.bootstrapGuide.dismiss")}
+            onClick={() => setBootstrapGuideCardDismissed(true)}
+          >
+            <CloseOutlined aria-hidden="true" />
+          </button>
+        </div>
+        <ol className="sidebar-bootstrap-guide-steps">
+          <li>
+            <span aria-hidden="true">1</span>
+            {t("sidebar.bootstrapGuide.stepAgent")}
+          </li>
+          <li>
+            <span aria-hidden="true">2</span>
+            {t("sidebar.bootstrapGuide.stepProfile")}
+          </li>
+          <li>
+            <span aria-hidden="true">3</span>
+            {t("sidebar.bootstrapGuide.stepHelp")}
+          </li>
+        </ol>
+        <div className="sidebar-bootstrap-guide-actions">
+          <button type="button" onClick={handleBootstrapGuideOpenAgent}>
+            {t("sidebar.bootstrapGuide.actionAgent")}
+          </button>
+          <button type="button" onClick={handleBootstrapGuideOpenHelp}>
+            {t("sidebar.bootstrapGuide.actionHelp")}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   function getBootstrapGuideFloatingBubbles(): BootstrapGuideFloatingBubble[] {
     const bubbles: BootstrapGuideFloatingBubble[] = [];
     if (!bootstrapGuideDismissedBubbles.agent) {
@@ -4248,6 +4329,7 @@ export function AppSidebar({
       >
         {isSettingsMode ? renderSettingsNav() : navItems.map((item) => renderPrimaryNavEntry(item))}
       </nav>
+      {renderBootstrapGuideCard()}
 
       {!isSettingsMode ? (
       <div className="sidebar-footer">

@@ -52,7 +52,7 @@ import {
 import { DesktopPetPreviewProjector } from "./desktop-pet-preview";
 import { AgentPlatformPetStatusClient } from "./pet-status-client";
 import { AgentPlatformPetStreamClient } from "./pet-stream-client";
-import { createDesktopPetBrowserWindow } from "./window";
+import { applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow } from "./window";
 
 export type DesktopPetRuntimeOptions = {
   app: App;
@@ -636,6 +636,18 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }
   }
 
+  function restoreWindowLayering() {
+    if (!isDesktopPetSupportedPlatform(options.platform)) {
+      return;
+    }
+    for (const targetWindow of [state.desktopPetWindow, state.desktopPetPanelWindow]) {
+      applyDesktopPetBrowserWindowLayering(targetWindow, options.platform, {
+        preserveProcessType: true,
+        moveTop: true
+      });
+    }
+  }
+
   function createPanelWindow(mode: DesktopPetWindowMode) {
     if (!isDesktopPetSupportedPlatform(options.platform)) {
       return null;
@@ -708,8 +720,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     if (!panelWindow.isVisible()) {
       panelWindow.showInactive();
     }
-    panelWindow.moveTop();
-    state.desktopPetWindow.moveTop();
+    restoreWindowLayering();
   }
 
   function persistPosition(mode: DesktopPetWindowMode = getWindowMode()) {
@@ -915,6 +926,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   function showWindow() {
     const result = desktopPetWindowController.showWindow();
     applyPanelWindowBounds();
+    restoreWindowLayering();
     return result;
   }
 
@@ -991,6 +1003,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     getPointDisplayBounds,
     getBounds: getPetBounds,
     applyWindowBounds: applyPetWindowBounds,
+    restoreWindowLayering,
     persistPosition,
     moveWindowBy,
     stickWindowToEdge,

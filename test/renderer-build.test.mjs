@@ -667,12 +667,10 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.doesNotMatch(globalStyles, /rgba\(196,\s*225,\s*252,\s*0\.(?:28|78)\)/);
   assert.doesNotMatch(globalStyles, /#4A9EDB|#6CB1E4|#A9D0F2|#B6D8F4/);
   assert.match(globalStyles, /:root\[data-theme="dark"\][\s\S]*?--embedded-surface-shell-bg:\s*#1f2329;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] body\.embedded-surface-body,\s*[\s\S]*?body\.embedded-surface-body\.mac-translucent-sidebar-body\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /body\.embedded-surface-body\s*\{[\s\S]*?padding:\s*0;/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
-  assert.match(macPluginEmbeddedRule, /background:\s*var\(--bg-canvas\);/);
-  assert.match(darkMacPluginEmbeddedRule, /background:\s*var\(--embedded-surface-shell-bg\);/);
-  assert.doesNotMatch(darkMacPluginEmbeddedRule, /background:\s*var\(--bg-canvas\);/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,[\s\S]*?background:\s*transparent;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(appShellBeforeRule, /background:\s*transparent;/);
   assert.match(darkAppShellBeforeRule, /background:\s*transparent;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface::before\s*\{[\s\S]*?display:\s*none;/);
@@ -1005,7 +1003,10 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /"data-sidebar-group-id": args\.groupId/);
   assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
   assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
-  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(assistantNavAgents, assistantNavSortMode\)/);
+  assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
+  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
+  assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
+  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
   assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "website_open"[\s\S]*\| "website_closed"/);
@@ -1019,7 +1020,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /<SidebarActionIcon kind="more_actions" \/>/);
   assert.match(sidebarSource, /const webIconKind = isOpen \? "website_open" : "website_closed"/);
   assert.match(sidebarSource, /<SidebarActionIcon kind=\{webIconKind\} \/>/);
-  assert.doesNotMatch(sidebarSource, /CloseOutlined|LeftOutlined|RightOutlined|MoreOutlined|SortAscendingOutlined|EditSquareIcon|AddIcon/);
+  assert.doesNotMatch(sidebarSource, /EditSquareIcon|AddIcon/);
   assert.doesNotMatch(sidebarSource, /assistant-material-icon is-(?:more|done-all|add)/);
   assert.doesNotMatch(sidebarSource, /assistantHomeNavItem/);
   assert.doesNotMatch(sidebarSource, /智能助理首页|智能助手首页/);
@@ -1091,7 +1092,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /暂无相关会话/);
   assert.doesNotMatch(sidebarSource, /Math\.max\(agent\.chatCount, recentChats\.length\) > 5/);
   assert.match(sidebarSource, /renderStatusBadges/);
-  assert.match(sidebarSource, /summarizeAgentStatus\(assistantNavAgents\)/);
+  assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
   const newChatHandlerStart = sidebarSource.indexOf("function handleAssistantNewChat");
   const markAllReadHandlerStart = sidebarSource.indexOf("async function handleAssistantMarkAllRead");
@@ -1397,8 +1398,8 @@ test("assistant sidebar chat history selection follows pending navigation", () =
   assert.match(globalStyles, /\.assistant-worker-badge\s*\{[\s\S]{0,120}margin-left:\s*auto;/);
   assert.match(globalStyles, /\.assistant-worker-header\.is-active/);
   assert.match(globalStyles, /\.assistant-worker-chat-item\.is-active\s*\{[\s\S]{0,120}background:\s*transparent;/);
-  assert.doesNotMatch(globalStyles, /\.assistant-worker-collapse-item\.is-selected\s*\{/);
-  assert.doesNotMatch(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\.is-selected\s*\{/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-selected\s*\{[\s\S]{0,120}background:\s*rgba\(var\(--accent-rgb\),\s*0\.08\);/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-selected\.is-expanded\s*\{[\s\S]{0,160}border-color:\s*rgba\(var\(--accent-rgb\),\s*0\.18\);/);
 });
 
 test("assistant sidebar awaiting chats use a right-side loading status", () => {
@@ -1509,6 +1510,33 @@ test("assistant sidebar empty state waits for navigation load", () => {
   assert.match(sidebarSource, /assistantNavAgentsLoaded\?: boolean;/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded = true,/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>\s*\) : null/);
+});
+
+test("assistant sidebar hides desktop helper agents from primary navigation only", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
+  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
+  assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
+  assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
+  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
+  assert.doesNotMatch(sidebarSource, /copilotAgentOptions\.filter\(shouldShowAssistantInPrimaryNavigation\)/);
+});
+
+test("assistant sidebar uses merged activity agents when available", () => {
+  const appShell = readAppShellSource();
+
+  assert.match(appShell, /function resolveAssistantNavDisplayItems\(result: AssistantNavAgentItemsResult\)/);
+  assert.match(appShell, /const activityItems = Array\.isArray\(result\.activityItems\)\s*\?\s*result\.activityItems\s*:\s*\[\];/);
+  assert.match(appShell, /return activityItems\.length > 0 \? activityItems : result\.items;/);
+  assert.match(appShell, /const nextItems = normalizeAssistantNavAgents\(resolveAssistantNavDisplayItems\(result\)\);/);
+  assert.match(appShell, /setAssistantNavAgents\(normalizeAssistantNavAgents\(resolveAssistantNavDisplayItems\(nextResult\)\)\);/);
 });
 
 test("settings route moves section navigation into the app sidebar and uses section subroutes", () => {
@@ -2240,18 +2268,14 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.doesNotMatch(globalStyles, /--sidebar-translucency-opacity/);
   assert.match(globalStyles, /\.app-shell\.is-mac-translucent-sidebar::before\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-shell::before\s*\{[\s\S]*?(?:radial-gradient|linear-gradient)/);
-  assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.08\)\s*0%/);
-  assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.05\)\s*46%/);
-  assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.03\)\s*100%/);
-  assert.match(darkSidebarRule, /background:\s*#202020;/);
+  assert.match(lightSidebarRule, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.05\);/);
+  assert.match(darkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.15\);/);
   assert.doesNotMatch(darkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)/);
   assert.doesNotMatch(darkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)/);
   assert.doesNotMatch(darkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)/);
-  assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.08\)\s*0%/);
-  assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.05\)\s*46%/);
-  assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.03\)\s*100%/);
-  assert.match(macSidebarRule, /blur\(12px\)\s*saturate\(112%\)\s*brightness\(1\.01\)/);
-  assert.match(macDarkSidebarRule, /background:\s*#202020;/);
+  assert.match(macSidebarRule, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.05\);/);
+  assert.match(macSidebarRule, /box-shadow:[\s\S]*?10px 0 28px rgba\(60,\s*60,\s*67,\s*0\.08\);/);
+  assert.match(macDarkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.15\);/);
   assert.match(macDarkSidebarRule, /backdrop-filter:\s*none;/);
   assert.match(macDarkSidebarRule, /-webkit-backdrop-filter:\s*none;/);
   assert.doesNotMatch(macDarkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)/);
@@ -3090,7 +3114,11 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appShell, /const webOpenEntryKeys = useMemo\(\(\) => \{/);
   assert.match(appShell, /openKeys\.add\(activeWebEntryKey\)/);
   assert.match(appShell, /mountedWebEntryKeys/);
-  assert.match(closeWebEntry, /requestSidebarNavigation\(BUILTIN_BROWSER_ROUTE\)/);
+  assert.match(appShell, /const EMPTY_WEB_SURFACE_ROUTE = "\/webs";/);
+  assert.match(closeWebEntry, /requestSidebarNavigation\(EMPTY_WEB_SURFACE_ROUTE\)/);
+  assert.doesNotMatch(closeWebEntry, /requestSidebarNavigation\(BUILTIN_BROWSER_ROUTE\)/);
+  assert.match(appShell, /location\.pathname === EMPTY_WEB_SURFACE_ROUTE \|\|[\s\S]{0,120}location\.pathname\.startsWith\("\/webs\/"\)/);
+  assert.match(appShell, /<Route path=\{EMPTY_WEB_SURFACE_ROUTE\} element=\{null\} \/>/);
   assert.match(closeWebEntry, /setMountedWebEntryKeys\(\(current\) =>[\s\S]*?current\.filter\(\(entryKey\) => entryKey !== item\.entryKey\)/);
   assert.match(closeWebEntry, /window\.electronAPI\.webs\.webapps\.stop\(item\.id\)/);
   assert.doesNotMatch(closeWebEntry, /webs\.websites\.remove/);
@@ -3563,6 +3591,13 @@ test("assistant navigation agents refresh immediately after startup services bec
 
 test("bootstrap startup completion opens configured bootstrap agent", () => {
   const appShell = readAppShellSource();
+  const appSidebar = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
   const startupGate = readSourceFile(
     "src",
     "renderer",
@@ -3572,6 +3607,8 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   );
   const startupGateHelper = readSourceFile("src", "shared", "startup-gate.ts");
   const globalStyles = readRendererStyles();
+  const zhDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const bootstrapAutoOpenGuardIndex = appShell.indexOf(
     "startupBootstrapNavigationDoneRef.current ||\n      !shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)"
   );
@@ -3623,6 +3660,35 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.doesNotMatch(bootstrapAutoOpenBlock, /getKanbanAwareFallbackPath/);
   assert.doesNotMatch(bootstrapAutoOpenBlock, /navigate\("\/control-center"/);
   assert.match(appShell, /function createBootstrapAgentRoute\(agentKey: string\)[\s\S]*?encodeURIComponent\(agentKey\)/);
+  assert.match(appShell, /const normalizedBootstrapAgentKey = assistantSettings\?\.bootstrapAgentKey\.trim\(\) \?\? "";/);
+  assert.match(appShell, /const bootstrapGuideAgentVisible = Boolean\([\s\S]*?normalizedBootstrapAgentKey[\s\S]*?!assistantNavAgentsLoaded \|\|[\s\S]*?assistantNavAgents\.some\(\(agent\) => agent\.agentKey === normalizedBootstrapAgentKey\)[\s\S]*?\);/);
+  assert.match(appShell, /const bootstrapGuideActive =[\s\S]*?startupRestoreState\?\.mode === "bootstrap"[\s\S]*?startupRestoreState\.phase === "succeeded"[\s\S]*?bootstrapGuideAgentVisible/);
+  assert.match(appShell, /bootstrapGuideActive=\{bootstrapGuideActive\}/);
+  assert.match(appShell, /bootstrapAgentKey=\{normalizedBootstrapAgentKey\}/);
+  assert.match(appSidebar, /const \[bootstrapGuideCardDismissed, setBootstrapGuideCardDismissed\] = useState\(false\)/);
+  assert.match(appSidebar, /setBootstrapGuideCardDismissed\(false\)/);
+  assert.match(appSidebar, /function renderBootstrapGuideCard\(\)/);
+  assert.match(appSidebar, /sidebar-bootstrap-guide-card/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.title/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.stepAgent/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.stepProfile/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.stepHelp/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.actionAgent/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.actionHelp/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.dismiss/);
+  assert.doesNotMatch(appSidebar, /BOOTSTRAP_GUIDE_CARD_STORAGE|bootstrapGuideCardDismissed[^;]*localStorage|localStorage[^;]*bootstrapGuideCardDismissed/);
+  [
+    "sidebar.bootstrapGuide.title",
+    "sidebar.bootstrapGuide.stepAgent",
+    "sidebar.bootstrapGuide.stepProfile",
+    "sidebar.bootstrapGuide.stepHelp",
+    "sidebar.bootstrapGuide.actionAgent",
+    "sidebar.bootstrapGuide.actionHelp",
+    "sidebar.bootstrapGuide.dismiss"
+  ].forEach((key) => {
+    assert.match(zhDictionary, new RegExp(`${escapeRegExp(JSON.stringify(key))}:`));
+    assert.match(enDictionary, new RegExp(`${escapeRegExp(JSON.stringify(key))}:`));
+  });
   assert.doesNotMatch(startupGateHelper, /shouldAutoOpenAssistant/);
   assert.doesNotMatch(startupGateHelper, /shouldRedirectStartupFailureToControlCenter/);
   assert.doesNotMatch(startupGateHelper, /resolveStartupRootPath/);
@@ -4139,6 +4205,14 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.ok(externalBrowserChromeRule, "missing .external-webview-browser-chrome rule");
   assert.match(externalBrowserChromeRule, /app-region:\s*drag;/);
   assert.match(externalBrowserChromeRule, /-webkit-app-region:\s*drag;/);
+  assert.match(
+    globalStyles,
+    /\.external-webview-page\.is-app-surface\s*\{[^}]*margin:\s*-28px -24px -28px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/
+  );
+  assert.match(
+    globalStyles,
+    /\.external-webview-page\.is-app-surface\s+\.external-webview-frame-shell,\s*\.external-webview-page\.is-app-surface\s+\.external-webview-panel,\s*\.external-webview-page\.is-app-surface\s+\.external-webview-frame\s*\{[^}]*background:\s*transparent;/
+  );
   assert.doesNotMatch(globalStyles, /\.app-main-drag-region\s*\{/);
   assert.doesNotMatch(globalStyles, /\.sidebar-chrome-drag-region\s*\{/);
   assert.doesNotMatch(
@@ -4264,6 +4338,8 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const appState = readSourceFile("src", "main", "app-state.ts");
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const appShell = readAppShellSource();
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
@@ -4277,13 +4353,18 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(windowManager, /vibrancy:\s*"under-window"\s+as const/);
   assert.match(windowManager, /visualEffectState:\s*"active"\s+as const/);
   assert.match(windowManager, /applyAppearance\(targetWindow: TWindow \| null\)/);
+  assert.match(windowManager, /restoreFloatingWindowsForFullscreen\?: \(\) => void;/);
   assert.match(
     windowManager,
     /if \(options\.platform === "darwin"\)\s*\{[\s\S]*?isSidebarTranslucencyEnabled\?\.\(\) \?\? true\) && !targetWindow\.isFullScreen\(\);[\s\S]*?targetWindow\.setVibrancy\(useSidebarTranslucency \? "under-window" : null\);[\s\S]*?targetWindow\.setBackgroundColor\(useSidebarTranslucency \? "#00000000" : "#FFFFFF"\);/
   );
   assert.match(windowManager, /targetWindow\.setBackgroundColor\("#FFFFFF"\);/);
-  assert.match(windowManager, /targetWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
-  assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
+  assert.match(windowManager, /targetWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?options\.restoreFloatingWindowsForFullscreen\?\.\(\);[\s\S]*?\}\);/);
+  assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?options\.restoreFloatingWindowsForFullscreen\?\.\(\);[\s\S]*?\}\);/);
+  assert.match(appShellRuntime, /restoreDesktopPetWindowLayering: \(\) => void;/);
+  assert.match(appShellRuntime, /restoreFloatingWindowsForFullscreen: \(\) => options\.restoreDesktopPetWindowLayering\(\)/);
+  assert.match(appRuntime, /restoreDesktopPetWindowLayering\s*\n\s*\}\);/);
+  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,120}petRuntime\.restoreWindowLayering\(\)/);
   assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;/);
   assert.match(contracts, /getWindowState:\s*\(\) => Promise<\{ ok:\s*boolean; isFullScreen:\s*boolean; message\?:\s*string \}>;/);
   assert.match(contracts, /onWindowStateChanged:\s*\(listener:\s*DesktopWindowStateListener\) => \(\(\) => void\);/);
@@ -4295,8 +4376,8 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(appShell, /desktopShell\.onWindowStateChanged/);
   assert.match(appShell, /windowFullScreen \? "is-window-fullscreen" : ""/);
   assert.match(macFullscreenRule, /--app-window-drag-height:\s*0px;/);
-  assert.doesNotMatch(macFullscreenRule, /padding-top:/);
-  assert.doesNotMatch(globalStyles, /--mac-fullscreen-top-safe-area/u);
+  assert.match(macFullscreenRule, /padding-top:\s*var\(--mac-fullscreen-top-safe-area\);/);
+  assert.match(globalStyles, /--mac-fullscreen-top-safe-area:\s*32px;/);
   assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*44px;/);
   assert.match(globalStyles, /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[\s\S]*?padding-top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 12px\);/);
 });
@@ -4449,7 +4530,7 @@ test("web copilot dock yields to native dialogs while quick assistant keeps outs
   assert.match(preload, /onNativeDialogVisibility/);
   assert.match(appShell, /nativeDialogVisible/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
-  assert.match(appShell, /nativeDialogVisible=\{nativeDialogVisible\}/);
+  assert.match(appShell, /nativeDialogVisible=\{nativeDialogVisible \|\| Boolean\(desktopActionConfirmation\)\}/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\.is-native-dialog-open/);
 });
 
@@ -5673,7 +5754,18 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petRuntime, /options\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
   assert.match(desktopPetWindow, /const isWindows = options\.platform === "win32";/);
   assert.match(desktopPetWindow, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
-  assert.match(desktopPetWindow, /if \(isMac\) \{[\s\S]{0,180}setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\);[\s\S]{0,80}\} else if \(isWindows\) \{[\s\S]{0,80}setAlwaysOnTop\(true\);/);
+  assert.match(
+    desktopPetWindow,
+    /export function applyDesktopPetBrowserWindowLayering\([\s\S]*?platform === "darwin"[\s\S]{0,180}setAlwaysOnTop\(true, "screen-saver"\);[\s\S]{0,220}setVisibleOnAllWorkspaces\(true,\s*\{[\s\S]{0,160}visibleOnFullScreen:\s*true,[\s\S]{0,180}skipTransformProcessType:\s*true[\s\S]*?\}\);[\s\S]{0,120}platform === "win32"[\s\S]{0,120}setAlwaysOnTop\(true\);/
+  );
+  assert.match(desktopPetWindow, /applyDesktopPetBrowserWindowLayering\(win, options\.platform\);/);
+  assert.match(petRuntime, /import \{ applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow \} from "\.\/window";/);
+  assert.match(
+    petRuntime,
+    /function restoreWindowLayering\(\)[\s\S]{0,320}\[state\.desktopPetWindow, state\.desktopPetPanelWindow\][\s\S]{0,260}applyDesktopPetBrowserWindowLayering\(targetWindow, options\.platform,[\s\S]{0,160}preserveProcessType:\s*true,[\s\S]{0,80}moveTop:\s*true/
+  );
+  assert.match(petRuntime, /function showWindow\(\)[\s\S]{0,160}applyPanelWindowBounds\(\);[\s\S]{0,80}restoreWindowLayering\(\);/);
+  assert.match(petRuntime, /restoreWindowLayering,/);
   assert.match(desktopPetHandlers, /desktopPet\.setMouseInteractive/);
   assert.match(desktopPetHandlers, /desktopPet\.dismissPreview/);
   assert.doesNotMatch(mainProcess, /desktopPet\.danceRequested/);
@@ -5831,7 +5923,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
     globalStyles,
     /\.sidebar-account-menu \.sidebar-tool-menu-item:hover,[\s\S]*?\.sidebar-account-menu \.sidebar-tool-menu-item\.sidebar-link-active,[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/
   );
-  assert.doesNotMatch(globalStyles, /\.sidebar-account-menu \.sidebar-tool-menu-item:hover \.sidebar-link-icon,[\s\S]*?color:\s*var\(--accent\);/);
+  assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-tool-menu-item:hover \.sidebar-link-icon,[\s\S]*?color:\s*#64748b;/);
   assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-action:hover \.sidebar-account-menu-icon[\s\S]*?color:\s*var\(--accent\);/);
   assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-action:focus-visible \.sidebar-account-menu-icon[\s\S]*?color:\s*var\(--accent\);/);
   assert.match(globalStyles, /\.sidebar-account-menu-user\s*\{[\s\S]*?font-size:\s*14px;[\s\S]*?font-weight:\s*500;/);
@@ -5936,7 +6028,7 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /afterTabId: sourceTab\.id,[\s\S]{0,120}partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
 });
 
-test("embedded browser address entry stays read-only until the current tab is unlocked", () => {
+test("embedded browser address entry remains editable while preserving edits", () => {
   const externalWebviewPage = readSourceFile(
     "src",
     "renderer",
@@ -5950,13 +6042,34 @@ test("embedded browser address entry stays read-only until the current tab is un
   assert.match(externalWebviewPage, /value === BLANK_EXTERNAL_WEBVIEW_URL \? "" : value/u);
   assert.match(externalWebviewPage, /const \[addressInputUnlocked, setAddressInputUnlocked\] = useState\(false\)/u);
   assert.match(externalWebviewPage, /useEffect\(\(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(false\);[\s\S]{0,80}\}, \[activeTab\?\.id\]\);/u);
-  assert.match(externalWebviewPage, /event\.detail < 3/u);
-  assert.match(externalWebviewPage, /setAddressInputUnlocked\(true\)/u);
-  assert.match(externalWebviewPage, /if \(!addressInputUnlocked\) \{[\s\S]{0,80}return;[\s\S]{0,80}\}[\s\S]{0,80}setAddressInputValue\(event\.target\.value\);/u);
-  assert.match(externalWebviewPage, /if \(!addressInputUnlocked \|\| event\.key !== "Enter"\) \{/u);
-  assert.match(externalWebviewPage, /readOnly=\{!addressInputUnlocked\}/u);
+  assert.match(externalWebviewPage, /if \(addressInputUnlocked\) \{[\s\S]{0,80}return;[\s\S]{0,80}\}[\s\S]{0,120}setAddressInputValue\(getEditableAddressInputValue\(activeTab\?\.currentUrl \?\? url\)\);/u);
+  assert.match(externalWebviewPage, /const handleAddressInputFocus = \(event: ReactFocusEvent<HTMLInputElement>\) => \{[\s\S]{0,160}setAddressInputUnlocked\(true\);[\s\S]{0,80}event\.currentTarget\.select\(\);/u);
+  assert.match(externalWebviewPage, /onChange=\{\(event\) => \{[\s\S]{0,80}setAddressInputValue\(event\.target\.value\);[\s\S]{0,40}\}\}/u);
+  assert.match(externalWebviewPage, /if \(event\.key !== "Enter"\) \{/u);
+  assert.match(externalWebviewPage, /onFocus=\{handleAddressInputFocus\}/u);
+  assert.match(externalWebviewPage, /onBlur=\{\(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(false\);[\s\S]{0,160}setAddressInputValue\(getEditableAddressInputValue\(activeTab\?\.currentUrl \?\? url\)\);/u);
+  assert.doesNotMatch(externalWebviewPage, /readOnly=\{!addressInputUnlocked\}/u);
+  assert.doesNotMatch(externalWebviewPage, /if \(!addressInputUnlocked\) \{[\s\S]{0,80}return;/u);
+  assert.doesNotMatch(externalWebviewPage, /if \(!addressInputUnlocked \|\| event\.key !== "Enter"\) \{/u);
+  assert.doesNotMatch(externalWebviewPage, /event\.detail < 3/u);
   assert.match(externalWebviewPage, /onClick=\{\(\) => openTab\(BLANK_EXTERNAL_WEBVIEW_URL,\s*""\)\}/u);
   assert.doesNotMatch(externalWebviewPage, /onClick=\{\(\) => openTab\(url,\s*title\)\}/u);
+});
+
+test("embedded browser closing the final tab leaves a blank page", () => {
+  const externalWebviewPage = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "external-webview",
+    "ExternalWebviewPage.tsx"
+  );
+
+  assert.match(externalWebviewPage, /function createBlankTab\(\)/u);
+  assert.match(externalWebviewPage, /createTab\(BLANK_EXTERNAL_WEBVIEW_URL,\s*""\)/u);
+  assert.match(externalWebviewPage, /if \(currentState\.tabs\.length <= 1\) \{[\s\S]{0,220}tabs: \[blankTab\],[\s\S]{0,80}activeTabId: blankTab\.id/u);
+  assert.match(externalWebviewPage, /const canClose = true;/u);
+  assert.doesNotMatch(externalWebviewPage, /embeddedError\("last_tab"/u);
 });
 
 test("help page uses settings-aligned layout shell", () => {

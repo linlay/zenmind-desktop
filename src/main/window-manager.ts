@@ -215,6 +215,7 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     clearWindow(targetWindow: TWindow): void;
     isNativeDialogOpen(): boolean;
     hideQuickAssistantAfterOutsideFocus(): void;
+    restoreFloatingWindowsForFullscreen?: () => void;
   }
 ) {
   function sendWindowState() {
@@ -242,11 +243,13 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
 
   targetWindow.on("enter-full-screen", () => {
     options.lifecycle.applyAppearance(targetWindow);
+    options.restoreFloatingWindowsForFullscreen?.();
     sendWindowState();
   });
 
   targetWindow.on("leave-full-screen", () => {
     options.lifecycle.applyAppearance(targetWindow);
+    options.restoreFloatingWindowsForFullscreen?.();
     sendWindowState();
   });
 
