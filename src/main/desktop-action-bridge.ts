@@ -4,6 +4,9 @@ import type { AddressInfo } from "node:net";
 import type { App, BrowserWindow } from "electron";
 import { dialog } from "electron";
 import type {
+  DesktopActionConfirmationDecision,
+  DesktopActionConfirmationRequest,
+  DesktopActionConfirmationResponse,
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
   DesktopPageContextSnapshot,
@@ -87,6 +90,7 @@ type DesktopActionBridgeOptions = {
   navigate: (targetPath: string) => void;
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
+  confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
   getKanbanRuntime?: () => KanbanRuntime | null;
   desktopPet?: {
@@ -146,6 +150,7 @@ const CONFIRMATION_ARG_MAX_NESTED_KEYS = 6;
 const CONFIRMATION_ARG_MAX_ARRAY_ITEMS = 4;
 const CONFIRMATION_ARG_VALUE_MAX_CHARS = 160;
 const CONFIRMATION_ARG_SUMMARY_MAX_CHARS = 1200;
+const CONFIRMATION_COMPACT_VALUE_MAX_CHARS = 280;
 let activeServer: http.Server | null = null;
 
 function agentPlatformAuthFailureMessage() {
@@ -194,7 +199,7 @@ type PageControlGrantScope = {
   pageTitle?: string;
 };
 
-type PageControlConfirmationDecision = "grant" | "once" | "cancel";
+type PageControlConfirmationDecision = Extract<DesktopActionConfirmationDecision, "grant" | "once" | "cancel">;
 
 class PageControlGrantStore {
   private readonly grants = new Map<string, number>();
@@ -716,71 +721,172 @@ function buildDesktopActionConfirmationDetail(
   ].join("\n");
 }
 
-async function confirmMutatingAction(
+function compactConfirmationValue(value: string) {
+  return truncateConfirmationText(value, CONFIRMATION_COMPACT_VALUE_MAX_CHARS);
+}
+
+function getConfirmationRequestId(request: DesktopActionCallRequest) {
+  return request.requestId?.trim() || randomUUID();
+}
+
+function buildNativeConfirmationDetail(payload: DesktopActionConfirmationRequest) {
+  return [
+    payload.description,
+    "",
+    ...payload.fields.map((field) => `${field.label}: ${field.value}`)
+  ].filter((line) => line !== undefined).join("\n");
+}
+
+function findConfirmationButtonIndex(
+  payload: DesktopActionConfirmationRequest,
+  decision: DesktopActionConfirmationDecision
+) {
+  const index = payload.buttons.findIndex((button) => button.decision === decision);
+  return index === -1 ? 0 : index;
+}
+
+function normalizeConfirmationDecision(
+  value: unknown,
+  fallback: DesktopActionConfirmationDecision
+): DesktopActionConfirmationDecision {
+  return value === "confirm" || value === "grant" || value === "once" || value === "cancel"
+    ? value
+    : fallback;
+}
+
+async function requestDesktopActionConfirmation(
+  options: DesktopActionBridgeOptions,
+  payload: DesktopActionConfirmationRequest,
+  owner: BrowserWindow | null
+): Promise<DesktopActionConfirmationDecision> {
+  if (options.confirmRendererAction && owner && !owner.isDestroyed()) {
+    const response = await options.confirmRendererAction(payload);
+    return normalizeConfirmationDecision(response.decision, payload.cancelDecision);
+  }
+
+  const buttons = payload.buttons.map((button) => button.label);
+  const dialogOptions = {
+    type: "question" as const,
+    buttons,
+    defaultId: findConfirmationButtonIndex(payload, payload.defaultDecision),
+    cancelId: findConfirmationButtonIndex(payload, payload.cancelDecision),
+    title: payload.title,
+    message: payload.summary,
+    detail: buildNativeConfirmationDetail(payload)
+  };
+  const result = owner && !owner.isDestroyed()
+    ? await dialog.showMessageBox(owner, dialogOptions)
+    : await dialog.showMessageBox(dialogOptions);
+  return payload.buttons[result.response]?.decision ?? payload.cancelDecision;
+}
+
+function buildMutatingActionConfirmationRequest(
   request: DesktopActionCallRequest,
   args: Record<string, unknown>,
-  snapshot: DesktopPageContextSnapshot | null,
-  owner: BrowserWindow | null
-) {
+  snapshot: DesktopPageContextSnapshot | null
+): DesktopActionConfirmationRequest {
   const action = request.action;
   const providedSummary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
     : "";
   const summary = providedSummary || t("desktopAction.confirmSummary", { action });
   const permissionMode = readRequestPermissionMode(request, args);
-  const dialogOptions = {
-    type: "question" as const,
-    buttons: [t("desktopAction.confirmExecute"), t("common.cancel")],
-    defaultId: 1,
-    cancelId: 1,
+  const target = describeDesktopActionSnapshotTarget(snapshot);
+  const argsSummary = summarizeConfirmationArgs(args);
+  return {
+    requestId: getConfirmationRequestId(request),
+    kind: "action",
     title: t("desktopAction.confirmActionTitle"),
-    message: summary,
-    detail: buildDesktopActionConfirmationDetail(request, args, {
+    summary,
+    description: t("desktopAction.confirmActionDetail"),
+    fields: [
+      { label: t("desktopAction.confirmFieldAction"), value: action || "unknown" },
+      { label: t("desktopAction.confirmFieldTarget"), value: compactConfirmationValue(sanitizeConfirmationUrlText(target)) },
+      { label: t("desktopAction.confirmFieldPermission"), value: permissionMode },
+      { label: t("desktopAction.confirmFieldArgs"), value: compactConfirmationValue(argsSummary) }
+    ],
+    details: buildDesktopActionConfirmationDetail(request, args, {
       permissionMode,
-      target: describeDesktopActionSnapshotTarget(snapshot)
-    })
+      target
+    }),
+    buttons: [
+      { decision: "cancel", label: t("common.cancel"), variant: "cancel" },
+      { decision: "confirm", label: t("desktopAction.confirmExecute"), variant: "primary" }
+    ],
+    defaultDecision: "cancel",
+    cancelDecision: "cancel"
   };
-  const result = owner && !owner.isDestroyed()
-    ? await dialog.showMessageBox(owner, dialogOptions)
-    : await dialog.showMessageBox(dialogOptions);
-  return result.response === 0;
 }
 
-async function confirmPageControlAction(
-  scope: PageControlGrantScope,
+async function confirmMutatingAction(
+  options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
   args: Record<string, unknown>,
+  snapshot: DesktopPageContextSnapshot | null,
   owner: BrowserWindow | null
-): Promise<PageControlConfirmationDecision> {
+) {
+  const decision = await requestDesktopActionConfirmation(
+    options,
+    buildMutatingActionConfirmationRequest(request, args, snapshot),
+    owner
+  );
+  return decision === "confirm";
+}
+
+function buildPageControlActionConfirmationRequest(
+  scope: PageControlGrantScope,
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>
+): DesktopActionConfirmationRequest {
   const summary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
     : t("desktopAction.pageControlSummary", { origin: scope.origin });
   const targetLabel = [scope.surfaceLabel, scope.pageTitle].filter(Boolean).join(" · ") || scope.origin;
-  const dialogOptions = {
-    type: "question" as const,
-    buttons: [t("desktopAction.pageControlGrant"), t("desktopAction.pageControlOnce"), t("common.cancel")],
-    defaultId: 1,
-    cancelId: 2,
+  const permissionMode = readRequestPermissionMode(request, args);
+  return {
+    requestId: getConfirmationRequestId(request),
+    kind: "page_control",
     title: t("desktopAction.pageControlTitle"),
-    message: summary,
-    detail: buildDesktopActionConfirmationDetail(request, args, {
-      permissionMode: readRequestPermissionMode(request, args),
+    summary,
+    description: t("desktopAction.pageControlCompactDescription"),
+    fields: [
+      { label: t("desktopAction.confirmFieldTarget"), value: compactConfirmationValue(sanitizeConfirmationUrlText(targetLabel)) },
+      { label: t("desktopAction.confirmFieldPermission"), value: permissionMode },
+      { label: t("desktopAction.confirmFieldArgs"), value: compactConfirmationValue(summarizeConfirmationArgs(args)) }
+    ],
+    details: buildDesktopActionConfirmationDetail(request, args, {
+      permissionMode,
       target: targetLabel,
       prefixLines: [
         t("desktopAction.pageControlTarget", { target: targetLabel }),
         t("desktopAction.pageControlGrantDetail"),
         t("desktopAction.pageControlHighRiskDetail")
       ]
-    })
+    }),
+    buttons: [
+      { decision: "cancel", label: t("common.cancel"), variant: "cancel" },
+      { decision: "once", label: t("desktopAction.pageControlOnce"), variant: "secondary" },
+      { decision: "grant", label: t("desktopAction.pageControlGrant"), variant: "primary" }
+    ],
+    defaultDecision: "once",
+    cancelDecision: "cancel"
   };
-  const result = owner && !owner.isDestroyed()
-    ? await dialog.showMessageBox(owner, dialogOptions)
-    : await dialog.showMessageBox(dialogOptions);
-  if (result.response === 0) {
-    return "grant";
-  }
-  if (result.response === 1) {
-    return "once";
+}
+
+async function confirmPageControlAction(
+  options: DesktopActionBridgeOptions,
+  scope: PageControlGrantScope,
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>,
+  owner: BrowserWindow | null
+): Promise<PageControlConfirmationDecision> {
+  const decision = await requestDesktopActionConfirmation(
+    options,
+    buildPageControlActionConfirmationRequest(scope, request, args),
+    owner
+  );
+  if (decision === "grant" || decision === "once") {
+    return decision;
   }
   return "cancel";
 }
@@ -935,7 +1041,7 @@ async function confirmDesktopActionIfNeeded(
       return null;
     }
     if (scope) {
-      const decision = await confirmPageControlAction(scope, request, args, options.getMainWindow());
+      const decision = await confirmPageControlAction(options, scope, request, args, options.getMainWindow());
       if (decision === "grant") {
         pageControlGrantStore.grant(scope);
         return null;
@@ -951,7 +1057,7 @@ async function confirmDesktopActionIfNeeded(
       };
     }
   }
-  const confirmed = await confirmMutatingAction(request, args, snapshot, options.getMainWindow());
+  const confirmed = await confirmMutatingAction(options, request, args, snapshot, options.getMainWindow());
   if (confirmed) {
     return null;
   }
@@ -1479,6 +1585,8 @@ export function stopDesktopActionBridge() {
 
 export const __testInternals = {
   buildDesktopActionConfirmationDetail,
+  buildMutatingActionConfirmationRequest,
+  buildPageControlActionConfirmationRequest,
   sanitizeConfirmationUrl,
   summarizeConfirmationArgs,
   fetchAgentPlatformWithAuth

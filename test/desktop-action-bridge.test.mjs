@@ -236,3 +236,85 @@ test("desktop action confirmation detail exposes debug context with redacted arg
   assert.doesNotMatch(detail, /提醒主人喝水/u);
   assert.doesNotMatch(detail, new RegExp("x".repeat(200), "u"));
 });
+
+test("desktop action confirmation request keeps compact fields free of debug context", () => {
+  const payload = __testInternals.buildMutatingActionConfirmationRequest({
+    requestId: "request-123",
+    action: "desktop.web.website.add",
+    source: {
+      runId: "run-abc",
+      chatId: "chat-def",
+      agentKey: "zenmi"
+    }
+  }, {
+    input: {
+      label: "腾讯视频",
+      url: "https://v.qq.com/?token=secret#hash"
+    },
+    accessToken: "secret-token"
+  }, {
+    pageKind: "webview",
+    surfaceLabel: "Agent Webclient",
+    pageContext: {
+      title: "Agent",
+      url: "http://127.0.0.1:7080/agent/zenmi?token=secret#fragment"
+    }
+  });
+
+  const compactText = JSON.stringify({
+    summary: payload.summary,
+    description: payload.description,
+    fields: payload.fields
+  });
+
+  assert.equal(payload.kind, "action");
+  assert.deepEqual(payload.buttons.map((button) => button.decision), ["cancel", "confirm"]);
+  assert.match(compactText, /desktop\.web\.website\.add/u);
+  assert.match(compactText, /Agent Webclient/u);
+  assert.match(compactText, /https:\/\/v\.qq\.com\//u);
+  assert.doesNotMatch(compactText, /request-123/u);
+  assert.doesNotMatch(compactText, /run-abc/u);
+  assert.doesNotMatch(compactText, /chat-def/u);
+  assert.doesNotMatch(compactText, /secret-token/u);
+  assert.doesNotMatch(compactText, /token=secret/u);
+  assert.match(payload.details, /request-123/u);
+  assert.match(payload.details, /run-abc/u);
+  assert.match(payload.details, /chat-def/u);
+  assert.doesNotMatch(payload.details, /secret-token/u);
+  assert.doesNotMatch(payload.details, /token=secret/u);
+});
+
+test("page control confirmation request exposes grant once cancel decisions", () => {
+  const payload = __testInternals.buildPageControlActionConfirmationRequest({
+    chatId: "chat-def",
+    agentKey: "zenmi",
+    webContentsId: 12,
+    origin: "https://example.test",
+    surfaceLabel: "Agent Webclient",
+    pageTitle: "Example"
+  }, {
+    requestId: "request-page",
+    action: "desktop.page.interact",
+    permissionMode: "page_control",
+    source: {
+      runId: "run-page",
+      chatId: "chat-def",
+      agentKey: "zenmi"
+    }
+  }, {
+    action: "click",
+    selector: "#name",
+    password: "hidden-password"
+  });
+
+  assert.equal(payload.kind, "page_control");
+  assert.deepEqual(payload.buttons.map((button) => button.decision), ["cancel", "once", "grant"]);
+  assert.equal(payload.defaultDecision, "once");
+  assert.equal(payload.cancelDecision, "cancel");
+  assert.match(JSON.stringify(payload.fields), /page_control/u);
+  assert.match(payload.details, /request-page/u);
+  assert.match(payload.details, /run-page/u);
+  assert.match(payload.details, /Agent Webclient/u);
+  assert.match(payload.details, /\[已隐藏\]/u);
+  assert.doesNotMatch(payload.details, /hidden-password/u);
+});

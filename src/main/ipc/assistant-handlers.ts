@@ -13,6 +13,8 @@ export interface AssistantIpcHandlerOptions {
   assistantNavigationStatusClient: any;
   /** The shared pending-renderer-requests Map (desktopActions.respond resolves into it) */
   desktopActionRendererRequests: Map<string, { resolve: (r: any) => void; timeout: ReturnType<typeof setTimeout> | null }>;
+  /** The shared pending-confirmation-requests Map (desktopActions.respondConfirmation resolves into it) */
+  desktopActionConfirmationRequests: Map<string, { resolve: (r: any) => void; timeout: ReturnType<typeof setTimeout> | null }>;
   /** Optional external getter for currentPage snapshot (bridges to callers that need it) */
   getCurrentPageSnapshot?: () => any;
   /** Optional external setter for currentPage snapshot (called when renderer publishes) */
@@ -66,6 +68,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     assistantBridge,
     assistantNavigationStatusClient,
     desktopActionRendererRequests,
+    desktopActionConfirmationRequests,
     desktopActionOptions,
     app,
     mainWindow,
@@ -406,6 +409,17 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     const pending = desktopActionRendererRequests.get(requestId);
     if (!pending) return { ok: false };
     desktopActionRendererRequests.delete(requestId);
+    if (pending.timeout !== null) clearTimeout(pending.timeout);
+    pending.resolve(response);
+    return { ok: true };
+  });
+
+  ipcMain.handle("desktopActions.respondConfirmation", async (_event: any, response: any) => {
+    const requestId = typeof response?.requestId === "string" ? response.requestId : "";
+    if (!requestId) return { ok: false };
+    const pending = desktopActionConfirmationRequests.get(requestId);
+    if (!pending) return { ok: false };
+    desktopActionConfirmationRequests.delete(requestId);
     if (pending.timeout !== null) clearTimeout(pending.timeout);
     pending.resolve(response);
     return { ok: true };

@@ -20,6 +20,7 @@ export interface DesktopActionContextDependencies {
   navigate: (...args: any[]) => unknown;
   openLogViewer: (...args: any[]) => unknown;
   callRendererAction: (...args: any[]) => unknown;
+  confirmRendererAction?: (...args: any[]) => unknown;
   cdpIntegration: any;
   desktopPet?: {
     refreshState: (...args: any[]) => unknown;
@@ -41,6 +42,7 @@ export function createDesktopActionOptions(
     navigate: dependencies.navigate,
     openLogViewer: dependencies.openLogViewer,
     callRendererAction: dependencies.callRendererAction,
+    confirmRendererAction: dependencies.confirmRendererAction,
     executeCdpCommand: async (request: unknown) => {
       const gateway = dependencies.cdpIntegration.start();
       return gateway.executeCommand(request);
@@ -112,6 +114,7 @@ export function createAssistantIpcHandlerOptions(
     assistantBridge: dependencies.assistantBridge,
     assistantNavigationStatusClient: context.state.assistantNavigationStatusClient,
     desktopActionRendererRequests: context.state.desktopActionRendererRequests,
+    desktopActionConfirmationRequests: context.state.desktopActionConfirmationRequests,
     desktopActionOptions: dependencies.desktopActionOptions,
     app: context.app,
     mainWindow: context.state.mainWindow,

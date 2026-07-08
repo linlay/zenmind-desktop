@@ -2,7 +2,7 @@ import type { App, BrowserWindow } from "electron";
 import type { AssistantEvent, AssistantNavAgentItemsResult, DesktopWsServerStartOptions } from "../../shared/contracts";
 import { AgentPlatformAssistantBridge } from "../assistant/core/agent-platform-bridge";
 import { AssistantNavigationStatusClient } from "../assistant/core/assistant-navigation-status-client";
-import { callDesktopActionRenderer } from "../desktop-action-renderer";
+import { callDesktopActionConfirmation, callDesktopActionRenderer } from "../desktop-action-renderer";
 import {
   startDesktopActionBridge,
   stopDesktopActionBridge
@@ -73,6 +73,10 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     callRendererAction: (request) => callDesktopActionRenderer(request, {
       getMainWindow: () => state.mainWindow,
       pendingRequests: state.desktopActionRendererRequests
+    }),
+    confirmRendererAction: (request) => callDesktopActionConfirmation(request, {
+      getMainWindow: () => state.mainWindow,
+      pendingRequests: state.desktopActionConfirmationRequests
     }),
     cdpIntegration: options.cdpIntegration,
     desktopPet: options.desktopPet

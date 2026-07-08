@@ -3713,6 +3713,9 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);
   assert.match(bridge, /buildDesktopActionConfirmationDetail/);
+  assert.match(bridge, /buildMutatingActionConfirmationRequest/);
+  assert.match(bridge, /buildPageControlActionConfirmationRequest/);
+  assert.match(bridge, /confirmRendererAction/);
   assert.match(bridge, /summarizeConfirmationArgs/);
   assert.match(bridge, /confirmDetailRedacted/);
   assert.match(bridge, /confirmationSummary"\)/);
@@ -3723,9 +3726,13 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(directCdpHandler, /confirmDesktopActionIfNeeded|confirmMutatingAction|desktopActionConfirmationEnabled/);
   assert.doesNotMatch(bridge, /小宅助理/);
   assert.match(assistantRuntime, /startDesktopActionBridge\(\{/);
+  assert.match(assistantRuntime, /callDesktopActionConfirmation/);
   assert.match(assistantHandlers, /desktopActions\.respond/);
+  assert.match(assistantHandlers, /desktopActions\.respondConfirmation/);
   assert.match(assistantHandlers, /desktopActions\.call/);
   assert.match(preload, /desktopActions:\s*\{/);
+  assert.match(preload, /respondConfirmation:\s*\(response: DesktopActionConfirmationResponse\)/);
+  assert.match(preload, /ipcRenderer\.on\("desktopActions\.confirm"/);
   assert.match(preload, /getDesktopWsServerState: \(\) => ipcRenderer\.invoke\("settings\.getDesktopWsServerState"\)/);
   assert.match(preload, /setDesktopWsServerEnabled: \(enabled\) => ipcRenderer\.invoke\("settings\.setDesktopWsServerEnabled", enabled\)/);
   assert.match(preload, /ipcRenderer\.invoke\("desktopActions\.respond"/);
@@ -3735,12 +3742,18 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(contracts, /setDesktopWsServerEnabled: \(enabled: boolean\) => Promise<DesktopWsServerState>/);
   assert.match(contracts, /DesktopActionRendererRequest/);
   assert.match(contracts, /DesktopActionCallListener/);
+  assert.match(contracts, /DesktopActionConfirmationRequest/);
+  assert.match(contracts, /DesktopActionConfirmationResponse/);
+  assert.match(contracts, /DesktopActionConfirmationListener/);
   assert.match(registry, /DesktopActionProviderScope = "global" \| "page" \| "web"/);
   assert.match(registry, /registerDesktopActionProviderForScope/);
   assert.match(registry, /web_action_unavailable/);
   assert.match(registry, /registerDesktopActionProvider/);
   assert.match(registry, /page_action_unavailable/);
   assert.match(appShell, /startDesktopActionRendererBridge\(\)/);
+  assert.match(appShell, /DesktopActionConfirmationDialog/);
+  assert.match(appShell, /desktopActions\.onConfirm/);
+  assert.match(appShell, /desktopActions\.respondConfirmation/);
   assert.match(appShell, /registerDesktopActionProviderForScope\("global"/);
   assert.match(appShell, /desktop\.setting\.getState/);
   assert.match(appShell, /settingSectionIds = \[/);
@@ -3771,17 +3784,27 @@ test("desktop action confirmation detail keeps debug context and redaction keys"
   const enUS = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "enUS.ts"), "utf8");
 
   assert.match(bridge, /function buildDesktopActionConfirmationDetail/);
+  assert.match(bridge, /function buildMutatingActionConfirmationRequest/);
+  assert.match(bridge, /function buildPageControlActionConfirmationRequest/);
   assert.match(bridge, /function summarizeConfirmationArgs/);
   assert.match(bridge, /function sanitizeConfirmationUrl/);
   assert.match(bridge, /entryKey\) => entryKey !== "confirmationSummary"/);
-  assert.match(bridge, /confirmMutatingAction\(\s*request,\s*args,\s*snapshot/);
-  assert.match(bridge, /confirmPageControlAction\(\s*scope,\s*request,\s*args/);
+  assert.match(bridge, /confirmMutatingAction\(\s*options,\s*request,\s*args,\s*snapshot/);
+  assert.match(bridge, /confirmPageControlAction\(\s*options,\s*scope,\s*request,\s*args/);
   assert.match(bridge, /buildDesktopActionConfirmationDetail\(request, args/);
+  assert.match(bridge, /buildNativeConfirmationDetail/);
   assert.match(bridge, /desktopAction\.confirmDetailRedacted/);
   assert.match(bridge, /desktopAction\.confirmDetailMore/);
   assert.match(bridge, /__testInternals[\s\S]*buildDesktopActionConfirmationDetail/);
+  assert.match(bridge, /__testInternals[\s\S]*buildMutatingActionConfirmationRequest/);
 
   for (const dictionary of [zhCN, enUS]) {
+    assert.match(dictionary, /desktopAction\.confirmFieldAction/);
+    assert.match(dictionary, /desktopAction\.confirmFieldTarget/);
+    assert.match(dictionary, /desktopAction\.confirmFieldPermission/);
+    assert.match(dictionary, /desktopAction\.confirmFieldArgs/);
+    assert.match(dictionary, /desktopAction\.confirmShowDetails/);
+    assert.match(dictionary, /desktopAction\.confirmHideDetails/);
     assert.match(dictionary, /desktopAction\.confirmDetailIntro/);
     assert.match(dictionary, /desktopAction\.confirmDetailAction/);
     assert.match(dictionary, /desktopAction\.confirmDetailRequest/);
@@ -3792,6 +3815,7 @@ test("desktop action confirmation detail keeps debug context and redaction keys"
     assert.match(dictionary, /desktopAction\.confirmDetailRedacted/);
     assert.match(dictionary, /desktopAction\.confirmDetailMore/);
     assert.match(dictionary, /desktopAction\.confirmDetailFooter/);
+    assert.match(dictionary, /desktopAction\.pageControlCompactDescription/);
   }
 });
 

@@ -2,6 +2,7 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
+import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { StartupLoadingScreen, StartupRoutePlaceholder } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
@@ -14,7 +15,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
@@ -474,6 +475,8 @@ export function AppShell() {
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [desktopActionConfirmation, setDesktopActionConfirmation] =
+    useState<DesktopActionConfirmationRequest | null>(null);
   const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -497,6 +500,7 @@ export function AppShell() {
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
   const [envImportBusy, setEnvImportBusy] = useState(false);
   const [envImportError, setEnvImportError] = useState("");
+  const desktopActionConfirmationRef = useRef<DesktopActionConfirmationRequest | null>(null);
   const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search, copilotAgentOptions);
   const rawActiveAgentWebclientRouteLabelKey = rawActiveAgentWebclientRoute?.labelKey;
   const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
@@ -1068,6 +1072,35 @@ export function AppShell() {
   useEffect(() => {
     setDesktopActionTranslator(t);
   }, [t]);
+
+  useEffect(() => {
+    desktopActionConfirmationRef.current = desktopActionConfirmation;
+  }, [desktopActionConfirmation]);
+
+  useEffect(() => window.electronAPI.desktopActions.onConfirm((request) => {
+    const previousRequest = desktopActionConfirmationRef.current;
+    if (previousRequest && previousRequest.requestId !== request.requestId) {
+      void window.electronAPI.desktopActions.respondConfirmation({
+        requestId: previousRequest.requestId,
+        decision: previousRequest.cancelDecision
+      }).catch(() => undefined);
+    }
+    desktopActionConfirmationRef.current = request;
+    setDesktopActionConfirmation(request);
+  }), []);
+
+  const handleDesktopActionConfirmationDecision = useCallback((decision: DesktopActionConfirmationDecision) => {
+    const request = desktopActionConfirmationRef.current;
+    if (!request) {
+      return;
+    }
+    desktopActionConfirmationRef.current = null;
+    setDesktopActionConfirmation(null);
+    void window.electronAPI.desktopActions.respondConfirmation({
+      requestId: request.requestId,
+      decision
+    }).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2974,7 +3007,7 @@ export function AppShell() {
       <AgentWebclientCopilotDock
         open={assistantCopilotOpen}
         hostTheme={resolvedTheme}
-        nativeDialogVisible={nativeDialogVisible}
+        nativeDialogVisible={nativeDialogVisible || Boolean(desktopActionConfirmation)}
         openRequest={assistantDockOpenRequest}
         resolvedAgentKey={resolvedCopilotAgentKey}
         onRunningRunIdChange={setAssistantRunningRunId}
@@ -3050,6 +3083,10 @@ export function AppShell() {
           onImport={handleEnvImport}
         />
       ) : null}
+      <DesktopActionConfirmationDialog
+        request={desktopActionConfirmation}
+        onDecision={handleDesktopActionConfirmationDecision}
+      />
       <DesktopGlobalSearchOverlay
         open={globalSearchOpen}
         agents={assistantNavAgents}

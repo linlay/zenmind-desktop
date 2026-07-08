@@ -22,6 +22,8 @@ import type {
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
   DesktopConfigChangedListener,
+  DesktopActionConfirmationListener,
+  DesktopActionConfirmationResponse,
   DesktopWindowStateListener,
   DesktopPetStateListener,
   DesktopLogTarget,
@@ -394,6 +396,8 @@ const api: DesktopApi = {
   },
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => ipcRenderer.invoke("desktopActions.respond", response),
+    respondConfirmation: (response: DesktopActionConfirmationResponse) =>
+      ipcRenderer.invoke("desktopActions.respondConfirmation", response),
     list: () => ipcRenderer.invoke("desktopActions.list"),
     call: (request: DesktopActionCallRequest) => ipcRenderer.invoke("desktopActions.call", request),
     onCall: (listener: DesktopActionCallListener) => {
@@ -407,6 +411,19 @@ const api: DesktopApi = {
       ipcRenderer.on("desktopActions.call", handleDesktopActionCall);
       return () => {
         ipcRenderer.off("desktopActions.call", handleDesktopActionCall);
+      };
+    },
+    onConfirm: (listener: DesktopActionConfirmationListener) => {
+      const handleDesktopActionConfirmation = (
+        _event: Electron.IpcRendererEvent,
+        request: Parameters<DesktopActionConfirmationListener>[0]
+      ) => {
+        listener(request);
+      };
+
+      ipcRenderer.on("desktopActions.confirm", handleDesktopActionConfirmation);
+      return () => {
+        ipcRenderer.off("desktopActions.confirm", handleDesktopActionConfirmation);
       };
     }
   },

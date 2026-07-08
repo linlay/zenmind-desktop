@@ -92,6 +92,41 @@ export interface DesktopActionRendererResponse {
 
 export type DesktopActionCallListener = (request: DesktopActionRendererRequest) => void;
 
+export type DesktopActionConfirmationDecision = "confirm" | "grant" | "once" | "cancel";
+export type DesktopActionConfirmationKind = "action" | "page_control";
+export type DesktopActionConfirmationButtonVariant = "primary" | "secondary" | "cancel";
+
+export interface DesktopActionConfirmationField {
+  label: string;
+  value: string;
+}
+
+export interface DesktopActionConfirmationButton {
+  decision: DesktopActionConfirmationDecision;
+  label: string;
+  variant: DesktopActionConfirmationButtonVariant;
+}
+
+export interface DesktopActionConfirmationRequest {
+  requestId: string;
+  kind: DesktopActionConfirmationKind;
+  title: string;
+  summary: string;
+  description: string;
+  fields: DesktopActionConfirmationField[];
+  details: string;
+  buttons: DesktopActionConfirmationButton[];
+  defaultDecision: DesktopActionConfirmationDecision;
+  cancelDecision: DesktopActionConfirmationDecision;
+}
+
+export interface DesktopActionConfirmationResponse {
+  requestId: string;
+  decision: DesktopActionConfirmationDecision;
+}
+
+export type DesktopActionConfirmationListener = (request: DesktopActionConfirmationRequest) => void;
+
 export interface AssistantChatMessage {
   id: string;
   role: AssistantMessageRole;

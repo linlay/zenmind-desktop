@@ -7,7 +7,7 @@ import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 
@@ -622,9 +622,11 @@ export interface DesktopApi {
   };
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;
+    respondConfirmation: (response: DesktopActionConfirmationResponse) => Promise<{ ok: boolean }>;
     list: () => Promise<{ ok: boolean; actions: DesktopActionDefinition[] }>;
     call: (request: DesktopActionCallRequest) => Promise<DesktopActionCallResponse>;
     onCall: (listener: DesktopActionCallListener) => () => void;
+    onConfirm: (listener: DesktopActionConfirmationListener) => () => void;
   };
   currentPage: {
     publishSnapshot: (snapshot: DesktopPageContextSnapshot | null) => Promise<{ ok: boolean }>;

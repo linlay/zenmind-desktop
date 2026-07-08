@@ -1,5 +1,6 @@
 import type { BrowserWindow } from "electron";
 import type {
+  DesktopActionConfirmationResponse,
   DesktopPageContextSnapshot,
   DesktopActionRendererResponse,
   DesktopPetAgentOption,
@@ -44,6 +45,10 @@ export interface MainAppState {
     resolve: (response: DesktopActionRendererResponse) => void;
     timeout: ReturnType<typeof setTimeout>;
   }>;
+  desktopActionConfirmationRequests: Map<string, {
+    resolve: (response: DesktopActionConfirmationResponse) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }>;
   startupPhase: StartupPhase;
 }
 
@@ -72,6 +77,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     desktopPetMouseInteractive: initialState.desktopPetMouseInteractive ?? true,
     kanbanRuntime: initialState.kanbanRuntime ?? null,
     desktopActionRendererRequests: initialState.desktopActionRendererRequests ?? new Map(),
+    desktopActionConfirmationRequests: initialState.desktopActionConfirmationRequests ?? new Map(),
     startupPhase: initialState.startupPhase ?? "booting"
   };
 }
