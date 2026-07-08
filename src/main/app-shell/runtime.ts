@@ -74,6 +74,7 @@ export type AppShellRuntimeOptions = {
   isDesktopPetSupported: () => boolean;
   showDesktopPetWindow: () => unknown;
   hideDesktopPetWindow: (disable?: boolean) => unknown;
+  restoreDesktopPetWindowLayering: () => void;
 };
 
 export function createAppShellRuntime(options: AppShellRuntimeOptions) {
@@ -228,7 +229,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
         }
       },
       isNativeDialogOpen: () => nativeDialogController.isOpen(),
-      hideQuickAssistantAfterOutsideFocus: () => options.quickCopilotWindowController.hideAfterOutsideFocus()
+      hideQuickAssistantAfterOutsideFocus: () => options.quickCopilotWindowController.hideAfterOutsideFocus(),
+      restoreFloatingWindowsForFullscreen: () => options.restoreDesktopPetWindowLayering()
     });
 
     return targetWindow;

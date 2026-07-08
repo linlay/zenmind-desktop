@@ -322,7 +322,7 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.title, PRODUCT_NAME);
   assert.equal(macOptions.show, false);
   assert.equal(macOptions.titleBarStyle, "hidden");
-  assert.deepEqual(macOptions.trafficLightPosition, { x: 18, y: 20 });
+  assert.deepEqual(macOptions.trafficLightPosition, { x: 10, y: 16 });
   assert.equal(macOptions.transparent, true);
   assert.equal(macOptions.vibrancy, "under-window");
   assert.equal(macOptions.backgroundColor, "#00000000");
@@ -407,6 +407,7 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
   const target = new FakeWindow();
   const appearances = [];
   let hiddenOutsideFocus = 0;
+  let restoredFloatingWindows = 0;
 
   configureMainWindowLifecycleEvents(target, {
     platform: "win32",
@@ -421,6 +422,9 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
     isNativeDialogOpen: () => false,
     hideQuickAssistantAfterOutsideFocus: () => {
       hiddenOutsideFocus += 1;
+    },
+    restoreFloatingWindowsForFullscreen: () => {
+      restoredFloatingWindows += 1;
     }
   });
 
@@ -434,6 +438,7 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
   assert.equal(target.showCount, 1);
   assert.equal(target.focusCount, 1);
   assert.equal(hiddenOutsideFocus, 1);
+  assert.equal(restoredFloatingWindows, 2);
   assert.deepEqual(appearances, [target, target]);
   assert.deepEqual(target.webContents.sentMessages, [
     { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false } },

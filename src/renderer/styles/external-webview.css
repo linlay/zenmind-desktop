@@ -78,6 +78,14 @@
 }
 
 .external-webview-page.is-app-surface {
+  margin: -28px -24px -28px;
+  background: transparent;
+  overflow: hidden;
+}
+
+.external-webview-page.is-app-surface .external-webview-frame-shell,
+.external-webview-page.is-app-surface .external-webview-panel,
+.external-webview-page.is-app-surface .external-webview-frame {
   background: transparent;
 }
 
