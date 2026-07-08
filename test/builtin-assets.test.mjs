@@ -180,7 +180,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
 
   if (id === "agent-webclient") {
     writeText(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n");
-    writeText(path.join(bundleRoot, ".env.example"), "DESKTOP_APP=true\nBASE_URL=http://127.0.0.1:11949\n");
+    writeText(path.join(bundleRoot, ".env.example"), "# Optional agent-webclient runtime feature flags\n");
     writeText(
       path.join(bundleRoot, "deploy.sh"),
       [
@@ -188,7 +188,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         "set -euo pipefail",
         "while [[ $# -gt 0 ]]; do",
         "  case \"$1\" in",
-        "    --output-dir|--base-url|--port) shift 2 ;;",
+        "    --output-dir) shift 2 ;;",
         "    *) shift ;;",
         "  esac",
         "done"
@@ -199,12 +199,6 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
       hostManaged: true
     };
     manifest.runtime.requiredPaths.push("frontend/dist/index.html");
-    manifest.desktop.envBindings = [
-      {
-        key: "BASE_URL",
-        value: "http://127.0.0.1:11949"
-      }
-    ];
     manifest.desktop.capabilities.requires = [
       {
         phase: "verifyRunning",

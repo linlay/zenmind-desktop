@@ -19,7 +19,7 @@ const CORE_SERVICE_LIFECYCLE_COMMANDS = {
   "agent-container-hub": ["deploy", "start", "stop"],
   "identity-center": ["deploy", "start"],
   "agent-platform": ["deploy", "start", "stop"],
-  "agent-webclient": ["deploy"]
+  "agent-webclient": ["deploy", "start"]
 } as const satisfies Record<string, readonly ServiceLifecycleCommandKind[]>;
 
 const AGENT_PLATFORM_REMOVED_VALUE_FLAGS = new Set(["--runtime-dir"]);

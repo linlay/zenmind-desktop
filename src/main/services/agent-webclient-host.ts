@@ -42,6 +42,7 @@ type AgentWebclientHostConfig = {
   service: ServiceDefinition;
   layout: ServiceLayout;
   env: Map<string, string>;
+  envOverrides?: Map<string, string>;
   port: number;
   logger?: Logger;
   issueAccessToken?: IssueAccessToken;
@@ -57,6 +58,7 @@ type AgentWebclientHostRecord = {
   frontendSpa: boolean;
   layout: ServiceLayout;
   env: Map<string, string>;
+  envOverrides: Map<string, string>;
   hosting: HostManagedDesktopHosting;
   logger: Logger;
   issueAccessToken?: IssueAccessToken;
@@ -181,11 +183,11 @@ function assertHostConfig(config: AgentWebclientHostConfig) {
 }
 
 function getEnvValue(record: AgentWebclientHostRecord, env: Map<string, string>, key: string) {
-  return env.get(key) ?? record.env.get(key);
+  return record.envOverrides.get(key) ?? env.get(key) ?? record.env.get(key);
 }
 
 function resolveRouteTarget(record: AgentWebclientHostRecord, route: ManifestDesktopProxyRoute) {
-  return normalizeEnvUrl(record.env.get(route.targetEnv));
+  return normalizeEnvUrl(record.envOverrides.get(route.targetEnv) ?? record.env.get(route.targetEnv));
 }
 
 function resolveRouteTargetFromEnv(
@@ -935,6 +937,7 @@ export async function startAgentWebclientHost(config: AgentWebclientHostConfig) 
     frontendSpa: config.service.frontend.spa !== false,
     layout: config.layout,
     env: config.env,
+    envOverrides: config.envOverrides ?? new Map<string, string>(),
     hosting,
     logger,
     issueAccessToken: config.issueAccessToken,

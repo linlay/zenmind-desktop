@@ -159,7 +159,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         defaultPort: "7910",
         lifecycleArgs: {
           deploy: ["--webclient-deploy"],
-          start: ["--ignored-webclient-start"],
+          start: ["--base-url", "http://127.0.0.1:7908"],
           stop: ["--ignored-webclient-stop"]
         }
       },
@@ -237,7 +237,8 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
       },
       "agent-webclient": {
         lifecycleArgs: {
-          deploy: ["--webclient-deploy"]
+          deploy: ["--webclient-deploy"],
+          start: ["--base-url", "http://127.0.0.1:7908"]
         }
       }
     }
@@ -804,7 +805,10 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
         }
       },
       "agent-webclient": {
-        defaultPort: 70000
+        defaultPort: 70000,
+        lifecycleArgs: {
+          start: ["--base-url", "http://127.0.0.1:7078"]
+        }
       }
     }
   });
@@ -822,6 +826,11 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
         lifecycleArgs: {
           deploy: ["--auth-issuer", "https://zenmind.cc"],
           start: ["--identity-start", "-IdentityStartWindows"]
+        }
+      },
+      "agent-webclient": {
+        lifecycleArgs: {
+          start: ["--base-url", "http://127.0.0.1:7078"]
         }
       }
     }

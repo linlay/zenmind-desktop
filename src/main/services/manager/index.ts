@@ -173,6 +173,7 @@ import {
 import { resolveDesktopCapability } from "./capabilities";
 import {
   appendConfiguredServiceLifecycleArgs,
+  getConfiguredServiceLifecycleArgs,
   type ServiceLifecycleCommandKind
 } from "../../service-lifecycle-args";
 
@@ -349,19 +350,51 @@ async function getDesktopManagedAgentPlatformContainerHubBaseUrl(app: App) {
   return `http://127.0.0.1:${hubPort || getService("agent-container-hub").web.defaultPort}`;
 }
 
-async function getDesktopManagedAgentWebclientPlatformBaseUrl(app: App) {
-  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
-  return `http://127.0.0.1:${platformPort || getService("agent-platform").web.defaultPort}`;
+function normalizeHttpUrlArgument(value: string) {
+  try {
+    const parsed = new URL(value);
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host) {
+      return parsed.toString().replace(/\/$/u, "");
+    }
+  } catch {
+    // Return null below so callers get a lifecycle-specific error message.
+  }
+  return null;
 }
 
-async function ensureAgentWebclientBaseUrlEnv(app: App, layout: ServiceLayout, env: Map<string, string>) {
-  if (env.get("BASE_URL")?.trim()) {
-    return env;
+function resolveAgentWebclientHostStartOverrides(app: App) {
+  const args = getConfiguredServiceLifecycleArgs(app, "agent-webclient", "start");
+  let baseUrl = "";
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    switch (arg) {
+      case "--base-url": {
+        const value = args[index + 1];
+        if (!value) {
+          throw new Error("agent-webclient host start argument --base-url requires a value.");
+        }
+        const normalized = normalizeHttpUrlArgument(value);
+        if (!normalized) {
+          throw new Error(`agent-webclient host start argument --base-url must be an http(s) URL: ${value}`);
+        }
+        baseUrl = normalized;
+        index += 1;
+        break;
+      }
+      default:
+        throw new Error(`unsupported agent-webclient host start argument: ${arg}`);
+    }
   }
-  const baseUrl = await getDesktopManagedAgentWebclientPlatformBaseUrl(app);
-  writeEnvFileUpdates(layout.envPath, new Map([["BASE_URL", baseUrl]]));
-  env.set("BASE_URL", baseUrl);
-  return env;
+
+  if (!baseUrl) {
+    throw new Error("agent-webclient host start requires lifecycleArgs.start --base-url.");
+  }
+
+  return new Map<string, string>([
+    ["BASE_URL", baseUrl],
+    ["DESKTOP_APP", "true"]
+  ]);
 }
 
 async function resolveAgentPlatformDeployPublicKeySourceFile(app: App) {
@@ -412,15 +445,11 @@ function appendIdentityCenterDesktopDeployArgs(command: string[], layout: Servic
 
 function appendAgentWebclientDesktopDeployArgs(
   command: string[],
-  service: ServiceDefinition,
-  layout: ServiceLayout,
-  platformBaseUrl: string
+  layout: ServiceLayout
 ) {
   return [
     ...command,
-    "--output-dir", layout.configDir,
-    "--port", String(getDesktopManagedCommandPort(service)),
-    "--base-url", platformBaseUrl
+    "--output-dir", layout.configDir
   ];
 }
 
@@ -453,9 +482,7 @@ async function buildDesktopManagedDeployCommand(
   if (service.id === "agent-webclient") {
     return appendAgentWebclientDesktopDeployArgs(
       commandWithConfiguredArgs,
-      service,
-      layout,
-      await getDesktopManagedAgentWebclientPlatformBaseUrl(app)
+      layout
     );
   }
   return commandWithConfiguredArgs;
@@ -914,8 +941,9 @@ export async function getServiceState(
   });
 
   const env = installed ? readEnvFile(layout.envPath) : new Map<string, string>();
-  const port = parsePort(service, env);
-  const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
+  const hostManaged = isHostManagedService(service);
+  const port = hostManaged ? getDesktopManagedCommandPort(service) : parsePort(service, env);
+  const webUrl = installed && !hostManaged ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
   const pidFromFile = installed
     ? readManagedPidFile(pidFilePaths, installDir, {
         isProcessRunningImpl: isProcessRunning,
@@ -933,7 +961,6 @@ export async function getServiceState(
         cacheContainerEngineProbe: options.cacheContainerEngineProbe
       })
       : [];
-  const hostManaged = isHostManagedService(service);
   const hostState = hostManaged ? getAgentWebclientHostState(service.id) : null;
   const hostRunning = Boolean(
     hostManaged &&
@@ -1981,14 +2008,17 @@ async function startServiceInternal(
     } else {
       if (isHostManagedService(service)) {
         const layout = getServiceLayout(app, service);
-        const env = service.id === "agent-webclient"
-          ? await ensureAgentWebclientBaseUrlEnv(app, layout, readEnvFile(layout.envPath))
-          : readEnvFile(layout.envPath);
-        const port = parsePort(service, env);
+        const fileEnv = readEnvFile(layout.envPath);
+        const envOverrides = service.id === "agent-webclient"
+          ? resolveAgentWebclientHostStartOverrides(app)
+          : new Map<string, string>();
+        const env = new Map([...fileEnv, ...envOverrides]);
+        const port = service.id === "agent-webclient" ? getDesktopManagedCommandPort(service) : parsePort(service, env);
         await startAgentWebclientHost({
           service,
           layout,
           env,
+          envOverrides,
           port,
           issueAccessToken: (reason) => issueAgentAccessToken(app, reason)
         });
@@ -3113,6 +3143,7 @@ export const __testInternals = {
   appendConfiguredServiceLifecycleArgs,
   appendDesktopManagedLayoutFlags,
   appendAgentPlatformDesktopDeployArgs,
+  resolveAgentWebclientHostStartOverrides,
   buildDesktopManagedDeployCommand,
   resolveAgentPlatformDeployPublicKeySourceFile,
   getDesktopStartCommandOptions,

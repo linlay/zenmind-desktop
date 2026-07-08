@@ -595,7 +595,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       frontend: { mode: "standalone", entry: "/", directAccess: true, hostManaged: true },
       web: { routePath: "/", portEnvKey: "PORT", defaultPort: ports.webclient },
       envExample: [
-        `PORT=${ports.webclient}`
+        "# agent-webclient host-managed runtime flags"
       ].join("\n") + "\n",
       extraPaths: [["frontend", "dist"], ["scripts"]]
     }
@@ -867,24 +867,7 @@ function createStartupCoreAssetsFixture(options = {}) {
               ].join("\r\n")
             : "",
           service.id === "agent-webclient"
-            ? [
-                "function Upsert-Env([string]$Key, [string]$Value) {",
-                "  if (-not $Value) { return }",
-                "  $lines = @()",
-                "  if (Test-Path -LiteralPath $envPath -PathType Leaf) { $lines = @(Get-Content -LiteralPath $envPath) }",
-                "  $found = $false",
-                "  $next = @(",
-                "    foreach ($line in $lines) {",
-                "      if ($line -match ('^' + [regex]::Escape($Key) + '=')) { $found = $true; \"$Key=$Value\" } else { $line }",
-                "    }",
-                "  )",
-                "  if (-not $found) { $next += \"$Key=$Value\" }",
-                "  Set-Content -LiteralPath $envPath -Value $next -Encoding UTF8",
-                "}",
-                "Upsert-Env 'PORT' $servicePort",
-                "Upsert-Env 'DESKTOP_APP' 'true'",
-                "Upsert-Env 'BASE_URL' $baseUrl"
-              ].join("\r\n")
+            ? "# agent-webclient host-managed deploy only initializes .env"
             : "",
           options.deployDelayMs ? `Start-Sleep -Milliseconds ${options.deployDelayMs}` : "",
           `Add-Content -LiteralPath (Join-Path $runDir 'deploy.log') -Value '${service.id}'`
@@ -1038,23 +1021,7 @@ function createStartupCoreAssetsFixture(options = {}) {
               ].join("\n")
             : "",
           service.id === "agent-webclient"
-            ? [
-                "upsert_env() {",
-                "  key=\"$1\"",
-                "  value=\"$2\"",
-                "  [ -n \"$value\" ] || return 0",
-                "  tmp_file=\"$env_file.tmp\"",
-                "  if grep -q \"^${key}=\" \"$env_file\"; then",
-                "    awk -v key=\"$key\" -v value=\"$value\" 'BEGIN{prefix=key\"=\"} index($0,prefix)==1{$0=prefix value} {print}' \"$env_file\" > \"$tmp_file\"",
-                "    mv \"$tmp_file\" \"$env_file\"",
-                "  else",
-                "    printf '%s=%s\\n' \"$key\" \"$value\" >> \"$env_file\"",
-                "  fi",
-                "}",
-                'upsert_env PORT "$service_port"',
-                'upsert_env DESKTOP_APP "true"',
-                'upsert_env BASE_URL "$base_url"'
-              ].join("\n")
+            ? "# agent-webclient host-managed deploy only initializes .env"
             : "",
           options.deployDelayMs ? `sleep ${options.deployDelayMs / 1000}` : "",
           `printf '%s\\n' '${service.id}' >> run/deploy.log`
@@ -1467,10 +1434,23 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
 }
 
 function loadStartupCoreBuiltinsForTest(userDataRoot, fixture, appOptions = {}) {
-  return loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
+  const loaded = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
     ...appOptions,
     testCoreServicePortBase: fixture.corePortBase
   });
+  const configPath = path.join(getDesktopConfigRoot(loaded.app), "service-lifecycle-args.json");
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify({
+    schemaVersion: 1,
+    services: {
+      "agent-webclient": {
+        lifecycleArgs: {
+          start: ["--base-url", `http://127.0.0.1:${fixture.ports.platform}`]
+        }
+      }
+    }
+  }, null, 2)}\n`, "utf8");
+  return loaded;
 }
 
 function writeContainerHubBundleRoot(bundleRoot, options = {}) {
@@ -1936,14 +1916,13 @@ test("service manager no longer exposes built-in service env repair helpers", ()
   assert.equal("normalizeAgentWebclientEnvContentForDesktop" in __testInternals, false);
 });
 
-test("initializeService lets agent-webclient deploy own env without Desktop env bindings", async () => {
+test("initializeService lets agent-webclient deploy initialize env without Desktop host-managed fields", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
   const webclientService = getBuiltinService("agent-webclient");
   const originalEnv = [
-    `PORT=${fixture.ports.webclient}`,
-    "BASE_URL=https://custom-platform.example.test",
+    "VOICE_BASE_URL=http://127.0.0.1:11953",
     "NODE_BIN={{processExecPath}}",
     ""
   ].join("\n");
@@ -1964,9 +1943,10 @@ test("initializeService lets agent-webclient deploy own env without Desktop env 
       fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8")
     );
     assert.equal(env.get("NODE_BIN"), "{{processExecPath}}");
-    assert.equal(env.get("PORT"), String(fixture.ports.webclient));
-    assert.equal(env.get("DESKTOP_APP"), "true");
-    assert.equal(env.get("BASE_URL"), `http://127.0.0.1:${fixture.ports.platform}`);
+    assert.equal(env.get("VOICE_BASE_URL"), "http://127.0.0.1:11953");
+    assert.equal(env.has("PORT"), false);
+    assert.equal(env.has("DESKTOP_APP"), false);
+    assert.equal(env.has("BASE_URL"), false);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -2297,8 +2277,8 @@ test("desktop managed service commands keep deploy, start, and stop contracts se
     };
     const webclientDeployCommand = await __testInternals.buildDesktopManagedDeployCommand(app, webclient, ["deploy.sh"], webclientLayout);
     assertFlag(webclientDeployCommand, "--output-dir", webclientLayout.configDir);
-    assertFlag(webclientDeployCommand, "--port", String(webclient.web.defaultPort));
-    assertFlag(webclientDeployCommand, "--base-url", `http://127.0.0.1:${getBuiltinService("agent-platform").web.defaultPort}`);
+    assert.equal(webclientDeployCommand.includes("--port"), false);
+    assert.equal(webclientDeployCommand.includes("--base-url"), false);
     assert.equal(webclientDeployCommand.includes("--config-dir"), false);
   } finally {
     restore();
@@ -2347,7 +2327,7 @@ test("desktop managed service commands insert configured lifecycle args before m
         "agent-webclient": {
           lifecycleArgs: {
             deploy: ["--extra-webclient-deploy"],
-            start: ["--ignored-webclient-start"],
+            start: ["--base-url", "http://127.0.0.1:7078"],
             stop: ["--ignored-webclient-stop"]
           }
         }
@@ -2444,14 +2424,65 @@ test("desktop managed service commands insert configured lifecycle args before m
     const webclientDeployCommand = await __testInternals.buildDesktopManagedDeployCommand(app, webclient, ["deploy.sh"], webclientLayout);
     assert.deepEqual(webclientDeployCommand.slice(0, 2), ["deploy.sh", "--extra-webclient-deploy"]);
     assertFlag(webclientDeployCommand, "--output-dir", webclientLayout.configDir);
-    assertFlag(webclientDeployCommand, "--base-url", `http://127.0.0.1:${getBuiltinService("agent-platform").web.defaultPort}`);
+    assert.equal(webclientDeployCommand.includes("--base-url"), false);
+    assert.equal(webclientDeployCommand.includes("--port"), false);
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["start.sh"], "start"),
-      ["start.sh"]
+      ["start.sh", "--base-url", "http://127.0.0.1:7078"]
     );
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["stop.sh"], "stop"),
       ["stop.sh"]
+    );
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("agent-webclient host-managed start args require base-url only", () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
+    testCoreServicePortBase: fixture.corePortBase
+  });
+  const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
+
+  try {
+    assert.throws(
+      () => __testInternals.resolveAgentWebclientHostStartOverrides(app),
+      /requires lifecycleArgs\.start --base-url/u
+    );
+
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "agent-webclient": {
+          lifecycleArgs: {
+            start: ["--port", "7080"]
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+    assert.throws(
+      () => __testInternals.resolveAgentWebclientHostStartOverrides(app),
+      /unsupported agent-webclient host start argument: --port/u
+    );
+
+    fs.writeFileSync(configPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "agent-webclient": {
+          lifecycleArgs: {
+            start: ["--base-url", "http://127.0.0.1:7078/"]
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+    assert.deepEqual(
+      [...__testInternals.resolveAgentWebclientHostStartOverrides(app).entries()],
+      [["BASE_URL", "http://127.0.0.1:7078"], ["DESKTOP_APP", "true"]]
     );
   } finally {
     restore();
@@ -4826,9 +4857,9 @@ test("initializeService lets core service deploy scripts recreate config after d
       fs.readFileSync(path.join(getTestConfigDir(userDataRoot, "agent-platform"), "configs", "local-public-key.pem"), "utf8"),
       identityCenterPublicKey
     );
-    assert.match(webclientEnv, new RegExp(`^PORT=${fixture.ports.webclient}$`, "m"));
-    assert.match(webclientEnv, /^DESKTOP_APP=true$/m);
-    assert.match(webclientEnv, new RegExp(`^BASE_URL=http://127\\.0\\.0\\.1:${fixture.ports.platform}$`, "m"));
+    assert.doesNotMatch(webclientEnv, /^PORT=/m);
+    assert.doesNotMatch(webclientEnv, /^DESKTOP_APP=/m);
+    assert.doesNotMatch(webclientEnv, /^BASE_URL=/m);
     assert.doesNotMatch(webclientEnv, /^WS_BASE_URL=/m);
     assert.doesNotMatch(webclientEnv, /^VOICE_BASE_URL=/m);
     for (const serviceId of serviceIds) {
@@ -4880,16 +4911,16 @@ test("initializeService applies configured core service default ports", async ()
     assert.match(identityCenterEnv, /^SERVER_PORT=7076$/m);
     assert.match(platformEnv, /^SERVER_PORT=7078$/m);
     assert.match(platformEnv, /^AP_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
-    assert.match(webclientEnv, /^PORT=39180$/m);
+    assert.match(webclientEnv, /^PORT=7080$/m);
     assert.match(webclientEnv, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
-    assert.match(webclientEnv, /^DESKTOP_APP=true$/m);
+    assert.doesNotMatch(webclientEnv, /^DESKTOP_APP=/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 
-test("initializeService lets deploy scripts apply configured default ports", async () => {
+test("initializeService lets deploy scripts apply configured default ports without rewriting webclient port", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
@@ -4927,7 +4958,7 @@ test("initializeService lets deploy scripts apply configured default ports", asy
     assert.match(fs.readFileSync(runtimePath, "utf8"), /^  port: 39378$/m);
     assert.match(
       fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8"),
-      /^PORT=39280$/m
+      /^PORT=39380$/m
     );
   } finally {
     restore();
@@ -5173,7 +5204,7 @@ test("writeServiceConfig saves core env content without automatic port migration
       ].join("\n") + "\n"
     );
     envContent = fs.readFileSync(getTestEnvPath(userDataRoot, webclientService.id), "utf8");
-    assert.equal(result.service.healthMeta.port, 7902);
+    assert.equal(result.service.healthMeta.port, fixture.ports.webclient);
     assert.match(result.message, /重启服务后生效/u);
     assert.equal(
       envContent,
@@ -5316,7 +5347,7 @@ test("startService reinitializes a core builtin when its config was deleted", as
     const result = await startService(app, "agent-webclient");
     assert.equal(result.ok, true, JSON.stringify(result, null, 2));
     assert.equal(result.service.status, "running");
-    assert.match(fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8"), new RegExp(`^PORT=${fixture.ports.webclient}$`, "m"));
+    assert.doesNotMatch(fs.readFileSync(getTestEnvPath(userDataRoot, "agent-webclient"), "utf8"), /^PORT=/m);
     assert.match(fs.readFileSync(path.join(installDir, "run", "deploy.log"), "utf8"), /^agent-webclient$/m);
   } finally {
     await stopStartupCoreProcesses(app);
@@ -6303,7 +6334,7 @@ test("startService hosts agent-webclient without executing bundle start script",
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const webclientService = getBuiltinService("agent-webclient");
-  const webclientInstallDir = getTestServiceProgramDir(userDataRoot, webclientService.id, webclientService.version);
+  const webclientInstallDir = getInstallDir(app, webclientService);
   const startFileName = process.platform === "win32" ? "start.ps1" : "start.sh";
 
   try {
@@ -6510,6 +6541,73 @@ test("startService reuses a running identity-center despite frontend route and l
     assert.doesNotMatch(envContent, /^FRONTEND_DIST_DIR=/m);
   } finally {
     await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService applies agent-webclient host-managed base-url start arg over env", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  const upstream = http.createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      url: req.url,
+      authorization: req.headers.authorization || ""
+    }));
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      upstream.once("error", reject);
+      upstream.listen(0, "127.0.0.1", resolve);
+    });
+    const upstreamAddress = upstream.address();
+    assert.ok(typeof upstreamAddress === "object" && upstreamAddress);
+    const upstreamUrl = `http://127.0.0.1:${upstreamAddress.port}`;
+    const lifecycleConfigPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
+    fs.mkdirSync(path.dirname(lifecycleConfigPath), { recursive: true });
+    fs.writeFileSync(lifecycleConfigPath, `${JSON.stringify({
+      schemaVersion: 1,
+      services: {
+        "agent-webclient": {
+          lifecycleArgs: {
+            start: ["--base-url", upstreamUrl]
+          }
+        }
+      }
+    }, null, 2)}\n`, "utf8");
+
+    await installBuiltinService(app, "agent-webclient");
+    writeTestEnv(userDataRoot, "agent-webclient", [
+      "BASE_URL=http://127.0.0.1:1",
+      "DESKTOP_APP=false",
+      ""
+    ].join("\n"));
+
+    const platformStart = await startService(app, "agent-platform");
+    assert.equal(platformStart.ok, true, platformStart.message);
+    const webclientStart = await startService(app, "agent-webclient");
+    assert.equal(webclientStart.ok, true, webclientStart.message);
+
+    const proxyResponse = await fetch(new URL("/api/overlay-probe?x=1", webclientStart.service.healthMeta.webUrl), {
+      headers: {
+        authorization: "Bearer caller"
+      }
+    });
+    assert.equal(proxyResponse.status, 200);
+    assert.deepEqual(await proxyResponse.json(), {
+      url: "/api/overlay-probe?x=1",
+      authorization: "Bearer caller"
+    });
+
+    const runtimeConfigResponse = await fetch(new URL("/runtime-config.js", webclientStart.service.healthMeta.webUrl));
+    assert.equal(runtimeConfigResponse.status, 200);
+    assert.match(await runtimeConfigResponse.text(), /"DESKTOP_APP":"true"/u);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    await new Promise((resolve) => upstream.close(resolve));
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
