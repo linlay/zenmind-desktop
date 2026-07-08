@@ -3555,21 +3555,26 @@
 }
 
 .page-feedback-anchor {
-  position: relative;
+  position: fixed;
+  top: calc(var(--windows-titlebar-overlay-height, 0px) + env(safe-area-inset-top, 0px) + 16px);
+  right: 24px;
   z-index: 20;
+  width: min(560px, calc(100vw - 48px));
   height: 0;
+  pointer-events: none;
 }
 
 .page-feedback-layer {
   position: absolute;
   top: 0;
   right: 0;
-  left: 0;
+  left: auto;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
-  transform: translateY(calc(-100% - 12px));
+  transform: none;
 }
 
 .page-feedback-toast {

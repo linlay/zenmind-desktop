@@ -193,7 +193,11 @@ function readAgentType(agent: PlatformAgentSummary) {
   if (explicitType) {
     return explicitType;
   }
-  return toText(agent.mode).toUpperCase() === "CODER" ? "coder" : undefined;
+  const mode = toText(agent.mode).toUpperCase();
+  if (mode === "CODER" || mode === "KBASE") {
+    return mode.toLowerCase();
+  }
+  return undefined;
 }
 
 function checkWorkspaceDirExists(workspaceDir: string) {

@@ -41,6 +41,8 @@ const APP_ICON_TILE_SIZE = 840;
 const APP_ICON_CORNER_RADIUS = 232;
 const APP_ICON_TILE_FILL = "#FCFCFC";
 const APP_ICON_FOREGROUND_SIZE = 800;
+const WINDOWS_APP_ICON_TILE_SIZE = 960;
+const WINDOWS_APP_ICON_FOREGROUND_SIZE = 940;
 const pngSizes = [16, 32, 64, 128, 256, 512, 1024];
 const icoSizes = [16, 32, 48, 64, 128, 256];
 const iconsetEntries = [
@@ -286,6 +288,34 @@ export async function renderAppIconToPng(svg, size) {
   return canvas.toBuffer("image/png");
 }
 
+export async function renderWindowsAppIconToPng(svg, size) {
+  const canvas = createCanvas(size, size);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, size, size);
+
+  const outputScale = size / APP_ICON_BASE_SIZE;
+  const tileSize = WINDOWS_APP_ICON_TILE_SIZE * outputScale;
+  const tileOffset = (size - tileSize) / 2;
+  drawRoundedRect(
+    context,
+    tileOffset,
+    tileOffset,
+    tileSize,
+    tileSize,
+    APP_ICON_CORNER_RADIUS * outputScale
+  );
+  context.fillStyle = APP_ICON_TILE_FILL;
+  context.fill();
+
+  const foregroundSvg = extractAppIconForegroundSvg(svg);
+  const foregroundImage = await loadImage(Buffer.from(foregroundSvg));
+  const foregroundSize = WINDOWS_APP_ICON_FOREGROUND_SIZE * outputScale;
+  const foregroundOffset = (size - foregroundSize) / 2;
+  context.drawImage(foregroundImage, foregroundOffset, foregroundOffset, foregroundSize, foregroundSize);
+
+  return canvas.toBuffer("image/png");
+}
+
 async function countOpaquePixels(png) {
   const image = await loadImage(png);
   const canvas = createCanvas(image.width, image.height);
@@ -446,7 +476,7 @@ async function main() {
 
   const icoPngEntries = [];
   for (const size of icoSizes) {
-    const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
+    const png = await renderWindowsAppIconToPng(appIconSvg, size);
     icoPngEntries.push({ size, png });
   }
   writeFileIfChanged(path.join(buildIconsDir, "icon.ico"), createIco(icoPngEntries));

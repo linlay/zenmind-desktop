@@ -442,9 +442,12 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.page-feedback-layer\s*\{/);
   assert.match(globalStyles, /\.page-feedback-toast\s*\{/);
   assert.match(globalStyles, /\.page-feedback-dismiss\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-anchor\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?height:\s*0;/);
+  assert.match(globalStyles, /\.page-feedback-layer\s*\{[\s\S]*?transform:\s*none;/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-anchor\s*\{/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-layer\s*\{/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-toast\s*\{/);
+  assert.match(globalStyles, /\.service-sider\.service-catalog\s*\{[\s\S]*?max-height:\s*none;/);
   assert.match(globalStyles, /\.service-sider\.service-catalog\s*\{[\s\S]*?overflow:\s*visible;/);
   assert.doesNotMatch(globalStyles, /\.service-catalog-head\s*\{/);
   assert.doesNotMatch(globalStyles, /\.service-catalog-foot\s*\{/);
@@ -1114,7 +1117,11 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /SidebarIllustration kind="agent"/);
   assert.match(sidebarSource, /worker-panel-header-body/);
   assert.match(sidebarSource, /worker-panel-role/);
-  assert.match(sidebarSource, /mode !== "CODER"[\s\S]{0,200}worker-panel-role/);
+  assert.match(sidebarSource, /HIDDEN_ASSISTANT_ROLE_MODES[\s\S]*?"CODER"[\s\S]*?"KBASE"/);
+  assert.match(sidebarSource, /function getAssistantAgentRoleLabel\(agent: AssistantNavAgentItem\)/);
+  assert.match(sidebarSource, /const agentRole = getAssistantAgentRoleLabel\(agent\);/);
+  assert.match(sidebarSource, /agentRole \? \([\s\S]{0,200}worker-panel-role/);
+  assert.doesNotMatch(sidebarSource, /agent\.role \|\| "--"/);
   assert.match(sidebarSource, /worker-panel-preview/);
   assert.match(sidebarSource, /worker-chat-item-head/);
   assert.match(sidebarSource, /worker-chat-name/);
@@ -4376,8 +4383,8 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(appShell, /desktopShell\.onWindowStateChanged/);
   assert.match(appShell, /windowFullScreen \? "is-window-fullscreen" : ""/);
   assert.match(macFullscreenRule, /--app-window-drag-height:\s*0px;/);
-  assert.match(macFullscreenRule, /padding-top:\s*var\(--mac-fullscreen-top-safe-area\);/);
-  assert.match(globalStyles, /--mac-fullscreen-top-safe-area:\s*32px;/);
+  assert.doesNotMatch(macFullscreenRule, /padding-top:/);
+  assert.doesNotMatch(globalStyles, /--mac-fullscreen-top-safe-area/u);
   assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*44px;/);
   assert.match(globalStyles, /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[\s\S]*?padding-top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 12px\);/);
 });

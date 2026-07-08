@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
+import { CloseOutlined } from "@ant-design/icons";
 import {
   SidebarActionIcon,
   SidebarIllustration,
@@ -197,6 +198,8 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
   "desktopAssistant",
   "webOperator",
 ]);
+const HIDDEN_ASSISTANT_ROLE_AGENT_TYPES = new Set<string>(["coder", "kbase"]);
+const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 
 const kanbanNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "kanban",
@@ -209,6 +212,22 @@ const schedulesNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   to: "/automations",
   icon: "schedule",
 };
+
+function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
+  const role = agent.role?.trim() ?? "";
+  if (!role) {
+    return "";
+  }
+  const agentType = agent.agentType?.trim().toLowerCase() ?? "";
+  const mode = agent.mode?.trim().toUpperCase() ?? "";
+  if (
+    HIDDEN_ASSISTANT_ROLE_AGENT_TYPES.has(agentType) ||
+    HIDDEN_ASSISTANT_ROLE_MODES.has(mode)
+  ) {
+    return "";
+  }
+  return role;
+}
 
 const assistantGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "group:assistants",
@@ -2711,6 +2730,7 @@ export function AppSidebar({
     );
     const showBootstrapGuideAgent =
       bootstrapGuideAgent && !bootstrapGuideDismissedBubbles.agent;
+    const agentRole = getAssistantAgentRoleLabel(agent);
     return (
       <Collapse
         key={agent.agentKey}
@@ -2756,11 +2776,11 @@ export function AppSidebar({
                   <span className="worker-panel-header-body">
                     <span className="assistant-worker-name">
                       <span>{agent.displayName}</span>
-                      {agent.mode !== "CODER" && (
+                      {agentRole ? (
                         <span className="worker-panel-role">
-                          {agent.role || "--"}
+                          {agentRole}
                         </span>
-                      )}
+                      ) : null}
                     </span>
                     {unreadCount > 0 ? (
                       <span className="assistant-worker-badge">
@@ -4131,12 +4151,15 @@ export function AppSidebar({
               disabled={websiteCreatePending}
             >
               <option value="">{t("sidebar.website.defaultAssistant")}</option>
-              {copilotAgentOptions.map((agent) => (
-                <option value={agent.agentKey} key={agent.agentKey}>
-                  {agent.displayName}
-                  {agent.role ? ` · ${agent.role}` : ""}
-                </option>
-              ))}
+              {copilotAgentOptions.map((agent) => {
+                const agentRole = getAssistantAgentRoleLabel(agent);
+                return (
+                  <option value={agent.agentKey} key={agent.agentKey}>
+                    {agent.displayName}
+                    {agentRole ? ` · ${agentRole}` : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
           {websiteCreateError ? (

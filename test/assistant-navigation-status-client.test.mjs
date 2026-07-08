@@ -158,6 +158,18 @@ test("assistant navigation requests enough chat history for sidebar attention pr
   assert.equal(new URL(requestedUrls[0]).searchParams.get("includeChats"), "50");
 });
 
+test("assistant navigation infers project agent types from mode", () => {
+  const agents = buildAssistantNavigationAgentsFromPlatformAgents([
+    { key: "coder", name: "代码项目", mode: "CODER" },
+    { key: "kbase", name: "知识库项目", mode: "KBASE" },
+    { key: "regular", name: "普通智能体", mode: "CHAT", role: "助手" },
+  ]);
+
+  assert.equal(agents.find((agent) => agent.agentKey === "coder")?.agentType, "coder");
+  assert.equal(agents.find((agent) => agent.agentKey === "kbase")?.agentType, "kbase");
+  assert.equal(agents.find((agent) => agent.agentKey === "regular")?.agentType, undefined);
+});
+
 test("assistant navigation keeps nested read state for desktop sidebar history", () => {
   const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([
     {

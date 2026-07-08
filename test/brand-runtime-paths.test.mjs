@@ -27,7 +27,7 @@ import {
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
 import { desktopBuiltinServicesRelativePath } from "../scripts/lib/desktop-resources.mjs";
-import { renderAppIconToPng, renderBrandMarkToPng } from "../scripts/generate-app-icons.mjs";
+import { renderAppIconToPng, renderBrandMarkToPng, renderWindowsAppIconToPng } from "../scripts/generate-app-icons.mjs";
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
 import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
 import { ensureWindowsLatestAliases } from "../scripts/platform/dist-win-host.mjs";
@@ -397,6 +397,7 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
   assert.match(generator, /APP_ICON_TILE_FILL\s*=\s*"#FCFCFC"/u);
   assert.match(generator, /APP_ICON_FOREGROUND_SIZE\s*=\s*800/u);
   assert.match(generator, /renderAppIconToPng\(appIconSvg,\s*size\)/u);
+  assert.match(generator, /renderWindowsAppIconToPng\(appIconSvg,\s*size\)/u);
   assert.match(generator, /renderBrandMarkToPng\(appIconSvg,\s*256\)/u);
   assert.doesNotMatch(generator, /renderTransparentAppIconToPng/u);
   assert.doesNotMatch(generator, /removeRootWhiteBackground/u);
@@ -418,6 +419,39 @@ test("brand app icon generation rounds the white backdrop for every brand", asyn
     assertComfortableForegroundSize(stats, `${brandId} app icon`);
     assertNoGrayTile(stats, `${brandId} app icon`);
     assert(stats.opaquePixels > stats.width * stats.height * 0.5, `${brandId} app icon should include a visible rounded backdrop`);
+  }
+});
+
+test("Windows app icon generation fills the taskbar frame without changing macOS app icons", async () => {
+  for (const brandId of ["zenmind", "cutej"]) {
+    const brand = loadBrandConfig(projectRoot, brandId);
+    const iconPath = path.join(projectRoot, brand.icons.appIconSvg);
+    const appStats = await inspectPngBuffer(await renderAppIconToPng(fs.readFileSync(iconPath, "utf8"), 256));
+    const windowsStats = await inspectPngBuffer(await renderWindowsAppIconToPng(fs.readFileSync(iconPath, "utf8"), 256));
+
+    assert(appStats.opaqueBounds, `${brandId} app icon should contain macOS app art`);
+    assert(windowsStats.opaqueBounds, `${brandId} Windows app icon should contain app art`);
+    assert(windowsStats.coloredBounds, `${brandId} Windows app icon should contain colored foreground art`);
+    assert(
+      windowsStats.opaqueBounds.width / windowsStats.width >= 0.92,
+      `${brandId} Windows app icon tile should fill the taskbar frame`
+    );
+    assert(
+      windowsStats.opaqueBounds.height / windowsStats.height >= 0.92,
+      `${brandId} Windows app icon tile should fill the taskbar frame`
+    );
+    assert(
+      appStats.opaqueBounds.width / appStats.width <= 0.84,
+      `${brandId} macOS app icon sizing should remain unchanged`
+    );
+    assert(
+      windowsStats.coloredBounds.width / windowsStats.width >= 0.68,
+      `${brandId} Windows app icon foreground should not render too small`
+    );
+    assert(
+      windowsStats.coloredBounds.height / windowsStats.height >= 0.68,
+      `${brandId} Windows app icon foreground should not render too small`
+    );
   }
 });
 
