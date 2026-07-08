@@ -1587,7 +1587,8 @@
 .settings-desktop-ws-actions {
   display: flex;
   flex: 0 0 auto;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -1843,7 +1844,6 @@
 
   .settings-desktop-ws-actions {
     justify-content: flex-start;
-    flex-wrap: wrap;
   }
 
   .settings-debug-panel-head {
