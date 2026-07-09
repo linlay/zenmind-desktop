@@ -12,6 +12,12 @@ import {
   type EmbeddedWebReadInclude,
   type EmbeddedWebStructuredTarget
 } from "../shared/embedded-web-scripts";
+import {
+  DESKTOP_CDP_TARGET_TIMEOUT_CODE,
+  isDesktopCdpTimeoutError,
+  readDesktopCdpErrorDetails,
+  sendDesktopCdpCommand
+} from "./desktop-cdp-debugger";
 import { t } from "./i18n/main-i18n";
 
 type CdpTraceEntry = {
@@ -122,6 +128,14 @@ async function delay(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function readSnapshotDebugUrl(snapshot: DesktopPageContextSnapshot) {
+  return snapshot.pageContext?.browserTarget?.currentUrl || snapshot.pageContext?.url || "";
+}
+
+function readSnapshotDebugTitle(snapshot: DesktopPageContextSnapshot) {
+  return snapshot.pageContext?.title || snapshot.surfaceLabel || snapshot.pageKey;
+}
+
 async function withDebugger<T>(
   snapshot: DesktopPageContextSnapshot,
   trace: CdpTraceEntry[],
@@ -142,7 +156,12 @@ async function withDebugger<T>(
   try {
     return await callback(async (method, params = {}) => {
       trace.push({ method, params });
-      return debuggerRef.sendCommand(method, params);
+      return sendDesktopCdpCommand(debuggerRef, method, params, {
+        surfaceId: snapshot.surfaceId || snapshot.pageContext?.browserTarget?.surfaceId,
+        webContentsId: snapshot.webContentsId,
+        url: readSnapshotDebugUrl(snapshot),
+        title: readSnapshotDebugTitle(snapshot)
+      });
     });
   } finally {
     if (ownsAttach && debuggerRef.isAttached()) {
@@ -356,6 +375,13 @@ export async function executeCurrentPageCdpAction(
     return null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isDesktopCdpTimeoutError(error)) {
+      return fail(action, DESKTOP_CDP_TARGET_TIMEOUT_CODE, message, {
+        pageKey: snapshot.pageKey,
+        pageKind: snapshot.pageKind,
+        cdp: readDesktopCdpErrorDetails(error)
+      });
+    }
     const code = message.startsWith("execution_context_not_ready") ? "execution_context_not_ready" : "cdp_action_failed";
     return fail(action, code, message, {
       pageKey: snapshot.pageKey,

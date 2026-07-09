@@ -10,10 +10,14 @@ const require = createRequire(import.meta.url);
 
 const {
   handleDesktopActionRequest,
+  handleDesktopCdpRequest,
   startDesktopActionBridge,
   stopDesktopActionBridge,
   __testInternals
 } = require("../dist-electron/main/desktop-action-bridge.js");
+const {
+  DesktopCdpTimeoutError
+} = require("../dist-electron/main/desktop-cdp-debugger.js");
 const {
   writeDesktopActionBridgeSettingsConfig
 } = require("../dist-electron/main/desktop-action-bridge-settings.js");
@@ -269,6 +273,39 @@ test("desktop website add returns detailed input issues", async (t) => {
   assert.match(response.result.issues[0].message, /Website address is required|网站地址不能为空/u);
   assert.equal(response.result.issues[0].expected, "non-empty string");
   assert.equal(response.result.issues[0].received, "missing");
+});
+
+test("desktop cdp bridge surfaces target timeout distinctly", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.executeCdpCommand = async () => {
+    throw new DesktopCdpTimeoutError({
+      method: "Runtime.evaluate",
+      targetId: "desktop-timeout",
+      surfaceId: "website:timeout",
+      webContentsId: 42,
+      url: "https://example.test/page",
+      title: "Example",
+      paramKeys: ["expression", "returnByValue"],
+      timeoutMs: 12_000,
+      elapsedMs: 12_001
+    });
+  };
+
+  const response = await handleDesktopCdpRequest(options, {
+    method: "Runtime.evaluate",
+    params: {
+      expression: "1+1",
+      returnByValue: true
+    },
+    targetId: "desktop-timeout"
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "target_timeout");
+  assert.match(response.error.message, /Runtime\.evaluate/u);
+  assert.equal(response.error.details.targetId, "desktop-timeout");
+  assert.equal(response.error.details.surfaceId, "website:timeout");
+  assert.deepEqual(response.error.details.paramKeys, ["expression", "returnByValue"]);
 });
 
 test("desktop action confirmation detail exposes debug context with redacted args", () => {

@@ -73,6 +73,11 @@ import { normalizeMarketApiBaseUrl } from "./marketplace/common";
 import { readDesktopProfileFromRoot } from "./desktop-profile-store";
 import { getDesktopConfigRoot } from "./user-paths";
 import {
+  DESKTOP_CDP_TARGET_TIMEOUT_CODE,
+  isDesktopCdpTimeoutError,
+  readDesktopCdpErrorDetails
+} from "./desktop-cdp-debugger";
+import {
   executeCurrentPageCdpAction,
   inspectCurrentPageCdpElement,
   readCurrentPageCdpLocation,
@@ -1500,6 +1505,9 @@ export async function handleDesktopCdpRequest(
       surfaceId: response.surfaceId
     };
   } catch (error) {
+    if (isDesktopCdpTimeoutError(error)) {
+      return cdpFail(method, DESKTOP_CDP_TARGET_TIMEOUT_CODE, error.message, readDesktopCdpErrorDetails(error));
+    }
     return cdpFail(method, "cdp_failed", error instanceof Error ? error.message : String(error));
   }
 }
