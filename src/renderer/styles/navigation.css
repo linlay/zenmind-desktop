@@ -243,7 +243,7 @@
   align-items: center;
   justify-content: center;
   width: 24px;
-  height: 22px;
+  height: 24px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -950,13 +950,15 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #92400e;
   cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .sidebar-bootstrap-guide-card-dismiss:hover {
@@ -1301,8 +1303,8 @@
 }
 
 .assistant-worker-collapse-item.is-expanded .assistant-worker-actions .assistant-worker-icon-button {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
 }
 
 .assistant-worker-collapse-item.is-expanded .worker-panel-preview {
@@ -1331,8 +1333,8 @@
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -1373,8 +1375,8 @@
 }
 
 .assistant-worker-icon-button:hover {
-  background: rgba(22, 119, 255, 0.12);
-  color: #1677ff;
+  background: color-mix(in srgb, var(--ink-muted) 12%, transparent);
+  color: var(--ink);
 }
 
 .assistant-worker-icon-button:disabled {
@@ -1457,14 +1459,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
 }
 
@@ -1815,15 +1817,21 @@
   transform: translateY(-50%);
   display: none;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   flex: 0 0 auto;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
+}
+
+.assistant-worker-chat-menu-button:hover {
+  background: color-mix(in srgb, var(--ink-muted) 12%, transparent);
+  color: var(--ink);
 }
 
 .assistant-worker-chat-row:hover .assistant-worker-chat-menu-button,
@@ -1960,10 +1968,13 @@
 }
 
 .sidebar-agent-dialog-close {
-  width: 28px;
-  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
@@ -2572,10 +2583,10 @@
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button {
-  width: 100%;
+  width: 24px;
   height: 24px;
-  justify-self: stretch;
-  border-radius: 8px;
+  justify-self: center;
+  border-radius: 6px;
   background: transparent;
   border-color: transparent;
   color: rgba(71, 85, 105, 0.82);
@@ -2904,7 +2915,7 @@
 
 .app-sidebar-collapse-button.is-compact {
   width: 24px;
-  height: 22px;
+  height: 24px;
   border-radius: 6px;
 }
 
@@ -3439,10 +3450,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -3467,22 +3478,18 @@
 }
 
 .embedded-back-button:hover {
-  transform: scale(1.06);
-  background: rgba(255, 255, 255, 0.95);
+  transform: none;
+  background: rgba(148, 163, 184, 0.18);
   border-color: rgba(203, 213, 225, 1);
-  color: var(--accent, #3b82f6);
-  box-shadow:
-    0 6px 16px rgba(0, 0, 0, 0.12),
-    0 0 0 3px rgba(59, 130, 246, 0.15);
+  color: #1e293b;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 :root[data-theme="dark"] .embedded-back-button:hover {
-  background: rgba(30, 41, 59, 0.95);
+  background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
-  color: var(--accent, #3b82f6);
-  box-shadow:
-    0 6px 16px rgba(0, 0, 0, 0.36),
-    0 0 0 3px rgba(59, 130, 246, 0.25);
+  color: #f1f5f9;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
 }
 
 .embedded-back-button:active {
@@ -3492,6 +3499,8 @@
 .embedded-back-button svg {
   display: block;
   flex: none;
+  width: 16px;
+  height: 16px;
 }
 
 .embedded-surface-frame-shell {

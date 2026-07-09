@@ -158,14 +158,14 @@
 }
 
 .desktop-sso-login-modal-close {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--ink-muted);
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
 }

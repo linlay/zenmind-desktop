@@ -616,10 +616,10 @@ body.desktop-pet-body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border: 0.5px solid rgba(22, 22, 22, 0.2);
-  border-radius: 999px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.38);
   color: #111;
   cursor: pointer;
@@ -627,9 +627,15 @@ body.desktop-pet-body,
   -webkit-app-region: no-drag;
 }
 
+.desktop-pet-task-head-action:hover,
+.desktop-pet-task-head-action:focus-visible {
+  background: rgba(22, 22, 22, 0.08);
+  outline: none;
+}
+
 .desktop-pet-task-head-action span {
-  width: 8px;
-  height: 8px;
+  width: 16px;
+  height: 16px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: translateY(-2px) rotate(45deg);
@@ -1093,7 +1099,7 @@ body.desktop-pet-body,
   width: 24px;
   height: 24px;
   border: 1px solid rgba(93, 122, 177, 0.2);
-  border-radius: 999px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.74);
   color: #42516f;
   box-shadow: 0 4px 10px rgba(41, 66, 111, 0.1);
@@ -1102,13 +1108,13 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-preview-toggle:hover {
-  background: rgba(255, 255, 255, 0.96);
-  color: #173a83;
+  background: rgba(120, 139, 176, 0.16);
+  color: #2f3a50;
 }
 
 .desktop-pet-preview-toggle-icon {
-  width: 8px;
-  height: 8px;
+  width: 16px;
+  height: 16px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: rotate(45deg);
@@ -1409,11 +1415,11 @@ body.desktop-pet-body,
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 21px;
-  height: 21px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid rgba(120, 139, 176, 0.2);
-  border-radius: 50%;
+  border-radius: 6px;
   background: #fff;
   box-shadow: 0 2px 6px rgba(30, 54, 105, 0.14);
   cursor: pointer;
@@ -1429,22 +1435,23 @@ body.desktop-pet-body,
 .desktop-pet-message-card:hover .desktop-pet-message-dismiss,
 .desktop-pet-message-dismiss:focus-visible {
   border-color: rgba(120, 139, 176, 0.34);
+  background: rgba(120, 139, 176, 0.14);
   opacity: 1;
 }
 
 .desktop-pet-message-dismiss span {
   position: relative;
-  width: 9px;
-  height: 9px;
+  width: 16px;
+  height: 16px;
 }
 
 .desktop-pet-message-dismiss span::before,
 .desktop-pet-message-dismiss span::after {
   content: "";
   position: absolute;
-  left: 0;
+  left: 2px;
   top: 50%;
-  width: 9px;
+  width: 12px;
   height: 1.6px;
   border-radius: 2px;
   background: #6b7785;

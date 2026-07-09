@@ -93,7 +93,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: #eef2f7;
   color: var(--market-store-muted);
   cursor: pointer;
@@ -114,7 +114,7 @@
 }
 
 .market-store-search-filter-button .anticon {
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1;
 }
 
@@ -197,8 +197,11 @@
 }
 
 .market-store-toolbar-button.is-icon-only.ant-btn {
-  width: 34px;
-  min-width: 34px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border-radius: 6px;
   padding: 0;
 }
 
@@ -226,6 +229,14 @@
   border-color: var(--market-store-accent-strong);
   background: var(--market-store-accent-strong);
   color: #ffffff;
+}
+
+.market-store-toolbar-button.is-icon-only.ant-btn:hover:not(:disabled) {
+  border-color: var(--market-store-line);
+  background: var(--market-store-surface-soft);
+  color: #475569;
+  box-shadow: none;
+  transform: none;
 }
 
 .market-store-toolbar-button.ant-btn:disabled {
@@ -842,7 +853,26 @@
 .market-store-detail-modal .ant-modal-close {
   top: 14px;
   right: 14px;
-  border-radius: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--market-store-muted);
+}
+
+.market-store-detail-modal .ant-modal-close:hover,
+.market-store-detail-modal .ant-modal-close:focus-visible {
+  background: var(--market-store-surface-soft);
+  color: var(--market-store-text);
+}
+
+.market-store-detail-modal .ant-modal-close-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .market-store-detail-head {
@@ -1125,6 +1155,14 @@
   color: #ffffff;
 }
 
+:root[data-theme="dark"] .market-store-toolbar-button.is-icon-only.ant-btn:hover:not(:disabled) {
+  border-color: var(--market-store-line);
+  background: rgba(148, 163, 184, 0.12);
+  color: #c5d0de;
+  box-shadow: none;
+  transform: none;
+}
+
 :root[data-theme="dark"] .market-store-toolbar-actions .market-store-toolbar-button.is-primary.ant-btn:hover:not(:disabled),
 :root[data-theme="dark"] .market-store-card-footer .market-store-action.is-primary.ant-btn:hover:not(:disabled) {
   border-color: #6ea8ff;
@@ -1222,6 +1260,11 @@
 
   .market-store-toolbar-button.ant-btn {
     width: 100%;
+  }
+
+  .market-store-toolbar-button.is-icon-only.ant-btn {
+    width: 24px;
+    min-width: 24px;
   }
 
   .market-store-card .market-store-card-body {

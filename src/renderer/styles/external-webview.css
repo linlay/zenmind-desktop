@@ -329,10 +329,10 @@
 
 .external-webview-tab-close {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   margin-right: 6px;
-  border-radius: 999px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -347,9 +347,9 @@
 
 .external-webview-tab-add {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -374,9 +374,9 @@
 }
 
 .external-webview-toolbar-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -388,9 +388,9 @@
 
 .external-webview-copilot-button {
   flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }

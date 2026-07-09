@@ -653,8 +653,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -664,8 +664,8 @@
 }
 
 .service-nav-help-button svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -882,16 +882,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  max-width: 32px;
-  max-height: 32px;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  max-width: 24px;
+  max-height: 24px;
   padding: 0;
   border: 1px solid var(--control-center-border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--control-center-card-muted);
   color: var(--control-center-subtle);
   cursor: pointer;
@@ -931,10 +931,37 @@
 .service-action-button:focus-visible:not(:disabled),
 .service-title-text-button.service-action-button:hover:not(:disabled),
 .service-title-text-button.service-action-button:focus-visible:not(:disabled) {
-  border-color: var(--accent-border-subtle);
-  background: var(--accent-fill-subtle);
+  border-color: var(--control-center-border);
+  background: color-mix(in srgb, var(--control-center-subtle) 12%, transparent);
   color: var(--control-center-text);
   outline: none;
+}
+
+.service-action-button.is-primary:hover:not(:disabled),
+.service-action-button.is-primary:focus-visible:not(:disabled),
+.service-title-text-button.service-action-button.is-primary:hover:not(:disabled),
+.service-title-text-button.service-action-button.is-primary:focus-visible:not(:disabled) {
+  border-color: var(--accent-border-subtle);
+  background: var(--accent-fill-subtle);
+  color: var(--accent);
+}
+
+.service-action-button.is-warning:hover:not(:disabled),
+.service-action-button.is-warning:focus-visible:not(:disabled),
+.service-title-text-button.service-action-button.is-warning:hover:not(:disabled),
+.service-title-text-button.service-action-button.is-warning:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--warning) 32%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+}
+
+.service-action-button.is-danger:hover:not(:disabled),
+.service-action-button.is-danger:focus-visible:not(:disabled),
+.service-title-text-button.service-action-button.is-danger:hover:not(:disabled),
+.service-title-text-button.service-action-button.is-danger:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
 }
 
 .service-action-button.is-primary,
@@ -1082,12 +1109,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--control-center-border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--control-center-card-muted);
   color: var(--control-center-subtle);
   cursor: pointer;
@@ -1098,8 +1125,8 @@
 .service-detail-log-action:focus-visible:not(:disabled),
 .control-center-link-action.icon-link-action:hover:not(:disabled),
 .control-center-link-action.icon-link-action:focus-visible:not(:disabled) {
-  border-color: var(--accent-border-subtle);
-  background: var(--accent-fill-subtle);
+  border-color: var(--control-center-border);
+  background: color-mix(in srgb, var(--control-center-subtle) 12%, transparent);
   color: var(--control-center-text);
   outline: none;
   text-decoration: none;
@@ -1545,22 +1572,22 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--control-center-border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--control-center-card-muted);
   color: var(--control-center-subtle);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 }
 
 .service-detail-dialog-close:hover,
 .service-detail-dialog-close:focus-visible {
-  border-color: var(--accent-border-subtle);
-  background: var(--accent-fill-subtle);
+  border-color: var(--control-center-border);
+  background: color-mix(in srgb, var(--control-center-subtle) 12%, transparent);
   color: var(--control-center-text);
   outline: none;
 }

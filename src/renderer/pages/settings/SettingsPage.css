@@ -520,11 +520,17 @@
 }
 
 .settings-page .settings-device-copy-button.ant-btn {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
   padding: 0;
+  border-radius: 6px;
   color: var(--ink-soft);
+}
+
+.settings-page .settings-device-copy-button.ant-btn .anticon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .settings-page .settings-device-copy-button.ant-btn:not(:disabled):hover,
@@ -1088,6 +1094,29 @@
 :root[data-theme="dark"] .settings-debug-modal .ant-modal-title,
 :root[data-theme="dark"] .settings-debug-modal .ant-modal-close {
   color: var(--ink);
+}
+
+.settings-debug-modal .ant-modal-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--ink-soft);
+}
+
+.settings-debug-modal .ant-modal-close:hover,
+.settings-debug-modal .ant-modal-close:focus-visible {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.settings-debug-modal .ant-modal-close-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 :root[data-theme="dark"] .settings-select-popup {

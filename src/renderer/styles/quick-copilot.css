@@ -140,9 +140,9 @@ body.quick-web-copilot-body,
 }
 
 .attachment-image-preview-toolbar button {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
 
 .attachment-image-preview-toolbar button:hover:not(:disabled),
@@ -161,8 +161,8 @@ body.quick-web-copilot-body,
 
 .attachment-image-preview-toolbar svg,
 .attachment-image-preview-close svg {
-  width: 25px;
-  height: 25px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -181,16 +181,16 @@ body.quick-web-copilot-body,
   position: absolute;
   top: 18px;
   right: 22px;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   color: rgba(255, 255, 255, 0.78);
   pointer-events: auto;
 }
 
 .attachment-image-preview-close svg {
-  width: 34px;
-  height: 34px;
+  width: 16px;
+  height: 16px;
   stroke-width: 1.8;
 }
 
