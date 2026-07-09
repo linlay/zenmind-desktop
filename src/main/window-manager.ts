@@ -1,4 +1,4 @@
-import type { BrowserWindow, NativeTheme } from "electron";
+import type { App, BrowserWindow, NativeTheme } from "electron";
 import { PRODUCT_NAME } from "../shared/brand";
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
@@ -35,7 +35,7 @@ type MainWindowLike = Pick<
 
 type MainWindowActivationLike = Pick<
   BrowserWindow,
-  "focus" | "isDestroyed" | "isMinimized" | "restore" | "show"
+  "focus" | "isDestroyed" | "isFullScreen" | "isMinimized" | "restore" | "show"
 > & {
   webContents: Pick<BrowserWindow["webContents"], "isLoadingMainFrame" | "once" | "send">;
 };
@@ -753,7 +753,7 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     if (options.platform !== "darwin") {
       return false;
     }
-    return Boolean(pendingCloseCancel) || targetWindow.isFullScreen();
+    return Boolean(pendingCloseCancel);
   }
 
   function discardDarwinWindowForActivation(targetWindow: TWindow) {
@@ -840,11 +840,13 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
 export type MainWindowLifecycleController = ReturnType<typeof createMainWindowLifecycleController>;
 
 export type MainWindowActivationControllerOptions<TWindow extends MainWindowActivationLike> = {
+  platform: DesktopPlatform;
   lifecycle: {
     getWindowForActivation(): TWindow | null;
     normalizeBeforeShow(targetWindow: TWindow): void;
   };
   ensureDockIdentity(): void;
+  focusApp?: Pick<App, "focus">["focus"];
 };
 
 export function createMainWindowActivationController<TWindow extends MainWindowActivationLike>(
@@ -857,6 +859,12 @@ export function createMainWindowActivationController<TWindow extends MainWindowA
     }
 
     options.lifecycle.normalizeBeforeShow(targetWindow);
+
+    if (options.platform === "darwin" && targetWindow.isFullScreen()) {
+      options.focusApp?.({ steal: true });
+      targetWindow.focus();
+      return targetWindow;
+    }
 
     if (targetWindow.isMinimized()) {
       targetWindow.restore();

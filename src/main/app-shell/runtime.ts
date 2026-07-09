@@ -92,8 +92,10 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     reportRendererDiagnostic: options.reportRendererDiagnostic
   });
   const mainWindowActivation = createMainWindowActivationController({
+    platform: options.platform,
     lifecycle: mainWindowLifecycle,
-    ensureDockIdentity: options.ensureDockIdentity
+    ensureDockIdentity: options.ensureDockIdentity,
+    focusApp: (focusOptions) => options.app.focus(focusOptions)
   });
   const agentPlatformMonitorWindowController = new AgentPlatformMonitorWindowController({
     platform: options.platform,

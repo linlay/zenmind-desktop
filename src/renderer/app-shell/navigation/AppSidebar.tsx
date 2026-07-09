@@ -50,6 +50,7 @@ import {
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
+import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../../../shared/agent-webclient-routes";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
@@ -116,6 +117,12 @@ type SidebarGroupActionMenuState = {
 type AssistantChatRenameDialogState = {
   chat: AssistantNavChatItem;
   value: string;
+  pending: boolean;
+  error: string;
+};
+
+type AssistantChatDeleteDialogState = {
+  chat: AssistantNavChatItem;
   pending: boolean;
   error: string;
 };
@@ -200,6 +207,11 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
 ]);
 const HIDDEN_ASSISTANT_ROLE_AGENT_TYPES = new Set<string>(["coder", "kbase"]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
+const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
+  AGENT_WEBCLIENT_ROUTE_DEFINITIONS
+    .filter((routeDefinition) => routeDefinition.kind === "management")
+    .map((routeDefinition) => routeDefinition.routePath),
+);
 
 const kanbanNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "kanban",
@@ -214,16 +226,16 @@ const schedulesNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
 };
 
 function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
-  const role = agent.role?.trim() ?? "";
-  if (!role) {
-    return "";
-  }
   const agentType = agent.agentType?.trim().toLowerCase() ?? "";
   const mode = agent.mode?.trim().toUpperCase() ?? "";
   if (
     HIDDEN_ASSISTANT_ROLE_AGENT_TYPES.has(agentType) ||
     HIDDEN_ASSISTANT_ROLE_MODES.has(mode)
   ) {
+    return "";
+  }
+  const role = agent.role?.trim() ?? "";
+  if (!role || role === "--") {
     return "";
   }
   return role;
@@ -424,6 +436,10 @@ function getRunningCoderAcpProxyOptions(
 
 function getRoutePathname(route: string) {
   return route.split("?")[0] || "/";
+}
+
+function isAgentWebclientManagementRoute(route: string) {
+  return AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS.has(getRoutePathname(route));
 }
 
 function getRouteEmbedPath(route: string) {
@@ -888,6 +904,8 @@ export function AppSidebar({
   );
   const [bootstrapGuideCardDismissed, setBootstrapGuideCardDismissed] = useState(false);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
+  const [forcedActiveManagementRoute, setForcedActiveManagementRoute] =
+    useState("");
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -909,6 +927,8 @@ export function AppSidebar({
     useState<SidebarGroupActionMenuState | null>(null);
   const [assistantChatRenameDialog, setAssistantChatRenameDialog] =
     useState<AssistantChatRenameDialogState | null>(null);
+  const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
+    useState<AssistantChatDeleteDialogState | null>(null);
   const [agentMenu, setAgentMenu] = useState<{
     agent: AssistantNavAgentItem;
     x: number;
@@ -926,15 +946,23 @@ export function AppSidebar({
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
   const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
   const agentMenuRef = useRef<HTMLDivElement | null>(null);
-  const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
-  const pendingRouteAgentInfo = pendingPath
+  const forcedActiveManagementPathname = forcedActiveManagementRoute
+    ? getRoutePathname(forcedActiveManagementRoute)
+    : "";
+  const displayCurrentRoute = forcedActiveManagementRoute || currentRoute;
+  const displayCurrentPathname =
+    forcedActiveManagementPathname || currentPathname;
+  const currentRouteAgentInfo = readAgentRouteInfo(displayCurrentRoute);
+  const pendingRouteAgentInfo = pendingPath && !forcedActiveManagementRoute
     ? readAgentRouteInfo(pendingPath)
     : { agentKey: "", chatId: "", historyRequested: false };
   const currentAgentKey = currentRouteAgentInfo.agentKey;
   const currentChatId = currentRouteAgentInfo.chatId;
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
   const pendingChatId = pendingRouteAgentInfo.chatId;
-  const activeSidebarAgentKey = pendingPath ? pendingAgentKey : currentAgentKey;
+  const activeSidebarAgentKey =
+    currentAgentKey ||
+    (pendingPath && !forcedActiveManagementRoute ? pendingAgentKey : "");
   const normalizedBootstrapAgentKey = bootstrapGuideActive ? bootstrapAgentKey.trim() : "";
   const showBootstrapGuideCard =
     bootstrapGuideActive && !bootstrapGuideCardDismissed && !isSettingsMode && !isCollapsed;
@@ -1154,6 +1182,25 @@ export function AppSidebar({
   }, [assistantChatRenameDialog]);
 
   useEffect(() => {
+    const currentDialog = assistantChatDeleteDialog;
+    if (!currentDialog) {
+      return undefined;
+    }
+    const canCloseDialog = !currentDialog.pending;
+
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && canCloseDialog) {
+        setAssistantChatDeleteDialog(null);
+      }
+    }
+
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [assistantChatDeleteDialog]);
+
+  useEffect(() => {
     if (!assistantChatMenu) {
       return undefined;
     }
@@ -1325,6 +1372,16 @@ export function AppSidebar({
   }, [groupActionMenu]);
 
   useEffect(() => {
+    if (!forcedActiveManagementRoute) {
+      return;
+    }
+    if (isAgentWebclientManagementRoute(currentRoute)) {
+      return;
+    }
+    setForcedActiveManagementRoute("");
+  }, [currentRoute, forcedActiveManagementRoute]);
+
+  useEffect(() => {
     if (isSettingsMode) {
       if (sidebarNavFocusId) {
         setSidebarNavFocusId("");
@@ -1413,6 +1470,11 @@ export function AppSidebar({
     targetPath: string,
   ) {
     const targetPathname = getRoutePathname(targetPath);
+    const targetIsAgentWebclientManagementRoute =
+      isAgentWebclientManagementRoute(targetPath);
+    if (!targetIsAgentWebclientManagementRoute && forcedActiveManagementRoute) {
+      setForcedActiveManagementRoute("");
+    }
     if (targetPath === "/settings") {
       onCloseAssistantDock?.();
     }
@@ -1422,6 +1484,11 @@ export function AppSidebar({
       (!targetPath.includes("?") && targetPathname === currentPathname)
     ) {
       event.preventDefault();
+      if (targetIsAgentWebclientManagementRoute) {
+        setForcedActiveManagementRoute(targetPath);
+        dispatchAgentWebclientManagementRouteToActiveWebview(targetPath);
+        onNavigateItem?.();
+      }
       return;
     }
 
@@ -1519,6 +1586,37 @@ export function AppSidebar({
 
     void webview.executeJavaScript(script, true).catch((error: unknown) => {
       console.warn("[assistant] failed to retrigger agent route", error);
+    });
+    return true;
+  }
+
+  function dispatchAgentWebclientManagementRouteToActiveWebview(targetPath: string) {
+    if (!isAgentWebclientManagementRoute(targetPath)) {
+      return false;
+    }
+
+    const webview = getActivePluginSurfaceWebviewRef()?.current;
+    if (!webview) {
+      return false;
+    }
+
+    const script = `(() => {
+      const target = new URL(${JSON.stringify(targetPath)}, window.location.href);
+      const oldUrl = window.location.href;
+      const nextPath = target.pathname + target.search + target.hash;
+      const currentPath = window.location.pathname + window.location.search + window.location.hash;
+      if (nextPath !== currentPath) {
+        window.history.pushState(window.history.state, "", nextPath);
+        window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+        if (new URL(oldUrl).hash !== target.hash) {
+          window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL: oldUrl, newURL: target.href }));
+        }
+      }
+      true;
+    })()`;
+
+    void webview.executeJavaScript(script, true).catch((error: unknown) => {
+      console.warn("[assistant] failed to retrigger agent-webclient management route", error);
     });
     return true;
   }
@@ -1940,7 +2038,7 @@ export function AppSidebar({
       await onRefreshAssistantNavAgents?.();
       if (result.agentKey) {
         setExpandedAssistantAgentKey(result.agentKey);
-        requestNavigate(createAgentRoute(result.agentKey));
+        requestNavigate(createAgentNewChatRoute(result.agentKey));
       }
     } catch (error) {
       console.warn("[assistant] failed to create project", error);
@@ -2164,6 +2262,9 @@ export function AppSidebar({
     }
     requestNavigate(
       createAgentChatRoute(chat.agentKey || currentAgentKey, chat.chatId),
+      {
+        retriggerAgentRoute: true,
+      },
     );
   }
 
@@ -2256,11 +2357,40 @@ export function AppSidebar({
 
   async function handleAssistantDeleteChat(chat: AssistantNavChatItem) {
     setAssistantChatMenu(null);
-    const chatLabel = chat.chatName?.trim() || chat.chatId;
-    if (!window.confirm(t("sidebar.chat.deleteConfirm", { name: chatLabel }))) {
+    setAssistantChatDeleteDialog({
+      chat,
+      pending: false,
+      error: "",
+    });
+  }
+
+  async function handleConfirmDeleteChat() {
+    if (!assistantChatDeleteDialog || assistantChatDeleteDialog.pending) {
       return;
     }
-    await window.electronAPI.assistant.deleteChat(chat.chatId);
+    setAssistantChatDeleteDialog((current) =>
+      current ? { ...current, pending: true, error: "" } : current,
+    );
+    try {
+      const result = await window.electronAPI.assistant.deleteChat(
+        assistantChatDeleteDialog.chat.chatId,
+      );
+      if (!result.ok) {
+        throw new Error(result.message || t("sidebar.chat.deleteFailed"));
+      }
+      setAssistantChatDeleteDialog(null);
+      await onRefreshAssistantNavAgents?.();
+    } catch (error) {
+      setAssistantChatDeleteDialog((current) =>
+        current
+          ? {
+              ...current,
+              pending: false,
+              error: error instanceof Error ? error.message : t("sidebar.chat.deleteFailed"),
+            }
+          : current,
+      );
+    }
   }
 
   function handleAssistantDockClick() {
@@ -2295,12 +2425,19 @@ export function AppSidebar({
     return activeSidebarAgentKey;
   }
 
-  function getActiveSidebarChatId(agentKey: string) {
+  function getActiveSidebarChatId(
+    agentKey: string,
+    chats: AssistantNavChatItem[] = [],
+  ) {
+    const routeChatId =
+      currentChatId || (pendingPath && pendingChatId ? pendingChatId : "");
+    if (routeChatId && chats.some((chat) => chat.chatId === routeChatId)) {
+      return routeChatId;
+    }
     const activeAgentKey = getActiveSidebarAgentKey();
     if (activeAgentKey !== agentKey) {
       return "";
     }
-    const routeChatId = pendingPath ? pendingChatId : currentChatId;
     if (routeChatId) {
       return routeChatId;
     }
@@ -2309,11 +2446,11 @@ export function AppSidebar({
 
   function isRouteActive(targetPath: string) {
     const targetPathname = getRoutePathname(targetPath);
-    if (targetPathname !== currentPathname && pendingPath !== targetPath) {
+    if (targetPathname !== displayCurrentPathname && pendingPath !== targetPath) {
       return false;
     }
     if (targetPathname !== "/service/agent-webclient") {
-      return targetPathname === currentPathname || pendingPath === targetPath;
+      return targetPathname === displayCurrentPathname || pendingPath === targetPath;
     }
     const targetAgentKey = readAgentRouteInfo(targetPath).agentKey;
     const activeAgentKey =
@@ -2326,23 +2463,26 @@ export function AppSidebar({
     const pendingPathname = pendingPath ? getRoutePathname(pendingPath) : "";
     if (targetPathname === "/agents") {
       return (
-        currentPathname === targetPathname ||
-        currentPathname.startsWith(`${targetPathname}/`) ||
-        pendingPathname === targetPathname ||
-        pendingPathname.startsWith(`${targetPathname}/`)
+        displayCurrentPathname === targetPathname ||
+        displayCurrentPathname.startsWith(`${targetPathname}/`) ||
+        (!forcedActiveManagementRoute && pendingPathname === targetPathname) ||
+        (!forcedActiveManagementRoute && pendingPathname.startsWith(`${targetPathname}/`))
       );
     }
-    return currentPathname === targetPathname || pendingPathname === targetPathname;
+    return (
+      displayCurrentPathname === targetPathname ||
+      (!forcedActiveManagementRoute && pendingPathname === targetPathname)
+    );
   }
 
   function isAssistantGroupActive() {
     return (
-      currentPathname === "/service/agent-webclient" ||
-      currentPathname.startsWith("/agent/") ||
-      Boolean(
+      displayCurrentPathname === "/service/agent-webclient" ||
+      displayCurrentPathname.startsWith("/agent/") ||
+      (!forcedActiveManagementRoute && Boolean(
         pendingPath?.startsWith("/service/agent-webclient") ||
-        pendingPath?.startsWith("/agent/"),
-      )
+          pendingPath?.startsWith("/agent/"),
+      ))
     );
   }
 
@@ -2485,6 +2625,7 @@ export function AppSidebar({
     const webItem = item.webItem ?? null;
     if (webItem) {
       const isOpen = webOpenEntryKeys.includes(webItem.entryKey);
+      const isActive = isRouteActive(item.to);
       const closing = webClosePendingEntryKey === webItem.entryKey;
       const removePending =
         webItem.kind === "webapp" && webItemRemovePendingId === webItem.id;
@@ -2499,6 +2640,7 @@ export function AppSidebar({
           key={item.to}
           className={[
             "sidebar-website-child-row",
+            isActive ? "is-active" : "",
             isOpen ? "is-open" : "",
             closing ? "is-closing" : "",
           ]
@@ -2561,7 +2703,7 @@ export function AppSidebar({
                   ) : webItem.kind === "webapp" ? (
                     <SidebarActionIcon kind="more_actions" />
                   ) : (
-                    <SidebarActionIcon kind="website_closed" />
+                    <SidebarActionIcon kind="close" />
                   )}
                 </button>
               </Tooltip>
@@ -2690,7 +2832,6 @@ export function AppSidebar({
   ) {
     const roving = options.roving ?? true;
     const expanded = expandedAssistantAgentKey === agent.agentKey;
-    const selected = getActiveSidebarAgentKey() === agent.agentKey;
     const allRecentChats = getAssistantNavAgentSortedChats(agent);
     const recentChats = getAssistantNavAgentPreviewChats(agent);
     const chatCount = Math.max(
@@ -2723,7 +2864,8 @@ export function AppSidebar({
         : activeRunChat
           ? "running"
           : "";
-    const activeChatId = getActiveSidebarChatId(agent.agentKey);
+    const activeChatId = getActiveSidebarChatId(agent.agentKey, allRecentChats);
+    const selected = getActiveSidebarAgentKey() === agent.agentKey || Boolean(activeChatId);
     const bootstrapGuideAgent = Boolean(
       normalizedBootstrapAgentKey &&
       agent.agentKey === normalizedBootstrapAgentKey,
@@ -3863,6 +4005,74 @@ export function AppSidebar({
     );
   }
 
+  function renderAssistantChatDeleteDialog() {
+    if (!assistantChatDeleteDialog || typeof document === "undefined") {
+      return null;
+    }
+    const chatLabel =
+      assistantChatDeleteDialog.chat.chatName?.trim() ||
+      assistantChatDeleteDialog.chat.chatId;
+    return createPortal(
+      <div
+        className="sidebar-agent-dialog-layer"
+        role="presentation"
+        onMouseDown={() => {
+          if (!assistantChatDeleteDialog.pending) {
+            setAssistantChatDeleteDialog(null);
+          }
+        }}
+      >
+        <div
+          className="sidebar-agent-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sidebar-chat-delete-dialog-title"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="sidebar-agent-dialog-head">
+            <strong id="sidebar-chat-delete-dialog-title">{t("sidebar.chat.delete")}</strong>
+            <button
+              type="button"
+              className="sidebar-agent-dialog-close"
+              aria-label={t("common.close")}
+              disabled={assistantChatDeleteDialog.pending}
+              onClick={() => setAssistantChatDeleteDialog(null)}
+            >
+              ×
+            </button>
+          </div>
+          <p className="sidebar-agent-dialog-message">
+            {t("sidebar.chat.deleteConfirm", { name: chatLabel })}
+          </p>
+          {assistantChatDeleteDialog.error ? (
+            <div className="sidebar-agent-dialog-error" role="alert">
+              {assistantChatDeleteDialog.error}
+            </div>
+          ) : null}
+          <div className="sidebar-agent-dialog-actions">
+            <button
+              type="button"
+              className="sidebar-agent-secondary-button"
+              disabled={assistantChatDeleteDialog.pending}
+              onClick={() => setAssistantChatDeleteDialog(null)}
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              type="button"
+              className="sidebar-agent-danger-button"
+              disabled={assistantChatDeleteDialog.pending}
+              onClick={() => void handleConfirmDeleteChat()}
+            >
+              {assistantChatDeleteDialog.pending ? t("sidebar.common.processing") : t("common.confirm")}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
   function renderAgentMenu() {
     if (!agentMenu || typeof document === "undefined") {
       return null;
@@ -4402,6 +4612,7 @@ export function AppSidebar({
           {renderWebItemMenu()}
           {renderGroupActionMenu()}
           {renderAssistantChatRenameDialog()}
+          {renderAssistantChatDeleteDialog()}
           {renderAgentMenu()}
           {renderCreateProjectDialog()}
           {renderWebsiteDialog()}

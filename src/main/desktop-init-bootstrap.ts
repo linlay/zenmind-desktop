@@ -4,7 +4,8 @@ import type { App } from "electron";
 import {
   DESKTOP_COPILOT_PAGE_KEYS,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_AGENT_KEY
+  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+  normalizeQuickAssistantShortcut
 } from "../shared/assistant-settings";
 import { DEFAULT_LOCALE, normalizeLocale } from "../shared/i18n";
 import {
@@ -291,6 +292,11 @@ function applyProfileDefaults(
     readText(legacyQuickAssistant.agentKey) ||
     current.assistant.quick.agentKey ||
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
+  const quickShortcut = normalizeQuickAssistantShortcut(
+    readText(assistantQuick.shortcut) ||
+    readText(legacyQuickAssistant.shortcut) ||
+    current.assistant.quick.shortcut
+  );
   updateDesktopProfileInRoot(profileRoot, {
     general: {
       deviceName: "deviceName" in general
@@ -322,7 +328,8 @@ function applyProfileDefaults(
           : typeof legacyQuickAssistant.enabled === "boolean"
             ? legacyQuickAssistant.enabled
             : current.assistant.quick.enabled,
-        agentKey: quickAgentKey
+        agentKey: quickAgentKey,
+        shortcut: quickShortcut
       }
     },
     navigation: {

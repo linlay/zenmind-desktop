@@ -88,6 +88,10 @@
   padding: 14px 16px;
 }
 
+.settings-page .quick-assistant-shortcut-form {
+  border-top: 1px solid var(--line);
+}
+
 .settings-page .desktop-pet-agent-field {
   display: block;
   margin: 0;

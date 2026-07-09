@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
+  logoutDesktopSso,
   startDesktopSsoLogin,
   startDesktopSsoSiteTokenBridge,
   __testInternals
@@ -448,6 +449,47 @@ test("desktop sso authorize and logout URLs use standard OIDC defaults", () => {
   assert.equal(logoutUrl.searchParams.get("id_token_hint"), "id-token-1");
   assert.equal(logoutUrl.searchParams.get("post_logout_redirect_uri"), "http://localhost:8080/api/auth/oidc/logout-callback");
   assert.equal(logoutUrl.searchParams.has("callback"), false);
+});
+
+test("desktop sso logout proxy failure renders signed-out page", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => {
+    __testInternals.closeCallbackServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    issuer: "http://127.0.0.1:65530/application/o/desktop/",
+    authorizeUrl: "http://127.0.0.1:65530/o/authorize/",
+    tokenUrl: "http://127.0.0.1:65530/application/o/token/",
+    clientId: "desktop-client",
+    browserOrigin: "http://127.0.0.1:65530",
+    loginUrl: "http://127.0.0.1:65530/login",
+    logoutUrl: "http://127.0.0.1:65530/auth/ssoLogout"
+  });
+  __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "user-1",
+    iss: "http://127.0.0.1:65530",
+    aud: "desktop-client",
+    name: "Desktop User"
+  }));
+
+  const result = await logoutDesktopSso(app);
+  assert.equal(result.ok, true);
+  assert.match(result.browserUrl, /^http:\/\/localhost:8080\/auth\/ssoLogout/u);
+
+  const response = await fetch(result.browserUrl);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /text\/html/u);
+  assert.match(html, /已退出本地登录/u);
+  assert.match(html, /本地登录状态已清除/u);
+  assert.doesNotMatch(html, /Desktop SSO proxy failed/u);
+  assert.doesNotMatch(html, /fetch failed/u);
 });
 
 test("desktop sso authorize URL keeps explicit OIDC prompt", () => {

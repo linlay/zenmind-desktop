@@ -362,7 +362,11 @@ function normalizeHttpUrlArgument(value: string) {
   return null;
 }
 
-function resolveAgentWebclientHostStartOverrides(app: App) {
+function getDesktopManagedAgentPlatformBaseUrl() {
+  return `http://127.0.0.1:${getService("agent-platform").web.defaultPort}`;
+}
+
+function resolveAgentWebclientHostBaseUrl(app: App) {
   const args = getConfiguredServiceLifecycleArgs(app, "agent-webclient", "start");
   let baseUrl = "";
 
@@ -388,9 +392,14 @@ function resolveAgentWebclientHostStartOverrides(app: App) {
   }
 
   if (!baseUrl) {
-    throw new Error("agent-webclient host start requires lifecycleArgs.start --base-url.");
+    return getDesktopManagedAgentPlatformBaseUrl();
   }
 
+  return baseUrl;
+}
+
+function resolveAgentWebclientHostStartOverrides(app: App) {
+  const baseUrl = resolveAgentWebclientHostBaseUrl(app);
   return new Map<string, string>([
     ["BASE_URL", baseUrl],
     ["DESKTOP_APP", "true"]
@@ -445,11 +454,15 @@ function appendIdentityCenterDesktopDeployArgs(command: string[], layout: Servic
 
 function appendAgentWebclientDesktopDeployArgs(
   command: string[],
+  app: App,
+  service: ServiceDefinition,
   layout: ServiceLayout
 ) {
   return [
     ...command,
-    "--output-dir", layout.configDir
+    "--output-dir", layout.configDir,
+    "--base-url", resolveAgentWebclientHostBaseUrl(app),
+    "--port", String(getDesktopManagedCommandPort(service))
   ];
 }
 
@@ -482,6 +495,8 @@ async function buildDesktopManagedDeployCommand(
   if (service.id === "agent-webclient") {
     return appendAgentWebclientDesktopDeployArgs(
       commandWithConfiguredArgs,
+      app,
+      service,
       layout
     );
   }

@@ -2572,12 +2572,12 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
     try {
       await proxyDesktopSsoRequest(desktopSsoProxyState, request, response, requestUrl);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      response.writeHead(502, {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store"
-      });
-      response.end(`Desktop SSO proxy failed: ${message}`);
+      console.warn("failed to proxy desktop sso request", error);
+      writeHtmlResponse(
+        response,
+        200,
+        renderCallbackHtml(t("sso.logoutProxyFailedTitle"), t("sso.logoutProxyFailedMessage"))
+      );
     }
     return;
   }

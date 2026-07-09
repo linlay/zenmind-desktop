@@ -274,6 +274,7 @@ export interface AssistantSettingsPublic {
   bootstrapAgentKey: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
+  quickAssistantShortcut: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
   source?: "desktop" | "agent-platform";
   sourceLabel?: string;
@@ -284,6 +285,7 @@ export interface AssistantSettingsInput {
   desktopHelperAgentKey?: string;
   quickAssistantEnabled?: boolean;
   quickAssistantAgentKey?: string;
+  quickAssistantShortcut?: string;
   desktopCopilotPages?: DesktopCopilotPagePreferencesInput;
 }
 

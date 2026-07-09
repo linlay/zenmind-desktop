@@ -51,6 +51,7 @@ type PlatformAgentSummary = {
   key?: unknown;
   name?: unknown;
   displayName?: unknown;
+  type?: unknown;
   agentType?: unknown;
   role?: unknown;
   icon?: unknown;
@@ -189,7 +190,7 @@ function readAgentWorkspaceDir(agent: PlatformAgentSummary) {
 }
 
 function readAgentType(agent: PlatformAgentSummary) {
-  const explicitType = toText(agent.agentType).toLowerCase();
+  const explicitType = (toText(agent.agentType) || toText(agent.type)).toLowerCase();
   if (explicitType) {
     return explicitType;
   }

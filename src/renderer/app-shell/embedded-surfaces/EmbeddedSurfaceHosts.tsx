@@ -340,3 +340,13 @@ export function WebRouteFallback({
     />
   );
 }
+
+export function EmptyWebSurfaceRoute() {
+  const { t } = useI18n();
+  return (
+    <PlaceholderPage
+      title={t("webapp.emptySurfaceTitle")}
+      description={t("webapp.emptySurfaceDescription")}
+    />
+  );
+}

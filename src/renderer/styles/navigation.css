@@ -600,10 +600,8 @@
   background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
 }
 
-.sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
-.sidebar-group-heading[data-sidebar-group-id="webs"].is-active,
-.sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
-.sidebar-group-heading[data-sidebar-group-id="assistants"].is-active {
+.sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
+.sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible) {
   background: transparent;
   border-color: transparent;
 }
@@ -758,14 +756,51 @@
 .sidebar-website-child-row {
   display: flex;
   align-items: center;
-  gap: 2px;
   min-width: 0;
+  min-height: 30px;
   border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition:
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out,
+    color 0.2s ease-in-out;
 }
 
 .sidebar-website-child-row .sidebar-child-link {
   flex: 1;
   min-width: 0;
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sidebar-website-child-row:hover:not(.is-active) {
+  background: rgba(136, 151, 172, 0.1);
+}
+
+.sidebar-website-child-row.is-active {
+  background: rgba(22, 119, 255, 0.13);
+}
+
+:root[data-theme="dark"] .sidebar-website-child-row:hover:not(.is-active) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+:root[data-theme="dark"] .sidebar-website-child-row.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-website-child-row .sidebar-child-link:hover,
+.sidebar-website-child-row .sidebar-child-link.sidebar-link-active,
+:root[data-theme="dark"] .sidebar-website-child-row .sidebar-child-link:hover,
+:root[data-theme="dark"] .sidebar-website-child-row .sidebar-child-link.sidebar-link-active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .sidebar-website-child-row.is-open .sidebar-child-link .sidebar-link-label {
@@ -777,6 +812,7 @@
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+  padding-right: 4px;
   opacity: 0;
   transition: opacity 0.16s ease-in-out;
 }
@@ -1968,6 +2004,14 @@
   line-height: 1.5;
 }
 
+.sidebar-agent-dialog-message {
+  margin: 16px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .sidebar-agent-dialog-error {
   margin-top: 12px;
   color: var(--danger);
@@ -2347,10 +2391,8 @@
   background: rgba(255, 255, 255, 0.055);
 }
 
-:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
-:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active,
-:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
-:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active {
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible) {
   background: transparent;
   border-color: transparent;
 }

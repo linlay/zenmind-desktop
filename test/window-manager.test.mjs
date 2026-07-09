@@ -243,6 +243,24 @@ test("main window lifecycle recreates macOS windows while fullscreen close is pe
   assert.equal(activated, newWindow);
 });
 
+test("main window lifecycle preserves active macOS fullscreen windows for activation", () => {
+  const target = new FakeWindow({ fullscreen: true });
+  const controller = createMainWindowLifecycleController({
+    platform: "darwin",
+    getWindow: () => target,
+    createWindow: () => {
+      throw new Error("fullscreen activation should reuse the existing window");
+    },
+    clearWindow: () => {}
+  });
+
+  const activated = controller.getWindowForActivation();
+
+  assert.equal(activated, target);
+  assert.equal(target.fullscreen, true);
+  assert.equal(target.destroyed, false);
+});
+
 test("main window lifecycle applies macOS translucency only outside fullscreen", () => {
   const target = new FakeWindow();
   const controller = createMainWindowLifecycleController({
@@ -268,6 +286,7 @@ test("main window activation restores, shows and focuses the window before navig
   target.minimized = true;
   const normalized = [];
   const controller = createMainWindowActivationController({
+    platform: "win32",
     lifecycle: {
       getWindowForActivation: () => target,
       normalizeBeforeShow: (window) => normalized.push(window)
@@ -287,10 +306,34 @@ test("main window activation restores, shows and focuses the window before navig
   }]);
 });
 
+test("main window activation preserves macOS fullscreen when Dock icon is clicked", () => {
+  const target = new FakeWindow({ fullscreen: true });
+  const normalized = [];
+  const appFocusCalls = [];
+  const controller = createMainWindowActivationController({
+    platform: "darwin",
+    lifecycle: {
+      getWindowForActivation: () => target,
+      normalizeBeforeShow: (window) => normalized.push(window)
+    },
+    ensureDockIdentity: () => {},
+    focusApp: (options) => appFocusCalls.push(options)
+  });
+
+  controller.showMainWindow();
+
+  assert.deepEqual(normalized, [target]);
+  assert.deepEqual(appFocusCalls, [{ steal: true }]);
+  assert.equal(target.fullscreen, true);
+  assert.equal(target.shown, false);
+  assert.equal(target.focused, true);
+});
+
 test("main window activation waits for the renderer before navigating while loading", () => {
   const target = new FakeWindow();
   target.webContents.loadingMainFrame = true;
   const controller = createMainWindowActivationController({
+    platform: "win32",
     lifecycle: {
       getWindowForActivation: () => target,
       normalizeBeforeShow: () => {}

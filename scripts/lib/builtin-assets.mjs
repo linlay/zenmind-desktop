@@ -41,9 +41,9 @@ const LIFECYCLE_DEPLOY_PROTOCOLS = {
     message: "Please rebuild the Desktop-ready agent-container-hub bundle with deploy-only --output-dir support."
   },
   "agent-webclient": {
-    required: ["--output-dir"],
+    required: ["--output-dir", "--base-url", "--port"],
     forbidden: ["deploy is intentionally a no-op"],
-    message: "Please rebuild the Desktop-ready agent-webclient bundle so deploy.sh initializes the host-managed .env."
+    message: "Please rebuild the Desktop-ready agent-webclient bundle so deploy.sh initializes the host-managed .env with --base-url and --port support."
   }
 };
 const MACHO_MAGICS = new Set([

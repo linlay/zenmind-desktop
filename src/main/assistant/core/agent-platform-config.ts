@@ -289,6 +289,7 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
     bootstrapAgentKey: localSettings.bootstrapAgentKey,
     quickAssistantEnabled: localSettings.quickAssistantEnabled,
     quickAssistantAgentKey: localSettings.quickAssistantAgentKey,
+    quickAssistantShortcut: localSettings.quickAssistantShortcut,
     desktopCopilotPages: localSettings.desktopCopilotPages
   };
 }
@@ -344,6 +345,7 @@ export function loadAgentPlatformProviderSettings(
     bootstrapAgentKey: localSettings.bootstrapAgentKey,
     quickAssistantEnabled: localSettings.quickAssistantEnabled,
     quickAssistantAgentKey: localSettings.quickAssistantAgentKey,
+    quickAssistantShortcut: localSettings.quickAssistantShortcut,
     desktopCopilotPages: localSettings.desktopCopilotPages
   };
 }

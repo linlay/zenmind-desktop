@@ -1,5 +1,7 @@
+import { DEFAULT_QUICK_ASSISTANT_SHORTCUT } from "../../../shared/assistant-settings";
+
 export const QUICK_ASSISTANT_ROUTE = "/quick-assistant";
-export const QUICK_ASSISTANT_SHORTCUT = "Alt+Space";
+export const QUICK_ASSISTANT_SHORTCUT = DEFAULT_QUICK_ASSISTANT_SHORTCUT;
 
 export const QUICK_ASSISTANT_WEB_COPILOT_SIZE = {
   width: 360,
