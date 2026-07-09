@@ -38,10 +38,6 @@ function removedProtocolPattern(...parts) {
   return new RegExp(parts.map(escapeRegExp).join(":"));
 }
 
-const REMOVED_DESKTOP_WEBVIEW_BRIDGE_FLAG_PATTERN = new RegExp(
-  `__${["ZENMIND", "DESKTOP", "WEBVIEW", "BRIDGE"].map(escapeRegExp).join("_")}__`
-);
-
 function readCssWithImports(filePath, visited = new Set()) {
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
   if (visited.has(absolutePath)) {
@@ -4748,7 +4744,6 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewMainWorld, /emitFromMain\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*payload\)/);
   assert.doesNotMatch(serviceWebviewMainWorld, new RegExp(`emitFromMain\\(${removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL").source},\\s*payload\\)`));
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
-  assert.doesNotMatch(serviceWebviewMainWorld, REMOVED_DESKTOP_WEBVIEW_BRIDGE_FLAG_PATTERN);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);

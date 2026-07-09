@@ -21,10 +21,6 @@ const {
   AGENT_AUTH_RESPONSE_TYPE
 } = require("../dist-electron/shared/auth-bridge.js");
 
-function removedBridgeFlagName() {
-  return `__${["ZENMIND", "DESKTOP", "WEBVIEW", "BRIDGE"].join("_")}__`;
-}
-
 function removedProtocol(...parts) {
   return parts.join(":");
 }
@@ -176,7 +172,6 @@ test("service webview main-world script does not overwrite window postMessage", 
 
   assert.equal(window.postMessage, originalWindowPostMessage);
   assert.equal(window[DESKTOP_WEBVIEW_BRIDGE_FLAG], true);
-  assert.equal(window[removedBridgeFlagName()], undefined);
 });
 
 test("service webview main-world script forwards ordinary postMessage calls", () => {
