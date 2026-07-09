@@ -51,7 +51,6 @@ import {
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../../../shared/agent-webclient-routes";
-import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
   SettingsSectionGroupId,
@@ -1531,65 +1530,6 @@ export function AppSidebar({
     closeToolMenu();
   }
 
-  function dispatchAgentRouteActionToActiveWebview(targetPath: string) {
-    const { agentKey, chatId, historyRequested, newChatRequested } = readAgentRouteInfo(targetPath);
-    if (!agentKey) {
-      return false;
-    }
-
-    const webview = getActivePluginSurfaceWebviewRef()?.current;
-    if (!webview) {
-      return false;
-    }
-
-    if (historyRequested) {
-      try {
-        webview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
-          action: "openChatHistory",
-          data: {
-            workerKey: `agent:${agentKey}`,
-            agentKey,
-          },
-        });
-        return true;
-      } catch (error) {
-        console.warn("[assistant] failed to open agent history", error);
-        return false;
-      }
-    }
-
-    if (!chatId) {
-      if (!newChatRequested) {
-        return false;
-      }
-    }
-
-    const eventName = chatId
-      ? "agent:load-chat"
-      : "agent:start-new-conversation";
-    const detail = chatId
-      ? {
-          chatId,
-          focusComposerOnComplete: true,
-        }
-      : {
-          agentKey,
-          preserveWorkerContext: true,
-          focusComposerOnComplete: true,
-        };
-    const script = [
-      `window.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {`,
-      `  detail: ${JSON.stringify(detail)}`,
-      "}));",
-      "true;",
-    ].join("\n");
-
-    void webview.executeJavaScript(script, true).catch((error: unknown) => {
-      console.warn("[assistant] failed to retrigger agent route", error);
-    });
-    return true;
-  }
-
   function dispatchAgentWebclientManagementRouteToActiveWebview(targetPath: string) {
     if (!isAgentWebclientManagementRoute(targetPath)) {
       return false;
@@ -1621,18 +1561,7 @@ export function AppSidebar({
     return true;
   }
 
-  function requestNavigate(targetPath: string, options: NavigateOptions = {}) {
-    if (options.retriggerAgentRoute) {
-      const targetAgentInfo = readAgentRouteInfo(targetPath);
-      if (
-        targetPath === currentRoute ||
-        targetAgentInfo.historyRequested ||
-        targetAgentInfo.newChatRequested
-      ) {
-        dispatchAgentRouteActionToActiveWebview(targetPath);
-      }
-    }
-
+  function requestNavigate(targetPath: string, _options: NavigateOptions = {}) {
     if (targetPath === currentRoute) {
       return;
     }
