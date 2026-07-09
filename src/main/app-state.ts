@@ -1,6 +1,7 @@
 import type { BrowserWindow } from "electron";
 import type {
   DesktopActionConfirmationResponse,
+  CopilotDevToolsTarget,
   DesktopPageContextSnapshot,
   DesktopActionRendererResponse,
   DesktopPetAgentOption,
@@ -29,6 +30,7 @@ export interface MainAppState {
   serviceMutationQueue: Promise<void>;
   mainWindowSidebarTranslucencyEnabled: boolean;
   currentPageSnapshot: DesktopPageContextSnapshot | null;
+  copilotDevToolsTarget: CopilotDevToolsTarget | null;
   desktopPetSettings: DesktopPetSettingsState;
   desktopPetLocalStatus: DesktopPetLocalStatus;
   desktopPetAgentStatus: DesktopPetBoundAgentStatus | null;
@@ -64,6 +66,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     serviceMutationQueue: initialState.serviceMutationQueue ?? Promise.resolve(),
     mainWindowSidebarTranslucencyEnabled: initialState.mainWindowSidebarTranslucencyEnabled ?? true,
     currentPageSnapshot: initialState.currentPageSnapshot ?? null,
+    copilotDevToolsTarget: initialState.copilotDevToolsTarget ?? null,
     desktopPetSettings: initialState.desktopPetSettings as DesktopPetSettingsState,
     desktopPetLocalStatus: initialState.desktopPetLocalStatus as DesktopPetLocalStatus,
     desktopPetAgentStatus: initialState.desktopPetAgentStatus ?? null,

@@ -172,7 +172,8 @@ export function createMainProcessRuntime() {
     platform: process.platform,
     shell,
     session,
-    nativeTheme
+    nativeTheme,
+    webContents
   });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
@@ -767,6 +768,7 @@ export function createMainProcessRuntime() {
     }
     const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
       openCurrentWebviewDevTools({
+        preferredWebviewDevToolsTarget: appState.copilotDevToolsTarget,
         currentPageSnapshot: appState.currentPageSnapshot,
         webContents,
       });

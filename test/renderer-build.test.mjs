@@ -5158,6 +5158,7 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
   assert.match(appShell, /window\.electronAPI\.onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\(request\)/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
   assert.match(dockComponent, /skipContextRegistration/);
+  assert.match(dockComponent, /devToolsTarget="copilot"/);
   assert.match(dockComponent, /loadInitialEmbeddedUrlDirectly/);
   assert.doesNotMatch(appShell, /<AssistantDock/);
   assert.doesNotMatch(appShell, /openAssistantDock\("compact"\)/);
@@ -5205,6 +5206,7 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   assert.match(quickCopilotRoute, /const quickAssistantEmbedPath = buildAgentWebclientCopilotPath\(quickAssistantAgentKey\);/);
   assert.match(quickCopilotRoute, /embedPath=\{quickAssistantEmbedPath\}/);
   assert.match(quickCopilotRoute, /pluginId="agent-webclient"/);
+  assert.match(quickCopilotRoute, /devToolsTarget="copilot"/);
   assert.match(quickCopilotRoute, /loadInitialEmbeddedUrlDirectly/);
   assert.match(quickCopilotRoute, /quickAssistantAgentKey/);
   assert.match(quickCopilotRoute, /data-open-agent-key=\{quickAssistantAgentKey\}/);
@@ -5231,6 +5233,27 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   assert.match(contractQuickAssistantApi, /openControlCenter/);
   assert.doesNotMatch(contractQuickAssistantApi, /setExpanded|setDisplayMode|setInteractionState|onCompactModeRequested|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings/);
   assert.doesNotMatch(globalStyles, /\.quick-(?!(?:web|assistant-settings))|quick-message|quick-artifact|quick-composer|quick-attachment|attachment-action-menu/u);
+});
+
+test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", () => {
+  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const contracts = readSharedContractsSource();
+  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const mainProcess = readMainProcessRuntimeSource();
+
+  assert.match(pluginPage, /devToolsTarget\?: "copilot"/);
+  assert.match(pluginPage, /window\.electronAPI\.copilot\.publishDevToolsTarget/);
+  assert.match(pluginPage, /document\.visibilityState !== "hidden"/);
+  assert.match(preload, /copilot:\s*\{[\s\S]{0,140}publishDevToolsTarget:\s*\(target\) => ipcRenderer\.invoke\("copilot\.publishDevToolsTarget", target\)/);
+  assert.match(contracts, /interface CopilotDevToolsTargetInput/);
+  assert.match(contracts, /copilot:\s*\{[\s\S]{0,180}publishDevToolsTarget:\s*\(target: CopilotDevToolsTargetInput\)/);
+  assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}"agent-webclient-copilot-dock"[\s\S]{0,120}"agent-webclient-quick-copilot"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
+  assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
+  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*appState\.copilotDevToolsTarget/);
+  assert.doesNotMatch(preload, /webview\.openDevTools/);
+  assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
 });
 
 test("desktop pet appearance picker confirms persistence before success feedback", () => {

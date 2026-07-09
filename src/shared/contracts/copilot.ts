@@ -23,6 +23,20 @@ export interface WebviewOpenTabRequest {
 
 export type WebviewOpenTabListener = (request: WebviewOpenTabRequest) => void;
 
+export interface CopilotDevToolsTargetInput {
+  surfaceId: string;
+  active: boolean;
+  webContentsId?: number;
+  currentUrl?: string;
+}
+
+export interface CopilotDevToolsTarget {
+  surfaceId: string;
+  webContentsId: number;
+  ownerWebContentsId: number;
+  currentUrl?: string;
+}
+
 export type AssistantMessageRole = "user" | "assistant";
 
 export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";

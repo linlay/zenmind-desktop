@@ -133,6 +133,7 @@ export function AgentWebclientCopilotDock({
             surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
             surfaceLabel={t("copilotDock.surfaceLabel")}
             skipContextRegistration
+            devToolsTarget="copilot"
             loadInitialEmbeddedUrlDirectly
             suppressInitialLoadingCopy
             onCurrentUrlChange={handleCurrentUrlChange}

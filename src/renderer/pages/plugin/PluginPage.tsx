@@ -71,6 +71,7 @@ type PluginPageProps = {
   embedPath?: string;
   surfaceLabel?: string;
   skipContextRegistration?: boolean;
+  devToolsTarget?: "copilot";
   loadInitialEmbeddedUrlDirectly?: boolean;
   suppressInitialLoadingCopy?: boolean;
   onCurrentUrlChange?: (url: string) => void;
@@ -407,6 +408,7 @@ export function PluginPage({
   embedPath,
   surfaceLabel,
   skipContextRegistration,
+  devToolsTarget,
   loadInitialEmbeddedUrlDirectly,
   suppressInitialLoadingCopy,
   onCurrentUrlChange,
@@ -442,6 +444,7 @@ export function PluginPage({
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
   const [webviewSnapshotNonce, setWebviewSnapshotNonce] = useState(0);
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
+  const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== "hidden");
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
@@ -459,6 +462,17 @@ export function PluginPage({
   useEffect(() => {
     return registerPluginSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
+
+  useEffect(() => {
+    const syncDocumentVisibility = () => {
+      setDocumentVisible(document.visibilityState !== "hidden");
+    };
+    syncDocumentVisibility();
+    document.addEventListener("visibilitychange", syncDocumentVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", syncDocumentVisibility);
+    };
+  }, []);
 
   const handleWebviewRef = useCallback((node: Electron.WebviewTag | null): void => {
     if (webviewRef.current === node) {
@@ -662,6 +676,52 @@ export function PluginPage({
       )
     );
   }
+
+  function publishCopilotDevToolsTarget() {
+    if (devToolsTarget !== "copilot") {
+      return;
+    }
+
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const isActive =
+      active !== false &&
+      documentVisible &&
+      service?.status === "running" &&
+      typeof webContentsId === "number";
+    const currentUrl = webviewCurrentUrl || readCurrentWebviewUrl();
+    void window.electronAPI.copilot.publishDevToolsTarget({
+      surfaceId,
+      active: isActive,
+      ...(typeof webContentsId === "number" ? { webContentsId } : {}),
+      ...(currentUrl ? { currentUrl } : {}),
+    }).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    publishCopilotDevToolsTarget();
+  }, [
+    active,
+    devToolsTarget,
+    documentVisible,
+    embeddedUrl,
+    service?.status,
+    surfaceId,
+    webviewCurrentUrl,
+    webviewSnapshotNonce,
+    webviewSrcUrl,
+  ]);
+
+  useEffect(() => {
+    if (devToolsTarget !== "copilot") {
+      return undefined;
+    }
+    return () => {
+      void window.electronAPI.copilot.publishDevToolsTarget({
+        surfaceId,
+        active: false,
+      }).catch(() => undefined);
+    };
+  }, [devToolsTarget, surfaceId]);
 
   async function executeWebviewScript(
     args: Record<string, unknown>,

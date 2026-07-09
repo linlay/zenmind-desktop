@@ -431,6 +431,9 @@ const api: DesktopApi = {
     publishSnapshot: (snapshot) => ipcRenderer.invoke("currentPage.publishSnapshot", snapshot),
     getSnapshot: () => ipcRenderer.invoke("currentPage.getSnapshot")
   },
+  copilot: {
+    publishDevToolsTarget: (target) => ipcRenderer.invoke("copilot.publishDevToolsTarget", target)
+  },
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => {
       ipcRenderer.send("diagnostics.rendererError", report);
