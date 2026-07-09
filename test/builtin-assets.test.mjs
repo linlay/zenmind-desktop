@@ -188,7 +188,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         "set -euo pipefail",
         "while [[ $# -gt 0 ]]; do",
         "  case \"$1\" in",
-        "    --output-dir|--base-url|--port) shift 2 ;;",
+        "    --output-dir) shift 2 ;;",
         "    *) shift ;;",
         "  esac",
         "done"
