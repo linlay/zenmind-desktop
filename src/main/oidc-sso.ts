@@ -180,6 +180,10 @@ type CallbackHooks = {
     status: DesktopSsoStatus,
     context?: DesktopSsoStatusChangeContext
   ) => void | DesktopSsoClaims | Promise<void | DesktopSsoClaims>;
+  onAfterStatusChanged?: (
+    status: DesktopSsoStatus,
+    context?: DesktopSsoStatusChangeContext
+  ) => void | Promise<void>;
   onSiteTokenBridgeTicket?: (
     ticket: string,
     context: DesktopSsoSiteTokenBridgeTicketContext
@@ -2468,6 +2472,7 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
     const exchangedStatus = createAuthenticatedStatus(hookClaims);
     setCurrentStatus(exchangedStatus);
     saveSession(app, exchangedStatus);
+    await callbackHooks.onAfterStatusChanged?.(exchangedStatus, statusContext);
     return exchangedStatus;
   }
   const { code } = normalizeCallbackRequest(requestUrl, pendingLogin.state);
@@ -2489,6 +2494,7 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
   setCurrentStatus(status);
   currentIdToken = tokenClaims.idToken;
   saveSession(app, status, tokenClaims.idToken);
+  await callbackHooks.onAfterStatusChanged?.(status, statusContext);
   return status;
 }
 
@@ -2814,7 +2820,9 @@ export function startDesktopSsoSiteTokenBridge(app: App): DesktopSsoSiteTokenBri
       callbackServerInfo.redirectUri,
       state
     ),
+    browserOrigin: configResult.config.browserOrigin,
     browserLabel: getDesktopSsoLoginLabel(configResult.config),
+    openMode: shouldUseSystemBrowser(configResult.config) ? "system" : "embedded",
     message: t("sso.siteTokenBridgeOpened")
   };
 }

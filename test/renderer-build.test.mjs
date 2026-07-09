@@ -5849,6 +5849,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(ssoController, /sso\.embeddedLogin\.open/);
   assert.match(ssoWebviewCompletionHandler, /getDesktopSsoCookieAccessTokenExchangeUrl\(app\)/);
   assert.match(ssoWebviewCompletionHandler, /t\("main\.ssoCookieExchangeNoAccessToken"\)/);
+  assert.match(ssoWebviewCompletionHandler, /completeDesktopSsoCookieLogin\(app, accessToken\);[\s\S]{0,120}openConfiguredDesktopSsoSiteTokenBridge\(\)/);
   assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);

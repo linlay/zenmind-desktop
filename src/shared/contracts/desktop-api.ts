@@ -104,7 +104,9 @@ export interface DesktopSsoSiteTokenBridgeStartResult {
   configured: boolean;
   required: boolean;
   startUrl?: string;
+  browserOrigin?: string;
   browserLabel?: string;
+  openMode?: "embedded" | "system";
   message: string;
 }
 

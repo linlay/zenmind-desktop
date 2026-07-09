@@ -116,7 +116,7 @@ import {
 } from "../platform-adapter";
 import { configureSystemIdentity } from "./system-identity";
 import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
-import { createDesktopSsoController } from "../sso-controller";
+import { createDesktopSsoController, openDesktopSsoSiteTokenBridge } from "../sso-controller";
 import { createCdpIntegration } from "../cdp-integration";
 import { createWebSurfaceRuntime } from "../webs/surface-runtime";
 import { createSettingsRuntime } from "../settings/runtime";
@@ -434,6 +434,19 @@ export function createMainProcessRuntime() {
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
     openExternal: shell.openExternal
   });
+
+  async function openConfiguredDesktopSsoSiteTokenBridge() {
+    const bridgeStart = startDesktopSsoSiteTokenBridge(app);
+    if (bridgeStart.configured && bridgeStart.startUrl) {
+      const bridgeOpenResult = await openDesktopSsoSiteTokenBridge(desktopSsoController, bridgeStart);
+      if (!bridgeOpenResult.ok && bridgeStart.required) {
+        throw new Error(bridgeOpenResult.message || bridgeStart.message || "Desktop SSO site token bridge open failed");
+      }
+    } else if (bridgeStart.configured && bridgeStart.required) {
+      throw new Error(bridgeStart.message || "Desktop SSO site token bridge is unavailable");
+    }
+  }
+
   const settingsRuntime = createSettingsRuntime({
     app,
     platform: mainProcessContext.platform,
@@ -522,6 +535,7 @@ export function createMainProcessRuntime() {
         return;
       }
       completeDesktopSsoCookieLogin(app, accessToken);
+      await openConfiguredDesktopSsoSiteTokenBridge();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failDesktopSsoFlow(message);

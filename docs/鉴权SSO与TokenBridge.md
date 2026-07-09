@@ -29,6 +29,8 @@ config/desktop/sso.json
   -> secrets/sso-site-token.json
 ```
 
+`siteTokenBridge` 的打开方式跟随顶层 `sso.browserMode`：`system` 使用系统浏览器，`embedded` 使用 Desktop SSO WebView 与同一 SSO partition。嵌入式 cookie 登录完成后也会继续启动 `siteTokenBridge`，但 Desktop 不根据 brand 做任何分支。
+
 Desktop WebSocket 鉴权：
 
 - token 可来自 query `token` 或 WebSocket subprotocol。

@@ -95,7 +95,10 @@ function createHarness(startResult, options = {}) {
     getDesktopSsoStatus: () => createStatus(false),
     startDesktopSsoLogin: async (_app, hooks) => {
       if (options.invokeAuthenticatedHook) {
-        await hooks.onBeforeStatusChanged({ authenticated: true }, { idToken: "id-token-1" });
+        const status = { authenticated: true };
+        const context = { idToken: "id-token-1" };
+        await hooks.onBeforeStatusChanged(status, context);
+        await hooks.onAfterStatusChanged?.(status, context);
       }
       if (options.invokeSiteTokenBridgeTicket) {
         await hooks.onSiteTokenBridgeTicket?.("site-ticket-1", { required: false });
@@ -160,7 +163,7 @@ test("system desktop sso login still opens the system browser", async () => {
   }]);
 });
 
-test("desktop sso login opens configured site token bridge after oidc success", async () => {
+test("desktop sso login opens system site token bridge after oidc success", async () => {
   const status = createStatus(false);
   const { handlers, calls } = createHarness({
     ok: true,
@@ -174,6 +177,7 @@ test("desktop sso login opens configured site token bridge after oidc success", 
       required: false,
       startUrl: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
       browserLabel: "ZenMind 登录",
+      openMode: "system",
       message: "bridge opened"
     })
   });
@@ -184,6 +188,38 @@ test("desktop sso login opens configured site token bridge after oidc success", 
   assert.deepEqual(calls.openSystemBrowserUrl, [{
     url: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
     label: "ZenMind 登录"
+  }]);
+});
+
+test("desktop sso login opens embedded site token bridge when configured by browserMode", async () => {
+  const status = createStatus(false);
+  const { handlers, calls } = createHarness({
+    ok: true,
+    status,
+    message: "started"
+  }, {
+    invokeAuthenticatedHook: true,
+    startDesktopSsoSiteTokenBridge: () => ({
+      ok: true,
+      configured: true,
+      required: false,
+      startUrl: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
+      browserLabel: "ZenMind 登录",
+      browserOrigin: "https://app.example.test",
+      openMode: "embedded",
+      message: "bridge opened"
+    })
+  });
+
+  const result = await handlers.get("sso.startLogin")();
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.openSystemBrowserUrl.length, 0);
+  assert.deepEqual(calls.openEmbeddedLoginDialog, [{
+    url: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
+    label: "ZenMind 登录",
+    browserOrigin: "https://app.example.test",
+    resolveRedirect: true
   }]);
 });
 

@@ -1,5 +1,6 @@
 import { safeConsoleError } from "../safe-console";
 import { t } from "../i18n/main-i18n";
+import { openDesktopSsoSiteTokenBridge } from "../sso-controller";
 
 export interface SsoIpcHandlerOptions {
   app: any;
@@ -36,6 +37,7 @@ export interface SsoIpcHandlerOptions {
   getDesktopSsoStatus: (app: any) => any | Promise<any>;
   startDesktopSsoLogin: (app: any, options: {
     onBeforeStatusChanged: (status: any, context?: { idToken?: string; ticket?: string }) => Promise<any>;
+    onAfterStatusChanged?: (status: any, context?: { idToken?: string; ticket?: string }) => Promise<void>;
     onSiteTokenBridgeTicket?: (ticket: string, context?: { required?: boolean }) => Promise<void>;
     onStatusChanged: (status: any) => void;
     onReturnToAppRequested: () => void;
@@ -70,6 +72,18 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
   });
 
   ipcMain.handle("sso.startLogin", async () => {
+    async function openConfiguredDesktopSsoSiteTokenBridge() {
+      const bridgeStart = options.startDesktopSsoSiteTokenBridge?.(app);
+      if (bridgeStart?.configured && bridgeStart.startUrl) {
+        const bridgeOpenResult = await openDesktopSsoSiteTokenBridge(desktopSsoController, bridgeStart);
+        if (!bridgeOpenResult.ok && bridgeStart.required) {
+          throw new Error(bridgeOpenResult.message || bridgeStart.message || "Desktop SSO site token bridge open failed");
+        }
+      } else if (bridgeStart?.configured && bridgeStart.required) {
+        throw new Error(bridgeStart.message || "Desktop SSO site token bridge is unavailable");
+      }
+    }
+
     const result = await startDesktopSsoLogin(app, {
       onBeforeStatusChanged: async (status: any, context?: { idToken?: string; ticket?: string }) => {
         if (status.authenticated) {
@@ -79,20 +93,13 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
           await desktopSsoController.syncBrowserCookies();
           await desktopSsoController.exchangeBrowserCookieAccessToken();
           await desktopSsoController.exchangeWebSession(context?.idToken || "");
-          const bridgeStart = options.startDesktopSsoSiteTokenBridge?.(app);
-          if (bridgeStart?.configured && bridgeStart.startUrl) {
-            const bridgeOpenResult = await desktopSsoController.openSystemBrowserUrl({
-              url: bridgeStart.startUrl,
-              label: bridgeStart.browserLabel || t("sso.iamLogin")
-            });
-            if (!bridgeOpenResult.ok && bridgeStart.required) {
-              throw new Error(bridgeOpenResult.message || bridgeStart.message || "Desktop SSO site token bridge open failed");
-            }
-          } else if (bridgeStart?.configured && bridgeStart.required) {
-            throw new Error(bridgeStart.message || "Desktop SSO site token bridge is unavailable");
-          }
         }
         return undefined;
+      },
+      onAfterStatusChanged: async (status: any) => {
+        if (status.authenticated) {
+          await openConfiguredDesktopSsoSiteTokenBridge();
+        }
       },
       onSiteTokenBridgeTicket: async (ticket: string) => {
         const exchanged = await desktopSsoController.exchangeSiteTokenBridgeTicket?.(ticket);

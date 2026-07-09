@@ -16,7 +16,7 @@ import {
 import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-adapter";
 import { safeConsoleError } from "./safe-console";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../shared/sso";
-import type { DesktopSsoClaims } from "../shared/contracts";
+import type { DesktopSsoClaims, DesktopSsoSiteTokenBridgeStartResult } from "../shared/contracts";
 import { t } from "./i18n/main-i18n";
 
 export { DESKTOP_SSO_WEBVIEW_PARTITION };
@@ -61,6 +61,11 @@ type EmbeddedLoginDialogOpenInput = {
   label?: string;
   browserOrigin?: string;
   resolveRedirect?: boolean;
+};
+
+type DesktopSsoSiteTokenBridgeOpenController = {
+  openEmbeddedLoginDialog(input: EmbeddedLoginDialogOpenInput): Promise<{ ok: boolean; message?: string }>;
+  openSystemBrowserUrl(input: { url: string; label: string }): Promise<{ ok: boolean; message?: string }>;
 };
 
 type ElectronSessionAccess = {
@@ -380,6 +385,25 @@ function focusMainWindowAfterDesktopSso(options: DesktopSsoControllerOptions) {
     return;
   }
   mainWindow.focus();
+}
+
+export function openDesktopSsoSiteTokenBridge(
+  controller: DesktopSsoSiteTokenBridgeOpenController,
+  bridgeStart: DesktopSsoSiteTokenBridgeStartResult
+) {
+  const label = bridgeStart.browserLabel || t("sso.iamLogin");
+  if (bridgeStart.openMode === "embedded") {
+    return controller.openEmbeddedLoginDialog({
+      url: bridgeStart.startUrl || "",
+      label,
+      browserOrigin: bridgeStart.browserOrigin,
+      resolveRedirect: true
+    });
+  }
+  return controller.openSystemBrowserUrl({
+    url: bridgeStart.startUrl || "",
+    label
+  });
 }
 
 export function createDesktopSsoController(options: DesktopSsoControllerOptions) {

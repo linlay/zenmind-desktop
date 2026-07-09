@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 
 const {
   startDesktopSsoLogin,
+  startDesktopSsoSiteTokenBridge,
   __testInternals
 } = require("../dist-electron/main/oidc-sso.js");
 
@@ -202,6 +203,41 @@ test("desktop sso reads explicit site token bridge config", (t) => {
   ));
   assert.equal(startUrl.searchParams.get("callback"), "http://localhost:8080/api/auth/oidc/callback");
   assert.equal(startUrl.searchParams.get("state"), "state-1");
+});
+
+test("desktop sso site token bridge open mode follows browserMode", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-bridge-mode-"));
+  t.after(() => {
+    __testInternals.closeCallbackServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: "https://app.example.test",
+    issuer: "https://auth.example.test/application/o/desktop/",
+    authorizeUrl: "https://auth.example.test/o/authorize/",
+    tokenUrl: "https://auth.example.test/application/o/token/",
+    clientId: "desktop-client",
+    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
+    logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
+    siteTokenBridge: {
+      startUrl: "https://site.example.test/api/auth/desktop-sso/start",
+      exchangeUrl: "/api/auth/desktop-sso/session",
+      required: true
+    }
+  });
+
+  await startDesktopSsoLogin(app);
+  const bridgeStart = startDesktopSsoSiteTokenBridge(app);
+
+  assert.equal(bridgeStart.ok, true);
+  assert.equal(bridgeStart.openMode, "embedded");
+  assert.equal(bridgeStart.browserOrigin, "https://app.example.test");
+  assert.equal(bridgeStart.required, true);
+  assert.match(bridgeStart.startUrl, /^https:\/\/site\.example\.test\/api\/auth\/desktop-sso\/start/u);
 });
 
 test("desktop sso writes user info state after local authentication completes", (t) => {
