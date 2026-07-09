@@ -8,7 +8,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
-  readDesktopProfileFromRoot
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot
 } = require("../dist-electron/main/desktop-profile-store.js");
 
 test("desktop profile defaults Desktop Action confirmation to enabled", (t) => {
@@ -34,4 +35,21 @@ test("desktop profile preserves explicit Desktop Action confirmation disable", (
   const profile = readDesktopProfileFromRoot(root);
 
   assert.equal(profile.general.desktopActionConfirmationEnabled, false);
+});
+
+test("desktop profile stores custom quick assistant shortcut", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  updateDesktopProfileInRoot(root, {
+    assistant: {
+      quick: {
+        shortcut: "CommandOrControl+Shift+K"
+      }
+    }
+  });
+
+  const profile = readDesktopProfileFromRoot(root);
+
+  assert.equal(profile.assistant.quick.shortcut, "CommandOrControl+Shift+K");
 });

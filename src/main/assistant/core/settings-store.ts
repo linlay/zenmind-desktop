@@ -6,6 +6,7 @@ import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_ENABLED,
+  normalizeQuickAssistantShortcut,
   type DesktopCopilotPagePreferences
 } from "../../../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../../../shared/page-copilot";
@@ -30,6 +31,7 @@ export type AssistantSettingsPrivate = {
   bootstrapAgentKey: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
+  quickAssistantShortcut: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
 };
 
@@ -77,6 +79,7 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
   const quickAssistantAgentKey = typeof candidate.quickAssistantAgentKey === "string" && candidate.quickAssistantAgentKey.trim()
     ? candidate.quickAssistantAgentKey.trim()
     : DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
+  const quickAssistantShortcut = normalizeQuickAssistantShortcut(candidate.quickAssistantShortcut);
   const desktopCopilotPages = sanitizeDesktopCopilotPagePreferences(candidate.desktopCopilotPages);
   return {
     baseURL: "",
@@ -91,6 +94,7 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
       ? candidate.quickAssistantEnabled
       : DEFAULT_QUICK_ASSISTANT_ENABLED,
     quickAssistantAgentKey,
+    quickAssistantShortcut,
     desktopCopilotPages
   };
 }
@@ -101,6 +105,7 @@ function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
     quickAssistantEnabled: settings.quickAssistantEnabled,
     quickAssistantAgentKey: settings.quickAssistantAgentKey,
+    quickAssistantShortcut: settings.quickAssistantShortcut,
     desktopCopilotPages: settings.desktopCopilotPages
   };
 }
@@ -141,6 +146,7 @@ export function toPublicAssistantSettings(
     bootstrapAgentKey: settings.bootstrapAgentKey,
     quickAssistantEnabled: settings.quickAssistantEnabled,
     quickAssistantAgentKey: settings.quickAssistantAgentKey,
+    quickAssistantShortcut: settings.quickAssistantShortcut,
     desktopCopilotPages: settings.desktopCopilotPages,
     source,
     ...(sourceLabel ? { sourceLabel } : {})
@@ -156,6 +162,7 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
     bootstrapAgentKey: readBootstrapAgentKeyFromRoot(rootDir),
     quickAssistantEnabled: profile.assistant.quick.enabled,
     quickAssistantAgentKey: profile.assistant.quick.agentKey,
+    quickAssistantShortcut: profile.assistant.quick.shortcut,
     desktopCopilotPages: profile.navigation.desktopCopilotPages
   });
   return settings;
@@ -188,6 +195,9 @@ export function saveAssistantSettingsToRoot(
     quickAssistantAgentKey: typeof input.quickAssistantAgentKey === "string" && input.quickAssistantAgentKey.trim()
       ? input.quickAssistantAgentKey.trim()
       : current.quickAssistantAgentKey,
+    quickAssistantShortcut: typeof input.quickAssistantShortcut === "string"
+      ? normalizeQuickAssistantShortcut(input.quickAssistantShortcut)
+      : current.quickAssistantShortcut,
     desktopCopilotPages: mergeDesktopCopilotPagePreferences(current.desktopCopilotPages, input.desktopCopilotPages)
   };
 
@@ -199,7 +209,8 @@ export function saveAssistantSettingsToRoot(
       },
       quick: {
         enabled: next.quickAssistantEnabled,
-        agentKey: next.quickAssistantAgentKey
+        agentKey: next.quickAssistantAgentKey,
+        shortcut: next.quickAssistantShortcut
       }
     },
     navigation: {

@@ -52,6 +52,7 @@ import {
   INSTALLER_SHUTDOWN_ARG,
   PRODUCT_NAME,
 } from "../../shared/brand";
+import { normalizeQuickAssistantShortcut } from "../../shared/assistant-settings";
 import {
   desktopDataRootExists,
   ensureDataRoot,
@@ -100,8 +101,10 @@ import {
 } from "../assistant/quick/routing";
 import {
   registerQuickCopilotShortcut,
+  type QuickCopilotShortcutRegistrationResult,
   unregisterQuickCopilotShortcut,
 } from "../assistant/quick/shortcut";
+import { readAssistantSettings } from "../assistant/core/settings-store";
 import {
   captureAssistantScreenshot as captureCopilotScreenshot,
   captureScreenshotForBridge,
@@ -195,6 +198,7 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
+  let registeredQuickAssistantShortcut = "";
   
   const startupRestoreController = createStartupRestoreController({
     onChange: (state) => {
@@ -716,11 +720,67 @@ export function createMainProcessRuntime() {
   }
   
   function registerQuickAssistantShortcut() {
-    registerQuickCopilotShortcut({
+    const quickSettings = readAssistantSettings(app);
+    const result = registerQuickCopilotShortcut({
       platform: mainProcessContext.platform,
       globalShortcut,
-      controller: quickCopilotWindowController
+      controller: quickCopilotWindowController,
+      accelerator: quickSettings.quickAssistantShortcut
     });
+    if (result.registered) {
+      registeredQuickAssistantShortcut = result.accelerator;
+    }
+    return result;
+  }
+
+  function refreshQuickAssistantShortcut(accelerator?: string): QuickCopilotShortcutRegistrationResult {
+    const nextAccelerator = normalizeQuickAssistantShortcut(accelerator ?? readAssistantSettings(app).quickAssistantShortcut);
+    const previousAccelerator = registeredQuickAssistantShortcut;
+    if (previousAccelerator && previousAccelerator === nextAccelerator) {
+      return {
+        accelerator: previousAccelerator,
+        registered: true
+      };
+    }
+    if (previousAccelerator && previousAccelerator !== nextAccelerator) {
+      unregisterQuickCopilotShortcut({
+        platform: mainProcessContext.platform,
+        globalShortcut,
+        accelerator: previousAccelerator
+      });
+      registeredQuickAssistantShortcut = "";
+    }
+    const result = registerQuickCopilotShortcut({
+      platform: mainProcessContext.platform,
+      globalShortcut,
+      controller: quickCopilotWindowController,
+      accelerator: nextAccelerator
+    });
+    if (result.registered) {
+      registeredQuickAssistantShortcut = result.accelerator;
+      return result;
+    }
+    if (previousAccelerator && previousAccelerator !== nextAccelerator) {
+      const restored = registerQuickCopilotShortcut({
+        platform: mainProcessContext.platform,
+        globalShortcut,
+        controller: quickCopilotWindowController,
+        accelerator: previousAccelerator
+      });
+      if (restored.registered) {
+        registeredQuickAssistantShortcut = restored.accelerator;
+      }
+    }
+    return result;
+  }
+
+  function unregisterQuickAssistantShortcut() {
+    unregisterQuickCopilotShortcut({
+      platform: mainProcessContext.platform,
+      globalShortcut,
+      accelerator: registeredQuickAssistantShortcut || readAssistantSettings(app).quickAssistantShortcut
+    });
+    registeredQuickAssistantShortcut = "";
   }
   
   function refreshPluginDesktopGlobalShortcuts() {
@@ -1064,7 +1124,8 @@ export function createMainProcessRuntime() {
       captureDesktopScreenshotForWebview,
       reportRendererDiagnostic,
       emitAssistantAttachmentProgress,
-      captureAssistantScreenshot
+      captureAssistantScreenshot,
+      refreshQuickAssistantShortcut
     });
     configureAppMediaPermissions();
     registerFocusedWebviewDevToolsShortcut();
@@ -1096,10 +1157,7 @@ export function createMainProcessRuntime() {
       stopAssistantBridgeRuntime: () => assistantBridgeRuntime.stop(),
       stopTunnelHubRuntime,
       stopAgentPlatformPetStatusClient,
-      unregisterQuickAssistantShortcut: () => unregisterQuickCopilotShortcut({
-        platform: mainProcessContext.platform,
-        globalShortcut
-      }),
+      unregisterQuickAssistantShortcut,
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,
       stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop()

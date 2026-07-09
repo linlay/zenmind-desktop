@@ -236,9 +236,11 @@
   --control-center-radius: 8px;
   width: 100%;
   max-width: none;
-  min-height: 100%;
+  height: calc(100dvh - 56px);
+  max-height: calc(100dvh - 56px);
+  min-height: 0;
   min-width: 0;
-  overflow-x: hidden;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -379,28 +381,61 @@
   color: var(--control-center-muted);
 }
 
+.control-center-feedback-slot {
+  width: 100%;
+  min-height: 46px;
+  margin: -2px 0 2px;
+}
+
+.control-center-feedback-slot .page-feedback-anchor {
+  position: static;
+  width: 100%;
+  height: auto;
+  pointer-events: auto;
+}
+
+.control-center-feedback-slot .page-feedback-layer {
+  position: static;
+  width: 100%;
+  transform: none;
+  pointer-events: auto;
+}
+
+.control-center-feedback-slot .page-feedback-toast {
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: var(--control-center-radius);
+  box-shadow: none;
+}
+
+.control-center-feedback-slot .page-feedback-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .control-center-shell {
   display: grid;
   grid-template-columns: minmax(240px, 304px) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
   gap: 12px;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  overflow: hidden;
 }
 
 .service-sider.service-catalog {
   display: flex;
   min-width: 0;
-  max-height: none;
+  min-height: 0;
   flex-direction: column;
   padding: 0;
   border: 1px solid var(--control-center-border);
   border-radius: var(--control-center-radius);
   background: var(--control-center-card);
   box-shadow: none;
-  overflow: visible;
+  overflow: hidden auto;
 }
 
 .service-accordion,
@@ -711,6 +746,7 @@
   gap: 12px;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .control-center-service-hero,
@@ -1334,9 +1370,9 @@
 .config-editor {
   display: block;
   width: 100%;
-  flex: 1 1 auto;
-  height: clamp(360px, calc(100dvh - 320px), 760px);
-  min-height: 360px;
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
   box-sizing: border-box;
   margin: 0;
   padding: 14px 16px;
@@ -1350,7 +1386,8 @@
   font-weight: 500;
   line-height: 1.65;
   outline: none;
-  resize: vertical;
+  overflow: auto;
+  resize: none;
 }
 
 .config-editor:focus,
@@ -1751,7 +1788,7 @@
   }
 
   .service-sider.service-catalog {
-    max-height: none;
+    overflow: hidden auto;
   }
 
   .service-detail-metadata {
@@ -1814,8 +1851,7 @@
   }
 
   .config-editor {
-    height: clamp(320px, calc(100dvh - 260px), 560px);
-    min-height: 320px;
+    min-height: 220px;
   }
 
   .service-detail-dialog-backdrop {

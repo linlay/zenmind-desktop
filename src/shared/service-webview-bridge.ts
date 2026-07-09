@@ -14,6 +14,7 @@ export const DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE = "desktop:download:file";
 export const DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE = "desktop:download:file:response";
 export const DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE = "desktop:screenshot:capture";
 export const DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE = "desktop:screenshot:capture:response";
+export const AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE = "desktop:agent-webclient:chat-route";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -27,6 +28,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
+  AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -91,6 +93,8 @@ export type ServiceWebviewBridgeMessage = {
   restartRequired?: boolean;
   changedKeys?: string[];
   token?: string | null;
+  agentKey?: string;
+  chatId?: string;
   desktop?: unknown;
   stage?: string;
   message?: string;

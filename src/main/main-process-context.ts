@@ -104,6 +104,7 @@ export interface AssistantIpcHandlerContextDependencies {
   cancelAssistantAttachmentTask: (...args: any[]) => unknown;
   createAssistantAttachmentsFromFiles: (...args: any[]) => unknown;
   captureAssistantScreenshot: (...args: any[]) => unknown;
+  refreshQuickAssistantShortcut?: (...args: any[]) => unknown;
 }
 
 export function createAssistantIpcHandlerOptions(
@@ -132,6 +133,7 @@ export function createAssistantIpcHandlerOptions(
     cancelAssistantAttachmentTask: dependencies.cancelAssistantAttachmentTask,
     createAssistantAttachmentsFromFiles: dependencies.createAssistantAttachmentsFromFiles,
     captureAssistantScreenshot: dependencies.captureAssistantScreenshot,
+    refreshQuickAssistantShortcut: dependencies.refreshQuickAssistantShortcut,
     platform: context.platform,
     getCurrentPageSnapshot: () => context.state.currentPageSnapshot,
     setCurrentPageSnapshot: (snapshot: unknown) => {

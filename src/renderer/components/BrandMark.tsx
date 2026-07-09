@@ -39,6 +39,7 @@ export type SidebarActionIconKind =
   | "new_chat"
   | "more_actions"
   | "double_check"
+  | "close"
   | "website_open"
   | "website_closed";
 
@@ -196,6 +197,13 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
         <svg {...iconProps}>
           <path d="M2 13.5l3.5 3.5 6-6" />
           <path d="M9 13.5l3.5 3.5 7.5-7.5" />
+        </svg>
+      );
+    case "close":
+      return (
+        <svg {...iconProps}>
+          <line x1="6" y1="6" x2="18" y2="18" />
+          <line x1="18" y1="6" x2="6" y2="18" />
         </svg>
       );
     case "website_open":

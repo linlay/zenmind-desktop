@@ -1,4 +1,5 @@
 import {
+  AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
   SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES,
@@ -27,6 +28,7 @@ export function buildServiceWebviewMainWorldScript() {
   const PRELOAD_TO_PAGE_ACTION_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_ACTION_EVENT)};
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
+  const AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE = ${JSON.stringify(AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
   const DESKTOP_WS_MONITOR_WRAPPED_FLAG = ${JSON.stringify(DESKTOP_WS_MONITOR_WRAPPED_FLAG)};
   const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = ${JSON.stringify(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY)};
@@ -41,6 +43,7 @@ export function buildServiceWebviewMainWorldScript() {
     ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)}
   ]);
   const resolveServiceWebviewWsMonitorUrl = ${resolveServiceWebviewWsMonitorUrl.toString()};
+  const AGENT_NEW_CONVERSATION_ROUTE_HINT_TTL_MS = 45000;
   const initialWsSource = (() => {
     try {
       return new URLSearchParams(window.location.search || "").get("wsSource")?.trim() || "";
@@ -49,6 +52,7 @@ export function buildServiceWebviewMainWorldScript() {
     }
   })();
   const fromMainListeners = new Map();
+  let pendingAgentNewConversationRoute = null;
 
   function emitFromMain(channel, payload) {
     const listeners = fromMainListeners.get(channel);
@@ -128,6 +132,160 @@ export function buildServiceWebviewMainWorldScript() {
     window.dispatchEvent(new CustomEvent(PAGE_TO_PRELOAD_EVENT, { detail: value }));
   }
 
+  function readCurrentAgentKey() {
+    try {
+      const pathname =
+        window.location?.pathname ||
+        new URL(
+          window.location?.href || "",
+          window.location?.origin || "http://localhost",
+        ).pathname;
+      const match = /^\\/agent\\/([^/?#]+)/u.exec(pathname);
+      return match && match[1] ? decodeURIComponent(match[1]).trim() : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function readEventDetailRecord(event) {
+    return event && event.detail && typeof event.detail === "object" && !Array.isArray(event.detail)
+      ? event.detail
+      : {};
+  }
+
+  function readString(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  function dispatchAgentChatRouteHint(chatId, agentKey) {
+    const normalizedChatId = readString(chatId);
+    if (!normalizedChatId) {
+      return false;
+    }
+    const normalizedAgentKey = readString(agentKey) || readCurrentAgentKey();
+    dispatchToPreload({
+      type: AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
+      requestId: \`agent_webclient_chat_route_\${Date.now()}_\${Math.random().toString(36).slice(2, 8)}\`,
+      chatId: normalizedChatId,
+      agentKey: normalizedAgentKey
+    });
+    return true;
+  }
+
+  function rememberPendingAgentNewConversationRoute(event) {
+    const detail = readEventDetailRecord(event);
+    pendingAgentNewConversationRoute = {
+      agentKey: readString(detail.agentKey) || readCurrentAgentKey(),
+      expiresAt: Date.now() + AGENT_NEW_CONVERSATION_ROUTE_HINT_TTL_MS
+    };
+  }
+
+  function clearPendingAgentNewConversationRoute() {
+    pendingAgentNewConversationRoute = null;
+  }
+
+  function hasPendingAgentNewConversationRoute(agentKey) {
+    const pending = pendingAgentNewConversationRoute;
+    if (!pending || pending.expiresAt <= Date.now()) {
+      clearPendingAgentNewConversationRoute();
+      return false;
+    }
+    const normalizedAgentKey = readString(agentKey);
+    return !pending.agentKey || !normalizedAgentKey || pending.agentKey === normalizedAgentKey;
+  }
+
+  function readAgentRunStartRouteHint(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const frame = value;
+    const event =
+      frame.frame === "stream" && frame.event && typeof frame.event === "object"
+        ? frame.event
+        : frame.frame === "push" && frame.payload && typeof frame.payload === "object"
+          ? frame.payload
+          : frame.frame === "push" && frame.data && typeof frame.data === "object"
+            ? frame.data
+            : frame;
+    const rawType = readString(event.type || frame.type);
+    const type = rawType === "run.started" ? "run.start" : rawType;
+    if (type !== "run.start") {
+      return null;
+    }
+    const chatId = readString(event.chatId || frame.chatId);
+    if (!chatId) {
+      return null;
+    }
+    return {
+      chatId,
+      agentKey: readString(event.agentKey || frame.agentKey)
+    };
+  }
+
+  function readAgentRunStartRouteHintFromWebSocketMessage(event) {
+    const data = event ? event.data : null;
+    const text = typeof data === "string" ? data : "";
+    if (!text) {
+      return null;
+    }
+    try {
+      return readAgentRunStartRouteHint(JSON.parse(text));
+    } catch {
+      return null;
+    }
+  }
+
+  function forwardPendingAgentRunStartRoute(event) {
+    const routeHint = readAgentRunStartRouteHintFromWebSocketMessage(event);
+    if (!routeHint || !hasPendingAgentNewConversationRoute(routeHint.agentKey)) {
+      return;
+    }
+    if (dispatchAgentChatRouteHint(routeHint.chatId, routeHint.agentKey)) {
+      clearPendingAgentNewConversationRoute();
+    }
+  }
+
+  function observeAgentWebclientWebSocket(socket) {
+    if (!socket || typeof socket.addEventListener !== "function") {
+      return socket;
+    }
+    try {
+      socket.addEventListener("message", forwardPendingAgentRunStartRoute);
+    } catch {
+      // Keep service webview WebSocket behavior unchanged if observation fails.
+    }
+    return socket;
+  }
+
+  function forwardAgentChatRouteEvent(event) {
+    const detail = readEventDetailRecord(event);
+    const chatId = readString(detail.chatId);
+    const agentKey = readString(detail.agentKey) || readCurrentAgentKey();
+    if (dispatchAgentChatRouteHint(chatId, agentKey)) {
+      clearPendingAgentNewConversationRoute();
+    }
+  }
+
+  function forwardAgentLoadChatRoute(event) {
+    forwardAgentChatRouteEvent(event);
+  }
+
+  function forwardAgentAttachRunRoute(event) {
+    forwardAgentChatRouteEvent(event);
+  }
+
+  function forwardAgentRunStartedPushRoute(event) {
+    const detail = readEventDetailRecord(event);
+    const chatId = readString(detail.chatId);
+    const agentKey = readString(detail.agentKey) || readCurrentAgentKey();
+    if (!hasPendingAgentNewConversationRoute(agentKey)) {
+      return;
+    }
+    if (dispatchAgentChatRouteHint(chatId, agentKey)) {
+      clearPendingAgentNewConversationRoute();
+    }
+  }
+
   function readWsMonitorPageHref() {
     if (!initialWsSource) {
       return window.location.href;
@@ -154,9 +312,9 @@ export function buildServiceWebviewMainWorldScript() {
     function DesktopServiceWebviewWebSocket(url, protocols) {
       const nextUrl = resolveServiceWebviewWsMonitorUrl(url, readWsMonitorPageHref());
       if (arguments.length > 1) {
-        return new OriginalWebSocket(nextUrl, protocols);
+        return observeAgentWebclientWebSocket(new OriginalWebSocket(nextUrl, protocols));
       }
-      return new OriginalWebSocket(nextUrl);
+      return observeAgentWebclientWebSocket(new OriginalWebSocket(nextUrl));
     }
     try {
       Object.setPrototypeOf(DesktopServiceWebviewWebSocket, OriginalWebSocket);
@@ -248,6 +406,11 @@ export function buildServiceWebviewMainWorldScript() {
       dispatchToPreload(event.data);
     }
   });
+
+  window.addEventListener("agent:load-chat", forwardAgentLoadChatRoute);
+  window.addEventListener("agent:start-new-conversation", rememberPendingAgentNewConversationRoute);
+  window.addEventListener("agent:attach-run", forwardAgentAttachRunRoute);
+  window.addEventListener("agent:run-started-push", forwardAgentRunStartedPushRoute);
 
   window.addEventListener(PRELOAD_TO_PAGE_EVENT, (event) => {
     const payload = event.detail;

@@ -144,6 +144,7 @@ export type MainIpcRegistrationOptions = {
   reportRendererDiagnostic: (...args: any[]) => unknown;
   emitAssistantAttachmentProgress: (...args: any[]) => unknown;
   captureAssistantScreenshot: (...args: any[]) => unknown;
+  refreshQuickAssistantShortcut: (accelerator?: string) => unknown;
 };
 
 export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
@@ -185,7 +186,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     createAssistantAttachmentFromPastedImage,
     cancelAssistantAttachmentTask,
     createAssistantAttachmentsFromFiles,
-    captureAssistantScreenshot: options.captureAssistantScreenshot as any
+    captureAssistantScreenshot: options.captureAssistantScreenshot as any,
+    refreshQuickAssistantShortcut: options.refreshQuickAssistantShortcut
   }));
 
   registerQuickCopilotIpcHandlers(ipcMain, options.quickCopilotWindowController);

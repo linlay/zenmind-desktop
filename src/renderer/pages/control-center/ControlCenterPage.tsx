@@ -1592,30 +1592,32 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
         </div>
       </div>
 
-      {feedback || error ? (
-        <PageFeedbackStack
-          items={[
-            ...(feedback
-              ? [
-                {
-                  id: "control-center-feedback",
-                  tone: "success" as const,
-                  message: feedback,
-                },
-              ]
-              : []),
-            ...(error
-              ? [
-                {
-                  id: "control-center-error",
-                  tone: "error" as const,
-                  message: error,
-                },
-              ]
-              : []),
-          ]}
-        />
-      ) : null}
+      <div className="control-center-feedback-slot">
+        {feedback || error ? (
+          <PageFeedbackStack
+            items={[
+              ...(feedback
+                ? [
+                  {
+                    id: "control-center-feedback",
+                    tone: "success" as const,
+                    message: feedback,
+                  },
+                ]
+                : []),
+              ...(error
+                ? [
+                  {
+                    id: "control-center-error",
+                    tone: "error" as const,
+                    message: error,
+                  },
+                ]
+                : []),
+            ]}
+          />
+        ) : null}
+      </div>
       {loading ? (
         <div className="loading-box">
           {t("controlCenter.loadingServices")}

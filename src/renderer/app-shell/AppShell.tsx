@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "re
 import { AppSidebar } from "./navigation/AppSidebar";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
-import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
+import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { StartupLoadingScreen, StartupRoutePlaceholder } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
@@ -19,7 +19,9 @@ import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantSett
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+  DEFAULT_QUICK_ASSISTANT_SHORTCUT,
   DESKTOP_COPILOT_PAGE_KEYS,
+  normalizeQuickAssistantShortcut,
   type DesktopCopilotPageKey
 } from "../../shared/assistant-settings";
 import {
@@ -548,7 +550,10 @@ export function AppShell() {
     location.pathname === EMPTY_WEB_SURFACE_ROUTE ||
     location.pathname.startsWith("/webs/");
   const usesBuiltinBrowserSurface = location.pathname === BUILTIN_BROWSER_ROUTE;
-  const shouldMountBuiltinBrowserSurface = builtinBrowserSurfaceMounted || usesBuiltinBrowserSurface;
+  const shouldMountBuiltinBrowserSurface =
+    location.pathname === EMPTY_WEB_SURFACE_ROUTE
+      ? false
+      : builtinBrowserSurfaceMounted || usesBuiltinBrowserSurface;
   const usesPluginSurface =
     Boolean(activeEmbeddedAgentWebclientRoute) ||
     (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
@@ -907,6 +912,22 @@ export function AppShell() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSingleAgentWebclientRoute(location.pathname)) {
+      return;
+    }
+    let routeChatId = "";
+    try {
+      routeChatId = new URLSearchParams(location.search).get("chatId")?.trim() ?? "";
+    } catch {
+      routeChatId = "";
+    }
+    if (!routeChatId) {
+      return;
+    }
+    void refreshAssistantNavAgents();
+  }, [currentRoute]);
 
   useEffect(() => {
     if (agentPlatformRunning) {
@@ -2197,6 +2218,7 @@ export function AppShell() {
               return {
                 enabled: settings.quickAssistantEnabled,
                 agentKey: settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+                shortcut: normalizeQuickAssistantShortcut(settings.quickAssistantShortcut),
                 configured: settings.configured,
                 source: settings.source,
                 sourceLabel: settings.sourceLabel,
@@ -2512,6 +2534,14 @@ export function AppShell() {
           to: quickPatch.agentKey
         });
       }
+      if (hasOwn(quickPatch, "shortcut")) {
+        changes.push({
+          section: "quick",
+          field: "shortcut",
+          from: normalizeQuickAssistantShortcut(state.assistantSettings.quickAssistantShortcut),
+          to: normalizeQuickAssistantShortcut(quickPatch.shortcut)
+        });
+      }
       if (hasOwn(copilotPatch, "desktopCopilotPages")) {
         changes.push({
           section: "copilot",
@@ -2576,11 +2606,14 @@ export function AppShell() {
         await setLocale(appearancePatch.locale as SupportedLocale);
         affectedSections.add("appearance");
       }
-      if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey") || hasOwn(copilotPatch, "desktopCopilotPages")) {
+      if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey") || hasOwn(quickPatch, "shortcut") || hasOwn(copilotPatch, "desktopCopilotPages")) {
         const nextSettings = await window.electronAPI.assistant.saveSettings({
           ...(typeof quickPatch.enabled === "boolean" ? { quickAssistantEnabled: quickPatch.enabled } : {}),
           ...(typeof quickPatch.agentKey === "string"
             ? { quickAssistantAgentKey: quickPatch.agentKey.trim() || DEFAULT_QUICK_ASSISTANT_AGENT_KEY }
+            : {}),
+          ...(typeof quickPatch.shortcut === "string"
+            ? { quickAssistantShortcut: normalizeQuickAssistantShortcut(quickPatch.shortcut || DEFAULT_QUICK_ASSISTANT_SHORTCUT) }
             : {}),
           ...(hasOwn(copilotPatch, "desktopCopilotPages")
             ? {
@@ -2592,7 +2625,7 @@ export function AppShell() {
             : {})
         });
         setAssistantSettings(nextSettings);
-        if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey")) {
+        if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey") || hasOwn(quickPatch, "shortcut")) {
           affectedSections.add("quick");
         }
         if (hasOwn(copilotPatch, "desktopCopilotPages")) {
@@ -2998,7 +3031,7 @@ export function AppShell() {
               }
             />
             <Route path={BUILTIN_BROWSER_ROUTE} element={null} />
-            <Route path={EMPTY_WEB_SURFACE_ROUTE} element={null} />
+            <Route path={EMPTY_WEB_SURFACE_ROUTE} element={<EmptyWebSurfaceRoute />} />
             <Route path="/webs/:entryKey" element={<WebRouteFallback itemMap={webItemMap} />} />
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />

@@ -32,6 +32,7 @@ export interface AssistantIpcHandlerOptions {
   emitAssistantAttachmentProgress: ((progress: any) => void) | null;
   getAssistantSettings: ((app: any) => any) | null;
   saveAssistantSettings: ((app: any, input: any) => any) | null;
+  refreshQuickAssistantShortcut?: ((accelerator?: string) => any) | null;
   getAgentPlatformMinimaxSettingsPublic: ((app: any) => any) | null;
   resolveAssistantAttachmentPath: ((app: any, chatId: string, attachmentId: string) => string) | null;
   createAssistantAttachmentFromPastedImage: ((app: any, chatId: any, input: any) => any) | null;
@@ -80,6 +81,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     emitAssistantAttachmentProgress,
     getAssistantSettings,
     saveAssistantSettings,
+    refreshQuickAssistantShortcut,
     getAgentPlatformMinimaxSettingsPublic,
     resolveAssistantAttachmentPath,
     createAssistantAttachmentFromPastedImage,
@@ -129,9 +131,13 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     (getAgentPlatformMinimaxSettingsPublic?.(app) ?? null) ?? getAssistantSettings?.(app)
   );
 
-  ipcMain.handle("assistant.saveSettings", async (_event: any, input: any) =>
-    saveAssistantSettings?.(app, input)
-  );
+  ipcMain.handle("assistant.saveSettings", async (_event: any, input: any) => {
+    const nextSettings = await saveAssistantSettings?.(app, input);
+    if (nextSettings && input && typeof input.quickAssistantShortcut === "string") {
+      refreshQuickAssistantShortcut?.(nextSettings.quickAssistantShortcut);
+    }
+    return nextSettings;
+  });
 
   ipcMain.handle("assistant.getMemorySettings", async () =>
     assistantBridge?.getMemorySettings()

@@ -6,6 +6,7 @@ import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_ENABLED,
+  normalizeQuickAssistantShortcut,
   type DesktopCopilotPagePreferences
 } from "../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../shared/page-copilot";
@@ -39,6 +40,7 @@ export type DesktopProfile = {
     quick: {
       enabled: boolean;
       agentKey: string;
+      shortcut: string;
     };
   };
   navigation: {
@@ -157,6 +159,11 @@ function normalizeDesktopProfile(
     readText(legacyQuickAssistant.agentKey) ||
     readText(legacySettings.quickAssistantAgentKey) ||
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
+  const quickShortcut = normalizeQuickAssistantShortcut(
+    readText(quick.shortcut) ||
+    readText(legacyQuickAssistant.shortcut) ||
+    readText(legacySettings.quickAssistantShortcut)
+  );
   const legacyQuickAssistantEnabled = typeof legacySettings.quickAssistantEnabled === "boolean"
     ? legacySettings.quickAssistantEnabled
     : DEFAULT_QUICK_ASSISTANT_ENABLED;
@@ -197,7 +204,8 @@ function normalizeDesktopProfile(
           : typeof legacyQuickAssistant.enabled === "boolean"
             ? legacyQuickAssistant.enabled
           : legacyQuickAssistantEnabled,
-        agentKey: quickAgentKey
+        agentKey: quickAgentKey,
+        shortcut: quickShortcut
       }
     },
     navigation: {

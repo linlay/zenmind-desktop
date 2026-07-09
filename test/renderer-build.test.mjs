@@ -411,7 +411,7 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /openLogViewer/);
   assert.match(controlCenter, /writeConfig/);
   assert.match(controlCenter, /PageFeedbackStack/);
-  assert.match(controlCenter, /\{feedback \|\| error \? \(\s*<PageFeedbackStack/);
+  assert.match(controlCenter, /className="control-center-feedback-slot"[\s\S]*?\{feedback \|\| error \? \(\s*<PageFeedbackStack/);
   assert.doesNotMatch(controlCenter, /control-center-feedback-anchor/);
   assert.match(globalStyles, /\.control-center-dashboard-metrics\s*\{/);
   assert.match(globalStyles, /:root\s*\{[\s\S]*?--desktop-ui-bg:\s*#ffffff;[\s\S]*?--desktop-ui-card:\s*#ffffff;[\s\S]*?--desktop-ui-primary:\s*#0052d9;[\s\S]*?--desktop-ui-code-bg:\s*#0d1117;/);
@@ -444,6 +444,9 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.page-feedback-dismiss\s*\{/);
   assert.match(globalStyles, /\.page-feedback-anchor\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?height:\s*0;/);
   assert.match(globalStyles, /\.page-feedback-layer\s*\{[\s\S]*?transform:\s*none;/);
+  assert.match(globalStyles, /\.control-center-feedback-slot\s*\{[\s\S]*?min-height:\s*46px;/);
+  assert.match(globalStyles, /\.control-center-feedback-slot \.page-feedback-anchor\s*\{[\s\S]*?position:\s*static;/);
+  assert.match(globalStyles, /\.control-center-feedback-slot \.page-feedback-layer\s*\{[\s\S]*?position:\s*static;/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-anchor\s*\{/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-layer\s*\{/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-toast\s*\{/);
@@ -1012,7 +1015,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
-  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "website_open"[\s\S]*\| "website_closed"/);
+  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close"[\s\S]*\| "website_open"[\s\S]*\| "website_closed"/);
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
   assert.match(brandMarkSource, /statusColor = kind === "website_open" \? "#10B981" : "#EF4444"/);
   assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
@@ -1062,14 +1065,16 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /"agent:load-chat"/);
   assert.match(sidebarSource, /params\.set\("newChat", "1"\)/);
   assert.match(sidebarSource, /params\.set\("newChatRequest", String\(Date\.now\(\)\)\)/);
+  assert.match(sidebarSource, /setExpandedAssistantAgentKey\(result\.agentKey\);\s*requestNavigate\(createAgentNewChatRoute\(result\.agentKey\)\);/);
   assert.match(sidebarSource, /newChatRequested: url\.searchParams\.get\("newChat"\)\?\.trim\(\) === "1"/);
   assert.match(sidebarSource, /if \(!newChatRequested\) \{\s*return false;\s*\}/);
   assert.match(sidebarSource, /webview\.executeJavaScript\(script, true\)/);
+  assert.match(sidebarSource, /requestNavigate\(\s*createAgentChatRoute\(chat\.agentKey \|\| currentAgentKey, chat\.chatId\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\},?\s*\)/);
   assert.match(sidebarSource, /targetAgentInfo\.newChatRequested/);
   assert.match(sidebarSource, /function handleAssistantAgentExpand\(\s*agent: AssistantNavAgentItem,\s*expanded: boolean,\s*\) \{[\s\S]*?if \(!expanded\) \{[\s\S]*?return;[\s\S]*?createAgentSelectionRoute\(agent, \{ preferNewChat: !isCollapsed \}\)[\s\S]*?retriggerAgentRoute: true/);
   assert.match(sidebarSource, /onExpand=\{\(val\) => handleAssistantAgentExpand\(agent, val\)\}/);
   assert.doesNotMatch(sidebarSource, /handleAssistantAgentHeaderClick/);
-  assert.match(sidebarSource, /currentPathname\.startsWith\("\/agent\/"\)/);
+  assert.match(sidebarSource, /displayCurrentPathname\.startsWith\("\/agent\/"\)/);
   assert.match(sidebarSource, /pendingPath\?\.startsWith\("\/agent\/"\)/);
   assert.doesNotMatch(sidebarSource, /nonce=/);
   assert.doesNotMatch(sidebarSource, /AssistantHistoryState/);
@@ -1109,6 +1114,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.ok(activeChatIdStart >= 0);
   assert.ok(routeActiveStart > activeChatIdStart);
   const activeChatIdBlock = sidebarSource.slice(activeChatIdStart, routeActiveStart);
+  assert.match(activeChatIdBlock, /chats: AssistantNavChatItem\[\] = \[\]/);
+  assert.match(activeChatIdBlock, /currentChatId \|\| \(pendingPath && pendingChatId \? pendingChatId : ""\)/);
+  assert.match(activeChatIdBlock, /routeChatId && chats\.some\(\(chat\) => chat\.chatId === routeChatId\)/);
   assert.match(activeChatIdBlock, /if \(routeChatId\) \{\s*return routeChatId;\s*\}\s*return "";/);
   assert.match(sidebarSource, /"assistant-worker-collapse-item"/);
   assert.match(sidebarSource, /className="assistant-worker-header-text"/);
@@ -1119,6 +1127,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /worker-panel-role/);
   assert.match(sidebarSource, /HIDDEN_ASSISTANT_ROLE_MODES[\s\S]*?"CODER"[\s\S]*?"KBASE"/);
   assert.match(sidebarSource, /function getAssistantAgentRoleLabel\(agent: AssistantNavAgentItem\)/);
+  assert.match(sidebarSource, /HIDDEN_ASSISTANT_ROLE_AGENT_TYPES\.has\(agentType\)[\s\S]*?HIDDEN_ASSISTANT_ROLE_MODES\.has\(mode\)[\s\S]*?return "";/);
+  assert.match(sidebarSource, /if \(!role \|\| role === "--"\) \{\s*return "";\s*\}/);
   assert.match(sidebarSource, /const agentRole = getAssistantAgentRoleLabel\(agent\);/);
   assert.match(sidebarSource, /agentRole \? \([\s\S]{0,200}worker-panel-role/);
   assert.doesNotMatch(sidebarSource, /agent\.role \|\| "--"/);
@@ -1151,6 +1161,12 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     sidebarSource.match(/async function handleConfirmRenameChat[\s\S]*?async function handleAssistantArchiveChat/u)?.[0] ?? "";
   assert.match(sidebarSource, /type AssistantChatRenameDialogState = \{/u);
   assert.match(sidebarSource, /function renderAssistantChatRenameDialog\(\)/u);
+  assert.match(sidebarSource, /type AssistantChatDeleteDialogState = \{/u);
+  assert.match(sidebarSource, /function renderAssistantChatDeleteDialog\(\)/u);
+  assert.doesNotMatch(sidebarSource, /window\.confirm\(t\("sidebar\.chat\.deleteConfirm"/u);
+  assert.match(sidebarSource, /t\("sidebar\.chat\.deleteConfirm", \{ name: chatLabel \}\)/u);
+  assert.match(sidebarSource, /t\("common\.cancel"\)/u);
+  assert.match(sidebarSource, /t\("common\.confirm"\)/u);
   assert.match(confirmRenameChatHandler, /const result = await window\.electronAPI\.assistant\.renameChat\(/u);
   assert.match(confirmRenameChatHandler, /assistantChatRenameDialog\.chat\.chatId/u);
   assert.match(confirmRenameChatHandler, /if \(!result\.ok\)/u);
@@ -1166,6 +1182,11 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /const helpToolItem: SidebarToolItem = \{[\s\S]*?to:\s*"\/help"/);
   assert.match(sidebarSource, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?anchorRef: bootstrapGuideToolHelpAnchorRef/);
   assert.match(sidebarSource, /settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
+  assert.match(sidebarSource, /AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS[\s\S]*?routeDefinition\.kind === "management"[\s\S]*?function isAgentWebclientManagementRoute\(route: string\)/);
+  assert.match(sidebarSource, /forcedActiveManagementRoute[\s\S]*?displayCurrentPathname[\s\S]*?activeSidebarAgentKey/);
+  assert.match(sidebarSource, /function handleItemClick\([\s\S]*?targetPath === currentRoute[\s\S]*?targetPathname === currentPathname[\s\S]*?setForcedActiveManagementRoute\(targetPath\)[\s\S]*?dispatchAgentWebclientManagementRouteToActiveWebview\(targetPath\)/);
+  assert.match(sidebarSource, /function isFixedToolRouteActive\(targetPath: string\)[\s\S]*?displayCurrentPathname === targetPathname/);
+  assert.match(sidebarSource, /function dispatchAgentWebclientManagementRouteToActiveWebview\(targetPath: string\)[\s\S]*?window\.history\.pushState[\s\S]*?PopStateEvent\("popstate"/);
   assert.doesNotMatch(sidebarSource, /"settings-help"/);
   assert.doesNotMatch(sidebarSource, /"sidebar-settings-help-link"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/automations"/);
@@ -1284,6 +1305,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /path=\{LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\}[\s\S]*?<LegacyAgentWebclientServiceRouteRedirect \/>/);
   assert.match(appShell, /function resolveSingleAgentWebclientRoute\(pathname: string, search: string\)/);
   assert.match(appShell, /matchPath\("\/agent\/:agentKey", pathname\)/);
+  assert.match(appShell, /if \(!isSingleAgentWebclientRoute\(location\.pathname\)\) \{[\s\S]*?return;[\s\S]*?new URLSearchParams\(location\.search\)\.get\("chatId"\)\?\.trim\(\)[\s\S]*?void refreshAssistantNavAgents\(\);[\s\S]*?\}, \[currentRoute\]\);/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)/);
   assert.match(appShell, /matchPath\("\/agents\/:agentKey", pathname\)/);
   assert.match(appShell, /embedPath:\s*`\$\{pathname\}\$\{search\}`/);
@@ -1371,7 +1393,7 @@ test("sidebar top navigation exposes scoped back and forward history controls", 
   assert.doesNotMatch(settingsPage, /onSidebarNavigateBack/);
 });
 
-test("assistant sidebar chat history selection follows pending navigation", () => {
+test("assistant sidebar chat history selection follows the current chat route", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1382,17 +1404,17 @@ test("assistant sidebar chat history selection follows pending navigation", () =
   const globalStyles = readRendererStyles();
 
   assert.match(sidebarSource, /const pendingChatId = pendingRouteAgentInfo\.chatId;/);
-  assert.match(sidebarSource, /const activeSidebarAgentKey = pendingPath \? pendingAgentKey : currentAgentKey;/);
+  assert.match(sidebarSource, /const activeSidebarAgentKey =\s*currentAgentKey \|\|[\s\S]{0,120}pendingAgentKey : ""/);
   assert.match(sidebarSource, /function getActiveSidebarAgentKey\(\)/);
-  assert.match(sidebarSource, /function getActiveSidebarChatId\(agentKey: string\)/);
+  assert.match(sidebarSource, /function getActiveSidebarChatId\(\s*agentKey: string,\s*chats: AssistantNavChatItem\[\] = \[\],\s*\)/);
   assert.match(sidebarSource, /agent\.agentKey === activeSidebarAgentKey/);
   assert.match(sidebarSource, /const activeAgentChanged =\s*lastAutoExpandedAssistantAgentKeyRef\.current !== matched\.agentKey;/);
   assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,220}setExpandedAssistantAgentKey\(matched\.agentKey\);/);
   assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey\]\);/);
-  assert.match(sidebarSource, /const routeChatId = pendingPath \? pendingChatId : currentChatId;/);
+  assert.match(sidebarSource, /const routeChatId =\s*currentChatId \|\| \(pendingPath && pendingChatId \? pendingChatId : ""\);/);
   assert.match(sidebarSource, /if \(routeChatId\) \{[\s\S]{0,80}return routeChatId;/);
-  assert.match(sidebarSource, /const selected =\s*getActiveSidebarAgentKey\(\) === agent\.agentKey;/);
-  assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey\);/);
+  assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey, allRecentChats\);/);
+  assert.match(sidebarSource, /const selected = getActiveSidebarAgentKey\(\) === agent\.agentKey \|\| Boolean\(activeChatId\);/);
   assert.doesNotMatch(sidebarSource, /const activeChatId = currentChatId \|\| "";/);
   assert.match(sidebarSource, /selected \? "is-selected" : ""/);
   assert.match(sidebarSource, /selected \? "is-active" : ""/);
@@ -1941,10 +1963,14 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
   assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_ENABLED\s*=\s*true/);
   assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_AGENT_KEY\s*=\s*DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
+  assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_SHORTCUT\s*=\s*"Alt\+Space"/);
+  assert.match(sharedSettings, /normalizeQuickAssistantShortcut/);
   assert.match(sharedSettings, /DESKTOP_COPILOT_PAGE_KEYS/);
   assert.match(sharedSettings, /controlCenter/);
   assert.match(sharedSettings, /schedules/);
   assert.match(contracts, /bootstrapAgentKey:\s*string/);
+  assert.match(contracts, /quickAssistantShortcut:\s*string/);
+  assert.match(contracts, /quickAssistantShortcut\?:\s*string/);
   assert.match(settingsStore, /const DESKTOP_INIT_ASSISTANT_FILE = "assistant\.json"/);
   assert.match(settingsStore, /function readBootstrapAgentKeyFromRoot\(rootDir: string\)/);
   assert.match(settingsStore, /bootstrapAgentKey:\s*readBootstrapAgentKeyFromRoot\(rootDir\)/);
@@ -1953,6 +1979,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStore, /desktopHelperAgentKey:\s*settings\.desktopHelperAgentKey/);
   assert.match(settingsStore, /quickAssistantEnabled:\s*settings\.quickAssistantEnabled/);
   assert.match(settingsStore, /quickAssistantAgentKey:\s*settings\.quickAssistantAgentKey/);
+  assert.match(settingsStore, /quickAssistantShortcut:\s*settings\.quickAssistantShortcut/);
   assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
   assert.doesNotMatch(settingsPage, /<p className="eyebrow">NAVIGATION<\/p>/);
   assert.match(settingsPageSections, /settings\.navigation\.label/);
@@ -2066,7 +2093,21 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /readAssistantAgentOptions\(agentsResult, fallbackAgents\)/);
   assert.match(settingsPage, /handleToggleQuickAssistantEnabled/);
   assert.match(settingsPage, /handleSelectQuickAssistantAgentKey/);
+  assert.match(settingsPage, /quickAssistantShortcut/);
+  assert.match(settingsPage, /function shortcutAcceleratorFromKeyboardEvent\(event: ReactKeyboardEvent<HTMLInputElement>\)/);
+  assert.match(settingsPage, /event\.ctrlKey \? "Control" : ""/);
+  assert.match(settingsPage, /key === " " \|\| key === "Spacebar" \|\| key === "Space"[\s\S]*?return "Space";/);
+  assert.match(settingsPage, /function handleQuickAssistantShortcutKeyDown\(event: ReactKeyboardEvent<HTMLInputElement>\)/);
+  assert.match(settingsPage, /setQuickAssistantShortcutDraft\(accelerator\)/);
+  assert.match(settingsPage, /onChange=\{\(event\) => setQuickAssistantShortcutDraft\(event\.target\.value\)\}/);
+  assert.match(settingsPage, /onKeyDown=\{handleQuickAssistantShortcutKeyDown\}/);
+  assert.doesNotMatch(settingsPage, /readOnly[\s\S]{0,240}onKeyDown=\{handleQuickAssistantShortcutKeyDown\}/);
+  assert.match(settingsPage, /handleSaveQuickAssistantShortcut/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*quickAssistantAgentKey: normalizedAgentKey\s*\}\)/);
+  assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*quickAssistantShortcut: normalizedShortcut\s*\}\)/);
+  assert.match(settingsPage, /settings\.quickAssistant\.shortcut/);
+  assert.match(enUS, /"settings\.quickAssistant\.shortcut":\s*"Shortcut"/);
+  assert.match(zhCN, /"settings\.quickAssistant\.shortcut":\s*"快捷键"/);
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
@@ -3125,7 +3166,8 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(closeWebEntry, /requestSidebarNavigation\(EMPTY_WEB_SURFACE_ROUTE\)/);
   assert.doesNotMatch(closeWebEntry, /requestSidebarNavigation\(BUILTIN_BROWSER_ROUTE\)/);
   assert.match(appShell, /location\.pathname === EMPTY_WEB_SURFACE_ROUTE \|\|[\s\S]{0,120}location\.pathname\.startsWith\("\/webs\/"\)/);
-  assert.match(appShell, /<Route path=\{EMPTY_WEB_SURFACE_ROUTE\} element=\{null\} \/>/);
+  assert.match(appShell, /<Route path=\{EMPTY_WEB_SURFACE_ROUTE\} element=\{<EmptyWebSurfaceRoute \/>\} \/>/);
+  assert.match(appShell, /location\.pathname === EMPTY_WEB_SURFACE_ROUTE[\s\S]{0,80}\? false[\s\S]{0,80}: builtinBrowserSurfaceMounted \|\| usesBuiltinBrowserSurface/);
   assert.match(closeWebEntry, /setMountedWebEntryKeys\(\(current\) =>[\s\S]*?current\.filter\(\(entryKey\) => entryKey !== item\.entryKey\)/);
   assert.match(closeWebEntry, /window\.electronAPI\.webs\.webapps\.stop\(item\.id\)/);
   assert.doesNotMatch(closeWebEntry, /webs\.websites\.remove/);
@@ -3140,7 +3182,7 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appSidebar, /webOpenEntryKeys\.includes\(webItem\.entryKey\)/);
   assert.match(appSidebar, /const webIconKind = isOpen \? "website_open" : "website_closed"/);
   assert.match(appSidebar, /<SidebarActionIcon kind=\{webIconKind\} \/>/);
-  assert.match(appSidebar, /<SidebarActionIcon kind="website_closed" \/>/);
+  assert.match(appSidebar, /<SidebarActionIcon kind="close" \/>/);
   assert.match(appSidebar, /isOpen \? "is-open" : ""/);
   assert.match(appSidebar, /t\("sidebar\.website\.manage"\)/);
   assert.match(appSidebar, /t\("sidebar\.website\.close"\)/);
@@ -4623,6 +4665,13 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(pluginPage, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
   assert.match(pluginPage, /normalizedCurrentUrl === embeddedUrl/);
+  assert.match(pluginPage, /function resolveAgentWebclientChatRouteFromUrl\(value: string, webviewSrcUrl: string\)/);
+  assert.match(pluginPage, /parsed\.searchParams\.get\("chatId"\)\?\.trim\(\)/);
+  assert.match(pluginPage, /service\?\.id === "agent-webclient"[\s\S]*?surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
+  assert.match(pluginPage, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
+  assert.match(pluginPage, /function handleAgentWebclientChatRouteMessage\([\s\S]*?payload\.type !== AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
+  assert.match(pluginPage, /readAgentWebclientRouteAgentKey\(currentRoute\)[\s\S]*?readAgentWebclientUrlAgentKey\(readCurrentWebviewUrl\(\), webviewSrcUrl\)/);
+  assert.match(pluginPage, /const nextChatRoute = createAgentWebclientChatRoute\(agentKey, chatId\);[\s\S]{0,120}navigate\(nextChatRoute, \{ replace: true \}\)/);
   assert.match(pluginPage, /buildClientSideRouteNavigationScript/);
   assert.match(directRouteLoadBlock, /currentParsed\.origin === targetParsed\.origin/);
   assert.match(directRouteLoadBlock, /targetWebview\.executeJavaScript\(/);
@@ -4667,6 +4716,9 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL"));
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,[\s\S]*?PLUGIN_SETTINGS_READ_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /chatId\?: string;/);
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewPreload, /sendToHost/);
@@ -4689,6 +4741,13 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.doesNotMatch(serviceWebviewMainWorld, REMOVED_DESKTOP_WEBVIEW_BRIDGE_FLAG_PATTERN);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
+  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
+  assert.match(serviceWebviewMainWorld, /window\.addEventListener\("agent:load-chat", forwardAgentLoadChatRoute\)/);
+  assert.match(serviceWebviewMainWorld, /window\.addEventListener\("agent:start-new-conversation", rememberPendingAgentNewConversationRoute\)/);
+  assert.match(serviceWebviewMainWorld, /window\.addEventListener\("agent:attach-run", forwardAgentAttachRunRoute\)/);
+  assert.match(serviceWebviewMainWorld, /window\.addEventListener\("agent:run-started-push", forwardAgentRunStartedPushRoute\)/);
+  assert.match(serviceWebviewMainWorld, /socket\.addEventListener\("message", forwardPendingAgentRunStartRoute\)/);
+  assert.match(serviceWebviewMainWorld, /requestId:\s*\\`agent_webclient_chat_route_/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
   assert.match(serviceWebviewMainWorld, /resolveServiceWebviewWsMonitorUrl/);
   assert.match(serviceWebviewMainWorld, /window\.WebSocket = DesktopServiceWebviewWebSocket/);
@@ -6146,7 +6205,7 @@ test("websites and webapps settings use split workspace detail panes", () => {
   assert.match(settingsPage, /desktop-pet-agent-select-wrap/);
 });
 
-test("built-in browser surface remains mounted after leaving the chrome route", () => {
+test("built-in browser surface remains mounted after leaving the chrome route except empty web surface", () => {
   const appShellFile = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const embeddedSurfaceHosts = readSourceFile(
     "src",
@@ -6159,7 +6218,7 @@ test("built-in browser surface remains mounted after leaving the chrome route", 
   assert.match(embeddedSurfaceHosts, /export function BuiltinBrowserSurfaceHost/u);
   assert.match(embeddedSurfaceHosts, /<ExternalWebviewPage[\s\S]*?surfaceId=\{BUILTIN_BROWSER_SURFACE_ID\}[\s\S]*?active=\{active\}/u);
   assert.match(appShellFile, /const \[builtinBrowserSurfaceMounted, setBuiltinBrowserSurfaceMounted\] = useState/u);
-  assert.match(appShellFile, /const shouldMountBuiltinBrowserSurface = builtinBrowserSurfaceMounted \|\| usesBuiltinBrowserSurface;/u);
+  assert.match(appShellFile, /const shouldMountBuiltinBrowserSurface =[\s\S]*?location\.pathname === EMPTY_WEB_SURFACE_ROUTE[\s\S]*?\? false[\s\S]*?: builtinBrowserSurfaceMounted \|\| usesBuiltinBrowserSurface;/u);
   assert.match(appShellFile, /<BuiltinBrowserSurfaceHost[\s\S]*?active=\{usesBuiltinBrowserSurface\}[\s\S]*?mounted=\{shouldMountBuiltinBrowserSurface\}/u);
   assert.match(appShellFile, /<Route path=\{BUILTIN_BROWSER_ROUTE\} element=\{null\} \/>/u);
   assert.doesNotMatch(appShellFile, /<Route\s+path=\{BUILTIN_BROWSER_ROUTE\}[\s\S]{0,260}<ExternalWebviewPage/u);

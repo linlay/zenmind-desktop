@@ -2277,8 +2277,8 @@ test("desktop managed service commands keep deploy, start, and stop contracts se
     };
     const webclientDeployCommand = await __testInternals.buildDesktopManagedDeployCommand(app, webclient, ["deploy.sh"], webclientLayout);
     assertFlag(webclientDeployCommand, "--output-dir", webclientLayout.configDir);
-    assert.equal(webclientDeployCommand.includes("--port"), false);
-    assert.equal(webclientDeployCommand.includes("--base-url"), false);
+    assertFlag(webclientDeployCommand, "--base-url", `http://127.0.0.1:${fixture.ports.platform}`);
+    assertFlag(webclientDeployCommand, "--port", String(webclient.web.defaultPort));
     assert.equal(webclientDeployCommand.includes("--config-dir"), false);
   } finally {
     restore();
@@ -2424,8 +2424,8 @@ test("desktop managed service commands insert configured lifecycle args before m
     const webclientDeployCommand = await __testInternals.buildDesktopManagedDeployCommand(app, webclient, ["deploy.sh"], webclientLayout);
     assert.deepEqual(webclientDeployCommand.slice(0, 2), ["deploy.sh", "--extra-webclient-deploy"]);
     assertFlag(webclientDeployCommand, "--output-dir", webclientLayout.configDir);
-    assert.equal(webclientDeployCommand.includes("--base-url"), false);
-    assert.equal(webclientDeployCommand.includes("--port"), false);
+    assertFlag(webclientDeployCommand, "--base-url", "http://127.0.0.1:7078");
+    assertFlag(webclientDeployCommand, "--port", String(webclient.web.defaultPort));
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["start.sh"], "start"),
       ["start.sh", "--base-url", "http://127.0.0.1:7078"]
@@ -2440,7 +2440,7 @@ test("desktop managed service commands insert configured lifecycle args before m
   }
 });
 
-test("agent-webclient host-managed start args require base-url only", () => {
+test("agent-webclient host-managed start args support configured base-url with platform fallback", () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
@@ -2449,9 +2449,9 @@ test("agent-webclient host-managed start args require base-url only", () => {
   const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
 
   try {
-    assert.throws(
-      () => __testInternals.resolveAgentWebclientHostStartOverrides(app),
-      /requires lifecycleArgs\.start --base-url/u
+    assert.deepEqual(
+      [...__testInternals.resolveAgentWebclientHostStartOverrides(app).entries()],
+      [["BASE_URL", `http://127.0.0.1:${fixture.ports.platform}`], ["DESKTOP_APP", "true"]]
     );
 
     fs.mkdirSync(path.dirname(configPath), { recursive: true });

@@ -12,6 +12,7 @@ const {
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
+  AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
@@ -68,10 +69,18 @@ function createEventTarget() {
 
 function createFakeWindow(options = {}) {
   const originalPostMessageCalls = [];
+  const sockets = [];
   const eventTarget = createEventTarget();
   function OriginalWebSocket(url, protocols) {
     this.url = url;
     this.protocols = protocols;
+    const socketEvents = createEventTarget();
+    this.addEventListener = socketEvents.addEventListener;
+    this.removeEventListener = socketEvents.removeEventListener;
+    this.emitMessage = (data) => {
+      socketEvents.dispatchEvent({ type: "message", data });
+    };
+    sockets.push(this);
   }
   OriginalWebSocket.CONNECTING = 0;
   OriginalWebSocket.OPEN = 1;
@@ -109,6 +118,7 @@ function createFakeWindow(options = {}) {
 
   return {
     originalPostMessageCalls,
+    sockets,
     window
   };
 }
@@ -260,6 +270,93 @@ test("service webview main-world script dispatches auth bridge requests", () => 
   window.postMessage(payload, "*");
 
   assert.deepEqual(captured, [payload]);
+});
+
+test("service webview main-world script forwards agent load-chat route hints", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  window.location.pathname = "/agent/zenmi";
+  window.location.href = "http://example.test/agent/zenmi?chatId=old&wsSource=desktop-chat";
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+  window.dispatchEvent({
+    type: "agent:load-chat",
+    detail: {
+      chatId: "chat_new"
+    }
+  });
+
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].type, AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE);
+  assert.equal(captured[0].chatId, "chat_new");
+  assert.equal(captured[0].agentKey, "zenmi");
+  assert.match(captured[0].requestId, /^agent_webclient_chat_route_/);
+});
+
+test("service webview main-world script forwards pending new-conversation run-start route hints", () => {
+  const { sockets, window } = createFakeWindow();
+  const captured = [];
+  window.location.pathname = "/agent/zenmi";
+  window.location.href = "http://example.test/agent/zenmi?chatId=old&wsSource=desktop-chat";
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+
+  const socket = new window.WebSocket("ws://example.test/ws");
+  assert.equal(sockets[0], socket);
+
+  socket.emitMessage(JSON.stringify({
+    frame: "stream",
+    id: "stream-1",
+    event: {
+      type: "run.start",
+      chatId: "chat_ignored",
+      runId: "run_ignored",
+      agentKey: "zenmi"
+    }
+  }));
+  assert.deepEqual(captured, []);
+
+  window.dispatchEvent({
+    type: "agent:start-new-conversation",
+    detail: {
+      agentKey: "zenmi",
+      preserveWorkerContext: true
+    }
+  });
+  socket.emitMessage(JSON.stringify({
+    frame: "stream",
+    id: "stream-2",
+    event: {
+      type: "run.start",
+      chatId: "chat_new",
+      runId: "run_new",
+      agentKey: "zenmi"
+    }
+  }));
+
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].type, AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE);
+  assert.equal(captured[0].chatId, "chat_new");
+  assert.equal(captured[0].agentKey, "zenmi");
+  assert.match(captured[0].requestId, /^agent_webclient_chat_route_/);
+
+  socket.emitMessage(JSON.stringify({
+    frame: "stream",
+    id: "stream-3",
+    event: {
+      type: "run.start",
+      chatId: "chat_late",
+      runId: "run_late",
+      agentKey: "zenmi"
+    }
+  }));
+  assert.equal(captured.length, 1);
 });
 
 test("service webview main-world script seeds tokens from auth responses", () => {
