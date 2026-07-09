@@ -3705,6 +3705,10 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
   const actionCatalog = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const bridgeSettings = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "desktop-action-bridge-settings.ts"),
+    "utf8"
+  );
   const mainProcess = readMainProcessRuntimeSource();
   const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
   const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
@@ -3732,6 +3736,11 @@ test("desktop action bridge exposes localhost api and renderer action providers"
 
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
+  assert.match(bridgeSettings, /DESKTOP_ACTION_BRIDGE_SETTINGS_FILE\s*=\s*"desktop-action-bridge\.json"/);
+  assert.match(bridgeSettings, /getConfiguredDesktopActionBridgePort/);
+  assert.match(bridge, /getConfiguredDesktopActionBridgePort\(options\.app\)/);
+  assert.match(bridge, /server\.listen\(bridgePort, DESKTOP_ACTION_BRIDGE_HOST/);
+  assert.doesNotMatch(bridge, /server\.listen\(DESKTOP_ACTION_BRIDGE_PORT/);
   assert.match(actionCatalog, /page_control/);
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
   assert.match(actionCatalog, /desktop\.setting\.applyPatch/);
@@ -3799,6 +3808,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(directCdpHandler, /confirmDesktopActionIfNeeded|confirmMutatingAction|desktopActionConfirmationEnabled/);
   assert.doesNotMatch(bridge, /小宅助理/);
   assert.match(assistantRuntime, /startDesktopActionBridge\(\{/);
+  assert.match(assistantRuntime, /refreshDesktopActionBridge/);
   assert.match(assistantRuntime, /callDesktopActionConfirmation/);
   assert.match(assistantHandlers, /desktopActions\.respond/);
   assert.match(assistantHandlers, /desktopActions\.respondConfirmation/);

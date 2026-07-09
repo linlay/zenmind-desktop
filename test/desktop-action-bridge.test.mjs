@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -9,8 +10,16 @@ const require = createRequire(import.meta.url);
 
 const {
   handleDesktopActionRequest,
+  startDesktopActionBridge,
+  stopDesktopActionBridge,
   __testInternals
 } = require("../dist-electron/main/desktop-action-bridge.js");
+const {
+  writeDesktopActionBridgeSettingsConfig
+} = require("../dist-electron/main/desktop-action-bridge-settings.js");
+const {
+  DESKTOP_ACTION_BRIDGE_HOST
+} = require("../dist-electron/shared/desktop-actions.js");
 
 function createApp(homePath) {
   return {
@@ -85,6 +94,82 @@ function createDesktopActionOptions(t) {
     }
   };
 }
+
+function waitForListening(server) {
+  if (server.listening) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      server.off("listening", onListening);
+      server.off("error", onError);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    server.on("listening", onListening);
+    server.on("error", onError);
+  });
+}
+
+async function getFreeLoopbackPort() {
+  const server = http.createServer();
+  await new Promise((resolve) => {
+    server.listen(0, DESKTOP_ACTION_BRIDGE_HOST, resolve);
+  });
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const port = address.port;
+  await new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
+}
+
+async function readJsonUrl(url) {
+  const response = await fetch(url);
+  assert.equal(response.ok, true);
+  return response.json();
+}
+
+test("desktop action bridge listens on configured port and refreshes when config changes", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const firstPort = await getFreeLoopbackPort();
+  let secondPort = await getFreeLoopbackPort();
+  while (secondPort === firstPort) {
+    secondPort = await getFreeLoopbackPort();
+  }
+  t.after(() => stopDesktopActionBridge());
+
+  writeDesktopActionBridgeSettingsConfig(options.app, {
+    schemaVersion: 1,
+    port: firstPort
+  });
+  const firstServer = startDesktopActionBridge(options);
+  await waitForListening(firstServer);
+  assert.deepEqual(await readJsonUrl(`http://${DESKTOP_ACTION_BRIDGE_HOST}:${firstPort}/health`), {
+    ok: true,
+    host: DESKTOP_ACTION_BRIDGE_HOST,
+    port: firstPort
+  });
+
+  writeDesktopActionBridgeSettingsConfig(options.app, {
+    schemaVersion: 1,
+    port: secondPort
+  });
+  const secondServer = startDesktopActionBridge(options);
+  await waitForListening(secondServer);
+  assert.deepEqual(await readJsonUrl(`http://${DESKTOP_ACTION_BRIDGE_HOST}:${secondPort}/health`), {
+    ok: true,
+    host: DESKTOP_ACTION_BRIDGE_HOST,
+    port: secondPort
+  });
+});
 
 test("desktop pet actions expose the simplified local pet API", async (t) => {
   const { calls, options, state } = createDesktopActionOptions(t);

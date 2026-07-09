@@ -120,10 +120,14 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     state.assistantNavigationStatusClient.start();
   }
 
-  function configureRemoteRuntimes() {
+  function refreshDesktopActionBridge() {
     startDesktopActionBridge({
       ...desktopActionOptions
     });
+  }
+
+  function configureRemoteRuntimes() {
+    refreshDesktopActionBridge();
     configureTunnelHubRegistrationController({
       logger: console
     });
@@ -178,6 +182,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     },
     startDesktopWsServerForSettings,
     stopDesktopWsServerForSettings,
+    refreshDesktopActionBridge,
     stop() {
       void options.cdpIntegration.stop();
       stopDesktopActionBridge();

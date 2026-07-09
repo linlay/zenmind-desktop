@@ -27,6 +27,10 @@ import {
   normalizeServicePortDefaultsConfig,
   writeServicePortDefaultsConfig
 } from "./service-port-defaults";
+import {
+  normalizeDesktopActionBridgeSettingsConfig,
+  writeDesktopActionBridgeSettingsConfig
+} from "./desktop-action-bridge-settings";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -46,6 +50,7 @@ type BootstrapApplyResult = {
   tunnelHub: BootstrapSectionResult;
   webs: BootstrapSectionResult;
   assistant: BootstrapAssistantResult;
+  desktopActionBridge: BootstrapSectionResult;
   services: BootstrapSectionResult;
 };
 
@@ -514,6 +519,25 @@ function applyServiceDefaults(
   return "applied";
 }
 
+function applyDesktopActionBridgeDefaults(
+  app: App,
+  desktopActionBridgeDefaults: unknown,
+  platform: NodeJS.Platform
+): Exclude<BootstrapSectionResult, "failed"> {
+  if (!isRecord(desktopActionBridgeDefaults)) {
+    return "absent";
+  }
+  const config = normalizeDesktopActionBridgeSettingsConfig(desktopActionBridgeDefaults, platform);
+  if (!config) {
+    if (Object.keys(desktopActionBridgeDefaults).length > 0) {
+      throw new Error("Desktop Action Bridge port must be an integer from 1 to 65535.");
+    }
+    return "absent";
+  }
+  writeDesktopActionBridgeSettingsConfig(app, config, platform);
+  return "applied";
+}
+
 function runBootstrapSection<T extends string>(
   sectionId: keyof BootstrapApplyResult,
   errors: Record<string, string>,
@@ -571,6 +595,11 @@ export function applyDesktopInitBootstrap(
       tunnelHub: runBootstrapSection("tunnelHub", errors, () => applyTunnelHubDefaults(app, defaults.tunnelHub, platform)),
       webs: runBootstrapSection("webs", errors, () => applyWebsiteDefaults(app, defaults.webs, defaults.websites, platform)),
       assistant: runBootstrapSection("assistant", errors, () => writeAssistantDefaults(app, assistant, platform)),
+      desktopActionBridge: runBootstrapSection(
+        "desktopActionBridge",
+        errors,
+        () => applyDesktopActionBridgeDefaults(app, defaults.desktopActionBridge, platform)
+      ),
       services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform))
     };
     const failedSections = getFailedSections(applied);
@@ -608,5 +637,6 @@ export const __testInternals = {
   applySsoDefaults,
   applyTunnelHubDefaults,
   applyWebsiteDefaults,
+  applyDesktopActionBridgeDefaults,
   applyServiceDefaults
 };

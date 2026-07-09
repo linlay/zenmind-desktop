@@ -21,6 +21,7 @@ export type SettingsRuntimeOptions = {
   broadcastDesktopSsoStatus: (status: ReturnType<typeof getDesktopSsoStatus>) => void;
   notifyServicesChanged: () => void;
   emitKanbanChanged: () => void;
+  refreshDesktopActionBridge: () => void;
 };
 
 export function createSettingsRuntime(options: SettingsRuntimeOptions) {
@@ -73,6 +74,7 @@ export function createSettingsRuntime(options: SettingsRuntimeOptions) {
     options.broadcastDesktopSsoStatus(getDesktopSsoStatus(options.app));
     options.notifyServicesChanged();
     options.emitKanbanChanged();
+    options.refreshDesktopActionBridge();
     emitDesktopConfigChanged(reason);
   }
 

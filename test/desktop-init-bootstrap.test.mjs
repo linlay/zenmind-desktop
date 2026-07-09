@@ -118,6 +118,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         agentKey: "desktopAssistant"
       }
     ],
+    desktopActionBridge: {
+      port: 17988
+    },
     services: {
       "agent-container-hub": {
         defaultPort: 7909
@@ -185,6 +188,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const pet = readJson(path.join(desktop, "config", "desktop", "pet.json"));
   const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
+  const desktopActionBridge = readJson(path.join(desktop, "config", "desktop", "desktop-action-bridge.json"));
   const serviceLifecycleArgs = readJson(path.join(desktop, "config", "desktop", "service-lifecycle-args.json"));
   const servicePortDefaults = readJson(path.join(desktop, "config", "desktop", "service-port-defaults.json"));
   const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
@@ -217,6 +221,10 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");
   assert.equal(fs.existsSync(path.join(desktop, "config", "marketplace", "settings.json")), false);
   assert.equal(sso.enabled, true);
+  assert.deepEqual(desktopActionBridge, {
+    schemaVersion: 1,
+    port: 17988
+  });
   assert.deepEqual(serviceLifecycleArgs, {
     schemaVersion: 1,
     services: {
@@ -274,6 +282,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.tunnelHub, "absent");
   assert.equal(bootstrapState.appliedResult.webs, "applied");
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
+  assert.equal(bootstrapState.appliedResult.desktopActionBridge, "applied");
   assert.equal(bootstrapState.appliedResult.services, "applied");
   assert.deepEqual(bootstrapState.failedSections, []);
   assert.deepEqual(bootstrapState.errors, {});
@@ -783,6 +792,17 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   writeDesktopInit(app, "win32", {
+    desktopActionBridge: {
+      port: 17988,
+      platforms: {
+        darwin: {
+          port: 17989
+        },
+        win32: {
+          port: 17990
+        }
+      }
+    },
     services: {
       "identity-center": {
         defaultPort: 7906,
@@ -814,11 +834,17 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
   });
 
   const result = applyDesktopInitBootstrap(app, "win32");
+  const desktopActionBridge = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "desktop-action-bridge.json"));
   const serviceLifecycleArgs = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "service-lifecycle-args.json"));
   const servicePortDefaults = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "service-port-defaults.json"));
 
   assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.desktopActionBridge, "applied");
   assert.equal(result.appliedResult.services, "applied");
+  assert.deepEqual(desktopActionBridge, {
+    schemaVersion: 1,
+    port: 17990
+  });
   assert.deepEqual(serviceLifecycleArgs, {
     schemaVersion: 1,
     services: {

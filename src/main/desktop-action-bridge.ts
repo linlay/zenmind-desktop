@@ -21,7 +21,6 @@ import type {
 } from "../shared/contracts";
 import {
   DESKTOP_ACTION_BRIDGE_HOST,
-  DESKTOP_ACTION_BRIDGE_PORT,
   DESKTOP_ACTION_DEFINITIONS,
   getDesktopActionDefinition,
   isDesktopActionMutating,
@@ -81,6 +80,7 @@ import {
 } from "./current-page-cdp-executor";
 import type { KanbanRuntime } from "./kanban-runtime";
 import { t } from "./i18n/main-i18n";
+import { getConfiguredDesktopActionBridgePort } from "./desktop-action-bridge-settings";
 
 type DesktopActionBridgeOptions = {
   app: App;
@@ -152,6 +152,7 @@ const CONFIRMATION_ARG_VALUE_MAX_CHARS = 160;
 const CONFIRMATION_ARG_SUMMARY_MAX_CHARS = 1200;
 const CONFIRMATION_COMPACT_VALUE_MAX_CHARS = 280;
 let activeServer: http.Server | null = null;
+let activeServerPort = 0;
 
 function agentPlatformAuthFailureMessage() {
   return t("desktopAction.agentPlatformAuthFailed");
@@ -1514,8 +1515,15 @@ function hasJsonContentType(req: http.IncomingMessage) {
 }
 
 export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
+  const bridgePort = getConfiguredDesktopActionBridgePort(options.app);
   if (activeServer) {
-    return activeServer;
+    if (activeServerPort === bridgePort) {
+      return activeServer;
+    }
+    const previousServer = activeServer;
+    activeServer = null;
+    activeServerPort = 0;
+    previousServer.close();
   }
 
   const server = http.createServer(async (req, res) => {
@@ -1524,9 +1532,13 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
       return;
     }
 
-    const url = new URL(req.url || "/", `http://${DESKTOP_ACTION_BRIDGE_HOST}:${DESKTOP_ACTION_BRIDGE_PORT}`);
+    const url = new URL(req.url || "/", `http://${DESKTOP_ACTION_BRIDGE_HOST}:${bridgePort}`);
     if (req.method === "GET" && url.pathname === "/health") {
-      writeJSON(res, 200, { ok: true, host: DESKTOP_ACTION_BRIDGE_HOST, port: (server.address() as AddressInfo | null)?.port ?? DESKTOP_ACTION_BRIDGE_PORT });
+      writeJSON(res, 200, {
+        ok: true,
+        host: DESKTOP_ACTION_BRIDGE_HOST,
+        port: (server.address() as AddressInfo | null)?.port ?? bridgePort
+      });
       return;
     }
     if (req.method === "GET" && url.pathname === "/actions") {
@@ -1567,19 +1579,21 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
     writeJSON(res, 404, fail("unknown", "not_found", "Desktop Action Bridge route not found."));
   });
 
-  server.listen(DESKTOP_ACTION_BRIDGE_PORT, DESKTOP_ACTION_BRIDGE_HOST, () => {
-    console.log(`[desktop-action-bridge] listening on ${DESKTOP_ACTION_BRIDGE_HOST}:${DESKTOP_ACTION_BRIDGE_PORT}`);
+  server.listen(bridgePort, DESKTOP_ACTION_BRIDGE_HOST, () => {
+    console.log(`[desktop-action-bridge] listening on ${DESKTOP_ACTION_BRIDGE_HOST}:${bridgePort}`);
   });
   server.on("error", (error) => {
     console.warn(`[desktop-action-bridge] failed: ${error instanceof Error ? error.message : String(error)}`);
   });
   activeServer = server;
+  activeServerPort = bridgePort;
   return server;
 }
 
 export function stopDesktopActionBridge() {
   const server = activeServer;
   activeServer = null;
+  activeServerPort = 0;
   server?.close();
 }
 

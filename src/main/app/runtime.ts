@@ -447,7 +447,8 @@ export function createMainProcessRuntime() {
     hideDesktopPetWindow: (disable = false) => hideDesktopPetWindow(disable),
     broadcastDesktopSsoStatus: (status) => desktopSsoController.broadcastStatus(status),
     notifyServicesChanged,
-    emitKanbanChanged
+    emitKanbanChanged,
+    refreshDesktopActionBridge: () => assistantBridgeRuntime.refreshDesktopActionBridge()
   });
   assistantBridgeRuntime = createAssistantBridgeRuntime({
     app,
