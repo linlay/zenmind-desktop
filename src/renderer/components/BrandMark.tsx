@@ -164,9 +164,11 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
     case "sort":
       return (
         <svg {...iconProps}>
-          <path d="M6 5v14M3 14l3 3 3-3" />
-          <path d="M13 8.5h3M13 8.5L14.5 5l1.5 3.5M13.5 7.5h2" />
-          <path d="M13 14h3l-3 4.5h3" />
+          <path d="M6 5v14" />
+          <path d="M3.5 15.5 6 18l2.5-2.5" />
+          <path d="M12 7h8" />
+          <path d="M12 12h6" />
+          <path d="M12 17h4" />
         </svg>
       );
     case "new_project":

@@ -2580,6 +2580,22 @@ export function AppSidebar({
     );
   }
 
+  function renderSidebarGroupStatusBadges(
+    groupId: SidebarGroupId,
+    status?: SidebarStatusSummary,
+  ) {
+    if (!status) {
+      return null;
+    }
+    if (groupId === "assistants") {
+      return renderStatusBadges(
+        { ...status, pendingCount: 0 },
+        "sidebar-group-status",
+      );
+    }
+    return renderStatusBadges(status, "sidebar-group-status");
+  }
+
   function getSidebarLinkClassName(targetPath: string, extraClassName = "") {
     return [
       "sidebar-link",
@@ -3121,8 +3137,8 @@ export function AppSidebar({
               <SidebarIllustration kind={args.icon} />
             </span>
             <span className="sidebar-link-label">{visibleLabel}</span>
-            {args.status && !expanded
-              ? renderStatusBadges(args.status, "sidebar-group-status")
+            {!expanded
+              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
               : null}
           </span>
         </button>
@@ -3155,8 +3171,8 @@ export function AppSidebar({
               expanded={expanded}
               width={18}
             />
-            {args.status && !expanded
-              ? renderStatusBadges(args.status, "sidebar-group-status")
+            {!expanded
+              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
               : null}
           </span>
         }

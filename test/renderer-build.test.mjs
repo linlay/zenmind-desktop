@@ -1016,6 +1016,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(brandMarkSource, /statusColor = kind === "website_open" \? "#10B981" : "#EF4444"/);
   assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="sort" \/>/);
+  assert.doesNotMatch(sidebarSource, /SortAscendingOutlined/);
+  assert.match(brandMarkSource, /<path d="M6 5v14" \/>[\s\S]*?<path d="M3\.5 15\.5 6 18l2\.5-2\.5" \/>[\s\S]*?<path d="M12 7h8" \/>[\s\S]*?<path d="M12 12h6" \/>[\s\S]*?<path d="M12 17h4" \/>/);
+  assert.doesNotMatch(brandMarkSource, /M13 8\.5h3|L14\.5 5|l-3 4\.5/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_project" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="double_check" \/>/);
@@ -1096,6 +1099,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /暂无相关会话/);
   assert.doesNotMatch(sidebarSource, /Math\.max\(agent\.chatCount, recentChats\.length\) > 5/);
   assert.match(sidebarSource, /renderStatusBadges/);
+  assert.match(sidebarSource, /function renderSidebarGroupStatusBadges\(\s*groupId: SidebarGroupId,\s*status\?: SidebarStatusSummary,\s*\)/);
+  assert.match(sidebarSource, /groupId === "assistants"[\s\S]{0,180}pendingCount:\s*0/);
+  assert.doesNotMatch(sidebarSource, /renderStatusBadges\(args\.status,\s*"sidebar-group-status"\)/);
   assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
   const newChatHandlerStart = sidebarSource.indexOf("function handleAssistantNewChat");
