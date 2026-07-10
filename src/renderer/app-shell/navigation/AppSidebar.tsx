@@ -646,6 +646,37 @@ function formatAssistantChatTime(updatedAt: string) {
   return formatYearMonth(updatedDate);
 }
 
+function formatAssistantChatDateTime(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+function getAssistantWorkspaceName(
+  workspaceDir: string | undefined,
+  workspaceDirExists: boolean | undefined,
+) {
+  const normalized = workspaceDir?.trim().replace(/[\\/]+$/u, "") ?? "";
+  if (!normalized || normalized === "@chat" || workspaceDirExists === false) {
+    return "";
+  }
+  return normalized.split(/[\\/]/u).filter(Boolean).at(-1) ?? "";
+}
+
 function isAssistantRunningPreview(value: string) {
   const normalized = value.trim().toLowerCase();
   return [
@@ -2761,6 +2792,52 @@ export function AppSidebar({
     );
   }
 
+  function renderChatHoverCard(
+    agent: (typeof recentChatsOverviewItems)[number]["agent"],
+    chat: AssistantNavChatItem,
+  ) {
+    const askedAt = formatAssistantChatDateTime(chat.createdAt);
+    const workspaceName = getAssistantWorkspaceName(
+      agent.workspaceDir,
+      agent.workspaceDirExists,
+    );
+    const statusLabels = [
+      chat.hasActiveRun ? t("sidebar.agent.running") : "",
+      chat.hasPendingAwaiting ? t(getAssistantAwaitingStatusKey(chat.awaitingMode)) : "",
+      !chat.isRead ? t("sidebar.chat.unread") : "",
+    ].filter(Boolean);
+    return (
+      <div className="sidebar-chat-hover-card">
+        <span className="sidebar-chat-hover-card-title">
+          {chat.chatName || getAssistantChatPreviewText(chat, t)}
+        </span>
+        <div className="sidebar-chat-hover-card-meta">
+          <span>{t("sidebar.chats.card.agent", { name: agent.displayName })}</span>
+          {askedAt ? (
+            <span>{t("sidebar.chats.card.askedAt", { time: askedAt })}</span>
+          ) : null}
+        </div>
+        {statusLabels.length > 0 ? (
+          <div className="sidebar-chat-hover-card-statuses" aria-label={t("sidebar.chats.card.status")}>
+            {statusLabels.map((label) => (
+              <span className="sidebar-chat-hover-card-status" key={label}>
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {workspaceName ? (
+          <div className="sidebar-chat-hover-card-context">
+            <span>{t("sidebar.chats.card.workspace", { name: workspaceName })}</span>
+            {agent.gitBranch ? (
+              <span>{t("sidebar.chats.card.branch", { name: agent.gitBranch })}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderChatsList(options: { roving?: boolean } = {}) {
     const roving = options.roving ?? true;
     return (
@@ -2775,36 +2852,41 @@ export function AppSidebar({
                 key={chat.chatId}
                 onContextMenu={(event) => handleAssistantChatContextMenu(event, chat)}
               >
-                <button
-                  type="button"
-                  className={[
-                    "sidebar-chats-item",
-                    isActive ? "is-active" : "",
-                    !chat.isRead ? "is-unread" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  aria-current={isActive ? "page" : undefined}
-                  onClick={() => void handleAssistantOpenChat(chat)}
-                  {...getSidebarRovingItemProps(
-                    createSidebarChatsChatFocusId(chat.chatId),
-                    roving,
-                  )}
-                  data-sidebar-nav-kind={roving ? "chats-chat" : undefined}
-                  data-sidebar-chat-id={roving ? chat.chatId : undefined}
+                <Popover
+                  trigger="hover"
+                  placement="right-start"
+                  closeOnOutsideClick={false}
+                  className="sidebar-chat-hover-card-surface"
+                  content={renderChatHoverCard(agent, chat)}
                 >
-                  <span className="sidebar-chats-copy">
-                    <span className="sidebar-chats-preview">
-                      {getAssistantChatPreviewText(chat, t)}
+                  <button
+                    type="button"
+                    className={[
+                      "sidebar-chats-item",
+                      isActive ? "is-active" : "",
+                      !chat.isRead ? "is-unread" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => void handleAssistantOpenChat(chat)}
+                    {...getSidebarRovingItemProps(
+                      createSidebarChatsChatFocusId(chat.chatId),
+                      roving,
+                    )}
+                    data-sidebar-nav-kind={roving ? "chats-chat" : undefined}
+                    data-sidebar-chat-id={roving ? chat.chatId : undefined}
+                  >
+                    <span className="sidebar-chats-copy">
+                      <span className="sidebar-chats-preview">
+                        {getAssistantChatPreviewText(chat, t)}
+                      </span>
                     </span>
-                    <span className="sidebar-chats-agent">
-                      {t("sidebar.chats.withAgent", { name: agent.displayName })}
+                    <span className="sidebar-chats-time">
+                      {formatAssistantChatTime(chat.updatedAt)}
                     </span>
-                  </span>
-                  <span className="sidebar-chats-time">
-                    {formatAssistantChatTime(chat.updatedAt)}
-                  </span>
-                </button>
+                  </button>
+                </Popover>
               </div>
             );
           })

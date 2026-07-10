@@ -2526,6 +2526,20 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   assert.match(sidebarSource, /renderSidebarGroup\(\{[\s\S]*?groupId: "chats"/);
   assert.match(sidebarSource, /function renderChatsList\(options: \{ roving\?: boolean \} = \{\}\)/);
   assert.match(sidebarSource, /className="sidebar-chats-list"/);
+  assert.match(sidebarSource, /function renderChatHoverCard\(/);
+  assert.match(sidebarSource, /className="sidebar-chat-hover-card"/);
+  assert.match(sidebarSource, /closeOnOutsideClick=\{false\}/);
+  const chatsListSource = sidebarSource.slice(
+    sidebarSource.indexOf("function renderChatsList"),
+    sidebarSource.indexOf("function renderChatsEntry"),
+  );
+  const chatHoverCardSource = sidebarSource.slice(
+    sidebarSource.indexOf("function renderChatHoverCard"),
+    sidebarSource.indexOf("function renderChatsList"),
+  );
+  assert.doesNotMatch(chatsListSource, /sidebar-chats-agent/);
+  assert.match(chatHoverCardSource, /chat\.createdAt/);
+  assert.match(chatHoverCardSource, /agent\.gitBranch/);
   assert.match(sidebarSource, /chatNavAgentOptions\?: AssistantNavAgentItem\[\]/);
   assert.match(sidebarSource, /<Popover[\s\S]*?trigger="hover"[\s\S]*?renderChatsSupportPopover\(\)/);
   assert.match(sidebarSource, /t\("sidebar\.chats\.withAgent", \{ name: resolvedChatDefaultAgent\.displayName \}\)/);
@@ -2545,6 +2559,8 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   assert.match(appShell, /setChatNavAgentOptions\(navigationItems\)/);
   assert.match(appShell, /saveSettings\(\{ chatDefaultAgentKey: fallbackAgentKey \}\)/);
   assert.match(assistantNavigation, /export function getAssistantNavRecentChatsOverview/);
+  assert.match(assistantNavigation, /createdAt: toScalarText\(record\.createdAt\)/);
+  assert.match(assistantNavigation, /gitBranch: toText\(record\.gitBranch\) \|\| undefined/);
   assert.match(assistantNavigation, /\.slice\(0, normalizedLimit\)/);
   assert.match(
     settingsStore,
@@ -2560,9 +2576,11 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   assert.match(zhCN, /"nav\.chats": "对话"/);
   assert.match(zhCN, /"sidebar\.chats\.switchAgent": "切换智能体"/);
   assert.match(zhCN, /"sidebar\.chats\.withAgent": "与 \{name\} 对话"/);
+  assert.match(zhCN, /"sidebar\.chats\.card\.askedAt": "提问于：\{time\}"/);
   assert.match(enUS, /"nav\.chats": "Chats"/);
   assert.match(enUS, /"sidebar\.chats\.switchAgent": "Switch agent"/);
   assert.match(enUS, /"sidebar\.chats\.withAgent": "Chat with \{name\}"/);
+  assert.match(enUS, /"sidebar\.chats\.card\.askedAt": "Asked: \{time\}"/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {

@@ -108,6 +108,7 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
     chatId,
     chatName: toText(record.chatName),
     agentKey: toText(record.agentKey) || fallbackAgentKey,
+    createdAt: toScalarText(record.createdAt),
     updatedAt: toScalarText(record.updatedAt),
     lastRunId: toText(record.lastRunId),
     lastRunContent: toText(record.lastRunContent),
@@ -164,6 +165,7 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
       typeof record.workspaceDirExists === "boolean"
         ? record.workspaceDirExists
         : undefined,
+    gitBranch: toText(record.gitBranch) || undefined,
   };
 }
 
@@ -213,7 +215,10 @@ export function getAssistantNavAgentPreviewChats(
 }
 
 export type AssistantNavChatsOverviewItem = {
-  agent: Pick<AssistantNavAgentItem, "agentKey" | "displayName">;
+  agent: Pick<
+    AssistantNavAgentItem,
+    "agentKey" | "displayName" | "mode" | "agentType" | "workspaceDir" | "workspaceDirExists" | "gitBranch"
+  >;
   chat: AssistantNavChatItem;
 };
 
@@ -242,6 +247,11 @@ export function getAssistantNavRecentChatsOverview(
           agent: {
             agentKey: agent.agentKey,
             displayName: agent.displayName,
+            mode: agent.mode,
+            agentType: agent.agentType,
+            workspaceDir: agent.workspaceDir,
+            workspaceDirExists: agent.workspaceDirExists,
+            gitBranch: agent.gitBranch,
           },
           chat: normalizedChat,
         });

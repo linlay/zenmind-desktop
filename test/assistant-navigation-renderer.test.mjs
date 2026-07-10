@@ -37,6 +37,7 @@ function chat(overrides) {
     chatId: "chat",
     chatName: "",
     agentKey: "zenmi",
+    createdAt: "",
     updatedAt: "",
     lastRunId: "",
     lastRunContent: "",
@@ -332,4 +333,29 @@ test("assistant nav normalization falls back to row read states when stats are a
 
   assert.equal(agent.unreadCount, 1);
   assert.equal(agent.unreadChatCount, 1);
+});
+
+test("assistant nav keeps chat hover metadata when building the Chats overview", () => {
+  const [agent] = normalizeAssistantNavAgents([
+    {
+      agentKey: "coder",
+      displayName: "Coder",
+      mode: "CODER",
+      workspaceDir: "/Users/demo/Project/zenmind-desktop",
+      workspaceDirExists: true,
+      gitBranch: "feature/chat-card",
+      recentChats: [{
+        chatId: "chat-card",
+        chatName: "Design the chat card",
+        createdAt: "2026-07-10T01:02:03.000Z",
+        updatedAt: "2026-07-10T02:03:04.000Z",
+      }],
+    },
+  ]);
+  const [overview] = getAssistantNavRecentChatsOverview([agent]);
+
+  assert.equal(overview.chat.createdAt, "2026-07-10T01:02:03.000Z");
+  assert.equal(overview.agent.workspaceDir, "/Users/demo/Project/zenmind-desktop");
+  assert.equal(overview.agent.workspaceDirExists, true);
+  assert.equal(overview.agent.gitBranch, "feature/chat-card");
 });

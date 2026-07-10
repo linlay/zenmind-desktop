@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { execFile } from "node:child_process";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
@@ -132,6 +133,16 @@ type MinimalWebSocket = {
 
 type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
 
+type AssistantGitBranchCacheEntry = {
+  branch: string;
+  expiresAt: number;
+};
+
+type AssistantGitBranchCommandRunner = (
+  command: string,
+  args: string[],
+) => Promise<string>;
+
 export type AssistantNavigationApplyResult = {
   items: AssistantNavAgentItem[];
   changed: boolean;
@@ -144,6 +155,9 @@ const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 const NAVIGATION_UNAVAILABLE_RETRY_MS = 12_000;
 const NAVIGATION_RECONNECT_MS = 10_000;
+const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
+const NAVIGATION_GIT_BRANCH_TIMEOUT_MS = 1_000;
+const navigationGitBranchCache = new Map<string, AssistantGitBranchCacheEntry>();
 const IGNORED_PUSH_TYPES = new Set(["heartbeat", "live.connected"]);
 const FINISHED_AWAITING_STATUSES = new Set([
   "answered",
@@ -210,6 +224,74 @@ function checkWorkspaceDirExists(workspaceDir: string) {
   } catch {
     return false;
   }
+}
+
+function resolveAssistantGitExecutable(platform: NodeJS.Platform) {
+  if (platform === "win32") {
+    return "git.exe";
+  }
+  if (platform === "darwin") {
+    return "git";
+  }
+  return "git";
+}
+
+function runAssistantGitBranchCommand(command: string, args: string[]) {
+  return new Promise<string>((resolve) => {
+    execFile(
+      command,
+      args,
+      {
+        encoding: "utf8",
+        timeout: NAVIGATION_GIT_BRANCH_TIMEOUT_MS,
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        resolve(error || typeof stdout !== "string" ? "" : stdout.trim());
+      },
+    );
+  });
+}
+
+export async function resolveAssistantWorkspaceGitBranch(
+  workspaceDir: string,
+  options: {
+    platform?: NodeJS.Platform;
+    now?: () => number;
+    cache?: Map<string, AssistantGitBranchCacheEntry>;
+    runCommand?: AssistantGitBranchCommandRunner;
+  } = {},
+) {
+  const normalizedWorkspaceDir = workspaceDir.trim();
+  if (!checkWorkspaceDirExists(normalizedWorkspaceDir)) {
+    return "";
+  }
+
+  const platform = options.platform ?? process.platform;
+  const now = options.now ?? Date.now;
+  const cache = options.cache ?? navigationGitBranchCache;
+  const cacheKey = `${platform}:${normalizedWorkspaceDir}`;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expiresAt > now()) {
+    return cached.branch;
+  }
+
+  const runCommand = options.runCommand ?? runAssistantGitBranchCommand;
+  let branch = "";
+  try {
+    branch = (await runCommand(
+      resolveAssistantGitExecutable(platform),
+      ["-C", normalizedWorkspaceDir, "branch", "--show-current"],
+    )).trim();
+  } catch {
+    branch = "";
+  }
+
+  cache.set(cacheKey, {
+    branch,
+    expiresAt: now() + NAVIGATION_GIT_BRANCH_CACHE_MS,
+  });
+  return branch;
 }
 
 function toFiniteNumber(value: unknown) {
@@ -331,8 +413,12 @@ function toTimestampMs(value: unknown) {
 }
 
 function timestampToIso(value: unknown) {
+  return timestampToIsoOrEmpty(value) || nowIso();
+}
+
+function timestampToIsoOrEmpty(value: unknown) {
   const timestamp = toTimestampMs(value);
-  return timestamp > 0 ? new Date(timestamp).toISOString() : nowIso();
+  return timestamp > 0 ? new Date(timestamp).toISOString() : "";
 }
 
 function createApiUrl(baseUrl: string, pathname: string) {
@@ -555,7 +641,10 @@ function mergeNavigationChats(
     }
     const existing = chatsById.get(chatId);
     if (!existing || toTimestampMs(chat.updatedAt) > toTimestampMs(existing.updatedAt)) {
-      chatsById.set(chatId, chat);
+      chatsById.set(chatId, {
+        ...chat,
+        createdAt: chat.createdAt || existing?.createdAt || "",
+      });
     }
   }
   return [...chatsById.values()].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
@@ -604,7 +693,8 @@ function mergeNavigationAgentItem(
     agentType: primary.agentType ?? secondary.agentType,
     mode: primary.mode ?? secondary.mode,
     workspaceDir: primary.workspaceDir ?? secondary.workspaceDir,
-    workspaceDirExists: primary.workspaceDirExists ?? secondary.workspaceDirExists
+    workspaceDirExists: primary.workspaceDirExists ?? secondary.workspaceDirExists,
+    gitBranch: primary.gitBranch ?? secondary.gitBranch,
   };
 }
 
@@ -634,6 +724,7 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
     chatId,
     chatName,
     agentKey: readChatAgentKey(chat, fallbackAgentKey),
+    createdAt: timestampToIsoOrEmpty(chat.createdAt),
     updatedAt: timestampToIso(chat.updatedAt || chat.createdAt),
     lastRunId: toText(chat.lastRunId),
     lastRunContent,
@@ -643,6 +734,39 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
     awaitingCount: readChatAwaitingCount(chat),
     awaitingMode: readChatAwaitingMode(chat)
   };
+}
+
+function isCoderAgent(agent: AssistantNavAgentItem) {
+  return agent.mode?.toLowerCase() === "coder" || agent.agentType?.toLowerCase() === "coder";
+}
+
+async function enrichNavigationAgentsWithGitBranches(items: AssistantNavAgentItem[]) {
+  const branchesByWorkspace = new Map<string, Promise<string>>();
+  for (const agent of items) {
+    const workspaceDir = agent.workspaceDir?.trim() ?? "";
+    if (!isCoderAgent(agent) || !workspaceDir || agent.workspaceDirExists === false) {
+      continue;
+    }
+    if (!branchesByWorkspace.has(workspaceDir)) {
+      branchesByWorkspace.set(workspaceDir, resolveAssistantWorkspaceGitBranch(workspaceDir));
+    }
+  }
+
+  if (branchesByWorkspace.size === 0) {
+    return items;
+  }
+
+  const resolvedBranches = new Map<string, string>();
+  await Promise.all(
+    [...branchesByWorkspace.entries()].map(async ([workspaceDir, branch]) => {
+      resolvedBranches.set(workspaceDir, await branch);
+    }),
+  );
+  return items.map((agent) => {
+    const workspaceDir = agent.workspaceDir?.trim() ?? "";
+    const gitBranch = workspaceDir ? resolvedBranches.get(workspaceDir)?.trim() ?? "" : "";
+    return gitBranch ? { ...agent, gitBranch } : agent;
+  });
 }
 
 function readAgentRawChatLists(agent: PlatformAgentSummary): unknown[][] {
@@ -790,6 +914,10 @@ function readPushUpdatedAt(event: NavigationPushEvent, fallback: string) {
   return timestampToIso(event.updatedAt || event.timestamp || event.createdAt || fallback);
 }
 
+function readPushCreatedAt(event: NavigationPushEvent, fallback = "") {
+  return timestampToIsoOrEmpty(event.createdAt) || fallback;
+}
+
 function readPushPreview(event: NavigationPushEvent) {
   return toText(event.lastRunContent) || toText(event.text) || toText(event.message);
 }
@@ -891,6 +1019,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   const preview = readPushPreview(event);
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
   const chatName = toText(event.chatName) || current?.chatName || preview || t("assistant.newChat");
+  const createdAt = readPushCreatedAt(event, current?.createdAt || "");
   const updatedAt = readPushUpdatedAt(event, current?.updatedAt || nowIso());
   let isRead = current?.isRead ?? true;
   if (event.type === "chat.read") {
@@ -909,6 +1038,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     chatId,
     chatName,
     agentKey,
+    createdAt,
     updatedAt,
     lastRunId: toText(event.lastRunId) || toText(event.runId) || current?.lastRunId || "",
     lastRunContent: preview || current?.lastRunContent || "",
@@ -1072,7 +1202,9 @@ export async function readAssistantNavigationAgentsFromPlatform(
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): Promise<AssistantNavAgentItem[]> {
   const agents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "nav", includeChatLimit);
-  return buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
+  return await enrichNavigationAgentsWithGitBranches(
+    buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit),
+  );
 }
 
 async function readAssistantNavigationAgentsFromPlatformScope(
@@ -1097,7 +1229,9 @@ export async function readAssistantNavigationActivityAgentsFromPlatform(
   let copilotItems: AssistantNavAgentItem[] = [];
   try {
     const copilotAgents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "copilot", includeChatLimit);
-    copilotItems = buildAssistantNavigationAgentsFromPlatformAgents(copilotAgents, includeChatLimit);
+    copilotItems = await enrichNavigationAgentsWithGitBranches(
+      buildAssistantNavigationAgentsFromPlatformAgents(copilotAgents, includeChatLimit),
+    );
   } catch {
     copilotItems = [];
   }
@@ -1113,13 +1247,17 @@ export async function readAssistantCopilotAgentsFromPlatform(
     token
   );
   if (Array.isArray(agents) && agents.length > 0) {
-    return buildAssistantCopilotAgentsFromPlatformAgents(agents);
+    return await enrichNavigationAgentsWithGitBranches(
+      buildAssistantCopilotAgentsFromPlatformAgents(agents),
+    );
   }
   const fallbackAgents = await readApiJson<unknown[]>(
     `${createApiUrl(baseUrl, "/api/agents")}?scope=nav`,
     token
   );
-  return buildAssistantCopilotAgentsFromPlatformAgents(fallbackAgents);
+  return await enrichNavigationAgentsWithGitBranches(
+    buildAssistantCopilotAgentsFromPlatformAgents(fallbackAgents),
+  );
 }
 
 export class AssistantNavigationStatusClient {

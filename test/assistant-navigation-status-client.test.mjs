@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -9,6 +12,7 @@ const {
   readAssistantNavigationActivityAgentsFromPlatform,
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform,
+  resolveAssistantWorkspaceGitBranch,
 } = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
 
 function createAgent(overrides = {}) {
@@ -393,4 +397,98 @@ test("assistant navigation still applies real preview text from chat.updated and
   assert.equal(updatedChat?.lastRunContent, "Updated elsewhere");
   assert.equal(completedChat?.lastRunContent, "Final answer");
   assert.equal(completedChat?.hasActiveRun, false);
+});
+
+test("assistant navigation preserves chat creation time from summaries and pushes", () => {
+  const chatId = "created-at-chat";
+  const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "Zenmi",
+      chats: [{
+        chatId,
+        createdAt: "2026-07-10T01:02:03.000Z",
+        updatedAt: "2026-07-10T02:03:04.000Z",
+      }],
+    },
+  ]);
+  assert.equal(agent.recentChats[0]?.createdAt, "2026-07-10T01:02:03.000Z");
+
+  const updated = applyAssistantNavigationPush([agent], {
+    frame: "push",
+    type: "chat.updated",
+    data: {
+      agentKey: "zenmi",
+      chatId,
+      updatedAt: "2026-07-10T03:04:05.000Z",
+    },
+  });
+  assert.equal(findChat(updated.items, chatId)?.createdAt, "2026-07-10T01:02:03.000Z");
+
+  const created = applyAssistantNavigationPush([createAgent()], {
+    frame: "push",
+    type: "chat.created",
+    data: {
+      agentKey: "zenmi",
+      chatId: "new-created-at-chat",
+      createdAt: "2026-07-10T04:05:06.000Z",
+    },
+  });
+  assert.equal(
+    findChat(created.items, "new-created-at-chat")?.createdAt,
+    "2026-07-10T04:05:06.000Z",
+  );
+});
+
+test("assistant navigation reads and caches Git branches with platform-specific commands", async (t) => {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-git-"));
+  t.after(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  const cache = new Map();
+  const commands = [];
+  const runCommand = async (command, args) => {
+    commands.push([command, args]);
+    return "feature/chat-card\n";
+  };
+  const macBranch = await resolveAssistantWorkspaceGitBranch(workspaceDir, {
+    platform: "darwin",
+    cache,
+    now: () => 100,
+    runCommand,
+  });
+  assert.equal(macBranch, "feature/chat-card");
+  assert.deepEqual(commands, [["git", ["-C", workspaceDir, "branch", "--show-current"]]]);
+
+  const cachedBranch = await resolveAssistantWorkspaceGitBranch(workspaceDir, {
+    platform: "darwin",
+    cache,
+    now: () => 101,
+    runCommand: async () => {
+      throw new Error("cache miss");
+    },
+  });
+  assert.equal(cachedBranch, "feature/chat-card");
+
+  const windowsCommands = [];
+  const windowsBranch = await resolveAssistantWorkspaceGitBranch(workspaceDir, {
+    platform: "win32",
+    cache: new Map(),
+    runCommand: async (command, args) => {
+      windowsCommands.push([command, args]);
+      return "main";
+    },
+  });
+  assert.equal(windowsBranch, "main");
+  assert.equal(windowsCommands[0]?.[0], "git.exe");
+
+  const unavailableBranch = await resolveAssistantWorkspaceGitBranch(workspaceDir, {
+    cache: new Map(),
+    runCommand: async () => {
+      throw new Error("not a repository");
+    },
+  });
+  assert.equal(unavailableBranch, "");
+  assert.equal(await resolveAssistantWorkspaceGitBranch(path.join(workspaceDir, "missing")), "");
 });

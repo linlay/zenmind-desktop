@@ -192,6 +192,7 @@ export interface AssistantNavChatItem {
   chatId: string;
   chatName: string;
   agentKey: string;
+  createdAt: string;
   updatedAt: string;
   lastRunId: string;
   lastRunContent: string;
@@ -219,6 +220,7 @@ export interface AssistantNavAgentItem {
   mode?: string;
   workspaceDir?: string;
   workspaceDirExists?: boolean;
+  gitBranch?: string;
 }
 
 export interface AssistantNavAgentItemsResult {
