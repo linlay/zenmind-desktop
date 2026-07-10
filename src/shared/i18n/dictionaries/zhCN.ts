@@ -147,6 +147,7 @@ export const zhCNMessages = {
   "sidebar.chats.defaultAgentUnavailable": "请先在助理设置中选择可用的 Chat 默认智能体。",
   "sidebar.chats.empty": "暂无对话",
   "sidebar.chats.supportedBy": "由 {name} 支持",
+  "sidebar.chats.switchAgent": "切换智能体",
   "sidebar.chats.withAgent": "与 {name} 对话",
   "sidebar.agent.noChats": "暂无会话",
   "sidebar.agent.markAllRead": "全部已读",

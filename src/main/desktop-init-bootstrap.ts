@@ -66,7 +66,7 @@ type DesktopInitBootstrapState = {
 };
 
 type DesktopInitAssistantDefaults = {
-  defaultAgentKey?: string;
+  defaultChatAgentKey?: string;
   bootstrapAgentKey?: string;
 };
 
@@ -214,10 +214,11 @@ function normalizeDesktopInitAssistantDefaults(value: unknown): DesktopInitAssis
     return null;
   }
   const assistant: DesktopInitAssistantDefaults = {};
-  const defaultAgentKey = readText(value.defaultAgentKey);
+  const defaultChatAgentKey =
+    readText(value.defaultChatAgentKey) || readText(value.defaultAgentKey);
   const bootstrapAgentKey = readText(value.bootstrapAgentKey);
-  if (defaultAgentKey) {
-    assistant.defaultAgentKey = defaultAgentKey;
+  if (defaultChatAgentKey) {
+    assistant.defaultChatAgentKey = defaultChatAgentKey;
   }
   if (bootstrapAgentKey) {
     assistant.bootstrapAgentKey = bootstrapAgentKey;

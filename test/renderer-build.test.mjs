@@ -821,7 +821,7 @@ test("body-level popovers stay clickable above Electron drag regions", () => {
   assert.match(popoverRule, /-webkit-app-region:\s*no-drag;/);
   assert.match(popoverRule, /pointer-events:\s*auto;/);
   assert.match(popoverSource, /Style\.PopoverDismissLayer/);
-  assert.match(popoverSource, /closeOnOutsideClick && isOpen/);
+  assert.match(popoverSource, /triggerMode === "click" && closeOnOutsideClick && isOpen/);
   assert.match(popoverStyles, /\.PopoverDismissLayer\s*\{[\s\S]*?position:\s*fixed;/);
   assert.match(popoverStyles, /\.PopoverDismissLayer\s*\{[\s\S]*?z-index:\s*9999;/);
   assert.match(popoverStyles, /\.PopoverDismissLayer\s*\{[\s\S]*?app-region:\s*no-drag;/);
@@ -1961,6 +1961,7 @@ test("settings page configures desktop helper default agent separately from desk
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
   assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
+  assert.match(sharedSettings, /DEFAULT_CHAT_DEFAULT_AGENT_KEY\s*=\s*""/);
   assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_ENABLED\s*=\s*true/);
   assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_AGENT_KEY\s*=\s*DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
   assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_SHORTCUT\s*=\s*"Alt\+Space"/);
@@ -1972,8 +1973,9 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(contracts, /quickAssistantShortcut:\s*string/);
   assert.match(contracts, /quickAssistantShortcut\?:\s*string/);
   assert.match(settingsStore, /const DESKTOP_INIT_ASSISTANT_FILE = "assistant\.json"/);
-  assert.match(settingsStore, /function readBootstrapAgentKeyFromRoot\(rootDir: string\)/);
-  assert.match(settingsStore, /bootstrapAgentKey:\s*readBootstrapAgentKeyFromRoot\(rootDir\)/);
+  assert.match(settingsStore, /function readDesktopInitAssistantSettingsFromRoot\(rootDir: string\)/);
+  assert.match(settingsStore, /defaultChatAgentKey/);
+  assert.match(settingsStore, /bootstrapAgentKey:\s*desktopInitAssistant\.bootstrapAgentKey/);
   assert.match(settingsStore, /bootstrapAgentKey:\s*settings\.bootstrapAgentKey/);
   assert.match(settingsStore, /bootstrapAgentKey:\s*current\.bootstrapAgentKey/);
   assert.match(settingsStore, /desktopHelperAgentKey:\s*settings\.desktopHelperAgentKey/);
@@ -2524,26 +2526,42 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   assert.match(sidebarSource, /renderSidebarGroup\(\{[\s\S]*?groupId: "chats"/);
   assert.match(sidebarSource, /function renderChatsList\(options: \{ roving\?: boolean \} = \{\}\)/);
   assert.match(sidebarSource, /className="sidebar-chats-list"/);
-  assert.match(sidebarSource, /<Tooltip content=\{chatSupportTooltip\}>/);
-  assert.match(sidebarSource, /t\("sidebar\.chats\.supportedBy", \{ name: chatDefaultAgent\.displayName \}\)/);
-  assert.doesNotMatch(sidebarSource, /trigger="hover"/);
+  assert.match(sidebarSource, /chatNavAgentOptions\?: AssistantNavAgentItem\[\]/);
+  assert.match(sidebarSource, /<Popover[\s\S]*?trigger="hover"[\s\S]*?renderChatsSupportPopover\(\)/);
+  assert.match(sidebarSource, /t\("sidebar\.chats\.withAgent", \{ name: resolvedChatDefaultAgent\.displayName \}\)/);
+  assert.match(sidebarSource, /t\("sidebar\.chats\.switchAgent"\)/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-popover-surface/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
-  assert.match(sidebarSource, /function handleChatsNewChat[\s\S]*?createAgentNewChatRoute\(normalizedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /function handleChatsNewChat[\s\S]*?createAgentRoute\(resolvedChatDefaultAgentKey\)/);
+  assert.doesNotMatch(
+    sidebarSource.slice(
+      sidebarSource.indexOf("function handleChatsNewChat"),
+      sidebarSource.indexOf("async function handleSelectChatDefaultAgent"),
+    ),
+    /newChat/,
+  );
   assert.match(sidebarSource, /chatDefaultAgentUnavailable/);
   assert.match(appShell, /chatDefaultAgentKey=\{assistantSettings\?\.chatDefaultAgentKey\}/);
+  assert.match(appShell, /setChatNavAgentOptions\(navigationItems\)/);
+  assert.match(appShell, /saveSettings\(\{ chatDefaultAgentKey: fallbackAgentKey \}\)/);
   assert.match(assistantNavigation, /export function getAssistantNavRecentChatsOverview/);
   assert.match(assistantNavigation, /\.slice\(0, normalizedLimit\)/);
-  assert.match(settingsStore, /chatDefaultAgentKey: profile\.assistant\.chat\.agentKey/);
+  assert.match(
+    settingsStore,
+    /chatDefaultAgentKey:\s*profile\.assistant\.chat\.agentKey \|\| desktopInitAssistant\.chatDefaultAgentKey/,
+  );
   assert.match(settingsStore, /chat:\s*\{[\s\S]*?agentKey: next\.chatDefaultAgentKey/);
   assert.match(profileStore, /chat:\s*\{\s*agentKey: string;/);
   assert.match(settingsPage, /handleSelectChatDefaultAgentKey/);
+  assert.match(settingsPage, /window\.electronAPI\.assistant\.listNavigationAgents\(\)/);
+  assert.match(settingsPage, /function readChatAgentOptions/);
+  assert.match(settingsPage, /chatAgentOptions\.find/);
   assert.match(settingsPage, /chatDefaultAgentKey/);
   assert.match(zhCN, /"nav\.chats": "对话"/);
-  assert.match(zhCN, /"sidebar\.chats\.supportedBy": "由 \{name\} 支持"/);
+  assert.match(zhCN, /"sidebar\.chats\.switchAgent": "切换智能体"/);
   assert.match(zhCN, /"sidebar\.chats\.withAgent": "与 \{name\} 对话"/);
   assert.match(enUS, /"nav\.chats": "Chats"/);
-  assert.match(enUS, /"sidebar\.chats\.supportedBy": "Supported by \{name\}"/);
+  assert.match(enUS, /"sidebar\.chats\.switchAgent": "Switch agent"/);
   assert.match(enUS, /"sidebar\.chats\.withAgent": "Chat with \{name\}"/);
 });
 

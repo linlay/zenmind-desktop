@@ -165,7 +165,7 @@ function normalizeDesktopProfile(
     readText(legacyQuickAssistant.agentKey) ||
     readText(legacySettings.quickAssistantAgentKey) ||
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
-  const chatAgentKey = readText(chat.agentKey) || copilotAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY;
+  const chatAgentKey = readText(chat.agentKey) || DEFAULT_CHAT_DEFAULT_AGENT_KEY;
   const quickShortcut = normalizeQuickAssistantShortcut(
     readText(quick.shortcut) ||
     readText(legacyQuickAssistant.shortcut) ||

@@ -54,7 +54,7 @@ test("desktop profile stores custom quick assistant shortcut", (t) => {
   assert.equal(profile.assistant.quick.shortcut, "CommandOrControl+Shift+K");
 });
 
-test("desktop profile defaults Chat agent to the configured sidebar helper and persists overrides", (t) => {
+test("desktop profile leaves Chat agent unset instead of inheriting the sidebar helper", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -66,7 +66,7 @@ test("desktop profile defaults Chat agent to the configured sidebar helper and p
     }
   }, null, 2)}\n`, "utf8");
 
-  assert.equal(readDesktopProfileFromRoot(root).assistant.chat.agentKey, "existing-helper");
+  assert.equal(readDesktopProfileFromRoot(root).assistant.chat.agentKey, "");
 
   updateDesktopProfileInRoot(root, {
     assistant: {

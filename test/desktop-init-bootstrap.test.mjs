@@ -91,7 +91,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
       }
     },
     assistant: {
-      defaultAgentKey: "desktopAssistant",
+      defaultChatAgentKey: "zenmi",
       bootstrapAgentKey: "zenmi"
     },
     kanban: {
@@ -200,7 +200,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
   assert.equal(profile.assistant.quick.enabled, true);
   assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
-  assert.equal(assistantConfig.defaultAgentKey, "desktopAssistant");
+  assert.equal(assistantConfig.defaultChatAgentKey, "zenmi");
   assert.equal(assistantConfig.bootstrapAgentKey, "zenmi");
   assert.equal("desktopHelperAgentKey" in profile.assistant, false);
   assert.equal("quickAssistant" in profile.assistant, false);
@@ -306,6 +306,27 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profileAfterSecondRun.appearance.locale, "zh-CN");
   assert.equal(profileAfterSecondRun.general.desktopActionConfirmationEnabled, false);
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
+});
+
+test("desktop-init bootstrap canonicalizes the legacy Chat default agent field", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-chat-agent-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    assistant: {
+      defaultAgentKey: "zenmi",
+    },
+  });
+
+  applyDesktopInitBootstrap(app, "darwin");
+
+  const assistantConfig = readJson(
+    path.join(desktopRoot(homePath), "config", "desktop", "assistant.json"),
+  );
+  assert.equal(assistantConfig.defaultChatAgentKey, "zenmi");
+  assert.equal("defaultAgentKey" in assistantConfig, false);
 });
 
 test("desktop-init bootstrap ignores legacy desktop-default file names", (t) => {
@@ -669,7 +690,7 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
       }
     },
     assistant: {
-      defaultAgentKey: "cutej",
+      defaultChatAgentKey: "cutej",
       bootstrapAgentKey: "bootstrap"
     },
     kanban: {
@@ -705,7 +726,7 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.deepEqual(profile.navigation.mainOrder, []);
   assert.deepEqual(profile.navigation.webOrder, []);
   assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "desktopAssistant");
-  assert.equal(assistantConfig.defaultAgentKey, "cutej");
+  assert.equal(assistantConfig.defaultChatAgentKey, "cutej");
   assert.equal(assistantConfig.bootstrapAgentKey, "bootstrap");
   assert.equal(kanban.enabled, false);
   assert.equal(kanban.cloud.serverUrl, "https://kanban.example.test");

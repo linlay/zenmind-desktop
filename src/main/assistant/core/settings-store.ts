@@ -57,17 +57,24 @@ function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function readBootstrapAgentKeyFromRoot(rootDir: string) {
+function readDesktopInitAssistantSettingsFromRoot(rootDir: string) {
   try {
     const parsed = JSON.parse(
       fs.readFileSync(path.join(rootDir, DESKTOP_INIT_ASSISTANT_FILE), "utf8")
     ) as unknown;
-    return isRecord(parsed) ? readText(parsed.bootstrapAgentKey) : "";
+    if (!isRecord(parsed)) {
+      return { bootstrapAgentKey: "", chatDefaultAgentKey: "" };
+    }
+    return {
+      bootstrapAgentKey: readText(parsed.bootstrapAgentKey),
+      chatDefaultAgentKey:
+        readText(parsed.defaultChatAgentKey) || readText(parsed.defaultAgentKey),
+    };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       console.warn(`[assistant] failed to read ${DESKTOP_INIT_ASSISTANT_FILE}:`, error);
     }
-    return "";
+    return { bootstrapAgentKey: "", chatDefaultAgentKey: "" };
   }
 }
 
@@ -80,7 +87,7 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
     : DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const chatDefaultAgentKey = typeof candidate.chatDefaultAgentKey === "string" && candidate.chatDefaultAgentKey.trim()
     ? candidate.chatDefaultAgentKey.trim()
-    : desktopHelperAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY;
+    : DEFAULT_CHAT_DEFAULT_AGENT_KEY;
   const quickAssistantAgentKey = typeof candidate.quickAssistantAgentKey === "string" && candidate.quickAssistantAgentKey.trim()
     ? candidate.quickAssistantAgentKey.trim()
     : DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
@@ -164,11 +171,13 @@ export function toPublicAssistantSettings(
 export function readAssistantSettingsFromRoot(rootDir: string): AssistantSettingsPrivate {
   ensureRoot(rootDir);
   const profile = readDesktopProfileFromRoot(rootDir);
+  const desktopInitAssistant = readDesktopInitAssistantSettingsFromRoot(rootDir);
   const settings = normalizeStoredSettings({
     voiceCorrectionEnabled: profile.assistant.voiceCorrectionEnabled,
     desktopHelperAgentKey: profile.assistant.copilot.agentKey,
-    chatDefaultAgentKey: profile.assistant.chat.agentKey,
-    bootstrapAgentKey: readBootstrapAgentKeyFromRoot(rootDir),
+    chatDefaultAgentKey:
+      profile.assistant.chat.agentKey || desktopInitAssistant.chatDefaultAgentKey,
+    bootstrapAgentKey: desktopInitAssistant.bootstrapAgentKey,
     quickAssistantEnabled: profile.assistant.quick.enabled,
     quickAssistantAgentKey: profile.assistant.quick.agentKey,
     quickAssistantShortcut: profile.assistant.quick.shortcut,

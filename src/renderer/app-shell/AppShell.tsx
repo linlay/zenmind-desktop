@@ -447,6 +447,7 @@ export function AppShell() {
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
   const assistantNavAgentsRefreshIdRef = useRef(0);
+  const chatDefaultAgentMigrationRef = useRef("");
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
@@ -483,6 +484,7 @@ export function AppShell() {
   const [bootstrapNavigationRetryTick, setBootstrapNavigationRetryTick] = useState(0);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
+  const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [desktopActionConfirmation, setDesktopActionConfirmation] =
     useState<DesktopActionConfirmationRequest | null>(null);
@@ -864,8 +866,10 @@ export function AppShell() {
         if (!result.ok) {
           return;
         }
+        const navigationItems = normalizeAssistantNavAgents(result.items);
         const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(result));
         setAssistantNavAgentsLoaded(true);
+        setChatNavAgentOptions(navigationItems);
         setAssistantNavAgents(nextItems);
       }
     } catch {
@@ -903,6 +907,7 @@ export function AppShell() {
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
       setAssistantNavAgentsLoaded(true);
+      setChatNavAgentOptions(nextResult.items);
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
     });
 
@@ -912,6 +917,36 @@ export function AppShell() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!assistantSettings) {
+      return;
+    }
+    const fallbackAgentKey = chatNavAgentOptions[0]?.agentKey.trim() ?? "";
+    const currentAgentKey = assistantSettings?.chatDefaultAgentKey.trim() ?? "";
+    if (
+      !fallbackAgentKey ||
+      chatNavAgentOptions.some((agent) => agent.agentKey === currentAgentKey)
+    ) {
+      return;
+    }
+
+    const migrationKey = `${currentAgentKey}:${fallbackAgentKey}`;
+    if (chatDefaultAgentMigrationRef.current === migrationKey) {
+      return;
+    }
+    chatDefaultAgentMigrationRef.current = migrationKey;
+    void window.electronAPI.assistant
+      .saveSettings({ chatDefaultAgentKey: fallbackAgentKey })
+      .then((nextSettings) => {
+        setAssistantSettings(nextSettings);
+      })
+      .catch(() => {
+        if (chatDefaultAgentMigrationRef.current === migrationKey) {
+          chatDefaultAgentMigrationRef.current = "";
+        }
+      });
+  }, [assistantSettings?.chatDefaultAgentKey, chatNavAgentOptions]);
 
   useEffect(() => {
     if (!isSingleAgentWebclientRoute(location.pathname)) {
@@ -949,6 +984,14 @@ export function AppShell() {
     } catch {
       // Keep the last usable settings if the bridge is not ready yet.
     }
+  }
+
+  async function saveChatDefaultAgent(agentKey: string) {
+    const nextSettings = await window.electronAPI.assistant.saveSettings({
+      chatDefaultAgentKey: agentKey.trim(),
+    });
+    setAssistantSettings(nextSettings);
+    return nextSettings;
   }
 
   async function refreshThemePreferenceFromCanonical() {
@@ -2883,8 +2926,10 @@ export function AppShell() {
           webOpenEntryKeys={webOpenEntryKeys}
           assistantNavAgents={assistantNavAgents}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
+          chatNavAgentOptions={chatNavAgentOptions}
           copilotAgentOptions={copilotAgentOptions}
           chatDefaultAgentKey={assistantSettings?.chatDefaultAgentKey}
+          onChatDefaultAgentChange={saveChatDefaultAgent}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
           bootstrapGuideActive={bootstrapGuideActive}
