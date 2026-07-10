@@ -2432,6 +2432,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
   assert.match(orderHelper, /"kanban"/);
   assert.match(orderHelper, /"schedules"/);
+  assert.match(orderHelper, /"chats"/);
   assert.match(orderHelper, /"group:assistants"/);
   assert.match(orderHelper, /"group:webs"/);
   assert.match(orderHelper, /STATIC_SIDEBAR_NAV_ORDER_ITEMS/);
@@ -2440,6 +2441,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(orderHelper, /staticItems\.get\("kanban"\)/);
   assert.match(orderHelper, /\.\.\.\(kanbanEnabled \? \[staticItems\.get\("kanban"\)!\] : \[\]\)/);
   assert.match(orderHelper, /staticItems\.get\("schedules"\)/);
+  assert.match(orderHelper, /staticItems\.get\("chats"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("market"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("agents"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("help"\)/);
@@ -2492,6 +2494,57 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(sidebarSource, /webItems:\s*WebEntry\[\]/);
   assert.doesNotMatch(sidebarSource, /websiteItems/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
+});
+
+test("Chats sidebar entry is an expanded group using the configured Chat default agent", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const appShell = readAppShellSource();
+  const settingsStore = readSourceFile("src", "main", "assistant", "core", "settings-store.ts");
+  const profileStore = readSourceFile("src", "main", "desktop-profile-store.ts");
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(sidebarSource, /const chatsNavItemBase[\s\S]*?orderKey:\s*"chats"[\s\S]*?entryType:\s*"chats"/);
+  assert.doesNotMatch(
+    sidebarSource.match(/const chatsNavItemBase[\s\S]*?};/)?.[0] ?? "",
+    /icon:/,
+  );
+  assert.match(sidebarSource, /getAssistantNavRecentChatsOverview\(primaryAssistantNavAgents\)/);
+  assert.match(sidebarSource, /type SidebarGroupId = "assistants" \| "chats" \| "webs"/);
+  assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{[\s\S]*?chats: true,/);
+  assert.match(sidebarSource, /function renderChatsEntry\(item: SidebarChatsEntry\)/);
+  assert.match(sidebarSource, /renderSidebarGroup\(\{[\s\S]*?groupId: "chats"/);
+  assert.match(sidebarSource, /function renderChatsList\(options: \{ roving\?: boolean \} = \{\}\)/);
+  assert.match(sidebarSource, /className="sidebar-chats-list"/);
+  assert.match(sidebarSource, /<Tooltip content=\{chatSupportTooltip\}>/);
+  assert.match(sidebarSource, /t\("sidebar\.chats\.supportedBy", \{ name: chatDefaultAgent\.displayName \}\)/);
+  assert.doesNotMatch(sidebarSource, /trigger="hover"/);
+  assert.doesNotMatch(sidebarSource, /sidebar-chats-popover-surface/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
+  assert.match(sidebarSource, /function handleChatsNewChat[\s\S]*?createAgentNewChatRoute\(normalizedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /chatDefaultAgentUnavailable/);
+  assert.match(appShell, /chatDefaultAgentKey=\{assistantSettings\?\.chatDefaultAgentKey\}/);
+  assert.match(assistantNavigation, /export function getAssistantNavRecentChatsOverview/);
+  assert.match(assistantNavigation, /\.slice\(0, normalizedLimit\)/);
+  assert.match(settingsStore, /chatDefaultAgentKey: profile\.assistant\.chat\.agentKey/);
+  assert.match(settingsStore, /chat:\s*\{[\s\S]*?agentKey: next\.chatDefaultAgentKey/);
+  assert.match(profileStore, /chat:\s*\{\s*agentKey: string;/);
+  assert.match(settingsPage, /handleSelectChatDefaultAgentKey/);
+  assert.match(settingsPage, /chatDefaultAgentKey/);
+  assert.match(zhCN, /"nav\.chats": "对话"/);
+  assert.match(zhCN, /"sidebar\.chats\.supportedBy": "由 \{name\} 支持"/);
+  assert.match(zhCN, /"sidebar\.chats\.withAgent": "与 \{name\} 对话"/);
+  assert.match(enUS, /"nav\.chats": "Chats"/);
+  assert.match(enUS, /"sidebar\.chats\.supportedBy": "Supported by \{name\}"/);
+  assert.match(enUS, /"sidebar\.chats\.withAgent": "Chat with \{name\}"/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {

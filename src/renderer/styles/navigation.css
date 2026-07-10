@@ -376,6 +376,7 @@
 .sidebar-group-heading:focus-visible,
 .assistant-worker-header:focus-visible,
 .assistant-worker-chat-item:focus-visible,
+.sidebar-chats-item:focus-visible,
 .assistant-worker-more:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.28);
@@ -391,6 +392,7 @@
 :root[data-theme="dark"] .sidebar-group-heading:focus-visible,
 :root[data-theme="dark"] .assistant-worker-header:focus-visible,
 :root[data-theme="dark"] .assistant-worker-chat-item:focus-visible,
+:root[data-theme="dark"] .sidebar-chats-item:focus-visible,
 :root[data-theme="dark"] .assistant-worker-more:focus-visible {
   box-shadow: 0 0 0 2px rgba(79, 136, 255, 0.38);
 }
@@ -456,6 +458,11 @@
   color: #e2e8f0;
 }
 
+:root[data-theme="dark"] .sidebar-chats-item:hover,
+:root[data-theme="dark"] .sidebar-chats-item:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+}
+
 :root[data-theme="dark"] .sidebar-link-icon {
   --sidebar-special-icon-active-frame: #e2e8f0;
 }
@@ -499,6 +506,123 @@
 
 .sidebar-link-label-collapsed {
   display: none;
+}
+
+.sidebar-chats-new-button {
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
+.sidebar-chats-collapsed-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 4px 2px 8px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-chats-new-button.is-in-popover {
+  margin-left: 8px;
+}
+
+.sidebar-chats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(480px, calc(100vh - 32px));
+  padding: 0 4px 2px 12px;
+  overflow-y: auto;
+}
+
+.worker-popover-content .sidebar-chats-list {
+  min-width: 280px;
+  padding: 0;
+}
+
+.sidebar-chats-row {
+  min-width: 0;
+}
+
+.sidebar-chats-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.sidebar-chats-item:hover,
+.sidebar-chats-item:focus-visible {
+  outline: none;
+  background: rgba(136, 151, 172, 0.1);
+  color: var(--ink);
+}
+
+.sidebar-chats-item.is-active {
+  background: transparent;
+  color: var(--ink);
+}
+
+.sidebar-chats-item.is-unread .sidebar-chats-preview::before {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 6px 1px 0;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  content: "";
+  vertical-align: middle;
+}
+
+.sidebar-chats-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-chats-preview,
+.sidebar-chats-agent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-chats-preview {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sidebar-chats-agent,
+.sidebar-chats-time,
+.sidebar-chats-empty {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.sidebar-chats-time {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding-top: 1px;
+}
+
+.sidebar-chats-empty {
+  padding: 12px 8px;
+  text-align: center;
 }
 
 /* ── Sidebar Footer ── */
@@ -601,7 +725,8 @@
 }
 
 .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
-.sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible) {
+.sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible),
+.sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
   background: transparent;
   border-color: transparent;
 }
@@ -1406,7 +1531,8 @@
 
 .sidebar-nav-group>.Collapse-header .sidebar-assistant-project-button,
 .sidebar-nav-group>.Collapse-header .sidebar-website-manage-button,
-.sidebar-nav-group>.Collapse-header .sidebar-website-add-button {
+.sidebar-nav-group>.Collapse-header .sidebar-website-add-button,
+.sidebar-nav-group>.Collapse-header .sidebar-chats-new-button {
   margin-left: 0;
 }
 
@@ -2403,7 +2529,8 @@
 }
 
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
-:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible) {
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible),
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
   background: transparent;
   border-color: transparent;
 }
@@ -2471,6 +2598,15 @@
 }
 
 :root[data-theme="dark"] .assistant-worker-chat-item.is-active {
+  background: transparent;
+  color: #f5f5f5;
+}
+
+:root[data-theme="dark"] .sidebar-chats-item {
+  color: #9aa4b2;
+}
+
+:root[data-theme="dark"] .sidebar-chats-item.is-active {
   background: transparent;
   color: #f5f5f5;
 }

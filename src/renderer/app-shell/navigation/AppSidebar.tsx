@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type Ref,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
@@ -46,6 +47,7 @@ import {
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
+  getAssistantNavRecentChatsOverview,
   getAssistantNavAgentSortedChats,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
@@ -71,11 +73,20 @@ type SidebarToolItem = Omit<SidebarNavItem, "orderKey"> & {
   orderKey: string;
 };
 
-type SidebarPrimaryEntry = SidebarNavItem & {
+type SidebarChatsEntry = {
+  orderKey: "chats";
+  label: string;
+  collapsedLabel?: string;
+  entryType: "chats";
+};
+
+type SidebarStandardPrimaryEntry = SidebarNavItem & {
   entryType?: "link" | "assistants" | "webs";
 };
 
-type SidebarGroupId = "assistants" | "webs";
+type SidebarPrimaryEntry = SidebarStandardPrimaryEntry | SidebarChatsEntry;
+
+type SidebarGroupId = "assistants" | "chats" | "webs";
 
 type SidebarGroupState = Record<SidebarGroupId, boolean>;
 
@@ -184,6 +195,7 @@ function createInitialBootstrapGuideDismissedBubbles(): BootstrapGuideDismissedB
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
+  chats: true,
   webs: true,
 };
 
@@ -212,16 +224,21 @@ const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
     .map((routeDefinition) => routeDefinition.routePath),
 );
 
-const kanbanNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const kanbanNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "kanban",
   to: "/kanban",
   icon: "futures",
 };
 
-const schedulesNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const schedulesNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "schedules",
   to: "/automations",
   icon: "schedule",
+};
+
+const chatsNavItemBase: Omit<SidebarChatsEntry, "label"> = {
+  orderKey: "chats",
+  entryType: "chats",
 };
 
 function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
@@ -240,14 +257,14 @@ function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
   return role;
 }
 
-const assistantGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const assistantGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "group:assistants",
   to: "",
   icon: "assistant",
   entryType: "assistants",
 };
 
-const websGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const websGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "group:webs",
   to: "",
   icon: "website",
@@ -366,12 +383,18 @@ function normalizeSidebarGroupState(candidate: unknown): SidebarGroupState {
   if (!candidate || typeof candidate !== "object") {
     return defaultSidebarGroupState;
   }
-  const record = candidate as Partial<Record<SidebarGroupId | "websites", unknown>>;
+  const record = candidate as Partial<
+    Record<SidebarGroupId | "websites", unknown>
+  >;
   return {
     assistants:
       typeof record.assistants === "boolean"
         ? record.assistants
         : defaultSidebarGroupState.assistants,
+    chats:
+      typeof record.chats === "boolean"
+        ? record.chats
+        : defaultSidebarGroupState.chats,
     webs:
       typeof record.webs === "boolean"
         ? record.webs
@@ -632,6 +655,15 @@ function isAssistantRunningPreview(value: string) {
   ].includes(normalized);
 }
 
+function getAssistantChatPreviewText(
+  chat: AssistantNavChatItem,
+  t: TranslateFunction,
+) {
+  return chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
+    ? chat.chatName || t("sidebar.chat.noPreview")
+    : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
+}
+
 function toAssistantSortTimestamp(value: string | undefined) {
   const timestamp = value ? Date.parse(value) : 0;
   return Number.isFinite(timestamp) ? timestamp : 0;
@@ -717,6 +749,10 @@ function createSidebarAgentMoreFocusId(agentKey: string) {
 
 function createSidebarChatFocusId(chatId: string) {
   return `chat:${chatId}`;
+}
+
+function createSidebarChatsChatFocusId(chatId: string) {
+  return `chats-chat:${chatId}`;
 }
 
 function createSidebarWebFocusId(entryKey: WebEntryKey | string) {
@@ -806,6 +842,7 @@ type AppSidebarProps = {
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavAgentsLoaded?: boolean;
   copilotAgentOptions?: AssistantNavAgentItem[];
+  chatDefaultAgentKey?: string;
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
   bootstrapGuideActive?: boolean;
@@ -855,6 +892,7 @@ export function AppSidebar({
   assistantNavAgents = [],
   assistantNavAgentsLoaded = true,
   copilotAgentOptions = [],
+  chatDefaultAgentKey = "",
   desktopSsoStatus = null,
   desktopSsoBusy = false,
   bootstrapGuideActive = false,
@@ -969,6 +1007,31 @@ export function AppSidebar({
     () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
   );
+  const recentChatsOverviewItems = useMemo(
+    () => getAssistantNavRecentChatsOverview(primaryAssistantNavAgents),
+    [primaryAssistantNavAgents],
+  );
+  const normalizedChatDefaultAgentKey = chatDefaultAgentKey.trim();
+  const chatDefaultAgent = useMemo(
+    () =>
+      [...assistantNavAgents, ...copilotAgentOptions].find(
+        (agent) => agent.agentKey === normalizedChatDefaultAgentKey,
+      ) ?? null,
+    [assistantNavAgents, copilotAgentOptions, normalizedChatDefaultAgentKey],
+  );
+  const chatDefaultAgentAvailable = Boolean(chatDefaultAgent);
+  const chatDefaultAgentUnavailable =
+    assistantNavAgentsLoaded && !chatDefaultAgentAvailable;
+  const chatSupportTooltip = chatDefaultAgent
+    ? t("sidebar.chats.supportedBy", { name: chatDefaultAgent.displayName })
+    : chatDefaultAgentUnavailable
+      ? t("sidebar.chats.defaultAgentUnavailable")
+      : "";
+  const activeChatsOverviewChatId = recentChatsOverviewItems.some(
+    ({ chat }) => chat.chatId === currentChatId,
+  )
+    ? currentChatId
+    : "";
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(primaryAssistantNavAgents),
     [primaryAssistantNavAgents],
@@ -1032,6 +1095,11 @@ export function AppSidebar({
       },
       { ...schedulesNavItemBase, label: t("nav.schedules"), collapsedLabel: t("nav.schedulesCollapsed") },
       {
+        ...chatsNavItemBase,
+        label: t("nav.chats"),
+        collapsedLabel: t("nav.chatsCollapsed"),
+      },
+      {
         ...assistantGroupNavItemBase,
         label: t("nav.assistants"),
         collapsedLabel: t("nav.assistantsCollapsed"),
@@ -1041,7 +1109,7 @@ export function AppSidebar({
         label: t("nav.websites"),
         collapsedLabel: t("nav.websitesCollapsed"),
       },
-    ].filter((item) => sidebarNavOrder.includes(item.orderKey)),
+    ].filter((item) => sidebarNavOrder.includes(item.orderKey)) as SidebarPrimaryEntry[],
     sidebarNavOrder,
   );
   const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase
@@ -1078,6 +1146,13 @@ export function AppSidebar({
       return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
     }
 
+    if (activeChatsOverviewChatId) {
+      if (!isCollapsed && sidebarGroupState.chats) {
+        return createSidebarChatsChatFocusId(activeChatsOverviewChatId);
+      }
+      return createSidebarGroupFocusId("chats");
+    }
+
     if (isAssistantGroupActive()) {
       if (
         !isCollapsed &&
@@ -1104,6 +1179,9 @@ export function AppSidebar({
     if (firstItem.entryType === "assistants") {
       return createSidebarGroupFocusId("assistants");
     }
+    if (firstItem.entryType === "chats") {
+      return createSidebarGroupFocusId("chats");
+    }
     if (firstItem.entryType === "webs") {
       return createSidebarGroupFocusId("webs");
     }
@@ -1117,7 +1195,9 @@ export function AppSidebar({
     navItems,
     pendingPath,
     sidebarGroupState.assistants,
+    sidebarGroupState.chats,
     sidebarGroupState.webs,
+    activeChatsOverviewChatId,
     webNavItems,
   ]);
   const resolvedSidebarNavFocusId =
@@ -1405,6 +1485,7 @@ export function AppSidebar({
     navItems,
     resolvedSidebarNavFocusId,
     sidebarGroupState.assistants,
+    sidebarGroupState.chats,
     sidebarGroupState.webs,
     sidebarNavFocusId,
     sortedAssistantNavAgents,
@@ -1648,7 +1729,9 @@ export function AppSidebar({
   }
 
   function readSidebarGroupId(value: string | undefined): SidebarGroupId | null {
-    return value === "assistants" || value === "webs" ? value : null;
+    return value === "assistants" || value === "chats" || value === "webs"
+      ? value
+      : null;
   }
 
   function findAssistantNavAgent(agentKey: string) {
@@ -1722,7 +1805,7 @@ export function AppSidebar({
       openAgentMenuAtElement(element, agent);
       return true;
     }
-    if (kind === "chat") {
+    if (kind === "chat" || kind === "chats-chat") {
       const chat = findAssistantNavChat(element.dataset.sidebarChatId || "");
       if (!chat) {
         return false;
@@ -1796,6 +1879,9 @@ export function AppSidebar({
         return true;
       }
       return false;
+    }
+    if (kind === "chats-chat") {
+      return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
     }
     if (kind === "chat" || kind === "agent-more") {
       const agentKey = element.dataset.sidebarAgentKey || "";
@@ -2159,6 +2245,17 @@ export function AppSidebar({
     event.stopPropagation();
     setExpandedAssistantAgentKey(agent.agentKey);
     requestNavigate(createAgentNewChatRoute(agent.agentKey), {
+      retriggerAgentRoute: true,
+    });
+  }
+
+  function handleChatsNewChat(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!normalizedChatDefaultAgentKey || chatDefaultAgentUnavailable) {
+      return;
+    }
+    requestNavigate(createAgentNewChatRoute(normalizedChatDefaultAgentKey), {
       retriggerAgentRoute: true,
     });
   }
@@ -2558,6 +2655,111 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsNewChatButton(options: { inPopover?: boolean } = {}) {
+    const disabled = !normalizedChatDefaultAgentKey || chatDefaultAgentUnavailable;
+    const label = disabled
+      ? t("sidebar.chats.defaultAgentUnavailable")
+      : t("sidebar.chats.newChat");
+    return (
+      <Tooltip content={label}>
+        <button
+          type="button"
+          className={[
+            "assistant-worker-icon-button",
+            "sidebar-chats-new-button",
+            options.inPopover ? "is-in-popover" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-label={t("sidebar.chats.newChat")}
+          title={label}
+          tabIndex={options.inPopover ? undefined : -1}
+          disabled={disabled}
+          onClick={handleChatsNewChat}
+        >
+          <SidebarActionIcon kind="new_chat" />
+        </button>
+      </Tooltip>
+    );
+  }
+
+  function renderChatsList(options: { roving?: boolean } = {}) {
+    const roving = options.roving ?? true;
+    return (
+      <div className="sidebar-chats-list" role="list">
+        {recentChatsOverviewItems.length > 0 ? (
+          recentChatsOverviewItems.map(({ agent, chat }) => {
+            const isActive = chat.chatId === currentChatId;
+            return (
+              <div
+                className="sidebar-chats-row"
+                role="listitem"
+                key={chat.chatId}
+                onContextMenu={(event) => handleAssistantChatContextMenu(event, chat)}
+              >
+                <button
+                  type="button"
+                  className={[
+                    "sidebar-chats-item",
+                    isActive ? "is-active" : "",
+                    !chat.isRead ? "is-unread" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  aria-current={isActive ? "page" : undefined}
+                  onClick={() => void handleAssistantOpenChat(chat)}
+                  {...getSidebarRovingItemProps(
+                    createSidebarChatsChatFocusId(chat.chatId),
+                    roving,
+                  )}
+                  data-sidebar-nav-kind={roving ? "chats-chat" : undefined}
+                  data-sidebar-chat-id={roving ? chat.chatId : undefined}
+                >
+                  <span className="sidebar-chats-copy">
+                    <span className="sidebar-chats-preview">
+                      {getAssistantChatPreviewText(chat, t)}
+                    </span>
+                    <span className="sidebar-chats-agent">
+                      {t("sidebar.chats.withAgent", { name: agent.displayName })}
+                    </span>
+                  </span>
+                  <span className="sidebar-chats-time">
+                    {formatAssistantChatTime(chat.updatedAt)}
+                  </span>
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <div className="sidebar-chats-empty">{t("sidebar.chats.empty")}</div>
+        )}
+      </div>
+    );
+  }
+
+  function renderChatsEntry(item: SidebarChatsEntry) {
+    return renderSidebarGroup({
+      groupId: "chats",
+      label: item.label,
+      collapsedLabel: item.collapsedLabel,
+      active: Boolean(activeChatsOverviewChatId),
+      children: [],
+      headerLabel: (
+        <Tooltip content={chatSupportTooltip}>
+          <span className="sidebar-link-label">{item.label}</span>
+        </Tooltip>
+      ),
+      headerActions: renderChatsNewChatButton(),
+      popoverHeader: (
+        <div className="sidebar-chats-collapsed-head">
+          <span>{item.label}</span>
+          {renderChatsNewChatButton({ inPopover: true })}
+        </div>
+      ),
+      renderChildren: ({ roving }) => renderChatsList({ roving }),
+    });
+  }
+
   function renderSidebarChildLink(
     item: SidebarNavItem & { status?: SidebarStatusSummary },
     options: { roving?: boolean } = {},
@@ -2696,10 +2898,7 @@ export function AppSidebar({
       : chat.hasActiveRun
       ? "loading"
       : "time";
-    const previewText =
-      chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
-        ? chat.chatName || t("sidebar.chat.noPreview")
-        : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
+    const previewText = getAssistantChatPreviewText(chat, t);
     return (
       <div
         key={chat.chatId}
@@ -2989,10 +3188,14 @@ export function AppSidebar({
     groupId: SidebarGroupId;
     label: string;
     collapsedLabel?: string;
-    icon: SidebarIllustrationKind;
+    icon?: SidebarIllustrationKind;
     active: boolean;
     status?: SidebarStatusSummary;
     children: Array<SidebarNavItem & { status?: SidebarStatusSummary }>;
+    headerLabel?: ReactNode;
+    headerActions?: ReactNode;
+    popoverHeader?: ReactNode;
+    renderChildren?: (options: { roving: boolean }) => ReactNode;
   }) {
     const expanded = sidebarGroupState[args.groupId];
     const groupTriggerClassName = isCollapsed
@@ -3023,6 +3226,7 @@ export function AppSidebar({
             role="group"
             aria-label={args.label}
           >
+            {args.popoverHeader}
             {args.groupId === "assistants" ? (
               <div className="assistant-worker-collapse worker-collapse">
                 <div className="sidebar-assistant-popover-tools">
@@ -3041,6 +3245,8 @@ export function AppSidebar({
                   </div>
                 ) : null}
               </div>
+            ) : args.renderChildren ? (
+              args.renderChildren({ roving: false })
             ) : (
               args.children.map((item) =>
                 renderSidebarChildLink(item, { roving: false }),
@@ -3062,10 +3268,16 @@ export function AppSidebar({
           data-sidebar-group-id={args.groupId}
         >
           <span className="sidebar-group-heading-main">
-            <span className="sidebar-link-icon">
-              <SidebarIllustration kind={args.icon} />
-            </span>
-            <span className="sidebar-link-label">{visibleLabel}</span>
+            {args.icon ? (
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={args.icon} />
+              </span>
+            ) : null}
+            {isCollapsed || !args.headerLabel ? (
+              <span className="sidebar-link-label">{visibleLabel}</span>
+            ) : (
+              args.headerLabel
+            )}
             {!expanded
               ? renderSidebarGroupStatusBadges(args.groupId, args.status)
               : null}
@@ -3083,7 +3295,7 @@ export function AppSidebar({
         headerButtonProps={{
           className: groupTriggerClassName,
           "aria-label": args.label,
-          title: args.label,
+          title: args.headerLabel ? undefined : args.label,
           onContextMenu: (event) =>
             handleSidebarGroupContextMenu(event, args.groupId),
           ...getSidebarRovingItemProps(
@@ -3094,7 +3306,9 @@ export function AppSidebar({
         }}
         header={
           <span className="sidebar-group-heading-main">
-            <span className="sidebar-link-label">{args.label}</span>
+            {args.headerLabel ?? (
+              <span className="sidebar-link-label">{args.label}</span>
+            )}
             <ArrowIcon
               className="sidebar-group-heading-arrow"
               expanded={expanded}
@@ -3107,6 +3321,7 @@ export function AppSidebar({
         }
         headerActions={
           <>
+            {args.headerActions}
             {args.groupId === "assistants" ? (
               renderAssistantSortButton({ tabIndex: -1 })
             ) : null}
@@ -3183,6 +3398,8 @@ export function AppSidebar({
                 </div>
               ) : null}
             </div>
+          ) : args.renderChildren ? (
+            args.renderChildren({ roving: true })
           ) : (
             args.children.map((item) => renderSidebarChildLink(item))
           )}
@@ -3192,6 +3409,9 @@ export function AppSidebar({
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
+    if (item.entryType === "chats") {
+      return renderChatsEntry(item);
+    }
     if (item.entryType === "assistants") {
       return renderSidebarGroup({
         groupId: "assistants",
@@ -3624,7 +3844,11 @@ export function AppSidebar({
           style={{ left: groupActionMenu.x, top: groupActionMenu.y }}
           role="menu"
           aria-label={
-            groupId === "assistants" ? t("nav.assistants") : t("nav.websites")
+            groupId === "assistants"
+              ? t("nav.assistants")
+              : groupId === "chats"
+                ? t("nav.chats")
+                : t("nav.websites")
           }
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -3664,6 +3888,18 @@ export function AppSidebar({
                 <span>{t("sidebar.project.new")}</span>
               </button>
             </>
+          ) : groupId === "chats" ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!normalizedChatDefaultAgentKey || chatDefaultAgentUnavailable}
+              onClick={(event) => {
+                setGroupActionMenu(null);
+                handleChatsNewChat(event);
+              }}
+            >
+              <span>{t("sidebar.chats.newChat")}</span>
+            </button>
           ) : (
             <>
               <button

@@ -2884,6 +2884,7 @@ export function AppShell() {
           assistantNavAgents={assistantNavAgents}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           copilotAgentOptions={copilotAgentOptions}
+          chatDefaultAgentKey={assistantSettings?.chatDefaultAgentKey}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
           bootstrapGuideActive={bootstrapGuideActive}

@@ -271,6 +271,7 @@ export interface AssistantSettingsPublic {
   apiKeyConfigured: boolean;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
@@ -283,6 +284,7 @@ export interface AssistantSettingsPublic {
 export interface AssistantSettingsInput {
   voiceCorrectionEnabled?: boolean;
   desktopHelperAgentKey?: string;
+  chatDefaultAgentKey?: string;
   quickAssistantEnabled?: boolean;
   quickAssistantAgentKey?: string;
   quickAssistantShortcut?: string;

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { App } from "electron";
 import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../../shared/contracts";
 import {
+  DEFAULT_CHAT_DEFAULT_AGENT_KEY,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_ENABLED,
@@ -28,6 +29,7 @@ export type AssistantSettingsPrivate = {
   apiKey: string;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
@@ -76,6 +78,9 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
   const desktopHelperAgentKey = typeof candidate.desktopHelperAgentKey === "string" && candidate.desktopHelperAgentKey.trim()
     ? candidate.desktopHelperAgentKey.trim()
     : DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+  const chatDefaultAgentKey = typeof candidate.chatDefaultAgentKey === "string" && candidate.chatDefaultAgentKey.trim()
+    ? candidate.chatDefaultAgentKey.trim()
+    : desktopHelperAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY;
   const quickAssistantAgentKey = typeof candidate.quickAssistantAgentKey === "string" && candidate.quickAssistantAgentKey.trim()
     ? candidate.quickAssistantAgentKey.trim()
     : DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
@@ -89,6 +94,7 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
       ? candidate.voiceCorrectionEnabled
       : DEFAULT_VOICE_CORRECTION_ENABLED,
     desktopHelperAgentKey,
+    chatDefaultAgentKey,
     bootstrapAgentKey: typeof candidate.bootstrapAgentKey === "string" ? candidate.bootstrapAgentKey.trim() : "",
     quickAssistantEnabled: typeof candidate.quickAssistantEnabled === "boolean"
       ? candidate.quickAssistantEnabled
@@ -103,6 +109,7 @@ function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
   return {
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
+    chatDefaultAgentKey: settings.chatDefaultAgentKey,
     quickAssistantEnabled: settings.quickAssistantEnabled,
     quickAssistantAgentKey: settings.quickAssistantAgentKey,
     quickAssistantShortcut: settings.quickAssistantShortcut,
@@ -143,6 +150,7 @@ export function toPublicAssistantSettings(
     apiKeyConfigured,
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
+    chatDefaultAgentKey: settings.chatDefaultAgentKey,
     bootstrapAgentKey: settings.bootstrapAgentKey,
     quickAssistantEnabled: settings.quickAssistantEnabled,
     quickAssistantAgentKey: settings.quickAssistantAgentKey,
@@ -159,6 +167,7 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
   const settings = normalizeStoredSettings({
     voiceCorrectionEnabled: profile.assistant.voiceCorrectionEnabled,
     desktopHelperAgentKey: profile.assistant.copilot.agentKey,
+    chatDefaultAgentKey: profile.assistant.chat.agentKey,
     bootstrapAgentKey: readBootstrapAgentKeyFromRoot(rootDir),
     quickAssistantEnabled: profile.assistant.quick.enabled,
     quickAssistantAgentKey: profile.assistant.quick.agentKey,
@@ -188,6 +197,9 @@ export function saveAssistantSettingsToRoot(
     desktopHelperAgentKey: typeof input.desktopHelperAgentKey === "string" && input.desktopHelperAgentKey.trim()
       ? input.desktopHelperAgentKey.trim()
       : current.desktopHelperAgentKey,
+    chatDefaultAgentKey: typeof input.chatDefaultAgentKey === "string" && input.chatDefaultAgentKey.trim()
+      ? input.chatDefaultAgentKey.trim()
+      : current.chatDefaultAgentKey,
     bootstrapAgentKey: current.bootstrapAgentKey,
     quickAssistantEnabled: typeof input.quickAssistantEnabled === "boolean"
       ? input.quickAssistantEnabled
@@ -206,6 +218,9 @@ export function saveAssistantSettingsToRoot(
       voiceCorrectionEnabled: next.voiceCorrectionEnabled,
       copilot: {
         agentKey: next.desktopHelperAgentKey
+      },
+      chat: {
+        agentKey: next.chatDefaultAgentKey
       },
       quick: {
         enabled: next.quickAssistantEnabled,

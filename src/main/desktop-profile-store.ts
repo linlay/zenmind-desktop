@@ -3,6 +3,7 @@ import path from "node:path";
 import type { SupportedLocale } from "../shared/i18n";
 import { DEFAULT_LOCALE, normalizeLocale } from "../shared/i18n";
 import {
+  DEFAULT_CHAT_DEFAULT_AGENT_KEY,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_ENABLED,
@@ -37,6 +38,9 @@ export type DesktopProfile = {
     copilot: {
       agentKey: string;
     };
+    chat: {
+      agentKey: string;
+    };
     quick: {
       enabled: boolean;
       agentKey: string;
@@ -57,8 +61,9 @@ type DesktopProfileReadOptions = {
 type DesktopProfilePatch = Partial<{
   general: Partial<DesktopProfile["general"]>;
   appearance: Partial<DesktopProfile["appearance"]>;
-  assistant: Partial<Omit<DesktopProfile["assistant"], "copilot" | "quick">> & {
+  assistant: Partial<Omit<DesktopProfile["assistant"], "copilot" | "chat" | "quick">> & {
     copilot?: Partial<DesktopProfile["assistant"]["copilot"]>;
+    chat?: Partial<DesktopProfile["assistant"]["chat"]>;
     quick?: Partial<DesktopProfile["assistant"]["quick"]>;
   };
   navigation: Partial<DesktopProfile["navigation"]>;
@@ -142,6 +147,7 @@ function normalizeDesktopProfile(
   const appearance = isRecord(record.appearance) ? record.appearance : {};
   const assistant = isRecord(record.assistant) ? record.assistant : {};
   const copilot = isRecord(assistant.copilot) ? assistant.copilot : {};
+  const chat = isRecord(assistant.chat) ? assistant.chat : {};
   const quick = isRecord(assistant.quick) ? assistant.quick : {};
   const legacyQuickAssistant = isRecord(assistant.quickAssistant) ? assistant.quickAssistant : {};
   const navigation = isRecord(record.navigation) ? record.navigation : {};
@@ -159,6 +165,7 @@ function normalizeDesktopProfile(
     readText(legacyQuickAssistant.agentKey) ||
     readText(legacySettings.quickAssistantAgentKey) ||
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
+  const chatAgentKey = readText(chat.agentKey) || copilotAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY;
   const quickShortcut = normalizeQuickAssistantShortcut(
     readText(quick.shortcut) ||
     readText(legacyQuickAssistant.shortcut) ||
@@ -197,6 +204,9 @@ function normalizeDesktopProfile(
         : legacyVoiceCorrectionEnabled,
       copilot: {
         agentKey: copilotAgentKey
+      },
+      chat: {
+        agentKey: chatAgentKey
       },
       quick: {
         enabled: typeof quick.enabled === "boolean"
@@ -267,6 +277,10 @@ export function updateDesktopProfileInRoot(rootDir: string, patch: DesktopProfil
       copilot: {
         ...current.assistant.copilot,
         ...patch.assistant?.copilot
+      },
+      chat: {
+        ...current.assistant.chat,
+        ...patch.assistant?.chat
       },
       quick: {
         ...current.assistant.quick,
