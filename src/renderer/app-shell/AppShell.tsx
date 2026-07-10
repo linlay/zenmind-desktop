@@ -7,6 +7,7 @@ import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebS
 import { StartupLoadingScreen, StartupRoutePlaceholder } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
+import { DebugModeContext } from "../debug/DebugModeContext";
 import { useServices } from "../services/ServicesContext";
 import { getAssistantPageContext } from "../copilot/page-context/assistantPageContext";
 import { publishCurrentPageContextSnapshot } from "../services/currentPageContext";
@@ -2881,10 +2882,11 @@ export function AppShell() {
     bootstrapGuideAgentVisible;
 
   return (
-    <div
-      style={appShellStyle}
-      onPointerDownCapture={handleWindowDragPointerDownCapture}
-      className={[
+    <DebugModeContext.Provider value={debugSettingsUnlocked}>
+      <div
+        style={appShellStyle}
+        onPointerDownCapture={handleWindowDragPointerDownCapture}
+        className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
@@ -3191,7 +3193,8 @@ export function AppShell() {
         onClose={() => setGlobalSearchOpen(false)}
         onNavigate={requestSidebarNavigation}
       />
-    </div>
+      </div>
+    </DebugModeContext.Provider>
   );
 }
 

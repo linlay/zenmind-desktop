@@ -24,6 +24,7 @@ import {
   registerDesktopActionProviderForScope
 } from "../../services/desktopActionRegistry";
 import { SidebarActionIcon } from "../../components/BrandMark";
+import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
 import { useI18n } from "../../i18n/useI18n";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
@@ -461,6 +462,7 @@ function ExternalWebviewPane({
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
       })}
+      <WebviewDebugOverlay url={tab.currentUrl} />
     </div>
   );
 }

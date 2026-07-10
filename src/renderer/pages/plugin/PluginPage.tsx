@@ -63,6 +63,7 @@ import {
   readFormFields,
 } from "../../copilot/page-context/webActions";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
+import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";
@@ -1792,6 +1793,7 @@ export function PluginPage({
         </button>
       )}
       <div className="embedded-surface-frame-shell">
+        <WebviewDebugOverlay url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl} />
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>
             {webviewLoadError ? (

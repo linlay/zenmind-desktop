@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const projectRoot = process.cwd();
+const require = createRequire(import.meta.url);
+const typescript = require("typescript");
 
 function readSourceFile(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
@@ -11,6 +14,19 @@ function readSourceFile(...segments) {
 
 function readJsonFile(...segments) {
   return JSON.parse(fs.readFileSync(path.join(projectRoot, ...segments), "utf8"));
+}
+
+function loadTypeScriptCommonJs(...segments) {
+  const source = readSourceFile(...segments);
+  const output = typescript.transpileModule(source, {
+    compilerOptions: {
+      module: typescript.ModuleKind.CommonJS,
+      target: typescript.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const module = { exports: {} };
+  new Function("exports", "module", output)(module.exports, module);
+  return module.exports;
 }
 
 function newestGeneratedBrandPath() {
@@ -6254,6 +6270,47 @@ test("embedded browser closing the final tab leaves a blank page", () => {
   assert.match(externalWebviewPage, /if \(currentState\.tabs\.length <= 1\) \{[\s\S]{0,220}tabs: \[blankTab\],[\s\S]{0,80}activeTabId: blankTab\.id/u);
   assert.match(externalWebviewPage, /const canClose = true;/u);
   assert.doesNotMatch(externalWebviewPage, /embeddedError\("last_tab"/u);
+});
+
+test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overlay", () => {
+  const appShell = readAppShellSource();
+  const debugModeContext = readSourceFile("src", "renderer", "debug", "DebugModeContext.ts");
+  const webviewDebugOverlay = readSourceFile("src", "renderer", "components", "WebviewDebugOverlay.tsx");
+  const webviewDebugUrl = loadTypeScriptCommonJs("src", "renderer", "debug", "webviewDebugUrl.ts");
+  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const externalWebviewPage = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "external-webview",
+    "ExternalWebviewPage.tsx"
+  );
+  const externalWebviewStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "external-webview.css"
+  );
+
+  assert.match(appShell, /DebugModeContext\.Provider value=\{debugSettingsUnlocked\}/u);
+  assert.match(debugModeContext, /createContext\(false\)/u);
+  assert.match(webviewDebugOverlay, /redactWebviewDebugUrl/u);
+  assert.match(webviewDebugOverlay, /aria-hidden="true"/u);
+  assert.equal(
+    webviewDebugUrl.redactWebviewDebugUrl(
+      "https://example.test/path?access_token=secret&visible=1#id_token=hidden&route=overview"
+    ),
+    "https://example.test/path?access_token=REDACTED&visible=1#id_token=REDACTED&route=overview"
+  );
+  assert.equal(
+    webviewDebugUrl.redactWebviewDebugUrl("https://example.test/?API-Key=secret&token=other"),
+    "https://example.test/?API-Key=REDACTED&token=REDACTED"
+  );
+  assert.match(pluginPage, /<WebviewDebugOverlay url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\} \/>/u);
+  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} \/>/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*none;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*none;/u);
+  assert.match(externalWebviewStyles, /\.embedded-surface-page \.webview-debug-url-overlay/u);
 });
 
 test("help page uses settings-aligned layout shell", () => {
