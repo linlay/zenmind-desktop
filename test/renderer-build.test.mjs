@@ -955,7 +955,8 @@ test("sidebar collapse headers separate trigger and actions", () => {
 
   assert.match(collapseSource, /headerActions\?: React\.ReactNode;/);
   assert.match(collapseSource, /headerButtonProps\?: CollapseHeaderButtonProps;/);
-  assert.match(collapseSource, /<div className="Collapse-header">[\s\S]*?<button[\s\S]*?className=\{\["Collapse-trigger"/);
+  assert.match(collapseSource, /const headerButton = \(\s*<button[\s\S]*?className=\{\["Collapse-trigger"/);
+  assert.match(collapseSource, /<div className="Collapse-header">[\s\S]*?headerPopover \? \([\s\S]*?<Popover[\s\S]*?\{headerButton\}/);
   assert.match(collapseSource, /<div className="Collapse-headerActions">\{headerActions\}<\/div>/);
   assert.doesNotMatch(collapseSource, /className="Collapse-header"[\s\S]{0,160}onClick=\{handleToggle\}/);
   assert.match(collapseStyles, /\.Collapse-trigger\s*\{/);
@@ -1575,6 +1576,46 @@ test("assistant sidebar limits Projects to project modes while Chats retain non-
   assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
   assert.doesNotMatch(sidebarSource, /copilotAgentOptions\.filter\(shouldShowAssistantInPrimaryNavigation\)/);
+});
+
+test("Projects headers show hover cards for Coder and Knowledge Base agents only", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const collapseSource = readSourceFile("src", "renderer", "components", "Collapse", "index.tsx");
+  const popoverSource = readSourceFile("src", "renderer", "components", "Popover", "index.tsx");
+  const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
+  const navigationClient = readSourceFile(
+    "src",
+    "main",
+    "assistant",
+    "core",
+    "assistant-navigation-status-client.ts",
+  );
+  const styles = readRendererStyles();
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(assistantNavigation, /isAssistantNavProjectAgent\([\s\S]*?"mode" \| "agentType"/);
+  assert.match(sidebarSource, /function getAssistantProjectKind\(/);
+  assert.match(sidebarSource, /function renderProjectHoverCard\(/);
+  assert.match(sidebarSource, /className="sidebar-project-hover-card"/);
+  assert.match(sidebarSource, /headerPopover=\{projectHoverCard \? \{/);
+  assert.match(sidebarSource, /placement: "right-start"/);
+  assert.match(sidebarSource, /sidebar\.project\.card\.lastActivity/);
+  assert.match(sidebarSource, /agent\.gitBranch/);
+  assert.match(collapseSource, /headerPopover\?: CollapseHeaderPopover;/);
+  assert.match(collapseSource, /<Popover[\s\S]*?trigger="hover"[\s\S]*?closeOnOutsideClick=\{false\}/);
+  assert.match(popoverSource, /triggerMode === "click"[\s\S]*?children\.props\["aria-expanded"\]/);
+  assert.match(navigationClient, /function isWorkspaceProjectAgent[\s\S]*?mode === "coder"[\s\S]*?mode === "kbase"/);
+  assert.match(styles, /\.sidebar-project-hover-card-surface/);
+  assert.match(styles, /\.sidebar-project-hover-card-status/);
+  assert.match(zhCN, /"sidebar\.project\.card\.workspace": "工作目录：\{name\}"/);
+  assert.match(enUS, /"sidebar\.project\.card\.workspace": "Workspace: \{name\}"/);
 });
 
 test("assistant sidebar uses merged activity agents when available", () => {

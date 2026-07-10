@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   applyAssistantNavigationPush,
   buildAssistantNavigationAgentsFromPlatformAgents,
+  enrichNavigationAgentsWithGitBranches,
   readAssistantNavigationActivityAgentsFromPlatform,
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform,
@@ -491,4 +492,36 @@ test("assistant navigation reads and caches Git branches with platform-specific 
   });
   assert.equal(unavailableBranch, "");
   assert.equal(await resolveAssistantWorkspaceGitBranch(path.join(workspaceDir, "missing")), "");
+});
+
+test("assistant navigation enriches both Coder and Knowledge Base project branches", async () => {
+  const requestedWorkspaces = [];
+  const items = await enrichNavigationAgentsWithGitBranches([
+    createAgent({
+      agentKey: "coder",
+      mode: "CODER",
+      workspaceDir: "/tmp/coder-project",
+      workspaceDirExists: true,
+    }),
+    createAgent({
+      agentKey: "kbase",
+      agentType: "kbase",
+      workspaceDir: "/tmp/kbase-project",
+      workspaceDirExists: true,
+    }),
+    createAgent({
+      agentKey: "chat",
+      mode: "CHAT",
+      workspaceDir: "/tmp/chat-agent",
+      workspaceDirExists: true,
+    }),
+  ], async (workspaceDir) => {
+    requestedWorkspaces.push(workspaceDir);
+    return workspaceDir.includes("kbase") ? "docs" : "main";
+  });
+
+  assert.deepEqual(requestedWorkspaces.sort(), ["/tmp/coder-project", "/tmp/kbase-project"]);
+  assert.equal(items.find((item) => item.agentKey === "coder")?.gitBranch, "main");
+  assert.equal(items.find((item) => item.agentKey === "kbase")?.gitBranch, "docs");
+  assert.equal(items.find((item) => item.agentKey === "chat")?.gitBranch, undefined);
 });

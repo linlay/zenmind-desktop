@@ -149,6 +149,8 @@ test("assistant nav Chats overview shows ten most recent chats by default", () =
 test("assistant nav project predicate only accepts CODER and KBASE modes", () => {
   assert.equal(isAssistantNavProjectAgent({ mode: "CODER" }), true);
   assert.equal(isAssistantNavProjectAgent({ mode: "kbase" }), true);
+  assert.equal(isAssistantNavProjectAgent({ agentType: "coder" }), true);
+  assert.equal(isAssistantNavProjectAgent({ agentType: "KBASE" }), true);
   assert.equal(isAssistantNavProjectAgent({ mode: "CHAT" }), false);
   assert.equal(isAssistantNavProjectAgent({}), false);
 });

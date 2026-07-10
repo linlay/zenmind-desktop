@@ -736,19 +736,24 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
   };
 }
 
-function isCoderAgent(agent: AssistantNavAgentItem) {
-  return agent.mode?.toLowerCase() === "coder" || agent.agentType?.toLowerCase() === "coder";
+function isWorkspaceProjectAgent(agent: AssistantNavAgentItem) {
+  const mode = agent.mode?.toLowerCase() ?? "";
+  const agentType = agent.agentType?.toLowerCase() ?? "";
+  return mode === "coder" || mode === "kbase" || agentType === "coder" || agentType === "kbase";
 }
 
-async function enrichNavigationAgentsWithGitBranches(items: AssistantNavAgentItem[]) {
+export async function enrichNavigationAgentsWithGitBranches(
+  items: AssistantNavAgentItem[],
+  resolveGitBranch: (workspaceDir: string) => Promise<string> = resolveAssistantWorkspaceGitBranch,
+) {
   const branchesByWorkspace = new Map<string, Promise<string>>();
   for (const agent of items) {
     const workspaceDir = agent.workspaceDir?.trim() ?? "";
-    if (!isCoderAgent(agent) || !workspaceDir || agent.workspaceDirExists === false) {
+    if (!isWorkspaceProjectAgent(agent) || !workspaceDir || agent.workspaceDirExists === false) {
       continue;
     }
     if (!branchesByWorkspace.has(workspaceDir)) {
-      branchesByWorkspace.set(workspaceDir, resolveAssistantWorkspaceGitBranch(workspaceDir));
+      branchesByWorkspace.set(workspaceDir, resolveGitBranch(workspaceDir));
     }
   }
 

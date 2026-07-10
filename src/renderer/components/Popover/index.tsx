@@ -320,9 +320,15 @@ export const Popover: React.FC<PopoverProps> = (props) => {
 
   const trigger = cloneElement<PopoverCloneProps>(children, {
     ref: setTriggerRef,
-    "aria-controls": isOpen ? popoverId : undefined,
-    "aria-expanded": isOpen,
-    "aria-haspopup": "dialog",
+    "aria-controls": triggerMode === "click"
+      ? isOpen ? popoverId : undefined
+      : children.props["aria-controls"],
+    "aria-expanded": triggerMode === "click"
+      ? isOpen
+      : children.props["aria-expanded"],
+    "aria-haspopup": triggerMode === "click"
+      ? "dialog"
+      : children.props["aria-haspopup"],
     tabIndex: children.props.tabIndex ?? 0,
     onClick: (event: React.MouseEvent<HTMLElement>) => {
       children.props.onClick?.(event);

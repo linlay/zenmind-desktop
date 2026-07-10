@@ -220,6 +220,7 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
 ]);
 const HIDDEN_ASSISTANT_ROLE_AGENT_TYPES = new Set<string>(["coder", "kbase"]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
+type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS
     .filter((routeDefinition) => routeDefinition.kind === "management")
@@ -257,6 +258,21 @@ function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
     return "";
   }
   return role;
+}
+
+function getAssistantProjectKind(
+  agent: AssistantNavAgentItem,
+): AssistantProjectKind | null {
+  const mode = agent.mode?.trim().toUpperCase() ?? "";
+  if (mode === "CODER") {
+    return "coder";
+  }
+  if (mode === "KBASE") {
+    return "kbase";
+  }
+
+  const agentType = agent.agentType?.trim().toLowerCase() ?? "";
+  return agentType === "coder" || agentType === "kbase" ? agentType : null;
 }
 
 const assistantGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
@@ -3147,6 +3163,61 @@ export function AppSidebar({
     );
   }
 
+  function renderProjectHoverCard(
+    agent: AssistantNavAgentItem,
+    projectKind: AssistantProjectKind,
+    options: {
+      hasActiveRun: boolean;
+      unreadCount: number;
+      awaitingMode?: AssistantNavChatItem["awaitingMode"];
+    },
+  ) {
+    const workspaceName = getAssistantWorkspaceName(
+      agent.workspaceDir,
+      agent.workspaceDirExists,
+    );
+    const lastActivity = formatAssistantChatDateTime(agent.updatedAt);
+    const projectType = projectKind === "coder"
+      ? t("sidebar.project.coder")
+      : t("sidebar.project.kbase");
+    const statusLabels = [
+      options.hasActiveRun ? t("sidebar.agent.running") : "",
+      agent.hasPendingAwaiting ? t(getAssistantAwaitingStatusKey(options.awaitingMode)) : "",
+      options.unreadCount > 0 ? t("sidebar.chat.unread") : "",
+    ].filter(Boolean);
+    return (
+      <div className="sidebar-project-hover-card">
+        <span className="sidebar-project-hover-card-title">{agent.displayName}</span>
+        <div className="sidebar-project-hover-card-meta">
+          <span>{t("sidebar.project.card.type", { type: projectType })}</span>
+          {lastActivity ? (
+            <span>{t("sidebar.project.card.lastActivity", { time: lastActivity })}</span>
+          ) : null}
+        </div>
+        {statusLabels.length > 0 ? (
+          <div
+            className="sidebar-project-hover-card-statuses"
+            aria-label={t("sidebar.project.card.status")}
+          >
+            {statusLabels.map((label) => (
+              <span className="sidebar-project-hover-card-status" key={label}>
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {workspaceName ? (
+          <div className="sidebar-project-hover-card-context">
+            <span>{t("sidebar.project.card.workspace", { name: workspaceName })}</span>
+            {agent.gitBranch ? (
+              <span>{t("sidebar.project.card.branch", { name: agent.gitBranch })}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderAssistantAgent(
     agent: AssistantNavAgentItem,
     options: { roving?: boolean } = {},
@@ -3194,6 +3265,14 @@ export function AppSidebar({
     const showBootstrapGuideAgent =
       bootstrapGuideAgent && !bootstrapGuideDismissedBubbles.agent;
     const agentRole = getAssistantAgentRoleLabel(agent);
+    const projectKind = getAssistantProjectKind(agent);
+    const projectHoverCard = projectKind
+      ? renderProjectHoverCard(agent, projectKind, {
+          hasActiveRun: Boolean(activeRunChat),
+          unreadCount,
+          awaitingMode: awaitingChat?.awaitingMode,
+        })
+      : null;
     return (
       <Collapse
         key={agent.agentKey}
@@ -3219,6 +3298,11 @@ export function AppSidebar({
         headerButtonRef={
           showBootstrapGuideAgent ? bootstrapGuideAgentAnchorRef : undefined
         }
+        headerPopover={projectHoverCard ? {
+          content: projectHoverCard,
+          placement: "right-start",
+          className: "sidebar-project-hover-card-surface",
+        } : undefined}
         header={
           <span className="assistant-worker-header-text">
               <span

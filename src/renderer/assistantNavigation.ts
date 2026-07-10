@@ -180,9 +180,13 @@ export function normalizeAssistantNavAgents(items: unknown): AssistantNavAgentIt
 }
 
 export function isAssistantNavProjectAgent(
-  agent: Pick<AssistantNavAgentItem, "mode"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "mode" | "agentType"> | null | undefined,
 ) {
-  return PROJECT_ASSISTANT_MODES.has(agent?.mode?.trim().toUpperCase() ?? "");
+  const mode = agent?.mode?.trim().toUpperCase() ?? "";
+  if (PROJECT_ASSISTANT_MODES.has(mode)) {
+    return true;
+  }
+  return PROJECT_ASSISTANT_MODES.has(agent?.agentType?.trim().toUpperCase() ?? "");
 }
 
 export function normalizeAssistantNavAgentItemsResult(
