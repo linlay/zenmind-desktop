@@ -1159,6 +1159,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /window\.prompt/u);
   const confirmRenameChatHandler =
     sidebarSource.match(/async function handleConfirmRenameChat[\s\S]*?async function handleAssistantArchiveChat/u)?.[0] ?? "";
+  const archiveChatHandler =
+    sidebarSource.match(/async function handleAssistantArchiveChat[\s\S]*?async function handleAssistantDeleteChat/u)?.[0] ?? "";
   assert.match(sidebarSource, /type AssistantChatRenameDialogState = \{/u);
   assert.match(sidebarSource, /function renderAssistantChatRenameDialog\(\)/u);
   assert.match(sidebarSource, /type AssistantChatDeleteDialogState = \{/u);
@@ -1172,6 +1174,13 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(confirmRenameChatHandler, /if \(!result\.ok\)/u);
   assert.match(confirmRenameChatHandler, /setAssistantChatRenameDialog\(null\)/u);
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
+  assert.match(archiveChatHandler, /const result = await window\.electronAPI\.assistant\.archiveChat\(chat\.chatId\)/u);
+  assert.match(archiveChatHandler, /if \(!result\?\.ok\)/u);
+  assert.match(archiveChatHandler, /window\.alert\(result\?\.message \|\| t\("sidebar\.chat\.archiveFailed"\)\)/u);
+  assert.match(archiveChatHandler, /currentChatId === chat\.chatId/u);
+  assert.match(archiveChatHandler, /candidate\.chatId !== chat\.chatId/u);
+  assert.match(archiveChatHandler, /onRequestNavigate\?\.\(nextRoute\)/u);
+  assert.match(archiveChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
   assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
@@ -3673,7 +3682,7 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.notEqual(bootstrapAutoOpenBlockEnd, -1);
   const bootstrapAutoOpenBlock = appShell.slice(bootstrapAutoOpenBlockStart, bootstrapAutoOpenBlockEnd);
   const bootstrapSettingsCatchBlock = bootstrapAutoOpenBlock.match(/catch \{(?<body>[\s\S]*?)\n        \}/)?.groups?.body ?? "";
-  const bootstrapEmptyKeyBlock = bootstrapAutoOpenBlock.match(/if \(!bootstrapAgentKey\) \{(?<body>[\s\S]*?)\n      \}\n      navigate/)?.groups?.body ?? "";
+  const bootstrapEmptyKeyBlock = bootstrapAutoOpenBlock.match(/if \(!bootstrapAgentKey\) \{(?<body>[\s\S]*?)\n      \}\n      if \(!assistantNavAgentsLoaded\)/)?.groups?.body ?? "";
   const startupRoutePlaceholderBlock = startupGate.slice(
     startupGate.indexOf("export function StartupRoutePlaceholder("),
     startupGate.indexOf("export function StartupLoadingScreen")
@@ -3705,7 +3714,9 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.doesNotMatch(startupGate, /<Navigate\b/);
   assert.doesNotMatch(startupGate, /resolveStartupRootPath/);
   assert.doesNotMatch(appShell, /showStartupPetGreeting/);
-  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?defaultAgentKey=\{sortAssistantNavAgentsForMode\([\s\S]*?getPrimaryAssistantNavAgents\(assistantNavAgents\),[\s\S]*?"byTime"[\s\S]*?\)\[0\]\?\.agentKey \?\? ""\}[\s\S]*?agentsLoaded=\{assistantNavAgentsLoaded\}/);
+  assert.match(appShell, /const primaryAssistantNavAgents = useMemo\([\s\S]*?getPrimaryAssistantNavAgents\(assistantNavAgents\)/);
+  assert.match(appShell, /const defaultAssistantAgentKey = useMemo\([\s\S]*?sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, "byTime"\)\[0\]\?\.agentKey \?\? ""/);
+  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?defaultAgentKey=\{defaultAssistantAgentKey\}[\s\S]*?agentsLoaded=\{assistantNavAgentsLoaded\}/);
   assert.doesNotMatch(appShell, /shouldAutoOpenAssistant/);
   assert.doesNotMatch(appShell, /shouldRedirectStartupFailureToControlCenter/);
   assert.doesNotMatch(appShell, /startupNavigationDoneRef/);
@@ -3723,6 +3734,9 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.match(bootstrapAutoOpenBlock, /window\.setTimeout\(\(\) => \{[\s\S]*?setBootstrapNavigationRetryTick\(\(tick\) => tick \+ 1\)/);
   assert.match(bootstrapAutoOpenBlock, /window\.electronAPI\.assistant\.getSettings\(\)/);
   assert.match(bootstrapAutoOpenBlock, /nextAssistantSettings\.bootstrapAgentKey\.trim\(\)/);
+  assert.match(bootstrapAutoOpenBlock, /if \(!assistantNavAgentsLoaded\) \{[\s\S]*?return;/);
+  assert.match(bootstrapAutoOpenBlock, /assistantNavAgents\.some\(\(agent\) => agent\.agentKey === bootstrapAgentKey\)/);
+  assert.match(bootstrapAutoOpenBlock, /scheduleBootstrapNavigationRetry\(\);/);
   assert.match(bootstrapAutoOpenBlock, /navigate\(createBootstrapAgentRoute\(bootstrapAgentKey\), \{ replace: true \}\)/);
   assert.match(bootstrapAutoOpenBlock, /navigate\(createBootstrapAgentRoute\(bootstrapAgentKey\), \{ replace: true \}\);[\s\S]*?startupBootstrapNavigationDoneRef\.current = true;/);
   assert.match(bootstrapSettingsCatchBlock, /scheduleBootstrapNavigationRetry\(\);/);
@@ -3734,6 +3748,8 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.doesNotMatch(bootstrapAutoOpenBlock, /listNavigationAgents/);
   assert.doesNotMatch(bootstrapAutoOpenBlock, /getKanbanAwareFallbackPath/);
   assert.doesNotMatch(bootstrapAutoOpenBlock, /navigate\("\/control-center"/);
+  assert.match(appShell, /location\.pathname !== createBootstrapAgentRoute\(normalizedBootstrapAgentKey\)[\s\S]*?assistantNavAgents\.some\(\(agent\) => agent\.agentKey === normalizedBootstrapAgentKey\)/);
+  assert.match(appShell, /defaultAssistantAgentKey[\s\S]*?createBootstrapAgentRoute\(defaultAssistantAgentKey\)[\s\S]*?: AGENT_WEBCLIENT_TARGET_PATH/);
   assert.match(appShell, /function createBootstrapAgentRoute\(agentKey: string\)[\s\S]*?encodeURIComponent\(agentKey\)/);
   assert.match(appShell, /const normalizedBootstrapAgentKey = assistantSettings\?\.bootstrapAgentKey\.trim\(\) \?\? "";/);
   assert.match(appShell, /const bootstrapGuideAgentVisible = Boolean\([\s\S]*?normalizedBootstrapAgentKey[\s\S]*?!assistantNavAgentsLoaded \|\|[\s\S]*?assistantNavAgents\.some\(\(agent\) => agent\.agentKey === normalizedBootstrapAgentKey\)[\s\S]*?\);/);
@@ -4693,7 +4709,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /normalizedCurrentUrl === embeddedUrl/);
   assert.match(pluginPage, /function resolveAgentWebclientChatRouteFromUrl\(value: string, webviewSrcUrl: string\)/);
   assert.match(pluginPage, /parsed\.searchParams\.get\("chatId"\)\?\.trim\(\)/);
-  assert.match(pluginPage, /service\?\.id === "agent-webclient"[\s\S]*?surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
+  assert.match(pluginPage, /function isAgentWebclientChatRouteSurface\(surfaceId: string\)[\s\S]*?surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT[\s\S]*?surfaceId === AGENT_WEBCLIENT_SOURCE_FALLBACK[\s\S]*?surfaceId === AGENT_WEBCLIENT_SOURCE_MANAGEMENT/);
+  assert.match(pluginPage, /service\?\.id !== "agent-webclient" \|\|[\s\S]*?!isAgentWebclientChatRouteSurface\(surfaceId\)[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
   assert.match(pluginPage, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
   assert.match(pluginPage, /function handleAgentWebclientChatRouteMessage\([\s\S]*?payload\.type !== AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
   assert.match(pluginPage, /readAgentWebclientRouteAgentKey\(currentRoute\)[\s\S]*?readAgentWebclientUrlAgentKey\(readCurrentWebviewUrl\(\), webviewSrcUrl\)/);

@@ -2295,7 +2295,31 @@ export function AppSidebar({
 
   async function handleAssistantArchiveChat(chat: AssistantNavChatItem) {
     setAssistantChatMenu(null);
-    await window.electronAPI.assistant.archiveChat(chat.chatId);
+    const result = await window.electronAPI.assistant.archiveChat(chat.chatId);
+    if (!result?.ok) {
+      window.alert(result?.message || t("sidebar.chat.archiveFailed"));
+      return;
+    }
+
+    if (currentChatId === chat.chatId) {
+      const agentKey = chat.agentKey.trim() || currentAgentKey;
+      const currentAgent = assistantNavAgents.find(
+        (agent) => agent.agentKey === agentKey,
+      );
+      const nextChat = currentAgent
+        ? getAssistantNavAgentSortedChats(currentAgent).find(
+            (candidate) => candidate.chatId !== chat.chatId,
+          )
+        : null;
+      const nextRoute = nextChat
+        ? createAgentChatRoute(agentKey, nextChat.chatId)
+        : agentKey
+          ? createAgentRoute(agentKey)
+          : "/agents";
+      onRequestNavigate?.(nextRoute);
+    }
+
+    await onRefreshAssistantNavAgents?.();
   }
 
   async function handleAssistantDeleteChat(chat: AssistantNavChatItem) {

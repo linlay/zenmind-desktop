@@ -119,6 +119,14 @@ type PlatformChatSearchResponse = {
   results?: unknown;
 };
 
+type PlatformArchiveChatResponse = {
+  results?: Array<{
+    chatId?: string;
+    success?: boolean;
+    error?: string;
+  }>;
+};
+
 type PlatformMemoryRecord = {
   id?: string;
   chatId?: string;
@@ -1089,6 +1097,24 @@ export class AgentPlatformAssistantBridge {
     });
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
+    }
+    let payload: PlatformArchiveChatResponse;
+    try {
+      payload = unwrapApiResponse<PlatformArchiveChatResponse>(await response.json());
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : t("assistant.chatArchiveFailed")
+      };
+    }
+    const archiveResult = payload.results?.find(
+      (result) => result.chatId?.trim() === trimmedChatId
+    ) ?? payload.results?.[0];
+    if (archiveResult?.success !== true) {
+      return {
+        ok: false,
+        message: archiveResult?.error?.trim() || t("assistant.chatArchiveFailed")
+      };
     }
     return { ok: true, message: t("assistant.chatArchived") };
   }

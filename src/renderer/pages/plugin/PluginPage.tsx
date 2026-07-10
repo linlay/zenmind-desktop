@@ -348,6 +348,14 @@ function createAgentWebclientChatRoute(agentKey: string, chatId: string) {
   return `/agent/${encodeURIComponent(normalizedAgentKey)}?${params.toString()}`;
 }
 
+function isAgentWebclientChatRouteSurface(surfaceId: string) {
+  return (
+    surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT ||
+    surfaceId === AGENT_WEBCLIENT_SOURCE_FALLBACK ||
+    surfaceId === AGENT_WEBCLIENT_SOURCE_MANAGEMENT
+  );
+}
+
 function buildPluginRouteChangedMessage(
   targetUrl: string,
   reason: "initial" | "navigation" | "route-sync",
@@ -1162,7 +1170,7 @@ export function PluginPage({
     }
     if (
       service?.id !== "agent-webclient" ||
-      surfaceId !== AGENT_WEBCLIENT_SOURCE_CHAT
+      !isAgentWebclientChatRouteSurface(surfaceId)
     ) {
       return true;
     }

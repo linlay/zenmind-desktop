@@ -485,6 +485,15 @@ export function AppShell() {
   const [bootstrapNavigationRetryTick, setBootstrapNavigationRetryTick] = useState(0);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
+  const primaryAssistantNavAgents = useMemo(
+    () => getPrimaryAssistantNavAgents(assistantNavAgents),
+    [assistantNavAgents]
+  );
+  const defaultAssistantAgentKey = useMemo(
+    () => sortAssistantNavAgentsForMode(primaryAssistantNavAgents, "byTime")[0]?.agentKey ?? "",
+    [primaryAssistantNavAgents]
+  );
+  const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [desktopActionConfirmation, setDesktopActionConfirmation] =
     useState<DesktopActionConfirmationRequest | null>(null);
@@ -1304,6 +1313,32 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (
+      !assistantNavAgentsLoaded ||
+      !normalizedBootstrapAgentKey ||
+      location.pathname !== createBootstrapAgentRoute(normalizedBootstrapAgentKey) ||
+      assistantNavAgents.some((agent) => agent.agentKey === normalizedBootstrapAgentKey)
+    ) {
+      return;
+    }
+
+    startupBootstrapNavigationDoneRef.current = true;
+    navigate(
+      defaultAssistantAgentKey
+        ? createBootstrapAgentRoute(defaultAssistantAgentKey)
+        : AGENT_WEBCLIENT_TARGET_PATH,
+      { replace: true }
+    );
+  }, [
+    assistantNavAgents,
+    assistantNavAgentsLoaded,
+    defaultAssistantAgentKey,
+    location.pathname,
+    navigate,
+    normalizedBootstrapAgentKey
+  ]);
+
+  useEffect(() => {
     let retryTimer: number | null = null;
     if (
       startupBootstrapNavigationDoneRef.current ||
@@ -1351,6 +1386,13 @@ export function AppShell() {
         scheduleBootstrapNavigationRetry();
         return;
       }
+      if (!assistantNavAgentsLoaded) {
+        return;
+      }
+      if (!assistantNavAgents.some((agent) => agent.agentKey === bootstrapAgentKey)) {
+        scheduleBootstrapNavigationRetry();
+        return;
+      }
       navigate(createBootstrapAgentRoute(bootstrapAgentKey), { replace: true });
       startupBootstrapNavigationDoneRef.current = true;
     })();
@@ -1361,7 +1403,16 @@ export function AppShell() {
         window.clearTimeout(retryTimer);
       }
     };
-  }, [assistantSettings, bootstrapNavigationRetryTick, location.pathname, navigate, startupAllReady, startupRestoreState]);
+  }, [
+    assistantNavAgents,
+    assistantNavAgentsLoaded,
+    assistantSettings,
+    bootstrapNavigationRetryTick,
+    location.pathname,
+    navigate,
+    startupAllReady,
+    startupRestoreState
+  ]);
 
   useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
@@ -2828,7 +2879,6 @@ export function AppShell() {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`
   } as CSSProperties;
   const globalSearchShortcutLabel = isMac ? "Cmd+K" : isWindows ? "Ctrl+K" : "";
-  const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
   const bootstrapGuideAgentVisible = Boolean(
     normalizedBootstrapAgentKey &&
     (!assistantNavAgentsLoaded ||
@@ -2961,10 +3011,7 @@ export function AppShell() {
               path="/"
               element={(
                 <StartupRoutePlaceholder
-                  defaultAgentKey={sortAssistantNavAgentsForMode(
-                    getPrimaryAssistantNavAgents(assistantNavAgents),
-                    "byTime"
-                  )[0]?.agentKey ?? ""}
+                  defaultAgentKey={defaultAssistantAgentKey}
                   agentsLoaded={assistantNavAgentsLoaded}
                 />
               )}
