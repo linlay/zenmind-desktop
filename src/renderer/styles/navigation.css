@@ -438,8 +438,7 @@
   flex: none;
 }
 
-.sidebar-link:hover:not(.sidebar-link-active) .sidebar-link-icon,
-.sidebar-group-heading:hover .sidebar-link-icon {
+.sidebar-link:hover:not(.sidebar-link-active) .sidebar-link-icon {
   color: #64748b;
 }
 
@@ -448,8 +447,7 @@
   color: #1e293b;
 }
 
-:root[data-theme="dark"] .sidebar-link:hover:not(.sidebar-link-active) .sidebar-link-icon,
-:root[data-theme="dark"] .sidebar-group-heading:hover .sidebar-link-icon {
+:root[data-theme="dark"] .sidebar-link:hover:not(.sidebar-link-active) .sidebar-link-icon {
   color: #cbd5e1;
 }
 
@@ -658,7 +656,7 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 34px;
+  min-height: 29px;
   gap: 10px;
   padding: 5px 8px;
   border: 0;
@@ -708,8 +706,8 @@
 
 .sidebar-chats-preview {
   color: var(--ink);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .sidebar-chats-agent,
@@ -824,19 +822,11 @@
   text-align: left;
 }
 
-.sidebar-group-heading:hover {
-  background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
-}
-
 .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
   background: transparent;
   border-color: transparent;
-}
-
-.sidebar-group-heading:hover .sidebar-link-label {
-  color: var(--ink);
 }
 
 .app-sidebar.is-collapsed .sidebar-group-heading-main {
@@ -1470,8 +1460,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   line-height: 20px;
   color: var(--ink);
 }
@@ -1876,7 +1866,7 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 34px;
+  min-height: 29px;
   padding: 5px 10px;
   border: 0;
   border-radius: 0;
@@ -1912,7 +1902,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.35;
 }
 
@@ -2626,10 +2616,9 @@
   color: #a1a9b6;
 }
 
-:root[data-theme="dark"] .sidebar-group-heading:hover,
 :root[data-theme="dark"] .sidebar-group-heading.is-active {
   color: #f5f5f5;
-  background: rgba(255, 255, 255, 0.055);
+  background: transparent;
 }
 
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
