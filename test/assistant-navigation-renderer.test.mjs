@@ -29,6 +29,7 @@ const {
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
   getAssistantNavRecentChatsOverview,
+  isAssistantNavProjectAgent,
   normalizeAssistantNavAgents,
 } = loadAssistantNavigationModule();
 
@@ -143,6 +144,13 @@ test("assistant nav Chats overview shows ten most recent chats by default", () =
       "alpha-3",
     ],
   );
+});
+
+test("assistant nav project predicate only accepts CODER and KBASE modes", () => {
+  assert.equal(isAssistantNavProjectAgent({ mode: "CODER" }), true);
+  assert.equal(isAssistantNavProjectAgent({ mode: "kbase" }), true);
+  assert.equal(isAssistantNavProjectAgent({ mode: "CHAT" }), false);
+  assert.equal(isAssistantNavProjectAgent({}), false);
 });
 
 test("assistant nav attention matches webclient worker selection", () => {

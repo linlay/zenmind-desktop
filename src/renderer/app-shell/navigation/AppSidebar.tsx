@@ -50,6 +50,7 @@ import {
   getAssistantNavAgentRecentChats,
   getAssistantNavRecentChatsOverview,
   getAssistantNavAgentSortedChats,
+  isAssistantNavProjectAgent,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
@@ -590,8 +591,12 @@ function summarizeAgentStatus(
   };
 }
 
-function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
+function shouldShowAssistantInChats(agent: AssistantNavAgentItem) {
   return !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim());
+}
+
+function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
+  return shouldShowAssistantInChats(agent) && isAssistantNavProjectAgent(agent);
 }
 
 function formatUnreadCount(value: number) {
@@ -1046,9 +1051,13 @@ export function AppSidebar({
     () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
   );
+  const chatOverviewAssistantNavAgents = useMemo(
+    () => assistantNavAgents.filter(shouldShowAssistantInChats),
+    [assistantNavAgents],
+  );
   const recentChatsOverviewItems = useMemo(
-    () => getAssistantNavRecentChatsOverview(primaryAssistantNavAgents),
-    [primaryAssistantNavAgents],
+    () => getAssistantNavRecentChatsOverview(chatOverviewAssistantNavAgents),
+    [chatOverviewAssistantNavAgents],
   );
   const normalizedChatDefaultAgentKey = chatDefaultAgentKey.trim();
   const chatDefaultAgent = useMemo(
@@ -2298,7 +2307,7 @@ export function AppSidebar({
     if (!resolvedChatDefaultAgentKey || chatDefaultAgentUnavailable) {
       return;
     }
-    requestNavigate(createAgentRoute(resolvedChatDefaultAgentKey), {
+    requestNavigate(createAgentNewChatRoute(resolvedChatDefaultAgentKey), {
       retriggerAgentRoute: true,
     });
   }

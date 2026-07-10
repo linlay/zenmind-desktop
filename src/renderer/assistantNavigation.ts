@@ -39,6 +39,8 @@ function toOptionalNonNegativeInteger(value: unknown) {
     : undefined;
 }
 
+const PROJECT_ASSISTANT_MODES = new Set(["CODER", "KBASE"]);
+
 function resolveAssistantNavUnreadCount(options: {
   statsUnreadCount: number | undefined;
   statsUnreadChatCount: number | undefined;
@@ -175,6 +177,12 @@ export function normalizeAssistantNavAgents(items: unknown): AssistantNavAgentIt
       .map(normalizeAssistantNavAgent)
       .filter((item): item is AssistantNavAgentItem => Boolean(item))
     : [];
+}
+
+export function isAssistantNavProjectAgent(
+  agent: Pick<AssistantNavAgentItem, "mode"> | null | undefined,
+) {
+  return PROJECT_ASSISTANT_MODES.has(agent?.mode?.trim().toUpperCase() ?? "");
 }
 
 export function normalizeAssistantNavAgentItemsResult(

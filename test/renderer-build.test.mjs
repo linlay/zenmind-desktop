@@ -1541,7 +1541,7 @@ test("assistant sidebar empty state waits for navigation load", () => {
   assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>\s*\) : null/);
 });
 
-test("assistant sidebar hides desktop helper agents from primary navigation only", () => {
+test("assistant sidebar limits Projects to project modes while Chats retain non-internal agents", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1551,8 +1551,11 @@ test("assistant sidebar hides desktop helper agents from primary navigation only
   );
 
   assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
-  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
+  assert.match(sidebarSource, /function shouldShowAssistantInChats\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
+  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?shouldShowAssistantInChats\(agent\)[\s\S]*?isAssistantNavProjectAgent\(agent\)/);
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
+  assert.match(sidebarSource, /const chatOverviewAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInChats\),\s*\[assistantNavAgents\],\s*\);/);
+  assert.match(sidebarSource, /getAssistantNavRecentChatsOverview\(chatOverviewAssistantNavAgents\)/);
   assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
   assert.doesNotMatch(sidebarSource, /copilotAgentOptions\.filter\(shouldShowAssistantInPrimaryNavigation\)/);
@@ -2519,7 +2522,7 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
     sidebarSource.match(/const chatsNavItemBase[\s\S]*?};/)?.[0] ?? "",
     /icon:/,
   );
-  assert.match(sidebarSource, /getAssistantNavRecentChatsOverview\(primaryAssistantNavAgents\)/);
+  assert.match(sidebarSource, /getAssistantNavRecentChatsOverview\(chatOverviewAssistantNavAgents\)/);
   assert.match(sidebarSource, /type SidebarGroupId = "assistants" \| "chats" \| "webs"/);
   assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{[\s\S]*?chats: true,/);
   assert.match(sidebarSource, /function renderChatsEntry\(item: SidebarChatsEntry\)/);
@@ -2546,14 +2549,7 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   assert.match(sidebarSource, /t\("sidebar\.chats\.switchAgent"\)/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-popover-surface/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
-  assert.match(sidebarSource, /function handleChatsNewChat[\s\S]*?createAgentRoute\(resolvedChatDefaultAgentKey\)/);
-  assert.doesNotMatch(
-    sidebarSource.slice(
-      sidebarSource.indexOf("function handleChatsNewChat"),
-      sidebarSource.indexOf("async function handleSelectChatDefaultAgent"),
-    ),
-    /newChat/,
-  );
+  assert.match(sidebarSource, /function handleChatsNewChat[\s\S]*?createAgentNewChatRoute\(resolvedChatDefaultAgentKey\)/);
   assert.match(sidebarSource, /chatDefaultAgentUnavailable/);
   assert.match(appShell, /chatDefaultAgentKey=\{assistantSettings\?\.chatDefaultAgentKey\}/);
   assert.match(appShell, /setChatNavAgentOptions\(navigationItems\)/);
