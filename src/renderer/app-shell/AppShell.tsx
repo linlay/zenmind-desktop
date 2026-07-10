@@ -3338,7 +3338,7 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string): Age
 
   const params = new URLSearchParams(search);
   const embedParams = new URLSearchParams();
-  for (const key of ["chatId", "history", "historyRequest", "newChat", "newChatRequest"]) {
+  for (const key of ["chatId", "history", "historyRequest", "newChat"]) {
     if (params.has(key)) {
       embedParams.set(key, params.get(key)?.trim() ?? "");
     }

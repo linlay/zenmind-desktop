@@ -497,7 +497,7 @@ function getRouteEmbedPath(route: string) {
 function readAgentInfoFromWebclientPath(pathWithQuery: string) {
   const normalized = pathWithQuery.trim();
   if (!normalized) {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
   try {
     const url = new URL(normalized, "http://agent-webclient.local");
@@ -506,10 +506,9 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string) {
       agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
       historyRequested: url.searchParams.get("history")?.trim() === "1",
-      newChatRequested: url.searchParams.get("newChat")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
 }
 
@@ -524,7 +523,7 @@ function readAgentRouteInfo(route: string) {
   }
   const queryIndex = route.indexOf("?");
   if (queryIndex < 0) {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
   try {
     const searchParams = new URLSearchParams(route.slice(queryIndex + 1));
@@ -532,10 +531,9 @@ function readAgentRouteInfo(route: string) {
       agentKey: searchParams.get("agentKey")?.trim() ?? "",
       chatId: searchParams.get("chatId")?.trim() ?? "",
       historyRequested: searchParams.get("history")?.trim() === "1",
-      newChatRequested: searchParams.get("newChat")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
 }
 
@@ -550,10 +548,7 @@ function createAgentChatRoute(agentKey: string, chatId: string) {
 }
 
 function createAgentNewChatRoute(agentKey: string) {
-  const params = new URLSearchParams();
-  params.set("newChat", "1");
-  params.set("newChatRequest", String(Date.now()));
-  return `${createAgentRoute(agentKey)}?${params.toString()}`;
+  return `${createAgentRoute(agentKey)}?newChat=${Date.now()}`;
 }
 
 function createAgentDefaultRoute(agent: AssistantNavAgentItem) {

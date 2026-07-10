@@ -271,10 +271,7 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, currentA
     if (!currentAgentKey) {
       return "";
     }
-    const params = new URLSearchParams();
-    params.set("newChat", "1");
-    params.set("newChatRequest", String(Date.now()));
-    return `/agent/${encodeURIComponent(currentAgentKey)}?${params.toString()}`;
+    return `/agent/${encodeURIComponent(currentAgentKey)}?newChat=${Date.now()}`;
   }
   if (actionId === "agents") {
     return "/agents";

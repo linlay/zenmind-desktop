@@ -1079,12 +1079,11 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /function dispatchAgentRouteActionToActiveWebview\(targetPath: string\)/);
   assert.doesNotMatch(sidebarSource, /"agent:start-new-conversation"/);
   assert.doesNotMatch(sidebarSource, /"agent:load-chat"/);
-  assert.match(sidebarSource, /params\.set\("newChat", "1"\)/);
-  assert.match(sidebarSource, /params\.set\("newChatRequest", String\(Date\.now\(\)\)\)/);
+  assert.match(sidebarSource, /return `\$\{createAgentRoute\(agentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
+  assert.doesNotMatch(sidebarSource, /newChatRequest/);
   assert.match(sidebarSource, /setExpandedAssistantAgentKey\(result\.agentKey\);\s*requestNavigate\(createAgentNewChatRoute\(result\.agentKey\)\);/);
-  assert.match(sidebarSource, /newChatRequested: url\.searchParams\.get\("newChat"\)\?\.trim\(\) === "1"/);
+  assert.doesNotMatch(sidebarSource, /newChatRequested/);
   assert.match(sidebarSource, /requestNavigate\(\s*createAgentChatRoute\(chat\.agentKey \|\| currentAgentKey, chat\.chatId\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\},?\s*\)/);
-  assert.doesNotMatch(sidebarSource, /targetAgentInfo\.newChatRequested/);
   assert.match(sidebarSource, /function handleAssistantAgentExpand\(\s*agent: AssistantNavAgentItem,\s*expanded: boolean,\s*\) \{[\s\S]*?if \(!expanded\) \{[\s\S]*?return;[\s\S]*?createAgentSelectionRoute\(agent, \{ preferNewChat: !isCollapsed \}\)[\s\S]*?retriggerAgentRoute: true/);
   assert.match(sidebarSource, /onExpand=\{\(val\) => handleAssistantAgentExpand\(agent, val\)\}/);
   assert.doesNotMatch(sidebarSource, /handleAssistantAgentHeaderClick/);
@@ -1331,7 +1330,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest", "newChat", "newChatRequest"\]\)/);
+  assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest", "newChat"\]\)/);
+  assert.doesNotMatch(appShell, /newChatRequest/);
   assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.match(appShell, /labelKey:\s*embedPath\.startsWith\("\/agent\/"\) \? "nav\.assistants" : "nav\.agents"/);
   assert.match(appShell, /activeEmbeddedAgentWebclientRoute[\s\S]*?\? AGENT_WEBCLIENT_SERVICE_ID[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
@@ -3719,8 +3719,8 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appShell, /onOpenGlobalSearch/);
   assert.match(appShell, /<DesktopGlobalSearchOverlay/);
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
-  assert.match(overlay, /params\.set\("newChat", "1"\)/);
-  assert.match(overlay, /params\.set\("newChatRequest", String\(Date\.now\(\)\)\)/);
+  assert.match(overlay, /return `\/agent\/\$\{encodeURIComponent\(currentAgentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
+  assert.doesNotMatch(overlay, /newChatRequest/);
   assert.match(overlay, /row\.kind !== "action" \?/);
   assert.match(overlay, /renderChatStatus/);
   assert.match(overlay, /desktop\.globalSearch\.status\.unread/);
