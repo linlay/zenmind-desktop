@@ -52,8 +52,6 @@ type PlatformAgentSummary = {
   key?: unknown;
   name?: unknown;
   displayName?: unknown;
-  type?: unknown;
-  agentType?: unknown;
   role?: unknown;
   icon?: unknown;
   mode?: unknown;
@@ -201,18 +199,6 @@ function readAgentWorkspaceDir(agent: PlatformAgentSummary) {
     toText(agent.workspace?.root) ||
     toText(agent.runtimeConfig?.workspaceRoot)
   );
-}
-
-function readAgentType(agent: PlatformAgentSummary) {
-  const explicitType = (toText(agent.agentType) || toText(agent.type)).toLowerCase();
-  if (explicitType) {
-    return explicitType;
-  }
-  const mode = toText(agent.mode).toUpperCase();
-  if (mode === "CODER" || mode === "KBASE") {
-    return mode.toLowerCase();
-  }
-  return undefined;
 }
 
 function checkWorkspaceDirExists(workspaceDir: string) {
@@ -690,7 +676,6 @@ function mergeNavigationAgentItem(
     latestPreview: latestPreview.slice(0, 120),
     updatedAt: latestChat?.updatedAt ?? pickLatestTimestamp(primary.updatedAt, secondary.updatedAt),
     recentChats,
-    agentType: primary.agentType ?? secondary.agentType,
     mode: primary.mode ?? secondary.mode,
     workspaceDir: primary.workspaceDir ?? secondary.workspaceDir,
     workspaceDirExists: primary.workspaceDirExists ?? secondary.workspaceDirExists,
@@ -737,9 +722,8 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
 }
 
 function isWorkspaceProjectAgent(agent: AssistantNavAgentItem) {
-  const mode = agent.mode?.toLowerCase() ?? "";
-  const agentType = agent.agentType?.toLowerCase() ?? "";
-  return mode === "coder" || mode === "kbase" || agentType === "coder" || agentType === "kbase";
+  const mode = agent.mode?.trim().toUpperCase() ?? "";
+  return mode === "CODER" || mode === "KBASE";
 }
 
 export async function enrichNavigationAgentsWithGitBranches(
@@ -831,7 +815,6 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
     latestPreview: latestPreview.slice(0, 120),
     updatedAt: latestChat?.updatedAt ?? nowIso(),
     recentChats,
-    agentType: readAgentType(agent),
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
     workspaceDirExists: checkWorkspaceDirExists(workspaceDir),
@@ -857,7 +840,6 @@ function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentI
     latestPreview: "",
     updatedAt: nowIso(),
     recentChats: [],
-    agentType: readAgentType(agent),
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
     workspaceDirExists: checkWorkspaceDirExists(workspaceDir),

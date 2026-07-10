@@ -50,6 +50,7 @@ import {
   getAssistantNavAgentRecentChats,
   getAssistantNavRecentChatsOverview,
   getAssistantNavAgentSortedChats,
+  isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
@@ -218,8 +219,8 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
   "desktopAssistant",
   "webOperator",
 ]);
-const HIDDEN_ASSISTANT_ROLE_AGENT_TYPES = new Set<string>(["coder", "kbase"]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
+const CHATS_RECENT_LIMIT = 10;
 type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS
@@ -245,12 +246,8 @@ const chatsNavItemBase: Omit<SidebarChatsEntry, "label"> = {
 };
 
 function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
-  const agentType = agent.agentType?.trim().toLowerCase() ?? "";
   const mode = agent.mode?.trim().toUpperCase() ?? "";
-  if (
-    HIDDEN_ASSISTANT_ROLE_AGENT_TYPES.has(agentType) ||
-    HIDDEN_ASSISTANT_ROLE_MODES.has(mode)
-  ) {
+  if (HIDDEN_ASSISTANT_ROLE_MODES.has(mode)) {
     return "";
   }
   const role = agent.role?.trim() ?? "";
@@ -271,8 +268,7 @@ function getAssistantProjectKind(
     return "kbase";
   }
 
-  const agentType = agent.agentType?.trim().toLowerCase() ?? "";
-  return agentType === "coder" || agentType === "kbase" ? agentType : null;
+  return null;
 }
 
 const assistantGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
@@ -608,11 +604,12 @@ function summarizeAgentStatus(
 }
 
 function shouldShowAssistantInChats(agent: AssistantNavAgentItem) {
-  return !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim());
+  return isAssistantNavChatAgent(agent);
 }
 
 function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
-  return shouldShowAssistantInChats(agent) && isAssistantNavProjectAgent(agent);
+  return !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim()) &&
+    isAssistantNavProjectAgent(agent);
 }
 
 function formatUnreadCount(value: number) {
@@ -1067,14 +1064,6 @@ export function AppSidebar({
     () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
   );
-  const chatOverviewAssistantNavAgents = useMemo(
-    () => assistantNavAgents.filter(shouldShowAssistantInChats),
-    [assistantNavAgents],
-  );
-  const recentChatsOverviewItems = useMemo(
-    () => getAssistantNavRecentChatsOverview(chatOverviewAssistantNavAgents),
-    [chatOverviewAssistantNavAgents],
-  );
   const normalizedChatDefaultAgentKey = chatDefaultAgentKey.trim();
   const chatDefaultAgent = useMemo(
     () =>
@@ -1087,6 +1076,12 @@ export function AppSidebar({
     chatDefaultAgent ?? chatNavAgentOptions[0] ?? null;
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
+  const recentChatsOverviewItems = useMemo(
+    () => resolvedChatDefaultAgent
+      ? getAssistantNavRecentChatsOverview([resolvedChatDefaultAgent], CHATS_RECENT_LIMIT)
+      : [],
+    [resolvedChatDefaultAgent],
+  );
   const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);
   const chatDefaultAgentUnavailable =
     assistantNavAgentsLoaded && !chatDefaultAgentAvailable;
@@ -1095,6 +1090,15 @@ export function AppSidebar({
     : chatDefaultAgentUnavailable
       ? t("sidebar.chats.defaultAgentUnavailable")
       : "";
+  const chatOverviewTotal = resolvedChatDefaultAgent
+    ? Math.max(
+        getAssistantNavAgentNonNegativeInteger(resolvedChatDefaultAgent.chatCount),
+        getAssistantNavAgentSortedChats(resolvedChatDefaultAgent).length,
+      )
+    : 0;
+  const chatOverviewUnreadCount = resolvedChatDefaultAgent
+    ? getAssistantNavAgentNonNegativeInteger(resolvedChatDefaultAgent.unreadCount)
+    : 0;
   const activeChatsOverviewChatId = recentChatsOverviewItems.some(
     ({ chat }) => chat.chatId === currentChatId,
   )
@@ -2918,6 +2922,31 @@ export function AppSidebar({
         ) : (
           <div className="sidebar-chats-empty">{t("sidebar.chats.empty")}</div>
         )}
+        {chatOverviewTotal > CHATS_RECENT_LIMIT && resolvedChatDefaultAgent ? (
+          <button
+            type="button"
+            className="worker-chat-more assistant-worker-more"
+            {...getSidebarRovingItemProps(
+              createSidebarAgentMoreFocusId(resolvedChatDefaultAgent.agentKey),
+              roving,
+            )}
+            data-sidebar-nav-kind={roving ? "agent-more" : undefined}
+            data-sidebar-agent-key={roving ? resolvedChatDefaultAgent.agentKey : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              requestNavigate(createAgentHistoryRoute(resolvedChatDefaultAgent.agentKey), {
+                retriggerAgentRoute: true,
+              });
+            }}
+          >
+            {t("sidebar.chat.viewMore", {
+              count: chatOverviewTotal,
+              unread: chatOverviewUnreadCount > 0
+                ? t("sidebar.chat.unreadSuffix", { count: chatOverviewUnreadCount })
+                : "",
+            })}
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -4293,7 +4322,7 @@ export function AppSidebar({
   }
 
   function isCoderAgent(agent: AssistantNavAgentItem) {
-    return agent.agentType === "coder";
+    return agent.mode?.trim().toUpperCase() === "CODER";
   }
 
   function createAgentEditRoute(agent: AssistantNavAgentItem) {

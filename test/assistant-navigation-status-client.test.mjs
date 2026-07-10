@@ -163,16 +163,16 @@ test("assistant navigation requests enough chat history for sidebar attention pr
   assert.equal(new URL(requestedUrls[0]).searchParams.get("includeChats"), "50");
 });
 
-test("assistant navigation infers project agent types from mode", () => {
+test("assistant navigation preserves platform modes without agent types", () => {
   const agents = buildAssistantNavigationAgentsFromPlatformAgents([
     { key: "coder", name: "代码项目", mode: "CODER" },
     { key: "kbase", name: "知识库项目", mode: "KBASE" },
     { key: "regular", name: "普通智能体", mode: "CHAT", role: "助手" },
   ]);
 
-  assert.equal(agents.find((agent) => agent.agentKey === "coder")?.agentType, "coder");
-  assert.equal(agents.find((agent) => agent.agentKey === "kbase")?.agentType, "kbase");
-  assert.equal(agents.find((agent) => agent.agentKey === "regular")?.agentType, undefined);
+  assert.equal(agents.find((agent) => agent.agentKey === "coder")?.mode, "CODER");
+  assert.equal(agents.find((agent) => agent.agentKey === "kbase")?.mode, "KBASE");
+  assert.equal(Object.hasOwn(agents.find((agent) => agent.agentKey === "regular") ?? {}, "agentType"), false);
 });
 
 test("assistant navigation keeps nested read state for desktop sidebar history", () => {
@@ -505,7 +505,7 @@ test("assistant navigation enriches both Coder and Knowledge Base project branch
     }),
     createAgent({
       agentKey: "kbase",
-      agentType: "kbase",
+      mode: "KBASE",
       workspaceDir: "/tmp/kbase-project",
       workspaceDirExists: true,
     }),

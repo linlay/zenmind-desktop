@@ -67,6 +67,7 @@ import {
   resolveSettingsSectionId
 } from "../settings/settingsRoutes";
 import {
+  isAssistantNavChatAgent,
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents
 } from "../assistantNavigation";
@@ -114,6 +115,10 @@ const EMPTY_WEB_SURFACE_ROUTE = "/webs";
 function resolveAssistantNavDisplayItems(result: AssistantNavAgentItemsResult) {
   const activityItems = Array.isArray(result.activityItems) ? result.activityItems : [];
   return activityItems.length > 0 ? activityItems : result.items;
+}
+
+function getChatNavigationAgentOptions(items: AssistantNavAgentItem[]) {
+  return items.filter(isAssistantNavChatAgent);
 }
 
 function isThemePreference(value: unknown): value is ThemePreference {
@@ -870,7 +875,7 @@ export function AppShell() {
         const navigationItems = normalizeAssistantNavAgents(result.items);
         const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(result));
         setAssistantNavAgentsLoaded(true);
-        setChatNavAgentOptions(navigationItems);
+        setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
       }
     } catch {
@@ -908,7 +913,7 @@ export function AppShell() {
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
       setAssistantNavAgentsLoaded(true);
-      setChatNavAgentOptions(nextResult.items);
+      setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
     });
 

@@ -40,6 +40,7 @@ function toOptionalNonNegativeInteger(value: unknown) {
 }
 
 const PROJECT_ASSISTANT_MODES = new Set(["CODER", "KBASE"]);
+const HIDDEN_CHAT_AGENT_KEYS = new Set(["desktopAssistant", "webOperator"]);
 
 function resolveAssistantNavUnreadCount(options: {
   statsUnreadCount: number | undefined;
@@ -160,7 +161,6 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     latestPreview: toText(record.latestPreview),
     updatedAt: toText(record.updatedAt) || latestChat?.updatedAt || "",
     recentChats,
-    agentType: toText(record.agentType) || undefined,
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,
     workspaceDirExists:
@@ -180,13 +180,18 @@ export function normalizeAssistantNavAgents(items: unknown): AssistantNavAgentIt
 }
 
 export function isAssistantNavProjectAgent(
-  agent: Pick<AssistantNavAgentItem, "mode" | "agentType"> | null | undefined,
+  agent: Pick<AssistantNavAgentItem, "mode"> | null | undefined,
 ) {
-  const mode = agent?.mode?.trim().toUpperCase() ?? "";
-  if (PROJECT_ASSISTANT_MODES.has(mode)) {
-    return true;
-  }
-  return PROJECT_ASSISTANT_MODES.has(agent?.agentType?.trim().toUpperCase() ?? "");
+  return PROJECT_ASSISTANT_MODES.has(agent?.mode?.trim().toUpperCase() ?? "");
+}
+
+export function isAssistantNavChatAgent(
+  agent: Pick<AssistantNavAgentItem, "agentKey" | "mode"> | null | undefined,
+) {
+  const agentKey = agent?.agentKey.trim() ?? "";
+  return Boolean(agentKey) &&
+    !HIDDEN_CHAT_AGENT_KEYS.has(agentKey) &&
+    !isAssistantNavProjectAgent(agent);
 }
 
 export function normalizeAssistantNavAgentItemsResult(
@@ -229,7 +234,7 @@ export function getAssistantNavAgentPreviewChats(
 export type AssistantNavChatsOverviewItem = {
   agent: Pick<
     AssistantNavAgentItem,
-    "agentKey" | "displayName" | "mode" | "agentType" | "workspaceDir" | "workspaceDirExists" | "gitBranch"
+    "agentKey" | "displayName" | "mode" | "workspaceDir" | "workspaceDirExists" | "gitBranch"
   >;
   chat: AssistantNavChatItem;
 };
@@ -260,7 +265,6 @@ export function getAssistantNavRecentChatsOverview(
             agentKey: agent.agentKey,
             displayName: agent.displayName,
             mode: agent.mode,
-            agentType: agent.agentType,
             workspaceDir: agent.workspaceDir,
             workspaceDirExists: agent.workspaceDirExists,
             gitBranch: agent.gitBranch,

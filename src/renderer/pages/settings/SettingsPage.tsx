@@ -71,6 +71,7 @@ import {
 import { resolveSettingsSectionId } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
+import { isAssistantNavChatAgent } from "../../assistantNavigation";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type { DesktopActionCallRequest, DesktopActionDefinition } from "../../../shared/desktop-actions";
 
@@ -540,7 +541,8 @@ function readChatAgentOptions(
 ) {
   return navigationResult.ok
     ? toAssistantAgentOptions(
-        Array.isArray(navigationResult.items) ? navigationResult.items : [],
+        (Array.isArray(navigationResult.items) ? navigationResult.items : [])
+          .filter(isAssistantNavChatAgent),
       )
     : [];
 }
