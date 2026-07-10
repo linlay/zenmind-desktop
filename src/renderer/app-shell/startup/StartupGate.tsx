@@ -1,9 +1,48 @@
 import type { ServiceId, ServiceState, StartupRestoreServicePhase, StartupRestoreState } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
+import { AGENT_WEBCLIENT_TARGET_PATH } from "../../../shared/agent-webclient-routes";
+import { Link } from "react-router-dom";
 import { useI18n } from "../../i18n/useI18n";
 
-export function StartupRoutePlaceholder() {
-  return <div className="startup-route-placeholder" aria-hidden="true" />;
+function createStartupAgentTargetPath(defaultAgentKey: string) {
+  const normalizedAgentKey = defaultAgentKey.trim();
+  return normalizedAgentKey
+    ? `/agent/${encodeURIComponent(normalizedAgentKey)}`
+    : AGENT_WEBCLIENT_TARGET_PATH;
+}
+
+export function StartupRoutePlaceholder({
+  defaultAgentKey = "",
+  agentsLoaded = false
+}: {
+  defaultAgentKey?: string;
+  agentsLoaded?: boolean;
+}) {
+  const { t } = useI18n();
+  const defaultAgentTargetPath = createStartupAgentTargetPath(defaultAgentKey);
+
+  return (
+    <section className="startup-route-placeholder startup-route-fallback" aria-labelledby="startup-route-fallback-title">
+      <div className="startup-route-fallback-copy">
+        <h1 id="startup-route-fallback-title">{t("startup.fallback.title")}</h1>
+        <p>{t("startup.fallback.description")}</p>
+        <div className="startup-route-fallback-actions">
+          {agentsLoaded ? (
+            <Link className="primary-link" to={defaultAgentTargetPath}>
+              {t("startup.fallback.openAgents")}
+            </Link>
+          ) : (
+            <button className="action-button primary" type="button" disabled>
+              {t("startup.fallback.openAgents")}
+            </button>
+          )}
+          <Link className="action-button" to="/control-center">
+            {t("startup.fallback.openControlCenter")}
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function StartupLoadingScreen({

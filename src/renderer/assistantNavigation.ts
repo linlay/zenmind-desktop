@@ -4,6 +4,13 @@ import type {
   AssistantNavChatItem
 } from "../shared/contracts";
 
+const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
+  "desktopAssistant",
+  "webOperator",
+]);
+
+export type AssistantNavSortMode = "byName" | "byTime";
+
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
@@ -173,6 +180,57 @@ export function normalizeAssistantNavAgents(items: unknown): AssistantNavAgentIt
       .map(normalizeAssistantNavAgent)
       .filter((item): item is AssistantNavAgentItem => Boolean(item))
     : [];
+}
+
+export function getPrimaryAssistantNavAgents(items: AssistantNavAgentItem[]) {
+  return items.filter(
+    (agent) => !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim()),
+  );
+}
+
+function toAssistantSortTimestamp(value: string | undefined) {
+  const timestamp = value ? Date.parse(value) : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
+  const latestChat = getAssistantNavAgentSortedChats(agent)[0];
+  if (latestChat) {
+    return toAssistantSortTimestamp(latestChat.updatedAt);
+  }
+  return agent.latestChatId ? toAssistantSortTimestamp(agent.updatedAt) : 0;
+}
+
+function compareAssistantAgentsByName(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const displayNameComparison = left.displayName.localeCompare(
+    right.displayName,
+    "zh-CN",
+  );
+  return displayNameComparison || left.agentKey.localeCompare(right.agentKey);
+}
+
+function compareAssistantAgentsByTime(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const timestampDifference =
+    readAssistantAgentLatestTimestamp(right) -
+    readAssistantAgentLatestTimestamp(left);
+  return timestampDifference || compareAssistantAgentsByName(left, right);
+}
+
+export function sortAssistantNavAgentsForMode(
+  items: AssistantNavAgentItem[],
+  sortMode: AssistantNavSortMode,
+) {
+  const compare =
+    sortMode === "byName"
+      ? compareAssistantAgentsByName
+      : compareAssistantAgentsByTime;
+  return [...items].sort(compare);
 }
 
 export function normalizeAssistantNavAgentItemsResult(

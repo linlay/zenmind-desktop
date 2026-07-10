@@ -66,8 +66,10 @@ import {
   resolveSettingsSectionId
 } from "../settings/settingsRoutes";
 import {
+  getPrimaryAssistantNavAgents,
   normalizeAssistantNavAgentItemsResult,
-  normalizeAssistantNavAgents
+  normalizeAssistantNavAgents,
+  sortAssistantNavAgentsForMode
 } from "../assistantNavigation";
 import {
   AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS,
@@ -2957,7 +2959,15 @@ export function AppShell() {
           <Routes>
             <Route
               path="/"
-              element={<StartupRoutePlaceholder />}
+              element={(
+                <StartupRoutePlaceholder
+                  defaultAgentKey={sortAssistantNavAgentsForMode(
+                    getPrimaryAssistantNavAgents(assistantNavAgents),
+                    "byTime"
+                  )[0]?.agentKey ?? ""}
+                  agentsLoaded={assistantNavAgentsLoaded}
+                />
+              )}
             />
             <Route
               path="/kanban"

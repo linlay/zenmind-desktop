@@ -28,7 +28,9 @@ function loadAssistantNavigationModule() {
 const {
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
+  getPrimaryAssistantNavAgents,
   normalizeAssistantNavAgents,
+  sortAssistantNavAgentsForMode,
 } = loadAssistantNavigationModule();
 
 function chat(overrides) {
@@ -45,6 +47,30 @@ function chat(overrides) {
     ...overrides,
   };
 }
+
+test("default assistant entry uses the first visible agent in time order", () => {
+  const agents = [
+    {
+      agentKey: "webOperator",
+      displayName: "Web Operator",
+      recentChats: [chat({ chatId: "hidden-newest", updatedAt: "2026-07-09T03:00:00.000Z" })],
+    },
+    {
+      agentKey: "zenmi",
+      displayName: "小宅",
+      recentChats: [chat({ chatId: "visible-older", updatedAt: "2026-07-09T01:00:00.000Z" })],
+    },
+    {
+      agentKey: "coder",
+      displayName: "agent-platform",
+      recentChats: [chat({ chatId: "visible-newer", updatedAt: "2026-07-09T02:00:00.000Z" })],
+    },
+  ];
+
+  const visibleAgents = getPrimaryAssistantNavAgents(agents);
+  assert.deepEqual(visibleAgents.map((agent) => agent.agentKey), ["zenmi", "coder"]);
+  assert.equal(sortAssistantNavAgentsForMode(visibleAgents, "byTime")[0]?.agentKey, "coder");
+});
 
 test("assistant nav preview matches webclient updatedAt ordering", () => {
   const agent = {

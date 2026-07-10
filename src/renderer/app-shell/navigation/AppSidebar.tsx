@@ -42,11 +42,14 @@ import { Popover } from "../../components/Popover";
 import { SettingsSidebarIcon } from "./SettingsSidebarIcon";
 import { useI18n } from "../../i18n/useI18n";
 import {
+  getPrimaryAssistantNavAgents,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
   getAssistantNavAgentSortedChats,
+  sortAssistantNavAgentsForMode,
+  type AssistantNavSortMode,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
@@ -93,8 +96,6 @@ type SidebarStatusSummary = {
   unreadCount: number;
   pendingCount: number;
 };
-
-type AssistantNavSortMode = "byName" | "byTime";
 
 type AssistantChatMenuState = {
   chat: AssistantNavChatItem;
@@ -201,10 +202,6 @@ const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
   },
 ];
 
-const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
-  "desktopAssistant",
-  "webOperator",
-]);
 const HIDDEN_ASSISTANT_ROLE_AGENT_TYPES = new Set<string>(["coder", "kbase"]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
@@ -567,10 +564,6 @@ function summarizeAgentStatus(
   };
 }
 
-function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
-  return !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim());
-}
-
 function formatUnreadCount(value: number) {
   if (value <= 0) {
     return "";
@@ -631,56 +624,6 @@ function isAssistantRunningPreview(value: string) {
     "thinking",
     "thinking...",
   ].includes(normalized);
-}
-
-function toAssistantSortTimestamp(value: string | undefined) {
-  const timestamp = value ? Date.parse(value) : 0;
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
-  const latestChat = getAssistantNavAgentSortedChats(agent)[0];
-  if (latestChat) {
-    return toAssistantSortTimestamp(latestChat.updatedAt);
-  }
-  return agent.latestChatId ? toAssistantSortTimestamp(agent.updatedAt) : 0;
-}
-
-function compareAssistantAgentsByTime(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
-) {
-  const rightTime = readAssistantAgentLatestTimestamp(right);
-  const leftTime = readAssistantAgentLatestTimestamp(left);
-  if (rightTime !== leftTime) {
-    return rightTime - leftTime;
-  }
-  return compareAssistantAgentsByName(left, right);
-}
-
-function compareAssistantAgentsByName(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
-) {
-  const displayNameComparison = left.displayName.localeCompare(
-    right.displayName,
-    "zh-CN",
-  );
-  if (displayNameComparison !== 0) {
-    return displayNameComparison;
-  }
-  return left.agentKey.localeCompare(right.agentKey);
-}
-
-function sortAssistantNavAgentsForMode(
-  items: AssistantNavAgentItem[],
-  sortMode: AssistantNavSortMode,
-) {
-  const compare =
-    sortMode === "byName"
-      ? compareAssistantAgentsByName
-      : compareAssistantAgentsByTime;
-  return [...items].sort(compare);
 }
 
 function getAssistantAwaitingStatusKey(
@@ -967,7 +910,7 @@ export function AppSidebar({
   const showBootstrapGuideCard =
     bootstrapGuideActive && !bootstrapGuideCardDismissed && !isSettingsMode && !isCollapsed;
   const primaryAssistantNavAgents = useMemo(
-    () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
+    () => getPrimaryAssistantNavAgents(assistantNavAgents),
     [assistantNavAgents],
   );
   const assistantStatusSummary = useMemo(

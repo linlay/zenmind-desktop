@@ -1008,10 +1008,10 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{\s*assistants: true,\s*webs: true,/);
   assert.match(sidebarSource, /"data-sidebar-group-id": args\.groupId/);
   assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
-  assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
-  assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
-  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
-  assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
+  assert.match(assistantNavigationSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
+  assert.match(assistantNavigationSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
+  assert.match(assistantNavigationSource, /function getPrimaryAssistantNavAgents\(items: AssistantNavAgentItem\[\]\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
+  assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => getPrimaryAssistantNavAgents\(assistantNavAgents\),\s*\[assistantNavAgents\],\s*\);/);
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
@@ -1549,13 +1549,18 @@ test("assistant sidebar hides desktop helper agents from primary navigation only
     "navigation",
     "AppSidebar.tsx"
   );
+  const assistantNavigationSource = readSourceFile(
+    "src",
+    "renderer",
+    "assistantNavigation.ts"
+  );
 
-  assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
-  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
-  assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
+  assert.match(assistantNavigationSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
+  assert.match(assistantNavigationSource, /function getPrimaryAssistantNavAgents\(items: AssistantNavAgentItem\[\]\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
+  assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => getPrimaryAssistantNavAgents\(assistantNavAgents\),\s*\[assistantNavAgents\],\s*\);/);
   assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
-  assert.doesNotMatch(sidebarSource, /copilotAgentOptions\.filter\(shouldShowAssistantInPrimaryNavigation\)/);
+  assert.doesNotMatch(sidebarSource, /getPrimaryAssistantNavAgents\(copilotAgentOptions\)/);
 });
 
 test("assistant sidebar uses merged activity agents when available", () => {
@@ -3669,8 +3674,29 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   const bootstrapAutoOpenBlock = appShell.slice(bootstrapAutoOpenBlockStart, bootstrapAutoOpenBlockEnd);
   const bootstrapSettingsCatchBlock = bootstrapAutoOpenBlock.match(/catch \{(?<body>[\s\S]*?)\n        \}/)?.groups?.body ?? "";
   const bootstrapEmptyKeyBlock = bootstrapAutoOpenBlock.match(/if \(!bootstrapAgentKey\) \{(?<body>[\s\S]*?)\n      \}\n      navigate/)?.groups?.body ?? "";
+  const startupRoutePlaceholderBlock = startupGate.slice(
+    startupGate.indexOf("export function StartupRoutePlaceholder("),
+    startupGate.indexOf("export function StartupLoadingScreen")
+  );
 
-  assert.match(startupGate, /function StartupRoutePlaceholder\(\) \{[\s\S]*?className="startup-route-placeholder"[\s\S]*?aria-hidden="true"/);
+  assert.match(startupRoutePlaceholderBlock, /className="startup-route-placeholder startup-route-fallback"/);
+  assert.doesNotMatch(startupRoutePlaceholderBlock, /aria-hidden="true"/);
+  assert.match(startupRoutePlaceholderBlock, /t\("startup\.fallback\.title"\)/);
+  assert.match(startupRoutePlaceholderBlock, /t\("startup\.fallback\.description"\)/);
+  assert.match(startupRoutePlaceholderBlock, /defaultAgentKey = ""/);
+  assert.match(startupRoutePlaceholderBlock, /agentsLoaded = false/);
+  assert.match(startupRoutePlaceholderBlock, /createStartupAgentTargetPath\(defaultAgentKey\)/);
+  assert.match(startupRoutePlaceholderBlock, /agentsLoaded \? \(/);
+  assert.match(startupRoutePlaceholderBlock, /to=\{defaultAgentTargetPath\}/);
+  assert.match(startupRoutePlaceholderBlock, /className="action-button primary"[\s\S]*?disabled/);
+  assert.match(startupRoutePlaceholderBlock, /to="\/control-center"/);
+  assert.match(startupGate, /function createStartupAgentTargetPath\(defaultAgentKey: string\)/);
+  assert.match(startupGate, /`\/agent\/\$\{encodeURIComponent\(normalizedAgentKey\)\}`/);
+  assert.match(startupGate, /: AGENT_WEBCLIENT_TARGET_PATH;/);
+  assert.match(zhDictionary, /"startup\.fallback\.title":/);
+  assert.match(zhDictionary, /"startup\.fallback\.description":/);
+  assert.match(enDictionary, /"startup\.fallback\.title":/);
+  assert.match(enDictionary, /"startup\.fallback\.description":/);
   assert.doesNotMatch(startupGate, /StartupRoutePlaceholderProps|showPetGreeting|StartupPetGreeting/);
   assert.doesNotMatch(startupGate, /desktop-pet|DEFAULT_DESKTOP_PET|STARTUP_PET|PRODUCT_NAME|placeholderPetGreeting/);
   assert.doesNotMatch(startupGate, /from "\.\.\/\.\.\/copilot\/pet-copilot\/DesktopPet"|<DesktopPet\b/);
@@ -3679,7 +3705,7 @@ test("bootstrap startup completion opens configured bootstrap agent", () => {
   assert.doesNotMatch(startupGate, /<Navigate\b/);
   assert.doesNotMatch(startupGate, /resolveStartupRootPath/);
   assert.doesNotMatch(appShell, /showStartupPetGreeting/);
-  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
+  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?defaultAgentKey=\{sortAssistantNavAgentsForMode\([\s\S]*?getPrimaryAssistantNavAgents\(assistantNavAgents\),[\s\S]*?"byTime"[\s\S]*?\)\[0\]\?\.agentKey \?\? ""\}[\s\S]*?agentsLoaded=\{assistantNavAgentsLoaded\}/);
   assert.doesNotMatch(appShell, /shouldAutoOpenAssistant/);
   assert.doesNotMatch(appShell, /shouldRedirectStartupFailureToControlCenter/);
   assert.doesNotMatch(appShell, /startupNavigationDoneRef/);
