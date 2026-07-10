@@ -294,7 +294,6 @@ test("agent webclient management routes render embedded webclient pages", () => 
   const globalStyles = readSourceFile("src", "renderer", "styles.css");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const manifestContracts = readSourceFile("src", "shared", "contracts", "manifest.ts");
-  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
   const surfaceHosts = readSourceFile(
     "src",
     "renderer",
@@ -316,7 +315,8 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
   assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/registries"[\s\S]*?\]/);
-  assert.match(pluginPage, /normalizedEmbedPath === "\/archives"[\s\S]*?normalizedEmbedPath === "\/registries"/);
+  assert.match(routeDefinitions, /function resolveAgentWebclientWsSource\([\s\S]*?return undefined;/);
+  assert.doesNotMatch(routeDefinitions, /desktop-agent-webclient/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
   assert.doesNotMatch(appShell, /usesAgentNativeSurface/);
   assert.doesNotMatch(appShellCss, /has-agent-native-surface/);
@@ -4852,6 +4852,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /agent_webclient_seed_/);
   assert.match(pluginPage, /handleServiceWebviewBridgeMessage/);
   assert.match(serviceWebviewBridgeHost, /resolvePluginAuthBridgeResponseType\(bridgeProtocol\)/);
+  assert.match(serviceWebviewBridgeHost, /desktopAuthContext/);
   assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
@@ -4877,6 +4878,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,[\s\S]*?PLUGIN_SETTINGS_READ_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /chatId\?: string;/);
+  assert.match(serviceWebviewBridgeContracts, /desktopAuthContext\?: string;/);
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewPreload, /sendToHost/);
@@ -4898,6 +4900,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
+  assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_AUTH_CONTEXT = currentContext/);
   assert.doesNotMatch(serviceWebviewMainWorld, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
   assert.doesNotMatch(serviceWebviewMainWorld, /window\.addEventListener\("agent:load-chat"/);
   assert.doesNotMatch(serviceWebviewMainWorld, /window\.addEventListener\("agent:start-new-conversation"/);

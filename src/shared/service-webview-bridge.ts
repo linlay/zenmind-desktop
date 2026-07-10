@@ -93,6 +93,7 @@ export type ServiceWebviewBridgeMessage = {
   restartRequired?: boolean;
   changedKeys?: string[];
   token?: string | null;
+  desktopAuthContext?: string;
   agentKey?: string;
   chatId?: string;
   desktop?: unknown;

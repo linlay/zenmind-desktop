@@ -220,7 +220,7 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
   "webOperator",
 ]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
-const CHATS_RECENT_LIMIT = 10;
+const CHATS_RECENT_LIMIT = 8;
 type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS

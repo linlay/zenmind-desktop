@@ -191,19 +191,14 @@ export function buildServiceWebviewMainWorldScript() {
     }
   }
 
-  function readDesktopAuthContext() {
-    try {
-      return new URLSearchParams(window.location.search || "").get("desktopAuthContext")?.trim() || "";
-    } catch {
-      return "";
-    }
-  }
-
-  function syncStoredAuthContext() {
-    const currentContext = readDesktopAuthContext();
+  function syncStoredAuthContext(payload) {
+    const currentContext = typeof payload?.desktopAuthContext === "string"
+      ? payload.desktopAuthContext.trim()
+      : "";
     if (!currentContext) {
       return;
     }
+    window.__AGENT_APP_AUTH_CONTEXT = currentContext;
     try {
       const storedContext = window.sessionStorage.getItem(AGENT_APP_AUTH_CONTEXT_STORAGE_KEY) || "";
       if (storedContext === currentContext) {
@@ -226,7 +221,7 @@ export function buildServiceWebviewMainWorldScript() {
     }
     const token = typeof payload.token === "string" ? payload.token.trim() : "";
     try {
-      syncStoredAuthContext();
+      syncStoredAuthContext(payload);
       if (token) {
         window.sessionStorage.setItem(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY, token);
       } else {

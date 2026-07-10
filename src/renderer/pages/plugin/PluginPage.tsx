@@ -14,6 +14,7 @@ import {
   getPluginAuthBridgeProtocol,
 } from "../../../shared/auth-bridge";
 import { buildAgentWebclientAccessTokenInjectionScript } from "../../../shared/agent-webclient-auth-injection";
+import { resolveAgentWebclientWsSource } from "../../../shared/agent-webclient-routes";
 import { useI18n } from "../../i18n/useI18n";
 import {
   AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
@@ -93,60 +94,7 @@ type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
 
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
-const AGENT_WEBCLIENT_SOURCE_FALLBACK = "agent-webclient";
 const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
-const AGENT_WEBCLIENT_SOURCE_COPILOT = "agent-webclient-copilot";
-const AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK = "agent-webclient-copilot-dock";
-const AGENT_WEBCLIENT_SOURCE_MANAGEMENT = "agent-webclient-management";
-const AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT = "agent-webclient-quick-copilot";
-const AGENT_WEBCLIENT_SOURCE_KANBAN_CHAT = "agent-webclient-kanban-chat";
-const DESKTOP_WS_SOURCE_AGENT_WEBCLIENT = "desktop-agent-webclient";
-const DESKTOP_WS_SOURCE_CHAT = "desktop-chat";
-const DESKTOP_WS_SOURCE_COPILOT = "desktop-copilot";
-
-function isCopilotEmbedPath(value: string) {
-  return value === "/copilot" || value.startsWith("/copilot/") || value.startsWith("/copilot?");
-}
-
-function resolveAgentWebclientWsSource(surfaceId: string, embedPath: string | undefined) {
-  const normalizedSurfaceId = surfaceId.trim();
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_KANBAN_CHAT) {
-    return DESKTOP_WS_SOURCE_CHAT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_CHAT) {
-    return DESKTOP_WS_SOURCE_CHAT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_FALLBACK) {
-    return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
-  }
-
-  const normalizedEmbedPath = (embedPath ?? "").trim();
-  if (normalizedEmbedPath.startsWith("/agent/")) {
-    return DESKTOP_WS_SOURCE_CHAT;
-  }
-  if (isCopilotEmbedPath(normalizedEmbedPath)) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (
-    normalizedEmbedPath === "/agents" ||
-    normalizedEmbedPath === "/archives" ||
-    normalizedEmbedPath === "/automations" ||
-    normalizedEmbedPath === "/memory" ||
-    normalizedEmbedPath === "/registries"
-  ) {
-    return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
-  }
-  return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
-}
 
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
@@ -576,8 +524,6 @@ export function PluginPage({
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
-      desktopAuthContext:
-        service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       accessToken:
         service?.id === "agent-platform"
           ? agentPlatformMonitorAccessToken
@@ -596,7 +542,6 @@ export function PluginPage({
     service?.healthMeta.port,
     service?.id,
     webUrl,
-    webviewReloadKey,
     wsSource,
   ]);
   const webviewOriginSrcUrl = useMemo(
@@ -1194,6 +1139,7 @@ export function PluginPage({
           type: bridgeProtocol.responseType,
           requestId: `agent_webclient_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           token,
+          desktopAuthContext: webviewReloadKey,
         });
         if (!result.ok) {
           setBridgeError(result.message);
@@ -1259,6 +1205,8 @@ export function PluginPage({
     handleServiceWebviewBridgeMessage(payload, {
       serviceId: service?.id,
       bridgeProtocol,
+      desktopAuthContext:
+        service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       sendBridgeMessageToWebview,
       setBridgeError,
       logDebug: (stage, message) => {

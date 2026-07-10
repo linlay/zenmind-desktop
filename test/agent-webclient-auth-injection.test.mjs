@@ -123,6 +123,7 @@ test("agent-webclient token fallback does not overwrite window postMessage", () 
   assert.equal(window.postMessage, originalPostMessage);
   assert.equal(window.__DESKTOP_WEBVIEW_BRIDGE__, true);
   assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-one");
+  assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-1");
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-one");
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-1");
   assert.equal(listenerCount("message"), 1);
@@ -137,8 +138,8 @@ test("agent-webclient token fallback responds through message listener and updat
   const { listenerCount, window } = createFakeWindow();
   const responses = [];
 
-  runInjectionScript(window, "token-one");
-  runInjectionScript(window, "token-two");
+  runInjectionScript(window, "token-one", "desktop-auth-1");
+  runInjectionScript(window, "token-two", "desktop-auth-2");
   window.addEventListener("message", (event) => {
     if (event.data?.type === AGENT_AUTH_RESPONSE_TYPE) {
       responses.push(event.data);
@@ -158,13 +159,16 @@ test("agent-webclient token fallback responds through message listener and updat
 
   assert.equal(window.postMessage.name, "postMessage");
   assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-two");
+  assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-2");
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-two");
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-2");
   assert.equal(listenerCount("message"), 2);
   assert.deepEqual(toPlainJson(responses), [
     {
       type: AGENT_AUTH_RESPONSE_TYPE,
       requestId: "request-1",
-      token: "token-two"
+      token: "token-two",
+      desktopAuthContext: "desktop-auth-2"
     }
   ]);
 });

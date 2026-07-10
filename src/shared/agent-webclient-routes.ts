@@ -90,6 +90,42 @@ export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
   "/agent/:agentKey"
 ] as const;
 
+const AGENT_WEBCLIENT_CHAT_SURFACE_IDS = new Set([
+  "agent-webclient-chat",
+  "agent-webclient-kanban-chat"
+]);
+const AGENT_WEBCLIENT_COPILOT_SURFACE_IDS = new Set([
+  "agent-webclient-copilot",
+  "agent-webclient-copilot-dock",
+  "agent-webclient-quick-copilot"
+]);
+
+export function resolveAgentWebclientWsSource(
+  surfaceId: string,
+  embedPath: string | undefined
+): "desktop-chat" | "desktop-copilot" | undefined {
+  const normalizedSurfaceId = surfaceId.trim();
+  if (AGENT_WEBCLIENT_CHAT_SURFACE_IDS.has(normalizedSurfaceId)) {
+    return "desktop-chat";
+  }
+  if (AGENT_WEBCLIENT_COPILOT_SURFACE_IDS.has(normalizedSurfaceId)) {
+    return "desktop-copilot";
+  }
+
+  const normalizedEmbedPath = (embedPath ?? "").trim();
+  if (normalizedEmbedPath.startsWith("/agent/")) {
+    return "desktop-chat";
+  }
+  if (
+    normalizedEmbedPath === "/copilot" ||
+    normalizedEmbedPath.startsWith("/copilot/") ||
+    normalizedEmbedPath.startsWith("/copilot?")
+  ) {
+    return "desktop-copilot";
+  }
+  return undefined;
+}
+
 export function findAgentWebclientRouteDefinition(pathname: string) {
   return AGENT_WEBCLIENT_ROUTE_DEFINITIONS.find((item) => item.routePath === pathname) ?? null;
 }

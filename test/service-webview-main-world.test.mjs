@@ -12,7 +12,6 @@ const {
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
-  AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
@@ -267,7 +266,7 @@ test("service webview main-world script dispatches auth bridge requests", () => 
   assert.deepEqual(captured, [payload]);
 });
 
-test("service webview main-world script forwards agent load-chat route hints", () => {
+test("service webview main-world script ignores removed agent load-chat route hints", () => {
   const { window } = createFakeWindow();
   const captured = [];
   window.location.pathname = "/agent/zenmi";
@@ -284,14 +283,10 @@ test("service webview main-world script forwards agent load-chat route hints", (
     }
   });
 
-  assert.equal(captured.length, 1);
-  assert.equal(captured[0].type, AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE);
-  assert.equal(captured[0].chatId, "chat_new");
-  assert.equal(captured[0].agentKey, "zenmi");
-  assert.match(captured[0].requestId, /^agent_webclient_chat_route_/);
+  assert.deepEqual(captured, []);
 });
 
-test("service webview main-world script forwards pending new-conversation run-start route hints", () => {
+test("service webview main-world script does not infer chat routes from websocket run-start events", () => {
   const { sockets, window } = createFakeWindow();
   const captured = [];
   window.location.pathname = "/agent/zenmi";
@@ -335,11 +330,7 @@ test("service webview main-world script forwards pending new-conversation run-st
     }
   }));
 
-  assert.equal(captured.length, 1);
-  assert.equal(captured[0].type, AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE);
-  assert.equal(captured[0].chatId, "chat_new");
-  assert.equal(captured[0].agentKey, "zenmi");
-  assert.match(captured[0].requestId, /^agent_webclient_chat_route_/);
+  assert.deepEqual(captured, []);
 
   socket.emitMessage(JSON.stringify({
     frame: "stream",
@@ -351,11 +342,14 @@ test("service webview main-world script forwards pending new-conversation run-st
       agentKey: "zenmi"
     }
   }));
-  assert.equal(captured.length, 1);
+  assert.deepEqual(captured, []);
 });
 
 test("service webview main-world script seeds tokens from auth responses", () => {
   const { window } = createFakeWindow();
+  window.sessionStorage.setItem("agent-webclient.appAccessToken", "stale-token");
+  window.sessionStorage.setItem("agent-webclient.appAuthContext", "desktop-auth-old");
+  window.__AGENT_APP_ACCESS_TOKEN = "stale-token";
 
   runMainWorldScript(window);
   window.dispatchEvent({
@@ -363,12 +357,37 @@ test("service webview main-world script seeds tokens from auth responses", () =>
     detail: {
       type: AGENT_AUTH_RESPONSE_TYPE,
       requestId: "auth-1",
-      token: "token-1"
+      token: "token-1",
+      desktopAuthContext: "desktop-auth-current"
     }
   });
 
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-1");
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-current");
   assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-1");
+  assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
+});
+
+test("service webview main-world script keeps matching auth context while updating the token", () => {
+  const { window } = createFakeWindow();
+  window.sessionStorage.setItem("agent-webclient.appAccessToken", "token-1");
+  window.sessionStorage.setItem("agent-webclient.appAuthContext", "desktop-auth-current");
+
+  runMainWorldScript(window);
+  window.dispatchEvent({
+    type: PRELOAD_TO_PAGE_EVENT,
+    detail: {
+      type: AGENT_AUTH_RESPONSE_TYPE,
+      requestId: "auth-2",
+      token: "token-2",
+      desktopAuthContext: "desktop-auth-current"
+    }
+  });
+
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-2");
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-current");
+  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-2");
+  assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
 });
 
 test("service webview main-world script ignores removed legacy auth responses", () => {

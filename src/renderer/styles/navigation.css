@@ -662,9 +662,10 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   cursor: pointer;
   font: inherit;
+  font-weight: 400;
   text-align: left;
 }
 
@@ -676,8 +677,9 @@
 }
 
 .sidebar-chats-item.is-active {
-  background: transparent;
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
+  font-weight: 500;
 }
 
 .sidebar-chats-item.is-unread .sidebar-chats-preview::before {
@@ -705,9 +707,9 @@
 }
 
 .sidebar-chats-preview {
-  color: var(--ink);
+  color: inherit;
   font-size: 14px;
-  font-weight: 400;
+  font-weight: inherit;
 }
 
 .sidebar-chats-agent,
@@ -720,6 +722,11 @@
 
 .sidebar-chats-time {
   flex: 0 0 auto;
+}
+
+.sidebar-chats-item.is-active .sidebar-chats-agent,
+.sidebar-chats-item.is-active .sidebar-chats-time {
+  color: var(--ink);
 }
 
 .sidebar-chats-empty {
@@ -969,7 +976,7 @@
 
 .sidebar-child-link .sidebar-link-label {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .sidebar-website-child-row {
@@ -993,6 +1000,7 @@
   border: 0;
   background: transparent;
   box-shadow: none;
+  color: var(--ink-soft);
 }
 
 .sidebar-website-child-row:hover:not(.is-active) {
@@ -1000,7 +1008,8 @@
 }
 
 .sidebar-website-child-row.is-active {
-  background: rgba(22, 119, 255, 0.13);
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  border-color: transparent;
 }
 
 :root[data-theme="dark"] .sidebar-website-child-row:hover:not(.is-active) {
@@ -1009,8 +1018,8 @@
 }
 
 :root[data-theme="dark"] .sidebar-website-child-row.is-active {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  border-color: transparent;
 }
 
 .sidebar-website-child-row .sidebar-child-link:hover,
@@ -1022,8 +1031,12 @@
   box-shadow: none;
 }
 
-.sidebar-website-child-row.is-open .sidebar-child-link .sidebar-link-label {
+.sidebar-website-child-row.is-active .sidebar-child-link {
   color: var(--ink);
+}
+
+.sidebar-website-child-row.is-active .sidebar-child-link .sidebar-link-label {
+  font-weight: 500;
 }
 
 .sidebar-website-child-actions {
@@ -1121,9 +1134,6 @@
 
 .assistant-worker-collapse-item.is-selected>.Collapse-header,
 .assistant-worker-collapse-item.is-selected .assistant-worker-header,
-.assistant-worker-collapse-item.is-selected .assistant-worker-chat-item,
-.assistant-worker-collapse-item.is-selected .assistant-worker-chat-item:hover,
-.assistant-worker-collapse-item.is-selected .assistant-worker-chat-item.is-active,
 .assistant-worker-collapse-item.is-selected .assistant-worker-icon-button:hover {
   background: transparent;
 }
@@ -1883,9 +1893,9 @@
 }
 
 .assistant-worker-chat-item.is-active {
-  background: transparent;
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .worker-chat-item-head {
@@ -2682,26 +2692,28 @@
 }
 
 :root[data-theme="dark"] .assistant-worker-chat-item {
-  color: #9aa4b2;
+  color: var(--ink-soft);
 }
 
 :root[data-theme="dark"] .assistant-worker-chat-item:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #f5f5f5;
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  color: var(--ink);
 }
 
 :root[data-theme="dark"] .assistant-worker-chat-item.is-active {
-  background: transparent;
-  color: #f5f5f5;
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  color: var(--ink);
+  font-weight: 500;
 }
 
 :root[data-theme="dark"] .sidebar-chats-item {
-  color: #9aa4b2;
+  color: var(--ink-soft);
 }
 
 :root[data-theme="dark"] .sidebar-chats-item.is-active {
-  background: transparent;
-  color: #f5f5f5;
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  color: var(--ink);
+  font-weight: 500;
 }
 
 :root[data-theme="dark"] .sidebar-chats-support-title {
@@ -2731,9 +2743,6 @@
 
 :root[data-theme="dark"] .assistant-worker-collapse-item.is-selected>.Collapse-header,
 :root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-header,
-:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-chat-item,
-:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-chat-item:hover,
-:root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-chat-item.is-active,
 :root[data-theme="dark"] .assistant-worker-collapse-item.is-selected .assistant-worker-icon-button:hover {
   background: transparent;
 }

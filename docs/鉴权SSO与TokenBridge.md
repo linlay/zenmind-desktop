@@ -50,14 +50,16 @@ Desktop WebSocket 鉴权：
 Token bridge 类型：
 
 - request：`desktop:agent-auth:request`。
-- response：`desktop:agent-auth:response`。
+- response：`desktop:agent-auth:response`，同时携带 `token` 和可选 `desktopAuthContext`。
 - storage key：`agent-webclient.appAccessToken`、`agent-webclient.appAuthContext`。
+- 当前文档上下文：`window.__AGENT_APP_AUTH_CONTEXT`。
 
 ## 约束与注意事项
 
 - Desktop 本地凭据写入 `secrets/` 或 `state/`，不要进入 `config/` 文档示例。
 - `identity-center` 是 token 签发与校验基础，不进入 webview bridge 协议名称；嵌入页只依赖 Desktop agent auth bridge。
 - token cache 会根据 JWT `exp` 和刷新原因复用或失效；`unauthorized` 会强制丢弃缓存。
+- Desktop 先应用 `desktopAuthContext`、清理不匹配的旧 token，再写入响应 token；该上下文不再通过 agent-webclient URL 传递。
 - Windows 身份脚本走 PowerShell，macOS / Linux 优先走 `.sh`，需要显式平台分支。
 - webview 内页面只能通过 bridge 获取 token，不直接访问主进程 API。
 
