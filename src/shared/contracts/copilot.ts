@@ -14,6 +14,15 @@ export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) 
 
 export type AssistantNavigationAgentsChangedListener = (result: AssistantNavAgentItemsResult) => void;
 
+export interface AssistantNavigationPushEvent {
+  type: string;
+  chatId: string | null;
+  runId: string | null;
+  status: string | null;
+}
+
+export type AssistantNavigationPushEventListener = (event: AssistantNavigationPushEvent) => void;
+
 export interface WebviewOpenTabRequest {
   sourceGuestId: number;
   url: string;
@@ -274,6 +283,7 @@ export interface AssistantSettingsPublic {
   desktopHelperAgentKey: string;
   chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
+  bootstrapChatId: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
   quickAssistantShortcut: string;

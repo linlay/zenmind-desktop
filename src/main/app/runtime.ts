@@ -44,6 +44,7 @@ import type {
   AssistantAttachmentTaskProgress,
   AssistantEvent,
   AssistantNavAgentItemsResult,
+  AssistantNavigationPushEvent,
   AssistantWorkerOpenRequest,
   ServiceOpenLogViewerRequest,
 } from "../../shared/contracts";
@@ -482,6 +483,7 @@ export function createMainProcessRuntime() {
     listKanbanLocalAgents: () => petRuntime.listKanbanLocalAgents(),
     emitKanbanChanged,
     emitAssistantNavigationAgentsChanged,
+    emitAssistantNavigationPushEvent,
     handleDesktopPetAssistantEvent: (event) => petRuntime.handleAssistantEvent(event),
     desktopPet: {
       refreshState: () => petRuntime.refreshState(),
@@ -964,6 +966,15 @@ export function createMainProcessRuntime() {
     }
     if (petRuntime.isVisible()) {
       refreshDesktopPetState();
+    }
+  }
+
+  function emitAssistantNavigationPushEvent(event: AssistantNavigationPushEvent) {
+    for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        continue;
+      }
+      targetWindow.webContents.send("assistant.navigationPushEvent", event);
     }
   }
   

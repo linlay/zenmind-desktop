@@ -8,6 +8,7 @@ import type {
   AssistantNavAgentItem,
   AssistantNavAgentItemsResult,
   AssistantNavChatItem,
+  AssistantNavigationPushEvent,
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
@@ -112,13 +113,6 @@ type NavigationPushEvent = {
   mode?: unknown;
   status?: unknown;
   [key: string]: unknown;
-};
-
-export type AssistantNavigationPushEvent = {
-  type: string;
-  chatId: string | null;
-  runId: string | null;
-  status: string | null;
 };
 
 type MinimalWebSocket = {
@@ -1176,7 +1170,7 @@ export function applyAssistantNavigationPush(
     return {
       items: sortNavigationAgents(nextItems),
       changed: true,
-      shouldRefresh: type === "run.complete" && !readPushPreview(event)
+      shouldRefresh: type === "run.complete"
     };
   }
 

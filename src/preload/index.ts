@@ -6,6 +6,7 @@ import type {
   AssistantCreateProjectRequest,
   AssistantEventListener,
   AssistantNavigationAgentsChangedListener,
+  AssistantNavigationPushEventListener,
   AssistantAttachmentProgressListener,
   AssistantMemorySettingsInput,
   AssistantPastedImageInput,
@@ -177,6 +178,19 @@ const api: DesktopApi = {
       ipcRenderer.on("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
       return () => {
         ipcRenderer.off("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
+      };
+    },
+    onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => {
+      const handleNavigationPushEvent = (
+        _event: Electron.IpcRendererEvent,
+        payload: Parameters<AssistantNavigationPushEventListener>[0]
+      ) => {
+        listener(payload);
+      };
+
+      ipcRenderer.on("assistant.navigationPushEvent", handleNavigationPushEvent);
+      return () => {
+        ipcRenderer.off("assistant.navigationPushEvent", handleNavigationPushEvent);
       };
     },
     onAssistantEvent: (listener: AssistantEventListener) => {

@@ -29,7 +29,7 @@ import {
   resolveDesktopCopilotPreference,
   sanitizeDesktopCopilotPagePreferences
 } from "../../shared/page-copilot";
-import { shouldAutoOpenBootstrapAgent, shouldShowStartupProgressCard } from "../../shared/startup-gate";
+import { shouldShowStartupProgressCard } from "../../shared/startup-gate";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -179,7 +179,7 @@ const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
-const BOOTSTRAP_NAVIGATION_RETRY_MS = 1500;
+const BOOTSTRAP_COMPLETION_RETRY_MS = 1500;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
 
@@ -448,7 +448,9 @@ export function AppShell() {
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
-  const startupBootstrapNavigationDoneRef = useRef(false);
+  const bootstrapWasPresentRef = useRef(false);
+  const bootstrapRunTerminalRef = useRef(false);
+  const bootstrapCompletionNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -487,7 +489,7 @@ export function AppShell() {
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
-  const [bootstrapNavigationRetryTick, setBootstrapNavigationRetryTick] = useState(0);
+  const [bootstrapCompletionRetryTick, setBootstrapCompletionRetryTick] = useState(0);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
@@ -928,6 +930,11 @@ export function AppShell() {
     if (!assistantSettings) {
       return;
     }
+    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
+    if (bootstrapAgentKey) {
+      chatDefaultAgentMigrationRef.current = "";
+      return;
+    }
     const fallbackAgentKey = chatNavAgentOptions[0]?.agentKey.trim() ?? "";
     const currentAgentKey = assistantSettings?.chatDefaultAgentKey.trim() ?? "";
     if (
@@ -952,7 +959,85 @@ export function AppShell() {
           chatDefaultAgentMigrationRef.current = "";
         }
       });
-  }, [assistantSettings?.chatDefaultAgentKey, chatNavAgentOptions]);
+  }, [assistantSettings?.bootstrapAgentKey, assistantSettings?.chatDefaultAgentKey, chatNavAgentOptions]);
+
+  useEffect(() => {
+    const bootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
+    if (!bootstrapAgentKey) {
+      return undefined;
+    }
+    return window.electronAPI.assistant.onNavigationPushEvent((event) => {
+      if (event.type !== "run.start" && event.type !== "run.complete") {
+        return;
+      }
+      const route = readAgentRouteInfo(`${location.pathname}${location.search}`);
+      if (route.agentKey !== bootstrapAgentKey) {
+        return;
+      }
+      if (event.chatId && route.chatId && event.chatId !== route.chatId) {
+        return;
+      }
+      bootstrapRunTerminalRef.current = event.type === "run.complete";
+      if (event.type === "run.complete") {
+        setBootstrapCompletionRetryTick((tick) => tick + 1);
+        void refreshAssistantNavAgents();
+      }
+    });
+  }, [assistantSettings?.bootstrapAgentKey, location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!assistantNavAgentsLoaded || !assistantSettings) {
+      return undefined;
+    }
+    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
+    if (!bootstrapAgentKey) {
+      return undefined;
+    }
+    const bootstrapAgentPresent = chatNavAgentOptions.some(
+      (agent) => agent.agentKey === bootstrapAgentKey
+    );
+    if (bootstrapAgentPresent) {
+      bootstrapWasPresentRef.current = true;
+      bootstrapCompletionNavigationDoneRef.current = false;
+      return undefined;
+    }
+
+    const route = readAgentRouteInfo(`${location.pathname}${location.search}`);
+    if (
+      !bootstrapWasPresentRef.current ||
+      !bootstrapRunTerminalRef.current ||
+      bootstrapCompletionNavigationDoneRef.current ||
+      route.agentKey !== bootstrapAgentKey
+    ) {
+      return undefined;
+    }
+
+    const defaultChatAgentKey = assistantSettings.chatDefaultAgentKey.trim();
+    const defaultAgentAvailable = Boolean(
+      defaultChatAgentKey &&
+      chatNavAgentOptions.some((agent) => agent.agentKey === defaultChatAgentKey)
+    );
+    if (defaultAgentAvailable) {
+      bootstrapCompletionNavigationDoneRef.current = true;
+      navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
+      return undefined;
+    }
+
+    const retryTimer = window.setTimeout(() => {
+      void refreshAssistantNavAgents();
+      setBootstrapCompletionRetryTick((tick) => tick + 1);
+    }, BOOTSTRAP_COMPLETION_RETRY_MS);
+    return () => window.clearTimeout(retryTimer);
+  }, [
+    assistantNavAgentsLoaded,
+    assistantSettings?.bootstrapAgentKey,
+    assistantSettings?.chatDefaultAgentKey,
+    bootstrapCompletionRetryTick,
+    chatNavAgentOptions,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (!isSingleAgentWebclientRoute(location.pathname)) {
@@ -1351,69 +1436,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    let retryTimer: number | null = null;
-    if (
-      startupBootstrapNavigationDoneRef.current ||
-      !shouldAutoOpenBootstrapAgent(startupRestoreState, startupAllReady, location.pathname)
-    ) {
-      return () => {
-        if (retryTimer !== null) {
-          window.clearTimeout(retryTimer);
-        }
-      };
-    }
-
-    let cancelled = false;
-    setStartupTimedOut(false);
-    const scheduleBootstrapNavigationRetry = () => {
-      if (cancelled || retryTimer !== null || startupBootstrapNavigationDoneRef.current) {
-        return;
-      }
-      retryTimer = window.setTimeout(() => {
-        retryTimer = null;
-        if (!cancelled && !startupBootstrapNavigationDoneRef.current) {
-          setBootstrapNavigationRetryTick((tick) => tick + 1);
-        }
-      }, BOOTSTRAP_NAVIGATION_RETRY_MS);
-    };
-
-    void (async () => {
-      let nextAssistantSettings = assistantSettings;
-      let bootstrapAgentKey = nextAssistantSettings?.bootstrapAgentKey.trim() ?? "";
-      if (!bootstrapAgentKey) {
-        try {
-          nextAssistantSettings = await window.electronAPI.assistant.getSettings();
-        } catch {
-          scheduleBootstrapNavigationRetry();
-          return;
-        }
-        if (cancelled) {
-          return;
-        }
-        setAssistantSettings(nextAssistantSettings);
-        bootstrapAgentKey = nextAssistantSettings.bootstrapAgentKey.trim();
-      }
-
-      if (!bootstrapAgentKey) {
-        scheduleBootstrapNavigationRetry();
-        return;
-      }
-      navigate(createBootstrapAgentRoute(bootstrapAgentKey), { replace: true });
-      startupBootstrapNavigationDoneRef.current = true;
-    })();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-      }
-    };
-  }, [assistantSettings, bootstrapNavigationRetryTick, location.pathname, navigate, startupAllReady, startupRestoreState]);
-
-  useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
-      startupBootstrapNavigationDoneRef.current = false;
-      setBootstrapNavigationRetryTick(0);
       setStartupCardDismissed(false);
       return;
     }
@@ -1422,8 +1445,6 @@ export function AppShell() {
       startupRestoreState.phase === "idle" ||
       startupRestoreState.phase === "running"
     ) {
-      startupBootstrapNavigationDoneRef.current = false;
-      setBootstrapNavigationRetryTick(0);
       setStartupCardDismissed(false);
     }
   }, [startupRestoreState]);
@@ -2876,15 +2897,13 @@ export function AppShell() {
   } as CSSProperties;
   const globalSearchShortcutLabel = isMac ? "Cmd+K" : isWindows ? "Ctrl+K" : "";
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
-  const bootstrapGuideAgentVisible = Boolean(
+  const bootstrapAgentPresent = Boolean(
     normalizedBootstrapAgentKey &&
-    (!assistantNavAgentsLoaded ||
-      assistantNavAgents.some((agent) => agent.agentKey === normalizedBootstrapAgentKey))
+    chatNavAgentOptions.some((agent) => agent.agentKey === normalizedBootstrapAgentKey)
   );
-  const bootstrapGuideActive =
-    startupRestoreState?.mode === "bootstrap" &&
-    startupRestoreState.phase === "succeeded" &&
-    bootstrapGuideAgentVisible;
+  const chatRuntimeAgentKey = bootstrapAgentPresent
+    ? normalizedBootstrapAgentKey
+    : assistantSettings?.chatDefaultAgentKey.trim() ?? "";
 
   return (
     <DebugModeContext.Provider value={debugSettingsUnlocked}>
@@ -2935,12 +2954,13 @@ export function AppShell() {
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           chatNavAgentOptions={chatNavAgentOptions}
           copilotAgentOptions={copilotAgentOptions}
-          chatDefaultAgentKey={assistantSettings?.chatDefaultAgentKey}
+          chatDefaultAgentKey={chatRuntimeAgentKey}
           onChatDefaultAgentChange={saveChatDefaultAgent}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
-          bootstrapGuideActive={bootstrapGuideActive}
+          bootstrapActive={bootstrapAgentPresent}
           bootstrapAgentKey={normalizedBootstrapAgentKey}
+          bootstrapChatId={assistantSettings?.bootstrapChatId}
           sidebarNavigationCanGoBack={sidebarNavigationHistory.back.length > 0}
           sidebarNavigationCanGoForward={sidebarNavigationHistory.forward.length > 0}
           onOpenAssistantDock={() => openAssistantDock()}
@@ -3209,8 +3229,21 @@ function resolvePluginRouteId(pathname: string) {
     null;
 }
 
-function createBootstrapAgentRoute(agentKey: string) {
-  return `/agent/${encodeURIComponent(agentKey)}`;
+function readAgentRouteInfo(route: string) {
+  try {
+    const url = new URL(route, "http://desktop.local");
+    const match = url.pathname.match(/^\/agent\/([^/]+)$/);
+    return {
+      agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
+      chatId: url.searchParams.get("chatId")?.trim() ?? "",
+    };
+  } catch {
+    return { agentKey: "", chatId: "" };
+  }
+}
+
+function createAgentNewChatRoute(agentKey: string) {
+  return `/agent/${encodeURIComponent(agentKey)}?newChat=${Date.now()}`;
 }
 
 function resolveAgentWebclientRoute(

@@ -68,6 +68,7 @@ type DesktopInitBootstrapState = {
 type DesktopInitAssistantDefaults = {
   defaultChatAgentKey?: string;
   bootstrapAgentKey?: string;
+  bootstrapChatId?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -217,11 +218,15 @@ function normalizeDesktopInitAssistantDefaults(value: unknown): DesktopInitAssis
   const defaultChatAgentKey =
     readText(value.defaultChatAgentKey) || readText(value.defaultAgentKey);
   const bootstrapAgentKey = readText(value.bootstrapAgentKey);
+  const bootstrapChatId = readText(value.bootstrapChatId);
   if (defaultChatAgentKey) {
     assistant.defaultChatAgentKey = defaultChatAgentKey;
   }
   if (bootstrapAgentKey) {
     assistant.bootstrapAgentKey = bootstrapAgentKey;
+  }
+  if (bootstrapChatId) {
+    assistant.bootstrapChatId = bootstrapChatId;
   }
   return Object.keys(assistant).length > 0 ? assistant : null;
 }

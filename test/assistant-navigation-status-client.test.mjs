@@ -398,6 +398,7 @@ test("assistant navigation still applies real preview text from chat.updated and
   assert.equal(updatedChat?.lastRunContent, "Updated elsewhere");
   assert.equal(completedChat?.lastRunContent, "Final answer");
   assert.equal(completedChat?.hasActiveRun, false);
+  assert.equal(completed.shouldRefresh, true);
 });
 
 test("assistant navigation preserves chat creation time from summaries and pushes", () => {

@@ -11,6 +11,9 @@ const {
   applyDesktopInitBootstrap,
   resolveDesktopInitPath
 } = require("../dist-electron/main/desktop-init-bootstrap.js");
+const {
+  getAssistantSettingsFromRoot
+} = require("../dist-electron/main/assistant/core/settings-store.js");
 
 const { registerServicesIpcHandlers } = require("../dist-electron/main/ipc/services-handlers.js");
 const { getArchiveExtensions } = require("../dist-electron/main/platform-adapter.js");
@@ -70,6 +73,20 @@ test("archive import filters follow internal service package platform formats", 
   assert.deepEqual(getArchiveExtensions("win32"), ["zip"]);
 });
 
+test("assistant settings keep bootstrapChatId optional for legacy environments", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-assistant-settings-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "assistant.json"), JSON.stringify({
+    schemaVersion: 1,
+    defaultChatAgentKey: "zenmi",
+    bootstrapAgentKey: "bootstrap"
+  }), "utf8");
+
+  const settings = getAssistantSettingsFromRoot(root);
+  assert.equal(settings.bootstrapAgentKey, "bootstrap");
+  assert.equal(settings.bootstrapChatId, "");
+});
+
 test("desktop-init bootstrap applies into canonical desktop files and rereads explicit init", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -92,7 +109,8 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     },
     assistant: {
       defaultChatAgentKey: "zenmi",
-      bootstrapAgentKey: "zenmi"
+      bootstrapAgentKey: "zenmi",
+      bootstrapChatId: "00000000-0000-4000-8000-000000000001"
     },
     kanban: {
       enabled: false,
@@ -202,6 +220,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
   assert.equal(assistantConfig.defaultChatAgentKey, "zenmi");
   assert.equal(assistantConfig.bootstrapAgentKey, "zenmi");
+  assert.equal(assistantConfig.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
+  const publicAssistantSettings = getAssistantSettingsFromRoot(path.join(desktop, "config", "desktop"));
+  assert.equal(publicAssistantSettings.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
   assert.equal("desktopHelperAgentKey" in profile.assistant, false);
   assert.equal("quickAssistant" in profile.assistant, false);
   assert.equal("kanban" in profile.navigation, false);
@@ -691,7 +712,8 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
     },
     assistant: {
       defaultChatAgentKey: "cutej",
-      bootstrapAgentKey: "bootstrap"
+      bootstrapAgentKey: "bootstrap",
+      bootstrapChatId: "00000000-0000-4000-8000-000000000001"
     },
     kanban: {
       enabled: false,
@@ -728,6 +750,7 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "desktopAssistant");
   assert.equal(assistantConfig.defaultChatAgentKey, "cutej");
   assert.equal(assistantConfig.bootstrapAgentKey, "bootstrap");
+  assert.equal(assistantConfig.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
   assert.equal(kanban.enabled, false);
   assert.equal(kanban.cloud.serverUrl, "https://kanban.example.test");
   assert.equal("selectedProjectId" in kanban.cloud, false);

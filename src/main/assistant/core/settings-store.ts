@@ -31,6 +31,7 @@ export type AssistantSettingsPrivate = {
   desktopHelperAgentKey: string;
   chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
+  bootstrapChatId: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
   quickAssistantShortcut: string;
@@ -63,10 +64,11 @@ function readDesktopInitAssistantSettingsFromRoot(rootDir: string) {
       fs.readFileSync(path.join(rootDir, DESKTOP_INIT_ASSISTANT_FILE), "utf8")
     ) as unknown;
     if (!isRecord(parsed)) {
-      return { bootstrapAgentKey: "", chatDefaultAgentKey: "" };
+      return { bootstrapAgentKey: "", bootstrapChatId: "", chatDefaultAgentKey: "" };
     }
     return {
       bootstrapAgentKey: readText(parsed.bootstrapAgentKey),
+      bootstrapChatId: readText(parsed.bootstrapChatId),
       chatDefaultAgentKey:
         readText(parsed.defaultChatAgentKey) || readText(parsed.defaultAgentKey),
     };
@@ -74,7 +76,7 @@ function readDesktopInitAssistantSettingsFromRoot(rootDir: string) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       console.warn(`[assistant] failed to read ${DESKTOP_INIT_ASSISTANT_FILE}:`, error);
     }
-    return { bootstrapAgentKey: "", chatDefaultAgentKey: "" };
+    return { bootstrapAgentKey: "", bootstrapChatId: "", chatDefaultAgentKey: "" };
   }
 }
 
@@ -103,6 +105,7 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
     desktopHelperAgentKey,
     chatDefaultAgentKey,
     bootstrapAgentKey: typeof candidate.bootstrapAgentKey === "string" ? candidate.bootstrapAgentKey.trim() : "",
+    bootstrapChatId: typeof candidate.bootstrapChatId === "string" ? candidate.bootstrapChatId.trim() : "",
     quickAssistantEnabled: typeof candidate.quickAssistantEnabled === "boolean"
       ? candidate.quickAssistantEnabled
       : DEFAULT_QUICK_ASSISTANT_ENABLED,
@@ -159,6 +162,7 @@ export function toPublicAssistantSettings(
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
     chatDefaultAgentKey: settings.chatDefaultAgentKey,
     bootstrapAgentKey: settings.bootstrapAgentKey,
+    bootstrapChatId: settings.bootstrapChatId,
     quickAssistantEnabled: settings.quickAssistantEnabled,
     quickAssistantAgentKey: settings.quickAssistantAgentKey,
     quickAssistantShortcut: settings.quickAssistantShortcut,
@@ -178,6 +182,7 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
     chatDefaultAgentKey:
       profile.assistant.chat.agentKey || desktopInitAssistant.chatDefaultAgentKey,
     bootstrapAgentKey: desktopInitAssistant.bootstrapAgentKey,
+    bootstrapChatId: desktopInitAssistant.bootstrapChatId,
     quickAssistantEnabled: profile.assistant.quick.enabled,
     quickAssistantAgentKey: profile.assistant.quick.agentKey,
     quickAssistantShortcut: profile.assistant.quick.shortcut,
@@ -210,6 +215,7 @@ export function saveAssistantSettingsToRoot(
       ? input.chatDefaultAgentKey.trim()
       : current.chatDefaultAgentKey,
     bootstrapAgentKey: current.bootstrapAgentKey,
+    bootstrapChatId: current.bootstrapChatId,
     quickAssistantEnabled: typeof input.quickAssistantEnabled === "boolean"
       ? input.quickAssistantEnabled
       : current.quickAssistantEnabled,
