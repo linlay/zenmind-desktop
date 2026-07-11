@@ -1077,8 +1077,6 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /\/service\/agent-webclient\?embedPath=/);
   assert.match(sidebarSource, /function handleItemClick[\s\S]*?if \(onRequestNavigate\) \{[\s\S]*?event\.preventDefault\(\);[\s\S]*?if \(!onRequestNavigate\(targetPath\)\)/);
   assert.doesNotMatch(sidebarSource, /function dispatchAgentRouteActionToActiveWebview\(targetPath: string\)/);
-  assert.doesNotMatch(sidebarSource, /"agent:start-new-conversation"/);
-  assert.doesNotMatch(sidebarSource, /"agent:load-chat"/);
   assert.match(sidebarSource, /return `\$\{createAgentRoute\(agentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
   assert.doesNotMatch(sidebarSource, /newChatRequest/);
   assert.match(sidebarSource, /setExpandedAssistantAgentKey\(result\.agentKey\);\s*requestNavigate\(createAgentNewChatRoute\(result\.agentKey\)\);/);
@@ -1101,8 +1099,6 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
   assert.match(sidebarSource, /chatCount > recentChats\.length \? \(/);
   assert.match(sidebarSource, /historyRequested: url\.searchParams\.get\("history"\)\?\.trim\(\) === "1"/);
-  assert.doesNotMatch(sidebarSource, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
-  assert.doesNotMatch(sidebarSource, /webview\.send\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*\{\s*action:\s*"openChatHistory"/);
   assert.doesNotMatch(sidebarSource, /workerKey: `agent:\$\{agentKey\}`/);
   assert.match(sidebarSource, /lastRouteAgentInfoRef = useRef\(readAgentRouteInfo\(currentRoute\)\)/);
   assert.match(sidebarSource, /previousRouteAgentInfo\.historyRequested/);
@@ -1362,8 +1358,6 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(pluginPage, /agentWebclientRouteAgentKey/);
   assert.doesNotMatch(pluginPage, /agentWebclientRouteNewChat/);
   assert.doesNotMatch(pluginPage, /agent:select-worker/);
-  assert.doesNotMatch(pluginPage, /agent:load-chat/);
-  assert.doesNotMatch(pluginPage, /agent:start-new-conversation/);
 });
 
 test("sidebar top navigation exposes scoped back and forward history controls", () => {
@@ -1402,7 +1396,6 @@ test("sidebar top navigation exposes scoped back and forward history controls", 
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateBack\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateForward\}/);
   assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
-  assert.doesNotMatch(sidebarSource, /action:\s*"openChatHistory"/);
 
   assert.match(globalStyles, /\.sidebar-history-controls\s*\{/);
   assert.match(globalStyles, /\.sidebar-history-button:disabled\s*\{/);
@@ -4829,11 +4822,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /normalizedCurrentUrl === embeddedUrl/);
   assert.match(pluginPage, /function resolveAgentWebclientChatRouteFromUrl\(value: string, webviewSrcUrl: string\)/);
   assert.match(pluginPage, /parsed\.searchParams\.get\("chatId"\)\?\.trim\(\)/);
-  assert.match(pluginPage, /service\?\.id === "agent-webclient"[\s\S]*?surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
-  assert.match(pluginPage, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
-  assert.match(pluginPage, /function handleAgentWebclientChatRouteMessage\([\s\S]*?payload\.type !== AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
-  assert.match(pluginPage, /readAgentWebclientRouteAgentKey\(currentRoute\)[\s\S]*?readAgentWebclientUrlAgentKey\(readCurrentWebviewUrl\(\), webviewSrcUrl\)/);
-  assert.match(pluginPage, /const nextChatRoute = createAgentWebclientChatRoute\(agentKey, chatId\);[\s\S]{0,120}navigate\(nextChatRoute, \{ replace: true \}\)/);
+  assert.match(pluginPage, /function isAgentWebclientChatSurface\(/);
+  assert.match(pluginPage, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]{0,240}navigate\(nextChatRoute, \{ replace: true \}\)/);
+  assert.doesNotMatch(pluginPage, /ChatRouteMessage/);
+  assert.doesNotMatch(pluginPage, /handleAgentWebclientChatRouteMessage/);
+  assert.doesNotMatch(pluginPage, /createAgentWebclientChatRoute/);
   assert.match(pluginPage, /buildClientSideRouteNavigationScript/);
   assert.match(directRouteLoadBlock, /currentParsed\.origin === targetParsed\.origin/);
   assert.match(directRouteLoadBlock, /targetWebview\.executeJavaScript\(/);
@@ -4879,9 +4872,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL"));
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
-  assert.match(serviceWebviewBridgeContracts, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
-  assert.match(serviceWebviewBridgeContracts, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,[\s\S]*?PLUGIN_SETTINGS_READ_REQUEST_TYPE/);
-  assert.match(serviceWebviewBridgeContracts, /chatId\?: string;/);
+  assert.doesNotMatch(serviceWebviewBridgeContracts, /CHAT_ROUTE_REQUEST_TYPE/);
+  assert.doesNotMatch(serviceWebviewBridgeContracts, /ACTION_CHANNEL/);
   assert.match(serviceWebviewBridgeContracts, /desktopAuthContext\?: string;/);
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "RESPONSE", "TYPE"));
@@ -4889,29 +4881,22 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.doesNotMatch(serviceWebviewPreload, /contextBridge\.exposeInMainWorld/);
   assert.doesNotMatch(serviceWebviewPreload, /sendToMain/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL/);
-  assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /payload\.type !== DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
-  assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_ACTION_EVENT/);
+  assert.doesNotMatch(serviceWebviewPreload, /ACTION_CHANNEL/);
+  assert.doesNotMatch(serviceWebviewPreload, /ACTION_EVENT/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
-  assert.doesNotMatch(serviceWebviewMainWorld, removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL"));
-  assert.match(serviceWebviewMainWorld, /emitFromMain\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*payload\)/);
-  assert.doesNotMatch(serviceWebviewMainWorld, new RegExp(`emitFromMain\\(${removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL").source},\\s*payload\\)`));
+  assert.doesNotMatch(serviceWebviewMainWorld, /ACTION_CHANNEL/);
+  assert.doesNotMatch(serviceWebviewMainWorld, /ACTION_EVENT/);
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_AUTH_CONTEXT = currentContext/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /window\.addEventListener\("agent:load-chat"/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /window\.addEventListener\("agent:start-new-conversation"/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /window\.addEventListener\("agent:attach-run"/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /window\.addEventListener\("agent:run-started-push"/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /socket\.addEventListener\("message", forwardPendingAgentRunStartRoute\)/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /requestId:\s*\\`agent_webclient_chat_route_/);
+  assert.doesNotMatch(serviceWebviewMainWorld, /socket\.addEventListener\("message"/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
   assert.match(serviceWebviewMainWorld, /resolveServiceWebviewWsMonitorUrl/);
   assert.match(serviceWebviewMainWorld, /window\.WebSocket = DesktopServiceWebviewWebSocket/);
@@ -5019,7 +5004,6 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /showAssistantTargetWindow\(\s*"assistant-worker",[\s\S]*?createAgentWebclientRoute/);
   assert.doesNotMatch(mainProcess, /AGENT_WEBCLIENT_APP_PATHNAMES/);
   assert.doesNotMatch(mainProcess, /scheduleAgentWebclientOpenRequest/);
-  assert.doesNotMatch(mainProcess, /agent:load-chat/);
   assert.match(trayController, /openAssistantTarget\("tray-click"\)/);
   assert.doesNotMatch(trayController, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
 });

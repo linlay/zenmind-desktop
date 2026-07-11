@@ -71,6 +71,7 @@ function createFakeWindow(options = {}) {
     this.protocols = protocols;
     const socketEvents = createEventTarget();
     this.addEventListener = socketEvents.addEventListener;
+    this.listenerCount = socketEvents.listenerCount;
     this.removeEventListener = socketEvents.removeEventListener;
     this.emitMessage = (data) => {
       socketEvents.dispatchEvent({ type: "message", data });
@@ -266,27 +267,7 @@ test("service webview main-world script dispatches auth bridge requests", () => 
   assert.deepEqual(captured, [payload]);
 });
 
-test("service webview main-world script ignores removed agent load-chat route hints", () => {
-  const { window } = createFakeWindow();
-  const captured = [];
-  window.location.pathname = "/agent/zenmi";
-  window.location.href = "http://example.test/agent/zenmi?chatId=old&wsSource=desktop-chat";
-
-  runMainWorldScript(window);
-  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
-    captured.push(event.detail);
-  });
-  window.dispatchEvent({
-    type: "agent:load-chat",
-    detail: {
-      chatId: "chat_new"
-    }
-  });
-
-  assert.deepEqual(captured, []);
-});
-
-test("service webview main-world script does not infer chat routes from websocket run-start events", () => {
+test("service webview main-world script does not forward websocket stream frames", () => {
   const { sockets, window } = createFakeWindow();
   const captured = [];
   window.location.pathname = "/agent/zenmi";
@@ -299,6 +280,7 @@ test("service webview main-world script does not infer chat routes from websocke
 
   const socket = new window.WebSocket("ws://example.test/ws");
   assert.equal(sockets[0], socket);
+  assert.equal(socket.listenerCount("message"), 0);
 
   socket.emitMessage(JSON.stringify({
     frame: "stream",
@@ -307,38 +289,6 @@ test("service webview main-world script does not infer chat routes from websocke
       type: "run.start",
       chatId: "chat_ignored",
       runId: "run_ignored",
-      agentKey: "zenmi"
-    }
-  }));
-  assert.deepEqual(captured, []);
-
-  window.dispatchEvent({
-    type: "agent:start-new-conversation",
-    detail: {
-      agentKey: "zenmi",
-      preserveWorkerContext: true
-    }
-  });
-  socket.emitMessage(JSON.stringify({
-    frame: "stream",
-    id: "stream-2",
-    event: {
-      type: "run.start",
-      chatId: "chat_new",
-      runId: "run_new",
-      agentKey: "zenmi"
-    }
-  }));
-
-  assert.deepEqual(captured, []);
-
-  socket.emitMessage(JSON.stringify({
-    frame: "stream",
-    id: "stream-3",
-    event: {
-      type: "run.start",
-      chatId: "chat_late",
-      runId: "run_late",
       agentKey: "zenmi"
     }
   }));

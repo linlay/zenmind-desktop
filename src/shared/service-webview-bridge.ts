@@ -1,7 +1,6 @@
 export const SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL = "desktop:service-webview:message";
 export const SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL = "desktop:service-webview:deliver";
 export const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "desktop:service-webview:route";
-export const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action";
 export const SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE = "desktop:service-webview:debug";
 
 export const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "desktop:agent-app-clipboard:request";
@@ -14,7 +13,6 @@ export const DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE = "desktop:download:file";
 export const DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE = "desktop:download:file:response";
 export const DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE = "desktop:screenshot:capture";
 export const DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE = "desktop:screenshot:capture:response";
-export const AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE = "desktop:agent-webclient:chat-route";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -28,7 +26,6 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
-  AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -94,8 +91,6 @@ export type ServiceWebviewBridgeMessage = {
   changedKeys?: string[];
   token?: string | null;
   desktopAuthContext?: string;
-  agentKey?: string;
-  chatId?: string;
   desktop?: unknown;
   stage?: string;
   message?: string;

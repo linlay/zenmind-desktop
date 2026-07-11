@@ -1,5 +1,4 @@
 import {
-  SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
   SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
@@ -13,7 +12,6 @@ import { resolveServiceWebviewWsMonitorUrl } from "../shared/service-webview-ws-
 
 export const PAGE_TO_PRELOAD_EVENT = "__desktopServiceWebviewBridgeMessage";
 export const PRELOAD_TO_PAGE_EVENT = "__desktopServiceWebviewBridgeDeliver";
-export const PRELOAD_TO_PAGE_ACTION_EVENT = "__desktopServiceWebviewBridgeAction";
 export const DESKTOP_WEBVIEW_BRIDGE_FLAG = "__DESKTOP_WEBVIEW_BRIDGE__";
 const DESKTOP_WS_MONITOR_WRAPPED_FLAG = "__DESKTOP_WS_MONITOR_WRAPPED__";
 export const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = "agent-webclient.appAccessToken";
@@ -24,9 +22,7 @@ export function buildServiceWebviewMainWorldScript() {
 (() => {
   const PAGE_TO_PRELOAD_EVENT = ${JSON.stringify(PAGE_TO_PRELOAD_EVENT)};
   const PRELOAD_TO_PAGE_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_EVENT)};
-  const PRELOAD_TO_PAGE_ACTION_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_ACTION_EVENT)};
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
-  const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
   const DESKTOP_WS_MONITOR_WRAPPED_FLAG = ${JSON.stringify(DESKTOP_WS_MONITOR_WRAPPED_FLAG)};
   const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = ${JSON.stringify(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY)};
@@ -260,18 +256,6 @@ export function buildServiceWebviewMainWorldScript() {
     }));
   });
 
-  window.addEventListener(PRELOAD_TO_PAGE_ACTION_EVENT, (event) => {
-    const payload = event.detail;
-    if (!payload || typeof payload !== "object") {
-      return;
-    }
-    emitFromMain(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, payload);
-    window.dispatchEvent(new MessageEvent("message", {
-      data: payload,
-      origin: location.origin,
-      source: window
-    }));
-  });
 })();
 `;
 }

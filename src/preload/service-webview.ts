@@ -9,7 +9,6 @@ import {
   isServiceWebviewBridgeRequestType,
   isServiceWebviewBridgeResponseType,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
-  SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
@@ -18,7 +17,6 @@ import {
 import {
   PAGE_TO_PRELOAD_EVENT,
   PRELOAD_TO_PAGE_EVENT,
-  PRELOAD_TO_PAGE_ACTION_EVENT,
   buildServiceWebviewMainWorldScript
 } from "./service-webview-main-world";
 
@@ -142,12 +140,4 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, payload: ServiceWe
   }
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_EVENT, { detail: payload }));
   sendBridgeDebug("route-changed", String(payload.reason || ""));
-});
-
-ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<string, unknown>) => {
-  if (!payload || typeof payload !== "object") {
-    return;
-  }
-  window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_ACTION_EVENT, { detail: payload }));
-  sendBridgeDebug("action-dispatched", String(payload.action || ""));
 });

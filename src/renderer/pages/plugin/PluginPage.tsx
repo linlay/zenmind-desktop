@@ -17,7 +17,6 @@ import { buildAgentWebclientAccessTokenInjectionScript } from "../../../shared/a
 import { resolveAgentWebclientWsSource } from "../../../shared/agent-webclient-routes";
 import { useI18n } from "../../i18n/useI18n";
 import {
-  AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
@@ -95,6 +94,10 @@ type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
 const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
+
+function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
+  return serviceId === "agent-webclient" && surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT;
+}
 
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
@@ -265,37 +268,6 @@ function resolveAgentWebclientChatRouteFromUrl(value: string, webviewSrcUrl: str
   const params = new URLSearchParams();
   params.set("chatId", chatId);
   return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
-}
-
-function readAgentWebclientRouteAgentKey(route: string) {
-  const normalizedRoute = route.trim();
-  if (!normalizedRoute) {
-    return "";
-  }
-  const pathname = normalizedRoute.split("?")[0] || "";
-  const match = /^\/agent\/([^/?#]+)/u.exec(pathname);
-  return match?.[1] ? decodeURIComponent(match[1]).trim() : "";
-}
-
-function readAgentWebclientUrlAgentKey(value: string, webviewSrcUrl: string) {
-  const parsed = parseHttpUrl(value);
-  const src = parseHttpUrl(webviewSrcUrl);
-  if (!parsed || !src || parsed.origin !== src.origin) {
-    return "";
-  }
-  const match = /^\/agent\/([^/?#]+)/u.exec(parsed.pathname);
-  return match?.[1] ? decodeURIComponent(match[1]).trim() : "";
-}
-
-function createAgentWebclientChatRoute(agentKey: string, chatId: string) {
-  const normalizedAgentKey = agentKey.trim();
-  const normalizedChatId = chatId.trim();
-  if (!normalizedAgentKey || !normalizedChatId) {
-    return "";
-  }
-  const params = new URLSearchParams();
-  params.set("chatId", normalizedChatId);
-  return `/agent/${encodeURIComponent(normalizedAgentKey)}?${params.toString()}`;
 }
 
 function buildPluginRouteChangedMessage(
@@ -988,6 +960,9 @@ export function PluginPage({
     targetUrl: string,
     reason: "initial" | "navigation" | "route-sync",
   ) {
+    if (isAgentWebclientChatSurface(service?.id, surfaceId)) {
+      return;
+    }
     const payload = buildPluginRouteChangedMessage(targetUrl, reason);
     if (!payload) {
       return;
@@ -1161,31 +1136,6 @@ export function PluginPage({
     );
   }
 
-  function handleAgentWebclientChatRouteMessage(
-    payload: ServiceWebviewBridgeMessage,
-  ) {
-    if (payload.type !== AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE) {
-      return false;
-    }
-    if (
-      service?.id !== "agent-webclient" ||
-      surfaceId !== AGENT_WEBCLIENT_SOURCE_CHAT
-    ) {
-      return true;
-    }
-
-    const chatId = typeof payload.chatId === "string" ? payload.chatId.trim() : "";
-    const agentKey =
-      (typeof payload.agentKey === "string" ? payload.agentKey.trim() : "") ||
-      readAgentWebclientRouteAgentKey(currentRoute) ||
-      readAgentWebclientUrlAgentKey(readCurrentWebviewUrl(), webviewSrcUrl);
-    const nextChatRoute = createAgentWebclientChatRoute(agentKey, chatId);
-    if (nextChatRoute && nextChatRoute !== currentRoute) {
-      navigate(nextChatRoute, { replace: true });
-    }
-    return true;
-  }
-
   function handleWebviewBridgeMessage(event: Event) {
     const channel = readEventString(event, "channel");
     if (channel !== SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL) {
@@ -1195,10 +1145,6 @@ export function PluginPage({
       ServiceWebviewBridgeMessage?,
     ];
     if (!payload || !payload.type || !payload.requestId) {
-      return;
-    }
-
-    if (handleAgentWebclientChatRouteMessage(payload)) {
       return;
     }
 
@@ -1280,8 +1226,7 @@ export function PluginPage({
         : readCurrentWebviewUrl();
       updateWebviewCurrentUrl(resolvedUrl);
       if (
-        service?.id === "agent-webclient" &&
-        surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT
+        isAgentWebclientChatSurface(service?.id, surfaceId)
       ) {
         const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
           resolvedUrl,
@@ -1432,7 +1377,12 @@ export function PluginPage({
   }, [active, service?.id, service?.status, webviewReloadKey]);
 
   useEffect(() => {
-    if (service?.id !== "agent-webclient" || active === false || !embeddedUrl) {
+    if (
+      service?.id !== "agent-webclient" ||
+      isAgentWebclientChatSurface(service?.id, surfaceId) ||
+      active === false ||
+      !embeddedUrl
+    ) {
       return undefined;
     }
 
@@ -1452,7 +1402,7 @@ export function PluginPage({
     return () => {
       unsubscribe();
     };
-  }, [active, embeddedUrl, service?.id, webviewRenderKey]);
+  }, [active, embeddedUrl, service?.id, surfaceId, webviewRenderKey]);
 
   useEffect(() => {
     if (
