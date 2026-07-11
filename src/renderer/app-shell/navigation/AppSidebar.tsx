@@ -3,13 +3,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
+  type Ref,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
+import { CloseOutlined } from "@ant-design/icons";
 import {
   SidebarActionIcon,
   SidebarIllustration,
@@ -166,8 +169,31 @@ type CreateProjectDialogState = {
   error: string;
 };
 
+type BootstrapGuideFloatingBubble = {
+  id: "chat" | "tool-help";
+  messageKey: TranslationKey;
+  side: "left" | "right";
+  style: CSSProperties;
+};
+
+type BootstrapGuideDismissedBubbles = {
+  chat: boolean;
+  help: boolean;
+};
+
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
 const SIDEBAR_ASSISTANT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-assistant-sort`;
+const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
+const BOOTSTRAP_GUIDE_BUBBLE_GAP = 12;
+const BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000;
+const BOOTSTRAP_GUIDE_BUBBLE_VIEWPORT_MARGIN = 12;
+
+function createInitialBootstrapGuideDismissedBubbles(): BootstrapGuideDismissedBubbles {
+  return {
+    chat: false,
+    help: false,
+  };
+}
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
@@ -953,6 +979,15 @@ export function AppSidebar({
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
+    useState<BootstrapGuideFloatingBubble[]>([]);
+  const [
+    bootstrapGuideDismissedBubbles,
+    setBootstrapGuideDismissedBubbles,
+  ] = useState<BootstrapGuideDismissedBubbles>(
+    createInitialBootstrapGuideDismissedBubbles,
+  );
+  const [bootstrapGuideCardDismissed, setBootstrapGuideCardDismissed] = useState(false);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [forcedActiveManagementRoute, setForcedActiveManagementRoute] =
     useState("");
@@ -989,6 +1024,9 @@ export function AppSidebar({
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
+  const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
+  const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
   const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1012,6 +1050,8 @@ export function AppSidebar({
     (pendingPath && !forcedActiveManagementRoute ? pendingAgentKey : "");
   const normalizedBootstrapAgentKey = bootstrapAgentKey.trim();
   const normalizedBootstrapChatId = bootstrapChatId.trim();
+  const showBootstrapGuideCard =
+    bootstrapActive && !bootstrapGuideCardDismissed && !isSettingsMode && !isCollapsed;
   const primaryAssistantNavAgents = useMemo(
     () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
@@ -1033,11 +1073,20 @@ export function AppSidebar({
       : [],
     [resolvedChatDefaultAgent],
   );
+  const bootstrapSeedChatIndexed = Boolean(
+    bootstrapActive &&
+    normalizedBootstrapChatId &&
+    recentChatsOverviewItems.some(
+      ({ agent, chat }) =>
+        chat.chatId === normalizedBootstrapChatId &&
+        (chat.agentKey || agent.agentKey) === normalizedBootstrapAgentKey,
+    )
+  );
   const showBootstrapChatFallback = Boolean(
     bootstrapActive &&
     normalizedBootstrapAgentKey &&
     resolvedChatDefaultAgentKey === normalizedBootstrapAgentKey &&
-    recentChatsOverviewItems.length === 0
+    !bootstrapSeedChatIndexed
   );
   const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);
   const chatDefaultAgentUnavailable =
@@ -1334,6 +1383,77 @@ export function AppSidebar({
   }, [assistantChatMenu]);
 
   useEffect(() => {
+    if (!bootstrapActive) {
+      bootstrapGuideToolMenuAutoOpenedRef.current = false;
+      setBootstrapGuideCardDismissed(false);
+      setBootstrapGuideDismissedBubbles((current) =>
+        current.chat || current.help
+          ? createInitialBootstrapGuideDismissedBubbles()
+          : current,
+      );
+      setBootstrapGuideFloatingBubbles([]);
+      return;
+    }
+    if (!isSettingsMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
+      bootstrapGuideToolMenuAutoOpenedRef.current = true;
+      setToolMenuOpen(true);
+    }
+  }, [bootstrapActive, isSettingsMode]);
+
+  useEffect(() => {
+    if (!bootstrapActive || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setBootstrapGuideDismissedBubbles({
+        chat: true,
+        help: true,
+      });
+      setBootstrapGuideFloatingBubbles([]);
+    }, BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [bootstrapActive, normalizedBootstrapAgentKey, normalizedBootstrapChatId]);
+
+  useEffect(() => {
+    if (!bootstrapActive || typeof window === "undefined") {
+      setBootstrapGuideFloatingBubbles([]);
+      return undefined;
+    }
+
+    let frameId = 0;
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        setBootstrapGuideFloatingBubbles(getBootstrapGuideFloatingBubbles());
+      });
+    };
+
+    scheduleUpdate();
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+
+    return () => {
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [
+    bootstrapActive,
+    bootstrapGuideDismissedBubbles.chat,
+    bootstrapGuideDismissedBubbles.help,
+    bootstrapSeedChatIndexed,
+    isCollapsed,
+    isSettingsMode,
+    normalizedBootstrapAgentKey,
+    normalizedBootstrapChatId,
+    toolMenuOpen,
+  ]);
+
+  useEffect(() => {
     if (!agentMenu) {
       return undefined;
     }
@@ -1546,7 +1666,34 @@ export function AppSidebar({
     event: MouseEvent<HTMLAnchorElement>,
     targetPath: string,
   ) {
+    if (targetPath === "/help") {
+      dismissBootstrapGuideBubble("help");
+    }
     handleItemClick(event, targetPath);
+    closeToolMenu();
+  }
+
+  function createBootstrapChatTargetRoute() {
+    if (!normalizedBootstrapAgentKey) {
+      return "";
+    }
+    return bootstrapSeedChatIndexed && normalizedBootstrapChatId
+      ? createAgentChatRoute(normalizedBootstrapAgentKey, normalizedBootstrapChatId)
+      : createAgentNewChatRoute(normalizedBootstrapAgentKey);
+  }
+
+  function handleBootstrapGuideOpenChat() {
+    const targetRoute = createBootstrapChatTargetRoute();
+    if (!targetRoute) {
+      return;
+    }
+    dismissBootstrapGuideBubble("chat");
+    requestNavigate(targetRoute, { retriggerAgentRoute: true });
+  }
+
+  function handleBootstrapGuideOpenHelp() {
+    dismissBootstrapGuideBubble("help");
+    requestNavigate("/help");
     closeToolMenu();
   }
 
@@ -2203,6 +2350,13 @@ export function AppSidebar({
   }
 
   async function handleAssistantOpenChat(chat: AssistantNavChatItem) {
+    if (
+      bootstrapActive &&
+      normalizedBootstrapChatId &&
+      chat.chatId === normalizedBootstrapChatId
+    ) {
+      dismissBootstrapGuideBubble("chat");
+    }
     if (!chat.isRead && !chat.hasActiveRun) {
       const assistantApi = window.electronAPI.assistant as typeof window.electronAPI.assistant & {
         markChatRead?: (
@@ -2668,6 +2822,38 @@ export function AppSidebar({
     const roving = options.roving ?? true;
     return (
       <div className="sidebar-chats-list" role="list">
+        {showBootstrapChatFallback ? (
+          <div className="sidebar-chats-row" role="listitem">
+            <button
+              ref={bootstrapGuideChatAnchorRef}
+              type="button"
+              className={[
+                "sidebar-chats-item",
+                "sidebar-chats-bootstrap-fallback",
+                "is-bootstrap-guide",
+                currentAgentKey === normalizedBootstrapAgentKey && !currentChatId
+                  ? "is-active"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-current={
+                currentAgentKey === normalizedBootstrapAgentKey && !currentChatId
+                  ? "page"
+                  : undefined
+              }
+              onClick={handleBootstrapGuideOpenChat}
+              {...getSidebarRovingItemProps(
+                createSidebarChatsChatFocusId("bootstrap-fallback"),
+                roving,
+              )}
+            >
+              <span className="sidebar-chats-copy">
+                <span className="sidebar-chats-preview">{t("sidebar.bootstrapChat.cta")}</span>
+              </span>
+            </button>
+          </div>
+        ) : null}
         {recentChatsOverviewItems.length > 0 ? (
           recentChatsOverviewItems.map(({ agent, chat }) => {
             const isActive = chat.chatId === currentChatId;
@@ -2692,11 +2878,13 @@ export function AppSidebar({
                   content={renderChatHoverCard(agent, chat)}
                 >
                   <button
+                    ref={isBootstrapSeedChat ? bootstrapGuideChatAnchorRef : undefined}
                     type="button"
                     className={[
                       "sidebar-chats-item",
                       isActive ? "is-active" : "",
                       !chat.isRead ? "is-unread" : "",
+                      isBootstrapSeedChat ? "is-bootstrap-guide" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -2724,29 +2912,9 @@ export function AppSidebar({
               </div>
             );
           })
-        ) : showBootstrapChatFallback ? (
-          <div className="sidebar-chats-row" role="listitem">
-            <button
-              type="button"
-              className="sidebar-chats-item sidebar-chats-bootstrap-fallback"
-              onClick={() => {
-                requestNavigate(createAgentNewChatRoute(normalizedBootstrapAgentKey), {
-                  retriggerAgentRoute: true,
-                });
-              }}
-              {...getSidebarRovingItemProps(
-                createSidebarChatsChatFocusId("bootstrap-fallback"),
-                roving,
-              )}
-            >
-              <span className="sidebar-chats-copy">
-                <span className="sidebar-chats-preview">{t("sidebar.bootstrapChat.cta")}</span>
-              </span>
-            </button>
-          </div>
-        ) : (
+        ) : !showBootstrapChatFallback ? (
           <div className="sidebar-chats-empty">{t("sidebar.chats.empty")}</div>
-        )}
+        ) : null}
         {chatOverviewTotal > CHATS_RECENT_LIMIT && resolvedChatDefaultAgent ? (
           <button
             type="button"
@@ -2781,7 +2949,10 @@ export function AppSidebar({
       groupId: "chats",
       label: item.label,
       collapsedLabel: item.collapsedLabel,
-      active: Boolean(activeChatsOverviewChatId),
+      active: Boolean(
+        activeChatsOverviewChatId ||
+        (bootstrapActive && currentAgentKey === normalizedBootstrapAgentKey),
+      ),
       children: [],
       headerLabel: (
         <span className="sidebar-link-label" tabIndex={-1}>
@@ -3542,10 +3713,14 @@ export function AppSidebar({
     return renderSidebarLink(item);
   }
 
-  function renderToolLink(item: SidebarToolItem) {
+  function renderToolLink(
+    item: SidebarToolItem,
+    options: { bootstrapGuide?: boolean; anchorRef?: Ref<HTMLAnchorElement> } = {},
+  ) {
     return (
       <NavLink
         key={item.to}
+        ref={options.anchorRef}
         to={item.to}
         onClick={(event) => handleToolItemClick(event, item.to)}
         aria-label={item.label}
@@ -3556,6 +3731,7 @@ export function AppSidebar({
             "sidebar-link",
             "sidebar-tool-menu-item",
             isFixedToolRouteActive(item.to) ? "sidebar-link-active" : "",
+            options.bootstrapGuide ? "is-bootstrap-guide" : "",
           ]
             .filter(Boolean)
             .join(" ")
@@ -3570,6 +3746,182 @@ export function AppSidebar({
         </span>
       </NavLink>
     );
+  }
+
+  function renderBootstrapGuideFloatingBubbles() {
+    if (
+      !bootstrapActive ||
+      typeof document === "undefined" ||
+      bootstrapGuideFloatingBubbles.length === 0
+    ) {
+      return null;
+    }
+
+    return createPortal(
+      <div className="sidebar-bootstrap-guide-layer" aria-live="polite">
+        {bootstrapGuideFloatingBubbles.map((bubble) => (
+          <div
+            key={bubble.id}
+            className={[
+              "sidebar-bootstrap-guide-bubble",
+              `is-${bubble.id}`,
+              `is-${bubble.side}`,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={bubble.style}
+            role="note"
+          >
+            {t(bubble.messageKey, { appName: PRODUCT_NAME })}
+          </div>
+        ))}
+      </div>,
+      document.body,
+    );
+  }
+
+  function renderBootstrapGuideCard() {
+    if (!showBootstrapGuideCard) {
+      return null;
+    }
+
+    return (
+      <section
+        className="sidebar-bootstrap-guide-card"
+        aria-label={t("sidebar.bootstrapGuide.title")}
+      >
+        <div className="sidebar-bootstrap-guide-card-head">
+          <strong>{t("sidebar.bootstrapGuide.title")}</strong>
+          <button
+            type="button"
+            className="sidebar-bootstrap-guide-card-dismiss"
+            aria-label={t("sidebar.bootstrapGuide.dismiss")}
+            title={t("sidebar.bootstrapGuide.dismiss")}
+            onClick={() => setBootstrapGuideCardDismissed(true)}
+          >
+            <CloseOutlined aria-hidden="true" />
+          </button>
+        </div>
+        <ol className="sidebar-bootstrap-guide-steps">
+          <li>
+            <span aria-hidden="true">1</span>
+            {t("sidebar.bootstrapGuide.stepChat")}
+          </li>
+          <li>
+            <span aria-hidden="true">2</span>
+            {t("sidebar.bootstrapGuide.stepProfile")}
+          </li>
+          <li>
+            <span aria-hidden="true">3</span>
+            {t("sidebar.bootstrapGuide.stepHelp")}
+          </li>
+        </ol>
+        <div className="sidebar-bootstrap-guide-actions">
+          <button type="button" onClick={handleBootstrapGuideOpenChat}>
+            {t("sidebar.bootstrapGuide.actionChat")}
+          </button>
+          <button type="button" onClick={handleBootstrapGuideOpenHelp}>
+            {t("sidebar.bootstrapGuide.actionHelp")}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function getBootstrapGuideFloatingBubbles(): BootstrapGuideFloatingBubble[] {
+    const bubbles: BootstrapGuideFloatingBubble[] = [];
+    if (!bootstrapGuideDismissedBubbles.chat) {
+      const chatBubble = createBootstrapGuideFloatingBubble(
+        bootstrapGuideChatAnchorRef.current,
+        "chat",
+        "sidebar.bootstrapGuide.chatMessage",
+      );
+      if (chatBubble) {
+        bubbles.push(chatBubble);
+      }
+    }
+
+    if (!bootstrapGuideDismissedBubbles.help && !isSettingsMode && toolMenuOpen) {
+      const helpBubble = createBootstrapGuideFloatingBubble(
+        bootstrapGuideToolHelpAnchorRef.current,
+        "tool-help",
+        "sidebar.bootstrapGuide.helpMessage",
+      );
+      if (helpBubble) {
+        bubbles.push(helpBubble);
+      }
+    }
+
+    return bubbles;
+  }
+
+  function dismissBootstrapGuideBubble(
+    bubble: keyof BootstrapGuideDismissedBubbles,
+  ) {
+    setBootstrapGuideFloatingBubbles((current) =>
+      current.filter((item) =>
+        bubble === "chat"
+          ? item.id !== "chat"
+          : item.id !== "tool-help",
+      ),
+    );
+    setBootstrapGuideDismissedBubbles((current) =>
+      current[bubble]
+        ? current
+        : {
+            ...current,
+            [bubble]: true,
+          },
+    );
+  }
+
+  function createBootstrapGuideFloatingBubble(
+    anchor: HTMLElement | null,
+    id: BootstrapGuideFloatingBubble["id"],
+    messageKey: TranslationKey,
+  ): BootstrapGuideFloatingBubble | null {
+    if (!anchor?.isConnected || typeof window === "undefined") {
+      return null;
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const margin = BOOTSTRAP_GUIDE_BUBBLE_VIEWPORT_MARGIN;
+    const availableWidth = Math.max(160, viewportWidth - margin * 2);
+    const width = Math.min(BOOTSTRAP_GUIDE_BUBBLE_WIDTH, availableWidth);
+    const fitsRight =
+      rect.right + BOOTSTRAP_GUIDE_BUBBLE_GAP + width <= viewportWidth - margin;
+    const fitsLeft =
+      rect.left - BOOTSTRAP_GUIDE_BUBBLE_GAP - width >= margin;
+    const side: BootstrapGuideFloatingBubble["side"] =
+      fitsRight || !fitsLeft ? "right" : "left";
+    const left =
+      side === "right"
+        ? Math.min(
+            rect.right + BOOTSTRAP_GUIDE_BUBBLE_GAP,
+            viewportWidth - width - margin,
+          )
+        : Math.max(margin, rect.left - width - BOOTSTRAP_GUIDE_BUBBLE_GAP);
+    const top = Math.min(
+      Math.max(rect.top + rect.height / 2, margin + 44),
+      viewportHeight - margin - 44,
+    );
+
+    return {
+      id,
+      messageKey,
+      side,
+      style: {
+        left: Math.round(left),
+        top: Math.round(top),
+        width,
+      },
+    };
   }
 
   function renderAccountMenuIcon(kind: "login" | "logout") {
@@ -3725,6 +4077,7 @@ export function AppSidebar({
         className={[
           "sidebar-tool-menu",
           "sidebar-account-menu",
+          bootstrapActive ? "has-bootstrap-guide" : "",
           isCollapsed
             ? "is-from-collapsed-sidebar"
             : "is-from-expanded-sidebar",
@@ -3742,7 +4095,10 @@ export function AppSidebar({
         ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {renderToolLink(helpToolItem)}
+        {renderToolLink(helpToolItem, {
+          anchorRef: bootstrapGuideToolHelpAnchorRef,
+          bootstrapGuide: bootstrapActive,
+        })}
         {settingsToolItem ? renderToolLink(settingsToolItem) : null}
       </div>
     );
@@ -4666,6 +5022,7 @@ export function AppSidebar({
       >
         {isSettingsMode ? renderSettingsNav() : navItems.map((item) => renderPrimaryNavEntry(item))}
       </nav>
+      {renderBootstrapGuideCard()}
 
       {!isSettingsMode ? (
       <div className="sidebar-footer">
@@ -4723,6 +5080,7 @@ export function AppSidebar({
       </div>
       ) : null}
     </aside>
+    {renderBootstrapGuideFloatingBubbles()}
     </>
   );
 }

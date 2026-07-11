@@ -888,7 +888,7 @@ test("fixed sidebar settings trigger keeps Settings label and exposes Help affor
   );
   assert.match(
     sidebarSource,
-    /renderToolLink\(helpToolItem\)/
+    /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuideToolHelpAnchorRef/
   );
   assert.doesNotMatch(sidebarSource, /function renderSettingsHelpLink\(/);
   assert.doesNotMatch(sidebarSource, /sidebar-settings-help-link/);
@@ -1196,7 +1196,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/control-center"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/help"/);
   assert.match(sidebarSource, /const helpToolItem: SidebarToolItem = \{[\s\S]*?to:\s*"\/help"/);
-  assert.match(sidebarSource, /renderToolLink\(helpToolItem\)/);
+  assert.match(sidebarSource, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuideToolHelpAnchorRef/);
   assert.match(sidebarSource, /settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
   assert.match(sidebarSource, /AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS[\s\S]*?routeDefinition\.kind === "management"[\s\S]*?function isAgentWebclientManagementRoute\(route: string\)/);
   assert.match(sidebarSource, /forcedActiveManagementRoute[\s\S]*?displayCurrentPathname[\s\S]*?activeSidebarAgentKey/);
@@ -3858,6 +3858,10 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   const enDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   assert.doesNotMatch(appShell, /shouldAutoOpenBootstrapAgent|createBootstrapAgentRoute|startupBootstrapNavigationDoneRef/);
   assert.doesNotMatch(startupGateHelper, /shouldAutoOpenBootstrapAgent|isBootstrapOwnedRoute/);
+  assert.match(appShell, /const bootstrapInitialNavigationDoneRef = useRef\(false\)/);
+  assert.match(appShell, /bootstrapAgent\.recentChats\.some\(\(chat\) => chat\.chatId === bootstrapChatId\)/);
+  assert.match(appShell, /seedChatIndexed[\s\S]*?createAgentChatRoute\(bootstrapAgentKey, bootstrapChatId\)[\s\S]*?createAgentNewChatRoute\(bootstrapAgentKey\)/);
+  assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current = true;[\s\S]*?navigate\(targetRoute, \{ replace: true \}\)/);
   assert.match(appShell, /const normalizedBootstrapAgentKey = assistantSettings\?\.bootstrapAgentKey\.trim\(\) \?\? "";/);
   assert.match(appShell, /const bootstrapAgentPresent = Boolean\([\s\S]*?chatNavAgentOptions\.some\(\(agent\) => agent\.agentKey === normalizedBootstrapAgentKey\)/);
   assert.match(appShell, /const chatRuntimeAgentKey = bootstrapAgentPresent[\s\S]*?normalizedBootstrapAgentKey[\s\S]*?assistantSettings\?\.chatDefaultAgentKey/);
@@ -3873,11 +3877,23 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(appShell, /if \(bootstrapAgentKey\) \{[\s\S]*?chatDefaultAgentMigrationRef\.current = "";[\s\S]*?return;/);
   assert.match(appSidebar, /const resolvedChatDefaultAgent = chatDefaultAgent;/);
   assert.match(appSidebar, /isBootstrapSeedChat[\s\S]*?chat\.chatName \|\| t\("sidebar\.bootstrapChat\.cta"\)/);
-  assert.match(appSidebar, /showBootstrapChatFallback[\s\S]*?createAgentNewChatRoute\(normalizedBootstrapAgentKey\)/);
+  assert.match(appSidebar, /showBootstrapChatFallback[\s\S]*?!bootstrapSeedChatIndexed/);
+  assert.match(appSidebar, /function createBootstrapChatTargetRoute\(\)[\s\S]*?createAgentChatRoute\(normalizedBootstrapAgentKey, normalizedBootstrapChatId\)[\s\S]*?createAgentNewChatRoute\(normalizedBootstrapAgentKey\)/);
+  assert.match(appSidebar, /isBootstrapSeedChat \? "is-bootstrap-guide"/);
+  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?is-bootstrap-guide/);
   assert.match(zhDictionary, /"sidebar\.bootstrapChat\.cta": "点击我完成初始化工作"/);
   assert.match(enDictionary, /"sidebar\.bootstrapChat\.cta":/);
-  assert.doesNotMatch(appSidebar, /bootstrapGuide|BootstrapGuide|sidebar-bootstrap-guide/);
-  assert.doesNotMatch(globalStyles, /bootstrap-guide/);
+  assert.match(appSidebar, /function renderBootstrapGuideCard\(\)/);
+  assert.match(appSidebar, /function renderBootstrapGuideFloatingBubbles\(\)/);
+  assert.match(appSidebar, /BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000/);
+  assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?setToolMenuOpen\(true\)/);
+  assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: bootstrapActive/);
+  assert.match(appSidebar, /sidebar\.bootstrapGuide\.actionChat/);
+  assert.match(zhDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);
+  assert.match(enDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);
+  assert.match(globalStyles, /\.sidebar-chats-item\.is-bootstrap-guide::after/);
+  assert.match(globalStyles, /\.sidebar-tool-menu-item\.is-bootstrap-guide::after/);
+  assert.match(globalStyles, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
@@ -6116,7 +6132,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /const settingsToolItems = fixedToolItems\.filter/);
   assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\(\(item\) => item\.to === "\/settings"\);/);
   assert.match(sidebarSource, /shouldRenderDesktopSsoAccount \? \([\s\S]*?\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?\) : null/);
-  assert.match(sidebarSource, /\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?renderToolLink\(helpToolItem\)[\s\S]*?settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
+  assert.match(sidebarSource, /\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?renderToolLink\(helpToolItem,[\s\S]*?settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
   assert.match(sidebarSource, /className="sidebar-tool-menu-popover"/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);

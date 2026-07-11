@@ -448,6 +448,7 @@ export function AppShell() {
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
+  const bootstrapInitialNavigationDoneRef = useRef(false);
   const bootstrapWasPresentRef = useRef(false);
   const bootstrapRunTerminalRef = useRef(false);
   const bootstrapCompletionNavigationDoneRef = useRef(false);
@@ -960,6 +961,46 @@ export function AppShell() {
         }
       });
   }, [assistantSettings?.bootstrapAgentKey, assistantSettings?.chatDefaultAgentKey, chatNavAgentOptions]);
+
+  useEffect(() => {
+    if (
+      bootstrapInitialNavigationDoneRef.current ||
+      !assistantNavAgentsLoaded ||
+      !assistantSettings
+    ) {
+      return;
+    }
+
+    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
+    const bootstrapAgent = chatNavAgentOptions.find(
+      (agent) => agent.agentKey === bootstrapAgentKey,
+    );
+    if (!bootstrapAgentKey || !bootstrapAgent) {
+      return;
+    }
+
+    const bootstrapChatId = assistantSettings.bootstrapChatId.trim();
+    const seedChatIndexed = Boolean(
+      bootstrapChatId &&
+      bootstrapAgent.recentChats.some((chat) => chat.chatId === bootstrapChatId),
+    );
+    const targetRoute = seedChatIndexed
+      ? createAgentChatRoute(bootstrapAgentKey, bootstrapChatId)
+      : createAgentNewChatRoute(bootstrapAgentKey);
+    const currentRoute = `${location.pathname}${location.search}`;
+
+    bootstrapInitialNavigationDoneRef.current = true;
+    if (currentRoute !== targetRoute) {
+      navigate(targetRoute, { replace: true });
+    }
+  }, [
+    assistantNavAgentsLoaded,
+    assistantSettings,
+    chatNavAgentOptions,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
 
   useEffect(() => {
     const bootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
@@ -3235,6 +3276,12 @@ function readAgentRouteInfo(route: string) {
 
 function createAgentNewChatRoute(agentKey: string) {
   return `/agent/${encodeURIComponent(agentKey)}?newChat=${Date.now()}`;
+}
+
+function createAgentChatRoute(agentKey: string, chatId: string) {
+  const params = new URLSearchParams();
+  params.set("chatId", chatId.trim());
+  return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
 }
 
 function resolveAgentWebclientRoute(
