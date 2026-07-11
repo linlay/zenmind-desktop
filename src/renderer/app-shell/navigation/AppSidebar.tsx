@@ -19,7 +19,6 @@ import type {
   AssistantCreateProjectRequest,
   AssistantNavAgentItem,
   AssistantNavChatItem,
-  AssistantSettingsPublic,
   DesktopSsoStatus,
   ServiceState,
   WebEntry,
@@ -863,9 +862,6 @@ type AppSidebarProps = {
   chatNavAgentOptions?: AssistantNavAgentItem[];
   copilotAgentOptions?: AssistantNavAgentItem[];
   chatDefaultAgentKey?: string;
-  onChatDefaultAgentChange?: (
-    agentKey: string,
-  ) => Promise<AssistantSettingsPublic>;
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
   bootstrapActive?: boolean;
@@ -918,7 +914,6 @@ export function AppSidebar({
   chatNavAgentOptions = [],
   copilotAgentOptions = [],
   chatDefaultAgentKey = "",
-  onChatDefaultAgentChange,
   desktopSsoStatus = null,
   desktopSsoBusy = false,
   bootstrapActive = false,
@@ -955,7 +950,6 @@ export function AppSidebar({
   );
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
-  const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
@@ -1048,11 +1042,9 @@ export function AppSidebar({
   const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);
   const chatDefaultAgentUnavailable =
     assistantNavAgentsLoaded && !chatDefaultAgentAvailable;
-  const chatSupportLabel = resolvedChatDefaultAgent
+  const chatAgentInlineLabel = resolvedChatDefaultAgent
     ? t("sidebar.chats.withAgent", { name: resolvedChatDefaultAgent.displayName })
-    : chatDefaultAgentUnavailable
-      ? t("sidebar.chats.defaultAgentUnavailable")
-      : "";
+    : "";
   const chatOverviewTotal = resolvedChatDefaultAgent
     ? Math.max(
         getAssistantNavAgentNonNegativeInteger(resolvedChatDefaultAgent.chatCount),
@@ -2201,32 +2193,6 @@ export function AppSidebar({
     });
   }
 
-  async function handleSelectChatDefaultAgent(agentKey: string) {
-    const normalizedAgentKey = agentKey.trim();
-    if (
-      bootstrapActive ||
-      !normalizedAgentKey ||
-      normalizedAgentKey === resolvedChatDefaultAgentKey ||
-      !chatNavAgentOptions.some((agent) => agent.agentKey === normalizedAgentKey) ||
-      !onChatDefaultAgentChange ||
-      chatDefaultAgentPending
-    ) {
-      return;
-    }
-    setChatDefaultAgentPending(true);
-    try {
-      await onChatDefaultAgentChange(normalizedAgentKey);
-    } catch (error) {
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : t("sidebar.chats.defaultAgentUnavailable"),
-      );
-    } finally {
-      setChatDefaultAgentPending(false);
-    }
-  }
-
   async function handleAssistantMarkAllRead(
     event: MouseEvent<HTMLElement>,
     agent: AssistantNavAgentItem,
@@ -2625,8 +2591,7 @@ export function AppSidebar({
   function renderChatsNewChatButton(options: { inPopover?: boolean } = {}) {
     const disabled =
       !resolvedChatDefaultAgentKey ||
-      chatDefaultAgentUnavailable ||
-      chatDefaultAgentPending;
+      chatDefaultAgentUnavailable;
     const label = disabled
       ? t("sidebar.chats.defaultAgentUnavailable")
       : t("sidebar.chats.newChat");
@@ -2650,44 +2615,6 @@ export function AppSidebar({
           <SidebarActionIcon kind="new_chat" />
         </button>
       </Tooltip>
-    );
-  }
-
-  function renderChatsSupportPopover() {
-    return (
-      <div className="sidebar-chats-support-popover">
-        <span className="sidebar-chats-support-title">{chatSupportLabel}</span>
-        {!bootstrapActive && chatNavAgentOptions.length > 0 ? (
-          <>
-            <span className="sidebar-chats-support-caption">
-              {t("sidebar.chats.switchAgent")}
-            </span>
-            <div className="sidebar-chats-support-options" role="listbox">
-              {chatNavAgentOptions.map((agent) => {
-                const selected = agent.agentKey === resolvedChatDefaultAgentKey;
-                return (
-                  <button
-                    key={agent.agentKey}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    className={[
-                      "sidebar-chats-support-option",
-                      selected ? "is-selected" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    disabled={chatDefaultAgentPending}
-                    onClick={() => void handleSelectChatDefaultAgent(agent.agentKey)}
-                  >
-                    {agent.displayName}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
-      </div>
     );
   }
 
@@ -2857,18 +2784,15 @@ export function AppSidebar({
       active: Boolean(activeChatsOverviewChatId),
       children: [],
       headerLabel: (
-        <Popover
-          trigger="hover"
-          placement="right-start"
-          disabled={!chatSupportLabel}
-          className="sidebar-chats-support-popover-surface"
-          content={renderChatsSupportPopover()}
-        >
-          <span className="sidebar-link-label" tabIndex={-1}>
-            {item.label}
-          </span>
-        </Popover>
+        <span className="sidebar-link-label" tabIndex={-1}>
+          {item.label}
+        </span>
       ),
+      headerSupplement: chatAgentInlineLabel ? (
+        <span className="sidebar-chats-agent-label" aria-hidden="true">
+          {chatAgentInlineLabel}
+        </span>
+      ) : undefined,
       headerActions: renderChatsNewChatButton(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
@@ -3371,6 +3295,7 @@ export function AppSidebar({
     status?: SidebarStatusSummary;
     children: Array<SidebarNavItem & { status?: SidebarStatusSummary }>;
     headerLabel?: ReactNode;
+    headerSupplement?: ReactNode;
     headerActions?: ReactNode;
     popoverHeader?: ReactNode;
     renderChildren?: (options: { roving: boolean }) => ReactNode;
@@ -3483,19 +3408,22 @@ export function AppSidebar({
           "data-sidebar-group-id": args.groupId,
         }}
         header={
-          <span className="sidebar-group-heading-main">
-            {args.headerLabel ?? (
-              <span className="sidebar-link-label">{args.label}</span>
-            )}
-            <ArrowIcon
-              className="sidebar-group-heading-arrow"
-              expanded={expanded}
-              width={18}
-            />
-            {!expanded
-              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
-              : null}
-          </span>
+          <>
+            <span className="sidebar-group-heading-main">
+              {args.headerLabel ?? (
+                <span className="sidebar-link-label">{args.label}</span>
+              )}
+              <ArrowIcon
+                className="sidebar-group-heading-arrow"
+                expanded={expanded}
+                width={18}
+              />
+              {!expanded
+                ? renderSidebarGroupStatusBadges(args.groupId, args.status)
+                : null}
+            </span>
+            {args.headerSupplement}
+          </>
         }
         headerActions={
           <>
@@ -3886,8 +3814,7 @@ export function AppSidebar({
               role="menuitem"
               disabled={
                 !resolvedChatDefaultAgentKey ||
-                chatDefaultAgentUnavailable ||
-                chatDefaultAgentPending
+                chatDefaultAgentUnavailable
               }
               onClick={(event) => {
                 setGroupActionMenu(null);

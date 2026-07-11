@@ -1077,14 +1077,6 @@ export function AppShell() {
     }
   }
 
-  async function saveChatDefaultAgent(agentKey: string) {
-    const nextSettings = await window.electronAPI.assistant.saveSettings({
-      chatDefaultAgentKey: agentKey.trim(),
-    });
-    setAssistantSettings(nextSettings);
-    return nextSettings;
-  }
-
   async function refreshThemePreferenceFromCanonical() {
     try {
       const profileTheme = await window.electronAPI.settings.getThemePreference();
@@ -2955,7 +2947,6 @@ export function AppShell() {
           chatNavAgentOptions={chatNavAgentOptions}
           copilotAgentOptions={copilotAgentOptions}
           chatDefaultAgentKey={chatRuntimeAgentKey}
-          onChatDefaultAgentChange={saveChatDefaultAgent}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
           bootstrapActive={bootstrapAgentPresent}

@@ -139,7 +139,6 @@ export const enUSMessages = {
   "sidebar.chats.defaultAgentUnavailable": "Choose an available Chat default agent in Assistant settings first.",
   "sidebar.chats.empty": "No chats yet",
   "sidebar.chats.supportedBy": "Supported by {name}",
-  "sidebar.chats.switchAgent": "Switch agent",
   "sidebar.chats.withAgent": "Chat with {name}",
   "sidebar.chats.card.agent": "Agent: {name}",
   "sidebar.chats.card.askedAt": "Asked: {time}",

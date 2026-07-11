@@ -2577,6 +2577,7 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   const profileStore = readSourceFile("src", "main", "desktop-profile-store.ts");
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
+  const styles = readRendererStyles();
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
@@ -2607,10 +2608,54 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   assert.match(chatHoverCardSource, /chat\.createdAt/);
   assert.match(chatHoverCardSource, /agent\.gitBranch/);
   assert.match(sidebarSource, /chatNavAgentOptions\?: AssistantNavAgentItem\[\]/);
-  assert.match(sidebarSource, /<Popover[\s\S]*?trigger="hover"[\s\S]*?renderChatsSupportPopover\(\)/);
-  assert.match(sidebarSource, /t\("sidebar\.chats\.withAgent", \{ name: resolvedChatDefaultAgent\.displayName \}\)/);
-  assert.match(sidebarSource, /t\("sidebar\.chats\.switchAgent"\)/);
-  assert.doesNotMatch(sidebarSource, /sidebar-chats-popover-surface/);
+  assert.match(
+    sidebarSource,
+    /const chatAgentInlineLabel = resolvedChatDefaultAgent\s*\?\s*t\(\s*"sidebar\.chats\.withAgent",\s*\{\s*name:\s*resolvedChatDefaultAgent\.displayName\s*\}\s*\)\s*:\s*"";/,
+  );
+  const chatsEntrySource = sidebarSource.slice(
+    sidebarSource.indexOf("function renderChatsEntry"),
+    sidebarSource.indexOf("function renderSidebarChildLink"),
+  );
+  assert.match(
+    chatsEntrySource,
+    /headerSupplement: chatAgentInlineLabel \? \([\s\S]*?<span className="sidebar-chats-agent-label" aria-hidden="true">\s*\{chatAgentInlineLabel\}\s*<\/span>[\s\S]*?\) : undefined,/,
+  );
+  const sidebarGroupSource = sidebarSource.slice(
+    sidebarSource.indexOf("function renderSidebarGroup"),
+    sidebarSource.indexOf("function renderPrimaryNavEntry"),
+  );
+  const expandedGroupStart = sidebarGroupSource.indexOf("<Collapse");
+  assert.ok(expandedGroupStart >= 0, "missing expanded sidebar group branch");
+  assert.match(sidebarGroupSource, /headerSupplement\?: ReactNode;/);
+  assert.doesNotMatch(
+    sidebarGroupSource.slice(0, expandedGroupStart),
+    /\{args\.headerSupplement\}/,
+  );
+  assert.match(
+    sidebarGroupSource.slice(expandedGroupStart),
+    /<ArrowIcon[\s\S]*?className="sidebar-group-heading-arrow"[\s\S]*?\/>[\s\S]*?\{args\.headerSupplement\}/,
+  );
+  assert.doesNotMatch(sidebarSource, /renderChatsSupportPopover|chatSupportLabel/);
+  assert.doesNotMatch(sidebarSource, /handleSelectChatDefaultAgent/);
+  assert.doesNotMatch(sidebarSource, /onChatDefaultAgentChange/);
+  assert.doesNotMatch(sidebarSource, /chatDefaultAgentPending/);
+  assert.doesNotMatch(appShell, /saveChatDefaultAgent|onChatDefaultAgentChange/);
+  assert.doesNotMatch(styles, /sidebar-chats-support-(?:popover|title|caption|options?|option)/);
+  const chatAgentLabelRule = styles.match(
+    /^\.sidebar-chats-agent-label\s*\{(?<body>[\s\S]*?)^\}/m,
+  )?.groups?.body;
+  assert.ok(chatAgentLabelRule, "missing .sidebar-chats-agent-label rule");
+  assert.match(chatAgentLabelRule, /flex:\s*1 1 auto;/);
+  assert.match(chatAgentLabelRule, /min-width:\s*0;/);
+  assert.match(chatAgentLabelRule, /overflow:\s*hidden;/);
+  assert.match(chatAgentLabelRule, /text-overflow:\s*ellipsis;/);
+  assert.match(chatAgentLabelRule, /white-space:\s*nowrap;/);
+  assert.match(chatAgentLabelRule, /opacity:\s*0;/);
+  assert.match(chatAgentLabelRule, /visibility:\s*hidden;/);
+  assert.match(
+    styles,
+    /\.sidebar-nav-group>\.Collapse-header:hover \.sidebar-chats-agent-label\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?visibility:\s*visible;/,
+  );
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
   assert.match(sidebarSource, /function handleChatsNewChat[\s\S]*?createAgentNewChatRoute\(resolvedChatDefaultAgentKey\)/);
   assert.match(sidebarSource, /chatOverviewTotal > CHATS_RECENT_LIMIT[\s\S]*?className="worker-chat-more assistant-worker-more"/);
@@ -2640,11 +2685,11 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
   assert.match(settingsPage, /chatAgentOptions\.find/);
   assert.match(settingsPage, /chatDefaultAgentKey/);
   assert.match(zhCN, /"nav\.chats": "对话"/);
-  assert.match(zhCN, /"sidebar\.chats\.switchAgent": "切换智能体"/);
+  assert.doesNotMatch(zhCN, /"sidebar\.chats\.switchAgent"/);
   assert.match(zhCN, /"sidebar\.chats\.withAgent": "与 \{name\} 对话"/);
   assert.match(zhCN, /"sidebar\.chats\.card\.askedAt": "提问于：\{time\}"/);
   assert.match(enUS, /"nav\.chats": "Chats"/);
-  assert.match(enUS, /"sidebar\.chats\.switchAgent": "Switch agent"/);
+  assert.doesNotMatch(enUS, /"sidebar\.chats\.switchAgent"/);
   assert.match(enUS, /"sidebar\.chats\.withAgent": "Chat with \{name\}"/);
   assert.match(enUS, /"sidebar\.chats\.card\.askedAt": "Asked: \{time\}"/);
 });
