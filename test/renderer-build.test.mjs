@@ -3663,7 +3663,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /chatHasPendingAwaiting/);
   assert.match(bridge, /createNavigationAgentItem/);
   assert.match(appShell, /onNavigationAgentsChanged/);
-  assert.match(appShell, /onNavigationPushEvent/);
+  assert.doesNotMatch(appShell, /onNavigationPushEvent/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);
   assert.match(appShell, /onRefreshAssistantNavAgents=\{refreshAssistantNavAgents\}/);
   assert.match(appSidebar, /handleCreateProject/);
@@ -3862,11 +3862,11 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(appShell, /bootstrapActive=\{bootstrapAgentPresent\}/);
   assert.match(appShell, /bootstrapAgentKey=\{normalizedBootstrapAgentKey\}/);
   assert.match(appShell, /bootstrapChatId=\{assistantSettings\?\.bootstrapChatId\}/);
-  assert.match(appShell, /onNavigationPushEvent\(\(event\) =>/);
-  assert.match(appShell, /event\.type !== "run\.start" && event\.type !== "run\.complete"/);
-  assert.match(appShell, /bootstrapRunTerminalRef\.current = event\.type === "run\.complete"/);
+  assert.doesNotMatch(appShell, /bootstrapRunTerminalRef|bootstrapCompletionRetryTick|BOOTSTRAP_COMPLETION_RETRY_MS/);
+  assert.doesNotMatch(appShell, /onNavigationPushEvent\(\(event\) =>/);
+  assert.doesNotMatch(appShell, /run\.complete/);
+  assert.match(appShell, /const bootstrapAgentPresent = chatNavAgentOptions\.some\([\s\S]*?route\.agentKey !== bootstrapAgentKey[\s\S]*?defaultAgentAvailable/);
   assert.match(appShell, /navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/);
-  assert.match(appShell, /BOOTSTRAP_COMPLETION_RETRY_MS/);
   assert.match(appShell, /if \(bootstrapAgentKey\) \{[\s\S]*?chatDefaultAgentMigrationRef\.current = "";[\s\S]*?return;/);
   assert.match(appSidebar, /const resolvedChatDefaultAgent = chatDefaultAgent;/);
   assert.match(appSidebar, /isBootstrapSeedChat[\s\S]*?chat\.chatName \|\| t\("sidebar\.bootstrapChat\.cta"\)/);

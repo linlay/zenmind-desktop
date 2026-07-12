@@ -179,7 +179,6 @@ const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
-const BOOTSTRAP_COMPLETION_RETRY_MS = 1500;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
 
@@ -449,9 +448,6 @@ export function AppShell() {
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const bootstrapInitialNavigationDoneRef = useRef(false);
-  const bootstrapWasPresentRef = useRef(false);
-  const bootstrapRunTerminalRef = useRef(false);
-  const bootstrapCompletionNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -490,7 +486,6 @@ export function AppShell() {
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
-  const [bootstrapCompletionRetryTick, setBootstrapCompletionRetryTick] = useState(0);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
@@ -1003,54 +998,25 @@ export function AppShell() {
   ]);
 
   useEffect(() => {
-    const bootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
-    if (!bootstrapAgentKey) {
-      return undefined;
-    }
-    return window.electronAPI.assistant.onNavigationPushEvent((event) => {
-      if (event.type !== "run.start" && event.type !== "run.complete") {
-        return;
-      }
-      const route = readAgentRouteInfo(`${location.pathname}${location.search}`);
-      if (route.agentKey !== bootstrapAgentKey) {
-        return;
-      }
-      if (event.chatId && route.chatId && event.chatId !== route.chatId) {
-        return;
-      }
-      bootstrapRunTerminalRef.current = event.type === "run.complete";
-      if (event.type === "run.complete") {
-        setBootstrapCompletionRetryTick((tick) => tick + 1);
-        void refreshAssistantNavAgents();
-      }
-    });
-  }, [assistantSettings?.bootstrapAgentKey, location.pathname, location.search]);
-
-  useEffect(() => {
     if (!assistantNavAgentsLoaded || !assistantSettings) {
-      return undefined;
+      return;
     }
     const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
     if (!bootstrapAgentKey) {
-      return undefined;
+      return;
     }
     const bootstrapAgentPresent = chatNavAgentOptions.some(
       (agent) => agent.agentKey === bootstrapAgentKey
     );
     if (bootstrapAgentPresent) {
-      bootstrapWasPresentRef.current = true;
-      bootstrapCompletionNavigationDoneRef.current = false;
-      return undefined;
+      return;
     }
 
     const route = readAgentRouteInfo(`${location.pathname}${location.search}`);
     if (
-      !bootstrapWasPresentRef.current ||
-      !bootstrapRunTerminalRef.current ||
-      bootstrapCompletionNavigationDoneRef.current ||
       route.agentKey !== bootstrapAgentKey
     ) {
-      return undefined;
+      return;
     }
 
     const defaultChatAgentKey = assistantSettings.chatDefaultAgentKey.trim();
@@ -1059,21 +1025,13 @@ export function AppShell() {
       chatNavAgentOptions.some((agent) => agent.agentKey === defaultChatAgentKey)
     );
     if (defaultAgentAvailable) {
-      bootstrapCompletionNavigationDoneRef.current = true;
       navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
-      return undefined;
+      return;
     }
-
-    const retryTimer = window.setTimeout(() => {
-      void refreshAssistantNavAgents();
-      setBootstrapCompletionRetryTick((tick) => tick + 1);
-    }, BOOTSTRAP_COMPLETION_RETRY_MS);
-    return () => window.clearTimeout(retryTimer);
   }, [
     assistantNavAgentsLoaded,
     assistantSettings?.bootstrapAgentKey,
     assistantSettings?.chatDefaultAgentKey,
-    bootstrapCompletionRetryTick,
     chatNavAgentOptions,
     location.pathname,
     location.search,
