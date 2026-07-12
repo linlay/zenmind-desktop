@@ -6,6 +6,7 @@ import type {
   DesktopPetPreviewItemStatus,
   DesktopPetPreviewPanel
 } from "../../../shared/contracts";
+import { readEpochMillis } from "../../../shared/time-contract";
 import { t } from "../../i18n/main-i18n";
 
 type PreviewStatus = DesktopPetPreviewPanel["status"];
@@ -21,7 +22,7 @@ export type DesktopPetPreviewEvent = {
   runId: string;
   chatId: string | null;
   type: string;
-  createdAt: string;
+  createdAt: number;
   status?: string;
   message?: string;
   delta?: string;
@@ -282,7 +283,10 @@ export function normalizeDesktopPetAgentEvent(rawEvent: unknown): DesktopPetPrev
   }
 
   const chatId = readStringField(rawEvent, "chatId", "chatID") || (data ? readStringField(data, "chatId", "chatID") : "");
-  const createdAt = readStringField(rawEvent, "createdAt") || new Date().toISOString();
+  const createdAt = readEpochMillis(rawEvent.timestamp) ?? readEpochMillis(rawEvent.createdAt);
+  if (createdAt === undefined) {
+    return null;
+  }
   const seq = rawEvent.seq !== undefined ? toNumber(rawEvent.seq) : data?.seq !== undefined ? toNumber(data.seq) : undefined;
   const artifactCount = readNumericField(rawEvent, "artifactCount");
 
@@ -514,7 +518,7 @@ function readActionLabel(event: DesktopPetPreviewEvent) {
 
 function readAwaitingMode(event: DesktopPetPreviewEvent): AssistantAwaitingMode | "" {
   const mode = toText(event.mode || event.awaiting?.mode);
-  return mode === "question" || mode === "approval" || mode === "form" ? mode : "";
+  return mode === "question" || mode === "approval" || mode === "form" || mode === "planning" ? mode : "";
 }
 
 function firstRecordText(items: unknown[], keys: string[], maxLength = ITEM_TEXT_MAX_LENGTH) {
@@ -651,7 +655,7 @@ export class DesktopPetPreviewProjector {
       this.panel = {
         ...this.panel,
         expanded,
-        updatedAt: new Date().toISOString()
+        updatedAt: Date.now()
       };
     }
     return this.panel;
@@ -901,7 +905,7 @@ export class DesktopPetPreviewProjector {
     title: string,
     text: string,
     status: DesktopPetPreviewItemStatus,
-    createdAt: string,
+    createdAt: number,
     detailText?: string
   ) {
     if (!this.panel) {

@@ -350,7 +350,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 31px;
   padding: 0 4px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -497,7 +497,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.35;
   font-weight: 400;
 }
@@ -1218,13 +1218,28 @@
   color: var(--ink-soft);
 }
 
+.sidebar-website-child-row .sidebar-child-link .sidebar-link-label {
+  font-size: 14px;
+  font-weight: 400;
+}
+
 .sidebar-website-child-row:hover:not(.is-active) {
   background: rgba(136, 151, 172, 0.1);
+}
+
+.sidebar-website-child-row:hover:not(.is-active) .sidebar-link-label {
+  color: var(--ink);
+  font-weight: 400;
 }
 
 .sidebar-website-child-row.is-active {
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   border-color: transparent;
+}
+
+.sidebar-website-child-row.is-active .sidebar-link-label {
+  color: var(--ink);
+  font-weight: 500;
 }
 
 :root[data-theme="dark"] .sidebar-website-child-row:hover:not(.is-active) {
@@ -1274,6 +1289,82 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
+}
+
+/* ── Website open-status action ── */
+
+.sidebar-website-status-action {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 24px;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.sidebar-website-status-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #10B981;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.16s ease-in-out, transform 0.16s ease-in-out;
+}
+
+.sidebar-website-status-close {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  opacity: 0;
+  transform: scale(0.72);
+  transition: opacity 0.16s ease-in-out, transform 0.16s ease-in-out;
+}
+
+.sidebar-website-child-row:hover .sidebar-website-status-dot,
+.sidebar-website-child-row:focus-within .sidebar-website-status-dot {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.sidebar-website-child-row:hover .sidebar-website-status-close,
+.sidebar-website-child-row:focus-within .sidebar-website-status-close {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.sidebar-website-status-action .assistant-material-icon.is-loading {
+  position: absolute;
+}
+
+/* ── Website favicon ── */
+
+.sidebar-website-favicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+.sidebar-website-favicon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* ── Assistant Worker Navigation ── */

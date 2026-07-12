@@ -4,7 +4,6 @@ import {
   ControlOutlined,
   MessageOutlined,
   PlusOutlined,
-  SearchOutlined,
   SettingOutlined,
   UserOutlined
 } from "@ant-design/icons";
@@ -170,7 +169,10 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="desktop-global-search-input-shell">
-          <SearchOutlined className="desktop-global-search-input-icon" aria-hidden="true" />
+          <svg className="desktop-global-search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="10" cy="10" r="7.2" />
+            <line x1="15.09" y1="15.09" x2="18.27" y2="18.27" />
+          </svg>
           <input
             ref={inputRef}
             type="search"
@@ -276,6 +278,9 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, currentA
   if (actionId === "agents") {
     return "/agents";
   }
+  if (actionId === "skills") {
+    return "/skills";
+  }
   if (actionId === "controlCenter") {
     return "/control-center";
   }
@@ -299,6 +304,9 @@ function renderRowIcon(row: DesktopGlobalSearchRow) {
     return <PlusOutlined />;
   }
   if (row.actionId === "agents") {
+    return <AppstoreOutlined />;
+  }
+  if (row.actionId === "skills") {
     return <AppstoreOutlined />;
   }
   if (row.actionId === "controlCenter") {

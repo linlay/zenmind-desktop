@@ -660,6 +660,8 @@ function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: Translate
       return t("nav.agents");
     case "schedules":
       return t("nav.schedules");
+    case "skills":
+      return t("nav.skills");
     default:
       return pageKey;
   }
@@ -694,6 +696,7 @@ type FixedNavigationToolConfig = {
 const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
   [
     { id: "agents", labelKey: "nav.agents", copilotPageKey: "agents" },
+    { id: "skills", labelKey: "nav.skills", copilotPageKey: "skills" },
     { id: "market", labelKey: "nav.market", copilotPageKey: "market" }
   ],
   [
@@ -2234,7 +2237,7 @@ function AboutAppCard({
             machineHash: "",
             machineSource: "unavailable",
             createdAt: "",
-            updatedAt: ""
+            updatedAt: "",
           });
         }
       });

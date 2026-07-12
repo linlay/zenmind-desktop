@@ -16,6 +16,8 @@ const {
   resolveAssistantWorkspaceGitBranch,
 } = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
 
+const EPOCH_MS = 1_783_000_000_000;
+
 function createAgent(overrides = {}) {
   return {
     agentKey: "zenmi",
@@ -27,7 +29,7 @@ function createAgent(overrides = {}) {
     hasPendingAwaiting: false,
     latestChatId: null,
     latestPreview: "",
-    updatedAt: "2026-06-20T00:00:00.000Z",
+    updatedAt: EPOCH_MS,
     recentChats: [],
     ...overrides,
   };
@@ -112,7 +114,8 @@ test("assistant navigation activity agents include copilot-only chats for deskto
             chatName: "网络诊断",
             lastRunContent: "已完成网络诊断",
             isRead: false,
-            updatedAt: "2026-06-24T12:00:00.000Z",
+            createdAt: EPOCH_MS,
+            updatedAt: EPOCH_MS + 1,
           }],
         }]
       : [{ key: "zenmi", name: "Zenmi" }];
@@ -186,14 +189,16 @@ test("assistant navigation keeps nested read state for desktop sidebar history",
           chatId: "read-object-unread",
           agentKey: "zenmi",
           chatName: "Unread from read object",
-          updatedAt: "2026-06-20T01:00:00.000Z",
-          read: { isRead: false, readAt: 456, readRunId: "run_1" },
+          createdAt: EPOCH_MS + 10,
+          updatedAt: EPOCH_MS + 11,
+          read: { isRead: false, readAt: EPOCH_MS + 12, readRunId: "run_1" },
         },
         {
           chatId: "read-object-read",
           agentKey: "zenmi",
           chatName: "Read from read object",
-          updatedAt: "2026-06-20T00:00:00.000Z",
+          createdAt: EPOCH_MS + 20,
+          updatedAt: EPOCH_MS + 21,
           read: { isRead: true },
         },
       ],
@@ -216,19 +221,22 @@ test("assistant navigation trusts stats unread count when present", () => {
         {
           chatId: "read-newer",
           agentKey: "zenmi",
-          updatedAt: "2026-06-20T03:00:00.000Z",
+          createdAt: EPOCH_MS + 30,
+          updatedAt: EPOCH_MS + 33,
           read: { isRead: true },
         },
         {
           chatId: "unread-middle",
           agentKey: "zenmi",
-          updatedAt: "2026-06-20T02:00:00.000Z",
+          createdAt: EPOCH_MS + 31,
+          updatedAt: EPOCH_MS + 32,
           read: { isRead: false },
         },
         {
           chatId: "read-older",
           agentKey: "zenmi",
-          updatedAt: "2026-06-20T01:00:00.000Z",
+          createdAt: EPOCH_MS + 30,
+          updatedAt: EPOCH_MS + 31,
           read: { isRead: true },
         },
       ],
@@ -251,19 +259,22 @@ test("assistant navigation counts row read states when stats unread count is abs
         {
           chatId: "read-newer",
           agentKey: "zenmi",
-          updatedAt: "2026-06-20T03:00:00.000Z",
+          createdAt: EPOCH_MS + 40,
+          updatedAt: EPOCH_MS + 43,
           read: { isRead: true },
         },
         {
           chatId: "unread-middle",
           agentKey: "zenmi",
-          updatedAt: "2026-06-20T02:00:00.000Z",
+          createdAt: EPOCH_MS + 41,
+          updatedAt: EPOCH_MS + 42,
           read: { isRead: false },
         },
         {
           chatId: "read-older",
           agentKey: "zenmi",
-          updatedAt: "2026-06-20T01:00:00.000Z",
+          createdAt: EPOCH_MS + 40,
+          updatedAt: EPOCH_MS + 41,
           read: { isRead: true },
         },
       ],
@@ -308,7 +319,7 @@ test("assistant navigation run.started keeps a newly created chat title instead 
   assert.equal(chat?.hasActiveRun, true);
 });
 
-test("assistant navigation run.started without content does not synthesize a preview", () => {
+test("assistant navigation rejects a run.started push without an epoch-ms timestamp", () => {
   const chatId = "fresh-chat";
   const result = applyAssistantNavigationPush([createAgent()], {
     frame: "push",
@@ -320,11 +331,9 @@ test("assistant navigation run.started without content does not synthesize a pre
     },
   });
 
-  const chat = findChat(result.items, chatId);
-  assert.equal(result.changed, true);
-  assert.equal(chat?.hasActiveRun, true);
-  assert.equal(chat?.lastRunId, "run-1");
-  assert.equal(chat?.lastRunContent, "");
+  assert.equal(result.changed, false);
+  assert.equal(result.shouldRefresh, true);
+  assert.equal(findChat(result.items, chatId), undefined);
 });
 
 test("assistant navigation run.started preserves an existing real preview", () => {
@@ -337,7 +346,8 @@ test("assistant navigation run.started preserves an existing real preview", () =
         chatId,
         chatName: "Existing title",
         agentKey: "zenmi",
-        updatedAt: "2026-06-20T01:00:00.000Z",
+        createdAt: EPOCH_MS + 50,
+        updatedAt: EPOCH_MS + 51,
         lastRunId: "old-run",
         lastRunContent: "Previous reply",
         isRead: true,
@@ -352,6 +362,7 @@ test("assistant navigation run.started preserves an existing real preview", () =
       agentKey: "zenmi",
       chatId,
       runId: "new-run",
+      timestamp: EPOCH_MS + 52,
     },
   });
 
@@ -370,6 +381,7 @@ test("assistant navigation still applies real preview text from chat.updated and
       agentKey: "zenmi",
       chatId,
       runId: "run-1",
+      timestamp: EPOCH_MS + 70,
     },
   });
   const updated = applyAssistantNavigationPush(started.items, {
@@ -380,6 +392,7 @@ test("assistant navigation still applies real preview text from chat.updated and
       chatId,
       chatName: "Preview title",
       lastRunContent: "Updated elsewhere",
+      timestamp: EPOCH_MS + 71,
     },
   });
   const completed = applyAssistantNavigationPush(updated.items, {
@@ -390,6 +403,7 @@ test("assistant navigation still applies real preview text from chat.updated and
       chatId,
       runId: "run-1",
       message: "Final answer",
+      timestamp: EPOCH_MS + 72,
     },
   });
 
@@ -409,12 +423,12 @@ test("assistant navigation preserves chat creation time from summaries and pushe
       name: "Zenmi",
       chats: [{
         chatId,
-        createdAt: "2026-07-10T01:02:03.000Z",
-        updatedAt: "2026-07-10T02:03:04.000Z",
+        createdAt: EPOCH_MS + 80,
+        updatedAt: EPOCH_MS + 81,
       }],
     },
   ]);
-  assert.equal(agent.recentChats[0]?.createdAt, "2026-07-10T01:02:03.000Z");
+  assert.equal(agent.recentChats[0]?.createdAt, EPOCH_MS + 80);
 
   const updated = applyAssistantNavigationPush([agent], {
     frame: "push",
@@ -422,10 +436,10 @@ test("assistant navigation preserves chat creation time from summaries and pushe
     data: {
       agentKey: "zenmi",
       chatId,
-      updatedAt: "2026-07-10T03:04:05.000Z",
+      timestamp: EPOCH_MS + 82,
     },
   });
-  assert.equal(findChat(updated.items, chatId)?.createdAt, "2026-07-10T01:02:03.000Z");
+  assert.equal(findChat(updated.items, chatId)?.createdAt, EPOCH_MS + 80);
 
   const created = applyAssistantNavigationPush([createAgent()], {
     frame: "push",
@@ -433,13 +447,45 @@ test("assistant navigation preserves chat creation time from summaries and pushe
     data: {
       agentKey: "zenmi",
       chatId: "new-created-at-chat",
-      createdAt: "2026-07-10T04:05:06.000Z",
+      createdAt: EPOCH_MS + 83,
+      timestamp: EPOCH_MS + 84,
     },
   });
   assert.equal(
     findChat(created.items, "new-created-at-chat")?.createdAt,
-    "2026-07-10T04:05:06.000Z",
+    EPOCH_MS + 83,
   );
+});
+
+test("assistant navigation rejects string, seconds, fractional, and zero push timestamps", () => {
+  const current = [createAgent()];
+  for (const timestamp of [String(EPOCH_MS), Math.floor(EPOCH_MS / 1000), EPOCH_MS + 0.5, 0]) {
+    const result = applyAssistantNavigationPush(current, {
+      frame: "push",
+      type: "chat.updated",
+      data: { agentKey: "zenmi", chatId: "strict-time", timestamp },
+    });
+    assert.equal(result.changed, false);
+    assert.equal(result.shouldRefresh, true);
+    assert.equal(findChat(result.items, "strict-time"), undefined);
+  }
+});
+
+test("assistant navigation rejects malformed optional structured times instead of falling back", () => {
+  const result = applyAssistantNavigationPush([createAgent()], {
+    frame: "push",
+    type: "chat.created",
+    data: {
+      agentKey: "zenmi",
+      chatId: "invalid-created-at",
+      timestamp: EPOCH_MS,
+      createdAt: "2026-07-10T01:02:03.000Z",
+    },
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.shouldRefresh, true);
+  assert.equal(findChat(result.items, "invalid-created-at"), undefined);
 });
 
 test("assistant navigation reads and caches Git branches with platform-specific commands", async (t) => {

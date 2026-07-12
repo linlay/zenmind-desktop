@@ -73,7 +73,7 @@ export interface DesktopPetTaskItem {
   status: DesktopPetTaskStatus;
   awaitingCount?: number;
   awaitingMode?: AssistantAwaitingMode;
-  updatedAt: string;
+  updatedAt: number;
 }
 
 export type DesktopPetMessageStatus = "running" | "awaiting" | "done" | "error";
@@ -90,7 +90,7 @@ export interface DesktopPetMessageItem {
   unread: boolean;
   awaitingCount?: number;
   awaitingMode?: AssistantAwaitingMode;
-  updatedAt: string;
+  updatedAt: number;
 }
 
 export type DesktopPetPreviewItemKind =
@@ -121,7 +121,7 @@ export interface DesktopPetPreviewItem {
   text: string;
   detailText?: string;
   status: DesktopPetPreviewItemStatus;
-  createdAt: string;
+  createdAt: number;
 }
 
 export interface DesktopPetPreviewAwaiting {
@@ -143,7 +143,7 @@ export interface DesktopPetPreviewPanel {
   items: DesktopPetPreviewItem[];
   artifactCount: number;
   awaiting?: DesktopPetPreviewAwaiting;
-  updatedAt: string;
+  updatedAt: number;
 }
 
 export type DesktopPetSignatureTrigger = "manual" | "idle-random";
@@ -201,7 +201,7 @@ export interface DesktopPetState {
   dragDirection?: DesktopPetDragDirection;
   dragMoved?: boolean;
   signature?: DesktopPetSignatureAction[];
-  updatedAt: string;
+  updatedAt: number;
 }
 
 export type DesktopPetStateListener = (state: DesktopPetState) => void;

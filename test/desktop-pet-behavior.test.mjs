@@ -440,7 +440,7 @@ test("desktop pet builds a message history item from bound agent status when nav
     unreadCount: 1,
     latestPreview: "这是上一条历史回复",
     chatId: "chat-history",
-    updatedAt: "2026-06-17T00:00:00.000Z"
+    updatedAt: 1781654400000
   }));
 
   assert.equal(messages.length, 1);
@@ -454,7 +454,7 @@ test("desktop pet builds a message history item from bound agent status when nav
     preview: "这是上一条历史回复",
     status: "done",
     unread: true,
-    updatedAt: "2026-06-17T00:00:00.000Z"
+    updatedAt: 1781654400000
   });
 });
 
@@ -1459,12 +1459,12 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
       hasPendingAwaiting: true,
       latestChatId: "chat-awaiting",
       latestPreview: "等待确认",
-      updatedAt: "2026-06-17T12:00:00.000Z",
+      updatedAt: 1781697600000,
       recentChats: [{
         chatId: "chat-awaiting",
         chatName: "审批发布",
         agentKey: "cutej",
-        updatedAt: "2026-06-17T12:00:00.000Z",
+        updatedAt: 1781697600000,
         lastRunId: "run-awaiting",
         lastRunContent: "需要你确认两项操作",
         isRead: true,
@@ -1493,12 +1493,12 @@ test("desktop pet reads copilot activity items when navigation items omit the ag
       hasPendingAwaiting: false,
       latestChatId: "copilot-chat-1",
       latestPreview: "已完成网络诊断",
-      updatedAt: "2026-06-24T12:00:00.000Z",
+      updatedAt: 1782302400000,
       recentChats: [{
         chatId: "copilot-chat-1",
         chatName: "网络诊断",
         agentKey: "net-yu",
-        updatedAt: "2026-06-24T12:00:00.000Z",
+        updatedAt: 1782302400000,
         lastRunId: "run-1",
         lastRunContent: "已完成网络诊断",
         isRead: false,

@@ -671,7 +671,7 @@ export interface DesktopApi {
     setPreviewExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
     dismissPreview: () => Promise<{ ok: boolean }>;
     replyMessage: (input: { chatId: string; agentKey?: string; message: string }) => Promise<{ ok: boolean; message?: string; chatId?: string; runId?: string }>;
-    dismissMessage: (input: { chatId: string; runId?: string | null; updatedAt?: string }) => Promise<{ ok: boolean }>;
+    dismissMessage: (input: { chatId: string; runId?: string | null; updatedAt?: number }) => Promise<{ ok: boolean }>;
     setMouseInteractive: (interactive: boolean) => Promise<{ ok: boolean }>;
     setWindowMode: (mode: DesktopPetWindowMode) => Promise<{ ok: boolean }>;
     onStateChanged: (listener: DesktopPetStateListener) => () => void;

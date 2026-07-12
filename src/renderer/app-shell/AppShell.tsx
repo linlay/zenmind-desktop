@@ -1,6 +1,7 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
+import type { WebsiteFaviconCache } from "../components/Favicon";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
@@ -389,6 +390,8 @@ function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: ReturnTyp
       return t("nav.agents");
     case "schedules":
       return t("nav.schedules");
+    case "skills":
+      return t("nav.skills");
   }
 }
 
@@ -500,6 +503,8 @@ export function AppShell() {
   const [webItems, setWebItems] = useState<WebEntry[]>([]);
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
+  const [faviconCache, setFaviconCache] = useState<WebsiteFaviconCache>({});
+  const webItemsRef = useRef<WebEntry[]>([]);
   const webappStartInFlightRef = useRef<Set<string>>(new Set());
   const webappStopInFlightRef = useRef<Set<string>>(new Set());
   const websiteAgentSyncRequestRef = useRef("");
@@ -761,9 +766,27 @@ export function AppShell() {
   }
 
   function updateWebItems(items: WebEntry[]) {
+    webItemsRef.current = items;
     setWebItems(items);
     setWebItemsLoaded(true);
     setWebGroupOrder((currentOrder) => normalizeWebGroupOrder(currentOrder, items));
+    setFaviconCache((prev) => {
+      const websiteUrls = new Map<string, string>(
+        items
+          .filter((item): item is WebsiteEntry => item.kind === "website")
+          .map((item) => [item.entryKey, item.url]),
+      );
+      let changed = false;
+      const next: Record<string, WebsiteFaviconCache[string]> = {};
+      for (const [entryKey, cacheEntry] of Object.entries(prev)) {
+        if (websiteUrls.get(entryKey) === cacheEntry.websiteUrl) {
+          next[entryKey] = cacheEntry;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }
 
   async function handleCloseWebEntry(item: WebEntry) {
@@ -796,6 +819,34 @@ export function AppShell() {
       current.filter((entryKey) => entryKey !== item.entryKey)
     );
   }
+
+  const handleWebsiteFaviconDiscovered = useCallback(
+    (entryKey: string, websiteUrl: string, faviconUrl: string) => {
+      const website = webItemsRef.current.find(
+        (item): item is WebsiteEntry =>
+          item.kind === "website" &&
+          item.entryKey === entryKey &&
+          item.url === websiteUrl,
+      );
+      if (!website) {
+        return;
+      }
+      setFaviconCache((prev) => {
+        const current = prev[entryKey];
+        if (
+          current?.websiteUrl === websiteUrl &&
+          current.faviconUrl === faviconUrl
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [entryKey]: { websiteUrl, faviconUrl },
+        };
+      });
+    },
+    [],
+  );
 
   function handleCopilotSelectedAgentKeyChange(agentKey: string) {
     const normalizedAgentKey = agentKey.trim();
@@ -2941,6 +2992,7 @@ export function AppShell() {
           websiteNavOrder={normalizedWebGroupOrder}
           webItems={webItems}
           webOpenEntryKeys={webOpenEntryKeys}
+          faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}
@@ -3014,6 +3066,7 @@ export function AppShell() {
             activeEntryKey={activeWebEntryKey}
             itemMap={webItemMap}
             mountedEntryKeys={mountedWebEntryKeys}
+            onWebsiteFaviconDiscovered={handleWebsiteFaviconDiscovered}
             assistantDockOpen={assistantCopilotOpen}
             onOpenAssistantDock={() => openAssistantDock()}
             onCloseAssistantDock={closeAssistantDock}

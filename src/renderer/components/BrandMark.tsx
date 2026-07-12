@@ -40,8 +40,6 @@ export type SidebarActionIconKind =
   | "more_actions"
   | "double_check"
   | "close"
-  | "website_open"
-  | "website_closed";
 
 type SidebarIllustrationProps = {
   kind: SidebarIllustrationKind;
@@ -208,19 +206,6 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
           <line x1="18" y1="6" x2="6" y2="18" />
         </svg>
       );
-    case "website_open":
-    case "website_closed": {
-      const statusColor = kind === "website_open" ? "#10B981" : "#EF4444";
-      return (
-        <svg {...iconProps}>
-          <circle cx="12" cy="12" r="9" />
-          <line x1="3" y1="12" x2="21" y2="12" />
-          <line x1="12" y1="3" x2="12" y2="21" />
-          <path d="M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9z" />
-          <circle cx="19" cy="19" r="2.5" fill={statusColor} stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      );
-    }
     default:
       return (
         <svg {...iconProps}>

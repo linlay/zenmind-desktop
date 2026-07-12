@@ -3,6 +3,7 @@ import type {
   AssistantNavAgentItemsResult,
   AssistantNavChatItem
 } from "../shared/contracts";
+import { readEpochMillis } from "../shared/time-contract";
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -14,16 +15,6 @@ function asRecord(value: unknown) {
 
 function toText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function toScalarText(value: unknown) {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-  return "";
 }
 
 function toNonNegativeInteger(value: unknown) {
@@ -53,15 +44,7 @@ function resolveAssistantNavUnreadCount(options: {
 }
 
 function normalizeAssistantNavUpdatedAt(value: unknown) {
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) {
-    return numeric;
-  }
-  if (typeof value === "string") {
-    const timestamp = Date.parse(value);
-    return Number.isFinite(timestamp) ? timestamp : 0;
-  }
-  return 0;
+  return readEpochMillis(value) ?? 0;
 }
 
 function compareAssistantNavChatFreshness(
@@ -82,7 +65,7 @@ function toAwaitingMode(value: unknown): AssistantNavChatItem["awaitingMode"] {
   return mode === "approval" ||
     mode === "question" ||
     mode === "form" ||
-    mode === "plan"
+    mode === "planning"
     ? mode
     : undefined;
 }
@@ -106,13 +89,18 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
   if (!chatId) {
     return null;
   }
+  const createdAt = readEpochMillis(record.createdAt);
+  const updatedAt = readEpochMillis(record.updatedAt);
+  if (createdAt === undefined || updatedAt === undefined) {
+    return null;
+  }
 
   return {
     chatId,
     chatName: toText(record.chatName),
     agentKey: toText(record.agentKey) || fallbackAgentKey,
-    createdAt: toScalarText(record.createdAt),
-    updatedAt: toScalarText(record.updatedAt),
+    createdAt,
+    updatedAt,
     lastRunId: toText(record.lastRunId),
     lastRunContent: toText(record.lastRunContent),
     isRead: readAssistantNavChatIsRead(record),
@@ -141,6 +129,7 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
   const unreadFromChats = recentChats.filter((chat) => chat.isRead === false).length;
   const chatCount = Math.max(toNonNegativeInteger(record.chatCount), recentChats.length);
   const latestChat = recentChats[0] ?? null;
+  const updatedAt = readEpochMillis(record.updatedAt);
   const latestChatId = toText(record.latestChatId) || latestChat?.chatId || null;
   const resolvedUnreadCount = resolveAssistantNavUnreadCount({
     statsUnreadCount: unreadCount,
@@ -159,7 +148,9 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     hasPendingAwaiting: record.hasPendingAwaiting === true || recentChats.some((chat) => chat.hasPendingAwaiting),
     latestChatId,
     latestPreview: toText(record.latestPreview),
-    updatedAt: toText(record.updatedAt) || latestChat?.updatedAt || "",
+    ...(updatedAt !== undefined
+      ? { updatedAt }
+      : latestChat ? { updatedAt: latestChat.updatedAt } : {}),
     recentChats,
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,

@@ -71,7 +71,7 @@ function createFallbackDesktopPetState(): DesktopPetState {
     dragDirection: null,
     dragMoved: false,
     signature: [],
-    updatedAt: ""
+    updatedAt: Date.now()
   };
 }
 
@@ -152,8 +152,8 @@ function formatTaskStatus(task: DesktopPetTaskItem, t: ReturnType<typeof useI18n
     return t("desktopPet.task.running");
   }
   switch (task.awaitingMode) {
-    case "plan":
-      return t("desktopPet.task.awaitingPlan");
+    case "planning":
+      return t("desktopPet.task.awaitingPlanning");
     case "question":
       return t("desktopPet.task.awaitingQuestion");
     case "approval":
@@ -292,7 +292,7 @@ function formatStatusPanelPreview(
     return t("desktopPet.task.backgroundRunning");
   }
   if (status === "awaiting") {
-    return t("desktopPet.task.awaitingPlanConfirm");
+    return t("desktopPet.task.awaitingPlanningConfirm");
   }
   if (status === "done") {
     return t("desktopPet.task.completed");

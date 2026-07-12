@@ -997,8 +997,47 @@ function validateAgentPlatformArchiveDeployProtocol(service, archivePath) {
   validateAgentPlatformDeployProtocolText(service, archivePath, programCommonPath, programCommon);
 }
 
-function validateAgentPlatformBundleArchive(service, archivePath) {
+function expectedAgentPlatformSidecarPath(service) {
+  if (service.platform?.os === "windows") {
+    return "bin/kbase-lance-engine.exe";
+  }
+  if (service.platform?.os === "darwin" || service.platform?.os === "linux") {
+    return "bin/kbase-lance-engine";
+  }
+  throw new Error(
+    `invalid builtin bundle for ${service.id}: unsupported agent-platform target OS ${JSON.stringify(service.platform?.os ?? "")}`
+  );
+}
+
+function validateAgentPlatformSidecarContract(service, sourceLabel, containsPath) {
+  if (service.id !== "agent-platform") {
+    return;
+  }
+  const sidecarPath = expectedAgentPlatformSidecarPath(service);
+  const requiredPaths = new Set(service.requiredBundleEntries.map((entry) => normalizeRequiredPath(entry)));
+  if (!requiredPaths.has(sidecarPath)) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+        `Missing required agent-platform sidecar contract ${sidecarPath} in manifest runtime.requiredPaths.\n` +
+        "Please rebuild the upstream agent-platform release bundle."
+    );
+  }
+  if (!containsPath(sidecarPath)) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+        `Missing required agent-platform sidecar file: ${sidecarPath}.\n` +
+        "Please rebuild the upstream agent-platform release bundle."
+    );
+  }
+}
+
+function validateAgentPlatformBundleArchive(service, archivePath, entries) {
   validateAgentPlatformArchiveDeployProtocol(service, archivePath);
+  validateAgentPlatformSidecarContract(
+    service,
+    archivePath,
+    (relativePath) => entries.has(`${service.bundleTopLevelDir}/${relativePath}`)
+  );
 }
 
 function lifecycleDeployScriptPathForArchive(service, archivePath) {
@@ -1255,7 +1294,7 @@ export function validateBundleArchive(service, archivePath) {
   validateBundleContents(service, archivePath, entries);
 
   if (service.id === "agent-platform") {
-    validateAgentPlatformBundleArchive(service, archivePath);
+    validateAgentPlatformBundleArchive(service, archivePath, entries);
   }
   if (service.id === "agent-container-hub") {
     validateAgentContainerHubBundleArchive(service, archivePath);
@@ -1302,6 +1341,14 @@ function validateAgentPlatformBundleDirectory(service, directoryPath) {
       fs.readFileSync(filePath, "utf8")
     );
   }
+  validateAgentPlatformSidecarContract(
+    service,
+    directoryPath,
+    (relativePath) => {
+      const filePath = path.join(directoryPath, ...relativePath.split("/"));
+      return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+    }
+  );
 }
 
 function validateBundleDirectoryDeployProtocol(service, directoryPath) {

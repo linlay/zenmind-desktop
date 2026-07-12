@@ -3,9 +3,10 @@ import type {
   AssistantNavAgentItem,
   AssistantNavChatItem
 } from "../../../shared/contracts";
+import { readEpochMillis } from "../../../shared/time-contract";
 import type { TranslateFunction } from "../../../shared/i18n";
 
-export type DesktopGlobalSearchActionId = "newChat" | "agents" | "controlCenter" | "settings";
+export type DesktopGlobalSearchActionId = "newChat" | "agents" | "skills" | "controlCenter" | "settings";
 export type DesktopGlobalSearchSectionId = "awaiting" | "unread" | "actions" | "agents" | "chats";
 
 export type DesktopGlobalSearchRow =
@@ -160,6 +161,13 @@ function createActionRows(currentAgentKey: string, t: TranslateFunction): Deskto
       actionId: "agents",
       label: t("desktop.globalSearch.action.agents"),
       description: t("desktop.globalSearch.action.agents.description")
+    },
+    {
+      kind: "action",
+      key: "action:skills",
+      actionId: "skills",
+      label: t("desktop.globalSearch.action.skills"),
+      description: t("desktop.globalSearch.action.skills.description")
     },
     {
       kind: "action",
@@ -340,19 +348,7 @@ function normalizeSearchText(value: unknown) {
 }
 
 function readTimestampMs(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value > 0 && value < 10_000_000_000 ? value * 1000 : value;
-  }
-  const text = String(value ?? "").trim();
-  if (!text) {
-    return 0;
-  }
-  const numeric = Number(text);
-  if (Number.isFinite(numeric)) {
-    return numeric > 0 && numeric < 10_000_000_000 ? numeric * 1000 : numeric;
-  }
-  const parsed = Date.parse(text);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return readEpochMillis(value) ?? 0;
 }
 
 function decodeURIComponentSafe(value: string) {

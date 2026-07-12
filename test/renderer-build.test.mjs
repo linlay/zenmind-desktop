@@ -977,6 +977,7 @@ test("sidebar row action buttons stay out of default tab order", () => {
 
   assert.match(sidebarSource, /className="assistant-worker-chat-menu-button"[\s\S]{0,220}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /sidebar-website-status-action[\s\S]{0,300}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-manage-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
@@ -1028,9 +1029,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
-  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close"[\s\S]*\| "website_open"[\s\S]*\| "website_closed"/);
+  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
-  assert.match(brandMarkSource, /statusColor = kind === "website_open" \? "#10B981" : "#EF4444"/);
+
   assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="sort" \/>/);
   assert.doesNotMatch(sidebarSource, /SortAscendingOutlined/);
@@ -1040,8 +1041,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="double_check" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="more_actions" \/>/);
-  assert.match(sidebarSource, /const webIconKind = isOpen \? "website_open" : "website_closed"/);
-  assert.match(sidebarSource, /<SidebarActionIcon kind=\{webIconKind\} \/>/);
+
   assert.doesNotMatch(sidebarSource, /EditSquareIcon|AddIcon/);
   assert.doesNotMatch(sidebarSource, /assistant-material-icon is-(?:more|done-all|add)/);
   assert.doesNotMatch(sidebarSource, /assistantHomeNavItem/);
@@ -1155,7 +1155,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.approval/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.form/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.question/);
-  assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.plan/);
+  assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.planning/);
   assert.match(sidebarSource, /exportChat/);
   assert.match(sidebarSource, /renameChat/);
   assert.match(sidebarSource, /archiveChat/);
@@ -1519,7 +1519,7 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.approval": "等待批准"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.form": "等待提交"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.question": "等待回答"/);
-  assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.plan": "等待实施"/);
+  assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.planning": "等待实施"/);
   assert.match(zhCN, /"sidebar\.assistants\.sortByName": "按名称"/);
   assert.match(zhCN, /"sidebar\.assistants\.sortByTime": "按时间"/);
   assert.match(zhCN, /"nav\.archives": "已归档对话"/);
@@ -1527,7 +1527,7 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Await Appr"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Await Submit"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Ques"/);
-  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.plan": "Await Impl"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.planning": "Await Impl"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByName": "By name"/);
   assert.match(enUS, /"nav\.archives": "Archived Chats"/);
   assert.match(enUS, /"sidebar\.assistants\.sortByTime": "By time"/);
@@ -3329,6 +3329,9 @@ test("website agent association is exposed across webs desktop api layers", () =
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
+  const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
+  const faviconSource = readSourceFile("src", "renderer", "components", "Favicon.tsx");
+  const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
   const closeWebEntryStart = appShell.indexOf("async function handleCloseWebEntry(item: WebEntry)");
   const closeWebEntry = appShell.slice(
@@ -3373,9 +3376,8 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appSidebar, /className="sidebar-website-child-actions"/);
   assert.match(appSidebar, /requestNavigate\(buildSettingsSectionPath\("websites"\)\)/);
   assert.match(appSidebar, /webOpenEntryKeys\.includes\(webItem\.entryKey\)/);
-  assert.match(appSidebar, /const webIconKind = isOpen \? "website_open" : "website_closed"/);
-  assert.match(appSidebar, /<SidebarActionIcon kind=\{webIconKind\} \/>/);
-  assert.match(appSidebar, /<SidebarActionIcon kind="close" \/>/);
+
+  assert.match(appSidebar, /<SidebarActionIcon[\s\S]{0,120}kind="close"[\s\S]{0,120}className="sidebar-website-status-close"/);
   assert.match(appSidebar, /isOpen \? "is-open" : ""/);
   assert.match(appSidebar, /t\("sidebar\.website\.manage"\)/);
   assert.match(appSidebar, /t\("sidebar\.website\.close"\)/);
@@ -3385,8 +3387,51 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
   assert.match(appSidebar, /onCloseWebItem\(item\)/);
   assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
-  assert.match(navigationCss, /\.sidebar-website-child-row\.is-open \.sidebar-child-link \.sidebar-link-label\s*\{[\s\S]*?color:\s*var\(--ink\);/u);
+
   assert.match(navigationCss, /\.sidebar-website-manage-button \+ \.sidebar-website-add-button\s*\{[\s\S]*?margin-left:\s*0;/u);
+
+  // Favicon component and caching
+  assert.match(appSidebar, /import \{ Favicon, type WebsiteFaviconCache \} from/);
+  assert.match(appSidebar, /const isWebsite = webItem\.kind === "website"/);
+  assert.match(appSidebar, /const cachedFaviconUrl = faviconCache\?\.\[webItem\.entryKey\]\?\.faviconUrl/);
+  assert.match(appSidebar, /<Favicon[\s\S]*?className="sidebar-website-favicon"[\s\S]*?faviconUrl=\{cachedFaviconUrl\}/);
+  assert.match(appSidebar, /className=\{`assistant-worker-icon-button sidebar-website-status-action\$\{closing \? " is-closing" : ""\}`\}/);
+  assert.match(appSidebar, /const showWebappAction = webItem\.kind === "webapp"/);
+  assert.match(appSidebar, /<SidebarIllustration kind=\{item\.icon\} \/>/);
+  assert.doesNotMatch(appSidebar, /website_open/);
+  assert.doesNotMatch(appSidebar, /website_closed/);
+
+  // Green dot CSS
+  assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{/u);
+  assert.match(navigationCss, /\.sidebar-website-status-action\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/u);
+  assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{[\s\S]*?position:\s*absolute;/u);
+  assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;/u);
+  assert.match(navigationCss, /\.sidebar-website-favicon\s*\{/u);
+
+  // Website label font-size 14px matching Chats
+  assert.match(navigationCss, /\.sidebar-website-child-row \.sidebar-child-link \.sidebar-link-label\s*\{[\s\S]*?font-size:\s*14px/u);
+
+  // Cache stays session-local and invalidates when the configured website URL changes.
+  assert.match(appShell, /const \[faviconCache, setFaviconCache\] = useState<WebsiteFaviconCache>\(\{\}\)/);
+  assert.match(appShell, /const webItemsRef = useRef<WebEntry\[\]>\(\[\]\)/);
+  assert.match(appShell, /websiteUrls\.get\(entryKey\) === cacheEntry\.websiteUrl/);
+  assert.match(appShell, /item\.entryKey === entryKey &&[\s\S]{0,120}item\.url === websiteUrl/);
+  assert.match(appShell, /\[entryKey\]: \{ websiteUrl, faviconUrl \}/);
+  assert.doesNotMatch(surfaceHosts, /faviconCache/);
+  assert.match(surfaceHosts, /onWebsiteFaviconDiscovered\(entryKey, item\.url, faviconUrl\)/);
+
+  // Only the initial WebView tab can update the sidebar favicon cache.
+  assert.match(externalWebview, /const initialFaviconTabIdRef = useRef\(""\)/);
+  assert.match(externalWebview, /initialFaviconTabIdRef\.current = initialTab\.id/);
+  assert.match(externalWebview, /tab\.id === initialFaviconTabIdRef\.current/);
+
+  // Favicon candidates fall back from the discovered icon to /favicon.ico before monogram text.
+  assert.match(faviconSource, /const faviconCandidates = \[[\s\S]*?normalizeFaviconUrl\(faviconUrl, url\),[\s\S]*?fallbackFaviconUrl/);
+  assert.match(faviconSource, /const activeFaviconUrl = faviconCandidates\.find/);
+  assert.match(faviconSource, /setFailedFaviconUrls/);
+
+  // WebApp should still use more_actions (unchanged)
+  assert.match(appSidebar, /<SidebarActionIcon kind="more_actions" \/>/);
 });
 
 test("webapps expose desktop api and start from webs sidebar route", () => {
@@ -3613,7 +3658,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /hasActiveRun:\s*boolean/);
   assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
   assert.match(contracts, /awaitingMode\?: AssistantAwaitingMode/);
-  assert.match(contracts, /export type AssistantAwaitingMode = "approval" \| "question" \| "form" \| "plan"/);
+  assert.match(contracts, /export type AssistantAwaitingMode = "approval" \| "question" \| "form" \| "planning"/);
   assert.match(contracts, /"awaiting\.asking"/);
   assert.match(contracts, /"awaiting\.answered"/);
   assert.doesNotMatch(assistantNavigationStatusClient, /awaiting\.ask"/);

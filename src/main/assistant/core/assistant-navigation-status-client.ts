@@ -12,6 +12,7 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
+import { readEpochMillis } from "../../../shared/time-contract";
 import { getDesktopDeviceId } from "../../device-identity";
 import { t } from "../../i18n/main-i18n";
 
@@ -151,6 +152,25 @@ const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
 const NAVIGATION_GIT_BRANCH_TIMEOUT_MS = 1_000;
 const navigationGitBranchCache = new Map<string, AssistantGitBranchCacheEntry>();
 const IGNORED_PUSH_TYPES = new Set(["heartbeat", "live.connected"]);
+const TIMESTAMPED_PUSH_TYPES = new Set([
+  "chat.created",
+  "chat.updated",
+  "chat.read",
+  "chat.unread",
+  "run.start",
+  "run.complete",
+  "awaiting.asking",
+  "awaiting.answered",
+]);
+const STRUCTURED_PUSH_TIME_FIELDS = [
+  "createdAt",
+  "updatedAt",
+  "startedAt",
+  "completedAt",
+  "timestamp",
+  "expiresAt",
+  "readAt",
+] as const;
 const FINISHED_AWAITING_STATUSES = new Set([
   "answered",
   "cancelled",
@@ -164,8 +184,8 @@ const FINISHED_AWAITING_STATUSES = new Set([
   "timeout"
 ]);
 
-function nowIso() {
-  return new Date().toISOString();
+function nowEpochMillis() {
+  return Date.now();
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -181,7 +201,7 @@ function toAwaitingMode(value: unknown): AssistantAwaitingMode | undefined {
   return mode === "approval" ||
     mode === "question" ||
     mode === "form" ||
-    mode === "plan"
+    mode === "planning"
     ? mode
     : undefined;
 }
@@ -374,31 +394,7 @@ function countPendingAwaitingPayload(value: unknown): number {
 }
 
 function toTimestampMs(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return 0;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 0;
-  }
-  const numeric = Number(trimmed);
-  if (Number.isFinite(numeric)) {
-    return numeric;
-  }
-  const parsed = Date.parse(trimmed);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function timestampToIso(value: unknown) {
-  return timestampToIsoOrEmpty(value) || nowIso();
-}
-
-function timestampToIsoOrEmpty(value: unknown) {
-  const timestamp = toTimestampMs(value);
-  return timestamp > 0 ? new Date(timestamp).toISOString() : "";
+  return readEpochMillis(value);
 }
 
 function createApiUrl(baseUrl: string, pathname: string) {
@@ -580,8 +576,8 @@ function readChatActiveRun(chat: PlatformChatSummary) {
 }
 
 function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem) {
-  const rightTime = toTimestampMs(right.updatedAt);
-  const leftTime = toTimestampMs(left.updatedAt);
+  const rightTime = toTimestampMs(right.updatedAt) ?? 0;
+  const leftTime = toTimestampMs(left.updatedAt) ?? 0;
   if (rightTime !== leftTime) {
     return rightTime - leftTime;
   }
@@ -589,7 +585,7 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
 }
 
 function readAgentLatestChatTime(agent: AssistantNavAgentItem) {
-  return toTimestampMs(agent.updatedAt || agent.recentChats[0]?.updatedAt);
+  return toTimestampMs(agent.updatedAt) ?? toTimestampMs(agent.recentChats[0]?.updatedAt) ?? 0;
 }
 
 function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
@@ -620,10 +616,10 @@ function mergeNavigationChats(
       continue;
     }
     const existing = chatsById.get(chatId);
-    if (!existing || toTimestampMs(chat.updatedAt) > toTimestampMs(existing.updatedAt)) {
+    if (!existing || (toTimestampMs(chat.updatedAt) ?? 0) > (toTimestampMs(existing.updatedAt) ?? 0)) {
       chatsById.set(chatId, {
         ...chat,
-        createdAt: chat.createdAt || existing?.createdAt || "",
+        createdAt: chat.createdAt ?? existing?.createdAt,
       });
     }
   }
@@ -637,8 +633,8 @@ function resolveNavigationUnreadCount(options: {
   return options.statsUnreadCount ?? options.unreadFromChats;
 }
 
-function pickLatestTimestamp(left: string, right: string) {
-  return toTimestampMs(right) > toTimestampMs(left) ? right : left;
+function pickLatestTimestamp(left?: number, right?: number) {
+  return (toTimestampMs(right) ?? 0) > (toTimestampMs(left) ?? 0) ? right : left;
 }
 
 function mergeNavigationAgentItem(
@@ -699,12 +695,17 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
   }
   const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
   const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || t("assistant.newChat");
+  const createdAt = toTimestampMs(chat.createdAt);
+  const updatedAt = toTimestampMs(chat.updatedAt);
+  if (createdAt === undefined || updatedAt === undefined) {
+    return null;
+  }
   return {
     chatId,
     chatName,
     agentKey: readChatAgentKey(chat, fallbackAgentKey),
-    createdAt: timestampToIsoOrEmpty(chat.createdAt),
-    updatedAt: timestampToIso(chat.updatedAt || chat.createdAt),
+    createdAt,
+    updatedAt,
     lastRunId: toText(chat.lastRunId),
     lastRunContent,
     isRead: readChatIsRead(chat),
@@ -807,7 +808,7 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
     hasPendingAwaiting: chats.some((chat) => chat.hasPendingAwaiting),
     latestChatId: latestChat?.chatId ?? null,
     latestPreview: latestPreview.slice(0, 120),
-    updatedAt: latestChat?.updatedAt ?? nowIso(),
+    ...(latestChat ? { updatedAt: latestChat.updatedAt } : {}),
     recentChats,
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
@@ -832,7 +833,6 @@ function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentI
     hasPendingAwaiting: false,
     latestChatId: null,
     latestPreview: "",
-    updatedAt: nowIso(),
     recentChats: [],
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
@@ -883,6 +883,14 @@ function toPushEvent(frame: NavigationPushFrame): NavigationPushEvent {
   } as NavigationPushEvent;
 }
 
+function hasValidRequiredPushTimestamp(event: NavigationPushEvent) {
+  const allPresentTimesAreValid = STRUCTURED_PUSH_TIME_FIELDS.every((field) =>
+    event[field] === undefined || toTimestampMs(event[field]) !== undefined
+  );
+  return allPresentTimesAreValid &&
+    (!TIMESTAMPED_PUSH_TYPES.has(event.type) || toTimestampMs(event.timestamp) !== undefined);
+}
+
 function readPushAgentKey(event: NavigationPushEvent) {
   return toText(event.agentKey) || toText(event.firstAgentKey);
 }
@@ -891,12 +899,8 @@ function readPushChatId(event: NavigationPushEvent) {
   return toText(event.chatId);
 }
 
-function readPushUpdatedAt(event: NavigationPushEvent, fallback: string) {
-  return timestampToIso(event.updatedAt || event.timestamp || event.createdAt || fallback);
-}
-
-function readPushCreatedAt(event: NavigationPushEvent, fallback = "") {
-  return timestampToIsoOrEmpty(event.createdAt) || fallback;
+function readPushCreatedAt(event: NavigationPushEvent, fallback?: number) {
+  return toTimestampMs(event.createdAt) ?? fallback;
 }
 
 function readPushPreview(event: NavigationPushEvent) {
@@ -1000,8 +1004,12 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   const preview = readPushPreview(event);
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
   const chatName = toText(event.chatName) || current?.chatName || preview || t("assistant.newChat");
-  const createdAt = readPushCreatedAt(event, current?.createdAt || "");
-  const updatedAt = readPushUpdatedAt(event, current?.updatedAt || nowIso());
+  const eventTimestamp = toTimestampMs(event.timestamp);
+  if (eventTimestamp === undefined) {
+    return null;
+  }
+  const createdAt = readPushCreatedAt(event, current?.createdAt) ?? eventTimestamp;
+  const updatedAt = eventTimestamp;
   let isRead = current?.isRead ?? true;
   if (event.type === "chat.read") {
     isRead = true;
@@ -1090,6 +1098,9 @@ export function applyAssistantNavigationPush(
   const type = event.type;
   if (!type || IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
+  }
+  if (!hasValidRequiredPushTimestamp(event)) {
+    return { items: currentItems, changed: false, shouldRefresh: true };
   }
 
   const agentIndex = findAgentIndexForPush(currentItems, event);
@@ -1251,7 +1262,7 @@ export class AssistantNavigationStatusClient {
     items: [],
     activityItems: [],
     message: t("assistant.navigationStatusUninitialized"),
-    updatedAt: nowIso()
+    updatedAt: nowEpochMillis()
   };
   private lastBaseUrl = "";
   private lastToken = "";
@@ -1305,7 +1316,7 @@ export class AssistantNavigationStatusClient {
           ok: false,
           items: [],
           message: t("agentPlatform.notRunning"),
-          updatedAt: nowIso()
+          updatedAt: nowEpochMillis()
         });
         this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
         return this.latestResult;
@@ -1318,7 +1329,7 @@ export class AssistantNavigationStatusClient {
           ok: false,
           items: [],
           message: tokenResult.message || t("agentPlatform.accessTokenMissing"),
-          updatedAt: nowIso()
+          updatedAt: nowEpochMillis()
         });
         this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
         return this.latestResult;
@@ -1336,7 +1347,7 @@ export class AssistantNavigationStatusClient {
         items,
         activityItems,
         message: t("assistant.navigationStatusRead"),
-        updatedAt: nowIso()
+        updatedAt: nowEpochMillis()
       });
       this.connectWebSocket(baseUrl, token);
       return this.latestResult;
@@ -1347,7 +1358,7 @@ export class AssistantNavigationStatusClient {
         ok: false,
         items: [],
         message,
-        updatedAt: nowIso()
+        updatedAt: nowEpochMillis()
       });
       this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
       return this.latestResult;
@@ -1401,6 +1412,11 @@ export class AssistantNavigationStatusClient {
       return;
     }
     const event = toPushEvent(frame);
+    if (!hasValidRequiredPushTimestamp(event)) {
+      this.options.onDebug?.(`time_contract_violation: navigation push ${event.type} requires epoch_ms_int64 timestamp`);
+      this.scheduleRefresh();
+      return;
+    }
     this.options.onPushEvent?.({
       type: event.type,
       chatId: readPushChatId(event) || null,
@@ -1418,7 +1434,7 @@ export class AssistantNavigationStatusClient {
         items: next.items,
         activityItems: nextActivity.items,
         message: t("assistant.navigationNotificationSynced"),
-        updatedAt: nowIso()
+        updatedAt: nowEpochMillis()
       });
     }
     if (next.shouldRefresh || nextActivity.shouldRefresh) {

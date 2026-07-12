@@ -82,6 +82,8 @@ function writeText(filePath, content) {
 function writeDarwinCoreServiceArchive(sourceRoot, id, {
   includeAgentPlatformRuntime = true,
   requireAgentPlatformRuntime = true,
+  includeAgentPlatformSidecar = true,
+  requireAgentPlatformSidecar = true,
   agentPlatformProgramCommon = [
     "#!/usr/bin/env bash",
     "program_sync_deploy_env_values() {",
@@ -168,6 +170,12 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
   if (id === "agent-platform") {
     fs.mkdirSync(path.join(bundleRoot, "configs"), { recursive: true });
     manifest.runtime.requiredPaths.push("configs");
+    if (includeAgentPlatformSidecar) {
+      writeText(path.join(bundleRoot, "bin", "kbase-lance-engine"), "sidecar fixture\n");
+    }
+    if (requireAgentPlatformSidecar) {
+      manifest.runtime.requiredPaths.push("bin/kbase-lance-engine");
+    }
     if (includeAgentPlatformRuntime) {
       fs.mkdirSync(path.join(bundleRoot, "runtime", "registries", "providers"), { recursive: true });
       fs.mkdirSync(path.join(bundleRoot, "runtime", "chats"), { recursive: true });
@@ -565,6 +573,105 @@ test("syncBuiltinAssets rejects agent-platform archives without required runtime
       brandId: "cutej"
     }),
     /Missing required entries: runtime/u
+  );
+});
+
+test("syncBuiltinAssets rejects agent-platform archives that omit the sidecar contract", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-sidecar-contract-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
+    includeAgentPlatformSidecar: false,
+    requireAgentPlatformSidecar: false
+  });
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-no-sidecar-contract-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /Missing required agent-platform sidecar contract bin\/kbase-lance-engine/u
+  );
+});
+
+test("syncBuiltinAssets rejects agent-platform archives that declare but omit the sidecar file", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-sidecar-file-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
+    includeAgentPlatformSidecar: false,
+    requireAgentPlatformSidecar: true
+  });
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-no-sidecar-file-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      brandId: "cutej"
+    }),
+    /Missing required entries: agent-platform\/bin\/kbase-lance-engine/u
+  );
+});
+
+test("validateBundleDirectory rejects a Windows agent-platform sidecar without the exe suffix", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-platform-windows-sidecar-"));
+  const directoryPath = path.join(tempRoot, "agent-platform");
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+  writeText(path.join(directoryPath, "bin", "kbase-lance-engine"), "wrong platform sidecar\n");
+  writeJson(path.join(directoryPath, "manifest.json"), {
+    kind: "builtin",
+    id: "agent-platform",
+    version: "v999.0.0",
+    platform: { os: "windows", arch: "amd64" },
+    runtime: { requiredPaths: ["manifest.json", "bin/kbase-lance-engine"] }
+  });
+
+  const { validateBundleDirectory } = await importBuiltinAssetsModule(`windows-sidecar-suffix-${Date.now()}`);
+  assert.throws(
+    () => validateBundleDirectory({
+      id: "agent-platform",
+      version: "v999.0.0",
+      platform: { os: "windows", arch: "amd64" },
+      requiredBundleEntries: ["manifest.json", "bin/kbase-lance-engine"]
+    }, directoryPath),
+    /Missing required agent-platform sidecar contract bin\/kbase-lance-engine\.exe/u
   );
 });
 

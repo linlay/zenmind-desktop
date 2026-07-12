@@ -7,6 +7,7 @@ export type SidebarNavOrderItemKey =
   | "schedules"
   | "chats"
   | "market"
+  | "skills"
   | "help"
   | `service:${string}`
   | `experimental:${string}`

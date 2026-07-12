@@ -18,6 +18,7 @@ import {
   SidebarIllustration,
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
+import { Favicon, type WebsiteFaviconCache } from "../../components/Favicon";
 import type {
   AssistantCreateProjectRequest,
   AssistantNavAgentItem,
@@ -31,6 +32,7 @@ import type {
   WebsiteInput,
   WebsiteResult,
 } from "../../../shared/contracts";
+import { readEpochMillis } from "../../../shared/time-contract";
 import {
   createWebNavOrderKey,
   sortSidebarNavItems,
@@ -291,6 +293,7 @@ const fixedToolRowsBase: Array<
         | "nav.agents"
         | "nav.archives"
         | "nav.registries"
+        | "nav.skills"
         | "nav.market"
         | "nav.settings";
     }
@@ -320,6 +323,12 @@ const fixedToolRowsBase: Array<
       to: "/market",
       labelKey: "nav.market",
       icon: "market",
+    },
+    {
+      orderKey: "skills",
+      to: "/skills",
+      labelKey: "nav.skills",
+      icon: "agent",
     },
   ],
   [
@@ -628,12 +637,13 @@ function formatMonthDay(date: Date): string {
 function formatYearMonth(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
 }
-function formatAssistantChatTime(updatedAt: string) {
-  if (!updatedAt) {
+function formatAssistantChatTime(updatedAt?: number) {
+  const timestamp = readEpochMillis(updatedAt);
+  if (timestamp === undefined) {
     return "";
   }
 
-  const updatedDate = new Date(updatedAt);
+  const updatedDate = new Date(timestamp);
   if (Number.isNaN(updatedDate.getTime())) {
     return "--";
   }
@@ -658,12 +668,13 @@ function formatAssistantChatTime(updatedAt: string) {
   return formatYearMonth(updatedDate);
 }
 
-function formatAssistantChatDateTime(value: string) {
-  if (!value) {
+function formatAssistantChatDateTime(value?: number) {
+  const timestamp = readEpochMillis(value);
+  if (timestamp === undefined) {
     return "";
   }
 
-  const date = new Date(value);
+  const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) {
     return "";
   }
@@ -708,9 +719,8 @@ function getAssistantChatPreviewText(
     : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
 }
 
-function toAssistantSortTimestamp(value: string | undefined) {
-  const timestamp = value ? Date.parse(value) : 0;
-  return Number.isFinite(timestamp) ? timestamp : 0;
+function toAssistantSortTimestamp(value: number | undefined) {
+  return readEpochMillis(value) ?? 0;
 }
 
 function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
@@ -762,8 +772,8 @@ function getAssistantAwaitingStatusKey(
   mode?: AssistantNavChatItem["awaitingMode"],
 ) {
   switch (mode) {
-    case "plan":
-      return "sidebar.assistants.awaitingStatus.plan";
+    case "planning":
+      return "sidebar.assistants.awaitingStatus.planning";
     case "question":
       return "sidebar.assistants.awaitingStatus.question";
     case "approval":
@@ -908,6 +918,7 @@ type AppSidebarProps = {
   ) => Promise<WebsiteResult>;
   onImportWebappItem?: () => Promise<WebappImportResult>;
   webOpenEntryKeys?: WebEntryKey[];
+  faviconCache?: WebsiteFaviconCache;
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
   onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
@@ -959,6 +970,7 @@ export function AppSidebar({
   onCreateWebsiteItem,
   onImportWebappItem,
   webOpenEntryKeys = [],
+  faviconCache,
   onCloseWebItem,
   onRemoveWebappItem,
   onRequestNavigate,
@@ -2997,12 +3009,11 @@ export function AppSidebar({
       const closing = webClosePendingEntryKey === webItem.entryKey;
       const removePending =
         webItem.kind === "webapp" && webItemRemovePendingId === webItem.id;
-      const showWebAction = isOpen || webItem.kind === "webapp";
-      const webIconKind = isOpen ? "website_open" : "website_closed";
-      const webActionLabel =
-        webItem.kind === "webapp"
-          ? t("sidebar.webapp.actions")
-          : t("sidebar.website.close");
+      const showWebappAction = webItem.kind === "webapp";
+      const isWebsite = webItem.kind === "website";
+      const cachedFaviconUrl = faviconCache?.[webItem.entryKey]?.faviconUrl;
+      const webappActionLabel = t("sidebar.webapp.actions");
+      const closeWebsiteLabel = t("sidebar.website.close");
       return (
         <div
           key={item.to}
@@ -3029,9 +3040,18 @@ export function AppSidebar({
             data-sidebar-web-entry-key={roving ? webItem.entryKey : undefined}
             className={() => getSidebarLinkClassName(item.to, extraClassName)}
           >
-            {showIcon ? (
+            {showIcon && isWebsite ? (
               <span className="sidebar-link-icon">
-                <SidebarActionIcon kind={webIconKind} />
+                <Favicon
+                  className="sidebar-website-favicon"
+                  title={item.label}
+                  url={webItem.url}
+                  faviconUrl={cachedFaviconUrl}
+                />
+              </span>
+            ) : showIcon ? (
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={item.icon} />
               </span>
             ) : null}
             <span className="sidebar-link-label">{item.label}</span>
@@ -3039,28 +3059,48 @@ export function AppSidebar({
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {showWebAction ? (
+          {isOpen && isWebsite ? (
+            <Tooltip content={closeWebsiteLabel}>
+              <button
+                type="button"
+                className={`assistant-worker-icon-button sidebar-website-status-action${closing ? " is-closing" : ""}`}
+                aria-label={closeWebsiteLabel}
+                title={closeWebsiteLabel}
+                tabIndex={-1}
+                disabled={Boolean(webClosePendingEntryKey)}
+                onClick={(event) => void handleCloseWebItem(event, webItem)}
+              >
+                {closing ? (
+                  <span
+                    className="assistant-material-icon is-loading"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <>
+                    <span className="sidebar-website-status-dot" aria-hidden="true" />
+                    <SidebarActionIcon
+                      kind="close"
+                      className="sidebar-website-status-close"
+                    />
+                  </>
+                )}
+              </button>
+            </Tooltip>
+          ) : null}
+          {showWebappAction ? (
             <span className="sidebar-website-child-actions">
-              <Tooltip content={webActionLabel}>
+              <Tooltip content={webappActionLabel}>
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-website-child-action"
-                  aria-label={webActionLabel}
-                  title={webActionLabel}
+                  aria-label={webappActionLabel}
+                  title={webappActionLabel}
                   tabIndex={-1}
-                  disabled={
-                    webItem.kind === "webapp"
-                      ? Boolean(webItemRemovePendingId || webClosePendingEntryKey)
-                      : Boolean(webClosePendingEntryKey)
-                  }
+                  disabled={Boolean(webItemRemovePendingId || webClosePendingEntryKey)}
                   onClick={(event) => {
-                    if (webItem.kind === "webapp") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openWebItemMenuAtElement(event.currentTarget, webItem);
-                      return;
-                    }
-                    void handleCloseWebItem(event, webItem);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openWebItemMenuAtElement(event.currentTarget, webItem);
                   }}
                 >
                   {closing || removePending ? (
@@ -3068,11 +3108,7 @@ export function AppSidebar({
                       className="assistant-material-icon is-loading"
                       aria-hidden="true"
                     />
-                  ) : webItem.kind === "webapp" ? (
-                    <SidebarActionIcon kind="more_actions" />
-                  ) : (
-                    <SidebarActionIcon kind="close" />
-                  )}
+                  ) : <SidebarActionIcon kind="more_actions" />}
                 </button>
               </Tooltip>
             </span>
@@ -4077,7 +4113,7 @@ export function AppSidebar({
   function renderToolMenu() {
     const shouldRenderDesktopSsoAccount = desktopSsoStatus?.configured === true;
     const topToolItems = fixedToolItems.filter((item) =>
-      item.to === "/agents" || item.to === "/archives" || item.to === "/registries" || item.to === "/market"
+      item.to === "/agents" || item.to === "/archives" || item.to === "/registries" || item.to === "/market" || item.to === "/skills"
     );
 
     return (
