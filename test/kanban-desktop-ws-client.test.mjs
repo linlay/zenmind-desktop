@@ -130,7 +130,8 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   assert.equal(hello.payload.ownerUserId, "user-1");
   assert.equal(hello.payload.lastAckedDeliverySeq, 0);
   assert.equal(hello.payload.lastAppliedRevision, 0);
-  assert.equal(hello.payload.cacheSchemaVersion, 1);
+  assert.equal(hello.payload.cacheSchemaVersion, 2);
+  assert.equal(hello.payload.contractVersion, "3.1");
   assert.deepEqual(hello.payload.agents, [{ agentKey: "cutej", displayName: "小君", role: "桌面智能体" }]);
 
     socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
@@ -604,7 +605,8 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
     "manual resync snapshot"
   );
   const resyncSnapshotRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "snapshot.get");
-  assert.equal(resyncSnapshotRequest.payload.projectId, "project-1");
+  assert.equal(resyncSnapshotRequest.payload.scope, "project_set");
+  assert.equal(resyncSnapshotRequest.payload.deviceId, "device-1");
   socket.onmessage({
     data: JSON.stringify({
       v: 3,
@@ -1090,4 +1092,46 @@ test("kanban desktop ws client closes when response cannot be sent", async (t) =
   assert.equal(debugMessages.some((message) => /Sent before connected/.test(message)), true);
 
   client.stop();
+});
+
+test("kanban desktop ws client refuses private issue content before serialization", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor() {
+      this.sent = [];
+      this.readyState = 0;
+      sockets.push(this);
+    }
+    send(data) { this.sent.push(JSON.parse(data)); }
+    close() { this.readyState = 3; }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => { globalThis.WebSocket = originalWebSocket; });
+
+  const client = new KanbanDesktopWsClient({
+    capabilities: [],
+    getCurrentUser: () => ({ id: "user-1", name: "User", email: "user@example.test", source: "test" }),
+    getDeviceId: () => "device-1",
+    onSnapshot: () => {},
+    onDispatchIssue: () => ({ ok: true, message: "ok", issues: [] }),
+    onListAgents: async () => [],
+    onStartRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "ok" }),
+    onAutomationSync: async () => ({ ok: true })
+  });
+  client.start({ serverUrl: "http://127.0.0.1:3000", selectedProjectId: "default" });
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  await waitFor(() => socket.sent.some((frame) => frame.type === "sync.hello"), "sync.hello");
+  const sentBefore = socket.sent.length;
+
+  await assert.rejects(
+    client.request("issue.update", { issue: { id: "local-1", syncMode: "private", title: "never upload", filePath: "/Users/me/private.txt" } }),
+    /private kanban payload/u
+  );
+  assert.equal(socket.sent.length, sentBefore);
+  assert.equal(socket.readyState, 1);
+  client.stop();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 });

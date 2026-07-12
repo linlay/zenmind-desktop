@@ -790,7 +790,7 @@ export class AgentPlatformAssistantBridge {
   async startRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> {
     const message = request.message.trim();
     const chatId = request.chatId?.trim() || createChatId();
-    const runId = createRunId();
+    const runId = request.runId?.trim() || createRunId();
     if (!message) {
       return {
         ok: false,
@@ -809,6 +809,17 @@ export class AgentPlatformAssistantBridge {
       };
     }
     const controller = new AbortController();
+    if (this.activeRuns.has(runId)) {
+      return {
+        ok: true,
+        runId,
+        chatId,
+        message: t("agentPlatform.runSubmitted"),
+        permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
+        fullAccessExpiresAt: null,
+        fullAccessRemainingMs: 0
+      };
+    }
     this.activeRuns.set(runId, controller);
     this.acquireWakeLockForActiveRuns();
     void this.runQuery(availability.baseUrl, availability.token, request, { chatId, runId, controller });
@@ -1206,6 +1217,7 @@ export class AgentPlatformAssistantBridge {
         method: "POST",
         headers: this.jsonHeaders(token, { Accept: "text/event-stream" }),
         body: JSON.stringify({
+          requestId: request.requestId?.trim() || run.runId,
           runId: run.runId,
           chatId: run.chatId,
           agentKey: request.agentKey?.trim() || undefined,

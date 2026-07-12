@@ -337,6 +337,9 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     if (String(url).endsWith("/api/query")) {
       const body = JSON.parse(String(init.body));
       assert.equal(body.message, "hello platform");
+      assert.equal(body.runId, "run-stable-1");
+      assert.equal(body.requestId, "request-stable-1");
+      assert.equal(body.chatId, "chat-stable-1");
       assert.equal(body.agentKey, "codeAssistant");
       assert.equal(body.accessLevel, "auto_approve");
       assert.equal(body.stream, true);
@@ -353,7 +356,14 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
   };
 
   try {
-    const result = await bridge.startRun({ message: "hello platform", agentKey: "codeAssistant", accessLevel: "auto_approve" });
+    const result = await bridge.startRun({
+      message: "hello platform",
+      agentKey: "codeAssistant",
+      accessLevel: "auto_approve",
+      chatId: "chat-stable-1",
+      runId: "run-stable-1",
+      requestId: "request-stable-1"
+    });
     assert.equal(result.ok, true);
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(requests.length, 1);

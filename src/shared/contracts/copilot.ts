@@ -385,6 +385,8 @@ export type AssistantAccessLevel = "default" | "auto_approve" | "full_access";
 
 export interface AssistantStartRunRequest {
   chatId?: string | null;
+  runId?: string | null;
+  requestId?: string | null;
   agentKey?: string;
   message: string;
   accessLevel?: AssistantAccessLevel;

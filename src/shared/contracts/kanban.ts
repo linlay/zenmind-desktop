@@ -66,6 +66,10 @@ export interface KanbanIssue {
   chatId: string | null;
   runId: string | null;
   runState: KanbanRunState | null;
+  dispatchState?: "waiting_for_device" | "delivered" | "running" | "completed" | "failed" | "cancelled" | null;
+  dispatchDeviceId?: string | null;
+  dispatchCommandId?: string | null;
+  dispatchUpdatedAt?: string | null;
   automationId: string | null;
   automationEnabled: boolean;
   automationCron: string | null;
@@ -95,6 +99,7 @@ export interface KanbanProject {
   path: string;
   depth: number;
   position: number;
+  revision?: number;
   visibility?: string;
   defaultWorkflowId?: string;
   createdAt: string;
