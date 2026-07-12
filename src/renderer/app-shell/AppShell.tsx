@@ -2985,6 +2985,7 @@ export function AppShell() {
           webOpenEntryKeys={webOpenEntryKeys}
           assistantNavAgents={assistantNavAgents}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
+          websitesLoaded={webItemsLoaded}
           chatNavAgentOptions={chatNavAgentOptions}
           copilotAgentOptions={copilotAgentOptions}
           chatDefaultAgentKey={chatRuntimeAgentKey}

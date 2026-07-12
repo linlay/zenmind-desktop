@@ -885,6 +885,7 @@ type AppSidebarProps = {
   webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavAgentsLoaded?: boolean;
+  websitesLoaded?: boolean;
   chatNavAgentOptions?: AssistantNavAgentItem[];
   copilotAgentOptions?: AssistantNavAgentItem[];
   chatDefaultAgentKey?: string;
@@ -937,6 +938,7 @@ export function AppSidebar({
   webItems,
   assistantNavAgents = [],
   assistantNavAgentsLoaded = true,
+  websitesLoaded = true,
   chatNavAgentOptions = [],
   copilotAgentOptions = [],
   chatDefaultAgentKey = "",
@@ -2913,7 +2915,11 @@ export function AppSidebar({
             );
           })
         ) : !showBootstrapChatFallback ? (
-          <div className="sidebar-chats-empty">{t("sidebar.chats.empty")}</div>
+          chatDefaultAgentUnavailable ? (
+            <div className="sidebar-empty-hint">{t("sidebar.chats.defaultAgentUnavailable")}</div>
+          ) : (
+            <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
+          )
         ) : null}
         {chatOverviewTotal > CHATS_RECENT_LIMIT && resolvedChatDefaultAgent ? (
           <button
@@ -3514,7 +3520,7 @@ export function AppSidebar({
                     renderAssistantAgent(agent, { roving: false }),
                   )
                 ) : assistantNavAgentsLoaded ? (
-                  <div className="status-line">
+                  <div className="sidebar-empty-hint">
                     {t("sidebar.assistants.empty")}
                   </div>
                 ) : null}
@@ -3670,16 +3676,18 @@ export function AppSidebar({
                   renderAssistantAgent(agent),
                 )
               ) : assistantNavAgentsLoaded ? (
-                <div className="status-line">
+                <div className="sidebar-empty-hint">
                   {t("sidebar.assistants.empty")}
                 </div>
               ) : null}
             </div>
           ) : args.renderChildren ? (
             args.renderChildren({ roving: true })
-          ) : (
+          ) : args.children.length > 0 ? (
             args.children.map((item) => renderSidebarChildLink(item))
-          )}
+          ) : args.groupId === "webs" && websitesLoaded ? (
+            <div className="sidebar-empty-hint">{t("sidebar.websites.empty")}</div>
+          ) : null}
         </div>
       </Collapse>
     );

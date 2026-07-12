@@ -1513,9 +1513,9 @@ test("assistant sidebar empty state is localized", () => {
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(sidebarSource, /<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>/);
+  assert.match(sidebarSource, /<div className="sidebar-empty-hint">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无智能体/);
-  assert.match(zhCN, /"sidebar\.assistants\.empty": "暂无智能体"/);
+  assert.match(zhCN, /"sidebar\.assistants\.empty": "暂无项目。鼠标悬停「项目」即可添加。"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.approval": "等待批准"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.form": "等待提交"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.question": "等待回答"/);
@@ -1523,7 +1523,7 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(zhCN, /"sidebar\.assistants\.sortByName": "按名称"/);
   assert.match(zhCN, /"sidebar\.assistants\.sortByTime": "按时间"/);
   assert.match(zhCN, /"nav\.archives": "已归档对话"/);
-  assert.match(enUS, /"sidebar\.assistants\.empty": "No assistants"/);
+  assert.match(enUS, /"sidebar\.assistants\.empty": "No projects\. Hover over 'Projects' to add\."/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Await Appr"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Await Submit"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Ques"/);
@@ -1548,7 +1548,7 @@ test("assistant sidebar empty state waits for navigation load", () => {
   assert.match(appShell, /assistantNavAgentsLoaded=\{assistantNavAgentsLoaded\}/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded\?: boolean;/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded = true,/);
-  assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>\s*\) : null/);
+  assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="sidebar-empty-hint">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>\s*\) : null/);
 });
 
 test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", () => {
