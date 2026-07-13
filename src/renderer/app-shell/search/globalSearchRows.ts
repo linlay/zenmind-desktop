@@ -38,6 +38,7 @@ export type DesktopGlobalSearchRow =
       score: number;
       hasActiveRun: boolean;
       hasPendingAwaiting: boolean;
+      awaitingMode?: AssistantNavChatItem["awaitingMode"];
       isUnread: boolean;
     };
 
@@ -258,6 +259,7 @@ function createLocalChatRow(
     score: 0,
     hasActiveRun: chat.hasActiveRun,
     hasPendingAwaiting: chat.hasPendingAwaiting,
+    awaitingMode: chat.awaitingMode,
     isUnread: chat.isRead === false
   };
 }
@@ -297,6 +299,7 @@ function mergeQueryChatRows(
       score: result.score,
       hasActiveRun: localRow?.hasActiveRun ?? false,
       hasPendingAwaiting: localRow?.hasPendingAwaiting ?? false,
+      awaitingMode: localRow?.awaitingMode,
       isUnread: localRow?.isUnread ?? false
     });
   }

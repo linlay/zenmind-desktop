@@ -578,7 +578,7 @@
 
 .desktop-global-search-row {
   width: 100%;
-  min-height: 36px;
+  min-height: 31px;
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
@@ -602,8 +602,8 @@
 }
 
 .desktop-global-search-row-icon {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -632,8 +632,12 @@
 .desktop-global-search-row-title {
   color: #0f172a;
   font-size: 14px;
-  font-weight: 600;
+  /* font-weight: 600; */
   line-height: 20px;
+}
+
+.desktop-global-search-row.is-chat .desktop-global-search-row-title {
+  font-weight: 400;
 }
 
 .desktop-global-search-row-detail {

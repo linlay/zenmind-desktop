@@ -2291,7 +2291,6 @@ export const enUSMessages = {
   "desktop.globalSearch.action.controlCenter.description": "Manage Desktop services and runtime",
   "desktop.globalSearch.action.settings": "Open settings",
   "desktop.globalSearch.action.settings.description": "Adjust Desktop preferences",
-  "desktop.globalSearch.status.awaiting": "Awaiting input",
   "desktop.globalSearch.status.running": "Running",
 
   "logViewer.titleFallback": "Logs",

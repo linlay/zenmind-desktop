@@ -13,6 +13,7 @@ import type {
   AssistantNavAgentItem
 } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
+import { getAssistantAwaitingStatusKey } from "../../assistantNavigation";
 import {
   buildDesktopGlobalSearchSections,
   resolveDesktopGlobalSearchAgentKey,
@@ -218,7 +219,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                     </span>
                     <span className="desktop-global-search-row-body">
                       <span className="desktop-global-search-row-title">{row.label}</span>
-                      {row.kind !== "action" ? (
+                      {row.kind === "agent" ? (
                         <span className="desktop-global-search-row-detail">{renderRowDetail(row)}</span>
                       ) : null}
                     </span>
@@ -323,10 +324,7 @@ function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   return <SettingOutlined />;
 }
 
-function renderRowDetail(row: DesktopGlobalSearchRow) {
-  if (row.kind === "chat") {
-    return row.snippet;
-  }
+function renderRowDetail(row: Extract<DesktopGlobalSearchRow, { kind: "agent" }>) {
   return row.description;
 }
 
@@ -334,7 +332,7 @@ function renderChatStatus(row: Extract<DesktopGlobalSearchRow, { kind: "chat" }>
   if (row.hasPendingAwaiting) {
     return (
       <span className="desktop-global-search-row-status is-awaiting">
-        {t("desktop.globalSearch.status.awaiting")}
+        {t(getAssistantAwaitingStatusKey(row.awaitingMode))}
       </span>
     );
   }

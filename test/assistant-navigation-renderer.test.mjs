@@ -46,6 +46,7 @@ function loadAssistantNavigationModule() {
 }
 
 const {
+  getAssistantAwaitingStatusKey,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
   getAssistantNavRecentChatsOverview,
@@ -54,6 +55,14 @@ const {
   normalizeAssistantNavAgents,
   resolveAssistantNavChatRuntimeAgent,
 } = loadAssistantNavigationModule();
+
+test("assistant nav maps awaiting modes to the shared chat status labels", () => {
+  assert.equal(getAssistantAwaitingStatusKey("question"), "sidebar.assistants.awaitingStatus.question");
+  assert.equal(getAssistantAwaitingStatusKey("planning"), "sidebar.assistants.awaitingStatus.planning");
+  assert.equal(getAssistantAwaitingStatusKey("form"), "sidebar.assistants.awaitingStatus.form");
+  assert.equal(getAssistantAwaitingStatusKey("approval"), "sidebar.assistants.awaitingStatus.approval");
+  assert.equal(getAssistantAwaitingStatusKey(), "kanban.run.awaitingApproval");
+});
 
 function chat(overrides) {
   return {

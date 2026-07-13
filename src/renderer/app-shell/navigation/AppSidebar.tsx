@@ -46,6 +46,7 @@ import { Popover } from "../../components/Popover";
 import { SettingsSidebarIcon } from "./SettingsSidebarIcon";
 import { useI18n } from "../../i18n/useI18n";
 import {
+  getAssistantAwaitingStatusKey,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
@@ -779,23 +780,6 @@ function sortAssistantNavAgentsForMode(
       ? compareAssistantAgentsByName
       : compareAssistantAgentsByTime;
   return [...items].sort(compare);
-}
-
-function getAssistantAwaitingStatusKey(
-  mode?: AssistantNavChatItem["awaitingMode"],
-) {
-  switch (mode) {
-    case "planning":
-      return "sidebar.assistants.awaitingStatus.planning";
-    case "question":
-      return "sidebar.assistants.awaitingStatus.question";
-    case "approval":
-      return "sidebar.assistants.awaitingStatus.approval";
-    case "form":
-      return "sidebar.assistants.awaitingStatus.form";
-    default:
-      return "kanban.run.awaitingApproval";
-  }
 }
 
 function createSidebarLinkFocusId(orderKey: SidebarNavOrderItemKey | string) {

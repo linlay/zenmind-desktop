@@ -193,6 +193,7 @@ test("desktop global search filters rows, boosts local attention state, and pref
             lastRunContent: "local deploy snippet",
             isRead: false,
             hasPendingAwaiting: true,
+            awaitingMode: "question",
           }),
           chat({ chatId: "chat-2", chatName: "Meeting notes", lastRunContent: "unrelated" }),
         ],
@@ -243,6 +244,7 @@ test("desktop global search filters rows, boosts local attention state, and pref
   assert.equal(chatRows[0].snippet, "remote deploy snippet");
   assert.equal(chatRows[0].source, "remote");
   assert.equal(chatRows[0].hasPendingAwaiting, true);
+  assert.equal(chatRows[0].awaitingMode, "question");
   assert.equal(chatRows[0].isUnread, true);
   assert.equal(chatRows[1].chatId, "chat-remote");
   assert.equal(chatRows.some((row) => row.chatId === "chat-missing-agent"), false);

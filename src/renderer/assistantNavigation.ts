@@ -64,6 +64,23 @@ function toAwaitingMode(value: unknown): AssistantNavChatItem["awaitingMode"] {
     : undefined;
 }
 
+export function getAssistantAwaitingStatusKey(
+  mode?: AssistantNavChatItem["awaitingMode"],
+) {
+  switch (mode) {
+    case "planning":
+      return "sidebar.assistants.awaitingStatus.planning";
+    case "question":
+      return "sidebar.assistants.awaitingStatus.question";
+    case "approval":
+      return "sidebar.assistants.awaitingStatus.approval";
+    case "form":
+      return "sidebar.assistants.awaitingStatus.form";
+    default:
+      return "kanban.run.awaitingApproval";
+  }
+}
+
 function readAssistantNavChatIsRead(record: Record<string, unknown>) {
   if (typeof record.isRead === "boolean") {
     return record.isRead;
