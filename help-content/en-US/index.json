@@ -8,6 +8,7 @@
       "label": "Popular",
       "items": [
         { "id": "what-is-desktop", "title": "What is {{productName}}?", "file": "popular/what-is-desktop.md" },
+        { "id": "create-chat-project-site", "title": "How do I create a Chat, Project, or Site?", "file": "popular/create-chat-project-site.md" },
         { "id": "install", "title": "How do I install and start {{productName}} for the first time?", "file": "popular/install.md" },
         { "id": "requirements", "title": "System requirements and environment setup", "file": "popular/requirements.md" },
         { "id": "data-directories", "title": "Where are data directories stored?", "file": "popular/data-directories.md" },

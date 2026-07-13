@@ -8,6 +8,7 @@
       "label": "热门问题",
       "items": [
         { "id": "what-is-desktop", "title": "什么是 {{productName}}？", "file": "popular/what-is-desktop.md" },
+        { "id": "create-chat-project-site", "title": "如何新建 Chat、Project 和 Site？", "file": "popular/create-chat-project-site.md" },
         { "id": "install", "title": "如何安装与首次启动？", "file": "popular/install.md" },
         { "id": "requirements", "title": "系统要求与环境准备", "file": "popular/requirements.md" },
         { "id": "data-directories", "title": "数据目录在哪里？", "file": "popular/data-directories.md" },
