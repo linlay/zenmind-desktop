@@ -317,6 +317,19 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     }
   });
 
+  ipcMain.handle("assistant.getNavigationLiveStatus", () =>
+    assistantNavigationStatusClient?.getLiveStatus?.() ?? {
+      phase: "idle",
+      source: "desktop-nav",
+      endpoint: null,
+      connectedAt: null,
+      lastMessageAt: null,
+      lastRefreshAt: null,
+      lastPushType: null,
+      lastError: null,
+    },
+  );
+
   ipcMain.handle("assistant.listCopilotAgents", async (): Promise<any> => {
     try {
       return await assistantBridge.listCopilotAgents();

@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   AssistantNavigationStatusClient,
+  applyAssistantNavigationChatPush,
   applyAssistantNavigationPush,
   buildAssistantNavigationChatsFromPlatform,
   buildAssistantNavigationAgentsFromPlatformAgents,
@@ -41,7 +42,23 @@ function findChat(items, chatId) {
   return items.flatMap((agent) => agent.recentChats).find((chat) => chat.chatId === chatId);
 }
 
-test("assistant navigation reads global REACT chats over WebSocket and refreshes them after pushes", async (t) => {
+function createNavigationChat(overrides = {}) {
+  return {
+    chatId: "chat-1",
+    chatName: "Chat one",
+    agentKey: "zenmi",
+    createdAt: EPOCH_MS,
+    updatedAt: EPOCH_MS,
+    lastRunId: "",
+    lastRunContent: "",
+    isRead: true,
+    hasActiveRun: false,
+    hasPendingAwaiting: false,
+    ...overrides,
+  };
+}
+
+test("assistant navigation reads global REACT chats over WebSocket and keeps displayed chat status live", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
@@ -57,7 +74,7 @@ test("assistant navigation reads global REACT chats over WebSocket and refreshes
       lastRunId: "run-newest",
       lastRunContent: "latest response",
       read: { isRead: false },
-      activeRun: true,
+      activeRun: false,
     },
     {
       chatId: "team-without-agent",
@@ -80,6 +97,34 @@ test("assistant navigation reads global REACT chats over WebSocket and refreshes
       createdAt: EPOCH_MS + index,
       updatedAt: EPOCH_MS + index,
     })),
+  ], [
+    {
+      chatId: "react-newest",
+      chatName: "Newest React chat",
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + 30,
+      updatedAt: EPOCH_MS + 70,
+      lastRunId: "run-newest",
+      lastRunContent: "latest response",
+      read: { isRead: false },
+      awaiting: {
+        awaitingId: "awaiting-1",
+        mode: "question",
+        status: "awaiting",
+        createdAt: EPOCH_MS + 70,
+      },
+    },
+  ], [
+    {
+      chatId: "react-newest",
+      chatName: "Newest React chat",
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + 30,
+      updatedAt: EPOCH_MS + 80,
+      lastRunId: "run-newest",
+      lastRunContent: "latest response",
+      read: { isRead: false },
+    },
   ]];
 
   class FakeWebSocket {
@@ -113,6 +158,10 @@ test("assistant navigation reads global REACT chats over WebSocket and refreshes
 
     emit(frame) {
       this.onmessage?.({ data: JSON.stringify(frame) });
+    }
+
+    emitClose() {
+      this.onclose?.();
     }
 
     close() {}
@@ -151,36 +200,165 @@ test("assistant navigation reads global REACT chats over WebSocket and refreshes
     ["react-newest", "react-0", "react-1", "react-2", "react-3", "react-4", "react-5", "react-6"],
   );
   assert.equal(first.chatItems[0].isRead, false);
-  assert.equal(first.chatItems[0].hasActiveRun, true);
+  assert.equal(first.chatItems[0].hasActiveRun, false);
+  const connected = client.getLiveStatus();
+  assert.equal(connected.phase, "connected");
+  assert.equal(connected.source, "desktop-nav");
+  assert.equal(connected.endpoint, "ws://127.0.0.1:11789/ws");
+  assert.equal(typeof connected.connectedAt, "number");
+  assert.equal(JSON.stringify(connected).includes("token"), false);
 
-  const refreshAfterPush = async (type, data, expectedRequestCount) => {
-    sockets[0].emit({ frame: "push", type, data });
-    await new Promise((resolve) => setTimeout(resolve, 450));
-    assert.equal(
-      sockets[0].sent.filter((frame) => frame.type === "/api/chats").length,
-      expectedRequestCount,
-    );
-  };
-  await refreshAfterPush("chat.updated", {
+  sockets[0].emit({ frame: "push", type: "run.started", data: {
     agentKey: "zenmi",
     chatId: "react-newest",
-    timestamp: EPOCH_MS + 50,
-    createdAt: EPOCH_MS + 30,
-    updatedAt: EPOCH_MS + 50,
-  }, 2);
-  await refreshAfterPush("run.complete", {
-    agentKey: "zenmi",
-    chatId: "react-newest",
+    runId: "run-newest",
     timestamp: EPOCH_MS + 60,
-    updatedAt: EPOCH_MS + 60,
-  }, 3);
-  await refreshAfterPush("awaiting.asking", {
+  }});
+  assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
+
+  sockets[0].emit({ frame: "push", type: "awaiting.asking", data: {
     agentKey: "zenmi",
     chatId: "react-newest",
+    awaitingId: "awaiting-1",
     createdAt: EPOCH_MS + 70,
-    updatedAt: EPOCH_MS + 70,
-  }, 4);
+    mode: "question",
+  }});
+  assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, true);
+  assert.equal(client.getSnapshot().chatItems[0].awaitingMode, "question");
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 2);
+  assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, true);
+
+  sockets[0].emit({ frame: "push", type: "awaiting.answered", data: {
+    agentKey: "zenmi",
+    chatId: "react-newest",
+    awaitingId: "awaiting-1",
+    resolvedAt: EPOCH_MS + 80,
+  }});
+  assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 3);
+  assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
+
+  sockets[0].emit({ frame: "push", type: "awaiting.asking", data: {
+    agentKey: "not-listed",
+    chatId: "not-listed",
+    createdAt: EPOCH_MS + 90,
+    mode: "question",
+  }});
+  assert.equal(client.getSnapshot().chatItems.some((chat) => chat.chatId === "not-listed"), false);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 4);
   assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 8));
+
+  sockets[0].emitClose();
+  assert.equal(client.getLiveStatus().phase, "reconnecting");
+  assert.match(client.getLiveStatus().lastError, /WebSocket closed/);
+});
+
+test("assistant navigation chat reducer updates displayed chats without checking agent mode", () => {
+  const current = [createNavigationChat({ agentKey: "coder-agent", agentMode: "CODER" })];
+  const started = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "run.started",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      runId: "run-1",
+      timestamp: EPOCH_MS + 1,
+    },
+  });
+  assert.equal(started.changed, true);
+  assert.equal(started.items[0].hasActiveRun, true);
+
+  const asked = applyAssistantNavigationChatPush(started.items, {
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      createdAt: EPOCH_MS + 2,
+      mode: "question",
+    },
+  });
+  assert.equal(asked.changed, true);
+  assert.equal(asked.items[0].hasPendingAwaiting, true);
+  assert.equal(asked.items[0].awaitingMode, "question");
+
+  const completed = applyAssistantNavigationChatPush(asked.items, {
+    frame: "push",
+    type: "run.finished",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      runId: "run-1",
+      timestamp: EPOCH_MS + 3,
+    },
+  });
+  assert.equal(completed.changed, true);
+  assert.equal(completed.items[0].hasActiveRun, false);
+
+  const answered = applyAssistantNavigationChatPush(completed.items, {
+    frame: "push",
+    type: "awaiting.answered",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      resolvedAt: EPOCH_MS + 4,
+    },
+  });
+  assert.equal(answered.changed, true);
+  assert.equal(answered.items[0].hasPendingAwaiting, false);
+
+  const absent = applyAssistantNavigationChatPush(answered.items, {
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "other-agent",
+      chatId: "not-listed",
+      createdAt: EPOCH_MS + 5,
+      mode: "question",
+    },
+  });
+  assert.equal(absent.changed, false);
+  assert.equal(absent.shouldRefresh, true);
+  assert.deepEqual(absent.items.map((chat) => chat.chatId), ["chat-1"]);
+});
+
+test("assistant navigation live status reports WebSocket setup failures without credentials", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+  });
+  globalThis.WebSocket = undefined;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+    },
+  });
+
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => os.tmpdir() },
+    getServiceState: async () => ({
+      status: "running",
+      healthMeta: { webUrl: "http://127.0.0.1:11789" },
+    }),
+    issueAccessToken: async () => ({ ok: true, token: "secret-token", message: "" }),
+    onSnapshot: () => {},
+  });
+  t.after(() => client.stop());
+
+  const result = await client.refreshNow();
+  const status = client.getLiveStatus();
+  assert.equal(result.ok, false);
+  assert.equal(status.phase, "error");
+  assert.equal(status.endpoint, "ws://127.0.0.1:11789/ws");
+  assert.match(status.lastError, /WebSocket is unavailable/);
+  assert.equal(JSON.stringify(status).includes("secret-token"), false);
 });
 
 test("assistant navigation chat mapper preserves server order and rejects missing agent keys or timestamps", () => {

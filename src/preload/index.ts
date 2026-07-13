@@ -134,6 +134,7 @@ const api: DesktopApi = {
     getMemorySummary: () => ipcRenderer.invoke("assistant.getMemorySummary"),
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: () => ipcRenderer.invoke("assistant.listNavigationAgents"),
+    getNavigationLiveStatus: () => ipcRenderer.invoke("assistant.getNavigationLiveStatus"),
     listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
     createProject: (input: AssistantCreateProjectRequest) =>
       ipcRenderer.invoke("assistant.createProject", input),

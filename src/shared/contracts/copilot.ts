@@ -212,6 +212,25 @@ export interface AssistantNavChatItem {
   awaitingMode?: AssistantAwaitingMode;
 }
 
+export type AssistantNavigationLivePhase =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "unavailable"
+  | "error";
+
+export interface AssistantNavigationLiveStatus {
+  phase: AssistantNavigationLivePhase;
+  source: "desktop-nav";
+  endpoint: string | null;
+  connectedAt: number | null;
+  lastMessageAt: number | null;
+  lastRefreshAt: number | null;
+  lastPushType: string | null;
+  lastError: string | null;
+}
+
 export interface AssistantNavAgentItem {
   agentKey: string;
   displayName: string;

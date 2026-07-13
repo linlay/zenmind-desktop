@@ -3689,6 +3689,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /workspaceDirExists\?: boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);
   assert.match(contracts, /chatItems: AssistantNavChatItem\[\];/);
+  assert.match(contracts, /export interface AssistantNavigationLiveStatus/);
+  assert.match(contracts, /source: "desktop-nav"/);
   assert.match(contracts, /interface AssistantCreateProjectRequest/);
   assert.match(contracts, /type AssistantCreateProjectType = "coder" \| "kbase"/);
   assert.match(contracts, /interface AssistantCreateProjectResult/);
@@ -3698,11 +3700,13 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /AssistantNavigationPushEventListener/);
   assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
   assert.match(contracts, /listNavigationAgents: \(\) => Promise<AssistantNavAgentItemsResult>/);
+  assert.match(contracts, /getNavigationLiveStatus: \(\) => Promise<AssistantNavigationLiveStatus>/);
   assert.match(contracts, /createProject:\s*\(input: AssistantCreateProjectRequest\) => Promise<AssistantCreateProjectResult>/);
   assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
   assert.match(preload, /listNavigationAgents: \(\) => ipcRenderer\.invoke\("assistant\.listNavigationAgents"\)/);
+  assert.match(preload, /getNavigationLiveStatus: \(\) => ipcRenderer\.invoke\("assistant\.getNavigationLiveStatus"\)/);
   assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createProject:\s*\(input: AssistantCreateProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createProject", input\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
@@ -3711,6 +3715,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(mainIpcRegister, /registerAssistantIpcHandlers\(ipcMain,/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getNavigationLiveStatus"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createProject"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createCoderProject"/);
@@ -3721,6 +3726,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantNavigationStatusClient, /agentMode: NAVIGATION_CHAT_AGENT_MODE/);
   assert.match(assistantNavigationStatusClient, /limit: NAVIGATION_CHAT_LIMIT/);
   assert.match(assistantNavigationStatusClient, /buildAssistantNavigationChatsFromPlatform/);
+  assert.match(assistantNavigationStatusClient, /applyAssistantNavigationChatPush/);
+  assert.match(assistantNavigationStatusClient, /getLiveStatus\(\): AssistantNavigationLiveStatus/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?assistant\.navigationAgentsChanged/);
   assert.match(mainProcess, /function emitAssistantNavigationPushEvent[\s\S]*?assistant\.navigationPushEvent/);
   assert.match(assistantRuntime, /emitAssistantNavigationPushEvent\(event\)/);
