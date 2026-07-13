@@ -561,6 +561,8 @@ const api: DesktopApi = {
       stop: (id: string) => ipcRenderer.invoke("webs.webapps.stop", id),
       restart: (id: string) => ipcRenderer.invoke("webs.webapps.restart", id),
       getStatus: (id: string) => ipcRenderer.invoke("webs.webapps.getStatus", id),
+      getPublishInfo: (id: string) => ipcRenderer.invoke("webs.webapps.getPublishInfo", id),
+      publish: (id: string, input) => ipcRenderer.invoke("webs.webapps.publish", id, input),
       readLog: (id, target, options) => ipcRenderer.invoke("webs.webapps.readLog", id, target, options)
     }
   },

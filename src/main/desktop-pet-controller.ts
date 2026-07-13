@@ -1091,8 +1091,12 @@ export function createDesktopPetWindowController(
       });
       options.stopStatusClient();
     }
-    if (window && !window.isDestroyed() && window.isVisible()) {
-      window.hide();
+    if (window && !window.isDestroyed()) {
+      if (disable) {
+        window.destroy();
+      } else if (window.isVisible()) {
+        window.hide();
+      }
     }
     return options.refreshState({
       ...(disable ? { unreadCount: 0 } : {})

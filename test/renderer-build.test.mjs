@@ -6043,18 +6043,26 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
   assert.match(petRuntime, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
   assert.match(petRuntime, /options\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
+  assert.match(desktopPetWindow, /const isMac = options\.platform === "darwin";/);
   assert.match(desktopPetWindow, /const isWindows = options\.platform === "win32";/);
+  assert.match(desktopPetWindow, /\.\.\.\(isMac \? \{ type: "panel" as const \} : \{\}\)/);
   assert.match(desktopPetWindow, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
   assert.match(
     desktopPetWindow,
-    /export function applyDesktopPetBrowserWindowLayering\([\s\S]*?platform === "darwin"[\s\S]{0,180}setAlwaysOnTop\(true, "screen-saver"\);[\s\S]{0,220}setVisibleOnAllWorkspaces\(true,\s*\{[\s\S]{0,160}visibleOnFullScreen:\s*true,[\s\S]{0,180}skipTransformProcessType:\s*true[\s\S]*?\}\);[\s\S]{0,120}platform === "win32"[\s\S]{0,120}setAlwaysOnTop\(true\);/
+    /export function applyDesktopPetBrowserWindowLayering\([\s\S]*?platform === "darwin"[\s\S]{0,180}setAlwaysOnTop\(true, "screen-saver"\);[\s\S]{0,120}platform === "win32"[\s\S]{0,120}setAlwaysOnTop\(true\);/
   );
+  assert.doesNotMatch(desktopPetWindow, /setVisibleOnAllWorkspaces/);
   assert.match(desktopPetWindow, /applyDesktopPetBrowserWindowLayering\(win, options\.platform\);/);
   assert.match(petRuntime, /import \{ applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow \} from "\.\/window";/);
   assert.match(
     petRuntime,
-    /function restoreWindowLayering\(\)[\s\S]{0,320}\[state\.desktopPetWindow, state\.desktopPetPanelWindow\][\s\S]{0,260}applyDesktopPetBrowserWindowLayering\(targetWindow, options\.platform,[\s\S]{0,160}preserveProcessType:\s*true,[\s\S]{0,80}moveTop:\s*true/
+    /function restoreWindowLayering\(\)[\s\S]{0,220}!state\.desktopPetSettings\.enabled[\s\S]{0,220}\[state\.desktopPetWindow, state\.desktopPetPanelWindow\][\s\S]{0,260}applyDesktopPetBrowserWindowLayering\(targetWindow, options\.platform\);/
   );
+  const restoreWindowLayeringBlock = petRuntime.slice(
+    petRuntime.indexOf("function restoreWindowLayering()"),
+    petRuntime.indexOf("function createPanelWindow")
+  );
+  assert.doesNotMatch(restoreWindowLayeringBlock, /moveTop\(/);
   assert.match(petRuntime, /function showWindow\(\)[\s\S]{0,160}applyPanelWindowBounds\(\);[\s\S]{0,80}restoreWindowLayering\(\);/);
   assert.match(petRuntime, /restoreWindowLayering,/);
   assert.match(desktopPetHandlers, /desktopPet\.setMouseInteractive/);

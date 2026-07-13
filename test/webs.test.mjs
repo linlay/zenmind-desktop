@@ -34,6 +34,10 @@ const {
   webappRuntime
 } = require("../dist-electron/main/webs/webapps/runtime.js");
 const {
+  __testInternals: webappPublisherInternals,
+  getWebappPublishInfo
+} = require("../dist-electron/main/webs/webapps/publisher.js");
+const {
   registerWebIpcHandlers
 } = require("../dist-electron/main/ipc/web-handlers.js");
 const {
@@ -544,6 +548,57 @@ test("webapp ipc import installs local archive and returns refreshed web entries
     "website:docs",
     "webapp:reg-report-excelx-webapp"
   ]);
+});
+
+test("webapp publisher discovers the configured Liteploy project without exposing credentials", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-info-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const appDir = writeWebapp(webappsRoot(homePath), "publish-demo");
+  writeJson(path.join(appDir, "webapp.publish.json"), {
+    schemaVersion: 1,
+    provider: "liteploy",
+    mode: "static",
+    port: 80,
+    stateMount: null
+  });
+
+  const liteployPath = path.join(homePath, ".local", "bin", "liteploy");
+  fs.mkdirSync(path.dirname(liteployPath), { recursive: true });
+  fs.writeFileSync(liteployPath, `#!/bin/sh
+case "$1 $2 $3" in
+  "config show ")
+    printf '%s\n' 'url: https://dokploy.example.test' 'token: masked' 'projects: 1' 'domainSuffix: .example.test'
+    ;;
+  "auth projects ")
+    printf '%s\n' 'PROJECT CPU_LIMIT MEMORY_LIMIT' 'demo 1 CPU 1024MB'
+    ;;
+  "app deploy --help")
+    printf '%s\n' 'Usage: liteploy app deploy --volume NAME:/data'
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+`, "utf8");
+  fs.chmodSync(liteployPath, 0o755);
+
+  const result = await getWebappPublishInfo(app, "publish-demo");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.info.configured, true);
+  assert.equal(result.info.cliAvailable, true);
+  assert.equal(result.info.defaultProject, "demo");
+  assert.equal(result.info.domainSuffix, ".example.test");
+  assert.equal(result.info.persistentVolumeSupported, true);
+  assert.doesNotMatch(JSON.stringify(result), /token: masked/u);
+});
+
+test("webapp publisher keeps generated application names within the domain label limit", () => {
+  const application = webappPublisherInternals.stableApplicationName("demo", `webapp-${"x".repeat(100)}`);
+  assert.equal(`demo-${application}`.length <= 63, true);
+  assert.match(application, /-[a-f0-9]{8}$/u);
 });
 
 test("resource directory watcher debounces and refreshes web, pet, and plugin domains", (t) => {

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { EventEmitter } from "node:events";
 
 const require = createRequire(import.meta.url);
 
@@ -19,6 +20,7 @@ const {
   createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetActiveTasksFromNavigationSnapshot,
   createDesktopPetDragController,
+  createDesktopPetWindowController,
   computeDesktopPetPositionPersistence,
   resolveDesktopPetWindowMode
 } = require("../dist-electron/main/desktop-pet-controller.js");
@@ -72,6 +74,99 @@ function createAgentStatus(overrides = {}) {
     ...overrides
   };
 }
+
+test("closing desktop pet destroys its window until the user explicitly enables it again", () => {
+  let settings = createSettings({ enabled: false });
+  let createdWindow = null;
+  let stopStatusClientCount = 0;
+
+  class FakeDesktopPetWindow extends EventEmitter {
+    constructor() {
+      super();
+      this.destroyed = false;
+      this.visible = false;
+      this.destroyCount = 0;
+      this.hideCount = 0;
+      this.webContents = new EventEmitter();
+    }
+
+    isDestroyed() {
+      return this.destroyed;
+    }
+
+    isVisible() {
+      return this.visible;
+    }
+
+    setBounds() {}
+
+    showInactive() {
+      this.visible = true;
+      this.emit("show");
+    }
+
+    moveTop() {}
+
+    hide() {
+      this.hideCount += 1;
+      this.visible = false;
+      this.emit("hide");
+    }
+
+    destroy() {
+      this.destroyCount += 1;
+      this.destroyed = true;
+      this.visible = false;
+      this.emit("closed");
+    }
+  }
+
+  const controller = createDesktopPetWindowController({
+    platform: "darwin",
+    createWindow: () => {
+      createdWindow = new FakeDesktopPetWindow();
+      return createdWindow;
+    },
+    getSettings: () => settings,
+    saveSettings: (patch) => {
+      settings = { ...settings, ...patch };
+    },
+    getMode: () => "base",
+    getBounds: () => ({ x: 10, y: 20, width: 240, height: 240 }),
+    isHandlingQuit: () => false,
+    loadRendererRoute: async () => {},
+    buildContextMenu: () => null,
+    startStatusClient: () => {},
+    stopStatusClient: () => {
+      stopStatusClientCount += 1;
+    },
+    endDrag: () => {},
+    clearIdleResetTimer: () => {},
+    clearPreviewRefreshTimer: () => {},
+    clearPreview: () => {},
+    refreshState: () => ({ enabled: settings.enabled }),
+    setMouseInteractive: () => {}
+  });
+
+  controller.showWindow();
+  assert.equal(settings.enabled, true);
+  assert.equal(createdWindow.isVisible(), true);
+
+  let closePrevented = false;
+  createdWindow.emit("close", {
+    preventDefault() {
+      closePrevented = true;
+    }
+  });
+
+  assert.equal(closePrevented, true);
+  assert.equal(settings.enabled, false);
+  assert.equal(createdWindow.destroyCount, 1);
+  assert.equal(createdWindow.hideCount, 0);
+  assert.equal(controller.getWindow(), null);
+  assert.equal(controller.isVisible(), false);
+  assert.equal(stopStatusClientCount, 1);
+});
 
 function visibleFootprintRect(bounds, footprint) {
   return {
