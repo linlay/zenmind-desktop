@@ -2194,12 +2194,6 @@ export function AppSidebar({
     requestNavigate(buildSettingsSectionPath("websites"));
   }
 
-  function openWebsitesSettings(event: MouseEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    navigateWebsitesSettings();
-  }
-
   async function handleSaveWebsite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (websiteCreatePending) {
@@ -3668,18 +3662,6 @@ export function AppSidebar({
             ) : null}
             {args.groupId === "webs" ? (
               <>
-                <Tooltip content={t("sidebar.website.manage")}>
-                  <button
-                    type="button"
-                    className="assistant-worker-icon-button sidebar-website-manage-button"
-                    aria-label={t("sidebar.website.manage")}
-                    title={t("sidebar.website.manage")}
-                    tabIndex={-1}
-                    onClick={openWebsitesSettings}
-                  >
-                    <SidebarActionIcon kind="new_chat" />
-                  </button>
-                </Tooltip>
                 <Tooltip content={t("sidebar.website.actions")}>
                   <button
                     type="button"

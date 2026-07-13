@@ -52,6 +52,7 @@ const {
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
   normalizeAssistantNavAgents,
+  resolveAssistantNavChatRuntimeAgent,
 } = loadAssistantNavigationModule();
 
 function chat(overrides) {
@@ -180,6 +181,82 @@ test("assistant nav Chats exclude projects and internal agents", () => {
   assert.equal(isAssistantNavChatAgent({ agentKey: "coder", mode: "CODER" }), false);
   assert.equal(isAssistantNavChatAgent({ agentKey: "desktopAssistant", mode: "CHAT" }), false);
   assert.equal(isAssistantNavChatAgent({ agentKey: "webOperator", mode: "CHAT" }), false);
+});
+
+test("assistant nav runtime Chat agent prefers the configured default over bootstrap", () => {
+  const bootstrap = { agentKey: "bootstrap", displayName: "Bootstrap", recentChats: [] };
+  const zenmi = { agentKey: "zenmi", displayName: "小宅", recentChats: [] };
+
+  assert.deepEqual(
+    resolveAssistantNavChatRuntimeAgent([bootstrap], {
+      defaultChatAgentKey: "zenmi",
+      bootstrapAgentKey: "bootstrap",
+    }),
+    {
+      agent: bootstrap,
+      agentKey: "bootstrap",
+      defaultAgentAvailable: false,
+      bootstrapAgentAvailable: true,
+      bootstrapActive: true,
+    },
+  );
+  assert.deepEqual(
+    resolveAssistantNavChatRuntimeAgent([bootstrap, zenmi], {
+      defaultChatAgentKey: "zenmi",
+      bootstrapAgentKey: "bootstrap",
+    }),
+    {
+      agent: zenmi,
+      agentKey: "zenmi",
+      defaultAgentAvailable: true,
+      bootstrapAgentAvailable: true,
+      bootstrapActive: false,
+    },
+  );
+  assert.deepEqual(
+    resolveAssistantNavChatRuntimeAgent([zenmi], {
+      defaultChatAgentKey: "zenmi",
+      bootstrapAgentKey: "bootstrap",
+    }),
+    {
+      agent: zenmi,
+      agentKey: "zenmi",
+      defaultAgentAvailable: true,
+      bootstrapAgentAvailable: false,
+      bootstrapActive: false,
+    },
+  );
+  assert.deepEqual(
+    resolveAssistantNavChatRuntimeAgent([], {
+      defaultChatAgentKey: "zenmi",
+      bootstrapAgentKey: "bootstrap",
+    }),
+    {
+      agent: null,
+      agentKey: "zenmi",
+      defaultAgentAvailable: false,
+      bootstrapAgentAvailable: false,
+      bootstrapActive: false,
+    },
+  );
+});
+
+test("assistant nav runtime Chat agent treats matching default and bootstrap keys as default", () => {
+  const zenmi = { agentKey: "zenmi", displayName: "小宅", recentChats: [] };
+
+  assert.deepEqual(
+    resolveAssistantNavChatRuntimeAgent([zenmi], {
+      defaultChatAgentKey: "zenmi",
+      bootstrapAgentKey: "zenmi",
+    }),
+    {
+      agent: zenmi,
+      agentKey: "zenmi",
+      defaultAgentAvailable: true,
+      bootstrapAgentAvailable: true,
+      bootstrapActive: false,
+    },
+  );
 });
 
 test("assistant nav attention matches webclient worker selection", () => {

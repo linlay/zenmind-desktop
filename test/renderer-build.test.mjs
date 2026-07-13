@@ -979,7 +979,6 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /sidebar-website-status-action[\s\S]{0,300}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
-  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-manage-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /function openSidebarRovingContextMenu\(element: HTMLElement\)/);
   assert.match(sidebarSource, /function renderWebItemMenu\(\)/);
@@ -3371,7 +3370,6 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appShell, /webOpenEntryKeys=\{webOpenEntryKeys\}/);
   assert.match(appShell, /onCloseWebItem=\{handleCloseWebEntry\}/);
   assert.match(appSidebar, /args\.groupId === "webs"/);
-  assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-manage-button"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /className="sidebar-website-child-actions"/);
   assert.match(appSidebar, /requestNavigate\(buildSettingsSectionPath\("websites"\)\)/);
@@ -3388,7 +3386,6 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(appSidebar, /onCloseWebItem\(item\)/);
   assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
 
-  assert.match(navigationCss, /\.sidebar-website-manage-button \+ \.sidebar-website-add-button\s*\{[\s\S]*?margin-left:\s*0;/u);
 
   // Favicon component and caching
   assert.match(appSidebar, /import \{ Favicon, type WebsiteFaviconCache \} from/);
@@ -3883,6 +3880,7 @@ test("assistant navigation agents refresh immediately after startup services bec
 
 test("bootstrap initialization stays in Chats and restores the configured default agent", () => {
   const appShell = readAppShellSource();
+  const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const appSidebar = readSourceFile(
     "src",
     "renderer",
@@ -3897,20 +3895,25 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.doesNotMatch(appShell, /shouldAutoOpenBootstrapAgent|createBootstrapAgentRoute|startupBootstrapNavigationDoneRef/);
   assert.doesNotMatch(startupGateHelper, /shouldAutoOpenBootstrapAgent|isBootstrapOwnedRoute/);
   assert.match(appShell, /const bootstrapInitialNavigationDoneRef = useRef\(false\)/);
+  assert.match(appShell, /const bootstrapHandoffNavigationDoneRef = useRef\(false\)/);
   assert.match(appShell, /bootstrapAgent\.recentChats\.some\(\(chat\) => chat\.chatId === bootstrapChatId\)/);
   assert.match(appShell, /seedChatIndexed[\s\S]*?createAgentChatRoute\(bootstrapAgentKey, bootstrapChatId\)[\s\S]*?createAgentNewChatRoute\(bootstrapAgentKey\)/);
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current = true;[\s\S]*?navigate\(targetRoute, \{ replace: true \}\)/);
-  assert.match(appShell, /const normalizedBootstrapAgentKey = assistantSettings\?\.bootstrapAgentKey\.trim\(\) \?\? "";/);
-  assert.match(appShell, /const bootstrapAgentPresent = Boolean\([\s\S]*?chatNavAgentOptions\.some\(\(agent\) => agent\.agentKey === normalizedBootstrapAgentKey\)/);
-  assert.match(appShell, /const chatRuntimeAgentKey = bootstrapAgentPresent[\s\S]*?normalizedBootstrapAgentKey[\s\S]*?assistantSettings\?\.chatDefaultAgentKey/);
-  assert.match(appShell, /chatDefaultAgentKey=\{chatRuntimeAgentKey\}/);
-  assert.match(appShell, /bootstrapActive=\{bootstrapAgentPresent\}/);
+  assert.match(assistantNavigation, /export function resolveAssistantNavChatRuntimeAgent\(/);
+  assert.match(assistantNavigation, /const agent = defaultAgent \?\? bootstrapAgent;/);
+  assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapAgent && !defaultAgent\)/);
+  assert.match(appShell, /const chatRuntimeAgent = useMemo\([\s\S]*?resolveAssistantNavChatRuntimeAgent\(chatNavAgentOptions/);
+  assert.match(appShell, /if \(!chatRuntimeAgent\.bootstrapActive \|\| !bootstrapAgentKey \|\| !bootstrapAgent\)/);
+  assert.match(appShell, /chatDefaultAgentKey=\{chatRuntimeAgent\.agentKey\}/);
+  assert.match(appShell, /bootstrapActive=\{chatRuntimeAgent\.bootstrapActive\}/);
   assert.match(appShell, /bootstrapAgentKey=\{normalizedBootstrapAgentKey\}/);
   assert.match(appShell, /bootstrapChatId=\{assistantSettings\?\.bootstrapChatId\}/);
   assert.doesNotMatch(appShell, /bootstrapRunTerminalRef|bootstrapCompletionRetryTick|BOOTSTRAP_COMPLETION_RETRY_MS/);
   assert.doesNotMatch(appShell, /onNavigationPushEvent\(\(event\) =>/);
   assert.doesNotMatch(appShell, /run\.complete/);
-  assert.match(appShell, /const bootstrapAgentPresent = chatNavAgentOptions\.some\([\s\S]*?route\.agentKey !== bootstrapAgentKey[\s\S]*?defaultAgentAvailable/);
+  assert.match(appShell, /bootstrapHandoffNavigationDoneRef\.current/);
+  assert.match(appShell, /!chatRuntimeAgent\.defaultAgentAvailable/);
+  assert.match(appShell, /route\.agentKey !== bootstrapAgentKey/);
   assert.match(appShell, /navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/);
   assert.match(appShell, /if \(bootstrapAgentKey\) \{[\s\S]*?chatDefaultAgentMigrationRef\.current = "";[\s\S]*?return;/);
   assert.match(appSidebar, /const resolvedChatDefaultAgent = chatDefaultAgent;/);

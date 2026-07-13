@@ -1677,10 +1677,6 @@
   margin-left: auto;
 }
 
-.sidebar-website-manage-button {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
 
 .sidebar-website-add-button {
   flex: 0 0 auto;
@@ -1688,15 +1684,11 @@
 }
 
 .sidebar-nav-group>.Collapse-header .sidebar-assistant-project-button,
-.sidebar-nav-group>.Collapse-header .sidebar-website-manage-button,
 .sidebar-nav-group>.Collapse-header .sidebar-website-add-button,
 .sidebar-nav-group>.Collapse-header .sidebar-chats-new-button {
   margin-left: 0;
 }
 
-.sidebar-website-manage-button + .sidebar-website-add-button {
-  margin-left: 0;
-}
 
 .sidebar-website-dialog-layer {
   position: fixed;

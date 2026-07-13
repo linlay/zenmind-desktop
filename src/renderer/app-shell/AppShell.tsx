@@ -70,7 +70,8 @@ import {
 import {
   isAssistantNavChatAgent,
   normalizeAssistantNavAgentItemsResult,
-  normalizeAssistantNavAgents
+  normalizeAssistantNavAgents,
+  resolveAssistantNavChatRuntimeAgent,
 } from "../assistantNavigation";
 import {
   AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS,
@@ -451,6 +452,7 @@ export function AppShell() {
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const bootstrapInitialNavigationDoneRef = useRef(false);
+  const bootstrapHandoffNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -492,6 +494,17 @@ export function AppShell() {
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
+  const chatRuntimeAgent = useMemo(
+    () => resolveAssistantNavChatRuntimeAgent(chatNavAgentOptions, {
+      defaultChatAgentKey: assistantSettings?.chatDefaultAgentKey,
+      bootstrapAgentKey: assistantSettings?.bootstrapAgentKey,
+    }),
+    [
+      assistantSettings?.bootstrapAgentKey,
+      assistantSettings?.chatDefaultAgentKey,
+      chatNavAgentOptions,
+    ],
+  );
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [desktopActionConfirmation, setDesktopActionConfirmation] =
     useState<DesktopActionConfirmationRequest | null>(null);
@@ -1018,10 +1031,8 @@ export function AppShell() {
     }
 
     const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
-    const bootstrapAgent = chatNavAgentOptions.find(
-      (agent) => agent.agentKey === bootstrapAgentKey,
-    );
-    if (!bootstrapAgentKey || !bootstrapAgent) {
+    const bootstrapAgent = chatRuntimeAgent.agent;
+    if (!chatRuntimeAgent.bootstrapActive || !bootstrapAgentKey || !bootstrapAgent) {
       return;
     }
 
@@ -1042,6 +1053,7 @@ export function AppShell() {
   }, [
     assistantNavAgentsLoaded,
     assistantSettings,
+    chatRuntimeAgent,
     chatNavAgentOptions,
     location.pathname,
     location.search,
@@ -1052,14 +1064,17 @@ export function AppShell() {
     if (!assistantNavAgentsLoaded || !assistantSettings) {
       return;
     }
-    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
-    if (!bootstrapAgentKey) {
+    if (bootstrapHandoffNavigationDoneRef.current) {
       return;
     }
-    const bootstrapAgentPresent = chatNavAgentOptions.some(
-      (agent) => agent.agentKey === bootstrapAgentKey
-    );
-    if (bootstrapAgentPresent) {
+    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
+    const defaultChatAgentKey = assistantSettings.chatDefaultAgentKey.trim();
+    if (
+      !bootstrapAgentKey ||
+      !defaultChatAgentKey ||
+      bootstrapAgentKey === defaultChatAgentKey ||
+      !chatRuntimeAgent.defaultAgentAvailable
+    ) {
       return;
     }
 
@@ -1070,20 +1085,13 @@ export function AppShell() {
       return;
     }
 
-    const defaultChatAgentKey = assistantSettings.chatDefaultAgentKey.trim();
-    const defaultAgentAvailable = Boolean(
-      defaultChatAgentKey &&
-      chatNavAgentOptions.some((agent) => agent.agentKey === defaultChatAgentKey)
-    );
-    if (defaultAgentAvailable) {
-      navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
-      return;
-    }
+    bootstrapHandoffNavigationDoneRef.current = true;
+    navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
   }, [
     assistantNavAgentsLoaded,
     assistantSettings?.bootstrapAgentKey,
     assistantSettings?.chatDefaultAgentKey,
-    chatNavAgentOptions,
+    chatRuntimeAgent.defaultAgentAvailable,
     location.pathname,
     location.search,
     navigate,
@@ -2939,13 +2947,6 @@ export function AppShell() {
   } as CSSProperties;
   const globalSearchShortcutLabel = isMac ? "Cmd+K" : isWindows ? "Ctrl+K" : "";
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
-  const bootstrapAgentPresent = Boolean(
-    normalizedBootstrapAgentKey &&
-    chatNavAgentOptions.some((agent) => agent.agentKey === normalizedBootstrapAgentKey)
-  );
-  const chatRuntimeAgentKey = bootstrapAgentPresent
-    ? normalizedBootstrapAgentKey
-    : assistantSettings?.chatDefaultAgentKey.trim() ?? "";
 
   return (
     <DebugModeContext.Provider value={debugSettingsUnlocked}>
@@ -2998,10 +2999,10 @@ export function AppShell() {
           websitesLoaded={webItemsLoaded}
           chatNavAgentOptions={chatNavAgentOptions}
           copilotAgentOptions={copilotAgentOptions}
-          chatDefaultAgentKey={chatRuntimeAgentKey}
+          chatDefaultAgentKey={chatRuntimeAgent.agentKey}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
-          bootstrapActive={bootstrapAgentPresent}
+          bootstrapActive={chatRuntimeAgent.bootstrapActive}
           bootstrapAgentKey={normalizedBootstrapAgentKey}
           bootstrapChatId={assistantSettings?.bootstrapChatId}
           sidebarNavigationCanGoBack={sidebarNavigationHistory.back.length > 0}

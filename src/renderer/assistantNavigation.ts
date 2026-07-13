@@ -185,6 +185,40 @@ export function isAssistantNavChatAgent(
     !isAssistantNavProjectAgent(agent);
 }
 
+export type AssistantNavChatRuntimeAgent = {
+  agent: AssistantNavAgentItem | null;
+  agentKey: string;
+  defaultAgentAvailable: boolean;
+  bootstrapAgentAvailable: boolean;
+  bootstrapActive: boolean;
+};
+
+export function resolveAssistantNavChatRuntimeAgent(
+  agents: AssistantNavAgentItem[],
+  options: {
+    defaultChatAgentKey?: string;
+    bootstrapAgentKey?: string;
+  },
+): AssistantNavChatRuntimeAgent {
+  const defaultChatAgentKey = toText(options.defaultChatAgentKey);
+  const bootstrapAgentKey = toText(options.bootstrapAgentKey);
+  const defaultAgent = defaultChatAgentKey
+    ? agents.find((agent) => agent.agentKey === defaultChatAgentKey) ?? null
+    : null;
+  const bootstrapAgent = bootstrapAgentKey
+    ? agents.find((agent) => agent.agentKey === bootstrapAgentKey) ?? null
+    : null;
+  const agent = defaultAgent ?? bootstrapAgent;
+
+  return {
+    agent,
+    agentKey: agent?.agentKey ?? defaultChatAgentKey,
+    defaultAgentAvailable: Boolean(defaultAgent),
+    bootstrapAgentAvailable: Boolean(bootstrapAgent),
+    bootstrapActive: Boolean(bootstrapAgent && !defaultAgent),
+  };
+}
+
 export function normalizeAssistantNavAgentItemsResult(
   result: AssistantNavAgentItemsResult
 ): AssistantNavAgentItemsResult {
