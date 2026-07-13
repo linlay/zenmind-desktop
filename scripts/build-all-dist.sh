@@ -6,58 +6,52 @@ DESKTOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_DESKTOP_WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DESKTOP_WORKSPACE_ROOT="${DESKTOP_WORKSPACE_ROOT:-$DEFAULT_DESKTOP_WORKSPACE_ROOT}"
 
-CLEAN_FIRST=1
 DRY_RUN=0
-ONLY_PROJECTS=""
-SKIP_PROJECTS=""
-SYNC_AFTER_BUILD=1
 SYNC_OS=""
 SYNC_ARCH=""
 SIGN_MAC_BUILTINS="${SIGN_MAC_BUILTINS:-0}"
+BUILD_ARCH=""
+
+UPSTREAM_SERVICE_REPOS=(
+  "agent-container-hub"
+  "agent-webclient"
+  "agent-platform"
+  "identity-center"
+)
 
 usage() {
   cat <<'EOF'
 Usage:
   scripts/build-all-dist.sh [options]
 
-Build latest dist/release packages for:
-  container-hub   -> agent-container-hub
-  agent-webclient -> agent-webclient
-  platform        -> agent-platform
-  identity-center -> identity-center
-
-After the selected builds finish, the script syncs Desktop builtin service
-assets into:
-  build/resources/services
+Build the complete set of upstream builtin service release packages, then sync
+only those release outputs into build/resources/services.
 
 Options:
-  --only a,b,c     Build only selected short names.
-  --skip a,b,c     Skip selected short names.
-  --no-clean       Do not remove previous dist output first.
-  --no-sync        Do not copy/sync built packages into this Desktop project.
   --sync-os os     Sync only one target OS (darwin, windows, linux).
-  --sync-arch arch Sync only one target arch (arm64, amd64).
+  --sync-arch arch Build upstream services for, and sync only, one target arch
+                    (arm64, amd64). Defaults to the host arch for upstream builds.
   --sign-mac       Pre-sign extracted Darwin service binaries before packaging.
   --no-sign-mac    Disable Darwin service binary pre-signing.
-  --dry-run        Print commands without running them.
+  --dry-run        Print upstream and sync commands without running them.
   -h, --help       Show this help.
 
 Environment:
   DESKTOP_WORKSPACE_ROOT
-                   Override the parent directory containing the four projects.
+                   Override the parent directory containing the four service repos.
   SIGN_MAC_BUILTINS=1
                    Enable --sign-mac without putting signing details in git.
   DESKTOP_DARWIN_CODESIGN_IDENTITY / MACOS_CODESIGN_IDENTITY / CSC_NAME
                    Developer ID Application identity for --sign-mac. Final
                    release signing still happens in electron-builder.
-  PROGRAM_TARGETS / PROGRAM_TARGET_MATRIX / ARCH / VERSION
-                   Passed through to the underlying project release scripts.
+
+Each upstream service owns its VERSION, target matrix, and all service-private
+release inputs. Desktop invokes only: make release ARCH=<host-or-sync-arch>.
 
 Examples:
-  scripts/build-all-dist.sh
-  scripts/build-all-dist.sh --only container-hub,platform
+  scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64
   SIGN_MAC_BUILTINS=1 CSC_NAME="Your Name (TEAMID)" scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64
-  DESKTOP_WORKSPACE_ROOT=/Users/me/Project/desktop-workspace scripts/build-all-dist.sh
+  DESKTOP_WORKSPACE_ROOT=/Users/me/Project/desktop-workspace scripts/build-all-dist.sh --sync-os windows --sync-arch amd64
 EOF
 }
 
@@ -87,9 +81,7 @@ normalize_bool() {
 }
 
 detect_host_os() {
-  local uname_s
-  uname_s="$(uname -s)"
-  case "$uname_s" in
+  case "$(uname -s)" in
     Darwin)
       printf 'macos\n'
       ;;
@@ -100,29 +92,27 @@ detect_host_os() {
       printf 'windows\n'
       ;;
     *)
-      die "unsupported host OS: $uname_s"
+      die "unsupported host OS: $(uname -s)"
+      ;;
+  esac
+}
+
+detect_host_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)
+      printf 'amd64\n'
+      ;;
+    arm64|aarch64)
+      printf 'arm64\n'
+      ;;
+    *)
+      die "unsupported host architecture: $(uname -m)"
       ;;
   esac
 }
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
-}
-
-contains_csv() {
-  local csv="$1"
-  local needle="$2"
-  [[ ",$csv," == *",$needle,"* ]]
-}
-
-run_cmd() {
-  if [[ "$DRY_RUN" == "1" ]]; then
-    printf '  '
-    printf '%q ' "$@"
-    printf '\n'
-    return
-  fi
-  "$@"
 }
 
 run_cmd_in_dir() {
@@ -171,41 +161,28 @@ normalize_sync_arch() {
 }
 
 should_sign_mac_builtins() {
-  [[ "$SYNC_AFTER_BUILD" == "1" && "$SIGN_MAC_BUILTINS" == "1" && ( -z "$SYNC_OS" || "$SYNC_OS" == "darwin" ) ]]
-}
-
-clean_dist_dir() {
-  local project_dir="$1"
-  local dist_dir="$project_dir/dist"
-
-  if [[ "$CLEAN_FIRST" != "1" ]]; then
-    return
-  fi
-
-  case "$dist_dir" in
-    "$DESKTOP_WORKSPACE_ROOT"/*/dist)
-      log "clean $dist_dir"
-      run_cmd rm -rf "$dist_dir"
-      ;;
-    *)
-      die "refusing to clean unexpected path: $dist_dir"
-      ;;
-  esac
+  [[ "$SIGN_MAC_BUILTINS" == "1" && ( -z "$SYNC_OS" || "$SYNC_OS" == "darwin" ) ]]
 }
 
 build_project() {
-  local short_name="$1"
-  local repo_name="$2"
-  local make_target="$3"
+  local repo_name="$1"
   local project_dir="$DESKTOP_WORKSPACE_ROOT/$repo_name"
 
-  [[ -d "$project_dir" ]] || die "missing project directory for $short_name: $project_dir"
-  [[ -f "$project_dir/Makefile" ]] || die "missing Makefile for $short_name: $project_dir/Makefile"
+  [[ -d "$project_dir" ]] || die "missing service project: $project_dir"
+  [[ -f "$project_dir/Makefile" ]] || die "missing Makefile: $project_dir/Makefile"
 
-  log "start $short_name ($repo_name)"
-  clean_dist_dir "$project_dir"
-  run_cmd make -C "$project_dir" "$make_target"
-  log "done $short_name"
+  log "release $repo_name (ARCH=$BUILD_ARCH)"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf '  (cd %q && unset VERSION PROGRAM_TARGETS PROGRAM_TARGET_MATRIX && make release ARCH=%q)\n' \
+      "$project_dir" "$BUILD_ARCH"
+    return
+  fi
+
+  (
+    cd "$project_dir"
+    unset VERSION PROGRAM_TARGETS PROGRAM_TARGET_MATRIX
+    make release "ARCH=$BUILD_ARCH"
+  )
 }
 
 assert_no_synced_darwin_archives() {
@@ -223,11 +200,12 @@ assert_no_synced_darwin_archives() {
 }
 
 sync_desktop_assets() {
-  if [[ "$SYNC_AFTER_BUILD" != "1" ]]; then
-    return
-  fi
-
   local sync_args=("./scripts/sync-builtin-assets.mjs")
+  local repo_name
+
+  for repo_name in "${UPSTREAM_SERVICE_REPOS[@]}"; do
+    sync_args+=("--source=$DESKTOP_WORKSPACE_ROOT/$repo_name/dist/release")
+  done
   if [[ -n "$SYNC_OS" ]]; then
     sync_args+=("--os=$SYNC_OS")
   fi
@@ -238,7 +216,7 @@ sync_desktop_assets() {
     sync_args+=("--sign-darwin")
   fi
 
-  log "sync builtin packages into $DESKTOP_ROOT/build/resources/services"
+  log "sync current upstream release packages into $DESKTOP_ROOT/build/resources/services"
   run_cmd_in_dir "$DESKTOP_ROOT" node "${sync_args[@]}"
   if [[ "$DRY_RUN" != "1" && ( -z "$SYNC_OS" || "$SYNC_OS" == "darwin" ) ]]; then
     assert_no_synced_darwin_archives
@@ -247,24 +225,6 @@ sync_desktop_assets() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --only)
-      [[ $# -ge 2 ]] || die "--only requires a comma-separated value"
-      ONLY_PROJECTS="$2"
-      shift 2
-      ;;
-    --skip)
-      [[ $# -ge 2 ]] || die "--skip requires a comma-separated value"
-      SKIP_PROJECTS="$2"
-      shift 2
-      ;;
-    --no-clean)
-      CLEAN_FIRST=0
-      shift
-      ;;
-    --no-sync)
-      SYNC_AFTER_BUILD=0
-      shift
-      ;;
     --sync-os)
       [[ $# -ge 2 ]] || die "--sync-os requires a value"
       SYNC_OS="$(normalize_sync_os "$2")"
@@ -299,57 +259,26 @@ done
 
 SIGN_MAC_BUILTINS="$(normalize_bool "$SIGN_MAC_BUILTINS" "SIGN_MAC_BUILTINS")"
 HOST_OS="$(detect_host_os)"
-case "$HOST_OS" in
-  macos|linux)
-    require_command make
-    if [[ "$SYNC_AFTER_BUILD" == "1" ]]; then
-      require_command node
-    fi
-    if should_sign_mac_builtins; then
-      [[ "$HOST_OS" == "macos" ]] || die "--sign-mac requires a macOS host when syncing Darwin assets"
-      require_command codesign
-      require_command security
-      require_command tar
-    fi
-    ;;
-  windows)
-    require_command make
-    if [[ "$SYNC_AFTER_BUILD" == "1" ]]; then
-      require_command node
-    fi
-    if should_sign_mac_builtins; then
-      die "--sign-mac requires a macOS host when syncing Darwin assets"
-    fi
-    ;;
-esac
+BUILD_ARCH="${SYNC_ARCH:-$(detect_host_arch)}"
+
+require_command make
+require_command node
+if should_sign_mac_builtins; then
+  [[ "$HOST_OS" == "macos" ]] || die "--sign-mac requires a macOS host when syncing Darwin assets"
+  require_command codesign
+  require_command security
+  require_command tar
+fi
 
 [[ -d "$DESKTOP_WORKSPACE_ROOT" ]] || die "DESKTOP_WORKSPACE_ROOT does not exist: $DESKTOP_WORKSPACE_ROOT"
 [[ -d "$DESKTOP_ROOT" ]] || die "Desktop root does not exist: $DESKTOP_ROOT"
 
-log "host=$HOST_OS root=$DESKTOP_WORKSPACE_ROOT desktop=$DESKTOP_ROOT"
+log "host=$HOST_OS workspace=$DESKTOP_WORKSPACE_ROOT desktop=$DESKTOP_ROOT build-arch=$BUILD_ARCH"
 
-PROJECT_SPECS=(
-  "container-hub|agent-container-hub|release"
-  "agent-webclient|agent-webclient|release"
-  "platform|agent-platform|release"
-  "identity-center|identity-center|release"
-)
-
-for spec in "${PROJECT_SPECS[@]}"; do
-  IFS='|' read -r short_name repo_name make_target <<<"$spec"
-
-  if [[ -n "$ONLY_PROJECTS" ]] && ! contains_csv "$ONLY_PROJECTS" "$short_name"; then
-    continue
-  fi
-
-  if [[ -n "$SKIP_PROJECTS" ]] && contains_csv "$SKIP_PROJECTS" "$short_name"; then
-    log "skip $short_name"
-    continue
-  fi
-
-  build_project "$short_name" "$repo_name" "$make_target"
+for repo_name in "${UPSTREAM_SERVICE_REPOS[@]}"; do
+  build_project "$repo_name"
 done
 
 sync_desktop_assets
 
-log "all requested dist packages finished"
+log "all core service release packages were synced"

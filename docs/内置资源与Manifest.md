@@ -12,6 +12,7 @@ Desktop 内置服务使用按平台生成的资源包或目录分发。资源根
 npm run sync:assets
   -> scripts/lib/builtin-assets.mjs
   -> scan workspace or DESKTOP_BUILTIN_ASSETS_SOURCE
+  -> --source <release-dir> 时只读取明确指定的上游发布目录
   -> filter manifest.kind === "builtin"
   -> filter target os / arch
   -> build/resources/services/<service-id>/<archive>
@@ -57,6 +58,7 @@ loadBuiltinServices()
 ## 约束与注意事项
 
 - `sync:assets` 只同步 `manifest.json.kind === "builtin"` 的产物。
+- `build-all-dist.sh` 只调用每个上游服务的公开 `make release ARCH=<arch>`，然后将四个 `dist/release` 目录作为明确 `--source` 同步到 Desktop。它不清理、不修复也不传递服务私有发布配置。
 - `dev` 和 `dist:mac` 不扫描周边服务项目；它们只校验当前 `build/resources/services`。刷新内置服务资源请先运行 `scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64`，或显式运行 `npm run sync:assets`。
 - 新增内置服务必须保证 bundle 内的 `runtime.requiredPaths` 完整。
 - `agent-platform` 额外执行 sidecar 硬门禁：Darwin/Linux 必须同时声明并携带 `bin/kbase-lance-engine`，Windows 必须同时声明并携带 `bin/kbase-lance-engine.exe`；即使上游 manifest 漏写该路径，`sync:assets` 也会拒绝不完整产物。

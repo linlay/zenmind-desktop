@@ -316,6 +316,50 @@ test("syncBuiltinAssets writes brand-neutral service resources and removes legac
   assert.equal(fs.existsSync(legacyServicesRoot), false);
 });
 
+test("syncBuiltinAssets uses explicit release sources without scanning configured or workspace releases", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-explicit-sources-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoots = [];
+  for (const serviceId of ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"]) {
+    const sourceRoot = path.join(tempRoot, serviceId, "dist", "release");
+    writeDarwinCoreServiceArchive(sourceRoot, serviceId);
+    sourceRoots.push(sourceRoot);
+  }
+
+  const staleSourceRoot = path.join(tempRoot, "configured-source");
+  writeBuiltinArchive(staleSourceRoot, "workspace-leak");
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = staleSourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) {
+      delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    } else {
+      process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+    }
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`explicit-sources-${Date.now()}`);
+  const manifest = syncBuiltinAssets(tempRoot, {
+    os: "darwin",
+    arch: "arm64",
+    sourceRoots
+  });
+
+  assert.deepEqual(manifest.map((service) => service.id), [
+    "agent-container-hub",
+    "agent-platform",
+    "agent-webclient",
+    "identity-center"
+  ]);
+  assert.equal(
+    fs.existsSync(path.join(tempRoot, "build", "resources", "services", "manifest.json")),
+    true
+  );
+});
+
 test("syncBuiltinAssets expands Darwin builtin service archives into directories", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-darwin-dir-"));
   t.after(() => {
@@ -644,7 +688,7 @@ test("syncBuiltinAssets rejects agent-platform archives that declare but omit th
       arch: "arm64",
       brandId: "cutej"
     }),
-    /Missing required entries: agent-platform\/bin\/kbase-lance-engine/u
+    /Missing required entries: bin\/kbase-lance-engine/u
   );
 });
 

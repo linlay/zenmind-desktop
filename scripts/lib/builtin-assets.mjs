@@ -531,13 +531,13 @@ function listArchivesInDirectory(directoryPath) {
     .map((entry) => path.join(directoryPath, entry.name));
 }
 
-function listConfiguredReleaseArchives(sourceRoot) {
+function listConfiguredReleaseArchives(sourceRoot, sourceLabel = BUILTIN_ASSETS_SOURCE_ENV) {
   if (!fs.existsSync(sourceRoot)) {
-    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} does not exist: ${sourceRoot}`);
+    throw new Error(`${sourceLabel} does not exist: ${sourceRoot}`);
   }
 
   if (!fs.statSync(sourceRoot).isDirectory()) {
-    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} must point to a directory: ${sourceRoot}`);
+    throw new Error(`${sourceLabel} must point to a directory: ${sourceRoot}`);
   }
 
   const archives = [];
@@ -602,7 +602,17 @@ function listWorkspaceReleaseArchives() {
 }
 
 
-function listReleaseArchives() {
+function normalizeSourceRoots(sourceRoots) {
+  if (!Array.isArray(sourceRoots)) {
+    return [];
+  }
+  return [...new Set(sourceRoots
+    .filter((sourceRoot) => typeof sourceRoot === "string" && sourceRoot.trim())
+    .map((sourceRoot) => path.resolve(sourceRoot.trim())))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function listReleaseArchives({ sourceRoots = [] } = {}) {
   const archivesByBuildKey = new Map();
 
   function tryAddArchive(archivePath, sourcePreference = 0) {
@@ -648,15 +658,24 @@ function listReleaseArchives() {
     }
   }
 
-  const configuredSourceRoot = process.env[BUILTIN_ASSETS_SOURCE_ENV]?.trim();
-  if (configuredSourceRoot) {
-    for (const archivePath of listConfiguredReleaseArchives(configuredSourceRoot)) {
-      tryAddArchive(archivePath, 2);
+  const explicitSourceRoots = normalizeSourceRoots(sourceRoots);
+  if (explicitSourceRoots.length > 0) {
+    for (const sourceRoot of explicitSourceRoots) {
+      for (const archivePath of listConfiguredReleaseArchives(sourceRoot, "--source")) {
+        tryAddArchive(archivePath, 3);
+      }
     }
-  }
+  } else {
+    const configuredSourceRoot = process.env[BUILTIN_ASSETS_SOURCE_ENV]?.trim();
+    if (configuredSourceRoot) {
+      for (const archivePath of listConfiguredReleaseArchives(configuredSourceRoot)) {
+        tryAddArchive(archivePath, 2);
+      }
+    }
 
-  for (const archivePath of listWorkspaceReleaseArchives()) {
-    tryAddArchive(archivePath, 1);
+    for (const archivePath of listWorkspaceReleaseArchives()) {
+      tryAddArchive(archivePath, 1);
+    }
   }
 
   return [...archivesByBuildKey.values()]
@@ -729,10 +748,10 @@ function matchesTargetPlatform(manifest, { os, arch } = {}) {
   return true;
 }
 
-export function discoverBuiltinServices({ os, arch } = {}) {
+export function discoverBuiltinServices({ os, arch, sourceRoots } = {}) {
   const services = [];
 
-  for (const archivePath of listReleaseArchives()) {
+  for (const archivePath of listReleaseArchives({ sourceRoots })) {
     let manifest;
     try {
       manifest = readManifestFromArchive(archivePath);
@@ -1404,7 +1423,7 @@ export function validateBundleDirectory(service, directoryPath) {
 }
 
 export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
-  const { os, arch, signDarwin = false, useExisting = false } = options;
+  const { os, arch, signDarwin = false, sourceRoots, useExisting = false } = options;
   const outputRoot = desktopBuiltinServicesDir(projectRoot);
   const platform = { os, arch };
   if (useExisting) {
@@ -1419,7 +1438,7 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
     );
   }
 
-  const services = discoverBuiltinServices(platform);
+  const services = discoverBuiltinServices({ ...platform, sourceRoots });
   const darwinSigningIdentity = signDarwin && services.some((service) => service.platform.os === "darwin")
     ? resolveDarwinDeveloperIdApplicationIdentity()
     : "";
