@@ -327,6 +327,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       lastRefreshAt: null,
       lastPushType: null,
       lastError: null,
+      recentFrames: [],
     },
   );
 

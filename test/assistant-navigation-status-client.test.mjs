@@ -187,7 +187,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       status: "running",
       healthMeta: { webUrl: "http://127.0.0.1:11789" },
     }),
-    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
+    issueAccessToken: async () => ({ ok: true, token: "secret-token", message: "" }),
     onSnapshot: (snapshot) => snapshots.push(snapshot),
   });
   t.after(() => client.stop());
@@ -206,7 +206,38 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(connected.source, "desktop-nav");
   assert.equal(connected.endpoint, "ws://127.0.0.1:11789/ws");
   assert.equal(typeof connected.connectedAt, "number");
-  assert.equal(JSON.stringify(connected).includes("token"), false);
+  assert.equal(JSON.stringify(connected).includes("secret-token"), false);
+  assert.equal(JSON.stringify(connected).includes("deviceId"), false);
+  assert.equal(JSON.stringify(connected).includes("latest response"), false);
+  assert.ok(connected.recentFrames.every((frame) =>
+    Object.keys(frame).sort().join(",") === "at,direction,kind,type",
+  ));
+  assert.deepEqual(
+    connected.recentFrames.map(({ direction, kind, type }) => ({ direction, kind, type })),
+    [
+      { direction: "connection", kind: "connecting", type: null },
+      { direction: "connection", kind: "connected", type: null },
+      { direction: "outbound", kind: "request", type: "/api/chats" },
+      { direction: "inbound", kind: "response", type: "/api/chats" },
+    ],
+  );
+  const mutableStatus = client.getLiveStatus();
+  mutableStatus.recentFrames[0].type = "tampered";
+  assert.equal(client.getLiveStatus().recentFrames[0].type, null);
+
+  sockets[0].onmessage?.({ data: "invalid-navigation-frame" });
+  assert.equal(client.getLiveStatus().recentFrames.at(-1)?.kind, "invalid");
+
+  for (let index = 0; index < 21; index += 1) {
+    sockets[0].emit({ frame: "response", type: `diagnostic-${index}` });
+  }
+  const boundedFrames = client.getLiveStatus().recentFrames;
+  assert.equal(boundedFrames.length, 20);
+  assert.deepEqual(
+    boundedFrames.map((frame) => frame.type),
+    Array.from({ length: 20 }, (_, index) => `diagnostic-${index + 1}`),
+  );
+  assert.ok(boundedFrames.every((frame) => frame.direction === "inbound" && frame.kind === "response"));
 
   sockets[0].emit({ frame: "push", type: "run.started", data: {
     agentKey: "zenmi",
@@ -252,20 +283,49 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 8));
 
   sockets[0].emitClose();
-  assert.equal(client.getLiveStatus().phase, "reconnecting");
-  assert.match(client.getLiveStatus().lastError, /WebSocket closed/);
+  const reconnecting = client.getLiveStatus();
+  assert.equal(reconnecting.phase, "reconnecting");
+  assert.match(reconnecting.lastError, /WebSocket closed/);
+  assert.ok(reconnecting.recentFrames.some((frame) =>
+    frame.kind === "push" && frame.type === "awaiting.answered",
+  ));
+  assert.equal(reconnecting.recentFrames.at(-1)?.kind, "closed");
 });
 
 test("assistant navigation chat reducer updates displayed chats without checking agent mode", () => {
   const current = [createNavigationChat({ agentKey: "coder-agent", agentMode: "CODER" })];
-  const started = applyAssistantNavigationChatPush(current, {
+  const unread = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "chat.unread",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      timestamp: EPOCH_MS + 1,
+    },
+  });
+  assert.equal(unread.changed, true);
+  assert.equal(unread.items[0].isRead, false);
+
+  const read = applyAssistantNavigationChatPush(unread.items, {
+    frame: "push",
+    type: "chat.read",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      timestamp: EPOCH_MS + 2,
+    },
+  });
+  assert.equal(read.changed, true);
+  assert.equal(read.items[0].isRead, true);
+
+  const started = applyAssistantNavigationChatPush(read.items, {
     frame: "push",
     type: "run.started",
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
       runId: "run-1",
-      timestamp: EPOCH_MS + 1,
+      timestamp: EPOCH_MS + 3,
     },
   });
   assert.equal(started.changed, true);
@@ -277,7 +337,7 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
-      createdAt: EPOCH_MS + 2,
+      createdAt: EPOCH_MS + 4,
       mode: "question",
     },
   });
@@ -292,7 +352,7 @@ test("assistant navigation chat reducer updates displayed chats without checking
       agentKey: "coder-agent",
       chatId: "chat-1",
       runId: "run-1",
-      timestamp: EPOCH_MS + 3,
+      timestamp: EPOCH_MS + 5,
     },
   });
   assert.equal(completed.changed, true);
@@ -304,7 +364,7 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
-      resolvedAt: EPOCH_MS + 4,
+      resolvedAt: EPOCH_MS + 6,
     },
   });
   assert.equal(answered.changed, true);
@@ -316,7 +376,7 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "other-agent",
       chatId: "not-listed",
-      createdAt: EPOCH_MS + 5,
+      createdAt: EPOCH_MS + 7,
       mode: "question",
     },
   });
@@ -359,6 +419,9 @@ test("assistant navigation live status reports WebSocket setup failures without 
   assert.equal(status.endpoint, "ws://127.0.0.1:11789/ws");
   assert.match(status.lastError, /WebSocket is unavailable/);
   assert.equal(JSON.stringify(status).includes("secret-token"), false);
+  assert.deepEqual(status.recentFrames.map(({ direction, kind, type }) => ({ direction, kind, type })), [
+    { direction: "connection", kind: "error", type: null },
+  ]);
 });
 
 test("assistant navigation chat mapper preserves server order and rejects missing agent keys or timestamps", () => {

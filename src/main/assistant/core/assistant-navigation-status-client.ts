@@ -8,6 +8,7 @@ import type {
   AssistantNavAgentItem,
   AssistantNavAgentItemsResult,
   AssistantNavChatItem,
+  AssistantNavigationLiveFrame,
   AssistantNavigationPushEvent,
   AssistantNavigationLiveStatus,
   ServiceId,
@@ -160,6 +161,7 @@ const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 const NAVIGATION_WS_REQUEST_TIMEOUT_MS = 8_000;
 const NAVIGATION_UNAVAILABLE_RETRY_MS = 12_000;
 const NAVIGATION_RECONNECT_MS = 10_000;
+const NAVIGATION_LIVE_FRAME_LIMIT = 20;
 const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
 const NAVIGATION_GIT_BRANCH_TIMEOUT_MS = 1_000;
 const navigationGitBranchCache = new Map<string, AssistantGitBranchCacheEntry>();
@@ -1395,6 +1397,7 @@ export class AssistantNavigationStatusClient {
     lastRefreshAt: null,
     lastPushType: null,
     lastError: null,
+    recentFrames: [],
   };
   private lastBaseUrl = "";
   private lastToken = "";
@@ -1418,6 +1421,7 @@ export class AssistantNavigationStatusClient {
       lastRefreshAt: null,
       lastPushType: null,
       lastError: null,
+      recentFrames: [],
     });
     this.scheduleRefresh(0);
   }
@@ -1433,6 +1437,7 @@ export class AssistantNavigationStatusClient {
       lastRefreshAt: null,
       lastPushType: null,
       lastError: null,
+      recentFrames: [],
     });
     this.closeWebSocket();
   }
@@ -1442,7 +1447,10 @@ export class AssistantNavigationStatusClient {
   }
 
   getLiveStatus(): AssistantNavigationLiveStatus {
-    return { ...this.liveStatus };
+    return {
+      ...this.liveStatus,
+      recentFrames: this.liveStatus.recentFrames.map((frame) => ({ ...frame })),
+    };
   }
 
   scheduleRefresh(delayMs = NAVIGATION_REFRESH_DEBOUNCE_MS) {
@@ -1554,9 +1562,18 @@ export class AssistantNavigationStatusClient {
     };
   }
 
+  private recordLiveFrame(frame: Omit<AssistantNavigationLiveFrame, "at">) {
+    const recentFrames = [
+      ...this.liveStatus.recentFrames,
+      { ...frame, at: nowEpochMillis() },
+    ].slice(-NAVIGATION_LIVE_FRAME_LIMIT);
+    this.updateLiveStatus({ recentFrames });
+  }
+
   private connectWebSocket(baseUrl: string, token: string): Promise<void> {
     const WebSocketConstructor = getWebSocketConstructor();
     if (!WebSocketConstructor) {
+      this.recordLiveFrame({ direction: "connection", kind: "error", type: null });
       this.updateLiveStatus({
         phase: "error",
         endpoint: createRedactedWsEndpoint(baseUrl),
@@ -1575,6 +1592,7 @@ export class AssistantNavigationStatusClient {
       endpoint: createRedactedWsEndpoint(baseUrl),
       lastError: null,
     });
+    this.recordLiveFrame({ direction: "connection", kind: "connecting", type: null });
     const socket = new WebSocketConstructor(
       createWsUrl(
         baseUrl,
@@ -1592,6 +1610,7 @@ export class AssistantNavigationStatusClient {
     socket.onclose = () => this.handleWebSocketClosed();
     socket.onerror = () => this.handleWebSocketClosed();
     socket.onopen = () => {
+      this.recordLiveFrame({ direction: "connection", kind: "connected", type: null });
       this.updateLiveStatus({
         phase: "connected",
         connectedAt: nowEpochMillis(),
@@ -1626,6 +1645,7 @@ export class AssistantNavigationStatusClient {
             limit: NAVIGATION_CHAT_LIMIT,
           },
         }));
+        this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats" });
       } catch (error) {
         clearTimeout(timer);
         this.pendingWsRequests.delete(id);
@@ -1646,10 +1666,20 @@ export class AssistantNavigationStatusClient {
     try {
       frame = JSON.parse(raw) as NavigationPushFrame;
     } catch {
+      this.recordLiveFrame({ direction: "inbound", kind: "invalid", type: null });
       return;
     }
     this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
     const frameKind = toText(frame.frame);
+    const frameType = toText(frame.type) || null;
+    const liveFrameKind = frameKind === "response"
+      ? "response"
+      : frameKind === "error"
+        ? "error"
+        : frameKind === "push"
+          ? "push"
+          : "invalid";
+    this.recordLiveFrame({ direction: "inbound", kind: liveFrameKind, type: frameType });
     const requestId = toText(frame.id);
     if ((frameKind === "response" || frameKind === "error") && requestId) {
       const pending = this.pendingWsRequests.get(requestId);
@@ -1709,6 +1739,7 @@ export class AssistantNavigationStatusClient {
       return;
     }
     this.closeWebSocket();
+    this.recordLiveFrame({ direction: "connection", kind: "closed", type: null });
     this.updateLiveStatus({
       phase: "reconnecting",
       connectedAt: null,

@@ -1593,6 +1593,33 @@ test("Chats sidebar renders global chatItems without a history entry", () => {
   assert.doesNotMatch(chatsListSource, /worker-chat-more assistant-worker-more/);
 });
 
+test("Chats sidebar reuses the Projects chat row status and unread layout", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const styles = readRendererStyles();
+  const chatsListSource = sidebarSource.slice(
+    sidebarSource.indexOf("function renderChatsList"),
+    sidebarSource.indexOf("function renderChatsEntry"),
+  );
+
+  assert.match(chatsListSource, /renderAssistantChatRow\(chat, currentChatId, \{/);
+  assert.match(chatsListSource, /focusId: createSidebarChatsChatFocusId\(chat\.chatId\)/);
+  assert.match(chatsListSource, /navigationKind: "chats-chat"/);
+  assert.match(chatsListSource, /rowClassName: "sidebar-chats-row"/);
+  assert.match(chatsListSource, /itemClassName: \[\s*"sidebar-chats-item"/);
+  assert.match(chatsListSource, /wrapItem: \(item\) => \(/);
+  assert.match(sidebarSource, /options\.wrapItem \? options\.wrapItem\(item\) : item/);
+  assert.match(sidebarSource, /"assistant-worker-unread-dot",\s*"chat-unread-dot"/);
+  assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
+  assert.doesNotMatch(styles, /\.sidebar-chats-item\.is-unread \.sidebar-chats-preview::before/);
+  assert.match(styles, /\.assistant-worker-unread-dot\s*\{[\s\S]{0,160}width:\s*8px;[\s\S]{0,120}height:\s*8px;[\s\S]{0,120}background:\s*#1677ff;/);
+});
+
 test("Projects headers show hover cards for Coder and Knowledge Base agents only", () => {
   const sidebarSource = readSourceFile(
     "src",
@@ -3691,6 +3718,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /chatItems: AssistantNavChatItem\[\];/);
   assert.match(contracts, /export interface AssistantNavigationLiveStatus/);
   assert.match(contracts, /source: "desktop-nav"/);
+  assert.match(contracts, /recentFrames: AssistantNavigationLiveFrame\[\];/);
   assert.match(contracts, /interface AssistantCreateProjectRequest/);
   assert.match(contracts, /type AssistantCreateProjectType = "coder" \| "kbase"/);
   assert.match(contracts, /interface AssistantCreateProjectResult/);
@@ -3728,6 +3756,9 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantNavigationStatusClient, /buildAssistantNavigationChatsFromPlatform/);
   assert.match(assistantNavigationStatusClient, /applyAssistantNavigationChatPush/);
   assert.match(assistantNavigationStatusClient, /getLiveStatus\(\): AssistantNavigationLiveStatus/);
+  assert.match(assistantNavigationStatusClient, /const NAVIGATION_LIVE_FRAME_LIMIT = 20;/);
+  assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
+  assert.match(assistantHandlers, /lastError:\s*null,\s*recentFrames:\s*\[\]/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?assistant\.navigationAgentsChanged/);
   assert.match(mainProcess, /function emitAssistantNavigationPushEvent[\s\S]*?assistant\.navigationPushEvent/);
   assert.match(assistantRuntime, /emitAssistantNavigationPushEvent\(event\)/);
