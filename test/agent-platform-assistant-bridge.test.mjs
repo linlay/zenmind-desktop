@@ -398,15 +398,14 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
   }
 });
 
-test("agent platform assistant bridge rejects ISO, string, seconds, fractional, zero, and missing stream timestamps", async () => {
+test("agent platform assistant bridge rejects ISO, string, fractional, negative, and missing stream timestamps", async () => {
   const originalFetch = globalThis.fetch;
   try {
     for (const timestamp of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
-      Math.floor(EPOCH_MS / 1000),
       EPOCH_MS + 0.5,
-      0,
+      -1,
       undefined,
     ]) {
       const { bridge, events } = makeBridge();
@@ -443,9 +442,8 @@ test("agent platform assistant bridge atomically rejects malformed chat, search,
     for (const value of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
-      Math.floor(EPOCH_MS / 1000),
       EPOCH_MS + 0.5,
-      0,
+      -1,
       undefined,
     ]) {
       const { bridge } = makeBridge();
@@ -514,9 +512,8 @@ test("agent platform assistant bridge rejects malformed memory audit timestamps"
     for (const value of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
-      Math.floor(EPOCH_MS / 1000),
       EPOCH_MS + 0.5,
-      0,
+      -1,
       undefined,
     ]) {
       const { bridge } = makeBridge();
@@ -547,9 +544,8 @@ test("agent platform assistant bridge rejects malformed chat message times", asy
     for (const value of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
-      Math.floor(EPOCH_MS / 1000),
       EPOCH_MS + 0.5,
-      0,
+      -1,
       undefined,
     ]) {
       const { bridge } = makeBridge();

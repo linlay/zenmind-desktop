@@ -522,13 +522,24 @@ test("assistant navigation keeps Agent Mode separate from awaiting mode", () => 
   assert.equal(chats[1].awaitingMode, "question");
 });
 
+test("assistant navigation accepts zero as a valid epoch-ms value", () => {
+  const [chat] = buildAssistantNavigationChatsFromPlatform([{
+    chatId: "epoch-zero",
+    agentKey: "zenmi",
+    createdAt: 0,
+    updatedAt: 0,
+  }]);
+
+  assert.equal(chat?.createdAt, 0);
+  assert.equal(chat?.updatedAt, 0);
+});
+
 test("assistant navigation atomically rejects malformed chat snapshot times", () => {
   for (const value of [
     "2026-07-13T00:00:00.000Z",
     String(EPOCH_MS),
-    Math.floor(EPOCH_MS / 1000),
     EPOCH_MS + 0.5,
-    0,
+    -1,
     undefined,
   ]) {
     assert.throws(
@@ -589,9 +600,8 @@ test("assistant navigation preserves absent optional agent times and rejects mal
   for (const value of [
     "2026-07-13T00:00:00.000Z",
     String(EPOCH_MS),
-    Math.floor(EPOCH_MS / 1000),
     EPOCH_MS + 0.5,
-    0,
+    -1,
   ]) {
     assert.throws(
       () => buildAssistantNavigationAgentsFromPlatformAgents([
@@ -1131,14 +1141,13 @@ test("assistant navigation preserves chat creation time from summaries and pushe
   );
 });
 
-test("assistant navigation rejects ISO, string, seconds, fractional, zero, and missing push timestamps", () => {
+test("assistant navigation rejects ISO, string, fractional, negative, and missing push timestamps", () => {
   const current = [createAgent()];
   for (const timestamp of [
     "2026-07-13T00:00:00.000Z",
     String(EPOCH_MS),
-    Math.floor(EPOCH_MS / 1000),
     EPOCH_MS + 0.5,
-    0,
+    -1,
     undefined,
   ]) {
     const result = applyAssistantNavigationPush(current, {

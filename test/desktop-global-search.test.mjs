@@ -28,8 +28,8 @@ function loadGlobalSearchRowsModule() {
         readEpochMillis(value) {
           return typeof value === "number" &&
             Number.isSafeInteger(value) &&
-            value >= 1_000_000_000_000 &&
-            value <= Number.MAX_SAFE_INTEGER
+            value >= 0 &&
+            value <= 8_640_000_000_000_000
             ? value
             : undefined;
         },

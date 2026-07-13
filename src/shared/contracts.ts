@@ -9,3 +9,4 @@ export * from "./contracts/attachments";
 export * from "./contracts/marketplace";
 export * from "./contracts/kanban";
 export * from "./contracts/desktop-api";
+export * from "./time-contract";

@@ -7,7 +7,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 const projectRoot = process.cwd();
-const EPOCH_MILLIS_MIN = 1_000_000_000_000;
+const EPOCH_MILLIS_MIN = 0;
+const EPOCH_MILLIS_MAX = 8_640_000_000_000_000;
 const TEST_EPOCH_MILLIS = 1_700_000_000_000;
 
 function epoch(offset = 0) {
@@ -18,7 +19,7 @@ function readEpochMillis(value) {
   return typeof value === "number" &&
     Number.isSafeInteger(value) &&
     value >= EPOCH_MILLIS_MIN &&
-    value <= Number.MAX_SAFE_INTEGER
+    value <= EPOCH_MILLIS_MAX
     ? value
     : undefined;
 }

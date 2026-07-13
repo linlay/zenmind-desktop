@@ -79,6 +79,7 @@ npm test
 ## 6. 专题文档索引
 
 - [架构与模块边界](docs/架构与模块边界.md)：进程、模块、服务和前端边界。
+- [时间契约](docs/时间契约.md)：epoch-ms、RFC3339、JWT 秒级字段和 shared contract 规则。
 - [配置化与品牌](docs/配置化与品牌.md)：`BRAND`、品牌生成物、环境变量与配置来源。
 - [数据目录](docs/数据目录.md)：桌面数据根、程序数据根、服务/插件/webs 数据分层。
 - [内置资源与Manifest](docs/内置资源与Manifest.md)：内置服务资源包、manifest 字段和同步脚本。
