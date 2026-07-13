@@ -170,8 +170,8 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
       >
         <div className="desktop-global-search-input-shell">
           <svg className="desktop-global-search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="10" cy="10" r="7.2" />
-            <line x1="15.09" y1="15.09" x2="18.27" y2="18.27" />
+            <circle cx="10.5" cy="10.5" r="6.3" />
+            <line x1="15.0" y1="15.0" x2="17.9" y2="17.9" />
           </svg>
           <input
             ref={inputRef}

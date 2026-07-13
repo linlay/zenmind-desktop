@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type Ref,
+  type ReactElement,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -138,6 +139,18 @@ type AssistantChatDeleteDialogState = {
   chat: AssistantNavChatItem;
   pending: boolean;
   error: string;
+};
+
+type AssistantChatRowOptions = {
+  roving?: boolean;
+  focusId?: string;
+  navigationKind?: "chat" | "chats-chat";
+  rowClassName?: string;
+  itemClassName?: string;
+  itemRef?: Ref<HTMLButtonElement>;
+  rowRole?: "listitem";
+  previewText?: string;
+  wrapItem?: (item: ReactElement) => ReactNode;
 };
 
 type AgentSelectionOptions = {
@@ -718,15 +731,11 @@ function getAssistantChatPreviewText(
 }
 
 function toAssistantSortTimestamp(value: number | undefined) {
-  return readEpochMillis(value) ?? 0;
+  return readEpochMillis(value);
 }
 
 function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
-  const latestChat = getAssistantNavAgentSortedChats(agent)[0];
-  if (latestChat) {
-    return toAssistantSortTimestamp(latestChat.updatedAt);
-  }
-  return agent.latestChatId ? toAssistantSortTimestamp(agent.updatedAt) : 0;
+  return toAssistantSortTimestamp(agent.updatedAt);
 }
 
 function compareAssistantAgentsByTime(
@@ -735,8 +744,14 @@ function compareAssistantAgentsByTime(
 ) {
   const rightTime = readAssistantAgentLatestTimestamp(right);
   const leftTime = readAssistantAgentLatestTimestamp(left);
-  if (rightTime !== leftTime) {
+  if (rightTime !== undefined && leftTime !== undefined && rightTime !== leftTime) {
     return rightTime - leftTime;
+  }
+  if (leftTime === undefined && rightTime !== undefined) {
+    return 1;
+  }
+  if (leftTime !== undefined && rightTime === undefined) {
+    return -1;
   }
   return compareAssistantAgentsByName(left, right);
 }
@@ -2909,20 +2924,31 @@ export function AppSidebar({
         {sidebarChatItems.length > 0 ? (
           sidebarChatItems.map((chat) => {
             const agent = getChatHoverAgent(chat);
-            const isActive = chat.chatId === currentChatId;
             const isBootstrapSeedChat = Boolean(
               bootstrapActive &&
               normalizedBootstrapChatId &&
               chat.chatId === normalizedBootstrapChatId &&
               chat.agentKey === normalizedBootstrapAgentKey
             );
-            return (
-              <div
-                className="sidebar-chats-row"
-                role="listitem"
-                key={chat.chatId}
-                onContextMenu={(event) => handleAssistantChatContextMenu(event, chat)}
-              >
+            return renderAssistantChatRow(chat, currentChatId, {
+              roving,
+              focusId: createSidebarChatsChatFocusId(chat.chatId),
+              navigationKind: "chats-chat",
+              rowClassName: "sidebar-chats-row",
+              itemClassName: [
+                "sidebar-chats-item",
+                isBootstrapSeedChat ? "is-bootstrap-guide" : "",
+              ]
+                .filter(Boolean)
+                .join(" "),
+              itemRef: isBootstrapSeedChat
+                ? bootstrapGuideChatAnchorRef
+                : undefined,
+              rowRole: "listitem",
+              previewText: isBootstrapSeedChat
+                ? chat.chatName || t("sidebar.bootstrapChat.cta")
+                : undefined,
+              wrapItem: (item) => (
                 <Popover
                   trigger="hover"
                   placement="right-start"
@@ -2930,40 +2956,10 @@ export function AppSidebar({
                   className="sidebar-chat-hover-card-surface"
                   content={renderChatHoverCard(agent, chat)}
                 >
-                  <button
-                    ref={isBootstrapSeedChat ? bootstrapGuideChatAnchorRef : undefined}
-                    type="button"
-                    className={[
-                      "sidebar-chats-item",
-                      isActive ? "is-active" : "",
-                      !chat.isRead ? "is-unread" : "",
-                      isBootstrapSeedChat ? "is-bootstrap-guide" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    aria-current={isActive ? "page" : undefined}
-                    onClick={() => void handleAssistantOpenChat(chat)}
-                    {...getSidebarRovingItemProps(
-                      createSidebarChatsChatFocusId(chat.chatId),
-                      roving,
-                    )}
-                    data-sidebar-nav-kind={roving ? "chats-chat" : undefined}
-                    data-sidebar-chat-id={roving ? chat.chatId : undefined}
-                  >
-                    <span className="sidebar-chats-copy">
-                      <span className="sidebar-chats-preview">
-                        {isBootstrapSeedChat
-                          ? chat.chatName || t("sidebar.bootstrapChat.cta")
-                          : getAssistantChatPreviewText(chat, t)}
-                      </span>
-                    </span>
-                    <span className="sidebar-chats-time">
-                      {formatAssistantChatTime(chat.updatedAt)}
-                    </span>
-                  </button>
+                  {item}
                 </Popover>
-              </div>
-            );
+              ),
+            });
           })
         ) : !showBootstrapChatFallback ? (
           chatDefaultAgentUnavailable ? (
@@ -3161,7 +3157,7 @@ export function AppSidebar({
   function renderAssistantChatRow(
     chat: AssistantNavChatItem,
     activeChatId: string,
-    options: { roving?: boolean } = {},
+    options: AssistantChatRowOptions = {},
   ) {
     const roving = options.roving ?? true;
     const isActive = activeChatId === chat.chatId;
@@ -3170,64 +3166,73 @@ export function AppSidebar({
       : chat.hasActiveRun
       ? "loading"
       : "time";
-    const previewText = getAssistantChatPreviewText(chat, t);
+    const previewText = options.previewText ?? getAssistantChatPreviewText(chat, t);
+    const focusId = options.focusId ?? createSidebarChatFocusId(chat.chatId);
+    const navigationKind = options.navigationKind ?? "chat";
+    const item = (
+      <button
+        ref={options.itemRef}
+        type="button"
+        className={[
+          "assistant-worker-chat-item",
+          options.itemClassName ?? "",
+          isActive ? "is-active" : "",
+          !chat.isRead ? "is-unread" : "",
+          chat.hasPendingAwaiting ? "has-awaiting" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-current={isActive ? "page" : undefined}
+        onClick={() => void handleAssistantOpenChat(chat)}
+        {...getSidebarRovingItemProps(focusId, roving)}
+        data-sidebar-nav-kind={roving ? navigationKind : undefined}
+        data-sidebar-agent-key={roving ? chat.agentKey || currentAgentKey : undefined}
+        data-sidebar-chat-id={roving ? chat.chatId : undefined}
+      >
+        <span className="worker-chat-item-head">
+          <span
+            className={[
+              "assistant-worker-unread-dot",
+              "chat-unread-dot",
+              !chat.isRead ? "is-unread" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
+            aria-hidden={chat.isRead ? "true" : undefined}
+          />
+          <span className="worker-chat-name">{previewText}</span>
+          {chat.hasPendingAwaiting ? (
+            <span className="chat-awaiting-status">
+              {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
+            </span>
+          ) : null}
+          <span className="assistant-worker-chat-action" data-action={action}>
+            <span className="worker-panel-time-label">
+              {formatAssistantChatTime(chat.updatedAt)}
+            </span>
+            <span
+              className="worker-chat-loading assistant-material-icon is-loading"
+              aria-hidden="true"
+            />
+          </span>
+        </span>
+      </button>
+    );
     return (
       <div
         key={chat.chatId}
         className={[
           "assistant-worker-chat-row",
+          options.rowClassName ?? "",
           action === "awaiting" || action === "loading" ? "has-status-action" : "",
         ]
           .filter(Boolean)
           .join(" ")}
+        role={options.rowRole}
         onContextMenu={(event) => handleAssistantChatContextMenu(event, chat)}
       >
-        <button
-          type="button"
-          className={[
-            "assistant-worker-chat-item",
-            isActive ? "is-active" : "",
-            !chat.isRead ? "is-unread" : "",
-            chat.hasPendingAwaiting ? "has-awaiting" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          aria-current={isActive ? "page" : undefined}
-          onClick={() => handleAssistantOpenChat(chat)}
-          {...getSidebarRovingItemProps(createSidebarChatFocusId(chat.chatId), roving)}
-          data-sidebar-nav-kind={roving ? "chat" : undefined}
-          data-sidebar-agent-key={roving ? chat.agentKey || currentAgentKey : undefined}
-          data-sidebar-chat-id={roving ? chat.chatId : undefined}
-        >
-          <span className="worker-chat-item-head">
-            <span
-              className={[
-                "assistant-worker-unread-dot",
-                "chat-unread-dot",
-                !chat.isRead ? "is-unread" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-label={!chat.isRead ? t("sidebar.chat.unread") : undefined}
-              aria-hidden={chat.isRead ? "true" : undefined}
-            />
-            <span className="worker-chat-name">{previewText}</span>
-            {chat.hasPendingAwaiting ? (
-              <span className="chat-awaiting-status">
-                {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
-              </span>
-            ) : null}
-            <span className="assistant-worker-chat-action" data-action={action}>
-              <span className="worker-panel-time-label">
-                {formatAssistantChatTime(chat.updatedAt)}
-              </span>
-              <span
-                className="worker-chat-loading assistant-material-icon is-loading"
-                aria-hidden="true"
-              />
-            </span>
-          </span>
-        </button>
+        {options.wrapItem ? options.wrapItem(item) : item}
         <button
           type="button"
           className="assistant-worker-chat-menu-button"

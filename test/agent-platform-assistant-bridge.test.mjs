@@ -398,10 +398,17 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
   }
 });
 
-test("agent platform assistant bridge rejects string, seconds, fractional, zero, and missing stream timestamps", async () => {
+test("agent platform assistant bridge rejects ISO, string, seconds, fractional, zero, and missing stream timestamps", async () => {
   const originalFetch = globalThis.fetch;
   try {
-    for (const timestamp of [String(EPOCH_MS), Math.floor(EPOCH_MS / 1000), EPOCH_MS + 0.5, 0, undefined]) {
+    for (const timestamp of [
+      "2026-07-13T00:00:00.000Z",
+      String(EPOCH_MS),
+      Math.floor(EPOCH_MS / 1000),
+      EPOCH_MS + 0.5,
+      0,
+      undefined,
+    ]) {
       const { bridge, events } = makeBridge();
       globalThis.fetch = async (url, init = {}) => {
         if (String(url).endsWith("/api/query")) {
@@ -423,7 +430,174 @@ test("agent platform assistant bridge rejects string, seconds, fractional, zero,
       await waitFor(() => events.some((event) => event.type === "error"), "malformed stream did not surface a local error");
       assert.deepEqual(events.map((event) => event.type), ["error"]);
       assert.match(events[0].error ?? "", /time_contract_violation/u);
+      assert.equal(Object.hasOwn(events[0], "createdAt"), false);
     }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge atomically rejects malformed chat, search, and memory response times", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const value of [
+      "2026-07-13T00:00:00.000Z",
+      String(EPOCH_MS),
+      Math.floor(EPOCH_MS / 1000),
+      EPOCH_MS + 0.5,
+      0,
+      undefined,
+    ]) {
+      const { bridge } = makeBridge();
+      const invalid = value === undefined ? {} : { updatedAt: value };
+      globalThis.fetch = async (url) => {
+        const target = String(url);
+        if (target.includes("/api/chats/search")) {
+          return new Response(JSON.stringify({
+            query: "time",
+            count: 2,
+            results: [
+              { chatId: "valid", timestamp: EPOCH_MS, snippet: "valid" },
+              {
+                chatId: "invalid",
+                timestamp: value,
+                snippet: "invalid",
+              },
+            ],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (target.includes("/api/memory/record/list")) {
+          return new Response(JSON.stringify({
+            results: [{
+              id: "memory-1",
+              createdAt: EPOCH_MS,
+              ...invalid,
+            }],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (target.includes("/api/memory/history")) {
+          return new Response(JSON.stringify({
+            events: [{ operation: "learn", ts: value }],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (target.includes("/api/chat?")) {
+          return new Response(JSON.stringify({
+            chatId: "chat-1",
+            createdAt: EPOCH_MS,
+            ...invalid,
+            events: [],
+            runs: [],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (target.endsWith("/api/chats")) {
+          return new Response(JSON.stringify([
+            { chatId: "valid", createdAt: EPOCH_MS, updatedAt: EPOCH_MS },
+            { chatId: "invalid", createdAt: EPOCH_MS, ...invalid },
+          ]), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        throw new Error(`unexpected request ${target}`);
+      };
+
+      await assert.rejects(bridge.listChats(), /time_contract_violation: chats\[1\]\.updatedAt/u);
+      await assert.rejects(bridge.getChat("chat-1"), /time_contract_violation: chat\.updatedAt/u);
+      await assert.rejects(bridge.searchChats({ query: "time" }), /time_contract_violation: chatSearch\.results\[1\]\.timestamp/u);
+      await assert.rejects(bridge.listMemoryItems(), /time_contract_violation: memory\.records\[0\]\.updatedAt/u);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects malformed memory audit timestamps", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const value of [
+      "2026-07-13T00:00:00.000Z",
+      String(EPOCH_MS),
+      Math.floor(EPOCH_MS / 1000),
+      EPOCH_MS + 0.5,
+      0,
+      undefined,
+    ]) {
+      const { bridge } = makeBridge();
+      globalThis.fetch = async (url) => {
+        const target = String(url);
+        if (target.includes("/api/memory/record/list")) {
+          return new Response(JSON.stringify({
+            results: [{ id: "memory-1", createdAt: EPOCH_MS, updatedAt: EPOCH_MS }],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (target.includes("/api/memory/history")) {
+          return new Response(JSON.stringify({
+            events: [{ operation: "learn", ...(value === undefined ? {} : { ts: value }) }],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        throw new Error(`unexpected request ${target}`);
+      };
+      await assert.rejects(bridge.getMemorySummary(), /time_contract_violation: memory\.history\[0\]\.ts/u);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects malformed chat message times", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const value of [
+      "2026-07-13T00:00:00.000Z",
+      String(EPOCH_MS),
+      Math.floor(EPOCH_MS / 1000),
+      EPOCH_MS + 0.5,
+      0,
+      undefined,
+    ]) {
+      const { bridge } = makeBridge();
+      globalThis.fetch = async (url) => {
+        if (String(url).includes("/api/chat?")) {
+          return new Response(JSON.stringify({
+            chatId: "chat-1",
+            createdAt: EPOCH_MS,
+            updatedAt: EPOCH_MS,
+            events: [],
+            runs: [{ runId: "run-1", initialMessage: "hello", ...(value === undefined ? {} : { startedAt: value }) }],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        throw new Error(`unexpected request ${url}`);
+      };
+      await assert.rejects(bridge.getChat("chat-1"), /time_contract_violation: chat\.runs\[0\]\.startedAt/u);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects malformed nested awaiting timestamps", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge, events } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).endsWith("/api/query")) {
+      const body = JSON.parse(String(init.body));
+      return sseResponse([{
+        type: "awaiting.asking",
+        runId: body.runId,
+        chatId: body.chatId,
+        timestamp: EPOCH_MS,
+        awaiting: {
+          awaitingId: "awaiting-1",
+          createdAt: "2026-07-13T00:00:00.000Z",
+        },
+      }]);
+    }
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  try {
+    const result = await bridge.startRun({ message: "validate awaiting" });
+    assert.equal(result.ok, true);
+    await waitFor(() => events.some((event) => event.type === "error"), "awaiting violation did not surface");
+    assert.match(events[0].error ?? "", /stream\.events\[0\]\.awaiting\.createdAt/u);
+    assert.equal(Object.hasOwn(events[0], "createdAt"), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

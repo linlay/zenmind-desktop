@@ -187,8 +187,14 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
     case "double_check":
       return (
         <svg {...iconProps}>
-          <path d="M 2 12 L 8 19 L 17 4" />
-          <path d="M 7 12 L 13 19 L 22 4" />
+          <defs>
+            <mask id="double-check-mask">
+              <rect x="0" y="0" width="24" height="24" fill="white" />
+              <path d="M 7.5 11 L 13.5 20 L 22.5 5" stroke="black" strokeWidth={4.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </mask>
+          </defs>
+          <path d="M 2 11 L 8 20 L 17 5" mask="url(#double-check-mask)" />
+          <path d="M 7.5 11 L 13.5 20 L 22.5 5" />
         </svg>
       );
     case "close":

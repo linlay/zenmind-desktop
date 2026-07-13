@@ -6,6 +6,7 @@ import {
 } from "../download-paths";
 import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
+import { isTimeContractViolation } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
 
 export interface AssistantIpcHandlerOptions {
@@ -307,12 +308,15 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return await (assistantNavigationStatusClient?.refreshNow() ?? assistantBridge?.listNavigationAgents());
     } catch (error) {
       console.warn("[assistant] failed to list navigation agents", error);
+      if (isTimeContractViolation(error)) {
+        throw error;
+      }
       return {
         ok: false,
         items: [],
         chatItems: [],
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
-        updatedAt: new Date().toISOString()
+        updatedAt: Date.now()
       };
     }
   });
@@ -336,12 +340,15 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return await assistantBridge.listCopilotAgents();
     } catch (error) {
       console.warn("[assistant] failed to list copilot agents", error);
+      if (isTimeContractViolation(error)) {
+        throw error;
+      }
       return {
         ok: false,
         items: [],
         chatItems: [],
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
-        updatedAt: new Date().toISOString()
+        updatedAt: Date.now()
       };
     }
   });

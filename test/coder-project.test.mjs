@@ -12,7 +12,10 @@ const {
   registerAssistantIpcHandlers
 } = require("../dist-electron/main/ipc/assistant-handlers.js");
 
-function registerProjectHandlers() {
+function registerProjectHandlers({
+  assistantBridge = {},
+  assistantNavigationStatusClient,
+} = {}) {
   const handlers = new Map();
   const calls = [];
   const ipcMain = {
@@ -22,8 +25,8 @@ function registerProjectHandlers() {
   };
 
   registerAssistantIpcHandlers(ipcMain, {
-    assistantBridge: {},
-    assistantNavigationStatusClient: {
+    assistantBridge,
+    assistantNavigationStatusClient: assistantNavigationStatusClient ?? {
       scheduleRefresh(delay) {
         calls.push({ path: "scheduleRefresh", delay });
       }
@@ -210,4 +213,57 @@ test("assistant.createCoderProject remains a compatibility alias for CODER creat
   });
   assert.deepEqual(calls[1], { path: "scheduleRefresh", delay: 0 });
   assert.equal(calls.some((call) => call.path === "/api/admin/agents/update"), false);
+});
+
+test("assistant IPC rethrows time contract violations while keeping ordinary navigation failures structured", async () => {
+  const timeViolation = new Error("time_contract_violation: navigation.chats[1].updatedAt must be epoch_ms_int64");
+  const { handlers } = registerProjectHandlers({
+    assistantBridge: {
+      async listCopilotAgents() {
+        throw timeViolation;
+      },
+    },
+    assistantNavigationStatusClient: {
+      getSnapshot() {
+        return { ok: false };
+      },
+      async refreshNow() {
+        throw timeViolation;
+      },
+      scheduleRefresh() {},
+    },
+  });
+
+  await assert.rejects(
+    handlers.get("assistant.listNavigationAgents")(),
+    /time_contract_violation: navigation\.chats\[1\]\.updatedAt/u,
+  );
+  await assert.rejects(
+    handlers.get("assistant.listCopilotAgents")(),
+    /time_contract_violation: navigation\.chats\[1\]\.updatedAt/u,
+  );
+
+  const ordinaryFailure = new Error("agent-platform unavailable");
+  const ordinary = registerProjectHandlers({
+    assistantBridge: {
+      async listCopilotAgents() {
+        throw ordinaryFailure;
+      },
+    },
+    assistantNavigationStatusClient: {
+      getSnapshot() {
+        return { ok: false };
+      },
+      async refreshNow() {
+        throw ordinaryFailure;
+      },
+      scheduleRefresh() {},
+    },
+  });
+  const navigationResult = await ordinary.handlers.get("assistant.listNavigationAgents")();
+  const copilotResult = await ordinary.handlers.get("assistant.listCopilotAgents")();
+  assert.equal(navigationResult.ok, false);
+  assert.equal(copilotResult.ok, false);
+  assert.equal(typeof navigationResult.updatedAt, "number");
+  assert.equal(typeof copilotResult.updatedAt, "number");
 });

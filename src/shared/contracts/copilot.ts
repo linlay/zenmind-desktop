@@ -220,6 +220,25 @@ export type AssistantNavigationLivePhase =
   | "unavailable"
   | "error";
 
+export type AssistantNavigationLiveFrameDirection = "connection" | "outbound" | "inbound";
+
+export type AssistantNavigationLiveFrameKind =
+  | "connecting"
+  | "connected"
+  | "closed"
+  | "request"
+  | "response"
+  | "error"
+  | "push"
+  | "invalid";
+
+export interface AssistantNavigationLiveFrame {
+  at: number;
+  direction: AssistantNavigationLiveFrameDirection;
+  kind: AssistantNavigationLiveFrameKind;
+  type: string | null;
+}
+
 export interface AssistantNavigationLiveStatus {
   phase: AssistantNavigationLivePhase;
   source: "desktop-nav";
@@ -229,6 +248,7 @@ export interface AssistantNavigationLiveStatus {
   lastRefreshAt: number | null;
   lastPushType: string | null;
   lastError: string | null;
+  recentFrames: AssistantNavigationLiveFrame[];
 }
 
 export interface AssistantNavAgentItem {

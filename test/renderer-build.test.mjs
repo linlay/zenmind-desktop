@@ -3751,7 +3751,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
   assert.match(assistantRuntime, /AssistantNavigationStatusClient/);
   assert.match(assistantNavigationStatusClient, /type: "\/api\/chats"/);
-  assert.match(assistantNavigationStatusClient, /agentMode: NAVIGATION_CHAT_AGENT_MODE/);
+  assert.match(assistantNavigationStatusClient, /mode: NAVIGATION_CHAT_AGENT_MODE/);
   assert.match(assistantNavigationStatusClient, /limit: NAVIGATION_CHAT_LIMIT/);
   assert.match(assistantNavigationStatusClient, /buildAssistantNavigationChatsFromPlatform/);
   assert.match(assistantNavigationStatusClient, /applyAssistantNavigationChatPush/);
@@ -3769,7 +3769,9 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /readAssistantNavigationAgentsFromPlatform/);
   assert.match(bridge, /readAssistantCopilotAgentsFromPlatform/);
   assert.match(bridge, /chatHasPendingAwaiting/);
-  assert.match(bridge, /createNavigationAgentItem/);
+  assert.match(bridge, /validatePresentPlatformTimes/);
+  assert.doesNotMatch(bridge, /timestampToIso|Date\.parse/);
+  assert.doesNotMatch(contracts, /fullAccessExpiresAt/);
   assert.match(appShell, /onNavigationAgentsChanged/);
   assert.doesNotMatch(appShell, /onNavigationPushEvent/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);

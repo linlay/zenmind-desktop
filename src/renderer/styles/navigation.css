@@ -603,7 +603,7 @@
   flex-direction: column;
   gap: 2px;
   max-height: min(480px, calc(100vh - 32px));
-  padding: 0 4px 2px 12px;
+  padding: 4px 3px;
   overflow-y: auto;
 }
 
@@ -644,17 +644,6 @@
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
   font-weight: 500;
-}
-
-.sidebar-chats-item.is-unread .sidebar-chats-preview::before {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin: 0 6px 1px 0;
-  border-radius: 999px;
-  background: var(--accent-strong);
-  content: "";
-  vertical-align: middle;
 }
 
 .sidebar-chats-copy {

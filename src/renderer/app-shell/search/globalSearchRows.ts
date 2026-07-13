@@ -23,7 +23,7 @@ export type DesktopGlobalSearchRow =
       agentKey: string;
       label: string;
       description: string;
-      updatedAtMs: number;
+      updatedAtMs?: number;
     }
   | {
       kind: "chat";
@@ -88,7 +88,7 @@ export function buildDesktopGlobalSearchSections(input: BuildDesktopGlobalSearch
     .map((agent) => createAgentRow(agent))
     .filter((row): row is Extract<DesktopGlobalSearchRow, { kind: "agent" }> => Boolean(row))
     .filter((row) => !normalizedQuery || rowMatches(row, normalizedQuery))
-    .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+    .sort(compareAgentRows)
     .slice(0, normalizedQuery ? QUERY_AGENT_LIMIT : EMPTY_AGENT_LIMIT);
   const allLocalChatRows = createLocalChatRows(input.agents, input.t);
   const localChatRows = allLocalChatRows
@@ -124,7 +124,7 @@ export function buildDesktopGlobalSearchSections(input: BuildDesktopGlobalSearch
   }
   const recentChatRows = allLocalChatRows
     .filter((row) => !attentionChatIds.has(row.chatId))
-    .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+    .sort(compareAttentionChatRows)
     .slice(0, EMPTY_CHAT_LIMIT);
 
   return [
@@ -198,7 +198,9 @@ function createAgentRow(agent: AssistantNavAgentItem): Extract<DesktopGlobalSear
     agentKey,
     label: agent.displayName || agentKey,
     description: agent.role || agent.latestPreview || agentKey,
-    updatedAtMs: readTimestampMs(agent.updatedAt)
+    ...(readEpochMillis(agent.updatedAt) !== undefined
+      ? { updatedAtMs: readEpochMillis(agent.updatedAt) }
+      : {})
   };
 }
 
@@ -239,6 +241,10 @@ function createLocalChatRow(
     return null;
   }
   const label = chat.chatName || options.t("assistant.newChat");
+  const updatedAtMs = readEpochMillis(chat.updatedAt);
+  if (updatedAtMs === undefined) {
+    return null;
+  }
   return {
     kind: "chat",
     key: `chat:${chatId}`,
@@ -247,7 +253,7 @@ function createLocalChatRow(
     label,
     agentLabel: options.agentLabel,
     snippet: chat.lastRunContent || label,
-    updatedAtMs: readTimestampMs(chat.updatedAt),
+    updatedAtMs,
     source: "local",
     score: 0,
     hasActiveRun: chat.hasActiveRun,
@@ -273,6 +279,10 @@ function mergeQueryChatRows(
     }
     const localRow = localById.get(chatId) ?? chatById.get(chatId);
     const agent = agentByKey.get(agentKey);
+    const updatedAtMs = readEpochMillis(result.timestamp);
+    if (updatedAtMs === undefined) {
+      continue;
+    }
     const fallbackLabel = localRow?.label || result.chatName || t("assistant.newChat");
     chatById.set(chatId, {
       kind: "chat",
@@ -282,7 +292,7 @@ function mergeQueryChatRows(
       label: result.chatName || fallbackLabel,
       agentLabel: agent?.displayName || localRow?.agentLabel || agentKey,
       snippet: result.snippet || localRow?.snippet || fallbackLabel,
-      updatedAtMs: readTimestampMs(result.timestamp) || localRow?.updatedAtMs || 0,
+      updatedAtMs,
       source: "remote",
       score: result.score,
       hasActiveRun: localRow?.hasActiveRun ?? false,
@@ -301,6 +311,22 @@ function compareAttentionChatRows(
     return right.updatedAtMs - left.updatedAtMs;
   }
   return left.chatId.localeCompare(right.chatId);
+}
+
+function compareAgentRows(
+  left: Extract<DesktopGlobalSearchRow, { kind: "agent" }>,
+  right: Extract<DesktopGlobalSearchRow, { kind: "agent" }>,
+) {
+  if (right.updatedAtMs !== undefined && left.updatedAtMs !== undefined && right.updatedAtMs !== left.updatedAtMs) {
+    return right.updatedAtMs - left.updatedAtMs;
+  }
+  if (left.updatedAtMs === undefined && right.updatedAtMs !== undefined) {
+    return 1;
+  }
+  if (left.updatedAtMs !== undefined && right.updatedAtMs === undefined) {
+    return -1;
+  }
+  return left.agentKey.localeCompare(right.agentKey);
 }
 
 function compareQueryChatRows(
@@ -345,10 +371,6 @@ function rowMatches(row: DesktopGlobalSearchRow, normalizedQuery: string) {
 
 function normalizeSearchText(value: unknown) {
   return String(value ?? "").trim().toLocaleLowerCase();
-}
-
-function readTimestampMs(value: unknown) {
-  return readEpochMillis(value) ?? 0;
 }
 
 function decodeURIComponentSafe(value: string) {

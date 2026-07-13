@@ -35,7 +35,11 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
-import { readEpochMillis, requireEpochMillis } from "../../../shared/time-contract";
+import {
+  isTimeContractViolation,
+  readEpochMillis,
+  requireEpochMillis,
+} from "../../../shared/time-contract";
 import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
 import { DesktopPetSseParser } from "../pet/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
@@ -53,9 +57,11 @@ const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "updatedAt",
   "startedAt",
   "completedAt",
+  "resolvedAt",
   "timestamp",
   "expiresAt",
   "readAt",
+  "lastAccessedAt",
 ] as const;
 const DEFAULT_MEMORY_SETTINGS: AssistantMemorySettings = {
   enabled: true,
@@ -91,36 +97,36 @@ type PlatformUploadTicket = {
 };
 
 type PlatformChatSummary = {
-  chatId?: string;
-  chatName?: string;
-  agentKey?: string;
-  workerKey?: string;
-  createdAt?: number;
-  updatedAt?: number;
-  lastRunContent?: string;
-  read?: boolean | { isRead?: boolean };
-  isRead?: boolean;
+  chatId?: unknown;
+  chatName?: unknown;
+  agentKey?: unknown;
+  workerKey?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  lastRunContent?: unknown;
+  read?: unknown;
+  isRead?: unknown;
   awaiting?: unknown;
-  hasPendingAwaiting?: boolean;
-  awaitingCount?: number;
+  hasPendingAwaiting?: unknown;
+  awaitingCount?: unknown;
   awaitingMode?: unknown;
   mode?: unknown;
-  status?: string;
+  status?: unknown;
 };
 
 type PlatformRunSummary = {
-  runId?: string;
-  initialMessage?: string;
-  assistantText?: string;
-  startedAt?: number;
-  completedAt?: number;
+  runId?: unknown;
+  initialMessage?: unknown;
+  assistantText?: unknown;
+  startedAt?: unknown;
+  completedAt?: unknown;
 };
 
 type PlatformChatDetail = {
-  chatId?: string;
-  chatName?: string;
-  createdAt?: number;
-  updatedAt?: number;
+  chatId?: unknown;
+  chatName?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
   events?: Array<Record<string, unknown>>;
   runs?: PlatformRunSummary[];
 };
@@ -156,9 +162,9 @@ type PlatformMemoryRecord = {
   sourceChatId?: string;
   sourceRunId?: string;
   accessCount?: number;
-  createdAt?: number;
-  updatedAt?: number;
-  lastAccessedAt?: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  lastAccessedAt?: unknown;
 };
 
 type PlatformMemoryRecordsResponse = {
@@ -268,10 +274,27 @@ function readRequiredPlatformTimestamp(value: unknown, field: string) {
   return requireEpochMillis(value, field);
 }
 
-function hasValidPresentPlatformTimes(record: Record<string, unknown>) {
-  return STRUCTURED_PLATFORM_TIME_FIELDS.every((field) =>
-    record[field] === undefined || readEpochMillis(record[field]) !== undefined
-  );
+function validatePresentPlatformTimes(record: Record<string, unknown>, path: string) {
+  for (const field of STRUCTURED_PLATFORM_TIME_FIELDS) {
+    if (record[field] !== undefined) {
+      readRequiredPlatformTimestamp(record[field], `${path}.${field}`);
+    }
+  }
+}
+
+function validateAwaitingPayloadTimes(value: unknown, path: string) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => validateAwaitingPayloadTimes(item, `${path}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  validatePresentPlatformTimes(record, path);
+  if (record.awaiting !== undefined) {
+    validateAwaitingPayloadTimes(record.awaiting, `${path}.awaiting`);
+  }
 }
 
 function readErrorCode(value: unknown) {
@@ -533,18 +556,13 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
   runId: string;
   chatId: string;
   source?: AssistantStartRunRequest["source"];
-}): AssistantEvent | null {
+}, path: string): AssistantEvent | null {
   const type = readString(raw.type);
   if (!type) {
     return null;
   }
-  if (!hasValidPresentPlatformTimes(raw)) {
-    return null;
-  }
-  const timestamp = readEpochMillis(raw.timestamp);
-  if (timestamp === undefined) {
-    return null;
-  }
+  validatePresentPlatformTimes(raw, path);
+  const timestamp = readRequiredPlatformTimestamp(raw.timestamp, `${path}.timestamp`);
   const runId = readString(raw.runId) || fallback.runId;
   const chatId = readString(raw.chatId) || fallback.chatId;
   const errorText = readErrorPayloadText(raw.error);
@@ -583,6 +601,7 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
     ...(raw.data !== undefined ? { data: raw.data } : {})
   };
   if (typeof raw.awaiting === "object" && raw.awaiting !== null) {
+    validateAwaitingPayloadTimes(raw.awaiting, `${path}.awaiting`);
     event.awaiting = raw.awaiting as AssistantEvent["awaiting"];
   }
   return event;
@@ -599,11 +618,13 @@ function isAssistantRunTerminalEvent(event: AssistantEvent) {
     event.type === "run.expired";
 }
 
-function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary | null {
+function mapChatSummary(summary: PlatformChatSummary, path: string): AssistantChatSummary | null {
+  validatePresentPlatformTimes(summary as Record<string, unknown>, path);
+  validateAwaitingPayloadTimes(summary.awaiting, `${path}.awaiting`);
   const id = readString(summary.chatId);
-  const createdAt = readEpochMillis(summary.createdAt);
-  const updatedAt = readEpochMillis(summary.updatedAt);
-  if (!id || createdAt === undefined || updatedAt === undefined) {
+  const createdAt = readRequiredPlatformTimestamp(summary.createdAt, `${path}.createdAt`);
+  const updatedAt = readRequiredPlatformTimestamp(summary.updatedAt, `${path}.updatedAt`);
+  if (!id) {
     return null;
   }
   return {
@@ -616,11 +637,14 @@ function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary | nu
   };
 }
 
-function mapChatSearchResult(value: unknown): AssistantChatSearchResult | null {
+function mapChatSearchResult(value: unknown, path: string): AssistantChatSearchResult | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
   const record = value as Record<string, unknown>;
+  validatePresentPlatformTimes(record, path);
+  validateAwaitingPayloadTimes(record.awaiting, `${path}.awaiting`);
+  const timestamp = readRequiredPlatformTimestamp(record.timestamp, `${path}.timestamp`);
   const chatId = readString(record.chatId).trim();
   if (!chatId) {
     return null;
@@ -628,10 +652,6 @@ function mapChatSearchResult(value: unknown): AssistantChatSearchResult | null {
   const agentKey = readString(record.agentKey).trim();
   const runId = readString(record.runId).trim();
   const role = readString(record.role).trim();
-  const timestamp = readEpochMillis(record.timestamp);
-  if (timestamp === undefined) {
-    return null;
-  }
   return {
     chatId,
     chatName: readString(record.chatName),
@@ -647,7 +667,9 @@ function mapChatSearchResult(value: unknown): AssistantChatSearchResult | null {
 
 function mapChatSearchResponse(payload: PlatformChatSearchResponse | null | undefined, fallbackQuery: string): AssistantChatSearchResponse {
   const results = Array.isArray(payload?.results)
-    ? payload.results.map(mapChatSearchResult).filter((item): item is AssistantChatSearchResult => Boolean(item))
+    ? payload.results
+      .map((item, index) => mapChatSearchResult(item, `chatSearch.results[${index}]`))
+      .filter((item): item is AssistantChatSearchResult => Boolean(item))
     : [];
   const rawCount = Number(payload?.count);
   const hasCount = payload && typeof payload === "object" && "count" in payload && Number.isFinite(rawCount);
@@ -669,8 +691,12 @@ function readChatIsRead(summary: PlatformChatSummary) {
   if (typeof summary.read === "boolean") {
     return summary.read;
   }
-  if (typeof summary.read === "object" && summary.read !== null && typeof summary.read.isRead === "boolean") {
-    return summary.read.isRead;
+  if (
+    typeof summary.read === "object" &&
+    summary.read !== null &&
+    typeof (summary.read as { isRead?: unknown }).isRead === "boolean"
+  ) {
+    return (summary.read as { isRead: boolean }).isRead;
   }
   return true;
 }
@@ -697,56 +723,33 @@ function readChatAwaitingMode(summary: PlatformChatSummary) {
     readAwaitingPayloadMode(summary.awaiting);
 }
 
-function compareChatUpdatedAt(left: PlatformChatSummary, right: PlatformChatSummary) {
-  return (readEpochMillis(right.updatedAt) ?? readEpochMillis(right.createdAt) ?? 0) -
-    (readEpochMillis(left.updatedAt) ?? readEpochMillis(left.createdAt) ?? 0);
-}
-
-function createNavigationAgentItem(agent: DesktopPetAgentOption, chats: PlatformChatSummary[]): AssistantNavAgentItem {
-  const sortedChats = [...chats].sort(compareChatUpdatedAt);
-  const latestChat = sortedChats[0] ?? null;
-  const latestUpdatedAt = latestChat ? readEpochMillis(latestChat.updatedAt) : undefined;
-  const latestPreview = latestChat
-    ? (readString(latestChat.lastRunContent) || readString(latestChat.chatName)).replace(/\s+/gu, " ").trim()
-    : "";
-  const unreadFromChats = sortedChats.filter((chat) => !readChatIsRead(chat)).length;
-  return {
-    agentKey: agent.agentKey,
-    displayName: agent.displayName,
-    role: agent.role,
-    ...(agent.icon === undefined ? {} : { icon: agent.icon }),
-    unreadCount: Math.max(0, agent.unreadCount, unreadFromChats),
-    unreadChatCount: Math.max(0, agent.unreadCount, unreadFromChats),
-    chatCount: sortedChats.length,
-    hasPendingAwaiting: sortedChats.some(chatHasPendingAwaiting),
-    latestChatId: latestChat ? readString(latestChat.chatId) || null : null,
-    latestPreview: latestPreview.slice(0, 120),
-    ...(latestUpdatedAt !== undefined
-      ? { updatedAt: latestUpdatedAt }
-      : {}),
-    recentChats: []
-  };
-}
-
-function mapRunMessages(run: PlatformRunSummary): AssistantChatMessage[] {
+function mapRunMessages(run: PlatformRunSummary, path: string): AssistantChatMessage[] {
+  validatePresentPlatformTimes(run as Record<string, unknown>, path);
   const runId = readString(run.runId) || createRunId();
-  const createdAt = readEpochMillis(run.startedAt);
-  const completedAt = readEpochMillis(run.completedAt);
-  if (createdAt === undefined) {
-    return [];
+  const userContent = readString(run.initialMessage).trim();
+  const assistantContent = readString(run.assistantText).trim();
+  const startedAt = run.startedAt === undefined
+    ? undefined
+    : readRequiredPlatformTimestamp(run.startedAt, `${path}.startedAt`);
+  const completedAt = run.completedAt === undefined
+    ? undefined
+    : readRequiredPlatformTimestamp(run.completedAt, `${path}.completedAt`);
+  if (userContent && startedAt === undefined) {
+    readRequiredPlatformTimestamp(run.startedAt, `${path}.startedAt`);
+  }
+  if (assistantContent && completedAt === undefined) {
+    readRequiredPlatformTimestamp(run.completedAt, `${path}.completedAt`);
   }
   const messages: AssistantChatMessage[] = [];
-  const userContent = readString(run.initialMessage).trim();
-  if (userContent) {
+  if (userContent && startedAt !== undefined) {
     messages.push({
       id: createMessageId("user", runId),
       role: "user",
       content: userContent,
-      createdAt,
+      createdAt: startedAt,
       runId
     });
   }
-  const assistantContent = readString(run.assistantText).trim();
   if (assistantContent && completedAt !== undefined) {
     messages.push({
       id: createMessageId("assistant", runId),
@@ -759,17 +762,15 @@ function mapRunMessages(run: PlatformRunSummary): AssistantChatMessage[] {
   return messages;
 }
 
-function mapMemoryRecord(record: PlatformMemoryRecord): AssistantMemoryItem | null {
+function mapMemoryRecord(record: PlatformMemoryRecord, path: string): AssistantMemoryItem | null {
+  validatePresentPlatformTimes(record as Record<string, unknown>, path);
   const kind = record.kind === "observation" ? "observation" : "fact";
   const status = record.status === "archived" || record.status === "open" ? record.status : "active";
-  const createdAt = readEpochMillis(record.createdAt);
-  const updatedAt = readEpochMillis(record.updatedAt);
+  const createdAt = readRequiredPlatformTimestamp(record.createdAt, `${path}.createdAt`);
+  const updatedAt = readRequiredPlatformTimestamp(record.updatedAt, `${path}.updatedAt`);
   const lastReferencedAt = record.lastAccessedAt === undefined
     ? undefined
-    : readEpochMillis(record.lastAccessedAt);
-  if (createdAt === undefined || updatedAt === undefined || (record.lastAccessedAt !== undefined && lastReferencedAt === undefined)) {
-    return null;
-  }
+    : readRequiredPlatformTimestamp(record.lastAccessedAt, `${path}.lastAccessedAt`);
   return {
     id: readString(record.id),
     kind,
@@ -980,7 +981,9 @@ export class AgentPlatformAssistantBridge {
   async listChats(): Promise<AssistantChatSummary[]> {
     const data = await this.getJson<PlatformChatSummary[]>("/api/chats");
     return Array.isArray(data)
-      ? data.map(mapChatSummary).filter((summary): summary is AssistantChatSummary => summary !== null)
+      ? data
+        .map((summary, index) => mapChatSummary(summary, `chats[${index}]`))
+        .filter((summary): summary is AssistantChatSummary => summary !== null)
       : [];
   }
 
@@ -995,12 +998,19 @@ export class AgentPlatformAssistantBridge {
     if (!data) {
       return null;
     }
+    validatePresentPlatformTimes(data as Record<string, unknown>, "chat");
     const events = Array.isArray(data.events)
       ? data.events
-        .map((event) => normalizePlatformEvent(event, { runId: readString(event.runId), chatId: trimmedChatId }))
+        .map((event, index) => normalizePlatformEvent(
+          event,
+          { runId: readString(event.runId), chatId: trimmedChatId },
+          `chat.events[${index}]`,
+        ))
         .filter((event): event is AssistantRunEvent => Boolean(event && event.type !== "delta" && event.type !== "done" && event.type !== "error" && event.type !== "stopped"))
       : [];
-    const messages = Array.isArray(data.runs) ? data.runs.flatMap(mapRunMessages) : [];
+    const messages = Array.isArray(data.runs)
+      ? data.runs.flatMap((run, index) => mapRunMessages(run, `chat.runs[${index}]`))
+      : [];
     return {
       summary: {
         id: readString(data.chatId) || trimmedChatId,
@@ -1217,21 +1227,29 @@ export class AgentPlatformAssistantBridge {
       this.listMemoryItems(),
       this.getJson<PlatformMemoryHistoryResponse>("/api/memory/history?limit=1")
     ]);
+    if (itemsResult.status === "rejected" && isTimeContractViolation(itemsResult.reason)) {
+      throw itemsResult.reason;
+    }
+    if (historyResult.status === "rejected" && isTimeContractViolation(historyResult.reason)) {
+      throw historyResult.reason;
+    }
     const items = itemsResult.status === "fulfilled" ? itemsResult.value.items : [];
-    const recentHistory = historyResult.status === "fulfilled" ? historyResult.value.events?.[0] : null;
+    const history = historyResult.status === "fulfilled" ? historyResult.value.events : [];
+    const audits = Array.isArray(history)
+      ? history.map((event, index) => ({
+        operation: readString(event.operation),
+        status: "ok",
+        reason: readString(event.reason),
+        timestamp: readRequiredPlatformTimestamp(event.ts, `memory.history[${index}].ts`),
+      }))
+      : [];
+    const recentAudit = audits[0] ?? null;
     return {
       settings: DEFAULT_MEMORY_SETTINGS,
       stats: this.createMemoryStats(items),
       storage: this.createPlatformMemoryStorage(),
       directoryPath: "",
-      recentAudit: recentHistory
-        ? {
-            operation: readString(recentHistory.operation),
-            status: "ok",
-            reason: readString(recentHistory.reason),
-            timestamp: readRequiredPlatformTimestamp(recentHistory.ts, "memory.history.ts")
-          }
-        : null
+      recentAudit,
     };
   }
 
@@ -1243,7 +1261,9 @@ export class AgentPlatformAssistantBridge {
   }> {
     const data = await this.getJson<PlatformMemoryRecordsResponse>("/api/memory/record/list?limit=200");
     const items = Array.isArray(data.results)
-      ? data.results.map(mapMemoryRecord).filter((item): item is AssistantMemoryItem => item !== null)
+      ? data.results
+        .map((item, index) => mapMemoryRecord(item, `memory.records[${index}]`))
+        .filter((item): item is AssistantMemoryItem => item !== null)
       : [];
     return {
       items,
@@ -1342,7 +1362,7 @@ export class AgentPlatformAssistantBridge {
         runId: run.runId,
         chatId: run.chatId,
         type: "error",
-        createdAt: Date.now(),
+        ...(isTimeContractViolation(error) ? {} : { createdAt: Date.now() }),
         message,
         error: message
       });
@@ -1372,10 +1392,10 @@ export class AgentPlatformAssistantBridge {
         const { done, value } = await reader.read();
         const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
         const result = done ? parser.finish() : parser.push(chunk);
-        for (const event of result.events) {
-          const normalizedEvent = normalizePlatformEvent(event.raw, fallback);
+        for (const [index, event] of result.events.entries()) {
+          const normalizedEvent = normalizePlatformEvent(event.raw, fallback, `stream.events[${index}]`);
           if (!normalizedEvent) {
-            throw new Error("time_contract_violation: stream event requires epoch_ms_int64 timestamp");
+            throw new Error("time_contract_violation: stream event.type is required");
           }
           const eventText = readAssistantEventOutputText(normalizedEvent);
           const delta = normalizedEvent.type === "content.delta" ? normalizedEvent.delta || eventText : "";

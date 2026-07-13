@@ -21,7 +21,22 @@ function loadGlobalSearchRowsModule() {
   });
   const mod = { exports: {} };
   const fn = new Function("exports", "require", "module", "__filename", "__dirname", outputText);
-  fn(mod.exports, require, mod, sourcePath, path.dirname(sourcePath));
+  const sourceRequire = createRequire(sourcePath);
+  fn(mod.exports, (specifier) => {
+    if (specifier === "../../../shared/time-contract") {
+      return {
+        readEpochMillis(value) {
+          return typeof value === "number" &&
+            Number.isSafeInteger(value) &&
+            value >= 1_000_000_000_000 &&
+            value <= Number.MAX_SAFE_INTEGER
+            ? value
+            : undefined;
+        },
+      };
+    }
+    return sourceRequire(specifier);
+  }, mod, sourcePath, path.dirname(sourcePath));
   return mod.exports;
 }
 
@@ -46,6 +61,7 @@ const messages = {
   "desktop.globalSearch.action.settings": "Open settings",
   "desktop.globalSearch.action.settings.description": "Adjust preferences",
 };
+const EPOCH_MS = 1_710_000_000_000;
 
 function t(key) {
   return messages[key] ?? key;
@@ -56,7 +72,7 @@ function chat(overrides) {
     chatId: "chat-1",
     chatName: "Deploy plan",
     agentKey: "coder",
-    updatedAt: "1710000000000",
+    updatedAt: EPOCH_MS,
     lastRunId: "run-1",
     lastRunContent: "local deploy snippet",
     isRead: true,
@@ -77,7 +93,7 @@ function agent(overrides) {
     hasPendingAwaiting: false,
     latestChatId: "chat-1",
     latestPreview: "local deploy snippet",
-    updatedAt: "1710000000000",
+    updatedAt: EPOCH_MS,
     recentChats: [chat({})],
     ...overrides,
   };
@@ -114,19 +130,19 @@ test("desktop global search prioritizes awaiting and unread chats in the empty s
             chatName: "Needs input",
             isRead: false,
             hasPendingAwaiting: true,
-            updatedAt: "1710000001000",
+            updatedAt: EPOCH_MS + 1_000,
           }),
           chat({
             chatId: "chat-unread",
             chatName: "Unread design notes",
             isRead: false,
-            updatedAt: "1710000002000",
+            updatedAt: EPOCH_MS + 2_000,
           }),
           chat({
             chatId: "chat-recent",
             chatName: "Recent sync",
             lastRunContent: "recent local snippet",
-            updatedAt: "1710000003000",
+            updatedAt: EPOCH_MS + 3_000,
           }),
         ],
       }),
@@ -146,6 +162,24 @@ test("desktop global search prioritizes awaiting and unread chats in the empty s
   assert.deepEqual(unreadRows.map((row) => row.chatId), ["chat-unread"]);
   assert.equal(recentRows.some((row) => row.chatId === "chat-awaiting" || row.chatId === "chat-unread"), false);
   assert.deepEqual(recentRows.map((row) => row.chatId), ["chat-recent"]);
+});
+
+test("desktop global search keeps agents without optional updatedAt after timestamped agents", () => {
+  const sections = buildDesktopGlobalSearchSections({
+    agents: [
+      agent({ agentKey: "without-time", displayName: "Without time", updatedAt: undefined, recentChats: [] }),
+      agent({ agentKey: "older", displayName: "Older", updatedAt: EPOCH_MS + 1_000, recentChats: [] }),
+      agent({ agentKey: "newer", displayName: "Newer", updatedAt: EPOCH_MS + 2_000, recentChats: [] }),
+    ],
+    query: "",
+    currentAgentKey: "coder",
+    t,
+  });
+
+  assert.deepEqual(
+    rowsOfKind(sections, "agent").map((row) => row.agentKey),
+    ["newer", "older", "without-time"],
+  );
 });
 
 test("desktop global search filters rows, boosts local attention state, and prefers remote chat snippets", () => {

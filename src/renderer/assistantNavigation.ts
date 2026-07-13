@@ -43,18 +43,12 @@ function resolveAssistantNavUnreadCount(options: {
     options.unreadFromChats;
 }
 
-function normalizeAssistantNavUpdatedAt(value: unknown) {
-  return readEpochMillis(value) ?? 0;
-}
-
 function compareAssistantNavChatFreshness(
   left: AssistantNavChatItem,
   right: AssistantNavChatItem,
 ) {
-  const leftUpdatedAt = normalizeAssistantNavUpdatedAt(left.updatedAt);
-  const rightUpdatedAt = normalizeAssistantNavUpdatedAt(right.updatedAt);
-  if (leftUpdatedAt !== rightUpdatedAt) {
-    return rightUpdatedAt - leftUpdatedAt;
+  if (left.updatedAt !== right.updatedAt) {
+    return right.updatedAt - left.updatedAt;
   }
 
   return left.chatId.localeCompare(right.chatId);
@@ -161,9 +155,7 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     hasPendingAwaiting: record.hasPendingAwaiting === true || recentChats.some((chat) => chat.hasPendingAwaiting),
     latestChatId,
     latestPreview: toText(record.latestPreview),
-    ...(updatedAt !== undefined
-      ? { updatedAt }
-      : latestChat ? { updatedAt: latestChat.updatedAt } : {}),
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
     recentChats,
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,

@@ -94,6 +94,24 @@ test("assistant nav preview matches webclient updatedAt ordering", () => {
   );
 });
 
+test("assistant nav preserves a missing optional agent updatedAt instead of deriving it from chats", () => {
+  const [agent] = normalizeAssistantNavAgents([{
+    agentKey: "coder",
+    displayName: "Coder",
+    role: "",
+    unreadCount: 0,
+    unreadChatCount: 0,
+    chatCount: 1,
+    hasPendingAwaiting: false,
+    latestChatId: "chat-1",
+    latestPreview: "",
+    recentChats: [chat({ chatId: "chat-1", updatedAt: epoch(50) })],
+  }]);
+
+  assert.equal(agent?.updatedAt, undefined);
+  assert.equal(agent?.recentChats[0]?.updatedAt, epoch(50));
+});
+
 test("assistant nav preview caps visible awaiting rows at five", () => {
   const agent = {
     recentChats: Array.from({ length: 6 }, (_item, index) =>

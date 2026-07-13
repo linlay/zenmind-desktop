@@ -14,7 +14,11 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
-import { readEpochMillis } from "../../../shared/time-contract";
+import {
+  isTimeContractViolation,
+  readEpochMillis,
+  requireEpochMillis,
+} from "../../../shared/time-contract";
 import { getDesktopDeviceId } from "../../device-identity";
 import { t } from "../../i18n/main-i18n";
 
@@ -56,6 +60,7 @@ type PlatformAgentSummary = {
   key?: unknown;
   name?: unknown;
   displayName?: unknown;
+  updatedAt?: unknown;
   role?: unknown;
   icon?: unknown;
   mode?: unknown;
@@ -410,6 +415,28 @@ function toTimestampMs(value: unknown) {
   return readEpochMillis(value);
 }
 
+function validatePresentNavigationTimes(record: Record<string, unknown>, path: string) {
+  for (const field of STRUCTURED_PUSH_TIME_FIELDS) {
+    if (record[field] !== undefined) {
+      requireEpochMillis(record[field], `${path}.${field}`);
+    }
+  }
+}
+
+function validateNavigationPayloadTimes(value: unknown, path: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => validateNavigationPayloadTimes(item, `${path}[${index}]`));
+    return;
+  }
+  if (!isObjectRecord(value)) {
+    return;
+  }
+  validatePresentNavigationTimes(value, path);
+  if (value.awaiting !== undefined) {
+    validateNavigationPayloadTimes(value.awaiting, `${path}.awaiting`);
+  }
+}
+
 function createApiUrl(baseUrl: string, pathname: string) {
   const url = new URL(pathname, baseUrl);
   return url.toString();
@@ -554,9 +581,10 @@ function readAwaitingPayloadMode(value: unknown): AssistantAwaitingMode | undefi
 }
 
 function readChatAwaitingMode(chat: PlatformChatSummary): AssistantAwaitingMode | undefined {
+  // Top-level mode is the chat's Agent Mode (for example REACT), not an
+  // awaiting interaction mode. Awaiting state is carried separately.
   return (
     toAwaitingMode(chat.awaitingMode) ||
-    toAwaitingMode(chat.mode) ||
     readAwaitingPayloadMode(chat.awaiting)
   );
 }
@@ -599,23 +627,27 @@ function readChatActiveRun(chat: PlatformChatSummary) {
 }
 
 function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem) {
-  const rightTime = toTimestampMs(right.updatedAt) ?? 0;
-  const leftTime = toTimestampMs(left.updatedAt) ?? 0;
-  if (rightTime !== leftTime) {
-    return rightTime - leftTime;
+  if (right.updatedAt !== left.updatedAt) {
+    return right.updatedAt - left.updatedAt;
   }
   return left.chatId.localeCompare(right.chatId);
 }
 
-function readAgentLatestChatTime(agent: AssistantNavAgentItem) {
-  return toTimestampMs(agent.updatedAt) ?? toTimestampMs(agent.recentChats[0]?.updatedAt) ?? 0;
+function readAgentTimestamp(agent: AssistantNavAgentItem) {
+  return toTimestampMs(agent.updatedAt);
 }
 
 function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
-  const rightTime = readAgentLatestChatTime(right);
-  const leftTime = readAgentLatestChatTime(left);
-  if (rightTime !== leftTime) {
+  const rightTime = readAgentTimestamp(right);
+  const leftTime = readAgentTimestamp(left);
+  if (rightTime !== undefined && leftTime !== undefined && rightTime !== leftTime) {
     return rightTime - leftTime;
+  }
+  if (leftTime === undefined && rightTime !== undefined) {
+    return 1;
+  }
+  if (leftTime !== undefined && rightTime === undefined) {
+    return -1;
   }
   const displayNameComparison = left.displayName.localeCompare(right.displayName, "zh-CN");
   if (displayNameComparison !== 0) {
@@ -639,11 +671,8 @@ function mergeNavigationChats(
       continue;
     }
     const existing = chatsById.get(chatId);
-    if (!existing || (toTimestampMs(chat.updatedAt) ?? 0) > (toTimestampMs(existing.updatedAt) ?? 0)) {
-      chatsById.set(chatId, {
-        ...chat,
-        createdAt: chat.createdAt ?? existing?.createdAt,
-      });
+    if (!existing || chat.updatedAt > existing.updatedAt) {
+      chatsById.set(chatId, chat);
     }
   }
   return [...chatsById.values()].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
@@ -657,7 +686,13 @@ function resolveNavigationUnreadCount(options: {
 }
 
 function pickLatestTimestamp(left?: number, right?: number) {
-  return (toTimestampMs(right) ?? 0) > (toTimestampMs(left) ?? 0) ? right : left;
+  if (left === undefined) {
+    return right;
+  }
+  if (right === undefined) {
+    return left;
+  }
+  return right > left ? right : left;
 }
 
 function mergeNavigationAgentItem(
@@ -687,7 +722,9 @@ function mergeNavigationAgentItem(
     hasPendingAwaiting: primary.hasPendingAwaiting || secondary.hasPendingAwaiting || recentChats.some((chat) => chat.hasPendingAwaiting),
     latestChatId: latestChat?.chatId ?? primary.latestChatId ?? secondary.latestChatId,
     latestPreview: latestPreview.slice(0, 120),
-    updatedAt: latestChat?.updatedAt ?? pickLatestTimestamp(primary.updatedAt, secondary.updatedAt),
+    ...(pickLatestTimestamp(primary.updatedAt, secondary.updatedAt) !== undefined
+      ? { updatedAt: pickLatestTimestamp(primary.updatedAt, secondary.updatedAt) }
+      : {}),
     recentChats,
     mode: primary.mode ?? secondary.mode,
     workspaceDir: primary.workspaceDir ?? secondary.workspaceDir,
@@ -711,18 +748,23 @@ function mergeNavigationAgentGroups(
   return sortNavigationAgents([...agentsByKey.values()]);
 }
 
-function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): AssistantNavChatItem | null {
+function mapNavigationChat(
+  chat: PlatformChatSummary,
+  fallbackAgentKey = "",
+  path = "navigation.chat",
+): AssistantNavChatItem | null {
+  if (!isObjectRecord(chat)) {
+    return null;
+  }
+  validateNavigationPayloadTimes(chat, path);
   const chatId = toText(chat.chatId) || toText(chat.id);
+  const createdAt = requireEpochMillis(chat.createdAt, `${path}.createdAt`);
+  const updatedAt = requireEpochMillis(chat.updatedAt, `${path}.updatedAt`);
   if (!chatId) {
     return null;
   }
   const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
   const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || t("assistant.newChat");
-  const createdAt = toTimestampMs(chat.createdAt);
-  const updatedAt = toTimestampMs(chat.updatedAt);
-  if (createdAt === undefined || updatedAt === undefined) {
-    return null;
-  }
   return {
     chatId,
     chatName,
@@ -744,17 +786,14 @@ export function buildAssistantNavigationChatsFromPlatform(chats: unknown): Assis
     return [];
   }
   const validChats: AssistantNavChatItem[] = [];
-  for (const rawChat of chats) {
-    const chat = mapNavigationChat(rawChat as PlatformChatSummary);
+  for (const [index, rawChat] of chats.entries()) {
+    const chat = mapNavigationChat(rawChat as PlatformChatSummary, "", `navigation.chats[${index}]`);
     if (!chat?.agentKey) {
       continue;
     }
     validChats.push(chat);
-    if (validChats.length >= NAVIGATION_CHAT_LIMIT) {
-      break;
-    }
   }
-  return validChats;
+  return validChats.slice(0, NAVIGATION_CHAT_LIMIT);
 }
 
 function isWorkspaceProjectAgent(agent: AssistantNavAgentItem) {
@@ -804,11 +843,15 @@ function readAgentRawChatLists(agent: PlatformAgentSummary): unknown[][] {
   ].filter((candidate): candidate is unknown[] => Array.isArray(candidate));
 }
 
-function readAgentChats(agent: PlatformAgentSummary, agentKey: string): AssistantNavChatItem[] {
+function readAgentChats(agent: PlatformAgentSummary, agentKey: string, agentPath: string): AssistantNavChatItem[] {
   const chatsById = new Map<string, AssistantNavChatItem>();
-  for (const rawChats of readAgentRawChatLists(agent)) {
-    for (const rawChat of rawChats) {
-      const chat = mapNavigationChat(rawChat as PlatformChatSummary, agentKey);
+  for (const [listIndex, rawChats] of readAgentRawChatLists(agent).entries()) {
+    for (const [chatIndex, rawChat] of rawChats.entries()) {
+      const chat = mapNavigationChat(
+        rawChat as PlatformChatSummary,
+        agentKey,
+        `${agentPath}.chats[${listIndex}][${chatIndex}]`,
+      );
       if (!chat || chatsById.has(chat.chatId)) {
         continue;
       }
@@ -818,13 +861,14 @@ function readAgentChats(agent: PlatformAgentSummary, agentKey: string): Assistan
   return [...chatsById.values()].sort(compareNavChats);
 }
 
-function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit: number): AssistantNavAgentItem | null {
+function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit: number, path: string): AssistantNavAgentItem | null {
+  validatePresentNavigationTimes(agent as Record<string, unknown>, path);
   const agentKey = readAgentKey(agent);
   if (!agentKey) {
     return null;
   }
   const workspaceDir = readAgentWorkspaceDir(agent);
-  const chats = readAgentChats(agent, agentKey);
+  const chats = readAgentChats(agent, agentKey, path);
   const recentChats = chats.slice(0, includeChatLimit);
   const latestChat = recentChats[0] ?? null;
   const totalCount = toNonNegativeInteger(agent.stats?.totalCount);
@@ -838,6 +882,9 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
   const latestPreview = latestChat
     ? (latestChat.lastRunContent || latestChat.chatName).replace(/\s+/gu, " ").trim()
     : "";
+  const updatedAt = agent.updatedAt === undefined
+    ? undefined
+    : requireEpochMillis(agent.updatedAt, `${path}.updatedAt`);
   return {
     agentKey,
     displayName: readAgentDisplayName(agent, agentKey),
@@ -849,7 +896,7 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
     hasPendingAwaiting: chats.some((chat) => chat.hasPendingAwaiting),
     latestChatId: latestChat?.chatId ?? null,
     latestPreview: latestPreview.slice(0, 120),
-    ...(latestChat ? { updatedAt: latestChat.updatedAt } : {}),
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
     recentChats,
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
@@ -857,12 +904,16 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
   };
 }
 
-function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentItem | null {
+function createCopilotAgentItem(agent: PlatformAgentSummary, path: string): AssistantNavAgentItem | null {
+  validatePresentNavigationTimes(agent as Record<string, unknown>, path);
   const agentKey = readAgentKey(agent);
   if (!agentKey) {
     return null;
   }
   const workspaceDir = readAgentWorkspaceDir(agent);
+  const updatedAt = agent.updatedAt === undefined
+    ? undefined
+    : requireEpochMillis(agent.updatedAt, `${path}.updatedAt`);
   return {
     agentKey,
     displayName: readAgentDisplayName(agent, agentKey),
@@ -874,6 +925,7 @@ function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentI
     hasPendingAwaiting: false,
     latestChatId: null,
     latestPreview: "",
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
     recentChats: [],
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
@@ -887,16 +939,15 @@ export function buildAssistantNavigationAgentsFromPlatformAgents(
 ): AssistantNavAgentItem[] {
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
   return sortNavigationAgents(agents
-    .map((agent) => createNavigationAgentItem(agent, includeChatLimit))
+    .map((agent, index) => createNavigationAgentItem(agent, includeChatLimit, `navigation.agents[${index}]`))
     .filter((agent): agent is AssistantNavAgentItem => Boolean(agent)));
 }
 
 export function buildAssistantCopilotAgentsFromPlatformAgents(agentsInput: unknown): AssistantNavAgentItem[] {
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
-  return agents
-    .map(createCopilotAgentItem)
-    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent))
-    .sort((left, right) => left.displayName.localeCompare(right.displayName, "zh-CN"));
+  return sortNavigationAgents(agents
+    .map((agent, index) => createCopilotAgentItem(agent, `copilot.agents[${index}]`))
+    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent)));
 }
 
 function normalizePushType(type: string) {
@@ -944,17 +995,46 @@ function requiredPushTimeField(event: NavigationPushEvent) {
   return "timestamp";
 }
 
-function hasValidRequiredPushTime(event: NavigationPushEvent) {
-  const allPresentTimesAreValid = STRUCTURED_PUSH_TIME_FIELDS.every((field) =>
-    event[field] === undefined || toTimestampMs(event[field]) !== undefined
+function findInvalidPushTimeField(value: unknown, path = ""): string | undefined {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const invalid = findInvalidPushTimeField(item, `${path}[${index}]`);
+      if (invalid) {
+        return invalid;
+      }
+    }
+    return undefined;
+  }
+  if (!isObjectRecord(value)) {
+    return undefined;
+  }
+  const invalidPresentField = STRUCTURED_PUSH_TIME_FIELDS.find((field) =>
+    value[field] !== undefined && toTimestampMs(value[field]) === undefined
   );
-  if (!allPresentTimesAreValid) {
-    return false;
+  if (invalidPresentField) {
+    return path ? `${path}.${invalidPresentField}` : invalidPresentField;
+  }
+  if (value.awaiting !== undefined) {
+    return findInvalidPushTimeField(value.awaiting, path ? `${path}.awaiting` : "awaiting");
+  }
+  return undefined;
+}
+
+function invalidPushTimeField(event: NavigationPushEvent) {
+  const invalidPresentField = findInvalidPushTimeField(event);
+  if (invalidPresentField) {
+    return invalidPresentField;
   }
   if (event.type === "awaiting.asking" || event.type === "awaiting.answered") {
-    return readPushEventTimestamp(event) !== undefined;
+    return readPushEventTimestamp(event) === undefined ? requiredPushTimeField(event) : undefined;
   }
-  return !TIMESTAMPED_PUSH_TYPES.has(event.type) || readPushEventTimestamp(event) !== undefined;
+  return TIMESTAMPED_PUSH_TYPES.has(event.type) && readPushEventTimestamp(event) === undefined
+    ? requiredPushTimeField(event)
+    : undefined;
+}
+
+function hasValidRequiredPushTime(event: NavigationPushEvent) {
+  return invalidPushTimeField(event) === undefined;
 }
 
 function readPushAgentKey(event: NavigationPushEvent) {
@@ -1140,7 +1220,7 @@ function refreshAgentDerivedFields(agent: AssistantNavAgentItem): AssistantNavAg
     hasPendingAwaiting: recentChats.some((chat) => chat.hasPendingAwaiting),
     latestChatId: latestChat?.chatId ?? null,
     latestPreview: latestPreview.slice(0, 120),
-    updatedAt: latestChat?.updatedAt ?? agent.updatedAt
+    ...(agent.updatedAt !== undefined ? { updatedAt: agent.updatedAt } : {})
   };
 }
 
@@ -1338,7 +1418,10 @@ export async function readAssistantNavigationActivityAgentsFromPlatform(
     copilotItems = await enrichNavigationAgentsWithGitBranches(
       buildAssistantNavigationAgentsFromPlatformAgents(copilotAgents, includeChatLimit),
     );
-  } catch {
+  } catch (error) {
+    if (isTimeContractViolation(error)) {
+      throw error;
+    }
     copilotItems = [];
   }
   return mergeNavigationAgentGroups(navItems, copilotItems);
@@ -1462,7 +1545,9 @@ export class AssistantNavigationStatusClient {
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
-      void this.refreshNow();
+      void this.refreshNow().catch((error) => {
+        this.options.onDebug?.(error instanceof Error ? error.message : String(error));
+      });
     }, Math.max(0, delayMs));
   }
 
@@ -1537,6 +1622,10 @@ export class AssistantNavigationStatusClient {
         phase: this.reconnectTimer ? "reconnecting" : "error",
         lastError: message,
       });
+      if (isTimeContractViolation(error)) {
+        this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
+        throw error;
+      }
       this.setSnapshot({
         ok: false,
         items: [],
@@ -1641,7 +1730,7 @@ export class AssistantNavigationStatusClient {
           type: "/api/chats",
           id,
           payload: {
-            agentMode: NAVIGATION_CHAT_AGENT_MODE,
+            mode: NAVIGATION_CHAT_AGENT_MODE,
             limit: NAVIGATION_CHAT_LIMIT,
           },
         }));
@@ -1699,9 +1788,10 @@ export class AssistantNavigationStatusClient {
     }
     const event = toPushEvent(frame);
     this.updateLiveStatus({ lastPushType: event.type || null });
-    if (!hasValidRequiredPushTime(event)) {
+    const invalidTimeField = invalidPushTimeField(event);
+    if (invalidTimeField) {
       this.options.onDebug?.(
-        `time_contract_violation: navigation push ${event.type} requires epoch_ms_int64 ${requiredPushTimeField(event)}`,
+        `time_contract_violation: navigation.push.${event.type}.${invalidTimeField} must be epoch_ms_int64`,
       );
       this.scheduleRefresh();
       return;

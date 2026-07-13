@@ -10,6 +10,7 @@ const {
   AssistantNavigationStatusClient,
   applyAssistantNavigationChatPush,
   applyAssistantNavigationPush,
+  buildAssistantCopilotAgentsFromPlatformAgents,
   buildAssistantNavigationChatsFromPlatform,
   buildAssistantNavigationAgentsFromPlatformAgents,
   enrichNavigationAgentsWithGitBranches,
@@ -82,13 +83,6 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       agentKey: "",
       createdAt: EPOCH_MS + 20,
       updatedAt: EPOCH_MS + 21,
-    },
-    {
-      chatId: "invalid-time",
-      chatName: "Invalid time",
-      agentKey: "zenmi",
-      createdAt: "2026-07-13T00:00:00.000Z",
-      updatedAt: EPOCH_MS + 20,
     },
     ...Array.from({ length: 9 }, (_, index) => ({
       chatId: `react-${index}`,
@@ -194,7 +188,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { agentMode: "REACT", limit: 8 });
+  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 8 });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
     ["react-newest", "react-0", "react-1", "react-2", "react-3", "react-4", "react-5", "react-6"],
@@ -293,7 +287,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 });
 
 test("assistant navigation chat reducer updates displayed chats without checking agent mode", () => {
-  const current = [createNavigationChat({ agentKey: "coder-agent", agentMode: "CODER" })];
+  const current = [createNavigationChat({ agentKey: "coder-agent", mode: "CODER" })];
   const unread = applyAssistantNavigationChatPush(current, {
     frame: "push",
     type: "chat.unread",
@@ -424,15 +418,194 @@ test("assistant navigation live status reports WebSocket setup failures without 
   ]);
 });
 
-test("assistant navigation chat mapper preserves server order and rejects missing agent keys or timestamps", () => {
+test("assistant navigation retains its last valid snapshot when a refreshed batch violates the time contract", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-time-contract-"));
+  let chatResponse = [createNavigationChat()];
+
+  class FakeWebSocket {
+    constructor() {
+      queueMicrotask(() => this.onopen?.());
+    }
+
+    send(data) {
+      const request = JSON.parse(data);
+      if (request.type === "/api/chats") {
+        queueMicrotask(() => this.onmessage?.({
+          data: JSON.stringify({
+            frame: "response",
+            type: "/api/chats",
+            id: request.id,
+            code: 0,
+            data: chatResponse,
+          }),
+        }));
+      }
+    }
+
+    close() {}
+  }
+
+  globalThis.WebSocket = FakeWebSocket;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+    },
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+    fs.rmSync(temporaryAppData, { recursive: true, force: true });
+  });
+
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => temporaryAppData },
+    getServiceState: async () => ({
+      status: "running",
+      healthMeta: { webUrl: "http://127.0.0.1:11789" },
+    }),
+    issueAccessToken: async () => ({ ok: true, token: "desktop-token", message: "" }),
+    onSnapshot: () => {},
+  });
+  t.after(() => client.stop());
+
+  const first = await client.refreshNow();
+  chatResponse = [{
+    ...createNavigationChat({ chatId: "invalid" }),
+    updatedAt: "2026-07-13T00:00:00.000Z",
+  }];
+
+  await assert.rejects(
+    client.refreshNow(),
+    /time_contract_violation: navigation\.chats\[0\]\.updatedAt/u,
+  );
+  assert.strictEqual(client.getSnapshot(), first);
+  assert.equal(client.getSnapshot().ok, true);
+  assert.deepEqual(client.getSnapshot().chatItems.map((chat) => chat.chatId), ["chat-1"]);
+});
+
+test("assistant navigation chat mapper preserves server order while still filtering non-time semantic omissions", () => {
   const chats = buildAssistantNavigationChatsFromPlatform([
     { chatId: "second", agentKey: "zenmi", createdAt: EPOCH_MS + 2, updatedAt: EPOCH_MS + 2 },
     { chatId: "missing-agent", createdAt: EPOCH_MS + 1, updatedAt: EPOCH_MS + 1 },
-    { chatId: "missing-updated-at", agentKey: "zenmi", createdAt: EPOCH_MS + 1 },
     { chatId: "first", agentKey: "cutej", createdAt: EPOCH_MS, updatedAt: EPOCH_MS },
   ]);
 
   assert.deepEqual(chats.map((chat) => chat.chatId), ["second", "first"]);
+});
+
+test("assistant navigation keeps Agent Mode separate from awaiting mode", () => {
+  const chats = buildAssistantNavigationChatsFromPlatform([
+    {
+      chatId: "react-idle",
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS,
+      updatedAt: EPOCH_MS,
+      mode: "REACT",
+    },
+    {
+      chatId: "react-awaiting",
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + 1,
+      updatedAt: EPOCH_MS + 1,
+      mode: "REACT",
+      awaiting: { mode: "question", status: "awaiting" },
+    },
+  ]);
+
+  assert.equal(chats[0].hasPendingAwaiting, false);
+  assert.equal(chats[0].awaitingMode, undefined);
+  assert.equal(chats[1].hasPendingAwaiting, true);
+  assert.equal(chats[1].awaitingMode, "question");
+});
+
+test("assistant navigation atomically rejects malformed chat snapshot times", () => {
+  for (const value of [
+    "2026-07-13T00:00:00.000Z",
+    String(EPOCH_MS),
+    Math.floor(EPOCH_MS / 1000),
+    EPOCH_MS + 0.5,
+    0,
+    undefined,
+  ]) {
+    assert.throws(
+      () => buildAssistantNavigationChatsFromPlatform([
+        { chatId: "valid", agentKey: "zenmi", createdAt: EPOCH_MS, updatedAt: EPOCH_MS },
+        {
+          chatId: "invalid",
+          agentKey: "zenmi",
+          createdAt: EPOCH_MS,
+          ...(value === undefined ? {} : { updatedAt: value }),
+        },
+      ]),
+      /time_contract_violation: navigation\.chats\[1\]\.updatedAt/u,
+    );
+  }
+});
+
+test("assistant navigation rejects a batch with a malformed nested awaiting time", () => {
+  assert.throws(
+    () => buildAssistantNavigationChatsFromPlatform([
+      { chatId: "valid", agentKey: "zenmi", createdAt: EPOCH_MS, updatedAt: EPOCH_MS },
+      {
+        chatId: "invalid-awaiting",
+        agentKey: "zenmi",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS,
+        awaiting: { createdAt: "2026-07-13T00:00:00.000Z" },
+      },
+    ]),
+    /time_contract_violation: navigation\.chats\[1\]\.awaiting\.createdAt/u,
+  );
+});
+
+test("assistant navigation preserves absent optional agent times and rejects malformed present values", () => {
+  const agents = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "timestamped",
+      name: "Timestamped",
+      updatedAt: EPOCH_MS,
+      chats: [createNavigationChat({ agentKey: "timestamped", updatedAt: EPOCH_MS + 1 })],
+    },
+    {
+      key: "without-time",
+      name: "Without time",
+      chats: [createNavigationChat({ agentKey: "without-time", updatedAt: EPOCH_MS + 100 })],
+    },
+  ]);
+  assert.deepEqual(agents.map((agent) => agent.agentKey), ["timestamped", "without-time"]);
+  assert.equal(Object.hasOwn(agents[1], "updatedAt"), false);
+
+  const copilotAgents = buildAssistantCopilotAgentsFromPlatformAgents([
+    { key: "copilot-without-time", name: "Without time" },
+    { key: "copilot-timestamped", name: "Timestamped", updatedAt: EPOCH_MS },
+  ]);
+  assert.deepEqual(copilotAgents.map((agent) => agent.agentKey), ["copilot-timestamped", "copilot-without-time"]);
+  assert.equal(Object.hasOwn(copilotAgents[1], "updatedAt"), false);
+
+  for (const value of [
+    "2026-07-13T00:00:00.000Z",
+    String(EPOCH_MS),
+    Math.floor(EPOCH_MS / 1000),
+    EPOCH_MS + 0.5,
+    0,
+  ]) {
+    assert.throws(
+      () => buildAssistantNavigationAgentsFromPlatformAgents([
+        { key: "invalid", name: "Invalid", updatedAt: value },
+      ]),
+      /time_contract_violation: navigation\.agents\[0\]\.updatedAt/u,
+    );
+    assert.throws(
+      () => buildAssistantCopilotAgentsFromPlatformAgents([
+        { key: "invalid", name: "Invalid", updatedAt: value },
+      ]),
+      /time_contract_violation: copilot\.agents\[0\]\.updatedAt/u,
+    );
+  }
 });
 
 test("assistant copilot agents fall back to nav scope when the copilot scope is empty", async (t) => {
@@ -958,13 +1131,24 @@ test("assistant navigation preserves chat creation time from summaries and pushe
   );
 });
 
-test("assistant navigation rejects string, seconds, fractional, and zero push timestamps", () => {
+test("assistant navigation rejects ISO, string, seconds, fractional, zero, and missing push timestamps", () => {
   const current = [createAgent()];
-  for (const timestamp of [String(EPOCH_MS), Math.floor(EPOCH_MS / 1000), EPOCH_MS + 0.5, 0]) {
+  for (const timestamp of [
+    "2026-07-13T00:00:00.000Z",
+    String(EPOCH_MS),
+    Math.floor(EPOCH_MS / 1000),
+    EPOCH_MS + 0.5,
+    0,
+    undefined,
+  ]) {
     const result = applyAssistantNavigationPush(current, {
       frame: "push",
       type: "chat.updated",
-      data: { agentKey: "zenmi", chatId: "strict-time", timestamp },
+      data: {
+        agentKey: "zenmi",
+        chatId: "strict-time",
+        ...(timestamp === undefined ? {} : { timestamp }),
+      },
     });
     assert.equal(result.changed, false);
     assert.equal(result.shouldRefresh, true);
@@ -987,6 +1171,23 @@ test("assistant navigation rejects malformed optional structured times instead o
   assert.equal(result.changed, false);
   assert.equal(result.shouldRefresh, true);
   assert.equal(findChat(result.items, "invalid-created-at"), undefined);
+});
+
+test("assistant navigation ignores a push with a malformed nested awaiting time", () => {
+  const result = applyAssistantNavigationPush([createAgent()], {
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "zenmi",
+      chatId: "nested-awaiting",
+      createdAt: EPOCH_MS,
+      awaiting: { createdAt: "2026-07-13T00:00:00.000Z" },
+    },
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.shouldRefresh, true);
+  assert.equal(findChat(result.items, "nested-awaiting"), undefined);
 });
 
 test("assistant navigation reads and caches Git branches with platform-specific commands", async (t) => {
