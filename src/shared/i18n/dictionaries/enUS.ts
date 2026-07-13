@@ -2292,7 +2292,6 @@ export const enUSMessages = {
   "desktop.globalSearch.action.settings": "Open settings",
   "desktop.globalSearch.action.settings.description": "Adjust Desktop preferences",
   "desktop.globalSearch.status.awaiting": "Awaiting input",
-  "desktop.globalSearch.status.unread": "Unread",
   "desktop.globalSearch.status.running": "Running",
 
   "logViewer.titleFallback": "Logs",

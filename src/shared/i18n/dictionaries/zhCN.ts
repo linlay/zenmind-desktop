@@ -2292,7 +2292,6 @@ export const zhCNMessages = {
   "desktop.globalSearch.action.settings": "打开设置",
   "desktop.globalSearch.action.settings.description": "调整 Desktop 偏好",
   "desktop.globalSearch.status.awaiting": "等待输入",
-  "desktop.globalSearch.status.unread": "未读",
   "desktop.globalSearch.status.running": "运行中",
 
   "logViewer.titleFallback": "日志",

@@ -213,8 +213,8 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                       onClose: props.onClose
                     })}
                   >
-                    <span className="desktop-global-search-row-icon" aria-hidden="true">
-                      {renderRowIcon(row)}
+                    <span className="desktop-global-search-row-icon">
+                      {renderRowIcon(row, props.t)}
                     </span>
                     <span className="desktop-global-search-row-body">
                       <span className="desktop-global-search-row-title">{row.label}</span>
@@ -290,13 +290,21 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, currentA
   return "";
 }
 
-function renderRowIcon(row: DesktopGlobalSearchRow) {
+function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.kind === "agent") {
     return <UserOutlined />;
   }
   if (row.kind === "chat") {
-    if (row.isUnread && !row.hasPendingAwaiting) {
-      return <span className="desktop-global-search-unread-dot" />;
+    if (row.hasPendingAwaiting || row.hasActiveRun) {
+      return <span className="worker-chat-loading assistant-material-icon is-loading" aria-hidden="true" />;
+    }
+    if (row.isUnread) {
+      return (
+        <span
+          className="assistant-worker-unread-dot chat-unread-dot is-unread"
+          aria-label={t("sidebar.chat.unread")}
+        />
+      );
     }
     return row.source === "remote" ? <MessageOutlined /> : <ClockCircleOutlined />;
   }
@@ -327,13 +335,6 @@ function renderChatStatus(row: Extract<DesktopGlobalSearchRow, { kind: "chat" }>
     return (
       <span className="desktop-global-search-row-status is-awaiting">
         {t("desktop.globalSearch.status.awaiting")}
-      </span>
-    );
-  }
-  if (row.isUnread) {
-    return (
-      <span className="desktop-global-search-row-status is-unread">
-        {t("desktop.globalSearch.status.unread")}
       </span>
     );
   }

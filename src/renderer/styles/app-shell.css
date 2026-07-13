@@ -676,19 +676,6 @@
   color: #b45309;
 }
 
-.desktop-global-search-row-status.is-unread {
-  background: rgba(37, 99, 235, 0.1);
-  color: #2563eb;
-}
-
-.desktop-global-search-unread-dot {
-  width: 7px;
-  height: 7px;
-  display: inline-block;
-  border-radius: 999px;
-  background: #3b82f6;
-}
-
 .desktop-global-search-empty {
   min-height: 140px;
   display: flex;
@@ -758,11 +745,6 @@
 :root[data-theme="dark"] .desktop-global-search-row-status.is-awaiting {
   background: rgba(217, 119, 6, 0.18);
   color: #f4bf75;
-}
-
-:root[data-theme="dark"] .desktop-global-search-row-status.is-unread {
-  background: rgba(96, 165, 250, 0.16);
-  color: #93c5fd;
 }
 
 @media (max-width: 680px) {

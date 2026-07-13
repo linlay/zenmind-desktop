@@ -3857,6 +3857,7 @@ test("desktop global search contract is wired across main preload renderer and h
   const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
   const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const overlay = readSourceFile("src", "renderer", "app-shell", "search", "DesktopGlobalSearchOverlay.tsx");
   const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
   const i18nEn = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
@@ -3886,7 +3887,14 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.doesNotMatch(overlay, /newChatRequest/);
   assert.match(overlay, /row\.kind !== "action" \?/);
   assert.match(overlay, /renderChatStatus/);
-  assert.match(overlay, /desktop\.globalSearch\.status\.unread/);
+  assert.match(overlay, /row\.hasPendingAwaiting \|\| row\.hasActiveRun/);
+  assert.match(overlay, /className="worker-chat-loading assistant-material-icon is-loading"/);
+  assert.match(overlay, /className="assistant-worker-unread-dot chat-unread-dot is-unread"/);
+  assert.match(overlay, /aria-label=\{t\("sidebar\.chat\.unread"\)\}/);
+  assert.doesNotMatch(overlay, /desktop-global-search-unread-dot/);
+  assert.doesNotMatch(overlay, /desktop\.globalSearch\.status\.unread/);
+  assert.doesNotMatch(appShellCss, /\.desktop-global-search-unread-dot\s*\{/);
+  assert.doesNotMatch(appShellCss, /\.desktop-global-search-row-status\.is-unread\s*\{/);
   assert.match(rows, /DesktopGlobalSearchSectionId = "awaiting" \| "unread" \| "actions" \| "agents" \| "chats"/);
   assert.match(rows, /mergeQueryChatRows/);
   assert.match(rows, /if \(!chatId \|\| !agentKey\) \{/);
