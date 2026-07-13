@@ -682,13 +682,111 @@
 
 .settings-page .web-settings-detail {
   min-width: 0;
+  max-height: calc(100vh - 154px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .settings-page .web-detail-card {
+  flex: 0 0 auto;
   border: 1px solid var(--control-center-border);
   border-radius: var(--control-center-radius);
   background: var(--control-center-card);
   overflow: hidden;
+}
+
+.settings-page .web-publish-panel .config-head {
+  align-items: flex-start;
+}
+
+.settings-page .web-publish-panel .service-hero-copy p {
+  max-width: 620px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-page .web-publish-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 9px;
+  border: 1px solid var(--control-center-border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.settings-page .web-publish-status.is-ready,
+.settings-page .web-publish-status.is-published {
+  border-color: rgba(27, 133, 83, 0.24);
+  background: rgba(27, 133, 83, 0.08);
+  color: #187346;
+}
+
+.settings-page .web-publish-status.is-publishing {
+  border-color: var(--accent-border-faint);
+  background: var(--accent-fill-subtle);
+  color: var(--accent-strong);
+}
+
+.settings-page .web-publish-status.is-error {
+  border-color: rgba(201, 54, 57, 0.24);
+  background: rgba(201, 54, 57, 0.08);
+  color: #b52e31;
+}
+
+.settings-page .web-publish-project-row {
+  border-bottom: 0;
+}
+
+.settings-page .web-publish-link {
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.settings-page .web-publish-link:hover,
+.settings-page .web-publish-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.settings-page .web-publish-message {
+  padding: 10px 16px;
+  border-top: 1px solid var(--control-center-border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.settings-page .web-publish-message.is-error {
+  color: #b52e31;
+  background: rgba(201, 54, 57, 0.04);
+}
+
+:root[data-theme="dark"] .settings-page .web-publish-status.is-ready,
+:root[data-theme="dark"] .settings-page .web-publish-status.is-published {
+  color: #65d49b;
+}
+
+:root[data-theme="dark"] .settings-page .web-publish-status.is-error,
+:root[data-theme="dark"] .settings-page .web-publish-message.is-error {
+  color: #ff8f92;
 }
 
 .settings-page .web-hero-icon span {

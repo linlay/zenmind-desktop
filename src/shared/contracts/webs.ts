@@ -175,5 +175,53 @@ export interface WebappCommandResult {
   message: string;
 }
 
+export type WebappPublishMode = "static" | "fullstack";
+export type WebappPublishStatus = "not-configured" | "ready" | "publishing" | "published" | "error";
+
+export interface WebappPublishInfo {
+  configured: boolean;
+  cliAvailable: boolean;
+  mode: WebappPublishMode | null;
+  port: number | null;
+  stateMount: string | null;
+  persistentVolumeSupported: boolean;
+  authorizedProjects: string[];
+  defaultProject: string;
+  domainSuffix: string;
+}
+
+export interface WebappPublishState {
+  id: string;
+  status: WebappPublishStatus;
+  mode: WebappPublishMode | null;
+  project: string;
+  environment: string;
+  application: string;
+  url: string;
+  expiresAt: string;
+  message: string;
+  updatedAt: string;
+}
+
+export interface WebappPublishInput {
+  project?: string;
+  environment?: string;
+  expiresAt?: string;
+}
+
+export interface WebappPublishInfoResult {
+  ok: boolean;
+  info: WebappPublishInfo;
+  state: WebappPublishState | null;
+  message: string;
+}
+
+export interface WebappPublishResult {
+  ok: boolean;
+  info: WebappPublishInfo;
+  state: WebappPublishState;
+  message: string;
+}
+
 export interface WebappLogReadResult extends ServiceLogReadResult {}
 export interface WebappLogReadOptions extends ServiceLogReadOptions {}

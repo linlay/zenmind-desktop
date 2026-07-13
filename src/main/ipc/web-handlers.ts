@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { App } from "electron";
-import type { WebappLogReadOptions, WebappLogTarget } from "../../shared/contracts";
+import type { WebappLogReadOptions, WebappLogTarget, WebappPublishInput } from "../../shared/contracts";
 import {
   addWebsiteItem,
   exportWebsiteItems,
@@ -17,6 +17,7 @@ import {
 import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
 import { webappRuntime } from "../webs/webapps/runtime";
+import { getWebappPublishInfo, publishWebapp } from "../webs/webapps/publisher";
 import { installWebsiteAppArchiveFromPath } from "../marketplace/website-app-market";
 import { t } from "../i18n/main-i18n";
 
@@ -188,6 +189,12 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       message: state ? t("webapp.stateRead") : t("webapp.notFound")
     };
   });
+  ipcMain.handle("webs.webapps.getPublishInfo", async (_event: any, id: string) =>
+    getWebappPublishInfo(app, id)
+  );
+  ipcMain.handle("webs.webapps.publish", async (_event: any, id: string, input?: WebappPublishInput) =>
+    publishWebapp(app, id, input)
+  );
   ipcMain.handle("webs.webapps.readLog", async (_event: any, id: string, target: unknown, options?: WebappLogReadOptions) =>
     webappRuntime.readLog(app, id, normalizeLogTarget(target), options)
   );

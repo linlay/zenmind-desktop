@@ -651,6 +651,35 @@ test("agent platform assistant bridge marks a single chat read through /api/read
   }
 });
 
+test("agent platform assistant bridge honors per-chat archive results", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  const responses = [
+    { code: 0, msg: "success", data: { results: [{ chatId: "chat_1", success: false, error: "active run" }] } },
+    { code: 0, msg: "success", data: { results: [{ chatId: "chat_1", success: true }] } }
+  ];
+  globalThis.fetch = async (url, init = {}) => {
+    assert.equal(String(url), "http://127.0.0.1:18888/api/chat/archive");
+    assert.equal(init.method, "POST");
+    assert.equal(init.headers.Authorization, "Bearer desktop-token");
+    assert.deepEqual(JSON.parse(String(init.body)), { chatIds: ["chat_1"] });
+    return new Response(JSON.stringify(responses.shift()), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const failed = await bridge.archiveChat(" chat_1 ");
+    const succeeded = await bridge.archiveChat("chat_1");
+
+    assert.deepEqual(failed, { ok: false, message: "active run" });
+    assert.equal(succeeded.ok, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge downloads chat export from the current platform endpoint", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];

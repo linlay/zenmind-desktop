@@ -1158,6 +1158,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /window\.prompt/u);
   const confirmRenameChatHandler =
     sidebarSource.match(/async function handleConfirmRenameChat[\s\S]*?async function handleAssistantArchiveChat/u)?.[0] ?? "";
+  const archiveChatHandler =
+    sidebarSource.match(/async function handleAssistantArchiveChat[\s\S]*?async function handleAssistantDeleteChat/u)?.[0] ?? "";
   assert.match(sidebarSource, /type AssistantChatRenameDialogState = \{/u);
   assert.match(sidebarSource, /function renderAssistantChatRenameDialog\(\)/u);
   assert.match(sidebarSource, /type AssistantChatDeleteDialogState = \{/u);
@@ -1171,6 +1173,13 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(confirmRenameChatHandler, /if \(!result\.ok\)/u);
   assert.match(confirmRenameChatHandler, /setAssistantChatRenameDialog\(null\)/u);
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
+  assert.match(archiveChatHandler, /const result = await window\.electronAPI\.assistant\.archiveChat\(chat\.chatId\)/u);
+  assert.match(archiveChatHandler, /if \(!result\?\.ok\)/u);
+  assert.match(archiveChatHandler, /window\.alert\(result\?\.message \|\| t\("sidebar\.chat\.archiveFailed"\)\)/u);
+  assert.match(archiveChatHandler, /currentChatId === chat\.chatId/u);
+  assert.match(archiveChatHandler, /candidate\.chatId !== chat\.chatId/u);
+  assert.match(archiveChatHandler, /onRequestNavigate\?\.\(nextRoute\)/u);
+  assert.match(archiveChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
   assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
@@ -6058,18 +6067,26 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
   assert.match(petRuntime, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
   assert.match(petRuntime, /options\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
+  assert.match(desktopPetWindow, /const isMac = options\.platform === "darwin";/);
   assert.match(desktopPetWindow, /const isWindows = options\.platform === "win32";/);
+  assert.match(desktopPetWindow, /\.\.\.\(isMac \? \{ type: "panel" as const \} : \{\}\)/);
   assert.match(desktopPetWindow, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
   assert.match(
     desktopPetWindow,
-    /export function applyDesktopPetBrowserWindowLayering\([\s\S]*?platform === "darwin"[\s\S]{0,180}setAlwaysOnTop\(true, "screen-saver"\);[\s\S]{0,220}setVisibleOnAllWorkspaces\(true,\s*\{[\s\S]{0,160}visibleOnFullScreen:\s*true,[\s\S]{0,180}skipTransformProcessType:\s*true[\s\S]*?\}\);[\s\S]{0,120}platform === "win32"[\s\S]{0,120}setAlwaysOnTop\(true\);/
+    /export function applyDesktopPetBrowserWindowLayering\([\s\S]*?platform === "darwin"[\s\S]{0,180}setAlwaysOnTop\(true, "screen-saver"\);[\s\S]{0,120}platform === "win32"[\s\S]{0,120}setAlwaysOnTop\(true\);/
   );
+  assert.doesNotMatch(desktopPetWindow, /setVisibleOnAllWorkspaces/);
   assert.match(desktopPetWindow, /applyDesktopPetBrowserWindowLayering\(win, options\.platform\);/);
   assert.match(petRuntime, /import \{ applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow \} from "\.\/window";/);
   assert.match(
     petRuntime,
-    /function restoreWindowLayering\(\)[\s\S]{0,320}\[state\.desktopPetWindow, state\.desktopPetPanelWindow\][\s\S]{0,260}applyDesktopPetBrowserWindowLayering\(targetWindow, options\.platform,[\s\S]{0,160}preserveProcessType:\s*true,[\s\S]{0,80}moveTop:\s*true/
+    /function restoreWindowLayering\(\)[\s\S]{0,220}!state\.desktopPetSettings\.enabled[\s\S]{0,220}\[state\.desktopPetWindow, state\.desktopPetPanelWindow\][\s\S]{0,260}applyDesktopPetBrowserWindowLayering\(targetWindow, options\.platform\);/
   );
+  const restoreWindowLayeringBlock = petRuntime.slice(
+    petRuntime.indexOf("function restoreWindowLayering()"),
+    petRuntime.indexOf("function createPanelWindow")
+  );
+  assert.doesNotMatch(restoreWindowLayeringBlock, /moveTop\(/);
   assert.match(petRuntime, /function showWindow\(\)[\s\S]{0,160}applyPanelWindowBounds\(\);[\s\S]{0,80}restoreWindowLayering\(\);/);
   assert.match(petRuntime, /restoreWindowLayering,/);
   assert.match(desktopPetHandlers, /desktopPet\.setMouseInteractive/);

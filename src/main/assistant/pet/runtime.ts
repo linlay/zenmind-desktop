@@ -638,14 +638,14 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   function restoreWindowLayering() {
-    if (!isDesktopPetSupportedPlatform(options.platform)) {
+    if (
+      !isDesktopPetSupportedPlatform(options.platform) ||
+      !state.desktopPetSettings.enabled
+    ) {
       return;
     }
     for (const targetWindow of [state.desktopPetWindow, state.desktopPetPanelWindow]) {
-      applyDesktopPetBrowserWindowLayering(targetWindow, options.platform, {
-        preserveProcessType: true,
-        moveTop: true
-      });
+      applyDesktopPetBrowserWindowLayering(targetWindow, options.platform);
     }
   }
 
