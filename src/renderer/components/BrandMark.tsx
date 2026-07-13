@@ -187,8 +187,8 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
     case "double_check":
       return (
         <svg {...iconProps}>
-          <path d="M2 13.5l3.5 3.5 6-6" />
-          <path d="M9 13.5l3.5 3.5 7.5-7.5" />
+          <path d="M 2 12 L 8 19 L 17 4" />
+          <path d="M 7 12 L 13 19 L 22 4" />
         </svg>
       );
     case "close":

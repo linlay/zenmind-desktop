@@ -4346,7 +4346,7 @@
 .app-shell.is-settings-mode .sidebar-settings-back,
 .app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link {
   width: 100%;
-  min-height: 34px;
+  min-height: 30px;
   padding: 0 10px;
 }
 
@@ -4364,6 +4364,10 @@
 
 .app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link-active {
   color: var(--accent-strong);
+}
+
+.app-shell.is-settings-mode .sidebar-link-label {
+  font-size: 13px;
 }
 
 .app-shell.is-settings-mode .sidebar-settings-nav .sidebar-link-label {

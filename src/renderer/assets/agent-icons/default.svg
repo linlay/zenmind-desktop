@@ -1,16 +1,18 @@
-<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="g-agent-bot" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#94A3B8"/>
-      <stop offset="100%" stop-color="#475569"/>
-    </linearGradient>
-  </defs>
-  <path d="M24 14V6" stroke="url(#g-agent-bot)" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
-  <circle cx="24" cy="6" r="3" fill="url(#g-agent-bot)" opacity="0.9"/>
-  <rect x="10" y="14" width="28" height="24" rx="6" fill="url(#g-agent-bot)" opacity="0.15" stroke="url(#g-agent-bot)" stroke-width="3"/>
-  <rect x="6" y="21" width="4" height="10" rx="2" fill="url(#g-agent-bot)" opacity="0.6"/>
-  <rect x="38" y="21" width="4" height="10" rx="2" fill="url(#g-agent-bot)" opacity="0.6"/>
-  <circle cx="19" cy="24" r="3" fill="url(#g-agent-bot)" opacity="0.8"/>
-  <circle cx="29" cy="24" r="3" fill="url(#g-agent-bot)" opacity="0.8"/>
-  <path d="M18 31h12" stroke="url(#g-agent-bot)" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g stroke="#94A3B8" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 天线 -->
+    <path d="M12 5V2" />
+    <!-- 头部 -->
+    <rect x="6" y="5" width="12" height="7" rx="2" />
+    <!-- 脖子 -->
+    <path d="M10 12v2h4v-2" />
+    <!-- 身体 -->
+    <rect x="4" y="14" width="16" height="7" rx="2" />
+    <!-- 嘴巴 -->
+    <line x1="8" y1="17.5" x2="16" y2="17.5" />
+  </g>
+  <!-- 天线球、眼睛（填充） -->
+  <circle cx="12" cy="2" r="1" fill="#94A3B8" />
+  <circle cx="9.5" cy="8.5" r="1" fill="#94A3B8" />
+  <circle cx="14.5" cy="8.5" r="1" fill="#94A3B8" />
 </svg>

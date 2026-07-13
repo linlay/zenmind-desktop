@@ -111,6 +111,19 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
   };
 }
 
+export function normalizeAssistantNavChats(
+  items: unknown,
+  options: { requireAgentKey?: boolean } = {},
+): AssistantNavChatItem[] {
+  const requireAgentKey = options.requireAgentKey === true;
+  return Array.isArray(items)
+    ? items
+      .map((chat) => normalizeAssistantNavChat(chat, ""))
+      .filter((chat): chat is AssistantNavChatItem => chat !== null)
+      .filter((chat) => !requireAgentKey || Boolean(chat.agentKey))
+    : [];
+}
+
 export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentItem | null {
   const record = asRecord(value);
   const agentKey = toText(record.agentKey);
@@ -228,6 +241,7 @@ export function normalizeAssistantNavAgentItemsResult(
   return {
     ...result,
     items: normalizeAssistantNavAgents(result.items),
+    chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }),
     ...(activityItems ? { activityItems } : {})
   };
 }

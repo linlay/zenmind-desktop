@@ -17,7 +17,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
@@ -492,6 +492,7 @@ export function AppShell() {
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const chatRuntimeAgent = useMemo(
@@ -934,11 +935,13 @@ export function AppShell() {
         if (!result.ok) {
           return;
         }
-        const navigationItems = normalizeAssistantNavAgents(result.items);
-        const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(result));
+        const nextResult = normalizeAssistantNavAgentItemsResult(result);
+        const navigationItems = normalizeAssistantNavAgents(nextResult.items);
+        const nextItems = normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult));
         setAssistantNavAgentsLoaded(true);
         setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
+        setAssistantNavChatItems(nextResult.chatItems);
       }
     } catch {
       // Keep the current live list while agent-platform is still warming up.
@@ -977,6 +980,7 @@ export function AppShell() {
       setAssistantNavAgentsLoaded(true);
       setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
+      setAssistantNavChatItems(nextResult.chatItems);
     });
 
     return () => {
@@ -1039,7 +1043,9 @@ export function AppShell() {
     const bootstrapChatId = assistantSettings.bootstrapChatId.trim();
     const seedChatIndexed = Boolean(
       bootstrapChatId &&
-      bootstrapAgent.recentChats.some((chat) => chat.chatId === bootstrapChatId),
+      assistantNavChatItems.some((chat) =>
+        chat.chatId === bootstrapChatId && chat.agentKey === bootstrapAgentKey,
+      ),
     );
     const targetRoute = seedChatIndexed
       ? createAgentChatRoute(bootstrapAgentKey, bootstrapChatId)
@@ -1052,6 +1058,7 @@ export function AppShell() {
     }
   }, [
     assistantNavAgentsLoaded,
+    assistantNavChatItems,
     assistantSettings,
     chatRuntimeAgent,
     chatNavAgentOptions,
@@ -2995,6 +3002,7 @@ export function AppShell() {
           webOpenEntryKeys={webOpenEntryKeys}
           faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
+          assistantNavChatItems={assistantNavChatItems}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}
           chatNavAgentOptions={chatNavAgentOptions}

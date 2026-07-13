@@ -121,6 +121,7 @@ type MinimalWebSocket = {
   onmessage: ((event: { data?: unknown }) => void) | null;
   onclose: (() => void) | null;
   onerror: (() => void) | null;
+  send: (data: string) => void;
   close: (code?: number, reason?: string) => void;
 };
 
@@ -145,7 +146,10 @@ export type AssistantNavigationApplyResult = {
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const NAVIGATION_AGENT_HISTORY_LIMIT = 50;
 const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
+const NAVIGATION_CHAT_LIMIT = 8;
+const NAVIGATION_CHAT_AGENT_MODE = "REACT";
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
+const NAVIGATION_WS_REQUEST_TIMEOUT_MS = 8_000;
 const NAVIGATION_UNAVAILABLE_RETRY_MS = 12_000;
 const NAVIGATION_RECONNECT_MS = 10_000;
 const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
@@ -159,14 +163,13 @@ const TIMESTAMPED_PUSH_TYPES = new Set([
   "chat.unread",
   "run.start",
   "run.complete",
-  "awaiting.asking",
-  "awaiting.answered",
 ]);
 const STRUCTURED_PUSH_TIME_FIELDS = [
   "createdAt",
   "updatedAt",
   "startedAt",
   "completedAt",
+  "resolvedAt",
   "timestamp",
   "expiresAt",
   "readAt",
@@ -716,6 +719,24 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
   };
 }
 
+export function buildAssistantNavigationChatsFromPlatform(chats: unknown): AssistantNavChatItem[] {
+  if (!Array.isArray(chats)) {
+    return [];
+  }
+  const validChats: AssistantNavChatItem[] = [];
+  for (const rawChat of chats) {
+    const chat = mapNavigationChat(rawChat as PlatformChatSummary);
+    if (!chat?.agentKey) {
+      continue;
+    }
+    validChats.push(chat);
+    if (validChats.length >= NAVIGATION_CHAT_LIMIT) {
+      break;
+    }
+  }
+  return validChats;
+}
+
 function isWorkspaceProjectAgent(agent: AssistantNavAgentItem) {
   const mode = agent.mode?.trim().toUpperCase() ?? "";
   return mode === "CODER" || mode === "KBASE";
@@ -883,12 +904,37 @@ function toPushEvent(frame: NavigationPushFrame): NavigationPushEvent {
   } as NavigationPushEvent;
 }
 
-function hasValidRequiredPushTimestamp(event: NavigationPushEvent) {
+function readPushEventTimestamp(event: NavigationPushEvent) {
+  if (event.type === "awaiting.asking") {
+    return toTimestampMs(event.createdAt);
+  }
+  if (event.type === "awaiting.answered") {
+    return toTimestampMs(event.resolvedAt);
+  }
+  return toTimestampMs(event.timestamp);
+}
+
+function requiredPushTimeField(event: NavigationPushEvent) {
+  if (event.type === "awaiting.asking") {
+    return "createdAt";
+  }
+  if (event.type === "awaiting.answered") {
+    return "resolvedAt";
+  }
+  return "timestamp";
+}
+
+function hasValidRequiredPushTime(event: NavigationPushEvent) {
   const allPresentTimesAreValid = STRUCTURED_PUSH_TIME_FIELDS.every((field) =>
     event[field] === undefined || toTimestampMs(event[field]) !== undefined
   );
-  return allPresentTimesAreValid &&
-    (!TIMESTAMPED_PUSH_TYPES.has(event.type) || toTimestampMs(event.timestamp) !== undefined);
+  if (!allPresentTimesAreValid) {
+    return false;
+  }
+  if (event.type === "awaiting.asking" || event.type === "awaiting.answered") {
+    return readPushEventTimestamp(event) !== undefined;
+  }
+  return !TIMESTAMPED_PUSH_TYPES.has(event.type) || readPushEventTimestamp(event) !== undefined;
 }
 
 function readPushAgentKey(event: NavigationPushEvent) {
@@ -1004,7 +1050,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   const preview = readPushPreview(event);
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
   const chatName = toText(event.chatName) || current?.chatName || preview || t("assistant.newChat");
-  const eventTimestamp = toTimestampMs(event.timestamp);
+  const eventTimestamp = readPushEventTimestamp(event);
   if (eventTimestamp === undefined) {
     return null;
   }
@@ -1099,7 +1145,7 @@ export function applyAssistantNavigationPush(
   if (!type || IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
   }
-  if (!hasValidRequiredPushTimestamp(event)) {
+  if (!hasValidRequiredPushTime(event)) {
     return { items: currentItems, changed: false, shouldRefresh: true };
   }
 
@@ -1254,6 +1300,15 @@ export async function readAssistantCopilotAgentsFromPlatform(
 
 export class AssistantNavigationStatusClient {
   private ws: MinimalWebSocket | null = null;
+  private wsOpenPromise: Promise<void> | null = null;
+  private resolveWsOpen: (() => void) | null = null;
+  private rejectWsOpen: ((error: Error) => void) | null = null;
+  private readonly pendingWsRequests = new Map<string, {
+    resolve: (frame: NavigationPushFrame) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  private wsRequestSequence = 0;
   private stopped = false;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1261,6 +1316,7 @@ export class AssistantNavigationStatusClient {
     ok: false,
     items: [],
     activityItems: [],
+    chatItems: [],
     message: t("assistant.navigationStatusUninitialized"),
     updatedAt: nowEpochMillis()
   };
@@ -1315,6 +1371,7 @@ export class AssistantNavigationStatusClient {
         this.setSnapshot({
           ok: false,
           items: [],
+          chatItems: [],
           message: t("agentPlatform.notRunning"),
           updatedAt: nowEpochMillis()
         });
@@ -1328,6 +1385,7 @@ export class AssistantNavigationStatusClient {
         this.setSnapshot({
           ok: false,
           items: [],
+          chatItems: [],
           message: tokenResult.message || t("agentPlatform.accessTokenMissing"),
           updatedAt: nowEpochMillis()
         });
@@ -1342,14 +1400,16 @@ export class AssistantNavigationStatusClient {
         NAVIGATION_AGENT_CHAT_LIMIT,
         items
       );
+      await this.connectWebSocket(baseUrl, token);
+      const chatItems = await this.requestNavigationChats();
       this.setSnapshot({
         ok: true,
         items,
         activityItems,
+        chatItems,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowEpochMillis()
       });
-      this.connectWebSocket(baseUrl, token);
       return this.latestResult;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1357,6 +1417,7 @@ export class AssistantNavigationStatusClient {
       this.setSnapshot({
         ok: false,
         items: [],
+        chatItems: [],
         message,
         updatedAt: nowEpochMillis()
       });
@@ -1370,14 +1431,13 @@ export class AssistantNavigationStatusClient {
     this.options.onSnapshot(result);
   }
 
-  private connectWebSocket(baseUrl: string, token: string) {
+  private connectWebSocket(baseUrl: string, token: string): Promise<void> {
     const WebSocketConstructor = getWebSocketConstructor();
     if (!WebSocketConstructor) {
-      this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
-      return;
+      return Promise.reject(new Error("WebSocket is unavailable"));
     }
     if (this.ws && this.lastBaseUrl === baseUrl && this.lastToken === token) {
-      return;
+      return this.wsOpenPromise ?? Promise.resolve();
     }
     this.closeWebSocket();
     this.lastBaseUrl = baseUrl;
@@ -1391,10 +1451,52 @@ export class AssistantNavigationStatusClient {
       )
     );
     this.ws = socket;
+    this.wsOpenPromise = new Promise<void>((resolve, reject) => {
+      this.resolveWsOpen = resolve;
+      this.rejectWsOpen = reject;
+    });
     socket.onmessage = (event) => this.handleWebSocketMessage(event.data);
     socket.onclose = () => this.handleWebSocketClosed();
     socket.onerror = () => this.handleWebSocketClosed();
-    socket.onopen = () => undefined;
+    socket.onopen = () => {
+      this.resolveWsOpen?.();
+      this.resolveWsOpen = null;
+      this.rejectWsOpen = null;
+    };
+    return this.wsOpenPromise;
+  }
+
+  private async requestNavigationChats(): Promise<AssistantNavChatItem[]> {
+    const socket = this.ws;
+    if (!socket) {
+      throw new Error("agent-platform WebSocket is unavailable");
+    }
+    const id = `desktop-nav-chats-${++this.wsRequestSequence}`;
+    const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingWsRequests.delete(id);
+        reject(new Error("agent-platform WebSocket request timed out"));
+      }, NAVIGATION_WS_REQUEST_TIMEOUT_MS);
+      this.pendingWsRequests.set(id, { resolve, reject, timer });
+      try {
+        socket.send(JSON.stringify({
+          frame: "request",
+          type: "/api/chats",
+          id,
+          payload: {
+            agentMode: NAVIGATION_CHAT_AGENT_MODE,
+            limit: NAVIGATION_CHAT_LIMIT,
+          },
+        }));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingWsRequests.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+    return buildAssistantNavigationChatsFromPlatform(
+      unwrapApiResponse<unknown[]>(frame),
+    );
   }
 
   private handleWebSocketMessage(data: unknown) {
@@ -1408,13 +1510,33 @@ export class AssistantNavigationStatusClient {
     } catch {
       return;
     }
-    if (toText(frame.frame) !== "push") {
+    const frameKind = toText(frame.frame);
+    const requestId = toText(frame.id);
+    if ((frameKind === "response" || frameKind === "error") && requestId) {
+      const pending = this.pendingWsRequests.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingWsRequests.delete(requestId);
+        if (frameKind === "error") {
+          pending.reject(new Error(toText(frame.msg) || "agent-platform WebSocket request failed"));
+        } else {
+          pending.resolve(frame);
+        }
+      }
+      return;
+    }
+    if (frameKind !== "push") {
       return;
     }
     const event = toPushEvent(frame);
-    if (!hasValidRequiredPushTimestamp(event)) {
-      this.options.onDebug?.(`time_contract_violation: navigation push ${event.type} requires epoch_ms_int64 timestamp`);
+    if (!hasValidRequiredPushTime(event)) {
+      this.options.onDebug?.(
+        `time_contract_violation: navigation push ${event.type} requires epoch_ms_int64 ${requiredPushTimeField(event)}`,
+      );
       this.scheduleRefresh();
+      return;
+    }
+    if (IGNORED_PUSH_TYPES.has(event.type)) {
       return;
     }
     this.options.onPushEvent?.({
@@ -1433,13 +1555,12 @@ export class AssistantNavigationStatusClient {
         ok: true,
         items: next.items,
         activityItems: nextActivity.items,
+        chatItems: this.latestResult.chatItems,
         message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowEpochMillis()
       });
     }
-    if (next.shouldRefresh || nextActivity.shouldRefresh) {
-      this.scheduleRefresh();
-    }
+    this.scheduleRefresh();
   }
 
   private handleWebSocketClosed() {
@@ -1459,6 +1580,16 @@ export class AssistantNavigationStatusClient {
   private closeWebSocket() {
     const socket = this.ws;
     this.ws = null;
+    const openError = new Error("agent-platform WebSocket closed");
+    this.rejectWsOpen?.(openError);
+    this.resolveWsOpen = null;
+    this.rejectWsOpen = null;
+    this.wsOpenPromise = null;
+    for (const [id, pending] of this.pendingWsRequests) {
+      clearTimeout(pending.timer);
+      pending.reject(openError);
+      this.pendingWsRequests.delete(id);
+    }
     if (!socket) {
       return;
     }
@@ -1487,6 +1618,7 @@ export class AssistantNavigationStatusClient {
 export const __testInternals = {
   NAVIGATION_AGENT_CHAT_LIMIT,
   NAVIGATION_AGENT_HISTORY_LIMIT,
+  NAVIGATION_CHAT_LIMIT,
   createWsUrl,
   toPushEvent
 };

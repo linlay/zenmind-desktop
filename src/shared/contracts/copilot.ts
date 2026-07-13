@@ -235,6 +235,7 @@ export interface AssistantNavAgentItemsResult {
   ok: boolean;
   items: AssistantNavAgentItem[];
   activityItems?: AssistantNavAgentItem[];
+  chatItems: AssistantNavChatItem[];
   message: string;
   updatedAt: number;
 }

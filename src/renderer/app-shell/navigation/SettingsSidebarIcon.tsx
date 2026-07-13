@@ -62,14 +62,19 @@ export function SettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
     case "assistant":
       return (
         <svg {...iconProps}>
-          <path d="M12 5V2" />
-          <circle cx="12" cy="2" r="1" fill="currentColor" stroke="none" />
-          <rect x="6" y="5" width="12" height="7" rx="2" />
-          <circle cx="9.5" cy="8.5" r="1" fill="currentColor" stroke="none" />
-          <circle cx="14.5" cy="8.5" r="1" fill="currentColor" stroke="none" />
-          <path d="M10 12v2h4v-2" />
-          <rect x="4" y="14" width="16" height="7" rx="2" />
-          <line x1="8" y1="17.5" x2="16" y2="17.5" />
+          {/* 天线 (Antenna) */}
+          <path d="M 12 8 L 12 4" />
+          <circle cx="12" cy="3" r="1" fill="currentColor" />
+          {/* 机器人头部 (Head) */}
+          <rect x="5" y="8" width="14" height="11" rx="4" />
+          {/* 眼睛 (Eyes) */}
+          <circle cx="9.5" cy="13" r="1" fill="currentColor" stroke="none" />
+          <circle cx="14.5" cy="13" r="1" fill="currentColor" stroke="none" />
+          {/* 极简嘴部 (Mouth) */}
+          <path d="M 10 16 Q 12 18 14 16" />
+          {/* 耳部/侧边节点 (Ears) */}
+          <path d="M 3 13.5 L 5 13.5" />
+          <path d="M 19 13.5 L 21 13.5" />
         </svg>
       );
     case "navigation":

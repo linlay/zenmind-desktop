@@ -7,7 +7,9 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  AssistantNavigationStatusClient,
   applyAssistantNavigationPush,
+  buildAssistantNavigationChatsFromPlatform,
   buildAssistantNavigationAgentsFromPlatformAgents,
   enrichNavigationAgentsWithGitBranches,
   readAssistantNavigationActivityAgentsFromPlatform,
@@ -38,6 +40,159 @@ function createAgent(overrides = {}) {
 function findChat(items, chatId) {
   return items.flatMap((agent) => agent.recentChats).find((chat) => chat.chatId === chatId);
 }
+
+test("assistant navigation reads global REACT chats over WebSocket and refreshes them after pushes", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  const snapshots = [];
+  const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-ws-"));
+  const chatResponses = [[
+    {
+      chatId: "react-newest",
+      chatName: "Newest React chat",
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + 30,
+      updatedAt: EPOCH_MS + 40,
+      lastRunId: "run-newest",
+      lastRunContent: "latest response",
+      read: { isRead: false },
+      activeRun: true,
+    },
+    {
+      chatId: "team-without-agent",
+      chatName: "Team chat",
+      agentKey: "",
+      createdAt: EPOCH_MS + 20,
+      updatedAt: EPOCH_MS + 21,
+    },
+    {
+      chatId: "invalid-time",
+      chatName: "Invalid time",
+      agentKey: "zenmi",
+      createdAt: "2026-07-13T00:00:00.000Z",
+      updatedAt: EPOCH_MS + 20,
+    },
+    ...Array.from({ length: 9 }, (_, index) => ({
+      chatId: `react-${index}`,
+      chatName: `React ${index}`,
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + index,
+      updatedAt: EPOCH_MS + index,
+    })),
+  ]];
+
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      sockets.push(this);
+      queueMicrotask(() => this.onopen?.());
+    }
+
+    send(data) {
+      const request = JSON.parse(data);
+      this.sent.push(request);
+      if (request.type === "/api/chats") {
+        const response = chatResponses[Math.min(this.sent.filter((frame) => frame.type === "/api/chats").length - 1, chatResponses.length - 1)];
+        queueMicrotask(() => this.onmessage?.({
+          data: JSON.stringify({
+            frame: "response",
+            type: "/api/chats",
+            id: request.id,
+            code: 0,
+            data: response,
+          }),
+        }));
+      }
+    }
+
+    emit(frame) {
+      this.onmessage?.({ data: JSON.stringify(frame) });
+    }
+
+    close() {}
+  }
+
+  globalThis.WebSocket = FakeWebSocket;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+    },
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+    fs.rmSync(temporaryAppData, { recursive: true, force: true });
+  });
+
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => temporaryAppData },
+    getServiceState: async () => ({
+      status: "running",
+      healthMeta: { webUrl: "http://127.0.0.1:11789" },
+    }),
+    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+  });
+  t.after(() => client.stop());
+
+  const first = await client.refreshNow();
+  const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
+  assert.deepEqual(firstRequest.payload, { agentMode: "REACT", limit: 8 });
+  assert.deepEqual(
+    first.chatItems.map((chat) => chat.chatId),
+    ["react-newest", "react-0", "react-1", "react-2", "react-3", "react-4", "react-5", "react-6"],
+  );
+  assert.equal(first.chatItems[0].isRead, false);
+  assert.equal(first.chatItems[0].hasActiveRun, true);
+
+  const refreshAfterPush = async (type, data, expectedRequestCount) => {
+    sockets[0].emit({ frame: "push", type, data });
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    assert.equal(
+      sockets[0].sent.filter((frame) => frame.type === "/api/chats").length,
+      expectedRequestCount,
+    );
+  };
+  await refreshAfterPush("chat.updated", {
+    agentKey: "zenmi",
+    chatId: "react-newest",
+    timestamp: EPOCH_MS + 50,
+    createdAt: EPOCH_MS + 30,
+    updatedAt: EPOCH_MS + 50,
+  }, 2);
+  await refreshAfterPush("run.complete", {
+    agentKey: "zenmi",
+    chatId: "react-newest",
+    timestamp: EPOCH_MS + 60,
+    updatedAt: EPOCH_MS + 60,
+  }, 3);
+  await refreshAfterPush("awaiting.asking", {
+    agentKey: "zenmi",
+    chatId: "react-newest",
+    createdAt: EPOCH_MS + 70,
+    updatedAt: EPOCH_MS + 70,
+  }, 4);
+  assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 8));
+});
+
+test("assistant navigation chat mapper preserves server order and rejects missing agent keys or timestamps", () => {
+  const chats = buildAssistantNavigationChatsFromPlatform([
+    { chatId: "second", agentKey: "zenmi", createdAt: EPOCH_MS + 2, updatedAt: EPOCH_MS + 2 },
+    { chatId: "missing-agent", createdAt: EPOCH_MS + 1, updatedAt: EPOCH_MS + 1 },
+    { chatId: "missing-updated-at", agentKey: "zenmi", createdAt: EPOCH_MS + 1 },
+    { chatId: "first", agentKey: "cutej", createdAt: EPOCH_MS, updatedAt: EPOCH_MS },
+  ]);
+
+  assert.deepEqual(chats.map((chat) => chat.chatId), ["second", "first"]);
+});
 
 test("assistant copilot agents fall back to nav scope when the copilot scope is empty", async (t) => {
   const originalFetch = globalThis.fetch;
@@ -334,6 +489,111 @@ test("assistant navigation rejects a run.started push without an epoch-ms timest
   assert.equal(result.changed, false);
   assert.equal(result.shouldRefresh, true);
   assert.equal(findChat(result.items, chatId), undefined);
+});
+
+test("assistant navigation applies standard awaiting.asking project pushes with createdAt", () => {
+  const createdAt = 1783938199453;
+  const result = applyAssistantNavigationPush([createAgent({
+    agentKey: "askUserBudget.demo",
+    mode: "CODER",
+  })], {
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "askUserBudget.demo",
+      awaitingId: "call_function_7frdxe0cb31e_1",
+      chatId: "6bfee0ad-5263-41c9-9f13-4983882ff7ad",
+      createdAt,
+      mode: "question",
+      ownerType: "agent",
+      runId: "mrj2qklh",
+      timeout: 600,
+      viewportKey: "question",
+      viewportType: "builtin",
+    },
+  });
+
+  const [agent] = result.items;
+  const chat = findChat(result.items, "6bfee0ad-5263-41c9-9f13-4983882ff7ad");
+  assert.equal(result.changed, true);
+  assert.equal(chat?.createdAt, createdAt);
+  assert.equal(chat?.updatedAt, createdAt);
+  assert.equal(chat?.hasPendingAwaiting, true);
+  assert.equal(chat?.awaitingCount, 1);
+  assert.equal(chat?.awaitingMode, "question");
+  assert.equal(agent?.hasPendingAwaiting, true);
+});
+
+test("assistant navigation applies standard awaiting.answered pushes with resolvedAt", () => {
+  const chatId = "6bfee0ad-5263-41c9-9f13-4983882ff7ad";
+  const asked = applyAssistantNavigationPush([createAgent({
+    agentKey: "askUserBudget.demo",
+    mode: "CODER",
+  })], {
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "askUserBudget.demo",
+      chatId,
+      createdAt: 1783938199453,
+      mode: "question",
+      runId: "mrj2qklh",
+    },
+  });
+  const resolvedAt = 1783938200453;
+  const answered = applyAssistantNavigationPush(asked.items, {
+    frame: "push",
+    type: "awaiting.answered",
+    data: {
+      agentKey: "askUserBudget.demo",
+      awaitingId: "call_function_7frdxe0cb31e_1",
+      chatId,
+      resolvedAt,
+      runId: "mrj2qklh",
+    },
+  });
+
+  const [agent] = answered.items;
+  const chat = findChat(answered.items, chatId);
+  assert.equal(answered.changed, true);
+  assert.equal(chat?.updatedAt, resolvedAt);
+  assert.equal(chat?.hasPendingAwaiting, false);
+  assert.equal(chat?.awaitingCount, 0);
+  assert.equal(chat?.awaitingMode, undefined);
+  assert.equal(agent?.hasPendingAwaiting, false);
+});
+
+test("assistant navigation rejects timestamp-only awaiting.asking pushes", () => {
+  const result = applyAssistantNavigationPush([createAgent({ mode: "CODER" })], {
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "zenmi",
+      chatId: "legacy-awaiting-asking",
+      mode: "question",
+      timestamp: EPOCH_MS,
+    },
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.shouldRefresh, true);
+  assert.equal(findChat(result.items, "legacy-awaiting-asking"), undefined);
+});
+
+test("assistant navigation rejects timestamp-only awaiting.answered pushes", () => {
+  const result = applyAssistantNavigationPush([createAgent({ mode: "CODER" })], {
+    frame: "push",
+    type: "awaiting.answered",
+    data: {
+      agentKey: "zenmi",
+      chatId: "legacy-awaiting-answered",
+      timestamp: EPOCH_MS,
+    },
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.shouldRefresh, true);
+  assert.equal(findChat(result.items, "legacy-awaiting-answered"), undefined);
 });
 
 test("assistant navigation run.started preserves an existing real preview", () => {

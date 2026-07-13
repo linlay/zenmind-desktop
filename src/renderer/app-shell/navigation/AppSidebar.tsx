@@ -49,7 +49,6 @@ import {
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
-  getAssistantNavRecentChatsOverview,
   getAssistantNavAgentSortedChats,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
@@ -221,7 +220,6 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
   "webOperator",
 ]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
-const CHATS_RECENT_LIMIT = 8;
 type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS
@@ -894,6 +892,7 @@ type AppSidebarProps = {
   websiteNavOrder?: SidebarNavOrderItemKey[];
   webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
+  assistantNavChatItems?: AssistantNavChatItem[];
   assistantNavAgentsLoaded?: boolean;
   websitesLoaded?: boolean;
   chatNavAgentOptions?: AssistantNavAgentItem[];
@@ -948,6 +947,7 @@ export function AppSidebar({
   websiteNavOrder = [],
   webItems,
   assistantNavAgents = [],
+  assistantNavChatItems = [],
   assistantNavAgentsLoaded = true,
   websitesLoaded = true,
   chatNavAgentOptions = [],
@@ -1081,19 +1081,30 @@ export function AppSidebar({
   const resolvedChatDefaultAgent = chatDefaultAgent;
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
-  const recentChatsOverviewItems = useMemo(
-    () => resolvedChatDefaultAgent
-      ? getAssistantNavRecentChatsOverview([resolvedChatDefaultAgent], CHATS_RECENT_LIMIT)
-      : [],
-    [resolvedChatDefaultAgent],
+  const sidebarChatItems = useMemo(
+    () => assistantNavChatItems.slice(0, 8),
+    [assistantNavChatItems],
+  );
+  const chatNavigationAgentsByKey = useMemo(
+    () => new Map(
+      [...assistantNavAgents, ...chatNavAgentOptions].map((agent) => [agent.agentKey, agent]),
+    ),
+    [assistantNavAgents, chatNavAgentOptions],
+  );
+  const chatStatusSummary = useMemo(
+    () => ({
+      unreadCount: sidebarChatItems.filter((chat) => !chat.isRead).length,
+      pendingCount: sidebarChatItems.filter((chat) => chat.hasPendingAwaiting).length,
+    }),
+    [sidebarChatItems],
   );
   const bootstrapSeedChatIndexed = Boolean(
     bootstrapActive &&
     normalizedBootstrapChatId &&
-    recentChatsOverviewItems.some(
-      ({ agent, chat }) =>
+    sidebarChatItems.some(
+      (chat) =>
         chat.chatId === normalizedBootstrapChatId &&
-        (chat.agentKey || agent.agentKey) === normalizedBootstrapAgentKey,
+        chat.agentKey === normalizedBootstrapAgentKey,
     )
   );
   const showBootstrapChatFallback = Boolean(
@@ -1108,17 +1119,8 @@ export function AppSidebar({
   const chatAgentInlineLabel = resolvedChatDefaultAgent
     ? t("sidebar.chats.withAgent", { name: resolvedChatDefaultAgent.displayName })
     : "";
-  const chatOverviewTotal = resolvedChatDefaultAgent
-    ? Math.max(
-        getAssistantNavAgentNonNegativeInteger(resolvedChatDefaultAgent.chatCount),
-        getAssistantNavAgentSortedChats(resolvedChatDefaultAgent).length,
-      )
-    : 0;
-  const chatOverviewUnreadCount = resolvedChatDefaultAgent
-    ? getAssistantNavAgentNonNegativeInteger(resolvedChatDefaultAgent.unreadCount)
-    : 0;
-  const activeChatsOverviewChatId = recentChatsOverviewItems.some(
-    ({ chat }) => chat.chatId === currentChatId,
+  const activeChatsOverviewChatId = sidebarChatItems.some(
+    (chat) => chat.chatId === currentChatId,
   )
     ? currentChatId
     : "";
@@ -2358,6 +2360,9 @@ export function AppSidebar({
   }
 
   async function handleAssistantOpenChat(chat: AssistantNavChatItem) {
+    if (!chat.agentKey) {
+      return;
+    }
     if (
       bootstrapActive &&
       normalizedBootstrapChatId &&
@@ -2376,13 +2381,13 @@ export function AppSidebar({
       const markReadRequest =
         typeof markChatRead === "function"
           ? markChatRead(chat.chatId, chat.lastRunId || undefined)
-          : window.electronAPI.assistant.markAgentChatsRead(chat.agentKey || currentAgentKey);
+          : window.electronAPI.assistant.markAgentChatsRead(chat.agentKey);
       void markReadRequest.catch((error: unknown) => {
         console.warn("[assistant] failed to mark chat read", error);
       });
     }
     requestNavigate(
-      createAgentChatRoute(chat.agentKey || currentAgentKey, chat.chatId),
+      createAgentChatRoute(chat.agentKey, chat.chatId),
       {
         retriggerAgentRoute: true,
       },
@@ -2781,7 +2786,7 @@ export function AppSidebar({
   }
 
   function renderChatHoverCard(
-    agent: (typeof recentChatsOverviewItems)[number]["agent"],
+    agent: AssistantNavAgentItem,
     chat: AssistantNavChatItem,
   ) {
     const askedAt = formatAssistantChatDateTime(chat.createdAt);
@@ -2826,6 +2831,21 @@ export function AppSidebar({
     );
   }
 
+  function getChatHoverAgent(chat: AssistantNavChatItem): AssistantNavAgentItem {
+    return chatNavigationAgentsByKey.get(chat.agentKey) ?? {
+      agentKey: chat.agentKey,
+      displayName: chat.agentKey,
+      role: "",
+      unreadCount: 0,
+      unreadChatCount: 0,
+      chatCount: 0,
+      hasPendingAwaiting: false,
+      latestChatId: null,
+      latestPreview: "",
+      recentChats: [],
+    };
+  }
+
   function renderChatsList(options: { roving?: boolean } = {}) {
     const roving = options.roving ?? true;
     return (
@@ -2862,14 +2882,15 @@ export function AppSidebar({
             </button>
           </div>
         ) : null}
-        {recentChatsOverviewItems.length > 0 ? (
-          recentChatsOverviewItems.map(({ agent, chat }) => {
+        {sidebarChatItems.length > 0 ? (
+          sidebarChatItems.map((chat) => {
+            const agent = getChatHoverAgent(chat);
             const isActive = chat.chatId === currentChatId;
             const isBootstrapSeedChat = Boolean(
               bootstrapActive &&
               normalizedBootstrapChatId &&
               chat.chatId === normalizedBootstrapChatId &&
-              (chat.agentKey || agent.agentKey) === normalizedBootstrapAgentKey
+              chat.agentKey === normalizedBootstrapAgentKey
             );
             return (
               <div
@@ -2927,31 +2948,6 @@ export function AppSidebar({
             <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
           )
         ) : null}
-        {chatOverviewTotal > CHATS_RECENT_LIMIT && resolvedChatDefaultAgent ? (
-          <button
-            type="button"
-            className="worker-chat-more assistant-worker-more"
-            {...getSidebarRovingItemProps(
-              createSidebarAgentMoreFocusId(resolvedChatDefaultAgent.agentKey),
-              roving,
-            )}
-            data-sidebar-nav-kind={roving ? "agent-more" : undefined}
-            data-sidebar-agent-key={roving ? resolvedChatDefaultAgent.agentKey : undefined}
-            onClick={(event) => {
-              event.stopPropagation();
-              requestNavigate(createAgentHistoryRoute(resolvedChatDefaultAgent.agentKey), {
-                retriggerAgentRoute: true,
-              });
-            }}
-          >
-            {t("sidebar.chat.viewMore", {
-              count: chatOverviewTotal,
-              unread: chatOverviewUnreadCount > 0
-                ? t("sidebar.chat.unreadSuffix", { count: chatOverviewUnreadCount })
-                : "",
-            })}
-          </button>
-        ) : null}
       </div>
     );
   }
@@ -2965,6 +2961,7 @@ export function AppSidebar({
         activeChatsOverviewChatId ||
         (bootstrapActive && currentAgentKey === normalizedBootstrapAgentKey),
       ),
+      status: chatStatusSummary,
       children: [],
       headerLabel: (
         <span className="sidebar-link-label" tabIndex={-1}>

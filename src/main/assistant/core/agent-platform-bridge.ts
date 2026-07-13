@@ -935,6 +935,7 @@ export class AgentPlatformAssistantBridge {
       return {
         ok: false,
         items: [],
+        chatItems: [],
         message: availability.message,
         updatedAt: Date.now()
       };
@@ -942,6 +943,7 @@ export class AgentPlatformAssistantBridge {
     return {
       ok: true,
       items: await readAssistantNavigationAgentsFromPlatform(availability.baseUrl, availability.token),
+      chatItems: [],
       message: t("assistant.navigationStatusRead"),
       updatedAt: Date.now()
     };
@@ -953,6 +955,7 @@ export class AgentPlatformAssistantBridge {
       return {
         ok: false,
         items: [],
+        chatItems: [],
         message: availability.message,
         updatedAt: Date.now()
       };
@@ -960,6 +963,7 @@ export class AgentPlatformAssistantBridge {
     return {
       ok: true,
       items: await readAssistantCopilotAgentsFromPlatform(availability.baseUrl, availability.token),
+      chatItems: [],
       message: t("assistant.copilotAgentsRead"),
       updatedAt: Date.now()
     };

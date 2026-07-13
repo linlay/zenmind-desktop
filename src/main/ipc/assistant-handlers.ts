@@ -310,6 +310,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return {
         ok: false,
         items: [],
+        chatItems: [],
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
         updatedAt: new Date().toISOString()
       };
@@ -324,6 +325,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       return {
         ok: false,
         items: [],
+        chatItems: [],
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
         updatedAt: new Date().toISOString()
       };
