@@ -618,14 +618,6 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
-  const sidebarAssistantClosedIcon = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "assets", "sidebar-icons", "sidebar-assistant-closed.svg"),
-    "utf8"
-  );
-  const sidebarAssistantOpenIcon = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "assets", "sidebar-icons", "sidebar-assistant-open.svg"),
-    "utf8"
-  );
   const globalStyles = readRendererStyles();
   const nativeAssistantDockPath = path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx");
 
@@ -648,10 +640,6 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
   assert.match(sidebarSource, /t\("sidebar\.copilot\.open", \{ appName: PRODUCT_NAME \}\)/);
   assert.match(sidebarSource, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);
   assert.match(sidebarSource, /t\("sidebar\.copilot\.unavailableForPage", \{ appName: PRODUCT_NAME \}\)/);
-  assert.doesNotMatch(sidebarAssistantClosedIcon, /<text\b/);
-  assert.doesNotMatch(sidebarAssistantOpenIcon, /<text\b/);
-  assert.match(sidebarAssistantClosedIcon, /viewBox="0 0 24 24"/);
-  assert.match(sidebarAssistantOpenIcon, /viewBox="0 0 24 24"/);
   assert.match(globalStyles, /--assistant-dock-embedded-width:\s*360px;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{/);
   assert.doesNotMatch(globalStyles, /\.assistant-dock-/);
@@ -1748,9 +1736,9 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSidebarIconSource, /case "debug":[\s\S]*?case "general":[\s\S]*?<circle cx="12" cy="12" r="3" \/>/);
   assert.match(settingsSidebarIconSource, /case "usage":[\s\S]*?<path d="M21 12a9 9 0 1 0-18 0" \/>/);
   assert.match(settingsSidebarIconSource, /case "webapps":[\s\S]*?<rect x="3" y="3" width="18" height="18" rx="2" \/>/);
+  assert.match(settingsSidebarIconSource, /case "about":[\s\S]*?<circle cx="12" cy="12" r="10" \/>/);
+  assert.match(settingsSidebarIconSource, /case "appearance":[\s\S]*?<circle cx="12" cy="12" r="4" \/>/);
   assert.doesNotMatch(sidebarSource, /case "runtimeReset"/);
-  assert.match(brandMarkSource, /case "about":[\s\S]*?<circle cx="12" cy="12" r="10" \/>/);
-  assert.match(brandMarkSource, /case "appearance":[\s\S]*?<circle cx="12" cy="12" r="9" \/>/);
 
   assert.match(settingsPage, /useParams\(\)/);
   assert.match(settingsPage, /resolveSettingsSectionId/);
@@ -2771,7 +2759,6 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="sidebar_right" \/>/);
-  assert.doesNotMatch(sidebarSource, /sidebar-assistant-open[\s\S]*sidebar-assistant-closed/);
   assert.match(sidebarSource, /if \(assistantDockOpen\) \{\s*onCloseAssistantDock\?\.\(\);\s*\} else \{\s*onOpenAssistantDock\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
   assert.doesNotMatch(sidebarSource, /!assistantDockOpen && \(isActive \|\| pendingPath === "\/settings"\)/);
@@ -4729,7 +4716,6 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.match(externalWebviewPage, /const handleGoForward = \(\) => \{[\s\S]*?activeWebview\.goForward\(\)/);
   assert.match(externalWebviewPage, /disabled=\{!activeTab\?\.canGoForward\}[\s\S]*?<SidebarActionIcon kind="forward" \/>/);
   assert.match(externalWebviewPage, /<SidebarActionIcon[\s\S]*?kind="sidebar_right"[\s\S]*?className="external-webview-copilot-button-icon"/);
-  assert.doesNotMatch(externalWebviewPage, /SidebarIllustration[\s\S]*?sidebar-assistant-open[\s\S]*?sidebar-assistant-closed/);
   assert.doesNotMatch(externalWebviewStyles, /filter:\s*grayscale/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.open", \{ appName: PRODUCT_NAME \}\)/);

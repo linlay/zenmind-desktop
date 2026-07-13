@@ -2062,13 +2062,19 @@ function readJsonPathValue(value: unknown, pathValue: string) {
   return currentValue;
 }
 
+function normalizeCookieAccessToken(value: unknown) {
+  const token = normalizeStringClaim(value);
+  const bearerMatch = /^Bearer\s+(.+)$/iu.exec(token);
+  return (bearerMatch?.[1] || token).trim();
+}
+
 function readCookieAccessTokenFromResponse(value: unknown, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
-  const rawAccessToken = normalizeStringClaim(value);
+  const rawAccessToken = normalizeCookieAccessToken(value);
   if (rawAccessToken) {
     return rawAccessToken;
   }
   const pathValue = config.cookieAccessTokenExchange?.accessTokenPath || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
-  const accessToken = normalizeStringClaim(readJsonPathValue(value, pathValue));
+  const accessToken = normalizeCookieAccessToken(readJsonPathValue(value, pathValue));
   if (!accessToken) {
     throw new Error(t("sso.token.cookieAccessTokenMissingPath", { path: pathValue }));
   }

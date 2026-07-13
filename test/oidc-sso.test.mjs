@@ -293,6 +293,23 @@ test("desktop sso stores site token bridge response in secrets", (t) => {
   assert.equal(stored.issuer, "https://site.example.test");
 });
 
+test("desktop sso strips a Bearer scheme from cookie token responses", () => {
+  const token = createUnsignedJwt({
+    sub: "cookie-user",
+    iss: embeddedLoginOrigin,
+    exp: Math.floor(Date.now() / 1000) + 3600
+  });
+
+  assert.equal(
+    __testInternals.readCookieAccessTokenFromResponse(`Bearer ${token}`),
+    token
+  );
+  assert.equal(
+    __testInternals.readCookieAccessTokenFromResponse({ access_token: `bearer ${token}` }),
+    token
+  );
+});
+
 test("desktop sso does not infer cookie token exchange from ai browser origin", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -328,8 +345,7 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     loginCompletionUrls: [`${embeddedLoginOrigin}/`],
     cookieAccessTokenExchange: {
       url: embeddedTokenExchangeUrl,
-      method: "GET",
-      accessTokenPath: "access_token"
+      method: "GET"
     },
     accessTokenCookie: {
       url: `${embeddedLoginOrigin}/`,
@@ -354,6 +370,7 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     url: `${embeddedLoginOrigin}/`,
     name: "access_token"
   });
+  assert.equal(__testInternals.getDesktopSsoSiteTokenBridgeConfig(app), null);
 });
 
 test("desktop sso cookie completion preserves jwt user name and email claims", (t) => {

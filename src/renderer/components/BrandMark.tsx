@@ -8,9 +8,6 @@ type BrandMarkProps = {
 };
 
 export type SidebarIllustrationKind =
-  | "about"
-  | "appearance"
-  | "control"
   | "assistant"
   | "agent"
   | "login"
@@ -21,12 +18,7 @@ export type SidebarIllustrationKind =
   | "settings"
   | "service"
   | "futures"
-  | "autumn"
-  | "custom"
-  | "memory"
   | "schedule"
-  | "sidebar-assistant-closed"
-  | "sidebar-assistant-open"
   | "website";
 
 export type SidebarActionIconKind =
@@ -233,7 +225,6 @@ export function SidebarIllustration({ kind, className }: SidebarIllustrationProp
         </svg>
       );
     case "login":
-    case "custom":
       return (
         <svg {...iconProps}>
           <path d="M19 21v-1.5a4.5 4.5 0 0 0-4.5-4.5h-5A4.5 4.5 0 0 0 5 19.5V21" />
@@ -332,72 +323,12 @@ export function SidebarIllustration({ kind, className }: SidebarIllustrationProp
           <path className="sidebar-illustration-automation-hand" d="M12 6v6l4 2" />
         </svg>
       );
-    case "appearance":
-      return (
-        <svg {...iconProps}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 3a6.5 6.5 0 0 0 0 18 7.5 7.5 0 0 1 0-18z" />
-        </svg>
-      );
-    case "control":
-      return (
-        <svg {...iconProps}>
-          <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
-          <circle cx="4" cy="12" r="2" />
-          <circle cx="12" cy="10" r="2" />
-          <circle cx="20" cy="14" r="2" />
-        </svg>
-      );
     case "website":
       return (
         <svg {...iconProps}>
           <circle cx="12" cy="12" r="10" />
           <path d="M2 12h20" />
           <path d="M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
-        </svg>
-      );
-    case "about":
-      return (
-        <svg {...iconProps}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 11v6" />
-          <circle cx="12" cy="7" r="1" fill="currentColor" stroke="none" />
-        </svg>
-      );
-    case "memory":
-      return (
-        <svg {...iconProps}>
-          <rect x="6" y="6" width="12" height="12" rx="2" />
-          <rect x="10" y="10" width="4" height="4" rx="1" />
-          <path d="M6 2v3M10 2v3M14 2v3M18 2v3M6 19v3M10 19v3M14 19v3M18 19v3M2 6h3M2 10h3M2 14h3M2 18h3M19 6h3M19 10h3M19 14h3M19 18h3" />
-        </svg>
-      );
-    case "autumn":
-      return (
-        <svg {...iconProps}>
-          <rect x="3" y="5" width="18" height="16" rx="3" />
-          <path d="M16 3v4M8 3v4M3 10h18" />
-          <path d="M9 15h6" />
-        </svg>
-      );
-    case "sidebar-assistant-open":
-      return (
-        <svg {...iconProps}>
-          <rect x="3" y="4" width="18" height="16" rx="3" />
-          <path d="M9 4v16M13 8h4M13 12h3M13 16h4" />
-        </svg>
-      );
-    case "sidebar-assistant-closed":
-      return (
-        <svg {...iconProps}>
-          <rect x="3" y="4" width="18" height="16" rx="3" />
-          <path d="M8 8h8M8 12h6M8 16h8" />
-        </svg>
-      );
-    default:
-      return (
-        <svg {...iconProps}>
-          <circle cx="12" cy="12" r="10" />
         </svg>
       );
   }
