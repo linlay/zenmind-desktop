@@ -3,13 +3,7 @@ import type {
   AssistantNavAgentItemsResult,
   AssistantNavChatItem
 } from "../shared/contracts";
-
-const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
-  "desktopAssistant",
-  "webOperator",
-]);
-
-export type AssistantNavSortMode = "byName" | "byTime";
+import { readEpochMillis } from "../shared/time-contract";
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -21,16 +15,6 @@ function asRecord(value: unknown) {
 
 function toText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function toScalarText(value: unknown) {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-  return "";
 }
 
 function toNonNegativeInteger(value: unknown) {
@@ -46,6 +30,9 @@ function toOptionalNonNegativeInteger(value: unknown) {
     : undefined;
 }
 
+const PROJECT_ASSISTANT_MODES = new Set(["CODER", "KBASE"]);
+const HIDDEN_CHAT_AGENT_KEYS = new Set(["desktopAssistant", "webOperator"]);
+
 function resolveAssistantNavUnreadCount(options: {
   statsUnreadCount: number | undefined;
   statsUnreadChatCount: number | undefined;
@@ -57,15 +44,7 @@ function resolveAssistantNavUnreadCount(options: {
 }
 
 function normalizeAssistantNavUpdatedAt(value: unknown) {
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) {
-    return numeric;
-  }
-  if (typeof value === "string") {
-    const timestamp = Date.parse(value);
-    return Number.isFinite(timestamp) ? timestamp : 0;
-  }
-  return 0;
+  return readEpochMillis(value) ?? 0;
 }
 
 function compareAssistantNavChatFreshness(
@@ -86,7 +65,7 @@ function toAwaitingMode(value: unknown): AssistantNavChatItem["awaitingMode"] {
   return mode === "approval" ||
     mode === "question" ||
     mode === "form" ||
-    mode === "plan"
+    mode === "planning"
     ? mode
     : undefined;
 }
@@ -110,12 +89,18 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
   if (!chatId) {
     return null;
   }
+  const createdAt = readEpochMillis(record.createdAt);
+  const updatedAt = readEpochMillis(record.updatedAt);
+  if (createdAt === undefined || updatedAt === undefined) {
+    return null;
+  }
 
   return {
     chatId,
     chatName: toText(record.chatName),
     agentKey: toText(record.agentKey) || fallbackAgentKey,
-    updatedAt: toScalarText(record.updatedAt),
+    createdAt,
+    updatedAt,
     lastRunId: toText(record.lastRunId),
     lastRunContent: toText(record.lastRunContent),
     isRead: readAssistantNavChatIsRead(record),
@@ -144,6 +129,7 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
   const unreadFromChats = recentChats.filter((chat) => chat.isRead === false).length;
   const chatCount = Math.max(toNonNegativeInteger(record.chatCount), recentChats.length);
   const latestChat = recentChats[0] ?? null;
+  const updatedAt = readEpochMillis(record.updatedAt);
   const latestChatId = toText(record.latestChatId) || latestChat?.chatId || null;
   const resolvedUnreadCount = resolveAssistantNavUnreadCount({
     statsUnreadCount: unreadCount,
@@ -162,15 +148,17 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     hasPendingAwaiting: record.hasPendingAwaiting === true || recentChats.some((chat) => chat.hasPendingAwaiting),
     latestChatId,
     latestPreview: toText(record.latestPreview),
-    updatedAt: toText(record.updatedAt) || latestChat?.updatedAt || "",
+    ...(updatedAt !== undefined
+      ? { updatedAt }
+      : latestChat ? { updatedAt: latestChat.updatedAt } : {}),
     recentChats,
-    agentType: toText(record.agentType) || undefined,
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,
     workspaceDirExists:
       typeof record.workspaceDirExists === "boolean"
         ? record.workspaceDirExists
         : undefined,
+    gitBranch: toText(record.gitBranch) || undefined,
   };
 }
 
@@ -182,55 +170,19 @@ export function normalizeAssistantNavAgents(items: unknown): AssistantNavAgentIt
     : [];
 }
 
-export function getPrimaryAssistantNavAgents(items: AssistantNavAgentItem[]) {
-  return items.filter(
-    (agent) => !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim()),
-  );
-}
-
-function toAssistantSortTimestamp(value: string | undefined) {
-  const timestamp = value ? Date.parse(value) : 0;
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
-  const latestChat = getAssistantNavAgentSortedChats(agent)[0];
-  if (latestChat) {
-    return toAssistantSortTimestamp(latestChat.updatedAt);
-  }
-  return agent.latestChatId ? toAssistantSortTimestamp(agent.updatedAt) : 0;
-}
-
-function compareAssistantAgentsByName(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
+export function isAssistantNavProjectAgent(
+  agent: Pick<AssistantNavAgentItem, "mode"> | null | undefined,
 ) {
-  const displayNameComparison = left.displayName.localeCompare(
-    right.displayName,
-    "zh-CN",
-  );
-  return displayNameComparison || left.agentKey.localeCompare(right.agentKey);
+  return PROJECT_ASSISTANT_MODES.has(agent?.mode?.trim().toUpperCase() ?? "");
 }
 
-function compareAssistantAgentsByTime(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
+export function isAssistantNavChatAgent(
+  agent: Pick<AssistantNavAgentItem, "agentKey" | "mode"> | null | undefined,
 ) {
-  const timestampDifference =
-    readAssistantAgentLatestTimestamp(right) -
-    readAssistantAgentLatestTimestamp(left);
-  return timestampDifference || compareAssistantAgentsByName(left, right);
-}
-
-export function sortAssistantNavAgentsForMode(
-  items: AssistantNavAgentItem[],
-  sortMode: AssistantNavSortMode,
-) {
-  const compare =
-    sortMode === "byName"
-      ? compareAssistantAgentsByName
-      : compareAssistantAgentsByTime;
-  return [...items].sort(compare);
+  const agentKey = agent?.agentKey.trim() ?? "";
+  return Boolean(agentKey) &&
+    !HIDDEN_CHAT_AGENT_KEYS.has(agentKey) &&
+    !isAssistantNavProjectAgent(agent);
 }
 
 export function normalizeAssistantNavAgentItemsResult(
@@ -268,6 +220,55 @@ export function getAssistantNavAgentPreviewChats(
   }
 
   return getAssistantNavAgentSortedChats(agent).slice(0, normalizedLimit);
+}
+
+export type AssistantNavChatsOverviewItem = {
+  agent: Pick<
+    AssistantNavAgentItem,
+    "agentKey" | "displayName" | "mode" | "workspaceDir" | "workspaceDirExists" | "gitBranch"
+  >;
+  chat: AssistantNavChatItem;
+};
+
+export function getAssistantNavRecentChatsOverview(
+  agents: AssistantNavAgentItem[],
+  limit = 10,
+) {
+  const normalizedLimit = Math.max(0, Math.floor(Number(limit) || 0));
+  if (normalizedLimit <= 0) {
+    return [];
+  }
+
+  const chatsById = new Map<string, AssistantNavChatsOverviewItem>();
+  for (const agent of agents) {
+    for (const chat of getAssistantNavAgentSortedChats(agent)) {
+      const normalizedChat = {
+        ...chat,
+        agentKey: chat.agentKey || agent.agentKey,
+      };
+      const existing = chatsById.get(normalizedChat.chatId);
+      if (
+        !existing ||
+        compareAssistantNavChatFreshness(normalizedChat, existing.chat) < 0
+      ) {
+        chatsById.set(normalizedChat.chatId, {
+          agent: {
+            agentKey: agent.agentKey,
+            displayName: agent.displayName,
+            mode: agent.mode,
+            workspaceDir: agent.workspaceDir,
+            workspaceDirExists: agent.workspaceDirExists,
+            gitBranch: agent.gitBranch,
+          },
+          chat: normalizedChat,
+        });
+      }
+    }
+  }
+
+  return Array.from(chatsById.values())
+    .sort((left, right) => compareAssistantNavChatFreshness(left.chat, right.chat))
+    .slice(0, normalizedLimit);
 }
 
 export function getAssistantNavAgentAttentionChat(

@@ -7,7 +7,7 @@ import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 
@@ -104,7 +104,9 @@ export interface DesktopSsoSiteTokenBridgeStartResult {
   configured: boolean;
   required: boolean;
   startUrl?: string;
+  browserOrigin?: string;
   browserLabel?: string;
+  openMode?: "embedded" | "system";
   message: string;
 }
 
@@ -513,8 +515,12 @@ export interface DesktopApi {
     archiveChat: (chatId: string) => Promise<AssistantNavActionResult>;
     exportChat: (chatId: string) => Promise<AssistantNavActionResult>;
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => () => void;
+    onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => () => void;
     onAssistantEvent: (listener: AssistantEventListener) => () => void;
     onAttachmentProgress: (listener: AssistantAttachmentProgressListener) => () => void;
+  };
+  copilot: {
+    publishDevToolsTarget: (target: CopilotDevToolsTargetInput) => Promise<{ ok: boolean; message?: string }>;
   };
   services: {
     list: () => Promise<ServiceState[]>;
@@ -665,7 +671,7 @@ export interface DesktopApi {
     setPreviewExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
     dismissPreview: () => Promise<{ ok: boolean }>;
     replyMessage: (input: { chatId: string; agentKey?: string; message: string }) => Promise<{ ok: boolean; message?: string; chatId?: string; runId?: string }>;
-    dismissMessage: (input: { chatId: string; runId?: string | null; updatedAt?: string }) => Promise<{ ok: boolean }>;
+    dismissMessage: (input: { chatId: string; runId?: string | null; updatedAt?: number }) => Promise<{ ok: boolean }>;
     setMouseInteractive: (interactive: boolean) => Promise<{ ok: boolean }>;
     setWindowMode: (mode: DesktopPetWindowMode) => Promise<{ ok: boolean }>;
     onStateChanged: (listener: DesktopPetStateListener) => () => void;

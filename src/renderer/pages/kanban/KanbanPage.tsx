@@ -825,7 +825,6 @@ function createNavigationAgentFromOption(agent: DesktopPetAgentOption): Assistan
     hasPendingAwaiting: false,
     latestChatId: null,
     latestPreview: "",
-    updatedAt: "",
     recentChats: []
   };
 }

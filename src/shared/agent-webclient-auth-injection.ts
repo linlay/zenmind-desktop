@@ -26,8 +26,15 @@ export function buildAgentWebclientAccessTokenInjectionScript(
 
     function writeToken(nextToken) {
       const normalizedToken = typeof nextToken === "string" ? nextToken.trim() : "";
+      if (desktopAuthContext) {
+        window.__AGENT_APP_AUTH_CONTEXT = desktopAuthContext;
+      }
       try {
         if (desktopAuthContext) {
+          const storedAuthContext = window.sessionStorage.getItem(authContextStorageKey) || "";
+          if (storedAuthContext !== desktopAuthContext) {
+            window.sessionStorage.removeItem(accessTokenStorageKey);
+          }
           window.sessionStorage.setItem(authContextStorageKey, desktopAuthContext);
         }
         if (normalizedToken) {
@@ -78,7 +85,8 @@ export function buildAgentWebclientAccessTokenInjectionScript(
         data: {
           type: authResponseType,
           requestId: String(value.requestId),
-          token: window[fallbackTokenKey] || null
+          token: window[fallbackTokenKey] || null,
+          desktopAuthContext: window.__AGENT_APP_AUTH_CONTEXT || desktopAuthContext || undefined
         },
         origin: location.origin,
         source: window

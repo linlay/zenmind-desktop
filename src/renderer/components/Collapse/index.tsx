@@ -5,10 +5,16 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { Popover } from "../Popover";
 import "./index.css";
 
 type CollapseHeaderButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
   Partial<Record<`data-${string}`, string | undefined>>;
+
+type CollapseHeaderPopover = Pick<
+  React.ComponentProps<typeof Popover>,
+  "content" | "placement" | "className" | "hoverEnterDelay" | "hoverLeaveDelay"
+>;
 
 export interface CollapseProps {
   className?: string;
@@ -18,6 +24,7 @@ export interface CollapseProps {
   headerActions?: React.ReactNode;
   headerButtonProps?: CollapseHeaderButtonProps;
   headerButtonRef?: React.Ref<HTMLButtonElement>;
+  headerPopover?: CollapseHeaderPopover;
   children: React.ReactNode;
 }
 
@@ -29,6 +36,7 @@ export const Collapse: React.FC<CollapseProps> = ({
   headerActions,
   headerButtonProps,
   headerButtonRef,
+  headerPopover,
   children,
 }) => {
   const contentId = useId();
@@ -67,6 +75,27 @@ export const Collapse: React.FC<CollapseProps> = ({
     ...restHeaderButtonProps
   } = headerButtonProps ?? {};
 
+  const headerButton = (
+    <button
+      {...restHeaderButtonProps}
+      ref={headerButtonRef}
+      type="button"
+      className={["Collapse-trigger", headerButtonClassName]
+        .filter(Boolean)
+        .join(" ")}
+      aria-expanded={expanded}
+      aria-controls={contentId}
+      onClick={(event) => {
+        onHeaderButtonClick?.(event);
+        if (!event.defaultPrevented) {
+          handleToggle();
+        }
+      }}
+    >
+      {header}
+    </button>
+  );
+
   return (
     <div
       className={["Collapse", expanded ? "is-expanded" : "", className]
@@ -74,24 +103,15 @@ export const Collapse: React.FC<CollapseProps> = ({
         .join(" ")}
     >
       <div className="Collapse-header">
-        <button
-          {...restHeaderButtonProps}
-          ref={headerButtonRef}
-          type="button"
-          className={["Collapse-trigger", headerButtonClassName]
-            .filter(Boolean)
-            .join(" ")}
-          aria-expanded={expanded}
-          aria-controls={contentId}
-          onClick={(event) => {
-            onHeaderButtonClick?.(event);
-            if (!event.defaultPrevented) {
-              handleToggle();
-            }
-          }}
-        >
-          {header}
-        </button>
+        {headerPopover ? (
+          <Popover
+            trigger="hover"
+            closeOnOutsideClick={false}
+            {...headerPopover}
+          >
+            {headerButton}
+          </Popover>
+        ) : headerButton}
         {headerActions ? (
           <div className="Collapse-headerActions">{headerActions}</div>
         ) : null}

@@ -59,6 +59,7 @@ loadBuiltinServices()
 - `sync:assets` 只同步 `manifest.json.kind === "builtin"` 的产物。
 - `dev` 和 `dist:mac` 不扫描周边服务项目；它们只校验当前 `build/resources/services`。刷新内置服务资源请先运行 `scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64`，或显式运行 `npm run sync:assets`。
 - 新增内置服务必须保证 bundle 内的 `runtime.requiredPaths` 完整。
+- `agent-platform` 额外执行 sidecar 硬门禁：Darwin/Linux 必须同时声明并携带 `bin/kbase-lance-engine`，Windows 必须同时声明并携带 `bin/kbase-lance-engine.exe`；即使上游 manifest 漏写该路径，`sync:assets` 也会拒绝不完整产物。
 - macOS 内置二进制如需预签名，使用 Darwin signing 相关环境变量和 `--sign-darwin`；`--use-existing --sign-darwin` 只处理 `build/resources/services` 中已有的 Darwin 目录资源，并刷新资源 manifest 的 `assetSignature`。
 - `agent-container-hub` 是 install-only startup service；核心必需资源校验当前主要覆盖 `identity-center`、`agent-platform`、`agent-webclient`。
 

@@ -33,6 +33,28 @@ test("plugin page does not sync API resource navigations back into the embedded 
   assert.match(navigationHandlerBlock, /sendPluginRouteToWebview\(resolvedUrl, "navigation"\)/);
 });
 
+test("agent chat mirrors its URL without receiving route bridge messages", () => {
+  const pluginPage = readPluginPageSource();
+  const routeDeliveryBlock = pluginPage.slice(
+    pluginPage.indexOf("function sendPluginRouteToWebview"),
+    pluginPage.indexOf("function requestDirectWebviewRouteLoad"),
+  );
+  const contextBridgeStart = pluginPage.lastIndexOf(
+    "useEffect(() => {",
+    pluginPage.indexOf("const postDesktopContextChanged"),
+  );
+  const contextBridgeBlock = pluginPage.slice(
+    contextBridgeStart,
+    pluginPage.indexOf("useEffect(() => {", contextBridgeStart + 1),
+  );
+
+  assert.match(pluginPage, /function isAgentWebclientChatSurface/);
+  assert.match(pluginPage, /function resolveAgentWebclientChatRouteFromUrl/);
+  assert.match(routeDeliveryBlock, /if \(isAgentWebclientChatSurface\(service\?\.id, surfaceId\)\) \{\s*return;/);
+  assert.match(contextBridgeBlock, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)/);
+  assert.doesNotMatch(pluginPage, /ChatRouteMessage/);
+});
+
 test("plugin page reports webview breadcrumbs for post-crash diagnosis", () => {
   const pluginPage = readPluginPageSource();
 

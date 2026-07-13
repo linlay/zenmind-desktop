@@ -11,6 +11,9 @@ const {
   applyDesktopInitBootstrap,
   resolveDesktopInitPath
 } = require("../dist-electron/main/desktop-init-bootstrap.js");
+const {
+  getAssistantSettingsFromRoot
+} = require("../dist-electron/main/assistant/core/settings-store.js");
 
 const { registerServicesIpcHandlers } = require("../dist-electron/main/ipc/services-handlers.js");
 const { getArchiveExtensions } = require("../dist-electron/main/platform-adapter.js");
@@ -70,6 +73,20 @@ test("archive import filters follow internal service package platform formats", 
   assert.deepEqual(getArchiveExtensions("win32"), ["zip"]);
 });
 
+test("assistant settings keep bootstrapChatId optional for legacy environments", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-assistant-settings-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "assistant.json"), JSON.stringify({
+    schemaVersion: 1,
+    defaultChatAgentKey: "zenmi",
+    bootstrapAgentKey: "bootstrap"
+  }), "utf8");
+
+  const settings = getAssistantSettingsFromRoot(root);
+  assert.equal(settings.bootstrapAgentKey, "bootstrap");
+  assert.equal(settings.bootstrapChatId, "");
+});
+
 test("desktop-init bootstrap applies into canonical desktop files and rereads explicit init", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -91,8 +108,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
       }
     },
     assistant: {
-      defaultAgentKey: "desktopAssistant",
-      bootstrapAgentKey: "zenmi"
+      defaultChatAgentKey: "zenmi",
+      bootstrapAgentKey: "zenmi",
+      bootstrapChatId: "00000000-0000-4000-8000-000000000001"
     },
     kanban: {
       enabled: false,
@@ -118,6 +136,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
         agentKey: "desktopAssistant"
       }
     ],
+    desktopActionBridge: {
+      port: 17988
+    },
     services: {
       "agent-container-hub": {
         defaultPort: 7909
@@ -185,6 +206,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const pet = readJson(path.join(desktop, "config", "desktop", "pet.json"));
   const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
+  const desktopActionBridge = readJson(path.join(desktop, "config", "desktop", "desktop-action-bridge.json"));
   const serviceLifecycleArgs = readJson(path.join(desktop, "config", "desktop", "service-lifecycle-args.json"));
   const servicePortDefaults = readJson(path.join(desktop, "config", "desktop", "service-port-defaults.json"));
   const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
@@ -196,8 +218,11 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
   assert.equal(profile.assistant.quick.enabled, true);
   assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
-  assert.equal(assistantConfig.defaultAgentKey, "desktopAssistant");
+  assert.equal(assistantConfig.defaultChatAgentKey, "zenmi");
   assert.equal(assistantConfig.bootstrapAgentKey, "zenmi");
+  assert.equal(assistantConfig.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
+  const publicAssistantSettings = getAssistantSettingsFromRoot(path.join(desktop, "config", "desktop"));
+  assert.equal(publicAssistantSettings.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
   assert.equal("desktopHelperAgentKey" in profile.assistant, false);
   assert.equal("quickAssistant" in profile.assistant, false);
   assert.equal("kanban" in profile.navigation, false);
@@ -217,6 +242,10 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");
   assert.equal(fs.existsSync(path.join(desktop, "config", "marketplace", "settings.json")), false);
   assert.equal(sso.enabled, true);
+  assert.deepEqual(desktopActionBridge, {
+    schemaVersion: 1,
+    port: 17988
+  });
   assert.deepEqual(serviceLifecycleArgs, {
     schemaVersion: 1,
     services: {
@@ -274,6 +303,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.tunnelHub, "absent");
   assert.equal(bootstrapState.appliedResult.webs, "applied");
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
+  assert.equal(bootstrapState.appliedResult.desktopActionBridge, "applied");
   assert.equal(bootstrapState.appliedResult.services, "applied");
   assert.deepEqual(bootstrapState.failedSections, []);
   assert.deepEqual(bootstrapState.errors, {});
@@ -297,6 +327,27 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profileAfterSecondRun.appearance.locale, "zh-CN");
   assert.equal(profileAfterSecondRun.general.desktopActionConfirmationEnabled, false);
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
+});
+
+test("desktop-init bootstrap canonicalizes the legacy Chat default agent field", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-chat-agent-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    assistant: {
+      defaultAgentKey: "zenmi",
+    },
+  });
+
+  applyDesktopInitBootstrap(app, "darwin");
+
+  const assistantConfig = readJson(
+    path.join(desktopRoot(homePath), "config", "desktop", "assistant.json"),
+  );
+  assert.equal(assistantConfig.defaultChatAgentKey, "zenmi");
+  assert.equal("defaultAgentKey" in assistantConfig, false);
 });
 
 test("desktop-init bootstrap ignores legacy desktop-default file names", (t) => {
@@ -660,8 +711,9 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
       }
     },
     assistant: {
-      defaultAgentKey: "cutej",
-      bootstrapAgentKey: "bootstrap"
+      defaultChatAgentKey: "cutej",
+      bootstrapAgentKey: "bootstrap",
+      bootstrapChatId: "00000000-0000-4000-8000-000000000001"
     },
     kanban: {
       enabled: false,
@@ -696,8 +748,9 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.deepEqual(profile.navigation.mainOrder, []);
   assert.deepEqual(profile.navigation.webOrder, []);
   assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "desktopAssistant");
-  assert.equal(assistantConfig.defaultAgentKey, "cutej");
+  assert.equal(assistantConfig.defaultChatAgentKey, "cutej");
   assert.equal(assistantConfig.bootstrapAgentKey, "bootstrap");
+  assert.equal(assistantConfig.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
   assert.equal(kanban.enabled, false);
   assert.equal(kanban.cloud.serverUrl, "https://kanban.example.test");
   assert.equal("selectedProjectId" in kanban.cloud, false);
@@ -783,6 +836,17 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   writeDesktopInit(app, "win32", {
+    desktopActionBridge: {
+      port: 17988,
+      platforms: {
+        darwin: {
+          port: 17989
+        },
+        win32: {
+          port: 17990
+        }
+      }
+    },
     services: {
       "identity-center": {
         defaultPort: 7906,
@@ -814,11 +878,17 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
   });
 
   const result = applyDesktopInitBootstrap(app, "win32");
+  const desktopActionBridge = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "desktop-action-bridge.json"));
   const serviceLifecycleArgs = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "service-lifecycle-args.json"));
   const servicePortDefaults = readJson(path.join(desktopRoot(homePath, "win32"), "config", "desktop", "service-port-defaults.json"));
 
   assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.desktopActionBridge, "applied");
   assert.equal(result.appliedResult.services, "applied");
+  assert.deepEqual(desktopActionBridge, {
+    schemaVersion: 1,
+    port: 17990
+  });
   assert.deepEqual(serviceLifecycleArgs, {
     schemaVersion: 1,
     services: {

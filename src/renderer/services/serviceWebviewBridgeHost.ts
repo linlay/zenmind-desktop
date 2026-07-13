@@ -27,6 +27,7 @@ import {
 export type ServiceWebviewBridgeHostContext = {
   serviceId?: string | null;
   bridgeProtocol?: PluginAuthBridgeProtocol | null;
+  desktopAuthContext?: string;
   sendBridgeMessageToWebview: (payload: ServiceWebviewBridgeMessage) => void;
   setBridgeError: (message: string) => void;
   logDebug?: (stage: string, message: string) => void;
@@ -77,10 +78,12 @@ export function handleServiceWebviewBridgeMessage(
     void window.electronAPI.agentAuth
       .issueAccessToken(payload.reason === "unauthorized" ? "unauthorized" : "missing")
       .then((result) => {
+        const desktopAuthContext = context.desktopAuthContext?.trim() ?? "";
         context.sendBridgeMessageToWebview({
           type: responseType,
           requestId: payload.requestId,
-          token: result.ok ? result.token : null
+          token: result.ok ? result.token : null,
+          ...(desktopAuthContext ? { desktopAuthContext } : {})
         });
         if (!result.ok) {
           context.setBridgeError(result.message);

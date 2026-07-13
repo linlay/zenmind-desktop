@@ -14,9 +14,9 @@ import {
   getPluginAuthBridgeProtocol,
 } from "../../../shared/auth-bridge";
 import { buildAgentWebclientAccessTokenInjectionScript } from "../../../shared/agent-webclient-auth-injection";
+import { resolveAgentWebclientWsSource } from "../../../shared/agent-webclient-routes";
 import { useI18n } from "../../i18n/useI18n";
 import {
-  AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
@@ -63,6 +63,7 @@ import {
   readFormFields,
 } from "../../copilot/page-context/webActions";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
+import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";
@@ -72,6 +73,7 @@ type PluginPageProps = {
   embedPath?: string;
   surfaceLabel?: string;
   skipContextRegistration?: boolean;
+  devToolsTarget?: "copilot";
   loadInitialEmbeddedUrlDirectly?: boolean;
   suppressInitialLoadingCopy?: boolean;
   onCurrentUrlChange?: (url: string) => void;
@@ -91,59 +93,10 @@ type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
 
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
-const AGENT_WEBCLIENT_SOURCE_FALLBACK = "agent-webclient";
 const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
-const AGENT_WEBCLIENT_SOURCE_COPILOT = "agent-webclient-copilot";
-const AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK = "agent-webclient-copilot-dock";
-const AGENT_WEBCLIENT_SOURCE_MANAGEMENT = "agent-webclient-management";
-const AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT = "agent-webclient-quick-copilot";
-const AGENT_WEBCLIENT_SOURCE_KANBAN_CHAT = "agent-webclient-kanban-chat";
-const DESKTOP_WS_SOURCE_AGENT_WEBCLIENT = "desktop-agent-webclient";
-const DESKTOP_WS_SOURCE_CHAT = "desktop-chat";
-const DESKTOP_WS_SOURCE_COPILOT = "desktop-copilot";
 
-function isCopilotEmbedPath(value: string) {
-  return value === "/copilot" || value.startsWith("/copilot/") || value.startsWith("/copilot?");
-}
-
-function resolveAgentWebclientWsSource(surfaceId: string, embedPath: string | undefined) {
-  const normalizedSurfaceId = surfaceId.trim();
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_KANBAN_CHAT) {
-    return DESKTOP_WS_SOURCE_CHAT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_CHAT) {
-    return DESKTOP_WS_SOURCE_CHAT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_FALLBACK) {
-    return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
-  }
-
-  const normalizedEmbedPath = (embedPath ?? "").trim();
-  if (normalizedEmbedPath.startsWith("/agent/")) {
-    return DESKTOP_WS_SOURCE_CHAT;
-  }
-  if (isCopilotEmbedPath(normalizedEmbedPath)) {
-    return DESKTOP_WS_SOURCE_COPILOT;
-  }
-  if (
-    normalizedEmbedPath === "/agents" ||
-    normalizedEmbedPath === "/archives" ||
-    normalizedEmbedPath === "/automations" ||
-    normalizedEmbedPath === "/memory" ||
-    normalizedEmbedPath === "/registries"
-  ) {
-    return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
-  }
-  return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
+function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
+  return serviceId === "agent-webclient" && surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT;
 }
 
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
@@ -317,45 +270,6 @@ function resolveAgentWebclientChatRouteFromUrl(value: string, webviewSrcUrl: str
   return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
 }
 
-function readAgentWebclientRouteAgentKey(route: string) {
-  const normalizedRoute = route.trim();
-  if (!normalizedRoute) {
-    return "";
-  }
-  const pathname = normalizedRoute.split("?")[0] || "";
-  const match = /^\/agent\/([^/?#]+)/u.exec(pathname);
-  return match?.[1] ? decodeURIComponent(match[1]).trim() : "";
-}
-
-function readAgentWebclientUrlAgentKey(value: string, webviewSrcUrl: string) {
-  const parsed = parseHttpUrl(value);
-  const src = parseHttpUrl(webviewSrcUrl);
-  if (!parsed || !src || parsed.origin !== src.origin) {
-    return "";
-  }
-  const match = /^\/agent\/([^/?#]+)/u.exec(parsed.pathname);
-  return match?.[1] ? decodeURIComponent(match[1]).trim() : "";
-}
-
-function createAgentWebclientChatRoute(agentKey: string, chatId: string) {
-  const normalizedAgentKey = agentKey.trim();
-  const normalizedChatId = chatId.trim();
-  if (!normalizedAgentKey || !normalizedChatId) {
-    return "";
-  }
-  const params = new URLSearchParams();
-  params.set("chatId", normalizedChatId);
-  return `/agent/${encodeURIComponent(normalizedAgentKey)}?${params.toString()}`;
-}
-
-function isAgentWebclientChatRouteSurface(surfaceId: string) {
-  return (
-    surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT ||
-    surfaceId === AGENT_WEBCLIENT_SOURCE_FALLBACK ||
-    surfaceId === AGENT_WEBCLIENT_SOURCE_MANAGEMENT
-  );
-}
-
 function buildPluginRouteChangedMessage(
   targetUrl: string,
   reason: "initial" | "navigation" | "route-sync",
@@ -465,6 +379,7 @@ export function PluginPage({
   embedPath,
   surfaceLabel,
   skipContextRegistration,
+  devToolsTarget,
   loadInitialEmbeddedUrlDirectly,
   suppressInitialLoadingCopy,
   onCurrentUrlChange,
@@ -500,6 +415,7 @@ export function PluginPage({
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
   const [webviewSnapshotNonce, setWebviewSnapshotNonce] = useState(0);
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
+  const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== "hidden");
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
@@ -517,6 +433,17 @@ export function PluginPage({
   useEffect(() => {
     return registerPluginSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
+
+  useEffect(() => {
+    const syncDocumentVisibility = () => {
+      setDocumentVisible(document.visibilityState !== "hidden");
+    };
+    syncDocumentVisibility();
+    document.addEventListener("visibilitychange", syncDocumentVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", syncDocumentVisibility);
+    };
+  }, []);
 
   const handleWebviewRef = useCallback((node: Electron.WebviewTag | null): void => {
     if (webviewRef.current === node) {
@@ -569,8 +496,6 @@ export function PluginPage({
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
-      desktopAuthContext:
-        service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       accessToken:
         service?.id === "agent-platform"
           ? agentPlatformMonitorAccessToken
@@ -589,7 +514,6 @@ export function PluginPage({
     service?.healthMeta.port,
     service?.id,
     webUrl,
-    webviewReloadKey,
     wsSource,
   ]);
   const webviewOriginSrcUrl = useMemo(
@@ -720,6 +644,52 @@ export function PluginPage({
       )
     );
   }
+
+  function publishCopilotDevToolsTarget() {
+    if (devToolsTarget !== "copilot") {
+      return;
+    }
+
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const isActive =
+      active !== false &&
+      documentVisible &&
+      service?.status === "running" &&
+      typeof webContentsId === "number";
+    const currentUrl = webviewCurrentUrl || readCurrentWebviewUrl();
+    void window.electronAPI.copilot.publishDevToolsTarget({
+      surfaceId,
+      active: isActive,
+      ...(typeof webContentsId === "number" ? { webContentsId } : {}),
+      ...(currentUrl ? { currentUrl } : {}),
+    }).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    publishCopilotDevToolsTarget();
+  }, [
+    active,
+    devToolsTarget,
+    documentVisible,
+    embeddedUrl,
+    service?.status,
+    surfaceId,
+    webviewCurrentUrl,
+    webviewSnapshotNonce,
+    webviewSrcUrl,
+  ]);
+
+  useEffect(() => {
+    if (devToolsTarget !== "copilot") {
+      return undefined;
+    }
+    return () => {
+      void window.electronAPI.copilot.publishDevToolsTarget({
+        surfaceId,
+        active: false,
+      }).catch(() => undefined);
+    };
+  }, [devToolsTarget, surfaceId]);
 
   async function executeWebviewScript(
     args: Record<string, unknown>,
@@ -990,6 +960,9 @@ export function PluginPage({
     targetUrl: string,
     reason: "initial" | "navigation" | "route-sync",
   ) {
+    if (isAgentWebclientChatSurface(service?.id, surfaceId)) {
+      return;
+    }
     const payload = buildPluginRouteChangedMessage(targetUrl, reason);
     if (!payload) {
       return;
@@ -1141,6 +1114,7 @@ export function PluginPage({
           type: bridgeProtocol.responseType,
           requestId: `agent_webclient_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           token,
+          desktopAuthContext: webviewReloadKey,
         });
         if (!result.ok) {
           setBridgeError(result.message);
@@ -1162,31 +1136,6 @@ export function PluginPage({
     );
   }
 
-  function handleAgentWebclientChatRouteMessage(
-    payload: ServiceWebviewBridgeMessage,
-  ) {
-    if (payload.type !== AGENT_WEBCLIENT_CHAT_ROUTE_REQUEST_TYPE) {
-      return false;
-    }
-    if (
-      service?.id !== "agent-webclient" ||
-      !isAgentWebclientChatRouteSurface(surfaceId)
-    ) {
-      return true;
-    }
-
-    const chatId = typeof payload.chatId === "string" ? payload.chatId.trim() : "";
-    const agentKey =
-      (typeof payload.agentKey === "string" ? payload.agentKey.trim() : "") ||
-      readAgentWebclientRouteAgentKey(currentRoute) ||
-      readAgentWebclientUrlAgentKey(readCurrentWebviewUrl(), webviewSrcUrl);
-    const nextChatRoute = createAgentWebclientChatRoute(agentKey, chatId);
-    if (nextChatRoute && nextChatRoute !== currentRoute) {
-      navigate(nextChatRoute, { replace: true });
-    }
-    return true;
-  }
-
   function handleWebviewBridgeMessage(event: Event) {
     const channel = readEventString(event, "channel");
     if (channel !== SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL) {
@@ -1199,13 +1148,11 @@ export function PluginPage({
       return;
     }
 
-    if (handleAgentWebclientChatRouteMessage(payload)) {
-      return;
-    }
-
     handleServiceWebviewBridgeMessage(payload, {
       serviceId: service?.id,
       bridgeProtocol,
+      desktopAuthContext:
+        service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       sendBridgeMessageToWebview,
       setBridgeError,
       logDebug: (stage, message) => {
@@ -1279,8 +1226,7 @@ export function PluginPage({
         : readCurrentWebviewUrl();
       updateWebviewCurrentUrl(resolvedUrl);
       if (
-        service?.id === "agent-webclient" &&
-        surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT
+        isAgentWebclientChatSurface(service?.id, surfaceId)
       ) {
         const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
           resolvedUrl,
@@ -1431,7 +1377,12 @@ export function PluginPage({
   }, [active, service?.id, service?.status, webviewReloadKey]);
 
   useEffect(() => {
-    if (service?.id !== "agent-webclient" || active === false || !embeddedUrl) {
+    if (
+      service?.id !== "agent-webclient" ||
+      isAgentWebclientChatSurface(service?.id, surfaceId) ||
+      active === false ||
+      !embeddedUrl
+    ) {
       return undefined;
     }
 
@@ -1451,7 +1402,7 @@ export function PluginPage({
     return () => {
       unsubscribe();
     };
-  }, [active, embeddedUrl, service?.id, webviewRenderKey]);
+  }, [active, embeddedUrl, service?.id, surfaceId, webviewRenderKey]);
 
   useEffect(() => {
     if (
@@ -1740,6 +1691,7 @@ export function PluginPage({
         </button>
       )}
       <div className="embedded-surface-frame-shell">
+        <WebviewDebugOverlay url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl} />
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>
             {webviewLoadError ? (

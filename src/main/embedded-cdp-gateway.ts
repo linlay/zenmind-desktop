@@ -7,6 +7,12 @@ import {
   EMBEDDED_CDP_GATEWAY_PORT
 } from "../shared/embedded-cdp";
 import { PRODUCT_NAME } from "../shared/brand";
+import {
+  DESKTOP_CDP_TARGET_TIMEOUT_CODE,
+  isDesktopCdpTimeoutError,
+  readDesktopCdpErrorDetails,
+  sendDesktopCdpCommand
+} from "./desktop-cdp-debugger";
 
 export type EmbeddedCdpSurface = {
   id: string;
@@ -30,6 +36,8 @@ type EmbeddedCdpGatewayOptions = {
   activateSurface?: (surface: EmbeddedCdpSurface) => Promise<void>;
   openUrl?: (url: string) => Promise<void>;
   version?: string;
+  commandTimeoutMs?: number;
+  logger?: Pick<Console, "debug" | "warn">;
 };
 
 type CdpCommand = {
@@ -161,6 +169,15 @@ function ensureHttpUrl(value: unknown) {
   try {
     const parsed = new URL(raw);
     return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function readWebContentsString(contents: WebContents, key: "getTitle" | "getURL") {
+  try {
+    const reader = (contents as unknown as Record<string, unknown>)[key];
+    return typeof reader === "function" ? String(reader.call(contents) || "") : "";
   } catch {
     return "";
   }
@@ -530,6 +547,14 @@ export class EmbeddedCdpGateway {
       const result = await this.handleWebContentsCommand(connection, targetId, surface, method, command.params ?? {});
       connection.sendJSON({ id, result });
     } catch (error) {
+      if (isDesktopCdpTimeoutError(error)) {
+        this.releaseConnection(connection);
+        connection.sendJSON(cdpError(id, -32000, error.message, {
+          code: DESKTOP_CDP_TARGET_TIMEOUT_CODE,
+          details: readDesktopCdpErrorDetails(error)
+        }));
+        return;
+      }
       connection.sendJSON(cdpError(
         id,
         -32000,
@@ -554,7 +579,7 @@ export class EmbeddedCdpGateway {
       return {};
     }
     const session = this.ensureDebuggerSession(connection, targetId, contents);
-    return session.debuggerRef.sendCommand(method, params);
+    return sendDesktopCdpCommand(session.debuggerRef, method, params, this.buildCommandDebugContext(surface, targetId, contents));
   }
 
   private async handleWebContentsCommandOnce(
@@ -576,7 +601,7 @@ export class EmbeddedCdpGateway {
       debuggerRef.attach(DEFAULT_PROTOCOL_VERSION);
     }
     try {
-      return await debuggerRef.sendCommand(method, params);
+      return await sendDesktopCdpCommand(debuggerRef, method, params, this.buildCommandDebugContext(surface, stableTargetId(surface), contents));
     } finally {
       if (ownsAttach && debuggerRef.isAttached()) {
         try {
@@ -586,6 +611,22 @@ export class EmbeddedCdpGateway {
         }
       }
     }
+  }
+
+  private buildCommandDebugContext(
+    surface: EmbeddedCdpSurface,
+    targetId: string,
+    contents: WebContents
+  ) {
+    return {
+      targetId,
+      surfaceId: surface.id,
+      webContentsId: contents.id,
+      url: readWebContentsString(contents, "getURL") || surface.currentUrl || surface.url,
+      title: readWebContentsString(contents, "getTitle") || surface.title || surface.label,
+      timeoutMs: this.options.commandTimeoutMs,
+      logger: this.options.logger
+    };
   }
 
   private async ensureWebContents(surface: EmbeddedCdpSurface) {

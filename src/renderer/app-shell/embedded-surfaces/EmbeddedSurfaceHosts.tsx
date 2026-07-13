@@ -210,6 +210,7 @@ export function WebSurfaceHost({
   activeEntryKey,
   itemMap,
   mountedEntryKeys,
+  onWebsiteFaviconDiscovered,
   assistantDockOpen,
   onOpenAssistantDock,
   onCloseAssistantDock
@@ -217,6 +218,11 @@ export function WebSurfaceHost({
   activeEntryKey: string | null;
   itemMap: Map<string, EmbeddedSidebarItem>;
   mountedEntryKeys: string[];
+  onWebsiteFaviconDiscovered?: (
+    entryKey: string,
+    websiteUrl: string,
+    faviconUrl: string,
+  ) => void;
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
@@ -252,6 +258,8 @@ export function WebSurfaceHost({
           );
         }
 
+        const isWebsite = item.kind === "website";
+
         return (
           <ExternalWebviewPage
             key={entryKey}
@@ -262,6 +270,12 @@ export function WebSurfaceHost({
             url={item.url}
             chrome={item.chrome}
             partition={resolveWebsiteSsoPartition(item)}
+            onFaviconDiscovered={
+              isWebsite && onWebsiteFaviconDiscovered
+                ? (faviconUrl: string) =>
+                    onWebsiteFaviconDiscovered(entryKey, item.url, faviconUrl)
+                : undefined
+            }
             assistantDockOpen={assistantDockOpen}
             onOpenAssistantDock={onOpenAssistantDock}
             onCloseAssistantDock={onCloseAssistantDock}

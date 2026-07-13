@@ -1,5 +1,6 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, AssistantNavAgentIcon, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
+import { readEpochMillis } from "../../../shared/time-contract";
 import {
   DESKTOP_PET_STATUS_HINT_TEXTS,
   sanitizeDesktopPetUnreadCount,
@@ -76,6 +77,15 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS = new Set([
   "zen",
   DEFAULT_DESKTOP_PET_AGENT_DISPLAY_NAME
 ]);
+const STRUCTURED_PUSH_TIME_FIELDS = [
+  "createdAt",
+  "updatedAt",
+  "startedAt",
+  "completedAt",
+  "timestamp",
+  "expiresAt",
+  "readAt",
+] as const;
 
 function readUnreadCountFromPush(
   data: Record<string, unknown>,
@@ -98,22 +108,7 @@ function readUnreadCountFromPush(
 }
 
 function toTimestampMs(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return 0;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 0;
-  }
-  const numeric = Number(trimmed);
-  if (Number.isFinite(numeric)) {
-    return numeric;
-  }
-  const parsed = Date.parse(trimmed);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return readEpochMillis(value);
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -143,8 +138,8 @@ function getWebSocketConstructor(): MinimalWebSocketConstructor | null {
 }
 
 function compareChatFreshness(a: ChatSummary, b: ChatSummary) {
-  const updatedA = toTimestampMs(a.updatedAt);
-  const updatedB = toTimestampMs(b.updatedAt);
+  const updatedA = toTimestampMs(a.updatedAt) ?? 0;
+  const updatedB = toTimestampMs(b.updatedAt) ?? 0;
   if (updatedA !== updatedB) {
     return updatedB - updatedA;
   }
@@ -307,6 +302,26 @@ function readFrameData(frame: AgentPlatformPetPushFrame): Record<string, unknown
   return {};
 }
 
+function readFrameTimestamp(frame: AgentPlatformPetPushFrame) {
+  return readEpochMillis(readFrameData(frame).timestamp);
+}
+
+function hasValidPresentFrameTimes(frame: AgentPlatformPetPushFrame) {
+  const data = readFrameData(frame);
+  return STRUCTURED_PUSH_TIME_FIELDS.every((field) =>
+    data[field] === undefined || readEpochMillis(data[field]) !== undefined
+  );
+}
+
+function requiresFrameTimestamp(frameType: string) {
+  return frameType === "chat.read_all" ||
+    frameType === "chat.read" ||
+    frameType === "chat.unread" ||
+    frameType === "chat.updated" ||
+    frameType === "run.started" ||
+    frameType === "run.finished";
+}
+
 function readFrameAgentKey(data: Record<string, unknown>) {
   const nestedChat = isObjectRecord(data.chat) ? data.chat : {};
   const nestedRun = isObjectRecord(data.run) ? data.run : {};
@@ -364,11 +379,13 @@ export function buildAgentPlatformPetStatus(input: {
   boundAgentKey?: string;
   agents: unknown;
   chats: unknown;
-  updatedAt?: string;
+  updatedAt?: number;
 }): DesktopPetBoundAgentStatus {
   const agents = toArray(input.agents) as AgentSummary[];
   const requestedBoundAgentKey = input.boundAgentKey ? normalizeDesktopPetBoundAgentKey(input.boundAgentKey) : "";
-  const allChats = (toArray(input.chats) as ChatSummary[]).sort(compareChatFreshness);
+  const allChats = (toArray(input.chats) as ChatSummary[])
+    .filter((chat) => readEpochMillis(chat.updatedAt) !== undefined)
+    .sort(compareChatFreshness);
   const resolved = requestedBoundAgentKey
     ? resolveAgentPlatformPetBoundAgentKey(requestedBoundAgentKey, agents)
     : null;
@@ -384,7 +401,8 @@ export function buildAgentPlatformPetStatus(input: {
     ? allChats.filter((chat) => toText(chat.agentKey) === boundAgentKey)
     : allChats;
   const matchedAgent = resolved?.agent || findAgentByKey(agents, boundAgentKey);
-  const updatedAt = input.updatedAt ?? new Date().toISOString();
+  const updatedAt = readEpochMillis(input.updatedAt) ??
+    readEpochMillis(latestChat?.updatedAt);
 
   if (!matchedAgent) {
     return {
@@ -397,7 +415,7 @@ export function buildAgentPlatformPetStatus(input: {
       chatId: null,
       hasPendingAwaiting: false,
       stale: false,
-      updatedAt
+      ...(updatedAt === undefined ? {} : { updatedAt })
     };
   }
 
@@ -417,7 +435,7 @@ export function buildAgentPlatformPetStatus(input: {
     chatId: toText(relevantChat?.chatId) || null,
     hasPendingAwaiting,
     stale: false,
-    updatedAt
+    ...(updatedAt === undefined ? {} : { updatedAt })
   };
 }
 
@@ -428,6 +446,10 @@ export function applyAgentPlatformPetPush(
 ): DesktopPetBoundAgentStatus | null {
   const frameType = toText(frame.type);
   const data = readFrameData(frame);
+  const timestamp = readFrameTimestamp(frame);
+  if (timestamp === undefined) {
+    return current;
+  }
   const eventAgentKey = readFrameAgentKey(data);
   const configuredBoundAgentKey = normalizeDesktopPetBoundAgentKey(boundAgentKey);
   const normalizedBoundAgentKey = current?.agentKey || configuredBoundAgentKey || eventAgentKey;
@@ -445,7 +467,7 @@ export function applyAgentPlatformPetPush(
       unreadCount: 0,
       presence: current?.presence ?? "available",
       stale: false,
-      updatedAt: new Date().toISOString()
+      updatedAt: timestamp
     };
   }
 
@@ -465,7 +487,7 @@ export function applyAgentPlatformPetPush(
       ),
       presence: currentPresence === "busy" || currentPresence === "away" ? currentPresence : "available",
       stale: false,
-      updatedAt: new Date().toISOString()
+      updatedAt: timestamp
     };
   }
 
@@ -487,7 +509,7 @@ export function applyAgentPlatformPetPush(
       latestPreview,
       hasPendingAwaiting: false,
       stale: false,
-      updatedAt: new Date().toISOString()
+      updatedAt: timestamp
     };
   }
 
@@ -503,7 +525,7 @@ export function applyAgentPlatformPetPush(
       unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
       latestPreview: t("desktopPet.status.thinking"),
       stale: false,
-      updatedAt: new Date().toISOString()
+      updatedAt: timestamp
     };
   }
 
@@ -523,7 +545,7 @@ export function applyAgentPlatformPetPush(
       unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
       latestPreview: readCompletionPreview(data, current?.latestPreview),
       stale: false,
-      updatedAt: new Date().toISOString()
+      updatedAt: timestamp
     };
   }
 
@@ -542,6 +564,10 @@ export function applyAgentPlatformCompletionReminder(
     return current;
   }
   const data = readFrameData(frame);
+  const timestamp = readFrameTimestamp(frame);
+  if (timestamp === undefined) {
+    return current;
+  }
   const eventAgentKey = readFrameAgentKey(data);
   const configuredBoundAgentKey = normalizeDesktopPetBoundAgentKey(boundAgentKey);
   const normalizedBoundAgentKey = current?.agentKey || configuredBoundAgentKey || eventAgentKey;
@@ -570,7 +596,7 @@ export function applyAgentPlatformCompletionReminder(
     latestPreview: readCompletionPreview(data, current?.latestPreview),
     hasPendingAwaiting: false,
     stale: false,
-    updatedAt: new Date(now).toISOString()
+    updatedAt: timestamp
   };
 }
 
@@ -591,8 +617,8 @@ export class AgentPlatformPetStatusClient {
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
     onStatus: (status: DesktopPetBoundAgentStatus | null) => void;
     onAgents?: (agents: DesktopPetAgentOption[]) => void;
-    onRunStarted?: (input: { runId: string; chatId: string | null; agentKey: string }) => void;
-    onRunFinished?: (input: { runId: string; chatId: string | null; agentKey: string; message: string }) => void;
+    onRunStarted?: (input: { runId: string; chatId: string | null; agentKey: string; timestamp: number }) => void;
+    onRunFinished?: (input: { runId: string; chatId: string | null; agentKey: string; message: string; timestamp: number }) => void;
     onDebug?: (message: string) => void;
   }) {}
 
@@ -679,8 +705,7 @@ export class AgentPlatformPetStatusClient {
       this.setStatus({
         ...this.latestStatus,
         stale: true,
-        presence: "offline",
-        updatedAt: new Date().toISOString()
+        presence: "offline"
       });
     }, AGENT_PLATFORM_STATUS_STALE_MS);
   }
@@ -727,6 +752,12 @@ export class AgentPlatformPetStatusClient {
       return;
     }
     const frameType = toText(frame.type);
+    if (!hasValidPresentFrameTimes(frame) ||
+      (requiresFrameTimestamp(frameType) && readFrameTimestamp(frame) === undefined)) {
+      this.options.onDebug?.(`time_contract_violation: pet push ${frameType} requires epoch_ms_int64 timestamp`);
+      this.scheduleRefresh();
+      return;
+    }
     const frameData = readFrameData(frame);
     const currentBoundAgentKey = this.latestStatus?.agentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
     let nextStatus = applyAgentPlatformPetPush(this.latestStatus, currentBoundAgentKey, frame);
@@ -738,11 +769,13 @@ export class AgentPlatformPetStatusClient {
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
       const matchedAgentKey = nextStatus?.agentKey || eventAgentKey;
-      if (runId && eventAgentKey && (!matchedAgentKey || eventAgentKey === matchedAgentKey)) {
+      const timestamp = readFrameTimestamp(frame);
+      if (timestamp !== undefined && runId && eventAgentKey && (!matchedAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunStarted?.({
           runId,
           chatId: chatId || null,
-          agentKey: eventAgentKey
+          agentKey: eventAgentKey,
+          timestamp
         });
       }
     } else if (frameType === "run.finished") {
@@ -753,12 +786,14 @@ export class AgentPlatformPetStatusClient {
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
       const matchedAgentKey = eventAgentKey || nextStatus?.agentKey || currentBoundAgentKey;
-      if ((runId || chatId) && (!eventAgentKey || eventAgentKey === matchedAgentKey)) {
+      const timestamp = readFrameTimestamp(frame);
+      if (timestamp !== undefined && (runId || chatId) && (!eventAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunFinished?.({
           runId,
           chatId: chatId || null,
           agentKey: matchedAgentKey,
-          message: readCompletionPreview(frameData, nextStatus?.latestPreview)
+          message: readCompletionPreview(frameData, nextStatus?.latestPreview),
+          timestamp
         });
       }
     } else if (frameType === "chat.read" || frameType === "chat.unread") {

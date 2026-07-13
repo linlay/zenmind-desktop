@@ -428,10 +428,10 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   border: 1px solid var(--market-control-border);
   border-radius: 6px;
   background: var(--surface-soft);
@@ -442,14 +442,14 @@
 
 .market-import-progress-close:hover,
 .market-import-progress-close:focus-visible {
-  border-color: rgba(0, 82, 217, 0.24);
-  background: var(--accent-soft);
-  color: var(--market-control-blue);
+  border-color: var(--market-control-border);
+  background: color-mix(in srgb, var(--market-control-muted) 12%, transparent);
+  color: var(--market-control-text);
 }
 
 .market-import-progress-close svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   stroke: currentColor;
   fill: none;
   stroke-width: 2;
@@ -922,16 +922,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
-  min-height: 30px;
-  max-width: 30px;
-  max-height: 30px;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  max-width: 24px;
+  max-height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 3px;
+  border-radius: 6px;
   background: #f8fafc;
   color: var(--market-control-muted);
   cursor: pointer;
@@ -943,8 +943,8 @@
 
 .market-image-action-button svg {
   display: block;
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.85;
@@ -954,8 +954,8 @@
 
 .market-image-action-button:hover:not(:disabled),
 .market-image-action-button:focus-visible {
-  background: #f2f6ff;
-  color: var(--market-control-blue);
+  background: color-mix(in srgb, var(--market-control-muted) 12%, transparent);
+  color: var(--market-control-text);
   outline: none;
 }
 
@@ -976,8 +976,8 @@
 
 :root[data-theme="dark"] .market-image-action-button:hover:not(:disabled),
 :root[data-theme="dark"] .market-image-action-button:focus-visible {
-  background: rgba(87, 144, 255, 0.14);
-  color: #9ec1ff;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--market-control-text);
 }
 
 :root[data-theme="dark"] .market-image-action-button.is-danger {
@@ -1133,8 +1133,8 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--market-control-border);
   border-radius: 6px;
@@ -1144,8 +1144,8 @@
 }
 
 .market-image-detail-close svg {
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.9;
@@ -1155,9 +1155,9 @@
 
 .market-image-detail-close:hover,
 .market-image-detail-close:focus-visible {
-  border-color: var(--market-control-blue);
-  color: var(--market-control-blue);
-  background: var(--accent-soft);
+  border-color: var(--market-control-border);
+  color: var(--market-control-text);
+  background: color-mix(in srgb, var(--market-control-muted) 12%, transparent);
   outline: none;
 }
 
@@ -1207,6 +1207,13 @@
 :root[data-theme="dark"] .market-image-detail-close {
   border-color: var(--line);
   background: var(--surface-soft);
+}
+
+:root[data-theme="dark"] .market-image-detail-close:hover,
+:root[data-theme="dark"] .market-image-detail-close:focus-visible {
+  border-color: var(--market-control-border);
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--market-control-text);
 }
 
 .market-empty-state {

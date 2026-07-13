@@ -24,6 +24,11 @@ import {
   registerDesktopActionProviderForScope
 } from "../../services/desktopActionRegistry";
 import { SidebarActionIcon } from "../../components/BrandMark";
+import {
+  Favicon,
+  normalizeFaviconUrl,
+} from "../../components/Favicon";
+import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
 import { useI18n } from "../../i18n/useI18n";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
@@ -49,6 +54,7 @@ type ExternalWebviewPageProps = {
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
+  onFaviconDiscovered?: (faviconUrl: string) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -106,7 +112,6 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
 })()`;
 
 const BLANK_EXTERNAL_WEBVIEW_URL = "about:blank";
-const SAFE_DATA_IMAGE_PATTERN = /^data:image\/(?:png|jpe?g|gif|webp|bmp|x-icon|vnd\.microsoft\.icon);/iu;
 
 type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
@@ -115,6 +120,7 @@ type ExternalWebviewPaneProps = {
   surfaceLabel?: string;
   onTabStateChange: (tabId: string, patch: ExternalWebviewTabPatch) => void;
   onWebviewRefChange: (tabId: string, webview: Electron.WebviewTag | null) => void;
+  onFaviconDiscovered?: (faviconUrl: string) => void;
 };
 
 function getFallbackTabTitle(defaultTitle: string, url: string) {
@@ -168,12 +174,6 @@ function shouldRefreshWebviewAfterDesktopSso(value: string) {
   }
 }
 
-function getTabMonogram(title: string, url: string) {
-  const source = title.trim() || getUrlDisplayLabel(url);
-  const match = source.match(/[A-Za-z0-9\u4e00-\u9fa5]/u);
-  return match ? match[0].toUpperCase() : "·";
-}
-
 function readEventString(event: Event, key: string) {
   const candidate = (event as unknown as Record<string, unknown>)[key];
   return typeof candidate === "string" ? candidate : "";
@@ -186,31 +186,6 @@ function getUrlDisplayLabel(url: string) {
     return `${parsedUrl.hostname}${pathname}` || url;
   } catch {
     return url;
-  }
-}
-
-function normalizeFaviconUrl(inputUrl: unknown, baseUrl?: string | null) {
-  if (typeof inputUrl !== "string") {
-    return null;
-  }
-
-  const trimmedUrl = inputUrl.trim();
-  if (!trimmedUrl) {
-    return null;
-  }
-
-  if (SAFE_DATA_IMAGE_PATTERN.test(trimmedUrl)) {
-    return trimmedUrl;
-  }
-
-  try {
-    const parsedUrl = baseUrl ? new URL(trimmedUrl, baseUrl) : new URL(trimmedUrl);
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return null;
-    }
-    return parsedUrl.toString();
-  } catch {
-    return null;
   }
 }
 
@@ -285,42 +260,6 @@ function CloseIcon() {
   );
 }
 
-type SiteIconProps = {
-  title: string;
-  url: string;
-  faviconUrl?: string;
-  className: string;
-};
-
-function SiteIcon({ title, url, faviconUrl, className }: SiteIconProps) {
-  const normalizedFaviconUrl = normalizeFaviconUrl(faviconUrl, url);
-  const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
-  const shouldShowFavicon = normalizedFaviconUrl && failedFaviconUrl !== normalizedFaviconUrl;
-
-  useEffect(() => {
-    setFailedFaviconUrl(null);
-  }, [normalizedFaviconUrl]);
-
-  if (shouldShowFavicon) {
-    return (
-      <span className={`${className} has-image`} aria-hidden="true">
-        <img
-          src={normalizedFaviconUrl}
-          alt=""
-          draggable={false}
-          onError={() => setFailedFaviconUrl(normalizedFaviconUrl)}
-        />
-      </span>
-    );
-  }
-
-  return (
-    <span className={className} aria-hidden="true">
-      {getTabMonogram(title, url)}
-    </span>
-  );
-}
-
 function getEditableAddressInputValue(value: string) {
   return value === BLANK_EXTERNAL_WEBVIEW_URL ? "" : value;
 }
@@ -331,7 +270,8 @@ function ExternalWebviewPane({
   surfaceId,
   surfaceLabel,
   onTabStateChange,
-  onWebviewRefChange
+  onWebviewRefChange,
+  onFaviconDiscovered
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const initialSrcRef = useRef(tab.currentUrl);
@@ -419,6 +359,7 @@ function ExternalWebviewPane({
       const nextFaviconUrl = pickFirstSafeFaviconUrl(favicons, webview.getURL() || tab.currentUrl);
       if (nextFaviconUrl) {
         syncFromWebview({ faviconUrl: nextFaviconUrl });
+        onFaviconDiscovered?.(nextFaviconUrl);
       }
     };
 
@@ -461,6 +402,7 @@ function ExternalWebviewPane({
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
       })}
+      <WebviewDebugOverlay url={tab.currentUrl} />
     </div>
   );
 }
@@ -475,7 +417,8 @@ export function ExternalWebviewPage({
   partition,
   assistantDockOpen = false,
   onOpenAssistantDock,
-  onCloseAssistantDock
+  onCloseAssistantDock,
+  onFaviconDiscovered
 }: ExternalWebviewPageProps) {
   const { t } = useI18n();
   const location = useLocation();
@@ -485,6 +428,8 @@ export function ExternalWebviewPage({
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
   const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
+  const faviconReportedRef = useRef(false);
+  const initialFaviconTabIdRef = useRef("");
   const surfaceClassName = [
     "embedded-surface-page external-webview-page",
     appChrome ? "" : "has-browser-chrome",
@@ -519,6 +464,7 @@ export function ExternalWebviewPage({
 
   const createInitialBrowserState = () => {
     const initialTab = createTab(url, title);
+    initialFaviconTabIdRef.current = initialTab.id;
     return {
       tabs: [initialTab],
       activeTabId: initialTab.id
@@ -562,6 +508,7 @@ export function ExternalWebviewPage({
     }
     surfaceKeyRef.current = nextSurfaceKey;
     webviewRefs.current.clear();
+    faviconReportedRef.current = false;
     setBrowserState(createInitialBrowserState());
     setAddressInputValue(url);
     setAddressInputUnlocked(false);
@@ -1563,7 +1510,7 @@ export function ExternalWebviewPage({
                         <span className="external-webview-tab-favicon-spinner" />
                       </span>
                     ) : (
-                      <SiteIcon
+                      <Favicon
                         className="external-webview-tab-favicon"
                         title={tab.title}
                         url={tab.currentUrl}
@@ -1697,6 +1644,17 @@ export function ExternalWebviewPage({
               }
               webviewRefs.current.delete(tabId);
             }}
+            onFaviconDiscovered={
+              onFaviconDiscovered && tab.id === initialFaviconTabIdRef.current
+                ? (faviconUrl: string) => {
+                    if (faviconReportedRef.current) {
+                      return;
+                    }
+                    faviconReportedRef.current = true;
+                    onFaviconDiscovered(faviconUrl);
+                  }
+                : undefined
+            }
           />
         ))}
       </div>

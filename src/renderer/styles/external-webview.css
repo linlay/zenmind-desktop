@@ -329,10 +329,10 @@
 
 .external-webview-tab-close {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   margin-right: 6px;
-  border-radius: 999px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -347,9 +347,9 @@
 
 .external-webview-tab-add {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -374,9 +374,9 @@
 }
 
 .external-webview-toolbar-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -388,9 +388,9 @@
 
 .external-webview-copilot-button {
   flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -514,6 +514,37 @@
 
 .external-webview-panel[hidden] {
   display: none;
+}
+
+.webview-debug-url-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 9998;
+  max-width: calc(100% - 24px);
+  padding: 3px 6px;
+  border: 1px solid rgba(100, 116, 139, 0.22);
+  border-radius: 4px;
+  background: rgba(248, 250, 252, 0.68);
+  color: rgba(51, 65, 85, 0.72);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.embedded-surface-page .webview-debug-url-overlay {
+  left: 52px;
+  max-width: calc(100% - 64px);
+}
+
+:root[data-theme="dark"] .webview-debug-url-overlay {
+  border-color: rgba(203, 213, 225, 0.2);
+  background: rgba(15, 23, 42, 0.62);
+  color: rgba(226, 232, 240, 0.74);
 }
 
 .external-webview-frame {

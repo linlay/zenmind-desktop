@@ -73,6 +73,8 @@ npm test
 | --- | --- | --- |
 | macOS | `Cmd + Option + I` | 打开或关闭 DevTools |
 | Windows | `Ctrl + Shift + I` | 打开或关闭 DevTools |
+| macOS | `Cmd + Shift + D` | 打开 Copilot 或当前 webview 的 DevTools |
+| Windows | `Ctrl + Shift + D` | 打开 Copilot 或当前 webview 的 DevTools |
 
 ## 6. 专题文档索引
 

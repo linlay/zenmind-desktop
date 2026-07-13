@@ -83,8 +83,8 @@
 .log-viewer-control-button {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -99,6 +99,12 @@
 .log-viewer-control-button:hover {
   background: var(--desktop-ui-card-soft);
   color: var(--desktop-ui-text);
+}
+
+.log-viewer-control-button svg,
+.log-viewer-scroll-jump svg {
+  width: 16px;
+  height: 16px;
 }
 
 .log-viewer-control-button.close:hover {
@@ -183,12 +189,12 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 32px;
-  height: 28px;
-  min-height: 28px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
   padding: 0;
   border: 1px solid var(--desktop-ui-border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--desktop-ui-card);
   color: var(--desktop-ui-muted);
   cursor: pointer;
@@ -197,19 +203,24 @@
 }
 
 .log-viewer-find-trigger .anticon {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .log-viewer-follow-toggle svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
-.log-viewer-find-trigger:hover:not(:disabled),
 .log-viewer-find-trigger.is-active {
   border-color: rgba(var(--desktop-ui-success-rgb), 0.24);
   background: rgba(var(--desktop-ui-success-rgb), 0.1);
   color: var(--desktop-ui-success);
+}
+
+.log-viewer-find-trigger:hover:not(:disabled):not(.is-active) {
+  border-color: var(--desktop-ui-border);
+  background: var(--desktop-ui-card-soft);
+  color: var(--desktop-ui-text);
 }
 
 .log-viewer-follow-toggle:hover:not(:disabled) {
@@ -306,22 +317,22 @@
 .log-viewer-find-close {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--desktop-ui-muted);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 800;
   cursor: pointer;
 }
 
 .log-viewer-find-nav:hover:not(:disabled),
 .log-viewer-find-close:hover {
-  border-color: rgba(var(--desktop-ui-primary-rgb), 0.16);
-  background: rgba(var(--desktop-ui-primary-rgb), 0.08);
-  color: var(--desktop-ui-primary);
+  border-color: var(--desktop-ui-border);
+  background: var(--desktop-ui-card-soft);
+  color: var(--desktop-ui-text);
 }
 
 .log-viewer-find-nav:disabled {
@@ -342,14 +353,14 @@
   z-index: 3;
   display: inline-grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid rgba(var(--desktop-ui-primary-rgb), 0.2);
-  border-radius: 50%;
-  background: var(--desktop-ui-primary);
-  color: #ffffff;
-  box-shadow: 0 10px 26px rgba(var(--desktop-ui-primary-rgb), 0.24);
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: 6px;
+  background: var(--desktop-ui-card);
+  color: var(--desktop-ui-muted);
+  box-shadow: none;
   cursor: pointer;
   app-region: no-drag;
   -webkit-app-region: no-drag;
@@ -364,7 +375,8 @@
 }
 
 .log-viewer-scroll-jump:hover {
-  background: var(--desktop-ui-primary-strong);
+  background: var(--desktop-ui-card-soft);
+  color: var(--desktop-ui-text);
 }
 
 .log-viewer-pagination {

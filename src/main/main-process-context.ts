@@ -9,6 +9,9 @@ export interface MainProcessContext {
   shell: unknown;
   session: unknown;
   nativeTheme: unknown;
+  webContents?: {
+    fromId: (id: number) => any;
+  };
 }
 
 export function createMainProcessContext(options: MainProcessContext): MainProcessContext {
@@ -139,6 +142,11 @@ export function createAssistantIpcHandlerOptions(
     setCurrentPageSnapshot: (snapshot: unknown) => {
       context.state.currentPageSnapshot = snapshot as any;
     },
+    getCopilotDevToolsTarget: () => context.state.copilotDevToolsTarget,
+    setCopilotDevToolsTarget: (target: unknown) => {
+      context.state.copilotDevToolsTarget = target as any;
+    },
+    getWebContentsById: (id: number) => context.webContents?.fromId(id),
     reportRendererDiagnostic: dependencies.reportRendererDiagnostic
   };
 }

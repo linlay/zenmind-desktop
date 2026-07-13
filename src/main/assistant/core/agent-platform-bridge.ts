@@ -35,6 +35,7 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
+import { readEpochMillis, requireEpochMillis } from "../../../shared/time-contract";
 import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
 import { DesktopPetSseParser } from "../pet/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
@@ -47,6 +48,15 @@ import { resolveRuntimeRoot } from "../../env-bootstrap";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
+const STRUCTURED_PLATFORM_TIME_FIELDS = [
+  "createdAt",
+  "updatedAt",
+  "startedAt",
+  "completedAt",
+  "timestamp",
+  "expiresAt",
+  "readAt",
+] as const;
 const DEFAULT_MEMORY_SETTINGS: AssistantMemorySettings = {
   enabled: true,
   autoLearn: true,
@@ -109,6 +119,8 @@ type PlatformRunSummary = {
 type PlatformChatDetail = {
   chatId?: string;
   chatName?: string;
+  createdAt?: number;
+  updatedAt?: number;
   events?: Array<Record<string, unknown>>;
   runs?: PlatformRunSummary[];
 };
@@ -146,7 +158,7 @@ type PlatformMemoryRecord = {
   accessCount?: number;
   createdAt?: number;
   updatedAt?: number;
-  lastAccessedAt?: number | null;
+  lastAccessedAt?: number;
 };
 
 type PlatformMemoryRecordsResponse = {
@@ -170,10 +182,6 @@ type PlatformAgentSummary = {
   };
   chats?: unknown;
 };
-
-function nowIso() {
-  return new Date().toISOString();
-}
 
 function createChatId() {
   return `chat_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
@@ -205,7 +213,7 @@ function readAwaitingMode(value: unknown): AssistantAwaitingMode | undefined {
   return mode === "approval" ||
     mode === "question" ||
     mode === "form" ||
-    mode === "plan"
+    mode === "planning"
     ? mode
     : undefined;
 }
@@ -256,12 +264,14 @@ function isPendingAwaitingPayload(value: unknown): boolean {
     isPendingAwaitingPayload(record.awaiting);
 }
 
-function timestampToIso(value: unknown) {
-  const numberValue = readNumber(value);
-  if (numberValue > 0) {
-    return new Date(numberValue).toISOString();
-  }
-  return nowIso();
+function readRequiredPlatformTimestamp(value: unknown, field: string) {
+  return requireEpochMillis(value, field);
+}
+
+function hasValidPresentPlatformTimes(record: Record<string, unknown>) {
+  return STRUCTURED_PLATFORM_TIME_FIELDS.every((field) =>
+    record[field] === undefined || readEpochMillis(record[field]) !== undefined
+  );
 }
 
 function readErrorCode(value: unknown) {
@@ -528,19 +538,27 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
   if (!type) {
     return null;
   }
+  if (!hasValidPresentPlatformTimes(raw)) {
+    return null;
+  }
+  const timestamp = readEpochMillis(raw.timestamp);
+  if (timestamp === undefined) {
+    return null;
+  }
   const runId = readString(raw.runId) || fallback.runId;
   const chatId = readString(raw.chatId) || fallback.chatId;
   const errorText = readErrorPayloadText(raw.error);
   const outputText = readOutputTextFromRecord(raw);
   const message = outputText || readString(raw.message) || readString(raw.msg) || errorText;
   const delta = readString(raw.delta) || (type === "content.delta" ? outputText || readString(raw.message) : "");
+  const awaitingMode = readAwaitingMode(raw.mode);
   const event: AssistantEvent = {
     ...(typeof raw.id === "string" ? { id: raw.id } : {}),
     ...(typeof raw.seq === "number" ? { seq: raw.seq } : {}),
     runId,
     chatId,
     type: isPlatformEventType(type) ? type : "content.delta",
-    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : timestampToIso(raw.timestamp),
+    createdAt: timestamp,
     ...(fallback.source ? { source: fallback.source } : {}),
     ...(typeof raw.status === "string" ? { status: raw.status as AssistantEvent["status"] } : {}),
     ...(delta ? { delta } : {}),
@@ -551,12 +569,12 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
     ...(typeof raw.target === "string" ? { target: raw.target } : {}),
     ...(errorText ? { error: errorText } : {}),
     ...(typeof raw.awaitingId === "string" ? { awaitingId: raw.awaitingId } : {}),
-    ...(typeof raw.mode === "string" ? { mode: raw.mode as AssistantAwaitingMode } : {}),
+    ...(awaitingMode ? { mode: awaitingMode } : {}),
     ...(typeof raw.viewportType === "string" ? { viewportType: raw.viewportType } : {}),
     ...(typeof raw.viewportKey === "string" ? { viewportKey: raw.viewportKey } : {}),
     ...(typeof raw.timeout === "number" || raw.timeout === null ? { timeout: raw.timeout } : {}),
     ...(typeof raw.timeoutMs === "number" ? { timeoutMs: raw.timeoutMs } : {}),
-    ...(typeof raw.timestamp === "number" ? { timestamp: raw.timestamp } : {}),
+    timestamp,
     ...(Array.isArray(raw.questions) ? { questions: raw.questions as AssistantEvent["questions"] } : {}),
     ...(Array.isArray(raw.approvals) ? { approvals: raw.approvals as AssistantEvent["approvals"] } : {}),
     ...(Array.isArray(raw.forms) ? { forms: raw.forms as AssistantEvent["forms"] } : {}),
@@ -581,13 +599,18 @@ function isAssistantRunTerminalEvent(event: AssistantEvent) {
     event.type === "run.expired";
 }
 
-function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary {
+function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary | null {
   const id = readString(summary.chatId);
+  const createdAt = readEpochMillis(summary.createdAt);
+  const updatedAt = readEpochMillis(summary.updatedAt);
+  if (!id || createdAt === undefined || updatedAt === undefined) {
+    return null;
+  }
   return {
     id,
     title: readString(summary.chatName) || t("assistant.newChat"),
-    createdAt: timestampToIso(summary.createdAt),
-    updatedAt: timestampToIso(summary.updatedAt || summary.createdAt),
+    createdAt,
+    updatedAt,
     lastMessage: readString(summary.lastRunContent),
     messageCount: 0
   };
@@ -605,6 +628,10 @@ function mapChatSearchResult(value: unknown): AssistantChatSearchResult | null {
   const agentKey = readString(record.agentKey).trim();
   const runId = readString(record.runId).trim();
   const role = readString(record.role).trim();
+  const timestamp = readEpochMillis(record.timestamp);
+  if (timestamp === undefined) {
+    return null;
+  }
   return {
     chatId,
     chatName: readString(record.chatName),
@@ -612,7 +639,7 @@ function mapChatSearchResult(value: unknown): AssistantChatSearchResult | null {
     ...(runId ? { runId } : {}),
     kind: readString(record.kind),
     ...(role ? { role } : {}),
-    timestamp: readNumber(record.timestamp),
+    timestamp,
     snippet: readString(record.snippet),
     score: readNumber(record.score)
   };
@@ -671,12 +698,14 @@ function readChatAwaitingMode(summary: PlatformChatSummary) {
 }
 
 function compareChatUpdatedAt(left: PlatformChatSummary, right: PlatformChatSummary) {
-  return readNumber(right.updatedAt || right.createdAt) - readNumber(left.updatedAt || left.createdAt);
+  return (readEpochMillis(right.updatedAt) ?? readEpochMillis(right.createdAt) ?? 0) -
+    (readEpochMillis(left.updatedAt) ?? readEpochMillis(left.createdAt) ?? 0);
 }
 
 function createNavigationAgentItem(agent: DesktopPetAgentOption, chats: PlatformChatSummary[]): AssistantNavAgentItem {
   const sortedChats = [...chats].sort(compareChatUpdatedAt);
   const latestChat = sortedChats[0] ?? null;
+  const latestUpdatedAt = latestChat ? readEpochMillis(latestChat.updatedAt) : undefined;
   const latestPreview = latestChat
     ? (readString(latestChat.lastRunContent) || readString(latestChat.chatName)).replace(/\s+/gu, " ").trim()
     : "";
@@ -692,15 +721,20 @@ function createNavigationAgentItem(agent: DesktopPetAgentOption, chats: Platform
     hasPendingAwaiting: sortedChats.some(chatHasPendingAwaiting),
     latestChatId: latestChat ? readString(latestChat.chatId) || null : null,
     latestPreview: latestPreview.slice(0, 120),
-    updatedAt: latestChat ? timestampToIso(latestChat.updatedAt || latestChat.createdAt) : nowIso(),
+    ...(latestUpdatedAt !== undefined
+      ? { updatedAt: latestUpdatedAt }
+      : {}),
     recentChats: []
   };
 }
 
 function mapRunMessages(run: PlatformRunSummary): AssistantChatMessage[] {
   const runId = readString(run.runId) || createRunId();
-  const createdAt = timestampToIso(run.startedAt);
-  const completedAt = timestampToIso(run.completedAt || run.startedAt);
+  const createdAt = readEpochMillis(run.startedAt);
+  const completedAt = readEpochMillis(run.completedAt);
+  if (createdAt === undefined) {
+    return [];
+  }
   const messages: AssistantChatMessage[] = [];
   const userContent = readString(run.initialMessage).trim();
   if (userContent) {
@@ -713,7 +747,7 @@ function mapRunMessages(run: PlatformRunSummary): AssistantChatMessage[] {
     });
   }
   const assistantContent = readString(run.assistantText).trim();
-  if (assistantContent) {
+  if (assistantContent && completedAt !== undefined) {
     messages.push({
       id: createMessageId("assistant", runId),
       role: "assistant",
@@ -725,9 +759,17 @@ function mapRunMessages(run: PlatformRunSummary): AssistantChatMessage[] {
   return messages;
 }
 
-function mapMemoryRecord(record: PlatformMemoryRecord): AssistantMemoryItem {
+function mapMemoryRecord(record: PlatformMemoryRecord): AssistantMemoryItem | null {
   const kind = record.kind === "observation" ? "observation" : "fact";
   const status = record.status === "archived" || record.status === "open" ? record.status : "active";
+  const createdAt = readEpochMillis(record.createdAt);
+  const updatedAt = readEpochMillis(record.updatedAt);
+  const lastReferencedAt = record.lastAccessedAt === undefined
+    ? undefined
+    : readEpochMillis(record.lastAccessedAt);
+  if (createdAt === undefined || updatedAt === undefined || (record.lastAccessedAt !== undefined && lastReferencedAt === undefined)) {
+    return null;
+  }
   return {
     id: readString(record.id),
     kind,
@@ -744,9 +786,9 @@ function mapMemoryRecord(record: PlatformMemoryRecord): AssistantMemoryItem {
     sourceChatId: readString(record.sourceChatId || record.chatId),
     sourceRunId: readString(record.sourceRunId || record.runId),
     referenceCount: readNumber(record.accessCount),
-    createdAt: timestampToIso(record.createdAt),
-    updatedAt: timestampToIso(record.updatedAt || record.createdAt),
-    ...(record.lastAccessedAt ? { lastReferencedAt: timestampToIso(record.lastAccessedAt) } : {})
+    createdAt,
+    updatedAt,
+    ...(lastReferencedAt === undefined ? {} : { lastReferencedAt })
   };
 }
 
@@ -798,7 +840,7 @@ export class AgentPlatformAssistantBridge {
   async startRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> {
     const message = request.message.trim();
     const chatId = request.chatId?.trim() || createChatId();
-    const runId = createRunId();
+    const runId = request.runId?.trim() || createRunId();
     if (!message) {
       return {
         ok: false,
@@ -817,6 +859,16 @@ export class AgentPlatformAssistantBridge {
       };
     }
     const controller = new AbortController();
+    if (this.activeRuns.has(runId)) {
+      return {
+        ok: true,
+        runId,
+        chatId,
+        message: t("agentPlatform.runSubmitted"),
+        permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
+        fullAccessRemainingMs: 0
+      };
+    }
     this.activeRuns.set(runId, controller);
     this.acquireWakeLockForActiveRuns();
     void this.runQuery(availability.baseUrl, availability.token, request, { chatId, runId, controller });
@@ -826,7 +878,6 @@ export class AgentPlatformAssistantBridge {
       chatId,
       message: t("agentPlatform.runSubmitted"),
       permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
-      fullAccessExpiresAt: null,
       fullAccessRemainingMs: 0
     };
   }
@@ -893,14 +944,14 @@ export class AgentPlatformAssistantBridge {
         ok: false,
         items: [],
         message: availability.message,
-        updatedAt: nowIso()
+        updatedAt: Date.now()
       };
     }
     return {
       ok: true,
       items: await readAssistantNavigationAgentsFromPlatform(availability.baseUrl, availability.token),
       message: t("assistant.navigationStatusRead"),
-      updatedAt: nowIso()
+      updatedAt: Date.now()
     };
   }
 
@@ -911,20 +962,22 @@ export class AgentPlatformAssistantBridge {
         ok: false,
         items: [],
         message: availability.message,
-        updatedAt: nowIso()
+        updatedAt: Date.now()
       };
     }
     return {
       ok: true,
       items: await readAssistantCopilotAgentsFromPlatform(availability.baseUrl, availability.token),
       message: t("assistant.copilotAgentsRead"),
-      updatedAt: nowIso()
+      updatedAt: Date.now()
     };
   }
 
   async listChats(): Promise<AssistantChatSummary[]> {
     const data = await this.getJson<PlatformChatSummary[]>("/api/chats");
-    return Array.isArray(data) ? data.map(mapChatSummary) : [];
+    return Array.isArray(data)
+      ? data.map(mapChatSummary).filter((summary): summary is AssistantChatSummary => summary !== null)
+      : [];
   }
 
   async getChat(chatId: string): Promise<AssistantChatDetail | null> {
@@ -948,8 +1001,8 @@ export class AgentPlatformAssistantBridge {
       summary: {
         id: readString(data.chatId) || trimmedChatId,
         title: readString(data.chatName) || t("assistant.newChat"),
-        createdAt: messages[0]?.createdAt ?? nowIso(),
-        updatedAt: messages[messages.length - 1]?.createdAt ?? nowIso(),
+        createdAt: readRequiredPlatformTimestamp(data.createdAt, "chat.createdAt"),
+        updatedAt: readRequiredPlatformTimestamp(data.updatedAt, "chat.updatedAt"),
         lastMessage: messages[messages.length - 1]?.content ?? "",
         messageCount: messages.length
       },
@@ -1172,7 +1225,7 @@ export class AgentPlatformAssistantBridge {
             operation: readString(recentHistory.operation),
             status: "ok",
             reason: readString(recentHistory.reason),
-            timestamp: timestampToIso(recentHistory.ts)
+            timestamp: readRequiredPlatformTimestamp(recentHistory.ts, "memory.history.ts")
           }
         : null
     };
@@ -1184,8 +1237,10 @@ export class AgentPlatformAssistantBridge {
     stats: AssistantMemoryStats;
     storage: AssistantMemoryStorage;
   }> {
-    const data = await this.getJson<PlatformMemoryRecordsResponse>("/api/memory/records?limit=200");
-    const items = Array.isArray(data.results) ? data.results.map(mapMemoryRecord) : [];
+    const data = await this.getJson<PlatformMemoryRecordsResponse>("/api/memory/record/list?limit=200");
+    const items = Array.isArray(data.results)
+      ? data.results.map(mapMemoryRecord).filter((item): item is AssistantMemoryItem => item !== null)
+      : [];
     return {
       items,
       settings: DEFAULT_MEMORY_SETTINGS,
@@ -1232,6 +1287,7 @@ export class AgentPlatformAssistantBridge {
         method: "POST",
         headers: this.jsonHeaders(token, { Accept: "text/event-stream" }),
         body: JSON.stringify({
+          requestId: request.requestId?.trim() || run.runId,
           runId: run.runId,
           chatId: run.chatId,
           agentKey: request.agentKey?.trim() || undefined,
@@ -1263,25 +1319,8 @@ export class AgentPlatformAssistantBridge {
         chatId: run.chatId,
         source: request.source
       });
-      const finalMessage = streamResult.finalMessage || await this.readPersistedFinalAssistantMessage(run.chatId, run.runId);
       if (!streamResult.sawTerminalEvent) {
-        this.options.onEvent({
-          runId: run.runId,
-          chatId: run.chatId,
-          type: "run.complete",
-          createdAt: nowIso(),
-          ...(finalMessage ? { message: finalMessage } : {}),
-          ...(request.source ? { source: request.source } : {})
-        });
-      } else if (!streamResult.terminalMessageEmitted && finalMessage) {
-        this.options.onEvent({
-          runId: run.runId,
-          chatId: run.chatId,
-          type: "run.complete",
-          createdAt: nowIso(),
-          message: finalMessage,
-          ...(request.source ? { source: request.source } : {})
-        });
+        throw new Error("time_contract_violation: stream ended before a timestamped terminal event");
       }
     } catch (error) {
       if ((error as Error).name === "AbortError") {
@@ -1289,7 +1328,7 @@ export class AgentPlatformAssistantBridge {
           runId: run.runId,
           chatId: run.chatId,
           type: "stopped",
-          createdAt: nowIso(),
+          createdAt: Date.now(),
           message: t("assistant.stopped")
         });
         return;
@@ -1299,7 +1338,7 @@ export class AgentPlatformAssistantBridge {
         runId: run.runId,
         chatId: run.chatId,
         type: "error",
-        createdAt: nowIso(),
+        createdAt: Date.now(),
         message,
         error: message
       });
@@ -1330,13 +1369,10 @@ export class AgentPlatformAssistantBridge {
         const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
         const result = done ? parser.finish() : parser.push(chunk);
         for (const event of result.events) {
-          const normalizedEvent = normalizePlatformEvent(event.raw, fallback) ?? {
-            runId: fallback.runId,
-            chatId: fallback.chatId,
-            type: "content.delta",
-            createdAt: nowIso(),
-            delta: event.delta || event.text || event.content || ""
-          };
+          const normalizedEvent = normalizePlatformEvent(event.raw, fallback);
+          if (!normalizedEvent) {
+            throw new Error("time_contract_violation: stream event requires epoch_ms_int64 timestamp");
+          }
           const eventText = readAssistantEventOutputText(normalizedEvent);
           const delta = normalizedEvent.type === "content.delta" ? normalizedEvent.delta || eventText : "";
           if (delta) {
@@ -1502,13 +1538,13 @@ export class AgentPlatformAssistantBridge {
   }
 
   private createMemoryStats(items: AssistantMemoryItem[]): AssistantMemoryStats {
-    const lastLearnedAt = items.reduce<string | null>((latest, item) => {
+    const lastLearnedAt = items.reduce<number | null>((latest, item) => {
       if (!latest || item.createdAt > latest) {
         return item.createdAt;
       }
       return latest;
     }, null);
-    const lastReferencedAt = items.reduce<string | null>((latest, item) => {
+    const lastReferencedAt = items.reduce<number | null>((latest, item) => {
       if (item.lastReferencedAt && (!latest || item.lastReferencedAt > latest)) {
         return item.lastReferencedAt;
       }
@@ -1525,7 +1561,7 @@ export class AgentPlatformAssistantBridge {
 
   private createPlatformMemoryStorage(): AssistantMemoryStorage {
     return {
-      recordsPath: "agent-platform:/api/memory/records",
+      recordsPath: "agent-platform:/api/memory/record/list",
       staticPath: "agent-platform:/api/memory/scope",
       auditPath: "agent-platform:/api/memory/history",
       directoryPath: ""

@@ -185,7 +185,7 @@ export type DesktopPetBoundAgentStatus = {
   chatId: string | null;
   hasPendingAwaiting: boolean;
   stale: boolean;
-  updatedAt: string;
+  updatedAt?: number;
 };
 
 type DisplayArea = Pick<Rectangle, "x" | "y" | "width" | "height">;
@@ -371,7 +371,7 @@ function toDesktopPetStateFile(state: DesktopPetStoredState) {
   return {
     schemaVersion: DESKTOP_PET_SCHEMA_VERSION,
     unreadCount: state.unreadCount,
-    updatedAt: new Date().toISOString()
+    updatedAt: Date.now()
   };
 }
 
@@ -952,7 +952,7 @@ export function createDesktopPetState(
     dragDirection: normalizeDesktopPetDragDirection(options.dragDirection),
     dragMoved: Boolean(options.dragMoved),
     signature,
-    updatedAt: new Date().toISOString()
+    updatedAt: Date.now()
   };
 }
 

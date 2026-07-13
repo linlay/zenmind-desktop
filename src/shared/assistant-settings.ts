@@ -1,4 +1,5 @@
 export const DEFAULT_DESKTOP_HELPER_AGENT_KEY = "desktopAssistant";
+export const DEFAULT_CHAT_DEFAULT_AGENT_KEY = "";
 export const DEFAULT_QUICK_ASSISTANT_ENABLED = true;
 export const DEFAULT_QUICK_ASSISTANT_AGENT_KEY = DEFAULT_DESKTOP_HELPER_AGENT_KEY;
 export const DEFAULT_QUICK_ASSISTANT_SHORTCUT = "Alt+Space";
@@ -8,7 +9,8 @@ export const DESKTOP_COPILOT_PAGE_KEYS = [
   "market",
   "help",
   "agents",
-  "schedules"
+  "schedules",
+  "skills"
 ] as const;
 
 export type DesktopCopilotPageKey = typeof DESKTOP_COPILOT_PAGE_KEYS[number];

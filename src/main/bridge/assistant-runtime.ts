@@ -1,5 +1,5 @@
 import type { App, BrowserWindow } from "electron";
-import type { AssistantEvent, AssistantNavAgentItemsResult, DesktopWsServerStartOptions } from "../../shared/contracts";
+import type { AssistantEvent, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, DesktopWsServerStartOptions } from "../../shared/contracts";
 import { AgentPlatformAssistantBridge } from "../assistant/core/agent-platform-bridge";
 import { AssistantNavigationStatusClient } from "../assistant/core/assistant-navigation-status-client";
 import { callDesktopActionConfirmation, callDesktopActionRenderer } from "../desktop-action-renderer";
@@ -33,6 +33,7 @@ export type AssistantBridgeRuntimeOptions = {
   listKanbanLocalAgents: () => any[];
   emitKanbanChanged: () => void;
   emitAssistantNavigationAgentsChanged: (result: AssistantNavAgentItemsResult) => void;
+  emitAssistantNavigationPushEvent: (event: AssistantNavigationPushEvent) => void;
   handleDesktopPetAssistantEvent: (event: AssistantEvent) => void;
   desktopPet: {
     refreshState: (...args: any[]) => unknown;
@@ -112,7 +113,10 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       getServiceState: options.getResponsiveServiceState,
       issueAccessToken: options.issueAgentAccessToken,
       onSnapshot: options.emitAssistantNavigationAgentsChanged,
-      onPushEvent: (event) => state.kanbanRuntime?.sendAssistantEvent(event),
+      onPushEvent: (event) => {
+        state.kanbanRuntime?.sendAssistantEvent(event);
+        options.emitAssistantNavigationPushEvent(event);
+      },
       onDebug: (message) => {
         options.logger.warn(`[assistant-navigation] status unavailable: ${message}`);
       }
@@ -120,10 +124,14 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     state.assistantNavigationStatusClient.start();
   }
 
-  function configureRemoteRuntimes() {
+  function refreshDesktopActionBridge() {
     startDesktopActionBridge({
       ...desktopActionOptions
     });
+  }
+
+  function configureRemoteRuntimes() {
+    refreshDesktopActionBridge();
     configureTunnelHubRegistrationController({
       logger: console
     });
@@ -178,6 +186,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     },
     startDesktopWsServerForSettings,
     stopDesktopWsServerForSettings,
+    refreshDesktopActionBridge,
     stop() {
       void options.cdpIntegration.stop();
       stopDesktopActionBridge();

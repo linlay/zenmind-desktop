@@ -28,6 +28,10 @@ type PopoverPlacement =
 type PopoverChildProps = {
   onClick?: React.MouseEventHandler<HTMLElement>;
   onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
+  onMouseEnter?: React.MouseEventHandler<HTMLElement>;
+  onMouseLeave?: React.MouseEventHandler<HTMLElement>;
+  onFocus?: React.FocusEventHandler<HTMLElement>;
+  onBlur?: React.FocusEventHandler<HTMLElement>;
   "aria-controls"?: string;
   "aria-expanded"?: boolean;
   "aria-haspopup"?: React.AriaAttributes["aria-haspopup"];
@@ -49,6 +53,9 @@ interface PopoverProps {
   disabled?: boolean;
   closeOnOutsideClick?: boolean;
   closeOnEscape?: boolean;
+  trigger?: "click" | "hover";
+  hoverEnterDelay?: number;
+  hoverLeaveDelay?: number;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -64,6 +71,9 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     disabled = false,
     closeOnOutsideClick = true,
     closeOnEscape = true,
+    trigger: triggerMode = "click",
+    hoverEnterDelay = 180,
+    hoverLeaveDelay = 100,
     className,
     style,
   } = props;
@@ -71,6 +81,8 @@ export const Popover: React.FC<PopoverProps> = (props) => {
   const triggerRef = useRef<HTMLElement | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<number>();
+  const hoverOpenTimerRef = useRef<number>();
+  const hoverCloseTimerRef = useRef<number>();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const [position, setPosition] = useState<React.CSSProperties>({
     left: 0,
@@ -81,7 +93,8 @@ export const Popover: React.FC<PopoverProps> = (props) => {
   const isOpen = isControlled ? open : uncontrolledOpen;
   const hasContent =
     content !== null && content !== undefined && content !== false;
-  const shouldRenderDismissLayer = closeOnOutsideClick && isOpen && hasContent;
+  const shouldRenderDismissLayer =
+    triggerMode === "click" && closeOnOutsideClick && isOpen && hasContent;
 
   const setTriggerRef = useCallback(
     (node: HTMLElement | null) => {
@@ -110,6 +123,33 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     },
     [disabled, hasContent, isControlled, onOpenChange],
   );
+
+  const clearHoverTimers = useCallback(() => {
+    window.clearTimeout(hoverOpenTimerRef.current);
+    window.clearTimeout(hoverCloseTimerRef.current);
+  }, []);
+
+  const openFromHover = useCallback((delay = hoverEnterDelay) => {
+    if (triggerMode !== "hover") {
+      return;
+    }
+    window.clearTimeout(hoverCloseTimerRef.current);
+    window.clearTimeout(hoverOpenTimerRef.current);
+    hoverOpenTimerRef.current = window.setTimeout(() => {
+      setOpen(true);
+    }, delay);
+  }, [hoverEnterDelay, setOpen, triggerMode]);
+
+  const closeFromHover = useCallback(() => {
+    if (triggerMode !== "hover") {
+      return;
+    }
+    window.clearTimeout(hoverOpenTimerRef.current);
+    window.clearTimeout(hoverCloseTimerRef.current);
+    hoverCloseTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+    }, hoverLeaveDelay);
+  }, [hoverLeaveDelay, setOpen, triggerMode]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -270,8 +310,9 @@ export const Popover: React.FC<PopoverProps> = (props) => {
   useEffect(() => {
     return () => {
       window.cancelAnimationFrame(frameRef.current ?? 0);
+      clearHoverTimers();
     };
-  }, []);
+  }, [clearHoverTimers]);
 
   if (!isValidElement(children)) {
     return <>{children}</>;
@@ -279,14 +320,20 @@ export const Popover: React.FC<PopoverProps> = (props) => {
 
   const trigger = cloneElement<PopoverCloneProps>(children, {
     ref: setTriggerRef,
-    "aria-controls": isOpen ? popoverId : undefined,
-    "aria-expanded": isOpen,
-    "aria-haspopup": "dialog",
+    "aria-controls": triggerMode === "click"
+      ? isOpen ? popoverId : undefined
+      : children.props["aria-controls"],
+    "aria-expanded": triggerMode === "click"
+      ? isOpen
+      : children.props["aria-expanded"],
+    "aria-haspopup": triggerMode === "click"
+      ? "dialog"
+      : children.props["aria-haspopup"],
     tabIndex: children.props.tabIndex ?? 0,
     onClick: (event: React.MouseEvent<HTMLElement>) => {
       children.props.onClick?.(event);
 
-      if (!event.defaultPrevented) {
+      if (triggerMode === "click" && !event.defaultPrevented) {
         setOpen(!isOpen);
       }
     },
@@ -297,10 +344,32 @@ export const Popover: React.FC<PopoverProps> = (props) => {
         return;
       }
 
-      if (event.key === "Enter" || event.key === " ") {
+      if (
+        triggerMode === "click" &&
+        (event.key === "Enter" || event.key === " ")
+      ) {
         event.preventDefault();
         setOpen(!isOpen);
       }
+    },
+    onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
+      children.props.onMouseEnter?.(event);
+      openFromHover();
+    },
+    onMouseLeave: (event: React.MouseEvent<HTMLElement>) => {
+      children.props.onMouseLeave?.(event);
+      closeFromHover();
+    },
+    onFocus: (event: React.FocusEvent<HTMLElement>) => {
+      children.props.onFocus?.(event);
+      if (triggerMode === "hover") {
+        clearHoverTimers();
+        setOpen(true);
+      }
+    },
+    onBlur: (event: React.FocusEvent<HTMLElement>) => {
+      children.props.onBlur?.(event);
+      closeFromHover();
     },
   });
 
@@ -318,6 +387,18 @@ export const Popover: React.FC<PopoverProps> = (props) => {
                 ref={popoverRef}
                 className={`${Style.Popover} ${className || ""}`}
                 onClick={(event) => event.stopPropagation()}
+                onMouseEnter={() => {
+                  if (triggerMode === "hover") {
+                    clearHoverTimers();
+                  }
+                }}
+                onMouseLeave={closeFromHover}
+                onFocusCapture={() => {
+                  if (triggerMode === "hover") {
+                    clearHoverTimers();
+                  }
+                }}
+                onBlurCapture={closeFromHover}
                 role="dialog"
                 style={{ ...position, ...style }}
               >

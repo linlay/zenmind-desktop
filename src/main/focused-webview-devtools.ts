@@ -11,6 +11,10 @@ type WebContentsLookup = {
   getFocusedWebContents: () => FocusedWebviewDevToolsContents | null | undefined;
 };
 
+type PreferredWebviewDevToolsTarget = {
+  webContentsId?: number;
+} | null | undefined;
+
 function isLiveWebviewContents(
   contents: FocusedWebviewDevToolsContents | null | undefined
 ): contents is FocusedWebviewDevToolsContents {
@@ -37,10 +41,19 @@ export function openFocusedWebviewDevTools(
 }
 
 export function openCurrentWebviewDevTools(options: {
+  preferredWebviewDevToolsTarget?: PreferredWebviewDevToolsTarget;
   currentPageSnapshot: DesktopPageContextSnapshot | null | undefined;
   webContents: WebContentsLookup;
 }) {
-  const { currentPageSnapshot, webContents } = options;
+  const { preferredWebviewDevToolsTarget, currentPageSnapshot, webContents } = options;
+  if (typeof preferredWebviewDevToolsTarget?.webContentsId === "number") {
+    const preferredContents = webContents.fromId(preferredWebviewDevToolsTarget.webContentsId);
+    if (isLiveWebviewContents(preferredContents)) {
+      preferredContents.openDevTools({ mode: "detach" });
+      return { ok: true as const, source: "copilot" as const };
+    }
+  }
+
   if (
     currentPageSnapshot?.pageKind === "webview" &&
     typeof currentPageSnapshot.webContentsId === "number"

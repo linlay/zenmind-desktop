@@ -51,12 +51,12 @@ export function SettingsSidebarIcon({ kind, className }: SettingsSidebarIconProp
     case "usage":
       return (
         <svg {...iconProps}>
-          <path d="M21 12a9 9 0 1 0-18 0" />
-          <path d="M12 12l4-4" />
+          <path d="M 4.9 19.1 A 10 10 0 1 1 19.1 19.1" />
+          <path d="M 12 12 L 17 7" />
           <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-          <path d="M12 7V5" />
-          <path d="M5.6 8.4l1.4 1.4" />
-          <path d="M18.4 8.4l-1.4 1.4" />
+          <path d="M 12 2 V 5" />
+          <path d="M 4.9 4.9 L 7.1 7.1" />
+          <path d="M 19.1 4.9 L 16.9 7.1" />
         </svg>
       );
     case "assistant":

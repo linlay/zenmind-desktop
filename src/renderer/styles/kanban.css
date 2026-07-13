@@ -150,7 +150,17 @@
 }
 
 .kanban-tool.is-icon-only {
-  width: auto;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  gap: 0;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.kanban-tool.is-icon-only .kanban-tool-label {
+  display: none;
 }
 
 .kanban-tool-label {
@@ -166,8 +176,13 @@
   border-color: rgba(0, 82, 217, 0.24);
 }
 
+.kanban-tool.is-icon-only:hover:not(.is-active) {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(100, 116, 139, 0.24);
+}
+
 .kanban-tool-icon {
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1;
 }
 
@@ -396,7 +411,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: #eef2f7;
   color: var(--kanban-muted);
   cursor: pointer;
@@ -416,13 +431,13 @@
 }
 
 .kanban-search-filter-button .anticon {
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1;
 }
 
 .kanban-search-filter-button .kanban-icon {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
 }
 
 .kanban-search-filter-menu {
@@ -743,9 +758,17 @@
 
 .kanban-feedback button,
 .kanban-modal-head button {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   padding: 0;
+  border-radius: 6px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.kanban-feedback button:hover {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--kanban-ink);
 }
 
 .kanban-columns {
@@ -1019,7 +1042,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: var(--kanban-muted);
   box-shadow: none;
@@ -1642,9 +1665,9 @@
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  height: 22px;
+  height: 24px;
   display: inline-flex;
-  min-width: 22px;
+  min-width: 24px;
   align-items: center;
   justify-content: flex-end;
   gap: 0;
@@ -1665,10 +1688,10 @@
 }
 
 .issue-card-action {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
-  min-height: 22px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1677,9 +1700,14 @@
   border: 1px solid rgba(148, 163, 184, 0.3);
   background: rgba(248, 250, 252, 0.92);
   color: #64748b;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.issue-card-action .anticon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .issue-card-action:hover:not(:disabled) {
@@ -2012,24 +2040,24 @@
   right: 10px;
   z-index: 3;
   display: inline-flex;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 999px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.9);
   color: var(--kanban-muted);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
   cursor: pointer;
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
 }
 
 .kanban-chat-modal-close:hover {
-  border-color: rgba(22, 119, 255, 0.34);
-  color: #1677ff;
-  background: #ffffff;
+  border-color: rgba(100, 116, 139, 0.24);
+  color: var(--kanban-ink);
+  background: rgba(15, 23, 42, 0.05);
 }
 
 .kanban-modal-head {
@@ -2076,15 +2104,21 @@
 
 .kanban-modal-close-button {
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
+  border-radius: 6px;
   box-shadow: none;
   background: transparent;
   appearance: none;
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
+}
+
+.kanban-modal-close-button:hover {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--kanban-ink);
 }
 
 .kanban-field {
@@ -2221,11 +2255,17 @@
 }
 
 .kanban-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 24px;
-  align-self: stretch;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  align-self: center;
   border: 0;
-  border-left: 1px solid var(--kanban-border);
+  border-radius: 6px;
   background: transparent;
   color: var(--kanban-muted);
   cursor: pointer;

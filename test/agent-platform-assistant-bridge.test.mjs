@@ -9,6 +9,8 @@ const require = createRequire(import.meta.url);
 const { AgentPlatformAssistantBridge } = require("../dist-electron/main/assistant/core/agent-platform-bridge.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
+const EPOCH_MS = 1_783_000_000_000;
+
 function makeApp(homeDir = "/tmp") {
   return {
     getPath(name) {
@@ -214,7 +216,8 @@ test("agent platform assistant bridge holds wake lock while a run is active", as
       assert.deepEqual(wakeLock.calls, ["acquire"]);
       const body = JSON.parse(String(init.body));
       return sseResponse([
-        { seq: 1, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "awake", timestamp: 1 },
+        { seq: 1, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "awake", timestamp: EPOCH_MS },
+        { seq: 2, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + 1 },
         "[DONE]"
       ]);
     }
@@ -265,7 +268,14 @@ test("agent platform assistant bridge shares one wake lock across concurrent run
       runId: streams[0].body.runId,
       chatId: streams[0].body.chatId,
       delta: "first",
-      timestamp: 1
+      timestamp: EPOCH_MS
+    });
+    streams[0].stream.send({
+      seq: 2,
+      type: "run.complete",
+      runId: streams[0].body.runId,
+      chatId: streams[0].body.chatId,
+      timestamp: EPOCH_MS + 1
     });
     streams[0].stream.close();
     await waitFor(
@@ -280,7 +290,14 @@ test("agent platform assistant bridge shares one wake lock across concurrent run
       runId: streams[1].body.runId,
       chatId: streams[1].body.chatId,
       delta: "second",
-      timestamp: 1
+      timestamp: EPOCH_MS + 2
+    });
+    streams[1].stream.send({
+      seq: 2,
+      type: "run.complete",
+      runId: streams[1].body.runId,
+      chatId: streams[1].body.chatId,
+      timestamp: EPOCH_MS + 3
     });
     streams[1].stream.close();
     await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after both runs completed");
@@ -337,6 +354,9 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     if (String(url).endsWith("/api/query")) {
       const body = JSON.parse(String(init.body));
       assert.equal(body.message, "hello platform");
+      assert.equal(body.runId, "run-stable-1");
+      assert.equal(body.requestId, "request-stable-1");
+      assert.equal(body.chatId, "chat-stable-1");
       assert.equal(body.agentKey, "codeAssistant");
       assert.equal(body.accessLevel, "auto_approve");
       assert.equal(body.stream, true);
@@ -344,8 +364,9 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
       assert.equal(Object.hasOwn(body.params.desktop, "permissionMode"), false);
       assert.equal(Object.hasOwn(body.params.desktop, "historyBeforeMessageId"), false);
       return sseResponse([
-        { seq: 1, type: "run.start", runId: body.runId, chatId: body.chatId, timestamp: 1 },
-        { seq: 2, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "hi", timestamp: 2 },
+        { seq: 1, type: "run.start", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS },
+        { seq: 2, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "hi", timestamp: EPOCH_MS + 1 },
+        { seq: 3, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + 2 },
         "[DONE]"
       ]);
     }
@@ -353,7 +374,14 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
   };
 
   try {
-    const result = await bridge.startRun({ message: "hello platform", agentKey: "codeAssistant", accessLevel: "auto_approve" });
+    const result = await bridge.startRun({
+      message: "hello platform",
+      agentKey: "codeAssistant",
+      accessLevel: "auto_approve",
+      chatId: "chat-stable-1",
+      runId: "run-stable-1",
+      requestId: "request-stable-1"
+    });
     assert.equal(result.ok, true);
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(requests.length, 1);
@@ -365,6 +393,37 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     assert.equal(events[2].runId, result.runId);
     assert.equal(events[2].chatId, result.chatId);
     assert.equal(events[2].message, "hi");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects string, seconds, fractional, zero, and missing stream timestamps", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const timestamp of [String(EPOCH_MS), Math.floor(EPOCH_MS / 1000), EPOCH_MS + 0.5, 0, undefined]) {
+      const { bridge, events } = makeBridge();
+      globalThis.fetch = async (url, init = {}) => {
+        if (String(url).endsWith("/api/query")) {
+          const body = JSON.parse(String(init.body));
+          return sseResponse([{
+            seq: 1,
+            type: "content.delta",
+            runId: body.runId,
+            chatId: body.chatId,
+            delta: "must not reach the desktop",
+            ...(timestamp === undefined ? {} : { timestamp })
+          }]);
+        }
+        throw new Error(`unexpected request ${url}`);
+      };
+
+      const result = await bridge.startRun({ message: "strict timestamp" });
+      assert.equal(result.ok, true);
+      await waitFor(() => events.some((event) => event.type === "error"), "malformed stream did not surface a local error");
+      assert.deepEqual(events.map((event) => event.type), ["error"]);
+      assert.match(events[0].error ?? "", /time_contract_violation/u);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -384,7 +443,7 @@ test("agent platform assistant bridge uses terminal result payload as completion
           runId: body.runId,
           chatId: body.chatId,
           data: { result: "云端验证OK" },
-          timestamp: 1
+          timestamp: EPOCH_MS
         }
       ]);
     }
@@ -430,7 +489,7 @@ test("agent platform assistant bridge falls back to persisted chat jsonl for emp
         ].join("\n")
       );
       return sseResponse([
-        { seq: 1, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: 1 }
+        { seq: 1, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS }
       ]);
     }
     throw new Error(`unexpected request ${url}`);

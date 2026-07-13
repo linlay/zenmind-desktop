@@ -5,7 +5,9 @@ export type SidebarNavOrderItemKey =
   | "assistant"
   | "agents"
   | "schedules"
+  | "chats"
   | "market"
+  | "skills"
   | "help"
   | `service:${string}`
   | `experimental:${string}`
@@ -27,6 +29,7 @@ type SidebarNavOrderInput = {
 export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
   { key: "kanban", label: "nav.kanban" },
   { key: "schedules", label: "nav.schedules" },
+  { key: "chats", label: "nav.chats" },
   { key: "group:assistants", label: "nav.assistants" },
   { key: "group:webs", label: "nav.websites" },
 ];
@@ -52,6 +55,7 @@ export function createDefaultSidebarNavOrderItems({
   return [
     ...(kanbanEnabled ? [staticItems.get("kanban")!] : []),
     staticItems.get("schedules")!,
+    staticItems.get("chats")!,
     staticItems.get("group:assistants")!,
     staticItems.get("group:webs")!
   ];
@@ -67,9 +71,17 @@ export function normalizeSidebarNavOrder(
         typeof key === "string" && availableKeys.has(key as SidebarNavOrderItemKey)
       )
     : [];
+  const candidateIncludesChats = normalizedCandidate.includes("chats");
   const orderedKeys = normalizedCandidate.length > 0 ? normalizedCandidate : [];
   for (const item of availableItems) {
     if (!orderedKeys.includes(item.key)) {
+      if (item.key === "chats" && !candidateIncludesChats) {
+        const schedulesIndex = orderedKeys.indexOf("schedules");
+        if (schedulesIndex >= 0) {
+          orderedKeys.splice(schedulesIndex + 1, 0, item.key);
+          continue;
+        }
+      }
       orderedKeys.push(item.key);
     }
   }

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { execFile } from "node:child_process";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
@@ -7,9 +8,11 @@ import type {
   AssistantNavAgentItem,
   AssistantNavAgentItemsResult,
   AssistantNavChatItem,
+  AssistantNavigationPushEvent,
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
+import { readEpochMillis } from "../../../shared/time-contract";
 import { getDesktopDeviceId } from "../../device-identity";
 import { t } from "../../i18n/main-i18n";
 
@@ -51,8 +54,6 @@ type PlatformAgentSummary = {
   key?: unknown;
   name?: unknown;
   displayName?: unknown;
-  type?: unknown;
-  agentType?: unknown;
   role?: unknown;
   icon?: unknown;
   mode?: unknown;
@@ -115,13 +116,6 @@ type NavigationPushEvent = {
   [key: string]: unknown;
 };
 
-export type AssistantNavigationPushEvent = {
-  type: string;
-  chatId: string | null;
-  runId: string | null;
-  status: string | null;
-};
-
 type MinimalWebSocket = {
   onopen: (() => void) | null;
   onmessage: ((event: { data?: unknown }) => void) | null;
@@ -131,6 +125,16 @@ type MinimalWebSocket = {
 };
 
 type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
+
+type AssistantGitBranchCacheEntry = {
+  branch: string;
+  expiresAt: number;
+};
+
+type AssistantGitBranchCommandRunner = (
+  command: string,
+  args: string[],
+) => Promise<string>;
 
 export type AssistantNavigationApplyResult = {
   items: AssistantNavAgentItem[];
@@ -144,7 +148,29 @@ const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 const NAVIGATION_UNAVAILABLE_RETRY_MS = 12_000;
 const NAVIGATION_RECONNECT_MS = 10_000;
+const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
+const NAVIGATION_GIT_BRANCH_TIMEOUT_MS = 1_000;
+const navigationGitBranchCache = new Map<string, AssistantGitBranchCacheEntry>();
 const IGNORED_PUSH_TYPES = new Set(["heartbeat", "live.connected"]);
+const TIMESTAMPED_PUSH_TYPES = new Set([
+  "chat.created",
+  "chat.updated",
+  "chat.read",
+  "chat.unread",
+  "run.start",
+  "run.complete",
+  "awaiting.asking",
+  "awaiting.answered",
+]);
+const STRUCTURED_PUSH_TIME_FIELDS = [
+  "createdAt",
+  "updatedAt",
+  "startedAt",
+  "completedAt",
+  "timestamp",
+  "expiresAt",
+  "readAt",
+] as const;
 const FINISHED_AWAITING_STATUSES = new Set([
   "answered",
   "cancelled",
@@ -158,8 +184,8 @@ const FINISHED_AWAITING_STATUSES = new Set([
   "timeout"
 ]);
 
-function nowIso() {
-  return new Date().toISOString();
+function nowEpochMillis() {
+  return Date.now();
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -175,7 +201,7 @@ function toAwaitingMode(value: unknown): AssistantAwaitingMode | undefined {
   return mode === "approval" ||
     mode === "question" ||
     mode === "form" ||
-    mode === "plan"
+    mode === "planning"
     ? mode
     : undefined;
 }
@@ -189,18 +215,6 @@ function readAgentWorkspaceDir(agent: PlatformAgentSummary) {
   );
 }
 
-function readAgentType(agent: PlatformAgentSummary) {
-  const explicitType = (toText(agent.agentType) || toText(agent.type)).toLowerCase();
-  if (explicitType) {
-    return explicitType;
-  }
-  const mode = toText(agent.mode).toUpperCase();
-  if (mode === "CODER" || mode === "KBASE") {
-    return mode.toLowerCase();
-  }
-  return undefined;
-}
-
 function checkWorkspaceDirExists(workspaceDir: string) {
   if (!workspaceDir || workspaceDir === "@chat") {
     return false;
@@ -210,6 +224,74 @@ function checkWorkspaceDirExists(workspaceDir: string) {
   } catch {
     return false;
   }
+}
+
+function resolveAssistantGitExecutable(platform: NodeJS.Platform) {
+  if (platform === "win32") {
+    return "git.exe";
+  }
+  if (platform === "darwin") {
+    return "git";
+  }
+  return "git";
+}
+
+function runAssistantGitBranchCommand(command: string, args: string[]) {
+  return new Promise<string>((resolve) => {
+    execFile(
+      command,
+      args,
+      {
+        encoding: "utf8",
+        timeout: NAVIGATION_GIT_BRANCH_TIMEOUT_MS,
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        resolve(error || typeof stdout !== "string" ? "" : stdout.trim());
+      },
+    );
+  });
+}
+
+export async function resolveAssistantWorkspaceGitBranch(
+  workspaceDir: string,
+  options: {
+    platform?: NodeJS.Platform;
+    now?: () => number;
+    cache?: Map<string, AssistantGitBranchCacheEntry>;
+    runCommand?: AssistantGitBranchCommandRunner;
+  } = {},
+) {
+  const normalizedWorkspaceDir = workspaceDir.trim();
+  if (!checkWorkspaceDirExists(normalizedWorkspaceDir)) {
+    return "";
+  }
+
+  const platform = options.platform ?? process.platform;
+  const now = options.now ?? Date.now;
+  const cache = options.cache ?? navigationGitBranchCache;
+  const cacheKey = `${platform}:${normalizedWorkspaceDir}`;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expiresAt > now()) {
+    return cached.branch;
+  }
+
+  const runCommand = options.runCommand ?? runAssistantGitBranchCommand;
+  let branch = "";
+  try {
+    branch = (await runCommand(
+      resolveAssistantGitExecutable(platform),
+      ["-C", normalizedWorkspaceDir, "branch", "--show-current"],
+    )).trim();
+  } catch {
+    branch = "";
+  }
+
+  cache.set(cacheKey, {
+    branch,
+    expiresAt: now() + NAVIGATION_GIT_BRANCH_CACHE_MS,
+  });
+  return branch;
 }
 
 function toFiniteNumber(value: unknown) {
@@ -312,27 +394,7 @@ function countPendingAwaitingPayload(value: unknown): number {
 }
 
 function toTimestampMs(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return 0;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 0;
-  }
-  const numeric = Number(trimmed);
-  if (Number.isFinite(numeric)) {
-    return numeric;
-  }
-  const parsed = Date.parse(trimmed);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function timestampToIso(value: unknown) {
-  const timestamp = toTimestampMs(value);
-  return timestamp > 0 ? new Date(timestamp).toISOString() : nowIso();
+  return readEpochMillis(value);
 }
 
 function createApiUrl(baseUrl: string, pathname: string) {
@@ -514,8 +576,8 @@ function readChatActiveRun(chat: PlatformChatSummary) {
 }
 
 function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem) {
-  const rightTime = toTimestampMs(right.updatedAt);
-  const leftTime = toTimestampMs(left.updatedAt);
+  const rightTime = toTimestampMs(right.updatedAt) ?? 0;
+  const leftTime = toTimestampMs(left.updatedAt) ?? 0;
   if (rightTime !== leftTime) {
     return rightTime - leftTime;
   }
@@ -523,7 +585,7 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
 }
 
 function readAgentLatestChatTime(agent: AssistantNavAgentItem) {
-  return toTimestampMs(agent.updatedAt || agent.recentChats[0]?.updatedAt);
+  return toTimestampMs(agent.updatedAt) ?? toTimestampMs(agent.recentChats[0]?.updatedAt) ?? 0;
 }
 
 function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
@@ -554,8 +616,11 @@ function mergeNavigationChats(
       continue;
     }
     const existing = chatsById.get(chatId);
-    if (!existing || toTimestampMs(chat.updatedAt) > toTimestampMs(existing.updatedAt)) {
-      chatsById.set(chatId, chat);
+    if (!existing || (toTimestampMs(chat.updatedAt) ?? 0) > (toTimestampMs(existing.updatedAt) ?? 0)) {
+      chatsById.set(chatId, {
+        ...chat,
+        createdAt: chat.createdAt ?? existing?.createdAt,
+      });
     }
   }
   return [...chatsById.values()].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
@@ -568,8 +633,8 @@ function resolveNavigationUnreadCount(options: {
   return options.statsUnreadCount ?? options.unreadFromChats;
 }
 
-function pickLatestTimestamp(left: string, right: string) {
-  return toTimestampMs(right) > toTimestampMs(left) ? right : left;
+function pickLatestTimestamp(left?: number, right?: number) {
+  return (toTimestampMs(right) ?? 0) > (toTimestampMs(left) ?? 0) ? right : left;
 }
 
 function mergeNavigationAgentItem(
@@ -601,10 +666,10 @@ function mergeNavigationAgentItem(
     latestPreview: latestPreview.slice(0, 120),
     updatedAt: latestChat?.updatedAt ?? pickLatestTimestamp(primary.updatedAt, secondary.updatedAt),
     recentChats,
-    agentType: primary.agentType ?? secondary.agentType,
     mode: primary.mode ?? secondary.mode,
     workspaceDir: primary.workspaceDir ?? secondary.workspaceDir,
-    workspaceDirExists: primary.workspaceDirExists ?? secondary.workspaceDirExists
+    workspaceDirExists: primary.workspaceDirExists ?? secondary.workspaceDirExists,
+    gitBranch: primary.gitBranch ?? secondary.gitBranch,
   };
 }
 
@@ -630,11 +695,17 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
   }
   const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
   const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || t("assistant.newChat");
+  const createdAt = toTimestampMs(chat.createdAt);
+  const updatedAt = toTimestampMs(chat.updatedAt);
+  if (createdAt === undefined || updatedAt === undefined) {
+    return null;
+  }
   return {
     chatId,
     chatName,
     agentKey: readChatAgentKey(chat, fallbackAgentKey),
-    updatedAt: timestampToIso(chat.updatedAt || chat.createdAt),
+    createdAt,
+    updatedAt,
     lastRunId: toText(chat.lastRunId),
     lastRunContent,
     isRead: readChatIsRead(chat),
@@ -643,6 +714,43 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
     awaitingCount: readChatAwaitingCount(chat),
     awaitingMode: readChatAwaitingMode(chat)
   };
+}
+
+function isWorkspaceProjectAgent(agent: AssistantNavAgentItem) {
+  const mode = agent.mode?.trim().toUpperCase() ?? "";
+  return mode === "CODER" || mode === "KBASE";
+}
+
+export async function enrichNavigationAgentsWithGitBranches(
+  items: AssistantNavAgentItem[],
+  resolveGitBranch: (workspaceDir: string) => Promise<string> = resolveAssistantWorkspaceGitBranch,
+) {
+  const branchesByWorkspace = new Map<string, Promise<string>>();
+  for (const agent of items) {
+    const workspaceDir = agent.workspaceDir?.trim() ?? "";
+    if (!isWorkspaceProjectAgent(agent) || !workspaceDir || agent.workspaceDirExists === false) {
+      continue;
+    }
+    if (!branchesByWorkspace.has(workspaceDir)) {
+      branchesByWorkspace.set(workspaceDir, resolveGitBranch(workspaceDir));
+    }
+  }
+
+  if (branchesByWorkspace.size === 0) {
+    return items;
+  }
+
+  const resolvedBranches = new Map<string, string>();
+  await Promise.all(
+    [...branchesByWorkspace.entries()].map(async ([workspaceDir, branch]) => {
+      resolvedBranches.set(workspaceDir, await branch);
+    }),
+  );
+  return items.map((agent) => {
+    const workspaceDir = agent.workspaceDir?.trim() ?? "";
+    const gitBranch = workspaceDir ? resolvedBranches.get(workspaceDir)?.trim() ?? "" : "";
+    return gitBranch ? { ...agent, gitBranch } : agent;
+  });
 }
 
 function readAgentRawChatLists(agent: PlatformAgentSummary): unknown[][] {
@@ -700,9 +808,8 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
     hasPendingAwaiting: chats.some((chat) => chat.hasPendingAwaiting),
     latestChatId: latestChat?.chatId ?? null,
     latestPreview: latestPreview.slice(0, 120),
-    updatedAt: latestChat?.updatedAt ?? nowIso(),
+    ...(latestChat ? { updatedAt: latestChat.updatedAt } : {}),
     recentChats,
-    agentType: readAgentType(agent),
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
     workspaceDirExists: checkWorkspaceDirExists(workspaceDir),
@@ -726,9 +833,7 @@ function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentI
     hasPendingAwaiting: false,
     latestChatId: null,
     latestPreview: "",
-    updatedAt: nowIso(),
     recentChats: [],
-    agentType: readAgentType(agent),
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
     workspaceDirExists: checkWorkspaceDirExists(workspaceDir),
@@ -778,6 +883,14 @@ function toPushEvent(frame: NavigationPushFrame): NavigationPushEvent {
   } as NavigationPushEvent;
 }
 
+function hasValidRequiredPushTimestamp(event: NavigationPushEvent) {
+  const allPresentTimesAreValid = STRUCTURED_PUSH_TIME_FIELDS.every((field) =>
+    event[field] === undefined || toTimestampMs(event[field]) !== undefined
+  );
+  return allPresentTimesAreValid &&
+    (!TIMESTAMPED_PUSH_TYPES.has(event.type) || toTimestampMs(event.timestamp) !== undefined);
+}
+
 function readPushAgentKey(event: NavigationPushEvent) {
   return toText(event.agentKey) || toText(event.firstAgentKey);
 }
@@ -786,8 +899,8 @@ function readPushChatId(event: NavigationPushEvent) {
   return toText(event.chatId);
 }
 
-function readPushUpdatedAt(event: NavigationPushEvent, fallback: string) {
-  return timestampToIso(event.updatedAt || event.timestamp || event.createdAt || fallback);
+function readPushCreatedAt(event: NavigationPushEvent, fallback?: number) {
+  return toTimestampMs(event.createdAt) ?? fallback;
 }
 
 function readPushPreview(event: NavigationPushEvent) {
@@ -891,7 +1004,12 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   const preview = readPushPreview(event);
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
   const chatName = toText(event.chatName) || current?.chatName || preview || t("assistant.newChat");
-  const updatedAt = readPushUpdatedAt(event, current?.updatedAt || nowIso());
+  const eventTimestamp = toTimestampMs(event.timestamp);
+  if (eventTimestamp === undefined) {
+    return null;
+  }
+  const createdAt = readPushCreatedAt(event, current?.createdAt) ?? eventTimestamp;
+  const updatedAt = eventTimestamp;
   let isRead = current?.isRead ?? true;
   if (event.type === "chat.read") {
     isRead = true;
@@ -909,6 +1027,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     chatId,
     chatName,
     agentKey,
+    createdAt,
     updatedAt,
     lastRunId: toText(event.lastRunId) || toText(event.runId) || current?.lastRunId || "",
     lastRunContent: preview || current?.lastRunContent || "",
@@ -979,6 +1098,9 @@ export function applyAssistantNavigationPush(
   const type = event.type;
   if (!type || IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
+  }
+  if (!hasValidRequiredPushTimestamp(event)) {
+    return { items: currentItems, changed: false, shouldRefresh: true };
   }
 
   const agentIndex = findAgentIndexForPush(currentItems, event);
@@ -1059,7 +1181,7 @@ export function applyAssistantNavigationPush(
     return {
       items: sortNavigationAgents(nextItems),
       changed: true,
-      shouldRefresh: type === "run.complete" && !readPushPreview(event)
+      shouldRefresh: type === "run.complete"
     };
   }
 
@@ -1072,7 +1194,9 @@ export async function readAssistantNavigationAgentsFromPlatform(
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): Promise<AssistantNavAgentItem[]> {
   const agents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "nav", includeChatLimit);
-  return buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
+  return await enrichNavigationAgentsWithGitBranches(
+    buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit),
+  );
 }
 
 async function readAssistantNavigationAgentsFromPlatformScope(
@@ -1097,7 +1221,9 @@ export async function readAssistantNavigationActivityAgentsFromPlatform(
   let copilotItems: AssistantNavAgentItem[] = [];
   try {
     const copilotAgents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "copilot", includeChatLimit);
-    copilotItems = buildAssistantNavigationAgentsFromPlatformAgents(copilotAgents, includeChatLimit);
+    copilotItems = await enrichNavigationAgentsWithGitBranches(
+      buildAssistantNavigationAgentsFromPlatformAgents(copilotAgents, includeChatLimit),
+    );
   } catch {
     copilotItems = [];
   }
@@ -1113,13 +1239,17 @@ export async function readAssistantCopilotAgentsFromPlatform(
     token
   );
   if (Array.isArray(agents) && agents.length > 0) {
-    return buildAssistantCopilotAgentsFromPlatformAgents(agents);
+    return await enrichNavigationAgentsWithGitBranches(
+      buildAssistantCopilotAgentsFromPlatformAgents(agents),
+    );
   }
   const fallbackAgents = await readApiJson<unknown[]>(
     `${createApiUrl(baseUrl, "/api/agents")}?scope=nav`,
     token
   );
-  return buildAssistantCopilotAgentsFromPlatformAgents(fallbackAgents);
+  return await enrichNavigationAgentsWithGitBranches(
+    buildAssistantCopilotAgentsFromPlatformAgents(fallbackAgents),
+  );
 }
 
 export class AssistantNavigationStatusClient {
@@ -1132,7 +1262,7 @@ export class AssistantNavigationStatusClient {
     items: [],
     activityItems: [],
     message: t("assistant.navigationStatusUninitialized"),
-    updatedAt: nowIso()
+    updatedAt: nowEpochMillis()
   };
   private lastBaseUrl = "";
   private lastToken = "";
@@ -1186,7 +1316,7 @@ export class AssistantNavigationStatusClient {
           ok: false,
           items: [],
           message: t("agentPlatform.notRunning"),
-          updatedAt: nowIso()
+          updatedAt: nowEpochMillis()
         });
         this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
         return this.latestResult;
@@ -1199,7 +1329,7 @@ export class AssistantNavigationStatusClient {
           ok: false,
           items: [],
           message: tokenResult.message || t("agentPlatform.accessTokenMissing"),
-          updatedAt: nowIso()
+          updatedAt: nowEpochMillis()
         });
         this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
         return this.latestResult;
@@ -1217,7 +1347,7 @@ export class AssistantNavigationStatusClient {
         items,
         activityItems,
         message: t("assistant.navigationStatusRead"),
-        updatedAt: nowIso()
+        updatedAt: nowEpochMillis()
       });
       this.connectWebSocket(baseUrl, token);
       return this.latestResult;
@@ -1228,7 +1358,7 @@ export class AssistantNavigationStatusClient {
         ok: false,
         items: [],
         message,
-        updatedAt: nowIso()
+        updatedAt: nowEpochMillis()
       });
       this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
       return this.latestResult;
@@ -1282,6 +1412,11 @@ export class AssistantNavigationStatusClient {
       return;
     }
     const event = toPushEvent(frame);
+    if (!hasValidRequiredPushTimestamp(event)) {
+      this.options.onDebug?.(`time_contract_violation: navigation push ${event.type} requires epoch_ms_int64 timestamp`);
+      this.scheduleRefresh();
+      return;
+    }
     this.options.onPushEvent?.({
       type: event.type,
       chatId: readPushChatId(event) || null,
@@ -1299,7 +1434,7 @@ export class AssistantNavigationStatusClient {
         items: next.items,
         activityItems: nextActivity.items,
         message: t("assistant.navigationNotificationSynced"),
-        updatedAt: nowIso()
+        updatedAt: nowEpochMillis()
       });
     }
     if (next.shouldRefresh || nextActivity.shouldRefresh) {

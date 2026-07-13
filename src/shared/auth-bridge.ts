@@ -43,7 +43,6 @@ export function resolvePluginAuthBridgeResponseType(protocol: PluginAuthBridgePr
 type BuildPluginEmbeddedUrlOptions = {
   hostTheme?: "light" | "dark";
   hostLocale?: "zh-CN" | "en-US";
-  desktopAuthContext?: string;
   accessToken?: string;
   baseUrl?: string;
   embedPath?: string;
@@ -150,9 +149,6 @@ export function buildPluginEmbeddedUrl(
     const hostLocale = normalizePluginLocale(options.hostLocale);
     if (hostLocale) {
       url.searchParams.set("lang", hostLocale);
-    }
-    if (options.desktopAuthContext?.trim()) {
-      url.searchParams.set("desktopAuthContext", options.desktopAuthContext.trim());
     }
     if (options.wsSource?.trim()) {
       url.searchParams.set("wsSource", options.wsSource.trim());

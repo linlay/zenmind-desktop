@@ -15,6 +15,7 @@ import type {
   DesktopPetMessageItem,
   DesktopPetMessageStatus
 } from "../shared/contracts";
+import { readEpochMillis } from "../shared/time-contract";
 import type {
   DesktopPetBoundAgentStatus,
   DesktopPetLocalStatus,
@@ -213,16 +214,7 @@ function toDesktopPetTaskText(value: unknown) {
 }
 
 function getDesktopPetTaskTimestamp(value: unknown) {
-  const text = toDesktopPetTaskText(value);
-  if (!text) {
-    return 0;
-  }
-  const numeric = Number(text);
-  if (Number.isFinite(numeric)) {
-    return numeric;
-  }
-  const parsed = Date.parse(text);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return readEpochMillis(value) ?? 0;
 }
 
 function getUsableDesktopPetTaskPreview(value: unknown) {
@@ -284,7 +276,10 @@ export function createDesktopPetActiveTasksFromNavigationSnapshot(
       }
       const taskAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
       const status = chat.hasPendingAwaiting ? "awaiting" : "running";
-      const updatedAt = toDesktopPetTaskText(chat.updatedAt) || toDesktopPetTaskText(agent.updatedAt);
+      const updatedAt = readEpochMillis(chat.updatedAt) ?? readEpochMillis(agent.updatedAt);
+      if (updatedAt === undefined) {
+        continue;
+      }
       const awaitingCount = readDesktopPetAwaitingCount(chat);
       const task: DesktopPetTaskItem = {
         id: `${taskAgentKey}:${chatId}`,
@@ -348,7 +343,8 @@ export function createDesktopPetMessagesFromAgentStatus(
   }
   const agentKey = toDesktopPetTaskText(agentStatus.agentKey);
   const chatId = toDesktopPetTaskText(agentStatus.chatId);
-  if (!agentKey || !chatId) {
+  const updatedAt = readEpochMillis(agentStatus.updatedAt);
+  if (!agentKey || !chatId || updatedAt === undefined) {
     return [];
   }
   const unreadCount = Math.max(0, Math.round(Number(agentStatus.unreadCount) || 0));
@@ -371,7 +367,7 @@ export function createDesktopPetMessagesFromAgentStatus(
       preview: preview || "打开对话查看历史消息",
       status,
       unread: unreadCount > 0,
-      updatedAt: toDesktopPetTaskText(agentStatus.updatedAt) || new Date().toISOString()
+      updatedAt
     }
   ];
 }
@@ -403,7 +399,10 @@ export function createDesktopPetMessagesFromNavigationSnapshot(
         continue;
       }
       const messageAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
-      const updatedAt = toDesktopPetTaskText(chat.updatedAt) || toDesktopPetTaskText(agent.updatedAt);
+      const updatedAt = readEpochMillis(chat.updatedAt) ?? readEpochMillis(agent.updatedAt);
+      if (updatedAt === undefined) {
+        continue;
+      }
       const awaitingCount = readDesktopPetAwaitingCount(chat);
       const message: DesktopPetMessageItem = {
         id: `${messageAgentKey}:${chatId}`,
@@ -1178,12 +1177,12 @@ export function createDesktopPetClientLifecycleController(
         options.setAgentOptions(agents);
         options.refreshState();
       },
-      onRunStarted: ({ runId, chatId }: { runId: string; chatId: string | null }) => {
+      onRunStarted: ({ runId, chatId }: { runId: string; chatId: string | null; timestamp: number }) => {
         options.updateActiveRuns({ type: "run.started", runId });
         options.clearDismissedPreview(chatId, runId);
         ensureStreamClient()?.attach(runId, chatId);
       },
-      onRunFinished: ({ runId, chatId, message }: { runId: string; chatId: string | null; message: string }) => {
+      onRunFinished: ({ runId, chatId, message, timestamp }: { runId: string; chatId: string | null; message: string; timestamp: number }) => {
         options.updateActiveRuns({ type: "run.finished", runId });
         const panel = options.getPreviewPanel();
         const resolvedRunId = runId || (panel && (!chatId || panel.chatId === chatId) ? panel.runId : "");
@@ -1194,7 +1193,7 @@ export function createDesktopPetClientLifecycleController(
           runId: resolvedRunId,
           chatId: chatId ?? panel?.chatId ?? null,
           type: "run.complete",
-          createdAt: new Date().toISOString(),
+          createdAt: timestamp,
           message
         }, {
           source: "agent-platform-status",
@@ -1434,7 +1433,8 @@ export function createDesktopPetPreviewController(
       return false;
     }
     const replyPreview = getUsableDesktopPetReplyPreview(status.latestPreview);
-    if (!replyPreview) {
+    const timestamp = readEpochMillis(status.updatedAt);
+    if (!replyPreview || timestamp === undefined) {
       return false;
     }
     const panel = options.previewProjector.getPanel();
@@ -1455,7 +1455,7 @@ export function createDesktopPetPreviewController(
       runId: panel.runId,
       chatId: panel.chatId ?? status.chatId,
       type: "run.complete",
-      createdAt: new Date().toISOString(),
+      createdAt: timestamp,
       message: replyPreview
     }, {
       source: "agent-platform-status",

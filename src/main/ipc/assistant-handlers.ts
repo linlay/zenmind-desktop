@@ -19,6 +19,10 @@ export interface AssistantIpcHandlerOptions {
   getCurrentPageSnapshot?: () => any;
   /** Optional external setter for currentPage snapshot (called when renderer publishes) */
   setCurrentPageSnapshot?: (snapshot: any) => void;
+  /** Optional getter/setter for the currently preferred Copilot DevTools webview target. */
+  getCopilotDevToolsTarget?: () => any;
+  setCopilotDevToolsTarget?: (target: any) => void;
+  getWebContentsById?: (id: number) => any;
   /** Optional diagnostic sink for crash breadcrumbs. */
   reportRendererDiagnostic?: (source: string, details: Record<string, unknown>) => void;
   desktopActionOptions: any;
@@ -60,6 +64,30 @@ async function saveAssistantChatExport(
   return { ok: true, message: t("assistant.chatExportDownloaded"), filePath: exportPath };
 }
 
+const COPILOT_DEVTOOLS_SURFACE_IDS = new Set([
+  "agent-webclient-copilot-dock",
+  "agent-webclient-quick-copilot"
+]);
+
+function readOptionalString(value: unknown) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || undefined;
+}
+
+function readOptionalFiniteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isLiveWebviewContents(contents: any) {
+  return Boolean(
+    contents &&
+    typeof contents.isDestroyed === "function" &&
+    typeof contents.getType === "function" &&
+    !contents.isDestroyed() &&
+    contents.getType() === "webview"
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
@@ -98,6 +126,13 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   let _internalSnapshot: any = null;
   const getSnapshot = options.getCurrentPageSnapshot ?? (() => _internalSnapshot);
   const setSnapshot = options.setCurrentPageSnapshot ?? ((s: any) => { _internalSnapshot = s; });
+  let _internalCopilotDevToolsTarget: any = null;
+  const getCopilotDevToolsTarget = options.getCopilotDevToolsTarget ?? (() => _internalCopilotDevToolsTarget);
+  const setCopilotDevToolsTarget = options.setCopilotDevToolsTarget ?? ((target: any) => {
+    _internalCopilotDevToolsTarget = target;
+  });
+  const getWebContentsById = options.getWebContentsById ?? (() => null);
+  const copilotDevToolsOwnerCleanupIds = new Set<number>();
 
   ipcMain.handle("currentPage.publishSnapshot", async (_event: any, snapshot: any) => {
     setSnapshot(snapshot);
@@ -123,6 +158,72 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   });
 
   ipcMain.handle("currentPage.getSnapshot", async () => getSnapshot());
+
+  ipcMain.handle("copilot.publishDevToolsTarget", async (event: any, input: any) => {
+    const request = input && typeof input === "object" ? input : {};
+    const surfaceId = readOptionalString(request.surfaceId);
+    const ownerWebContentsId = readOptionalFiniteNumber(event?.sender?.id);
+    const clearCurrentTarget = () => {
+      const current = getCopilotDevToolsTarget();
+      if (
+        current &&
+        current.surfaceId === surfaceId &&
+        current.ownerWebContentsId === ownerWebContentsId
+      ) {
+        setCopilotDevToolsTarget(null);
+      }
+    };
+
+    if (!surfaceId || !COPILOT_DEVTOOLS_SURFACE_IDS.has(surfaceId)) {
+      return { ok: false, message: "Unsupported Copilot DevTools target." };
+    }
+
+    if (request.active === false) {
+      clearCurrentTarget();
+      return { ok: true };
+    }
+
+    if (ownerWebContentsId === undefined) {
+      return { ok: false, message: "Copilot DevTools target owner is unavailable." };
+    }
+
+    const webContentsId = readOptionalFiniteNumber(request.webContentsId);
+    if (webContentsId === undefined) {
+      clearCurrentTarget();
+      return { ok: false, message: "Copilot DevTools webContentsId is unavailable." };
+    }
+
+    const targetContents = getWebContentsById(webContentsId);
+    if (!isLiveWebviewContents(targetContents)) {
+      clearCurrentTarget();
+      return { ok: false, message: "Copilot DevTools target is not a live webview." };
+    }
+
+    const currentUrl = readOptionalString(request.currentUrl);
+    setCopilotDevToolsTarget({
+      surfaceId,
+      webContentsId,
+      ownerWebContentsId,
+      ...(currentUrl ? { currentUrl } : {})
+    });
+
+    if (
+      !copilotDevToolsOwnerCleanupIds.has(ownerWebContentsId) &&
+      event?.sender &&
+      typeof event.sender.once === "function"
+    ) {
+      copilotDevToolsOwnerCleanupIds.add(ownerWebContentsId);
+      event.sender.once("destroyed", () => {
+        copilotDevToolsOwnerCleanupIds.delete(ownerWebContentsId);
+        const current = getCopilotDevToolsTarget();
+        if (current?.ownerWebContentsId === ownerWebContentsId) {
+          setCopilotDevToolsTarget(null);
+        }
+      });
+    }
+
+    return { ok: true };
+  });
 
   // ---------------------------------------------------------------------------
   // assistant — settings

@@ -37,6 +37,75 @@ function createWebContentsApi(contents, focusedContents) {
   };
 }
 
+test("current webview DevTools shortcut prefers a live Copilot target", () => {
+  const focusedWebview = new FakeWebContents(1);
+  const snapshotWebview = new FakeWebContents(2);
+  const copilotWebview = new FakeWebContents(3);
+
+  const result = openCurrentWebviewDevTools({
+    preferredWebviewDevToolsTarget: {
+      webContentsId: copilotWebview.id
+    },
+    currentPageSnapshot: {
+      route: "/service/agent-webclient",
+      pageKey: "webview:/service/agent-webclient:agent-webclient",
+      pageKind: "webview",
+      webContentsId: snapshotWebview.id,
+      pageContext: null
+    },
+    webContents: createWebContentsApi([focusedWebview, snapshotWebview, copilotWebview], focusedWebview)
+  });
+
+  assert.deepEqual(result, { ok: true, source: "copilot" });
+  assert.equal(copilotWebview.openCount, 1);
+  assert.deepEqual(copilotWebview.devtoolsOpenOptions, { mode: "detach" });
+  assert.equal(snapshotWebview.openCount, 0);
+  assert.equal(focusedWebview.openCount, 0);
+});
+
+test("current webview DevTools shortcut falls back when Copilot target is stale", () => {
+  const focusedWebview = new FakeWebContents(1);
+  const snapshotWebview = new FakeWebContents(2);
+  const copilotWebview = new FakeWebContents(3);
+  copilotWebview.destroyed = true;
+
+  const result = openCurrentWebviewDevTools({
+    preferredWebviewDevToolsTarget: {
+      webContentsId: copilotWebview.id
+    },
+    currentPageSnapshot: {
+      route: "/service/agent-webclient",
+      pageKey: "webview:/service/agent-webclient:agent-webclient",
+      pageKind: "webview",
+      webContentsId: snapshotWebview.id,
+      pageContext: null
+    },
+    webContents: createWebContentsApi([focusedWebview, snapshotWebview, copilotWebview], focusedWebview)
+  });
+
+  assert.deepEqual(result, { ok: true, source: "snapshot" });
+  assert.equal(copilotWebview.openCount, 0);
+  assert.equal(snapshotWebview.openCount, 1);
+  assert.equal(focusedWebview.openCount, 0);
+});
+
+test("current webview DevTools shortcut ignores a non-webview Copilot target", () => {
+  const focusedWebview = new FakeWebContents(1);
+  const copilotWindow = new FakeWebContents(3, "window");
+
+  const result = openCurrentWebviewDevTools({
+    preferredWebviewDevToolsTarget: {
+      webContentsId: copilotWindow.id
+    },
+    currentPageSnapshot: null,
+    webContents: createWebContentsApi([focusedWebview, copilotWindow], focusedWebview)
+  });
+
+  assert.deepEqual(result, { ok: true, source: "focused" });
+  assert.equal(copilotWindow.openCount, 0);
+  assert.equal(focusedWebview.openCount, 1);
+});
+
 test("current webview DevTools shortcut prefers the active snapshot webview", () => {
   const focusedWebview = new FakeWebContents(1);
   const snapshotWebview = new FakeWebContents(2);

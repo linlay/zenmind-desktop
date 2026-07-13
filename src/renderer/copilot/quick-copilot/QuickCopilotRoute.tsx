@@ -108,6 +108,7 @@ export function QuickCopilotRoute() {
         pluginId="agent-webclient"
         surfaceId={AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID}
         surfaceLabel={t("copilotDock.surfaceLabel")}
+        devToolsTarget="copilot"
         loadInitialEmbeddedUrlDirectly
       />
       <span className="quick-web-copilot-agent-marker" data-open-agent-key={quickAssistantAgentKey} aria-hidden="true" />

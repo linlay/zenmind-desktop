@@ -44,6 +44,7 @@ import type {
   AssistantAttachmentTaskProgress,
   AssistantEvent,
   AssistantNavAgentItemsResult,
+  AssistantNavigationPushEvent,
   AssistantWorkerOpenRequest,
   ServiceOpenLogViewerRequest,
 } from "../../shared/contracts";
@@ -119,7 +120,7 @@ import {
 } from "../platform-adapter";
 import { configureSystemIdentity } from "./system-identity";
 import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
-import { createDesktopSsoController } from "../sso-controller";
+import { createDesktopSsoController, openDesktopSsoSiteTokenBridge } from "../sso-controller";
 import { createCdpIntegration } from "../cdp-integration";
 import { createWebSurfaceRuntime } from "../webs/surface-runtime";
 import { createSettingsRuntime } from "../settings/runtime";
@@ -175,7 +176,8 @@ export function createMainProcessRuntime() {
     platform: process.platform,
     shell,
     session,
-    nativeTheme
+    nativeTheme,
+    webContents
   });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
@@ -438,6 +440,19 @@ export function createMainProcessRuntime() {
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
     openExternal: shell.openExternal
   });
+
+  async function openConfiguredDesktopSsoSiteTokenBridge() {
+    const bridgeStart = startDesktopSsoSiteTokenBridge(app);
+    if (bridgeStart.configured && bridgeStart.startUrl) {
+      const bridgeOpenResult = await openDesktopSsoSiteTokenBridge(desktopSsoController, bridgeStart);
+      if (!bridgeOpenResult.ok && bridgeStart.required) {
+        throw new Error(bridgeOpenResult.message || bridgeStart.message || "Desktop SSO site token bridge open failed");
+      }
+    } else if (bridgeStart.configured && bridgeStart.required) {
+      throw new Error(bridgeStart.message || "Desktop SSO site token bridge is unavailable");
+    }
+  }
+
   const settingsRuntime = createSettingsRuntime({
     app,
     platform: mainProcessContext.platform,
@@ -451,7 +466,8 @@ export function createMainProcessRuntime() {
     hideDesktopPetWindow: (disable = false) => hideDesktopPetWindow(disable),
     broadcastDesktopSsoStatus: (status) => desktopSsoController.broadcastStatus(status),
     notifyServicesChanged,
-    emitKanbanChanged
+    emitKanbanChanged,
+    refreshDesktopActionBridge: () => assistantBridgeRuntime.refreshDesktopActionBridge()
   });
   assistantBridgeRuntime = createAssistantBridgeRuntime({
     app,
@@ -467,6 +483,7 @@ export function createMainProcessRuntime() {
     listKanbanLocalAgents: () => petRuntime.listKanbanLocalAgents(),
     emitKanbanChanged,
     emitAssistantNavigationAgentsChanged,
+    emitAssistantNavigationPushEvent,
     handleDesktopPetAssistantEvent: (event) => petRuntime.handleAssistantEvent(event),
     desktopPet: {
       refreshState: () => petRuntime.refreshState(),
@@ -525,6 +542,7 @@ export function createMainProcessRuntime() {
         return;
       }
       completeDesktopSsoCookieLogin(app, accessToken);
+      await openConfiguredDesktopSsoSiteTokenBridge();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failDesktopSsoFlow(message);
@@ -812,6 +830,7 @@ export function createMainProcessRuntime() {
     }
     const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
       openCurrentWebviewDevTools({
+        preferredWebviewDevToolsTarget: appState.copilotDevToolsTarget,
         currentPageSnapshot: appState.currentPageSnapshot,
         webContents,
       });
@@ -947,6 +966,15 @@ export function createMainProcessRuntime() {
     }
     if (petRuntime.isVisible()) {
       refreshDesktopPetState();
+    }
+  }
+
+  function emitAssistantNavigationPushEvent(event: AssistantNavigationPushEvent) {
+    for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        continue;
+      }
+      targetWindow.webContents.send("assistant.navigationPushEvent", event);
     }
   }
   

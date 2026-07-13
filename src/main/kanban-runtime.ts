@@ -32,20 +32,28 @@ import { resolveRuntimeRoot } from "./env-bootstrap";
 import { buildKanbanAutomationPayload, resolveKanbanRunStateFromAssistantEvent, resolveKanbanStatusFromAssistantEvent } from "./kanban-sync";
 import {
   applyDesktopKanbanCloudSnapshot,
+  completeDesktopKanbanCommandReceiptByRunId,
   createPrivateDesktopKanbanIssue,
   deleteDesktopKanbanIssue,
+  ensureDesktopKanbanDefaultBinding,
   getDesktopKanbanIssue,
+  hasDesktopKanbanCloudProject,
+  listPendingDesktopKanbanCommandReceipts,
+  markDesktopKanbanCommandReceiptReported,
   listDesktopKanbanIssues,
   moveDesktopKanbanIssue,
   readDesktopKanbanSyncCursor,
+  recordDesktopKanbanCommandReceipt,
   setDesktopKanbanIssuePosition,
   tombstoneDesktopKanbanCloudIssue,
   updateDesktopKanbanIssue,
+  updateDesktopKanbanCommandReceipt,
   updateDesktopKanbanIssueByChatId,
   updateDesktopKanbanIssueByRunId,
   upsertDispatchedDesktopKanbanIssue,
   writeDesktopKanbanSyncCursor,
-  type KanbanCloudSnapshot
+  type KanbanCloudSnapshot,
+  type KanbanCommandReceipt
 } from "./kanban-local-store";
 import { getDesktopConfigRoot } from "./user-paths";
 import {
@@ -78,6 +86,10 @@ type AgentPlatformCaller<TApp> = <T = unknown>(
 type AssistantBridgeLike = {
   listAgents: () => Promise<DesktopPetAgentOption[]>;
   startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
+  getChat?: (chatId: string) => Promise<{
+    messages?: Array<{ runId?: string }>;
+    events?: Array<{ runId?: string; seq?: number; type?: string; status?: string; message?: string; error?: string }>;
+  } | null>;
 };
 
 type KanbanRuntimeOptions = {
@@ -486,6 +498,8 @@ export class KanbanRuntime {
   private readonly wsClient: KanbanDesktopWsClient;
   private readonly cloudSync: DesktopCloudSyncEngine;
   private connectionState: KanbanDesktopConnectionState = "disabled";
+  private commandReceiptProcessing = false;
+  private commandReceiptRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: KanbanRuntimeOptions) {
     this.wsClient = new KanbanDesktopWsClient({
@@ -505,6 +519,7 @@ export class KanbanRuntime {
       },
       onSnapshot: (snapshot) => this.applySnapshot(snapshot),
       onDelivery: (delivery) => this.applyDelivery(delivery),
+      onDeliveryAcked: () => this.processPendingCommandReceipts(),
       onIssueEvent: (event) => this.applyIssueEvent(event),
       onDispatchIssue: (issue, revision) => this.applyDispatch(issue, revision),
       onListAgents: () => this.listAgents(),
@@ -515,6 +530,9 @@ export class KanbanRuntime {
       onCreateLocalProject: (payload) => Promise.resolve(this.createLocalProject(payload)),
       onBindProject: (payload) => Promise.resolve(this.bindLocalProject(payload)),
       onUnbindProject: (payload) => Promise.resolve(this.unbindLocalProject(payload)),
+      onConnected: () => {
+        void this.processPendingCommandReceipts().catch((error) => this.options.onDebug?.(error instanceof Error ? error.message : String(error)));
+      },
       onStateChanged: (state) => {
         this.connectionState = state;
         this.notifyChanged();
@@ -536,6 +554,10 @@ export class KanbanRuntime {
   }
 
   stop() {
+    if (this.commandReceiptRetryTimer) {
+      clearTimeout(this.commandReceiptRetryTimer);
+      this.commandReceiptRetryTimer = null;
+    }
     this.cloudSync.stop();
     this.wsClient.stop();
   }
@@ -605,12 +627,19 @@ export class KanbanRuntime {
 
   async listSyncLocalProjects(): Promise<KanbanDesktopSyncLocalProject[]> {
     const deviceId = getDesktopDeviceId(this.options.app);
-    const selectedProjectId = readText(process.env.DESKTOP_KANBAN_PROJECT_ID) || DEFAULT_SELECTED_PROJECT_ID;
-    const result = this.listIssues();
-    const bindings = (result.projectBindings ?? []).filter((binding) =>
+    let result = this.listIssues();
+    let bindings = (result.projectBindings ?? []).filter((binding) =>
       binding.deviceId === deviceId &&
       binding.status === "active"
     );
+    if (bindings.length === 0) {
+      const cloud = readKanbanCloudConfig(this.options.app);
+      if (cloud.remoteControlEnabled) {
+        ensureDesktopKanbanDefaultBinding(this.options.app, this.currentUser(), deviceId, readText(process.env.DESKTOP_KANBAN_PROJECT_ID) || DEFAULT_SELECTED_PROJECT_ID);
+        result = this.listIssues();
+        bindings = (result.projectBindings ?? []).filter((binding) => binding.deviceId === deviceId && binding.status === "active");
+      }
+    }
     if (bindings.length > 0) {
       return bindings.map((binding) => ({
         projectId: binding.projectId,
@@ -621,14 +650,7 @@ export class KanbanRuntime {
           : binding.controlMode === "observe" ? "readonly" : "execute"
       }));
     }
-    const projects = result.projects ?? [];
-    const localProject = projects.find((project) => project.id === DEFAULT_SELECTED_PROJECT_ID) ?? projects[0];
-    return [{
-      projectId: selectedProjectId,
-      localProjectId: localProject?.id || DEFAULT_SELECTED_PROJECT_ID,
-      localDisplayName: localProject?.name || DEFAULT_SELECTED_PROJECT_ID,
-      controlMode: "execute"
-    }];
+    return [];
   }
 
   saveCloudConfig(input: KanbanCloudConfig): KanbanCloudConfigResult {
@@ -808,18 +830,17 @@ export class KanbanRuntime {
       return;
     }
     if (matchingIssue && issueSyncMode(matchingIssue) === "cloud") {
+      const terminalEventType = runState === "completed" ? "run.completed" : runState === "cancelled" ? "run.cancelled" : "run.failed";
+      const commandId = readText(matchingIssue.dispatchCommandId);
       void this.appendRunEvent({
         projectId: matchingIssue.projectId,
         issueId: getRemoteIssueId(matchingIssue),
         runId: event.runId,
         chatId: event.chatId,
-        eventType: readText(event.type) || `run.${runState}`,
-        clientEventParts: [
-          "assistant",
-          getRemoteIssueId(matchingIssue),
-          event.runId || event.chatId,
-          readText(event.type) || readText(event.status) || runState
-        ],
+        eventType: terminalEventType,
+        clientEventParts: commandId
+          ? ["command", commandId, terminalEventType]
+          : ["assistant", getRemoteIssueId(matchingIssue), event.runId || event.chatId, terminalEventType],
         payload: {
           type: event.type,
           status: status ?? event.status ?? runState,
@@ -829,9 +850,11 @@ export class KanbanRuntime {
           message: event.message,
           error: event.error
         }
-      }).catch((error) => {
-        this.options.onDebug?.(error instanceof Error ? error.message : String(error));
-      });
+      }).then(() => {
+        if (event.runId) {
+          completeDesktopKanbanCommandReceiptByRunId(this.options.app, currentUser, event.runId, runState === "completed" ? "completed" : "failed");
+        }
+      }).catch((error) => this.options.onDebug?.(error instanceof Error ? error.message : String(error)));
     }
   }
 
@@ -908,10 +931,12 @@ export class KanbanRuntime {
       return { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
     }
 
-    if (event.eventType === "issue.deleted") {
+    const issuePayload = issueEventIssuePayload(event);
+    const scopedTombstone = !issuePayload && Boolean(event.deletedIssueId || event.issueId);
+    if (event.eventType === "issue.deleted" || scopedTombstone || (event.toProjectId && !hasDesktopKanbanCloudProject(this.options.app, currentUser, event.toProjectId))) {
       tombstoneDesktopKanbanCloudIssue(this.options.app, currentUser, issueEventIssueId(event), seq);
     } else {
-      const issue = issueEventIssuePayload(event);
+      const issue = issuePayload;
       if (!issue) {
         return { ok: false, message: t("kanban.runtime.dispatchInvalid") };
       }
@@ -936,7 +961,7 @@ export class KanbanRuntime {
 
     if (delivery.kind === "snapshot_reset") {
       const snapshot = await this.wsClient.request<KanbanCloudSnapshot>("snapshot.get", {
-        projectId: delivery.projectId || DEFAULT_SELECTED_PROJECT_ID,
+        scope: "project_set",
         deviceId: getDesktopDeviceId(this.options.app)
       });
       this.applySnapshot(snapshot);
@@ -957,37 +982,165 @@ export class KanbanRuntime {
       return { ok: result.ok, message: result.message, lastAppliedRevision: cursor.lastAppliedRevision };
     }
     if (delivery.eventType === "command.runIssue") {
-      const agentKey = optionalText(payload.agentKey);
-      const runResult = await this.startRemoteRun({
-        issue,
-        revision: sourceRevision,
-        agentKey,
-        accessLevel: normalizeRemoteAccessLevel(payload.accessLevel),
-        chatId: nullableText(payload.chatId),
-        message: readText(payload.message),
-        source: "sidebar"
-      });
-      if (!runResult.ok) {
-        return { ok: false, message: runResult.message };
-      }
-      await this.appendRunEvent({
-        sourceDeliverySeq: delivery.deliverySeq,
+      const commandId = readText(delivery.commandId) || `delivery:${getDesktopDeviceId(this.options.app)}:${delivery.deliverySeq}`;
+      const receipt = recordDesktopKanbanCommandReceipt(this.options.app, currentUser, {
+        commandId,
+        deliverySeq: delivery.deliverySeq,
         projectId: readText(delivery.projectId) || readText(payload.projectId),
-        issueId: deliveryIssueId(delivery),
-        runId: runResult.runId,
-        chatId: runResult.chatId,
-        eventType: "run.started",
-        clientEventParts: ["delivery", delivery.deliverySeq, "run.started"],
-        payload: {
-          status: "running",
-          agentKey,
-          runId: runResult.runId,
-          chatId: runResult.chatId
-        }
+        sourceRevision,
+        payload,
+        issue
       });
-      return { ok: true, lastAppliedRevision: cursor.lastAppliedRevision };
+      this.notifyChanged();
+      return { ok: receipt.ok, message: receipt.message, lastAppliedRevision: Math.max(cursor.lastAppliedRevision, sourceRevision) };
     }
     return { ok: false, message: t("kanban.ws.unsupportedBusiness", { type: delivery.eventType || "unknown" }) };
+  }
+
+  private async processPendingCommandReceipts() {
+    if (this.commandReceiptProcessing) return;
+    this.commandReceiptProcessing = true;
+    try {
+      const currentUser = this.currentUser();
+      const receipts = listPendingDesktopKanbanCommandReceipts(this.options.app, currentUser);
+      for (const receipt of receipts) {
+        if (receipt.state === "failed") {
+          await this.reportFailedCommandReceipt(receipt, receipt.lastError || "Desktop failed to start the command");
+          continue;
+        }
+        const recovery = receipt.state === "starting" || receipt.state === "started"
+          ? await this.inspectReceiptRun(receipt.chatId, receipt.runId)
+          : { exists: false as const, terminalEventType: undefined, message: undefined, error: undefined };
+        if (recovery.terminalEventType) {
+          await this.appendRunEvent({
+            sourceDeliverySeq: receipt.deliverySeq,
+            projectId: receipt.projectId,
+            issueId: receipt.issueId,
+            runId: receipt.runId,
+            chatId: receipt.chatId,
+            eventType: recovery.terminalEventType,
+            clientEventParts: ["command", receipt.commandId, recovery.terminalEventType],
+            payload: {
+              status: recovery.terminalEventType === "run.completed" ? "completed" : recovery.terminalEventType === "run.cancelled" ? "cancelled" : "failed",
+              commandId: receipt.commandId,
+              runId: receipt.runId,
+              chatId: receipt.chatId,
+              message: recovery.message,
+              error: recovery.error
+            }
+          });
+          updateDesktopKanbanCommandReceipt(
+            this.options.app,
+            currentUser,
+            receipt.commandId,
+            recovery.terminalEventType === "run.completed" ? "completed" : "failed"
+          );
+          continue;
+        }
+        if (!recovery.exists) {
+          updateDesktopKanbanCommandReceipt(this.options.app, currentUser, receipt.commandId, "starting", null, true);
+          const issue = receipt.payload.issue;
+          const issueRevision = isRecord(issue) && typeof issue.revision === "number" ? issue.revision : 0;
+          const runResult = await this.startRemoteRun({
+            issue,
+            revision: issueRevision,
+            agentKey: optionalText(receipt.payload.agentKey),
+            accessLevel: normalizeRemoteAccessLevel(receipt.payload.accessLevel),
+            chatId: receipt.chatId,
+            runId: receipt.runId,
+            requestId: receipt.requestId,
+            message: readText(receipt.payload.message),
+            source: "sidebar"
+          });
+          if (!runResult.ok) {
+            updateDesktopKanbanCommandReceipt(this.options.app, currentUser, receipt.commandId, "failed", runResult.message);
+            await this.reportFailedCommandReceipt(receipt, runResult.message);
+            continue;
+          }
+        }
+        updateDesktopKanbanCommandReceipt(this.options.app, currentUser, receipt.commandId, "started");
+        await this.appendRunEvent({
+          sourceDeliverySeq: receipt.deliverySeq,
+          projectId: receipt.projectId,
+          issueId: receipt.issueId,
+          runId: receipt.runId,
+          chatId: receipt.chatId,
+          eventType: "run.started",
+          clientEventParts: ["command", receipt.commandId, "run.started"],
+          payload: {
+            status: "running",
+            agentKey: optionalText(receipt.payload.agentKey),
+            commandId: receipt.commandId,
+            runId: receipt.runId,
+            chatId: receipt.chatId
+          }
+        });
+      }
+    } finally {
+      this.commandReceiptProcessing = false;
+      this.scheduleCommandReceiptRecovery();
+    }
+  }
+
+  private async inspectReceiptRun(chatId: string, runId: string): Promise<{
+    exists: boolean;
+    terminalEventType?: "run.completed" | "run.failed" | "run.cancelled";
+    message?: string;
+    error?: string;
+  }> {
+    if (!this.options.assistantBridge.getChat) return { exists: false };
+    try {
+      const detail = await this.options.assistantBridge.getChat(chatId);
+      const events = (detail?.events ?? []).filter((event) => event.runId === runId).sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0));
+      const terminal = [...events].reverse().find((event) => ["run.complete", "run.error", "run.stopped", "run.interrupt", "run.expired"].includes(readText(event.type)));
+      if (terminal) {
+        const type = readText(terminal.type);
+        return {
+          exists: true,
+          terminalEventType: type === "run.complete" ? "run.completed" : type === "run.stopped" || type === "run.interrupt" ? "run.cancelled" : "run.failed",
+          message: readText(terminal.message) || undefined,
+          error: readText(terminal.error) || undefined
+        };
+      }
+      return {
+        exists: Boolean(detail?.messages?.some((message) => message.runId === runId) || events.length > 0)
+      };
+    } catch {
+      return { exists: false };
+    }
+  }
+
+  private async reportFailedCommandReceipt(receipt: KanbanCommandReceipt, error: string) {
+    await this.appendRunEvent({
+      sourceDeliverySeq: receipt.deliverySeq,
+      projectId: receipt.projectId,
+      issueId: receipt.issueId,
+      runId: receipt.runId,
+      chatId: receipt.chatId,
+      eventType: "run.failed",
+      clientEventParts: ["command", receipt.commandId, "run.failed"],
+      payload: {
+        status: "failed",
+        commandId: receipt.commandId,
+        runId: receipt.runId,
+        chatId: receipt.chatId,
+        error
+      }
+    });
+    markDesktopKanbanCommandReceiptReported(this.options.app, this.currentUser(), receipt.commandId);
+  }
+
+  private scheduleCommandReceiptRecovery() {
+    if (this.commandReceiptRetryTimer) clearTimeout(this.commandReceiptRetryTimer);
+    const pending = listPendingDesktopKanbanCommandReceipts(this.options.app, this.currentUser());
+    if (pending.length === 0 || !this.wsClient.isOpen()) {
+      this.commandReceiptRetryTimer = null;
+      return;
+    }
+    this.commandReceiptRetryTimer = setTimeout(() => {
+      this.commandReceiptRetryTimer = null;
+      void this.processPendingCommandReceipts().catch((error) => this.options.onDebug?.(error instanceof Error ? error.message : String(error)));
+    }, 5_000);
   }
 
   private async appendRunEvent(input: {
@@ -1005,7 +1158,7 @@ export class KanbanRuntime {
       return;
     }
     const deviceId = getDesktopDeviceId(this.options.app);
-    await this.wsClient.request("run.event.append", {
+    const result = await this.wsClient.request<{ ok?: boolean; message?: string }>("run.event.append", {
       deviceId,
       clientEventId: stableClientEventId(deviceId, input.clientEventParts),
       sourceDeliverySeq: input.sourceDeliverySeq ?? 0,
@@ -1016,6 +1169,9 @@ export class KanbanRuntime {
       eventType: input.eventType,
       payload: input.payload
     });
+    if (result?.ok === false) {
+      throw new Error(result.message || "run.event.append was rejected");
+    }
   }
 
   // 响应云端 desktop.project.createLocal:在本地真正创建项目。
@@ -1121,8 +1277,8 @@ export class KanbanRuntime {
     }
 
     const chatId = request.chatId?.trim() || createKanbanRemoteChatId();
-    const fallbackRunId = createKanbanRemoteRunId();
-    const startRequest = { ...request, chatId };
+    const fallbackRunId = request.runId?.trim() || createKanbanRemoteRunId();
+    const startRequest = { ...request, chatId, runId: fallbackRunId, requestId: request.requestId?.trim() || fallbackRunId };
     const startRun = this.options.assistantBridge.startRun(startRequest);
     const applyRunResult = (runResult: AssistantStartRunResult) => {
       if (runResult.ok && localIssueId) {

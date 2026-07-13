@@ -8,6 +8,7 @@ import type {
   DesktopPetTaskItem
 } from "../../../shared/contracts";
 import { PRODUCT_NAME } from "../../../shared/brand";
+import { readEpochMillis } from "../../../shared/time-contract";
 import { issueAgentAccessToken as defaultIssueAgentAccessToken } from "../../agent-auth";
 import type { MainAppState } from "../../app-state";
 import {
@@ -100,7 +101,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
   const desktopPetDonePreviewDismissalTracker = createDesktopPetDonePreviewDismissalTracker();
   const desktopPetActiveRunTracker = createDesktopPetActiveRunTracker();
-  const desktopPetDismissedMessages = new Map<string, string>();
+  const desktopPetDismissedMessages = new Map<string, number>();
   const desktopPetMessageCache = new Map<string, DesktopPetMessageItem>();
   let destroyingPanelWindow = false;
   let desktopPetPanelPlacement: DesktopPetPanelPlacement = null;
@@ -319,7 +320,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return {
       tasks,
       runningTaskCount: Math.max(getRunningTaskCount(), tasks.length),
-      updatedAt: new Date().toISOString()
+      updatedAt: Date.now()
     };
   }
 
@@ -854,7 +855,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
         chatId: normalizedChatId,
         unreadCount,
         stale: false,
-        updatedAt: new Date().toISOString()
+        updatedAt: Date.now()
       };
       refreshState();
     } catch (error) {
@@ -971,10 +972,10 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
 
   function dismissMessage(input: any) {
     const chatId = typeof input?.chatId === "string" ? input.chatId.trim() : "";
-    if (!chatId) {
+    const updatedAt = readEpochMillis(input?.updatedAt);
+    if (!chatId || updatedAt === undefined) {
       return { ok: false };
     }
-    const updatedAt = typeof input?.updatedAt === "string" ? input.updatedAt : new Date().toISOString();
     desktopPetDismissedMessages.set(chatId, updatedAt);
     refreshState();
     return { ok: true };

@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type Ref,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
@@ -17,6 +18,7 @@ import {
   SidebarIllustration,
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
+import { Favicon, type WebsiteFaviconCache } from "../../components/Favicon";
 import type {
   AssistantCreateProjectRequest,
   AssistantNavAgentItem,
@@ -30,6 +32,7 @@ import type {
   WebsiteInput,
   WebsiteResult,
 } from "../../../shared/contracts";
+import { readEpochMillis } from "../../../shared/time-contract";
 import {
   createWebNavOrderKey,
   sortSidebarNavItems,
@@ -42,19 +45,18 @@ import { Popover } from "../../components/Popover";
 import { SettingsSidebarIcon } from "./SettingsSidebarIcon";
 import { useI18n } from "../../i18n/useI18n";
 import {
-  getPrimaryAssistantNavAgents,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
+  getAssistantNavRecentChatsOverview,
   getAssistantNavAgentSortedChats,
-  sortAssistantNavAgentsForMode,
-  type AssistantNavSortMode,
+  isAssistantNavChatAgent,
+  isAssistantNavProjectAgent,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../../../shared/agent-webclient-routes";
-import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
   SettingsSectionGroupId,
@@ -75,11 +77,20 @@ type SidebarToolItem = Omit<SidebarNavItem, "orderKey"> & {
   orderKey: string;
 };
 
-type SidebarPrimaryEntry = SidebarNavItem & {
+type SidebarChatsEntry = {
+  orderKey: "chats";
+  label: string;
+  collapsedLabel?: string;
+  entryType: "chats";
+};
+
+type SidebarStandardPrimaryEntry = SidebarNavItem & {
   entryType?: "link" | "assistants" | "webs";
 };
 
-type SidebarGroupId = "assistants" | "webs";
+type SidebarPrimaryEntry = SidebarStandardPrimaryEntry | SidebarChatsEntry;
+
+type SidebarGroupId = "assistants" | "chats" | "webs";
 
 type SidebarGroupState = Record<SidebarGroupId, boolean>;
 
@@ -96,6 +107,8 @@ type SidebarStatusSummary = {
   unreadCount: number;
   pendingCount: number;
 };
+
+type AssistantNavSortMode = "byName" | "byTime";
 
 type AssistantChatMenuState = {
   chat: AssistantNavChatItem;
@@ -159,14 +172,14 @@ type CreateProjectDialogState = {
 };
 
 type BootstrapGuideFloatingBubble = {
-  id: "agent" | "tool-help";
+  id: "chat" | "tool-help";
   messageKey: TranslationKey;
   side: "left" | "right";
   style: CSSProperties;
 };
 
 type BootstrapGuideDismissedBubbles = {
-  agent: boolean;
+  chat: boolean;
   help: boolean;
 };
 
@@ -179,13 +192,14 @@ const BOOTSTRAP_GUIDE_BUBBLE_VIEWPORT_MARGIN = 12;
 
 function createInitialBootstrapGuideDismissedBubbles(): BootstrapGuideDismissedBubbles {
   return {
-    agent: false,
+    chat: false,
     help: false,
   };
 }
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
+  chats: true,
   webs: true,
 };
 
@@ -202,33 +216,39 @@ const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
   },
 ];
 
-const HIDDEN_ASSISTANT_ROLE_AGENT_TYPES = new Set<string>(["coder", "kbase"]);
+const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
+  "desktopAssistant",
+  "webOperator",
+]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
+const CHATS_RECENT_LIMIT = 8;
+type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS
     .filter((routeDefinition) => routeDefinition.kind === "management")
     .map((routeDefinition) => routeDefinition.routePath),
 );
 
-const kanbanNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const kanbanNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "kanban",
   to: "/kanban",
   icon: "futures",
 };
 
-const schedulesNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const schedulesNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "schedules",
   to: "/automations",
   icon: "schedule",
 };
 
+const chatsNavItemBase: Omit<SidebarChatsEntry, "label"> = {
+  orderKey: "chats",
+  entryType: "chats",
+};
+
 function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
-  const agentType = agent.agentType?.trim().toLowerCase() ?? "";
   const mode = agent.mode?.trim().toUpperCase() ?? "";
-  if (
-    HIDDEN_ASSISTANT_ROLE_AGENT_TYPES.has(agentType) ||
-    HIDDEN_ASSISTANT_ROLE_MODES.has(mode)
-  ) {
+  if (HIDDEN_ASSISTANT_ROLE_MODES.has(mode)) {
     return "";
   }
   const role = agent.role?.trim() ?? "";
@@ -238,14 +258,28 @@ function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
   return role;
 }
 
-const assistantGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+function getAssistantProjectKind(
+  agent: AssistantNavAgentItem,
+): AssistantProjectKind | null {
+  const mode = agent.mode?.trim().toUpperCase() ?? "";
+  if (mode === "CODER") {
+    return "coder";
+  }
+  if (mode === "KBASE") {
+    return "kbase";
+  }
+
+  return null;
+}
+
+const assistantGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "group:assistants",
   to: "",
   icon: "assistant",
   entryType: "assistants",
 };
 
-const websGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+const websGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "group:webs",
   to: "",
   icon: "website",
@@ -259,6 +293,7 @@ const fixedToolRowsBase: Array<
         | "nav.agents"
         | "nav.archives"
         | "nav.registries"
+        | "nav.skills"
         | "nav.market"
         | "nav.settings";
     }
@@ -288,6 +323,12 @@ const fixedToolRowsBase: Array<
       to: "/market",
       labelKey: "nav.market",
       icon: "market",
+    },
+    {
+      orderKey: "skills",
+      to: "/skills",
+      labelKey: "nav.skills",
+      icon: "agent",
     },
   ],
   [
@@ -364,12 +405,18 @@ function normalizeSidebarGroupState(candidate: unknown): SidebarGroupState {
   if (!candidate || typeof candidate !== "object") {
     return defaultSidebarGroupState;
   }
-  const record = candidate as Partial<Record<SidebarGroupId | "websites", unknown>>;
+  const record = candidate as Partial<
+    Record<SidebarGroupId | "websites", unknown>
+  >;
   return {
     assistants:
       typeof record.assistants === "boolean"
         ? record.assistants
         : defaultSidebarGroupState.assistants,
+    chats:
+      typeof record.chats === "boolean"
+        ? record.chats
+        : defaultSidebarGroupState.chats,
     webs:
       typeof record.webs === "boolean"
         ? record.webs
@@ -458,7 +505,7 @@ function getRouteEmbedPath(route: string) {
 function readAgentInfoFromWebclientPath(pathWithQuery: string) {
   const normalized = pathWithQuery.trim();
   if (!normalized) {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
   try {
     const url = new URL(normalized, "http://agent-webclient.local");
@@ -467,10 +514,9 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string) {
       agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
       historyRequested: url.searchParams.get("history")?.trim() === "1",
-      newChatRequested: url.searchParams.get("newChat")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
 }
 
@@ -485,7 +531,7 @@ function readAgentRouteInfo(route: string) {
   }
   const queryIndex = route.indexOf("?");
   if (queryIndex < 0) {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
   try {
     const searchParams = new URLSearchParams(route.slice(queryIndex + 1));
@@ -493,10 +539,9 @@ function readAgentRouteInfo(route: string) {
       agentKey: searchParams.get("agentKey")?.trim() ?? "",
       chatId: searchParams.get("chatId")?.trim() ?? "",
       historyRequested: searchParams.get("history")?.trim() === "1",
-      newChatRequested: searchParams.get("newChat")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false, newChatRequested: false };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
 }
 
@@ -511,10 +556,7 @@ function createAgentChatRoute(agentKey: string, chatId: string) {
 }
 
 function createAgentNewChatRoute(agentKey: string) {
-  const params = new URLSearchParams();
-  params.set("newChat", "1");
-  params.set("newChatRequest", String(Date.now()));
-  return `${createAgentRoute(agentKey)}?${params.toString()}`;
+  return `${createAgentRoute(agentKey)}?newChat=${Date.now()}`;
 }
 
 function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
@@ -564,6 +606,15 @@ function summarizeAgentStatus(
   };
 }
 
+function shouldShowAssistantInChats(agent: AssistantNavAgentItem) {
+  return isAssistantNavChatAgent(agent);
+}
+
+function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
+  return !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim()) &&
+    isAssistantNavProjectAgent(agent);
+}
+
 function formatUnreadCount(value: number) {
   if (value <= 0) {
     return "";
@@ -586,12 +637,13 @@ function formatMonthDay(date: Date): string {
 function formatYearMonth(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
 }
-function formatAssistantChatTime(updatedAt: string) {
-  if (!updatedAt) {
+function formatAssistantChatTime(updatedAt?: number) {
+  const timestamp = readEpochMillis(updatedAt);
+  if (timestamp === undefined) {
     return "";
   }
 
-  const updatedDate = new Date(updatedAt);
+  const updatedDate = new Date(timestamp);
   if (Number.isNaN(updatedDate.getTime())) {
     return "--";
   }
@@ -616,6 +668,38 @@ function formatAssistantChatTime(updatedAt: string) {
   return formatYearMonth(updatedDate);
 }
 
+function formatAssistantChatDateTime(value?: number) {
+  const timestamp = readEpochMillis(value);
+  if (timestamp === undefined) {
+    return "";
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+function getAssistantWorkspaceName(
+  workspaceDir: string | undefined,
+  workspaceDirExists: boolean | undefined,
+) {
+  const normalized = workspaceDir?.trim().replace(/[\\/]+$/u, "") ?? "";
+  if (!normalized || normalized === "@chat" || workspaceDirExists === false) {
+    return "";
+  }
+  return normalized.split(/[\\/]/u).filter(Boolean).at(-1) ?? "";
+}
+
 function isAssistantRunningPreview(value: string) {
   const normalized = value.trim().toLowerCase();
   return [
@@ -626,12 +710,70 @@ function isAssistantRunningPreview(value: string) {
   ].includes(normalized);
 }
 
+function getAssistantChatPreviewText(
+  chat: AssistantNavChatItem,
+  t: TranslateFunction,
+) {
+  return chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
+    ? chat.chatName || t("sidebar.chat.noPreview")
+    : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
+}
+
+function toAssistantSortTimestamp(value: number | undefined) {
+  return readEpochMillis(value) ?? 0;
+}
+
+function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
+  const latestChat = getAssistantNavAgentSortedChats(agent)[0];
+  if (latestChat) {
+    return toAssistantSortTimestamp(latestChat.updatedAt);
+  }
+  return agent.latestChatId ? toAssistantSortTimestamp(agent.updatedAt) : 0;
+}
+
+function compareAssistantAgentsByTime(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const rightTime = readAssistantAgentLatestTimestamp(right);
+  const leftTime = readAssistantAgentLatestTimestamp(left);
+  if (rightTime !== leftTime) {
+    return rightTime - leftTime;
+  }
+  return compareAssistantAgentsByName(left, right);
+}
+
+function compareAssistantAgentsByName(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const displayNameComparison = left.displayName.localeCompare(
+    right.displayName,
+    "zh-CN",
+  );
+  if (displayNameComparison !== 0) {
+    return displayNameComparison;
+  }
+  return left.agentKey.localeCompare(right.agentKey);
+}
+
+function sortAssistantNavAgentsForMode(
+  items: AssistantNavAgentItem[],
+  sortMode: AssistantNavSortMode,
+) {
+  const compare =
+    sortMode === "byName"
+      ? compareAssistantAgentsByName
+      : compareAssistantAgentsByTime;
+  return [...items].sort(compare);
+}
+
 function getAssistantAwaitingStatusKey(
   mode?: AssistantNavChatItem["awaitingMode"],
 ) {
   switch (mode) {
-    case "plan":
-      return "sidebar.assistants.awaitingStatus.plan";
+    case "planning":
+      return "sidebar.assistants.awaitingStatus.planning";
     case "question":
       return "sidebar.assistants.awaitingStatus.question";
     case "approval":
@@ -661,6 +803,10 @@ function createSidebarAgentMoreFocusId(agentKey: string) {
 
 function createSidebarChatFocusId(chatId: string) {
   return `chat:${chatId}`;
+}
+
+function createSidebarChatsChatFocusId(chatId: string) {
+  return `chats-chat:${chatId}`;
 }
 
 function createSidebarWebFocusId(entryKey: WebEntryKey | string) {
@@ -749,11 +895,15 @@ type AppSidebarProps = {
   webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavAgentsLoaded?: boolean;
+  websitesLoaded?: boolean;
+  chatNavAgentOptions?: AssistantNavAgentItem[];
   copilotAgentOptions?: AssistantNavAgentItem[];
+  chatDefaultAgentKey?: string;
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
-  bootstrapGuideActive?: boolean;
+  bootstrapActive?: boolean;
   bootstrapAgentKey?: string;
+  bootstrapChatId?: string;
   sidebarNavigationCanGoBack?: boolean;
   sidebarNavigationCanGoForward?: boolean;
   onOpenAssistantDock?: () => void;
@@ -768,6 +918,7 @@ type AppSidebarProps = {
   ) => Promise<WebsiteResult>;
   onImportWebappItem?: () => Promise<WebappImportResult>;
   webOpenEntryKeys?: WebEntryKey[];
+  faviconCache?: WebsiteFaviconCache;
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
   onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
@@ -798,11 +949,15 @@ export function AppSidebar({
   webItems,
   assistantNavAgents = [],
   assistantNavAgentsLoaded = true,
+  websitesLoaded = true,
+  chatNavAgentOptions = [],
   copilotAgentOptions = [],
+  chatDefaultAgentKey = "",
   desktopSsoStatus = null,
   desktopSsoBusy = false,
-  bootstrapGuideActive = false,
+  bootstrapActive = false,
   bootstrapAgentKey = "",
+  bootstrapChatId = "",
   sidebarNavigationCanGoBack = false,
   sidebarNavigationCanGoForward = false,
   onOpenAssistantDock,
@@ -815,6 +970,7 @@ export function AppSidebar({
   onCreateWebsiteItem,
   onImportWebappItem,
   webOpenEntryKeys = [],
+  faviconCache,
   onCloseWebItem,
   onRemoveWebappItem,
   onRequestNavigate,
@@ -883,7 +1039,7 @@ export function AppSidebar({
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
-  const bootstrapGuideAgentAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
   const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
@@ -906,13 +1062,66 @@ export function AppSidebar({
   const activeSidebarAgentKey =
     currentAgentKey ||
     (pendingPath && !forcedActiveManagementRoute ? pendingAgentKey : "");
-  const normalizedBootstrapAgentKey = bootstrapGuideActive ? bootstrapAgentKey.trim() : "";
+  const normalizedBootstrapAgentKey = bootstrapAgentKey.trim();
+  const normalizedBootstrapChatId = bootstrapChatId.trim();
   const showBootstrapGuideCard =
-    bootstrapGuideActive && !bootstrapGuideCardDismissed && !isSettingsMode && !isCollapsed;
+    bootstrapActive && !bootstrapGuideCardDismissed && !isSettingsMode && !isCollapsed;
   const primaryAssistantNavAgents = useMemo(
-    () => getPrimaryAssistantNavAgents(assistantNavAgents),
+    () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
   );
+  const normalizedChatDefaultAgentKey = chatDefaultAgentKey.trim();
+  const chatDefaultAgent = useMemo(
+    () =>
+      chatNavAgentOptions.find(
+        (agent) => agent.agentKey === normalizedChatDefaultAgentKey,
+      ) ?? null,
+    [chatNavAgentOptions, normalizedChatDefaultAgentKey],
+  );
+  const resolvedChatDefaultAgent = chatDefaultAgent;
+  const resolvedChatDefaultAgentKey =
+    resolvedChatDefaultAgent?.agentKey.trim() ?? "";
+  const recentChatsOverviewItems = useMemo(
+    () => resolvedChatDefaultAgent
+      ? getAssistantNavRecentChatsOverview([resolvedChatDefaultAgent], CHATS_RECENT_LIMIT)
+      : [],
+    [resolvedChatDefaultAgent],
+  );
+  const bootstrapSeedChatIndexed = Boolean(
+    bootstrapActive &&
+    normalizedBootstrapChatId &&
+    recentChatsOverviewItems.some(
+      ({ agent, chat }) =>
+        chat.chatId === normalizedBootstrapChatId &&
+        (chat.agentKey || agent.agentKey) === normalizedBootstrapAgentKey,
+    )
+  );
+  const showBootstrapChatFallback = Boolean(
+    bootstrapActive &&
+    normalizedBootstrapAgentKey &&
+    resolvedChatDefaultAgentKey === normalizedBootstrapAgentKey &&
+    !bootstrapSeedChatIndexed
+  );
+  const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);
+  const chatDefaultAgentUnavailable =
+    assistantNavAgentsLoaded && !chatDefaultAgentAvailable;
+  const chatAgentInlineLabel = resolvedChatDefaultAgent
+    ? t("sidebar.chats.withAgent", { name: resolvedChatDefaultAgent.displayName })
+    : "";
+  const chatOverviewTotal = resolvedChatDefaultAgent
+    ? Math.max(
+        getAssistantNavAgentNonNegativeInteger(resolvedChatDefaultAgent.chatCount),
+        getAssistantNavAgentSortedChats(resolvedChatDefaultAgent).length,
+      )
+    : 0;
+  const chatOverviewUnreadCount = resolvedChatDefaultAgent
+    ? getAssistantNavAgentNonNegativeInteger(resolvedChatDefaultAgent.unreadCount)
+    : 0;
+  const activeChatsOverviewChatId = recentChatsOverviewItems.some(
+    ({ chat }) => chat.chatId === currentChatId,
+  )
+    ? currentChatId
+    : "";
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(primaryAssistantNavAgents),
     [primaryAssistantNavAgents],
@@ -976,6 +1185,11 @@ export function AppSidebar({
       },
       { ...schedulesNavItemBase, label: t("nav.schedules"), collapsedLabel: t("nav.schedulesCollapsed") },
       {
+        ...chatsNavItemBase,
+        label: t("nav.chats"),
+        collapsedLabel: t("nav.chatsCollapsed"),
+      },
+      {
         ...assistantGroupNavItemBase,
         label: t("nav.assistants"),
         collapsedLabel: t("nav.assistantsCollapsed"),
@@ -985,7 +1199,7 @@ export function AppSidebar({
         label: t("nav.websites"),
         collapsedLabel: t("nav.websitesCollapsed"),
       },
-    ].filter((item) => sidebarNavOrder.includes(item.orderKey)),
+    ].filter((item) => sidebarNavOrder.includes(item.orderKey)) as SidebarPrimaryEntry[],
     sidebarNavOrder,
   );
   const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase
@@ -1022,6 +1236,13 @@ export function AppSidebar({
       return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
     }
 
+    if (activeChatsOverviewChatId) {
+      if (!isCollapsed && sidebarGroupState.chats) {
+        return createSidebarChatsChatFocusId(activeChatsOverviewChatId);
+      }
+      return createSidebarGroupFocusId("chats");
+    }
+
     if (isAssistantGroupActive()) {
       if (
         !isCollapsed &&
@@ -1048,6 +1269,9 @@ export function AppSidebar({
     if (firstItem.entryType === "assistants") {
       return createSidebarGroupFocusId("assistants");
     }
+    if (firstItem.entryType === "chats") {
+      return createSidebarGroupFocusId("chats");
+    }
     if (firstItem.entryType === "webs") {
       return createSidebarGroupFocusId("webs");
     }
@@ -1061,7 +1285,9 @@ export function AppSidebar({
     navItems,
     pendingPath,
     sidebarGroupState.assistants,
+    sidebarGroupState.chats,
     sidebarGroupState.webs,
+    activeChatsOverviewChatId,
     webNavItems,
   ]);
   const resolvedSidebarNavFocusId =
@@ -1171,30 +1397,31 @@ export function AppSidebar({
   }, [assistantChatMenu]);
 
   useEffect(() => {
-    if (!bootstrapGuideActive) {
+    if (!bootstrapActive) {
       bootstrapGuideToolMenuAutoOpenedRef.current = false;
       setBootstrapGuideCardDismissed(false);
       setBootstrapGuideDismissedBubbles((current) =>
-        current.agent || current.help
+        current.chat || current.help
           ? createInitialBootstrapGuideDismissedBubbles()
           : current,
       );
+      setBootstrapGuideFloatingBubbles([]);
       return;
     }
     if (!isSettingsMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
       bootstrapGuideToolMenuAutoOpenedRef.current = true;
       setToolMenuOpen(true);
     }
-  }, [bootstrapGuideActive, isSettingsMode]);
+  }, [bootstrapActive, isSettingsMode]);
 
   useEffect(() => {
-    if (!bootstrapGuideActive || typeof window === "undefined") {
+    if (!bootstrapActive || typeof window === "undefined") {
       return undefined;
     }
 
     const timeoutId = window.setTimeout(() => {
       setBootstrapGuideDismissedBubbles({
-        agent: true,
+        chat: true,
         help: true,
       });
       setBootstrapGuideFloatingBubbles([]);
@@ -1203,10 +1430,10 @@ export function AppSidebar({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [bootstrapGuideActive, normalizedBootstrapAgentKey]);
+  }, [bootstrapActive, normalizedBootstrapAgentKey, normalizedBootstrapChatId]);
 
   useEffect(() => {
-    if (!bootstrapGuideActive || typeof window === "undefined") {
+    if (!bootstrapActive || typeof window === "undefined") {
       setBootstrapGuideFloatingBubbles([]);
       return undefined;
     }
@@ -1229,13 +1456,14 @@ export function AppSidebar({
       window.cancelAnimationFrame(frameId);
     };
   }, [
-    bootstrapGuideActive,
-    bootstrapGuideDismissedBubbles.agent,
+    bootstrapActive,
+    bootstrapGuideDismissedBubbles.chat,
     bootstrapGuideDismissedBubbles.help,
+    bootstrapSeedChatIndexed,
     isCollapsed,
     isSettingsMode,
     normalizedBootstrapAgentKey,
-    sortedAssistantNavAgents.length,
+    normalizedBootstrapChatId,
     toolMenuOpen,
   ]);
 
@@ -1349,6 +1577,7 @@ export function AppSidebar({
     navItems,
     resolvedSidebarNavFocusId,
     sidebarGroupState.assistants,
+    sidebarGroupState.chats,
     sidebarGroupState.webs,
     sidebarNavFocusId,
     sortedAssistantNavAgents,
@@ -1458,79 +1687,28 @@ export function AppSidebar({
     closeToolMenu();
   }
 
-  function handleBootstrapGuideOpenAgent() {
+  function createBootstrapChatTargetRoute() {
     if (!normalizedBootstrapAgentKey) {
+      return "";
+    }
+    return bootstrapSeedChatIndexed && normalizedBootstrapChatId
+      ? createAgentChatRoute(normalizedBootstrapAgentKey, normalizedBootstrapChatId)
+      : createAgentNewChatRoute(normalizedBootstrapAgentKey);
+  }
+
+  function handleBootstrapGuideOpenChat() {
+    const targetRoute = createBootstrapChatTargetRoute();
+    if (!targetRoute) {
       return;
     }
-    dismissBootstrapGuideBubble("agent");
-    requestNavigate(createAgentRoute(normalizedBootstrapAgentKey), {
-      retriggerAgentRoute: true,
-    });
+    dismissBootstrapGuideBubble("chat");
+    requestNavigate(targetRoute, { retriggerAgentRoute: true });
   }
 
   function handleBootstrapGuideOpenHelp() {
     dismissBootstrapGuideBubble("help");
     requestNavigate("/help");
     closeToolMenu();
-  }
-
-  function dispatchAgentRouteActionToActiveWebview(targetPath: string) {
-    const { agentKey, chatId, historyRequested, newChatRequested } = readAgentRouteInfo(targetPath);
-    if (!agentKey) {
-      return false;
-    }
-
-    const webview = getActivePluginSurfaceWebviewRef()?.current;
-    if (!webview) {
-      return false;
-    }
-
-    if (historyRequested) {
-      try {
-        webview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
-          action: "openChatHistory",
-          data: {
-            workerKey: `agent:${agentKey}`,
-            agentKey,
-          },
-        });
-        return true;
-      } catch (error) {
-        console.warn("[assistant] failed to open agent history", error);
-        return false;
-      }
-    }
-
-    if (!chatId) {
-      if (!newChatRequested) {
-        return false;
-      }
-    }
-
-    const eventName = chatId
-      ? "agent:load-chat"
-      : "agent:start-new-conversation";
-    const detail = chatId
-      ? {
-          chatId,
-          focusComposerOnComplete: true,
-        }
-      : {
-          agentKey,
-          preserveWorkerContext: true,
-          focusComposerOnComplete: true,
-        };
-    const script = [
-      `window.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {`,
-      `  detail: ${JSON.stringify(detail)}`,
-      "}));",
-      "true;",
-    ].join("\n");
-
-    void webview.executeJavaScript(script, true).catch((error: unknown) => {
-      console.warn("[assistant] failed to retrigger agent route", error);
-    });
-    return true;
   }
 
   function dispatchAgentWebclientManagementRouteToActiveWebview(targetPath: string) {
@@ -1564,18 +1742,7 @@ export function AppSidebar({
     return true;
   }
 
-  function requestNavigate(targetPath: string, options: NavigateOptions = {}) {
-    if (options.retriggerAgentRoute) {
-      const targetAgentInfo = readAgentRouteInfo(targetPath);
-      if (
-        targetPath === currentRoute ||
-        targetAgentInfo.historyRequested ||
-        targetAgentInfo.newChatRequested
-      ) {
-        dispatchAgentRouteActionToActiveWebview(targetPath);
-      }
-    }
-
+  function requestNavigate(targetPath: string, _options: NavigateOptions = {}) {
     if (targetPath === currentRoute) {
       return;
     }
@@ -1662,7 +1829,9 @@ export function AppSidebar({
   }
 
   function readSidebarGroupId(value: string | undefined): SidebarGroupId | null {
-    return value === "assistants" || value === "webs" ? value : null;
+    return value === "assistants" || value === "chats" || value === "webs"
+      ? value
+      : null;
   }
 
   function findAssistantNavAgent(agentKey: string) {
@@ -1736,7 +1905,7 @@ export function AppSidebar({
       openAgentMenuAtElement(element, agent);
       return true;
     }
-    if (kind === "chat") {
+    if (kind === "chat" || kind === "chats-chat") {
       const chat = findAssistantNavChat(element.dataset.sidebarChatId || "");
       if (!chat) {
         return false;
@@ -1810,6 +1979,9 @@ export function AppSidebar({
         return true;
       }
       return false;
+    }
+    if (kind === "chats-chat") {
+      return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
     }
     if (kind === "chat" || kind === "agent-more") {
       const agentKey = element.dataset.sidebarAgentKey || "";
@@ -2147,12 +2319,6 @@ export function AppSidebar({
     agent: AssistantNavAgentItem,
     expanded: boolean,
   ) {
-    if (
-      normalizedBootstrapAgentKey &&
-      agent.agentKey === normalizedBootstrapAgentKey
-    ) {
-      dismissBootstrapGuideBubble("agent");
-    }
     setExpandedAssistantAgentKey(expanded ? agent.agentKey : "");
     if (!expanded) {
       return;
@@ -2177,6 +2343,17 @@ export function AppSidebar({
     });
   }
 
+  function handleChatsNewChat(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!resolvedChatDefaultAgentKey || chatDefaultAgentUnavailable) {
+      return;
+    }
+    requestNavigate(createAgentNewChatRoute(resolvedChatDefaultAgentKey), {
+      retriggerAgentRoute: true,
+    });
+  }
+
   async function handleAssistantMarkAllRead(
     event: MouseEvent<HTMLElement>,
     agent: AssistantNavAgentItem,
@@ -2187,6 +2364,13 @@ export function AppSidebar({
   }
 
   async function handleAssistantOpenChat(chat: AssistantNavChatItem) {
+    if (
+      bootstrapActive &&
+      normalizedBootstrapChatId &&
+      chat.chatId === normalizedBootstrapChatId
+    ) {
+      dismissBootstrapGuideBubble("chat");
+    }
     if (!chat.isRead && !chat.hasActiveRun) {
       const assistantApi = window.electronAPI.assistant as typeof window.electronAPI.assistant & {
         markChatRead?: (
@@ -2547,6 +2731,22 @@ export function AppSidebar({
     );
   }
 
+  function renderSidebarGroupStatusBadges(
+    groupId: SidebarGroupId,
+    status?: SidebarStatusSummary,
+  ) {
+    if (!status) {
+      return null;
+    }
+    if (groupId === "assistants") {
+      return renderStatusBadges(
+        { ...status, pendingCount: 0 },
+        "sidebar-group-status",
+      );
+    }
+    return renderStatusBadges(status, "sidebar-group-status");
+  }
+
   function getSidebarLinkClassName(targetPath: string, extraClassName = "") {
     return [
       "sidebar-link",
@@ -2580,6 +2780,243 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsNewChatButton(options: { inPopover?: boolean } = {}) {
+    const disabled =
+      !resolvedChatDefaultAgentKey ||
+      chatDefaultAgentUnavailable;
+    const label = disabled
+      ? t("sidebar.chats.defaultAgentUnavailable")
+      : t("sidebar.chats.newChat");
+    return (
+      <Tooltip content={label}>
+        <button
+          type="button"
+          className={[
+            "assistant-worker-icon-button",
+            "sidebar-chats-new-button",
+            options.inPopover ? "is-in-popover" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-label={t("sidebar.chats.newChat")}
+          title={label}
+          tabIndex={options.inPopover ? undefined : -1}
+          disabled={disabled}
+          onClick={handleChatsNewChat}
+        >
+          <SidebarActionIcon kind="new_chat" />
+        </button>
+      </Tooltip>
+    );
+  }
+
+  function renderChatHoverCard(
+    agent: (typeof recentChatsOverviewItems)[number]["agent"],
+    chat: AssistantNavChatItem,
+  ) {
+    const askedAt = formatAssistantChatDateTime(chat.createdAt);
+    const workspaceName = getAssistantWorkspaceName(
+      agent.workspaceDir,
+      agent.workspaceDirExists,
+    );
+    const statusLabels = [
+      chat.hasActiveRun ? t("sidebar.agent.running") : "",
+      chat.hasPendingAwaiting ? t(getAssistantAwaitingStatusKey(chat.awaitingMode)) : "",
+      !chat.isRead ? t("sidebar.chat.unread") : "",
+    ].filter(Boolean);
+    return (
+      <div className="sidebar-chat-hover-card">
+        <span className="sidebar-chat-hover-card-title">
+          {chat.chatName || getAssistantChatPreviewText(chat, t)}
+        </span>
+        <div className="sidebar-chat-hover-card-meta">
+          <span>{t("sidebar.chats.card.agent", { name: agent.displayName })}</span>
+          {askedAt ? (
+            <span>{t("sidebar.chats.card.askedAt", { time: askedAt })}</span>
+          ) : null}
+        </div>
+        {statusLabels.length > 0 ? (
+          <div className="sidebar-chat-hover-card-statuses" aria-label={t("sidebar.chats.card.status")}>
+            {statusLabels.map((label) => (
+              <span className="sidebar-chat-hover-card-status" key={label}>
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {workspaceName ? (
+          <div className="sidebar-chat-hover-card-context">
+            <span>{t("sidebar.chats.card.workspace", { name: workspaceName })}</span>
+            {agent.gitBranch ? (
+              <span>{t("sidebar.chats.card.branch", { name: agent.gitBranch })}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderChatsList(options: { roving?: boolean } = {}) {
+    const roving = options.roving ?? true;
+    return (
+      <div className="sidebar-chats-list" role="list">
+        {showBootstrapChatFallback ? (
+          <div className="sidebar-chats-row" role="listitem">
+            <button
+              ref={bootstrapGuideChatAnchorRef}
+              type="button"
+              className={[
+                "sidebar-chats-item",
+                "sidebar-chats-bootstrap-fallback",
+                "is-bootstrap-guide",
+                currentAgentKey === normalizedBootstrapAgentKey && !currentChatId
+                  ? "is-active"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-current={
+                currentAgentKey === normalizedBootstrapAgentKey && !currentChatId
+                  ? "page"
+                  : undefined
+              }
+              onClick={handleBootstrapGuideOpenChat}
+              {...getSidebarRovingItemProps(
+                createSidebarChatsChatFocusId("bootstrap-fallback"),
+                roving,
+              )}
+            >
+              <span className="sidebar-chats-copy">
+                <span className="sidebar-chats-preview">{t("sidebar.bootstrapChat.cta")}</span>
+              </span>
+            </button>
+          </div>
+        ) : null}
+        {recentChatsOverviewItems.length > 0 ? (
+          recentChatsOverviewItems.map(({ agent, chat }) => {
+            const isActive = chat.chatId === currentChatId;
+            const isBootstrapSeedChat = Boolean(
+              bootstrapActive &&
+              normalizedBootstrapChatId &&
+              chat.chatId === normalizedBootstrapChatId &&
+              (chat.agentKey || agent.agentKey) === normalizedBootstrapAgentKey
+            );
+            return (
+              <div
+                className="sidebar-chats-row"
+                role="listitem"
+                key={chat.chatId}
+                onContextMenu={(event) => handleAssistantChatContextMenu(event, chat)}
+              >
+                <Popover
+                  trigger="hover"
+                  placement="right-start"
+                  closeOnOutsideClick={false}
+                  className="sidebar-chat-hover-card-surface"
+                  content={renderChatHoverCard(agent, chat)}
+                >
+                  <button
+                    ref={isBootstrapSeedChat ? bootstrapGuideChatAnchorRef : undefined}
+                    type="button"
+                    className={[
+                      "sidebar-chats-item",
+                      isActive ? "is-active" : "",
+                      !chat.isRead ? "is-unread" : "",
+                      isBootstrapSeedChat ? "is-bootstrap-guide" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => void handleAssistantOpenChat(chat)}
+                    {...getSidebarRovingItemProps(
+                      createSidebarChatsChatFocusId(chat.chatId),
+                      roving,
+                    )}
+                    data-sidebar-nav-kind={roving ? "chats-chat" : undefined}
+                    data-sidebar-chat-id={roving ? chat.chatId : undefined}
+                  >
+                    <span className="sidebar-chats-copy">
+                      <span className="sidebar-chats-preview">
+                        {isBootstrapSeedChat
+                          ? chat.chatName || t("sidebar.bootstrapChat.cta")
+                          : getAssistantChatPreviewText(chat, t)}
+                      </span>
+                    </span>
+                    <span className="sidebar-chats-time">
+                      {formatAssistantChatTime(chat.updatedAt)}
+                    </span>
+                  </button>
+                </Popover>
+              </div>
+            );
+          })
+        ) : !showBootstrapChatFallback ? (
+          chatDefaultAgentUnavailable ? (
+            <div className="sidebar-empty-hint">{t("sidebar.chats.defaultAgentUnavailable")}</div>
+          ) : (
+            <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
+          )
+        ) : null}
+        {chatOverviewTotal > CHATS_RECENT_LIMIT && resolvedChatDefaultAgent ? (
+          <button
+            type="button"
+            className="worker-chat-more assistant-worker-more"
+            {...getSidebarRovingItemProps(
+              createSidebarAgentMoreFocusId(resolvedChatDefaultAgent.agentKey),
+              roving,
+            )}
+            data-sidebar-nav-kind={roving ? "agent-more" : undefined}
+            data-sidebar-agent-key={roving ? resolvedChatDefaultAgent.agentKey : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              requestNavigate(createAgentHistoryRoute(resolvedChatDefaultAgent.agentKey), {
+                retriggerAgentRoute: true,
+              });
+            }}
+          >
+            {t("sidebar.chat.viewMore", {
+              count: chatOverviewTotal,
+              unread: chatOverviewUnreadCount > 0
+                ? t("sidebar.chat.unreadSuffix", { count: chatOverviewUnreadCount })
+                : "",
+            })}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderChatsEntry(item: SidebarChatsEntry) {
+    return renderSidebarGroup({
+      groupId: "chats",
+      label: item.label,
+      collapsedLabel: item.collapsedLabel,
+      active: Boolean(
+        activeChatsOverviewChatId ||
+        (bootstrapActive && currentAgentKey === normalizedBootstrapAgentKey),
+      ),
+      children: [],
+      headerLabel: (
+        <span className="sidebar-link-label" tabIndex={-1}>
+          {item.label}
+        </span>
+      ),
+      headerSupplement: chatAgentInlineLabel ? (
+        <span className="sidebar-chats-agent-label" aria-hidden="true">
+          {chatAgentInlineLabel}
+        </span>
+      ) : undefined,
+      headerActions: renderChatsNewChatButton(),
+      popoverHeader: (
+        <div className="sidebar-chats-collapsed-head">
+          <span>{item.label}</span>
+          {renderChatsNewChatButton({ inPopover: true })}
+        </div>
+      ),
+      renderChildren: ({ roving }) => renderChatsList({ roving }),
+    });
+  }
+
   function renderSidebarChildLink(
     item: SidebarNavItem & { status?: SidebarStatusSummary },
     options: { roving?: boolean } = {},
@@ -2596,12 +3033,11 @@ export function AppSidebar({
       const closing = webClosePendingEntryKey === webItem.entryKey;
       const removePending =
         webItem.kind === "webapp" && webItemRemovePendingId === webItem.id;
-      const showWebAction = isOpen || webItem.kind === "webapp";
-      const webIconKind = isOpen ? "website_open" : "website_closed";
-      const webActionLabel =
-        webItem.kind === "webapp"
-          ? t("sidebar.webapp.actions")
-          : t("sidebar.website.close");
+      const showWebappAction = webItem.kind === "webapp";
+      const isWebsite = webItem.kind === "website";
+      const cachedFaviconUrl = faviconCache?.[webItem.entryKey]?.faviconUrl;
+      const webappActionLabel = t("sidebar.webapp.actions");
+      const closeWebsiteLabel = t("sidebar.website.close");
       return (
         <div
           key={item.to}
@@ -2628,9 +3064,18 @@ export function AppSidebar({
             data-sidebar-web-entry-key={roving ? webItem.entryKey : undefined}
             className={() => getSidebarLinkClassName(item.to, extraClassName)}
           >
-            {showIcon ? (
+            {showIcon && isWebsite ? (
               <span className="sidebar-link-icon">
-                <SidebarActionIcon kind={webIconKind} />
+                <Favicon
+                  className="sidebar-website-favicon"
+                  title={item.label}
+                  url={webItem.url}
+                  faviconUrl={cachedFaviconUrl}
+                />
+              </span>
+            ) : showIcon ? (
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={item.icon} />
               </span>
             ) : null}
             <span className="sidebar-link-label">{item.label}</span>
@@ -2638,28 +3083,48 @@ export function AppSidebar({
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {showWebAction ? (
+          {isOpen && isWebsite ? (
+            <Tooltip content={closeWebsiteLabel}>
+              <button
+                type="button"
+                className={`assistant-worker-icon-button sidebar-website-status-action${closing ? " is-closing" : ""}`}
+                aria-label={closeWebsiteLabel}
+                title={closeWebsiteLabel}
+                tabIndex={-1}
+                disabled={Boolean(webClosePendingEntryKey)}
+                onClick={(event) => void handleCloseWebItem(event, webItem)}
+              >
+                {closing ? (
+                  <span
+                    className="assistant-material-icon is-loading"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <>
+                    <span className="sidebar-website-status-dot" aria-hidden="true" />
+                    <SidebarActionIcon
+                      kind="close"
+                      className="sidebar-website-status-close"
+                    />
+                  </>
+                )}
+              </button>
+            </Tooltip>
+          ) : null}
+          {showWebappAction ? (
             <span className="sidebar-website-child-actions">
-              <Tooltip content={webActionLabel}>
+              <Tooltip content={webappActionLabel}>
                 <button
                   type="button"
                   className="assistant-worker-icon-button sidebar-website-child-action"
-                  aria-label={webActionLabel}
-                  title={webActionLabel}
+                  aria-label={webappActionLabel}
+                  title={webappActionLabel}
                   tabIndex={-1}
-                  disabled={
-                    webItem.kind === "webapp"
-                      ? Boolean(webItemRemovePendingId || webClosePendingEntryKey)
-                      : Boolean(webClosePendingEntryKey)
-                  }
+                  disabled={Boolean(webItemRemovePendingId || webClosePendingEntryKey)}
                   onClick={(event) => {
-                    if (webItem.kind === "webapp") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openWebItemMenuAtElement(event.currentTarget, webItem);
-                      return;
-                    }
-                    void handleCloseWebItem(event, webItem);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openWebItemMenuAtElement(event.currentTarget, webItem);
                   }}
                 >
                   {closing || removePending ? (
@@ -2667,11 +3132,7 @@ export function AppSidebar({
                       className="assistant-material-icon is-loading"
                       aria-hidden="true"
                     />
-                  ) : webItem.kind === "webapp" ? (
-                    <SidebarActionIcon kind="more_actions" />
-                  ) : (
-                    <SidebarActionIcon kind="close" />
-                  )}
+                  ) : <SidebarActionIcon kind="more_actions" />}
                 </button>
               </Tooltip>
             </span>
@@ -2718,10 +3179,7 @@ export function AppSidebar({
       : chat.hasActiveRun
       ? "loading"
       : "time";
-    const previewText =
-      chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
-        ? chat.chatName || t("sidebar.chat.noPreview")
-        : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
+    const previewText = getAssistantChatPreviewText(chat, t);
     return (
       <div
         key={chat.chatId}
@@ -2793,6 +3251,61 @@ export function AppSidebar({
     );
   }
 
+  function renderProjectHoverCard(
+    agent: AssistantNavAgentItem,
+    projectKind: AssistantProjectKind,
+    options: {
+      hasActiveRun: boolean;
+      unreadCount: number;
+      awaitingMode?: AssistantNavChatItem["awaitingMode"];
+    },
+  ) {
+    const workspaceName = getAssistantWorkspaceName(
+      agent.workspaceDir,
+      agent.workspaceDirExists,
+    );
+    const lastActivity = formatAssistantChatDateTime(agent.updatedAt);
+    const projectType = projectKind === "coder"
+      ? t("sidebar.project.coder")
+      : t("sidebar.project.kbase");
+    const statusLabels = [
+      options.hasActiveRun ? t("sidebar.agent.running") : "",
+      agent.hasPendingAwaiting ? t(getAssistantAwaitingStatusKey(options.awaitingMode)) : "",
+      options.unreadCount > 0 ? t("sidebar.chat.unread") : "",
+    ].filter(Boolean);
+    return (
+      <div className="sidebar-project-hover-card">
+        <span className="sidebar-project-hover-card-title">{agent.displayName}</span>
+        <div className="sidebar-project-hover-card-meta">
+          <span>{t("sidebar.project.card.type", { type: projectType })}</span>
+          {lastActivity ? (
+            <span>{t("sidebar.project.card.lastActivity", { time: lastActivity })}</span>
+          ) : null}
+        </div>
+        {statusLabels.length > 0 ? (
+          <div
+            className="sidebar-project-hover-card-statuses"
+            aria-label={t("sidebar.project.card.status")}
+          >
+            {statusLabels.map((label) => (
+              <span className="sidebar-project-hover-card-status" key={label}>
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {workspaceName ? (
+          <div className="sidebar-project-hover-card-context">
+            <span>{t("sidebar.project.card.workspace", { name: workspaceName })}</span>
+            {agent.gitBranch ? (
+              <span>{t("sidebar.project.card.branch", { name: agent.gitBranch })}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderAssistantAgent(
     agent: AssistantNavAgentItem,
     options: { roving?: boolean } = {},
@@ -2833,20 +3346,21 @@ export function AppSidebar({
           : "";
     const activeChatId = getActiveSidebarChatId(agent.agentKey, allRecentChats);
     const selected = getActiveSidebarAgentKey() === agent.agentKey || Boolean(activeChatId);
-    const bootstrapGuideAgent = Boolean(
-      normalizedBootstrapAgentKey &&
-      agent.agentKey === normalizedBootstrapAgentKey,
-    );
-    const showBootstrapGuideAgent =
-      bootstrapGuideAgent && !bootstrapGuideDismissedBubbles.agent;
     const agentRole = getAssistantAgentRoleLabel(agent);
+    const projectKind = getAssistantProjectKind(agent);
+    const projectHoverCard = projectKind
+      ? renderProjectHoverCard(agent, projectKind, {
+          hasActiveRun: Boolean(activeRunChat),
+          unreadCount,
+          awaitingMode: awaitingChat?.awaitingMode,
+        })
+      : null;
     return (
       <Collapse
         key={agent.agentKey}
         className={[
           "assistant-worker-collapse-item",
           selected ? "is-selected" : "",
-          showBootstrapGuideAgent ? "is-bootstrap-guide" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -2862,9 +3376,11 @@ export function AppSidebar({
           "data-sidebar-nav-kind": roving ? "agent" : undefined,
           "data-sidebar-agent-key": roving ? agent.agentKey : undefined,
         }}
-        headerButtonRef={
-          showBootstrapGuideAgent ? bootstrapGuideAgentAnchorRef : undefined
-        }
+        headerPopover={projectHoverCard ? {
+          content: projectHoverCard,
+          placement: "right-start",
+          className: "sidebar-project-hover-card-surface",
+        } : undefined}
         header={
           <span className="assistant-worker-header-text">
               <span
@@ -3011,10 +3527,15 @@ export function AppSidebar({
     groupId: SidebarGroupId;
     label: string;
     collapsedLabel?: string;
-    icon: SidebarIllustrationKind;
+    icon?: SidebarIllustrationKind;
     active: boolean;
     status?: SidebarStatusSummary;
     children: Array<SidebarNavItem & { status?: SidebarStatusSummary }>;
+    headerLabel?: ReactNode;
+    headerSupplement?: ReactNode;
+    headerActions?: ReactNode;
+    popoverHeader?: ReactNode;
+    renderChildren?: (options: { roving: boolean }) => ReactNode;
   }) {
     const expanded = sidebarGroupState[args.groupId];
     const groupTriggerClassName = isCollapsed
@@ -3045,6 +3566,7 @@ export function AppSidebar({
             role="group"
             aria-label={args.label}
           >
+            {args.popoverHeader}
             {args.groupId === "assistants" ? (
               <div className="assistant-worker-collapse worker-collapse">
                 <div className="sidebar-assistant-popover-tools">
@@ -3058,11 +3580,13 @@ export function AppSidebar({
                     renderAssistantAgent(agent, { roving: false }),
                   )
                 ) : assistantNavAgentsLoaded ? (
-                  <div className="status-line">
+                  <div className="sidebar-empty-hint">
                     {t("sidebar.assistants.empty")}
                   </div>
                 ) : null}
               </div>
+            ) : args.renderChildren ? (
+              args.renderChildren({ roving: false })
             ) : (
               args.children.map((item) =>
                 renderSidebarChildLink(item, { roving: false }),
@@ -3084,12 +3608,18 @@ export function AppSidebar({
           data-sidebar-group-id={args.groupId}
         >
           <span className="sidebar-group-heading-main">
-            <span className="sidebar-link-icon">
-              <SidebarIllustration kind={args.icon} />
-            </span>
-            <span className="sidebar-link-label">{visibleLabel}</span>
-            {args.status && !expanded
-              ? renderStatusBadges(args.status, "sidebar-group-status")
+            {args.icon ? (
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={args.icon} />
+              </span>
+            ) : null}
+            {isCollapsed || !args.headerLabel ? (
+              <span className="sidebar-link-label">{visibleLabel}</span>
+            ) : (
+              args.headerLabel
+            )}
+            {!expanded
+              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
               : null}
           </span>
         </button>
@@ -3105,7 +3635,7 @@ export function AppSidebar({
         headerButtonProps={{
           className: groupTriggerClassName,
           "aria-label": args.label,
-          title: args.label,
+          title: args.headerLabel ? undefined : args.label,
           onContextMenu: (event) =>
             handleSidebarGroupContextMenu(event, args.groupId),
           ...getSidebarRovingItemProps(
@@ -3115,20 +3645,26 @@ export function AppSidebar({
           "data-sidebar-group-id": args.groupId,
         }}
         header={
-          <span className="sidebar-group-heading-main">
-            <span className="sidebar-link-label">{args.label}</span>
-            <ArrowIcon
-              className="sidebar-group-heading-arrow"
-              expanded={expanded}
-              width={18}
-            />
-            {args.status && !expanded
-              ? renderStatusBadges(args.status, "sidebar-group-status")
-              : null}
-          </span>
+          <>
+            <span className="sidebar-group-heading-main">
+              {args.headerLabel ?? (
+                <span className="sidebar-link-label">{args.label}</span>
+              )}
+              <ArrowIcon
+                className="sidebar-group-heading-arrow"
+                expanded={expanded}
+                width={18}
+              />
+              {!expanded
+                ? renderSidebarGroupStatusBadges(args.groupId, args.status)
+                : null}
+            </span>
+            {args.headerSupplement}
+          </>
         }
         headerActions={
           <>
+            {args.headerActions}
             {args.groupId === "assistants" ? (
               renderAssistantSortButton({ tabIndex: -1 })
             ) : null}
@@ -3200,20 +3736,27 @@ export function AppSidebar({
                   renderAssistantAgent(agent),
                 )
               ) : assistantNavAgentsLoaded ? (
-                <div className="status-line">
+                <div className="sidebar-empty-hint">
                   {t("sidebar.assistants.empty")}
                 </div>
               ) : null}
             </div>
-          ) : (
+          ) : args.renderChildren ? (
+            args.renderChildren({ roving: true })
+          ) : args.children.length > 0 ? (
             args.children.map((item) => renderSidebarChildLink(item))
-          )}
+          ) : args.groupId === "webs" && websitesLoaded ? (
+            <div className="sidebar-empty-hint">{t("sidebar.websites.empty")}</div>
+          ) : null}
         </div>
       </Collapse>
     );
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
+    if (item.entryType === "chats") {
+      return renderChatsEntry(item);
+    }
     if (item.entryType === "assistants") {
       return renderSidebarGroup({
         groupId: "assistants",
@@ -3275,7 +3818,7 @@ export function AppSidebar({
 
   function renderBootstrapGuideFloatingBubbles() {
     if (
-      !bootstrapGuideActive ||
+      !bootstrapActive ||
       typeof document === "undefined" ||
       bootstrapGuideFloatingBubbles.length === 0
     ) {
@@ -3297,7 +3840,7 @@ export function AppSidebar({
             style={bubble.style}
             role="note"
           >
-            {t(bubble.messageKey)}
+            {t(bubble.messageKey, { appName: PRODUCT_NAME })}
           </div>
         ))}
       </div>,
@@ -3330,7 +3873,7 @@ export function AppSidebar({
         <ol className="sidebar-bootstrap-guide-steps">
           <li>
             <span aria-hidden="true">1</span>
-            {t("sidebar.bootstrapGuide.stepAgent")}
+            {t("sidebar.bootstrapGuide.stepChat")}
           </li>
           <li>
             <span aria-hidden="true">2</span>
@@ -3342,8 +3885,8 @@ export function AppSidebar({
           </li>
         </ol>
         <div className="sidebar-bootstrap-guide-actions">
-          <button type="button" onClick={handleBootstrapGuideOpenAgent}>
-            {t("sidebar.bootstrapGuide.actionAgent")}
+          <button type="button" onClick={handleBootstrapGuideOpenChat}>
+            {t("sidebar.bootstrapGuide.actionChat")}
           </button>
           <button type="button" onClick={handleBootstrapGuideOpenHelp}>
             {t("sidebar.bootstrapGuide.actionHelp")}
@@ -3355,14 +3898,14 @@ export function AppSidebar({
 
   function getBootstrapGuideFloatingBubbles(): BootstrapGuideFloatingBubble[] {
     const bubbles: BootstrapGuideFloatingBubble[] = [];
-    if (!bootstrapGuideDismissedBubbles.agent) {
-      const agentBubble = createBootstrapGuideFloatingBubble(
-        bootstrapGuideAgentAnchorRef.current,
-        "agent",
-        "sidebar.bootstrapGuide.agentMessage",
+    if (!bootstrapGuideDismissedBubbles.chat) {
+      const chatBubble = createBootstrapGuideFloatingBubble(
+        bootstrapGuideChatAnchorRef.current,
+        "chat",
+        "sidebar.bootstrapGuide.chatMessage",
       );
-      if (agentBubble) {
-        bubbles.push(agentBubble);
+      if (chatBubble) {
+        bubbles.push(chatBubble);
       }
     }
 
@@ -3385,8 +3928,8 @@ export function AppSidebar({
   ) {
     setBootstrapGuideFloatingBubbles((current) =>
       current.filter((item) =>
-        bubble === "agent"
-          ? item.id !== "agent"
+        bubble === "chat"
+          ? item.id !== "chat"
           : item.id !== "tool-help",
       ),
     );
@@ -3594,7 +4137,7 @@ export function AppSidebar({
   function renderToolMenu() {
     const shouldRenderDesktopSsoAccount = desktopSsoStatus?.configured === true;
     const topToolItems = fixedToolItems.filter((item) =>
-      item.to === "/agents" || item.to === "/archives" || item.to === "/registries" || item.to === "/market"
+      item.to === "/agents" || item.to === "/archives" || item.to === "/registries" || item.to === "/market" || item.to === "/skills"
     );
 
     return (
@@ -3602,7 +4145,7 @@ export function AppSidebar({
         className={[
           "sidebar-tool-menu",
           "sidebar-account-menu",
-          bootstrapGuideActive ? "has-bootstrap-guide" : "",
+          bootstrapActive ? "has-bootstrap-guide" : "",
           isCollapsed
             ? "is-from-collapsed-sidebar"
             : "is-from-expanded-sidebar",
@@ -3622,8 +4165,7 @@ export function AppSidebar({
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
         {renderToolLink(helpToolItem, {
           anchorRef: bootstrapGuideToolHelpAnchorRef,
-          bootstrapGuide:
-            bootstrapGuideActive && !bootstrapGuideDismissedBubbles.help,
+          bootstrapGuide: bootstrapActive,
         })}
         {settingsToolItem ? renderToolLink(settingsToolItem) : null}
       </div>
@@ -3646,7 +4188,11 @@ export function AppSidebar({
           style={{ left: groupActionMenu.x, top: groupActionMenu.y }}
           role="menu"
           aria-label={
-            groupId === "assistants" ? t("nav.assistants") : t("nav.websites")
+            groupId === "assistants"
+              ? t("nav.assistants")
+              : groupId === "chats"
+                ? t("nav.chats")
+                : t("nav.websites")
           }
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -3686,6 +4232,21 @@ export function AppSidebar({
                 <span>{t("sidebar.project.new")}</span>
               </button>
             </>
+          ) : groupId === "chats" ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={
+                !resolvedChatDefaultAgentKey ||
+                chatDefaultAgentUnavailable
+              }
+              onClick={(event) => {
+                setGroupActionMenu(null);
+                handleChatsNewChat(event);
+              }}
+            >
+              <span>{t("sidebar.chats.newChat")}</span>
+            </button>
           ) : (
             <>
               <button
@@ -3814,7 +4375,7 @@ export function AppSidebar({
   }
 
   function isCoderAgent(agent: AssistantNavAgentItem) {
-    return agent.agentType === "coder";
+    return agent.mode?.trim().toUpperCase() === "CODER";
   }
 
   function createAgentEditRoute(agent: AssistantNavAgentItem) {

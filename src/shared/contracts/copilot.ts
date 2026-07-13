@@ -14,6 +14,15 @@ export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) 
 
 export type AssistantNavigationAgentsChangedListener = (result: AssistantNavAgentItemsResult) => void;
 
+export interface AssistantNavigationPushEvent {
+  type: string;
+  chatId: string | null;
+  runId: string | null;
+  status: string | null;
+}
+
+export type AssistantNavigationPushEventListener = (event: AssistantNavigationPushEvent) => void;
+
 export interface WebviewOpenTabRequest {
   sourceGuestId: number;
   url: string;
@@ -22,6 +31,20 @@ export interface WebviewOpenTabRequest {
 }
 
 export type WebviewOpenTabListener = (request: WebviewOpenTabRequest) => void;
+
+export interface CopilotDevToolsTargetInput {
+  surfaceId: string;
+  active: boolean;
+  webContentsId?: number;
+  currentUrl?: string;
+}
+
+export interface CopilotDevToolsTarget {
+  surfaceId: string;
+  webContentsId: number;
+  ownerWebContentsId: number;
+  currentUrl?: string;
+}
 
 export type AssistantMessageRole = "user" | "assistant";
 
@@ -131,7 +154,7 @@ export interface AssistantChatMessage {
   id: string;
   role: AssistantMessageRole;
   content: string;
-  createdAt: string;
+  createdAt: number;
   runId?: string;
   attachments?: AssistantAttachment[];
 }
@@ -139,8 +162,8 @@ export interface AssistantChatMessage {
 export interface AssistantChatSummary {
   id: string;
   title: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: number;
+  updatedAt: number;
   lastMessage: string;
   messageCount: number;
 }
@@ -178,7 +201,8 @@ export interface AssistantNavChatItem {
   chatId: string;
   chatName: string;
   agentKey: string;
-  updatedAt: string;
+  createdAt: number;
+  updatedAt: number;
   lastRunId: string;
   lastRunContent: string;
   isRead: boolean;
@@ -199,12 +223,12 @@ export interface AssistantNavAgentItem {
   hasPendingAwaiting: boolean;
   latestChatId: string | null;
   latestPreview: string;
-  updatedAt: string;
+  updatedAt?: number;
   recentChats: AssistantNavChatItem[];
-  agentType?: string;
   mode?: string;
   workspaceDir?: string;
   workspaceDirExists?: boolean;
+  gitBranch?: string;
 }
 
 export interface AssistantNavAgentItemsResult {
@@ -212,7 +236,7 @@ export interface AssistantNavAgentItemsResult {
   items: AssistantNavAgentItem[];
   activityItems?: AssistantNavAgentItem[];
   message: string;
-  updatedAt: string;
+  updatedAt: number;
 }
 
 export type AssistantCreateProjectType = "coder" | "kbase";
@@ -257,7 +281,9 @@ export interface AssistantSettingsPublic {
   apiKeyConfigured: boolean;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
+  bootstrapChatId: string;
   quickAssistantEnabled: boolean;
   quickAssistantAgentKey: string;
   quickAssistantShortcut: string;
@@ -269,6 +295,7 @@ export interface AssistantSettingsPublic {
 export interface AssistantSettingsInput {
   voiceCorrectionEnabled?: boolean;
   desktopHelperAgentKey?: string;
+  chatDefaultAgentKey?: string;
   quickAssistantEnabled?: boolean;
   quickAssistantAgentKey?: string;
   quickAssistantShortcut?: string;
@@ -295,9 +322,9 @@ export interface AssistantMemoryItem {
   sourceRunId?: string;
   referenceCount: number;
   reason?: string;
-  createdAt: string;
-  updatedAt: string;
-  lastReferencedAt?: string;
+  createdAt: number;
+  updatedAt: number;
+  lastReferencedAt?: number;
 }
 
 export interface AssistantMemorySettings {
@@ -318,8 +345,8 @@ export interface AssistantMemoryStats {
   total: number;
   factCount: number;
   observationCount: number;
-  lastLearnedAt: string | null;
-  lastReferencedAt: string | null;
+  lastLearnedAt: number | null;
+  lastReferencedAt: number | null;
 }
 
 export interface AssistantMemoryStorage {
@@ -337,7 +364,7 @@ export interface AssistantMemoryAuditSummary {
   skipped?: number;
   updated?: number;
   archived?: number;
-  timestamp: string;
+  timestamp: number;
 }
 
 export interface AssistantMemorySummary {
@@ -358,6 +385,8 @@ export type AssistantAccessLevel = "default" | "auto_approve" | "full_access";
 
 export interface AssistantStartRunRequest {
   chatId?: string | null;
+  runId?: string | null;
+  requestId?: string | null;
   agentKey?: string;
   message: string;
   accessLevel?: AssistantAccessLevel;
@@ -376,7 +405,6 @@ export interface AssistantStartRunResult {
   chatId: string;
   message: string;
   permissionMode?: AssistantPermissionMode;
-  fullAccessExpiresAt?: string | null;
   fullAccessRemainingMs?: number;
 }
 
@@ -423,7 +451,7 @@ export interface AssistantVoiceTranscriptionResult {
   uncertainTerms?: string[];
 }
 
-export type AssistantAwaitingMode = "approval" | "question" | "form" | "plan";
+export type AssistantAwaitingMode = "approval" | "question" | "form" | "planning";
 
 export interface AssistantAwaitingQuestion {
   id: string;
@@ -477,7 +505,7 @@ export interface AssistantAwaitingPayload {
   toolName?: string;
   runId: string;
   chatId: string;
-  createdAt?: number | string;
+  createdAt?: number;
   timeout?: number | null;
   timeoutMs?: number;
   questions?: AssistantAwaitingQuestion[];
@@ -661,7 +689,7 @@ export interface AssistantRunEvent {
   runId: string;
   chatId: string;
   type: AssistantRunEventType;
-  createdAt: string;
+  createdAt: number;
   source?: AssistantRunSource;
   status?: AssistantRunEventStatus;
   message?: string;
@@ -700,7 +728,7 @@ export interface AssistantEvent {
   runId: string;
   chatId: string;
   type: AssistantEventType;
-  createdAt?: string;
+  createdAt?: number;
   source?: AssistantRunSource;
   status?: AssistantRunEventStatus;
   delta?: string;

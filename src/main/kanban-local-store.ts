@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { App } from "electron";
 import type {
@@ -63,6 +63,10 @@ type KanbanIssueRow = {
   chat_id: string | null;
   run_id: string | null;
   run_state: KanbanRunState | null;
+  dispatch_state: KanbanIssue["dispatchState"];
+  dispatch_device_id: string | null;
+  dispatch_command_id: string | null;
+  dispatch_updated_at: string | null;
   automation_id: string | null;
   automation_enabled: number;
   automation_cron: string | null;
@@ -92,6 +96,7 @@ type KanbanProjectRow = {
   path: string;
   depth: number;
   position: number;
+  revision: number;
   visibility: string;
   default_workflow_id: string;
   created_at: string;
@@ -116,6 +121,7 @@ type KanbanProjectBindingRow = {
 export type KanbanCloudSnapshot = {
   boardId?: string;
   projectId?: string;
+  projectIds?: string[];
   revision?: number;
   lastSeq?: number;
   complete?: boolean;
@@ -131,13 +137,33 @@ export type KanbanDesktopSyncCursor = {
   cacheSchemaVersion: number;
 };
 
+export type KanbanCommandReceiptState = "received" | "starting" | "started" | "completed" | "failed";
+
+export type KanbanCommandReceipt = {
+  commandId: string;
+  deliverySeq: number;
+  projectId: string;
+  issueId: string;
+  payload: Record<string, unknown>;
+  payloadHash: string;
+  chatId: string;
+  runId: string;
+  requestId: string;
+  state: KanbanCommandReceiptState;
+  attemptCount: number;
+  lastError: string | null;
+  terminalReportedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const BOARD_ID = "default";
 const PROJECT_ID = "default";
 const WORKFLOW_ID = "workflow-standard-requirement";
 const ISSUE_TYPE_ID = "issue-type-standard-requirement";
 const DATABASE_DIRECTORY = "desktop-kanban";
 const DATABASE_FILENAME = "kanban.db";
-const SYNC_CACHE_SCHEMA_VERSION = 1;
+const SYNC_CACHE_SCHEMA_VERSION = 2;
 
 function nowIso() {
   return new Date().toISOString();
@@ -236,6 +262,8 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       PATH_ TEXT NOT NULL,
       DEPTH_ INTEGER NOT NULL DEFAULT 0,
       POSITION_ REAL NOT NULL DEFAULT 0,
+      REVISION_ INTEGER NOT NULL DEFAULT 0,
+      SYNC_MODE_ TEXT NOT NULL DEFAULT 'private' CHECK (SYNC_MODE_ IN ('private','cloud')),
       VISIBILITY_ TEXT NOT NULL DEFAULT 'workspace',
       DEFAULT_WORKFLOW_ID_ TEXT NOT NULL,
       CREATED_AT_ TEXT NOT NULL,
@@ -305,6 +333,10 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       CHAT_ID_ TEXT,
       RUN_ID_ TEXT,
       RUN_STATE_ TEXT CHECK (RUN_STATE_ IN ('running','completed','failed','cancelled') OR RUN_STATE_ IS NULL),
+      DISPATCH_STATE_ TEXT,
+      DISPATCH_DEVICE_ID_ TEXT,
+      DISPATCH_COMMAND_ID_ TEXT,
+      DISPATCH_UPDATED_AT_ TEXT,
       AUTOMATION_ID_ TEXT,
       AUTOMATION_ENABLED_ INTEGER NOT NULL DEFAULT 0,
       AUTOMATION_CRON_ TEXT,
@@ -420,6 +452,27 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       DELETED_AT_ TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS kanban_command_receipt (
+      COMMAND_ID_ TEXT PRIMARY KEY,
+      DELIVERY_SEQ_ INTEGER NOT NULL,
+      PROJECT_ID_ TEXT,
+      ISSUE_ID_ TEXT NOT NULL,
+      PAYLOAD_JSON_ TEXT NOT NULL,
+      PAYLOAD_HASH_ TEXT NOT NULL,
+      CHAT_ID_ TEXT NOT NULL,
+      RUN_ID_ TEXT NOT NULL,
+      REQUEST_ID_ TEXT NOT NULL,
+      STATE_ TEXT NOT NULL CHECK (STATE_ IN ('received','starting','started','completed','failed')),
+      ATTEMPT_COUNT_ INTEGER NOT NULL DEFAULT 0,
+      LAST_ERROR_ TEXT,
+      TERMINAL_REPORTED_AT_ TEXT,
+      CREATED_AT_ TEXT NOT NULL,
+      UPDATED_AT_ TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_kanban_command_receipt_state
+      ON kanban_command_receipt(STATE_, DELIVERY_SEQ_);
+
     CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_issue_sync_remote
       ON desktop_issue_sync(REMOTE_ISSUE_ID_)
       WHERE REMOTE_ISSUE_ID_ IS NOT NULL;
@@ -446,6 +499,22 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   if (!columns.has("STATUS_NAME_")) {
     db.exec("ALTER TABLE issue ADD COLUMN STATUS_NAME_ TEXT");
   }
+  for (const [name, definition] of [
+    ["DISPATCH_STATE_", "TEXT"],
+    ["DISPATCH_DEVICE_ID_", "TEXT"],
+    ["DISPATCH_COMMAND_ID_", "TEXT"],
+    ["DISPATCH_UPDATED_AT_", "TEXT"]
+  ] as const) {
+    if (!columns.has(name)) db.exec(`ALTER TABLE issue ADD COLUMN ${name} ${definition}`);
+  }
+  const projectColumns = new Set((db.prepare("PRAGMA table_info(project)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!projectColumns.has("REVISION_")) db.exec("ALTER TABLE project ADD COLUMN REVISION_ INTEGER NOT NULL DEFAULT 0");
+  if (!projectColumns.has("SYNC_MODE_")) {
+    db.exec("ALTER TABLE project ADD COLUMN SYNC_MODE_ TEXT NOT NULL DEFAULT 'private'");
+    db.exec(`UPDATE project SET SYNC_MODE_ = 'cloud' WHERE ID_ IN (SELECT DISTINCT PROJECT_ID_ FROM issue JOIN desktop_issue_sync ON desktop_issue_sync.LOCAL_ISSUE_ID_ = issue.ID_ WHERE desktop_issue_sync.SYNC_MODE_ = 'cloud')`);
+  }
+  const receiptColumns = new Set((db.prepare("PRAGMA table_info(kanban_command_receipt)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!receiptColumns.has("TERMINAL_REPORTED_AT_")) db.exec("ALTER TABLE kanban_command_receipt ADD COLUMN TERMINAL_REPORTED_AT_ TEXT");
 }
 
 function seedDesktopKanban(db: DatabaseSync, currentUser: KanbanCurrentUser) {
@@ -548,6 +617,10 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     chatId: row.chat_id,
     runId: row.run_id,
     runState: row.run_state,
+    dispatchState: row.dispatch_state,
+    dispatchDeviceId: row.dispatch_device_id,
+    dispatchCommandId: row.dispatch_command_id,
+    dispatchUpdatedAt: row.dispatch_updated_at,
     automationId: row.automation_id,
     automationEnabled: row.automation_enabled === 1,
     automationCron: row.automation_cron,
@@ -579,6 +652,7 @@ function projectFromRow(row: KanbanProjectRow): KanbanProject {
     path: row.path,
     depth: row.depth,
     position: row.position,
+    revision: row.revision,
     visibility: row.visibility || undefined,
     defaultWorkflowId: row.default_workflow_id || undefined,
     createdAt: row.created_at,
@@ -620,6 +694,7 @@ function parseCloudProject(value: unknown): KanbanProject | null {
     path: trimText(record.path) || id,
     depth: typeof record.depth === "number" && Number.isFinite(record.depth) ? record.depth : 0,
     position: typeof record.position === "number" && Number.isFinite(record.position) ? record.position : 0,
+    revision: typeof record.revision === "number" && Number.isFinite(record.revision) ? record.revision : 0,
     visibility: trimText(record.visibility) || undefined,
     defaultWorkflowId: trimText(record.defaultWorkflowId) || WORKFLOW_ID,
     createdAt: trimText(record.createdAt) || timestamp,
@@ -771,6 +846,10 @@ function selectIssues(db: DatabaseSync, currentUser: KanbanCurrentUser): KanbanI
       issue.CHAT_ID_ AS chat_id,
       issue.RUN_ID_ AS run_id,
       issue.RUN_STATE_ AS run_state,
+      issue.DISPATCH_STATE_ AS dispatch_state,
+      issue.DISPATCH_DEVICE_ID_ AS dispatch_device_id,
+      issue.DISPATCH_COMMAND_ID_ AS dispatch_command_id,
+      issue.DISPATCH_UPDATED_AT_ AS dispatch_updated_at,
       issue.AUTOMATION_ID_ AS automation_id,
       issue.AUTOMATION_ENABLED_ AS automation_enabled,
       issue.AUTOMATION_CRON_ AS automation_cron,
@@ -820,6 +899,7 @@ function selectProjects(db: DatabaseSync): KanbanProject[] {
       PATH_ AS path,
       DEPTH_ AS depth,
       POSITION_ AS position,
+      REVISION_ AS revision,
       VISIBILITY_ AS visibility,
       DEFAULT_WORKFLOW_ID_ AS default_workflow_id,
       CREATED_AT_ AS created_at,
@@ -861,12 +941,12 @@ function nextIssuePosition(db: DatabaseSync, status: KanbanStatus) {
   return typeof row?.maxPosition === "number" && Number.isFinite(row.maxPosition) ? row.maxPosition + 1 : 1;
 }
 
-function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject) {
+function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject, syncMode: KanbanSyncMode = "cloud") {
   db.prepare(`
     INSERT INTO project (
       ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, PATH_, DEPTH_, POSITION_,
-      VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      REVISION_, SYNC_MODE_, VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     ON CONFLICT(ID_) DO UPDATE SET
       PARENT_ID_ = excluded.PARENT_ID_,
       SLUG_ = excluded.SLUG_,
@@ -876,6 +956,8 @@ function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject) {
       PATH_ = excluded.PATH_,
       DEPTH_ = excluded.DEPTH_,
       POSITION_ = excluded.POSITION_,
+      REVISION_ = excluded.REVISION_,
+      SYNC_MODE_ = excluded.SYNC_MODE_,
       VISIBILITY_ = excluded.VISIBILITY_,
       DEFAULT_WORKFLOW_ID_ = excluded.DEFAULT_WORKFLOW_ID_,
       UPDATED_AT_ = excluded.UPDATED_AT_,
@@ -890,6 +972,8 @@ function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject) {
     project.path,
     project.depth,
     project.position,
+    project.revision ?? 0,
+    syncMode,
     project.visibility ?? "workspace",
     project.defaultWorkflowId ?? WORKFLOW_ID,
     project.createdAt,
@@ -898,6 +982,11 @@ function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject) {
 }
 
 function insertOrReplaceProjectBinding(db: DatabaseSync, binding: KanbanProjectBinding) {
+  db.prepare(`
+    UPDATE project_desktop_binding
+    SET DELETED_AT_ = ?, UPDATED_AT_ = ?
+    WHERE DEVICE_ID_ = ? AND PROJECT_ID_ = ? AND LOCAL_PROJECT_ID_ = ? AND ID_ != ? AND DELETED_AT_ IS NULL
+  `).run(binding.updatedAt, binding.updatedAt, binding.deviceId, binding.projectId, binding.localProjectId, binding.id);
   db.prepare(`
     INSERT INTO project_desktop_binding (
       ID_, PROJECT_ID_, DEVICE_ID_, CURRENT_USER_ID_, LOCAL_PROJECT_ID_, LOCAL_DISPLAY_NAME_,
@@ -945,9 +1034,10 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
       ID_, REMOTE_ISSUE_ID_, BOARD_ID_, PROJECT_ID_, WORKFLOW_ID_, TYPE_ID_, STAGE_ID_, STAGE_NAME_, STATUS_ID_, STATUS_NAME_,
       TITLE_, DESCRIPTION_, STATUS_, PRIORITY_, SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
       WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
-      CHAT_ID_, RUN_ID_, RUN_STATE_, AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_,
+      CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
+      AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_,
       AUTOMATION_TIMEZONE_, ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     ON CONFLICT(ID_) DO UPDATE SET
       REMOTE_ISSUE_ID_ = excluded.REMOTE_ISSUE_ID_,
       BOARD_ID_ = excluded.BOARD_ID_,
@@ -976,6 +1066,10 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
       CHAT_ID_ = excluded.CHAT_ID_,
       RUN_ID_ = excluded.RUN_ID_,
       RUN_STATE_ = excluded.RUN_STATE_,
+      DISPATCH_STATE_ = excluded.DISPATCH_STATE_,
+      DISPATCH_DEVICE_ID_ = excluded.DISPATCH_DEVICE_ID_,
+      DISPATCH_COMMAND_ID_ = excluded.DISPATCH_COMMAND_ID_,
+      DISPATCH_UPDATED_AT_ = excluded.DISPATCH_UPDATED_AT_,
       AUTOMATION_ID_ = excluded.AUTOMATION_ID_,
       AUTOMATION_ENABLED_ = excluded.AUTOMATION_ENABLED_,
       AUTOMATION_CRON_ = excluded.AUTOMATION_CRON_,
@@ -1015,6 +1109,10 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
     issue.chatId,
     issue.runId,
     issue.runState,
+    issue.dispatchState ?? null,
+    issue.dispatchDeviceId ?? null,
+    issue.dispatchCommandId ?? null,
+    issue.dispatchUpdatedAt ?? null,
     issue.automationId,
     issue.automationEnabled ? 1 : 0,
     issue.automationCron,
@@ -1430,6 +1528,10 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     chatId: nullableTrimmedText(rawIssue.chatId),
     runId: nullableTrimmedText(rawIssue.runId),
     runState: normalizeKanbanRunState(rawIssue.runState),
+    dispatchState: nullableTrimmedText(rawIssue.dispatchState) as KanbanIssue["dispatchState"],
+    dispatchDeviceId: nullableTrimmedText(rawIssue.dispatchDeviceId),
+    dispatchCommandId: nullableTrimmedText(rawIssue.dispatchCommandId),
+    dispatchUpdatedAt: nullableTrimmedText(rawIssue.dispatchUpdatedAt),
     automationId: nullableTrimmedText(rawIssue.automationId),
     automationEnabled: rawIssue.automationEnabled === true,
     automationCron: nullableTrimmedText(rawIssue.automationCron),
@@ -1533,19 +1635,25 @@ export function applyDesktopKanbanCloudSnapshot(
       : undefined;
     const revision = snapshotLastSeq ?? snapshotRevision ?? currentRevision;
     const snapshotProjectId = trimText(snapshot.projectId);
-    const canTombstoneMissing = snapshot.complete === true && snapshot.scope === "project" && Boolean(snapshotProjectId);
+    const snapshotProjectIds = new Set((snapshot.projectIds ?? []).map(trimText).filter(Boolean));
+    const isProjectSet = snapshot.complete === true && snapshot.scope === "project_set";
+    const canTombstoneMissing = snapshot.complete === true && ((snapshot.scope === "project" && Boolean(snapshotProjectId)) || isProjectSet);
     const remoteIds = new Set<string>();
+    const remoteProjectIds = new Set<string>();
+    const remoteBindingIds = new Set<string>();
     db.exec("BEGIN IMMEDIATE");
     try {
       for (const rawProject of snapshot.projects ?? []) {
         const project = parseCloudProject(rawProject);
         if (project) {
-          insertOrReplaceProject(db, project);
+          remoteProjectIds.add(project.id);
+          insertOrReplaceProject(db, project, "cloud");
         }
       }
       for (const rawBinding of snapshot.projectBindings ?? []) {
         const binding = parseCloudProjectBinding(rawBinding);
         if (binding) {
+          remoteBindingIds.add(binding.id);
           insertOrReplaceProjectBinding(db, binding);
         }
       }
@@ -1578,12 +1686,48 @@ export function applyDesktopKanbanCloudSnapshot(
       `).all() as Array<{ localIssueId: string; remoteIssueId: string | null; lastRemoteRevision: number; projectId: string }>;
         for (const row of cloudRows) {
           if (
-            row.projectId === snapshotProjectId &&
+            (isProjectSet ? snapshotProjectIds.has(row.projectId) : row.projectId === snapshotProjectId) &&
             row.remoteIssueId &&
             !remoteIds.has(row.remoteIssueId) &&
             row.lastRemoteRevision <= revision
           ) {
             db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(nowIso(), nowIso(), row.localIssueId);
+          }
+        }
+      }
+      if (isProjectSet) {
+        const timestamp = nowIso();
+        const cachedBindings = db.prepare(`SELECT ID_ AS id FROM project_desktop_binding WHERE DELETED_AT_ IS NULL`).all() as Array<{ id: string }>;
+        const tombstoneBinding = db.prepare(`UPDATE project_desktop_binding SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ? AND DELETED_AT_ IS NULL`);
+        for (const binding of cachedBindings) {
+          if (!remoteBindingIds.has(binding.id)) tombstoneBinding.run(timestamp, timestamp, binding.id);
+        }
+        const cachedCloudProjects = db.prepare(`SELECT ID_ AS id FROM project WHERE SYNC_MODE_ = 'cloud' AND DELETED_AT_ IS NULL`).all() as Array<{ id: string }>;
+        const removedProjectIds = cachedCloudProjects.map((row) => row.id).filter((id) => !remoteProjectIds.has(id));
+        if (removedProjectIds.length > 0) {
+          const privateContainerId = "local-private-orphans";
+          db.prepare(`
+            INSERT INTO project (
+              ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, PATH_, DEPTH_, POSITION_, REVISION_, SYNC_MODE_,
+              VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+            ) VALUES (?, NULL, 'private-orphans', 'PRIVATE', 'Private Tasks', '', 'private-orphans', 0, 999999, 0, 'private', 'private', ?, ?, ?, NULL)
+            ON CONFLICT(ID_) DO UPDATE SET DELETED_AT_ = NULL, UPDATED_AT_ = excluded.UPDATED_AT_
+          `).run(privateContainerId, WORKFLOW_ID, timestamp, timestamp);
+          const updatePrivateIssues = db.prepare(`
+            UPDATE issue SET PROJECT_ID_ = ?, UPDATED_AT_ = ?
+            WHERE PROJECT_ID_ = ? AND ID_ IN (SELECT LOCAL_ISSUE_ID_ FROM desktop_issue_sync WHERE SYNC_MODE_ = 'private')
+          `);
+          const tombstoneCloudIssues = db.prepare(`
+            UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ?
+            WHERE PROJECT_ID_ = ? AND ID_ IN (SELECT LOCAL_ISSUE_ID_ FROM desktop_issue_sync WHERE SYNC_MODE_ = 'cloud')
+          `);
+          const tombstoneProject = db.prepare("UPDATE project SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ? AND SYNC_MODE_ = 'cloud'");
+          const removeBinding = db.prepare("UPDATE project_desktop_binding SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE PROJECT_ID_ = ? AND DELETED_AT_ IS NULL");
+          for (const projectId of removedProjectIds) {
+            updatePrivateIssues.run(privateContainerId, timestamp, projectId);
+            tombstoneCloudIssues.run(timestamp, timestamp, projectId);
+            tombstoneProject.run(timestamp, timestamp, projectId);
+            removeBinding.run(timestamp, timestamp, projectId);
           }
         }
       }
@@ -1608,6 +1752,174 @@ export function applyDesktopKanbanCloudSnapshot(
       connectionState: "open"
     };
   });
+}
+
+export function recordDesktopKanbanCommandReceipt(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  input: { commandId: string; deliverySeq: number; projectId?: string | null; sourceRevision?: number; payload: Record<string, unknown>; issue: unknown }
+): { ok: boolean; executable: boolean; message: string; receipt: KanbanCommandReceipt } {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const commandId = trimText(input.commandId);
+    const issueRecord = parseCloudIssue(input.issue);
+    const issueId = trimText(issueRecord?.id);
+    if (!commandId || !issueId) throw new Error("commandId and issue.id are required");
+    const payloadJson = stableJson(input.payload);
+    const payloadHash = createHash("sha256").update(payloadJson).digest("hex");
+    const idHash = createHash("sha256").update(commandId).digest("hex").slice(0, 32);
+    const timestamp = nowIso();
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = readCommandReceiptInDb(db, commandId);
+      if (existing) {
+        if (existing.payloadHash !== payloadHash) {
+          db.prepare(`UPDATE kanban_command_receipt SET STATE_ = 'failed', LAST_ERROR_ = ?, UPDATED_AT_ = ? WHERE COMMAND_ID_ = ?`)
+            .run("command payload hash mismatch", timestamp, commandId);
+          db.exec("COMMIT");
+          const receipt = readCommandReceiptInDb(db, commandId)!;
+          return { ok: true, executable: false, message: receipt.lastError || "command payload mismatch", receipt };
+        }
+        db.exec("COMMIT");
+        return { ok: true, executable: existing.state === "received" || existing.state === "starting", message: "command already received", receipt: existing };
+      }
+      const cloudIssue = cloudIssueToLocalIssue(issueRecord!, currentUser, input.sourceRevision ?? 0);
+      if (!cloudIssue) throw new Error("invalid command issue snapshot");
+      const existingSync = findLocalSyncForRemote(db, issueId);
+      cloudIssue.id = existingSync.localIssueId || createLocalIssueId("cloud");
+      cloudIssue.localIssueId = cloudIssue.id;
+      insertOrReplaceIssue(db, cloudIssue, {
+        syncMode: "cloud",
+        syncState: "synced",
+        origin: existingSync.origin ?? "cloud_dispatch",
+        ownerUserId: currentUser.id,
+        lastRemoteRevision: cloudIssue.revision,
+        lastSyncedAt: timestamp,
+        syncError: null
+      });
+      db.prepare(`
+        INSERT INTO kanban_command_receipt (
+          COMMAND_ID_, DELIVERY_SEQ_, PROJECT_ID_, ISSUE_ID_, PAYLOAD_JSON_, PAYLOAD_HASH_, CHAT_ID_, RUN_ID_, REQUEST_ID_,
+          STATE_, ATTEMPT_COUNT_, LAST_ERROR_, CREATED_AT_, UPDATED_AT_
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 0, NULL, ?, ?)
+      `).run(commandId, input.deliverySeq, trimText(input.projectId), issueId, payloadJson, payloadHash,
+        `chat_kanban_${idHash}`, `run_kanban_${idHash}`, `request_kanban_${idHash}`, timestamp, timestamp);
+      db.exec("COMMIT");
+      return { ok: true, executable: true, message: "command received", receipt: readCommandReceiptInDb(db, commandId)! };
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  });
+}
+
+export function listPendingDesktopKanbanCommandReceipts(app: AppPathProvider, currentUser: KanbanCurrentUser): KanbanCommandReceipt[] {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const rows = db.prepare(`
+      SELECT COMMAND_ID_ AS commandId FROM kanban_command_receipt
+      WHERE STATE_ IN ('received','starting','started') OR (STATE_ = 'failed' AND TERMINAL_REPORTED_AT_ IS NULL)
+      ORDER BY DELIVERY_SEQ_
+    `).all() as Array<{ commandId: string }>;
+    return rows.map((row) => readCommandReceiptInDb(db, row.commandId)).filter((item): item is KanbanCommandReceipt => Boolean(item));
+  });
+}
+
+export function updateDesktopKanbanCommandReceipt(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  commandId: string,
+  state: KanbanCommandReceiptState,
+  lastError: string | null = null,
+  incrementAttempt = false
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`
+      UPDATE kanban_command_receipt
+      SET STATE_ = ?, LAST_ERROR_ = ?, ATTEMPT_COUNT_ = ATTEMPT_COUNT_ + ?, UPDATED_AT_ = ?
+      WHERE COMMAND_ID_ = ? AND (? IN ('completed','failed') OR STATE_ NOT IN ('completed','failed'))
+    `).run(state, lastError, incrementAttempt ? 1 : 0, nowIso(), trimText(commandId), state);
+    return readCommandReceiptInDb(db, commandId);
+  });
+}
+
+export function completeDesktopKanbanCommandReceiptByRunId(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  runId: string,
+  state: "completed" | "failed"
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`UPDATE kanban_command_receipt SET STATE_ = ?, UPDATED_AT_ = ? WHERE RUN_ID_ = ?`)
+      .run(state, nowIso(), trimText(runId));
+  });
+}
+
+export function markDesktopKanbanCommandReceiptReported(app: AppPathProvider, currentUser: KanbanCurrentUser, commandId: string) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`UPDATE kanban_command_receipt SET TERMINAL_REPORTED_AT_ = ?, UPDATED_AT_ = ? WHERE COMMAND_ID_ = ?`)
+      .run(nowIso(), nowIso(), trimText(commandId));
+  });
+}
+
+export function hasDesktopKanbanCloudProject(app: AppPathProvider, currentUser: KanbanCurrentUser, projectId: string) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const row = db.prepare(`SELECT COUNT(*) AS count FROM project WHERE ID_ = ? AND SYNC_MODE_ = 'cloud' AND DELETED_AT_ IS NULL`)
+      .get(trimText(projectId)) as { count?: number } | undefined;
+    return (row?.count ?? 0) > 0;
+  });
+}
+
+export function ensureDesktopKanbanDefaultBinding(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  deviceId: string,
+  remoteProjectId: string
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const timestamp = nowIso();
+    const localProject = db.prepare(`SELECT ID_ AS id, NAME_ AS name FROM project WHERE ID_ = ? AND DELETED_AT_ IS NULL`)
+      .get(PROJECT_ID) as { id: string; name: string } | undefined;
+    if (!localProject) return null;
+    const binding: KanbanProjectBinding = {
+      id: `binding:${trimText(deviceId)}:${trimText(remoteProjectId)}:${localProject.id}`,
+      projectId: trimText(remoteProjectId) || PROJECT_ID,
+      deviceId: trimText(deviceId),
+      currentUserId: currentUser.id,
+      localProjectId: localProject.id,
+      localDisplayName: localProject.name,
+      syncPolicy: "future",
+      controlMode: "dispatch",
+      status: "active",
+      lastRemoteRevision: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    insertOrReplaceProjectBinding(db, binding);
+    return binding;
+  });
+}
+
+function readCommandReceiptInDb(db: DatabaseSync, commandId: string): KanbanCommandReceipt | null {
+  const row = db.prepare(`
+    SELECT COMMAND_ID_ AS commandId, DELIVERY_SEQ_ AS deliverySeq, PROJECT_ID_ AS projectId, ISSUE_ID_ AS issueId,
+      PAYLOAD_JSON_ AS payloadJson, PAYLOAD_HASH_ AS payloadHash, CHAT_ID_ AS chatId, RUN_ID_ AS runId,
+      REQUEST_ID_ AS requestId, STATE_ AS state, ATTEMPT_COUNT_ AS attemptCount, LAST_ERROR_ AS lastError,
+      TERMINAL_REPORTED_AT_ AS terminalReportedAt, CREATED_AT_ AS createdAt, UPDATED_AT_ AS updatedAt
+    FROM kanban_command_receipt WHERE COMMAND_ID_ = ?
+  `).get(trimText(commandId)) as (Omit<KanbanCommandReceipt, "payload"> & { payloadJson: string }) | undefined;
+  if (!row) return null;
+  let payload: Record<string, unknown> = {};
+  try { payload = JSON.parse(row.payloadJson) as Record<string, unknown>; } catch { payload = {}; }
+  const { payloadJson: _payloadJson, ...receipt } = row;
+  return { ...receipt, projectId: receipt.projectId || "", payload };
+}
+
+function stableJson(value: unknown): string {
+  const normalize = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(normalize);
+    if (!item || typeof item !== "object") return item;
+    return Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, nested]) => [key, normalize(nested)]));
+  };
+  return JSON.stringify(normalize(value));
 }
 
 export function upsertDispatchedDesktopKanbanIssue(

@@ -7,6 +7,21 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 const projectRoot = process.cwd();
+const EPOCH_MILLIS_MIN = 1_000_000_000_000;
+const TEST_EPOCH_MILLIS = 1_700_000_000_000;
+
+function epoch(offset = 0) {
+  return TEST_EPOCH_MILLIS + offset;
+}
+
+function readEpochMillis(value) {
+  return typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= EPOCH_MILLIS_MIN &&
+    value <= Number.MAX_SAFE_INTEGER
+    ? value
+    : undefined;
+}
 
 function loadAssistantNavigationModule() {
   const sourcePath = path.join(projectRoot, "src", "renderer", "assistantNavigation.ts");
@@ -21,16 +36,22 @@ function loadAssistantNavigationModule() {
   });
   const mod = { exports: {} };
   const fn = new Function("exports", "require", "module", "__filename", "__dirname", outputText);
-  fn(mod.exports, require, mod, sourcePath, path.dirname(sourcePath));
+  fn(mod.exports, (specifier) => {
+    if (specifier === "../shared/time-contract") {
+      return { readEpochMillis };
+    }
+    return require(specifier);
+  }, mod, sourcePath, path.dirname(sourcePath));
   return mod.exports;
 }
 
 const {
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
-  getPrimaryAssistantNavAgents,
+  getAssistantNavRecentChatsOverview,
+  isAssistantNavChatAgent,
+  isAssistantNavProjectAgent,
   normalizeAssistantNavAgents,
-  sortAssistantNavAgentsForMode,
 } = loadAssistantNavigationModule();
 
 function chat(overrides) {
@@ -38,7 +59,8 @@ function chat(overrides) {
     chatId: "chat",
     chatName: "",
     agentKey: "zenmi",
-    updatedAt: "",
+    createdAt: TEST_EPOCH_MILLIS,
+    updatedAt: TEST_EPOCH_MILLIS,
     lastRunId: "",
     lastRunContent: "",
     isRead: true,
@@ -48,38 +70,14 @@ function chat(overrides) {
   };
 }
 
-test("default assistant entry uses the first visible agent in time order", () => {
-  const agents = [
-    {
-      agentKey: "webOperator",
-      displayName: "Web Operator",
-      recentChats: [chat({ chatId: "hidden-newest", updatedAt: "2026-07-09T03:00:00.000Z" })],
-    },
-    {
-      agentKey: "zenmi",
-      displayName: "小宅",
-      recentChats: [chat({ chatId: "visible-older", updatedAt: "2026-07-09T01:00:00.000Z" })],
-    },
-    {
-      agentKey: "coder",
-      displayName: "agent-platform",
-      recentChats: [chat({ chatId: "visible-newer", updatedAt: "2026-07-09T02:00:00.000Z" })],
-    },
-  ];
-
-  const visibleAgents = getPrimaryAssistantNavAgents(agents);
-  assert.deepEqual(visibleAgents.map((agent) => agent.agentKey), ["zenmi", "coder"]);
-  assert.equal(sortAssistantNavAgentsForMode(visibleAgents, "byTime")[0]?.agentKey, "coder");
-});
-
 test("assistant nav preview matches webclient updatedAt ordering", () => {
   const agent = {
     recentChats: [
-      chat({ chatId: "normal-2319-a", updatedAt: "1782700663959", isRead: true }),
-      chat({ chatId: "normal-2320", updatedAt: "1782700667378", isRead: true }),
-      chat({ chatId: "normal-2319-b", updatedAt: "1782700663000", isRead: true }),
-      chat({ chatId: "await-older", updatedAt: "1782700660000", hasPendingAwaiting: true }),
-      chat({ chatId: "await-newer", updatedAt: "1782700668000", hasPendingAwaiting: true }),
+      chat({ chatId: "normal-2319-a", updatedAt: 1782700663959, isRead: true }),
+      chat({ chatId: "normal-2320", updatedAt: 1782700667378, isRead: true }),
+      chat({ chatId: "normal-2319-b", updatedAt: 1782700663000, isRead: true }),
+      chat({ chatId: "await-older", updatedAt: 1782700660000, hasPendingAwaiting: true }),
+      chat({ chatId: "await-newer", updatedAt: 1782700668000, hasPendingAwaiting: true }),
     ],
   };
 
@@ -108,12 +106,88 @@ test("assistant nav preview caps visible awaiting rows at five", () => {
   );
 });
 
+test("assistant nav Chats overview merges agents, preserves ownership, and caps recent rows", () => {
+  const overview = getAssistantNavRecentChatsOverview([
+    {
+      agentKey: "alpha",
+      displayName: "Alpha",
+      recentChats: [
+        chat({ chatId: "alpha-older", agentKey: "", updatedAt: epoch(100) }),
+        chat({ chatId: "shared", agentKey: "", updatedAt: epoch(300), lastRunContent: "latest" }),
+      ],
+    },
+    {
+      agentKey: "beta",
+      displayName: "Beta",
+      recentChats: [
+        chat({ chatId: "beta-newest", agentKey: "beta", updatedAt: epoch(400) }),
+        chat({ chatId: "shared", agentKey: "beta", updatedAt: epoch(200) }),
+      ],
+    },
+  ], 2);
+
+  assert.deepEqual(
+    overview.map((item) => [item.chat.chatId, item.agent.displayName, item.chat.agentKey]),
+    [
+      ["beta-newest", "Beta", "beta"],
+      ["shared", "Alpha", "alpha"],
+    ],
+  );
+});
+
+test("assistant nav Chats overview shows ten most recent chats by default", () => {
+  const overview = getAssistantNavRecentChatsOverview([
+    {
+      agentKey: "alpha",
+      displayName: "Alpha",
+      recentChats: Array.from({ length: 12 }, (_item, index) =>
+        chat({
+          chatId: `alpha-${index + 1}`,
+          updatedAt: epoch(index + 1),
+        }),
+      ),
+    },
+  ]);
+
+  assert.equal(overview.length, 10);
+  assert.deepEqual(
+    overview.map((item) => item.chat.chatId),
+    [
+      "alpha-12",
+      "alpha-11",
+      "alpha-10",
+      "alpha-9",
+      "alpha-8",
+      "alpha-7",
+      "alpha-6",
+      "alpha-5",
+      "alpha-4",
+      "alpha-3",
+    ],
+  );
+});
+
+test("assistant nav project predicate only accepts CODER and KBASE modes", () => {
+  assert.equal(isAssistantNavProjectAgent({ mode: "CODER" }), true);
+  assert.equal(isAssistantNavProjectAgent({ mode: "kbase" }), true);
+  assert.equal(isAssistantNavProjectAgent({ mode: "CHAT" }), false);
+  assert.equal(isAssistantNavProjectAgent({}), false);
+});
+
+test("assistant nav Chats exclude projects and internal agents", () => {
+  assert.equal(isAssistantNavChatAgent({ agentKey: "zenmi", mode: "CHAT" }), true);
+  assert.equal(isAssistantNavChatAgent({ agentKey: "legacy" }), true);
+  assert.equal(isAssistantNavChatAgent({ agentKey: "coder", mode: "CODER" }), false);
+  assert.equal(isAssistantNavChatAgent({ agentKey: "desktopAssistant", mode: "CHAT" }), false);
+  assert.equal(isAssistantNavChatAgent({ agentKey: "webOperator", mode: "CHAT" }), false);
+});
+
 test("assistant nav attention matches webclient worker selection", () => {
   assert.equal(
     getAssistantNavAgentAttentionChat({
       recentChats: [
-        chat({ chatId: "latest-unread", updatedAt: "300", isRead: false }),
-        chat({ chatId: "older-running", updatedAt: "100", hasActiveRun: true }),
+        chat({ chatId: "latest-unread", updatedAt: epoch(300), isRead: false }),
+        chat({ chatId: "older-running", updatedAt: epoch(100), hasActiveRun: true }),
       ],
     })?.chatId,
     "older-running",
@@ -122,8 +196,8 @@ test("assistant nav attention matches webclient worker selection", () => {
   assert.equal(
     getAssistantNavAgentAttentionChat({
       recentChats: [
-        chat({ chatId: "latest-unread", updatedAt: "300", isRead: false }),
-        chat({ chatId: "older-awaiting", updatedAt: "100", hasPendingAwaiting: true }),
+        chat({ chatId: "latest-unread", updatedAt: epoch(300), isRead: false }),
+        chat({ chatId: "older-awaiting", updatedAt: epoch(100), hasPendingAwaiting: true }),
       ],
     })?.chatId,
     "latest-unread",
@@ -133,9 +207,9 @@ test("assistant nav attention matches webclient worker selection", () => {
 test("assistant nav attention only opens unread when the latest row is unread", () => {
   const agent = {
     recentChats: [
-      chat({ chatId: "older-unread", updatedAt: "100", isRead: false }),
-      chat({ chatId: "newest-read", updatedAt: "300", isRead: true }),
-      chat({ chatId: "newer-unread", updatedAt: "200", isRead: false }),
+      chat({ chatId: "older-unread", updatedAt: epoch(100), isRead: false }),
+      chat({ chatId: "newest-read", updatedAt: epoch(300), isRead: true }),
+      chat({ chatId: "newer-unread", updatedAt: epoch(200), isRead: false }),
     ],
   };
 
@@ -148,8 +222,8 @@ test("assistant nav attention only opens unread when the latest row is unread", 
   assert.equal(
     getAssistantNavAgentAttentionChat({
       recentChats: [
-        chat({ chatId: "latest-unread", updatedAt: "300", isRead: false }),
-        chat({ chatId: "older-read", updatedAt: "200", isRead: true }),
+        chat({ chatId: "latest-unread", updatedAt: epoch(300), isRead: false }),
+        chat({ chatId: "older-read", updatedAt: epoch(200), isRead: true }),
       ],
     })?.chatId,
     "latest-unread",
@@ -159,15 +233,15 @@ test("assistant nav attention only opens unread when the latest row is unread", 
 test("assistant nav preview does not move older awaiting or unread rows ahead of newer rows", () => {
   const agent = {
     recentChats: [
-      chat({ chatId: "read-700", updatedAt: "700", isRead: true }),
-      chat({ chatId: "await-650", updatedAt: "650", isRead: true, hasPendingAwaiting: true }),
-      chat({ chatId: "read-600", updatedAt: "600", isRead: true }),
-      chat({ chatId: "read-500", updatedAt: "500", isRead: true }),
-      chat({ chatId: "read-400", updatedAt: "400", isRead: true }),
-      chat({ chatId: "read-300", updatedAt: "300", isRead: true }),
-      chat({ chatId: "unread-350", updatedAt: "350", isRead: false }),
-      chat({ chatId: "unread-250", updatedAt: "250", isRead: false }),
-      chat({ chatId: "unread-200", updatedAt: "200", isRead: false }),
+      chat({ chatId: "read-700", updatedAt: epoch(700), isRead: true }),
+      chat({ chatId: "await-650", updatedAt: epoch(650), isRead: true, hasPendingAwaiting: true }),
+      chat({ chatId: "read-600", updatedAt: epoch(600), isRead: true }),
+      chat({ chatId: "read-500", updatedAt: epoch(500), isRead: true }),
+      chat({ chatId: "read-400", updatedAt: epoch(400), isRead: true }),
+      chat({ chatId: "read-300", updatedAt: epoch(300), isRead: true }),
+      chat({ chatId: "unread-350", updatedAt: epoch(350), isRead: false }),
+      chat({ chatId: "unread-250", updatedAt: epoch(250), isRead: false }),
+      chat({ chatId: "unread-200", updatedAt: epoch(200), isRead: false }),
     ],
   };
 
@@ -193,14 +267,14 @@ test("assistant nav keeps numeric updatedAt values sortable and visible", () => 
       agentKey: "zenmi",
       displayName: "Zenmi",
       recentChats: [
-        { chatId: "read-100", updatedAt: 100, isRead: true },
-        { chatId: "unread-300", updatedAt: 300, read: { isRead: false } },
-        { chatId: "read-200", updatedAt: 200, isRead: true },
+        { chatId: "read-100", createdAt: epoch(100), updatedAt: epoch(100), isRead: true },
+        { chatId: "unread-300", createdAt: epoch(300), updatedAt: epoch(300), read: { isRead: false } },
+        { chatId: "read-200", createdAt: epoch(200), updatedAt: epoch(200), isRead: true },
       ],
     },
   ]);
 
-  assert.equal(agent.recentChats[1].updatedAt, "300");
+  assert.equal(agent.recentChats[1].updatedAt, epoch(300));
   assert.deepEqual(
     getAssistantNavAgentPreviewChats(agent, 3).map((item) => [
       item.chatId,
@@ -215,22 +289,22 @@ test("assistant nav keeps numeric updatedAt values sortable and visible", () => 
   assert.equal(getAssistantNavAgentAttentionChat(agent)?.chatId, "unread-300");
 });
 
-test("assistant nav sorts ISO updatedAt values by actual time", () => {
+test("assistant nav sorts epoch-ms updatedAt values by actual time", () => {
   const agent = {
     recentChats: [
       chat({
         chatId: "iso-newer",
-        updatedAt: "2026-06-29T07:50:00.000Z",
+        updatedAt: epoch(300),
         isRead: true,
       }),
       chat({
         chatId: "iso-older",
-        updatedAt: "2026-06-29T07:29:00.000Z",
+        updatedAt: epoch(100),
         isRead: true,
       }),
       chat({
         chatId: "iso-middle",
-        updatedAt: "2026-06-29T07:45:00.000Z",
+        updatedAt: epoch(200),
         isRead: true,
       }),
     ],
@@ -250,6 +324,8 @@ test("assistant nav normalization preserves nested read state", () => {
       recentChats: [
         {
           chatId: "read-object-unread",
+          createdAt: epoch(100),
+          updatedAt: epoch(100),
           read: { isRead: false },
         },
       ],
@@ -270,9 +346,9 @@ test("assistant nav normalization trusts stats unread counts like webclient", ()
       unreadCount: 3,
       unreadChatCount: 3,
       recentChats: [
-        { chatId: "read-newer", updatedAt: 300, read: { isRead: true } },
-        { chatId: "unread-middle", updatedAt: 200, read: { isRead: false } },
-        { chatId: "read-older", updatedAt: 100, read: { isRead: true } },
+        { chatId: "read-newer", createdAt: epoch(300), updatedAt: epoch(300), read: { isRead: true } },
+        { chatId: "unread-middle", createdAt: epoch(200), updatedAt: epoch(200), read: { isRead: false } },
+        { chatId: "read-older", createdAt: epoch(100), updatedAt: epoch(100), read: { isRead: true } },
       ],
     },
   ]);
@@ -287,13 +363,38 @@ test("assistant nav normalization falls back to row read states when stats are a
       agentKey: "zenmi",
       displayName: "Zenmi",
       recentChats: [
-        { chatId: "read-newer", updatedAt: 300, read: { isRead: true } },
-        { chatId: "unread-middle", updatedAt: 200, read: { isRead: false } },
-        { chatId: "read-older", updatedAt: 100, read: { isRead: true } },
+        { chatId: "read-newer", createdAt: epoch(300), updatedAt: epoch(300), read: { isRead: true } },
+        { chatId: "unread-middle", createdAt: epoch(200), updatedAt: epoch(200), read: { isRead: false } },
+        { chatId: "read-older", createdAt: epoch(100), updatedAt: epoch(100), read: { isRead: true } },
       ],
     },
   ]);
 
   assert.equal(agent.unreadCount, 1);
   assert.equal(agent.unreadChatCount, 1);
+});
+
+test("assistant nav keeps chat hover metadata when building the Chats overview", () => {
+  const [agent] = normalizeAssistantNavAgents([
+    {
+      agentKey: "coder",
+      displayName: "Coder",
+      mode: "CODER",
+      workspaceDir: "/Users/demo/Project/zenmind-desktop",
+      workspaceDirExists: true,
+      gitBranch: "feature/chat-card",
+      recentChats: [{
+        chatId: "chat-card",
+        chatName: "Design the chat card",
+        createdAt: epoch(1000),
+        updatedAt: epoch(2000),
+      }],
+    },
+  ]);
+  const [overview] = getAssistantNavRecentChatsOverview([agent]);
+
+  assert.equal(overview.chat.createdAt, epoch(1000));
+  assert.equal(overview.agent.workspaceDir, "/Users/demo/Project/zenmind-desktop");
+  assert.equal(overview.agent.workspaceDirExists, true);
+  assert.equal(overview.agent.gitBranch, "feature/chat-card");
 });

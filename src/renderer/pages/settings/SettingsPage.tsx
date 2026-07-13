@@ -38,6 +38,7 @@ import type {
   TunnelHubSettings
 } from "../../../shared/contracts";
 import {
+  DEFAULT_CHAT_DEFAULT_AGENT_KEY,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_SHORTCUT,
@@ -70,6 +71,7 @@ import {
 import { resolveSettingsSectionId } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
+import { isAssistantNavChatAgent } from "../../assistantNavigation";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type { DesktopActionCallRequest, DesktopActionDefinition } from "../../../shared/desktop-actions";
 
@@ -435,6 +437,7 @@ function getLocaleLabel(nextLocale: SupportedLocale, t: TranslateFunction) {
 
 const SETTINGS_ACTION_PATCH_FIELDS = [
   "desktopHelperAgentKey",
+  "chatDefaultAgentKey",
   "quickAssistantEnabled",
   "quickAssistantAgentKey",
   "quickAssistantShortcut",
@@ -531,6 +534,17 @@ function readAssistantAgentOptions(
     }
   }
   return Array.isArray(fallbackAgents) ? fallbackAgents : [];
+}
+
+function readChatAgentOptions(
+  navigationResult: Awaited<ReturnType<NonNullable<typeof window.electronAPI>["assistant"]["listNavigationAgents"]>>,
+) {
+  return navigationResult.ok
+    ? toAssistantAgentOptions(
+        (Array.isArray(navigationResult.items) ? navigationResult.items : [])
+          .filter(isAssistantNavChatAgent),
+      )
+    : [];
 }
 
 function buildSettingsActionPatch(
@@ -646,6 +660,8 @@ function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: Translate
       return t("nav.agents");
     case "schedules":
       return t("nav.schedules");
+    case "skills":
+      return t("nav.skills");
     default:
       return pageKey;
   }
@@ -680,6 +696,7 @@ type FixedNavigationToolConfig = {
 const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
   [
     { id: "agents", labelKey: "nav.agents", copilotPageKey: "agents" },
+    { id: "skills", labelKey: "nav.skills", copilotPageKey: "skills" },
     { id: "market", labelKey: "nav.market", copilotPageKey: "market" }
   ],
   [
@@ -2220,7 +2237,7 @@ function AboutAppCard({
             machineHash: "",
             machineSource: "unavailable",
             createdAt: "",
-            updatedAt: ""
+            updatedAt: "",
           });
         }
       });
@@ -2379,7 +2396,9 @@ export function SettingsPage({
   const [webappLogPending, setWebappLogPending] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantAgentOptions, setAssistantAgentOptions] = useState<DesktopPetAgentOption[]>([]);
+  const [chatAgentOptions, setChatAgentOptions] = useState<DesktopPetAgentOption[]>([]);
   const [desktopHelperAgentKey, setDesktopHelperAgentKey] = useState(DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+  const [chatDefaultAgentKey, setChatDefaultAgentKey] = useState(DEFAULT_CHAT_DEFAULT_AGENT_KEY);
   const [quickAssistantEnabled, setQuickAssistantEnabled] = useState(DEFAULT_QUICK_ASSISTANT_ENABLED);
   const [quickAssistantAgentKey, setQuickAssistantAgentKey] = useState(DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
   const [quickAssistantShortcut, setQuickAssistantShortcut] = useState(DEFAULT_QUICK_ASSISTANT_SHORTCUT);
@@ -2388,6 +2407,8 @@ export function SettingsPage({
     createDefaultDesktopCopilotPagePreferences
   );
   const [desktopHelperAgentPending, setDesktopHelperAgentPending] = useState(false);
+  const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
+  const chatDefaultAgentMigrationRef = useRef("");
   const [quickAssistantPending, setQuickAssistantPending] = useState(false);
   const [quickAssistantAgentPending, setQuickAssistantAgentPending] = useState(false);
   const [quickAssistantShortcutPending, setQuickAssistantShortcutPending] = useState(false);
@@ -2819,25 +2840,29 @@ export function SettingsPage({
     Promise.all([
       window.electronAPI.assistant.getSettings(),
       window.electronAPI.assistant.listCopilotAgents(),
-      window.electronAPI.assistant.listAgents()
+      window.electronAPI.assistant.listAgents(),
+      window.electronAPI.assistant.listNavigationAgents(),
     ])
-      .then(([settings, agentsResult, fallbackAgents]) => {
+      .then(([settings, agentsResult, fallbackAgents, navigationResult]) => {
         if (cancelled) {
           assistantSettingsLoadedRef.current = false;
           return;
         }
         const assistantAgents = readAssistantAgentOptions(agentsResult, fallbackAgents);
+        const chatAgents = readChatAgentOptions(navigationResult);
         if (!agentsResult.ok && assistantAgents.length === 0) {
           throw new Error(agentsResult.message);
         }
         setAssistantSettings(settings);
         setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+        setChatDefaultAgentKey(settings.chatDefaultAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY);
         setQuickAssistantEnabled(settings.quickAssistantEnabled);
         setQuickAssistantAgentKey(settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
         setQuickAssistantShortcut(normalizeQuickAssistantShortcut(settings.quickAssistantShortcut));
         setQuickAssistantShortcutDraft(normalizeQuickAssistantShortcut(settings.quickAssistantShortcut));
         setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
         setAssistantAgentOptions(assistantAgents);
+        setChatAgentOptions(chatAgents);
         setReadErrorSections(ASSISTANT_SETTINGS_SECTION_IDS, "");
       })
       .catch((reason) => {
@@ -2903,6 +2928,50 @@ export function SettingsPage({
     return assistantAgentOptions.some((agent) => agent.agentKey === agentKey);
   }
 
+  function isKnownChatAgent(agentKey: string) {
+    return chatAgentOptions.some((agent) => agent.agentKey === agentKey);
+  }
+
+  const resolvedChatDefaultAgentKey = isKnownChatAgent(chatDefaultAgentKey)
+    ? chatDefaultAgentKey
+    : chatAgentOptions[0]?.agentKey ?? "";
+
+  useEffect(() => {
+    if (
+      !assistantSettings ||
+      !resolvedChatDefaultAgentKey ||
+      isKnownChatAgent(chatDefaultAgentKey)
+    ) {
+      return;
+    }
+    const migrationKey = `${chatDefaultAgentKey}:${resolvedChatDefaultAgentKey}`;
+    if (chatDefaultAgentMigrationRef.current === migrationKey) {
+      return;
+    }
+    chatDefaultAgentMigrationRef.current = migrationKey;
+    setChatDefaultAgentPending(true);
+    void window.electronAPI.assistant
+      .saveSettings({ chatDefaultAgentKey: resolvedChatDefaultAgentKey })
+      .then((nextSettings) => {
+        setAssistantSettings(nextSettings);
+        setChatDefaultAgentKey(nextSettings.chatDefaultAgentKey);
+        onAssistantSettingsChange?.(nextSettings);
+      })
+      .catch(() => {
+        if (chatDefaultAgentMigrationRef.current === migrationKey) {
+          chatDefaultAgentMigrationRef.current = "";
+        }
+      })
+      .finally(() => {
+        setChatDefaultAgentPending(false);
+      });
+  }, [
+    assistantSettings,
+    chatDefaultAgentKey,
+    onAssistantSettingsChange,
+    resolvedChatDefaultAgentKey,
+  ]);
+
   function getAgentLabel(agentKey: string) {
     return assistantAgentOptions.find((agent) => agent.agentKey === agentKey)?.displayName || agentKey;
   }
@@ -2944,6 +3013,11 @@ export function SettingsPage({
           saved: assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY,
           valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === desktopHelperAgentKey))
         },
+        chatDefaultAgentKey: {
+          value: chatDefaultAgentKey,
+          saved: assistantSettings?.chatDefaultAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY,
+          valid: Boolean(chatAgentOptions.find((agent) => agent.agentKey === chatDefaultAgentKey))
+        },
         quickAssistantEnabled: {
           value: quickAssistantEnabled,
           saved: assistantSettings?.quickAssistantEnabled ?? DEFAULT_QUICK_ASSISTANT_ENABLED
@@ -2961,6 +3035,11 @@ export function SettingsPage({
       },
       options: {
         assistantAgents: assistantAgentOptions.map((agent) => ({
+          agentKey: agent.agentKey,
+          displayName: agent.displayName,
+          role: agent.role
+        })),
+        chatAgents: chatAgentOptions.map((agent) => ({
           agentKey: agent.agentKey,
           displayName: agent.displayName,
           role: agent.role
@@ -3048,6 +3127,13 @@ export function SettingsPage({
           : desktopHelperAgentKey.trim();
       const helperTouched = typeof request.args?.desktopHelperAgentKey === "string" || typeof patch.desktopHelperAgentKey === "string";
       const nextHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === requestedHelperAgentKey);
+      const requestedChatDefaultAgentKey = typeof request.args?.chatDefaultAgentKey === "string"
+        ? request.args.chatDefaultAgentKey.trim()
+        : typeof patch.chatDefaultAgentKey === "string"
+          ? patch.chatDefaultAgentKey.trim()
+          : chatDefaultAgentKey.trim();
+      const chatDefaultTouched = typeof request.args?.chatDefaultAgentKey === "string" || typeof patch.chatDefaultAgentKey === "string";
+      const nextChatDefaultAgent = chatAgentOptions.find((agent) => agent.agentKey === requestedChatDefaultAgentKey);
       const requestedQuickAssistantAgentKey = typeof request.args?.quickAssistantAgentKey === "string"
         ? request.args.quickAssistantAgentKey.trim()
         : typeof patch.quickAssistantAgentKey === "string"
@@ -3075,6 +3161,14 @@ export function SettingsPage({
           ? t("settings.navigation.helperAgentValid")
           : t("settings.navigation.helperAgentInvalid")
       };
+      const chatDefaultValidation = {
+        field: "chatDefaultAgentKey",
+        value: requestedChatDefaultAgentKey,
+        valid: Boolean(requestedChatDefaultAgentKey && nextChatDefaultAgent),
+        message: nextChatDefaultAgent
+          ? t("settings.chat.agentValid")
+          : t("settings.chat.agentInvalid")
+      };
       const quickAssistantValidation = {
         field: "quickAssistantAgentKey",
         value: requestedQuickAssistantAgentKey,
@@ -3086,6 +3180,9 @@ export function SettingsPage({
       const actionPatchHelperAgentKey = typeof actionPatch.desktopHelperAgentKey === "string"
         ? actionPatch.desktopHelperAgentKey.trim()
         : desktopHelperAgentKey.trim();
+      const actionPatchChatDefaultAgentKey = typeof actionPatch.chatDefaultAgentKey === "string"
+        ? actionPatch.chatDefaultAgentKey.trim()
+        : chatDefaultAgentKey.trim();
       const actionPatchQuickAssistantEnabled = typeof actionPatch.quickAssistantEnabled === "boolean"
         ? actionPatch.quickAssistantEnabled
         : quickAssistantEnabled;
@@ -3100,6 +3197,7 @@ export function SettingsPage({
         ...readCopilotPatch(actionPatch)
       });
       const actionPatchHelperTouched = typeof actionPatch.desktopHelperAgentKey === "string";
+      const actionPatchChatDefaultTouched = typeof actionPatch.chatDefaultAgentKey === "string";
       const actionPatchQuickAssistantEnabledTouched = typeof actionPatch.quickAssistantEnabled === "boolean";
       const actionPatchQuickAssistantAgentTouched = typeof actionPatch.quickAssistantAgentKey === "string";
       const actionPatchQuickAssistantShortcutTouched = typeof actionPatch.quickAssistantShortcut === "string";
@@ -3109,6 +3207,7 @@ export function SettingsPage({
           DESKTOP_COPILOT_PAGE_KEYS.includes(key as DesktopCopilotPageKey)
         );
       const actionPatchHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === actionPatchHelperAgentKey);
+      const actionPatchChatDefaultAgent = chatAgentOptions.find((agent) => agent.agentKey === actionPatchChatDefaultAgentKey);
       const actionPatchQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === actionPatchQuickAssistantAgentKey);
       const actionPatchHelperValidation = {
         field: "desktopHelperAgentKey",
@@ -3117,6 +3216,14 @@ export function SettingsPage({
         message: actionPatchHelperAgent
           ? t("settings.navigation.helperAgentValid")
           : t("settings.navigation.helperAgentInvalid")
+      };
+      const actionPatchChatDefaultValidation = {
+        field: "chatDefaultAgentKey",
+        value: actionPatchChatDefaultAgentKey,
+        valid: Boolean(actionPatchChatDefaultAgentKey && actionPatchChatDefaultAgent),
+        message: actionPatchChatDefaultAgent
+          ? t("settings.chat.agentValid")
+          : t("settings.chat.agentInvalid")
       };
       const actionPatchQuickAssistantValidation = {
         field: "quickAssistantAgentKey",
@@ -3159,6 +3266,7 @@ export function SettingsPage({
           }
           if (
             (actionPatchHelperTouched && !actionPatchHelperValidation.valid) ||
+            (actionPatchChatDefaultTouched && !actionPatchChatDefaultValidation.valid) ||
             (actionPatchQuickAssistantAgentTouched && !actionPatchQuickAssistantValidation.valid) ||
             (actionPatchCopilotTouched && !actionPatchCopilotValidation.valid)
           ) {
@@ -3168,11 +3276,14 @@ export function SettingsPage({
                 code: "invalid_form_patch",
                 message: actionPatchHelperTouched && !actionPatchHelperValidation.valid
                   ? actionPatchHelperValidation.message
+                  : actionPatchChatDefaultTouched && !actionPatchChatDefaultValidation.valid
+                    ? actionPatchChatDefaultValidation.message
                   : actionPatchQuickAssistantAgentTouched && !actionPatchQuickAssistantValidation.valid
                     ? actionPatchQuickAssistantValidation.message
                     : t("settings.navigation.sideAssistantUnavailable"),
                 details: {
                   helperValidation: actionPatchHelperValidation,
+                  chatDefaultValidation: actionPatchChatDefaultValidation,
                   quickAssistantValidation: actionPatchQuickAssistantValidation,
                   copilotValidation: actionPatchCopilotValidation
                 }
@@ -3181,6 +3292,9 @@ export function SettingsPage({
           }
           if (actionPatchHelperTouched) {
             setDesktopHelperAgentKey(actionPatchHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+          }
+          if (actionPatchChatDefaultTouched) {
+            setChatDefaultAgentKey(actionPatchChatDefaultAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY);
           }
           if (actionPatchQuickAssistantEnabledTouched) {
             setQuickAssistantEnabled(actionPatchQuickAssistantEnabled);
@@ -3210,18 +3324,23 @@ export function SettingsPage({
             ? actionPatch
             : {
                 desktopHelperAgentKey,
+                chatDefaultAgentKey,
                 quickAssistantEnabled,
                 quickAssistantAgentKey,
                 quickAssistantShortcut,
                 desktopCopilotPages
               };
           const submitPatchHelperTouched = typeof submitPatch.desktopHelperAgentKey === "string";
+          const submitPatchChatDefaultTouched = typeof submitPatch.chatDefaultAgentKey === "string";
           const submitPatchQuickAssistantEnabledTouched = typeof submitPatch.quickAssistantEnabled === "boolean";
           const submitPatchQuickAssistantAgentTouched = typeof submitPatch.quickAssistantAgentKey === "string";
           const submitPatchQuickAssistantShortcutTouched = typeof submitPatch.quickAssistantShortcut === "string";
           const submitPatchHelperAgentKey = typeof submitPatch.desktopHelperAgentKey === "string"
             ? submitPatch.desktopHelperAgentKey.trim()
             : desktopHelperAgentKey.trim();
+          const submitPatchChatDefaultAgentKey = typeof submitPatch.chatDefaultAgentKey === "string"
+            ? submitPatch.chatDefaultAgentKey.trim()
+            : chatDefaultAgentKey.trim();
           const submitPatchQuickAssistantEnabled = typeof submitPatch.quickAssistantEnabled === "boolean"
             ? submitPatch.quickAssistantEnabled
             : quickAssistantEnabled;
@@ -3241,6 +3360,7 @@ export function SettingsPage({
               DESKTOP_COPILOT_PAGE_KEYS.includes(key as DesktopCopilotPageKey)
             );
           const submitPatchHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === submitPatchHelperAgentKey);
+          const submitPatchChatDefaultAgent = chatAgentOptions.find((agent) => agent.agentKey === submitPatchChatDefaultAgentKey);
           const submitPatchQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === submitPatchQuickAssistantAgentKey);
           const submitPatchHelperValidation = {
             field: "desktopHelperAgentKey",
@@ -3249,6 +3369,14 @@ export function SettingsPage({
             message: submitPatchHelperAgent
               ? t("settings.navigation.helperAgentValid")
               : t("settings.navigation.helperAgentInvalid")
+          };
+          const submitPatchChatDefaultValidation = {
+            field: "chatDefaultAgentKey",
+            value: submitPatchChatDefaultAgentKey,
+            valid: Boolean(submitPatchChatDefaultAgentKey && submitPatchChatDefaultAgent),
+            message: submitPatchChatDefaultAgent
+              ? t("settings.chat.agentValid")
+              : t("settings.chat.agentInvalid")
           };
           const submitPatchQuickAssistantValidation = {
             field: "quickAssistantAgentKey",
@@ -3261,6 +3389,7 @@ export function SettingsPage({
           const submitPatchCopilotValidation = validateCopilotPages(submitPatchCopilotPages);
           if (
             (submitPatchHelperTouched && !submitPatchHelperValidation.valid) ||
+            (submitPatchChatDefaultTouched && !submitPatchChatDefaultValidation.valid) ||
             (submitPatchQuickAssistantAgentTouched && !submitPatchQuickAssistantValidation.valid) ||
             (submitPatchCopilotTouched && !submitPatchCopilotValidation.valid)
           ) {
@@ -3270,11 +3399,14 @@ export function SettingsPage({
                 code: "invalid_form_patch",
                 message: submitPatchHelperTouched && !submitPatchHelperValidation.valid
                   ? submitPatchHelperValidation.message
+                  : submitPatchChatDefaultTouched && !submitPatchChatDefaultValidation.valid
+                    ? submitPatchChatDefaultValidation.message
                   : submitPatchQuickAssistantAgentTouched && !submitPatchQuickAssistantValidation.valid
                     ? submitPatchQuickAssistantValidation.message
                     : t("settings.navigation.sideAssistantUnavailable"),
                 details: {
                   helperValidation: submitPatchHelperValidation,
+                  chatDefaultValidation: submitPatchChatDefaultValidation,
                   quickAssistantValidation: submitPatchQuickAssistantValidation,
                   copilotValidation: submitPatchCopilotValidation
                 }
@@ -3283,6 +3415,9 @@ export function SettingsPage({
           }
           if (submitPatchHelperTouched) {
             await handleSelectDesktopHelperAgentKey(submitPatchHelperAgentKey);
+          }
+          if (submitPatchChatDefaultTouched) {
+            await handleSelectChatDefaultAgentKey(submitPatchChatDefaultAgentKey);
           }
           if (submitPatchQuickAssistantEnabledTouched) {
             const nextSettings = await window.electronAPI.assistant.saveSettings({
@@ -3336,14 +3471,16 @@ export function SettingsPage({
           return {
             ok: true,
             result: {
-              valid: helperValidation.valid && quickAssistantValidation.valid && copilotValidation.valid,
+              valid: helperValidation.valid && chatDefaultValidation.valid && quickAssistantValidation.valid && copilotValidation.valid,
               issues: [
                 ...(helperValidation.valid ? [] : [helperValidation]),
+                ...(chatDefaultValidation.valid ? [] : [chatDefaultValidation]),
                 ...(quickAssistantValidation.valid ? [] : [quickAssistantValidation]),
                 ...copilotValidation.issues
               ],
               fields: {
                 desktopHelperAgentKey: helperValidation,
+                chatDefaultAgentKey: chatDefaultValidation,
                 quickAssistantAgentKey: quickAssistantValidation,
                 quickAssistantShortcut: {
                   field: "quickAssistantShortcut",
@@ -3365,6 +3502,12 @@ export function SettingsPage({
                 to: requestedHelperAgentKey,
                 displayName: nextHelperAgent?.displayName ?? requestedHelperAgentKey,
                 valid: helperValidation.valid
+              }, {
+                field: "chatDefaultAgentKey",
+                from: chatDefaultAgentKey,
+                to: requestedChatDefaultAgentKey,
+                displayName: nextChatDefaultAgent?.displayName ?? requestedChatDefaultAgentKey,
+                valid: chatDefaultValidation.valid
               }, {
                 field: "quickAssistantEnabled",
                 from: quickAssistantEnabled,
@@ -3390,22 +3533,27 @@ export function SettingsPage({
             }
           };
         case "desktop.page.applyPatch":
-          if ((helperTouched && !helperValidation.valid) || (quickAssistantAgentTouched && !quickAssistantValidation.valid) || !copilotValidation.valid) {
+          if ((helperTouched && !helperValidation.valid) || (chatDefaultTouched && !chatDefaultValidation.valid) || (quickAssistantAgentTouched && !quickAssistantValidation.valid) || !copilotValidation.valid) {
             return {
               ok: false,
               error: {
                 code: "invalid_form_patch",
                 message: helperTouched && !helperValidation.valid
                   ? helperValidation.message
+                  : chatDefaultTouched && !chatDefaultValidation.valid
+                    ? chatDefaultValidation.message
                   : quickAssistantAgentTouched && !quickAssistantValidation.valid
                     ? quickAssistantValidation.message
                     : t("settings.navigation.sideAssistantUnavailable"),
-                details: { helperValidation, quickAssistantValidation, copilotValidation }
+                details: { helperValidation, chatDefaultValidation, quickAssistantValidation, copilotValidation }
               }
             };
           }
           if (helperTouched) {
             await handleSelectDesktopHelperAgentKey(requestedHelperAgentKey);
+          }
+          if (chatDefaultTouched) {
+            await handleSelectChatDefaultAgentKey(requestedChatDefaultAgentKey);
           }
           if (quickAssistantEnabledTouched) {
             const nextSettings = await window.electronAPI.assistant.saveSettings({
@@ -3444,6 +3592,7 @@ export function SettingsPage({
             result: {
               applied: true,
               desktopHelperAgentKey: requestedHelperAgentKey,
+              chatDefaultAgentKey: requestedChatDefaultAgentKey,
               quickAssistantEnabled: requestedQuickAssistantEnabled,
               quickAssistantAgentKey: requestedQuickAssistantAgentKey,
               quickAssistantShortcut: requestedQuickAssistantShortcut,
@@ -3456,11 +3605,14 @@ export function SettingsPage({
     });
   }, [
     assistantAgentOptions,
+    chatAgentOptions,
     assistantSettings?.desktopHelperAgentKey,
+    assistantSettings?.chatDefaultAgentKey,
     assistantSettings?.quickAssistantAgentKey,
     assistantSettings?.quickAssistantEnabled,
     assistantSettings?.quickAssistantShortcut,
     desktopHelperAgentKey,
+    chatDefaultAgentKey,
     desktopCopilotPages,
     quickAssistantAgentKey,
     quickAssistantEnabled,
@@ -3897,6 +4049,37 @@ export function SettingsPage({
       showSectionNotice("navigation", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopHelperAgentPending(false);
+    }
+  }
+
+  async function handleSelectChatDefaultAgentKey(nextAgentKey: string) {
+    const normalizedAgentKey = nextAgentKey.trim();
+    const previousAgentKey = chatDefaultAgentKey;
+    if (!normalizedAgentKey || normalizedAgentKey === previousAgentKey) {
+      return;
+    }
+
+    setChatDefaultAgentKey(normalizedAgentKey);
+    setChatDefaultAgentPending(true);
+    try {
+      const nextSettings = await window.electronAPI.assistant.saveSettings({
+        chatDefaultAgentKey: normalizedAgentKey
+      });
+      const nextAgent = chatAgentOptions.find((agent) => agent.agentKey === nextSettings.chatDefaultAgentKey);
+      setAssistantSettings(nextSettings);
+      setChatDefaultAgentKey(nextSettings.chatDefaultAgentKey);
+      onAssistantSettingsChange?.(nextSettings);
+      setReadErrorSections(["assistant"], "");
+      showSectionNotice(
+        "assistant",
+        t("settings.chat.defaultAgentChanged", { name: nextAgent?.displayName ?? nextSettings.chatDefaultAgentKey }),
+        "success"
+      );
+    } catch (reason) {
+      setChatDefaultAgentKey(previousAgentKey);
+      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setChatDefaultAgentPending(false);
     }
   }
 
@@ -4650,6 +4833,40 @@ export function SettingsPage({
                 </div>
               </div>
             ) : null}
+            <div className="settings-item-card desktop-helper-settings-card" aria-label={t("settings.chat.defaultAgent")}>
+              <div className="settings-item-form desktop-pet-agent-form">
+                <label className="desktop-pet-agent-field">
+                  <span>{t("settings.chat.defaultAgent")}</span>
+                  <span className="desktop-pet-agent-select-wrap">
+                    <Select
+                      classNames={SETTINGS_SELECT_CLASS_NAMES}
+                      style={{ width: "100%" }}
+                      value={resolvedChatDefaultAgentKey}
+                      onChange={(value) => void handleSelectChatDefaultAgentKey(value)}
+                      disabled={chatAgentOptions.length === 0 || chatDefaultAgentPending}
+                      aria-label={t("settings.chat.defaultAgent")}
+                      options={[
+                        {
+                          value: "",
+                          label: chatAgentOptions.length === 0
+                            ? t("settings.navigation.agentsLoading")
+                            : isKnownChatAgent(chatDefaultAgentKey)
+                              ? t("settings.navigation.selectAgent")
+                              : t("settings.navigation.unavailableAgent", { agentKey: chatDefaultAgentKey })
+                        },
+                        ...chatAgentOptions.map((agent) => ({
+                          value: agent.agentKey,
+                          label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
+                        }))
+                      ]}
+                    />
+                  </span>
+                  {!resolvedChatDefaultAgentKey ? (
+                    <em>{t("settings.chat.defaultUnavailable")}</em>
+                  ) : null}
+                </label>
+              </div>
+            </div>
             <div className="settings-item-card desktop-helper-settings-card" aria-label={t("settings.assistant.panelAria")}>
               <div className="settings-item-header">
                 <div className="settings-appearance-row-copy">
