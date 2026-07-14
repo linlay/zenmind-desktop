@@ -249,7 +249,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     agentKey: "zenmi",
     chatId: "react-newest",
     runId: "run-newest",
-    timestamp: EPOCH_MS + 60,
+    startedAt: EPOCH_MS + 60,
   }});
   assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
 
@@ -270,7 +270,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     agentKey: "zenmi",
     chatId: "react-newest",
     awaitingId: "awaiting-1",
-    resolvedAt: EPOCH_MS + 80,
+    answeredAt: EPOCH_MS + 80,
   }});
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
   await new Promise((resolve) => setTimeout(resolve, 450));
@@ -306,11 +306,12 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
+      createdAt: EPOCH_MS + 1,
     },
   });
   assert.equal(unread.changed, true);
   assert.equal(unread.items[0].isRead, false);
-  assert.equal(unread.items[0].updatedAt, EPOCH_MS);
+  assert.equal(unread.items[0].updatedAt, EPOCH_MS + 1);
 
   const read = applyAssistantNavigationChatPush(unread.items, {
     frame: "push",
@@ -318,11 +319,12 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
+      readAt: EPOCH_MS + 2,
     },
   });
   assert.equal(read.changed, true);
   assert.equal(read.items[0].isRead, true);
-  assert.equal(read.items[0].updatedAt, EPOCH_MS);
+  assert.equal(read.items[0].updatedAt, EPOCH_MS + 2);
 
   const started = applyAssistantNavigationChatPush(read.items, {
     frame: "push",
@@ -331,7 +333,7 @@ test("assistant navigation chat reducer updates displayed chats without checking
       agentKey: "coder-agent",
       chatId: "chat-1",
       runId: "run-1",
-      timestamp: EPOCH_MS + 3,
+      startedAt: EPOCH_MS + 3,
     },
   });
   assert.equal(started.changed, true);
@@ -358,7 +360,7 @@ test("assistant navigation chat reducer updates displayed chats without checking
       agentKey: "coder-agent",
       chatId: "chat-1",
       runId: "run-1",
-      timestamp: EPOCH_MS + 5,
+      finishedAt: EPOCH_MS + 5,
     },
   });
   assert.equal(completed.changed, true);
@@ -370,7 +372,7 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
-      resolvedAt: EPOCH_MS + 6,
+      answeredAt: EPOCH_MS + 6,
     },
   });
   assert.equal(answered.changed, true);
@@ -903,7 +905,7 @@ test("assistant navigation run.started keeps a newly created chat title instead 
       agentKey: "zenmi",
       chatId,
       chatName: "# Query Settings 菜单项配色",
-      timestamp: 1781940164377,
+      createdAt: 1781940164377,
     },
   });
 
@@ -914,7 +916,7 @@ test("assistant navigation run.started keeps a newly created chat title instead 
       agentKey: "zenmi",
       chatId,
       runId: "mqm5r2wf",
-      timestamp: 1781947868278,
+      startedAt: 1781947868278,
     },
   });
 
@@ -926,7 +928,7 @@ test("assistant navigation run.started keeps a newly created chat title instead 
   assert.equal(chat?.hasActiveRun, true);
 });
 
-test("assistant navigation rejects a run.started push without an epoch-ms timestamp", () => {
+test("assistant navigation rejects a run.started push without startedAt", () => {
   const chatId = "fresh-chat";
   const result = applyAssistantNavigationPush([createAgent()], {
     frame: "push",
@@ -1005,7 +1007,7 @@ test("assistant navigation applies standard awaiting.asking project pushes with 
   assert.equal(agent?.hasPendingAwaiting, true);
 });
 
-test("assistant navigation applies standard awaiting.answered pushes with resolvedAt", () => {
+test("assistant navigation applies standard awaiting.answered pushes with answeredAt", () => {
   const chatId = "6bfee0ad-5263-41c9-9f13-4983882ff7ad";
   const asked = applyAssistantNavigationPush([createAgent({
     agentKey: "askUserBudget.demo",
@@ -1021,7 +1023,7 @@ test("assistant navigation applies standard awaiting.answered pushes with resolv
       runId: "mrj2qklh",
     },
   });
-  const resolvedAt = 1783938200453;
+  const answeredAt = 1783938200453;
   const answered = applyAssistantNavigationPush(asked.items, {
     frame: "push",
     type: "awaiting.answered",
@@ -1029,7 +1031,7 @@ test("assistant navigation applies standard awaiting.answered pushes with resolv
       agentKey: "askUserBudget.demo",
       awaitingId: "call_function_7frdxe0cb31e_1",
       chatId,
-      resolvedAt,
+      answeredAt,
       runId: "mrj2qklh",
     },
   });
@@ -1037,7 +1039,7 @@ test("assistant navigation applies standard awaiting.answered pushes with resolv
   const [agent] = answered.items;
   const chat = findChat(answered.items, chatId);
   assert.equal(answered.changed, true);
-  assert.equal(chat?.updatedAt, resolvedAt);
+  assert.equal(chat?.updatedAt, answeredAt);
   assert.equal(chat?.hasPendingAwaiting, false);
   assert.equal(chat?.awaitingCount, 0);
   assert.equal(chat?.awaitingMode, undefined);
@@ -1103,7 +1105,7 @@ test("assistant navigation run.started preserves an existing real preview", () =
       agentKey: "zenmi",
       chatId,
       runId: "new-run",
-      timestamp: EPOCH_MS + 52,
+      startedAt: EPOCH_MS + 52,
     },
   });
 
@@ -1122,7 +1124,7 @@ test("assistant navigation still applies real preview text from chat.updated and
       agentKey: "zenmi",
       chatId,
       runId: "run-1",
-      timestamp: EPOCH_MS + 70,
+      startedAt: EPOCH_MS + 70,
     },
   });
   const updated = applyAssistantNavigationPush(started.items, {
@@ -1144,7 +1146,7 @@ test("assistant navigation still applies real preview text from chat.updated and
       chatId,
       runId: "run-1",
       message: "Final answer",
-      timestamp: EPOCH_MS + 72,
+      finishedAt: EPOCH_MS + 72,
     },
   });
 
@@ -1189,7 +1191,6 @@ test("assistant navigation preserves chat creation time from summaries and pushe
       agentKey: "zenmi",
       chatId: "new-created-at-chat",
       createdAt: EPOCH_MS + 83,
-      timestamp: EPOCH_MS + 84,
     },
   });
   assert.equal(
@@ -1253,7 +1254,6 @@ test("assistant navigation rejects malformed optional structured times instead o
     data: {
       agentKey: "zenmi",
       chatId: "invalid-created-at",
-      timestamp: EPOCH_MS,
       createdAt: "2026-07-10T01:02:03.000Z",
     },
   });

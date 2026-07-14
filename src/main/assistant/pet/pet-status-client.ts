@@ -2,6 +2,10 @@ import type { App } from "electron";
 import type { AgentAuthIssueResult, AssistantNavAgentIcon, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
 import { readEpochMillis } from "../../../shared/time-contract";
 import {
+  readAgentPlatformPushEpochMillis,
+  validateAgentPlatformPushTimeContract,
+} from "../../../shared/agent-platform-push-time-contract";
+import {
   DESKTOP_PET_STATUS_HINT_TEXTS,
   sanitizeDesktopPetUnreadCount,
   toDesktopPetText as toText
@@ -77,15 +81,6 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS = new Set([
   "zen",
   DEFAULT_DESKTOP_PET_AGENT_DISPLAY_NAME
 ]);
-const STRUCTURED_PUSH_TIME_FIELDS = [
-  "createdAt",
-  "updatedAt",
-  "startedAt",
-  "completedAt",
-  "timestamp",
-  "expiresAt",
-  "readAt",
-] as const;
 
 function readUnreadCountFromPush(
   data: Record<string, unknown>,
@@ -302,24 +297,8 @@ function readFrameData(frame: AgentPlatformPetPushFrame): Record<string, unknown
   return {};
 }
 
-function readFrameTimestamp(frame: AgentPlatformPetPushFrame) {
-  return readEpochMillis(readFrameData(frame).timestamp);
-}
-
-function hasValidPresentFrameTimes(frame: AgentPlatformPetPushFrame) {
-  const data = readFrameData(frame);
-  return STRUCTURED_PUSH_TIME_FIELDS.every((field) =>
-    data[field] === undefined || readEpochMillis(data[field]) !== undefined
-  );
-}
-
-function requiresFrameTimestamp(frameType: string) {
-  return frameType === "chat.read_all" ||
-    frameType === "chat.read" ||
-    frameType === "chat.unread" ||
-    frameType === "chat.updated" ||
-    frameType === "run.started" ||
-    frameType === "run.finished";
+function readFramePushTime(frame: AgentPlatformPetPushFrame) {
+  return readAgentPlatformPushEpochMillis(toText(frame.type), readFrameData(frame));
 }
 
 function readFrameAgentKey(data: Record<string, unknown>) {
@@ -446,10 +425,10 @@ export function applyAgentPlatformPetPush(
 ): DesktopPetBoundAgentStatus | null {
   const frameType = toText(frame.type);
   const data = readFrameData(frame);
-  const timestamp = readFrameTimestamp(frame);
-  if (timestamp === undefined) {
+  if (validateAgentPlatformPushTimeContract(frameType, data)) {
     return current;
   }
+  const timestamp = readFramePushTime(frame);
   const eventAgentKey = readFrameAgentKey(data);
   const configuredBoundAgentKey = normalizeDesktopPetBoundAgentKey(boundAgentKey);
   const normalizedBoundAgentKey = current?.agentKey || configuredBoundAgentKey || eventAgentKey;
@@ -467,7 +446,7 @@ export function applyAgentPlatformPetPush(
       unreadCount: 0,
       presence: current?.presence ?? "available",
       stale: false,
-      updatedAt: timestamp
+      ...(timestamp === undefined ? {} : { updatedAt: timestamp })
     };
   }
 
@@ -564,7 +543,10 @@ export function applyAgentPlatformCompletionReminder(
     return current;
   }
   const data = readFrameData(frame);
-  const timestamp = readFrameTimestamp(frame);
+  if (validateAgentPlatformPushTimeContract(frameType, data)) {
+    return current;
+  }
+  const timestamp = readFramePushTime(frame);
   if (timestamp === undefined) {
     return current;
   }
@@ -752,9 +734,9 @@ export class AgentPlatformPetStatusClient {
       return;
     }
     const frameType = toText(frame.type);
-    if (!hasValidPresentFrameTimes(frame) ||
-      (requiresFrameTimestamp(frameType) && readFrameTimestamp(frame) === undefined)) {
-      this.options.onDebug?.(`time_contract_violation: pet push ${frameType} requires epoch_ms_int64 timestamp`);
+    const timeIssue = validateAgentPlatformPushTimeContract(frameType, readFrameData(frame));
+    if (timeIssue) {
+      this.options.onDebug?.(`time_contract_violation: pet.push.${frameType}.${timeIssue} violates the push time contract`);
       this.scheduleRefresh();
       return;
     }
@@ -769,7 +751,7 @@ export class AgentPlatformPetStatusClient {
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
       const matchedAgentKey = nextStatus?.agentKey || eventAgentKey;
-      const timestamp = readFrameTimestamp(frame);
+      const timestamp = readFramePushTime(frame);
       if (timestamp !== undefined && runId && eventAgentKey && (!matchedAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunStarted?.({
           runId,
@@ -786,7 +768,7 @@ export class AgentPlatformPetStatusClient {
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
       const matchedAgentKey = eventAgentKey || nextStatus?.agentKey || currentBoundAgentKey;
-      const timestamp = readFrameTimestamp(frame);
+      const timestamp = readFramePushTime(frame);
       if (timestamp !== undefined && (runId || chatId) && (!eventAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunFinished?.({
           runId,
