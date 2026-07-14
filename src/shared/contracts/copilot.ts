@@ -1,5 +1,6 @@
 import type { DesktopCopilotPagePreferences, DesktopCopilotPagePreferencesInput } from "../assistant-settings";
 import type { AssistantAttachment } from "./attachments";
+import type { EpochMilliseconds } from "../time-contract";
 
 export interface AssistantWorkerOpenRequest {
   workerKey?: string;
@@ -154,7 +155,7 @@ export interface AssistantChatMessage {
   id: string;
   role: AssistantMessageRole;
   content: string;
-  createdAt: number;
+  createdAt: EpochMilliseconds;
   runId?: string;
   attachments?: AssistantAttachment[];
 }
@@ -162,8 +163,8 @@ export interface AssistantChatMessage {
 export interface AssistantChatSummary {
   id: string;
   title: string;
-  createdAt: number;
-  updatedAt: number;
+  createdAt: EpochMilliseconds;
+  updatedAt: EpochMilliseconds;
   lastMessage: string;
   messageCount: number;
 }
@@ -181,7 +182,7 @@ export interface AssistantChatSearchResult {
   runId?: string;
   kind: string;
   role?: string;
-  timestamp: number;
+  timestamp: EpochMilliseconds;
   snippet: string;
   score: number;
 }
@@ -201,8 +202,8 @@ export interface AssistantNavChatItem {
   chatId: string;
   chatName: string;
   agentKey: string;
-  createdAt: number;
-  updatedAt: number;
+  createdAt: EpochMilliseconds;
+  updatedAt: EpochMilliseconds;
   lastRunId: string;
   lastRunContent: string;
   isRead: boolean;
@@ -233,7 +234,7 @@ export type AssistantNavigationLiveFrameKind =
   | "invalid";
 
 export interface AssistantNavigationLiveFrame {
-  at: number;
+  at: EpochMilliseconds;
   direction: AssistantNavigationLiveFrameDirection;
   kind: AssistantNavigationLiveFrameKind;
   type: string | null;
@@ -243,9 +244,9 @@ export interface AssistantNavigationLiveStatus {
   phase: AssistantNavigationLivePhase;
   source: "desktop-nav";
   endpoint: string | null;
-  connectedAt: number | null;
-  lastMessageAt: number | null;
-  lastRefreshAt: number | null;
+  connectedAt: EpochMilliseconds | null;
+  lastMessageAt: EpochMilliseconds | null;
+  lastRefreshAt: EpochMilliseconds | null;
   lastPushType: string | null;
   lastError: string | null;
   recentFrames: AssistantNavigationLiveFrame[];
@@ -262,7 +263,7 @@ export interface AssistantNavAgentItem {
   hasPendingAwaiting: boolean;
   latestChatId: string | null;
   latestPreview: string;
-  updatedAt?: number;
+  updatedAt?: EpochMilliseconds | null;
   recentChats: AssistantNavChatItem[];
   mode?: string;
   workspaceDir?: string;
@@ -276,7 +277,7 @@ export interface AssistantNavAgentItemsResult {
   activityItems?: AssistantNavAgentItem[];
   chatItems: AssistantNavChatItem[];
   message: string;
-  updatedAt: number;
+  updatedAt: EpochMilliseconds;
 }
 
 export type AssistantCreateProjectType = "coder" | "kbase";
@@ -362,9 +363,9 @@ export interface AssistantMemoryItem {
   sourceRunId?: string;
   referenceCount: number;
   reason?: string;
-  createdAt: number;
-  updatedAt: number;
-  lastReferencedAt?: number;
+  createdAt: EpochMilliseconds;
+  updatedAt: EpochMilliseconds;
+  lastReferencedAt?: EpochMilliseconds | null;
 }
 
 export interface AssistantMemorySettings {
@@ -385,8 +386,8 @@ export interface AssistantMemoryStats {
   total: number;
   factCount: number;
   observationCount: number;
-  lastLearnedAt: number | null;
-  lastReferencedAt: number | null;
+  lastLearnedAt: EpochMilliseconds | null;
+  lastReferencedAt: EpochMilliseconds | null;
 }
 
 export interface AssistantMemoryStorage {
@@ -404,7 +405,7 @@ export interface AssistantMemoryAuditSummary {
   skipped?: number;
   updated?: number;
   archived?: number;
-  timestamp: number;
+  timestamp: EpochMilliseconds;
 }
 
 export interface AssistantMemorySummary {
@@ -545,7 +546,7 @@ export interface AssistantAwaitingPayload {
   toolName?: string;
   runId: string;
   chatId: string;
-  createdAt?: number;
+  createdAt?: EpochMilliseconds | null;
   timeout?: number | null;
   timeoutMs?: number;
   questions?: AssistantAwaitingQuestion[];
@@ -729,7 +730,7 @@ export interface AssistantRunEvent {
   runId: string;
   chatId: string;
   type: AssistantRunEventType;
-  createdAt: number;
+  createdAt: EpochMilliseconds;
   source?: AssistantRunSource;
   status?: AssistantRunEventStatus;
   message?: string;
@@ -746,7 +747,7 @@ export interface AssistantRunEvent {
   viewportKey?: string;
   timeout?: number | null;
   timeoutMs?: number;
-  timestamp?: number;
+  timestamp?: EpochMilliseconds | null;
   questions?: AssistantAwaitingQuestion[];
   approvals?: AssistantAwaitingApproval[];
   forms?: AssistantAwaitingForm[];
@@ -768,7 +769,7 @@ export interface AssistantEvent {
   runId: string;
   chatId: string;
   type: AssistantEventType;
-  createdAt?: number;
+  createdAt?: EpochMilliseconds | null;
   source?: AssistantRunSource;
   status?: AssistantRunEventStatus;
   delta?: string;
@@ -785,7 +786,7 @@ export interface AssistantEvent {
   viewportKey?: string;
   timeout?: number | null;
   timeoutMs?: number;
-  timestamp?: number;
+  timestamp?: EpochMilliseconds | null;
   questions?: AssistantAwaitingQuestion[];
   approvals?: AssistantAwaitingApproval[];
   forms?: AssistantAwaitingForm[];

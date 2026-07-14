@@ -16,7 +16,9 @@ import type {
 } from "../../../shared/contracts";
 import {
   isTimeContractViolation,
-  readEpochMillis,
+  isAgentPlatformEpochMilliseconds,
+  parseOptionalNullableAgentPlatformEpochMillis,
+  requireAgentPlatformEpochMillis,
   requireEpochMillis,
 } from "../../../shared/time-contract";
 import { getDesktopDeviceId } from "../../device-identity";
@@ -171,14 +173,6 @@ const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
 const NAVIGATION_GIT_BRANCH_TIMEOUT_MS = 1_000;
 const navigationGitBranchCache = new Map<string, AssistantGitBranchCacheEntry>();
 const IGNORED_PUSH_TYPES = new Set(["heartbeat", "live.connected"]);
-const TIMESTAMPED_PUSH_TYPES = new Set([
-  "chat.created",
-  "chat.updated",
-  "chat.read",
-  "chat.unread",
-  "run.start",
-  "run.complete",
-]);
 const STRUCTURED_PUSH_TIME_FIELDS = [
   "createdAt",
   "updatedAt",
@@ -203,7 +197,7 @@ const FINISHED_AWAITING_STATUSES = new Set([
 ]);
 
 function nowEpochMillis() {
-  return Date.now();
+  return requireEpochMillis(Date.now(), "desktop.assistantNavigation.now");
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -412,13 +406,13 @@ function countPendingAwaitingPayload(value: unknown): number {
 }
 
 function toTimestampMs(value: unknown) {
-  return readEpochMillis(value);
+  return isAgentPlatformEpochMilliseconds(value) ? value : undefined;
 }
 
 function validatePresentNavigationTimes(record: Record<string, unknown>, path: string) {
   for (const field of STRUCTURED_PUSH_TIME_FIELDS) {
-    if (record[field] !== undefined) {
-      requireEpochMillis(record[field], `${path}.${field}`);
+    if (record[field] !== undefined && record[field] !== null) {
+      parseOptionalNullableAgentPlatformEpochMillis(record[field], `${path}.${field}`);
     }
   }
 }
@@ -634,7 +628,7 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
 }
 
 function readAgentTimestamp(agent: AssistantNavAgentItem) {
-  return toTimestampMs(agent.updatedAt);
+  return agent.updatedAt ?? undefined;
 }
 
 function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
@@ -685,14 +679,16 @@ function resolveNavigationUnreadCount(options: {
   return options.statsUnreadCount ?? options.unreadFromChats;
 }
 
-function pickLatestTimestamp(left?: number, right?: number) {
-  if (left === undefined) {
-    return right;
+function pickLatestTimestamp(
+  left: AssistantNavAgentItem["updatedAt"],
+  right: AssistantNavAgentItem["updatedAt"],
+) {
+  const leftTimestamp = left ?? undefined;
+  const rightTimestamp = right ?? undefined;
+  if (leftTimestamp === undefined || rightTimestamp === undefined) {
+    return left ?? right;
   }
-  if (right === undefined) {
-    return left;
-  }
-  return right > left ? right : left;
+  return rightTimestamp > leftTimestamp ? rightTimestamp : leftTimestamp;
 }
 
 function mergeNavigationAgentItem(
@@ -758,8 +754,8 @@ function mapNavigationChat(
   }
   validateNavigationPayloadTimes(chat, path);
   const chatId = toText(chat.chatId) || toText(chat.id);
-  const createdAt = requireEpochMillis(chat.createdAt, `${path}.createdAt`);
-  const updatedAt = requireEpochMillis(chat.updatedAt, `${path}.updatedAt`);
+  const createdAt = requireAgentPlatformEpochMillis(chat.createdAt, `${path}.createdAt`);
+  const updatedAt = requireAgentPlatformEpochMillis(chat.updatedAt, `${path}.updatedAt`);
   if (!chatId) {
     return null;
   }
@@ -882,9 +878,7 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
   const latestPreview = latestChat
     ? (latestChat.lastRunContent || latestChat.chatName).replace(/\s+/gu, " ").trim()
     : "";
-  const updatedAt = agent.updatedAt === undefined
-    ? undefined
-    : requireEpochMillis(agent.updatedAt, `${path}.updatedAt`);
+  const updatedAt = parseOptionalNullableAgentPlatformEpochMillis(agent.updatedAt, `${path}.updatedAt`);
   return {
     agentKey,
     displayName: readAgentDisplayName(agent, agentKey),
@@ -911,9 +905,7 @@ function createCopilotAgentItem(agent: PlatformAgentSummary, path: string): Assi
     return null;
   }
   const workspaceDir = readAgentWorkspaceDir(agent);
-  const updatedAt = agent.updatedAt === undefined
-    ? undefined
-    : requireEpochMillis(agent.updatedAt, `${path}.updatedAt`);
+  const updatedAt = parseOptionalNullableAgentPlatformEpochMillis(agent.updatedAt, `${path}.updatedAt`);
   return {
     agentKey,
     displayName: readAgentDisplayName(agent, agentKey),
@@ -1009,7 +1001,7 @@ function findInvalidPushTimeField(value: unknown, path = ""): string | undefined
     return undefined;
   }
   const invalidPresentField = STRUCTURED_PUSH_TIME_FIELDS.find((field) =>
-    value[field] !== undefined && toTimestampMs(value[field]) === undefined
+    value[field] !== undefined && value[field] !== null && toTimestampMs(value[field]) === undefined
   );
   if (invalidPresentField) {
     return path ? `${path}.${invalidPresentField}` : invalidPresentField;
@@ -1025,10 +1017,7 @@ function invalidPushTimeField(event: NavigationPushEvent) {
   if (invalidPresentField) {
     return invalidPresentField;
   }
-  if (event.type === "awaiting.asking" || event.type === "awaiting.answered") {
-    return readPushEventTimestamp(event) === undefined ? requiredPushTimeField(event) : undefined;
-  }
-  return TIMESTAMPED_PUSH_TYPES.has(event.type) && readPushEventTimestamp(event) === undefined
+  return readPushEventTimestamp(event) === undefined
     ? requiredPushTimeField(event)
     : undefined;
 }
@@ -1045,7 +1034,10 @@ function readPushChatId(event: NavigationPushEvent) {
   return toText(event.chatId);
 }
 
-function readPushCreatedAt(event: NavigationPushEvent, fallback?: number) {
+function readPushCreatedAt(
+  event: NavigationPushEvent,
+  fallback?: AssistantNavChatItem["createdAt"],
+) {
   return toTimestampMs(event.createdAt) ?? fallback;
 }
 
@@ -1788,15 +1780,15 @@ export class AssistantNavigationStatusClient {
     }
     const event = toPushEvent(frame);
     this.updateLiveStatus({ lastPushType: event.type || null });
+    if (IGNORED_PUSH_TYPES.has(event.type)) {
+      return;
+    }
     const invalidTimeField = invalidPushTimeField(event);
     if (invalidTimeField) {
       this.options.onDebug?.(
         `time_contract_violation: navigation.push.${event.type}.${invalidTimeField} must be epoch_ms_int64`,
       );
       this.scheduleRefresh();
-      return;
-    }
-    if (IGNORED_PUSH_TYPES.has(event.type)) {
       return;
     }
     this.options.onPushEvent?.({

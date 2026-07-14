@@ -6,7 +6,7 @@ import {
 } from "../download-paths";
 import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
-import { isTimeContractViolation } from "../../shared/time-contract";
+import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
 
 export interface AssistantIpcHandlerOptions {
@@ -77,6 +77,10 @@ function readOptionalString(value: unknown) {
 
 function readOptionalFiniteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function nowEpochMillis() {
+  return requireEpochMillis(Date.now(), "desktop.assistantIpc.now");
 }
 
 function isLiveWebviewContents(contents: any) {
@@ -316,7 +320,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         items: [],
         chatItems: [],
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
-        updatedAt: Date.now()
+        updatedAt: nowEpochMillis()
       };
     }
   });
@@ -348,7 +352,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         items: [],
         chatItems: [],
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
-        updatedAt: Date.now()
+        updatedAt: nowEpochMillis()
       };
     }
   });

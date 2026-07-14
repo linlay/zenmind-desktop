@@ -24,14 +24,19 @@ function loadTimeContractModule() {
 }
 
 const {
+  AGENT_PLATFORM_EPOCH_MILLIS_MIN,
   EPOCH_MILLIS_MAX,
   EPOCH_MILLIS_MIN,
   TimeContractViolation,
   assertEpochMillis,
   formatEpochMillis,
+  isAgentPlatformEpochMilliseconds,
   isEpochMilliseconds,
+  parseOptionalNullableAgentPlatformEpochMillis,
+  parseOptionalNullableEpochMillis,
   parseOptionalEpochMillis,
   readEpochMillis,
+  requireAgentPlatformEpochMillis,
   requireEpochMillis,
 } = loadTimeContractModule();
 
@@ -82,6 +87,33 @@ test("required and optional epoch-ms parsers keep absence distinct from invalid 
   expectViolation(() => parseOptionalEpochMillis("", "updatedAt"), "updatedAt", "invalid");
   expectViolation(
     () => parseOptionalEpochMillis("2026-07-14T00:00:00.000Z", "updatedAt"),
+    "updatedAt",
+    "invalid",
+  );
+});
+
+test("agent-platform timestamps reject Unix-seconds values while retaining zero", () => {
+  for (const value of [0, AGENT_PLATFORM_EPOCH_MILLIS_MIN, 1_710_000_000_000]) {
+    assert.equal(isAgentPlatformEpochMilliseconds(value), true);
+    assert.equal(requireAgentPlatformEpochMillis(value, "timestamp"), value);
+  }
+
+  for (const value of [1_710_000_000, "1710000000000", "2026-07-14T00:00:00.000Z"]) {
+    assert.equal(isAgentPlatformEpochMilliseconds(value), false);
+    expectViolation(() => requireAgentPlatformEpochMillis(value, "timestamp"), "timestamp", "invalid");
+  }
+});
+
+test("nullable optional epoch-ms parsers preserve null separately from absence", () => {
+  assert.equal(parseOptionalNullableEpochMillis(undefined, "updatedAt"), undefined);
+  assert.equal(parseOptionalNullableEpochMillis(null, "updatedAt"), null);
+  assert.equal(parseOptionalNullableAgentPlatformEpochMillis(null, "updatedAt"), null);
+  assert.equal(
+    parseOptionalNullableAgentPlatformEpochMillis(1_710_000_000_000, "updatedAt"),
+    1_710_000_000_000,
+  );
+  expectViolation(
+    () => parseOptionalNullableAgentPlatformEpochMillis(1_710_000_000, "updatedAt"),
     "updatedAt",
     "invalid",
   );

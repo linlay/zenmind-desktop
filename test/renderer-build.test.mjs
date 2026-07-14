@@ -3695,11 +3695,16 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   );
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
+  const assistantNavigation = fs.readFileSync(path.join(projectRoot, "src", "renderer", "assistantNavigation.ts"), "utf8");
+  const globalSearchRows = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "search", "globalSearchRows.ts"), "utf8");
   const globalStyles = readRendererStyles();
   const i18nEn = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const i18nZh = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
   assert.match(contracts, /interface AssistantNavAgentItem/);
+  assert.match(contracts, /createdAt:\s*EpochMilliseconds/);
+  assert.match(contracts, /updatedAt\?: EpochMilliseconds \| null/);
+  assert.match(contracts, /timestamp:\s*EpochMilliseconds/);
   assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
   assert.match(contracts, /recentChats: AssistantNavChatItem\[\]/);
   assert.match(contracts, /hasActiveRun:\s*boolean/);
@@ -3772,6 +3777,9 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /validatePresentPlatformTimes/);
   assert.doesNotMatch(bridge, /timestampToIso|Date\.parse/);
   assert.doesNotMatch(contracts, /fullAccessExpiresAt/);
+  assert.doesNotMatch(assistantNavigation, /readEpochMillis/);
+  assert.doesNotMatch(appSidebar, /readEpochMillis/);
+  assert.doesNotMatch(globalSearchRows, /readEpochMillis/);
   assert.match(appShell, /onNavigationAgentsChanged/);
   assert.doesNotMatch(appShell, /onNavigationPushEvent/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);

@@ -538,6 +538,7 @@ test("assistant navigation atomically rejects malformed chat snapshot times", ()
   for (const value of [
     "2026-07-13T00:00:00.000Z",
     String(EPOCH_MS),
+    EPOCH_MS / 1_000,
     EPOCH_MS + 0.5,
     -1,
     undefined,
@@ -600,6 +601,7 @@ test("assistant navigation preserves absent optional agent times and rejects mal
   for (const value of [
     "2026-07-13T00:00:00.000Z",
     String(EPOCH_MS),
+    EPOCH_MS / 1_000,
     EPOCH_MS + 0.5,
     -1,
   ]) {
@@ -616,6 +618,20 @@ test("assistant navigation preserves absent optional agent times and rejects mal
       /time_contract_violation: copilot\.agents\[0\]\.updatedAt/u,
     );
   }
+});
+
+test("assistant navigation preserves explicit null optional agent times", () => {
+  const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([
+    { key: "null-time", name: "Null time", updatedAt: null },
+  ]);
+  const [copilotAgent] = buildAssistantCopilotAgentsFromPlatformAgents([
+    { key: "null-time", name: "Null time", updatedAt: null },
+  ]);
+
+  assert.equal(Object.hasOwn(agent, "updatedAt"), true);
+  assert.equal(agent.updatedAt, null);
+  assert.equal(Object.hasOwn(copilotAgent, "updatedAt"), true);
+  assert.equal(copilotAgent.updatedAt, null);
 });
 
 test("assistant copilot agents fall back to nav scope when the copilot scope is empty", async (t) => {
@@ -915,6 +931,20 @@ test("assistant navigation rejects a run.started push without an epoch-ms timest
   assert.equal(findChat(result.items, chatId), undefined);
 });
 
+test("assistant navigation rejects every non-awaiting push without timestamp", () => {
+  const result = applyAssistantNavigationPush([createAgent()], {
+    frame: "push",
+    type: "chat.archived",
+    data: {
+      agentKey: "zenmi",
+      chatId: "chat-1",
+    },
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.shouldRefresh, true);
+});
+
 test("assistant navigation applies standard awaiting.asking project pushes with createdAt", () => {
   const createdAt = 1783938199453;
   const result = applyAssistantNavigationPush([createAgent({
@@ -1141,11 +1171,12 @@ test("assistant navigation preserves chat creation time from summaries and pushe
   );
 });
 
-test("assistant navigation rejects ISO, string, fractional, negative, and missing push timestamps", () => {
+test("assistant navigation rejects ISO, string, seconds, fractional, negative, and missing push timestamps", () => {
   const current = [createAgent()];
   for (const timestamp of [
     "2026-07-13T00:00:00.000Z",
     String(EPOCH_MS),
+    EPOCH_MS / 1_000,
     EPOCH_MS + 0.5,
     -1,
     undefined,

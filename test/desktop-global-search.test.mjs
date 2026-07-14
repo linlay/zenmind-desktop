@@ -164,10 +164,11 @@ test("desktop global search prioritizes awaiting and unread chats in the empty s
   assert.deepEqual(recentRows.map((row) => row.chatId), ["chat-recent"]);
 });
 
-test("desktop global search keeps agents without optional updatedAt after timestamped agents", () => {
+test("desktop global search keeps agents with absent or null updatedAt after timestamped agents", () => {
   const sections = buildDesktopGlobalSearchSections({
     agents: [
       agent({ agentKey: "without-time", displayName: "Without time", updatedAt: undefined, recentChats: [] }),
+      agent({ agentKey: "null-time", displayName: "Null time", updatedAt: null, recentChats: [] }),
       agent({ agentKey: "older", displayName: "Older", updatedAt: EPOCH_MS + 1_000, recentChats: [] }),
       agent({ agentKey: "newer", displayName: "Newer", updatedAt: EPOCH_MS + 2_000, recentChats: [] }),
     ],
@@ -178,7 +179,7 @@ test("desktop global search keeps agents without optional updatedAt after timest
 
   assert.deepEqual(
     rowsOfKind(sections, "agent").map((row) => row.agentKey),
-    ["newer", "older", "without-time"],
+    ["newer", "older", "null-time", "without-time"],
   );
 });
 

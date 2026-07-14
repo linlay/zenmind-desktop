@@ -3,7 +3,10 @@ import type {
   AssistantNavAgentItemsResult,
   AssistantNavChatItem
 } from "../shared/contracts";
-import { readEpochMillis } from "../shared/time-contract";
+import {
+  parseOptionalNullableAgentPlatformEpochMillis,
+  requireAgentPlatformEpochMillis,
+} from "../shared/time-contract";
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -100,11 +103,8 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
   if (!chatId) {
     return null;
   }
-  const createdAt = readEpochMillis(record.createdAt);
-  const updatedAt = readEpochMillis(record.updatedAt);
-  if (createdAt === undefined || updatedAt === undefined) {
-    return null;
-  }
+  const createdAt = requireAgentPlatformEpochMillis(record.createdAt, "assistantNavigation.chat.createdAt");
+  const updatedAt = requireAgentPlatformEpochMillis(record.updatedAt, "assistantNavigation.chat.updatedAt");
 
   return {
     chatId,
@@ -153,7 +153,10 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
   const unreadFromChats = recentChats.filter((chat) => chat.isRead === false).length;
   const chatCount = Math.max(toNonNegativeInteger(record.chatCount), recentChats.length);
   const latestChat = recentChats[0] ?? null;
-  const updatedAt = readEpochMillis(record.updatedAt);
+  const updatedAt = parseOptionalNullableAgentPlatformEpochMillis(
+    record.updatedAt,
+    "assistantNavigation.agent.updatedAt",
+  );
   const latestChatId = toText(record.latestChatId) || latestChat?.chatId || null;
   const resolvedUnreadCount = resolveAssistantNavUnreadCount({
     statsUnreadCount: unreadCount,

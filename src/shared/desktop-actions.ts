@@ -9,7 +9,29 @@ export type DesktopActionDefinition = {
   kind: DesktopActionKind;
   category: string;
   description: string;
+  outputSchema?: DesktopActionOutputSchema;
 };
+
+// The bridge uses this small JSON-Schema-shaped declaration only to locate
+// explicitly declared time values. Names such as createdAt have no special
+// meaning unless a schema opts in with x-platform-time or format: date-time.
+export type DesktopActionOutputSchema = Record<string, unknown>;
+
+const WEBSITE_ENTRY_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    createdAt: { "x-platform-time": "epoch-ms" },
+    updatedAt: { "x-platform-time": "epoch-ms" }
+  }
+} satisfies DesktopActionOutputSchema;
+
+const WEBSITE_ITEMS_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    items: { type: "array", items: WEBSITE_ENTRY_OUTPUT_SCHEMA },
+    item: WEBSITE_ENTRY_OUTPUT_SCHEMA
+  }
+} satisfies DesktopActionOutputSchema;
 
 export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
@@ -34,10 +56,10 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.closeTab", kind: "execute", category: "web", description: "Close a Desktop web tab." },
   { name: "desktop.web.switchTab", kind: "execute", category: "web", description: "Switch the active Desktop web tab." },
   { name: "desktop.web.list", kind: "read", category: "web", description: "List Desktop website entries and webapps." },
-  { name: "desktop.web.website.list", kind: "read", category: "web", description: "List Desktop website entries." },
-  { name: "desktop.web.website.add", kind: "execute", category: "web", description: "Add one Desktop website entry. Args: { input: { label, url, agentKey? } } or top-level label/url; url is required. Do not send items/name-only batches." },
-  { name: "desktop.web.website.update", kind: "execute", category: "web", description: "Update one Desktop website entry. Args: id or websiteId plus { input|patch: { label?, url?, agentKey? } }." },
-  { name: "desktop.web.website.remove", kind: "execute", category: "web", description: "Remove one Desktop website entry. Args: id or websiteId." },
+  { name: "desktop.web.website.list", kind: "read", category: "web", description: "List Desktop website entries.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
+  { name: "desktop.web.website.add", kind: "execute", category: "web", description: "Add one Desktop website entry. Args: { input: { label, url, agentKey? } } or top-level label/url; url is required. Do not send items/name-only batches.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
+  { name: "desktop.web.website.update", kind: "execute", category: "web", description: "Update one Desktop website entry. Args: id or websiteId plus { input|patch: { label?, url?, agentKey? } }.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
+  { name: "desktop.web.website.remove", kind: "execute", category: "web", description: "Remove one Desktop website entry.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
   { name: "desktop.web.webapp.getStatus", kind: "read", category: "web", description: "Read a local webapp runtime status." },
   { name: "desktop.web.webapp.start", kind: "execute", category: "web", description: "Start a local webapp." },
   { name: "desktop.web.webapp.stop", kind: "execute", category: "web", description: "Stop a local webapp." },
@@ -93,7 +115,7 @@ export type DesktopActionName = typeof DESKTOP_ACTION_DEFINITIONS[number]["name"
 
 export const DESKTOP_ACTION_NAMES = DESKTOP_ACTION_DEFINITIONS.map((definition) => definition.name);
 
-export function getDesktopActionDefinition(action: string) {
+export function getDesktopActionDefinition(action: string): DesktopActionDefinition | null {
   return DESKTOP_ACTION_DEFINITIONS.find((definition) => definition.name === action) ?? null;
 }
 

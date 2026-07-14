@@ -33,7 +33,7 @@ import type {
   WebsiteInput,
   WebsiteResult,
 } from "../../../shared/contracts";
-import { readEpochMillis } from "../../../shared/time-contract";
+import { formatEpochMillis, type EpochMilliseconds } from "../../../shared/time-contract";
 import {
   createWebNavOrderKey,
   sortSidebarNavItems,
@@ -649,16 +649,12 @@ function formatMonthDay(date: Date): string {
 function formatYearMonth(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
 }
-function formatAssistantChatTime(updatedAt?: number) {
-  const timestamp = readEpochMillis(updatedAt);
-  if (timestamp === undefined) {
+function formatAssistantChatTime(updatedAt?: EpochMilliseconds | null) {
+  if (updatedAt === undefined || updatedAt === null) {
     return "";
   }
 
-  const updatedDate = new Date(timestamp);
-  if (Number.isNaN(updatedDate.getTime())) {
-    return "--";
-  }
+  const updatedDate = new Date(updatedAt);
 
   const nowDate: Date = new Date();
   const now = nowDate instanceof Date ? nowDate : new Date(nowDate);
@@ -680,25 +676,11 @@ function formatAssistantChatTime(updatedAt?: number) {
   return formatYearMonth(updatedDate);
 }
 
-function formatAssistantChatDateTime(value?: number) {
-  const timestamp = readEpochMillis(value);
-  if (timestamp === undefined) {
+function formatAssistantChatDateTime(value?: EpochMilliseconds | null) {
+  if (value === undefined || value === null) {
     return "";
   }
-
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(date);
+  return formatEpochMillis(value);
 }
 
 function getAssistantWorkspaceName(
@@ -731,12 +713,8 @@ function getAssistantChatPreviewText(
     : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
 }
 
-function toAssistantSortTimestamp(value: number | undefined) {
-  return readEpochMillis(value);
-}
-
 function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
-  return toAssistantSortTimestamp(agent.updatedAt);
+  return agent.updatedAt ?? undefined;
 }
 
 function compareAssistantAgentsByTime(

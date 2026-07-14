@@ -398,12 +398,13 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
   }
 });
 
-test("agent platform assistant bridge rejects ISO, string, fractional, negative, and missing stream timestamps", async () => {
+test("agent platform assistant bridge rejects ISO, string, seconds, fractional, negative, and missing stream timestamps", async () => {
   const originalFetch = globalThis.fetch;
   try {
     for (const timestamp of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
+      EPOCH_MS / 1_000,
       EPOCH_MS + 0.5,
       -1,
       undefined,
@@ -442,6 +443,7 @@ test("agent platform assistant bridge atomically rejects malformed chat, search,
     for (const value of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
+      EPOCH_MS / 1_000,
       EPOCH_MS + 0.5,
       -1,
       undefined,
@@ -512,6 +514,7 @@ test("agent platform assistant bridge rejects malformed memory audit timestamps"
     for (const value of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
+      EPOCH_MS / 1_000,
       EPOCH_MS + 0.5,
       -1,
       undefined,
@@ -544,6 +547,7 @@ test("agent platform assistant bridge rejects malformed chat message times", asy
     for (const value of [
       "2026-07-13T00:00:00.000Z",
       String(EPOCH_MS),
+      EPOCH_MS / 1_000,
       EPOCH_MS + 0.5,
       -1,
       undefined,
@@ -594,6 +598,56 @@ test("agent platform assistant bridge rejects malformed nested awaiting timestam
     await waitFor(() => events.some((event) => event.type === "error"), "awaiting violation did not surface");
     assert.match(events[0].error ?? "", /stream\.events\[0\]\.awaiting\.createdAt/u);
     assert.equal(Object.hasOwn(events[0], "createdAt"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge preserves nullable optional times and epoch zero", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("/api/chat?")) {
+      return new Response(JSON.stringify({
+        chatId: "chat-1",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS,
+        events: [{
+          type: "awaiting.asking",
+          runId: "run-1",
+          chatId: "chat-1",
+          timestamp: EPOCH_MS,
+          awaiting: {
+            awaitingId: "awaiting-1",
+            mode: "question",
+            title: "Question",
+            runId: "run-1",
+            chatId: "chat-1",
+            createdAt: null,
+          },
+        }],
+        runs: [],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (target.includes("/api/memory/record/list")) {
+      return new Response(JSON.stringify({
+        results: [
+          { id: "memory-zero", createdAt: 0, updatedAt: 0, lastAccessedAt: 0 },
+          { id: "memory-null", createdAt: EPOCH_MS, updatedAt: EPOCH_MS, lastAccessedAt: null },
+        ],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`unexpected request ${target}`);
+  };
+
+  try {
+    const detail = await bridge.getChat("chat-1");
+    const memory = await bridge.listMemoryItems();
+    assert.equal(detail?.events[0].awaiting?.createdAt, null);
+    assert.equal(memory.items[0].lastReferencedAt, 0);
+    assert.equal(memory.items[1].lastReferencedAt, null);
+    assert.equal(memory.stats.lastReferencedAt, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }

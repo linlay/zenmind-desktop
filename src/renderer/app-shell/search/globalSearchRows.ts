@@ -3,7 +3,7 @@ import type {
   AssistantNavAgentItem,
   AssistantNavChatItem
 } from "../../../shared/contracts";
-import { readEpochMillis } from "../../../shared/time-contract";
+import type { EpochMilliseconds } from "../../../shared/time-contract";
 import type { TranslateFunction } from "../../../shared/i18n";
 
 export type DesktopGlobalSearchActionId = "newChat" | "agents" | "skills" | "controlCenter" | "settings";
@@ -23,7 +23,7 @@ export type DesktopGlobalSearchRow =
       agentKey: string;
       label: string;
       description: string;
-      updatedAtMs?: number;
+      updatedAtMs?: EpochMilliseconds;
     }
   | {
       kind: "chat";
@@ -33,7 +33,7 @@ export type DesktopGlobalSearchRow =
       label: string;
       agentLabel: string;
       snippet: string;
-      updatedAtMs: number;
+      updatedAtMs: EpochMilliseconds;
       source: "local" | "remote";
       score: number;
       hasActiveRun: boolean;
@@ -199,8 +199,8 @@ function createAgentRow(agent: AssistantNavAgentItem): Extract<DesktopGlobalSear
     agentKey,
     label: agent.displayName || agentKey,
     description: agent.role || agent.latestPreview || agentKey,
-    ...(readEpochMillis(agent.updatedAt) !== undefined
-      ? { updatedAtMs: readEpochMillis(agent.updatedAt) }
+    ...(agent.updatedAt !== undefined && agent.updatedAt !== null
+      ? { updatedAtMs: agent.updatedAt }
       : {})
   };
 }
@@ -242,10 +242,7 @@ function createLocalChatRow(
     return null;
   }
   const label = chat.chatName || options.t("assistant.newChat");
-  const updatedAtMs = readEpochMillis(chat.updatedAt);
-  if (updatedAtMs === undefined) {
-    return null;
-  }
+  const updatedAtMs = chat.updatedAt;
   return {
     kind: "chat",
     key: `chat:${chatId}`,
@@ -281,10 +278,7 @@ function mergeQueryChatRows(
     }
     const localRow = localById.get(chatId) ?? chatById.get(chatId);
     const agent = agentByKey.get(agentKey);
-    const updatedAtMs = readEpochMillis(result.timestamp);
-    if (updatedAtMs === undefined) {
-      continue;
-    }
+    const updatedAtMs = result.timestamp;
     const fallbackLabel = localRow?.label || result.chatName || t("assistant.newChat");
     chatById.set(chatId, {
       kind: "chat",

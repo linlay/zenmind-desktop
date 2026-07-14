@@ -29,7 +29,7 @@ import {
   type DesktopActionError,
   type DesktopActionSource
 } from "../shared/desktop-actions";
-import { normalizeActionBridgeTimePayload } from "./action-bridge-time-normalizer";
+import { ActionBridgeTimeContractError, normalizeActionBridgeTimePayload } from "./action-bridge-time-normalizer";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-routes";
 import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
@@ -1479,27 +1479,35 @@ async function handleActionCallRaw(
 function normalizeActionResponseTimePayload(
   response: DesktopActionCallResponse
 ): DesktopActionCallResponse {
-  return {
-    ...response,
-    ...(response.result === undefined
-      ? {}
-      : { result: normalizeActionBridgeTimePayload(response.result) }),
-    ...(response.preview === undefined
-      ? {}
-      : { preview: normalizeActionBridgeTimePayload(response.preview) }),
-    ...(response.error === undefined
-      ? {}
-      : {
-          error: {
-            ...response.error,
-            ...(response.error.details === undefined
-              ? {}
-              : {
-                  details: normalizeActionBridgeTimePayload(response.error.details)
-                })
-          }
-        })
-  };
+  if (response.result === undefined) return response;
+  const schema = getDesktopActionDefinition(response.action)?.outputSchema;
+  if (!schema) return response;
+  try {
+    return {
+      ...response,
+      result: normalizeActionBridgeTimePayload(
+        response.result,
+        schema,
+        `desktop.action.${response.action}.result`
+      )
+    };
+  } catch (error) {
+    if (!(error instanceof ActionBridgeTimeContractError)) throw error;
+    return {
+      ok: false,
+      action: response.action,
+      error: {
+        code: "time_contract_violation",
+        message: "time contract violation",
+        details: {
+          code: "time_contract_violation",
+          field: error.field,
+          location: error.location,
+          expected: "epoch_ms_int64"
+        }
+      }
+    };
+  }
 }
 
 async function handleActionCall(
