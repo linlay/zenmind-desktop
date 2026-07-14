@@ -82,6 +82,7 @@ type SidebarChatsEntry = {
   orderKey: "chats";
   label: string;
   collapsedLabel?: string;
+  icon: SidebarIllustrationKind;
   entryType: "chats";
 };
 
@@ -255,6 +256,7 @@ const schedulesNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
 
 const chatsNavItemBase: Omit<SidebarChatsEntry, "label"> = {
   orderKey: "chats",
+  icon: "chat",
   entryType: "chats",
 };
 
@@ -287,7 +289,7 @@ function getAssistantProjectKind(
 const assistantGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
   orderKey: "group:assistants",
   to: "",
-  icon: "assistant",
+  icon: "project",
   entryType: "assistants",
 };
 
@@ -1166,17 +1168,14 @@ export function AppSidebar({
       {
         ...chatsNavItemBase,
         label: t("nav.chats"),
-        collapsedLabel: t("nav.chatsCollapsed"),
       },
       {
         ...assistantGroupNavItemBase,
         label: t("nav.assistants"),
-        collapsedLabel: t("nav.assistantsCollapsed"),
       },
       {
         ...websGroupNavItemBase,
         label: t("nav.websites"),
-        collapsedLabel: t("nav.websitesCollapsed"),
       },
     ].filter((item) => sidebarNavOrder.includes(item.orderKey)) as SidebarPrimaryEntry[],
     sidebarNavOrder,
@@ -2939,6 +2938,7 @@ export function AppSidebar({
       groupId: "chats",
       label: item.label,
       collapsedLabel: item.collapsedLabel,
+      icon: item.icon,
       active: Boolean(
         activeChatsOverviewChatId ||
         (bootstrapActive && currentAgentKey === normalizedBootstrapAgentKey),

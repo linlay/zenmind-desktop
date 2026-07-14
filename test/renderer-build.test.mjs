@@ -1000,13 +1000,18 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     sidebarSource.match(/const fixedToolRowsBase[\s\S]*?\n\];/)?.[0] ?? "";
 
   assert.match(sidebarSource, /kanbanNavItemBase[\s\S]*?orderKey:\s*"kanban"[\s\S]*?to:\s*"\/kanban"/);
+  assert.match(sidebarSource, /chatsNavItemBase[\s\S]*?orderKey:\s*"chats"[\s\S]*?icon:\s*"chat"/);
   assert.match(sidebarSource, /assistantGroupNavItemBase[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?entryType:\s*"assistants"/);
+  assert.match(sidebarSource, /assistantGroupNavItemBase[\s\S]*?icon:\s*"project"/);
   assert.match(sidebarSource, /websGroupNavItemBase[\s\S]*?orderKey:\s*"group:webs"[\s\S]*?entryType:\s*"webs"/);
   assert.match(sidebarSource, /label:\s*t\("nav\.kanban"\)/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.chats"\)/);
   assert.match(sidebarSource, /label:\s*t\("nav\.assistants"\)/);
   assert.match(sidebarSource, /label:\s*t\("nav\.websites"\)/);
+  assert.doesNotMatch(sidebarSource, /collapsedLabel:\s*t\("nav\.(?:chats|assistants|websites)Collapsed"\)/);
+  assert.match(sidebarSource, /function renderChatsEntry\(item: SidebarChatsEntry\)[\s\S]*?icon: item\.icon/);
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
-  assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{\s*assistants: true,\s*webs: true,/);
+  assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{\s*assistants: true,\s*chats: true,\s*webs: true,/);
   assert.match(sidebarSource, /"data-sidebar-group-id": args\.groupId/);
   assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
   assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
@@ -1018,6 +1023,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
   assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
+  assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*?\| "chat"[\s\S]*?\| "project"/);
+  assert.match(brandMarkSource, /case "chat":[\s\S]*?<circle cx="8" cy="11" r="1"/);
+  assert.match(brandMarkSource, /case "project":[\s\S]*?<path d="M3\.5 7\.5A2\.5 2\.5/);
 
   assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="sort" \/>/);
@@ -1237,8 +1245,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-child-link \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-tool-menu \.sidebar-tool-menu-item \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-link-icon,[\s\S]*?\.sidebar-account-menu-icon\s*\{[\s\S]*?flex:\s*0 0 16px;[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-group-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-nav \.sidebar-link-icon\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-group-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/);
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.doesNotMatch(globalStyles, /\.sidebar-link(?:[\s\S]{0,120})\.sidebar-link-icon(?:[\s\S]{0,120})filter:\s*grayscale/);
   assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);

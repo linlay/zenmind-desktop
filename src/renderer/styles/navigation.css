@@ -2915,9 +2915,9 @@
   border-radius: 8px;
 }
 
-.app-sidebar.is-collapsed .sidebar-link-icon {
-  width: 16px;
-  height: 16px;
+.app-sidebar.is-collapsed .sidebar-nav .sidebar-link-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-utility .sidebar-link-icon {
@@ -2981,8 +2981,8 @@
 }
 
 .app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-link-icon {
-  width: 16px;
-  height: 16px;
+  width: 28px;
+  height: 28px;
 }
 
 .app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-status-badges {

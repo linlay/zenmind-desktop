@@ -10,6 +10,8 @@ type BrandMarkProps = {
 export type SidebarIllustrationKind =
   | "assistant"
   | "agent"
+  | "chat"
+  | "project"
   | "login"
   | "logout"
   | "archive"
@@ -31,7 +33,7 @@ export type SidebarActionIconKind =
   | "new_chat"
   | "more_actions"
   | "double_check"
-  | "close"
+  | "close";
 
 type SidebarIllustrationProps = {
   kind: SidebarIllustrationKind;
@@ -228,6 +230,22 @@ export function SidebarIllustration({ kind, className }: SidebarIllustrationProp
           <circle cx="8" cy="12" r="1.5" fill="currentColor" stroke="none" />
           <circle cx="16" cy="12" r="1.5" fill="currentColor" stroke="none" />
           <path d="M9 16h6" />
+        </svg>
+      );
+    case "chat":
+      return (
+        <svg {...iconProps}>
+          <path d="M20 11a7.5 7.5 0 0 1-7.5 7.5H8l-4 3v-6.1A7.5 7.5 0 0 1 12 3.5h.5A7.5 7.5 0 0 1 20 11Z" />
+          <circle cx="8" cy="11" r="1" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="11" r="1" fill="currentColor" stroke="none" />
+          <circle cx="16" cy="11" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "project":
+      return (
+        <svg {...iconProps}>
+          <path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h4l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-8A2.5 2.5 0 0 1 3.5 7.5Z" />
+          <path d="M3.5 10h17" />
         </svg>
       );
     case "login":
