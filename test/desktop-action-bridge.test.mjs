@@ -24,6 +24,12 @@ const {
 const {
   DESKTOP_ACTION_BRIDGE_HOST
 } = require("../dist-electron/shared/desktop-actions.js");
+const {
+  normalizeActionBridgeTimePayload
+} = require("../dist-electron/main/action-bridge-time-normalizer.js");
+const {
+  getWebsitePath
+} = require("../dist-electron/main/webs/websites/store.js");
 
 function createApp(homePath) {
   return {
@@ -141,6 +147,16 @@ async function readJsonUrl(url) {
   return response.json();
 }
 
+async function postJsonUrl(url, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  assert.equal(response.ok, true);
+  return response.json();
+}
+
 test("desktop action bridge listens on configured port and refreshes when config changes", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const firstPort = await getFreeLoopbackPort();
@@ -182,7 +198,12 @@ test("desktop pet actions expose the simplified local pet API", async (t) => {
     action: "desktop.pet.state"
   });
   assert.equal(stateResponse.ok, true);
-  assert.equal(stateResponse.result, state);
+  assert.notEqual(stateResponse.result, state);
+  assert.deepEqual(stateResponse.result, {
+    ...state,
+    updatedAt: Date.parse(state.updatedAt)
+  });
+  assert.equal(state.updatedAt, "2026-01-01T00:00:00.000Z");
   assert.equal(calls.refreshState, 1);
 
   const listResponse = await handleDesktopActionRequest(options, {
@@ -202,6 +223,76 @@ test("desktop pet actions expose the simplified local pet API", async (t) => {
   assert.equal(setResponse.ok, true);
   assert.deepEqual(calls.saveSettings, [{ appearanceId: "user:dario" }]);
   assert.equal(setResponse.result.appearanceId, "user:dario");
+});
+
+test("desktop action time normalization converts only valid semantic ISO timestamps", () => {
+  const payload = {
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: 1_700_000_000_000,
+    readAt: "1700000000000",
+    completedAt: 1_700_000_000,
+    invalidAt: "not-a-time",
+    invalidCalendarAt: "2026-02-30T00:00:00.000Z",
+    invalidOffsetAt: "2026-01-01T00:00:00.000+24:00",
+    outOfRangeAt: "0001-01-01T00:00:00.000Z",
+    triggeredAt: "2026-01-01T00:00:00.000Z",
+    iso: "2026-01-01T00:00:00.000Z",
+    nested: [{
+      timestamp: "2026-01-02T00:00:00+08:00",
+      mtimeMs: "2026-01-03T00:00:00.000Z",
+      displayTime: "2026-01-04T00:00:00.000Z"
+    }]
+  };
+
+  assert.deepEqual(normalizeActionBridgeTimePayload(payload), {
+    ...payload,
+    createdAt: Date.parse(payload.createdAt),
+    nested: [{
+      ...payload.nested[0],
+      timestamp: Date.parse(payload.nested[0].timestamp),
+      mtimeMs: Date.parse(payload.nested[0].mtimeMs)
+    }]
+  });
+  assert.equal(payload.createdAt, "2026-01-01T00:00:00.000Z");
+});
+
+test("desktop action response normalization covers result, preview, and error details", () => {
+  const iso = "2026-01-01T00:00:00.000Z";
+  const response = __testInternals.normalizeActionResponseTimePayload({
+    ok: false,
+    action: "desktop.test",
+    result: { createdAt: iso },
+    preview: { expiresAt: iso },
+    error: {
+      code: "test_error",
+      message: "test",
+      details: { nested: [{ updatedAt: iso }] }
+    }
+  });
+
+  assert.equal(response.result.createdAt, Date.parse(iso));
+  assert.equal(response.preview.expiresAt, Date.parse(iso));
+  assert.equal(response.error.details.nested[0].updatedAt, Date.parse(iso));
+});
+
+test("desktop action HTTP responses normalize semantic timestamps", async (t) => {
+  const { options, state } = createDesktopActionOptions(t);
+  const port = await getFreeLoopbackPort();
+  t.after(() => stopDesktopActionBridge());
+
+  writeDesktopActionBridgeSettingsConfig(options.app, {
+    schemaVersion: 1,
+    port
+  });
+  const server = startDesktopActionBridge(options);
+  await waitForListening(server);
+
+  const response = await postJsonUrl(
+    `http://${DESKTOP_ACTION_BRIDGE_HOST}:${port}/actions/call`,
+    { action: "desktop.pet.state" }
+  );
+  assert.equal(response.ok, true);
+  assert.equal(response.result.updatedAt, Date.parse(state.updatedAt));
 });
 
 test("desktop pet actions reject unknown local appearances and removed legacy names", async (t) => {
@@ -250,6 +341,50 @@ test("desktop website add accepts item payloads and name alias", async (t) => {
   assert.equal(response.result.item.label, "Weather.com");
   assert.equal(response.result.item.url, "https://weather.com/");
   assert.equal(response.result.items.length, 1);
+});
+
+test("desktop website add can be listed and reports an existing website as a business result", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const request = {
+    action: "desktop.web.website.add",
+    permissionMode: "full_access",
+    args: {
+      input: {
+        label: "天气",
+        url: "https://www.weather.com.cn/",
+        agentKey: "webOperator"
+      }
+    }
+  };
+
+  const added = await handleDesktopActionRequest(options, request);
+  assert.equal(added.ok, true);
+  assert.equal(added.result.ok, true, added.result.message);
+  assert.equal(typeof added.result.item.createdAt, "number");
+  assert.equal(typeof added.result.item.updatedAt, "number");
+
+  const storedManifest = JSON.parse(fs.readFileSync(
+    getWebsitePath(options.app, added.result.item.id),
+    "utf8"
+  ));
+  assert.match(storedManifest.createdAt, /^\d{4}-\d{2}-\d{2}T/u);
+  assert.match(storedManifest.updatedAt, /^\d{4}-\d{2}-\d{2}T/u);
+
+  const listed = await handleDesktopActionRequest(options, {
+    action: "desktop.web.website.list"
+  });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.result.ok, true);
+  assert.equal(listed.result.items.length, 1);
+  assert.equal(listed.result.items[0].url, "https://www.weather.com.cn/");
+  assert.equal(typeof listed.result.items[0].createdAt, "number");
+  assert.equal(typeof listed.result.items[0].updatedAt, "number");
+
+  const duplicate = await handleDesktopActionRequest(options, request);
+  assert.equal(duplicate.ok, true);
+  assert.equal(duplicate.result.ok, false);
+  assert.equal(duplicate.result.item.url, "https://www.weather.com.cn/");
+  assert.match(duplicate.result.message, /already exists|已经|已存在/u);
 });
 
 test("desktop website add returns detailed input issues", async (t) => {

@@ -29,6 +29,7 @@ import {
   type DesktopActionError,
   type DesktopActionSource
 } from "../shared/desktop-actions";
+import { normalizeActionBridgeTimePayload } from "./action-bridge-time-normalizer";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-routes";
 import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
@@ -1439,7 +1440,7 @@ async function executeAction(
   }
 }
 
-async function handleActionCall(
+async function handleActionCallRaw(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest
 ): Promise<DesktopActionCallResponse> {
@@ -1473,6 +1474,41 @@ async function handleActionCall(
   } catch (error) {
     return fail(action, "action_failed", error instanceof Error ? error.message : String(error));
   }
+}
+
+function normalizeActionResponseTimePayload(
+  response: DesktopActionCallResponse
+): DesktopActionCallResponse {
+  return {
+    ...response,
+    ...(response.result === undefined
+      ? {}
+      : { result: normalizeActionBridgeTimePayload(response.result) }),
+    ...(response.preview === undefined
+      ? {}
+      : { preview: normalizeActionBridgeTimePayload(response.preview) }),
+    ...(response.error === undefined
+      ? {}
+      : {
+          error: {
+            ...response.error,
+            ...(response.error.details === undefined
+              ? {}
+              : {
+                  details: normalizeActionBridgeTimePayload(response.error.details)
+                })
+          }
+        })
+  };
+}
+
+async function handleActionCall(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest
+): Promise<DesktopActionCallResponse> {
+  return normalizeActionResponseTimePayload(
+    await handleActionCallRaw(options, request)
+  );
 }
 
 export async function handleDesktopActionRequest(
@@ -1609,6 +1645,7 @@ export const __testInternals = {
   buildDesktopActionConfirmationDetail,
   buildMutatingActionConfirmationRequest,
   buildPageControlActionConfirmationRequest,
+  normalizeActionResponseTimePayload,
   sanitizeConfirmationUrl,
   summarizeConfirmationArgs,
   fetchAgentPlatformWithAuth
