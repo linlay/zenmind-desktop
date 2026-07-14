@@ -40,6 +40,7 @@ export const Collapse: React.FC<CollapseProps> = ({
   children,
 }) => {
   const contentId = useId();
+  const headerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
 
@@ -102,11 +103,12 @@ export const Collapse: React.FC<CollapseProps> = ({
         .filter(Boolean)
         .join(" ")}
     >
-      <div className="Collapse-header">
+      <div ref={headerRef} className="Collapse-header">
         {headerPopover ? (
           <Popover
             trigger="hover"
             closeOnOutsideClick={false}
+            positionReferenceRef={headerRef}
             {...headerPopover}
           >
             {headerButton}

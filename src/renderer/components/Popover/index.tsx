@@ -49,6 +49,7 @@ interface PopoverProps {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   placement?: PopoverPlacement;
+  positionReferenceRef?: React.RefObject<HTMLElement | null>;
   offset?: number;
   disabled?: boolean;
   closeOnOutsideClick?: boolean;
@@ -67,6 +68,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     defaultOpen = false,
     onOpenChange,
     placement = "bottom",
+    positionReferenceRef,
     offset = 8,
     disabled = false,
     closeOnOutsideClick = true,
@@ -152,14 +154,14 @@ export const Popover: React.FC<PopoverProps> = (props) => {
   }, [hoverLeaveDelay, setOpen, triggerMode]);
 
   const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
+    const positionReference = positionReferenceRef?.current ?? triggerRef.current;
     const popover = popoverRef.current;
 
-    if (!trigger || !popover) {
+    if (!positionReference || !popover) {
       return;
     }
 
-    const triggerRect = trigger.getBoundingClientRect();
+    const triggerRect = positionReference.getBoundingClientRect();
     const popoverRect = popover.getBoundingClientRect();
     const viewportPadding = 8;
     const viewportWidth = window.innerWidth;
@@ -229,7 +231,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
       ),
       visibility: "visible",
     });
-  }, [offset, placement]);
+  }, [offset, placement, positionReferenceRef]);
 
   useLayoutEffect(() => {
     if (!isOpen) {

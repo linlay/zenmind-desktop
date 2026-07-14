@@ -944,7 +944,7 @@ test("sidebar collapse headers separate trigger and actions", () => {
   assert.match(collapseSource, /headerActions\?: React\.ReactNode;/);
   assert.match(collapseSource, /headerButtonProps\?: CollapseHeaderButtonProps;/);
   assert.match(collapseSource, /const headerButton = \(\s*<button[\s\S]*?className=\{\["Collapse-trigger"/);
-  assert.match(collapseSource, /<div className="Collapse-header">[\s\S]*?headerPopover \? \([\s\S]*?<Popover[\s\S]*?\{headerButton\}/);
+  assert.match(collapseSource, /<div ref=\{headerRef\} className="Collapse-header">[\s\S]*?headerPopover \? \([\s\S]*?<Popover[\s\S]*?positionReferenceRef=\{headerRef\}[\s\S]*?\{headerButton\}/);
   assert.match(collapseSource, /<div className="Collapse-headerActions">\{headerActions\}<\/div>/);
   assert.doesNotMatch(collapseSource, /className="Collapse-header"[\s\S]{0,160}onClick=\{handleToggle\}/);
   assert.match(collapseStyles, /\.Collapse-trigger\s*\{/);
@@ -1651,7 +1651,10 @@ test("Projects headers show hover cards for Coder and Knowledge Base agents only
   assert.match(sidebarSource, /sidebar\.project\.card\.lastActivity/);
   assert.match(sidebarSource, /agent\.gitBranch/);
   assert.match(collapseSource, /headerPopover\?: CollapseHeaderPopover;/);
-  assert.match(collapseSource, /<Popover[\s\S]*?trigger="hover"[\s\S]*?closeOnOutsideClick=\{false\}/);
+  assert.match(collapseSource, /<div ref=\{headerRef\} className="Collapse-header">/);
+  assert.match(collapseSource, /<Popover[\s\S]*?trigger="hover"[\s\S]*?closeOnOutsideClick=\{false\}[\s\S]*?positionReferenceRef=\{headerRef\}/);
+  assert.match(popoverSource, /positionReferenceRef\?: React\.RefObject<HTMLElement \| null>;/);
+  assert.match(popoverSource, /const positionReference = positionReferenceRef\?\.current \?\? triggerRef\.current;/);
   assert.match(popoverSource, /triggerMode === "click"[\s\S]*?children\.props\["aria-expanded"\]/);
   assert.match(navigationClient, /function isWorkspaceProjectAgent[\s\S]*?mode === "CODER"[\s\S]*?mode === "KBASE"/);
   assert.match(styles, /\.sidebar-project-hover-card-surface/);
