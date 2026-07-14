@@ -1800,7 +1800,10 @@ export class AssistantNavigationStatusClient {
         updatedAt: nowEpochMillis()
       });
     }
-    this.scheduleRefresh();
+    // A new chat cannot be optimistically inserted into the global Chats list:
+    // the server owns its ordering and top-eight cutoff. Refresh it immediately
+    // so the route mirrored from agent-webclient can select the new list item.
+    this.scheduleRefresh(event.type === "chat.created" ? 0 : undefined);
   }
 
   private handleWebSocketClosed() {

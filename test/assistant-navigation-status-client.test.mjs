@@ -288,6 +288,19 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 4);
   assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 8));
 
+  sockets[0].emit({ frame: "push", type: "chat.created", data: {
+    agentKey: "zenmi",
+    chatId: "created-without-optimistic-insert",
+    chatName: "Newly created chat",
+    createdAt: EPOCH_MS + 100,
+  }});
+  assert.equal(
+    client.getSnapshot().chatItems.some((chat) => chat.chatId === "created-without-optimistic-insert"),
+    false,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 5);
+
   sockets[0].emitClose();
   const reconnecting = client.getLiveStatus();
   assert.equal(reconnecting.phase, "reconnecting");
