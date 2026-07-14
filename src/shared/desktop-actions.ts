@@ -33,6 +33,13 @@ const WEBSITE_ITEMS_OUTPUT_SCHEMA = {
   }
 } satisfies DesktopActionOutputSchema;
 
+const PET_STATE_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    updatedAt: { "x-platform-time": "epoch-ms" }
+  }
+} satisfies DesktopActionOutputSchema;
+
 export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
@@ -104,11 +111,11 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.kanban.deleteIssue", kind: "execute", category: "kanban", description: "Delete a Desktop Kanban issue." },
   { name: "desktop.kanban.moveIssue", kind: "execute", category: "kanban", description: "Move a Desktop Kanban issue." },
 
-  { name: "desktop.pet.state", kind: "read", category: "pet", description: "Read Desktop pet state." },
-  { name: "desktop.pet.show", kind: "execute", category: "pet", description: "Show the Desktop pet." },
-  { name: "desktop.pet.hide", kind: "execute", category: "pet", description: "Hide the Desktop pet." },
+  { name: "desktop.pet.state", kind: "read", category: "pet", description: "Read Desktop pet state.", outputSchema: PET_STATE_OUTPUT_SCHEMA },
+  { name: "desktop.pet.show", kind: "execute", category: "pet", description: "Show the Desktop pet.", outputSchema: PET_STATE_OUTPUT_SCHEMA },
+  { name: "desktop.pet.hide", kind: "execute", category: "pet", description: "Hide the Desktop pet.", outputSchema: PET_STATE_OUTPUT_SCHEMA },
   { name: "desktop.pet.list", kind: "read", category: "pet", description: "List local Desktop pet appearances." },
-  { name: "desktop.pet.set", kind: "execute", category: "pet", description: "Set the Desktop pet appearance." }
+  { name: "desktop.pet.set", kind: "execute", category: "pet", description: "Set the Desktop pet appearance.", outputSchema: PET_STATE_OUTPUT_SCHEMA }
 ] as const satisfies readonly DesktopActionDefinition[];
 
 export type DesktopActionName = typeof DESKTOP_ACTION_DEFINITIONS[number]["name"];

@@ -225,7 +225,7 @@ test("desktop pet actions expose the simplified local pet API", async (t) => {
   assert.equal(setResponse.result.appearanceId, "user:dario");
 });
 
-test("desktop action time normalization converts only valid semantic ISO timestamps", () => {
+test("desktop action time normalization follows an explicit output schema", () => {
   const payload = {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: 1_700_000_000_000,
@@ -244,7 +244,23 @@ test("desktop action time normalization converts only valid semantic ISO timesta
     }]
   };
 
-  assert.deepEqual(normalizeActionBridgeTimePayload(payload), {
+  const schema = {
+    type: "object",
+    properties: {
+      createdAt: { "x-platform-time": "epoch-ms" },
+      nested: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            timestamp: { "x-platform-time": "epoch-ms" },
+            mtimeMs: { "x-platform-time": "epoch-ms" }
+          }
+        }
+      }
+    }
+  };
+  assert.deepEqual(normalizeActionBridgeTimePayload(payload, schema), {
     ...payload,
     createdAt: Date.parse(payload.createdAt),
     nested: [{
@@ -256,7 +272,7 @@ test("desktop action time normalization converts only valid semantic ISO timesta
   assert.equal(payload.createdAt, "2026-01-01T00:00:00.000Z");
 });
 
-test("desktop action response normalization covers result, preview, and error details", () => {
+test("desktop action response leaves fields opaque when no action schema exists", () => {
   const iso = "2026-01-01T00:00:00.000Z";
   const response = __testInternals.normalizeActionResponseTimePayload({
     ok: false,
@@ -270,9 +286,26 @@ test("desktop action response normalization covers result, preview, and error de
     }
   });
 
-  assert.equal(response.result.createdAt, Date.parse(iso));
-  assert.equal(response.preview.expiresAt, Date.parse(iso));
-  assert.equal(response.error.details.nested[0].updatedAt, Date.parse(iso));
+  assert.equal(response.result.createdAt, iso);
+  assert.equal(response.preview.expiresAt, iso);
+  assert.equal(response.error.details.nested[0].updatedAt, iso);
+});
+
+test("desktop action time schemas reject lossy epoch conversion but keep readable RFC3339 values", () => {
+  assert.throws(
+    () => normalizeActionBridgeTimePayload(
+      { startedAt: "2026-01-01T00:00:00.000000001Z" },
+      { type: "object", properties: { startedAt: { "x-platform-time": "epoch-ms" } } }
+    ),
+    { name: "ActionBridgeTimeContractError" }
+  );
+  assert.deepEqual(
+    normalizeActionBridgeTimePayload(
+      { iso: "0001-01-01T00:00:00.000000001Z" },
+      { type: "object", properties: { iso: { format: "date-time" } } }
+    ),
+    { iso: "0001-01-01T00:00:00.000000001Z" }
+  );
 });
 
 test("desktop action HTTP responses normalize semantic timestamps", async (t) => {

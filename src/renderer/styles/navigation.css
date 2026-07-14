@@ -603,7 +603,7 @@
   flex-direction: column;
   gap: 2px;
   max-height: min(480px, calc(100vh - 32px));
-  padding: 4px 3px;
+  padding: 0px 3px;
   overflow-y: auto;
 }
 
@@ -989,7 +989,7 @@
 .sidebar-nav-group {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  /* gap: 3px; */
 }
 
 .sidebar-nav-group>.Collapse-header {
@@ -1017,7 +1017,7 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 36px;
+  min-height: 34px;
   gap: 8px;
   padding: 0 8px;
   border: 0;

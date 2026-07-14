@@ -64,6 +64,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   const snapshots = [];
+  const debugMessages = [];
   const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-ws-"));
   const chatResponses = [[
     {
@@ -183,6 +184,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     }),
     issueAccessToken: async () => ({ ok: true, token: "secret-token", message: "" }),
     onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onDebug: (message) => debugMessages.push(message),
   });
   t.after(() => client.stop());
 
@@ -232,6 +234,16 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     Array.from({ length: 20 }, (_, index) => `diagnostic-${index + 1}`),
   );
   assert.ok(boundedFrames.every((frame) => frame.direction === "inbound" && frame.kind === "response"));
+
+  sockets[0].emit({ frame: "push", type: "chat.updated", data: {
+    chatId: "react-newest",
+    lastRunId: "run-newest",
+    lastRunContent: "updated from navigation push",
+    updatedAt: EPOCH_MS + 50,
+  }});
+  assert.equal(client.getSnapshot().chatItems[0].lastRunContent, "updated from navigation push");
+  assert.equal(client.getSnapshot().chatItems[0].updatedAt, EPOCH_MS + 50);
+  assert.equal(debugMessages.some((message) => message.includes("time_contract_violation")), false);
 
   sockets[0].emit({ frame: "push", type: "run.started", data: {
     agentKey: "zenmi",
@@ -294,11 +306,11 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
-      timestamp: EPOCH_MS + 1,
     },
   });
   assert.equal(unread.changed, true);
   assert.equal(unread.items[0].isRead, false);
+  assert.equal(unread.items[0].updatedAt, EPOCH_MS);
 
   const read = applyAssistantNavigationChatPush(unread.items, {
     frame: "push",
@@ -306,11 +318,11 @@ test("assistant navigation chat reducer updates displayed chats without checking
     data: {
       agentKey: "coder-agent",
       chatId: "chat-1",
-      timestamp: EPOCH_MS + 2,
     },
   });
   assert.equal(read.changed, true);
   assert.equal(read.items[0].isRead, true);
+  assert.equal(read.items[0].updatedAt, EPOCH_MS);
 
   const started = applyAssistantNavigationChatPush(read.items, {
     frame: "push",
@@ -931,8 +943,22 @@ test("assistant navigation rejects a run.started push without an epoch-ms timest
   assert.equal(findChat(result.items, chatId), undefined);
 });
 
-test("assistant navigation rejects every non-awaiting push without timestamp", () => {
-  const result = applyAssistantNavigationPush([createAgent()], {
+test("assistant navigation applies untimestamped read-all and archive pushes to known chats", () => {
+  const current = [createAgent({
+    unreadCount: 1,
+    unreadChatCount: 1,
+    chatCount: 1,
+    recentChats: [createNavigationChat({ isRead: false })],
+  })];
+  const readAll = applyAssistantNavigationPush(current, {
+    frame: "push",
+    type: "chat.read_all",
+    data: { agentKey: "zenmi", agentUnreadCount: 0 },
+  });
+  assert.equal(readAll.changed, true);
+  assert.equal(findChat(readAll.items, "chat-1")?.isRead, true);
+
+  const archived = applyAssistantNavigationPush(readAll.items, {
     frame: "push",
     type: "chat.archived",
     data: {
@@ -941,8 +967,9 @@ test("assistant navigation rejects every non-awaiting push without timestamp", (
     },
   });
 
-  assert.equal(result.changed, false);
-  assert.equal(result.shouldRefresh, true);
+  assert.equal(archived.changed, true);
+  assert.equal(archived.shouldRefresh, true);
+  assert.equal(findChat(archived.items, "chat-1"), undefined);
 });
 
 test("assistant navigation applies standard awaiting.asking project pushes with createdAt", () => {
@@ -1106,7 +1133,7 @@ test("assistant navigation still applies real preview text from chat.updated and
       chatId,
       chatName: "Preview title",
       lastRunContent: "Updated elsewhere",
-      timestamp: EPOCH_MS + 71,
+      updatedAt: EPOCH_MS + 71,
     },
   });
   const completed = applyAssistantNavigationPush(updated.items, {
@@ -1150,7 +1177,7 @@ test("assistant navigation preserves chat creation time from summaries and pushe
     data: {
       agentKey: "zenmi",
       chatId,
-      timestamp: EPOCH_MS + 82,
+      updatedAt: EPOCH_MS + 82,
     },
   });
   assert.equal(findChat(updated.items, chatId)?.createdAt, EPOCH_MS + 80);
@@ -1171,15 +1198,14 @@ test("assistant navigation preserves chat creation time from summaries and pushe
   );
 });
 
-test("assistant navigation rejects ISO, string, seconds, fractional, negative, and missing push timestamps", () => {
-  const current = [createAgent()];
-  for (const timestamp of [
+test("assistant navigation rejects supplied malformed navigation times", () => {
+  const current = [createAgent({ recentChats: [createNavigationChat({ chatId: "strict-time" })] })];
+  for (const updatedAt of [
     "2026-07-13T00:00:00.000Z",
     String(EPOCH_MS),
     EPOCH_MS / 1_000,
     EPOCH_MS + 0.5,
     -1,
-    undefined,
   ]) {
     const result = applyAssistantNavigationPush(current, {
       frame: "push",
@@ -1187,13 +1213,37 @@ test("assistant navigation rejects ISO, string, seconds, fractional, negative, a
       data: {
         agentKey: "zenmi",
         chatId: "strict-time",
-        ...(timestamp === undefined ? {} : { timestamp }),
+        updatedAt,
       },
     });
     assert.equal(result.changed, false);
     assert.equal(result.shouldRefresh, true);
-    assert.equal(findChat(result.items, "strict-time"), undefined);
+    assert.equal(findChat(result.items, "strict-time")?.updatedAt, EPOCH_MS);
   }
+});
+
+test("assistant navigation refreshes without replacing a chat preview when chat.updated lacks updatedAt", () => {
+  const current = [createAgent({
+    recentChats: [createNavigationChat({
+      chatId: "missing-updated-at",
+      lastRunContent: "current preview",
+      updatedAt: EPOCH_MS + 10,
+    })],
+  })];
+  const result = applyAssistantNavigationPush(current, {
+    frame: "push",
+    type: "chat.updated",
+    data: {
+      agentKey: "zenmi",
+      chatId: "missing-updated-at",
+      lastRunContent: "stale preview must not replace current",
+    },
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.shouldRefresh, true);
+  assert.equal(findChat(result.items, "missing-updated-at")?.lastRunContent, "current preview");
+  assert.equal(findChat(result.items, "missing-updated-at")?.updatedAt, EPOCH_MS + 10);
 });
 
 test("assistant navigation rejects malformed optional structured times instead of falling back", () => {

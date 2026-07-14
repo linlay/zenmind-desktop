@@ -967,24 +967,20 @@ function toPushEvent(frame: NavigationPushFrame): NavigationPushEvent {
   } as NavigationPushEvent;
 }
 
-function readPushEventTimestamp(event: NavigationPushEvent) {
+function readPushChatUpdateTimestamp(event: NavigationPushEvent) {
   if (event.type === "awaiting.asking") {
     return toTimestampMs(event.createdAt);
   }
   if (event.type === "awaiting.answered") {
     return toTimestampMs(event.resolvedAt);
   }
-  return toTimestampMs(event.timestamp);
-}
-
-function requiredPushTimeField(event: NavigationPushEvent) {
-  if (event.type === "awaiting.asking") {
-    return "createdAt";
+  if (event.type === "chat.updated") {
+    return toTimestampMs(event.updatedAt);
   }
-  if (event.type === "awaiting.answered") {
-    return "resolvedAt";
+  if (event.type === "chat.created" || event.type === "run.start" || event.type === "run.complete") {
+    return toTimestampMs(event.timestamp);
   }
-  return "timestamp";
+  return undefined;
 }
 
 function findInvalidPushTimeField(value: unknown, path = ""): string | undefined {
@@ -1010,20 +1006,6 @@ function findInvalidPushTimeField(value: unknown, path = ""): string | undefined
     return findInvalidPushTimeField(value.awaiting, path ? `${path}.awaiting` : "awaiting");
   }
   return undefined;
-}
-
-function invalidPushTimeField(event: NavigationPushEvent) {
-  const invalidPresentField = findInvalidPushTimeField(event);
-  if (invalidPresentField) {
-    return invalidPresentField;
-  }
-  return readPushEventTimestamp(event) === undefined
-    ? requiredPushTimeField(event)
-    : undefined;
-}
-
-function hasValidRequiredPushTime(event: NavigationPushEvent) {
-  return invalidPushTimeField(event) === undefined;
 }
 
 function readPushAgentKey(event: NavigationPushEvent) {
@@ -1142,12 +1124,16 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   const preview = readPushPreview(event);
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
   const chatName = toText(event.chatName) || current?.chatName || preview || t("assistant.newChat");
-  const eventTimestamp = readPushEventTimestamp(event);
-  if (eventTimestamp === undefined) {
+  const eventTimestamp = readPushChatUpdateTimestamp(event);
+  const canReuseCurrentTimestamp = event.type === "chat.read" || event.type === "chat.unread";
+  if (eventTimestamp === undefined && (!canReuseCurrentTimestamp || !current)) {
     return null;
   }
   const createdAt = readPushCreatedAt(event, current?.createdAt) ?? eventTimestamp;
-  const updatedAt = eventTimestamp;
+  const updatedAt = eventTimestamp ?? current?.updatedAt;
+  if (createdAt === undefined || updatedAt === undefined) {
+    return null;
+  }
   let isRead = current?.isRead ?? true;
   if (event.type === "chat.read") {
     isRead = true;
@@ -1237,7 +1223,7 @@ export function applyAssistantNavigationPush(
   if (!type || IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
   }
-  if (!hasValidRequiredPushTime(event)) {
+  if (findInvalidPushTimeField(event)) {
     return { items: currentItems, changed: false, shouldRefresh: true };
   }
 
@@ -1265,7 +1251,7 @@ export function applyAssistantNavigationPush(
   }
 
   if (type === "chat.deleted" || type === "chat.archived") {
-    if (!chatId) {
+    if (!chatId || !currentChat) {
       return { items: currentItems, changed: false, shouldRefresh: true };
     }
     nextAgent.recentChats = nextAgent.recentChats.filter((chat) => chat.chatId !== chatId);
@@ -1276,13 +1262,14 @@ export function applyAssistantNavigationPush(
   }
 
   if (type === "chat.read" || type === "chat.unread") {
-    const patch = createChatPatchFromPush(event, currentChat);
-    if (patch && chatIndex >= 0) {
-      nextAgent.recentChats[chatIndex] = patch;
-    } else if (patch) {
-      nextAgent.recentChats.unshift(patch);
-      nextAgent.chatCount = Math.max(nextAgent.chatCount, nextAgent.recentChats.length);
+    if (!currentChat) {
+      return { items: currentItems, changed: false, shouldRefresh: true };
     }
+    const patch = createChatPatchFromPush(event, currentChat);
+    if (!patch) {
+      return { items: currentItems, changed: false, shouldRefresh: true };
+    }
+    nextAgent.recentChats[chatIndex] = patch;
     nextAgent.unreadCount = readPushUnreadCount(
       event,
       nextAgent.unreadCount,
@@ -1335,8 +1322,24 @@ export function applyAssistantNavigationChatPush(
   if (!type || IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
   }
-  if (!hasValidRequiredPushTime(event)) {
+  if (findInvalidPushTimeField(event)) {
     return { items: currentItems, changed: false, shouldRefresh: true };
+  }
+
+  if (type === "chat.read_all") {
+    const agentKey = readPushAgentKey(event);
+    if (!agentKey) {
+      return { items: currentItems, changed: false, shouldRefresh: true };
+    }
+    let changed = false;
+    const nextItems = currentItems.map((chat) => {
+      if (chat.agentKey !== agentKey || chat.isRead) {
+        return chat;
+      }
+      changed = true;
+      return { ...chat, isRead: true };
+    });
+    return { items: nextItems, changed, shouldRefresh: false };
   }
 
   const chatId = readPushChatId(event);
@@ -1783,7 +1786,7 @@ export class AssistantNavigationStatusClient {
     if (IGNORED_PUSH_TYPES.has(event.type)) {
       return;
     }
-    const invalidTimeField = invalidPushTimeField(event);
+    const invalidTimeField = findInvalidPushTimeField(event);
     if (invalidTimeField) {
       this.options.onDebug?.(
         `time_contract_violation: navigation.push.${event.type}.${invalidTimeField} must be epoch_ms_int64`,
