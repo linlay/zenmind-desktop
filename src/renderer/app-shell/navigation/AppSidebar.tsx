@@ -2748,7 +2748,10 @@ export function AppSidebar({
         className={() => getSidebarLinkClassName(item.to, extraClassName)}
       >
         <span className="sidebar-link-icon">
-          <SidebarIllustration kind={item.icon} />
+          <SidebarIllustration
+            kind={item.icon}
+            variant={isCollapsed ? "rail" : "compact"}
+          />
         </span>
         <span className="sidebar-link-label">{visibleLabel}</span>
       </NavLink>
@@ -3568,7 +3571,7 @@ export function AppSidebar({
           <span className="sidebar-group-heading-main">
             {args.icon ? (
               <span className="sidebar-link-icon">
-                <SidebarIllustration kind={args.icon} />
+                <SidebarIllustration kind={args.icon} variant="rail" />
               </span>
             ) : null}
             {isCollapsed || !args.headerLabel ? (

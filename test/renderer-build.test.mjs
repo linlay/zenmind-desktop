@@ -973,6 +973,41 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
 });
 
+test("primary sidebar navigation uses separate compact and rail SVG families", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const brandMarkSource = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "BrandMark.tsx"
+  );
+  const navigationStyles = readSourceFile("src", "renderer", "styles", "navigation.css");
+
+  assert.match(brandMarkSource, /export type SidebarIllustrationVariant = "compact" \| "rail";/);
+  assert.match(brandMarkSource, /variant = "compact"/);
+  assert.match(brandMarkSource, /function RailSidebarIllustration/);
+  assert.match(brandMarkSource, /viewBox: usesRailGeometry\s*\? "0 0 28 28"\s*:\s*usesCompactPrimaryGeometry\s*\? "0 0 16 16"/);
+  assert.match(brandMarkSource, /case "futures":[\s\S]*?width="5"[\s\S]*?height="18"/);
+  assert.match(brandMarkSource, /case "schedule":[\s\S]*?fillRule="evenodd"/);
+  assert.match(brandMarkSource, /case "chat":[\s\S]*?M4 6\.25A4\.25/);
+  assert.match(brandMarkSource, /case "project":[\s\S]*?M4 6\.5A3\.5/);
+  assert.match(brandMarkSource, /case "website":[\s\S]*?M14 2\.5a11\.5/);
+  assert.match(sidebarSource, /<SidebarIllustration\s+kind=\{item\.icon\}\s+variant=\{isCollapsed \? "rail" : "compact"\}/);
+  assert.match(sidebarSource, /<SidebarIllustration kind=\{args\.icon\} variant="rail" \/>/);
+  assert.doesNotMatch(sidebarSource, /<SidebarIllustration kind=\{args\.icon\} variant="compact" \/>/);
+  assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-nav \.sidebar-link-icon\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/);
+  assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
+  assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*#1677ff;/);
+  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*var\(--accent-strong\);/);
+  assert.match(navigationStyles, /\.sidebar-link-active \.sidebar-illustration-rail\.sidebar-illustration-kanban[\s\S]*?\.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?fill:\s*#3b82f6;/);
+});
+
 test("sidebar renders Kanban and section groups above the fixed tool menu", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
@@ -1024,8 +1059,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
   assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*?\| "chat"[\s\S]*?\| "project"/);
-  assert.match(brandMarkSource, /case "chat":[\s\S]*?<circle cx="8" cy="11" r="1"/);
-  assert.match(brandMarkSource, /case "project":[\s\S]*?<path d="M3\.5 7\.5A2\.5 2\.5/);
+  assert.match(brandMarkSource, /SidebarIllustrationVariant = "compact" \| "rail"/);
+  assert.match(brandMarkSource, /case "chat":[\s\S]*?<circle cx="6\.35" cy="7\.15" r="0\.5"/);
+  assert.match(brandMarkSource, /case "project":[\s\S]*?<path d="M2 5\.2A2\.2/);
 
   assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="sort" \/>/);
@@ -1238,9 +1274,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#475569;/);
   assert.match(globalStyles, /\.sidebar-link-active \.sidebar-link-icon,[\s\S]*?\.sidebar-group-heading\.is-active \.sidebar-link-icon\s*\{[\s\S]*?color:\s*#1e293b;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#e2e8f0;/);
-  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-kanban \.sidebar-illustration-kanban-frame,[\s\S]*?\.sidebar-link-active \.sidebar-illustration-automation \.sidebar-illustration-automation-ring\s*\{[\s\S]*?stroke:\s*var\(--sidebar-special-icon-active-frame\);/);
-  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-kanban \.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?stroke:\s*#3b82f6;/);
-  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-automation \.sidebar-illustration-automation-hand\s*\{[\s\S]*?stroke:\s*#3b82f6;/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-compact\.sidebar-illustration-kanban \.sidebar-illustration-kanban-frame,[\s\S]*?\.sidebar-link-active \.sidebar-illustration-compact\.sidebar-illustration-automation \.sidebar-illustration-automation-ring\s*\{[\s\S]*?stroke:\s*var\(--sidebar-special-icon-active-frame\);/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-compact\.sidebar-illustration-kanban \.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?stroke:\s*#3b82f6;/);
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-illustration-compact\.sidebar-illustration-automation \.sidebar-illustration-automation-hand\s*\{[\s\S]*?stroke:\s*#3b82f6;/);
   assert.match(globalStyles, /\.sidebar-group-heading \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-child-link \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-tool-menu \.sidebar-tool-menu-item \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);

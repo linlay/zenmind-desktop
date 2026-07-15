@@ -456,6 +456,14 @@
   color: #e2e8f0;
 }
 
+.app-sidebar.is-collapsed .sidebar-link-active .sidebar-illustration-rail {
+  color: #1677ff;
+}
+
+:root[data-theme="dark"] .app-sidebar.is-collapsed .sidebar-link-active .sidebar-illustration-rail {
+  color: var(--accent-strong);
+}
+
 :root[data-theme="dark"] .sidebar-chats-item:hover,
 :root[data-theme="dark"] .sidebar-chats-item:focus-visible {
   background: rgba(255, 255, 255, 0.07);
@@ -465,31 +473,43 @@
   --sidebar-special-icon-active-frame: #e2e8f0;
 }
 
-.sidebar-link-active .sidebar-illustration-kanban .sidebar-illustration-kanban-frame,
-.sidebar-link-active .sidebar-illustration-automation .sidebar-illustration-automation-ring {
+.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-frame,
+.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-automation .sidebar-illustration-automation-ring {
   stroke: var(--sidebar-special-icon-active-frame);
 }
 
-.sidebar-link-active .sidebar-illustration-kanban .sidebar-illustration-kanban-lane-blue {
+.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-blue {
   fill: #3b82f6;
   fill-opacity: 0.15;
   stroke: #3b82f6;
 }
 
-.sidebar-link-active .sidebar-illustration-kanban .sidebar-illustration-kanban-lane-green {
+.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-green {
   fill: #10b981;
   fill-opacity: 0.15;
   stroke: #10b981;
 }
 
-.sidebar-link-active .sidebar-illustration-kanban .sidebar-illustration-kanban-lane-amber {
+.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-amber {
   fill: #f59e0b;
   fill-opacity: 0.15;
   stroke: #f59e0b;
 }
 
-.sidebar-link-active .sidebar-illustration-automation .sidebar-illustration-automation-hand {
+.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-automation .sidebar-illustration-automation-hand {
   stroke: #3b82f6;
+}
+
+.sidebar-link-active .sidebar-illustration-rail.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-blue {
+  fill: #3b82f6;
+}
+
+.sidebar-link-active .sidebar-illustration-rail.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-green {
+  fill: #10b981;
+}
+
+.sidebar-link-active .sidebar-illustration-rail.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-amber {
+  fill: #f59e0b;
 }
 
 .sidebar-link-label {

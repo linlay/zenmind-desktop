@@ -23,6 +23,13 @@ export type SidebarIllustrationKind =
   | "schedule"
   | "website";
 
+/**
+ * The primary sidebar has two purpose-built icon families. The compact family
+ * is used beside the expanded labels; the rail family is only for the 28px
+ * collapsed navigation targets.
+ */
+export type SidebarIllustrationVariant = "compact" | "rail";
+
 export type SidebarActionIconKind =
   | "sidebar_left"
   | "sidebar_right"
@@ -37,6 +44,7 @@ export type SidebarActionIconKind =
 
 type SidebarIllustrationProps = {
   kind: SidebarIllustrationKind;
+  variant?: SidebarIllustrationVariant;
   className?: string;
 };
 
@@ -45,10 +53,23 @@ type SidebarActionIconProps = {
   className?: string;
 };
 
-function getSidebarIconClassName(kind: SidebarIllustrationKind, className?: string) {
+const compactPrimaryIllustrations = new Set<SidebarIllustrationKind>([
+  "futures",
+  "schedule",
+  "chat",
+  "project",
+  "website"
+]);
+
+function getSidebarIconClassName(
+  kind: SidebarIllustrationKind,
+  variant: SidebarIllustrationVariant,
+  className?: string
+) {
   return [
     "sidebar-illustration",
     `sidebar-illustration-${kind}`,
+    `sidebar-illustration-${variant}`,
     kind === "futures" ? "sidebar-illustration-kanban" : "",
     kind === "schedule" ? "sidebar-illustration-automation" : "",
     className ?? ""
@@ -59,14 +80,22 @@ function getSidebarIconClassName(kind: SidebarIllustrationKind, className?: stri
 
 function createSidebarIconProps(
   kind: SidebarIllustrationKind,
+  variant: SidebarIllustrationVariant,
   className?: string
 ): SVGProps<SVGSVGElement> {
+  const usesCompactPrimaryGeometry =
+    variant === "compact" && compactPrimaryIllustrations.has(kind);
+  const usesRailGeometry = variant === "rail";
   return {
-    className: getSidebarIconClassName(kind, className),
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 2,
+    className: getSidebarIconClassName(kind, variant, className),
+    viewBox: usesRailGeometry
+      ? "0 0 28 28"
+      : usesCompactPrimaryGeometry
+        ? "0 0 16 16"
+        : "0 0 24 24",
+    fill: usesRailGeometry ? "currentColor" : "none",
+    stroke: usesRailGeometry ? "none" : "currentColor",
+    strokeWidth: usesCompactPrimaryGeometry ? 1.4 : 2,
     strokeLinecap: "round",
     strokeLinejoin: "round",
     "aria-hidden": true,
@@ -215,8 +244,93 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
   }
 }
 
-export function SidebarIllustration({ kind, className }: SidebarIllustrationProps) {
-  const iconProps = createSidebarIconProps(kind, className);
+function RailSidebarIllustration({
+  kind,
+  className
+}: Omit<SidebarIllustrationProps, "variant">) {
+  const iconProps = createSidebarIconProps(kind, "rail", className);
+
+  switch (kind) {
+    case "futures":
+      return (
+        <svg {...iconProps}>
+          <rect
+            className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-blue"
+            x="4"
+            y="5"
+            width="5"
+            height="18"
+            rx="2.5"
+          />
+          <rect
+            className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-green"
+            x="11.5"
+            y="7"
+            width="5"
+            height="14"
+            rx="2.5"
+          />
+          <rect
+            className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-amber"
+            x="19"
+            y="9"
+            width="5"
+            height="10"
+            rx="2.5"
+          />
+        </svg>
+      );
+    case "schedule":
+      return (
+        <svg {...iconProps}>
+          <path
+            fillRule="evenodd"
+            d="M14 3a11 11 0 1 1 0 22 11 11 0 0 1 0-22Zm-1.15 4.5v6.84l4.6 2.65 1.15-1.98L15 12.96V7.5h-2.15Z"
+          />
+        </svg>
+      );
+    case "chat":
+      return (
+        <svg {...iconProps}>
+          <path
+            fillRule="evenodd"
+            d="M4 6.25A4.25 4.25 0 0 1 8.25 2h11.5A4.25 4.25 0 0 1 24 6.25v8.5A4.25 4.25 0 0 1 19.75 19H12l-5.5 4v-4.47A4.25 4.25 0 0 1 4 14.75v-8.5ZM9.5 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Zm4.5 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Zm4.5 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Z"
+          />
+        </svg>
+      );
+    case "project":
+      return (
+        <svg {...iconProps}>
+          <path
+            fillRule="evenodd"
+            d="M4 6.5A3.5 3.5 0 0 1 7.5 3h4.6l2.75 2.75h7.65A3.5 3.5 0 0 1 26 9.25v11.25A3.5 3.5 0 0 1 22.5 24h-15A3.5 3.5 0 0 1 4 20.5v-14Zm2.25 7.25v2.25h17.5v-2.25H6.25Z"
+          />
+        </svg>
+      );
+    case "website":
+      return (
+        <svg {...iconProps}>
+          <path
+            fillRule="evenodd"
+            d="M14 2.5a11.5 11.5 0 1 1 0 23 11.5 11.5 0 0 1 0-23ZM4.3 13h19.4v2H4.3v-2Zm6.1-9.05c-1.1 2.8-1.75 6.25-1.75 10.05s.65 7.25 1.75 10.05h1.75c-.85-2.8-1.35-6.25-1.35-10.05s.5-7.25 1.35-10.05H10.4Zm5.2 0c.85 2.8 1.35 6.25 1.35 10.05s-.5 7.25-1.35 10.05h1.75c1.1-2.8 1.75-6.25 1.75-10.05s-.65-7.25-1.75-10.05H15.6Z"
+          />
+        </svg>
+      );
+    default:
+      return <SidebarIllustration kind={kind} className={className} />;
+  }
+}
+
+export function SidebarIllustration({
+  kind,
+  variant = "compact",
+  className
+}: SidebarIllustrationProps) {
+  if (variant === "rail") {
+    return <RailSidebarIllustration kind={kind} className={className} />;
+  }
+
+  const iconProps = createSidebarIconProps(kind, variant, className);
 
   switch (kind) {
     case "agent":
@@ -235,17 +349,17 @@ export function SidebarIllustration({ kind, className }: SidebarIllustrationProp
     case "chat":
       return (
         <svg {...iconProps}>
-          <path d="M20 11a7.5 7.5 0 0 1-7.5 7.5H8l-4 3v-6.1A7.5 7.5 0 0 1 12 3.5h.5A7.5 7.5 0 0 1 20 11Z" />
-          <circle cx="8" cy="11" r="1" fill="currentColor" stroke="none" />
-          <circle cx="12" cy="11" r="1" fill="currentColor" stroke="none" />
-          <circle cx="16" cy="11" r="1" fill="currentColor" stroke="none" />
+          <path d="M13.35 7.15a5.15 5.15 0 0 1-5.15 5.15H5.9l-3.25 2.35v-4.03A5.15 5.15 0 0 1 7.8 2h.4a5.15 5.15 0 0 1 5.15 5.15Z" />
+          <circle cx="6.35" cy="7.15" r="0.5" fill="currentColor" stroke="none" />
+          <circle cx="8" cy="7.15" r="0.5" fill="currentColor" stroke="none" />
+          <circle cx="9.65" cy="7.15" r="0.5" fill="currentColor" stroke="none" />
         </svg>
       );
     case "project":
       return (
         <svg {...iconProps}>
-          <path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h4l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-8A2.5 2.5 0 0 1 3.5 7.5Z" />
-          <path d="M3.5 10h17" />
+          <path d="M2 5.2A2.2 2.2 0 0 1 4.2 3h2.7l1.65 1.65h3.25A2.2 2.2 0 0 1 14 6.85v5.95A2.2 2.2 0 0 1 11.8 15H4.2A2.2 2.2 0 0 1 2 12.8V5.2Z" />
+          <path d="M2 7.35h12" />
         </svg>
       );
     case "login":
@@ -308,51 +422,51 @@ export function SidebarIllustration({ kind, className }: SidebarIllustrationProp
         <svg {...iconProps}>
           <rect
             className="sidebar-illustration-kanban-frame"
-            x="3"
-            y="3"
-            width="18"
-            height="18"
-            rx="5"
+            x="2"
+            y="2"
+            width="12"
+            height="12"
+            rx="2.8"
           />
           <rect
             className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-blue"
-            x="7"
-            y="7"
-            width="2.5"
-            height="10"
-            rx="1"
+            x="4.6"
+            y="4.8"
+            width="1.55"
+            height="6.4"
+            rx="0.75"
           />
           <rect
             className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-green"
-            x="11"
-            y="7"
-            width="2.5"
-            height="7"
-            rx="1"
+            x="7.2"
+            y="4.8"
+            width="1.55"
+            height="4.7"
+            rx="0.75"
           />
           <rect
             className="sidebar-illustration-kanban-lane sidebar-illustration-kanban-lane-amber"
-            x="15"
-            y="7"
-            width="2.5"
-            height="4"
-            rx="1"
+            x="9.8"
+            y="4.8"
+            width="1.55"
+            height="3.1"
+            rx="0.75"
           />
         </svg>
       );
     case "schedule":
       return (
         <svg {...iconProps}>
-          <circle className="sidebar-illustration-automation-ring" cx="12" cy="12" r="10" />
-          <path className="sidebar-illustration-automation-hand" d="M12 6v6l4 2" />
+          <circle className="sidebar-illustration-automation-ring" cx="8" cy="8" r="5.8" />
+          <path className="sidebar-illustration-automation-hand" d="M8 4.8v3.6l2.55 1.45" />
         </svg>
       );
     case "website":
       return (
         <svg {...iconProps}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M2 12h20" />
-          <path d="M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
+          <circle cx="8" cy="8" r="5.8" />
+          <path d="M2.2 8h11.6" />
+          <path d="M8 2.2c1.55 1.55 2.45 3.6 2.45 5.8S9.55 12.25 8 13.8M8 2.2C6.45 3.75 5.55 5.8 5.55 8S6.45 12.25 8 13.8" />
         </svg>
       );
   }
