@@ -35,6 +35,7 @@ export type AssistantBridgeRuntimeOptions = {
   emitAssistantNavigationAgentsChanged: (result: AssistantNavAgentItemsResult) => void;
   emitAssistantNavigationPushEvent: (event: AssistantNavigationPushEvent) => void;
   handleDesktopPetAssistantEvent: (event: AssistantEvent) => void;
+  onTunnelConnected?: () => Promise<unknown> | unknown;
   desktopPet: {
     refreshState: (...args: any[]) => unknown;
     showWindow: (...args: any[]) => unknown;
@@ -138,6 +139,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     configureTunnelHubRuntime({
       app: options.app,
       desktopWsServerOptions,
+      onConnected: options.onTunnelConnected,
       logger: console
     });
   }

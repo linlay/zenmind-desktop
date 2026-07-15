@@ -449,6 +449,14 @@ export interface AssistantStartRunResult {
   fullAccessRemainingMs?: number;
 }
 
+export interface AssistantTextCompletionResult {
+  ok: boolean;
+  runId: string;
+  chatId: string;
+  text: string;
+  message: string;
+}
+
 export interface AssistantStopRunResult {
   ok: boolean;
   message: string;

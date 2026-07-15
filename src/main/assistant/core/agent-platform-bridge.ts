@@ -24,6 +24,7 @@ import type {
   AssistantRunEventType,
   AssistantStartRunRequest,
   AssistantStartRunResult,
+  AssistantTextCompletionResult,
   AssistantStopRunResult,
   AssistantSubmitAwaitingRequest,
   AssistantSubmitAwaitingResult,
@@ -901,6 +902,48 @@ export class AgentPlatformAssistantBridge {
     };
   }
 
+  async completeText(request: AssistantStartRunRequest): Promise<AssistantTextCompletionResult> {
+    const message = request.message.trim();
+    const chatId = request.chatId?.trim() || createChatId();
+    const runId = request.runId?.trim() || createRunId();
+    if (!message) {
+      return {
+        ok: false,
+        runId: "",
+        chatId,
+        text: "",
+        message: t("assistant.messageRequired")
+      };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return {
+        ok: false,
+        runId,
+        chatId,
+        text: "",
+        message: availability.message
+      };
+    }
+    if (this.activeRuns.has(runId)) {
+      return {
+        ok: false,
+        runId,
+        chatId,
+        text: "",
+        message: "runId is already active"
+      };
+    }
+    const controller = new AbortController();
+    this.activeRuns.set(runId, controller);
+    this.acquireWakeLockForActiveRuns();
+    return this.runQuery(availability.baseUrl, availability.token, request, {
+      chatId,
+      runId,
+      controller
+    });
+  }
+
   async stopRun(runId: string): Promise<AssistantStopRunResult> {
     const trimmedRunId = runId.trim();
     this.activeRuns.get(trimmedRunId)?.abort();
@@ -1321,7 +1364,7 @@ export class AgentPlatformAssistantBridge {
     token: string,
     request: AssistantStartRunRequest,
     run: { chatId: string; runId: string; controller: AbortController }
-  ) {
+  ): Promise<AssistantTextCompletionResult> {
     try {
       const references = await this.uploadAttachments(baseUrl, token, run.chatId, run.runId, request.attachments ?? []);
       const accessLevel = normalizeAssistantAccessLevel(request.accessLevel);
@@ -1364,16 +1407,24 @@ export class AgentPlatformAssistantBridge {
       if (!streamResult.sawTerminalEvent) {
         throw new Error("time_contract_violation: stream ended before a timestamped terminal event");
       }
+      return {
+        ok: true,
+        runId: run.runId,
+        chatId: run.chatId,
+        text: streamResult.finalMessage,
+        message: streamResult.finalMessage
+      };
     } catch (error) {
       if ((error as Error).name === "AbortError") {
+        const message = t("assistant.stopped");
         this.options.onEvent({
           runId: run.runId,
           chatId: run.chatId,
           type: "stopped",
           createdAt: nowEpochMillis(),
-          message: t("assistant.stopped")
+          message
         });
-        return;
+        return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
       }
       const message = error instanceof Error ? error.message : String(error);
       this.options.onEvent({
@@ -1384,6 +1435,7 @@ export class AgentPlatformAssistantBridge {
         message,
         error: message
       });
+      return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
     } finally {
       if (this.activeRuns.delete(run.runId)) {
         this.releaseWakeLockIfIdle();

@@ -2,8 +2,44 @@ import type { ServiceId, ServiceState, StartupRestoreServicePhase, StartupRestor
 import type { TranslateFunction } from "../../../shared/i18n";
 import { useI18n } from "../../i18n/useI18n";
 
-export function StartupRoutePlaceholder() {
-  return <div className="startup-route-placeholder" aria-hidden="true" />;
+export function StartupRoutePlaceholder({
+  canStartChat,
+  preparing,
+  onStartChat,
+  onOpenControlCenter
+}: {
+  canStartChat: boolean;
+  preparing: boolean;
+  onStartChat: () => void;
+  onOpenControlCenter: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="startup-route-placeholder">
+      <section className="startup-chat-guide" aria-labelledby="startup-chat-guide-title">
+        <div className="startup-chat-guide-mark" aria-hidden="true">✦</div>
+        <h1 id="startup-chat-guide-title">{t("startup.chatGuide.title")}</h1>
+        <p>
+          {canStartChat
+            ? t("startup.chatGuide.ready")
+            : preparing
+              ? t("startup.chatGuide.preparing")
+              : t("startup.chatGuide.unavailable")}
+        </p>
+        <div className="startup-chat-guide-actions">
+          {canStartChat ? (
+            <button type="button" className="action-button" onClick={onStartChat}>
+              {t("startup.chatGuide.start")}
+            </button>
+          ) : (
+            <button type="button" className="action-button" onClick={onOpenControlCenter}>
+              {t("startup.action.openControlCenter")}
+            </button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export function StartupLoadingScreen({

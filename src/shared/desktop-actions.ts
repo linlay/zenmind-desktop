@@ -43,6 +43,9 @@ const PET_STATE_OUTPUT_SCHEMA = {
 export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
+  { name: "desktop.assistant.translate", kind: "execute", category: "assistant", description: "Translate text with the Desktop assistant model. Args: { text, targetLanguage: en|ja|zh }." },
+  { name: "desktop.assistant.complete", kind: "execute", category: "assistant", description: "Generate text with the Desktop helper agent. Args: { prompt, instruction? }." },
+
   { name: "desktop.setting.getState", kind: "read", category: "setting", description: "Read Desktop setting state." },
   { name: "desktop.setting.validatePatch", kind: "validate", category: "setting", description: "Validate a Desktop setting patch." },
   { name: "desktop.setting.previewPatch", kind: "preview", category: "setting", description: "Preview Desktop setting changes." },

@@ -152,6 +152,14 @@ function stripHopHeaders(headers: HeaderRecord): HeaderRecord {
   return out;
 }
 
+function serializeResponseHeaders(headers: HeaderRecord): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    out[key] = Array.isArray(value) ? value : [value];
+  }
+  return out;
+}
+
 function stripWebSocketDialHeaders(headers: HeaderRecord): HeaderRecord {
   const out = stripHopHeaders(headers);
   for (const key of Object.keys(out)) {
@@ -652,7 +660,7 @@ export class TunnelClientEndpoint extends EventEmitter {
               msg: "success",
               data: {
                 statusCode: res.statusCode ?? 200,
-                headers: responseHeaders,
+                headers: serializeResponseHeaders(responseHeaders),
                 bodyLength: readContentLength(responseHeaders)
               }
             });

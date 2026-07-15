@@ -1008,7 +1008,7 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
   assert.equal(response.head.code, 0);
   assert.equal(response.head.msg, "success");
   assert.equal(response.head.data.statusCode, 201);
-  assert.equal(response.head.data.headers["x-local-reply"], "yes");
+  assert.deepEqual(response.head.data.headers["x-local-reply"], ["yes"]);
   assert.equal(response.head.data.bodyLength, responseBody.byteLength);
   assert.equal(response.body, "chunk-a:chunk-b");
   assert.deepEqual(captured, {

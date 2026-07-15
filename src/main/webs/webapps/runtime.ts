@@ -26,7 +26,9 @@ import {
   getWebappDir,
   readWebappItems
 } from "./store";
+import { syncPublishedWebappRoute } from "./publisher";
 import { t } from "../../i18n/main-i18n";
+import { getConfiguredDesktopActionBridgePort } from "../../desktop-action-bridge-settings";
 
 const HOST = "127.0.0.1";
 const STATE_FILE = "runtime.json";
@@ -34,6 +36,12 @@ const MAIN_LOG_FILE = "main.log";
 const ERROR_LOG_FILE = "error.log";
 const HEALTH_TIMEOUT_MS = 10_000;
 const HEALTH_INTERVAL_MS = 250;
+const DESKTOP_ASSISTANT_PATH = "/__desktop/actions/call";
+const DESKTOP_ASSISTANT_ACTIONS = new Set([
+  "desktop.assistant.complete",
+  "desktop.assistant.translate"
+]);
+const DESKTOP_ASSISTANT_BODY_LIMIT = 64 * 1024;
 
 type RuntimeRecord = {
   item: WebappEntry;
@@ -233,6 +241,86 @@ function writeText(res: http.ServerResponse, status: number, message: string) {
     "Cache-Control": "no-store"
   });
   res.end(message);
+}
+
+function readRequestBody(req: http.IncomingMessage, limit: number) {
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error("request body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+async function handleDesktopAssistantRequest(
+  app: App,
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+) {
+  if (req.method !== "POST") {
+    res.writeHead(405, { "Allow": "POST", "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
+  const origin = String(req.headers.origin || "").trim();
+  if (origin) {
+    try {
+      const originUrl = new URL(origin);
+      const host = String(req.headers.host || "").toLowerCase();
+      const originHost = originUrl.host.toLowerCase();
+      const loopback = originUrl.protocol === "http:" &&
+        (originUrl.hostname === HOST || originUrl.hostname === "localhost");
+      if (!loopback || originHost !== host) {
+        writeText(res, 403, "Desktop assistant actions are available only from the local WebApp origin");
+        return;
+      }
+    } catch {
+      writeText(res, 403, "invalid request origin");
+      return;
+    }
+  }
+  try {
+    const parsed = JSON.parse(await readRequestBody(req, DESKTOP_ASSISTANT_BODY_LIMIT)) as {
+      action?: unknown;
+      args?: unknown;
+    };
+    const action = typeof parsed.action === "string" ? parsed.action : "";
+    if (!DESKTOP_ASSISTANT_ACTIONS.has(action)) {
+      writeText(res, 403, "only Desktop assistant actions are allowed");
+      return;
+    }
+    const response = await fetch(
+      `http://${HOST}:${getConfiguredDesktopActionBridgePort(app)}/actions/call`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          args: parsed.args && typeof parsed.args === "object" ? parsed.args : {},
+          permissionMode: "full_access"
+        }),
+        signal: AbortSignal.timeout(120_000)
+      }
+    );
+    const body = await response.text();
+    res.writeHead(response.status, {
+      "Content-Type": response.headers.get("content-type") || "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff"
+    });
+    res.end(body);
+  } catch (error) {
+    writeText(res, 502, error instanceof Error ? error.message : String(error));
+  }
 }
 
 function sendFile(req: http.IncomingMessage, res: http.ServerResponse, file: { filePath: string; stat: fs.Stats }) {
@@ -455,6 +543,61 @@ export class WebappRuntime {
 
     let record: RuntimeRecord | null = null;
     try {
+      if (!item.backend) {
+        const state: WebappRuntimeState = {
+          id,
+          entryKey: item.entryKey,
+          kind: "webapp",
+          status: "starting",
+          webUrl: "",
+          backendUrl: "",
+          frontendPort: null,
+          backendPort: null,
+          pid: null,
+          message: t("webapp.starting"),
+          startedAt: nowIso(),
+          updatedAt: nowIso()
+        };
+        const staticRecord: RuntimeRecord = {
+          item,
+          webappDir,
+          child: null,
+          server: null,
+          sockets: new Set(),
+          state
+        };
+        record = staticRecord;
+        this.records.set(id, staticRecord);
+        writeState(app, state);
+        const server = http.createServer((req, res) => {
+          const requestPath = getRequestPath(req.url);
+          if (requestPath === DESKTOP_ASSISTANT_PATH) {
+            void handleDesktopAssistantRequest(app, req, res);
+            return;
+          }
+          handleStaticRequest(staticRecord, req, res).catch((error) => {
+            writeText(res, 500, error instanceof Error ? error.message : String(error));
+          });
+        });
+        server.on("connection", (socket) => {
+          staticRecord.sockets.add(socket);
+          socket.on("close", () => staticRecord.sockets.delete(socket));
+        });
+        const frontendPort = await listen(server, 0);
+        staticRecord.server = server;
+        staticRecord.state = {
+          ...staticRecord.state,
+          status: "running",
+          webUrl: `http://${HOST}:${frontendPort}/`,
+          frontendPort,
+          message: t("webapp.started", { label: item.label }),
+          updatedAt: nowIso()
+        };
+        writeState(app, staticRecord.state);
+        writeLogLine(getLogPath(app, id, "main"), `[${nowIso()}] running web=${staticRecord.state.webUrl} backend=none`);
+        void syncPublishedWebappRoute(app, item, staticRecord.state);
+        return { ok: true, item, state: staticRecord.state, message: staticRecord.state.message };
+      }
       const backendPort = item.backend.port === 0 ? await reservePort(0) : await reservePort(item.backend.port);
       const backendUrl = `http://${HOST}:${backendPort}`;
       const healthUrl = `${backendUrl}${item.backend.healthPath}`;
@@ -486,7 +629,8 @@ export class WebappRuntime {
           WEBAPP_ID: id,
           WEBAPP_ROOT: webappDir,
           WEBAPP_STATE_DIR: stateDir,
-          WEBAPP_LOG_DIR: logDir
+          WEBAPP_LOG_DIR: logDir,
+          DESKTOP_ACTION_BRIDGE_URL: `http://${HOST}:${getConfiguredDesktopActionBridgePort(app)}`
         },
         stdio: ["ignore", "pipe", "pipe"]
       });
@@ -530,6 +674,10 @@ export class WebappRuntime {
       await Promise.race([waitForBackendHealth(healthUrl, child), childError]);
       const server = http.createServer((req, res) => {
         const requestPath = getRequestPath(req.url);
+        if (requestPath === DESKTOP_ASSISTANT_PATH) {
+          void handleDesktopAssistantRequest(app, req, res);
+          return;
+        }
         if (requestPath !== null && shouldProxyRequest(item.frontend.apiPrefix, requestPath)) {
           proxyApiRequest(runningRecord, req, res);
           return;
@@ -556,6 +704,7 @@ export class WebappRuntime {
       };
       writeState(app, runningRecord.state);
       writeLogLine(getLogPath(app, id, "main"), `[${nowIso()}] running web=${runningRecord.state.webUrl} backend=${backendUrl}`);
+      void syncPublishedWebappRoute(app, item, runningRecord.state);
       return { ok: true, item, state: runningRecord.state, message: runningRecord.state.message };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -623,6 +772,9 @@ export class WebappRuntime {
   }
 
   private refreshRecordProcessState(app: App, record: RuntimeRecord) {
+    if (!record.item.backend && record.server?.listening) {
+      return;
+    }
     if (record.child && record.child.exitCode === null && record.child.signalCode === null) {
       return;
     }
@@ -648,6 +800,8 @@ export function stopAllWebapps(app: App) {
 export const __testInternals = {
   HOST,
   HEALTH_TIMEOUT_MS,
+  DESKTOP_ASSISTANT_PATH,
+  DESKTOP_ASSISTANT_ACTIONS,
   getRequestPath,
   shouldProxyRequest,
   reservePort

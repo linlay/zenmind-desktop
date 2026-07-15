@@ -87,6 +87,7 @@ import {
 import type { KanbanRuntime } from "./kanban-runtime";
 import { t } from "./i18n/main-i18n";
 import { getConfiguredDesktopActionBridgePort } from "./desktop-action-bridge-settings";
+import { getAssistantSettings } from "./assistant/core/settings-store";
 
 type DesktopActionBridgeOptions = {
   app: App;
@@ -157,6 +158,14 @@ const CONFIRMATION_ARG_MAX_ARRAY_ITEMS = 4;
 const CONFIRMATION_ARG_VALUE_MAX_CHARS = 160;
 const CONFIRMATION_ARG_SUMMARY_MAX_CHARS = 1200;
 const CONFIRMATION_COMPACT_VALUE_MAX_CHARS = 280;
+const MAX_TRANSLATION_TEXT_CHARS = 4_000;
+const MAX_ASSISTANT_PROMPT_CHARS = 12_000;
+const MAX_ASSISTANT_INSTRUCTION_CHARS = 2_000;
+const TRANSLATION_LANGUAGE_LABELS = {
+  en: "English",
+  ja: "Japanese",
+  zh: "Simplified Chinese"
+} as const;
 let activeServer: http.Server | null = null;
 let activeServerPort = 0;
 
@@ -1269,6 +1278,94 @@ async function executeAction(
   const args = asRecord(request.args);
 
   switch (action) {
+    case "desktop.assistant.complete": {
+      const prompt = readString(args, "prompt");
+      const instruction = readString(args, "instruction");
+      if (!prompt) {
+        return fail(action, "invalid_args", "prompt is required");
+      }
+      if (prompt.length > MAX_ASSISTANT_PROMPT_CHARS) {
+        return fail(action, "invalid_args", `prompt must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`);
+      }
+      if (instruction.length > MAX_ASSISTANT_INSTRUCTION_CHARS) {
+        return fail(action, "invalid_args", `instruction must be at most ${MAX_ASSISTANT_INSTRUCTION_CHARS} characters`);
+      }
+      const settings = getAssistantSettings(options.app);
+      const completion = await options.assistantBridge.completeText({
+        agentKey: settings.desktopHelperAgentKey,
+        source: "copilot",
+        action: "chat",
+        message: instruction
+          ? `${instruction}\n\nUSER REQUEST:\n${prompt}`
+          : prompt
+      });
+      if (!completion.ok) {
+        return fail(action, "assistant_failed", completion.message, {
+          runId: completion.runId,
+          chatId: completion.chatId
+        });
+      }
+      const text = completion.text.trim();
+      if (!text) {
+        return fail(action, "assistant_empty", "Desktop assistant returned an empty response", {
+          runId: completion.runId,
+          chatId: completion.chatId
+        });
+      }
+      return ok(action, {
+        text,
+        runId: completion.runId,
+        chatId: completion.chatId
+      });
+    }
+    case "desktop.assistant.translate": {
+      const text = readString(args, "text");
+      const targetLanguage = readString(args, "targetLanguage") as keyof typeof TRANSLATION_LANGUAGE_LABELS;
+      if (!text) {
+        return fail(action, "invalid_args", "text is required");
+      }
+      if (text.length > MAX_TRANSLATION_TEXT_CHARS) {
+        return fail(action, "invalid_args", `text must be at most ${MAX_TRANSLATION_TEXT_CHARS} characters`);
+      }
+      const targetLabel = TRANSLATION_LANGUAGE_LABELS[targetLanguage];
+      if (!targetLabel) {
+        return fail(action, "invalid_args", "targetLanguage must be en, ja, or zh");
+      }
+      const settings = getAssistantSettings(options.app);
+      const completion = await options.assistantBridge.completeText({
+        agentKey: settings.desktopHelperAgentKey,
+        source: "copilot",
+        action: "chat",
+        message: [
+          "You are a translation engine.",
+          `Translate the user text into ${targetLabel}.`,
+          "Preserve meaning, tone, names, numbers, and punctuation.",
+          "Return only the translated text. Do not add explanations, labels, quotation marks, or Markdown fences.",
+          "",
+          "USER TEXT:",
+          text
+        ].join("\n")
+      });
+      if (!completion.ok) {
+        return fail(action, "translation_failed", completion.message, {
+          runId: completion.runId,
+          chatId: completion.chatId
+        });
+      }
+      const translation = completion.text.trim();
+      if (!translation) {
+        return fail(action, "translation_empty", "Desktop assistant returned an empty translation", {
+          runId: completion.runId,
+          chatId: completion.chatId
+        });
+      }
+      return ok(action, {
+        translation,
+        targetLanguage,
+        runId: completion.runId,
+        chatId: completion.chatId
+      });
+    }
     case "desktop.page.getContext":
       if (options.getCurrentPageSnapshot()) {
         return ok(action, {

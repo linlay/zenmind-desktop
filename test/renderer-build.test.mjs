@@ -2659,7 +2659,8 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.doesNotMatch(appShell, /showStartupPetGreeting/);
-  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
+  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?canStartChat=\{Boolean\(chatRuntimeAgent\.agent\)\}/);
+  assert.match(appShell, /location\.pathname !== "\/"[\s\S]*?createAgentNewChatRoute\(chatRuntimeAgent\.agent\.agentKey\)/);
   assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);
   assert.doesNotMatch(appShell, /preferences\?\.kanban/);
