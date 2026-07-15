@@ -2610,17 +2610,37 @@ export function AppSidebar({
     if (!assistantChatDeleteDialog || assistantChatDeleteDialog.pending) {
       return;
     }
+    const chat = assistantChatDeleteDialog.chat;
     setAssistantChatDeleteDialog((current) =>
       current ? { ...current, pending: true, error: "" } : current,
     );
     try {
       const result = await window.electronAPI.assistant.deleteChat(
-        assistantChatDeleteDialog.chat.chatId,
+        chat.chatId,
       );
       if (!result.ok) {
         throw new Error(result.message || t("sidebar.chat.deleteFailed"));
       }
       setAssistantChatDeleteDialog(null);
+
+      if (currentChatId === chat.chatId) {
+        const agentKey = chat.agentKey.trim() || currentAgentKey;
+        const currentAgent = assistantNavAgents.find(
+          (agent) => agent.agentKey === agentKey,
+        );
+        const nextChat = currentAgent
+          ? getAssistantNavAgentSortedChats(currentAgent).find(
+              (candidate) => candidate.chatId !== chat.chatId,
+            )
+          : null;
+        const nextRoute = nextChat
+          ? createAgentChatRoute(agentKey, nextChat.chatId)
+          : agentKey
+            ? createAgentRoute(agentKey)
+            : "/agents";
+        onRequestNavigate?.(nextRoute);
+      }
+
       await onRefreshAssistantNavAgents?.();
     } catch (error) {
       setAssistantChatDeleteDialog((current) =>
