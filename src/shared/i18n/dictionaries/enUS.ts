@@ -142,6 +142,7 @@ export const enUSMessages = {
   "sidebar.chat.delete": "Delete",
   "sidebar.chat.renameTitle": "Rename Chat",
   "sidebar.chat.viewMore": "View more ({count} total{unread})",
+  "sidebar.chat.viewMoreSimple": "View more",
   "sidebar.chat.unreadSuffix": ", {count} unread",
   "sidebar.chats.newChat": "New chat",
   "sidebar.chats.defaultAgentUnavailable": "Choose an available Chat default agent in Assistant settings first.",

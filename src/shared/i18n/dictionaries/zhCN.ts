@@ -142,6 +142,7 @@ export const zhCNMessages = {
   "sidebar.chat.delete": "删除",
   "sidebar.chat.renameTitle": "重命名会话",
   "sidebar.chat.viewMore": "查看更多（共 {count} 条{unread}）",
+  "sidebar.chat.viewMoreSimple": "查看更多",
   "sidebar.chat.unreadSuffix": "，未读 {count} 条",
   "sidebar.chats.newChat": "新建对话",
   "sidebar.chats.defaultAgentUnavailable": "请先在助理设置中选择可用的 Chat 默认智能体。",

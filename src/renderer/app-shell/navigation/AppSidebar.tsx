@@ -58,6 +58,7 @@ import {
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../../../shared/agent-webclient-routes";
+import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
   SettingsSectionGroupId,
@@ -244,6 +245,7 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
   "webOperator",
 ]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
+const CHATS_VISIBLE_LIMIT = 8;
 type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS
@@ -1130,9 +1132,10 @@ export function AppSidebar({
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
   const sidebarChatItems = useMemo(
-    () => assistantNavChatItems.slice(0, 8),
+    () => assistantNavChatItems.slice(0, CHATS_VISIBLE_LIMIT),
     [assistantNavChatItems],
   );
+  const hasMoreChats = assistantNavChatItems.length > CHATS_VISIBLE_LIMIT;
   const chatNavigationAgentsByKey = useMemo(
     () => new Map(
       [...assistantNavAgents, ...chatNavAgentOptions].map((agent) => [agent.agentKey, agent]),
@@ -1718,7 +1721,7 @@ export function AppSidebar({
       event.preventDefault();
       if (targetIsAgentWebclientManagementRoute) {
         setForcedActiveManagementRoute(targetPath);
-        dispatchAgentWebclientManagementRouteToActiveWebview(targetPath);
+        dispatchAgentWebclientRouteToActiveWebview(targetPath);
         onNavigateItem?.();
       }
       return;
@@ -1771,14 +1774,34 @@ export function AppSidebar({
     closeToolMenu();
   }
 
-  function dispatchAgentWebclientManagementRouteToActiveWebview(targetPath: string) {
-    if (!isAgentWebclientManagementRoute(targetPath)) {
+  function dispatchAgentWebclientRouteToActiveWebview(targetPath: string) {
+    const targetAgentInfo = readAgentRouteInfo(targetPath);
+    if (
+      !isAgentWebclientManagementRoute(targetPath) &&
+      !targetAgentInfo.agentKey
+    ) {
       return false;
     }
 
     const webview = getActivePluginSurfaceWebviewRef()?.current;
     if (!webview) {
       return false;
+    }
+
+    if (targetAgentInfo.historyRequested) {
+      try {
+        webview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+          action: "openChatHistory",
+          data: {
+            workerKey: `agent:${targetAgentInfo.agentKey}`,
+            agentKey: targetAgentInfo.agentKey,
+          },
+        });
+        return true;
+      } catch (error) {
+        console.warn("[assistant] failed to open agent history", error);
+        return false;
+      }
     }
 
     const script = `(() => {
@@ -1797,12 +1820,23 @@ export function AppSidebar({
     })()`;
 
     void webview.executeJavaScript(script, true).catch((error: unknown) => {
-      console.warn("[assistant] failed to retrigger agent-webclient management route", error);
+      console.warn("[assistant] failed to retrigger agent-webclient route", error);
     });
     return true;
   }
 
-  function requestNavigate(targetPath: string, _options: NavigateOptions = {}) {
+  function requestNavigate(targetPath: string, options: NavigateOptions = {}) {
+    if (options.retriggerAgentRoute) {
+      const targetAgentInfo = readAgentRouteInfo(targetPath);
+      if (
+        targetPath === currentRoute ||
+        targetAgentInfo.historyRequested ||
+        targetAgentInfo.newChatRequested
+      ) {
+        dispatchAgentWebclientRouteToActiveWebview(targetPath);
+      }
+    }
+
     if (targetPath === currentRoute) {
       return;
     }
@@ -3008,6 +3042,26 @@ export function AppSidebar({
           ) : (
             <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
           )
+        ) : null}
+        {hasMoreChats && resolvedChatDefaultAgent ? (
+          <button
+            type="button"
+            className="worker-chat-more assistant-worker-more"
+            {...getSidebarRovingItemProps(
+              createSidebarAgentMoreFocusId(resolvedChatDefaultAgent.agentKey),
+              roving,
+            )}
+            data-sidebar-nav-kind={roving ? "agent-more" : undefined}
+            data-sidebar-agent-key={roving ? resolvedChatDefaultAgent.agentKey : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              requestNavigate(createAgentHistoryRoute(resolvedChatDefaultAgent.agentKey), {
+                retriggerAgentRoute: true,
+              });
+            }}
+          >
+            {t("sidebar.chat.viewMoreSimple")}
+          </button>
         ) : null}
       </div>
     );

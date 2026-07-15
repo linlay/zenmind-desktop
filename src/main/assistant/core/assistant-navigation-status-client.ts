@@ -169,7 +169,9 @@ export type AssistantNavigationChatApplyResult = {
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const NAVIGATION_AGENT_HISTORY_LIMIT = 50;
 const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
-const NAVIGATION_CHAT_LIMIT = 8;
+// Fetch one item beyond the visible sidebar limit so the renderer can tell
+// whether the history entry is needed without loading the full chat list.
+const NAVIGATION_CHAT_LIMIT = 9;
 const NAVIGATION_CHAT_AGENT_MODE = "REACT";
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 const NAVIGATION_WS_REQUEST_TIMEOUT_MS = 8_000;

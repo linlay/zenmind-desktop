@@ -190,10 +190,10 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 8 });
+  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 9 });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
-    ["react-newest", "react-0", "react-1", "react-2", "react-3", "react-4", "react-5", "react-6"],
+    ["react-newest", "react-0", "react-1", "react-2", "react-3", "react-4", "react-5", "react-6", "react-7"],
   );
   assert.equal(first.chatItems[0].isRead, false);
   assert.equal(first.chatItems[0].hasActiveRun, false);
@@ -286,7 +286,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(client.getSnapshot().chatItems.some((chat) => chat.chatId === "not-listed"), false);
   await new Promise((resolve) => setTimeout(resolve, 450));
   assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 4);
-  assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 8));
+  assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 9));
 
   sockets[0].emit({ frame: "push", type: "chat.created", data: {
     agentKey: "zenmi",
