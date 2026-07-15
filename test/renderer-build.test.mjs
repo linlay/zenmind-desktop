@@ -1158,7 +1158,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.ok(routeActiveStart > activeChatIdStart);
   const activeChatIdBlock = sidebarSource.slice(activeChatIdStart, routeActiveStart);
   assert.match(activeChatIdBlock, /chats: AssistantNavChatItem\[\] = \[\]/);
-  assert.match(activeChatIdBlock, /currentChatId \|\| \(pendingPath && pendingChatId \? pendingChatId : ""\)/);
+  assert.match(activeChatIdBlock, /const routeChatId = activeSidebarChatId;/);
   assert.match(activeChatIdBlock, /routeChatId && chats\.some\(\(chat\) => chat\.chatId === routeChatId\)/);
   assert.match(activeChatIdBlock, /if \(routeChatId\) \{\s*return routeChatId;\s*\}\s*return "";/);
   assert.match(sidebarSource, /"assistant-worker-collapse-item"/);
@@ -1453,15 +1453,16 @@ test("assistant sidebar chat history selection follows the current chat route", 
   );
   const globalStyles = readRendererStyles();
 
-  assert.match(sidebarSource, /const pendingChatId = pendingRouteAgentInfo\.chatId;/);
-  assert.match(sidebarSource, /const activeSidebarAgentKey =\s*currentAgentKey \|\|[\s\S]{0,120}pendingAgentKey : ""/);
+  assert.match(sidebarSource, /const activeNavigationRouteInfo = pendingAgentKey\s*\? pendingRouteAgentInfo\s*:\s*currentRouteAgentInfo;/);
+  assert.match(sidebarSource, /const activeSidebarAgentKey = activeNavigationRouteInfo\.agentKey;/);
+  assert.match(sidebarSource, /const activeSidebarChatId = activeNavigationRouteInfo\.chatId;/);
   assert.match(sidebarSource, /function getActiveSidebarAgentKey\(\)/);
   assert.match(sidebarSource, /function getActiveSidebarChatId\(\s*agentKey: string,\s*chats: AssistantNavChatItem\[\] = \[\],\s*\)/);
   assert.match(sidebarSource, /agent\.agentKey === activeSidebarAgentKey/);
   assert.match(sidebarSource, /const activeAgentChanged =\s*lastAutoExpandedAssistantAgentKeyRef\.current !== matched\.agentKey;/);
   assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,220}setExpandedAssistantAgentKey\(matched\.agentKey\);/);
   assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey\]\);/);
-  assert.match(sidebarSource, /const routeChatId =\s*currentChatId \|\| \(pendingPath && pendingChatId \? pendingChatId : ""\);/);
+  assert.match(sidebarSource, /const routeChatId = activeSidebarChatId;/);
   assert.match(sidebarSource, /if \(routeChatId\) \{[\s\S]{0,80}return routeChatId;/);
   assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey, allRecentChats\);/);
   assert.match(sidebarSource, /const selected = getActiveSidebarAgentKey\(\) === agent\.agentKey \|\| Boolean\(activeChatId\);/);
@@ -1479,6 +1480,34 @@ test("assistant sidebar chat history selection follows the current chat route", 
   assert.match(globalStyles, /\.assistant-worker-chat-item\.is-active\s*\{[\s\S]{0,120}background:\s*transparent;/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-selected\s*\{[\s\S]{0,120}background:\s*rgba\(var\(--accent-rgb\),\s*0\.08\);/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-selected\.is-expanded\s*\{[\s\S]{0,160}border-color:\s*rgba\(var\(--accent-rgb\),\s*0\.18\);/);
+});
+
+test("sidebar assigns Chats and Projects a single route owner", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(sidebarSource, /type SidebarNavigationOwner = "assistants" \| "chats" \| null;/);
+  assert.match(sidebarSource, /type AgentRouteInfo = \{[\s\S]*?newChatRequested: boolean;/);
+  assert.match(sidebarSource, /function resolveSidebarNavigationOwner\([\s\S]*?\): SidebarNavigationOwner \{/);
+  assert.match(sidebarSource, /if \(options\.bootstrapActive && agentKey === options\.bootstrapAgentKey\) \{\s*return "chats";/);
+  assert.match(sidebarSource, /isAssistantNavProjectAgent\(agent\)[\s\S]{0,80}return "assistants";/);
+  assert.match(sidebarSource, /isAssistantNavChatAgent\(agent\)[\s\S]{0,80}return "chats";/);
+  assert.match(sidebarSource, /chatItems\.some\([\s\S]{0,160}chat\.agentKey === agentKey && chat\.chatId === routeInfo\.chatId[\s\S]{0,100}return "chats";/);
+  assert.match(sidebarSource, /if \(routeInfo\.historyRequested\) \{\s*return "assistants";/);
+  assert.match(sidebarSource, /routeInfo\.newChatRequested[\s\S]{0,160}agentKey === options\.defaultChatAgentKey[\s\S]{0,100}return "chats";/);
+  assert.match(sidebarSource, /const navigationOwner = resolveSidebarNavigationOwner\([\s\S]*?activeNavigationRouteInfo[\s\S]*?chatNavigationAgentsByKey[\s\S]*?assistantNavChatItems/);
+  assert.match(sidebarSource, /const activeNavigationRouteInfo = pendingAgentKey\s*\? pendingRouteAgentInfo\s*:\s*currentRouteAgentInfo;/);
+  assert.match(sidebarSource, /function isChatsGroupActive\(\) \{\s*return navigationOwner === "chats";/);
+  assert.match(sidebarSource, /function isAssistantGroupActive\(\) \{\s*return navigationOwner === "assistants";/);
+  assert.match(sidebarSource, /active: isChatsGroupActive\(\),/);
+  assert.match(sidebarSource, /active: isAssistantGroupActive\(\),/);
+  assert.match(sidebarSource, /return renderAssistantChatRow\(chat, activeSidebarChatId, \{/);
+  assert.doesNotMatch(sidebarSource, /active: Boolean\(\s*activeChatsOverviewChatId/);
 });
 
 test("assistant sidebar awaiting chats use a right-side loading status", () => {

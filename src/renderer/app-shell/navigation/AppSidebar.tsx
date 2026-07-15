@@ -96,6 +96,15 @@ type SidebarGroupId = "assistants" | "chats" | "webs";
 
 type SidebarGroupState = Record<SidebarGroupId, boolean>;
 
+type SidebarNavigationOwner = "assistants" | "chats" | null;
+
+type AgentRouteInfo = {
+  agentKey: string;
+  chatId: string;
+  historyRequested: boolean;
+  newChatRequested: boolean;
+};
+
 const SETTINGS_SECTION_GROUPS: Array<{
   id: SettingsSectionGroupId;
   labelKey: TranslationKey;
@@ -516,10 +525,17 @@ function getRouteEmbedPath(route: string) {
   }
 }
 
-function readAgentInfoFromWebclientPath(pathWithQuery: string) {
+const EMPTY_AGENT_ROUTE_INFO: AgentRouteInfo = {
+  agentKey: "",
+  chatId: "",
+  historyRequested: false,
+  newChatRequested: false,
+};
+
+function readAgentInfoFromWebclientPath(pathWithQuery: string): AgentRouteInfo {
   const normalized = pathWithQuery.trim();
   if (!normalized) {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return EMPTY_AGENT_ROUTE_INFO;
   }
   try {
     const url = new URL(normalized, "http://agent-webclient.local");
@@ -528,13 +544,14 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string) {
       agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
       historyRequested: url.searchParams.get("history")?.trim() === "1",
+      newChatRequested: url.searchParams.has("newChat"),
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return EMPTY_AGENT_ROUTE_INFO;
   }
 }
 
-function readAgentRouteInfo(route: string) {
+function readAgentRouteInfo(route: string): AgentRouteInfo {
   const embeddedInfo = readAgentInfoFromWebclientPath(getRouteEmbedPath(route));
   if (embeddedInfo.agentKey || embeddedInfo.chatId) {
     return embeddedInfo;
@@ -545,7 +562,7 @@ function readAgentRouteInfo(route: string) {
   }
   const queryIndex = route.indexOf("?");
   if (queryIndex < 0) {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return EMPTY_AGENT_ROUTE_INFO;
   }
   try {
     const searchParams = new URLSearchParams(route.slice(queryIndex + 1));
@@ -553,10 +570,61 @@ function readAgentRouteInfo(route: string) {
       agentKey: searchParams.get("agentKey")?.trim() ?? "",
       chatId: searchParams.get("chatId")?.trim() ?? "",
       historyRequested: searchParams.get("history")?.trim() === "1",
+      newChatRequested: searchParams.has("newChat"),
     };
   } catch {
-    return { agentKey: "", chatId: "", historyRequested: false };
+    return EMPTY_AGENT_ROUTE_INFO;
   }
+}
+
+function resolveSidebarNavigationOwner(
+  routeInfo: AgentRouteInfo,
+  agentsByKey: ReadonlyMap<string, AssistantNavAgentItem>,
+  chatItems: readonly AssistantNavChatItem[],
+  options: {
+    bootstrapActive: boolean;
+    bootstrapAgentKey: string;
+    defaultChatAgentKey: string;
+  },
+): SidebarNavigationOwner {
+  const agentKey = routeInfo.agentKey;
+  if (!agentKey) {
+    return null;
+  }
+
+  if (options.bootstrapActive && agentKey === options.bootstrapAgentKey) {
+    return "chats";
+  }
+
+  const agent = agentsByKey.get(agentKey);
+  if (isAssistantNavProjectAgent(agent)) {
+    return "assistants";
+  }
+  if (isAssistantNavChatAgent(agent)) {
+    return "chats";
+  }
+
+  if (
+    routeInfo.chatId &&
+    chatItems.some(
+      (chat) => chat.agentKey === agentKey && chat.chatId === routeInfo.chatId,
+    )
+  ) {
+    return "chats";
+  }
+
+  if (routeInfo.historyRequested) {
+    return "assistants";
+  }
+
+  if (
+    routeInfo.newChatRequested &&
+    agentKey === options.defaultChatAgentKey
+  ) {
+    return "chats";
+  }
+
+  return null;
 }
 
 function createAgentRoute(agentKey: string) {
@@ -1033,14 +1101,15 @@ export function AppSidebar({
   const currentRouteAgentInfo = readAgentRouteInfo(displayCurrentRoute);
   const pendingRouteAgentInfo = pendingPath && !forcedActiveManagementRoute
     ? readAgentRouteInfo(pendingPath)
-    : { agentKey: "", chatId: "", historyRequested: false };
+    : EMPTY_AGENT_ROUTE_INFO;
   const currentAgentKey = currentRouteAgentInfo.agentKey;
   const currentChatId = currentRouteAgentInfo.chatId;
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
-  const pendingChatId = pendingRouteAgentInfo.chatId;
-  const activeSidebarAgentKey =
-    currentAgentKey ||
-    (pendingPath && !forcedActiveManagementRoute ? pendingAgentKey : "");
+  const activeNavigationRouteInfo = pendingAgentKey
+    ? pendingRouteAgentInfo
+    : currentRouteAgentInfo;
+  const activeSidebarAgentKey = activeNavigationRouteInfo.agentKey;
+  const activeSidebarChatId = activeNavigationRouteInfo.chatId;
   const normalizedBootstrapAgentKey = bootstrapAgentKey.trim();
   const normalizedBootstrapChatId = bootstrapChatId.trim();
   const showBootstrapGuideCard =
@@ -1069,6 +1138,16 @@ export function AppSidebar({
       [...assistantNavAgents, ...chatNavAgentOptions].map((agent) => [agent.agentKey, agent]),
     ),
     [assistantNavAgents, chatNavAgentOptions],
+  );
+  const navigationOwner = resolveSidebarNavigationOwner(
+    activeNavigationRouteInfo,
+    chatNavigationAgentsByKey,
+    assistantNavChatItems,
+    {
+      bootstrapActive,
+      bootstrapAgentKey: normalizedBootstrapAgentKey,
+      defaultChatAgentKey: resolvedChatDefaultAgentKey,
+    },
   );
   const chatStatusSummary = useMemo(
     () => ({
@@ -1099,9 +1178,9 @@ export function AppSidebar({
     ? t("sidebar.chats.withAgent", { name: resolvedChatDefaultAgent.displayName })
     : "";
   const activeChatsOverviewChatId = sidebarChatItems.some(
-    (chat) => chat.chatId === currentChatId,
+    (chat) => chat.chatId === activeSidebarChatId,
   )
-    ? currentChatId
+    ? activeSidebarChatId
     : "";
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(primaryAssistantNavAgents),
@@ -1214,14 +1293,16 @@ export function AppSidebar({
       return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
     }
 
-    if (activeChatsOverviewChatId) {
+    if (navigationOwner === "chats") {
       if (!isCollapsed && sidebarGroupState.chats) {
-        return createSidebarChatsChatFocusId(activeChatsOverviewChatId);
+        return activeChatsOverviewChatId
+          ? createSidebarChatsChatFocusId(activeChatsOverviewChatId)
+          : createSidebarGroupFocusId("chats");
       }
       return createSidebarGroupFocusId("chats");
     }
 
-    if (isAssistantGroupActive()) {
+    if (navigationOwner === "assistants") {
       if (
         !isCollapsed &&
         sidebarGroupState.assistants &&
@@ -1256,6 +1337,7 @@ export function AppSidebar({
     return createSidebarLinkFocusId(firstItem.orderKey);
   }, [
     activeSidebarAgentKey,
+    navigationOwner,
     currentPathname,
     currentRoute,
     isCollapsed,
@@ -2555,8 +2637,7 @@ export function AppSidebar({
     agentKey: string,
     chats: AssistantNavChatItem[] = [],
   ) {
-    const routeChatId =
-      currentChatId || (pendingPath && pendingChatId ? pendingChatId : "");
+    const routeChatId = activeSidebarChatId;
     if (routeChatId && chats.some((chat) => chat.chatId === routeChatId)) {
       return routeChatId;
     }
@@ -2602,14 +2683,11 @@ export function AppSidebar({
   }
 
   function isAssistantGroupActive() {
-    return (
-      displayCurrentPathname === "/service/agent-webclient" ||
-      displayCurrentPathname.startsWith("/agent/") ||
-      (!forcedActiveManagementRoute && Boolean(
-        pendingPath?.startsWith("/service/agent-webclient") ||
-          pendingPath?.startsWith("/agent/"),
-      ))
-    );
+    return navigationOwner === "assistants";
+  }
+
+  function isChatsGroupActive() {
+    return navigationOwner === "chats";
   }
 
   function isWebsiteGroupActive() {
@@ -2851,6 +2929,9 @@ export function AppSidebar({
 
   function renderChatsList(options: { roving?: boolean } = {}) {
     const roving = options.roving ?? true;
+    const bootstrapFallbackActive =
+      activeSidebarAgentKey === normalizedBootstrapAgentKey &&
+      !activeSidebarChatId;
     return (
       <div className="sidebar-chats-list" role="list">
         {showBootstrapChatFallback ? (
@@ -2862,16 +2943,12 @@ export function AppSidebar({
                 "sidebar-chats-item",
                 "sidebar-chats-bootstrap-fallback",
                 "is-bootstrap-guide",
-                currentAgentKey === normalizedBootstrapAgentKey && !currentChatId
-                  ? "is-active"
-                  : "",
+                bootstrapFallbackActive ? "is-active" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
               aria-current={
-                currentAgentKey === normalizedBootstrapAgentKey && !currentChatId
-                  ? "page"
-                  : undefined
+                bootstrapFallbackActive ? "page" : undefined
               }
               onClick={handleBootstrapGuideOpenChat}
               {...getSidebarRovingItemProps(
@@ -2894,7 +2971,7 @@ export function AppSidebar({
               chat.chatId === normalizedBootstrapChatId &&
               chat.agentKey === normalizedBootstrapAgentKey
             );
-            return renderAssistantChatRow(chat, currentChatId, {
+            return renderAssistantChatRow(chat, activeSidebarChatId, {
               roving,
               focusId: createSidebarChatsChatFocusId(chat.chatId),
               navigationKind: "chats-chat",
@@ -2942,10 +3019,7 @@ export function AppSidebar({
       label: item.label,
       collapsedLabel: item.collapsedLabel,
       icon: item.icon,
-      active: Boolean(
-        activeChatsOverviewChatId ||
-        (bootstrapActive && currentAgentKey === normalizedBootstrapAgentKey),
-      ),
+      active: isChatsGroupActive(),
       status: chatStatusSummary,
       children: [],
       headerLabel: (
