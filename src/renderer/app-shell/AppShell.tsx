@@ -493,6 +493,7 @@ export function AppShell() {
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
+  const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const chatRuntimeAgent = useMemo(
@@ -942,6 +943,7 @@ export function AppShell() {
         setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
+        setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
       }
     } catch {
       // Keep the current live list while agent-platform is still warming up.
@@ -981,6 +983,7 @@ export function AppShell() {
       setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
+      setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
     });
 
     return () => {
@@ -1140,6 +1143,17 @@ export function AppShell() {
     } catch {
       // Keep the last usable settings if the bridge is not ready yet.
     }
+  }
+
+  async function saveChatsDefaultAgent(agentKey: string) {
+    const normalizedAgentKey = agentKey.trim();
+    if (!chatNavAgentOptions.some((agent) => agent.agentKey === normalizedAgentKey)) {
+      throw new Error(t("sidebar.chats.defaultAgentUnavailable"));
+    }
+    const settings = await window.electronAPI.assistant.saveSettings({
+      chatDefaultAgentKey: normalizedAgentKey,
+    });
+    setAssistantSettings(settings);
   }
 
   async function refreshThemePreferenceFromCanonical() {
@@ -3003,6 +3017,7 @@ export function AppShell() {
           faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
           assistantNavChatItems={assistantNavChatItems}
+          assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}
           chatNavAgentOptions={chatNavAgentOptions}
@@ -3021,6 +3036,7 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onChatsDefaultAgentChange={saveChatsDefaultAgent}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateWebsiteItem={createWebsiteItem}
           onImportWebappItem={importWebappItem}

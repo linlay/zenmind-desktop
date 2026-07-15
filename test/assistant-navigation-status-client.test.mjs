@@ -11,6 +11,7 @@ const {
   applyAssistantNavigationChatPush,
   applyAssistantNavigationPush,
   buildAssistantCopilotAgentsFromPlatformAgents,
+  buildAssistantNavigationChatsSnapshotFromPlatform,
   buildAssistantNavigationChatsFromPlatform,
   buildAssistantNavigationAgentsFromPlatformAgents,
   enrichNavigationAgentsWithGitBranches,
@@ -190,13 +191,14 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 8 });
+  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 9 });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
     ["react-newest", "react-0", "react-1", "react-2", "react-3", "react-4", "react-5", "react-6"],
   );
   assert.equal(first.chatItems[0].isRead, false);
   assert.equal(first.chatItems[0].hasActiveRun, false);
+  assert.equal(first.chatItemsHasMore, true);
   const connected = client.getLiveStatus();
   assert.equal(connected.phase, "connected");
   assert.equal(connected.source, "desktop-nav");
@@ -522,6 +524,24 @@ test("assistant navigation chat mapper preserves server order while still filter
   ]);
 
   assert.deepEqual(chats.map((chat) => chat.chatId), ["second", "first"]);
+});
+
+test("assistant navigation probes the ninth eligible Chat without exposing it in the sidebar snapshot", () => {
+  const snapshot = buildAssistantNavigationChatsSnapshotFromPlatform(
+    Array.from({ length: 9 }, (_item, index) => ({
+      chatId: `chat-${index + 1}`,
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + index,
+      updatedAt: EPOCH_MS + index,
+    })),
+  );
+
+  assert.equal(snapshot.chatItems.length, 8);
+  assert.equal(snapshot.chatItemsHasMore, true);
+  assert.deepEqual(
+    snapshot.chatItems.map((chat) => chat.chatId),
+    ["chat-1", "chat-2", "chat-3", "chat-4", "chat-5", "chat-6", "chat-7", "chat-8"],
+  );
 });
 
 test("assistant navigation keeps Agent Mode separate from awaiting mode", () => {

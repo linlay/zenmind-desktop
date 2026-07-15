@@ -254,6 +254,7 @@ export function normalizeAssistantNavAgentItemsResult(
     ...result,
     items: normalizeAssistantNavAgents(result.items),
     chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }),
+    chatItemsHasMore: result.chatItemsHasMore === true,
     ...(activityItems ? { activityItems } : {})
   };
 }

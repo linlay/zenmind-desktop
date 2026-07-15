@@ -276,6 +276,7 @@ export interface AssistantNavAgentItemsResult {
   items: AssistantNavAgentItem[];
   activityItems?: AssistantNavAgentItem[];
   chatItems: AssistantNavChatItem[];
+  chatItemsHasMore: boolean;
   message: string;
   updatedAt: EpochMilliseconds;
 }

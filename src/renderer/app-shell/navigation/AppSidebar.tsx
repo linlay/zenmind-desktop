@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -854,6 +855,10 @@ function createSidebarChatsChatFocusId(chatId: string) {
   return `chats-chat:${chatId}`;
 }
 
+function createSidebarChatsMoreFocusId() {
+  return "chats-more";
+}
+
 function createSidebarWebFocusId(entryKey: WebEntryKey | string) {
   return `web:${entryKey}`;
 }
@@ -940,6 +945,7 @@ type AppSidebarProps = {
   webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavChatItems?: AssistantNavChatItem[];
+  assistantNavChatItemsHasMore?: boolean;
   assistantNavAgentsLoaded?: boolean;
   websitesLoaded?: boolean;
   chatNavAgentOptions?: AssistantNavAgentItem[];
@@ -958,6 +964,7 @@ type AppSidebarProps = {
   onDesktopSsoLogout?: () => void;
   onRefreshDesktopSsoStatus?: () => Promise<void> | void;
   onRefreshAssistantNavAgents?: () => Promise<void> | void;
+  onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (
     input: WebsiteInput,
@@ -995,6 +1002,7 @@ export function AppSidebar({
   webItems,
   assistantNavAgents = [],
   assistantNavChatItems = [],
+  assistantNavChatItemsHasMore = false,
   assistantNavAgentsLoaded = true,
   websitesLoaded = true,
   chatNavAgentOptions = [],
@@ -1013,6 +1021,7 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
+  onChatsDefaultAgentChange,
   onRefreshCopilotAgentOptions,
   onCreateWebsiteItem,
   onImportWebappItem,
@@ -1038,6 +1047,8 @@ export function AppSidebar({
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
+  const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
+  const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
@@ -1174,9 +1185,10 @@ export function AppSidebar({
   const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);
   const chatDefaultAgentUnavailable =
     assistantNavAgentsLoaded && !chatDefaultAgentAvailable;
-  const chatAgentInlineLabel = resolvedChatDefaultAgent
-    ? t("sidebar.chats.withAgent", { name: resolvedChatDefaultAgent.displayName })
-    : "";
+  const chatsHistoryAvailable =
+    assistantNavChatItemsHasMore &&
+    Boolean(resolvedChatDefaultAgentKey) &&
+    !chatDefaultAgentUnavailable;
   const activeChatsOverviewChatId = sidebarChatItems.some(
     (chat) => chat.chatId === activeSidebarChatId,
   )
@@ -2043,6 +2055,9 @@ export function AppSidebar({
     if (kind === "chats-chat") {
       return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
     }
+    if (kind === "chats-more") {
+      return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
+    }
     if (kind === "chat" || kind === "agent-more") {
       const agentKey = element.dataset.sidebarAgentKey || "";
       return agentKey ? focusSidebarRovingItemById(createSidebarAgentFocusId(agentKey)) : false;
@@ -2404,6 +2419,41 @@ export function AppSidebar({
       return;
     }
     requestNavigate(createAgentNewChatRoute(resolvedChatDefaultAgentKey), {
+      retriggerAgentRoute: true,
+    });
+  }
+
+  async function handleChatsDefaultAgentChange(
+    event: ChangeEvent<HTMLSelectElement>,
+  ) {
+    event.stopPropagation();
+    const nextAgentKey = event.target.value.trim();
+    if (
+      !nextAgentKey ||
+      nextAgentKey === resolvedChatDefaultAgentKey ||
+      !chatNavAgentOptions.some((agent) => agent.agentKey === nextAgentKey)
+    ) {
+      return;
+    }
+
+    setChatDefaultAgentError("");
+    setChatDefaultAgentPending(true);
+    try {
+      await onChatsDefaultAgentChange?.(nextAgentKey);
+    } catch {
+      setChatDefaultAgentError(t("sidebar.chats.defaultAgentSaveFailed"));
+    } finally {
+      setChatDefaultAgentPending(false);
+    }
+  }
+
+  function handleChatsOpenHistory(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!chatsHistoryAvailable || !resolvedChatDefaultAgentKey) {
+      return;
+    }
+    requestNavigate(createAgentHistoryRoute(resolvedChatDefaultAgentKey), {
       retriggerAgentRoute: true,
     });
   }
@@ -2866,6 +2916,44 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsDefaultAgentSelect(options: { inPopover?: boolean } = {}) {
+    const selectedAgentKey = chatNavAgentOptions.some(
+      (agent) => agent.agentKey === resolvedChatDefaultAgentKey,
+    )
+      ? resolvedChatDefaultAgentKey
+      : "";
+    const disabled =
+      chatNavAgentOptions.length === 0 ||
+      chatDefaultAgentPending ||
+      !onChatsDefaultAgentChange;
+    return (
+      <select
+        className={[
+          "sidebar-chats-agent-select",
+          options.inPopover ? "is-in-popover" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        value={selectedAgentKey}
+        aria-label={t("settings.chat.defaultAgent")}
+        disabled={disabled}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => void handleChatsDefaultAgentChange(event)}
+      >
+        {!selectedAgentKey ? (
+          <option value="">{t("sidebar.chats.defaultAgentUnavailable")}</option>
+        ) : null}
+        {chatNavAgentOptions.map((agent) => (
+          <option key={agent.agentKey} value={agent.agentKey}>
+            {agent.displayName}
+            {agent.role ? ` · ${agent.role}` : ""}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
   function renderChatHoverCard(
     agent: AssistantNavAgentItem,
     chat: AssistantNavChatItem,
@@ -3009,6 +3097,28 @@ export function AppSidebar({
             <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
           )
         ) : null}
+        {chatsHistoryAvailable ? (
+          <button
+            type="button"
+            className="worker-chat-more assistant-worker-more sidebar-chats-more"
+            {...getSidebarRovingItemProps(
+              createSidebarChatsMoreFocusId(),
+              roving,
+            )}
+            data-sidebar-nav-kind={roving ? "chats-more" : undefined}
+            data-sidebar-agent-key={
+              roving ? resolvedChatDefaultAgentKey : undefined
+            }
+            onClick={handleChatsOpenHistory}
+          >
+            {t("sidebar.chats.viewMoreHistory")}
+          </button>
+        ) : null}
+        {chatDefaultAgentError ? (
+          <div className="sidebar-chats-agent-error" role="alert">
+            {chatDefaultAgentError}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -3027,15 +3137,12 @@ export function AppSidebar({
           {item.label}
         </span>
       ),
-      headerSupplement: chatAgentInlineLabel ? (
-        <span className="sidebar-chats-agent-label" aria-hidden="true">
-          {chatAgentInlineLabel}
-        </span>
-      ) : undefined,
+      headerSupplement: renderChatsDefaultAgentSelect(),
       headerActions: renderChatsNewChatButton(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
           <span>{item.label}</span>
+          {renderChatsDefaultAgentSelect({ inPopover: true })}
           {renderChatsNewChatButton({ inPopover: true })}
         </div>
       ),
@@ -3679,23 +3786,21 @@ export function AppSidebar({
           "data-sidebar-nav-kind": "group",
           "data-sidebar-group-id": args.groupId,
         }}
+        headerSupplement={args.headerSupplement}
         header={
-          <>
-            <span className="sidebar-group-heading-main">
-              {args.headerLabel ?? (
-                <span className="sidebar-link-label">{args.label}</span>
-              )}
-              <ArrowIcon
-                className="sidebar-group-heading-arrow"
-                expanded={expanded}
-                width={18}
-              />
-              {!expanded
-                ? renderSidebarGroupStatusBadges(args.groupId, args.status)
-                : null}
-            </span>
-            {args.headerSupplement}
-          </>
+          <span className="sidebar-group-heading-main">
+            {args.headerLabel ?? (
+              <span className="sidebar-link-label">{args.label}</span>
+            )}
+            <ArrowIcon
+              className="sidebar-group-heading-arrow"
+              expanded={expanded}
+              width={18}
+            />
+            {!expanded
+              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
+              : null}
+          </span>
         }
         headerActions={
           <>

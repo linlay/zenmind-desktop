@@ -36,6 +36,12 @@
   align-items: center;
 }
 
+.Collapse-headerSupplement {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
 .Collapse-content {
   overflow: hidden;
   opacity: 0;

@@ -963,6 +963,7 @@ export class AgentPlatformAssistantBridge {
         ok: false,
         items: [],
         chatItems: [],
+        chatItemsHasMore: false,
         message: availability.message,
         updatedAt: nowEpochMillis()
       };
@@ -971,6 +972,7 @@ export class AgentPlatformAssistantBridge {
       ok: true,
       items: await readAssistantNavigationAgentsFromPlatform(availability.baseUrl, availability.token),
       chatItems: [],
+      chatItemsHasMore: false,
       message: t("assistant.navigationStatusRead"),
       updatedAt: nowEpochMillis()
     };
@@ -983,6 +985,7 @@ export class AgentPlatformAssistantBridge {
         ok: false,
         items: [],
         chatItems: [],
+        chatItemsHasMore: false,
         message: availability.message,
         updatedAt: nowEpochMillis()
       };
@@ -991,6 +994,7 @@ export class AgentPlatformAssistantBridge {
       ok: true,
       items: await readAssistantCopilotAgentsFromPlatform(availability.baseUrl, availability.token),
       chatItems: [],
+      chatItemsHasMore: false,
       message: t("assistant.copilotAgentsRead"),
       updatedAt: nowEpochMillis()
     };

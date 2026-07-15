@@ -319,6 +319,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         ok: false,
         items: [],
         chatItems: [],
+        chatItemsHasMore: false,
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
         updatedAt: nowEpochMillis()
       };
@@ -351,6 +352,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         ok: false,
         items: [],
         chatItems: [],
+        chatItemsHasMore: false,
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
         updatedAt: nowEpochMillis()
       };

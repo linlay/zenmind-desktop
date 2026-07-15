@@ -534,6 +534,7 @@
 .sidebar-chats-collapsed-head {
   display: flex;
   align-items: center;
+  gap: 6px;
   justify-content: space-between;
   min-height: 28px;
   padding: 0 4px 2px 8px;
@@ -543,27 +544,89 @@
 }
 
 .sidebar-chats-new-button.is-in-popover {
-  margin-left: 8px;
+  margin-left: 0;
 }
 
-.sidebar-chats-agent-label {
+.sidebar-nav-group>.Collapse-header .Collapse-headerSupplement {
+  display: inline-flex;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.sidebar-chats-agent-select {
+  width: 100%;
+  min-width: 72px;
+  max-width: 156px;
+  height: 24px;
+  padding: 0 22px 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  appearance: auto;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.sidebar-chats-agent-select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink-muted) 24%, transparent);
+  background: color-mix(in srgb, var(--ink-muted) 8%, transparent);
+  color: var(--ink);
+}
+
+.sidebar-chats-agent-select:focus-visible {
+  outline: none;
+  border-color: rgba(22, 119, 255, 0.62);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.18);
+}
+
+.sidebar-chats-agent-select:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.sidebar-chats-agent-select.is-in-popover {
+  flex: 1 1 auto;
+  max-width: 164px;
+}
+
+.sidebar-chats-agent-error {
+  padding: 0 10px 8px;
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.sidebar-chats-more {
+  margin-top: 2px;
+}
+
+.sidebar-chats-collapsed-head > span:first-child {
+  flex: 0 0 auto;
+}
+
+:root[data-theme="dark"] .sidebar-chats-agent-select {
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] .sidebar-chats-agent-select:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .sidebar-chats-agent-select:focus-visible {
+  border-color: rgba(79, 136, 255, 0.78);
+  box-shadow: 0 0 0 2px rgba(79, 136, 255, 0.22);
+}
+
+/* The collapsed Chats popover still exposes the same default-agent selector. */
+.sidebar-chats-collapsed-head .sidebar-chats-agent-select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0;
-  visibility: hidden;
-  color: var(--ink-muted);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.35;
-  text-align: left;
-}
-
-.sidebar-nav-group>.Collapse-header:hover .sidebar-chats-agent-label {
-  opacity: 1;
-  visibility: visible;
 }
 
 .sidebar-chat-hover-card-surface,

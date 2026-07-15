@@ -170,6 +170,7 @@ const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const NAVIGATION_AGENT_HISTORY_LIMIT = 50;
 const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
 const NAVIGATION_CHAT_LIMIT = 8;
+const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT + 1;
 const NAVIGATION_CHAT_AGENT_MODE = "REACT";
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 const NAVIGATION_WS_REQUEST_TIMEOUT_MS = 8_000;
@@ -789,9 +790,16 @@ function mapNavigationChat(
   };
 }
 
-export function buildAssistantNavigationChatsFromPlatform(chats: unknown): AssistantNavChatItem[] {
+export type AssistantNavigationChatsSnapshot = {
+  chatItems: AssistantNavChatItem[];
+  chatItemsHasMore: boolean;
+};
+
+export function buildAssistantNavigationChatsSnapshotFromPlatform(
+  chats: unknown,
+): AssistantNavigationChatsSnapshot {
   if (!Array.isArray(chats)) {
-    return [];
+    return { chatItems: [], chatItemsHasMore: false };
   }
   const validChats: AssistantNavChatItem[] = [];
   for (const [index, rawChat] of chats.entries()) {
@@ -801,7 +809,14 @@ export function buildAssistantNavigationChatsFromPlatform(chats: unknown): Assis
     }
     validChats.push(chat);
   }
-  return validChats.slice(0, NAVIGATION_CHAT_LIMIT);
+  return {
+    chatItems: validChats.slice(0, NAVIGATION_CHAT_LIMIT),
+    chatItemsHasMore: validChats.length > NAVIGATION_CHAT_LIMIT,
+  };
+}
+
+export function buildAssistantNavigationChatsFromPlatform(chats: unknown): AssistantNavChatItem[] {
+  return buildAssistantNavigationChatsSnapshotFromPlatform(chats).chatItems;
 }
 
 function isWorkspaceProjectAgent(agent: AssistantNavAgentItem) {
@@ -1447,6 +1462,7 @@ export class AssistantNavigationStatusClient {
     items: [],
     activityItems: [],
     chatItems: [],
+    chatItemsHasMore: false,
     message: t("assistant.navigationStatusUninitialized"),
     updatedAt: nowEpochMillis()
   };
@@ -1549,6 +1565,7 @@ export class AssistantNavigationStatusClient {
           ok: false,
           items: [],
           chatItems: [],
+          chatItemsHasMore: false,
           message,
           updatedAt: nowEpochMillis()
         });
@@ -1569,6 +1586,7 @@ export class AssistantNavigationStatusClient {
           ok: false,
           items: [],
           chatItems: [],
+          chatItemsHasMore: false,
           message,
           updatedAt: nowEpochMillis()
         });
@@ -1584,12 +1602,12 @@ export class AssistantNavigationStatusClient {
         items
       );
       await this.connectWebSocket(baseUrl, token);
-      const chatItems = await this.requestNavigationChats();
+      const chatSnapshot = await this.requestNavigationChats();
       this.setSnapshot({
         ok: true,
         items,
         activityItems,
-        chatItems,
+        ...chatSnapshot,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowEpochMillis()
       });
@@ -1609,6 +1627,7 @@ export class AssistantNavigationStatusClient {
         ok: false,
         items: [],
         chatItems: [],
+        chatItemsHasMore: false,
         message,
         updatedAt: nowEpochMillis()
       });
@@ -1691,7 +1710,7 @@ export class AssistantNavigationStatusClient {
     return this.wsOpenPromise;
   }
 
-  private async requestNavigationChats(): Promise<AssistantNavChatItem[]> {
+  private async requestNavigationChats(): Promise<AssistantNavigationChatsSnapshot> {
     const socket = this.ws;
     if (!socket) {
       throw new Error("agent-platform WebSocket is unavailable");
@@ -1710,7 +1729,7 @@ export class AssistantNavigationStatusClient {
           id,
           payload: {
             mode: NAVIGATION_CHAT_AGENT_MODE,
-            limit: NAVIGATION_CHAT_LIMIT,
+            limit: NAVIGATION_CHAT_PROBE_LIMIT,
           },
         }));
         this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats" });
@@ -1720,7 +1739,7 @@ export class AssistantNavigationStatusClient {
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
-    return buildAssistantNavigationChatsFromPlatform(
+    return buildAssistantNavigationChatsSnapshotFromPlatform(
       unwrapApiResponse<unknown[]>(frame),
     );
   }
@@ -1796,6 +1815,7 @@ export class AssistantNavigationStatusClient {
         items: next.items,
         activityItems: nextActivity.items,
         chatItems: nextChats.items,
+        chatItemsHasMore: this.latestResult.chatItemsHasMore,
         message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowEpochMillis()
       });

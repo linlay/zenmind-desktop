@@ -24,6 +24,21 @@ function readEpochMillis(value) {
     : undefined;
 }
 
+function requireAgentPlatformEpochMillis(value, field) {
+  const epochMillis = readEpochMillis(value);
+  if (epochMillis === undefined || (epochMillis !== 0 && epochMillis < 1_000_000_000_000)) {
+    throw new TypeError(`invalid agent-platform epoch milliseconds: ${field}`);
+  }
+  return epochMillis;
+}
+
+function parseOptionalNullableAgentPlatformEpochMillis(value, field) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  return requireAgentPlatformEpochMillis(value, field);
+}
+
 function loadAssistantNavigationModule() {
   const sourcePath = path.join(projectRoot, "src", "renderer", "assistantNavigation.ts");
   const source = fs.readFileSync(sourcePath, "utf8");
@@ -39,7 +54,11 @@ function loadAssistantNavigationModule() {
   const fn = new Function("exports", "require", "module", "__filename", "__dirname", outputText);
   fn(mod.exports, (specifier) => {
     if (specifier === "../shared/time-contract") {
-      return { readEpochMillis };
+      return {
+        readEpochMillis,
+        requireAgentPlatformEpochMillis,
+        parseOptionalNullableAgentPlatformEpochMillis,
+      };
     }
     return require(specifier);
   }, mod, sourcePath, path.dirname(sourcePath));
@@ -54,6 +73,7 @@ const {
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
   normalizeAssistantNavAgents,
+  normalizeAssistantNavAgentItemsResult,
   resolveAssistantNavChatRuntimeAgent,
 } = loadAssistantNavigationModule();
 
@@ -63,6 +83,28 @@ test("assistant nav maps awaiting modes to the shared chat status labels", () =>
   assert.equal(getAssistantAwaitingStatusKey("form"), "sidebar.assistants.awaitingStatus.form");
   assert.equal(getAssistantAwaitingStatusKey("approval"), "sidebar.assistants.awaitingStatus.approval");
   assert.equal(getAssistantAwaitingStatusKey(), "kanban.run.awaitingApproval");
+});
+
+test("assistant nav normalizes missing Chats overflow metadata to false", () => {
+  const baseResult = {
+    ok: true,
+    items: [],
+    chatItems: [],
+    message: "ok",
+    updatedAt: TEST_EPOCH_MILLIS,
+  };
+
+  assert.equal(
+    normalizeAssistantNavAgentItemsResult(baseResult).chatItemsHasMore,
+    false,
+  );
+  assert.equal(
+    normalizeAssistantNavAgentItemsResult({
+      ...baseResult,
+      chatItemsHasMore: true,
+    }).chatItemsHasMore,
+    true,
+  );
 });
 
 function chat(overrides) {

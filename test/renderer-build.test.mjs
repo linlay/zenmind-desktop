@@ -1644,7 +1644,7 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   assert.match(appShell, /setChatNavAgentOptions\(getChatNavigationAgentOptions\(navigationItems\)\)/);
 });
 
-test("Chats sidebar renders global chatItems without a history entry", () => {
+test("Chats sidebar retains global chatItems and adds a default-agent history entry", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1659,11 +1659,14 @@ test("Chats sidebar renders global chatItems without a history entry", () => {
   );
 
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
+  assert.match(appShell, /assistantNavChatItemsHasMore=\{assistantNavChatItemsHasMore\}/);
   assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, 8\)/);
   assert.match(chatsListSource, /sidebarChatItems\.map\(\(chat\) =>/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey, chat\.chatId\)/);
   assert.doesNotMatch(chatsListSource, /recentChats/);
-  assert.doesNotMatch(chatsListSource, /worker-chat-more assistant-worker-more/);
+  assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
+  assert.match(chatsListSource, /worker-chat-more assistant-worker-more sidebar-chats-more/);
+  assert.match(sidebarSource, /createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);
 });
 
 test("Chats sidebar reuses the Projects chat row status and unread layout", () => {
@@ -2680,7 +2683,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
 
-test("Chats sidebar entry is an expanded group using the configured Chat default agent", () => {
+test("Chats sidebar exposes a persistent default-agent Select and per-agent history", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -2689,128 +2692,39 @@ test("Chats sidebar entry is an expanded group using the configured Chat default
     "AppSidebar.tsx",
   );
   const appShell = readAppShellSource();
-  const settingsStore = readSourceFile("src", "main", "assistant", "core", "settings-store.ts");
-  const profileStore = readSourceFile("src", "main", "desktop-profile-store.ts");
-  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
-  const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
+  const collapse = readSourceFile("src", "renderer", "components", "Collapse", "index.tsx");
   const styles = readRendererStyles();
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(sidebarSource, /const chatsNavItemBase[\s\S]*?orderKey:\s*"chats"[\s\S]*?entryType:\s*"chats"/);
-  assert.doesNotMatch(
-    sidebarSource.match(/const chatsNavItemBase[\s\S]*?};/)?.[0] ?? "",
-    /icon:/,
-  );
-  assert.match(sidebarSource, /assistantNavChatItems\?: AssistantNavChatItem\[\]/);
-  assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, 8\)/);
-  assert.match(sidebarSource, /type SidebarGroupId = "assistants" \| "chats" \| "webs"/);
-  assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{[\s\S]*?chats: true,/);
-  assert.match(sidebarSource, /function renderChatsEntry\(item: SidebarChatsEntry\)/);
-  assert.match(sidebarSource, /renderSidebarGroup\(\{[\s\S]*?groupId: "chats"/);
-  assert.match(sidebarSource, /function renderChatsList\(options: \{ roving\?: boolean \} = \{\}\)/);
-  assert.match(sidebarSource, /className="sidebar-chats-list"/);
-  assert.match(sidebarSource, /function renderChatHoverCard\(/);
-  assert.match(sidebarSource, /className="sidebar-chat-hover-card"/);
-  assert.match(sidebarSource, /closeOnOutsideClick=\{false\}/);
-  const chatsListSource = sidebarSource.slice(
-    sidebarSource.indexOf("function renderChatsList"),
-    sidebarSource.indexOf("function renderChatsEntry"),
-  );
-  const chatHoverCardSource = sidebarSource.slice(
-    sidebarSource.indexOf("function renderChatHoverCard"),
-    sidebarSource.indexOf("function renderChatsList"),
-  );
-  assert.doesNotMatch(chatsListSource, /sidebar-chats-agent/);
-  assert.match(chatHoverCardSource, /chat\.createdAt/);
-  assert.match(chatHoverCardSource, /agent\.gitBranch/);
-  assert.match(sidebarSource, /chatNavAgentOptions\?: AssistantNavAgentItem\[\]/);
-  assert.match(
-    sidebarSource,
-    /const chatAgentInlineLabel = resolvedChatDefaultAgent\s*\?\s*t\(\s*"sidebar\.chats\.withAgent",\s*\{\s*name:\s*resolvedChatDefaultAgent\.displayName\s*\}\s*\)\s*:\s*"";/,
-  );
-  const chatsEntrySource = sidebarSource.slice(
-    sidebarSource.indexOf("function renderChatsEntry"),
-    sidebarSource.indexOf("function renderSidebarChildLink"),
-  );
-  assert.match(
-    chatsEntrySource,
-    /headerSupplement: chatAgentInlineLabel \? \([\s\S]*?<span className="sidebar-chats-agent-label" aria-hidden="true">\s*\{chatAgentInlineLabel\}\s*<\/span>[\s\S]*?\) : undefined,/,
-  );
-  const sidebarGroupSource = sidebarSource.slice(
-    sidebarSource.indexOf("function renderSidebarGroup"),
-    sidebarSource.indexOf("function renderPrimaryNavEntry"),
-  );
-  const expandedGroupStart = sidebarGroupSource.indexOf("<Collapse");
-  assert.ok(expandedGroupStart >= 0, "missing expanded sidebar group branch");
-  assert.match(sidebarGroupSource, /headerSupplement\?: ReactNode;/);
-  assert.doesNotMatch(
-    sidebarGroupSource.slice(0, expandedGroupStart),
-    /\{args\.headerSupplement\}/,
-  );
-  assert.match(
-    sidebarGroupSource.slice(expandedGroupStart),
-    /<ArrowIcon[\s\S]*?className="sidebar-group-heading-arrow"[\s\S]*?\/>[\s\S]*?\{args\.headerSupplement\}/,
-  );
-  assert.doesNotMatch(sidebarSource, /renderChatsSupportPopover|chatSupportLabel/);
-  assert.doesNotMatch(sidebarSource, /handleSelectChatDefaultAgent/);
-  assert.doesNotMatch(sidebarSource, /onChatDefaultAgentChange/);
-  assert.doesNotMatch(sidebarSource, /chatDefaultAgentPending/);
-  assert.doesNotMatch(appShell, /saveChatDefaultAgent|onChatDefaultAgentChange/);
-  assert.doesNotMatch(styles, /sidebar-chats-support-(?:popover|title|caption|options?|option)/);
-  const chatAgentLabelRule = styles.match(
-    /^\.sidebar-chats-agent-label\s*\{(?<body>[\s\S]*?)^\}/m,
-  )?.groups?.body;
-  assert.ok(chatAgentLabelRule, "missing .sidebar-chats-agent-label rule");
-  assert.match(chatAgentLabelRule, /flex:\s*1 1 auto;/);
-  assert.match(chatAgentLabelRule, /min-width:\s*0;/);
-  assert.match(chatAgentLabelRule, /overflow:\s*hidden;/);
-  assert.match(chatAgentLabelRule, /text-overflow:\s*ellipsis;/);
-  assert.match(chatAgentLabelRule, /white-space:\s*nowrap;/);
-  assert.match(chatAgentLabelRule, /opacity:\s*0;/);
-  assert.match(chatAgentLabelRule, /visibility:\s*hidden;/);
-  assert.match(
-    styles,
-    /\.sidebar-nav-group>\.Collapse-header:hover \.sidebar-chats-agent-label\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?visibility:\s*visible;/,
-  );
-  assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
-  assert.match(sidebarSource, /function handleChatsNewChat[\s\S]*?createAgentNewChatRoute\(resolvedChatDefaultAgentKey\)/);
-  assert.match(sidebarSource, /const chatStatusSummary = useMemo\([\s\S]*?sidebarChatItems\.filter\(\(chat\) => !chat\.isRead\)[\s\S]*?sidebarChatItems\.filter\(\(chat\) => chat\.hasPendingAwaiting\)/);
-  assert.match(sidebarSource, /function getChatHoverAgent\(chat: AssistantNavChatItem\): AssistantNavAgentItem/);
-  assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey, chat\.chatId\)/);
-  assert.doesNotMatch(chatsListSource, /worker-chat-more assistant-worker-more/);
-  assert.doesNotMatch(chatsListSource, /createAgentHistoryRoute/);
-  assert.match(sidebarSource, /chatDefaultAgentUnavailable/);
-  assert.match(appShell, /chatDefaultAgentKey=\{chatRuntimeAgent\.agentKey\}/);
-  assert.match(appShell, /bootstrapActive=\{chatRuntimeAgent\.bootstrapActive\}/);
-  assert.match(appShell, /bootstrapChatId=\{assistantSettings\?\.bootstrapChatId\}/);
-  assert.match(appShell, /setChatNavAgentOptions\(getChatNavigationAgentOptions\(navigationItems\)\)/);
-  assert.match(appShell, /saveSettings\(\{ chatDefaultAgentKey: fallbackAgentKey \}\)/);
-  assert.match(sidebarSource, /const resolvedChatDefaultAgent = chatDefaultAgent;/);
-  assert.match(assistantNavigation, /export function getAssistantNavRecentChatsOverview/);
-  assert.match(assistantNavigation, /createdAt: toScalarText\(record\.createdAt\)/);
-  assert.match(assistantNavigation, /gitBranch: toText\(record\.gitBranch\) \|\| undefined/);
-  assert.match(assistantNavigation, /\.slice\(0, normalizedLimit\)/);
-  assert.match(
-    settingsStore,
-    /chatDefaultAgentKey:\s*profile\.assistant\.chat\.agentKey \|\| desktopInitAssistant\.chatDefaultAgentKey/,
-  );
-  assert.match(settingsStore, /chat:\s*\{[\s\S]*?agentKey: next\.chatDefaultAgentKey/);
-  assert.match(profileStore, /chat:\s*\{\s*agentKey: string;/);
-  assert.match(settingsPage, /handleSelectChatDefaultAgentKey/);
-  assert.match(settingsPage, /window\.electronAPI\.assistant\.listNavigationAgents\(\)/);
-  assert.match(settingsPage, /function readChatAgentOptions/);
-  assert.match(settingsPage, /\.filter\(isAssistantNavChatAgent\)/);
-  assert.match(settingsPage, /chatAgentOptions\.find/);
-  assert.match(settingsPage, /chatDefaultAgentKey/);
-  assert.match(zhCN, /"nav\.chats": "对话"/);
-  assert.doesNotMatch(zhCN, /"sidebar\.chats\.switchAgent"/);
-  assert.match(zhCN, /"sidebar\.chats\.withAgent": "与 \{name\} 对话"/);
-  assert.match(zhCN, /"sidebar\.chats\.card\.askedAt": "提问于：\{time\}"/);
-  assert.match(enUS, /"nav\.chats": "Chats"/);
-  assert.doesNotMatch(enUS, /"sidebar\.chats\.switchAgent"/);
-  assert.match(enUS, /"sidebar\.chats\.withAgent": "Chat with \{name\}"/);
-  assert.match(enUS, /"sidebar\.chats\.card\.askedAt": "Asked: \{time\}"/);
+  assert.match(sidebarSource, /assistantNavChatItemsHasMore\?: boolean/);
+  assert.match(sidebarSource, /onChatsDefaultAgentChange\?: \(agentKey: string\) => Promise<void> \| void/);
+  assert.match(sidebarSource, /function renderChatsDefaultAgentSelect/);
+  assert.match(sidebarSource, /<select[\s\S]*?className=\{\[[\s\S]*?"sidebar-chats-agent-select"/);
+  assert.match(sidebarSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(sidebarSource, /function handleChatsDefaultAgentChange[\s\S]*?onChatsDefaultAgentChange\?\.\(nextAgentKey\)/);
+  assert.match(sidebarSource, /catch \{\s*setChatDefaultAgentError\(t\("sidebar\.chats\.defaultAgentSaveFailed"\)\);/);
+  assert.match(sidebarSource, /chatDefaultAgentPending/);
+  assert.match(sidebarSource, /headerSupplement: renderChatsDefaultAgentSelect\(\)/);
+  assert.match(sidebarSource, /renderChatsDefaultAgentSelect\(\{ inPopover: true \}\)/);
+  assert.match(collapse, /headerSupplement\?: React\.ReactNode/);
+  assert.match(collapse, /<div className="Collapse-headerSupplement">\{headerSupplement\}<\/div>/);
+  assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-label|chatAgentInlineLabel/);
+  assert.match(styles, /\.sidebar-chats-agent-select\s*\{/);
+  assert.doesNotMatch(styles, /\.sidebar-chats-agent-label\s*\{/);
+
+  assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
+  assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /createSidebarChatsMoreFocusId\(\)/);
+  assert.match(sidebarSource, /data-sidebar-nav-kind=\{roving \? "chats-more" : undefined\}/);
+  assert.match(sidebarSource, /sidebar\.chats\.viewMoreHistory/);
+
+  assert.match(appShell, /const \[assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore\] = useState\(false\);/);
+  assert.match(appShell, /setAssistantNavChatItemsHasMore\(nextResult\.chatItemsHasMore\)/);
+  assert.match(appShell, /async function saveChatsDefaultAgent\(agentKey: string\)[\s\S]*?saveSettings\(\{[\s\S]*?chatDefaultAgentKey: normalizedAgentKey/);
+  assert.match(appShell, /onChatsDefaultAgentChange=\{saveChatsDefaultAgent\}/);
+  assert.match(zhCN, /"sidebar\.chats\.viewMoreHistory": "查看更多历史"/);
+  assert.match(enUS, /"sidebar\.chats\.viewMoreHistory": "View more history"/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {
@@ -3797,6 +3711,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /workspaceDirExists\?: boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);
   assert.match(contracts, /chatItems: AssistantNavChatItem\[\];/);
+  assert.match(contracts, /chatItemsHasMore: boolean;/);
   assert.match(contracts, /export interface AssistantNavigationLiveStatus/);
   assert.match(contracts, /source: "desktop-nav"/);
   assert.match(contracts, /recentFrames: AssistantNavigationLiveFrame\[\];/);
@@ -3833,8 +3748,9 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantRuntime, /AssistantNavigationStatusClient/);
   assert.match(assistantNavigationStatusClient, /type: "\/api\/chats"/);
   assert.match(assistantNavigationStatusClient, /mode: NAVIGATION_CHAT_AGENT_MODE/);
-  assert.match(assistantNavigationStatusClient, /limit: NAVIGATION_CHAT_LIMIT/);
-  assert.match(assistantNavigationStatusClient, /buildAssistantNavigationChatsFromPlatform/);
+  assert.match(assistantNavigationStatusClient, /const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT \+ 1;/);
+  assert.match(assistantNavigationStatusClient, /limit: NAVIGATION_CHAT_PROBE_LIMIT/);
+  assert.match(assistantNavigationStatusClient, /buildAssistantNavigationChatsSnapshotFromPlatform/);
   assert.match(assistantNavigationStatusClient, /applyAssistantNavigationChatPush/);
   assert.match(assistantNavigationStatusClient, /getLiveStatus\(\): AssistantNavigationLiveStatus/);
   assert.match(assistantNavigationStatusClient, /const NAVIGATION_LIVE_FRAME_LIMIT = 20;/);
@@ -3860,8 +3776,11 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appShell, /onNavigationPushEvent/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);
   assert.match(appShell, /const \[assistantNavChatItems, setAssistantNavChatItems\] = useState<AssistantNavChatItem\[\]>\(\[\]\);/);
+  assert.match(appShell, /const \[assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore\] = useState\(false\);/);
   assert.match(appShell, /setAssistantNavChatItems\(nextResult\.chatItems\)/);
+  assert.match(appShell, /setAssistantNavChatItemsHasMore\(nextResult\.chatItemsHasMore\)/);
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
+  assert.match(appShell, /assistantNavChatItemsHasMore=\{assistantNavChatItemsHasMore\}/);
   assert.match(appShell, /onRefreshAssistantNavAgents=\{refreshAssistantNavAgents\}/);
   assert.match(appSidebar, /handleCreateProject/);
   assert.match(appSidebar, /window\.electronAPI\.desktopDialog\.selectDirectory\(\)[\s\S]*?window\.electronAPI\.assistant\.createProject/);

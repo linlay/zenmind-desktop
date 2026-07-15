@@ -21,6 +21,7 @@ export interface CollapseProps {
   expanded: boolean;
   onExpand: (expanded: boolean) => void;
   header: React.ReactNode;
+  headerSupplement?: React.ReactNode;
   headerActions?: React.ReactNode;
   headerButtonProps?: CollapseHeaderButtonProps;
   headerButtonRef?: React.Ref<HTMLButtonElement>;
@@ -33,6 +34,7 @@ export const Collapse: React.FC<CollapseProps> = ({
   expanded,
   onExpand,
   header,
+  headerSupplement,
   headerActions,
   headerButtonProps,
   headerButtonRef,
@@ -114,6 +116,9 @@ export const Collapse: React.FC<CollapseProps> = ({
             {headerButton}
           </Popover>
         ) : headerButton}
+        {headerSupplement ? (
+          <div className="Collapse-headerSupplement">{headerSupplement}</div>
+        ) : null}
         {headerActions ? (
           <div className="Collapse-headerActions">{headerActions}</div>
         ) : null}
