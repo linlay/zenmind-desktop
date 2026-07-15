@@ -423,7 +423,8 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /openLogViewer/);
   assert.match(controlCenter, /writeConfig/);
   assert.match(controlCenter, /PageFeedbackStack/);
-  assert.match(controlCenter, /className="control-center-feedback-slot"[\s\S]*?\{feedback \|\| error \? \(\s*<PageFeedbackStack/);
+  assert.match(controlCenter, /\{feedback \|\| error \? \(\s*<PageFeedbackStack/);
+  assert.doesNotMatch(controlCenter, /control-center-feedback-slot/);
   assert.doesNotMatch(controlCenter, /control-center-feedback-anchor/);
   assert.match(globalStyles, /\.control-center-dashboard-metrics\s*\{/);
   assert.match(globalStyles, /:root\s*\{[\s\S]*?--desktop-ui-bg:\s*#ffffff;[\s\S]*?--desktop-ui-card:\s*#ffffff;[\s\S]*?--desktop-ui-primary:\s*#0052d9;[\s\S]*?--desktop-ui-code-bg:\s*#0d1117;/);
@@ -456,9 +457,7 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.page-feedback-dismiss\s*\{/);
   assert.match(globalStyles, /\.page-feedback-anchor\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?height:\s*0;/);
   assert.match(globalStyles, /\.page-feedback-layer\s*\{[\s\S]*?transform:\s*none;/);
-  assert.match(globalStyles, /\.control-center-feedback-slot\s*\{[\s\S]*?min-height:\s*46px;/);
-  assert.match(globalStyles, /\.control-center-feedback-slot \.page-feedback-anchor\s*\{[\s\S]*?position:\s*static;/);
-  assert.match(globalStyles, /\.control-center-feedback-slot \.page-feedback-layer\s*\{[\s\S]*?position:\s*static;/);
+  assert.doesNotMatch(globalStyles, /\.control-center-feedback-slot/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-anchor\s*\{/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-layer\s*\{/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-toast\s*\{/);

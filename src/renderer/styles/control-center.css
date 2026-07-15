@@ -381,38 +381,6 @@
   color: var(--control-center-muted);
 }
 
-.control-center-feedback-slot {
-  width: 100%;
-  min-height: 46px;
-  margin: -2px 0 2px;
-}
-
-.control-center-feedback-slot .page-feedback-anchor {
-  position: static;
-  width: 100%;
-  height: auto;
-  pointer-events: auto;
-}
-
-.control-center-feedback-slot .page-feedback-layer {
-  position: static;
-  width: 100%;
-  transform: none;
-  pointer-events: auto;
-}
-
-.control-center-feedback-slot .page-feedback-toast {
-  min-height: 42px;
-  padding: 10px 14px;
-  border-radius: var(--control-center-radius);
-  box-shadow: none;
-}
-
-.control-center-feedback-slot .page-feedback-message {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .control-center-shell {
   display: grid;
   grid-template-columns: minmax(240px, 304px) minmax(0, 1fr);
