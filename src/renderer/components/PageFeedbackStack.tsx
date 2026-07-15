@@ -1,3 +1,4 @@
+import { CloseOutlined } from "@ant-design/icons";
 import { useI18n } from "../i18n/useI18n";
 
 export type PageFeedbackItem = {
@@ -9,16 +10,22 @@ export type PageFeedbackItem = {
 
 type PageFeedbackStackProps = {
   items: PageFeedbackItem[];
+  placement?: "top-right" | "top-center";
 };
 
-export function PageFeedbackStack({ items }: PageFeedbackStackProps) {
+export function PageFeedbackStack({
+  items,
+  placement = "top-right",
+}: PageFeedbackStackProps) {
   const { t } = useI18n();
   if (items.length === 0) {
     return null;
   }
 
   return (
-    <div className="page-feedback-anchor">
+    <div
+      className={`page-feedback-anchor${placement === "top-center" ? " is-top-center" : ""}`}
+    >
       <div className="page-feedback-layer" aria-live="polite">
         {items.map((item) => (
           <div
@@ -34,7 +41,7 @@ export function PageFeedbackStack({ items }: PageFeedbackStackProps) {
                 aria-label={t("pageFeedback.close")}
                 onClick={item.onDismiss}
               >
-                {t("pageFeedback.dismiss")}
+                <CloseOutlined aria-hidden="true" />
               </button>
             ) : null}
           </div>

@@ -10,10 +10,12 @@ import {
 } from "../plugin-bridge";
 import {
   hideDesktopActivityIsland,
+  hideDesktopCalendarOverlay,
   hideDesktopClipboardPalette,
   showDesktopPetBanner,
   showSystemUpdateOverlay,
-  updateDesktopActivityIsland
+  updateDesktopActivityIsland,
+  updateDesktopCalendarOverlay
 } from "../plugin-desktop-effects";
 import type { PluginClipboardBridge } from "./plugin-clipboard";
 
@@ -41,8 +43,12 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
       getAssistantActiveTasks: options.getAssistantActiveTasks,
       updateDesktopActivityIsland: (params) => updateDesktopActivityIsland(params as any),
       hideDesktopActivityIsland: () => hideDesktopActivityIsland(),
+      updateDesktopCalendarOverlay: (params) => updateDesktopCalendarOverlay(params as any),
+      hideDesktopCalendarOverlay: () => hideDesktopCalendarOverlay(),
       readDesktopClipboardText: () => options.clipboardBridge.readDesktopClipboardText(),
       writeDesktopClipboardText: (params) => options.clipboardBridge.writeDesktopClipboardText(params),
+      readDesktopClipboardContent: () => options.clipboardBridge.readDesktopClipboardContent(),
+      writeDesktopClipboardContent: (params) => options.clipboardBridge.writeDesktopClipboardContent(params),
       registerDesktopClipboardShortcut: (pluginId, params) =>
         options.clipboardBridge.registerDesktopClipboardShortcut(pluginId, params),
       unregisterDesktopClipboardShortcut: (pluginId) =>
@@ -106,6 +112,7 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
     },
     stop() {
       hideDesktopActivityIsland();
+      hideDesktopCalendarOverlay();
       hideDesktopClipboardPalette();
       stopPluginBridgeServers();
     }

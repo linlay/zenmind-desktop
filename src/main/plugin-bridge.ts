@@ -73,8 +73,12 @@ let showSystemUpdateOverlayCallback: ((params: unknown) => unknown) | null = nul
 let getAssistantActiveTasksCallback: (() => unknown) | null = null;
 let updateDesktopActivityIslandCallback: ((params: unknown) => unknown) | null = null;
 let hideDesktopActivityIslandCallback: ((params: unknown) => unknown) | null = null;
+let updateDesktopCalendarOverlayCallback: ((params: unknown) => unknown) | null = null;
+let hideDesktopCalendarOverlayCallback: ((params: unknown) => unknown) | null = null;
 let readDesktopClipboardTextCallback: (() => unknown) | null = null;
 let writeDesktopClipboardTextCallback: ((params: unknown) => unknown) | null = null;
+let readDesktopClipboardContentCallback: (() => unknown) | null = null;
+let writeDesktopClipboardContentCallback: ((params: unknown) => unknown) | null = null;
 let registerDesktopClipboardShortcutCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
 let unregisterDesktopClipboardShortcutCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
 let showDesktopClipboardPaletteCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
@@ -128,11 +132,14 @@ export function createPluginBridgePath(
     return `\\\\.\\pipe\\Desktop.PluginBridge.${pluginHash}.${instanceId}`;
   }
 
-  if (platform === "darwin") {
-    return path.join(getTempPath(app), `desktop-pb-${pluginHash}-${instanceId}.sock`);
+  const socketName = `desktop-pb-${pluginHash}-${instanceId}.sock`;
+  const preferredPath = path.join(getTempPath(app), socketName);
+  // Darwin's sockaddr_un path is short (104 bytes). Test and user temp roots can
+  // exceed it, so fall back to the OS temp root while retaining a unique name.
+  if (Buffer.byteLength(preferredPath) < 100) {
+    return preferredPath;
   }
-
-  return path.join(getTempPath(app), `desktop-pb-${pluginHash}-${instanceId}.sock`);
+  return path.join(os.tmpdir(), socketName);
 }
 
 function sendEnvelope(client: BridgeClient, envelope: BridgeEnvelope) {
@@ -486,6 +493,18 @@ async function handleBridgeRequest(
       }
       return { ok: true, result: hideDesktopActivityIslandCallback(context.params) };
     }
+    if (context.method === "desktopCalendarOverlay.update") {
+      if (!updateDesktopCalendarOverlayCallback) {
+        throw new Error("desktop calendar overlay bridge is unavailable");
+      }
+      return { ok: true, result: updateDesktopCalendarOverlayCallback(context.params) };
+    }
+    if (context.method === "desktopCalendarOverlay.hide") {
+      if (!hideDesktopCalendarOverlayCallback) {
+        throw new Error("desktop calendar overlay bridge is unavailable");
+      }
+      return { ok: true, result: hideDesktopCalendarOverlayCallback(context.params) };
+    }
     if (context.method === "desktopClipboard.readText") {
       if (!readDesktopClipboardTextCallback) {
         throw new Error("desktop clipboard bridge is unavailable");
@@ -497,6 +516,18 @@ async function handleBridgeRequest(
         throw new Error("desktop clipboard bridge is unavailable");
       }
       return { ok: true, result: writeDesktopClipboardTextCallback(context.params) };
+    }
+    if (context.method === "desktopClipboard.readContent") {
+      if (!readDesktopClipboardContentCallback) {
+        throw new Error("desktop clipboard content bridge is unavailable");
+      }
+      return { ok: true, result: readDesktopClipboardContentCallback() };
+    }
+    if (context.method === "desktopClipboard.writeContent") {
+      if (!writeDesktopClipboardContentCallback) {
+        throw new Error("desktop clipboard content bridge is unavailable");
+      }
+      return { ok: true, result: writeDesktopClipboardContentCallback(context.params) };
     }
     if (context.method === "desktopClipboard.registerShortcut") {
       if (!registerDesktopClipboardShortcutCallback) {
@@ -627,8 +658,12 @@ export function configurePluginBridge(options: {
   getAssistantActiveTasks?: () => unknown;
   updateDesktopActivityIsland?: (params: unknown) => unknown;
   hideDesktopActivityIsland?: (params: unknown) => unknown;
+  updateDesktopCalendarOverlay?: (params: unknown) => unknown;
+  hideDesktopCalendarOverlay?: (params: unknown) => unknown;
   readDesktopClipboardText?: () => unknown;
   writeDesktopClipboardText?: (params: unknown) => unknown;
+  readDesktopClipboardContent?: () => unknown;
+  writeDesktopClipboardContent?: (params: unknown) => unknown;
   registerDesktopClipboardShortcut?: (pluginId: string, params: unknown) => unknown;
   unregisterDesktopClipboardShortcut?: (pluginId: string, params: unknown) => unknown;
   showDesktopClipboardPalette?: (pluginId: string, params: unknown) => unknown;
@@ -643,8 +678,12 @@ export function configurePluginBridge(options: {
   getAssistantActiveTasksCallback = options.getAssistantActiveTasks ?? null;
   updateDesktopActivityIslandCallback = options.updateDesktopActivityIsland ?? null;
   hideDesktopActivityIslandCallback = options.hideDesktopActivityIsland ?? null;
+  updateDesktopCalendarOverlayCallback = options.updateDesktopCalendarOverlay ?? null;
+  hideDesktopCalendarOverlayCallback = options.hideDesktopCalendarOverlay ?? null;
   readDesktopClipboardTextCallback = options.readDesktopClipboardText ?? null;
   writeDesktopClipboardTextCallback = options.writeDesktopClipboardText ?? null;
+  readDesktopClipboardContentCallback = options.readDesktopClipboardContent ?? null;
+  writeDesktopClipboardContentCallback = options.writeDesktopClipboardContent ?? null;
   registerDesktopClipboardShortcutCallback = options.registerDesktopClipboardShortcut ?? null;
   unregisterDesktopClipboardShortcutCallback = options.unregisterDesktopClipboardShortcut ?? null;
   showDesktopClipboardPaletteCallback = options.showDesktopClipboardPalette ?? null;

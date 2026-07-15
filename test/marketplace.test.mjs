@@ -80,6 +80,7 @@ function writePluginArchive(root, options = {}) {
   fs.writeFileSync(
     path.join(bundleRoot, "manifest.json"),
     `${JSON.stringify({
+      pluginApiVersion: options.pluginApiVersion ?? 1,
       id: pluginId,
       name: "Cloud Plugin",
       ...(options.kind ? { kind: options.kind } : {}),
@@ -90,10 +91,11 @@ function writePluginArchive(root, options = {}) {
         web: { healthPath: "", portEnvKey: "PORT", defaultPort: 9300 }
       },
       lifecycle: { start: "start.sh", stop: "stop.sh" },
+      ...(options.platform ? { platform: options.platform } : {}),
       runtime: {
         pidRelativePath: "run/cloud-plugin.pid",
         logRelativePath: "run/cloud-plugin.log",
-        requiredPaths: ["manifest.json", "start.sh", "stop.sh", ".env.example", "run"]
+        requiredPaths: options.requiredPaths ?? ["manifest.json", "start.sh", "stop.sh", ".env.example", "run"]
       }
     }, null, 2)}\n`,
     "utf8"
@@ -560,6 +562,40 @@ test("installPluginFromArchive rejects non-zip plugin packages", async (t) => {
   await assert.rejects(
     () => installPluginFromArchive(app, path.join(root, "plugin.tar.gz")),
     /插件包仅支持 \.zip 格式。/
+  );
+});
+
+test("installPluginFromArchive validates plugin API, platform, and declared bundle paths", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-plugin-contract-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const unsupportedApi = writePluginArchive(root, {
+    id: "unsupported-api-plugin",
+    pluginApiVersion: 2
+  });
+  await assert.rejects(
+    () => installPluginFromArchive(app, unsupportedApi),
+    /pluginApiVersion 2/u
+  );
+
+  const incompatibleOs = process.platform === "win32" ? "darwin" : "windows";
+  const incompatiblePlatform = writePluginArchive(root, {
+    id: "incompatible-platform-plugin",
+    platform: { os: incompatibleOs, arch: process.arch === "x64" ? "amd64" : process.arch }
+  });
+  await assert.rejects(
+    () => installPluginFromArchive(app, incompatiblePlatform),
+    /目标平台|targets/u
+  );
+
+  const missingRuntime = writePluginArchive(root, {
+    id: "missing-runtime-plugin",
+    requiredPaths: ["manifest.json", "bin/missing"]
+  });
+  await assert.rejects(
+    () => installPluginFromArchive(app, missingRuntime),
+    /bin\/missing/u
   );
 });
 

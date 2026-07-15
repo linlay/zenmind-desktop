@@ -1,3 +1,4 @@
+import { nativeImage } from "electron";
 import type { Clipboard, GlobalShortcut } from "electron";
 import {
   hideDesktopClipboardPalette,
@@ -15,7 +16,7 @@ type ClipboardShortcutRecord = {
 
 export type PluginClipboardBridgeOptions = {
   platform: NodeJS.Platform;
-  clipboard: Pick<Clipboard, "readText" | "writeText">;
+  clipboard: Pick<Clipboard, "readText" | "writeText" | "readImage" | "writeImage">;
   globalShortcut: Pick<GlobalShortcut, "register" | "unregister">;
 };
 
@@ -82,6 +83,40 @@ export function createPluginClipboardBridge(options: PluginClipboardBridgeOption
     return { written: true, platform: options.platform };
   }
 
+  function readDesktopClipboardContent() {
+    const image = options.clipboard.readImage();
+    if (!image.isEmpty()) {
+      return {
+        type: "image",
+        dataUrl: image.toDataURL(),
+        platform: options.platform
+      };
+    }
+    return {
+      type: "text",
+      text: options.clipboard.readText(),
+      platform: options.platform
+    };
+  }
+
+  function writeDesktopClipboardContent(params: unknown) {
+    const record = asPluginRecord(params);
+    if (record.type === "image") {
+      const dataUrl = String(record.dataUrl ?? "");
+      if (!/^data:image\//iu.test(dataUrl)) {
+        throw new Error("image clipboard content requires a data:image URL");
+      }
+      const image = nativeImage.createFromDataURL(dataUrl);
+      if (image.isEmpty()) {
+        throw new Error("image clipboard content is empty");
+      }
+      options.clipboard.writeImage(image);
+      return { written: true, type: "image", platform: options.platform };
+    }
+    options.clipboard.writeText(String(record.text ?? ""));
+    return { written: true, type: "text", platform: options.platform };
+  }
+
   function showDesktopClipboardPaletteForPlugin(pluginId: string, params: unknown) {
     if (options.platform !== "darwin") {
       return { shown: false, unsupported: true, platform: options.platform };
@@ -136,6 +171,8 @@ export function createPluginClipboardBridge(options: PluginClipboardBridgeOption
   return {
     readDesktopClipboardText,
     writeDesktopClipboardText,
+    readDesktopClipboardContent,
+    writeDesktopClipboardContent,
     registerDesktopClipboardShortcut,
     unregisterDesktopClipboardShortcut,
     showDesktopClipboardPaletteForPlugin,

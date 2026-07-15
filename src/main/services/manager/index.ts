@@ -1766,10 +1766,24 @@ function getDesktopStartCommandOptions(app: App, service: ServiceDefinition): Ru
 function buildDesktopServiceCommandEnv(
   app: App,
   service: ServiceDefinition,
-  _layout: ServiceLayout,
+  layout: ServiceLayout,
   overrides: NodeJS.ProcessEnv | undefined
 ) {
-  const env = {
+  const pluginFileEnv = service.kind === "plugin" && fs.existsSync(layout.envPath)
+    ? Object.fromEntries(readEnvFile(layout.envPath))
+    : {};
+  const env: NodeJS.ProcessEnv = {
+    ...pluginFileEnv,
+    ...(service.kind === "plugin"
+      ? {
+          SERVICE_PROGRAM_DIR: layout.programDir,
+          SERVICE_CONFIG_DIR: layout.configDir,
+          SERVICE_DATA_DIR: layout.dataDir,
+          SERVICE_STATE_DIR: layout.stateDir,
+          SERVICE_LOG_DIR: layout.logDir,
+          SERVICE_ENV_PATH: layout.envPath
+        }
+      : {}),
     ...getPluginBridgeEnv(app, service),
     ...getPluginSettingsEnv(app, service),
     ...(overrides ?? {})

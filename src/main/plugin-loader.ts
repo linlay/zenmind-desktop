@@ -11,6 +11,8 @@ import { removePluginResources } from "./plugin-resources";
 import { t } from "./i18n/main-i18n";
 import { assertPluginNotRetired, isRetiredPluginId } from "./retired-plugins";
 
+const SUPPORTED_PLUGIN_API_VERSION = 1;
+
 function readManifest(pluginDir: string) {
   const manifestPath = path.join(pluginDir, "manifest.json");
   if (!fs.existsSync(manifestPath)) {
@@ -126,6 +128,66 @@ function ensurePluginArchivePath(archivePath: string) {
   }
 }
 
+function isSafePathSegment(value: string) {
+  return Boolean(value) && value !== "." && value !== ".." && !path.isAbsolute(value) && !/[\\/]/u.test(value);
+}
+
+function currentManifestPlatform() {
+  const os = process.platform === "win32" ? "windows" : process.platform;
+  const arch = process.arch === "x64" ? "amd64" : process.arch;
+  return { os, arch };
+}
+
+function isUniversalPlatformValue(value: string) {
+  return value === "" || value === "any" || value === "all" || value === "universal" || value === "*";
+}
+
+function assertPathInsidePlugin(pluginDir: string, relativePath: string) {
+  const root = path.resolve(pluginDir);
+  const candidate = path.resolve(root, relativePath);
+  if (candidate !== root && !candidate.startsWith(`${root}${path.sep}`)) {
+    throw new Error(t("plugin.manifestUnsafePath", { path: relativePath }));
+  }
+  return candidate;
+}
+
+function assertPluginBundleImportable(pluginDir: string, topLevelDir: string, definition: ReturnType<typeof normalizeManifest>) {
+  if (definition.pluginApiVersion !== SUPPORTED_PLUGIN_API_VERSION) {
+    throw new Error(t("plugin.apiVersionUnsupported", {
+      actual: String(definition.pluginApiVersion || "missing"),
+      expected: String(SUPPORTED_PLUGIN_API_VERSION)
+    }));
+  }
+  if (!isSafePathSegment(definition.id) || !isSafePathSegment(definition.version)) {
+    throw new Error(t("plugin.manifestUnsafeIdentity"));
+  }
+  if (definition.bundleTopLevelDir !== topLevelDir) {
+    throw new Error(t("plugin.bundleRootMismatch", {
+      actual: topLevelDir,
+      expected: definition.bundleTopLevelDir
+    }));
+  }
+
+  if (definition.platform) {
+    const current = currentManifestPlatform();
+    const osMatches = isUniversalPlatformValue(definition.platform.os) || definition.platform.os === current.os;
+    const archMatches = isUniversalPlatformValue(definition.platform.arch) || definition.platform.arch === current.arch;
+    if (!osMatches || !archMatches) {
+      throw new Error(t("plugin.platformMismatch", {
+        actual: `${definition.platform.os || "any"}/${definition.platform.arch || "any"}`,
+        expected: `${current.os}/${current.arch}`
+      }));
+    }
+  }
+
+  for (const requiredPath of definition.runtime.requiredPaths) {
+    const absolutePath = assertPathInsidePlugin(pluginDir, requiredPath);
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error(t("plugin.requiredPathMissing", { path: requiredPath }));
+    }
+  }
+}
+
 export async function installPluginFromArchive(app: App, archivePath: string) {
   ensurePluginArchivePath(archivePath);
 
@@ -150,6 +212,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     }
     assertPluginNotRetired(manifest.id);
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
+    assertPluginBundleImportable(extractedDir, entries[0], definition);
 
     const targetDir = getPluginInstallDir(app, manifest.id, definition.version);
     const configDir = getServiceConfigRoot(app, manifest.id, "plugin");

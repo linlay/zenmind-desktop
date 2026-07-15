@@ -326,9 +326,19 @@ test("plugin bridge path generation is platform explicit", () => {
       instanceId: "abc"
     });
 
-    assert.equal(path.dirname(darwinPath), path.join(root, "tmp"));
+    const preferredDarwinDir = path.join(root, "tmp");
+    const expectedDarwinDir = Buffer.byteLength(path.join(preferredDarwinDir, path.basename(darwinPath))) < 100
+      ? preferredDarwinDir
+      : os.tmpdir();
+    assert.equal(path.dirname(darwinPath), expectedDarwinDir);
     assert.match(path.basename(darwinPath), /^desktop-pb-[a-f0-9]{12}-abc\.sock$/u);
     assert.match(windowsPath, /^\\\\\.\\pipe\\Desktop\.PluginBridge\.[a-f0-9]{12}\.abc$/u);
+    const longTempPath = bridgeInternals.createPluginBridgePath({
+      getPath() {
+        return path.join(os.tmpdir(), "x".repeat(120));
+      }
+    }, "proxy-acp-codex", { platform: "darwin", instanceId: "long" });
+    assert.equal(path.dirname(longTempPath), os.tmpdir());
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -346,7 +356,9 @@ test("plugin bridge filters hooks and requests by manifest declarations", () => 
         "desktopOverlay.showSystemUpdate",
         "assistantRuns.getActiveTasks",
         "desktopActivityIsland.update",
-        "desktopClipboard.readText"
+        "desktopCalendarOverlay.update",
+        "desktopClipboard.readText",
+        "desktopClipboard.readContent"
       ]
     }
   };
@@ -360,7 +372,9 @@ test("plugin bridge filters hooks and requests by manifest declarations", () => 
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopOverlay.showSystemUpdate"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "assistantRuns.getActiveTasks"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopActivityIsland.update"), true);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "desktopCalendarOverlay.update"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopClipboard.readText"), true);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "desktopClipboard.readContent"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "agentPlatform.upsertAcpProxy"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopPet.runBanner"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopClipboard.writeText"), false);
@@ -469,6 +483,31 @@ test("plugin desktop effects normalize activity island input and local palette U
   assert.match(
     desktopEffectsInternals.getActivityIslandHtml({ tasks, runningTaskCount: 4 }),
     /还有 2 个任务/u
+  );
+  assert.doesNotMatch(
+    desktopEffectsInternals.getActivityIslandHtml({ tasks, runningTaskCount: 4, maxVisibleTasks: 1 }),
+    /实现插件/u
+  );
+  const days = desktopEffectsInternals.normalizeCalendarOverlayDays([
+    {
+      date: "2026-07-16",
+      label: "今天",
+      events: [
+        { title: "  评审插件实现  ", time: "10:00", status: "done" },
+        { title: "", time: "11:00" }
+      ]
+    },
+    { date: "2026-07-17", label: "明天", events: [] },
+    { date: "2026-07-18", label: "后天", events: [] },
+    { date: "2026-07-19", label: "第四天", events: [] }
+  ]);
+  assert.equal(days.length, 3);
+  assert.deepEqual(days[0].events, [
+    { title: "评审插件实现", time: "10:00", status: "done" }
+  ]);
+  assert.match(
+    desktopEffectsInternals.getCalendarOverlayHtml({ title: "三日议程", days }),
+    /三日议程[\s\S]*评审插件实现/u
   );
   assert.equal(
     desktopEffectsInternals.normalizeLocalHttpUrl("http://127.0.0.1:1234/palette"),

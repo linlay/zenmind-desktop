@@ -51,7 +51,7 @@ const QUICK_START_ORDER = [
   "agent-platform",
   "agent-webclient",
 ] as const;
-const FEEDBACK_AUTO_CLOSE_MS = 3200;
+const FEEDBACK_AUTO_CLOSE_MS = 5000;
 
 function statusClass(status: ServiceState["status"]) {
   switch (status) {
@@ -568,6 +568,7 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
     scope: ActionScope;
   } | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [dismissedError, setDismissedError] = useState("");
   const [isBatchStarting, setIsBatchStarting] = useState(false);
   const [configCache, setConfigCache] = useState<ConfigCache>({});
   const [configOriginalCache, setConfigOriginalCache] = useState<ConfigCache>(
@@ -625,6 +626,7 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
   } | null;
   const startupFailure = navigationState?.startupFailure;
   const selectedServiceIdFromNavigation = navigationState?.selectedServiceId;
+  const visibleError = error === dismissedError ? "" : error;
 
   useEffect(() => {
     const currentGroupIds = [
@@ -671,6 +673,12 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
       window.clearTimeout(timeoutId);
     };
   }, [feedback]);
+
+  useEffect(() => {
+    if (!error) {
+      setDismissedError("");
+    }
+  }, [error]);
 
   useEffect(() => {
     if (!detailDialogOpen) {
@@ -1592,8 +1600,9 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
         </div>
       </div>
 
-      {feedback || error ? (
+      {feedback || visibleError ? (
         <PageFeedbackStack
+          placement="top-center"
           items={[
             ...(feedback
               ? [
@@ -1601,15 +1610,17 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
                   id: "control-center-feedback",
                   tone: "success" as const,
                   message: feedback,
+                  onDismiss: () => setFeedback(""),
                 },
               ]
               : []),
-            ...(error
+            ...(visibleError
               ? [
                 {
                   id: "control-center-error",
                   tone: "error" as const,
-                  message: error,
+                  message: visibleError,
+                  onDismiss: () => setDismissedError(error),
                 },
               ]
               : []),

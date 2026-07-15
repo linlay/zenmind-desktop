@@ -67,6 +67,14 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "plugins",
+      group: "integrations",
+      label: "plugins",
+      description: "",
+      layout: "wide",
+      visible: true
+    },
+    {
       id: "kanban",
       group: "integrations",
       label: "kanban",
@@ -88,14 +96,6 @@ export function createSettingsSectionDefinitions({
       label: "tunnelHub",
       description: "",
       layout: "measure",
-      visible: true
-    },
-    {
-      id: "plugins",
-      group: "integrations",
-      label: "plugins",
-      description: "",
-      layout: "wide",
       visible: true
     },
     {

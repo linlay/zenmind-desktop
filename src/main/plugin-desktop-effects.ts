@@ -38,6 +38,24 @@ type ActivityIslandInput = {
   tasks?: unknown;
   runningTaskCount?: unknown;
   title?: unknown;
+  maxVisibleTasks?: unknown;
+};
+
+type CalendarOverlayEventInput = {
+  title?: unknown;
+  time?: unknown;
+  status?: unknown;
+};
+
+type CalendarOverlayDayInput = {
+  date?: unknown;
+  label?: unknown;
+  events?: unknown;
+};
+
+type CalendarOverlayInput = {
+  title?: unknown;
+  days?: unknown;
 };
 
 type ClipboardPaletteInput = {
@@ -53,6 +71,7 @@ type DesktopPetBannerAsset = {
 };
 
 let activityIslandWindow: BrowserWindow | null = null;
+let calendarOverlayWindow: BrowserWindow | null = null;
 let clipboardPaletteWindow: BrowserWindow | null = null;
 let clipboardPaletteOwnerPluginId = "";
 
@@ -190,7 +209,8 @@ function getActivityIslandHtml(input: ActivityIslandInput) {
     tasks.length,
     Math.max(0, Math.round(Number(input.runningTaskCount) || 0))
   );
-  const visibleTasks = tasks.slice(0, 3);
+  const maxVisibleTasks = Math.max(1, Math.min(10, Math.round(Number(input.maxVisibleTasks) || 3)));
+  const visibleTasks = tasks.slice(0, maxVisibleTasks);
   const hiddenCount = Math.max(0, runningTaskCount - visibleTasks.length);
   const defaultTitle = t("desktopPet.activity.defaultTitle");
   const title = String(input.title || defaultTitle).trim() || defaultTitle;
@@ -211,7 +231,7 @@ function getActivityIslandHtml(input: ActivityIslandInput) {
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f8fafc}
 body{display:grid;place-items:start center}
-.island{width:420px;margin-top:10px;border-radius:28px;background:rgba(8,11,18,.94);box-shadow:0 18px 55px rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.08);backdrop-filter:blur(22px);padding:13px 16px 14px}
+.island{width:calc(100% - 24px);max-width:420px;margin-top:10px;border-radius:28px;background:rgba(8,11,18,.94);box-shadow:0 18px 55px rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.08);backdrop-filter:blur(22px);padding:13px 16px 14px}
 .head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:9px}
 .title{font-size:13px;font-weight:760}
 .status{font-size:12px;color:#a7f3d0;font-weight:700;white-space:nowrap}
@@ -236,15 +256,36 @@ em{font-style:normal;font-size:11px;line-height:1.2;color:#aeb9c8}
 </html>`;
 }
 
-function getActivityIslandBounds() {
+function getActivityIslandBounds(visibleTaskCount = 3) {
   const display = screen.getPrimaryDisplay();
-  const bounds = process.platform === "darwin" ? display.bounds : display.workArea;
-  const width = Math.min(460, Math.max(320, bounds.width - 48));
+  const taskCount = Math.max(1, Math.min(10, visibleTaskCount));
+  if (process.platform === "darwin") {
+    const bounds = display.bounds;
+    const width = Math.max(220, Math.min(460, bounds.width - 36));
+    return {
+      x: Math.round(bounds.x + (bounds.width - width) / 2),
+      y: Math.round(bounds.y),
+      width,
+      height: Math.min(Math.max(198, 86 + taskCount * 42), Math.max(180, bounds.height - 24))
+    };
+  }
+  if (process.platform === "win32") {
+    const bounds = display.workArea;
+    const width = Math.max(220, Math.min(388, bounds.width - 36));
+    return {
+      x: Math.round(bounds.x + bounds.width - width - 18),
+      y: Math.round(bounds.y + 18),
+      width,
+      height: Math.min(Math.max(198, 86 + taskCount * 42), Math.max(180, bounds.height - 36))
+    };
+  }
+  const bounds = display.workArea;
+  const width = Math.max(220, Math.min(420, bounds.width - 36));
   return {
     x: Math.round(bounds.x + (bounds.width - width) / 2),
-    y: Math.round(bounds.y),
+    y: Math.round(bounds.y + 12),
     width,
-    height: 198
+    height: Math.min(Math.max(198, 86 + taskCount * 42), Math.max(180, bounds.height - 24))
   };
 }
 
@@ -281,10 +322,8 @@ function ensureActivityIslandWindow() {
 }
 
 export function updateDesktopActivityIsland(input: ActivityIslandInput = {}) {
-  if (process.platform !== "darwin") {
-    return { shown: false, unsupported: true, platform: process.platform };
-  }
   const tasks = normalizeActivityIslandTasks(input.tasks);
+  const maxVisibleTasks = Math.max(1, Math.min(10, Math.round(Number(input.maxVisibleTasks) || 3)));
   const runningTaskCount = Math.max(
     tasks.length,
     Math.max(0, Math.round(Number(input.runningTaskCount) || 0))
@@ -293,8 +332,8 @@ export function updateDesktopActivityIsland(input: ActivityIslandInput = {}) {
     return hideDesktopActivityIsland();
   }
   const win = ensureActivityIslandWindow();
-  win.setBounds(getActivityIslandBounds(), false);
-  loadHtml(win, getActivityIslandHtml({ ...input, tasks, runningTaskCount }));
+  win.setBounds(getActivityIslandBounds(Math.min(tasks.length, maxVisibleTasks)), false);
+  loadHtml(win, getActivityIslandHtml({ ...input, tasks, runningTaskCount, maxVisibleTasks }));
   win.once("ready-to-show", () => {
     if (!win.isDestroyed()) {
       win.showInactive();
@@ -303,8 +342,20 @@ export function updateDesktopActivityIsland(input: ActivityIslandInput = {}) {
   if (!win.isVisible()) {
     win.showInactive();
   }
-  win.setAlwaysOnTop(true, "screen-saver");
-  return { shown: true, runningTaskCount, visibleTaskCount: Math.min(tasks.length, 3) };
+  if (process.platform === "darwin") {
+    win.setAlwaysOnTop(true, "screen-saver");
+  } else if (process.platform === "win32") {
+    win.setAlwaysOnTop(true, "pop-up-menu");
+  } else {
+    win.setAlwaysOnTop(true);
+  }
+  return {
+    shown: true,
+    platform: process.platform,
+    mode: process.platform === "darwin" ? "dynamic-island" : "desktop-widget",
+    runningTaskCount,
+    visibleTaskCount: Math.min(tasks.length, maxVisibleTasks)
+  };
 }
 
 export function hideDesktopActivityIsland() {
@@ -312,6 +363,172 @@ export function hideDesktopActivityIsland() {
     activityIslandWindow.close();
   }
   activityIslandWindow = null;
+  return { hidden: true };
+}
+
+function normalizeCalendarOverlayEvent(value: CalendarOverlayEventInput) {
+  const title = String(value.title ?? "").replace(/\s+/gu, " ").trim().slice(0, 120);
+  if (!title) {
+    return null;
+  }
+  const time = String(value.time ?? "").replace(/\s+/gu, " ").trim().slice(0, 32);
+  const status = value.status === "done" || value.status === "skipped"
+    ? value.status
+    : "planned";
+  return { title, time, status };
+}
+
+function normalizeCalendarOverlayDays(input: unknown) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return input
+    .filter((item): item is CalendarOverlayDayInput => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    .map((item) => {
+      const date = String(item.date ?? "").trim().slice(0, 10);
+      const label = String(item.label ?? date).replace(/\s+/gu, " ").trim().slice(0, 32);
+      const events = Array.isArray(item.events)
+        ? item.events
+          .filter((event): event is CalendarOverlayEventInput => Boolean(event) && typeof event === "object" && !Array.isArray(event))
+          .map(normalizeCalendarOverlayEvent)
+          .filter((event): event is NonNullable<ReturnType<typeof normalizeCalendarOverlayEvent>> => Boolean(event))
+          .slice(0, 6)
+        : [];
+      return { date, label: label || date, events };
+    })
+    .filter((day) => day.date || day.label)
+    .slice(0, 3);
+}
+
+function getCalendarOverlayHtml(input: CalendarOverlayInput) {
+  const title = String(input.title ?? "最近三天").replace(/\s+/gu, " ").trim().slice(0, 64) || "最近三天";
+  const days = normalizeCalendarOverlayDays(input.days);
+  const columns = days.map((day) => {
+    const rows = day.events.length > 0
+      ? day.events.map((event) => `
+        <li class="event is-${event.status}">
+          <span class="time">${escapeHtml(event.time || "全天")}</span>
+          <span class="event-title">${escapeHtml(event.title)}</span>
+        </li>
+      `).join("")
+      : '<li class="empty">暂无安排</li>';
+    return `
+      <section class="day">
+        <header><strong>${escapeHtml(day.label)}</strong><span>${escapeHtml(day.date)}</span></header>
+        <ul>${rows}</ul>
+      </section>
+    `;
+  }).join("");
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#182033}
+body{padding:12px}
+.panel{height:calc(100% - 24px);border:1px solid rgba(118,132,160,.22);border-radius:22px;background:rgba(250,252,255,.94);box-shadow:0 20px 60px rgba(30,48,82,.22);backdrop-filter:blur(24px);padding:15px;overflow:hidden}
+h1{margin:0 0 12px;font-size:15px;line-height:1.2}
+.days{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;height:calc(100% - 30px)}
+.day{min-width:0;border-radius:14px;background:rgba(235,240,248,.8);padding:10px;overflow:hidden}
+.day header{display:grid;gap:2px;margin-bottom:8px}.day strong{font-size:12px}.day header span{font-size:10px;color:#768197}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}.event{display:grid;gap:2px;padding:7px;border-radius:9px;background:#fff;box-shadow:inset 3px 0 #4f7cff}.event.is-done{opacity:.62;box-shadow:inset 3px 0 #35a875}.event.is-skipped{opacity:.48;box-shadow:inset 3px 0 #a3aab8}.time{font-size:9px;color:#707b90}.event-title{font-size:11px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.empty{padding:14px 4px;color:#8c95a7;font-size:10px;text-align:center}
+</style>
+</head>
+<body><main class="panel"><h1>${escapeHtml(title)}</h1><div class="days">${columns}</div></main></body>
+</html>`;
+}
+
+function getCalendarOverlayBounds() {
+  const display = screen.getPrimaryDisplay();
+  const bounds = display.workArea;
+  const width = Math.max(240, Math.min(560, bounds.width - 36));
+  const height = Math.max(180, Math.min(300, bounds.height - 36));
+  if (process.platform === "darwin") {
+    return {
+      x: Math.round(bounds.x + bounds.width - width - 18),
+      y: Math.round(bounds.y + 18),
+      width,
+      height
+    };
+  }
+  if (process.platform === "win32") {
+    return {
+      x: Math.round(bounds.x + bounds.width - width - 18),
+      y: Math.round(bounds.y + 18),
+      width,
+      height
+    };
+  }
+  return {
+    x: Math.round(bounds.x + bounds.width - width - 18),
+    y: Math.round(bounds.y + 18),
+    width,
+    height
+  };
+}
+
+function ensureCalendarOverlayWindow() {
+  if (calendarOverlayWindow && !calendarOverlayWindow.isDestroyed()) {
+    return calendarOverlayWindow;
+  }
+  const win = new BrowserWindow({
+    ...getCalendarOverlayBounds(),
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    show: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    hasShadow: false,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  win.setIgnoreMouseEvents(true, { forward: true });
+  win.on("closed", () => {
+    if (calendarOverlayWindow === win) {
+      calendarOverlayWindow = null;
+    }
+  });
+  calendarOverlayWindow = win;
+  return win;
+}
+
+export function updateDesktopCalendarOverlay(input: CalendarOverlayInput = {}) {
+  const days = normalizeCalendarOverlayDays(input.days);
+  if (days.length === 0) {
+    return hideDesktopCalendarOverlay();
+  }
+  const win = ensureCalendarOverlayWindow();
+  win.setBounds(getCalendarOverlayBounds(), false);
+  loadHtml(win, getCalendarOverlayHtml({ ...input, days }));
+  if (process.platform === "darwin") {
+    win.setAlwaysOnTop(true, "floating");
+  } else if (process.platform === "win32") {
+    win.setAlwaysOnTop(true, "pop-up-menu");
+  } else {
+    win.setAlwaysOnTop(true);
+  }
+  win.once("ready-to-show", () => {
+    if (!win.isDestroyed()) {
+      win.showInactive();
+    }
+  });
+  if (!win.isVisible()) {
+    win.showInactive();
+  }
+  return { shown: true, dayCount: days.length, platform: process.platform };
+}
+
+export function hideDesktopCalendarOverlay() {
+  if (calendarOverlayWindow && !calendarOverlayWindow.isDestroyed()) {
+    calendarOverlayWindow.close();
+  }
+  calendarOverlayWindow = null;
   return { hidden: true };
 }
 
@@ -595,7 +812,9 @@ ${allowEscape ? '<div class="hint">Press Esc to close</div>' : ""}
 
 export const __testInternals = {
   getActivityIslandHtml,
+  getCalendarOverlayHtml,
   normalizeActivityIslandTasks,
+  normalizeCalendarOverlayDays,
   normalizeLocalHttpUrl,
   resolveDesktopPetBannerAsset
 };

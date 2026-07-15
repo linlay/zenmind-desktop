@@ -2997,6 +2997,13 @@ test("service command env injects DESKTOP_DEVICE_ID only for identity-center", (
     assert.notEqual(identityEnv.DESKTOP_DEVICE_ID, "external-device");
     assert.equal(pluginEnv.DESKTOP_DEVICE_ID, undefined);
     assert.equal(pluginEnv.NODE_BIN, "/tmp/node");
+    assert.equal(pluginEnv.PORT, "9090");
+    assert.equal(pluginEnv.SERVICE_PROGRAM_DIR, pluginLayout.programDir);
+    assert.equal(pluginEnv.SERVICE_CONFIG_DIR, pluginLayout.configDir);
+    assert.equal(pluginEnv.SERVICE_DATA_DIR, pluginLayout.dataDir);
+    assert.equal(pluginEnv.SERVICE_STATE_DIR, pluginLayout.stateDir);
+    assert.equal(pluginEnv.SERVICE_LOG_DIR, pluginLayout.logDir);
+    assert.equal(pluginEnv.SERVICE_ENV_PATH, pluginLayout.envPath);
     assert.equal(fs.readFileSync(platformEnvPath, "utf8"), "SERVER_PORT=7078\n");
     assert.equal(fs.readFileSync(identityEnvPath, "utf8"), "SERVER_PORT=7076\n");
     assert.equal(fs.readFileSync(pluginEnvPath, "utf8"), "PORT=9090\n");

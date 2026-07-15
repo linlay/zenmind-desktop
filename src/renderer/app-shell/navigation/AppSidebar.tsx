@@ -3,7 +3,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -1047,6 +1046,7 @@ export function AppSidebar({
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
+  const [chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen] = useState(false);
   const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
@@ -1099,6 +1099,8 @@ export function AppSidebar({
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
   const bootstrapGuideToolHelpAnchorRef = useRef<HTMLAnchorElement | null>(null);
+  const chatDefaultAgentTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const chatDefaultAgentMenuRef = useRef<HTMLDivElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
   const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2423,23 +2425,128 @@ export function AppSidebar({
     });
   }
 
-  async function handleChatsDefaultAgentChange(
-    event: ChangeEvent<HTMLSelectElement>,
-  ) {
+  function focusChatsDefaultAgentMenuItem(index: number) {
+    const items = Array.from(
+      chatDefaultAgentMenuRef.current?.querySelectorAll<HTMLButtonElement>(
+        "[data-sidebar-chat-agent-key]",
+      ) ?? [],
+    );
+    if (items.length === 0) {
+      return;
+    }
+    const normalizedIndex = ((index % items.length) + items.length) % items.length;
+    items[normalizedIndex]?.focus();
+  }
+
+  function openChatsDefaultAgentMenu(focusAgentKey = resolvedChatDefaultAgentKey) {
+    setChatDefaultAgentMenuOpen(true);
+    window.requestAnimationFrame(() => {
+      const selectedIndex = chatNavAgentOptions.findIndex(
+        (agent) => agent.agentKey === focusAgentKey,
+      );
+      focusChatsDefaultAgentMenuItem(selectedIndex >= 0 ? selectedIndex : 0);
+    });
+  }
+
+  function closeChatsDefaultAgentMenu(restoreTriggerFocus = false) {
+    setChatDefaultAgentMenuOpen(false);
+    if (restoreTriggerFocus) {
+      window.requestAnimationFrame(() => chatDefaultAgentTriggerRef.current?.focus());
+    }
+  }
+
+  function handleChatsDefaultAgentTriggerClick(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
     event.stopPropagation();
-    const nextAgentKey = event.target.value.trim();
+    if (chatDefaultAgentMenuOpen) {
+      closeChatsDefaultAgentMenu();
+      return;
+    }
+    openChatsDefaultAgentMenu();
+  }
+
+  function handleChatsDefaultAgentTriggerKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      const selectedIndex = chatNavAgentOptions.findIndex(
+        (agent) => agent.agentKey === resolvedChatDefaultAgentKey,
+      );
+      openChatsDefaultAgentMenu(
+        chatNavAgentOptions[
+          selectedIndex < 0
+            ? 0
+            : event.key === "ArrowDown"
+              ? Math.min(selectedIndex + 1, chatNavAgentOptions.length - 1)
+              : Math.max(selectedIndex - 1, 0)
+        ]?.agentKey,
+      );
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (chatDefaultAgentMenuOpen) {
+        closeChatsDefaultAgentMenu();
+      } else {
+        openChatsDefaultAgentMenu();
+      }
+    }
+  }
+
+  function handleChatsDefaultAgentMenuKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeChatsDefaultAgentMenu(true);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const items = Array.from(
+      chatDefaultAgentMenuRef.current?.querySelectorAll<HTMLButtonElement>(
+        "[data-sidebar-chat-agent-key]",
+      ) ?? [],
+    );
+    const focusedItem = document.activeElement instanceof HTMLButtonElement
+      ? document.activeElement
+      : undefined;
+    const currentIndex = focusedItem ? items.indexOf(focusedItem) : -1;
+    if (event.key === "Home") {
+      focusChatsDefaultAgentMenuItem(0);
+      return;
+    }
+    if (event.key === "End") {
+      focusChatsDefaultAgentMenuItem(items.length - 1);
+      return;
+    }
+    focusChatsDefaultAgentMenuItem(
+      (currentIndex < 0 ? 0 : currentIndex) +
+        (event.key === "ArrowDown" ? 1 : -1),
+    );
+  }
+
+  async function handleChatsDefaultAgentChange(nextAgentKey: string) {
+    const normalizedAgentKey = nextAgentKey.trim();
     if (
-      !nextAgentKey ||
-      nextAgentKey === resolvedChatDefaultAgentKey ||
-      !chatNavAgentOptions.some((agent) => agent.agentKey === nextAgentKey)
+      !normalizedAgentKey ||
+      normalizedAgentKey === resolvedChatDefaultAgentKey ||
+      !chatNavAgentOptions.some((agent) => agent.agentKey === normalizedAgentKey)
     ) {
       return;
     }
 
     setChatDefaultAgentError("");
+    closeChatsDefaultAgentMenu();
     setChatDefaultAgentPending(true);
     try {
-      await onChatsDefaultAgentChange?.(nextAgentKey);
+      await onChatsDefaultAgentChange?.(normalizedAgentKey);
     } catch {
       setChatDefaultAgentError(t("sidebar.chats.defaultAgentSaveFailed"));
     } finally {
@@ -2916,41 +3023,89 @@ export function AppSidebar({
     );
   }
 
-  function renderChatsDefaultAgentSelect(options: { inPopover?: boolean } = {}) {
-    const selectedAgentKey = chatNavAgentOptions.some(
+  function renderChatsDefaultAgentPicker(options: { inPopover?: boolean } = {}) {
+    const selectedAgent = chatNavAgentOptions.find(
       (agent) => agent.agentKey === resolvedChatDefaultAgentKey,
-    )
-      ? resolvedChatDefaultAgentKey
-      : "";
+    ) ?? null;
     const disabled =
       chatNavAgentOptions.length === 0 ||
       chatDefaultAgentPending ||
       !onChatsDefaultAgentChange;
-    return (
-      <select
+    const menu = (
+      <div
+        ref={chatDefaultAgentMenuRef}
+        className="sidebar-chats-agent-menu"
+        role="menu"
+        aria-label={t("settings.chat.defaultAgent")}
+        onKeyDown={handleChatsDefaultAgentMenuKeyDown}
+      >
+        {chatNavAgentOptions.map((agent) => (
+          <button
+            key={agent.agentKey}
+            type="button"
+            className={[
+              "sidebar-chats-agent-option",
+              agent.agentKey === resolvedChatDefaultAgentKey ? "is-active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            role="menuitemradio"
+            aria-checked={agent.agentKey === resolvedChatDefaultAgentKey}
+            data-sidebar-chat-agent-key={agent.agentKey}
+            disabled={chatDefaultAgentPending}
+            onClick={() => void handleChatsDefaultAgentChange(agent.agentKey)}
+          >
+            <span className="sidebar-chats-agent-option-name">{agent.displayName}</span>
+            {agent.role ? (
+              <span className="sidebar-chats-agent-option-role">· {agent.role}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+    );
+    const trigger = (
+      <button
+        ref={chatDefaultAgentTriggerRef}
+        type="button"
         className={[
-          "sidebar-chats-agent-select",
+          "sidebar-chats-agent-trigger",
           options.inPopover ? "is-in-popover" : "",
         ]
           .filter(Boolean)
           .join(" ")}
-        value={selectedAgentKey}
         aria-label={t("settings.chat.defaultAgent")}
+        aria-haspopup="menu"
+        aria-expanded={chatDefaultAgentMenuOpen}
         disabled={disabled}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => void handleChatsDefaultAgentChange(event)}
+        onClick={handleChatsDefaultAgentTriggerClick}
+        onKeyDown={handleChatsDefaultAgentTriggerKeyDown}
       >
-        {!selectedAgentKey ? (
-          <option value="">{t("sidebar.chats.defaultAgentUnavailable")}</option>
-        ) : null}
-        {chatNavAgentOptions.map((agent) => (
-          <option key={agent.agentKey} value={agent.agentKey}>
-            {agent.displayName}
-            {agent.role ? ` · ${agent.role}` : ""}
-          </option>
-        ))}
-      </select>
+        <span className="sidebar-chats-agent-trigger-name">
+          {selectedAgent?.displayName || t("sidebar.chats.defaultAgentUnavailable")}
+        </span>
+        <span className="sidebar-chats-agent-trigger-caret" aria-hidden="true" />
+      </button>
+    );
+
+    if (options.inPopover) {
+      return (
+        <div className="sidebar-chats-agent-picker is-in-popover">
+          {trigger}
+          {chatDefaultAgentMenuOpen ? menu : null}
+        </div>
+      );
+    }
+
+    return (
+      <Popover
+        open={chatDefaultAgentMenuOpen}
+        onOpenChange={setChatDefaultAgentMenuOpen}
+        placement="bottom-start"
+        className="sidebar-chats-agent-menu-popover"
+        content={menu}
+      >
+        {trigger}
+      </Popover>
     );
   }
 
@@ -3137,12 +3292,12 @@ export function AppSidebar({
           {item.label}
         </span>
       ),
-      headerSupplement: renderChatsDefaultAgentSelect(),
+      headerSupplement: renderChatsDefaultAgentPicker(),
       headerActions: renderChatsNewChatButton(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
           <span>{item.label}</span>
-          {renderChatsDefaultAgentSelect({ inPopover: true })}
+          {renderChatsDefaultAgentPicker({ inPopover: true })}
           {renderChatsNewChatButton({ inPopover: true })}
         </div>
       ),

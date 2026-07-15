@@ -1,30 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import { STORAGE_NAMESPACE } from "../shared/brand";
 import { readInstalledRecords, removeInstalledRecord } from "./marketplace/common";
 import { t } from "./i18n/main-i18n";
 import {
-  getElectronUserDataRoot,
   getPluginsRoot,
-  getSecretsRoot,
   getServiceConfigRoot,
   getServiceDataRoot,
   getServiceLogsRoot,
   getServiceStateRoot
 } from "./user-paths";
 
-export const RETIRED_PLUGIN_IDS = ["pan-webclient"] as const;
+export const RETIRED_PLUGIN_IDS = [] as const;
 
 const retiredPluginIdSet = new Set<string>(RETIRED_PLUGIN_IDS);
-const retiredPanPrivateKeyFileNames = [
-  "pan-app-private-key.pem",
-  "pan-private-key.pem"
-] as const;
-const retiredPanPartitionNames = [
-  `${STORAGE_NAMESPACE}-service-pan-webclient`,
-  `${STORAGE_NAMESPACE}-plugin-settings-pan-webclient`
-] as const;
 
 export function isRetiredPluginId(pluginId: string | null | undefined) {
   return Boolean(pluginId && retiredPluginIdSet.has(pluginId));
@@ -64,19 +53,6 @@ export function cleanupRetiredPluginUserData(
       warn(`failed to remove retired plugin marketplace record: ${pluginId}`, error);
     }
   }
-
-  const secretsRoot = getSecretsRoot(app);
-  for (const fileName of retiredPanPrivateKeyFileNames) {
-    removePathBestEffort(path.join(secretsRoot, fileName), warn);
-  }
-
-  const partitionsRoot = path.join(getElectronUserDataRoot(app), "Partitions");
-  for (const partitionName of retiredPanPartitionNames) {
-    removePathBestEffort(path.join(partitionsRoot, partitionName), warn);
-  }
 }
 
-export const __testInternals = {
-  retiredPanPartitionNames,
-  retiredPanPrivateKeyFileNames
-};
+export const __testInternals = {};

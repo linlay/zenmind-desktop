@@ -423,7 +423,12 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /openLogViewer/);
   assert.match(controlCenter, /writeConfig/);
   assert.match(controlCenter, /PageFeedbackStack/);
-  assert.match(controlCenter, /\{feedback \|\| error \? \(\s*<PageFeedbackStack/);
+  assert.match(controlCenter, /const FEEDBACK_AUTO_CLOSE_MS = 5000;/);
+  assert.match(controlCenter, /const \[dismissedError, setDismissedError\] = useState\(""\);/);
+  assert.match(controlCenter, /\{feedback \|\| visibleError \? \(\s*<PageFeedbackStack/);
+  assert.match(controlCenter, /placement="top-center"/);
+  assert.match(controlCenter, /onDismiss: \(\) => setFeedback\(""\)/);
+  assert.match(controlCenter, /onDismiss: \(\) => setDismissedError\(error\)/);
   assert.doesNotMatch(controlCenter, /control-center-feedback-slot/);
   assert.doesNotMatch(controlCenter, /control-center-feedback-anchor/);
   assert.match(globalStyles, /\.control-center-dashboard-metrics\s*\{/);
@@ -456,6 +461,7 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.page-feedback-toast\s*\{/);
   assert.match(globalStyles, /\.page-feedback-dismiss\s*\{/);
   assert.match(globalStyles, /\.page-feedback-anchor\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?height:\s*0;/);
+  assert.match(globalStyles, /\.page-feedback-anchor\.is-top-center\s*\{[\s\S]*?right:\s*auto;[\s\S]*?left:\s*50%;[\s\S]*?transform:\s*translateX\(-50%\);/);
   assert.match(globalStyles, /\.page-feedback-layer\s*\{[\s\S]*?transform:\s*none;/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-slot/);
   assert.doesNotMatch(globalStyles, /\.control-center-feedback-anchor\s*\{/);
@@ -1823,7 +1829,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /group:\s*"personal"/);
   assert.match(settingsSections, /group:\s*"integrations"/);
   assert.match(settingsSections, /group:\s*"system"/);
-  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"control"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"market"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"tunnelHub"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"plugins"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"websites"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"webapps"[\s\S]*?group:\s*"integrations"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"appearance"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"usage"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"assistant"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"navigation"[\s\S]*?group:\s*"personal"[\s\S]*?id:\s*"control"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"plugins"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"kanban"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"market"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"tunnelHub"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"websites"[\s\S]*?group:\s*"integrations"[\s\S]*?id:\s*"webapps"[\s\S]*?group:\s*"integrations"/);
   assert.match(settingsSections, /id:\s*"usage"[\s\S]*?label:\s*"usage"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"control"[\s\S]*?label:\s*"control"[\s\S]*?layout:\s*"wide"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
@@ -2353,7 +2359,7 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?settings\.kanban\.label/);
   assert.match(sharedSettingsSections, /"tunnelHub"/);
   assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?visible:\s*true/);
-  assert.match(settingsSections, /id:\s*"control"[\s\S]*id:\s*"kanban"[\s\S]*id:\s*"market"[\s\S]*id:\s*"tunnelHub"[\s\S]*id:\s*"plugins"[\s\S]*id:\s*"websites"[\s\S]*id:\s*"webapps"/);
+  assert.match(settingsSections, /id:\s*"control"[\s\S]*id:\s*"plugins"[\s\S]*id:\s*"kanban"[\s\S]*id:\s*"market"[\s\S]*id:\s*"tunnelHub"[\s\S]*id:\s*"websites"[\s\S]*id:\s*"webapps"/);
   assert.match(settingsSections, /id:\s*"tunnelHub"[\s\S]*?visible:\s*true/);
   assert.doesNotMatch(settingsRoutes, /kanban:\s*"control"/);
   assert.doesNotMatch(settingsRoutes, /tunnelHub:\s*"control"/);
@@ -2682,7 +2688,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
 
-test("Chats sidebar exposes a persistent default-agent Select and per-agent history", () => {
+test("Chats sidebar exposes a hover-only default-agent picker and per-agent history", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -2692,25 +2698,38 @@ test("Chats sidebar exposes a persistent default-agent Select and per-agent hist
   );
   const appShell = readAppShellSource();
   const collapse = readSourceFile("src", "renderer", "components", "Collapse", "index.tsx");
+  const popover = readSourceFile("src", "renderer", "components", "Popover", "index.tsx");
   const styles = readRendererStyles();
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
   assert.match(sidebarSource, /assistantNavChatItemsHasMore\?: boolean/);
   assert.match(sidebarSource, /onChatsDefaultAgentChange\?: \(agentKey: string\) => Promise<void> \| void/);
-  assert.match(sidebarSource, /function renderChatsDefaultAgentSelect/);
-  assert.match(sidebarSource, /<select[\s\S]*?className=\{\[[\s\S]*?"sidebar-chats-agent-select"/);
-  assert.match(sidebarSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
-  assert.match(sidebarSource, /function handleChatsDefaultAgentChange[\s\S]*?onChatsDefaultAgentChange\?\.\(nextAgentKey\)/);
+  assert.match(sidebarSource, /function renderChatsDefaultAgentPicker/);
+  assert.match(sidebarSource, /const \[chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen\] = useState\(false\);/);
+  assert.match(sidebarSource, /className=\{\[[\s\S]*?"sidebar-chats-agent-trigger"/);
+  assert.match(sidebarSource, /aria-haspopup="menu"/);
+  assert.match(sidebarSource, /className="sidebar-chats-agent-menu"[\s\S]*?role="menu"/);
+  assert.match(sidebarSource, /role="menuitemradio"/);
+  assert.match(sidebarSource, /sidebar-chats-agent-option-role/);
+  assert.match(sidebarSource, /function handleChatsDefaultAgentTriggerKeyDown/);
+  assert.match(sidebarSource, /function handleChatsDefaultAgentMenuKeyDown/);
+  assert.match(sidebarSource, /function handleChatsDefaultAgentChange[\s\S]*?onChatsDefaultAgentChange\?\.\(normalizedAgentKey\)/);
   assert.match(sidebarSource, /catch \{\s*setChatDefaultAgentError\(t\("sidebar\.chats\.defaultAgentSaveFailed"\)\);/);
   assert.match(sidebarSource, /chatDefaultAgentPending/);
-  assert.match(sidebarSource, /headerSupplement: renderChatsDefaultAgentSelect\(\)/);
-  assert.match(sidebarSource, /renderChatsDefaultAgentSelect\(\{ inPopover: true \}\)/);
+  assert.match(sidebarSource, /headerSupplement: renderChatsDefaultAgentPicker\(\)/);
+  assert.match(sidebarSource, /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)/);
   assert.match(collapse, /headerSupplement\?: React\.ReactNode/);
   assert.match(collapse, /<div className="Collapse-headerSupplement">\{headerSupplement\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-label|chatAgentInlineLabel/);
-  assert.match(styles, /\.sidebar-chats-agent-select\s*\{/);
+  assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-select/);
+  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement[\s\S]*?opacity:\s*0;/);
+  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement,[\s\S]*?:focus-within \.Collapse-headerSupplement/);
+  assert.match(styles, /\.sidebar-chats-agent-trigger\s*\{/);
+  assert.match(styles, /\.sidebar-chats-agent-option-role\s*\{/);
+  assert.doesNotMatch(styles, /\.sidebar-chats-agent-select\s*\{/);
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-label\s*\{/);
+  assert.match(popover, /children\.props\["aria-haspopup"\] \?\? "dialog"/);
 
   assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
   assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);

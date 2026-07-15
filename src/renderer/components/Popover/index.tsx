@@ -329,7 +329,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
       ? isOpen
       : children.props["aria-expanded"],
     "aria-haspopup": triggerMode === "click"
-      ? "dialog"
+      ? children.props["aria-haspopup"] ?? "dialog"
       : children.props["aria-haspopup"],
     tabIndex: children.props.tabIndex ?? 0,
     onClick: (event: React.MouseEvent<HTMLElement>) => {
