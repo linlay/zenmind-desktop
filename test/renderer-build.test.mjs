@@ -1067,6 +1067,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
   assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*?\| "chat"[\s\S]*?\| "project"/);
   assert.match(brandMarkSource, /SidebarIllustrationVariant = "compact" \| "rail"/);
+  assert.match(brandMarkSource, /case "skill":[\s\S]*?<path d="m13 2-9\.5 11\.4/);
   assert.match(brandMarkSource, /case "chat":[\s\S]*?<circle cx="6\.35" cy="7\.15" r="0\.5"/);
   assert.match(brandMarkSource, /case "project":[\s\S]*?<path d="M2 5\.2A2\.2/);
 
@@ -1233,7 +1234,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(archiveChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
+  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/skills"[\s\S]*?labelKey:\s*"nav\.skills"[\s\S]*?icon:\s*"skill"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(fixedToolRowsBaseSource, /to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/control-center"/);

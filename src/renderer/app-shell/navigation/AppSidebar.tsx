@@ -354,7 +354,7 @@ const fixedToolRowsBase: Array<
       orderKey: "skills",
       to: "/skills",
       labelKey: "nav.skills",
-      icon: "agent",
+      icon: "skill",
     },
   ],
   [
