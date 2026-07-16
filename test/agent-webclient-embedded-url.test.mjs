@@ -8,6 +8,7 @@ const {
   buildPluginEmbeddedUrl
 } = require("../dist-electron/shared/auth-bridge.js");
 const {
+  areAgentWebclientChatNavigationUrlsEquivalent,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
 
@@ -63,4 +64,37 @@ test("management embedded URLs do not carry WebSocket source or auth context", (
     assert.equal(url.searchParams.has("wsSource"), false, embedPath);
     assert.equal(url.searchParams.has("desktopAuthContext"), false, embedPath);
   }
+});
+
+test("main chat route comparison ignores host presentation params and their order", () => {
+  const current =
+    "http://127.0.0.1:19011/agent/cutej?theme=dark&lang=zh-CN&wsSource=desktop-chat&chatId=chat-1";
+  const target =
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&wsSource=desktop-chat&theme=light&lang=en-US";
+
+  assert.equal(
+    areAgentWebclientChatNavigationUrlsEquivalent(current, target),
+    true
+  );
+  assert.equal(
+    areAgentWebclientChatNavigationUrlsEquivalent(
+      current,
+      "http://127.0.0.1:19011/agent/cutej?chatId=chat-2"
+    ),
+    false
+  );
+  assert.equal(
+    areAgentWebclientChatNavigationUrlsEquivalent(
+      current,
+      "http://127.0.0.1:19011/agent/cutej?newChat=2026-07-16T10%3A00%3A00.000Z"
+    ),
+    false
+  );
+  assert.equal(
+    areAgentWebclientChatNavigationUrlsEquivalent(
+      current,
+      "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&history=1"
+    ),
+    false
+  );
 });

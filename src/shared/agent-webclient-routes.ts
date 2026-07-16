@@ -135,6 +135,92 @@ export function resolveAgentWebclientWsSource(
   return undefined;
 }
 
+const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
+  "theme",
+  "hostTheme",
+  "lang",
+  "wsSource"
+]);
+
+interface AgentWebclientChatNavigationIdentity {
+  origin: string;
+  agentKey: string;
+  hash: string;
+  businessQueryEntries: Array<readonly [string, string]>;
+}
+
+function decodeAgentKey(value: string): string | null {
+  try {
+    const decoded = decodeURIComponent(value).trim();
+    return decoded || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveAgentWebclientChatNavigationIdentity(
+  value: string
+): AgentWebclientChatNavigationIdentity | null {
+  try {
+    const url = new URL(value);
+    const match = /^\/agent\/([^/]+)$/.exec(url.pathname);
+    const agentKey = match ? decodeAgentKey(match[1]) : null;
+    if (!agentKey) {
+      return null;
+    }
+
+    const businessQueryEntries = Array.from(url.searchParams.entries())
+      .filter(([key]) => !AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS.has(key))
+      .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+        const keyOrder = leftKey.localeCompare(rightKey);
+        return keyOrder || leftValue.localeCompare(rightValue);
+      });
+
+    return {
+      origin: url.origin,
+      agentKey,
+      hash: url.hash,
+      businessQueryEntries
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare an embedded main-chat URL by its WebClient business route identity.
+ *
+ * Desktop-owned presentation parameters can be added in a different order as
+ * the WebClient promotes `newChat` to `chatId`; they must not replay the route
+ * inside the already-running WebView. Every other query parameter is business
+ * state and deliberately remains part of the identity.
+ */
+export function areAgentWebclientChatNavigationUrlsEquivalent(
+  currentUrl: string,
+  targetUrl: string
+): boolean {
+  const current = resolveAgentWebclientChatNavigationIdentity(currentUrl);
+  const target = resolveAgentWebclientChatNavigationIdentity(targetUrl);
+  if (!current || !target) {
+    return false;
+  }
+
+  if (
+    current.origin !== target.origin ||
+    current.agentKey !== target.agentKey ||
+    current.hash !== target.hash ||
+    current.businessQueryEntries.length !== target.businessQueryEntries.length
+  ) {
+    return false;
+  }
+
+  return current.businessQueryEntries.every(
+    ([key, value], index) =>
+      target.businessQueryEntries[index]?.[0] === key &&
+      target.businessQueryEntries[index]?.[1] === value
+  );
+}
+
 export function findAgentWebclientRouteDefinition(pathname: string) {
   return AGENT_WEBCLIENT_ROUTE_DEFINITIONS.find((item) => item.routePath === pathname) ?? null;
 }

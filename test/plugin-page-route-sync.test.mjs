@@ -79,3 +79,17 @@ test("plugin page falls back to loadURL when client-side route navigation misses
   assert.match(directRouteLoadBlock, /resolvePluginCurrentUrl\(/);
   assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(embeddedUrl\)/);
 });
+
+test("main chat direct route loading uses business-route URL comparison", () => {
+  const pluginPage = readPluginPageSource();
+  const directRouteLoadBlock = pluginPage.slice(
+    pluginPage.indexOf("function requestDirectWebviewRouteLoad"),
+    pluginPage.indexOf("async function injectAgentWebclientAccessToken"),
+  );
+
+  assert.match(pluginPage, /areAgentWebclientChatNavigationUrlsEquivalent/);
+  assert.match(
+    directRouteLoadBlock,
+    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, embeddedUrl\)/,
+  );
+});

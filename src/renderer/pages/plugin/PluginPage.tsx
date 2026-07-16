@@ -14,7 +14,10 @@ import {
   getPluginAuthBridgeProtocol,
 } from "../../../shared/auth-bridge";
 import { buildAgentWebclientAccessTokenInjectionScript } from "../../../shared/agent-webclient-auth-injection";
-import { resolveAgentWebclientWsSource } from "../../../shared/agent-webclient-routes";
+import {
+  areAgentWebclientChatNavigationUrlsEquivalent,
+  resolveAgentWebclientWsSource,
+} from "../../../shared/agent-webclient-routes";
 import { useI18n } from "../../i18n/useI18n";
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -988,10 +991,14 @@ export function PluginPage({
       const normalizedCurrentUrl = currentUrl
         ? resolvePluginCurrentUrl(currentUrl, embeddedUrl, webviewSrcUrl)
         : "";
-      if (normalizedCurrentUrl === embeddedUrl) {
+      const isSemanticAgentChatRouteMatch =
+        isAgentWebclientChatSurface(service?.id, surfaceId) &&
+        areAgentWebclientChatNavigationUrlsEquivalent(currentUrl, embeddedUrl);
+      if (normalizedCurrentUrl === embeddedUrl || isSemanticAgentChatRouteMatch) {
         lastDirectWebviewRouteRef.current = embeddedUrl;
         reportPluginWebviewDiagnostic("direct-route-load-skipped", {
           reason: "already-at-target",
+          semanticAgentChatRouteMatch: isSemanticAgentChatRouteMatch || undefined,
         });
         return;
       }
