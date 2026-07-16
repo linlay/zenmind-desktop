@@ -887,18 +887,39 @@ export function AppShell() {
       if (!website) {
         return;
       }
-      setFaviconCache((prev) => {
-        const current = prev[entryKey];
-        if (
-          current?.websiteUrl === websiteUrl &&
-          current.faviconUrl === faviconUrl
-        ) {
-          return prev;
+
+      void window.electronAPI.webs.websites.cacheFavicon({
+        id: website.id,
+        websiteUrl,
+        faviconUrl,
+      }).then((result) => {
+        if (!result.ok || !result.faviconUrl) {
+          return;
         }
-        return {
-          ...prev,
-          [entryKey]: { websiteUrl, faviconUrl },
-        };
+        setFaviconCache((prev) => {
+          const currentWebsite = webItemsRef.current.find(
+            (item): item is WebsiteEntry =>
+              item.kind === "website" &&
+              item.entryKey === entryKey &&
+              item.url === websiteUrl,
+          );
+          if (!currentWebsite) {
+            return prev;
+          }
+          const current = prev[entryKey];
+          if (
+            current?.websiteUrl === websiteUrl &&
+            current.faviconUrl === result.faviconUrl
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [entryKey]: { websiteUrl, faviconUrl: result.faviconUrl },
+          };
+        });
+      }).catch(() => {
+        // A failed favicon cache should leave the site's monogram untouched.
       });
     },
     [],

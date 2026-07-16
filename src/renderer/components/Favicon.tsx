@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DESKTOP_WEBSITE_FAVICON_PROTOCOL } from "../../shared/website-favicon";
 
 const SAFE_DATA_IMAGE_PATTERN =
   /^data:image\/(?:png|jpe?g|gif|webp|bmp|x-icon|vnd\.microsoft\.icon);/iu;
@@ -25,7 +26,9 @@ export function normalizeFaviconUrl(
       ? new URL(trimmedUrl, baseUrl)
       : new URL(trimmedUrl);
     if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return null;
+      return parsedUrl.protocol === `${DESKTOP_WEBSITE_FAVICON_PROTOCOL}:`
+        ? parsedUrl.toString()
+        : null;
     }
     return parsedUrl.toString();
   } catch {
@@ -65,6 +68,7 @@ export type FaviconProps = {
   url: string;
   faviconUrl?: string;
   className: string;
+  allowOriginFallback?: boolean;
 };
 
 export type WebsiteFaviconCacheEntry = {
@@ -79,8 +83,9 @@ export function Favicon({
   url,
   faviconUrl,
   className,
+  allowOriginFallback = true,
 }: FaviconProps) {
-  const fallbackFaviconUrl = buildFallbackFaviconUrl(url);
+  const fallbackFaviconUrl = allowOriginFallback ? buildFallbackFaviconUrl(url) : null;
   const faviconCandidates = [
     normalizeFaviconUrl(faviconUrl, url),
     fallbackFaviconUrl,

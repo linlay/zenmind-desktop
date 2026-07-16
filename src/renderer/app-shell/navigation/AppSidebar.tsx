@@ -20,6 +20,7 @@ import {
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
 import { Favicon, type WebsiteFaviconCache } from "../../components/Favicon";
+import { buildWebsiteFaviconUrl } from "../../../shared/website-favicon";
 import type {
   AssistantCreateProjectRequest,
   AssistantNavAgentItem,
@@ -3376,7 +3377,7 @@ export function AppSidebar({
         webItem.kind === "webapp" && webItemRemovePendingId === webItem.id;
       const showWebappAction = webItem.kind === "webapp";
       const isWebsite = webItem.kind === "website";
-      const cachedFaviconUrl = faviconCache?.[webItem.entryKey]?.faviconUrl;
+      const cachedFaviconUrl = faviconCache?.[webItem.entryKey]?.faviconUrl || buildWebsiteFaviconUrl(webItem.id);
       const webappActionLabel = t("sidebar.webapp.actions");
       const closeWebsiteLabel = t("sidebar.website.close");
       return (
@@ -3412,6 +3413,7 @@ export function AppSidebar({
                   title={item.label}
                   url={webItem.url}
                   faviconUrl={cachedFaviconUrl}
+                  allowOriginFallback={false}
                 />
               </span>
             ) : showIcon ? (

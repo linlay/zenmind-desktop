@@ -121,6 +121,18 @@ export interface WebsiteDeleteResult {
   message: string;
 }
 
+export interface WebsiteFaviconCacheInput {
+  id: string;
+  websiteUrl: string;
+  faviconUrl: string;
+}
+
+export interface WebsiteFaviconCacheResult {
+  ok: boolean;
+  faviconUrl: string;
+  message: string;
+}
+
 export interface WebsiteTransferResult {
   ok: boolean;
   items: WebsiteEntry[];

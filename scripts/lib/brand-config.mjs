@@ -329,6 +329,7 @@ function listForeignBrandMarkers(rootDir, activeBrandId) {
       const productName = typeof manifest.productName === "string" ? manifest.productName.trim() : "";
       return [
         `${entry.name}-pet:`,
+        `${entry.name}-website-favicon:`,
         ...(productName ? [`<title>${escapeHtmlText(productName)}</title>`] : [])
       ];
     });
@@ -345,6 +346,12 @@ function htmlBrandProblems(content, label, brand, rootDir) {
   const petProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(expectedPetProtocol)}`, "u");
   if (!petProtocolPattern.test(content)) {
     problems.push(`${label} does not contain ${expectedPetProtocol} in img-src`);
+  }
+
+  const expectedWebsiteFaviconProtocol = `${brand.id}-website-favicon:`;
+  const websiteFaviconProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(expectedWebsiteFaviconProtocol)}`, "u");
+  if (!websiteFaviconProtocolPattern.test(content)) {
+    problems.push(`${label} does not contain ${expectedWebsiteFaviconProtocol} in img-src`);
   }
 
   for (const marker of listForeignBrandMarkers(rootDir, brand.id)) {
@@ -999,6 +1006,10 @@ function rendererPetProtocol(brand) {
   return `${brand.id}-pet`;
 }
 
+function rendererWebsiteFaviconProtocol(brand) {
+  return `${brand.id}-website-favicon`;
+}
+
 function escapeHtmlText(value) {
   return String(value)
     .replace(/&/gu, "&amp;")
@@ -1014,7 +1025,7 @@ function defaultRendererIndexHtml(brand) {
     "    <meta charset=\"UTF-8\" />",
     "    <meta",
     "      http-equiv=\"Content-Security-Policy\"",
-    `      content="default-src 'self'; img-src 'self' data: ${rendererPetProtocol(brand)}:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src 'self' http://127.0.0.1:*;"`,
+    `      content="default-src 'self'; img-src 'self' data: ${rendererPetProtocol(brand)}: ${rendererWebsiteFaviconProtocol(brand)}:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src 'self' http://127.0.0.1:*;"`,
     "    />",
     "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />",
     `    <title>${escapeHtmlText(brand.productName)}</title>`,
@@ -1030,6 +1041,7 @@ function defaultRendererIndexHtml(brand) {
 
 export function renderRendererIndexHtml(content, brand) {
   const petProtocol = `${rendererPetProtocol(brand)}:`;
+  const websiteFaviconProtocol = `${rendererWebsiteFaviconProtocol(brand)}:`;
   let next = content.replace(/<title>[\s\S]*?<\/title>/u, () =>
     `<title>${escapeHtmlText(brand.productName)}</title>`
   );
@@ -1039,8 +1051,9 @@ export function renderRendererIndexHtml(content, brand) {
       .trim()
       .split(/\s+/u)
       .filter(Boolean)
-      .filter((source) => !/^[a-z0-9][a-z0-9_-]*-pet:$/iu.test(source));
+      .filter((source) => !/^[a-z0-9][a-z0-9_-]*-(?:pet|website-favicon):$/iu.test(source));
     sourceList.push(petProtocol);
+    sourceList.push(websiteFaviconProtocol);
     return `${prefix}${sourceList.join(" ")}${suffix}`;
   });
 

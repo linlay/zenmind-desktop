@@ -1482,7 +1482,8 @@ test("assistant sidebar chat history selection follows the current chat route", 
   assert.match(globalStyles, /\.worker-panel-preview>\.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left:\s*auto;/);
   assert.match(globalStyles, /\.assistant-worker-badge\s*\{[\s\S]{0,120}margin-left:\s*auto;/);
   assert.match(globalStyles, /\.assistant-worker-header\.is-active/);
-  assert.match(globalStyles, /\.assistant-worker-chat-item\.is-active\s*\{[\s\S]{0,120}background:\s*transparent;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-item:hover\s*\{[\s\S]{0,120}border-radius:\s*8px;[\s\S]{0,120}background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);/);
+  assert.match(globalStyles, /\.assistant-worker-chat-item\.is-active\s*\{[\s\S]{0,120}border-radius:\s*8px;[\s\S]{0,120}background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-selected\s*\{[\s\S]{0,120}background:\s*rgba\(var\(--accent-rgb\),\s*0\.08\);/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-selected\.is-expanded\s*\{[\s\S]{0,160}border-color:\s*rgba\(var\(--accent-rgb\),\s*0\.18\);/);
 });
@@ -3408,6 +3409,8 @@ test("website agent association is exposed across webs desktop api layers", () =
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
   const faviconSource = readSourceFile("src", "renderer", "components", "Favicon.tsx");
+  const faviconCache = readSourceFile("src", "main", "webs", "websites", "favicon-cache.ts");
+  const faviconProtocol = readSourceFile("src", "main", "webs", "websites", "favicon-protocol.ts");
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
   const closeWebEntryStart = appShell.indexOf("async function handleCloseWebEntry(item: WebEntry)");
@@ -3421,14 +3424,18 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(contracts, /update: \(id: string, input: WebsiteUpdateInput\) => Promise<WebsiteResult>/);
   assert.match(contracts, /add: \(input: WebsiteInput\) => Promise<WebsiteResult>/);
   assert.match(contracts, /remove: \(id: string\) => Promise<WebsiteDeleteResult>/);
+  assert.match(contracts, /interface WebsiteFaviconCacheInput/);
+  assert.match(contracts, /cacheFavicon: \(input: WebsiteFaviconCacheInput\) => Promise<WebsiteFaviconCacheResult>/);
   assert.match(store, /export function updateWebsiteItem/);
   assert.match(store, /delete updated\.agentKey/);
   assert.match(store, /export function addWebsiteItem/);
   assert.match(mainIpcRegister, /registerWebIpcHandlers\(ipcMain,/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.websites\.update"/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.websites\.cacheFavicon"/);
   assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("webs\.websites\.update", id, input\)/);
   assert.match(preload, /add: \(input\) => ipcRenderer\.invoke\("webs\.websites\.add", input\)/);
   assert.match(preload, /remove: \(id(?:: string)?\) => ipcRenderer\.invoke\("webs\.websites\.remove", id\)/);
+  assert.match(preload, /cacheFavicon: \(input\) => ipcRenderer\.invoke\("webs\.websites\.cacheFavicon", input\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
   assert.match(appShell, /function createWebsiteItem\(input: WebsiteInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.add\(input\)/);
   assert.notEqual(closeWebEntryStart, -1);
@@ -3468,8 +3475,8 @@ test("website agent association is exposed across webs desktop api layers", () =
   // Favicon component and caching
   assert.match(appSidebar, /import \{ Favicon, type WebsiteFaviconCache \} from/);
   assert.match(appSidebar, /const isWebsite = webItem\.kind === "website"/);
-  assert.match(appSidebar, /const cachedFaviconUrl = faviconCache\?\.\[webItem\.entryKey\]\?\.faviconUrl/);
-  assert.match(appSidebar, /<Favicon[\s\S]*?className="sidebar-website-favicon"[\s\S]*?faviconUrl=\{cachedFaviconUrl\}/);
+  assert.match(appSidebar, /const cachedFaviconUrl = faviconCache\?\.\[webItem\.entryKey\]\?\.faviconUrl \|\| buildWebsiteFaviconUrl\(webItem\.id\)/);
+  assert.match(appSidebar, /<Favicon[\s\S]*?className="sidebar-website-favicon"[\s\S]*?faviconUrl=\{cachedFaviconUrl\}[\s\S]*?allowOriginFallback=\{false\}/);
   assert.match(appSidebar, /className=\{`assistant-worker-icon-button sidebar-website-status-action\$\{closing \? " is-closing" : ""\}`\}/);
   assert.match(appSidebar, /const showWebappAction = webItem\.kind === "webapp"/);
   assert.match(appSidebar, /<SidebarIllustration kind=\{item\.icon\} \/>/);
@@ -3486,12 +3493,13 @@ test("website agent association is exposed across webs desktop api layers", () =
   // Website label font-size 14px matching Chats
   assert.match(navigationCss, /\.sidebar-website-child-row \.sidebar-child-link \.sidebar-link-label\s*\{[\s\S]*?font-size:\s*14px/u);
 
-  // Cache stays session-local and invalidates when the configured website URL changes.
+  // The in-memory cache carries a versioned local protocol URL and invalidates when the configured website URL changes.
   assert.match(appShell, /const \[faviconCache, setFaviconCache\] = useState<WebsiteFaviconCache>\(\{\}\)/);
   assert.match(appShell, /const webItemsRef = useRef<WebEntry\[\]>\(\[\]\)/);
   assert.match(appShell, /websiteUrls\.get\(entryKey\) === cacheEntry\.websiteUrl/);
   assert.match(appShell, /item\.entryKey === entryKey &&[\s\S]{0,120}item\.url === websiteUrl/);
-  assert.match(appShell, /\[entryKey\]: \{ websiteUrl, faviconUrl \}/);
+  assert.match(appShell, /window\.electronAPI\.webs\.websites\.cacheFavicon\(\{[\s\S]*?id: website\.id,[\s\S]*?websiteUrl,[\s\S]*?faviconUrl/);
+  assert.match(appShell, /\[entryKey\]: \{ websiteUrl, faviconUrl: result\.faviconUrl \}/);
   assert.doesNotMatch(surfaceHosts, /faviconCache/);
   assert.match(surfaceHosts, /onWebsiteFaviconDiscovered\(entryKey, item\.url, faviconUrl\)/);
 
@@ -3504,6 +3512,11 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(faviconSource, /const faviconCandidates = \[[\s\S]*?normalizeFaviconUrl\(faviconUrl, url\),[\s\S]*?fallbackFaviconUrl/);
   assert.match(faviconSource, /const activeFaviconUrl = faviconCandidates\.find/);
   assert.match(faviconSource, /setFailedFaviconUrls/);
+  assert.match(faviconSource, /DESKTOP_WEBSITE_FAVICON_PROTOCOL/);
+  assert.match(faviconSource, /allowOriginFallback = true/);
+  assert.match(faviconCache, /FAVICON_DOWNLOAD_TIMEOUT_MS = 10_000/);
+  assert.match(faviconCache, /FAVICON_MAX_BYTES = 1024 \* 1024/);
+  assert.match(faviconProtocol, /registerWebsiteFaviconProtocolScheme/);
 
   // WebApp should still use more_actions (unchanged)
   assert.match(appSidebar, /<SidebarActionIcon kind="more_actions" \/>/);
@@ -4282,12 +4295,15 @@ test("built index uses relative asset paths", (t) => {
   }
   const builtIndex = fs.readFileSync(builtIndexPath, "utf8");
   const petProtocol = `${brand.id}-pet:`;
+  const websiteFaviconProtocol = `${brand.id}-website-favicon:`;
   const exactPetProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(petProtocol)}`, "u");
+  const exactWebsiteFaviconProtocolPattern = new RegExp(`img-src[^"]*${escapeRegExp(websiteFaviconProtocol)}`, "u");
 
   assert.doesNotMatch(builtIndex, /src="\/assets\//);
   assert.doesNotMatch(builtIndex, /href="\/assets\//);
   assert.match(builtIndex, /(src|href)="\.?\/?assets\//);
   assert.match(builtIndex, exactPetProtocolPattern);
+  assert.match(builtIndex, exactWebsiteFaviconProtocolPattern);
   assert.match(builtIndex, new RegExp(`<title>${escapeRegExp(brand.productName)}</title>`, "u"));
 
   for (const entry of fs.readdirSync(path.join(projectRoot, "brands"), { withFileTypes: true })) {
@@ -4295,6 +4311,7 @@ test("built index uses relative asset paths", (t) => {
       continue;
     }
     assert.doesNotMatch(builtIndex, new RegExp(`${escapeRegExp(entry.name)}-pet:`, "u"));
+    assert.doesNotMatch(builtIndex, new RegExp(`${escapeRegExp(entry.name)}-website-favicon:`, "u"));
   }
 });
 

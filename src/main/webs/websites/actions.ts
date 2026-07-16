@@ -5,6 +5,7 @@ import {
   readWebsiteItems,
   writeWebsiteItems
 } from "./store";
+import { clearCachedWebsiteFavicon } from "./favicon-cache";
 import {
   isRecord,
   normalizeAgentKey,
@@ -219,6 +220,7 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
     ...target,
     updatedAt: Date.now()
   };
+  let urlChanged = false;
 
   try {
     if (typeof input.url === "string") {
@@ -233,6 +235,7 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
         };
       }
       updated.url = nextUrl;
+      urlChanged = nextUrl !== target.url;
     }
 
     if (typeof input.label === "string" || typeof input.url === "string") {
@@ -250,6 +253,9 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
 
     items[targetIndex] = updated;
     writeWebsiteItems(app, items);
+    if (urlChanged) {
+      clearCachedWebsiteFavicon(app, updated.id);
+    }
     return {
       ok: true,
       item: updated,

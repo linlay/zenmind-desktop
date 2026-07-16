@@ -9,6 +9,7 @@ import {
   removeWebsiteItem,
   updateWebsiteItem
 } from "../webs/websites/actions";
+import { cacheWebsiteFavicon } from "../webs/websites/favicon-cache";
 import {
   listWebappItems,
   removeWebappItem,
@@ -69,6 +70,9 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   );
   ipcMain.handle("webs.websites.remove", async (_event: any, id: string) =>
     removeWebsiteItem(app, id)
+  );
+  ipcMain.handle("webs.websites.cacheFavicon", async (_event: any, input: any) =>
+    cacheWebsiteFavicon(app, input)
   );
   ipcMain.handle("webs.websites.import", async () => {
     const result = await showFileDialog({

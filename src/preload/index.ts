@@ -550,6 +550,7 @@ const api: DesktopApi = {
       add: (input) => ipcRenderer.invoke("webs.websites.add", input),
       update: (id, input) => ipcRenderer.invoke("webs.websites.update", id, input),
       remove: (id: string) => ipcRenderer.invoke("webs.websites.remove", id),
+      cacheFavicon: (input) => ipcRenderer.invoke("webs.websites.cacheFavicon", input),
       import: () => ipcRenderer.invoke("webs.websites.import"),
       export: () => ipcRenderer.invoke("webs.websites.export")
     },

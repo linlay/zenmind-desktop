@@ -721,7 +721,9 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/CuteJ"/u);
   assert.match(rendererIndex, /<title>CuteJ<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*cutej-pet:/u);
+  assert.match(rendererIndex, /img-src[^"]*cutej-website-favicon:/u);
   assert.doesNotMatch(rendererIndex, /zenmind-pet:/u);
+  assert.doesNotMatch(rendererIndex, /zenmind-website-favicon:/u);
 });
 
 test("brand sync disables macOS signing timestamp when notarization is skipped", (t) => {
@@ -787,7 +789,9 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 使用系统语音识别将你的语音输入转成文字。");
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*zenmind-pet:/u);
+  assert.match(rendererIndex, /img-src[^"]*zenmind-website-favicon:/u);
   assert.doesNotMatch(rendererIndex, /cutej-pet:/u);
+  assert.doesNotMatch(rendererIndex, /cutej-website-favicon:/u);
 });
 
 test("brand sync keeps source files stable across brand switches", (t) => {
