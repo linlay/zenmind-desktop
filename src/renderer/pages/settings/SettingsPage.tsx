@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, SunOutlined } from "@ant-design/icons";
+import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, SunOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
@@ -745,6 +745,7 @@ function getDesktopPetAppearanceDescription(appearanceId: string, fallback: stri
 type UsageSettingsPanelProps = {
   profile: DesktopUsageProfileResult | null;
   ssoStatus: DesktopSsoStatus | null;
+  ssoStatusUnavailable: boolean;
   loading: boolean;
   heatmapMode: UsageHeatmapMode;
   onHeatmapModeChange: (mode: UsageHeatmapMode) => void;
@@ -754,6 +755,7 @@ type UsageSettingsPanelProps = {
 function UsageSettingsPanel({
   profile,
   ssoStatus,
+  ssoStatusUnavailable,
   loading,
   heatmapMode,
   onHeatmapModeChange,
@@ -761,13 +763,46 @@ function UsageSettingsPanel({
 }: UsageSettingsPanelProps) {
   const { locale, t } = useI18n();
   const user = ssoStatus?.user ?? null;
-  const displayName = user?.name || user?.email || t("settings.usage.profile.guestName");
-  const displayAccount = user?.email || user?.sub || t("settings.usage.profile.accountFallback");
-  const statusLabel = ssoStatus?.authenticated
-    ? t("settings.usage.profile.statusSignedIn")
-    : ssoStatus?.pending
-      ? t("sidebar.sso.signingIn")
-      : t("settings.usage.profile.statusSignedOut");
+  const isSsoStatusUnavailable = ssoStatusUnavailable || Boolean(ssoStatus?.error);
+  const isSsoStatusLoading = !ssoStatus && !isSsoStatusUnavailable;
+  const isSignedIn = Boolean(ssoStatus?.authenticated) && !isSsoStatusUnavailable;
+  const isSigningIn = Boolean(ssoStatus?.pending) && !isSsoStatusUnavailable && !isSignedIn;
+  const displayName = user?.name || user?.email || t("settings.usage.profile.signedInFallback");
+  const displayAccount = user?.email && user.email !== displayName ? user.email : "";
+  const profileContext = isSignedIn
+    ? {
+        kind: "signed-in",
+        title: displayName,
+        description: displayAccount,
+        status: t("settings.usage.profile.statusSignedIn")
+      }
+    : isSigningIn
+      ? {
+          kind: "pending",
+          title: t("settings.usage.profile.statusSigningIn"),
+          description: t("settings.usage.profile.apiKeyContext"),
+          status: ""
+        }
+      : isSsoStatusUnavailable
+        ? {
+            kind: "unavailable",
+            title: t("settings.usage.profile.statusUnavailable"),
+            description: t("settings.usage.profile.apiKeyContext"),
+            status: ""
+          }
+        : isSsoStatusLoading
+          ? {
+              kind: "loading",
+              title: t("settings.usage.profile.statusLoading"),
+              description: t("settings.usage.profile.apiKeyContext"),
+              status: ""
+            }
+        : {
+            kind: "guest",
+            title: t("settings.usage.profile.guestMode"),
+            description: t("settings.usage.profile.apiKeyContext"),
+            status: ""
+          };
   const successProfile = profile?.ok ? profile : null;
   const failureProfile = profile && !profile.ok ? profile : null;
 
@@ -868,10 +903,13 @@ function UsageSettingsPanel({
   }, [successProfile]);
 
   function renderProfileAvatar() {
-    if (user?.avatarUrl) {
-      return <img src={user.avatarUrl} alt={t("settings.usage.profile.avatarAlt")} />;
+    if (!isSignedIn) {
+      return <UserOutlined aria-hidden="true" />;
     }
-    return <span>{usageAvatarInitials(displayName, displayAccount)}</span>;
+    if (user?.avatarUrl) {
+      return <img src={user.avatarUrl} alt={`${displayName} ${t("settings.usage.profile.avatarAlt")}`} />;
+    }
+    return <span aria-hidden="true">{usageAvatarInitials(displayName, displayAccount)}</span>;
   }
 
   function renderHeatmap() {
@@ -1037,16 +1075,18 @@ function UsageSettingsPanel({
 
   return (
     <div className="usage-settings-stack">
-      <div className="data-root-card usage-profile-card">
-        <div className="usage-profile-avatar" aria-hidden="true">
+      <div className={`data-root-card usage-profile-card is-${profileContext.kind}`}>
+        <div className="usage-profile-avatar">
           {renderProfileAvatar()}
         </div>
-        <div className="usage-profile-copy">
-          <h2>{displayName}</h2>
-          <p>{displayAccount}</p>
-          <span className={`usage-status-pill ${ssoStatus?.authenticated ? "is-active" : "is-muted"}`}>
-            {statusLabel}
-          </span>
+        <div className="usage-profile-copy" aria-live="polite">
+          <h2>{profileContext.title}</h2>
+          {profileContext.description ? <p>{profileContext.description}</p> : null}
+          {profileContext.status ? (
+            <span className="usage-status-pill is-active">
+              {profileContext.status}
+            </span>
+          ) : null}
         </div>
         <Button disabled={loading} loading={loading} onClick={() => void onRefresh()}>
           {t("common.refresh")}
@@ -2371,6 +2411,7 @@ export function SettingsPage({
   const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
   const [usageProfile, setUsageProfile] = useState<DesktopUsageProfileResult | null>(null);
   const [usageSsoStatus, setUsageSsoStatus] = useState<DesktopSsoStatus | null>(null);
+  const [usageSsoStatusUnavailable, setUsageSsoStatusUnavailable] = useState(false);
   const [usageProfileLoading, setUsageProfileLoading] = useState(false);
   const [usageHeatmapMode, setUsageHeatmapMode] = useState<UsageHeatmapMode>("day");
   const [generalSettings, setGeneralSettings] = useState<DesktopGeneralSettings>(defaultGeneralSettings);
@@ -2642,6 +2683,7 @@ export function SettingsPage({
 
   async function refreshUsageProfile() {
     setUsageProfileLoading(true);
+    setUsageSsoStatusUnavailable(false);
     const [profileResult, ssoResult] = await Promise.allSettled([
       window.electronAPI.settings.getUsageProfile(),
       window.electronAPI.sso.getStatus()
@@ -2659,6 +2701,9 @@ export function SettingsPage({
 
     if (ssoResult.status === "fulfilled") {
       setUsageSsoStatus(ssoResult.value);
+    } else {
+      setUsageSsoStatus(null);
+      setUsageSsoStatusUnavailable(true);
     }
     setUsageProfileLoading(false);
   }
@@ -4653,6 +4698,7 @@ export function SettingsPage({
           <UsageSettingsPanel
             profile={usageProfile}
             ssoStatus={usageSsoStatus}
+            ssoStatusUnavailable={usageSsoStatusUnavailable}
             loading={usageProfileLoading}
             heatmapMode={usageHeatmapMode}
             onHeatmapModeChange={setUsageHeatmapMode}

@@ -2012,7 +2012,18 @@
   }
 
   .settings-page .usage-profile-card {
-    display: flex;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .settings-page .usage-profile-card.is-signed-in {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .settings-page .usage-profile-card .ant-btn {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 
   .settings-page .usage-summary-strip {
@@ -2196,23 +2207,36 @@
 
 .settings-page .usage-profile-card {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
 }
 
+.settings-page .usage-profile-card.is-signed-in {
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+}
+
 .settings-page .usage-profile-avatar {
   display: grid;
-  width: 64px;
-  height: 64px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   border-radius: 50%;
-  background: #2fad6c;
-  color: #fff;
-  font-size: 24px;
+  border: 1px solid var(--line);
+  background: var(--control-select-bg);
+  color: var(--ink-soft);
+  font-size: 18px;
   font-weight: 700;
   line-height: 1;
   overflow: hidden;
+}
+
+.settings-page .usage-profile-card.is-signed-in .usage-profile-avatar {
+  width: 48px;
+  height: 48px;
+  border-color: transparent;
+  background: #2fad6c;
+  color: #fff;
 }
 
 .settings-page .usage-profile-avatar img {
@@ -2231,7 +2255,7 @@
 .settings-page .usage-profile-copy h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1.25;
   font-weight: 700;
 }
@@ -2241,9 +2265,7 @@
   color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .settings-page .usage-status-pill {

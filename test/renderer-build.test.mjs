@@ -1897,6 +1897,20 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "usage"[\s\S]*?<UsageSettingsPanel/);
   assert.match(settingsPage, /window\.electronAPI\.settings\.getUsageProfile\(\)/);
   assert.match(settingsPage, /window\.electronAPI\.sso\.getStatus\(\)/);
+  assert.match(settingsPage, /const isSsoStatusUnavailable = ssoStatusUnavailable \|\| Boolean\(ssoStatus\?\.error\);/);
+  assert.match(settingsPage, /const isSsoStatusLoading = !ssoStatus && !isSsoStatusUnavailable;/);
+  assert.match(settingsPage, /kind: "guest",[\s\S]*?settings\.usage\.profile\.guestMode/);
+  assert.match(settingsPage, /kind: "pending",[\s\S]*?settings\.usage\.profile\.statusSigningIn/);
+  assert.match(settingsPage, /kind: "unavailable",[\s\S]*?settings\.usage\.profile\.statusUnavailable/);
+  assert.match(settingsPage, /kind: "loading",[\s\S]*?settings\.usage\.profile\.statusLoading/);
+  assert.match(settingsPage, /<UserOutlined aria-hidden="true" \/>/);
+  assert.doesNotMatch(settingsPage, /settings\.usage\.profile\.guestName|settings\.usage\.profile\.accountFallback|settings\.usage\.profile\.statusSignedOut/);
+  assert.match(zhCN, /"settings\.usage\.profile\.guestMode":\s*"访客模式"/);
+  assert.match(zhCN, /"settings\.usage\.profile\.apiKeyContext":\s*"使用数据按当前接口密钥统计"/);
+  assert.match(enUS, /"settings\.usage\.profile\.guestMode":\s*"Guest mode"/);
+  assert.match(enUS, /"settings\.usage\.profile\.statusUnavailable":\s*"Account status unavailable"/);
+  assert.match(settingsStyles, /\.settings-page \.usage-profile-card\.is-signed-in\s*\{[\s\S]*?grid-template-columns:\s*48px minmax\(0, 1fr\) auto;/);
+  assert.match(settingsStyles, /\.settings-page \.usage-profile-card \.ant-btn\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/);
   assert.match(settingsPage, /case "appearance"/);
   assert.match(settingsPage, /settings-appearance-panel/);
   assert.match(settingsPage, /settings-appearance-row/);
@@ -6360,6 +6374,31 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-entry/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-copy/);
   assert.doesNotMatch(globalStyles, /\.app-sso-status/);
+});
+
+test("usage settings condense signed-out account context without changing API-key usage", () => {
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(settingsPage, /const \[usageSsoStatusUnavailable, setUsageSsoStatusUnavailable\] = useState\(false\);/);
+  assert.match(settingsPage, /setUsageSsoStatusUnavailable\(false\);[\s\S]*?window\.electronAPI\.sso\.getStatus\(\)/);
+  assert.match(settingsPage, /setUsageSsoStatus\(null\);[\s\S]*?setUsageSsoStatusUnavailable\(true\);/);
+  assert.match(settingsPage, /kind: "guest",[\s\S]*?settings\.usage\.profile\.guestMode/);
+  assert.match(settingsPage, /kind: "pending",[\s\S]*?settings\.usage\.profile\.statusSigningIn/);
+  assert.match(settingsPage, /kind: "unavailable",[\s\S]*?settings\.usage\.profile\.statusUnavailable/);
+  assert.match(settingsPage, /<UserOutlined aria-hidden="true" \/>/);
+  assert.match(settingsPage, /usage-profile-copy" aria-live="polite"/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.getUsageProfile\(\)/);
+  assert.doesNotMatch(settingsPage, /settings\.usage\.profile\.guestName|settings\.usage\.profile\.accountFallback|settings\.usage\.profile\.statusSignedOut/);
+  assert.match(zhCN, /"settings\.usage\.profile\.guestMode":\s*"访客模式"/);
+  assert.match(zhCN, /"settings\.usage\.profile\.apiKeyContext":\s*"使用数据按当前接口密钥统计"/);
+  assert.match(enUS, /"settings\.usage\.profile\.guestMode":\s*"Guest mode"/);
+  assert.match(enUS, /"settings\.usage\.profile\.statusUnavailable":\s*"Account status unavailable"/);
+  assert.match(settingsStyles, /\.settings-page \.usage-profile-card\s*\{[\s\S]*?grid-template-columns:\s*40px minmax\(0, 1fr\) auto;/);
+  assert.match(settingsStyles, /\.settings-page \.usage-profile-card\.is-signed-in\s*\{[\s\S]*?grid-template-columns:\s*48px minmax\(0, 1fr\) auto;/);
+  assert.match(settingsStyles, /\.settings-page \.usage-profile-card \.ant-btn\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/);
 });
 
 test("embedded browser accepts host-opened tabs after multiple tabs exist", () => {
