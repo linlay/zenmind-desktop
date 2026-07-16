@@ -1113,6 +1113,8 @@ export function AppShell() {
 
   useEffect(() => {
     if (
+      bootstrapInitialNavigationDoneRef.current ||
+      chatRuntimeAgent.bootstrapActive ||
       location.pathname !== "/" ||
       !assistantNavAgentsLoaded ||
       !assistantSettings ||
@@ -1125,6 +1127,7 @@ export function AppShell() {
     assistantNavAgentsLoaded,
     assistantSettings,
     chatRuntimeAgent.agent,
+    chatRuntimeAgent.bootstrapActive,
     location.pathname,
     navigate,
   ]);

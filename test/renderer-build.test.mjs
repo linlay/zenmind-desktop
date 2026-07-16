@@ -4015,6 +4015,7 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(appShell, /assistantNavChatItems\.some\(\(chat\) =>[\s\S]*?chat\.chatId === bootstrapChatId && chat\.agentKey === bootstrapAgentKey/);
   assert.match(appShell, /seedChatIndexed[\s\S]*?createAgentChatRoute\(bootstrapAgentKey, bootstrapChatId\)[\s\S]*?createAgentNewChatRoute\(bootstrapAgentKey\)/);
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current = true;[\s\S]*?navigate\(targetRoute, \{ replace: true \}\)/);
+  assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current \|\|[\s\S]*?chatRuntimeAgent\.bootstrapActive \|\|[\s\S]*?location\.pathname !== "\/"/);
   assert.match(assistantNavigation, /export function resolveAssistantNavChatRuntimeAgent\(/);
   assert.match(assistantNavigation, /const agent = defaultAgent \?\? bootstrapAgent;/);
   assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapAgent && !defaultAgent\)/);
