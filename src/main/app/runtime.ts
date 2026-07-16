@@ -34,6 +34,7 @@ import {
   runStartupPreparation,
 } from "../services/manager";
 import { installBundledWebappTemplates } from "../webs/webapps/template-installer";
+import { restorePublishedWebapps } from "../webs/webapps/publication-runtime";
 import { loadInstalledPlugins } from "../plugin-loader";
 import { configurePluginResources, retryPendingPluginResourceSync } from "../plugin-resources";
 import { revealPathInFileManager } from "../reveal-path";
@@ -485,6 +486,7 @@ export function createMainProcessRuntime() {
     emitAssistantNavigationAgentsChanged,
     emitAssistantNavigationPushEvent,
     handleDesktopPetAssistantEvent: (event) => petRuntime.handleAssistantEvent(event),
+    onTunnelConnected: () => restorePublishedWebapps(app),
     desktopPet: {
       refreshState: () => petRuntime.refreshState(),
       showWindow: () => petRuntime.showWindow(),

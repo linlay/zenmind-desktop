@@ -58,6 +58,7 @@ import {
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../../../shared/agent-webclient-routes";
+import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
   SettingsSectionGroupId,
@@ -244,6 +245,7 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
   "webOperator",
 ]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
+const CHATS_VISIBLE_LIMIT = 8;
 type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS
@@ -1143,7 +1145,7 @@ export function AppSidebar({
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
   const sidebarChatItems = useMemo(
-    () => assistantNavChatItems.slice(0, 8),
+    () => assistantNavChatItems.slice(0, CHATS_VISIBLE_LIMIT),
     [assistantNavChatItems],
   );
   const chatNavigationAgentsByKey = useMemo(
@@ -1732,7 +1734,7 @@ export function AppSidebar({
       event.preventDefault();
       if (targetIsAgentWebclientManagementRoute) {
         setForcedActiveManagementRoute(targetPath);
-        dispatchAgentWebclientManagementRouteToActiveWebview(targetPath);
+        dispatchAgentWebclientRouteToActiveWebview(targetPath);
         onNavigateItem?.();
       }
       return;
@@ -1785,14 +1787,34 @@ export function AppSidebar({
     closeToolMenu();
   }
 
-  function dispatchAgentWebclientManagementRouteToActiveWebview(targetPath: string) {
-    if (!isAgentWebclientManagementRoute(targetPath)) {
+  function dispatchAgentWebclientRouteToActiveWebview(targetPath: string) {
+    const targetAgentInfo = readAgentRouteInfo(targetPath);
+    if (
+      !isAgentWebclientManagementRoute(targetPath) &&
+      !targetAgentInfo.agentKey
+    ) {
       return false;
     }
 
     const webview = getActivePluginSurfaceWebviewRef()?.current;
     if (!webview) {
       return false;
+    }
+
+    if (targetAgentInfo.historyRequested) {
+      try {
+        webview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+          action: "openChatHistory",
+          data: {
+            workerKey: `agent:${targetAgentInfo.agentKey}`,
+            agentKey: targetAgentInfo.agentKey,
+          },
+        });
+        return true;
+      } catch (error) {
+        console.warn("[assistant] failed to open agent history", error);
+        return false;
+      }
     }
 
     const script = `(() => {
@@ -1811,12 +1833,23 @@ export function AppSidebar({
     })()`;
 
     void webview.executeJavaScript(script, true).catch((error: unknown) => {
-      console.warn("[assistant] failed to retrigger agent-webclient management route", error);
+      console.warn("[assistant] failed to retrigger agent-webclient route", error);
     });
     return true;
   }
 
-  function requestNavigate(targetPath: string, _options: NavigateOptions = {}) {
+  function requestNavigate(targetPath: string, options: NavigateOptions = {}) {
+    if (options.retriggerAgentRoute) {
+      const targetAgentInfo = readAgentRouteInfo(targetPath);
+      if (
+        targetPath === currentRoute ||
+        targetAgentInfo.historyRequested ||
+        targetAgentInfo.newChatRequested
+      ) {
+        dispatchAgentWebclientRouteToActiveWebview(targetPath);
+      }
+    }
+
     if (targetPath === currentRoute) {
       return;
     }
@@ -2733,17 +2766,37 @@ export function AppSidebar({
     if (!assistantChatDeleteDialog || assistantChatDeleteDialog.pending) {
       return;
     }
+    const chat = assistantChatDeleteDialog.chat;
     setAssistantChatDeleteDialog((current) =>
       current ? { ...current, pending: true, error: "" } : current,
     );
     try {
       const result = await window.electronAPI.assistant.deleteChat(
-        assistantChatDeleteDialog.chat.chatId,
+        chat.chatId,
       );
       if (!result.ok) {
         throw new Error(result.message || t("sidebar.chat.deleteFailed"));
       }
       setAssistantChatDeleteDialog(null);
+
+      if (currentChatId === chat.chatId) {
+        const agentKey = chat.agentKey.trim() || currentAgentKey;
+        const currentAgent = assistantNavAgents.find(
+          (agent) => agent.agentKey === agentKey,
+        );
+        const nextChat = currentAgent
+          ? getAssistantNavAgentSortedChats(currentAgent).find(
+              (candidate) => candidate.chatId !== chat.chatId,
+            )
+          : null;
+        const nextRoute = nextChat
+          ? createAgentChatRoute(agentKey, nextChat.chatId)
+          : agentKey
+            ? createAgentRoute(agentKey)
+            : "/agents";
+        onRequestNavigate?.(nextRoute);
+      }
+
       await onRefreshAssistantNavAgents?.();
     } catch (error) {
       setAssistantChatDeleteDialog((current) =>

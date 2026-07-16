@@ -76,7 +76,10 @@ function normalizeFrontend(raw: unknown, projectDir: string): WebappFrontendConf
   };
 }
 
-function normalizeBackend(raw: unknown, projectDir: string): WebappBackendConfig {
+function normalizeBackend(raw: unknown, projectDir: string): WebappBackendConfig | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
   const backend = isRecord(raw) ? raw : {};
   const runtime = readString(backend.runtime) || "node";
   if (runtime !== "node") {
@@ -108,13 +111,14 @@ export function normalizeWebappManifest(value: unknown, projectDir: string, fall
   const now = Date.now();
   const id = normalizeWebId(readString(value.id) || fallbackId || createWebId());
   const agentKey = normalizeAgentKey(value.agentKey);
+  const backend = normalizeBackend(value.backend, projectDir);
   return {
     id,
     entryKey: createWebappEntryKey(id),
     kind: "webapp",
     label: normalizeWebsiteLabel(readString(value.label), id),
     frontend: normalizeFrontend(value.frontend, projectDir),
-    backend: normalizeBackend(value.backend, projectDir),
+    ...(backend ? { backend } : {}),
     ...(agentKey ? { agentKey } : {}),
     createdAt: value.createdAt === undefined ? now : toTimestamp(value.createdAt),
     updatedAt: value.updatedAt === undefined ? now : toTimestamp(value.updatedAt)

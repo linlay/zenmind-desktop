@@ -42,7 +42,7 @@ export interface WebappEntry extends WebEntryBase {
   kind: "webapp";
   entryKey: `webapp:${string}`;
   frontend: WebappFrontendConfig;
-  backend: WebappBackendConfig;
+  backend?: WebappBackendConfig;
   sourceKind?: WebappSourceKind;
   sourceLabel?: string;
   sourceOwnerId?: string;
@@ -175,38 +175,31 @@ export interface WebappCommandResult {
   message: string;
 }
 
-export type WebappPublishMode = "static" | "fullstack";
-export type WebappPublishStatus = "not-configured" | "ready" | "publishing" | "published" | "error";
+export type WebappPublishProvider = "tunnel";
+export type WebappPublishStatus = "not-configured" | "ready" | "publishing" | "published" | "unpublished" | "error";
 
 export interface WebappPublishInfo {
+  provider: WebappPublishProvider;
   configured: boolean;
-  cliAvailable: boolean;
-  mode: WebappPublishMode | null;
-  port: number | null;
-  stateMount: string | null;
-  persistentVolumeSupported: boolean;
-  authorizedProjects: string[];
-  defaultProject: string;
-  domainSuffix: string;
+  signedIn: boolean;
+  tunnelEnabled: boolean;
+  tunnelConnected: boolean;
+  deviceId: string;
+  relayUrl: string;
 }
 
 export interface WebappPublishState {
   id: string;
+  provider: WebappPublishProvider;
   status: WebappPublishStatus;
-  mode: WebappPublishMode | null;
-  project: string;
-  environment: string;
-  application: string;
+  name: string;
+  routeId: string;
+  publicHost: string;
   url: string;
-  expiresAt: string;
+  targetUrl: string;
+  active: boolean;
   message: string;
   updatedAt: string;
-}
-
-export interface WebappPublishInput {
-  project?: string;
-  environment?: string;
-  expiresAt?: string;
 }
 
 export interface WebappPublishInfoResult {

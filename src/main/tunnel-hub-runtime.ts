@@ -44,6 +44,7 @@ type TunnelHubRuntimeOptions = {
   app: App;
   desktopWsServerOptions: DesktopWsServerOptions;
   logger?: Logger;
+  onConnected?: () => Promise<unknown> | unknown;
   createTunnelClient?: (input: TunnelClientFactoryInput) => TunnelClient;
   readNetworkSignature?: () => string;
   networkMonitorIntervalMs?: number;
@@ -248,6 +249,9 @@ export class TunnelHubRuntime {
       this.lastConnectedAt = new Date().toISOString();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl}`);
+      void Promise.resolve(this.options.onConnected?.()).catch((error) => {
+        this.options.logger?.warn?.(`[tunnel-hub] connected hook failed: ${messageFromError(error)}`);
+      });
       return this.commandResult(true, "Tunnel Hub connected.");
     } catch (error) {
       this.lastError = messageFromError(error);

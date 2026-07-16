@@ -2395,7 +2395,6 @@ export function SettingsPage({
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
   const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
   const [webappPublishStateById, setWebappPublishStateById] = useState<Record<string, WebappPublishState | null>>({});
-  const [webappPublishProjectById, setWebappPublishProjectById] = useState<Record<string, string>>({});
   const [webappPublishPendingId, setWebappPublishPendingId] = useState("");
   const [webappLogTarget, setWebappLogTarget] = useState<WebappLogTarget>("main");
   const [webappLogContent, setWebappLogContent] = useState("");
@@ -3902,15 +3901,6 @@ export function SettingsPage({
       const result = await window.electronAPI.webs.webapps.getPublishInfo(id);
       setWebappPublishInfoById((current) => ({ ...current, [id]: result.info }));
       setWebappPublishStateById((current) => ({ ...current, [id]: result.state }));
-      setWebappPublishProjectById((current) => {
-        const currentProject = current[id];
-        const nextProject = currentProject && result.info.authorizedProjects.includes(currentProject)
-          ? currentProject
-          : result.state?.project && result.info.authorizedProjects.includes(result.state.project)
-            ? result.state.project
-            : result.info.defaultProject || result.info.authorizedProjects[0] || "";
-        return { ...current, [id]: nextProject };
-      });
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     }
@@ -3919,9 +3909,21 @@ export function SettingsPage({
   async function handlePublishWebapp(item: WebappEntry) {
     setWebappPublishPendingId(item.id);
     try {
-      const result = await window.electronAPI.webs.webapps.publish(item.id, {
-        project: webappPublishProjectById[item.id] || undefined
-      });
+      const result = await window.electronAPI.webs.webapps.publish(item.id);
+      setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
+      setWebappPublishStateById((current) => ({ ...current, [item.id]: result.state }));
+      showSectionResultNotice("webapps", result);
+    } catch (reason) {
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setWebappPublishPendingId("");
+    }
+  }
+
+  async function handleUnpublishWebapp(item: WebappEntry) {
+    setWebappPublishPendingId(item.id);
+    try {
+      const result = await window.electronAPI.webs.webapps.unpublish(item.id);
       setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
       setWebappPublishStateById((current) => ({ ...current, [item.id]: result.state }));
       showSectionResultNotice("webapps", result);
@@ -4623,6 +4625,8 @@ export function SettingsPage({
         return t("settings.webapps.publishStatusPublishing");
       case "published":
         return t("settings.webapps.publishStatusPublished");
+      case "unpublished":
+        return t("settings.webapps.publishStatusUnpublished");
       case "error":
         return t("settings.webapps.publishStatusError");
       case "ready":
@@ -4630,17 +4634,6 @@ export function SettingsPage({
       default:
         return t("settings.webapps.publishStatusNotPublished");
     }
-  }
-
-  function formatWebappPublishExpiration(value: string | undefined) {
-    if (!value) {
-      return "";
-    }
-    const timestamp = Date.parse(value);
-    if (!Number.isFinite(timestamp)) {
-      return value;
-    }
-    return new Date(timestamp).toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US");
   }
 
   function renderWebDetailRow(label: string, value: ReactNode) {
@@ -5540,30 +5533,16 @@ export function SettingsPage({
         const runtimeState = selectedWebapp ? webappRuntimeById[selectedWebapp.id] : null;
         const publishInfo = selectedWebapp ? webappPublishInfoById[selectedWebapp.id] : null;
         const publishState = selectedWebapp ? webappPublishStateById[selectedWebapp.id] : null;
-        const publishProject = selectedWebapp ? webappPublishProjectById[selectedWebapp.id] || "" : "";
-        const publishVolumeBlocked = Boolean(
-          publishInfo?.mode === "fullstack" &&
-          publishInfo.stateMount &&
-          !publishInfo.persistentVolumeSupported
-        );
-        const publishReady = Boolean(
-          publishInfo?.configured &&
-          publishInfo.cliAvailable &&
-          publishInfo.authorizedProjects.length > 0 &&
-          publishInfo.domainSuffix &&
-          !publishVolumeBlocked
-        );
+        const publishReady = publishInfo?.configured === true;
         const publishHint = !publishInfo
           ? t("settings.webapps.publishChecking")
-          : !publishInfo.configured
-            ? t("settings.webapps.publishMissingProfile")
-            : !publishInfo.cliAvailable
-              ? t("settings.webapps.publishCliMissing")
-              : publishInfo.authorizedProjects.length === 0
-                ? t("settings.webapps.publishProjectMissing")
-                : publishVolumeBlocked
-                  ? t("settings.webapps.publishVolumeUnsupported")
-                  : t("settings.webapps.publishReadyHint");
+          : !publishInfo.signedIn
+            ? t("settings.webapps.publishSignInRequired")
+            : !publishInfo.tunnelEnabled
+              ? t("settings.webapps.publishTunnelDisabled")
+              : !publishInfo.tunnelConnected
+                ? t("settings.webapps.publishTunnelDisconnected")
+                : t("settings.webapps.publishReadyHint");
         const publishStatusLabel = publishState
           ? getWebappPublishStatusLabel(publishState)
           : publishReady
@@ -5575,6 +5554,8 @@ export function SettingsPage({
             ? t("settings.webapps.publishing")
             : publishState?.status === "published"
               ? t("settings.webapps.publishVerified")
+              : publishState?.status === "unpublished"
+                ? t("settings.webapps.publishStopped")
               : publishHint;
         return (
           <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-webapps">
@@ -5660,7 +5641,9 @@ export function SettingsPage({
                         >
                           {webappPublishPendingId === selectedWebapp.id
                             ? t("settings.webapps.publishing")
-                            : t("settings.webapps.publishAction")}
+                            : publishState?.active
+                              ? t("settings.webapps.publishUpdateAction")
+                              : t("settings.webapps.publishAction")}
                         </Button>
                         <Button
                           disabled={webappRuntimePendingId !== ""}
@@ -5762,29 +5745,18 @@ export function SettingsPage({
                         </Button>
                       </div>
                     </div>
-                    {publishInfo && publishInfo.authorizedProjects.length > 1 ? (
-                      <label className="web-detail-form-item web-publish-project-row">
-                        <span>{t("settings.webapps.publishProject")}</span>
-                        <Select
-                          classNames={SETTINGS_SELECT_CLASS_NAMES}
-                          value={publishProject}
-                          onChange={(project) => setWebappPublishProjectById((current) => ({
-                            ...current,
-                            [selectedWebapp.id]: project
-                          }))}
-                          options={publishInfo.authorizedProjects.map((project) => ({ value: project, label: project }))}
-                        />
-                      </label>
-                    ) : null}
                     <div className="web-detail-grid">
                       {renderWebDetailRow(t("settings.webapps.publishStatus"), publishStatusLabel)}
-                      {renderWebDetailRow(t("settings.webapps.publishMode"), publishInfo?.mode === "static"
-                        ? t("settings.webapps.publishMode.static")
-                        : publishInfo?.mode === "fullstack"
-                          ? t("settings.webapps.publishMode.fullstack")
-                          : "")}
-                      {renderWebDetailRow(t("settings.webapps.publishProject"), publishState?.project || publishProject)}
-                      {renderWebDetailRow(t("settings.webapps.publishApplication"), publishState?.application)}
+                      {renderWebDetailRow(t("settings.webapps.publishProvider"), publishInfo?.provider === "tunnel"
+                        ? t("settings.webapps.publishProviderTunnel")
+                        : "")}
+                      {renderWebDetailRow(t("settings.webapps.publishTunnelStatus"), publishInfo?.tunnelConnected
+                        ? t("settings.webapps.publishTunnelConnected")
+                        : t("settings.webapps.publishTunnelDisconnectedShort"))}
+                      {renderWebDetailRow(t("settings.webapps.publishDeviceId"), publishInfo?.deviceId)}
+                      {renderWebDetailRow(t("settings.webapps.publishRouteName"), publishState?.name)}
+                      {renderWebDetailRow(t("settings.webapps.publishRouteId"), publishState?.routeId)}
+                      {renderWebDetailRow(t("settings.webapps.publishTargetUrl"), publishState?.targetUrl)}
                       {renderWebDetailRow(t("settings.webapps.publishUrl"), publishState?.url ? (
                         <button
                           type="button"
@@ -5794,8 +5766,22 @@ export function SettingsPage({
                           {publishState.url}
                         </button>
                       ) : "")}
-                      {renderWebDetailRow(t("settings.webapps.publishExpiresAt"), formatWebappPublishExpiration(publishState?.expiresAt))}
+                      {renderWebDetailRow(t("settings.webapps.publishUpdatedAt"), publishState?.updatedAt
+                        ? new Date(publishState.updatedAt).toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US")
+                        : "")}
                     </div>
+                    {publishState?.active ? (
+                      <div className="web-detail-actions">
+                        <Button
+                          danger
+                          disabled={webappPublishPendingId !== ""}
+                          loading={webappPublishPendingId === selectedWebapp.id}
+                          onClick={() => void handleUnpublishWebapp(selectedWebapp)}
+                        >
+                          {t("settings.webapps.unpublishAction")}
+                        </Button>
+                      </div>
+                    ) : null}
                     <div className={`web-publish-message${publishState?.status === "error" ? " is-error" : ""}`}>
                       {publishMessage}
                     </div>
@@ -5835,11 +5821,15 @@ export function SettingsPage({
                       {renderWebDetailRow(t("settings.webapps.frontendIndex"), selectedWebapp.frontend.index)}
                       {renderWebDetailRow(t("settings.webapps.frontendSpa"), selectedWebapp.frontend.spa ? t("common.yes") : t("common.no"))}
                       {renderWebDetailRow(t("settings.webapps.apiPrefix"), selectedWebapp.frontend.apiPrefix)}
-                      {renderWebDetailRow(t("settings.webapps.backendRuntime"), selectedWebapp.backend.runtime)}
-                      {renderWebDetailRow(t("settings.webapps.backendEntry"), selectedWebapp.backend.entry)}
-                      {renderWebDetailRow(t("settings.webapps.backendArgs"), selectedWebapp.backend.args.join(" "))}
-                      {renderWebDetailRow(t("settings.webapps.backendPortSetting"), selectedWebapp.backend.port)}
-                      {renderWebDetailRow(t("settings.webapps.healthPath"), selectedWebapp.backend.healthPath)}
+                      {renderWebDetailRow(t("settings.webapps.backendRuntime"), selectedWebapp.backend?.runtime ?? t("common.none"))}
+                      {selectedWebapp.backend ? (
+                        <>
+                          {renderWebDetailRow(t("settings.webapps.backendEntry"), selectedWebapp.backend.entry)}
+                          {renderWebDetailRow(t("settings.webapps.backendArgs"), selectedWebapp.backend.args.join(" "))}
+                          {renderWebDetailRow(t("settings.webapps.backendPortSetting"), selectedWebapp.backend.port)}
+                          {renderWebDetailRow(t("settings.webapps.healthPath"), selectedWebapp.backend.healthPath)}
+                        </>
+                      ) : null}
                     </div>
                   </section>
 

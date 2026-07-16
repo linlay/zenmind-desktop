@@ -72,7 +72,8 @@ function createDesktopActionOptions(t) {
   };
   const calls = {
     refreshState: 0,
-    saveSettings: []
+    saveSettings: [],
+    translations: []
   };
 
   return {
@@ -80,7 +81,18 @@ function createDesktopActionOptions(t) {
     state,
     options: {
       app: createApp(homePath),
-      assistantBridge: {},
+      assistantBridge: {
+        completeText: async (request) => {
+          calls.translations.push(request);
+          return {
+            ok: true,
+            runId: "run-translate",
+            chatId: "chat-translate",
+            text: "Hello world",
+            message: "Hello world"
+          };
+        }
+      },
       getMainWindow: () => null,
       getCurrentPageSnapshot: () => null,
       navigate: () => {},
@@ -104,6 +116,54 @@ function createDesktopActionOptions(t) {
     }
   };
 }
+
+test("desktop assistant translate validates language and returns model text", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.assistant.translate",
+    args: { text: "你好，世界", targetLanguage: "en" },
+    permissionMode: "full_access"
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.result.translation, "Hello world");
+  assert.equal(response.result.targetLanguage, "en");
+  assert.equal(calls.translations.length, 1);
+  assert.match(calls.translations[0].message, /Translate the user text into English/u);
+  assert.match(calls.translations[0].message, /你好，世界/u);
+
+  const invalid = await handleDesktopActionRequest(options, {
+    action: "desktop.assistant.translate",
+    args: { text: "hello", targetLanguage: "fr" },
+    permissionMode: "full_access"
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, "invalid_args");
+});
+
+test("desktop assistant complete uses the configured helper without exposing credentials", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.assistant.complete",
+    args: { prompt: "总结这段文字", instruction: "只返回一句中文" },
+    permissionMode: "full_access"
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.result.text, "Hello world");
+  assert.equal(response.result.runId, "run-translate");
+  assert.equal(calls.translations.length, 1);
+  assert.match(calls.translations[0].message, /只返回一句中文/u);
+  assert.match(calls.translations[0].message, /总结这段文字/u);
+
+  const invalid = await handleDesktopActionRequest(options, {
+    action: "desktop.assistant.complete",
+    args: { prompt: "" },
+    permissionMode: "full_access"
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, "invalid_args");
+});
 
 function waitForListening(server) {
   if (server.listening) {

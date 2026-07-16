@@ -1,4 +1,5 @@
 const { execFileSync, execSync } = require("child_process");
+const { createHash } = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -216,6 +217,54 @@ function pruneUnusedElectronLocales(appPath) {
   }
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+}
+
+function setPlistString(plist, key, value) {
+  const pattern = new RegExp(`(<key>${escapeRegExp(key)}</key>\\s*<string>)([^<]*)(</string>)`, "u");
+  if (!pattern.test(plist)) {
+    throw new Error(`Missing ${key} in macOS app Info.plist.`);
+  }
+  return plist.replace(pattern, `$1${value}$3`);
+}
+
+function resolveMacAppIconPath(resourcesRoot, configuredIconFile) {
+  const iconFileName = path.basename(configuredIconFile);
+  const candidates = path.extname(iconFileName)
+    ? [iconFileName]
+    : [iconFileName, `${iconFileName}.icns`];
+  return candidates
+    .map((candidate) => path.join(resourcesRoot, candidate))
+    .find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+function contentAddressMacAppIcon(appPath) {
+  const plistPath = path.join(appPath, "Contents", "Info.plist");
+  const resourcesRoot = path.join(appPath, "Contents", "Resources");
+  const plist = fs.readFileSync(plistPath, "utf8");
+  const iconMatch = plist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/u);
+  if (!iconMatch) {
+    throw new Error(`Missing CFBundleIconFile in ${plistPath}`);
+  }
+
+  const sourceIconPath = resolveMacAppIconPath(resourcesRoot, iconMatch[1]);
+  if (!sourceIconPath) {
+    throw new Error(`macOS app icon not found for CFBundleIconFile=${iconMatch[1]} in ${resourcesRoot}`);
+  }
+
+  const iconHash = createHash("sha256").update(fs.readFileSync(sourceIconPath)).digest("hex").slice(0, 12);
+  const targetIconFileName = `icon-${iconHash}.icns`;
+  const targetIconPath = path.join(resourcesRoot, targetIconFileName);
+
+  if (sourceIconPath !== targetIconPath) {
+    fs.renameSync(sourceIconPath, targetIconPath);
+  }
+  fs.writeFileSync(plistPath, setPlistString(plist, "CFBundleIconFile", targetIconFileName));
+  console.log(`[fix-mac-sign] Content-addressed macOS app icon as ${targetIconFileName}`);
+  return targetIconFileName;
+}
+
 function formatBytes(bytes) {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
@@ -234,6 +283,7 @@ exports.default = async function (context) {
   if (context.electronPlatformName !== "darwin") return;
 
   pruneUnusedElectronLocales(appPath);
+  contentAddressMacAppIcon(appPath);
 
   if (process.env.DESKTOP_MAC_AD_HOC_SIGN !== "1") {
     console.log("[fix-mac-sign] Skipping ad-hoc signing; electron-builder will handle macOS code signing.");
@@ -248,3 +298,5 @@ exports.default = async function (context) {
     { stdio: "inherit" }
   );
 };
+
+exports.contentAddressMacAppIcon = contentAddressMacAppIcon;

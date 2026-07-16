@@ -1640,7 +1640,8 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)[\s\S]*?isAssistantNavProjectAgent\(agent\)/);
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
   assert.match(sidebarSource, /assistantNavChatItems\?: AssistantNavChatItem\[\]/);
-  assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, 8\)/);
+  assert.match(sidebarSource, /const CHATS_VISIBLE_LIMIT = 8;/);
+  assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, CHATS_VISIBLE_LIMIT\)/);
   assert.doesNotMatch(sidebarSource, /getAssistantNavRecentChatsOverview/);
   assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
@@ -1665,13 +1666,17 @@ test("Chats sidebar retains global chatItems and adds a default-agent history en
 
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
   assert.match(appShell, /assistantNavChatItemsHasMore=\{assistantNavChatItemsHasMore\}/);
-  assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, 8\)/);
+  assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, CHATS_VISIBLE_LIMIT\)/);
   assert.match(chatsListSource, /sidebarChatItems\.map\(\(chat\) =>/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey, chat\.chatId\)/);
   assert.doesNotMatch(chatsListSource, /recentChats/);
   assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
   assert.match(chatsListSource, /worker-chat-more assistant-worker-more sidebar-chats-more/);
   assert.match(sidebarSource, /createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /function dispatchAgentWebclientRouteToActiveWebview\(targetPath: string\)/);
+  assert.match(sidebarSource, /targetAgentInfo\.historyRequested \|\|\s*targetAgentInfo\.newChatRequested/);
+  assert.match(sidebarSource, /dispatchAgentWebclientRouteToActiveWebview\(targetPath\)/);
+  assert.match(sidebarSource, /webview\.send\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, \{\s*action: "openChatHistory"/);
 });
 
 test("Chats sidebar reuses the Projects chat row status and unread layout", () => {
@@ -1688,7 +1693,7 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
     sidebarSource.indexOf("function renderChatsEntry"),
   );
 
-  assert.match(chatsListSource, /renderAssistantChatRow\(chat, currentChatId, \{/);
+  assert.match(chatsListSource, /renderAssistantChatRow\(chat, activeSidebarChatId, \{/);
   assert.match(chatsListSource, /focusId: createSidebarChatsChatFocusId\(chat\.chatId\)/);
   assert.match(chatsListSource, /navigationKind: "chats-chat"/);
   assert.match(chatsListSource, /rowClassName: "sidebar-chats-row"/);
@@ -2667,7 +2672,8 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.doesNotMatch(appShell, /showStartupPetGreeting/);
-  assert.match(appShell, /path="\/"[\s\S]*?element=\{<StartupRoutePlaceholder \/>\}/);
+  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?canStartChat=\{Boolean\(chatRuntimeAgent\.agent\)\}/);
+  assert.match(appShell, /location\.pathname !== "\/"[\s\S]*?createAgentNewChatRoute\(chatRuntimeAgent\.agent\.agentKey\)/);
   assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);
   assert.doesNotMatch(appShell, /preferences\?\.kanban/);
@@ -5026,11 +5032,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /screen\.capture/);
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "RESPONSE", "TYPE"));
-  assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "SERVICE", "WEBVIEW", "BRIDGE", "ACTION", "CHANNEL"));
+  assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action"/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.doesNotMatch(serviceWebviewBridgeContracts, /CHAT_ROUTE_REQUEST_TYPE/);
-  assert.doesNotMatch(serviceWebviewBridgeContracts, /ACTION_CHANNEL/);
+  assert.match(serviceWebviewBridgeContracts, /ACTION_CHANNEL/);
   assert.match(serviceWebviewBridgeContracts, /desktopAuthContext\?: string;/);
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "RESPONSE", "TYPE"));
@@ -5044,11 +5050,13 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /payload\.type !== DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
-  assert.doesNotMatch(serviceWebviewPreload, /ACTION_CHANNEL/);
-  assert.doesNotMatch(serviceWebviewPreload, /ACTION_EVENT/);
+  assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
+  assert.match(serviceWebviewPreload, /PRELOAD_TO_PAGE_ACTION_EVENT/);
+  assert.match(serviceWebviewPreload, /payload\.action !== "openChatHistory"/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /ACTION_CHANNEL/);
-  assert.doesNotMatch(serviceWebviewMainWorld, /ACTION_EVENT/);
+  assert.match(serviceWebviewMainWorld, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
+  assert.match(serviceWebviewMainWorld, /PRELOAD_TO_PAGE_ACTION_EVENT/);
+  assert.match(serviceWebviewMainWorld, /emitFromMain\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, payload\)/);
   assert.match(serviceWebviewMainWorld, /__DESKTOP_WEBVIEW_BRIDGE__/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);

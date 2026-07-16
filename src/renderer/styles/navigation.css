@@ -3817,6 +3817,52 @@
 
 .startup-route-placeholder {
   min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  background: var(--bg-base);
+}
+
+.startup-chat-guide {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.startup-chat-guide-mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(22, 119, 255, 0.1);
+  color: var(--accent);
+  font-size: 25px;
+}
+
+.startup-chat-guide h1 {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.startup-chat-guide p {
+  max-width: 420px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.startup-chat-guide-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
 }
 
 .app-error-screen {

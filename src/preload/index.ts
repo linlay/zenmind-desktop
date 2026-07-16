@@ -563,7 +563,8 @@ const api: DesktopApi = {
       restart: (id: string) => ipcRenderer.invoke("webs.webapps.restart", id),
       getStatus: (id: string) => ipcRenderer.invoke("webs.webapps.getStatus", id),
       getPublishInfo: (id: string) => ipcRenderer.invoke("webs.webapps.getPublishInfo", id),
-      publish: (id: string, input) => ipcRenderer.invoke("webs.webapps.publish", id, input),
+      publish: (id: string) => ipcRenderer.invoke("webs.webapps.publish", id),
+      unpublish: (id: string) => ipcRenderer.invoke("webs.webapps.unpublish", id),
       readLog: (id, target, options) => ipcRenderer.invoke("webs.webapps.readLog", id, target, options)
     }
   },

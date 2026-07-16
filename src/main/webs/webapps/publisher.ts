@@ -1,305 +1,49 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import type { App } from "electron";
 import type {
   WebappEntry,
   WebappPublishInfo,
   WebappPublishInfoResult,
-  WebappPublishInput,
-  WebappPublishMode,
   WebappPublishResult,
-  WebappPublishState
+  WebappPublishState,
+  WebappRuntimeState
 } from "../../../shared/contracts";
+import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
+import { getTunnelHubRuntimeStatus, startTunnelHubRuntime } from "../../tunnel-hub-runtime";
+import { readTunnelHubRegistrationBearerToken, readTunnelHubSettings } from "../../tunnel-hub-settings";
 import { getDesktopWebappStateRoot } from "../../user-paths";
-import { getWebappDir, readWebappItems } from "./store";
+import { readWebappItems } from "./store";
 
-const PUBLISH_PROFILE_FILE = "webapp.publish.json";
 const PUBLISH_STATE_FILE = "publish.json";
-const DEFAULT_ENVIRONMENT = "production";
-const DEFAULT_EXPIRATION_MS = 6 * 60 * 60 * 1_000;
-const COMMAND_OUTPUT_LIMIT = 16 * 1024 * 1024;
+const PROVIDER = "tunnel" as const;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
-type PublishProfile = {
-  schemaVersion: 1;
-  provider: "liteploy";
-  mode: WebappPublishMode;
-  port: number;
-  stateMount: string | null;
-};
-
-type CommandResult = {
-  stdout: string;
-  stderr: string;
-};
-
-type PublishContext = {
-  item: WebappEntry;
-  root: string;
-  profile: PublishProfile;
-};
-
-const EMPTY_INFO: WebappPublishInfo = {
-  configured: false,
-  cliAvailable: false,
-  mode: null,
-  port: null,
-  stateMount: null,
-  persistentVolumeSupported: false,
-  authorizedProjects: [],
-  defaultProject: "",
-  domainSuffix: ""
+type TunnelWebappResponse = {
+  name?: unknown;
+  publicHost?: unknown;
+  publicUrl?: unknown;
+  targetUrl?: unknown;
+  routeId?: unknown;
+  active?: unknown;
 };
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function redact(value: unknown) {
-  return String(value || "")
-    .replace(/^token:\s*.*$/gimu, "token: ***")
-    .replace(/(--token(?:=|\s+))\S+/giu, "$1***")
-    .replace(/\beyJ[A-Za-z0-9_-]{40,}\b/gu, "***")
-    .replace(/((?:api[-_ ]?key|authorization)\s*[:=]\s*)\S+/giu, "$1***");
+function readText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function errorMessage(error: unknown) {
-  return redact(error instanceof Error ? error.message : String(error));
-}
-
-function readJson(filePath: string, label: string) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
-  } catch (error) {
-    throw new Error(`${label} is invalid JSON: ${errorMessage(error)}`);
-  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 function findWebapp(app: App, id: string) {
   const normalizedId = id.trim();
   return readWebappItems(app).find((item) => item.id === normalizedId) ?? null;
-}
-
-function readPublishContext(app: App, id: string): PublishContext {
-  const item = findWebapp(app, id);
-  if (!item) {
-    throw new Error("WebApp was not found.");
-  }
-  const root = item.installPath || getWebappDir(app, item.id);
-  const profilePath = path.join(root, PUBLISH_PROFILE_FILE);
-  if (!fs.existsSync(profilePath)) {
-    throw new Error(`${PUBLISH_PROFILE_FILE} is missing.`);
-  }
-  const raw = readJson(profilePath, PUBLISH_PROFILE_FILE);
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error(`${PUBLISH_PROFILE_FILE} must contain an object.`);
-  }
-  const value = raw as Record<string, unknown>;
-  if (value.schemaVersion !== 1 || value.provider !== "liteploy") {
-    throw new Error(`${PUBLISH_PROFILE_FILE} must use schemaVersion 1 and provider liteploy.`);
-  }
-
-  let profile: PublishProfile;
-  if (value.mode === "static" && value.port === 80 && value.stateMount === null) {
-    profile = {
-      schemaVersion: 1,
-      provider: "liteploy",
-      mode: "static",
-      port: 80,
-      stateMount: null
-    };
-  } else if (value.mode === "fullstack" && value.port === 3000 && value.stateMount === "/data") {
-    const dockerfile = path.join(root, "deploy", "Dockerfile");
-    if (!fs.existsSync(dockerfile) || !fs.statSync(dockerfile).isFile()) {
-      throw new Error("Full-stack publishing requires deploy/Dockerfile.");
-    }
-    profile = {
-      schemaVersion: 1,
-      provider: "liteploy",
-      mode: "fullstack",
-      port: 3000,
-      stateMount: "/data"
-    };
-  } else {
-    throw new Error(`${PUBLISH_PROFILE_FILE} must declare a supported static or fullstack profile.`);
-  }
-  return { item, root, profile };
-}
-
-function executableNames(platform: NodeJS.Platform) {
-  return platform === "win32"
-    ? ["liteploy.exe", "liteploy.cmd", "liteploy"]
-    : ["liteploy"];
-}
-
-function liteployCandidates(app: App, platform: NodeJS.Platform = process.platform) {
-  const home = app.getPath("home");
-  const directories: string[] = [];
-  if (platform === "win32") {
-    const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
-    directories.push(
-      path.join(home, ".local", "bin"),
-      path.join(localAppData, "Programs", "liteploy"),
-      path.join(localAppData, "liteploy")
-    );
-  } else {
-    directories.push(
-      path.join(home, ".local", "bin"),
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-      "/usr/bin"
-    );
-  }
-  directories.push(...String(process.env.PATH || "").split(path.delimiter).filter(Boolean));
-  if (process.env.LITEPLOY_HOME) {
-    directories.push(path.resolve(process.env.LITEPLOY_HOME));
-  }
-  const candidates = directories.flatMap((directory) =>
-    executableNames(platform).map((name) => path.join(directory, name))
-  );
-  return [...new Set(candidates)];
-}
-
-function resolveLiteploy(app: App, platform: NodeJS.Platform = process.platform) {
-  for (const candidate of liteployCandidates(app, platform)) {
-    try {
-      if (!fs.statSync(candidate).isFile()) {
-        continue;
-      }
-      fs.accessSync(candidate, platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK);
-      return candidate;
-    } catch {
-      // Continue to the next explicit candidate.
-    }
-  }
-  return "";
-}
-
-function runCommand(
-  command: string,
-  args: string[],
-  options: { cwd?: string; timeoutMs?: number } = {}
-): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: process.env,
-      shell: false,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-
-    const finish = (callback: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      callback();
-    };
-    const append = (current: string, chunk: Buffer) => {
-      const next = `${current}${chunk.toString("utf8")}`;
-      if (Buffer.byteLength(next, "utf8") > COMMAND_OUTPUT_LIMIT) {
-        child.kill();
-        throw new Error("Liteploy command output exceeded the safety limit.");
-      }
-      return next;
-    };
-
-    child.stdout?.on("data", (chunk: Buffer) => {
-      try {
-        stdout = append(stdout, chunk);
-      } catch (error) {
-        finish(() => reject(error));
-      }
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      try {
-        stderr = append(stderr, chunk);
-      } catch (error) {
-        finish(() => reject(error));
-      }
-    });
-    child.on("error", (error) => finish(() => reject(new Error(`Failed to start Liteploy: ${error.message}`))));
-    child.on("close", (code) => finish(() => {
-      const output = {
-        stdout: redact(stdout).trim(),
-        stderr: redact(stderr).trim()
-      };
-      if (code !== 0) {
-        reject(new Error([
-          `Liteploy exited with code ${code ?? "unknown"}.`,
-          output.stderr,
-          output.stdout
-        ].filter(Boolean).join("\n")));
-        return;
-      }
-      resolve(output);
-    }));
-
-    const timer = setTimeout(() => {
-      child.kill();
-      finish(() => reject(new Error("Liteploy command timed out.")));
-    }, options.timeoutMs ?? 30_000);
-  });
-}
-
-function parseAuthorizedProjects(output: string) {
-  const projects: string[] = [];
-  for (const line of output.split(/\r?\n/u)) {
-    const match = line.trim().match(/^([^\s]+)\s+[0-9.]+\s+CPU\s+\d+MB$/u);
-    if (match) {
-      projects.push(match[1]);
-    }
-  }
-  return [...new Set(projects)].sort();
-}
-
-function parseDomainSuffix(output: string) {
-  const match = output.match(/^domainSuffix:\s*(\S+)\s*$/mu);
-  return match && /^\.[a-z0-9.-]+$/u.test(match[1]) ? match[1].toLowerCase() : "";
-}
-
-function stableName(value: string, maximum: number) {
-  if (value.length <= maximum) {
-    return value;
-  }
-  const digest = crypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
-  const prefix = value.slice(0, maximum - digest.length - 1).replace(/-+$/u, "");
-  return `${prefix}-${digest}`;
-}
-
-function stableApplicationName(project: string, webappId: string) {
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(project)) {
-    throw new Error(`Project ${JSON.stringify(project)} cannot be used to generate a public domain.`);
-  }
-  const maximum = 63 - project.length - 1;
-  if (maximum < 10) {
-    throw new Error(`Project ${JSON.stringify(project)} is too long to generate a WebApp domain.`);
-  }
-  return stableName(webappId, maximum);
-}
-
-function validateEnvironment(value: string) {
-  if (!/^[a-z0-9][a-z0-9-]{0,62}$/u.test(value)) {
-    throw new Error("Environment must be a lowercase DNS-style label.");
-  }
-  return value;
-}
-
-function validateExpiration(value: string | undefined) {
-  if (!value) {
-    return "";
-  }
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp) || timestamp <= Date.now()) {
-    throw new Error("Expiration must be a future RFC3339 timestamp.");
-  }
-  return new Date(timestamp).toISOString();
 }
 
 function publishStatePath(app: App, id: string) {
@@ -314,329 +58,303 @@ function writePublishState(app: App, state: WebappPublishState) {
   fs.renameSync(temporaryPath, filePath);
 }
 
-function readPublishState(app: App, id: string): WebappPublishState | null {
+export function readWebappPublishState(app: App, id: string): WebappPublishState | null {
   try {
-    const value = readJson(publishStatePath(app, id), PUBLISH_STATE_FILE) as Partial<WebappPublishState>;
-    if (!value || value.id !== id) {
+    const value = JSON.parse(fs.readFileSync(publishStatePath(app, id), "utf8")) as Partial<WebappPublishState>;
+    if (!value || value.id !== id || value.provider !== PROVIDER) {
       return null;
     }
+    const active = value.active === true;
     return {
       id,
-      status: value.status === "publishing" || value.status === "published" || value.status === "error"
+      provider: PROVIDER,
+      status: value.status === "publishing" || value.status === "published" || value.status === "unpublished" || value.status === "error"
         ? value.status
-        : "ready",
-      mode: value.mode === "static" || value.mode === "fullstack" ? value.mode : null,
-      project: typeof value.project === "string" ? value.project : "",
-      environment: typeof value.environment === "string" ? value.environment : "",
-      application: typeof value.application === "string" ? value.application : "",
-      url: typeof value.url === "string" ? value.url : "",
-      expiresAt: typeof value.expiresAt === "string" ? normalizeExpirationValue(value.expiresAt) : "",
-      message: typeof value.message === "string" ? value.message : "",
-      updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : nowIso()
+        : active ? "published" : "ready",
+      name: readText(value.name),
+      routeId: readText(value.routeId),
+      publicHost: readText(value.publicHost),
+      url: readText(value.url),
+      targetUrl: readText(value.targetUrl),
+      active,
+      message: readText(value.message),
+      updatedAt: readText(value.updatedAt) || nowIso()
     };
   } catch {
     return null;
   }
 }
 
-async function inspectPublishInfo(app: App, context: PublishContext | null, liteploy: string) {
-  const info: WebappPublishInfo = {
-    ...EMPTY_INFO,
-    configured: Boolean(context),
-    cliAvailable: Boolean(liteploy),
-    mode: context?.profile.mode ?? null,
-    port: context?.profile.port ?? null,
-    stateMount: context?.profile.stateMount ?? null
-  };
-  if (!liteploy) {
-    return info;
+function readRuntimeStatus() {
+  try {
+    return getTunnelHubRuntimeStatus();
+  } catch {
+    return null;
   }
-  const [configShow, authProjects, deployHelp] = await Promise.all([
-    runCommand(liteploy, ["config", "show"]),
-    runCommand(liteploy, ["auth", "projects"]),
-    runCommand(liteploy, ["app", "deploy", "--help"])
-  ]);
-  info.authorizedProjects = parseAuthorizedProjects(authProjects.stdout);
-  info.defaultProject = info.authorizedProjects.length === 1 ? info.authorizedProjects[0] : "";
-  info.domainSuffix = parseDomainSuffix(configShow.stdout);
-  info.persistentVolumeSupported = /(^|\s)--volume(?:\s|$)/mu.test(`${deployHelp.stdout}\n${deployHelp.stderr}`);
-  return info;
+}
+
+function inspectPublishInfo(app: App): WebappPublishInfo {
+  const settings = readTunnelHubSettings(app);
+  const status = readRuntimeStatus();
+  const signedIn = Boolean(readTunnelHubRegistrationBearerToken(app));
+  return {
+    provider: PROVIDER,
+    configured: signedIn && settings.enabled && Boolean(settings.relayUrl) && Boolean(settings.deviceId),
+    signedIn,
+    tunnelEnabled: settings.enabled,
+    tunnelConnected: status?.connected === true,
+    deviceId: settings.deviceId,
+    relayUrl: settings.relayUrl
+  };
 }
 
 export async function getWebappPublishInfo(app: App, id: string): Promise<WebappPublishInfoResult> {
-  const state = readPublishState(app, id.trim());
-  let context: PublishContext | null = null;
-  let contextError = "";
-  try {
-    context = readPublishContext(app, id);
-  } catch (error) {
-    contextError = errorMessage(error);
+  const item = findWebapp(app, id);
+  const info = inspectPublishInfo(app);
+  const state = readWebappPublishState(app, id.trim());
+  if (!item) {
+    return { ok: false, info, state, message: "WebApp was not found." };
   }
-  const liteploy = resolveLiteploy(app);
+  const message = !info.signedIn
+    ? "Sign in before publishing through Tunnel Hub."
+    : !info.tunnelEnabled
+      ? "Enable Tunnel Hub before publishing."
+      : !info.tunnelConnected
+        ? "Tunnel Hub is not connected. Publishing will retry the connection."
+        : "Ready to publish through Tunnel Hub.";
+  return { ok: info.configured, info, state, message };
+}
+
+function stableWebappName(id: string) {
+  const normalized = id
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/-+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+  const base = normalized || `webapp-${crypto.createHash("sha256").update(id).digest("hex").slice(0, 12)}`;
+  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(base)) {
+    return base;
+  }
+  const digest = crypto.createHash("sha256").update(base).digest("hex").slice(0, 8);
+  return `${base.slice(0, 54).replace(/-+$/u, "")}-${digest}`;
+}
+
+function requireLoopbackTarget(targetUrl: string) {
+  let parsed: URL;
   try {
-    const info = await inspectPublishInfo(app, context, liteploy);
-    const ok = Boolean(context) && Boolean(liteploy) && info.authorizedProjects.length > 0 && Boolean(info.domainSuffix);
-    const message = contextError || (!liteploy
-      ? "Liteploy CLI was not found."
-      : info.authorizedProjects.length === 0
-        ? "No Liteploy project is authorized."
-        : info.domainSuffix
-          ? "Ready to publish."
-          : "Liteploy did not return a domain suffix.");
-    return { ok, info, state, message };
-  } catch (error) {
-    return {
-      ok: false,
-      info: {
-        ...EMPTY_INFO,
-        configured: Boolean(context),
-        cliAvailable: Boolean(liteploy),
-        mode: context?.profile.mode ?? null,
-        port: context?.profile.port ?? null,
-        stateMount: context?.profile.stateMount ?? null
+    parsed = new URL(targetUrl);
+  } catch {
+    throw new Error("WebApp runtime did not return a valid local URL.");
+  }
+  if (parsed.protocol !== "http:" || !LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
+    throw new Error("Tunnel publishing only accepts a loopback HTTP WebApp target.");
+  }
+  parsed.username = "";
+  parsed.password = "";
+  parsed.hash = "";
+  return parsed.toString();
+}
+
+async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: string, active: boolean) {
+  const settings = readTunnelHubSettings(app);
+  const siteToken = readTunnelHubRegistrationBearerToken(app);
+  if (!siteToken) {
+    throw new Error("Sign in before publishing through Tunnel Hub.");
+  }
+  if (!settings.enabled || !settings.relayUrl || !settings.deviceId) {
+    throw new Error("Enable Tunnel Hub before publishing.");
+  }
+  const name = stableWebappName(item.id);
+  const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
+  const response = await fetch(
+    `${origin}/api/desktop/devices/${encodeURIComponent(settings.deviceId)}/webapps/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${siteToken}`,
+        "Content-Type": "application/json"
       },
-      state,
-      message: contextError || errorMessage(error)
-    };
+      body: JSON.stringify({ targetUrl: requireLoopbackTarget(targetUrl), active }),
+      signal: AbortSignal.timeout(30_000)
+    }
+  );
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`Tunnel Hub WebApp registration failed (${response.status} ${response.statusText}): ${raw}`);
   }
-}
-
-function deploymentArguments(
-  context: PublishContext,
-  project: string,
-  environment: string,
-  application: string,
-  expiresAt: string,
-  volumeSupported: boolean
-) {
-  const args = [
-    "app", "deploy",
-    "--project", project,
-    "--env", environment,
-    "--app", application
-  ];
-  if (context.profile.mode === "static") {
-    args.push(
-      "--path", path.resolve(context.root, context.item.frontend.root),
-      "--build", "static",
-      "--resources", "tiny",
-      "--publish-dir", "."
-    );
-    if (context.item.frontend.spa !== false) {
-      args.push("--spa");
-    }
-  } else {
-    if (context.profile.stateMount && !volumeSupported) {
-      throw new Error("The installed Liteploy CLI does not support --volume; full-stack data persistence cannot be guaranteed.");
-    }
-    args.push(
-      "--path", context.root,
-      "--build", "dockerfile",
-      "--resources", "small",
-      "--dockerfile", "deploy/Dockerfile",
-      "--context", "."
-    );
-    if (context.profile.stateMount) {
-      const volumeName = stableName(`${project}-${application}-data`, 63);
-      args.push("--volume", `${volumeName}:${context.profile.stateMount}`);
-    }
+  let data: TunnelWebappResponse;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    data = parsed && typeof parsed === "object" ? parsed as TunnelWebappResponse : {};
+  } catch {
+    throw new Error("Tunnel Hub returned an invalid WebApp registration response.");
   }
-  if (expiresAt) {
-    args.push("--expires-at", expiresAt);
+  const publicHost = readText(data.publicHost);
+  const publicUrl = readText(data.publicUrl) || (publicHost ? `https://${publicHost}` : "");
+  if (!readText(data.routeId) || !publicHost || !/^https:\/\//iu.test(publicUrl)) {
+    throw new Error("Tunnel Hub did not return a complete WebApp route.");
   }
-  return args;
-}
-
-function domainArguments(project: string, environment: string, application: string, port: number) {
-  return [
-    "domain", "set",
-    "--project", project,
-    "--env", environment,
-    "--app", application,
-    "--port", String(port)
-  ];
-}
-
-function statusArguments(project: string, environment: string, application: string) {
-  return ["app", "status", "--project", project, "--env", environment, "--app", application];
-}
-
-function statusValue(output: string, field: string) {
-  const match = output.match(new RegExp(`^${field}:\\s*(.+)$`, "mu"));
-  return match ? match[1].trim() : "";
-}
-
-function normalizeExpirationValue(value: string) {
-  const match = value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/u);
-  return match ? match[0] : value;
-}
-
-async function verifyUrl(url: string, requireHealthPayload = false) {
-  let lastError = "verification failed";
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    try {
-      const response = await fetch(url, {
-        redirect: "follow",
-        signal: AbortSignal.timeout(8_000),
-        headers: { "User-Agent": "desktop-webapp-publisher/1" }
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      if (requireHealthPayload) {
-        const payload = await response.json() as { ok?: unknown };
-        if (payload?.ok !== true) {
-          throw new Error("health response did not contain ok=true");
-        }
-      }
-      return;
-    } catch (error) {
-      lastError = errorMessage(error);
-    }
-    if (attempt < 11) {
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-    }
-  }
-  throw new Error(`Public URL verification failed: ${lastError}`);
+  return {
+    name: readText(data.name) || name,
+    routeId: readText(data.routeId),
+    publicHost,
+    url: publicUrl,
+    targetUrl: readText(data.targetUrl) || requireLoopbackTarget(targetUrl),
+    active: data.active === undefined ? active : data.active === true
+  };
 }
 
 function createState(
-  context: PublishContext,
-  values: Partial<Omit<WebappPublishState, "id" | "mode" | "updatedAt">>
+  item: Pick<WebappEntry, "id">,
+  values: Partial<Omit<WebappPublishState, "id" | "provider" | "updatedAt">>
 ): WebappPublishState {
   return {
-    id: context.item.id,
+    id: item.id,
+    provider: PROVIDER,
     status: values.status ?? "ready",
-    mode: context.profile.mode,
-    project: values.project ?? "",
-    environment: values.environment ?? DEFAULT_ENVIRONMENT,
-    application: values.application ?? "",
+    name: values.name ?? stableWebappName(item.id),
+    routeId: values.routeId ?? "",
+    publicHost: values.publicHost ?? "",
     url: values.url ?? "",
-    expiresAt: values.expiresAt ?? "",
+    targetUrl: values.targetUrl ?? "",
+    active: values.active === true,
     message: values.message ?? "",
     updatedAt: nowIso()
   };
 }
 
-export async function publishWebapp(app: App, id: string, input: WebappPublishInput = {}): Promise<WebappPublishResult> {
-  let context: PublishContext;
-  try {
-    context = readPublishContext(app, id);
-  } catch (error) {
-    const fallbackState: WebappPublishState = {
-      id: id.trim(),
-      status: "error",
-      mode: null,
-      project: "",
-      environment: DEFAULT_ENVIRONMENT,
-      application: "",
-      url: "",
-      expiresAt: "",
-      message: errorMessage(error),
-      updatedAt: nowIso()
-    };
-    return { ok: false, info: { ...EMPTY_INFO }, state: fallbackState, message: fallbackState.message };
+async function ensureTunnelConnected(app: App) {
+  const current = readRuntimeStatus();
+  if (current?.connected) {
+    return current;
   }
+  const result = await startTunnelHubRuntime();
+  if (!result.ok || !result.status.connected) {
+    throw new Error(result.message || "Tunnel Hub is not connected.");
+  }
+  return result.status;
+}
 
-  const liteploy = resolveLiteploy(app);
-  let info: WebappPublishInfo = {
-    ...EMPTY_INFO,
-    configured: true,
-    cliAvailable: Boolean(liteploy),
-    mode: context.profile.mode,
-    port: context.profile.port,
-    stateMount: context.profile.stateMount
-  };
-  let state = createState(context, { status: "error" });
-  try {
-    if (!liteploy) {
-      throw new Error("Liteploy CLI was not found.");
-    }
-    info = await inspectPublishInfo(app, context, liteploy);
-    await runCommand(liteploy, ["config", "test"], { timeoutMs: 30_000 });
-    await runCommand(liteploy, ["project", "list"], { timeoutMs: 30_000 });
-
-    const requestedProject = String(input.project || info.defaultProject).trim();
-    if (!requestedProject) {
-      throw new Error(`Choose one authorized project: ${info.authorizedProjects.join(", ")}`);
-    }
-    if (!info.authorizedProjects.includes(requestedProject)) {
-      throw new Error(`Project ${JSON.stringify(requestedProject)} is not authorized.`);
-    }
-    if (!info.domainSuffix) {
-      throw new Error("Liteploy did not return a valid domain suffix.");
-    }
-    const environment = validateEnvironment(String(input.environment || DEFAULT_ENVIRONMENT).trim());
-    const expiresAt = validateExpiration(input.expiresAt);
-    const application = stableApplicationName(requestedProject, context.item.id);
-    const host = `${requestedProject}-${application}${info.domainSuffix}`.toLowerCase();
-    const url = `https://${host}`;
-    const plannedExpiration = expiresAt || new Date(Date.now() + DEFAULT_EXPIRATION_MS).toISOString();
-    const deployArgs = deploymentArguments(
-      context,
-      requestedProject,
-      environment,
-      application,
-      expiresAt,
-      info.persistentVolumeSupported
-    );
-    const domainArgs = domainArguments(requestedProject, environment, application, context.profile.port);
-
-    await runCommand(liteploy, ["--dry-run", ...deployArgs], { cwd: context.root, timeoutMs: 120_000 });
-    await runCommand(liteploy, ["--dry-run", ...domainArgs], { cwd: context.root, timeoutMs: 60_000 });
-
-    state = createState(context, {
-      status: "publishing",
-      project: requestedProject,
-      environment,
-      application,
-      url,
-      expiresAt: plannedExpiration,
-      message: "Publishing with Liteploy..."
-    });
-    writePublishState(app, state);
-
-    await runCommand(liteploy, deployArgs, { cwd: context.root, timeoutMs: 12 * 60_000 });
-    await runCommand(liteploy, domainArgs, { cwd: context.root, timeoutMs: 120_000 });
-    const status = await runCommand(
-      liteploy,
-      statusArguments(requestedProject, environment, application),
-      { cwd: context.root, timeoutMs: 60_000 }
-    );
-    await verifyUrl(url);
-    if (context.profile.mode === "fullstack") {
-      await verifyUrl(`${url}${context.item.backend.healthPath}`, true);
-    }
-
-    state = createState(context, {
-      status: "published",
-      project: requestedProject,
-      environment,
-      application,
-      url,
-      expiresAt: normalizeExpirationValue(statusValue(status.stdout, "Expires") || plannedExpiration),
-      message: statusValue(status.stdout, "Status") || "Published and verified."
-    });
-    writePublishState(app, state);
-    return { ok: true, info, state, message: "WebApp published successfully." };
-  } catch (error) {
-    state = {
-      ...state,
-      status: "error",
-      message: errorMessage(error),
-      updatedAt: nowIso()
-    };
-    writePublishState(app, state);
+export async function publishWebapp(
+  app: App,
+  id: string,
+  runtime: WebappRuntimeState | null
+): Promise<WebappPublishResult> {
+  const item = findWebapp(app, id);
+  const info = inspectPublishInfo(app);
+  if (!item) {
+    const state = createState({ id: id.trim() }, { status: "error", message: "WebApp was not found." });
     return { ok: false, info, state, message: state.message };
+  }
+  const previous = readWebappPublishState(app, item.id);
+  let state = createState(item, {
+    ...previous,
+    status: "publishing",
+    active: previous?.active === true,
+    targetUrl: runtime?.webUrl || previous?.targetUrl || "",
+    message: "Publishing through Tunnel Hub..."
+  });
+  writePublishState(app, state);
+  try {
+    if (runtime?.status !== "running" || !runtime.webUrl) {
+      throw new Error("Start the WebApp before publishing.");
+    }
+    await ensureTunnelConnected(app);
+    const route = await registerTunnelRoute(app, item, runtime.webUrl, true);
+    state = createState(item, {
+      status: "published",
+      ...route,
+      active: true,
+      message: "Published through Tunnel Hub."
+    });
+    writePublishState(app, state);
+    return { ok: true, info: inspectPublishInfo(app), state, message: state.message };
+  } catch (error) {
+    state = createState(item, {
+      ...previous,
+      status: "error",
+      active: previous?.active === true,
+      targetUrl: runtime?.webUrl || previous?.targetUrl || "",
+      message: errorMessage(error)
+    });
+    writePublishState(app, state);
+    return { ok: false, info: inspectPublishInfo(app), state, message: state.message };
   }
 }
 
+export async function unpublishWebapp(app: App, id: string): Promise<WebappPublishResult> {
+  const item = findWebapp(app, id);
+  const info = inspectPublishInfo(app);
+  if (!item) {
+    const state = createState({ id: id.trim() }, { status: "error", message: "WebApp was not found." });
+    return { ok: false, info, state, message: state.message };
+  }
+  const previous = readWebappPublishState(app, item.id);
+  if (!previous?.active) {
+    const state = createState(item, { ...previous, status: "unpublished", active: false, message: "WebApp is not published." });
+    writePublishState(app, state);
+    return { ok: true, info, state, message: state.message };
+  }
+  try {
+    const route = await registerTunnelRoute(app, item, previous.targetUrl, false);
+    const state = createState(item, {
+      status: "unpublished",
+      ...route,
+      active: false,
+      message: "Tunnel publishing stopped."
+    });
+    writePublishState(app, state);
+    return { ok: true, info: inspectPublishInfo(app), state, message: state.message };
+  } catch (error) {
+    const state = createState(item, {
+      ...previous,
+      status: "error",
+      active: true,
+      message: errorMessage(error)
+    });
+    writePublishState(app, state);
+    return { ok: false, info: inspectPublishInfo(app), state, message: state.message };
+  }
+}
+
+export async function syncPublishedWebappRoute(app: App, item: WebappEntry, runtime: WebappRuntimeState) {
+  const previous = readWebappPublishState(app, item.id);
+  if (!previous?.active || runtime.status !== "running" || !runtime.webUrl) {
+    return previous;
+  }
+  try {
+    await ensureTunnelConnected(app);
+    const route = await registerTunnelRoute(app, item, runtime.webUrl, true);
+    const state = createState(item, {
+      status: "published",
+      ...route,
+      active: true,
+      message: "Tunnel route synchronized."
+    });
+    writePublishState(app, state);
+    return state;
+  } catch (error) {
+    const state = createState(item, {
+      ...previous,
+      status: "error",
+      active: true,
+      targetUrl: runtime.webUrl,
+      message: `Tunnel route synchronization failed: ${errorMessage(error)}`
+    });
+    writePublishState(app, state);
+    return state;
+  }
+}
+
+export function listPublishedWebappIds(app: App) {
+  return readWebappItems(app)
+    .filter((item) => readWebappPublishState(app, item.id)?.active === true)
+    .map((item) => item.id);
+}
+
 export const __testInternals = {
-  parseAuthorizedProjects,
-  parseDomainSuffix,
-  stableApplicationName,
-  validateExpiration,
-  validateEnvironment,
-  readPublishState,
-  resolveLiteploy
+  stableWebappName,
+  requireLoopbackTarget,
+  registerTunnelRoute
 };

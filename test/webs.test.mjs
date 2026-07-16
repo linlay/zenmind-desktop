@@ -129,9 +129,10 @@ function writeWebsite(root, id, options = {}) {
 function writeWebapp(root, id, options = {}) {
   const appDir = path.join(root, id);
   fs.mkdirSync(path.join(appDir, "frontend"), { recursive: true });
-  fs.mkdirSync(path.join(appDir, "backend"), { recursive: true });
   fs.writeFileSync(path.join(appDir, "frontend", "index.html"), "<!doctype html><div id=\"app\">demo</div>", "utf8");
-  fs.writeFileSync(path.join(appDir, "backend", "server.mjs"), `
+  if (!options.frontendOnly) {
+    fs.mkdirSync(path.join(appDir, "backend"), { recursive: true });
+    fs.writeFileSync(path.join(appDir, "backend", "server.mjs"), `
 import http from "node:http";
 const host = process.env.HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.PORT || "0", 10);
@@ -148,7 +149,8 @@ const server = http.createServer((req, res) => {
       webappId: process.env.WEBAPP_ID,
       root: process.env.WEBAPP_ROOT,
       stateDir: process.env.WEBAPP_STATE_DIR,
-      logDir: process.env.WEBAPP_LOG_DIR
+      logDir: process.env.WEBAPP_LOG_DIR,
+      desktopActionBridgeUrl: process.env.DESKTOP_ACTION_BRIDGE_URL
     }));
     return;
   }
@@ -157,6 +159,7 @@ const server = http.createServer((req, res) => {
 });
 server.listen(port, host);
 `, "utf8");
+  }
   writeJson(path.join(appDir, "webapp.json"), {
     schemaVersion: 1,
     id,
@@ -169,14 +172,14 @@ server.listen(port, host);
       spa: true,
       apiPrefix: "/api"
     },
-    backend: {
+    ...(!options.frontendOnly ? { backend: {
       runtime: options.runtime ?? "node",
       entry: options.entry ?? "backend/server.mjs",
       args: [],
       env: {},
       port: 0,
       healthPath: "/api/health"
-    },
+    } } : {}),
     createdAt: options.createdAt ?? "2026-01-02T00:00:00.000Z",
     updatedAt: options.updatedAt ?? "2026-01-02T00:00:00.000Z"
   });
@@ -259,6 +262,32 @@ function readUrl(target) {
         contentType: String(res.headers["content-type"] ?? "")
       }));
     }).on("error", reject);
+  });
+}
+
+function postUrl(target, body, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(target);
+    const request = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: `${url.pathname}${url.search}`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+        ...headers
+      }
+    }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({
+        statusCode: res.statusCode,
+        body: Buffer.concat(chunks).toString("utf8")
+      }));
+    });
+    request.on("error", reject);
+    request.end(body);
   });
 }
 
@@ -550,55 +579,83 @@ test("webapp ipc import installs local archive and returns refreshed web entries
   ]);
 });
 
-test("webapp publisher discovers the configured Liteploy project without exposing credentials", async (t) => {
+test("webapp publisher reports Tunnel readiness without exposing the SSO site token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-info-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  const appDir = writeWebapp(webappsRoot(homePath), "publish-demo");
-  writeJson(path.join(appDir, "webapp.publish.json"), {
-    schemaVersion: 1,
-    provider: "liteploy",
-    mode: "static",
-    port: 80,
-    stateMount: null
+  writeWebapp(webappsRoot(homePath), "publish-demo");
+  writeJson(path.join(desktopRoot(homePath), "config", "desktop", "tunnel-hub.json"), {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    reconnectSeconds: 3
   });
-
-  const liteployPath = path.join(homePath, ".local", "bin", "liteploy");
-  fs.mkdirSync(path.dirname(liteployPath), { recursive: true });
-  fs.writeFileSync(liteployPath, `#!/bin/sh
-case "$1 $2 $3" in
-  "config show ")
-    printf '%s\n' 'url: https://dokploy.example.test' 'token: masked' 'projects: 1' 'domainSuffix: .example.test'
-    ;;
-  "auth projects ")
-    printf '%s\n' 'PROJECT CPU_LIMIT MEMORY_LIMIT' 'demo 1 CPU 1024MB'
-    ;;
-  "app deploy --help")
-    printf '%s\n' 'Usage: liteploy app deploy --volume NAME:/data'
-    ;;
-  *)
-    exit 2
-    ;;
-esac
-`, "utf8");
-  fs.chmodSync(liteployPath, 0o755);
+  writeJson(path.join(desktopRoot(homePath), "secrets", "sso-site-token.json"), {
+    accessToken: "publisher-site-secret"
+  });
 
   const result = await getWebappPublishInfo(app, "publish-demo");
 
   assert.equal(result.ok, true);
+  assert.equal(result.info.provider, "tunnel");
   assert.equal(result.info.configured, true);
-  assert.equal(result.info.cliAvailable, true);
-  assert.equal(result.info.defaultProject, "demo");
-  assert.equal(result.info.domainSuffix, ".example.test");
-  assert.equal(result.info.persistentVolumeSupported, true);
-  assert.doesNotMatch(JSON.stringify(result), /token: masked/u);
+  assert.equal(result.info.signedIn, true);
+  assert.equal(result.info.tunnelEnabled, true);
+  assert.equal(result.info.tunnelConnected, false);
+  assert.equal(result.info.deviceId, "mac-mini-office");
+  assert.doesNotMatch(JSON.stringify(result), /publisher-site-secret/u);
 });
 
-test("webapp publisher keeps generated application names within the domain label limit", () => {
-  const application = webappPublisherInternals.stableApplicationName("demo", `webapp-${"x".repeat(100)}`);
-  assert.equal(`demo-${application}`.length <= 63, true);
-  assert.match(application, /-[a-f0-9]{8}$/u);
+test("webapp publisher registers a stable loopback route with Tunnel Hub", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-route-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeWebapp(webappsRoot(homePath), "publish-demo");
+  writeJson(path.join(desktopRoot(homePath), "config", "desktop", "tunnel-hub.json"), {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    reconnectSeconds: 3
+  });
+  writeJson(path.join(desktopRoot(homePath), "secrets", "sso-site-token.json"), {
+    accessToken: "publisher-site-secret"
+  });
+  const item = readWebappItems(app)[0];
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify({
+      name: "publish-demo",
+      publicHost: "publish-demo.mac-mini-office.example.test",
+      publicUrl: "https://publish-demo.mac-mini-office.example.test",
+      targetUrl: "http://127.0.0.1:43123/",
+      routeId: "route-publish-demo",
+      active: true
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const route = await webappPublisherInternals.registerTunnelRoute(app, item, "http://127.0.0.1:43123/#ignored", true);
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "https://relay.example.test/api/desktop/devices/mac-mini-office/webapps/publish-demo");
+  assert.equal(requests[0].init.method, "PUT");
+  assert.equal(requests[0].init.headers.Authorization, "Bearer publisher-site-secret");
+  assert.deepEqual(JSON.parse(requests[0].init.body), { targetUrl: "http://127.0.0.1:43123/", active: true });
+  assert.equal(route.routeId, "route-publish-demo");
+  assert.equal(route.url, "https://publish-demo.mac-mini-office.example.test");
+});
+
+test("webapp publisher limits route names and rejects non-loopback targets", () => {
+  const name = webappPublisherInternals.stableWebappName(`webapp-${"x".repeat(100)}`);
+  assert.equal(name.length <= 63, true);
+  assert.match(name, /-[a-f0-9]{8}$/u);
+  assert.equal(webappPublisherInternals.requireLoopbackTarget("http://localhost:3000/demo#ignored"), "http://localhost:3000/demo");
+  assert.throws(() => webappPublisherInternals.requireLoopbackTarget("https://127.0.0.1:3000/"), /loopback HTTP/u);
+  assert.throws(() => webappPublisherInternals.requireLoopbackTarget("http://example.test/"), /loopback HTTP/u);
 });
 
 test("resource directory watcher debounces and refreshes web, pet, and plugin domains", (t) => {
@@ -705,6 +762,7 @@ test("webapp runtime starts frontend, proxies api, writes logs, and stops", asyn
   assert.equal(body.webappId, "runtime-demo");
   assert.match(body.stateDir, /state[\\/]webs[\\/]webapps[\\/]runtime-demo/u);
   assert.match(body.logDir, /logs[\\/]webs[\\/]webapps[\\/]runtime-demo/u);
+  assert.equal(body.desktopActionBridgeUrl, "http://127.0.0.1:11788");
 
   const logResult = webappRuntime.readLog(app, "runtime-demo", "main");
   assert.equal(logResult.ok, true);
@@ -713,6 +771,36 @@ test("webapp runtime starts frontend, proxies api, writes logs, and stops", asyn
   const stopResult = await webappRuntime.stop(app, "runtime-demo");
   assert.equal(stopResult.ok, true);
   assert.equal(stopResult.state?.status, "stopped");
+});
+
+test("webapp runtime starts a frontend-only package without a backend process", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-frontend-only-"));
+  t.after(async () => {
+    await webappRuntime.stopAll(createApp(path.join(root, "home")));
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeWebapp(webappsRoot(homePath), "frontend-only", { frontendOnly: true });
+
+  const [item] = readWebappItems(app);
+  assert.equal(item.backend, undefined);
+  const result = await webappRuntime.start(app, "frontend-only");
+  assert.equal(result.ok, true);
+  assert.equal(result.state?.status, "running");
+  assert.equal(result.state?.backendUrl, "");
+  assert.equal(result.state?.backendPort, null);
+  assert.equal(result.state?.pid, null);
+  const page = await readUrl(result.state.webUrl);
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /demo/u);
+  const publicOriginAttempt = await postUrl(
+    new URL("/__desktop/actions/call", result.state.webUrl).toString(),
+    JSON.stringify({ action: "desktop.assistant.complete", args: { prompt: "hello" } }),
+    { Origin: "https://public.example.test" }
+  );
+  assert.equal(publicOriginAttempt.statusCode, 403);
+  assert.match(publicOriginAttempt.body, /local WebApp origin/u);
 });
 
 test("bundled webapp template installer is gated by demo manifest and refreshes demo on macOS and Windows branches", (t) => {

@@ -732,8 +732,49 @@ export function AppShell() {
     const result = await window.electronAPI.webs.list();
     if (result.ok) {
       updateWebItems(result.items);
+      await refreshWebappRuntimeStates(result.items);
     }
     return result;
+  }
+
+  async function refreshWebappRuntimeStates(items: WebEntry[]) {
+    const webapps = items.filter((item) => item.kind === "webapp");
+    if (webapps.length === 0) {
+      return;
+    }
+
+    const statuses = await Promise.all(webapps.map(async (item) => ({
+      id: item.id,
+      result: await window.electronAPI.webs.webapps.getStatus(item.id)
+    })));
+
+    setWebappRuntimeById((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const { id, result } of statuses) {
+        if (!result.ok || !result.state) {
+          continue;
+        }
+        const status = result.state.status === "stopped" ? "idle" : result.state.status;
+        const previous = current[id];
+        if (
+          previous?.status === status &&
+          previous.webUrl === result.state.webUrl &&
+          previous.message === result.message &&
+          previous.state?.updatedAt === result.state.updatedAt
+        ) {
+          continue;
+        }
+        changed = true;
+        next[id] = {
+          status,
+          webUrl: result.state.webUrl,
+          message: result.message || result.state.message,
+          state: result.state
+        };
+      }
+      return changed ? next : current;
+    });
   }
 
   async function createWebsiteItem(input: WebsiteInput): Promise<WebsiteResult> {
@@ -1067,6 +1108,24 @@ export function AppShell() {
     chatNavAgentOptions,
     location.pathname,
     location.search,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (
+      location.pathname !== "/" ||
+      !assistantNavAgentsLoaded ||
+      !assistantSettings ||
+      !chatRuntimeAgent.agent
+    ) {
+      return;
+    }
+    navigate(createAgentNewChatRoute(chatRuntimeAgent.agent.agentKey), { replace: true });
+  }, [
+    assistantNavAgentsLoaded,
+    assistantSettings,
+    chatRuntimeAgent.agent,
+    location.pathname,
     navigate,
   ]);
 
@@ -3099,7 +3158,18 @@ export function AppShell() {
           <Routes>
             <Route
               path="/"
-              element={<StartupRoutePlaceholder />}
+              element={
+                <StartupRoutePlaceholder
+                  canStartChat={Boolean(chatRuntimeAgent.agent)}
+                  preparing={servicesLoading || resolvedStartupRestoreState.phase === "running"}
+                  onStartChat={() => {
+                    if (chatRuntimeAgent.agent) {
+                      navigate(createAgentNewChatRoute(chatRuntimeAgent.agent.agentKey));
+                    }
+                  }}
+                  onOpenControlCenter={() => navigate("/control-center")}
+                />
+              }
             />
             <Route
               path="/kanban"

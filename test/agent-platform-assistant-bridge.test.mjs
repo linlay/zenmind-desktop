@@ -131,6 +131,29 @@ test("agent platform assistant bridge returns a clear error when platform is una
   assert.match(result.message, /platform stopped/u);
 });
 
+test("agent platform assistant bridge waits for a text completion", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (_url, init = {}) => {
+    const body = JSON.parse(String(init.body));
+    return sseResponse([
+      { seq: 1, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "Hello", timestamp: EPOCH_MS },
+      { seq: 2, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + 1 },
+      "[DONE]"
+    ]);
+  };
+
+  try {
+    const result = await bridge.completeText({ message: "Translate this" });
+    assert.equal(result.ok, true);
+    assert.equal(result.text, "Hello");
+    assert.match(result.runId, /^run_/u);
+    assert.match(result.chatId, /^chat_/u);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge proxies global chat search with bearer token", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
