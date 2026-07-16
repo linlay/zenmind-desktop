@@ -105,7 +105,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       read: { isRead: false },
       awaiting: {
         awaitingId: "awaiting-1",
-        mode: "question",
+        mode: "approval",
         status: "awaiting",
         createdAt: EPOCH_MS + 70,
       },
@@ -260,10 +260,10 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     chatId: "react-newest",
     awaitingId: "awaiting-1",
     createdAt: EPOCH_MS + 70,
-    mode: "question",
+    mode: "approval",
   }});
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, true);
-  assert.equal(client.getSnapshot().chatItems[0].awaitingMode, "question");
+  assert.equal(client.getSnapshot().chatItems[0].awaitingMode, "approval");
   await new Promise((resolve) => setTimeout(resolve, 450));
   assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 2);
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, true);
@@ -567,6 +567,58 @@ test("assistant navigation keeps Agent Mode separate from awaiting mode", () => 
   assert.equal(chats[0].awaitingMode, undefined);
   assert.equal(chats[1].hasPendingAwaiting, true);
   assert.equal(chats[1].awaitingMode, "question");
+});
+
+test("assistant navigation keeps approval awaitings pending when approval details are omitted", () => {
+  const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([{
+    key: "approval-project",
+    name: "Approval project",
+    mode: "CODER",
+    chats: [{
+      chatId: "approval-summary",
+      createdAt: EPOCH_MS,
+      updatedAt: EPOCH_MS,
+      awaiting: {
+        awaitingId: "awaiting-approval",
+        mode: "approval",
+        status: "awaiting",
+      },
+    }],
+  }]);
+
+  const chat = agent.recentChats[0];
+  assert.equal(agent.hasPendingAwaiting, true);
+  assert.equal(chat?.hasPendingAwaiting, true);
+  assert.equal(chat?.awaitingCount, 1);
+  assert.equal(chat?.awaitingMode, "approval");
+});
+
+test("assistant navigation ignores completed, answered, and cancelled approval awaitings", () => {
+  const chats = buildAssistantNavigationChatsFromPlatform(
+    ["completed", "answered", "cancelled"].map((status, index) => ({
+      chatId: `approval-${status}`,
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + index,
+      updatedAt: EPOCH_MS + index,
+      awaiting: {
+        awaitingId: `awaiting-${status}`,
+        mode: "approval",
+        status,
+      },
+    })),
+  );
+
+  assert.deepEqual(
+    chats.map((chat) => ({
+      hasPendingAwaiting: chat.hasPendingAwaiting,
+      awaitingCount: chat.awaitingCount,
+    })),
+    [
+      { hasPendingAwaiting: false, awaitingCount: 0 },
+      { hasPendingAwaiting: false, awaitingCount: 0 },
+      { hasPendingAwaiting: false, awaitingCount: 0 },
+    ],
+  );
 });
 
 test("assistant navigation accepts zero as a valid epoch-ms value", () => {

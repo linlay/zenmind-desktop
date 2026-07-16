@@ -339,10 +339,6 @@ function isFinishedAwaitingStatus(value: string) {
   return FINISHED_AWAITING_STATUSES.has(value);
 }
 
-function hasAwaitingListItems(value: unknown) {
-  return Array.isArray(value) && value.some((item) => isObjectRecord(item));
-}
-
 function hasPendingAwaitingPayload(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.some((item) => hasPendingAwaitingPayload(item));
@@ -353,10 +349,6 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
 
   const type = toText(value.type).toLowerCase();
   if (type === "awaiting.answered") {
-    return false;
-  }
-  const mode = toText(value.mode).toLowerCase();
-  if (mode === "approval" && !hasAwaitingListItems(value.approvals)) {
     return false;
   }
 
@@ -407,12 +399,6 @@ function countPendingAwaitingPayload(value: unknown): number {
   const explicitCount = toNonNegativeInteger(value.awaitingCount);
   if (explicitCount > 0) {
     return explicitCount;
-  }
-  if (toText(value.mode).toLowerCase() === "approval") {
-    const approvalCount = countPendingAwaitingPayload(value.approvals);
-    if (approvalCount > 0) {
-      return approvalCount;
-    }
   }
   const nestedCount = countPendingAwaitingPayload(value.awaiting);
   return nestedCount > 0 ? nestedCount : 1;
