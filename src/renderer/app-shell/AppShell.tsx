@@ -3073,7 +3073,6 @@ export function AppShell() {
         windowFullScreen ? "is-window-fullscreen" : "",
         effectiveSidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
-        globalSearchOpen ? "is-global-search-open" : "",
         isSettingsRoute ? "is-settings-mode" : "",
         "has-translucent-sidebar",
         isMac ? "is-mac-translucent-sidebar" : ""

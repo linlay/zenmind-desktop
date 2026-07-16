@@ -508,16 +508,13 @@ export class WebappRuntime {
     }
     const stored = readStoredState(app, id);
     if (stored?.pid && isProcessRunning(stored.pid)) {
-      if (pidMatchesInstallDir(stored.pid, getWebappDir(app, id))) {
-        terminateProcessTree(stored.pid);
-        writeLogLine(
-          getLogPath(app, id, "main"),
-          `[${nowIso()}] cleaned stale backend process ${stored.pid} after Desktop restart`
-        );
-      }
-      const stopped = createStoppedState(item);
-      writeState(app, stopped);
-      return stopped;
+      return {
+        ...stored,
+        status: "error",
+        webUrl: "",
+        message: t("service.runningUnmanagedProcess"),
+        updatedAt: nowIso()
+      } satisfies WebappRuntimeState;
     }
     return createStoppedState(item);
   }

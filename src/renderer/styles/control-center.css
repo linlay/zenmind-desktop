@@ -730,12 +730,6 @@
   overflow: hidden;
 }
 
-.control-center-service-hero {
-  position: relative;
-  z-index: 2;
-  overflow: visible;
-}
-
 .control-center-service-head,
 .config-head {
   display: flex;
