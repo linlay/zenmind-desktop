@@ -211,6 +211,8 @@ export interface AssistantNavChatItem {
   hasPendingAwaiting: boolean;
   awaitingCount?: number;
   awaitingMode?: AssistantAwaitingMode;
+  /** Short, user-facing summary of the currently pending awaiting interaction. */
+  awaitingPreview?: string;
 }
 
 export type AssistantNavigationLivePhase =

@@ -593,6 +593,114 @@ test("assistant navigation keeps approval awaitings pending when approval detail
   assert.equal(chat?.awaitingMode, "approval");
 });
 
+test("assistant navigation derives safe awaiting previews for Chats and Projects", () => {
+  const base = {
+    agentKey: "zenmi",
+    createdAt: EPOCH_MS,
+    updatedAt: EPOCH_MS,
+  };
+  const chats = buildAssistantNavigationChatsFromPlatform([
+    {
+      ...base,
+      chatId: "question",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        title: "Question",
+        questions: [{ label: "Fallback label", question: "Which repository should I inspect?" }],
+      },
+    },
+    {
+      ...base,
+      chatId: "approval",
+      awaiting: {
+        mode: "approval",
+        status: "awaiting",
+        title: "Approval",
+        approvals: [{ summary: "Install the approved dependency", command: "rm -rf /" }],
+      },
+    },
+    {
+      ...base,
+      chatId: "question-label",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        questions: [{ label: "Choose the target branch" }],
+      },
+    },
+    {
+      ...base,
+      chatId: "question-header",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        questions: [{ header: "Confirm the migration window" }],
+      },
+    },
+    {
+      ...base,
+      chatId: "question-title",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        questions: [{ title: "Select the release environment" }],
+      },
+    },
+    {
+      ...base,
+      chatId: "form",
+      awaiting: {
+        mode: "form",
+        status: "awaiting",
+        title: "Fallback form title",
+        forms: [{ title: "Choose a deployment region" }],
+      },
+    },
+    {
+      ...base,
+      chatId: "planning",
+      awaiting: {
+        mode: "planning",
+        status: "awaiting",
+        title: "Confirm the implementation plan",
+        description: "This must not replace the title",
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    chats.map((chat) => [chat.chatId, chat.awaitingPreview]),
+    [
+      ["question", "Which repository should I inspect?"],
+      ["approval", "Install the approved dependency"],
+      ["question-label", "Choose the target branch"],
+      ["question-header", "Confirm the migration window"],
+      ["question-title", "Select the release environment"],
+      ["form", "Choose a deployment region"],
+      ["planning", "Confirm the implementation plan"],
+    ],
+  );
+  assert.equal(chats.find((chat) => chat.chatId === "approval")?.awaitingPreview?.includes("rm -rf"), false);
+
+  const [project] = buildAssistantNavigationAgentsFromPlatformAgents([{
+    key: "coder-project",
+    name: "Coder project",
+    mode: "CODER",
+    chats: [{
+      ...base,
+      chatId: "project-question",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        title: "Question",
+        questions: [{ label: "Fallback label", question: "Which repository should I inspect?" }],
+      },
+    }],
+  }]);
+  assert.equal(project?.recentChats[0]?.awaitingPreview, "Which repository should I inspect?");
+});
+
 test("assistant navigation ignores completed, answered, and cancelled approval awaitings", () => {
   const chats = buildAssistantNavigationChatsFromPlatform(
     ["completed", "answered", "cancelled"].map((status, index) => ({
@@ -1078,6 +1186,11 @@ test("assistant navigation applies standard awaiting.asking project pushes with 
       timeout: 600,
       viewportKey: "question",
       viewportType: "builtin",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        questions: [{ question: "Which technical direction should we discuss?" }],
+      },
     },
   });
 
@@ -1089,6 +1202,7 @@ test("assistant navigation applies standard awaiting.asking project pushes with 
   assert.equal(chat?.hasPendingAwaiting, true);
   assert.equal(chat?.awaitingCount, 1);
   assert.equal(chat?.awaitingMode, "question");
+  assert.equal(chat?.awaitingPreview, "Which technical direction should we discuss?");
   assert.equal(agent?.hasPendingAwaiting, true);
 });
 
@@ -1106,6 +1220,11 @@ test("assistant navigation applies standard awaiting.answered pushes with answer
       createdAt: 1783938199453,
       mode: "question",
       runId: "mrj2qklh",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        questions: [{ question: "Choose a project direction" }],
+      },
     },
   });
   const answeredAt = 1783938200453;
@@ -1128,7 +1247,80 @@ test("assistant navigation applies standard awaiting.answered pushes with answer
   assert.equal(chat?.hasPendingAwaiting, false);
   assert.equal(chat?.awaitingCount, 0);
   assert.equal(chat?.awaitingMode, undefined);
+  assert.equal(chat?.awaitingPreview, undefined);
   assert.equal(agent?.hasPendingAwaiting, false);
+});
+
+test("assistant navigation applies awaiting previews to Project and Chats lists together", () => {
+  const chatId = "shared-awaiting";
+  const asking = {
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "coder-project",
+      chatId,
+      createdAt: EPOCH_MS + 1,
+      mode: "question",
+      awaiting: {
+        mode: "question",
+        status: "awaiting",
+        questions: [{ question: "Which implementation should I continue with?" }],
+      },
+    },
+  };
+  const projectAsked = applyAssistantNavigationPush([createAgent({
+    agentKey: "coder-project",
+    mode: "CODER",
+    chatCount: 1,
+    recentChats: [createNavigationChat({
+      chatId,
+      agentKey: "coder-project",
+      lastRunContent: "Previous project reply",
+    })],
+  })], asking);
+  const chatsAsked = applyAssistantNavigationChatPush([
+    createNavigationChat({
+      chatId,
+      agentKey: "coder-project",
+      lastRunContent: "Previous project reply",
+    }),
+  ], asking);
+
+  assert.equal(findChat(projectAsked.items, chatId)?.awaitingPreview, "Which implementation should I continue with?");
+  assert.equal(chatsAsked.items[0]?.awaitingPreview, "Which implementation should I continue with?");
+
+  const cancelled = {
+    frame: "push",
+    type: "chat.updated",
+    data: {
+      agentKey: "coder-project",
+      chatId,
+      updatedAt: EPOCH_MS + 2,
+      awaiting: { status: "cancelled" },
+    },
+  };
+  const projectCancelled = applyAssistantNavigationPush(projectAsked.items, cancelled);
+  const chatsCancelled = applyAssistantNavigationChatPush(chatsAsked.items, cancelled);
+  assert.equal(findChat(projectCancelled.items, chatId)?.hasPendingAwaiting, false);
+  assert.equal(findChat(projectCancelled.items, chatId)?.awaitingPreview, undefined);
+  assert.equal(chatsCancelled.items[0]?.hasPendingAwaiting, false);
+  assert.equal(chatsCancelled.items[0]?.awaitingPreview, undefined);
+
+  const answered = {
+    frame: "push",
+    type: "awaiting.answered",
+    data: {
+      agentKey: "coder-project",
+      chatId,
+      answeredAt: EPOCH_MS + 2,
+    },
+  };
+  const projectAnswered = applyAssistantNavigationPush(projectAsked.items, answered);
+  const chatsAnswered = applyAssistantNavigationChatPush(chatsAsked.items, answered);
+  assert.equal(findChat(projectAnswered.items, chatId)?.awaitingPreview, undefined);
+  assert.equal(findChat(projectAnswered.items, chatId)?.lastRunContent, "Previous project reply");
+  assert.equal(chatsAnswered.items[0]?.awaitingPreview, undefined);
+  assert.equal(chatsAnswered.items[0]?.lastRunContent, "Previous project reply");
 });
 
 test("assistant navigation rejects timestamp-only awaiting.asking pushes", () => {

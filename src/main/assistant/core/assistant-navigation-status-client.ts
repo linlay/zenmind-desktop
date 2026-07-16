@@ -339,6 +339,34 @@ function isFinishedAwaitingStatus(value: string) {
   return FINISHED_AWAITING_STATUSES.has(value);
 }
 
+function hasFinishedAwaitingPayload(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => hasFinishedAwaitingPayload(item));
+  }
+  if (!isObjectRecord(value)) {
+    return false;
+  }
+
+  const type = toText(value.type).toLowerCase();
+  const status = toText(value.status).toLowerCase();
+  if (type === "awaiting.answered" || isFinishedAwaitingStatus(status)) {
+    return true;
+  }
+
+  if (isObjectRecord(value.answer)) {
+    const answerType = toText(value.answer.type).toLowerCase();
+    const answerStatus = toText(value.answer.status).toLowerCase();
+    if (
+      answerType === "awaiting.answered" ||
+      isFinishedAwaitingStatus(answerStatus)
+    ) {
+      return true;
+    }
+  }
+
+  return hasFinishedAwaitingPayload(value.awaiting);
+}
+
 function hasPendingAwaitingPayload(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.some((item) => hasPendingAwaitingPayload(item));
@@ -582,6 +610,101 @@ function readChatAwaitingMode(chat: PlatformChatSummary): AssistantAwaitingMode 
   );
 }
 
+const NAVIGATION_AWAITING_PREVIEW_LIMIT = 160;
+
+function toNavigationAwaitingPreview(value: unknown) {
+  return toText(value)
+    .replace(/\s+/gu, " ")
+    .slice(0, NAVIGATION_AWAITING_PREVIEW_LIMIT);
+}
+
+function readAwaitingPreviewFromRecord(
+  value: unknown,
+  fields: readonly string[],
+): string {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const preview = readAwaitingPreviewFromRecord(item, fields);
+      if (preview) {
+        return preview;
+      }
+    }
+    return "";
+  }
+  if (!isObjectRecord(value)) {
+    return "";
+  }
+  for (const field of fields) {
+    const preview = toNavigationAwaitingPreview(value[field]);
+    if (preview) {
+      return preview;
+    }
+  }
+  return "";
+}
+
+function readAwaitingPreview(value: unknown): string {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const preview = readAwaitingPreview(item);
+      if (preview) {
+        return preview;
+      }
+    }
+    return "";
+  }
+  if (!isObjectRecord(value)) {
+    return "";
+  }
+
+  const mode = toAwaitingMode(value.mode);
+  const fallback = () =>
+    readAwaitingPreviewFromRecord(value, ["title", "description"]) ||
+    readAwaitingPreview(value.awaiting);
+
+  switch (mode) {
+    case "question":
+      return readAwaitingPreviewFromRecord(value.questions, [
+        "question",
+        "label",
+        "header",
+        "title",
+      ]) || readAwaitingPreviewFromRecord(value.question, [
+        "question",
+        "label",
+        "header",
+        "title",
+      ]) || readAwaitingPreviewFromRecord(value, [
+        "question",
+        "label",
+        "header",
+        "title",
+      ]) || fallback();
+    case "approval":
+      return readAwaitingPreviewFromRecord(value.approvals, [
+        "summary",
+        "description",
+      ]) || readAwaitingPreviewFromRecord(value.approval, [
+        "summary",
+        "description",
+      ]) || readAwaitingPreviewFromRecord(value, [
+        "summary",
+        "description",
+      ]) || fallback();
+    case "form":
+      return readAwaitingPreviewFromRecord(value.forms, ["title"]) ||
+        readAwaitingPreviewFromRecord(value.form, ["title"]) ||
+        fallback();
+    case "planning":
+      return readAwaitingPreviewFromRecord(value.planning, [
+        "title",
+        "description",
+      ]) || fallback();
+    default:
+      return fallback();
+  }
+}
+
 function readActiveRunValue(value: unknown): boolean | null {
   if (typeof value === "boolean") {
     return value;
@@ -760,6 +883,10 @@ function mapNavigationChat(
   }
   const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
   const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || t("assistant.newChat");
+  const hasPendingAwaiting = readChatPendingAwaiting(chat);
+  const awaitingPreview = hasPendingAwaiting
+    ? readAwaitingPreview(chat.awaiting)
+    : "";
   return {
     chatId,
     chatName,
@@ -770,9 +897,10 @@ function mapNavigationChat(
     lastRunContent,
     isRead: readChatIsRead(chat),
     hasActiveRun: readChatActiveRun(chat),
-    hasPendingAwaiting: readChatPendingAwaiting(chat),
+    hasPendingAwaiting,
     awaitingCount: readChatAwaitingCount(chat),
-    awaitingMode: readChatAwaitingMode(chat)
+    awaitingMode: readChatAwaitingMode(chat),
+    ...(awaitingPreview ? { awaitingPreview } : {})
   };
 }
 
@@ -1017,6 +1145,9 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
   ) {
     return false;
   }
+  if (hasFinishedAwaitingPayload(event.awaiting)) {
+    return false;
+  }
   if (event.hasPendingAwaiting === true) {
     return true;
   }
@@ -1029,7 +1160,11 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
   if (hasPendingAwaitingPayload(event.awaiting)) {
     return true;
   }
-  if (toText(event.status).toLowerCase() === "awaiting") {
+  const status = toText(event.status).toLowerCase();
+  if (isFinishedAwaitingStatus(status)) {
+    return false;
+  }
+  if (status === "awaiting") {
     return true;
   }
   return fallback;
@@ -1064,6 +1199,19 @@ function readPushAwaitingMode(
     readAwaitingPayloadMode(event.awaiting) ||
     fallback
   );
+}
+
+function readPushAwaitingPreview(
+  event: NavigationPushEvent,
+  hasPendingAwaiting: boolean,
+  fallback?: string,
+) {
+  if (!hasPendingAwaiting) {
+    return undefined;
+  }
+  return readAwaitingPreview(event.awaiting) ||
+    readAwaitingPreview(event) ||
+    fallback;
 }
 
 function readPushActiveRun(event: NavigationPushEvent, fallback: boolean) {
@@ -1126,6 +1274,11 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     isRead = event.read.isRead;
   }
   const hasPendingAwaiting = readPushPendingAwaiting(event, current?.hasPendingAwaiting ?? false);
+  const awaitingPreview = readPushAwaitingPreview(
+    event,
+    hasPendingAwaiting,
+    current?.awaitingPreview,
+  );
   return {
     chatId,
     chatName,
@@ -1138,7 +1291,8 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
     hasPendingAwaiting,
     awaitingCount: readPushAwaitingCount(event, hasPendingAwaiting, current?.awaitingCount),
-    awaitingMode: readPushAwaitingMode(event, hasPendingAwaiting, current?.awaitingMode)
+    awaitingMode: readPushAwaitingMode(event, hasPendingAwaiting, current?.awaitingMode),
+    ...(awaitingPreview ? { awaitingPreview } : {})
   };
 }
 

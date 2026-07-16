@@ -118,7 +118,10 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
     hasActiveRun: record.hasActiveRun === true,
     hasPendingAwaiting: record.hasPendingAwaiting === true,
     awaitingCount: toNonNegativeInteger(record.awaitingCount),
-    awaitingMode: toAwaitingMode(record.awaitingMode)
+    awaitingMode: toAwaitingMode(record.awaitingMode),
+    ...(toText(record.awaitingPreview)
+      ? { awaitingPreview: toText(record.awaitingPreview) }
+      : {})
   };
 }
 

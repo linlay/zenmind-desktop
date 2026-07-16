@@ -1533,7 +1533,9 @@ test("assistant sidebar awaiting chats use a right-side loading status", () => {
   const globalStyles = readRendererStyles();
 
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"/);
-  assert.match(sidebarSource, /action === "awaiting" \|\| action === "loading" \? "has-status-action" : ""/);
+  assert.match(sidebarSource, /const awaitingPreview = chat\.hasPendingAwaiting/);
+  assert.match(sidebarSource, /chat\.awaitingPreview\?\.trim\(\)/);
+  assert.match(sidebarSource, /action === "awaiting" \|\| action === "loading"\s*\?\s*"has-status-action"\s*:\s*""/);
   assert.match(sidebarSource, /chat\.hasPendingAwaiting \? "has-awaiting" : ""/);
   assert.match(sidebarSource, /getAssistantAwaitingStatusKey\(chat\.awaitingMode\)/);
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
@@ -1550,7 +1552,7 @@ test("assistant sidebar awaiting chats use a right-side loading status", () => {
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,120}display: inline-flex;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*#b45309;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*var\(--ink-muted\);/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.chat-awaiting-status \+ \.sidebar-assistant-preview-loading,\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\],\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*#facc15;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.chat-awaiting-status\s*\+\s*\.sidebar-assistant-preview-loading,\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\],\s*:root\[data-theme="dark"\] \.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading\s*\{[\s\S]{0,80}color:\s*#facc15;/);
   assert.match(globalStyles, /\.assistant-worker-chat-row\.has-status-action:hover \.assistant-worker-chat-menu-button,\s*\.assistant-worker-chat-row\.has-status-action:focus-within \.assistant-worker-chat-menu-button\s*\{[\s\S]{0,60}display:\s*none;/);
 });
 
