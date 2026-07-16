@@ -1687,6 +1687,7 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
     "navigation",
     "AppSidebar.tsx",
   );
+  const popoverSource = readSourceFile("src", "renderer", "components", "Popover", "index.tsx");
   const styles = readRendererStyles();
   const chatsListSource = sidebarSource.slice(
     sidebarSource.indexOf("function renderChatsList"),
@@ -1699,11 +1700,42 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
   assert.match(chatsListSource, /rowClassName: "sidebar-chats-row"/);
   assert.match(chatsListSource, /itemClassName: \[\s*"sidebar-chats-item"/);
   assert.match(chatsListSource, /wrapItem: \(item\) => \(/);
+  assert.match(
+    chatsListSource,
+    /shouldOpen=\{\(trigger\) => \{[\s\S]*?querySelector<HTMLElement>\("\.worker-chat-name"\)[\s\S]*?title\.scrollWidth > title\.clientWidth/,
+  );
   assert.match(sidebarSource, /options\.wrapItem \? options\.wrapItem\(item\) : item/);
+  assert.match(
+    popoverSource,
+    /onMouseEnter:[\s\S]*?event\.buttons !== 0[\s\S]*?suppressHoverUntilLeaveRef\.current = true[\s\S]*?setOpen\(false\);[\s\S]*?suppressHoverUntilLeaveRef\.current[\s\S]*?return;[\s\S]*?openFromHover\(\);/,
+  );
+  assert.match(
+    popoverSource,
+    /onMouseLeave:[\s\S]*?suppressHoverUntilLeaveRef\.current = false[\s\S]*?closeFromHover\(\);/,
+  );
+  assert.match(popoverSource, /data-popover-hover-suppressed/);
+  assert.match(
+    popoverSource,
+    /onMouseUp:[\s\S]*?triggerMode === "hover"[\s\S]*?suppressHoverUntilLeaveRef\.current = true[\s\S]*?clearHoverTimers\(\);[\s\S]*?setOpen\(false\);/,
+  );
+  assert.match(
+    popoverSource,
+    /onFocus:[\s\S]*?triggerMode === "hover"[\s\S]*?event\.currentTarget\.matches\(":focus-visible"\)[\s\S]*?setOpen\(canOpenFromTrigger\(\)\)/,
+  );
   assert.match(sidebarSource, /"assistant-worker-unread-dot",\s*"chat-unread-dot"/);
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
   assert.doesNotMatch(styles, /\.sidebar-chats-item\.is-unread \.sidebar-chats-preview::before/);
   assert.match(styles, /\.assistant-worker-unread-dot\s*\{[\s\S]{0,160}width:\s*8px;[\s\S]{0,120}height:\s*8px;[\s\S]{0,120}background:\s*#1677ff;/);
+  assert.match(styles, /\.worker-chat-item-head\s*\{[\s\S]*?display:\s*flex;/);
+  assert.match(styles, /\.worker-chat-name\s*\{[\s\S]*?text-overflow:\s*ellipsis;/);
+  assert.match(
+    styles,
+    /\.sidebar-chats-item\[data-popover-hover-suppressed="true"\]:not\(\.is-active\):hover\s*\{[\s\S]*?background:\s*transparent;/,
+  );
+  assert.match(
+    styles,
+    /\.sidebar-chats-item\[data-popover-hover-suppressed="true"\][\s\S]*?\+ \.assistant-worker-chat-menu-button\s*\{[\s\S]*?opacity:\s*0;/,
+  );
 });
 
 test("Projects headers show hover cards for Coder and Knowledge Base agents only", () => {

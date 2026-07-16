@@ -832,6 +832,17 @@
   color: var(--ink);
 }
 
+.sidebar-chats-item[data-popover-hover-suppressed="true"]:not(.is-active):hover {
+  background: transparent;
+  color: var(--ink-soft);
+}
+
+.sidebar-chats-item[data-popover-hover-suppressed="true"]
+  + .assistant-worker-chat-menu-button {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sidebar-chats-item.is-active {
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
