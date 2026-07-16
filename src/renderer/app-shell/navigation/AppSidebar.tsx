@@ -3292,6 +3292,7 @@ export function AppSidebar({
               wrapItem: (item) => (
                 <Popover
                   trigger="hover"
+                  hoverEnterDelay={2000}
                   placement="right-start"
                   closeOnOutsideClick={false}
                   shouldOpen={(trigger) => {

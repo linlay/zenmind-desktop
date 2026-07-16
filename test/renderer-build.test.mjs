@@ -476,6 +476,10 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.service-group-copy h2\s*\{[\s\S]*?font-size:\s*13px;[\s\S]*?font-weight:\s*600;/);
   assert.match(globalStyles, /\.service-nav-card h3\s*\{[\s\S]*?font-size:\s*13px;[\s\S]*?font-weight:\s*600;/);
   assert.match(globalStyles, /\.control-center-service-hero,\s*\.config-panel,/);
+  assert.match(
+    globalStyles,
+    /\.control-center-service-hero\s*\{[\s\S]*?z-index:\s*2;[\s\S]*?overflow:\s*visible;/,
+  );
   assert.match(globalStyles, /\.service-detail-metadata\s*\{[\s\S]*?grid-template-columns:\s*minmax\(88px,\s*0\.55fr\) minmax\(112px,\s*0\.65fr\) minmax\(92px,\s*0\.55fr\) minmax\(220px,\s*1\.6fr\)\s*;/);
   assert.match(globalStyles, /\.service-detail-log-actions\s*\{/);
   assert.match(globalStyles, /\.service-detail-log-action,[\s\S]*?\.control-center-link-action\.icon-link-action\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border:\s*1px solid var\(--control-center-border\);/);
@@ -1706,6 +1710,7 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
   assert.match(chatsListSource, /rowClassName: "sidebar-chats-row"/);
   assert.match(chatsListSource, /itemClassName: \[\s*"sidebar-chats-item"/);
   assert.match(chatsListSource, /wrapItem: \(item\) => \(/);
+  assert.match(chatsListSource, /hoverEnterDelay=\{2000\}/);
   assert.match(
     chatsListSource,
     /shouldOpen=\{\(trigger\) => \{[\s\S]*?querySelector<HTMLElement>\("\.worker-chat-name"\)[\s\S]*?title\.scrollWidth > title\.clientWidth/,
@@ -3949,6 +3954,7 @@ test("desktop global search contract is wired across main preload renderer and h
   const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const overlay = readSourceFile("src", "renderer", "app-shell", "search", "DesktopGlobalSearchOverlay.tsx");
   const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
@@ -3973,7 +3979,10 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appRuntime, /isGlobalSearchShortcut/);
   assert.match(appShellRuntime, /isGlobalSearchShortcut/);
   assert.match(appShell, /onOpenGlobalSearch/);
+  assert.match(appShell, /globalSearchOpen \? "is-global-search-open" : ""/);
   assert.match(appShell, /<DesktopGlobalSearchOverlay/);
+  assert.match(navigationCss, /\.app-shell\.is-global-search-open \.sidebar-chats-item\.is-active/);
+  assert.match(navigationCss, /\.app-shell\.is-global-search-open \.assistant-worker-collapse-item\.is-selected/);
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
   assert.match(overlay, /return `\/agent\/\$\{encodeURIComponent\(currentAgentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
   assert.doesNotMatch(overlay, /newChatRequest/);
@@ -3991,6 +4000,10 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-unread-dot\s*\{/);
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-row-status\.is-unread\s*\{/);
   assert.match(appShellCss, /\.desktop-global-search-row\.is-chat \.desktop-global-search-row-title\s*\{[\s\S]{0,80}font-weight:\s*400;/);
+  assert.doesNotMatch(
+    appShellCss.match(/\.desktop-global-search-layer\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "",
+    /backdrop-filter:/
+  );
   assert.match(rows, /DesktopGlobalSearchSectionId = "awaiting" \| "unread" \| "actions" \| "agents" \| "chats"/);
   assert.match(rows, /mergeQueryChatRows/);
   assert.match(rows, /if \(!chatId \|\| !agentKey\) \{/);
@@ -4852,8 +4865,16 @@ test("main process keeps app identity visible in platform program bars", () => {
 });
 
 test("mac dev app uses a content-addressed icon filename to avoid stale Dock cache", () => {
+  const devScript = readSourceFile("scripts", "dev.mjs");
   const darwinDev = readSourceFile("scripts", "platform", "dev-darwin.mjs");
+  const unixDev = readSourceFile("scripts", "platform", "dev-unix.mjs");
+  const windowsDev = readSourceFile("scripts", "platform", "dev-windows.mjs");
+  const agentWebclientHost = readSourceFile("src", "main", "services", "agent-webclient-host.ts");
 
+  assert.match(devScript, /async function resolveDevServerPort\(\)/);
+  assert.match(devScript, /process\.env\.DESKTOP_DEV_SERVER_PORT \?\? "5173"/);
+  assert.match(devScript, /process\.env\.VITE_DEV_SERVER_URL = devServerUrl/);
+  assert.match(devScript, /"--strictPort"/);
   assert.match(darwinDev, /createHash\("sha256"\)/);
   assert.match(darwinDev, /const targetIconFileName = `icon-\$\{fileHashPrefix\(sourceIconPath\)\}\.icns`;/);
   assert.match(darwinDev, /const iconRoot = brandIconDir\(projectRoot,\s*brand\);/);
@@ -4861,7 +4882,10 @@ test("mac dev app uses a content-addressed icon filename to avoid stale Dock cac
   assert.match(darwinDev, /fs\.copyFileSync\(sourceDockIconPath, path\.join\(targetResourcesDir, "icon\.png"\)\);/);
   assert.match(darwinDev, /setPlistString\(plist,\s*"CFBundleIconFile",\s*targetIconFileName\)/);
   assert.match(darwinDev, /function setPlistEnvironment\(plist,\s*env\)/);
-  assert.match(darwinDev, /VITE_DEV_SERVER_URL:\s*"http:\/\/127\.0\.0\.1:5173"/);
+  assert.match(darwinDev, /VITE_DEV_SERVER_URL:\s*process\.env\.VITE_DEV_SERVER_URL \|\| "http:\/\/127\.0\.0\.1:5173"/);
+  assert.match(unixDev, /VITE_DEV_SERVER_URL:\s*process\.env\.VITE_DEV_SERVER_URL \|\| "http:\/\/127\.0\.0\.1:5173"/);
+  assert.match(windowsDev, /VITE_DEV_SERVER_URL:\s*process\.env\.VITE_DEV_SERVER_URL \|\| "http:\/\/127\.0\.0\.1:5173"/);
+  assert.match(agentWebclientHost, /origin !== configuredDevOrigin/);
   assert.match(darwinDev, /DESKTOP_BUILTIN_ASSETS_ROOT:\s*serviceAssetsRoot/);
   assert.match(darwinDev, /BRAND:\s*brand\.id/);
   assert.match(darwinDev, /spawn\("open",\s*\["-n",\s*"-W",\s*preparedApp\.appRoot,\s*"--args",\s*projectRoot\]/);

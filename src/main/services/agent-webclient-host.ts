@@ -372,7 +372,8 @@ function contentTypeForFile(filePath: string) {
 
 function applyDevCors(req: http.IncomingMessage, res: http.ServerResponse) {
   const origin = getHeaderValue(req.headers, "origin");
-  if (!DEV_CORS_ALLOWED_ORIGINS.has(origin)) {
+  const configuredDevOrigin = String(process.env.VITE_DEV_SERVER_URL ?? "").replace(/\/$/u, "");
+  if (!DEV_CORS_ALLOWED_ORIGINS.has(origin) && origin !== configuredDevOrigin) {
     return false;
   }
 

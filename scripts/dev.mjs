@@ -1,4 +1,5 @@
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import {
@@ -89,12 +90,48 @@ try {
   );
   shutdown(1);
 }
+
+function canListen(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", () => resolve(false));
+    server.listen({ host: "127.0.0.1", port }, () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+async function resolveDevServerPort() {
+  const configuredPort = Number.parseInt(process.env.DESKTOP_DEV_SERVER_PORT ?? "5173", 10);
+  if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 65535) {
+    throw new Error("DESKTOP_DEV_SERVER_PORT must be a valid TCP port");
+  }
+  for (let port = configuredPort; port < Math.min(configuredPort + 20, 65536); port += 1) {
+    if (await canListen(port)) {
+      return port;
+    }
+  }
+  throw new Error(`unable to find an available dev server port from ${configuredPort}`);
+}
 // Keep dev bundled env resources explicit. Without ENV_ZIP this clears stale env.zip.
 await runAndWait("node", ["./scripts/sync-env-zip.mjs"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "build:main"], brandProcessOptions({ cwd: projectRoot }));
 
-track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"], brandProcessOptions({ cwd: projectRoot })));
-await waitForUrl("http://127.0.0.1:5173");
+const devServerPort = await resolveDevServerPort();
+const devServerUrl = `http://127.0.0.1:${devServerPort}`;
+process.env.VITE_DEV_SERVER_URL = devServerUrl;
+track(run(npmCmd, [
+  "exec",
+  "vite",
+  "--",
+  "--host",
+  "127.0.0.1",
+  "--port",
+  String(devServerPort),
+  "--strictPort"
+], brandProcessOptions({ cwd: projectRoot })));
+await waitForUrl(devServerUrl);
 
 const platform = hostPlatform();
 const { spawnElectron } = isWindows()

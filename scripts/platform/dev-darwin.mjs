@@ -51,7 +51,7 @@ function buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot) 
     DESKTOP_BRAND_JSON: path.join(projectRoot, "build", "brands", brand.id, "generated", "brand.json"),
     DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
     DESKTOP_NODE_BIN: process.env.DESKTOP_NODE_BIN || process.execPath,
-    VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
+    VITE_DEV_SERVER_URL: process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173"
   };
 }
 

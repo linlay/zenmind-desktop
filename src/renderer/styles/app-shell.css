@@ -495,8 +495,6 @@
   justify-content: center;
   padding: 48px 16px 16px;
   background: rgba(15, 23, 42, 0.18);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
