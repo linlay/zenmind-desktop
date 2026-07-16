@@ -3021,7 +3021,10 @@ export function AppSidebar({
       .join(" ");
   }
 
-  function renderSidebarLink(item: SidebarNavItem, extraClassName = "") {
+  function renderSidebarLink(
+    item: SidebarNavItem,
+    extraClassName = "sidebar-primary-link",
+  ) {
     const visibleLabel =
       isCollapsed && item.collapsedLabel ? item.collapsedLabel : item.label;
     const focusId = createSidebarLinkFocusId(item.orderKey);
@@ -3898,6 +3901,7 @@ export function AppSidebar({
       ? [
           "sidebar-link",
           "sidebar-group-trigger",
+          "sidebar-primary-link",
           args.active ? "sidebar-link-active" : "",
         ]
           .filter(Boolean)

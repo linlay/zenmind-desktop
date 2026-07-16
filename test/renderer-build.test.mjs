@@ -1006,6 +1006,8 @@ test("primary sidebar navigation uses separate compact and rail SVG families", (
   assert.match(sidebarSource, /<SidebarIllustration\s+kind=\{item\.icon\}\s+variant=\{isCollapsed \? "rail" : "compact"\}/);
   assert.match(sidebarSource, /<SidebarIllustration kind=\{args\.icon\} variant="rail" \/>/);
   assert.doesNotMatch(sidebarSource, /<SidebarIllustration kind=\{args\.icon\} variant="compact" \/>/);
+  assert.match(sidebarSource, /function renderSidebarLink\([\s\S]*?extraClassName = "sidebar-primary-link"/);
+  assert.match(sidebarSource, /"sidebar-group-trigger",\s*"sidebar-primary-link",\s*args\.active \? "sidebar-link-active"/);
   assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-nav \.sidebar-link-icon\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/);
   assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*#1677ff;/);
@@ -1270,7 +1272,10 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="webs"\]:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="webs"\]\.is-active,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="assistants"\]:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-group-heading\[data-sidebar-group-id="assistants"\]\.is-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border-color:\s*transparent;/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
-  assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?\.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active,[\s\S]*?\.app-sidebar\.is-collapsed \.sidebar-link\.sidebar-tool-menu-trigger,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger:not\(\.sidebar-link-active\),[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?border-radius:\s*6px;[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);[\s\S]*?font-weight:\s*500;/);
+  assert.match(globalStyles, /\.sidebar-primary-link\.sidebar-link-active \.sidebar-link-label,[\s\S]*?\.sidebar-tool-menu-trigger\.sidebar-link-active \.sidebar-link-label-collapsed\s*\{[\s\S]*?font-weight:\s*500;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?:root\[data-theme="dark"\] \.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-top-actions\s*\{[\s\S]*?top:\s*12px;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{[\s\S]*?top:\s*38px;/);
@@ -6393,7 +6398,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-link-icon,[\s\S]*?\.sidebar-account-menu-icon\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.sidebar-account-menu-item\.is-disabled\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.sidebar-link:hover:not\(\.sidebar-link-active\)\s*\{[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/);
-  assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
+  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
   assert.match(
     globalStyles,
     /\.sidebar-account-menu \.sidebar-tool-menu-item:hover,[\s\S]*?\.sidebar-account-menu \.sidebar-tool-menu-item\.sidebar-link-active,[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/

@@ -2585,18 +2585,16 @@
   width: calc(100% - 8px);
 }
 
-.sidebar-link.sidebar-tool-menu-trigger,
-.sidebar-link.sidebar-tool-menu-trigger:hover,
-.sidebar-link.sidebar-tool-menu-trigger:focus,
-.sidebar-link.sidebar-tool-menu-trigger.is-open,
-.sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active,
-.app-sidebar:not(.is-collapsed) .sidebar-link.sidebar-tool-menu-trigger,
-.app-sidebar.is-collapsed .sidebar-link.sidebar-tool-menu-trigger,
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger,
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:hover,
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:focus,
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger.is-open,
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active {
+.sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
+.sidebar-link.sidebar-tool-menu-trigger:hover:not(.sidebar-link-active),
+.sidebar-link.sidebar-tool-menu-trigger:focus:not(.sidebar-link-active),
+.sidebar-link.sidebar-tool-menu-trigger.is-open:not(.sidebar-link-active),
+.app-sidebar:not(.is-collapsed) .sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
+.app-sidebar.is-collapsed .sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:hover:not(.sidebar-link-active),
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:focus:not(.sidebar-link-active),
+:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger.is-open:not(.sidebar-link-active) {
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -3230,6 +3228,29 @@
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-label {
   display: none;
+}
+
+.app-sidebar .sidebar-primary-link.sidebar-link-active,
+.app-sidebar .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  border-color: transparent;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.app-sidebar .sidebar-primary-link.sidebar-link-active .sidebar-link-label,
+.app-sidebar .sidebar-primary-link.sidebar-link-active .sidebar-link-label-collapsed,
+.app-sidebar .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active .sidebar-link-label,
+.app-sidebar .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active .sidebar-link-label-collapsed {
+  font-weight: 500;
+}
+
+:root[data-theme="dark"] .app-sidebar .sidebar-primary-link.sidebar-link-active,
+:root[data-theme="dark"] .app-sidebar .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active {
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  border-color: transparent;
+  color: var(--ink);
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle {
