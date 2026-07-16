@@ -87,6 +87,7 @@ function createScreenshotSelectionHtml(selectionId: string) {
     `window.addEventListener('pointerdown',(event)=>{if(event.button!==0){return;}dragging=true;startX=clamp(event.clientX,0,window.innerWidth);startY=clamp(event.clientY,0,window.innerHeight);currentRect={x:startX,y:startY,width:0,height:0};hint.textContent=${JSON.stringify(selectionReleaseHint)};box.style.display='block';updateBox(event.clientX,event.clientY);try{document.body.setPointerCapture(event.pointerId);}catch{}});`,
     "window.addEventListener('pointermove',(event)=>{if(!dragging){return;}updateBox(event.clientX,event.clientY);});",
     `window.addEventListener('pointerup',(event)=>{if(!dragging){return;}dragging=false;try{document.body.releasePointerCapture(event.pointerId);}catch{}updateBox(event.clientX,event.clientY);if(!currentRect||currentRect.width<minSize||currentRect.height<minSize){box.style.display='none';hint.textContent=${JSON.stringify(selectionTooSmall)};return;}finish('select',currentRect);});`,
+    "window.addEventListener('contextmenu',(event)=>{event.preventDefault();finish('cancel');});",
     "window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){finish('cancel');}});",
     "</script>",
     "</body>",
