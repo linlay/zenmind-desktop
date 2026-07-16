@@ -28,6 +28,8 @@ type PopoverPlacement =
 type PopoverChildProps = {
   onClick?: React.MouseEventHandler<HTMLElement>;
   onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
+  onMouseDown?: React.MouseEventHandler<HTMLElement>;
+  onMouseUp?: React.MouseEventHandler<HTMLElement>;
   onMouseEnter?: React.MouseEventHandler<HTMLElement>;
   onMouseLeave?: React.MouseEventHandler<HTMLElement>;
   onFocus?: React.FocusEventHandler<HTMLElement>;
@@ -57,6 +59,7 @@ interface PopoverProps {
   trigger?: "click" | "hover";
   hoverEnterDelay?: number;
   hoverLeaveDelay?: number;
+  shouldOpen?: (trigger: HTMLElement) => boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -76,6 +79,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     trigger: triggerMode = "click",
     hoverEnterDelay = 180,
     hoverLeaveDelay = 100,
+    shouldOpen,
     className,
     style,
   } = props;
@@ -85,6 +89,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
   const frameRef = useRef<number>();
   const hoverOpenTimerRef = useRef<number>();
   const hoverCloseTimerRef = useRef<number>();
+  const suppressHoverUntilLeaveRef = useRef(false);
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const [position, setPosition] = useState<React.CSSProperties>({
     left: 0,
@@ -131,6 +136,23 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     window.clearTimeout(hoverCloseTimerRef.current);
   }, []);
 
+  const canOpenFromTrigger = useCallback(() => {
+    const trigger = triggerRef.current;
+    return !shouldOpen || (trigger ? shouldOpen(trigger) : false);
+  }, [shouldOpen]);
+
+  const setHoverSuppressed = useCallback((suppressed: boolean) => {
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      return;
+    }
+    if (suppressed) {
+      trigger.setAttribute("data-popover-hover-suppressed", "true");
+    } else {
+      trigger.removeAttribute("data-popover-hover-suppressed");
+    }
+  }, []);
+
   const openFromHover = useCallback((delay = hoverEnterDelay) => {
     if (triggerMode !== "hover") {
       return;
@@ -138,9 +160,9 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     window.clearTimeout(hoverCloseTimerRef.current);
     window.clearTimeout(hoverOpenTimerRef.current);
     hoverOpenTimerRef.current = window.setTimeout(() => {
-      setOpen(true);
+      setOpen(canOpenFromTrigger());
     }, delay);
-  }, [hoverEnterDelay, setOpen, triggerMode]);
+  }, [canOpenFromTrigger, hoverEnterDelay, setOpen, triggerMode]);
 
   const closeFromHover = useCallback(() => {
     if (triggerMode !== "hover") {
@@ -354,19 +376,52 @@ export const Popover: React.FC<PopoverProps> = (props) => {
         setOpen(!isOpen);
       }
     },
+    onMouseDown: (event: React.MouseEvent<HTMLElement>) => {
+      children.props.onMouseDown?.(event);
+      if (triggerMode === "hover") {
+        suppressHoverUntilLeaveRef.current = true;
+        setHoverSuppressed(true);
+        clearHoverTimers();
+        setOpen(false);
+      }
+    },
+    onMouseUp: (event: React.MouseEvent<HTMLElement>) => {
+      children.props.onMouseUp?.(event);
+      if (triggerMode === "hover") {
+        suppressHoverUntilLeaveRef.current = true;
+        setHoverSuppressed(true);
+        clearHoverTimers();
+        setOpen(false);
+      }
+    },
     onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
       children.props.onMouseEnter?.(event);
+      if (event.buttons !== 0) {
+        suppressHoverUntilLeaveRef.current = true;
+        setHoverSuppressed(true);
+        clearHoverTimers();
+        setOpen(false);
+        return;
+      }
+      if (suppressHoverUntilLeaveRef.current) {
+        return;
+      }
       openFromHover();
     },
     onMouseLeave: (event: React.MouseEvent<HTMLElement>) => {
       children.props.onMouseLeave?.(event);
+      suppressHoverUntilLeaveRef.current = false;
+      setHoverSuppressed(false);
       closeFromHover();
     },
     onFocus: (event: React.FocusEvent<HTMLElement>) => {
       children.props.onFocus?.(event);
-      if (triggerMode === "hover") {
+      if (
+        triggerMode === "hover" &&
+        event.currentTarget.matches(":focus-visible")
+      ) {
         clearHoverTimers();
-        setOpen(true);
+        setOpen(canOpenFromTrigger());
       }
     },
     onBlur: (event: React.FocusEvent<HTMLElement>) => {

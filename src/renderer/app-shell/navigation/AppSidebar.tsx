@@ -3291,6 +3291,10 @@ export function AppSidebar({
                   trigger="hover"
                   placement="right-start"
                   closeOnOutsideClick={false}
+                  shouldOpen={(trigger) => {
+                    const title = trigger.querySelector<HTMLElement>(".worker-chat-name");
+                    return Boolean(title && title.scrollWidth > title.clientWidth);
+                  }}
                   className="sidebar-chat-hover-card-surface"
                   content={renderChatHoverCard(agent, chat)}
                 >
