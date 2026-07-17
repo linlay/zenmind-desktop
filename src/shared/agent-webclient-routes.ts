@@ -142,6 +142,21 @@ const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
   "wsSource"
 ]);
 
+export function areAgentWebclientHostRouteParamsEqual(
+  currentUrl: string,
+  targetUrl: string
+): boolean {
+  try {
+    const current = new URL(currentUrl);
+    const target = new URL(targetUrl);
+    return Array.from(AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS).every(
+      (key) => current.searchParams.get(key) === target.searchParams.get(key)
+    );
+  } catch {
+    return false;
+  }
+}
+
 interface AgentWebclientChatNavigationIdentity {
   origin: string;
   agentKey: string;

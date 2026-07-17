@@ -12,7 +12,11 @@ import type {
 } from "../../../shared/contracts";
 import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
 import { getTunnelHubRuntimeStatus, startTunnelHubRuntime } from "../../tunnel-hub-runtime";
-import { readTunnelHubRegistrationBearerToken, readTunnelHubSettings } from "../../tunnel-hub-settings";
+import {
+  readTunnelHubRegistrationBearerToken,
+  readTunnelHubSettings,
+  saveTunnelHubSettings
+} from "../../tunnel-hub-settings";
 import { getDesktopWebappStateRoot } from "../../user-paths";
 import { readWebappItems } from "./store";
 
@@ -236,6 +240,18 @@ async function ensureTunnelConnected(app: App) {
   return result.status;
 }
 
+function enableTunnelForPublish(app: App) {
+  const settings = readTunnelHubSettings(app);
+  if (settings.enabled) {
+    return settings;
+  }
+  const result = saveTunnelHubSettings(app, { enabled: true });
+  if (!result.ok || !result.settings.enabled) {
+    throw new Error(result.message || "Tunnel Hub could not be enabled for publishing.");
+  }
+  return result.settings;
+}
+
 export async function publishWebapp(
   app: App,
   id: string,
@@ -260,6 +276,7 @@ export async function publishWebapp(
     if (runtime?.status !== "running" || !runtime.webUrl) {
       throw new Error("Start the WebApp before publishing.");
     }
+    enableTunnelForPublish(app);
     await ensureTunnelConnected(app);
     const route = await registerTunnelRoute(app, item, runtime.webUrl, true);
     state = createState(item, {
@@ -356,5 +373,6 @@ export function listPublishedWebappIds(app: App) {
 export const __testInternals = {
   stableWebappName,
   requireLoopbackTarget,
-  registerTunnelRoute
+  registerTunnelRoute,
+  enableTunnelForPublish
 };

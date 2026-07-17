@@ -15,6 +15,7 @@ import {
 } from "../../../shared/auth-bridge";
 import { buildAgentWebclientAccessTokenInjectionScript } from "../../../shared/agent-webclient-auth-injection";
 import {
+  areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
   resolveAgentWebclientWsSource,
 } from "../../../shared/agent-webclient-routes";
@@ -964,7 +965,13 @@ export function PluginPage({
     reason: "initial" | "navigation" | "route-sync",
   ) {
     if (isAgentWebclientChatSurface(service?.id, surfaceId)) {
-      return;
+      const currentUrl = readCurrentWebviewUrl();
+      if (
+        !areAgentWebclientChatNavigationUrlsEquivalent(currentUrl, targetUrl) ||
+        areAgentWebclientHostRouteParamsEqual(currentUrl, targetUrl)
+      ) {
+        return;
+      }
     }
     const payload = buildPluginRouteChangedMessage(targetUrl, reason);
     if (!payload) {
@@ -1344,6 +1351,18 @@ export function PluginPage({
     webviewRenderKey,
     webviewSrcUrl,
   ]);
+
+  useEffect(() => {
+    if (
+      active === false ||
+      !bridgeReady ||
+      !serviceWebviewPreloadUrl ||
+      !isAgentWebclientChatSurface(service?.id, surfaceId)
+    ) {
+      return;
+    }
+    sendPluginRouteToWebview(embeddedUrl, "route-sync");
+  }, [active, bridgeReady, embeddedUrl, service?.id, serviceWebviewPreloadUrl, surfaceId]);
 
   useEffect(() => {
     if (service?.id !== "agent-platform") {

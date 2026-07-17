@@ -29,6 +29,8 @@ config/desktop/sso.json
   -> secrets/sso-site-token.json
 ```
 
+Tunnel Hub 注册优先使用 `sso-site-token.json`。品牌未配置可选的 `siteTokenBridge` 时，回退使用同一次 Desktop 登录写入的、仍在有效期内的 `state/desktop/sso-access-token.txt`；过期 token 不参与 Tunnel 注册。
+
 `siteTokenBridge` 的打开方式跟随顶层 `sso.browserMode`：`system` 使用系统浏览器，`embedded` 使用 Desktop SSO WebView 与同一 SSO partition。嵌入式 cookie 登录完成后也会继续启动 `siteTokenBridge`，但 Desktop 不根据 brand 做任何分支。
 
 Desktop WebSocket 鉴权：

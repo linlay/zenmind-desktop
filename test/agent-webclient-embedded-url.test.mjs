@@ -8,6 +8,7 @@ const {
   buildPluginEmbeddedUrl
 } = require("../dist-electron/shared/auth-bridge.js");
 const {
+  areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
@@ -97,4 +98,16 @@ test("main chat route comparison ignores host presentation params and their orde
     ),
     false
   );
+});
+
+test("host presentation comparison detects a live theme change", () => {
+  const light =
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&lang=zh-CN&wsSource=desktop-chat";
+  const dark =
+    "http://127.0.0.1:19011/agent/cutej?wsSource=desktop-chat&lang=zh-CN&theme=dark&chatId=chat-1";
+  const reorderedLight =
+    "http://127.0.0.1:19011/agent/cutej?lang=zh-CN&theme=light&chatId=chat-1&wsSource=desktop-chat";
+
+  assert.equal(areAgentWebclientHostRouteParamsEqual(light, dark), false);
+  assert.equal(areAgentWebclientHostRouteParamsEqual(light, reorderedLight), true);
 });

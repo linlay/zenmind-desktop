@@ -5833,6 +5833,78 @@ test("ensurePreStartRequirements skips provider-register request when provider k
   }
 });
 
+test("ensurePreStartRequirements replaces existing provider keys for an explicit JWT switch", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const tempRoot = fixture.tempRoot;
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
+  const providersRoot = path.join(getTestRuntimeRoot(userDataRoot), "registries", "providers");
+  const registerPath = path.join(getTestRuntimeRoot(userDataRoot), "provider-register.json");
+  const originalFetch = globalThis.fetch;
+  const issuedKey = "dk_rotated_by_cutej_web_2";
+  let fetchCalls = 0;
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(providersRoot, { recursive: true });
+  for (const providerKey of ["th-deepseek", "th-minimax"]) {
+    fs.writeFileSync(
+      path.join(providersRoot, `${providerKey}.yml`),
+      `key: ${providerKey}\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: dk_existing_key\n`,
+      "utf8"
+    );
+  }
+  fs.writeFileSync(
+    registerPath,
+    `${JSON.stringify({
+      version: 1,
+      enabled: true,
+      replaceExisting: true,
+      endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
+      grant: { type: "jwt", token: "cutej-web-2-jwt" },
+      providers: ["th-deepseek", "th-minimax"]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  writeTestEnv(userDataRoot, platformService.id, "SERVER_PORT=11949\n");
+
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => JSON.stringify({ key: issuedKey })
+    };
+  };
+
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+
+    assert.equal(fetchCalls, 1);
+    for (const providerKey of ["th-deepseek", "th-minimax"]) {
+      assert.match(
+        fs.readFileSync(path.join(providersRoot, `${providerKey}.yml`), "utf8"),
+        /^apiKey: dk_rotated_by_cutej_web_2$/m
+      );
+    }
+    assert.equal(fs.existsSync(registerPath), false);
+  } finally {
+    if (originalFetch === undefined) {
+      delete globalThis.fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements leaves legacy agent-platform auth env untouched", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");

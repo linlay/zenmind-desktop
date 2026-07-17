@@ -8,6 +8,7 @@ import {
   recordTunnelHubRegistrationResult
 } from "./tunnel-hub-settings";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
+import { t } from "./i18n/main-i18n";
 
 type FetchLike = (url: string, init: {
   method: string;
@@ -116,6 +117,9 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
   });
   const raw = await response.text();
   if (!response.ok) {
+    if (response.status === 405) {
+      throw new Error(t("tunnelHub.registrationApiUnavailable"));
+    }
     throw new Error(`Tunnel Hub registration failed (${response.status} ${response.statusText}): ${raw}`);
   }
   const data = parseRegistrationResponse(raw);

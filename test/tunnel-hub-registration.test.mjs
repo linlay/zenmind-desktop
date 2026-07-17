@@ -213,3 +213,36 @@ test("Tunnel Hub registration ignores legacy registration token", async (t) => {
   assert.equal(registrations[0].authorization, "Bearer official-site-jwt");
   assert.equal(registrations[0].body.deviceId, "mac-mini-office");
 });
+
+test("Tunnel Hub registration reports an unavailable Desktop API without exposing nginx HTML", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-api-unavailable-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeSsoSiteToken(homePath);
+  const saved = saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office"
+  });
+  assert.equal(saved.ok, true);
+  configureTunnelHubRegistrationController({
+    fetch: async () => ({
+      ok: false,
+      status: 405,
+      statusText: "Not Allowed",
+      text: async () => "<html><h1>405 Not Allowed</h1></html>"
+    }),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  await assert.rejects(
+    ensureTunnelHubRegistrationReady(app),
+    (error) => {
+      assert.match(error.message, /Desktop 注册接口|Desktop registration API/u);
+      assert.doesNotMatch(error.message, /<html>/u);
+      return true;
+    }
+  );
+});

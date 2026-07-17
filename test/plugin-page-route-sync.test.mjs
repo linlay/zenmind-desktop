@@ -33,7 +33,7 @@ test("plugin page does not sync API resource navigations back into the embedded 
   assert.match(navigationHandlerBlock, /sendPluginRouteToWebview\(resolvedUrl, "navigation"\)/);
 });
 
-test("agent chat mirrors its URL without receiving route bridge messages", () => {
+test("agent chat mirrors its business URL and only receives changed host params", () => {
   const pluginPage = readPluginPageSource();
   const routeDeliveryBlock = pluginPage.slice(
     pluginPage.indexOf("function sendPluginRouteToWebview"),
@@ -50,7 +50,8 @@ test("agent chat mirrors its URL without receiving route bridge messages", () =>
 
   assert.match(pluginPage, /function isAgentWebclientChatSurface/);
   assert.match(pluginPage, /function resolveAgentWebclientChatRouteFromUrl/);
-  assert.match(routeDeliveryBlock, /if \(isAgentWebclientChatSurface\(service\?\.id, surfaceId\)\) \{\s*return;/);
+  assert.match(routeDeliveryBlock, /!areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)/);
+  assert.match(routeDeliveryBlock, /areAgentWebclientHostRouteParamsEqual\(currentUrl, targetUrl\)/);
   assert.match(contextBridgeBlock, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)/);
   assert.doesNotMatch(pluginPage, /ChatRouteMessage/);
 });
@@ -91,5 +92,26 @@ test("main chat direct route loading uses business-route URL comparison", () => 
   assert.match(
     directRouteLoadBlock,
     /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, embeddedUrl\)/,
+  );
+});
+
+test("main chat synchronizes changed host params without replaying its business route", () => {
+  const pluginPage = readPluginPageSource();
+  const routeDispatchBlock = pluginPage.slice(
+    pluginPage.indexOf("function sendPluginRouteToWebview"),
+    pluginPage.indexOf("function requestDirectWebviewRouteLoad"),
+  );
+
+  assert.match(
+    routeDispatchBlock,
+    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)/,
+  );
+  assert.match(
+    routeDispatchBlock,
+    /areAgentWebclientHostRouteParamsEqual\(currentUrl, targetUrl\)/,
+  );
+  assert.match(
+    pluginPage,
+    /sendPluginRouteToWebview\(embeddedUrl, "route-sync"\);/,
   );
 });

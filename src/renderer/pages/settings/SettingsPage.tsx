@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, SunOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import { ControlCenterPage, PluginsPage } from "../control-center/ControlCenterPage";
 import "./SettingsPage.css";
@@ -70,7 +70,7 @@ import {
   getVisibleSettingsSections,
   type SettingsSectionId
 } from "../../settingsPageSections";
-import { resolveSettingsSectionId } from "../../settings/settingsRoutes";
+import { buildSettingsSectionPath, resolveSettingsSectionId } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
 import { isAssistantNavChatAgent } from "../../assistantNavigation";
@@ -2407,6 +2407,7 @@ export function SettingsPage({
 }: SettingsPageProps) {
   const { locale, setLocale, t } = useI18n();
   const location = useLocation();
+  const navigate = useNavigate();
   const { sectionId: sectionIdParam } = useParams();
   const currentRoute = `${location.pathname}${location.search}`;
   const noticeIdRef = useRef(0);
@@ -3980,6 +3981,17 @@ export function SettingsPage({
     } finally {
       setWebappPublishPendingId("");
     }
+  }
+
+  async function handleCopyWebappPublishUrl(url: string) {
+    const result = await window.electronAPI.clipboard.writeText(url);
+    showSectionNotice(
+      "webapps",
+      result.ok
+        ? t("settings.webapps.publishUrlCopied")
+        : result.message || t("settings.webapps.publishUrlCopyFailed"),
+      result.ok ? "success" : "error"
+    );
   }
 
   async function handleSaveWebappItem(event?: FormEvent<HTMLFormElement>) {
@@ -5684,7 +5696,7 @@ export function SettingsPage({
                       <div className="service-title-actions service-primary-actions">
                         <Button
                           type="primary"
-                          disabled={!publishReady || webappPublishPendingId !== ""}
+                          disabled={webappPublishPendingId !== ""}
                           loading={webappPublishPendingId === selectedWebapp.id}
                           onClick={() => void handlePublishWebapp(selectedWebapp)}
                         >
@@ -5819,6 +5831,37 @@ export function SettingsPage({
                         ? new Date(publishState.updatedAt).toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US")
                         : "")}
                     </div>
+                    {publishState?.active && publishState.url ? (
+                      <div className="web-publish-share-card">
+                        <QRCode
+                          value={publishState.url}
+                          size={156}
+                          bordered={false}
+                          color="var(--ink)"
+                          bgColor="transparent"
+                        />
+                        <div className="web-publish-share-copy">
+                          <strong>{t("settings.webapps.publishQrTitle")}</strong>
+                          <span>{t("settings.webapps.publishQrDescription")}</span>
+                          <code>{publishState.url}</code>
+                          <div className="web-detail-actions">
+                            <Button onClick={() => void handleCopyWebappPublishUrl(publishState.url)}>
+                              {t("settings.webapps.publishCopyUrl")}
+                            </Button>
+                            <Button onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}>
+                              {t("settings.webapps.publishOpenUrl")}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                    {!publishReady ? (
+                      <div className="web-detail-actions web-publish-setup-actions">
+                        <Button onClick={() => navigate(buildSettingsSectionPath("tunnelHub"))}>
+                          {t("settings.webapps.publishConfigure")}
+                        </Button>
+                      </div>
+                    ) : null}
                     {publishState?.active ? (
                       <div className="web-detail-actions">
                         <Button

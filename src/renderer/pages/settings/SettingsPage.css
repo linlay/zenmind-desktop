@@ -779,6 +779,53 @@
   background: rgba(201, 54, 57, 0.04);
 }
 
+.settings-page .web-publish-share-card {
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  margin: 0 16px 16px;
+  padding: 16px;
+  border: 1px solid var(--control-center-border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.settings-page .web-publish-share-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-page .web-publish-share-copy strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.settings-page .web-publish-share-copy code {
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--accent-strong);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.settings-page .web-publish-setup-actions {
+  padding: 0 16px 16px;
+}
+
+@media (max-width: 760px) {
+  .settings-page .web-publish-share-card {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+}
+
 :root[data-theme="dark"] .settings-page .web-publish-status.is-ready,
 :root[data-theme="dark"] .settings-page .web-publish-status.is-published {
   color: #65d49b;

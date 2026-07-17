@@ -17,6 +17,7 @@ type AppPathReader = Pick<App, "getPath">;
 type ProviderRegisterConfig = {
   version?: unknown;
   enabled?: unknown;
+  replaceExisting?: unknown;
   endpoint?: unknown;
   grant?: unknown;
   providers?: unknown;
@@ -293,10 +294,11 @@ function readProviderTargets(input: {
 function applyProviderApiKey(input: {
   targets: ReturnType<typeof readProviderTargets>;
   apiKey: string;
+  replaceExisting?: boolean;
 }) {
   const updatedProviders: string[] = [];
   for (const target of input.targets) {
-    if (!target.needsUpdate) {
+    if (!input.replaceExisting && !target.needsUpdate) {
       continue;
     }
     fs.writeFileSync(
@@ -357,6 +359,7 @@ export async function ensureProviderRegisterApiKey(
 
   const { config } = readRegisterConfig(registerPath);
   const providers = normalizeProviders(config.providers);
+  const replaceExisting = config.replaceExisting === true;
   let targets: ReturnType<typeof readProviderTargets>;
   if (config.enabled !== true) {
     try {
@@ -370,7 +373,7 @@ export async function ensureProviderRegisterApiKey(
   } else {
     targets = readProviderTargets({ app, providers, platform });
   }
-  if (!targets.some((target) => target.needsUpdate)) {
+  if (!replaceExisting && !targets.some((target) => target.needsUpdate)) {
     if (config.enabled === true) {
       safetyCleanRegister(registerPath, config, platform);
     }
@@ -386,7 +389,7 @@ export async function ensureProviderRegisterApiKey(
     deviceId,
     fetchImpl: options.fetchImpl ?? defaultFetchImpl()
   });
-  const updatedProviders = applyProviderApiKey({ targets, apiKey });
+  const updatedProviders = applyProviderApiKey({ targets, apiKey, replaceExisting });
   safetyCleanRegister(registerPath, config, platform);
   console.info(
     `[provider-register] applied registration key for providers=${providers.join(",")} updated=${updatedProviders.join(",") || "none"}`
