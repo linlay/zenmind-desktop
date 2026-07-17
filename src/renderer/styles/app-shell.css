@@ -120,7 +120,7 @@
   align-items: center;
   justify-content: center;
   padding: 28px;
-  background: rgba(15, 23, 42, 0.42);
+  background: var(--modal-mask-bg);
 }
 
 .desktop-sso-login-modal {
@@ -192,9 +192,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.34);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--modal-mask-bg);
 }
 
 .desktop-action-confirmation-dialog {
@@ -509,7 +507,7 @@
   align-items: flex-start;
   justify-content: center;
   padding: 48px 16px 16px;
-  background: rgba(15, 23, 42, 0.18);
+  background: var(--modal-mask-bg);
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -715,10 +713,6 @@
 
 .desktop-global-search-status.is-error {
   color: #b42318;
-}
-
-:root[data-theme="dark"] .desktop-global-search-layer {
-  background: rgba(0, 0, 0, 0.18);
 }
 
 :root[data-theme="dark"] .desktop-global-search-panel {

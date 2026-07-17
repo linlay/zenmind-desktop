@@ -988,9 +988,7 @@
   display: grid;
   place-items: end center;
   padding: 18px;
-  background: rgba(15, 23, 42, 0.12);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--modal-mask-bg);
 }
 
 .assistant-hitl-dialog {

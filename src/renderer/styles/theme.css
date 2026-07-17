@@ -55,6 +55,7 @@
   --info: #722ED1;
   --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --modal-mask-bg: rgba(15, 23, 42, 0.18);
   --desktop-ui-bg: #ffffff;
   --desktop-ui-card: #ffffff;
   --desktop-ui-card-soft: #f4f7ff;
@@ -119,6 +120,7 @@
   --info: #A55EEA;
   --panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   --panel-shadow-hover: 0 12px 30px rgba(0, 0, 0, 0.24);
+  --modal-mask-bg: rgba(0, 0, 0, 0.18);
   --desktop-ui-bg: #181818;
   --desktop-ui-card: #181818;
   --desktop-ui-card-soft: #181818;
