@@ -1710,9 +1710,9 @@
   height: 24px;
 }
 
-.assistant-worker-collapse-item.is-expanded > .Collapse-header .chat-awaiting-status,
-.assistant-worker-collapse-item.is-expanded > .Collapse-header .assistant-worker-badge,
-.assistant-worker-collapse-item.is-expanded > .Collapse-header .sidebar-assistant-preview-loading {
+.assistant-worker-collapse-item.is-expanded>.Collapse-header .chat-awaiting-status,
+.assistant-worker-collapse-item.is-expanded>.Collapse-header .assistant-worker-badge,
+.assistant-worker-collapse-item.is-expanded>.Collapse-header .sidebar-assistant-preview-loading {
   display: none;
 }
 
@@ -1760,6 +1760,8 @@
   border-top-color: currentColor;
   border-radius: 999px;
   animation: assistant-worker-spin 0.8s linear infinite;
+  width: 12px;
+  height: 12px;
 }
 
 .sidebar-assistant-preview-loading {
@@ -2034,7 +2036,6 @@
 
 .assistant-worker-chat-row {
   position: relative;
-  margin: 2px 0;
 }
 
 .assistant-worker-chat-item {
@@ -2042,7 +2043,7 @@
   align-items: center;
   width: 100%;
   min-height: 29px;
-  padding: 5px 10px;
+  padding: 5px 10px 5px 14px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2067,7 +2068,7 @@
 .worker-chat-item-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   min-width: 0;
 }
@@ -2230,6 +2231,10 @@
 .assistant-worker-chat-row.has-status-action:hover .assistant-worker-chat-menu-button,
 .assistant-worker-chat-row.has-status-action:focus-within .assistant-worker-chat-menu-button {
   display: none;
+}
+
+.worker-chat-preview-list {
+  margin-top: 2px;
 }
 
 .worker-chat-preview-list .status-line {
