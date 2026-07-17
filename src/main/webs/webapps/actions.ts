@@ -6,6 +6,7 @@ import { removeInstalledRecord } from "../../marketplace/common";
 import { isRecord, readString } from "../common";
 import { getWebappDir, readWebappItems, writeWebappPreferenceFields } from "./store";
 import { webappRuntime } from "./runtime";
+import { readWebappPublishState, unpublishWebapp } from "./publisher";
 
 function findWebapp(items: WebappEntry[], id: string) {
   const normalizedId = id.trim();
@@ -81,6 +82,17 @@ export async function removeWebappItem(app: App, id: string): Promise<WebappDele
   }
 
   try {
+    if (readWebappPublishState(app, target.id)?.active === true) {
+      const unpublished = await unpublishWebapp(app, target.id);
+      if (!unpublished.ok) {
+        return {
+          ok: false,
+          item: target,
+          items,
+          message: `Stop Tunnel publishing before removing this WebApp: ${unpublished.message}`
+        };
+      }
+    }
     await webappRuntime.stop(app, target.id, t("webapp.deleted", { label: target.label })).catch(() => undefined);
     fs.rmSync(target.installPath || getWebappDir(app, target.id), { recursive: true, force: true });
     if (target.sourceKind === "market") {

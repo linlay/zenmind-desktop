@@ -1,6 +1,11 @@
 import path from "node:path";
 import type { App } from "electron";
-import type { WebappLogReadOptions, WebappLogTarget } from "../../shared/contracts";
+import type {
+  DesktopMobileWebappItem,
+  DesktopWebappChangedReason,
+  WebappLogReadOptions,
+  WebappLogTarget
+} from "../../shared/contracts";
 import {
   addWebsiteItem,
   exportWebsiteItems,
@@ -29,6 +34,11 @@ export interface WebIpcHandlerOptions {
   getDataRoot: (app: App) => string;
   fsReadFile?: (filePath: string, encoding: string) => Promise<string>;
   fsWriteFile?: (filePath: string, content: string, encoding: string) => Promise<void>;
+  emitWebappChanged?: (
+    reason: DesktopWebappChangedReason,
+    webappId: string,
+    item?: DesktopMobileWebappItem | null
+  ) => void;
 }
 
 function normalizeLogTarget(value: unknown): WebappLogTarget {
@@ -136,6 +146,9 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     });
 
     const currentItems = listWebEntries(app).items;
+    const previousWebappIds = new Set(
+      currentItems.filter((item) => item.kind === "webapp").map((item) => item.id)
+    );
     if (result.canceled || result.filePaths.length === 0) {
       return {
         ok: false,
@@ -155,6 +168,9 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       const item = nextItems.find((candidate) =>
         candidate.kind === "webapp" && candidate.id === installResult.itemId
       ) ?? null;
+      if (installResult.ok && item?.kind === "webapp") {
+        options.emitWebappChanged?.(previousWebappIds.has(item.id) ? "updated" : "installed", item.id);
+      }
       return {
         ok: installResult.ok,
         item,
@@ -173,12 +189,20 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       };
     }
   });
-  ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) =>
-    updateWebappItem(app, id, input)
-  );
-  ipcMain.handle("webs.webapps.remove", async (_event: any, id: string) =>
-    removeWebappItem(app, id)
-  );
+  ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) => {
+    const result = updateWebappItem(app, id, input);
+    if (result.ok) {
+      options.emitWebappChanged?.("updated", id);
+    }
+    return result;
+  });
+  ipcMain.handle("webs.webapps.remove", async (_event: any, id: string) => {
+    const result = await removeWebappItem(app, id);
+    if (result.ok) {
+      options.emitWebappChanged?.("removed", id, null);
+    }
+    return result;
+  });
   ipcMain.handle("webs.webapps.stop", async (_event: any, id: string) =>
     webappRuntime.stop(app, id)
   );
@@ -198,11 +222,15 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   );
   ipcMain.handle("webs.webapps.publish", async (_event: any, id: string) => {
     const command = await webappRuntime.start(app, id);
-    return publishWebapp(app, id, command.state);
+    const result = await publishWebapp(app, id, command.state);
+    options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", id);
+    return result;
   });
-  ipcMain.handle("webs.webapps.unpublish", async (_event: any, id: string) =>
-    unpublishWebapp(app, id)
-  );
+  ipcMain.handle("webs.webapps.unpublish", async (_event: any, id: string) => {
+    const result = await unpublishWebapp(app, id);
+    options.emitWebappChanged?.(result.ok ? "unpublished" : "publish-failed", id);
+    return result;
+  });
   ipcMain.handle("webs.webapps.readLog", async (_event: any, id: string, target: unknown, options?: WebappLogReadOptions) =>
     webappRuntime.readLog(app, id, normalizeLogTarget(target), options)
   );

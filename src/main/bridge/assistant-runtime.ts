@@ -1,5 +1,12 @@
 import type { App, BrowserWindow } from "electron";
-import type { AssistantEvent, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, DesktopWsServerStartOptions } from "../../shared/contracts";
+import type {
+  AssistantEvent,
+  AssistantNavAgentItemsResult,
+  AssistantNavigationPushEvent,
+  DesktopMobileWebappItem,
+  DesktopWebappChangedReason,
+  DesktopWsServerStartOptions
+} from "../../shared/contracts";
 import { AgentPlatformAssistantBridge } from "../assistant/core/agent-platform-bridge";
 import { AssistantNavigationStatusClient } from "../assistant/core/assistant-navigation-status-client";
 import { callDesktopActionConfirmation, callDesktopActionRenderer } from "../desktop-action-renderer";
@@ -10,6 +17,7 @@ import {
 import {
   emitDesktopWsPush,
   getDesktopWsServerRuntimeState,
+  hasTunnelDesktopWsSubscriber,
   startDesktopWsServer,
   stopDesktopWsServer
 } from "../desktop-ws-server";
@@ -18,6 +26,11 @@ import { createKanbanRuntime } from "../kanban-runtime";
 import { configureTunnelHubRegistrationController } from "../tunnel-hub-registration";
 import { configureTunnelHubRuntime } from "../tunnel-hub-runtime";
 import type { AssistantRunWakeLock } from "./assistant-wake-lock";
+import {
+  createDesktopMobileWebappCatalog,
+  readDesktopMobileWebappItem
+} from "../webs/webapps/mobile-catalog";
+import { webappRuntime } from "../webs/webapps/runtime";
 
 export type AssistantBridgeRuntimeOptions = {
   app: App;
@@ -68,6 +81,28 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     }
   });
 
+  function emitWebappChanged(
+    reason: DesktopWebappChangedReason,
+    webappId: string,
+    item?: DesktopMobileWebappItem | null
+  ) {
+    let resolvedItem = item ?? null;
+    if (item === undefined) {
+      try {
+        resolvedItem = readDesktopMobileWebappItem(options.app, webappId);
+      } catch (error) {
+        console.warn(`[webapp] failed to build mobile change item for ${webappId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    emitDesktopWsPush("webapp.changed", {
+      reason,
+      webappId,
+      changedAt: new Date().toISOString(),
+      item: resolvedItem
+    });
+  }
+  webappRuntime.setPublicationChangeListener(emitWebappChanged);
+
   const desktopActionOptions = createDesktopActionOptions(options.context, {
     assistantBridge,
     navigate: options.showMainWindow,
@@ -81,6 +116,8 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       pendingRequests: state.desktopActionConfirmationRequests
     }),
     cdpIntegration: options.cdpIntegration,
+    hasTunnelWebappSubscriber: () => hasTunnelDesktopWsSubscriber("webapp.changed"),
+    emitWebappChanged,
     desktopPet: options.desktopPet
   });
 
@@ -89,6 +126,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     desktopActionOptions,
     assistantBridge,
     getKanbanRuntime: () => state.kanbanRuntime,
+    listMobileWebapps: () => createDesktopMobileWebappCatalog(options.app),
     issueAccessToken: options.issueAgentAccessToken,
     agentPlatformBridge: {
       getServiceState: options.getResponsiveServiceState,
@@ -188,8 +226,10 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     },
     startDesktopWsServerForSettings,
     stopDesktopWsServerForSettings,
+    emitWebappChanged,
     refreshDesktopActionBridge,
     stop() {
+      webappRuntime.setPublicationChangeListener(null);
       void options.cdpIntegration.stop();
       stopDesktopActionBridge();
       void stopDesktopWsServer();

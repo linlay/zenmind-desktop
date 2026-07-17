@@ -228,5 +228,49 @@ export interface WebappPublishResult {
   message: string;
 }
 
+export type DesktopMobileWebappAvailability =
+  | "available"
+  | "not-published"
+  | "publishing"
+  | "desktop-offline"
+  | "webapp-stopped"
+  | "publish-error";
+
+export interface DesktopMobileWebappItem {
+  id: string;
+  label: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  runtimeStatus: WebappRuntimeStatus;
+  publishStatus: WebappPublishStatus;
+  available: boolean;
+  publicUrl: string;
+  availability: DesktopMobileWebappAvailability;
+}
+
+export interface DesktopMobileWebappCatalog {
+  desktopDeviceId: string;
+  tunnelConnected: boolean;
+  generatedAt: string;
+  items: DesktopMobileWebappItem[];
+}
+
+export type DesktopWebappChangedReason =
+  | "installed"
+  | "updated"
+  | "published"
+  | "unpublished"
+  | "removed"
+  | "route-synced"
+  | "publish-failed";
+
+export interface DesktopWebappChangedEvent {
+  reason: DesktopWebappChangedReason;
+  webappId: string;
+  changedAt: string;
+  item: DesktopMobileWebappItem | null;
+}
+
 export interface WebappLogReadResult extends ServiceLogReadResult {}
 export interface WebappLogReadOptions extends ServiceLogReadOptions {}

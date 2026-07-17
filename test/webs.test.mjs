@@ -34,6 +34,9 @@ const {
   webappRuntime
 } = require("../dist-electron/main/webs/webapps/runtime.js");
 const {
+  createDesktopMobileWebappCatalog
+} = require("../dist-electron/main/webs/webapps/mobile-catalog.js");
+const {
   __testInternals: webappPublisherInternals,
   getWebappPublishInfo
 } = require("../dist-electron/main/webs/webapps/publisher.js");
@@ -583,6 +586,67 @@ test("webapps remove deletes removable installs and rejects managed sources", as
   assert.equal(fs.existsSync(bundledDir), true);
 });
 
+test("removing a published WebApp disables its Tunnel route before deleting files", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-remove-published-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const installDir = writeWebapp(webappsRoot(homePath), "published-remove", { frontendOnly: true });
+  writeJson(path.join(desktopRoot(homePath), "config", "desktop", "tunnel-hub.json"), {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    reconnectSeconds: 3
+  });
+  writeJson(path.join(desktopRoot(homePath), "secrets", "sso-site-token.json"), {
+    accessToken: "publisher-site-secret"
+  });
+  writeJson(path.join(desktopRoot(homePath), "state", "webs", "webapps", "published-remove", "publish.json"), {
+    id: "published-remove",
+    provider: "tunnel",
+    status: "published",
+    name: "published-remove",
+    routeId: "route-published-remove",
+    publicHost: "published-remove.m.example.test",
+    url: "https://published-remove.m.example.test/",
+    targetUrl: "http://127.0.0.1:43123/",
+    active: true,
+    message: "published",
+    updatedAt: "2026-07-17T00:00:00.000Z"
+  });
+  const requests = [];
+  let shouldFail = true;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), body: JSON.parse(init.body) });
+    if (shouldFail) {
+      return new Response("route unavailable", { status: 503 });
+    }
+    return new Response(JSON.stringify({
+      name: "published-remove",
+      publicHost: "published-remove.m.example.test",
+      publicUrl: "https://published-remove.m.example.test/",
+      targetUrl: "http://127.0.0.1:43123/",
+      routeId: "route-published-remove",
+      active: false
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const blocked = await removeWebappItem(app, "published-remove");
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /Stop Tunnel publishing/u);
+  assert.equal(fs.existsSync(installDir), true);
+
+  shouldFail = false;
+  const removed = await removeWebappItem(app, "published-remove");
+  assert.equal(removed.ok, true);
+  assert.equal(fs.existsSync(installDir), false);
+  assert.equal(requests.at(-1).body.active, false);
+});
+
 test("webapp ipc import installs local archive and returns refreshed web entries", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-ipc-import-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -593,6 +657,7 @@ test("webapp ipc import installs local archive and returns refreshed web entries
     label: "监管报表与 Excel 工具"
   });
   writeWebsite(websitesRoot(homePath), "docs");
+  const changes = [];
 
   const ipcMain = createIpcMain();
   registerWebIpcHandlers(ipcMain, {
@@ -603,13 +668,15 @@ test("webapp ipc import installs local archive and returns refreshed web entries
       return { canceled: false, filePaths: [archivePath] };
     },
     showSaveDialog: async () => assert.fail("save dialog should not be opened"),
-    getDataRoot: () => desktopRoot(homePath)
+    getDataRoot: () => desktopRoot(homePath),
+    emitWebappChanged: (reason, webappId) => changes.push({ reason, webappId })
   });
 
   const result = await ipcMain.invoke("webs.webapps.import");
 
   assert.equal(result.ok, true);
   assert.equal(result.item?.id, "reg-report-excelx-webapp");
+  assert.deepEqual(changes, [{ reason: "installed", webappId: "reg-report-excelx-webapp" }]);
   assert.equal(result.item?.entryKey, "webapp:reg-report-excelx-webapp");
   assert.equal(result.path, archivePath);
   assert.equal(fs.existsSync(webappManifestPath(homePath, "reg-report-excelx-webapp")), true);
@@ -799,6 +866,48 @@ test("web order stores entryKey values and sorts mixed website and webapp entrie
     { id: "second", entryKey: "webapp:second", kind: "webapp", label: "Second", frontend: {}, backend: {}, createdAt: 2, updatedAt: 2 }
   ]);
   assert.deepEqual(ordered.map((item) => item.entryKey), ["webapp:second", "website:first"]);
+});
+
+test("mobile WebApp catalog preserves sidebar order and removes local publishing details", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-mobile-webapp-catalog-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  t.after(async () => {
+    await webappRuntime.stopAll(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  writeWebapp(webappsRoot(homePath), "first", { label: "First", frontendOnly: true });
+  writeWebapp(webappsRoot(homePath), "second", { label: "Second", frontendOnly: true });
+  writeWebOrderKeys(app, ["webapp:second", "webapp:first"]);
+  const running = await webappRuntime.start(app, "second");
+  assert.equal(running.ok, true);
+  writeJson(path.join(desktopRoot(homePath), "state", "webs", "webapps", "second", "publish.json"), {
+    id: "second",
+    provider: "tunnel",
+    status: "published",
+    name: "second",
+    routeId: "route-second-secret",
+    publicHost: "second.m.example.test",
+    url: "https://second.m.example.test/",
+    targetUrl: running.state.webUrl,
+    active: true,
+    message: "published",
+    updatedAt: "2026-07-17T00:00:00.000Z"
+  });
+
+  const catalog = createDesktopMobileWebappCatalog(app);
+  assert.deepEqual(catalog.items.map((item) => item.id), ["second", "first"]);
+  assert.deepEqual(catalog.items.map((item) => item.order), [0, 1]);
+  assert.equal(catalog.items[0].runtimeStatus, "running");
+  assert.equal(catalog.items[0].publishStatus, "published");
+  assert.equal(catalog.items[0].publicUrl, "https://second.m.example.test/");
+  assert.equal(catalog.items[0].availability, "desktop-offline");
+  assert.equal(catalog.items[1].availability, "not-published");
+  assert.equal(typeof catalog.desktopDeviceId, "string");
+  const serialized = JSON.stringify(catalog);
+  assert.doesNotMatch(serialized, /route-second-secret/u);
+  assert.doesNotMatch(serialized, /targetUrl|frontendPort|backendPort|installPath/u);
 });
 
 test("webapp runtime starts frontend, proxies api, writes logs, and stops", async (t) => {

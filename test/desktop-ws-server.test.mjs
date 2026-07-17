@@ -10,7 +10,9 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
+  createDesktopWsProtocolSession,
   emitDesktopWsPush,
+  hasTunnelDesktopWsSubscriber,
   startDesktopWsServer,
   stopDesktopWsServer
 } = require("../dist-electron/main/desktop-ws-server.js");
@@ -302,6 +304,25 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
       })
     },
     getKanbanRuntime: () => kanbanRuntime,
+    listMobileWebapps: () => ({
+      desktopDeviceId: "device-1",
+      tunnelConnected: true,
+      generatedAt: "2026-07-17T00:00:00.000Z",
+      items: [
+        {
+          id: "notes",
+          label: "Notes",
+          order: 0,
+          createdAt: 1,
+          updatedAt: 2,
+          runtimeStatus: "running",
+          publishStatus: "published",
+          available: true,
+          publicUrl: "https://notes.m.example.test",
+          availability: "available"
+        }
+      ]
+    }),
     verifyToken: async (token, subprotocol) => {
       assert.equal(token, "test-token");
       assert.equal(subprotocol, "bearer.test-token");
@@ -338,6 +359,15 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(hello.data.namespaceField, "ns");
   assert.deepEqual(hello.data.namespaces, { d: "desktop", ap: "agent-platform", wa: "webapp" });
   assert.ok(hello.data.requestTypes.includes("action.call"));
+  assert.ok(hello.data.requestTypes.includes("web.webapp.list"));
+
+  client.send({ frame: "request", type: "web.webapp.list", id: "webapp-list-1", payload: {} });
+  const webappList = await client.waitFor((message) => message.id === "webapp-list-1");
+  assert.equal(webappList.frame, "response");
+  assert.equal(webappList.code, 0);
+  assert.equal(webappList.data.desktopDeviceId, "device-1");
+  assert.equal(webappList.data.items[0].publicUrl, "https://notes.m.example.test");
+  assert.equal("targetUrl" in webappList.data.items[0], false);
   assert.ok(hello.data.requestTypes.includes("issue.claim"));
 
   client.send({ ns: "wa", frame: "request", type: "session.hello", id: "wa-hello-1", payload: {} });
@@ -473,6 +503,55 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(streamError.frame, "error");
   assert.equal(streamError.type, "invalid_request");
   assert.equal(streamError.code, 400);
+});
+
+test("only authenticated live Tunnel sessions subscribed to webapp.changed count as mobile subscribers", async (t) => {
+  const sent = [];
+  const options = {
+    app: createApp(path.join(os.tmpdir(), "zenmind-desktop-ws-tunnel-subscriber")),
+    desktopActionOptions: {},
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+    },
+    getKanbanRuntime: () => null,
+    verifyToken: async () => ({
+      subject: "app",
+      deviceId: "device-1",
+      expiresAt: Date.now() + 600_000,
+      scope: "app"
+    }),
+    logger: { log() {}, warn() {}, error() {} }
+  };
+  const session = await createDesktopWsProtocolSession(options, {
+    authToken: "mobile-token",
+    source: "react-app",
+    clientDeviceId: "phone-1",
+    transport: {
+      sendText(text) {
+        sent.push(JSON.parse(text));
+      },
+      close() {}
+    }
+  });
+  t.after(() => session.close());
+
+  assert.equal(hasTunnelDesktopWsSubscriber("webapp.changed"), false);
+  session.receiveTextFrame(JSON.stringify({
+    ns: "d",
+    frame: "request",
+    type: "event.subscribe",
+    id: "subscribe-webapps",
+    payload: { types: ["webapp.changed"] }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(hasTunnelDesktopWsSubscriber("webapp.changed"), true);
+
+  emitDesktopWsPush("webapp.changed", { webappId: "notes" });
+  assert.ok(sent.some((message) => message.frame === "push" && message.type === "webapp.changed"));
+
+  session.close();
+  assert.equal(hasTunnelDesktopWsSubscriber("webapp.changed"), false);
 });
 
 test("desktop ws auth.refresh validates explicit tokens and issues missing tokens", async (t) => {

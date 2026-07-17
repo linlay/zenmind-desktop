@@ -25,6 +25,8 @@ export interface DesktopActionContextDependencies {
   callRendererAction: (...args: any[]) => unknown;
   confirmRendererAction?: (...args: any[]) => unknown;
   cdpIntegration: any;
+  hasTunnelWebappSubscriber?: () => boolean;
+  emitWebappChanged?: (...args: any[]) => unknown;
   desktopPet?: {
     refreshState: (...args: any[]) => unknown;
     showWindow: (...args: any[]) => unknown;
@@ -51,6 +53,8 @@ export function createDesktopActionOptions(
       return gateway.executeCommand(request);
     },
     getKanbanRuntime: () => context.state.kanbanRuntime,
+    hasTunnelWebappSubscriber: dependencies.hasTunnelWebappSubscriber,
+    emitWebappChanged: dependencies.emitWebappChanged,
     desktopPet: dependencies.desktopPet
       ? {
           refreshState: () => dependencies.desktopPet?.refreshState(),

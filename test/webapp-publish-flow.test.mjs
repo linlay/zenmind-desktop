@@ -26,8 +26,13 @@ test("XiaoJun WebApp actions install, publish, and unpublish through the public 
     assert.match(bridge, new RegExp(action.replaceAll(".", "\\."), "u"));
   }
   assert.doesNotMatch(catalog, /desktop\.web\.webapps\.installAndOpen/u);
-  assert.match(bridge, /notifyWebsChanged\(options\);[\s\S]*?return openWebapp/u);
+  assert.match(bridge, /notifyWebsChanged\(options\);[\s\S]*?webappRuntime\.start\(options\.app, webappId\)[\s\S]*?options\.navigate\(route\)/u);
   assert.match(bridge, /webapp_install_not_visible/u);
+  assert.match(bridge, /hasTunnelWebappSubscriber\?\.\(\)[\s\S]*?publishWebapp\(options\.app, webappId, command\.state\)/u);
+  assert.match(bridge, /mobilePublish[\s\S]*?attempted:\s*true/u);
+  assert.match(bridge, /emitWebappChanged\?\.\(result\.ok \? "published" : "publish-failed", webappId\)/u);
+  assert.match(wsContract, /"web\.webapp\.list"/u);
+  assert.match(wsContract, /"webapp\.changed"/u);
   for (const alias of [
     "web.webapp.getPublishInfo",
     "web.webapp.publish",

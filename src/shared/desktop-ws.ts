@@ -28,6 +28,7 @@ export const DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES = [
   "action.list",
   "action.call",
   "snapshot.get",
+  "web.webapp.list",
   "issue.create",
   "issue.update",
   "issue.delete",

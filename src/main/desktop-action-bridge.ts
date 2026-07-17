@@ -11,6 +11,7 @@ import type {
   DesktopActionRendererResponse,
   DesktopPageContextSnapshot,
   DesktopPetState,
+  DesktopWebappChangedReason,
   KanbanIssueInput,
   KanbanIssueMoveInput,
   KanbanIssueUpdateInput,
@@ -105,6 +106,8 @@ type DesktopActionBridgeOptions = {
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
   getKanbanRuntime?: () => KanbanRuntime | null;
+  hasTunnelWebappSubscriber?: () => boolean;
+  emitWebappChanged?: (reason: DesktopWebappChangedReason, webappId: string) => void;
   desktopPet?: {
     refreshState: () => DesktopPetState | Promise<DesktopPetState>;
     saveSettings: (input: { enabled?: boolean; appearanceId?: string }) => DesktopPetState | Promise<DesktopPetState>;
@@ -1155,6 +1158,11 @@ async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action:
   if (!itemId && !archivePath) {
     return fail(action, "invalid_args", "itemId or archivePath is required.");
   }
+  const previousItemIds = new Set(
+    listWebEntries(options.app).items
+      .filter((item) => item.kind === "webapp")
+      .map((item) => item.id)
+  );
   const installResult = itemId
     ? await installWebsiteAppMarketItem(options.app, itemId)
     : await installWebsiteAppArchiveFromPath(options.app, archivePath, {
@@ -1171,7 +1179,33 @@ async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action:
     return fail(action, "webapp_install_not_visible", "The installed WebApp is not visible in the Desktop sidebar.", installResult);
   }
   notifyWebsChanged(options);
-  return openWebapp(options, action, webappId, installResult);
+  const command = await webappRuntime.start(options.app, webappId);
+  if (!command.ok || !command.state) {
+    return fail(action, "webapp_open_failed", command.message, command);
+  }
+  const route = webappRoute(webappId);
+  options.navigate(route);
+  options.emitWebappChanged?.(previousItemIds.has(webappId) ? "updated" : "installed", webappId);
+
+  let mobilePublish: Record<string, unknown> = {
+    attempted: false,
+    reason: "no-mobile-subscriber"
+  };
+  if (options.hasTunnelWebappSubscriber?.()) {
+    const result = await publishWebapp(options.app, webappId, command.state);
+    options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", webappId);
+    mobilePublish = {
+      attempted: true,
+      ...result
+    };
+  }
+  return ok(action, {
+    install: installResult,
+    command,
+    state: command.state,
+    route,
+    mobilePublish
+  });
 }
 
 async function executeWebAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
@@ -1215,12 +1249,15 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
       return fail(action, "webapp_start_failed", command.message, command);
     }
     const result = await publishWebapp(options.app, webappId, command.state);
+    options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", webappId);
     return result.ok
       ? ok(action, result)
       : fail(action, "webapp_publish_failed", result.message, result);
   }
   if (action === "desktop.web.webapp.unpublish") {
-    const result = await unpublishWebapp(options.app, readWebappId(args));
+    const webappId = readWebappId(args);
+    const result = await unpublishWebapp(options.app, webappId);
+    options.emitWebappChanged?.(result.ok ? "unpublished" : "publish-failed", webappId);
     return result.ok
       ? ok(action, result)
       : fail(action, "webapp_unpublish_failed", result.message, result);

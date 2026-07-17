@@ -6,6 +6,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { App } from "electron";
 import type {
   WebappCommandResult,
+  DesktopWebappChangedReason,
   WebappEntry,
   WebappLogReadOptions,
   WebappLogReadResult,
@@ -494,6 +495,25 @@ function findWebapp(app: App, webappId: string) {
 
 export class WebappRuntime {
   private readonly records = new Map<string, RuntimeRecord>();
+  private publicationChangeListener: ((reason: DesktopWebappChangedReason, webappId: string) => void) | null = null;
+
+  setPublicationChangeListener(
+    listener: ((reason: DesktopWebappChangedReason, webappId: string) => void) | null
+  ) {
+    this.publicationChangeListener = listener;
+  }
+
+  private syncPublishedRoute(app: App, item: WebappEntry, state: WebappRuntimeState) {
+    void syncPublishedWebappRoute(app, item, state).then((publishState) => {
+      if (!publishState?.active) {
+        return;
+      }
+      this.publicationChangeListener?.(
+        publishState.status === "published" ? "route-synced" : "publish-failed",
+        item.id
+      );
+    });
+  }
 
   getStatus(app: App, webappId: string) {
     const id = webappId.trim();
@@ -595,7 +615,7 @@ export class WebappRuntime {
         };
         writeState(app, staticRecord.state);
         writeLogLine(getLogPath(app, id, "main"), `[${nowIso()}] running web=${staticRecord.state.webUrl} backend=none`);
-        void syncPublishedWebappRoute(app, item, staticRecord.state);
+        this.syncPublishedRoute(app, item, staticRecord.state);
         return { ok: true, item, state: staticRecord.state, message: staticRecord.state.message };
       }
       const backendPort = item.backend.port === 0 ? await reservePort(0) : await reservePort(item.backend.port);
@@ -704,7 +724,7 @@ export class WebappRuntime {
       };
       writeState(app, runningRecord.state);
       writeLogLine(getLogPath(app, id, "main"), `[${nowIso()}] running web=${runningRecord.state.webUrl} backend=${backendUrl}`);
-      void syncPublishedWebappRoute(app, item, runningRecord.state);
+      this.syncPublishedRoute(app, item, runningRecord.state);
       return { ok: true, item, state: runningRecord.state, message: runningRecord.state.message };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

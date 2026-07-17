@@ -30,6 +30,7 @@ import type {
   AssistantStartRunResult,
   AgentAuthIssueResult,
   AgentAuthRefreshReason,
+  DesktopMobileWebappCatalog,
   DesktopWsServerState,
   ServiceState,
   KanbanIssueInput,
@@ -127,6 +128,7 @@ export type DesktopWsServerOptions = {
     startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   };
   getKanbanRuntime: () => KanbanRuntime | null;
+  listMobileWebapps?: () => DesktopMobileWebappCatalog;
   issueAccessToken?: (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
   agentPlatformBridge?: AgentPlatformBridgeOptions;
   verifyToken?: (token: string, subprotocol?: string) => Promise<DesktopWsAuthSession>;
@@ -303,6 +305,11 @@ const BLOCKED_PUBLIC_ACTION_NAMES = new Set([
   "web.activate",
   "web.context",
   "web.read",
+  "web.getPageContext",
+  "web.readPageData",
+  "web.extractStructured",
+  "web.interactElement",
+  "web.executeScript",
   "web.back",
   "web.tab.open",
   "web.tab.close",
@@ -1134,6 +1141,13 @@ async function handleRequest(
     case "snapshot.get":
       sendResponse(connection, namespace, type, id, getKanbanRuntime(options).listIssues());
       return;
+    case "web.webapp.list":
+      if (!options.listMobileWebapps) {
+        sendError(connection, namespace, id, "webapp_catalog_unavailable", 503, "WebApp catalog is not available.");
+        return;
+      }
+      sendResponse(connection, namespace, type, id, options.listMobileWebapps());
+      return;
     case "issue.create":
       sendResponse(connection, namespace, type, id, await getKanbanRuntime(options).createIssue(readIssueCreateInput(payload)));
       return;
@@ -1492,6 +1506,17 @@ export function emitDesktopWsPush(type: DesktopWsPushType | string, data?: unkno
       }
     }
   }
+}
+
+export function hasTunnelDesktopWsSubscriber(type: DesktopWsPushType | string) {
+  const now = Date.now();
+  return [...tunnelSessionGroup.connections].some((connection) =>
+    !connection.closed &&
+    connection.auth.scope === "app" &&
+    connection.auth.expiresAt > now &&
+    Boolean(connection.auth.deviceId) &&
+    connection.subscriptions.has(type)
+  );
 }
 
 function stopDesktopWsServerInstance(kind: DesktopWsServerKind) {

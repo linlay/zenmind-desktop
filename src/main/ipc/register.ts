@@ -364,7 +364,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     app,
     showFileDialog: options.showFileDialog as any,
     showSaveDialog: options.showSaveDialog as any,
-    getDataRoot
+    getDataRoot,
+    emitWebappChanged: assistantBridgeRuntime.emitWebappChanged
   });
   registerDesktopPetIpcHandlers(ipcMain, createDesktopPetIpcHandlerOptions(context, {
     clearActiveRuns: () => petRuntime.clearActiveRuns(),
