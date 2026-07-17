@@ -383,6 +383,9 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.ok(actionNames.includes("web.website.list"));
   assert.ok(actionNames.includes("web.webapp.getStatus"));
   assert.ok(actionNames.includes("web.webapp.installAndOpen"));
+  assert.ok(actionNames.includes("web.webapp.getPublishInfo"));
+  assert.ok(actionNames.includes("web.webapp.publish"));
+  assert.ok(actionNames.includes("web.webapp.unpublish"));
   assert.ok(actionNames.includes("pet.state"));
   assert.ok(actionNames.includes("pet.list"));
   assert.ok(actionNames.includes("pet.set"));

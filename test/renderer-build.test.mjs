@@ -548,6 +548,15 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
 });
 
+test("dark settings keep the control center config editor on the workspace background", () => {
+  const globalStyles = readRendererStyles();
+
+  assert.match(
+    globalStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.control-center-page \.config-editor\s*\{[\s\S]*?border-color:\s*var\(--line\)\s*!important;[\s\S]*?background:\s*var\(--desktop-ui-bg\)\s*!important;[\s\S]*?color:\s*var\(--desktop-ui-code-text\)\s*!important;/
+  );
+});
+
 test("control center internal endpoint opens service frontend entrypoints", () => {
   const controlCenter = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
@@ -4128,7 +4137,7 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.doesNotMatch(appShell, /shouldAutoOpenBootstrapAgent|createBootstrapAgentRoute|startupBootstrapNavigationDoneRef/);
   assert.doesNotMatch(startupGateHelper, /shouldAutoOpenBootstrapAgent|isBootstrapOwnedRoute/);
   assert.match(appShell, /const bootstrapInitialNavigationDoneRef = useRef\(false\)/);
-  assert.match(appShell, /const bootstrapHandoffNavigationDoneRef = useRef\(false\)/);
+  assert.doesNotMatch(appShell, /bootstrapHandoffNavigationDoneRef/);
   assert.match(appShell, /assistantNavChatItems\.some\(\(chat\) =>[\s\S]*?chat\.chatId === bootstrapChatId && chat\.agentKey === bootstrapAgentKey/);
   assert.match(appShell, /seedChatIndexed[\s\S]*?createAgentChatRoute\(bootstrapAgentKey, bootstrapChatId\)[\s\S]*?createAgentNewChatRoute\(bootstrapAgentKey\)/);
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current = true;[\s\S]*?navigate\(targetRoute, \{ replace: true \}\)/);
@@ -4145,10 +4154,12 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.doesNotMatch(appShell, /bootstrapRunTerminalRef|bootstrapCompletionRetryTick|BOOTSTRAP_COMPLETION_RETRY_MS/);
   assert.doesNotMatch(appShell, /onNavigationPushEvent\(\(event\) =>/);
   assert.doesNotMatch(appShell, /run\.complete/);
-  assert.match(appShell, /bootstrapHandoffNavigationDoneRef\.current/);
+  assert.match(appShell, /chatRuntimeAgent\.bootstrapActive[\s\S]*?window\.setInterval\([\s\S]*?refreshAssistantNavAgents\(\)[\s\S]*?2_000/);
   assert.match(appShell, /!chatRuntimeAgent\.defaultAgentAvailable/);
   assert.match(appShell, /route\.agentKey !== bootstrapAgentKey/);
   assert.match(appShell, /navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/);
+  assert.match(appShell, /const visibleAssistantNavChatItems = useMemo\([\s\S]*?chat\.agentKey !== bootstrapAgentKey/);
+  assert.match(appShell, /assistantNavChatItems=\{visibleAssistantNavChatItems\}/);
   assert.match(appShell, /if \(bootstrapAgentKey\) \{[\s\S]*?chatDefaultAgentMigrationRef\.current = "";[\s\S]*?return;/);
   assert.match(appSidebar, /const resolvedChatDefaultAgent = chatDefaultAgent;/);
   assert.match(appSidebar, /isBootstrapSeedChat[\s\S]*?chat\.chatName \|\| t\("sidebar\.bootstrapChat\.cta"\)/);

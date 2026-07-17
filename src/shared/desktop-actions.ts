@@ -75,8 +75,10 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.webapp.stop", kind: "execute", category: "web", description: "Stop a local webapp." },
   { name: "desktop.web.webapp.restart", kind: "execute", category: "web", description: "Restart a local webapp." },
   { name: "desktop.web.webapp.open", kind: "execute", category: "web", description: "Start and open a local webapp." },
-  { name: "desktop.web.webapps.installAndOpen", kind: "execute", category: "web", description: "Install and open a website app." },
   { name: "desktop.web.webapp.installAndOpen", kind: "execute", category: "web", description: "Install and open a website app." },
+  { name: "desktop.web.webapp.getPublishInfo", kind: "read", category: "web", description: "Read one local webapp's Tunnel publishing prerequisites, state, and public URL. Args: { webappId|id }." },
+  { name: "desktop.web.webapp.publish", kind: "execute", category: "web", description: "Start a local webapp and publish or refresh its public URL through the configured Tunnel. Args: { webappId|id }." },
+  { name: "desktop.web.webapp.unpublish", kind: "execute", category: "web", description: "Stop publishing a local webapp through Tunnel. Args: { webappId|id }." },
 
   { name: "desktop.controlCenter.listServices", kind: "read", category: "controlCenter", description: "List Desktop services." },
   { name: "desktop.controlCenter.getServiceStatus", kind: "read", category: "controlCenter", description: "Read one service status." },

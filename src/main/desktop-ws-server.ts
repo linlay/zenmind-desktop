@@ -290,7 +290,10 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "web.webapp.stop": "desktop.web.webapp.stop",
   "web.webapp.restart": "desktop.web.webapp.restart",
   "web.webapp.open": "desktop.web.webapp.open",
-  "web.webapp.installAndOpen": "desktop.web.webapp.installAndOpen"
+  "web.webapp.installAndOpen": "desktop.web.webapp.installAndOpen",
+  "web.webapp.getPublishInfo": "desktop.web.webapp.getPublishInfo",
+  "web.webapp.publish": "desktop.web.webapp.publish",
+  "web.webapp.unpublish": "desktop.web.webapp.unpublish"
 };
 
 const BLOCKED_PUBLIC_ACTION_NAMES = new Set([

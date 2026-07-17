@@ -452,7 +452,6 @@ export function AppShell() {
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const bootstrapInitialNavigationDoneRef = useRef(false);
-  const bootstrapHandoffNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -507,6 +506,17 @@ export function AppShell() {
       chatNavAgentOptions,
     ],
   );
+  const visibleAssistantNavChatItems = useMemo(() => {
+    const bootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
+    if (!bootstrapAgentKey || !chatRuntimeAgent.defaultAgentAvailable) {
+      return assistantNavChatItems;
+    }
+    return assistantNavChatItems.filter((chat) => chat.agentKey !== bootstrapAgentKey);
+  }, [
+    assistantNavChatItems,
+    assistantSettings?.bootstrapAgentKey,
+    chatRuntimeAgent.defaultAgentAvailable,
+  ]);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [desktopActionConfirmation, setDesktopActionConfirmation] =
     useState<DesktopActionConfirmationRequest | null>(null);
@@ -1063,6 +1073,20 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (!assistantSettings || !chatRuntimeAgent.bootstrapActive) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshAssistantNavAgents();
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [
+    assistantSettings?.bootstrapAgentKey,
+    assistantSettings?.chatDefaultAgentKey,
+    chatRuntimeAgent.bootstrapActive,
+  ]);
+
+  useEffect(() => {
     if (!assistantSettings) {
       return;
     }
@@ -1164,9 +1188,6 @@ export function AppShell() {
     if (!assistantNavAgentsLoaded || !assistantSettings) {
       return;
     }
-    if (bootstrapHandoffNavigationDoneRef.current) {
-      return;
-    }
     const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
     const defaultChatAgentKey = assistantSettings.chatDefaultAgentKey.trim();
     if (
@@ -1185,7 +1206,6 @@ export function AppShell() {
       return;
     }
 
-    bootstrapHandoffNavigationDoneRef.current = true;
     navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
   }, [
     assistantNavAgentsLoaded,
@@ -3101,7 +3121,7 @@ export function AppShell() {
           webOpenEntryKeys={webOpenEntryKeys}
           faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
-          assistantNavChatItems={assistantNavChatItems}
+          assistantNavChatItems={visibleAssistantNavChatItems}
           assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}

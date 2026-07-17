@@ -1385,6 +1385,13 @@
   resize: none;
 }
 
+/* SettingsPage styles form fields globally; this code surface stays flush with the dark workspace. */
+:root[data-theme="dark"] .settings-page .control-center-page .config-editor {
+  border-color: var(--line) !important;
+  background: var(--desktop-ui-bg) !important;
+  color: var(--desktop-ui-code-text) !important;
+}
+
 .config-editor:focus,
 .config-editor:focus-visible {
   outline: none;

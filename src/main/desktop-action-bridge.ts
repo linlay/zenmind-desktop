@@ -55,6 +55,11 @@ import {
 } from "./webs/websites/actions";
 import { webappRuntime } from "./webs/webapps/runtime";
 import {
+  getWebappPublishInfo,
+  publishWebapp,
+  unpublishWebapp
+} from "./webs/webapps/publisher";
+import {
   buildSandboxImage,
   deleteSandboxImage,
   exportSandboxImageToPath,
@@ -1117,6 +1122,14 @@ function webappRoute(webappId: string) {
   return `/webs/webapp:${webappId.trim()}`;
 }
 
+function notifyWebsChanged(options: DesktopActionBridgeOptions) {
+  const mainWindow = options.getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send("webs.changed", { changedAt: new Date().toISOString() });
+}
+
 async function openWebapp(options: DesktopActionBridgeOptions, action: string, webappId: string, installResult?: unknown) {
   const command = await webappRuntime.start(options.app, webappId);
   if (!command.ok || !command.state) {
@@ -1151,6 +1164,13 @@ async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action:
   if (!installResult.ok || !webappId) {
     return fail(action, "webapp_install_failed", installResult.message, installResult);
   }
+  const installedItem = listWebEntries(options.app).items.find((item) =>
+    item.kind === "webapp" && item.id === webappId
+  );
+  if (!installedItem) {
+    return fail(action, "webapp_install_not_visible", "The installed WebApp is not visible in the Desktop sidebar.", installResult);
+  }
+  notifyWebsChanged(options);
   return openWebapp(options, action, webappId, installResult);
 }
 
@@ -1184,6 +1204,26 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   }
   if (action === "desktop.web.webapp.open") {
     return openWebapp(options, action, readWebappId(args));
+  }
+  if (action === "desktop.web.webapp.getPublishInfo") {
+    return ok(action, await getWebappPublishInfo(options.app, readWebappId(args)));
+  }
+  if (action === "desktop.web.webapp.publish") {
+    const webappId = readWebappId(args);
+    const command = await webappRuntime.start(options.app, webappId);
+    if (!command.ok || !command.state) {
+      return fail(action, "webapp_start_failed", command.message, command);
+    }
+    const result = await publishWebapp(options.app, webappId, command.state);
+    return result.ok
+      ? ok(action, result)
+      : fail(action, "webapp_publish_failed", result.message, result);
+  }
+  if (action === "desktop.web.webapp.unpublish") {
+    const result = await unpublishWebapp(options.app, readWebappId(args));
+    return result.ok
+      ? ok(action, result)
+      : fail(action, "webapp_unpublish_failed", result.message, result);
   }
   return installAndOpenWebapp(options, action, args);
 }
@@ -1461,6 +1501,9 @@ async function executeAction(
     case "desktop.web.webapp.restart":
     case "desktop.web.webapp.open":
     case "desktop.web.webapp.installAndOpen":
+    case "desktop.web.webapp.getPublishInfo":
+    case "desktop.web.webapp.publish":
+    case "desktop.web.webapp.unpublish":
       return executeWebAction(options, action, args);
     case "desktop.market.getSettings":
       return ok(action, getMarketSettings(options.app));

@@ -647,6 +647,32 @@ test("webapp publisher reports Tunnel readiness without exposing the SSO site to
   assert.doesNotMatch(JSON.stringify(result), /publisher-site-secret/u);
 });
 
+test("one-click WebApp publishing enables a configured Tunnel Hub", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-enable-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeJson(path.join(desktopRoot(homePath), "config", "desktop", "tunnel-hub.json"), {
+    enabled: false,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office",
+    reconnectSeconds: 3
+  });
+  writeJson(path.join(desktopRoot(homePath), "secrets", "sso-site-token.json"), {
+    accessToken: "publisher-site-secret"
+  });
+
+  const settings = webappPublisherInternals.enableTunnelForPublish(app);
+
+  assert.equal(settings.enabled, true);
+  assert.equal(settings.relayUrl, "wss://relay.example.test/tunnel");
+  const stored = JSON.parse(fs.readFileSync(
+    path.join(desktopRoot(homePath), "config", "desktop", "tunnel-hub.json"),
+    "utf8"
+  ));
+  assert.equal(stored.enabled, true);
+});
+
 test("webapp publisher registers a stable loopback route with Tunnel Hub", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-route-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

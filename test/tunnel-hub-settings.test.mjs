@@ -53,6 +53,17 @@ function writeSsoSiteToken(app, token = "desktop-site-token") {
   fs.writeFileSync(tokenPath, `${JSON.stringify({ accessToken: token })}\n`, "utf8");
 }
 
+function createTestJwt(expiresAtSeconds) {
+  const encode = (value) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+  return `${encode({ alg: "RS256", typ: "JWT" })}.${encode({ exp: expiresAtSeconds })}.signature`;
+}
+
+function writeDesktopSsoAccessToken(app, token) {
+  const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-access-token.txt");
+  fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+  fs.writeFileSync(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
 test("Tunnel Hub settings normalize host-only relay URL with SSO site token", (t) => {
   const app = createTempApp(t);
   writeSsoSiteToken(app);
@@ -74,6 +85,33 @@ test("Tunnel Hub settings normalize host-only relay URL with SSO site token", (t
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
   assert.equal(stored.tlsInsecureSkipVerify, false);
   assert.equal(readTunnelHubSettings(app).enabled, true);
+});
+
+test("Tunnel Hub settings use the active Desktop SSO access token when no site-token bridge is configured", (t) => {
+  const app = createTempApp(t);
+  writeDesktopSsoAccessToken(app, createTestJwt(Math.floor(Date.now() / 1000) + 3600));
+
+  const result = saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "tunnel-hub.zenmind.cc"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.enabled, true);
+});
+
+test("Tunnel Hub settings reject an expired Desktop SSO access token fallback", (t) => {
+  const app = createTempApp(t);
+  writeDesktopSsoAccessToken(app, createTestJwt(Math.floor(Date.now() / 1000) - 60));
+
+  const result = saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "tunnel-hub.zenmind.cc"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.settings.enabled, false);
+  assert.match(result.message, /Sign in/u);
 });
 
 test("Tunnel Hub settings normalize HTTP, HTTPS, WSS, and local WS relay URLs", (t) => {
