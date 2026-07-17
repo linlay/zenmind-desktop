@@ -4053,6 +4053,7 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-unread-dot\s*\{/);
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-row-status\.is-unread\s*\{/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*var\(--bg-base\);[\s\S]*?box-shadow:\s*none;/);
+  assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row-icon\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row\.is-active\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.08\);/);
   assert.match(appShellCss, /\.desktop-global-search-row\.is-chat \.desktop-global-search-row-title\s*\{[\s\S]{0,80}font-weight:\s*400;/);
   assert.match(rows, /DesktopGlobalSearchSectionId = "awaiting" \| "unread" \| "actions" \| "agents" \| "chats"/);

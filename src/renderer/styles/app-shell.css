@@ -742,9 +742,13 @@
   color: #eeeeee;
 }
 
-:root[data-theme="dark"] .desktop-global-search-input-shell kbd,
-:root[data-theme="dark"] .desktop-global-search-row-icon {
+:root[data-theme="dark"] .desktop-global-search-input-shell kbd {
   background: rgba(255, 255, 255, 0.08);
+  color: #d4d4d4;
+}
+
+:root[data-theme="dark"] .desktop-global-search-row-icon {
+  background: transparent;
   color: #d4d4d4;
 }
 
