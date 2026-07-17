@@ -584,7 +584,7 @@ test("embedded service previews load auth and platform entrypoints directly", ()
   assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
 });
 
-test("startup loading screen uses localized copy", () => {
+test("startup surface uses localized, minimal copy", () => {
   const startupGate = readSourceFile(
     "src",
     "renderer",
@@ -592,17 +592,30 @@ test("startup loading screen uses localized copy", () => {
     "startup",
     "StartupGate.tsx"
   );
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
   assert.match(startupGate, /useI18n\(\)/);
-  assert.match(startupGate, /t\("startup\.title\.starting"\)/);
-  assert.match(startupGate, /t\("startup\.phase\.installing"\)/);
-  assert.match(startupGate, /t\("startup\.service\.authentication"\)/);
+  assert.match(startupGate, /export function StartupSurface/);
+  assert.match(startupGate, /t\("startup\.surface\.loading"\)/);
+  assert.match(startupGate, /t\("startup\.surface\.slow"\)/);
+  assert.match(startupGate, /t\("startup\.surface\.failed"\)/);
+  assert.match(startupGate, /role="status"/);
   assert.match(startupGate, /t\("startup\.action\.openControlCenter"\)/);
-  assert.doesNotMatch(startupGate, /getServiceDisplayName/);
-  assert.doesNotMatch(
-    startupGate,
-    /"(?:正在启动|服务未就绪|启动较慢|已就绪|安装中\.\.\.|初始化中\.\.\.|启动中\.\.\.|等待前序服务|等待启动|重新检查|进入控制中心|认证服务|智能体平台|智能体客户端)"/
-  );
+  assert.doesNotMatch(startupGate, /startup-loading-card|startup-chat-guide|startup\.chatGuide/);
+  assert.doesNotMatch(enUS, /"startup\.chatGuide\.title":\s*"Start a conversation"/);
+});
+
+test("startup surface owns the main content area without a card frame", () => {
+  const appShell = readAppShellSource();
+  const appShellStyles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const globalStyles = readRendererStyles();
+
+  assert.match(appShell, /has-startup-surface/);
+  assert.match(appShellStyles, /\.app-shell\.has-startup-surface \.app-main\s*\{[\s\S]*?padding:\s*0;/);
+  assert.match(appShellStyles, /is-windows-platform\.has-startup-surface[\s\S]*?padding-top:\s*0;/);
+  assert.match(appShellStyles, /is-mac-platform\.has-startup-surface \.app-main\s*\{[\s\S]*?padding-top:\s*0;/);
+  assert.match(globalStyles, /\.startup-surface\.is-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;/);
+  assert.doesNotMatch(globalStyles, /\.startup-loading-card|\.startup-loading-list|\.startup-chat-guide/);
 });
 
 test("desktop custom theme tokens are shared by control center and log viewer", () => {
@@ -2761,7 +2774,10 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.doesNotMatch(appShell, /showStartupPetGreeting/);
-  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?canStartChat=\{Boolean\(chatRuntimeAgent\.agent\)\}/);
+  assert.match(appShell, /resolveStartupSurfaceMode\(/);
+  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?mode=\{startupRouteSurfaceMode\}/);
+  assert.match(appShell, /showStartupSurface && startupSurfaceMode[\s\S]*?<StartupSurface[\s\S]*?overlay/);
+  assert.doesNotMatch(appShell, /StartupLoadingScreen|showStartupCard|startupCardDismissed/);
   assert.match(appShell, /location\.pathname !== "\/"[\s\S]*?createAgentNewChatRoute\(chatRuntimeAgent\.agent\.agentKey\)/);
   assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);

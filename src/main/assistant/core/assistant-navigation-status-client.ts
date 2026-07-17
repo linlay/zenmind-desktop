@@ -34,6 +34,17 @@ type AgentPlatformApiResponse<T> = {
   data?: T;
 };
 
+type PlatformActiveRunSummary = {
+  runId?: unknown;
+  agentKey?: unknown;
+  teamId?: unknown;
+  state?: unknown;
+  lastSeq?: unknown;
+  oldestSeq?: unknown;
+  startedAt?: unknown;
+  planningMode?: unknown;
+};
+
 type PlatformChatSummary = {
   id?: unknown;
   chatId?: unknown;
@@ -51,9 +62,7 @@ type PlatformChatSummary = {
   message?: unknown;
   read?: unknown;
   isRead?: unknown;
-  hasActiveRun?: unknown;
-  activeRun?: unknown;
-  running?: unknown;
+  activeRun?: PlatformActiveRunSummary | null;
   awaiting?: unknown;
   hasPendingAwaiting?: unknown;
   awaitingCount?: unknown;
@@ -617,20 +626,7 @@ function readActiveRunValue(value: unknown): boolean | null {
 }
 
 function readChatActiveRun(chat: PlatformChatSummary) {
-  const explicitActiveRun = readActiveRunValue(chat.hasActiveRun);
-  if (explicitActiveRun !== null) {
-    return explicitActiveRun;
-  }
-  const activeRun = readActiveRunValue(chat.activeRun);
-  if (activeRun !== null) {
-    return activeRun;
-  }
-  const running = readActiveRunValue(chat.running);
-  if (running !== null) {
-    return running;
-  }
-  const status = toText(chat.status).toLowerCase();
-  return status === "running" || status === "active" || status === "in_progress";
+  return isObjectRecord(chat.activeRun) && !Array.isArray(chat.activeRun);
 }
 
 function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem) {

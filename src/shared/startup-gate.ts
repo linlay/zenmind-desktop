@@ -26,34 +26,34 @@ export function getStartupBlockingService(startupServices: Array<ServiceState | 
   return startupServices.find((service) => service !== null && STARTUP_BLOCKING_STATUSES.has(service.status)) ?? null;
 }
 
-export function shouldShowStartupProgressCard(
+export type StartupSurfaceMode = "loading" | "slow" | "failed";
+
+export function resolveStartupSurfaceMode(
   startupRestoreState: StartupRestoreState | null,
   startupAllReady: boolean,
+  timedOut: boolean,
   currentPathname = "/"
-) {
-  if (currentPathname === "/settings") {
-    return false;
-  }
-
-  if (!startupRestoreState) {
-    return !startupAllReady;
-  }
-
-  if (startupRestoreState.phase === "env-import-required") {
-    return false;
+): StartupSurfaceMode | null {
+  if (currentPathname === "/settings" || currentPathname.startsWith("/settings/")) {
+    return null;
   }
 
   if (startupAllReady) {
-    return false;
+    return null;
   }
 
-  if (startupRestoreState.phase === "succeeded") {
-    return false;
+  if (
+    startupRestoreState?.phase === "env-import-required"
+  ) {
+    return null;
   }
 
-  return (
-    startupRestoreState.phase === "idle" ||
-    startupRestoreState.phase === "running" ||
-    startupRestoreState.phase === "failed"
-  );
+  if (
+    startupRestoreState?.phase === "failed" ||
+    startupRestoreState?.phase === "succeeded"
+  ) {
+    return "failed";
+  }
+
+  return timedOut ? "slow" : "loading";
 }

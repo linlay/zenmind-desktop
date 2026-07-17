@@ -60,6 +60,18 @@ function createNavigationChat(overrides = {}) {
   };
 }
 
+function createPlatformActiveRun(overrides = {}) {
+  return {
+    runId: "run-active",
+    agentKey: "zenmi",
+    state: "running",
+    lastSeq: 0,
+    oldestSeq: 0,
+    startedAt: EPOCH_MS,
+    ...overrides,
+  };
+}
+
 test("assistant navigation reads global REACT chats over WebSocket and keeps displayed chat status live", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalWebSocket = globalThis.WebSocket;
@@ -77,7 +89,6 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       lastRunId: "run-newest",
       lastRunContent: "latest response",
       read: { isRead: false },
-      activeRun: false,
     },
     {
       chatId: "team-without-agent",
@@ -92,7 +103,25 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       agentKey: "zenmi",
       createdAt: EPOCH_MS + index,
       updatedAt: EPOCH_MS + index,
+      ...(index === 0
+        ? { activeRun: createPlatformActiveRun({ runId: "run-react-0" }) }
+        : {}),
     })),
+  ], [
+    {
+      chatId: "react-newest",
+      chatName: "Newest React chat",
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + 30,
+      updatedAt: EPOCH_MS + 60,
+      lastRunId: "run-newest",
+      lastRunContent: "latest response",
+      read: { isRead: false },
+      activeRun: createPlatformActiveRun({
+        runId: "run-newest",
+        startedAt: EPOCH_MS + 60,
+      }),
+    },
   ], [
     {
       chatId: "react-newest",
@@ -103,6 +132,11 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       lastRunId: "run-newest",
       lastRunContent: "latest response",
       read: { isRead: false },
+      activeRun: createPlatformActiveRun({
+        runId: "run-newest",
+        state: "waiting_approval",
+        startedAt: EPOCH_MS + 60,
+      }),
       awaiting: {
         awaitingId: "awaiting-1",
         mode: "approval",
@@ -117,6 +151,21 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       agentKey: "zenmi",
       createdAt: EPOCH_MS + 30,
       updatedAt: EPOCH_MS + 80,
+      lastRunId: "run-newest",
+      lastRunContent: "latest response",
+      read: { isRead: false },
+      activeRun: createPlatformActiveRun({
+        runId: "run-newest",
+        startedAt: EPOCH_MS + 60,
+      }),
+    },
+  ], [
+    {
+      chatId: "react-newest",
+      chatName: "Newest React chat",
+      agentKey: "zenmi",
+      createdAt: EPOCH_MS + 30,
+      updatedAt: EPOCH_MS + 90,
       lastRunId: "run-newest",
       lastRunContent: "latest response",
       read: { isRead: false },
@@ -198,6 +247,8 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   );
   assert.equal(first.chatItems[0].isRead, false);
   assert.equal(first.chatItems[0].hasActiveRun, false);
+  assert.equal(first.chatItems[1].chatId, "react-0");
+  assert.equal(first.chatItems[1].hasActiveRun, true);
   assert.equal(first.chatItemsHasMore, true);
   const connected = client.getLiveStatus();
   assert.equal(connected.phase, "connected");
@@ -254,6 +305,10 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     startedAt: EPOCH_MS + 60,
   }});
   assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 2);
+  assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
+  assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
 
   sockets[0].emit({ frame: "push", type: "awaiting.asking", data: {
     agentKey: "zenmi",
@@ -265,7 +320,8 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, true);
   assert.equal(client.getSnapshot().chatItems[0].awaitingMode, "approval");
   await new Promise((resolve) => setTimeout(resolve, 450));
-  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 2);
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 3);
+  assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, true);
 
   sockets[0].emit({ frame: "push", type: "awaiting.answered", data: {
@@ -275,9 +331,23 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     answeredAt: EPOCH_MS + 80,
   }});
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
+  assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
   await new Promise((resolve) => setTimeout(resolve, 450));
-  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 3);
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 4);
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
+  assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
+
+  sockets[0].emit({ frame: "push", type: "run.finished", data: {
+    agentKey: "zenmi",
+    chatId: "react-newest",
+    runId: "run-newest",
+    finishedAt: EPOCH_MS + 90,
+  }});
+  assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, false);
+  assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 5);
+  assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, false);
 
   sockets[0].emit({ frame: "push", type: "awaiting.asking", data: {
     agentKey: "not-listed",
@@ -287,7 +357,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   }});
   assert.equal(client.getSnapshot().chatItems.some((chat) => chat.chatId === "not-listed"), false);
   await new Promise((resolve) => setTimeout(resolve, 450));
-  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 4);
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 6);
   assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 8));
 
   sockets[0].emit({ frame: "push", type: "chat.created", data: {
@@ -301,7 +371,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     false,
   );
   await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 5);
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 7);
 
   sockets[0].emitClose();
   const reconnecting = client.getLiveStatus();
@@ -311,6 +381,10 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     frame.kind === "push" && frame.type === "awaiting.answered",
   ));
   assert.equal(reconnecting.recentFrames.at(-1)?.kind, "closed");
+
+  const reconnected = await client.refreshNow();
+  assert.equal(sockets.length, 2);
+  assert.equal(reconnected.chatItems.find((chat) => chat.chatId === "react-0")?.hasActiveRun, true);
 });
 
 test("assistant navigation replays chat runtime pushes that arrive during a snapshot refresh", async (t) => {
@@ -333,7 +407,6 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     lastRunId: "previous-run",
     lastRunContent: "Original assistant preview",
     read: { isRead: true },
-    activeRun: false,
   };
 
   class FakeWebSocket {
@@ -664,6 +737,42 @@ test("assistant navigation chat mapper preserves server order while still filter
   ]);
 
   assert.deepEqual(chats.map((chat) => chat.chatId), ["second", "first"]);
+});
+
+test("assistant navigation maps the unified activeRun summary contract for Projects and Chats", () => {
+  const summaries = [
+    {
+      chatId: "active-chat",
+      chatName: "Active chat",
+      agentKey: "coder-project",
+      createdAt: EPOCH_MS,
+      updatedAt: EPOCH_MS + 2,
+      activeRun: createPlatformActiveRun({
+        runId: "active-run",
+        agentKey: "coder-project",
+        startedAt: EPOCH_MS + 1,
+      }),
+    },
+    {
+      chatId: "idle-chat",
+      chatName: "Idle chat",
+      agentKey: "coder-project",
+      createdAt: EPOCH_MS,
+      updatedAt: EPOCH_MS + 1,
+    },
+  ];
+  const [project] = buildAssistantNavigationAgentsFromPlatformAgents([{
+    key: "coder-project",
+    name: "Coder project",
+    mode: "CODER",
+    chats: summaries,
+  }]);
+  const chats = buildAssistantNavigationChatsFromPlatform(summaries);
+
+  for (const items of [project.recentChats, chats]) {
+    assert.equal(items.find((chat) => chat.chatId === "active-chat")?.hasActiveRun, true);
+    assert.equal(items.find((chat) => chat.chatId === "idle-chat")?.hasActiveRun, false);
+  }
 });
 
 test("assistant navigation probes the ninth eligible Chat without exposing it in the sidebar snapshot", () => {
