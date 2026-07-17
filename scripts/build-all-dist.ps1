@@ -84,6 +84,33 @@ function Invoke-ServiceRelease {
     }
 }
 
+function Assert-AgentPlatformBuiltins {
+    $projectDir = Join-Path $WorkspaceRoot "agent-platform"
+    $cacheDir = Join-Path $projectDir "build/builtins/$SyncOS-$SyncArch"
+    $manifestPath = Join-Path $cacheDir "builtins.manifest.json"
+    Write-Host "[build-all-dist] check agent-platform builtin cache ($SyncOS/$SyncArch)"
+    if ($DryRun) {
+        Write-Host "  (require $manifestPath and the cached Windows builtin payloads)"
+        return
+    }
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "Missing agent-platform builtin cache: $cacheDir. Build it manually before running build-all-dist.ps1."
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $expectedComponents = @("rg", "dbx", "httpx", "kbase-lance-engine", "poppler-pdftotext")
+    $cachedComponents = @($manifest.components | ForEach-Object { $_.name })
+    $missingComponents = @($expectedComponents | Where-Object { $_ -notin $cachedComponents })
+    if ($missingComponents.Count -gt 0) {
+        throw "agent-platform builtin cache is incomplete (missing: $($missingComponents -join ', ')). Build it manually before running build-all-dist.ps1."
+    }
+    foreach ($relative in @("bin/rg.exe", "bin/dbx.exe", "bin/httpx.exe", "bin/kbase-lance-engine.exe", "bin/pdftotext.exe", "libexec/poppler-pdftotext/windows-amd64")) {
+        $path = Join-Path $cacheDir $relative
+        if (-not (Test-Path -LiteralPath $path)) {
+            throw "agent-platform builtin cache is missing: $path. Build it manually before running build-all-dist.ps1."
+        }
+    }
+}
+
 function Sync-DesktopAssets {
     $arguments = @("./scripts/sync-builtin-assets.mjs")
     foreach ($repoName in $ServiceRepos) {
@@ -113,6 +140,7 @@ if (-not (Test-Path -LiteralPath $WorkspaceRoot -PathType Container)) {
 }
 
 Write-Host "[build-all-dist] workspace=$WorkspaceRoot desktop=$DesktopRoot target=$SyncOS/$SyncArch"
+Assert-AgentPlatformBuiltins
 foreach ($repoName in $ServiceRepos) { Invoke-ServiceRelease -RepoName $repoName }
 Sync-DesktopAssets
 Write-Host "[build-all-dist] synced 4 builtin service assets"
