@@ -1710,10 +1710,10 @@
   height: 24px;
 }
 
-.assistant-worker-collapse-item.is-expanded {
-  .chat-awaiting-status, .assistant-worker-badge, .sidebar-assistant-preview-loading{
-    display: none;
-  }
+.assistant-worker-collapse-item.is-expanded > .Collapse-header .chat-awaiting-status,
+.assistant-worker-collapse-item.is-expanded > .Collapse-header .assistant-worker-badge,
+.assistant-worker-collapse-item.is-expanded > .Collapse-header .sidebar-assistant-preview-loading {
+  display: none;
 }
 
 .assistant-worker-badge {

@@ -1554,6 +1554,23 @@ test("assistant sidebar awaiting chats use a right-side loading status", () => {
   assert.match(globalStyles, /\.assistant-worker-chat-row\.has-status-action:hover \.assistant-worker-chat-menu-button,\s*\.assistant-worker-chat-row\.has-status-action:focus-within \.assistant-worker-chat-menu-button\s*\{[\s\S]{0,60}display:\s*none;/);
 });
 
+test("expanded Projects hide duplicate header status without hiding chat Await badges", () => {
+  const globalStyles = readRendererStyles();
+
+  assert.match(
+    globalStyles,
+    /\.assistant-worker-collapse-item\.is-expanded\s*>\s*\.Collapse-header \.chat-awaiting-status,\s*\.assistant-worker-collapse-item\.is-expanded\s*>\s*\.Collapse-header \.assistant-worker-badge,\s*\.assistant-worker-collapse-item\.is-expanded\s*>\s*\.Collapse-header \.sidebar-assistant-preview-loading\s*\{[\s\S]{0,60}display:\s*none;/,
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.assistant-worker-collapse-item\.is-expanded\s*\{\s*\.chat-awaiting-status/,
+  );
+  assert.match(
+    globalStyles,
+    /\.assistant-worker-chat-item\.has-awaiting \.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left:\s*auto;/,
+  );
+});
+
 test("assistant sidebar active chats use loading status instead of thinking text", () => {
   const sidebarSource = readSourceFile(
     "src",
