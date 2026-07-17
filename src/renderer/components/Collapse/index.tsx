@@ -18,8 +18,8 @@ type CollapseHeaderPopover = Pick<
 
 export interface CollapseProps {
   className?: string;
-  expanded: boolean;
-  onExpand: (expanded: boolean) => void;
+  expanded?: boolean;
+  onExpand?: (expanded: boolean) => void;
   header: React.ReactNode;
   headerSupplement?: React.ReactNode;
   headerActions?: React.ReactNode;
@@ -45,6 +45,11 @@ export const Collapse: React.FC<CollapseProps> = ({
   const headerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
+  const [innerExpanded, setInnerExpanded] = useState(expanded);
+  const handleExpand = (val: boolean) => {
+    setInnerExpanded(val);
+    onExpand?.(val);
+  }
 
   const measureContentHeight = useCallback(() => {
     setContentHeight(innerRef.current?.scrollHeight ?? 0);
@@ -52,7 +57,7 @@ export const Collapse: React.FC<CollapseProps> = ({
 
   useLayoutEffect(() => {
     measureContentHeight();
-  }, [children, expanded, measureContentHeight]);
+  }, [children, innerExpanded, measureContentHeight]);
 
   useLayoutEffect(() => {
     const innerElement = innerRef.current;
@@ -70,7 +75,7 @@ export const Collapse: React.FC<CollapseProps> = ({
   }, [measureContentHeight]);
 
   const handleToggle = () => {
-    onExpand(!expanded);
+    handleExpand(!innerExpanded);
   };
   const {
     className: headerButtonClassName,
@@ -86,7 +91,7 @@ export const Collapse: React.FC<CollapseProps> = ({
       className={["Collapse-trigger", headerButtonClassName]
         .filter(Boolean)
         .join(" ")}
-      aria-expanded={expanded}
+      aria-expanded={innerExpanded}
       aria-controls={contentId}
       onClick={(event) => {
         onHeaderButtonClick?.(event);
@@ -101,7 +106,7 @@ export const Collapse: React.FC<CollapseProps> = ({
 
   return (
     <div
-      className={["Collapse", expanded ? "is-expanded" : "", className]
+      className={["Collapse", innerExpanded ? "is-expanded" : "", className]
         .filter(Boolean)
         .join(" ")}
     >
@@ -126,8 +131,8 @@ export const Collapse: React.FC<CollapseProps> = ({
       <div
         id={contentId}
         className="Collapse-content"
-        style={{ height: expanded ? contentHeight : 0 }}
-        aria-hidden={!expanded}
+        style={{ height: innerExpanded ? contentHeight : 0 }}
+        aria-hidden={!innerExpanded}
       >
         <div ref={innerRef} className="Collapse-contentInner">
           {children}

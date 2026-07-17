@@ -3812,7 +3812,6 @@ export function AppSidebar({
     options: { roving?: boolean } = {},
   ) {
     const roving = options.roving ?? true;
-    const expanded = expandedAssistantAgentKey === agent.agentKey;
     const allRecentChats = getAssistantNavAgentSortedChats(agent);
     const recentChats = getAssistantNavAgentPreviewChats(agent);
     const chatCount = Math.max(
@@ -3860,7 +3859,6 @@ export function AppSidebar({
         ]
           .filter(Boolean)
           .join(" ")}
-        expanded={expanded}
         onExpand={(val) => handleAssistantAgentExpand(agent, val)}
         headerButtonProps={{
           className: "assistant-worker-header",
@@ -3966,7 +3964,7 @@ export function AppSidebar({
           </span>
         }
       >
-        <div className="worker-chat-preview-list">
+        <Flex vertical gap={2} className="worker-chat-preview-list">
           {recentChats.length > 0 ? (
             recentChats.map((chat) =>
               renderAssistantChatRow(chat, activeChatId, { roving }),
@@ -4000,7 +3998,7 @@ export function AppSidebar({
               })}
             </button>
           ) : null}
-        </div>
+        </Flex>
       </Collapse>
     );
   }
