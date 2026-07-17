@@ -170,9 +170,9 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="desktop-global-search-input-shell">
-          <svg className="desktop-global-search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="10.5" cy="10.5" r="6.3" />
-            <line x1="15.0" y1="15.0" x2="17.9" y2="17.9" />
+          <svg className="desktop-global-search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.8" />
+            <line x1="15.5" y1="15.5" x2="20" y2="20" />
           </svg>
           <input
             ref={inputRef}
