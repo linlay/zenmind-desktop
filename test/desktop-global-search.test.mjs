@@ -183,6 +183,48 @@ test("desktop global search keeps agents with absent or null updatedAt after tim
   );
 });
 
+test("desktop global search uses project agent icons without secondary role text", () => {
+  const sections = buildDesktopGlobalSearchSections({
+    agents: [
+      agent({
+        agentKey: "coder-project",
+        displayName: "Coder project",
+        mode: "CODER",
+        role: "This role must not appear",
+        latestPreview: "This preview must not appear",
+        recentChats: [],
+      }),
+      agent({
+        agentKey: "kbase-project",
+        displayName: "KBase project",
+        mode: "kbase",
+        role: "This role must not appear",
+        latestPreview: "This preview must not appear",
+        recentChats: [],
+      }),
+      agent({
+        agentKey: "regular-agent",
+        displayName: "Regular agent",
+        role: "Visible role",
+        recentChats: [],
+      }),
+    ],
+    query: "",
+    currentAgentKey: "coder-project",
+    t,
+  });
+
+  const agentRows = rowsOfKind(sections, "agent");
+  assert.deepEqual(
+    agentRows.map((row) => [row.agentKey, row.projectKind, row.description]),
+    [
+      ["coder-project", "coder", undefined],
+      ["kbase-project", "kbase", undefined],
+      ["regular-agent", undefined, "Visible role"],
+    ],
+  );
+});
+
 test("desktop global search filters rows, boosts local attention state, and prefers remote chat snippets", () => {
   const sections = buildDesktopGlobalSearchSections({
     agents: [

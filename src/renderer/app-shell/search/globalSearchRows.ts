@@ -8,6 +8,7 @@ import type { TranslateFunction } from "../../../shared/i18n";
 
 export type DesktopGlobalSearchActionId = "newChat" | "agents" | "skills" | "controlCenter" | "settings";
 export type DesktopGlobalSearchSectionId = "awaiting" | "unread" | "actions" | "agents" | "chats";
+export type DesktopGlobalSearchProjectAgentKind = "coder" | "kbase";
 
 export type DesktopGlobalSearchRow =
   | {
@@ -22,7 +23,8 @@ export type DesktopGlobalSearchRow =
       key: string;
       agentKey: string;
       label: string;
-      description: string;
+      description?: string;
+      projectKind?: DesktopGlobalSearchProjectAgentKind;
       updatedAtMs?: EpochMilliseconds;
     }
   | {
@@ -193,16 +195,30 @@ function createAgentRow(agent: AssistantNavAgentItem): Extract<DesktopGlobalSear
   if (!agentKey) {
     return null;
   }
+  const projectKind = getProjectAgentKind(agent.mode);
   return {
     kind: "agent",
     key: `agent:${agentKey}`,
     agentKey,
     label: agent.displayName || agentKey,
-    description: agent.role || agent.latestPreview || agentKey,
+    ...(projectKind
+      ? { projectKind }
+      : { description: agent.role || agent.latestPreview || agentKey }),
     ...(agent.updatedAt !== undefined && agent.updatedAt !== null
       ? { updatedAtMs: agent.updatedAt }
       : {})
   };
+}
+
+function getProjectAgentKind(mode?: string): DesktopGlobalSearchProjectAgentKind | undefined {
+  switch (mode?.trim().toUpperCase()) {
+    case "CODER":
+      return "coder";
+    case "KBASE":
+      return "kbase";
+    default:
+      return undefined;
+  }
 }
 
 function createLocalChatRows(

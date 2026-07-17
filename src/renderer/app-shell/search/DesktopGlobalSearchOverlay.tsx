@@ -1,10 +1,6 @@
 import {
-  AppstoreOutlined,
   ClockCircleOutlined,
-  ControlOutlined,
   MessageOutlined,
-  PlusOutlined,
-  SettingOutlined,
   UserOutlined
 } from "@ant-design/icons";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -14,6 +10,9 @@ import type {
 } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
 import { getAssistantAwaitingStatusKey } from "../../assistantNavigation";
+import { SidebarActionIcon, SidebarIllustration } from "../../components/BrandMark";
+import { AgentIcon } from "../navigation/AgentIcon";
+import { SettingsSidebarIcon } from "../navigation/SettingsSidebarIcon";
 import {
   buildDesktopGlobalSearchSections,
   resolveDesktopGlobalSearchAgentKey,
@@ -219,7 +218,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                     </span>
                     <span className="desktop-global-search-row-body">
                       <span className="desktop-global-search-row-title">{row.label}</span>
-                      {row.kind === "agent" ? (
+                      {row.kind === "agent" && row.description ? (
                         <span className="desktop-global-search-row-detail">{renderRowDetail(row)}</span>
                       ) : null}
                     </span>
@@ -293,6 +292,9 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, currentA
 
 function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.kind === "agent") {
+    if (row.projectKind) {
+      return <AgentIcon icon={row.projectKind} size={16} type="agent" />;
+    }
     return <UserOutlined />;
   }
   if (row.kind === "chat") {
@@ -310,18 +312,18 @@ function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
     return row.source === "remote" ? <MessageOutlined /> : <ClockCircleOutlined />;
   }
   if (row.actionId === "newChat") {
-    return <PlusOutlined />;
+    return <SidebarActionIcon kind="new_chat" />;
   }
   if (row.actionId === "agents") {
-    return <AppstoreOutlined />;
+    return <SidebarIllustration kind="agent" />;
   }
   if (row.actionId === "skills") {
-    return <AppstoreOutlined />;
+    return <SidebarIllustration kind="skill" />;
   }
   if (row.actionId === "controlCenter") {
-    return <ControlOutlined />;
+    return <SettingsSidebarIcon kind="control" />;
   }
-  return <SettingOutlined />;
+  return <SidebarIllustration kind="settings" />;
 }
 
 function renderRowDetail(row: Extract<DesktopGlobalSearchRow, { kind: "agent" }>) {

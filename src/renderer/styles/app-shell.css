@@ -626,6 +626,16 @@
   font-size: 16px;
 }
 
+/* Cmd+K action rows reuse the same SVG families as their destination surfaces. */
+.desktop-global-search-row-icon .sidebar-illustration,
+.desktop-global-search-row-icon .sidebar-action-icon,
+.desktop-global-search-row-icon .settings-sidebar-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex: none;
+}
+
 .desktop-global-search-row-body {
   min-width: 0;
   display: flex;

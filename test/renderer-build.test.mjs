@@ -611,6 +611,7 @@ test("startup surface uses localized, minimal copy", () => {
   assert.match(startupGate, /role="status"/);
   assert.match(startupGate, /t\("startup\.action\.openControlCenter"\)/);
   assert.doesNotMatch(startupGate, /startup-loading-card|startup-chat-guide|startup\.chatGuide/);
+  assert.doesNotMatch(startupGate, /startup-surface-mark|✦/);
   assert.doesNotMatch(enUS, /"startup\.chatGuide\.title":\s*"Start a conversation"/);
 });
 
@@ -625,6 +626,7 @@ test("startup surface owns the main content area without a card frame", () => {
   assert.match(appShellStyles, /is-mac-platform\.has-startup-surface \.app-main\s*\{[\s\S]*?padding-top:\s*0;/);
   assert.match(globalStyles, /\.startup-surface\.is-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;/);
   assert.doesNotMatch(globalStyles, /\.startup-loading-card|\.startup-loading-list|\.startup-chat-guide/);
+  assert.doesNotMatch(globalStyles, /\.startup-surface-mark/);
 });
 
 test("desktop custom theme tokens are shared by control center and log viewer", () => {
@@ -4039,7 +4041,18 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
   assert.match(overlay, /return `\/agent\/\$\{encodeURIComponent\(currentAgentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
   assert.doesNotMatch(overlay, /newChatRequest/);
-  assert.match(overlay, /row\.kind === "agent" \?/);
+  assert.match(overlay, /import \{ SidebarActionIcon, SidebarIllustration \} from "\.\.\/\.\.\/components\/BrandMark";/);
+  assert.match(overlay, /import \{ AgentIcon \} from "\.\.\/navigation\/AgentIcon";/);
+  assert.match(overlay, /import \{ SettingsSidebarIcon \} from "\.\.\/navigation\/SettingsSidebarIcon";/);
+  assert.match(overlay, /row\.actionId === "newChat"[\s\S]*?<SidebarActionIcon kind="new_chat" \/>/);
+  assert.match(overlay, /row\.actionId === "agents"[\s\S]*?<SidebarIllustration kind="agent" \/>/);
+  assert.match(overlay, /row\.actionId === "skills"[\s\S]*?<SidebarIllustration kind="skill" \/>/);
+  assert.match(overlay, /row\.actionId === "controlCenter"[\s\S]*?<SettingsSidebarIcon kind="control" \/>/);
+  assert.match(overlay, /return <SidebarIllustration kind="settings" \/>;/);
+  assert.doesNotMatch(overlay, /AppstoreOutlined|ControlOutlined|PlusOutlined|SettingOutlined/);
+  assert.match(overlay, /row\.kind === "agent" && row\.description \?/);
+  assert.match(overlay, /if \(row\.projectKind\) \{[\s\S]*?<AgentIcon icon=\{row\.projectKind\} size=\{16\} type="agent" \/>/);
+  assert.doesNotMatch(overlay, /row\.kind === "agent" \?/);
   assert.doesNotMatch(overlay, /row\.kind !== "action" \?/);
   assert.match(overlay, /renderChatStatus/);
   assert.match(overlay, /t\(getAssistantAwaitingStatusKey\(row\.awaitingMode\)\)/);
@@ -4054,9 +4067,14 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-row-status\.is-unread\s*\{/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*var\(--bg-base\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row-icon\s*\{[\s\S]*?background:\s*transparent;/);
+  assert.match(appShellCss, /\.desktop-global-search-row-icon \.sidebar-illustration,[\s\S]*?\.desktop-global-search-row-icon \.sidebar-action-icon,[\s\S]*?\.desktop-global-search-row-icon \.settings-sidebar-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row\.is-active\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.08\);/);
   assert.match(appShellCss, /\.desktop-global-search-row\.is-chat \.desktop-global-search-row-title\s*\{[\s\S]{0,80}font-weight:\s*400;/);
   assert.match(rows, /DesktopGlobalSearchSectionId = "awaiting" \| "unread" \| "actions" \| "agents" \| "chats"/);
+  assert.match(rows, /DesktopGlobalSearchProjectAgentKind = "coder" \| "kbase"/);
+  assert.match(rows, /projectKind\?: DesktopGlobalSearchProjectAgentKind;/);
+  assert.match(rows, /function getProjectAgentKind\(mode\?: string\): DesktopGlobalSearchProjectAgentKind \| undefined/);
+  assert.match(rows, /description: agent\.role \|\| agent\.latestPreview \|\| agentKey/);
   assert.match(rows, /mergeQueryChatRows/);
   assert.match(rows, /if \(!chatId \|\| !agentKey\) \{/);
   assert.match(rows, /snippet: result\.snippet \|\| localRow\?\.snippet/);

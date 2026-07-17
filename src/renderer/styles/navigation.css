@@ -3521,14 +3521,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   text-align: center;
-}
-
-.startup-surface-mark {
-  color: var(--accent);
-  font-size: 28px;
-  line-height: 1;
 }
 
 .startup-surface-loader {

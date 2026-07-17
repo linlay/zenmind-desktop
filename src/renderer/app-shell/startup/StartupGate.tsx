@@ -42,7 +42,6 @@ export function StartupSurface({
       aria-live="polite"
     >
       <div className="startup-surface-content">
-        <div className="startup-surface-mark" aria-hidden="true">✦</div>
         {loading ? (
           <span
             className="startup-surface-loader"
