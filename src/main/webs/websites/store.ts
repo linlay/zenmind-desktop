@@ -19,6 +19,11 @@ import {
 } from "../common";
 
 export const WEBSITE_FILE = "website.json";
+export const WEBSITE_SCHEMA_VERSION = 2;
+
+function readCopilotAgentKey(value: Record<string, unknown>) {
+  return normalizeAgentKey(readString(value.copilotAgentKey) || readString(value.agentKey));
+}
 
 export function getWebsiteDir(app: App, id: string, platform: NodeJS.Platform = process.platform) {
   return path.join(getDesktopWebsitesDataRoot(app, platform), normalizeWebId(id));
@@ -39,14 +44,14 @@ export function normalizeWebsiteManifest(value: unknown, fallbackId = ""): Websi
   const url = normalizeWebsiteUrl(urlText);
   const now = Date.now();
   const id = normalizeWebId(readString(value.id) || fallbackId || createWebId());
-  const agentKey = normalizeAgentKey(value.agentKey);
+  const copilotAgentKey = readCopilotAgentKey(value);
   return {
     id,
     entryKey: createWebsiteEntryKey(id),
     kind: "website",
     label: normalizeWebsiteLabel(readString(value.label), url),
     url,
-    ...(agentKey ? { agentKey } : {}),
+    ...(copilotAgentKey ? { copilotAgentKey } : {}),
     createdAt: value.createdAt === undefined ? now : toTimestamp(value.createdAt),
     updatedAt: value.updatedAt === undefined ? now : toTimestamp(value.updatedAt)
   };
@@ -120,35 +125,44 @@ export function writeWebsiteItemsWithoutMigration(
   }
 
   for (const item of normalizedItems) {
-    const websiteId = normalizeWebId(item.id);
-    const targetPath = getWebsitePath(app, websiteId, platform);
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, `${JSON.stringify({
-      schemaVersion: 1,
-      id: websiteId,
-      kind: "website",
-      label: item.label,
-      url: item.url,
-      ...(item.agentKey ? { agentKey: item.agentKey } : {}),
-      createdAt: toIsoTimestamp(item.createdAt),
-      updatedAt: toIsoTimestamp(item.updatedAt)
-    }, null, 2)}\n`, "utf8");
+    writeWebsiteItem(app, item, platform);
   }
   return normalizedItems;
+}
+
+export function writeWebsiteItem(
+  app: App,
+  item: WebsiteEntry,
+  platform: NodeJS.Platform = process.platform
+) {
+  const websiteId = normalizeWebId(item.id);
+  const targetPath = getWebsitePath(app, websiteId, platform);
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, `${JSON.stringify({
+    schemaVersion: WEBSITE_SCHEMA_VERSION,
+    id: websiteId,
+    kind: "website",
+    label: item.label,
+    url: item.url,
+    ...(item.copilotAgentKey ? { copilotAgentKey: item.copilotAgentKey } : {}),
+    createdAt: toIsoTimestamp(item.createdAt),
+    updatedAt: toIsoTimestamp(item.updatedAt)
+  }, null, 2)}\n`, "utf8");
+  return item;
 }
 
 export function createWebsiteItem(input: WebsiteInput): WebsiteEntry {
   const url = normalizeWebsiteUrl(input.url);
   const now = Date.now();
   const id = normalizeWebId(input.id || createWebId());
-  const agentKey = normalizeAgentKey(input.agentKey);
+  const copilotAgentKey = readCopilotAgentKey(input as unknown as Record<string, unknown>);
   return {
     id,
     entryKey: createWebsiteEntryKey(id),
     kind: "website",
     label: normalizeWebsiteLabel(input.label, url),
     url,
-    ...(agentKey ? { agentKey } : {}),
+    ...(copilotAgentKey ? { copilotAgentKey } : {}),
     createdAt: input.createdAt === undefined ? now : toTimestamp(input.createdAt),
     updatedAt: input.updatedAt === undefined ? now : toTimestamp(input.updatedAt)
   };

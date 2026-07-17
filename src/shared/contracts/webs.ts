@@ -27,7 +27,7 @@ export interface WebEntryBase {
   entryKey: WebEntryKey;
   label: string;
   kind: WebKind;
-  agentKey?: string;
+  copilotAgentKey?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -83,7 +83,7 @@ export interface WebsiteInput {
   id?: string;
   label?: string;
   url: string;
-  agentKey?: string;
+  copilotAgentKey?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -91,7 +91,7 @@ export interface WebsiteInput {
 export interface WebsiteUpdateInput {
   label?: string;
   url?: string;
-  agentKey?: string;
+  copilotAgentKey?: string;
 }
 
 export interface WebsiteInputIssue {
@@ -142,7 +142,7 @@ export interface WebsiteTransferResult {
 
 export interface WebappUpdateInput {
   label?: string;
-  agentKey?: string;
+  copilotAgentKey?: string;
 }
 
 export interface WebappItemsResult {

@@ -10,8 +10,8 @@
   min-width: 0;
   overflow: hidden;
   border-left: 1px solid rgba(148, 163, 184, 0.14);
-  background: var(--embedded-surface-dock-bg);
-  box-shadow: var(--embedded-surface-dock-shadow);
+  background: var(--embedded-surface-shell-bg);
+  box-shadow: none;
   opacity: 0;
   pointer-events: none;
   transform: translateX(18px);
@@ -37,9 +37,12 @@
   transition: none;
 }
 
-.agent-webclient-copilot-dock .embedded-surface-page {
+.agent-webclient-copilot-dock .embedded-surface-page,
+.agent-webclient-copilot-dock .embedded-surface-frame-shell,
+.agent-webclient-copilot-dock .embedded-plugin-error {
   height: 100%;
   margin: 0;
+  background: var(--embedded-surface-shell-bg);
 }
 
 .agent-webclient-copilot-dock .embedded-surface-frame {
@@ -1611,11 +1614,6 @@
   50% {
     opacity: 1;
   }
-}
-
-:root[data-theme="dark"] .agent-webclient-copilot-dock {
-  background: var(--embedded-surface-dock-bg);
-  box-shadow: var(--embedded-surface-dock-shadow);
 }
 
 :root[data-theme="dark"] .assistant-message-text,

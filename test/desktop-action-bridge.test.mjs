@@ -455,6 +455,8 @@ test("desktop website add can be listed and reports an existing website as a bus
   assert.equal(added.result.ok, true, added.result.message);
   assert.equal(typeof added.result.item.createdAt, "number");
   assert.equal(typeof added.result.item.updatedAt, "number");
+  assert.equal(added.result.item.copilotAgentKey, "webOperator");
+  assert.equal("agentKey" in added.result.item, false);
 
   const storedManifest = JSON.parse(fs.readFileSync(
     getWebsitePath(options.app, added.result.item.id),
@@ -462,6 +464,9 @@ test("desktop website add can be listed and reports an existing website as a bus
   ));
   assert.match(storedManifest.createdAt, /^\d{4}-\d{2}-\d{2}T/u);
   assert.match(storedManifest.updatedAt, /^\d{4}-\d{2}-\d{2}T/u);
+  assert.equal(storedManifest.schemaVersion, 2);
+  assert.equal(storedManifest.copilotAgentKey, "webOperator");
+  assert.equal("agentKey" in storedManifest, false);
 
   const listed = await handleDesktopActionRequest(options, {
     action: "desktop.web.website.list"

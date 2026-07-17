@@ -67,6 +67,27 @@ function readText(filePath) {
   return fs.readFileSync(filePath, "utf8").trim();
 }
 
+function writeBootstrapWebappSeed(app, platform, id, manifest = {}) {
+  const initPath = resolveDesktopInitPath(app, platform);
+  const webappDir = path.join(path.dirname(initPath), "desktop-init", "sites", id);
+  fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
+  fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html><title>seed</title>", "utf8");
+  fs.writeFileSync(path.join(webappDir, "webapp.json"), `${JSON.stringify({
+    schemaVersion: 2,
+    id,
+    kind: "webapp",
+    label: id,
+    frontend: {
+      root: "frontend",
+      index: "index.html",
+      spa: true,
+      apiPrefix: "/api"
+    },
+    ...manifest
+  }, null, 2)}\n`, "utf8");
+  return webappDir;
+}
+
 test("archive import filters follow internal service package platform formats", () => {
   assert.deepEqual(getArchiveExtensions("darwin"), ["gz", "tgz"]);
   assert.deepEqual(getArchiveExtensions("linux"), ["gz", "tgz"]);
@@ -291,8 +312,10 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   });
   assert.equal(website.id, "docs");
   assert.equal(website.kind, "website");
-  assert.equal(website.agentKey, "desktopAssistant");
-  assert.equal(bootstrapState.schemaVersion, 1);
+  assert.equal(website.copilotAgentKey, "desktopAssistant");
+  assert.equal("agentKey" in website, false);
+  assert.equal(website.schemaVersion, 2);
+  assert.equal(bootstrapState.schemaVersion, 2);
   assert.equal(bootstrapState.sourcePath, initPath);
   assert.equal(bootstrapState.consumed, true);
   assert.equal(bootstrapState.appliedResult.profile, "applied");
@@ -305,6 +328,10 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
   assert.equal(bootstrapState.appliedResult.desktopActionBridge, "applied");
   assert.equal(bootstrapState.appliedResult.services, "applied");
+  assert.equal(bootstrapState.websReport.mode, "initialize");
+  assert.deepEqual(bootstrapState.websReport.items.map(({ entryKey, status }) => ({ entryKey, status })), [
+    { entryKey: "website:docs", status: "installed" }
+  ]);
   assert.deepEqual(bootstrapState.failedSections, []);
   assert.deepEqual(bootstrapState.errors, {});
   assert.match(bootstrapState.appliedAt, /^\d{4}-\d{2}-\d{2}T/);
@@ -327,6 +354,203 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profileAfterSecondRun.appearance.locale, "zh-CN");
   assert.equal(profileAfterSecondRun.general.desktopActionConfirmationEnabled, false);
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
+});
+
+test("desktop-init v2 installs mixed Sites once, keeps declared order, and later preserves user changes", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-sites-seed-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const init = {
+    schemaVersion: 2,
+    webs: {
+      items: [
+        {
+          kind: "website",
+          id: "docs",
+          label: "Docs",
+          url: "https://docs.example.com/",
+          copilotAgentKey: "desktopAssistant"
+        },
+        {
+          kind: "webapp",
+          id: "ops-console"
+        },
+        {
+          kind: "website",
+          id: "portal",
+          label: "Portal",
+          url: "https://portal.example.com/"
+        }
+      ]
+    }
+  };
+  const initPath = writeDesktopInit(app, "darwin", init);
+  writeBootstrapWebappSeed(app, "darwin", "ops-console", {
+    copilotAgentKey: "canonicalCopilot",
+    agentKey: "ignoredLegacyCopilot"
+  });
+
+  const first = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(first.appliedResult.webs, "applied");
+  assert.equal(first.websReport.mode, "initialize");
+  assert.deepEqual(first.websReport.items.map(({ entryKey, status }) => ({ entryKey, status })), [
+    { entryKey: "webapp:ops-console", status: "installed" },
+    { entryKey: "website:docs", status: "installed" },
+    { entryKey: "website:portal", status: "installed" }
+  ]);
+
+  const desktop = desktopRoot(homePath);
+  const docsPath = path.join(desktop, "data", "webs", "websites", "docs", "website.json");
+  const portalDir = path.join(desktop, "data", "webs", "websites", "portal");
+  const webappPath = path.join(desktop, "data", "webs", "webapps", "ops-console", "webapp.json");
+  const orderPath = path.join(desktop, "config", "webs", "order.json");
+  const docs = readJson(docsPath);
+  const portal = readJson(path.join(portalDir, "website.json"));
+  const webapp = readJson(webappPath);
+  assert.equal(docs.schemaVersion, 2);
+  assert.equal(docs.copilotAgentKey, "desktopAssistant");
+  assert.equal("agentKey" in docs, false);
+  assert.equal("copilotAgentKey" in portal, false);
+  assert.equal(webapp.schemaVersion, 3);
+  assert.equal(webapp.copilotAgentKey, "canonicalCopilot");
+  assert.equal("agentKey" in webapp, false);
+  assert.deepEqual(readJson(orderPath).entryKeys, [
+    "website:docs",
+    "webapp:ops-console",
+    "website:portal"
+  ]);
+  assert.equal(fs.existsSync(path.join(path.dirname(initPath), "desktop-init", "sites")), false);
+
+  fs.writeFileSync(docsPath, `${JSON.stringify({ ...docs, label: "User Docs" }, null, 2)}\n`, "utf8");
+  fs.rmSync(portalDir, { recursive: true, force: true });
+  const userOrder = {
+    schemaVersion: 1,
+    entryKeys: ["webapp:ops-console", "website:docs"]
+  };
+  fs.writeFileSync(orderPath, `${JSON.stringify(userOrder, null, 2)}\n`, "utf8");
+  writeDesktopInit(app, "darwin", init);
+  const staleStaging = path.join(path.dirname(initPath), "desktop-init", "sites", "ops-console");
+  fs.mkdirSync(staleStaging, { recursive: true });
+  fs.writeFileSync(path.join(staleStaging, "webapp.json"), "not valid json", "utf8");
+
+  const second = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(second.appliedResult.webs, "preserved");
+  assert.equal(second.websReport.mode, "preserve");
+  assert.equal(readJson(docsPath).label, "User Docs");
+  assert.equal(fs.existsSync(portalDir), false);
+  assert.deepEqual(readJson(orderPath), userOrder);
+  assert.equal(fs.existsSync(path.join(path.dirname(initPath), "desktop-init", "sites")), false);
+});
+
+test("desktop-init Sites validation rejects the whole seed before writing any Site", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-sites-invalid-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    schemaVersion: 2,
+    webs: {
+      items: [
+        { kind: "website", id: "first", label: "First", url: "https://same.example.com/" },
+        { kind: "website", id: "second", label: "Second", url: "https://same.example.com" }
+      ]
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.webs, "failed");
+  assert.match(result.errors.webs, /Duplicate Website URL/);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "websites", "first")), false);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "websites", "second")), false);
+});
+
+test("desktop-init rejects a WebApp whose manifest id differs from its declared id", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-sites-id-mismatch-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    schemaVersion: 2,
+    webs: { items: [{ kind: "webapp", id: "ops-console" }] }
+  });
+  writeBootstrapWebappSeed(app, "darwin", "ops-console", { id: "other-console" });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(result.appliedResult.webs, "failed");
+  assert.match(result.errors.webs, /manifest id must match/);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", "ops-console")), false);
+});
+
+test("desktop-init rejects an oversized Website seed without installing the earlier entries", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-sites-limit-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    schemaVersion: 2,
+    webs: {
+      items: Array.from({ length: 15 }, (_, index) => ({
+        kind: "website",
+        id: `site-${index + 1}`,
+        label: `Site ${index + 1}`,
+        url: `https://site-${index + 1}.example.com/`
+      }))
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(result.appliedResult.webs, "failed");
+  assert.match(result.errors.webs, /14 Website limit/);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "websites", "site-1")), false);
+});
+
+test("desktop-init mixed Sites uses the explicit Windows path branch", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-sites-win-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "win32", {
+    schemaVersion: 2,
+    webs: {
+      items: [
+        { kind: "webapp", id: "ops-win" },
+        { kind: "website", id: "docs-win", label: "Docs", url: "https://docs-win.example.com/" }
+      ]
+    }
+  });
+  writeBootstrapWebappSeed(app, "win32", "ops-win");
+
+  const result = applyDesktopInitBootstrap(app, "win32");
+  assert.equal(result.appliedResult.webs, "applied");
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", "ops-win", "webapp.json")), true);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "websites", "docs-win", "website.json")), true);
+  assert.deepEqual(
+    readJson(path.join(desktopRoot(homePath), "config", "webs", "order.json")).entryKeys,
+    ["webapp:ops-win", "website:docs-win"]
+  );
+});
+
+test("desktop-init rejects symbolic links inside a WebApp seed", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-sites-symlink-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    schemaVersion: 2,
+    webs: { items: [{ kind: "webapp", id: "linked-app" }] }
+  });
+  const seedDir = writeBootstrapWebappSeed(app, "darwin", "linked-app");
+  const outsideFile = path.join(root, "outside.html");
+  fs.writeFileSync(outsideFile, "outside", "utf8");
+  fs.rmSync(path.join(seedDir, "frontend", "index.html"));
+  fs.symlinkSync(outsideFile, path.join(seedDir, "frontend", "index.html"));
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(result.appliedResult.webs, "failed");
+  assert.match(result.errors.webs, /symbolic links/);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", "linked-app")), false);
 });
 
 test("desktop-init bootstrap canonicalizes the legacy Chat default agent field", (t) => {

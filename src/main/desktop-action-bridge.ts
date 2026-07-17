@@ -330,7 +330,7 @@ function firstRecordItem(value: unknown) {
 }
 
 function hasWebsiteInputFields(value: Record<string, unknown>) {
-  return ["id", "url", "label", "name", "agentKey"].some((field) => field in value);
+  return ["id", "url", "label", "name", "copilotAgentKey", "agentKey"].some((field) => field in value);
 }
 
 function normalizeWebsiteInputAliases(input: Record<string, unknown>) {
@@ -338,6 +338,13 @@ function normalizeWebsiteInputAliases(input: Record<string, unknown>) {
   if (typeof normalized.label !== "string" && typeof normalized.name === "string") {
     normalized.label = normalized.name;
   }
+  if (
+    (typeof normalized.copilotAgentKey !== "string" || !normalized.copilotAgentKey.trim()) &&
+    typeof normalized.agentKey === "string"
+  ) {
+    normalized.copilotAgentKey = normalized.agentKey;
+  }
+  delete normalized.agentKey;
   return normalized;
 }
 

@@ -16,14 +16,25 @@ import {
 } from "../common";
 import { t } from "../../i18n/main-i18n";
 
-const MAX_WEBSITE_ITEMS = 14;
-const WEBSITE_ADD_EXPECTED_INPUT = "object with url as a non-empty string, plus optional label and agentKey strings";
+export const MAX_WEBSITE_ITEMS = 14;
+const WEBSITE_ADD_EXPECTED_INPUT = "object with url as a non-empty string, plus optional label and copilotAgentKey strings";
+
+function readLegacyAgentKey(value: unknown) {
+  return isRecord(value) ? value.agentKey : undefined;
+}
+
+function readInputCopilotAgentKey(value: unknown) {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return readString(value.copilotAgentKey) || readString(value.agentKey);
+}
 
 type StoredWebsiteItems = {
   items: WebsiteEntry[];
 };
 
-function normalizeItem(item: Partial<WebsiteEntry>): WebsiteEntry | null {
+function normalizeItem(item: Partial<WebsiteEntry> & { agentKey?: unknown }): WebsiteEntry | null {
   if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.url !== "string") {
     return null;
   }
@@ -33,7 +44,7 @@ function normalizeItem(item: Partial<WebsiteEntry>): WebsiteEntry | null {
       id: item.id.trim() || normalizeWebId(""),
       label: item.label,
       url: item.url,
-      agentKey: item.agentKey,
+      copilotAgentKey: readInputCopilotAgentKey(item),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt
     });
@@ -67,10 +78,10 @@ function sanitizeItems(rawItems: Partial<WebsiteEntry>[]) {
 
 function parseItemsPayload(raw: unknown) {
   if (Array.isArray(raw)) {
-    return raw as Partial<WebsiteEntry>[];
+    return raw as Array<Partial<WebsiteEntry> & { agentKey?: unknown }>;
   }
   if (isRecord(raw) && Array.isArray((raw as Partial<StoredWebsiteItems>).items)) {
-    return (raw as Partial<StoredWebsiteItems>).items as Partial<WebsiteEntry>[];
+    return (raw as Partial<StoredWebsiteItems>).items as Array<Partial<WebsiteEntry> & { agentKey?: unknown }>;
   }
   return [];
 }
@@ -123,6 +134,9 @@ function validateWebsiteAddInput(input: unknown) {
   }
   if ("label" in input && input.label !== undefined && typeof input.label !== "string") {
     issues.push(websiteInputIssue("label", t("website.labelInvalid"), "string", input.label));
+  }
+  if ("copilotAgentKey" in input && input.copilotAgentKey !== undefined && typeof input.copilotAgentKey !== "string") {
+    issues.push(websiteInputIssue("copilotAgentKey", t("website.agentKeyInvalid"), "string", input.copilotAgentKey));
   }
   if ("agentKey" in input && input.agentKey !== undefined && typeof input.agentKey !== "string") {
     issues.push(websiteInputIssue("agentKey", t("website.agentKeyInvalid"), "string", input.agentKey));
@@ -182,7 +196,7 @@ export function addWebsiteItem(app: App, input: WebsiteInput) {
     const item = createWebsiteItem({
       label: input.label,
       url,
-      agentKey: input.agentKey
+      copilotAgentKey: readInputCopilotAgentKey(input)
     });
     const nextItems = [...items, item];
     writeWebsiteItems(app, nextItems);
@@ -242,12 +256,12 @@ export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInpu
       updated.label = normalizeWebsiteLabel(input.label ?? target.label, updated.url);
     }
 
-    if (typeof input.agentKey === "string") {
-      const agentKey = normalizeAgentKey(input.agentKey);
-      if (agentKey) {
-        updated.agentKey = agentKey;
+    if (typeof input.copilotAgentKey === "string" || typeof readLegacyAgentKey(input) === "string") {
+      const copilotAgentKey = normalizeAgentKey(readInputCopilotAgentKey(input));
+      if (copilotAgentKey) {
+        updated.copilotAgentKey = copilotAgentKey;
       } else {
-        delete updated.agentKey;
+        delete updated.copilotAgentKey;
       }
     }
 

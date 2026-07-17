@@ -2373,7 +2373,7 @@ export function AppSidebar({
         ? await onCreateWebsiteItem({
             label: websiteLabel,
             url: websiteUrl,
-            agentKey: websiteAgentKey,
+            copilotAgentKey: websiteAgentKey,
           })
         : null;
       if (!result) {

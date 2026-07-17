@@ -217,6 +217,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     if (!resetRuntimeEnv) {
       return {
         ok: false,
+        restartRequired: false,
         message: t("settings.reset.unavailable"),
         runtimeRoot: "",
         copiedFiles: 0,
@@ -228,6 +229,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
       const result = await resetRuntimeEnv(app, platform);
       return {
         ok: true,
+        restartRequired: true,
         message: result.backupPath
           ? t("settings.reset.successWithBackup", { path: result.backupPath })
           : t("settings.reset.success"),
@@ -243,6 +245,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         : {};
       return {
         ok: false,
+        restartRequired: false,
         message: error instanceof Error ? error.message : String(error),
         runtimeRoot: typeof detail.runtimeRoot === "string" ? detail.runtimeRoot : "",
         backupPath: typeof detail.backupPath === "string" ? detail.backupPath : undefined,

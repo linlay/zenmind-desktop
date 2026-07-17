@@ -115,8 +115,8 @@
   border-right: none;
   border-radius: 0;
   box-shadow: none;
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   overflow: hidden;
   -webkit-user-select: none;
   user-select: none;
@@ -128,46 +128,36 @@
 }
 
 :root[data-theme="dark"] .app-sidebar {
-  background: #202020;
+  background: transparent;
   border: none;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    10px 0 28px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 .app-shell.has-translucent-sidebar .app-sidebar {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border-right: 1px solid rgba(83, 96, 112, 0.13);
-  box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.32),
-    10px 0 28px rgba(60, 60, 67, 0.08);
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .app-shell.has-translucent-sidebar .app-sidebar {
-  background: rgba(0, 0, 0, 0.15);
+  background: transparent;
   border-right-color: rgba(255, 255, 255, 0.08);
-  box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.035),
-    10px 0 30px rgba(0, 0, 0, 0.24);
+  box-shadow: none;
 }
 
 .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border-right: 1px solid rgba(83, 96, 112, 0.13);
-  box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.32),
-    10px 0 28px rgba(60, 60, 67, 0.08);
-  backdrop-filter: blur(12px) saturate(112%) brightness(1.01);
-  -webkit-backdrop-filter: blur(12px) saturate(112%) brightness(1.01);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background: rgba(0, 0, 0, 0.15);
+  background: transparent;
   border-right-color: rgba(255, 255, 255, 0.08);
-  box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.035),
-    10px 0 30px rgba(0, 0, 0, 0.24);
+  box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -562,7 +552,7 @@
 
 .sidebar-nav-group>.Collapse-header:hover .Collapse-headerSupplement,
 .sidebar-nav-group>.Collapse-header:focus-within .Collapse-headerSupplement {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   max-width: 156px;
   opacity: 1;
   pointer-events: auto;
@@ -570,21 +560,23 @@
 
 .sidebar-chats-agent-picker {
   position: relative;
-  width: 100%;
+  display: inline-flex;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 156px;
 }
 
 .sidebar-chats-agent-trigger {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  width: 100%;
-  min-width: 72px;
-  max-width: 156px;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
   height: 24px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
@@ -595,12 +587,15 @@
 
 .sidebar-chats-agent-trigger:hover:not(:disabled),
 .sidebar-chats-agent-trigger[aria-expanded="true"] {
-  border-color: color-mix(in srgb, var(--ink-muted) 24%, transparent);
   background: color-mix(in srgb, var(--ink-muted) 8%, transparent);
   color: var(--ink);
 }
 
-.sidebar-chats-agent-trigger:focus-visible,
+.sidebar-chats-agent-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.18);
+}
+
 .sidebar-chats-agent-option:focus-visible {
   outline: none;
   border-color: rgba(22, 119, 255, 0.62);
@@ -613,15 +608,16 @@
 }
 
 .sidebar-chats-agent-picker.is-in-popover {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   max-width: 164px;
 }
 
 .sidebar-chats-agent-trigger.is-in-popover {
-  max-width: 164px;
+  max-width: 100%;
 }
 
 .sidebar-chats-agent-trigger-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -632,7 +628,7 @@
   flex: 0 0 auto;
   width: 0;
   height: 0;
-  margin-left: auto;
+  margin-left: 1px;
   border-top: 4px solid currentColor;
   border-right: 3px solid transparent;
   border-left: 3px solid transparent;
@@ -727,13 +723,17 @@
 
 :root[data-theme="dark"] .sidebar-chats-agent-trigger:hover:not(:disabled),
 :root[data-theme="dark"] .sidebar-chats-agent-trigger[aria-expanded="true"] {
-  border-color: rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.08);
   color: var(--ink);
 }
 
-:root[data-theme="dark"] .sidebar-chats-agent-trigger:focus-visible,
+:root[data-theme="dark"] .sidebar-chats-agent-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 136, 255, 0.22);
+}
+
 :root[data-theme="dark"] .sidebar-chats-agent-option:focus-visible {
+  outline: none;
   border-color: rgba(79, 136, 255, 0.78);
   box-shadow: 0 0 0 2px rgba(79, 136, 255, 0.22);
 }
@@ -3357,16 +3357,16 @@
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-compact {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: transparent;
+  border-color: transparent;
   box-shadow: none;
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-compact:hover,
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-compact:focus-visible {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-nav {

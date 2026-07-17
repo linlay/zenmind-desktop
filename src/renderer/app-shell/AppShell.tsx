@@ -693,8 +693,9 @@ export function AppShell() {
     return [...openKeys];
   }, [activeWebEntryKey, mountedWebEntryKeys, webItems, webappRuntimeById]);
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
-  const websiteAgentKey = activeWebEntry?.agentKey || "";
-  const resolvedCopilotAgentKey = websiteAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+  const resolvedCopilotAgentKey = activeWebEntry
+    ? activeWebEntry.copilotAgentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY
+    : currentCopilotPreference?.agentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute =
     location.pathname === ASSISTANT_TARGET_PATH ||
@@ -945,7 +946,7 @@ export function AppShell() {
     const websiteId = activeWebEntry.id;
     websiteAgentSyncRequestRef.current = requestKey;
     void window.electronAPI.webs.websites
-      .update(websiteId, { agentKey: normalizedAgentKey })
+      .update(websiteId, { copilotAgentKey: normalizedAgentKey })
       .then((result) => {
         if (!result.ok) {
           console.warn("[webs] failed to save website copilot agent", result.message);
@@ -2697,9 +2698,9 @@ export function AppShell() {
         if (!isValidWebsiteUrl(item.url)) {
           addIssue("web.websites.add.url", "web.websites.add.url must be a valid URL or hostname.", item.url);
         }
-        const agentKey = readString(item.agentKey);
-        if (agentKey && !hasAgentKey(state.assistantAgents, agentKey)) {
-          addIssue("web.websites.add.agentKey", t("settings.navigation.helperAgentInvalid"), item.agentKey);
+        const copilotAgentKey = readString(item.copilotAgentKey) || readString(item.agentKey);
+        if (copilotAgentKey && !hasAgentKey(state.assistantAgents, copilotAgentKey)) {
+          addIssue("web.websites.add.copilotAgentKey", t("settings.navigation.helperAgentInvalid"), copilotAgentKey);
         }
       }
       for (const item of websiteOperations.update) {
@@ -2709,9 +2710,9 @@ export function AppShell() {
         if (hasOwn(item, "url") && !isValidWebsiteUrl(item.url)) {
           addIssue("web.websites.update.url", "web.websites.update.url must be a valid URL or hostname.", item.url);
         }
-        const agentKey = readString(item.agentKey);
-        if (agentKey && !hasAgentKey(state.assistantAgents, agentKey)) {
-          addIssue("web.websites.update.agentKey", t("settings.navigation.helperAgentInvalid"), item.agentKey);
+        const copilotAgentKey = readString(item.copilotAgentKey) || readString(item.agentKey);
+        if (copilotAgentKey && !hasAgentKey(state.assistantAgents, copilotAgentKey)) {
+          addIssue("web.websites.update.copilotAgentKey", t("settings.navigation.helperAgentInvalid"), copilotAgentKey);
         }
       }
       for (const item of websiteOperations.remove) {
@@ -2868,7 +2869,11 @@ export function AppShell() {
         const result = await window.electronAPI.webs.websites.add({
           label: readString(item.label),
           url: readString(item.url),
-          ...(typeof item.agentKey === "string" ? { agentKey: item.agentKey.trim() } : {})
+          ...(
+            typeof item.copilotAgentKey === "string" || typeof item.agentKey === "string"
+              ? { copilotAgentKey: readString(item.copilotAgentKey) || readString(item.agentKey) }
+              : {}
+          )
         });
         if (!result.ok) {
           throw new Error(result.message);
@@ -2880,7 +2885,11 @@ export function AppShell() {
         const result = await window.electronAPI.webs.websites.update(id, {
           ...(typeof item.label === "string" ? { label: item.label.trim() } : {}),
           ...(typeof item.url === "string" ? { url: item.url.trim() } : {}),
-          ...(typeof item.agentKey === "string" ? { agentKey: item.agentKey.trim() } : {})
+          ...(
+            typeof item.copilotAgentKey === "string" || typeof item.agentKey === "string"
+              ? { copilotAgentKey: readString(item.copilotAgentKey) || readString(item.agentKey) }
+              : {}
+          )
         });
         if (!result.ok) {
           throw new Error(result.message);

@@ -11,7 +11,7 @@ export type BrowserSurface = {
   label: string;
   url: string;
   active: boolean;
-  agentKey?: string;
+  copilotAgentKey?: string;
   currentUrl?: string;
   title?: string;
   webContentsId?: number;
@@ -25,7 +25,7 @@ type WebContentsAccess = {
 
 export type BrowserSurfaceRegistryOptions = {
   webContents: WebContentsAccess;
-  listWebEntries(): { items: Array<{ id: string; entryKey: string; label: string; url: string; agentKey?: string }> };
+  listWebEntries(): { items: Array<{ id: string; entryKey: string; label: string; url: string; copilotAgentKey?: string }> };
   getCurrentPageSnapshot(): DesktopPageContextSnapshot | null;
 };
 
@@ -124,7 +124,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
           id: item.entryKey,
           label: item.label,
           url: item.url,
-          agentKey: item.agentKey,
+          copilotAgentKey: item.copilotAgentKey,
           active: currentPageSnapshotMatchesSurface(item.entryKey, contents),
           currentUrl: contents?.getURL(),
           title: contents?.getTitle(),

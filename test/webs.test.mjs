@@ -393,6 +393,42 @@ test("web stores read canonical website and webapp manifests", (t) => {
   assert.equal(fs.existsSync(path.join(webappsRoot(homePath), "local-demo", "webapp.json")), true);
   const websiteManifest = JSON.parse(fs.readFileSync(path.join(websitesRoot(homePath), "docs", "website.json"), "utf8"));
   assert.equal(websiteManifest.kind, "website");
+  assert.equal(websiteManifest.schemaVersion, 2);
+});
+
+test("web stores prefer copilotAgentKey and keep agentKey as a read-only legacy alias", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webs-copilot-key-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+
+  writeWebsite(websitesRoot(homePath), "legacy-site", { agentKey: "legacy-site-agent" });
+  const canonicalWebsitePath = path.join(websitesRoot(homePath), "canonical-site", "website.json");
+  writeJson(canonicalWebsitePath, {
+    schemaVersion: 2,
+    id: "canonical-site",
+    kind: "website",
+    label: "Canonical",
+    url: "https://canonical.example.com/",
+    copilotAgentKey: "canonical-site-agent",
+    agentKey: "ignored-site-agent"
+  });
+  writeWebapp(webappsRoot(homePath), "legacy-app", { agentKey: "legacy-app-agent" });
+  const canonicalWebappPath = webappManifestPath(homePath, "legacy-app");
+  const canonicalWebapp = JSON.parse(fs.readFileSync(canonicalWebappPath, "utf8"));
+  writeJson(canonicalWebappPath, {
+    ...canonicalWebapp,
+    copilotAgentKey: "canonical-app-agent",
+    agentKey: "ignored-app-agent"
+  });
+
+  const websites = Object.fromEntries(readWebsiteItems(app).map((item) => [item.id, item]));
+  const webapps = Object.fromEntries(readWebappItems(app).map((item) => [item.id, item]));
+  assert.equal(websites["legacy-site"].copilotAgentKey, "legacy-site-agent");
+  assert.equal(websites["canonical-site"].copilotAgentKey, "canonical-site-agent");
+  assert.equal("agentKey" in websites["legacy-site"], false);
+  assert.equal(webapps["legacy-app"].copilotAgentKey, "canonical-app-agent");
+  assert.equal("agentKey" in webapps["legacy-app"], false);
 });
 
 test("webapp store rejects unsafe manifests", (t) => {
@@ -468,7 +504,7 @@ test("webapp items include source management metadata", (t) => {
   assert.equal(byId["demo-node-html"].removable, false);
 });
 
-test("webapps update rewrites preferences and preserves manifest runtime fields", (t) => {
+test("webapps update writes canonical Copilot preferences and preserves manifest runtime fields", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapps-update-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
@@ -479,23 +515,27 @@ test("webapps update rewrites preferences and preserves manifest runtime fields"
 
   const result = updateWebappItem(app, "prefs-demo", {
     label: "After",
-    agentKey: "desktopAssistant"
+    copilotAgentKey: "desktopAssistant"
   });
   assert.equal(result.ok, true);
   assert.equal(result.item.label, "After");
-  assert.equal(result.item.agentKey, "desktopAssistant");
+  assert.equal(result.item.copilotAgentKey, "desktopAssistant");
+  assert.equal("agentKey" in result.item, false);
 
   const after = JSON.parse(fs.readFileSync(webappManifestPath(homePath, "prefs-demo"), "utf8"));
   assert.equal(after.label, "After");
-  assert.equal(after.agentKey, "desktopAssistant");
+  assert.equal(after.schemaVersion, 3);
+  assert.equal(after.copilotAgentKey, "desktopAssistant");
+  assert.equal(Object.hasOwn(after, "agentKey"), false);
   assert.notEqual(after.updatedAt, before.updatedAt);
   assert.deepEqual(after.frontend, before.frontend);
   assert.deepEqual(after.backend, before.backend);
 
-  const cleared = updateWebappItem(app, "prefs-demo", { agentKey: "" });
+  const cleared = updateWebappItem(app, "prefs-demo", { copilotAgentKey: "" });
   assert.equal(cleared.ok, true);
   const clearedManifest = JSON.parse(fs.readFileSync(webappManifestPath(homePath, "prefs-demo"), "utf8"));
   assert.equal(Object.hasOwn(clearedManifest, "agentKey"), false);
+  assert.equal(Object.hasOwn(clearedManifest, "copilotAgentKey"), false);
   assert.deepEqual(clearedManifest.frontend, before.frontend);
   assert.deepEqual(clearedManifest.backend, before.backend);
 });

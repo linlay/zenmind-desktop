@@ -18,12 +18,12 @@ function normalizeEntryKeyArray(value: unknown) {
     : [];
 }
 
-export function getWebOrderPath(app: App) {
-  return path.join(getDesktopWebsConfigRoot(app), ORDER_FILE);
+export function getWebOrderPath(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopWebsConfigRoot(app, platform), ORDER_FILE);
 }
 
-function readOrderFile(app: App) {
-  const orderPath = getWebOrderPath(app);
+function readOrderFile(app: App, platform: NodeJS.Platform) {
+  const orderPath = getWebOrderPath(app, platform);
   if (!fs.existsSync(orderPath)) {
     return null;
   }
@@ -37,37 +37,45 @@ function readOrderFile(app: App) {
   return [];
 }
 
-function readProfileOrder(app: App) {
-  const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+function readProfileOrder(app: App, platform: NodeJS.Platform) {
+  const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform));
   return normalizeEntryKeyArray(profile.navigation.webOrder);
 }
 
-export function readWebOrderKeys(app: App, availableEntryKeys: string[] = []) {
+export function readWebOrderKeys(
+  app: App,
+  availableEntryKeys: string[] = [],
+  platform: NodeJS.Platform = process.platform
+) {
   const available = new Set(availableEntryKeys);
   const filterKnown = (keys: WebEntryKey[]) => available.size > 0 ? keys.filter((key) => available.has(key)) : keys;
-  const orderFromFile = readOrderFile(app);
+  const orderFromFile = readOrderFile(app, platform);
   if (orderFromFile) {
     return filterKnown(orderFromFile);
   }
 
-  const profileOrder = filterKnown(readProfileOrder(app));
+  const profileOrder = filterKnown(readProfileOrder(app, platform));
   if (profileOrder.length > 0) {
-    writeWebOrderKeys(app, profileOrder);
+    writeWebOrderKeys(app, profileOrder, platform);
   }
   return profileOrder;
 }
 
-export function writeWebOrderKeys(app: App, keys: string[]) {
+export function writeWebOrderKeys(
+  app: App,
+  keys: string[],
+  platform: NodeJS.Platform = process.platform
+) {
   const normalized = [...new Set(normalizeEntryKeyArray(keys))];
-  const targetPath = getWebOrderPath(app);
+  const targetPath = getWebOrderPath(app, platform);
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, `${JSON.stringify({
     schemaVersion: 1,
     entryKeys: normalized
   }, null, 2)}\n`, "utf8");
 
-  const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
-  updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+  const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform));
+  updateDesktopProfileInRoot(getDesktopConfigRoot(app, platform), {
     navigation: {
       mainOrder: current.navigation.mainOrder,
       webOrder: normalized,
@@ -77,8 +85,8 @@ export function writeWebOrderKeys(app: App, keys: string[]) {
   return normalized;
 }
 
-export function applyWebOrder(app: App, items: WebEntry[]) {
-  const order = readWebOrderKeys(app, items.map((item) => item.entryKey));
+export function applyWebOrder(app: App, items: WebEntry[], platform: NodeJS.Platform = process.platform) {
+  const order = readWebOrderKeys(app, items.map((item) => item.entryKey), platform);
   const orderIndex = new Map(order.map((entryKey, index) => [entryKey, index] as const));
   return [...items].sort((a, b) => {
     const aIndex = orderIndex.get(a.entryKey);

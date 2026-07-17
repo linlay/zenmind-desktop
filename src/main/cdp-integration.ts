@@ -71,7 +71,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     const webviewSurfaces = options.browserSurfaces.listBrowserSurfaces().map((surface) => ({
       ...surface,
       kind: "webview" as const,
-      agentKey: surface.agentKey || ""
+      copilotAgentKey: surface.copilotAgentKey || ""
     }));
 
     let serviceSurfaces: EmbeddedCdpSurface[] = [];

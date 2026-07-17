@@ -23,7 +23,7 @@ export type EmbeddedCdpSurface = {
   currentUrl?: string;
   title?: string;
   webContentsId?: number;
-  agentKey?: string;
+  copilotAgentKey?: string;
   surfaceRoute?: string;
   embedPath?: string;
 };
@@ -139,7 +139,7 @@ function targetDescriptor(
     webSocketDebuggerUrl: `${origins.wsOrigin}/devtools/page/${encodedTargetId}`,
     surfaceId: surface.id,
     surfaceRoute: surface.surfaceRoute || "",
-    agentKey: surface.agentKey || ""
+    copilotAgentKey: surface.copilotAgentKey || ""
   };
 }
 
@@ -157,7 +157,7 @@ function targetInfoDescriptor(surface: EmbeddedCdpSurface, targetId: string, cur
     url,
     surfaceId: surface.id,
     surfaceRoute: surface.surfaceRoute || "",
-    agentKey: surface.agentKey || ""
+    copilotAgentKey: surface.copilotAgentKey || ""
   };
 }
 

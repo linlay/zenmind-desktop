@@ -121,7 +121,7 @@ type WebsiteDraftSnapshot = {
   id: string;
   label: string;
   url: string;
-  agentKey: string;
+  copilotAgentKey: string;
 };
 
 type AboutAppCardProps = {
@@ -183,7 +183,7 @@ function createWebsiteDraftSnapshot(item: WebsiteEntry): WebsiteDraftSnapshot {
     id: item.id,
     label: item.label,
     url: item.url,
-    agentKey: item.agentKey || ""
+    copilotAgentKey: item.copilotAgentKey || ""
   };
 }
 
@@ -191,7 +191,7 @@ function areWebsiteDraftSnapshotsEqual(left: WebsiteDraftSnapshot, right: Websit
   return left.id === right.id &&
     left.label === right.label &&
     left.url === right.url &&
-    left.agentKey === right.agentKey;
+    left.copilotAgentKey === right.copilotAgentKey;
 }
 
 function isWebappEntry(item: WebEntry): item is WebappEntry {
@@ -2367,6 +2367,9 @@ function AboutAppCard({
                 skipped: runtimeResetResult.skippedFiles
               })}
             </span>
+            {runtimeResetResult.restartRequired ? (
+              <span>{t("settings.reset.restartReminder")}</span>
+            ) : null}
           </div>
         ) : null}
         <div className="settings-reset-actions">
@@ -2536,7 +2539,7 @@ export function SettingsPage({
   function applyWebsiteDraftSnapshot(snapshot: WebsiteDraftSnapshot) {
     setWebsiteLabel(snapshot.label);
     setWebsiteUrl(snapshot.url);
-    setWebsiteAgentKey(snapshot.agentKey);
+    setWebsiteAgentKey(snapshot.copilotAgentKey);
   }
 
   function applyWebsiteDraftFromItem(item: WebsiteEntry) {
@@ -2577,7 +2580,7 @@ export function SettingsPage({
       const hasDraft = sameSource && (
         websiteLabel !== previousSnapshot.label ||
         websiteUrl !== previousSnapshot.url ||
-        websiteAgentKey !== previousSnapshot.agentKey
+        websiteAgentKey !== previousSnapshot.copilotAgentKey
       );
       if (!sameSource || !hasDraft) {
         applyWebsiteDraftSnapshot(nextSnapshot);
@@ -2603,7 +2606,7 @@ export function SettingsPage({
     }
     if (selectedWebapp) {
       setWebappLabel(selectedWebapp.label);
-      setWebappAgentKey(selectedWebapp.agentKey || "");
+      setWebappAgentKey(selectedWebapp.copilotAgentKey || "");
       return;
     }
     const firstWebapp = webappItems[0] ?? null;
@@ -3818,12 +3821,12 @@ export function SettingsPage({
         ? await window.electronAPI.webs.websites.add({
             label: websiteLabel,
             url: websiteUrl,
-            agentKey: websiteAgentKey
+            copilotAgentKey: websiteAgentKey
           })
         : await window.electronAPI.webs.websites.update(selectedWebsite.id, {
             label: websiteLabel,
             url: websiteUrl,
-            agentKey: websiteAgentKey
+            copilotAgentKey: websiteAgentKey
           });
       showSectionResultNotice("websites", result);
       if (result.ok) {
@@ -3932,7 +3935,7 @@ export function SettingsPage({
   function handleSelectWebappItem(item: WebappEntry) {
     setSelectedWebappId(item.id);
     setWebappLabel(item.label);
-    setWebappAgentKey(item.agentKey || "");
+    setWebappAgentKey(item.copilotAgentKey || "");
     setWebappLogContent("");
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
@@ -3988,7 +3991,7 @@ export function SettingsPage({
     try {
       const result = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
         label: webappLabel,
-        agentKey: webappAgentKey
+        copilotAgentKey: webappAgentKey
       });
       showSectionResultNotice("webapps", result);
       if (result.ok) {
@@ -4608,7 +4611,7 @@ export function SettingsPage({
   function renderAgentSelectOptions(currentAgentKey: string) {
     const agentKnown = !currentAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === currentAgentKey);
     return [
-      { value: "", label: t("settings.defaultAssistant") },
+      { value: "", label: t("settings.websites.defaultCopilot") },
       ...(currentAgentKey && !agentKnown ? [{
         value: currentAgentKey,
         label: t("settings.navigation.unavailableAgent", { agentKey: currentAgentKey })

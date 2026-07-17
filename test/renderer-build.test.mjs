@@ -680,6 +680,10 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.match(globalStyles, /:root\[data-theme="dark"\][\s\S]*?--embedded-surface-shell-bg:\s*#1f2329;/);
   assert.match(globalStyles, /body\.embedded-surface-body\s*\{[\s\S]*?padding:\s*0;/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /^\.app-sidebar\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;[\s\S]*?backdrop-filter:\s*none;/m);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border-right:\s*1px solid rgba\(255, 255, 255, 0\.08\);[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.app-shell\.has-translucent-sidebar \.app-sidebar\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-translucent-sidebar \.app-sidebar\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;[\s\S]*?backdrop-filter:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,[\s\S]*?background:\s*transparent;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(appShellBeforeRule, /background:\s*transparent;/);
@@ -700,12 +704,25 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
     /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.embedded-surface-page,\s*[\s\S]*?background:\s*var\(--embedded-surface-page-bg\);/
   );
   assert.doesNotMatch(globalStyles, /^\.app-shell\.is-windows-platform[^{]*\{[^}]*background:\s*var\(--bg-canvas\);/m);
-  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-dock-bg\);/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock \.embedded-surface-page,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-surface-frame-shell,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.embedded-surface-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);
   assert.match(globalStyles, /--browser-frame-bg:\s*#ffffff;/);
   assert.match(globalStyles, /\.external-webview-panel\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
   assert.match(globalStyles, /\.external-webview-frame\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
+});
+
+test("sidebar chrome keeps its 24px history hover feedback", () => {
+  const globalStyles = readRendererStyles();
+
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar-collapse-button\.is-compact\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border-color:\s*transparent;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar-collapse-button\.is-compact:hover,[\s\S]*?\.app-sidebar-collapse-button\.is-compact:focus-visible\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.08\);[\s\S]*?border-color:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.sidebar-history-button\s*\{[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/);
+  assert.match(
+    globalStyles,
+    /\.sidebar-history-button:hover:not\(:disabled\),[\s\S]*?\.sidebar-history-button:focus-visible:not\(:disabled\)\s*\{[\s\S]*?background:\s*rgba\(136, 151, 172, 0\.1\);/
+  );
 });
 
 test("sidebar collapse toggle moves into the top chrome with the outline sidebar icon", () => {
@@ -1003,6 +1020,8 @@ test("primary sidebar navigation uses separate compact and rail SVG families", (
   assert.match(brandMarkSource, /case "chat":[\s\S]*?M4 6\.25A4\.25/);
   assert.match(brandMarkSource, /case "project":[\s\S]*?M4 6\.5A3\.5/);
   assert.match(brandMarkSource, /case "website":[\s\S]*?M14 2\.5a11\.5/);
+  assert.match(brandMarkSource, /case "back":[\s\S]*?<path d="M20 12H4" \/>[\s\S]*?<path d="m10 6-6 6 6 6" \/>/);
+  assert.match(brandMarkSource, /case "forward":[\s\S]*?<path d="M4 12h16" \/>[\s\S]*?<path d="m14 6 6 6-6 6" \/>/);
   assert.match(sidebarSource, /<SidebarIllustration\s+kind=\{item\.icon\}\s+variant=\{isCollapsed \? "rail" : "compact"\}/);
   assert.match(sidebarSource, /<SidebarIllustration kind=\{args\.icon\} variant="rail" \/>/);
   assert.doesNotMatch(sidebarSource, /<SidebarIllustration kind=\{args\.icon\} variant="compact" \/>/);
@@ -3453,7 +3472,7 @@ test("Kanban status order places completed after in progress", () => {
   );
 });
 
-test("website agent association is exposed across webs desktop api layers", () => {
+test("website Copilot association is exposed across webs desktop api layers", () => {
   const contracts = readSharedContractsSource();
   const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "websites", "actions.ts"), "utf8");
   const mainProcess = readMainProcessRuntimeSource();
@@ -3474,7 +3493,7 @@ test("website agent association is exposed across webs desktop api layers", () =
     appShell.indexOf("  function handleCopilotSelectedAgentKeyChange", closeWebEntryStart)
   );
 
-  assert.match(contracts, /agentKey\?: string/);
+  assert.match(contracts, /copilotAgentKey\?: string/);
   assert.match(contracts, /interface WebsiteUpdateInput/);
   assert.match(contracts, /update: \(id: string, input: WebsiteUpdateInput\) => Promise<WebsiteResult>/);
   assert.match(contracts, /add: \(input: WebsiteInput\) => Promise<WebsiteResult>/);
@@ -3482,7 +3501,7 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.match(contracts, /interface WebsiteFaviconCacheInput/);
   assert.match(contracts, /cacheFavicon: \(input: WebsiteFaviconCacheInput\) => Promise<WebsiteFaviconCacheResult>/);
   assert.match(store, /export function updateWebsiteItem/);
-  assert.match(store, /delete updated\.agentKey/);
+  assert.match(store, /delete updated\.copilotAgentKey/);
   assert.match(store, /export function addWebsiteItem/);
   assert.match(mainIpcRegister, /registerWebIpcHandlers\(ipcMain,/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.websites\.update"/);
@@ -3522,7 +3541,7 @@ test("website agent association is exposed across webs desktop api layers", () =
   assert.doesNotMatch(appSidebar, /t\("sidebar\.website\.delete"\)/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
   assert.match(appSidebar, /t\("sidebar\.website\.name"\)[\s\S]*?t\("sidebar\.website\.url"\)[\s\S]*?t\("sidebar\.website\.sideAssistant"\)/);
-  assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
+  assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?copilotAgentKey: websiteAgentKey[\s\S]*?\}\)/);
   assert.match(appSidebar, /onCloseWebItem\(item\)/);
   assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
 

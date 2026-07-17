@@ -336,6 +336,7 @@ export type DesktopUsageProfileResult =
 
 export interface DesktopRuntimeEnvResetResult {
   ok: boolean;
+  restartRequired: boolean;
   message: string;
   runtimeRoot: string;
   backupPath?: string;

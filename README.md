@@ -89,7 +89,7 @@ npm test
 - [鉴权SSO与TokenBridge](docs/鉴权SSO与TokenBridge.md)：identity-center、OIDC、JWK、access token 与 postMessage bridge。
 - [插件开发](docs/插件开发.md)：插件包、manifest、脚本、初始化和卸载。
 - [市场系统](docs/市场系统.md)：市场 catalog、安装记录、下载缓存和各资源分区。
-- [外部网站](docs/外部网站.md)：URL 网站入口、排序、agentKey 和数据文件。
+- [外部网站](docs/外部网站.md)：URL 网站入口、排序、Copilot 绑定和数据文件。
 - [本地网站应用](docs/本地网站应用.md)：webapp 包结构、Node 后端、静态前端代理、运行状态。
 - [智能助理集成](docs/智能助理集成.md)：agent-platform bridge、聊天、附件、quick/copilot。
 - [桌宠系统](docs/桌宠系统.md)：桌宠设置、资产、窗口、状态和 agent 绑定。

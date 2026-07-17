@@ -202,12 +202,12 @@ export function getDesktopWebsitesDataRoot(app: App, platform: NodeJS.Platform =
   return path.join(getDesktopWebsDataRoot(app, platform), "websites");
 }
 
-export function getDesktopWebappsDataRoot(app: App) {
-  return path.join(getDesktopWebsDataRoot(app), "webapps");
+export function getDesktopWebappsDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopWebsDataRoot(app, platform), "webapps");
 }
 
-export function getDesktopWebsConfigRoot(app: App) {
-  return path.join(getDataRoot(app), "config", "webs");
+export function getDesktopWebsConfigRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDataRoot(app, platform), "config", "webs");
 }
 
 export function getDesktopWebsitesConfigRoot(app: App) {

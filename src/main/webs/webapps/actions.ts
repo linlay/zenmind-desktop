@@ -3,6 +3,7 @@ import type { App } from "electron";
 import type { WebappDeleteResult, WebappEntry, WebappResult, WebappUpdateInput } from "../../../shared/contracts";
 import { t } from "../../i18n/main-i18n";
 import { removeInstalledRecord } from "../../marketplace/common";
+import { isRecord, readString } from "../common";
 import { getWebappDir, readWebappItems, writeWebappPreferenceFields } from "./store";
 import { webappRuntime } from "./runtime";
 
@@ -32,7 +33,15 @@ export function updateWebappItem(app: App, id: string, input: WebappUpdateInput)
   }
 
   try {
-    const updated = writeWebappPreferenceFields(app, target.id, input);
+    const rawInput = isRecord(input) ? input : {};
+    const updated = writeWebappPreferenceFields(app, target.id, {
+      ...(typeof input.label === "string" ? { label: input.label } : {}),
+      ...(
+        typeof input.copilotAgentKey === "string" || typeof rawInput.agentKey === "string"
+          ? { copilotAgentKey: readString(input.copilotAgentKey) || readString(rawInput.agentKey) }
+          : {}
+      )
+    });
     const nextItems = readWebappItems(app);
     return {
       ok: true,
@@ -92,4 +101,3 @@ export async function removeWebappItem(app: App, id: string): Promise<WebappDele
     };
   }
 }
-

@@ -174,13 +174,15 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
     case "back":
       return (
         <svg {...iconProps}>
-          <polyline points="14 17 9 12 14 7" />
+          <path d="M20 12H4" />
+          <path d="m10 6-6 6 6 6" />
         </svg>
       );
     case "forward":
       return (
         <svg {...iconProps}>
-          <polyline points="10 17 15 12 10 7" />
+          <path d="M4 12h16" />
+          <path d="m14 6 6 6-6 6" />
         </svg>
       );
     case "sort":

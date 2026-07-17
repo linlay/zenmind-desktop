@@ -22,6 +22,11 @@ import {
 import { withWebappManagementMetadata } from "./metadata";
 
 export const WEBAPP_FILE = "webapp.json";
+export const WEBAPP_SCHEMA_VERSION = 3;
+
+function readCopilotAgentKey(value: Record<string, unknown>) {
+  return normalizeAgentKey(readString(value.copilotAgentKey) || readString(value.agentKey));
+}
 
 function normalizePort(value: unknown) {
   if (value === undefined || value === null || value === "") {
@@ -45,12 +50,12 @@ function normalizeHealthPath(value: unknown) {
   return raw.startsWith("/") ? raw : `/${raw}`;
 }
 
-export function getWebappDir(app: App, id: string) {
-  return path.join(getDesktopWebappsDataRoot(app), normalizeWebId(id));
+export function getWebappDir(app: App, id: string, platform: NodeJS.Platform = process.platform) {
+  return path.join(getDesktopWebappsDataRoot(app, platform), normalizeWebId(id));
 }
 
-export function getWebappPath(app: App, id: string) {
-  return path.join(getWebappDir(app, id), WEBAPP_FILE);
+export function getWebappPath(app: App, id: string, platform: NodeJS.Platform = process.platform) {
+  return path.join(getWebappDir(app, id, platform), WEBAPP_FILE);
 }
 
 function normalizeFrontend(raw: unknown, projectDir: string): WebappFrontendConfig {
@@ -110,7 +115,7 @@ export function normalizeWebappManifest(value: unknown, projectDir: string, fall
   }
   const now = Date.now();
   const id = normalizeWebId(readString(value.id) || fallbackId || createWebId());
-  const agentKey = normalizeAgentKey(value.agentKey);
+  const copilotAgentKey = readCopilotAgentKey(value);
   const backend = normalizeBackend(value.backend, projectDir);
   return {
     id,
@@ -119,7 +124,7 @@ export function normalizeWebappManifest(value: unknown, projectDir: string, fall
     label: normalizeWebsiteLabel(readString(value.label), id),
     frontend: normalizeFrontend(value.frontend, projectDir),
     ...(backend ? { backend } : {}),
-    ...(agentKey ? { agentKey } : {}),
+    ...(copilotAgentKey ? { copilotAgentKey } : {}),
     createdAt: value.createdAt === undefined ? now : toTimestamp(value.createdAt),
     updatedAt: value.updatedAt === undefined ? now : toTimestamp(value.updatedAt)
   };
@@ -147,12 +152,12 @@ function sanitizeWebappItems(items: WebappEntry[]) {
   return output;
 }
 
-export function readWebappItems(app: App) {
-  return readWebappItemsWithoutMigration(app).map((item) => withWebappManagementMetadata(app, item));
+export function readWebappItems(app: App, platform: NodeJS.Platform = process.platform) {
+  return readWebappItemsWithoutMigration(app, platform).map((item) => withWebappManagementMetadata(app, item));
 }
 
-export function readWebappItemsWithoutMigration(app: App) {
-  const root = getDesktopWebappsDataRoot(app);
+export function readWebappItemsWithoutMigration(app: App, platform: NodeJS.Platform = process.platform) {
+  const root = getDesktopWebappsDataRoot(app, platform);
   if (!fs.existsSync(root)) {
     return [];
   }
@@ -174,7 +179,7 @@ export function readWebappItemsWithoutMigration(app: App) {
 }
 
 export function isWebappFile(value: unknown) {
-  return isRecord(value) && (value.kind === "webapp" || value.kind === "local-app" || value.schemaVersion === 2);
+  return isRecord(value) && (value.kind === "webapp" || value.kind === "local-app" || value.schemaVersion === 2 || value.schemaVersion === WEBAPP_SCHEMA_VERSION);
 }
 
 export function writeWebappPreferenceFields(
@@ -182,10 +187,11 @@ export function writeWebappPreferenceFields(
   id: string,
   input: {
     label?: string;
-    agentKey?: string;
-  }
+    copilotAgentKey?: string;
+  },
+  platform: NodeJS.Platform = process.platform
 ) {
-  const webappPath = getWebappPath(app, id);
+  const webappPath = getWebappPath(app, id, platform);
   const raw = readWebappManifestFile(path.dirname(webappPath));
   if (!isRecord(raw)) {
     throw new Error("webapp.json must contain an object.");
@@ -197,23 +203,65 @@ export function writeWebappPreferenceFields(
   }
 
   const updatedAt = Date.now();
+  const requestedCopilotAgentKey = typeof input.copilotAgentKey === "string"
+    ? normalizeAgentKey(input.copilotAgentKey)
+    : item.copilotAgentKey;
   const next: Record<string, unknown> = {
     ...raw,
+    schemaVersion: WEBAPP_SCHEMA_VERSION,
+    id: item.id,
+    kind: "webapp",
+    ...(requestedCopilotAgentKey ? { copilotAgentKey: requestedCopilotAgentKey } : {}),
     updatedAt: toIsoTimestamp(updatedAt)
   };
+  delete next.agentKey;
+  if (!requestedCopilotAgentKey) {
+    delete next.copilotAgentKey;
+  }
 
   if (typeof input.label === "string") {
     next.label = normalizeWebsiteLabel(input.label, item.id);
   }
-  if (typeof input.agentKey === "string") {
-    const agentKey = normalizeAgentKey(input.agentKey);
-    if (agentKey) {
-      next.agentKey = agentKey;
+  if (typeof input.copilotAgentKey === "string") {
+    if (requestedCopilotAgentKey) {
+      next.copilotAgentKey = requestedCopilotAgentKey;
     } else {
-      delete next.agentKey;
+      delete next.copilotAgentKey;
     }
   }
 
   fs.writeFileSync(webappPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return withWebappManagementMetadata(app, readWebappItemFromDir(path.dirname(webappPath), id)!);
+}
+
+export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "") {
+  const raw = readWebappManifestFile(webappDir);
+  if (!isRecord(raw)) {
+    throw new Error("webapp.json must contain an object.");
+  }
+  const item = normalizeWebappManifest(raw, webappDir, fallbackId || path.basename(webappDir));
+  if (!item) {
+    throw new Error("webapp.json is invalid.");
+  }
+  const next: Record<string, unknown> = {
+    ...raw,
+    schemaVersion: WEBAPP_SCHEMA_VERSION,
+    id: item.id,
+    kind: "webapp",
+    label: item.label,
+    frontend: item.frontend,
+    ...(item.backend ? { backend: item.backend } : {}),
+    ...(item.copilotAgentKey ? { copilotAgentKey: item.copilotAgentKey } : {}),
+    createdAt: toIsoTimestamp(item.createdAt),
+    updatedAt: toIsoTimestamp(item.updatedAt)
+  };
+  delete next.agentKey;
+  if (!item.backend) {
+    delete next.backend;
+  }
+  if (!item.copilotAgentKey) {
+    delete next.copilotAgentKey;
+  }
+  fs.writeFileSync(path.join(webappDir, WEBAPP_FILE), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return normalizeWebappManifest(next, webappDir, item.id)!;
 }

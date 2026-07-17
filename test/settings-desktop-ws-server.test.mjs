@@ -210,3 +210,24 @@ test("desktop ws server setting does not persist enable when start fails", async
   assert.match(state.message, /EADDRINUSE/);
   assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled, false);
 });
+
+test("runtime env reset reports that restart is required before bootstrap resumes", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-runtime-reset-result-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  const ipcMain = registerSettingsHandlers(app, {
+    resetRuntimeEnv: async () => ({
+      targetRoot: path.join(root, "home", ".zenmind"),
+      backupPath: path.join(root, "home", ".zenmind-123"),
+      copiedFiles: 12,
+      skippedFiles: 0,
+      sourceZipPath: path.join(root, "env.zip")
+    })
+  });
+
+  const result = await ipcMain.invoke("settings.resetRuntimeEnv");
+  assert.equal(result.ok, true);
+  assert.equal(result.restartRequired, true);
+  assert.equal(result.copiedFiles, 12);
+  assert.match(result.backupPath, /\.zenmind-123$/u);
+});

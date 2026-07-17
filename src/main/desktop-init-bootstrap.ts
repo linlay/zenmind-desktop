@@ -8,14 +8,35 @@ import {
   normalizeQuickAssistantShortcut
 } from "../shared/assistant-settings";
 import { DEFAULT_LOCALE, normalizeLocale } from "../shared/i18n";
+import type { WebappEntry, WebEntryKey, WebsiteEntry } from "../shared/contracts";
 import {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
 } from "./desktop-profile-store";
-import { importWebsiteItems } from "./webs/websites/actions";
+import { MAX_WEBSITE_ITEMS } from "./webs/websites/actions";
+import {
+  createWebsiteItem,
+  getWebsiteDir,
+  readWebsiteItems,
+  writeWebsiteItem
+} from "./webs/websites/store";
+import {
+  isWebappFile,
+  readWebappItemFromDir,
+  readWebappItemsWithoutMigration,
+  WEBAPP_FILE,
+  writeCanonicalWebappManifest
+} from "./webs/webapps/store";
+import { readWebOrderKeys, writeWebOrderKeys } from "./webs/order-store";
+import { normalizeWebId } from "./webs/common";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { resolveDesktopSsoConfigPath } from "./oidc-sso";
-import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
+import {
+  getDesktopConfigRoot,
+  getDesktopStateRoot,
+  getDesktopWebappsDataRoot,
+  getDesktopWebsitesDataRoot
+} from "./user-paths";
 import { saveDesktopPetSettings } from "./assistant/pet/desktop-pet";
 import { saveMarketSettings } from "./marketplace/common";
 import { saveKanbanSettings } from "./kanban-runtime";
@@ -39,7 +60,7 @@ const DESKTOP_INIT_BOOTSTRAP_STATE_FILE = "bootstrap.json";
 
 type AppPathReader = Pick<App, "getPath">;
 
-type BootstrapSectionResult = "applied" | "absent" | "failed";
+type BootstrapSectionResult = "applied" | "absent" | "failed" | "preserved";
 type BootstrapAssistantResult = "recorded" | "absent" | "failed";
 
 type BootstrapApplyResult = {
@@ -55,14 +76,27 @@ type BootstrapApplyResult = {
   services: BootstrapSectionResult;
 };
 
+type BootstrapSiteItemResult = {
+  entryKey: WebEntryKey;
+  status: "installed" | "skipped";
+  message?: string;
+};
+
+type BootstrapWebsReport = {
+  mode: "initialize" | "preserve";
+  items: BootstrapSiteItemResult[];
+  warnings: string[];
+};
+
 type DesktopInitBootstrapState = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   appliedAt: string;
   sourcePath: string;
   consumed: boolean;
   appliedResult: BootstrapApplyResult;
   failedSections: string[];
   errors: Record<string, string>;
+  websReport: BootstrapWebsReport;
 };
 
 type DesktopInitAssistantDefaults = {
@@ -145,6 +179,19 @@ function removeDesktopInitFile(initPath: string) {
     fs.rmSync(initPath, { force: true });
   } catch (error) {
     console.warn(`[desktop-init] failed to remove consumed ${DESKTOP_INIT_FILE}:`, error);
+  }
+}
+
+function removeDesktopInitSitesStaging(initPath: string) {
+  const desktopInitDir = path.join(path.dirname(initPath), "desktop-init");
+  const sitesDir = path.join(desktopInitDir, "sites");
+  try {
+    fs.rmSync(sitesDir, { recursive: true, force: true });
+    if (fs.existsSync(desktopInitDir) && fs.readdirSync(desktopInitDir).length === 0) {
+      fs.rmdirSync(desktopInitDir);
+    }
+  } catch (error) {
+    console.warn("[desktop-init] failed to remove consumed Sites staging:", error);
   }
 }
 
@@ -474,14 +521,36 @@ function applyTunnelHubDefaults(
   return "applied";
 }
 
+type PreparedBootstrapWebsite = {
+  kind: "website";
+  id: string;
+  entryKey: WebEntryKey;
+  item: WebsiteEntry;
+};
+
+type PreparedBootstrapWebapp = {
+  kind: "webapp";
+  id: string;
+  entryKey: WebEntryKey;
+  item: WebappEntry;
+  sourceDir: string;
+};
+
+type PreparedBootstrapSite = PreparedBootstrapWebsite | PreparedBootstrapWebapp;
+
+type BootstrapWebsApplyResult = {
+  status: Exclude<BootstrapSectionResult, "failed">;
+  report: BootstrapWebsReport;
+};
+
 function hasWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
-  return (isRecord(webs) && Array.isArray(webs.websites)) ||
+  return (isRecord(webs) && (Array.isArray(webs.items) || Array.isArray(webs.websites))) ||
     Array.isArray(webs) ||
     Array.isArray(legacyWebsites) ||
     (isRecord(legacyWebsites) && Array.isArray(legacyWebsites.items));
 }
 
-function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
+function normalizeLegacyWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
   if (isRecord(webs) && Array.isArray(webs.websites)) {
     return webs.websites;
   }
@@ -497,20 +566,246 @@ function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
   return [];
 }
 
-function applyWebsiteDefaults(
-  app: App,
+function assertSafeBootstrapId(rawId: unknown, itemIndex: number) {
+  const id = readText(rawId);
+  if (!id || normalizeWebId(id) !== id) {
+    throw new Error(`webs.items[${itemIndex}].id must be a normalized Site id.`);
+  }
+  return id;
+}
+
+function assertPathInsideRoot(
+  rootDir: string,
+  targetDir: string,
+  pathApi: typeof path.posix | typeof path.win32,
+  message: string
+) {
+  const relative = pathApi.relative(rootDir, targetDir);
+  if (!relative || relative === ".." || relative.startsWith(`..${pathApi.sep}`) || pathApi.isAbsolute(relative)) {
+    throw new Error(message);
+  }
+}
+
+function assertBootstrapTreeHasNoSymlinks(rootDir: string) {
+  const visit = (currentDir: string) => {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`WebApp seed cannot contain symbolic links: ${entryPath}`);
+      }
+      if (entry.isDirectory()) {
+        visit(entryPath);
+      }
+    }
+  };
+  visit(rootDir);
+}
+
+function prepareBootstrapSites(
+  initPath: string,
   webs: unknown,
   legacyWebsites: unknown,
+  platform: NodeJS.Platform
+) {
+  const canonicalItems = isRecord(webs) && Array.isArray(webs.items) ? webs.items : null;
+  const rawItems = canonicalItems ?? normalizeLegacyWebsiteDefaults(webs, legacyWebsites);
+  const pathApi = pathApiForRuntimeRoot(platform, path.dirname(initPath));
+  const sitesRoot = pathApi.join(pathApi.dirname(initPath), "desktop-init", "sites");
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  const prepared: PreparedBootstrapSite[] = [];
+
+  for (const [index, rawItem] of rawItems.entries()) {
+    if (!isRecord(rawItem)) {
+      throw new Error(`webs.items[${index}] must be an object.`);
+    }
+    const kind = canonicalItems ? readText(rawItem.kind) : "website";
+    if (kind !== "website" && kind !== "webapp") {
+      throw new Error(`webs.items[${index}].kind must be website or webapp.`);
+    }
+    const explicitId = canonicalItems
+      ? assertSafeBootstrapId(rawItem.id, index)
+      : readText(rawItem.id);
+    if (explicitId && normalizeWebId(explicitId) !== explicitId) {
+      throw new Error(`webs.items[${index}].id must be a normalized Site id.`);
+    }
+
+    if (kind === "website") {
+      const item = createWebsiteItem({
+        id: explicitId || undefined,
+        label: readText(rawItem.label) || undefined,
+        url: readText(rawItem.url),
+        copilotAgentKey: readText(rawItem.copilotAgentKey) || readText(rawItem.agentKey) || undefined
+      });
+      if (seenIds.has(item.id)) {
+        throw new Error(`Duplicate Site id in desktop-init: ${item.id}`);
+      }
+      if (seenUrls.has(item.url)) {
+        throw new Error(`Duplicate Website URL in desktop-init: ${item.url}`);
+      }
+      seenIds.add(item.id);
+      seenUrls.add(item.url);
+      prepared.push({ kind, id: item.id, entryKey: item.entryKey, item });
+      continue;
+    }
+
+    const id = explicitId;
+    if (seenIds.has(id)) {
+      throw new Error(`Duplicate Site id in desktop-init: ${id}`);
+    }
+    const sourceDir = pathApi.join(sitesRoot, id);
+    if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+      throw new Error(`WebApp seed directory does not exist: desktop-init/sites/${id}`);
+    }
+    if (fs.lstatSync(sitesRoot).isSymbolicLink() || fs.lstatSync(sourceDir).isSymbolicLink()) {
+      throw new Error(`WebApp seed path cannot be a symbolic link: ${id}`);
+    }
+    const sitesRootReal = fs.realpathSync(sitesRoot);
+    const sourceDirReal = fs.realpathSync(sourceDir);
+    assertPathInsideRoot(
+      sitesRootReal,
+      sourceDirReal,
+      pathApi,
+      `WebApp seed path escapes desktop-init/sites: ${id}`
+    );
+    assertBootstrapTreeHasNoSymlinks(sourceDirReal);
+    const rawManifest = readJsonFile(pathApi.join(sourceDirReal, WEBAPP_FILE));
+    if (!isWebappFile(rawManifest) || !isRecord(rawManifest)) {
+      throw new Error(`WebApp seed manifest is invalid: ${id}/${WEBAPP_FILE}`);
+    }
+    if (readText(rawManifest.id) !== id) {
+      throw new Error(`WebApp seed manifest id must match directory id: ${id}`);
+    }
+    const item = readWebappItemFromDir(sourceDirReal, id);
+    if (!item || item.id !== id) {
+      throw new Error(`WebApp seed manifest is invalid: ${id}/${WEBAPP_FILE}`);
+    }
+    seenIds.add(id);
+    prepared.push({ kind, id, entryKey: item.entryKey, item, sourceDir: sourceDirReal });
+  }
+  return prepared;
+}
+
+function applyWebsiteDefaults(
+  app: App,
+  initPath: string,
+  webs: unknown,
+  legacyWebsites: unknown,
+  preserve: boolean,
   platform: NodeJS.Platform = process.platform
-): Exclude<BootstrapSectionResult, "failed"> {
+): BootstrapWebsApplyResult {
+  const mode = preserve ? "preserve" : "initialize";
+  const emptyReport: BootstrapWebsReport = { mode, items: [], warnings: [] };
   if (!hasWebsiteDefaults(webs, legacyWebsites)) {
-    return "absent";
+    return { status: "absent", report: emptyReport };
   }
-  const items = normalizeWebsiteDefaults(webs, legacyWebsites);
-  if (items.length > 0) {
-    importWebsiteItems(app, JSON.stringify({ items }), platform);
+  if (preserve) {
+    return { status: "preserved", report: emptyReport };
   }
-  return "applied";
+
+  // Validate every declared Site and packaged WebApp before touching user data.
+  const prepared = prepareBootstrapSites(initPath, webs, legacyWebsites, platform);
+  const existingWebsites = readWebsiteItems(app, platform);
+  const existingWebapps = readWebappItemsWithoutMigration(app, platform);
+  const websiteById = new Map(existingWebsites.map((item) => [item.id, item] as const));
+  const websiteByUrl = new Map(existingWebsites.map((item) => [item.url, item] as const));
+  const webappById = new Map(existingWebapps.map((item) => [item.id, item] as const));
+  const report: BootstrapWebsReport = { mode, items: [], warnings: [] };
+  const declaredOrder: WebEntryKey[] = [];
+  const websitesToInstall: PreparedBootstrapWebsite[] = [];
+  const webappsToInstall: PreparedBootstrapWebapp[] = [];
+
+  for (const site of prepared) {
+    if (site.kind === "website") {
+      const existing = websiteById.get(site.id) ?? websiteByUrl.get(site.item.url);
+      if (existing) {
+        declaredOrder.push(existing.entryKey);
+        const message = `Preserved existing Website for seed ${site.id}.`;
+        report.items.push({ entryKey: existing.entryKey, status: "skipped", message });
+        report.warnings.push(message);
+        continue;
+      }
+      const targetDir = getWebsiteDir(app, site.id, platform);
+      if (fs.existsSync(targetDir)) {
+        const message = `Preserved unknown Website directory for seed ${site.id}.`;
+        report.items.push({ entryKey: site.entryKey, status: "skipped", message });
+        report.warnings.push(message);
+        continue;
+      }
+      websitesToInstall.push(site);
+      declaredOrder.push(site.entryKey);
+      continue;
+    }
+
+    const existing = webappById.get(site.id);
+    const targetDir = path.join(getDesktopWebappsDataRoot(app, platform), site.id);
+    if (existing || fs.existsSync(targetDir)) {
+      const entryKey = existing?.entryKey ?? site.entryKey;
+      const message = `Preserved existing WebApp for seed ${site.id}.`;
+      if (existing) {
+        declaredOrder.push(entryKey);
+      }
+      report.items.push({ entryKey, status: "skipped", message });
+      report.warnings.push(message);
+      continue;
+    }
+    webappsToInstall.push(site);
+    declaredOrder.push(site.entryKey);
+  }
+
+  if (existingWebsites.length + websitesToInstall.length > MAX_WEBSITE_ITEMS) {
+    throw new Error(`Website seed would exceed the ${MAX_WEBSITE_ITEMS} Website limit.`);
+  }
+
+  const webappsRoot = getDesktopWebappsDataRoot(app, platform);
+  const stagedWebapps: Array<{ site: PreparedBootstrapWebapp; stagedDir: string; targetDir: string }> = [];
+  const createdDirs: string[] = [];
+  let stagingRoot = "";
+  try {
+    if (webappsToInstall.length > 0) {
+      fs.mkdirSync(webappsRoot, { recursive: true });
+      stagingRoot = fs.mkdtempSync(path.join(webappsRoot, ".desktop-init-"));
+      for (const site of webappsToInstall) {
+        const stagedDir = path.join(stagingRoot, site.id);
+        fs.cpSync(site.sourceDir, stagedDir, { recursive: true, errorOnExist: true });
+        const stagedItem = writeCanonicalWebappManifest(stagedDir, site.id);
+        if (stagedItem.id !== site.id) {
+          throw new Error(`Staged WebApp id changed unexpectedly: ${site.id}`);
+        }
+        stagedWebapps.push({ site, stagedDir, targetDir: path.join(webappsRoot, site.id) });
+      }
+    }
+
+    for (const staged of stagedWebapps) {
+      fs.renameSync(staged.stagedDir, staged.targetDir);
+      createdDirs.push(staged.targetDir);
+      report.items.push({ entryKey: staged.site.entryKey, status: "installed" });
+    }
+    for (const site of websitesToInstall) {
+      writeWebsiteItem(app, site.item, platform);
+      createdDirs.push(getWebsiteDir(app, site.id, platform));
+      report.items.push({ entryKey: site.entryKey, status: "installed" });
+    }
+
+    const availableEntryKeys = [
+      ...existingWebsites.map((item) => item.entryKey),
+      ...existingWebapps.map((item) => item.entryKey),
+      ...websitesToInstall.map((item) => item.entryKey),
+      ...webappsToInstall.map((item) => item.entryKey)
+    ];
+    const currentOrder = readWebOrderKeys(app, availableEntryKeys, platform);
+    writeWebOrderKeys(app, [...declaredOrder, ...currentOrder, ...availableEntryKeys], platform);
+  } catch (error) {
+    for (const createdDir of createdDirs.reverse()) {
+      fs.rmSync(createdDir, { recursive: true, force: true });
+    }
+    throw error;
+  } finally {
+    if (stagingRoot) {
+      fs.rmSync(stagingRoot, { recursive: true, force: true });
+    }
+  }
+  return { status: "applied", report };
 }
 
 function applyServiceDefaults(
@@ -593,11 +888,21 @@ export function applyDesktopInitBootstrap(
     return { ok: true, applied: false, reason: "missing" as const };
   }
   try {
+    const bootstrapStatePath = path.join(
+      getDesktopStateRoot(app, platform),
+      DESKTOP_INIT_BOOTSTRAP_STATE_FILE
+    );
+    const preserveSites = fs.existsSync(bootstrapStatePath);
     const assistant = normalizeDesktopInitAssistantDefaults(defaults.assistant);
     const kanbanDefaults = isRecord(defaults.kanban)
       ? defaults.kanban
       : readLegacyProfileKanbanDefaults(defaults.profile);
     const errors: Record<string, string> = {};
+    let websReport: BootstrapWebsReport = {
+      mode: preserveSites ? "preserve" : "initialize",
+      items: [],
+      warnings: []
+    };
 
     const applied: BootstrapApplyResult = {
       profile: runBootstrapSection("profile", errors, () => applyProfileDefaults(app, defaults.profile, platform)),
@@ -606,7 +911,18 @@ export function applyDesktopInitBootstrap(
       market: runBootstrapSection("market", errors, () => applyMarketDefaults(app, defaults.market, platform)),
       sso: runBootstrapSection("sso", errors, () => applySsoDefaults(app, defaults.sso, platform)),
       tunnelHub: runBootstrapSection("tunnelHub", errors, () => applyTunnelHubDefaults(app, defaults.tunnelHub, platform)),
-      webs: runBootstrapSection("webs", errors, () => applyWebsiteDefaults(app, defaults.webs, defaults.websites, platform)),
+      webs: runBootstrapSection("webs", errors, () => {
+        const result = applyWebsiteDefaults(
+          app,
+          initPath,
+          defaults.webs,
+          defaults.websites,
+          preserveSites,
+          platform
+        );
+        websReport = result.report;
+        return result.status;
+      }),
       assistant: runBootstrapSection("assistant", errors, () => writeAssistantDefaults(app, assistant, platform)),
       desktopActionBridge: runBootstrapSection(
         "desktopActionBridge",
@@ -616,17 +932,22 @@ export function applyDesktopInitBootstrap(
       services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform))
     };
     const failedSections = getFailedSections(applied);
+    if (applied.webs === "failed" && errors.webs) {
+      websReport.warnings.push(errors.webs);
+    }
     removeDesktopInitFile(initPath);
+    removeDesktopInitSitesStaging(initPath);
     writeBootstrapState(app, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       appliedAt: new Date().toISOString(),
       sourcePath: initPath,
       consumed: true,
       appliedResult: applied,
       failedSections,
-      errors
+      errors,
+      websReport
     }, platform);
-    return { ok: true, applied: true, appliedResult: applied, failedSections, errors };
+    return { ok: true, applied: true, appliedResult: applied, failedSections, errors, websReport };
   } catch (error) {
     console.warn(`[desktop-init] failed to apply ${DESKTOP_INIT_FILE}:`, error);
     return {
