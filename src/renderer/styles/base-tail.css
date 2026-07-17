@@ -13,6 +13,13 @@
   min-height: calc(100vh - 140px);
 }
 
+.app-shell.has-embedded-surface .app-main > .placeholder-page {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  border-radius: 0;
+}
+
 :root[data-theme="dark"] .placeholder-page {
   background: var(--surface);
   border-color: var(--line);

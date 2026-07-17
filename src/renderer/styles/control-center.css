@@ -1749,6 +1749,11 @@
     justify-content: flex-start;
   }
 
+  .service-primary-actions > .service-action-button:first-child[data-tooltip]::after {
+    right: auto;
+    left: 0;
+  }
+
   .service-detail-metadata {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
