@@ -421,6 +421,18 @@ function canUseUnzip() {
   }
 }
 
+function unzipEntryPattern(entryPath) {
+  return entryPath.replaceAll("/", "\\\\");
+}
+
+function readZipEntry(archivePath, entryPath, execOpts) {
+  try {
+    return execFileSync("unzip", ["-p", archivePath, entryPath], execOpts);
+  } catch {
+    return execFileSync("unzip", ["-p", archivePath, unzipEntryPattern(entryPath)], execOpts);
+  }
+}
+
 export function listArchiveEntries(archivePath) {
   const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
   const output = isZipArchive(archivePath)
@@ -475,7 +487,7 @@ export function readManifestFromArchive(archivePath) {
     raw = execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], execOpts);
   } else if (canUseUnzip()) {
     try {
-      raw = execFileSync("unzip", ["-p", archivePath, manifestEntry], execOpts);
+      raw = readZipEntry(archivePath, manifestEntry, execOpts);
     } catch {
       try {
         raw = execFileSync("unzip", ["-p", archivePath, "*/manifest.json"], execOpts);
@@ -503,7 +515,7 @@ export function readArchiveEntryText(archivePath, entryPath) {
     raw = execFileSync("tar", ["-xzf", archivePath, "-O", matchedEntry], execOpts);
   } else if (canUseUnzip()) {
     try {
-      raw = execFileSync("unzip", ["-p", archivePath, matchedEntry], execOpts);
+      raw = readZipEntry(archivePath, matchedEntry, execOpts);
     } catch {
       try {
         raw = execFileSync("unzip", ["-p", archivePath, "*/" + path.basename(normalizedEntryPath)], execOpts);

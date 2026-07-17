@@ -5,8 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 
 const projectRoot = process.cwd();
+const require = createRequire(import.meta.url);
+const JSZip = require("jszip");
 
 test("dist:mac validates existing builtin assets instead of scanning workspace releases", () => {
   const distMacScript = fs.readFileSync(path.join(projectRoot, "scripts", "dist-mac.mjs"), "utf8");
@@ -77,6 +80,15 @@ function createAuthCapabilityProviders() {
 function writeText(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
+}
+
+async function writeZipArchive(archivePath, entries) {
+  const zip = new JSZip();
+  for (const [entryPath, content] of Object.entries(entries)) {
+    zip.file(entryPath, content);
+  }
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
 }
 
 function writeDarwinCoreServiceArchive(sourceRoot, id, {
@@ -271,6 +283,90 @@ async function importBuiltinAssetsModule(cacheKey) {
   moduleUrl.search = `?cache=${cacheKey}`;
   return import(moduleUrl.href);
 }
+
+test("builtin asset readers handle PowerShell ZIP entries without wildcard matches", async (t) => {
+  try {
+    execFileSync("unzip", ["-v"], { stdio: "ignore" });
+  } catch {
+    t.skip("requires Info-ZIP unzip");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-windows-backslash-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const archivePath = path.join(tempRoot, "agent-platform-v0.3.18-windows-amd64.zip");
+  const manifest = {
+    kind: "builtin",
+    id: "agent-platform",
+    version: "v0.3.18"
+  };
+  await writeZipArchive(archivePath, {
+    "agent-platform\\manifest.json": JSON.stringify(manifest),
+    "agent-platform\\builtins.manifest.json": JSON.stringify({ generatedBy: "PowerShell" }),
+    "agent-platform\\deploy.ps1": "Write-Output 'agent-platform deploy'\n"
+  });
+
+  const { readArchiveEntryText, readManifestFromArchive } = await importBuiltinAssetsModule(`windows-backslash-read-${Date.now()}`);
+  assert.deepEqual(readManifestFromArchive(archivePath), manifest);
+  assert.equal(
+    readArchiveEntryText(archivePath, "agent-platform/deploy.ps1"),
+    "Write-Output 'agent-platform deploy'\n"
+  );
+});
+
+test("syncBuiltinAssets selects the newest PowerShell-style ZIP bundle", async (t) => {
+  try {
+    execFileSync("unzip", ["-v"], { stdio: "ignore" });
+  } catch {
+    t.skip("requires Info-ZIP unzip");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-windows-version-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  const id = "windows-backslash-tool";
+  const targetOs = "testos";
+  const oldArchiveName = `${id}-v0.3.13-${targetOs}-amd64.zip`;
+  const newArchiveName = `${id}-v0.3.18-${targetOs}-amd64.zip`;
+  const manifestFor = (version, assetFileName) => ({
+    kind: "builtin",
+    id,
+    name: id,
+    version,
+    platform: { os: targetOs, arch: "amd64" },
+    runtime: { requiredPaths: ["manifest.json"] },
+    desktop: { assetFileName, bundleTopLevelDir: id }
+  });
+  await writeZipArchive(path.join(sourceRoot, oldArchiveName), {
+    [`${id}/manifest.json`]: JSON.stringify(manifestFor("v0.3.13", oldArchiveName))
+  });
+  await writeZipArchive(path.join(sourceRoot, newArchiveName), {
+    [`${id}\\manifest.json`]: JSON.stringify(manifestFor("v0.3.18", newArchiveName)),
+    [`${id}\\builtins.manifest.json`]: JSON.stringify({ generatedBy: "PowerShell" })
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`windows-backslash-sync-${Date.now()}`);
+  const services = syncBuiltinAssets(tempRoot, {
+    os: targetOs,
+    arch: "amd64",
+    sourceRoots: [sourceRoot]
+  });
+
+  assert.deepEqual(services.map((service) => ({ id: service.id, version: service.version })), [
+    { id, version: "v0.3.18" }
+  ]);
+  assert.equal(
+    fs.existsSync(path.join(tempRoot, "build", "resources", "services", id, newArchiveName)),
+    true
+  );
+});
 
 test("syncBuiltinAssets writes brand-neutral service resources and removes legacy brand-scoped services", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-sync-"));
