@@ -1981,7 +1981,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.28);
+  background: var(--modal-mask-bg);
 }
 
 .kanban-modal {

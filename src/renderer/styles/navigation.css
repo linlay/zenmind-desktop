@@ -1820,7 +1820,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.18);
+  background: var(--modal-mask-bg);
   -webkit-app-region: no-drag;
 }
 
@@ -2332,7 +2332,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.32);
+  background: var(--modal-mask-bg);
 }
 
 .sidebar-agent-dialog {
