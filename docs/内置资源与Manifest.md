@@ -58,8 +58,9 @@ loadBuiltinServices()
 ## 约束与注意事项
 
 - `sync:assets` 只同步 `manifest.json.kind === "builtin"` 的产物。
-- `build-all-dist.sh` 只调用每个上游服务的公开 `make release ARCH=<arch>`，然后将四个 `dist/release` 目录作为明确 `--source` 同步到 Desktop。它不清理、不修复也不传递服务私有发布配置。
-- `dev` 和 `dist:mac` 不扫描周边服务项目；它们只校验当前 `build/resources/services`。刷新内置服务资源请先运行 `scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64`，或显式运行 `npm run sync:assets`。
+- macOS/Linux 使用 `build-all-dist.sh`；Windows AMD64 使用原生 PowerShell 5.1 的 `build-all-dist.ps1`。两个入口都只调用每个上游服务的公开 `make release ARCH=<arch>`，然后将四个 `dist/release` 目录作为明确 `--source` 同步到 Desktop。它们不清理、不修复也不传递服务私有发布配置。
+- Windows 完整发布分两阶段：先在 `agent-platform` 运行 `powershell -ExecutionPolicy Bypass -File scripts/sync-local-builtins.ps1 -Target windows/amd64` 准备私有 builtin cache，再在 Desktop 运行 `powershell -ExecutionPolicy Bypass -File scripts/build-all-dist.ps1 -SyncOS windows -SyncArch amd64`。Desktop 不读取 builtin 源码仓库，也不修改 `builtins.lock.json`。
+- `dev`、`dist:mac` 和 Windows Electron 打包不扫描周边服务项目；它们只校验当前 `build/resources/services`。刷新内置服务资源请先运行对应平台的 `build-all-dist` 入口，或显式运行 `npm run sync:assets`。
 - 新增内置服务必须保证 bundle 内的 `runtime.requiredPaths` 完整。
 - `agent-platform` 额外执行 sidecar 硬门禁：Darwin/Linux 必须同时声明并携带 `bin/kbase-lance-engine`，Windows 必须同时声明并携带 `bin/kbase-lance-engine.exe`；即使上游 manifest 漏写该路径，`sync:assets` 也会拒绝不完整产物。
 - macOS 内置二进制如需预签名，使用 Darwin signing 相关环境变量和 `--sign-darwin`；`--use-existing --sign-darwin` 只处理 `build/resources/services` 中已有的 Darwin 目录资源，并刷新资源 manifest 的 `assetSignature`。

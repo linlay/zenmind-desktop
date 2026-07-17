@@ -7,6 +7,8 @@ import { execFileSync } from "node:child_process";
 
 const projectRoot = process.cwd();
 const buildAllScript = path.join(projectRoot, "scripts", "build-all-dist.sh");
+const buildAllPowerShellScript = path.join(projectRoot, "scripts", "build-all-dist.ps1");
+const windowsReleaseChainScript = path.join(projectRoot, "scripts", "test-windows-release-chain.ps1");
 const serviceRepos = [
   "agent-container-hub",
   "agent-webclient",
@@ -104,6 +106,37 @@ test("build-all-dist leaves existing Desktop assets untouched when an upstream r
     fs.readFileSync(path.join(workspaceRoot, serviceRepos[0], "invocation.txt"), "utf8"),
     "ARCH=arm64 VERSION= TARGETS=\n"
   );
+});
+
+test("native PowerShell orchestrator preserves the public four-service release boundary", () => {
+  const source = fs.readFileSync(buildAllPowerShellScript, "utf8");
+  assert.match(source, /#Requires -Version 5\.1/u);
+  for (const parameter of ["SyncOS", "SyncArch", "WorkspaceRoot", "DryRun"]) {
+    assert.match(source, new RegExp(`\\$${parameter}\\b`, "u"));
+  }
+  let previousIndex = -1;
+  for (const repoName of serviceRepos) {
+    const index = source.indexOf(`"${repoName}"`);
+    assert.ok(index > previousIndex, `${repoName} must remain in the fixed release order`);
+    previousIndex = index;
+  }
+  assert.match(source, /foreach \(\$repoName in \$ServiceRepos\)[\s\S]*--source=\$\(Join-Path/u);
+  assert.match(source, /& make release "ARCH=\$SyncArch"/u);
+  assert.match(source, /Remove-Item "Env:\$name"/u);
+  assert.match(source, /--os=\$SyncOS/u);
+  assert.match(source, /--arch=\$SyncArch/u);
+  assert.match(source, /synced 4 builtin service assets/u);
+  assert.doesNotMatch(source, /sync-local-builtins|stage-builtins|builtins\.lock\.json/u);
+});
+
+test("Windows release-chain runner enforces two stages and canonical lock immutability", () => {
+  const source = fs.readFileSync(windowsReleaseChainScript, "utf8");
+  assert.match(source, /sync-local-builtins\.ps1[\s\S]*-Target windows\/amd64/u);
+  assert.match(source, /build-all-dist\.ps1[\s\S]*-SyncOS windows[\s\S]*-SyncArch amd64/u);
+  assert.match(source, /\.sha256[\s\S]*\.sizes\.json[\s\S]*\.sbom\.cdx\.json/u);
+  assert.match(source, /services\)\.Count -ne 4/u);
+  assert.match(source, /lockHashBefore[\s\S]*lockHashAfter/u);
+  assert.match(source, /Canonical builtins\.lock\.json changed/u);
 });
 
 function escapeRegExp(value) {
