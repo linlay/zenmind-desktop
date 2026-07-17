@@ -1533,8 +1533,6 @@ test("assistant sidebar awaiting chats use a right-side loading status", () => {
   const globalStyles = readRendererStyles();
 
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"/);
-  assert.match(sidebarSource, /const awaitingPreview = chat\.hasPendingAwaiting/);
-  assert.match(sidebarSource, /chat\.awaitingPreview\?\.trim\(\)/);
   assert.match(sidebarSource, /action === "awaiting" \|\| action === "loading"\s*\?\s*"has-status-action"\s*:\s*""/);
   assert.match(sidebarSource, /chat\.hasPendingAwaiting \? "has-awaiting" : ""/);
   assert.match(sidebarSource, /getAssistantAwaitingStatusKey\(chat\.awaitingMode\)/);

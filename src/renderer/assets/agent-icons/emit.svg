@@ -1,7 +1,5 @@
-<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs><linearGradient id="g-emit" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#F87171"/><stop offset="100%" stop-color="#B91C1C"/></linearGradient></defs>
-  <ellipse cx="24" cy="38" rx="14" ry="5" stroke="url(#g-emit)" stroke-width="3" fill="none" opacity="0.4"/>
-  <path d="M18 38 L24 46 L30 38 Z" fill="url(#g-emit)" opacity="0.9"/>
-  <path d="M16 34 L24 10 L32 34 Z" fill="url(#g-emit)" opacity="0.8"/>
-  <circle cx="24" cy="22" r="3" fill="#FFFFFF"/>
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3V17M8 13L12 17L16 13M5 21H19"/>
+  </g>
 </svg>

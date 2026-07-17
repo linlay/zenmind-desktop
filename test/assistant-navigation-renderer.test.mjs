@@ -107,41 +107,6 @@ test("assistant nav normalizes missing Chats overflow metadata to false", () => 
   );
 });
 
-test("assistant nav preserves awaiting previews for Chats and Projects", () => {
-  const result = normalizeAssistantNavAgentItemsResult({
-    ok: true,
-    items: [{
-      agentKey: "coder-project",
-      displayName: "Coder project",
-      role: "",
-      unreadCount: 0,
-      unreadChatCount: 0,
-      chatCount: 1,
-      hasPendingAwaiting: true,
-      latestChatId: "project-chat",
-      latestPreview: "",
-      mode: "CODER",
-      recentChats: [chat({
-        chatId: "project-chat",
-        agentKey: "coder-project",
-        hasPendingAwaiting: true,
-        awaitingPreview: "Choose an implementation path",
-      })],
-    }],
-    chatItems: [chat({
-      chatId: "chat-awaiting",
-      hasPendingAwaiting: true,
-      awaitingPreview: "Answer the current question",
-    })],
-    chatItemsHasMore: false,
-    message: "ok",
-    updatedAt: TEST_EPOCH_MILLIS,
-  });
-
-  assert.equal(result.items[0]?.recentChats[0]?.awaitingPreview, "Choose an implementation path");
-  assert.equal(result.chatItems[0]?.awaitingPreview, "Answer the current question");
-});
-
 function chat(overrides) {
   return {
     chatId: "chat",

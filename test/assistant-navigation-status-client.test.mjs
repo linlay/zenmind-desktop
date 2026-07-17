@@ -313,6 +313,144 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(reconnecting.recentFrames.at(-1)?.kind, "closed");
 });
 
+test("assistant navigation replays chat runtime pushes that arrive during a snapshot refresh", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-refresh-push-"));
+  const sockets = [];
+  let pendingChatsRequest = null;
+  let resolveChatsRequestSent;
+  const chatsRequestSent = new Promise((resolve) => {
+    resolveChatsRequestSent = resolve;
+  });
+  const chatId = "refresh-race-chat";
+  const staleChat = {
+    chatId,
+    chatName: "Original project chat",
+    agentKey: "coder-project",
+    createdAt: EPOCH_MS,
+    updatedAt: EPOCH_MS + 1,
+    lastRunId: "previous-run",
+    lastRunContent: "Original assistant preview",
+    read: { isRead: true },
+    activeRun: false,
+  };
+
+  class FakeWebSocket {
+    constructor() {
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      sockets.push(this);
+      queueMicrotask(() => this.onopen?.());
+    }
+
+    send(data) {
+      const request = JSON.parse(data);
+      if (request.type !== "/api/chats") {
+        return;
+      }
+      pendingChatsRequest = request;
+      resolveChatsRequestSent();
+    }
+
+    emit(frame) {
+      this.onmessage?.({ data: JSON.stringify(frame) });
+    }
+
+    respondWithStaleChats() {
+      this.onmessage?.({
+        data: JSON.stringify({
+          frame: "response",
+          type: "/api/chats",
+          id: pendingChatsRequest.id,
+          code: 0,
+          data: [staleChat],
+        }),
+      });
+    }
+
+    close() {}
+  }
+
+  globalThis.WebSocket = FakeWebSocket;
+  globalThis.fetch = async (input) => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        code: 0,
+        data: String(input).includes("scope=copilot")
+          ? []
+          : [{
+              key: "coder-project",
+              name: "Coder Project",
+              mode: "CODER",
+              updatedAt: EPOCH_MS + 1,
+              chats: [staleChat],
+            }],
+      };
+    },
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+    fs.rmSync(temporaryAppData, { recursive: true, force: true });
+  });
+
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => temporaryAppData },
+    getServiceState: async () => ({
+      status: "running",
+      healthMeta: { webUrl: "http://127.0.0.1:11789" },
+    }),
+    issueAccessToken: async () => ({ ok: true, token: "desktop-token", message: "" }),
+    onSnapshot: () => {},
+  });
+  t.after(() => client.stop());
+
+  const refresh = client.refreshNow();
+  await chatsRequestSent;
+  sockets[0].emit({
+    frame: "push",
+    type: "run.started",
+    data: {
+      agentKey: "runtime-owner-does-not-match-project",
+      chatId,
+      runId: "current-run",
+      startedAt: EPOCH_MS + 2,
+    },
+  });
+  sockets[0].emit({
+    frame: "push",
+    type: "awaiting.asking",
+    data: {
+      agentKey: "runtime-owner-does-not-match-project",
+      chatId,
+      createdAt: EPOCH_MS + 3,
+      mode: "planning",
+    },
+  });
+  sockets[0].respondWithStaleChats();
+
+  const result = await refresh;
+  const projectChat = findChat(result.items, chatId);
+  const activityChat = findChat(result.activityItems, chatId);
+  const globalChat = result.chatItems.find((chat) => chat.chatId === chatId);
+  for (const chat of [projectChat, activityChat, globalChat]) {
+    assert.equal(chat?.hasActiveRun, true);
+    assert.equal(chat?.hasPendingAwaiting, true);
+    assert.equal(chat?.awaitingMode, "planning");
+    assert.equal(chat?.lastRunId, "current-run");
+    assert.equal(chat?.chatName, staleChat.chatName);
+    assert.equal(chat?.lastRunContent, staleChat.lastRunContent);
+    assert.equal(chat?.updatedAt, staleChat.updatedAt);
+  }
+  assert.equal(result.items[0]?.hasPendingAwaiting, true);
+  assert.equal(result.activityItems[0]?.hasPendingAwaiting, true);
+});
+
 test("assistant navigation chat reducer updates displayed chats without checking agent mode", () => {
   const current = [createNavigationChat({ agentKey: "coder-agent", mode: "CODER" })];
   const unread = applyAssistantNavigationChatPush(current, {
@@ -380,6 +518,8 @@ test("assistant navigation chat reducer updates displayed chats without checking
   });
   assert.equal(completed.changed, true);
   assert.equal(completed.items[0].hasActiveRun, false);
+  assert.equal(completed.items[0].hasPendingAwaiting, false);
+  assert.equal(completed.items[0].awaitingMode, undefined);
 
   const answered = applyAssistantNavigationChatPush(completed.items, {
     frame: "push",
@@ -591,114 +731,6 @@ test("assistant navigation keeps approval awaitings pending when approval detail
   assert.equal(chat?.hasPendingAwaiting, true);
   assert.equal(chat?.awaitingCount, 1);
   assert.equal(chat?.awaitingMode, "approval");
-});
-
-test("assistant navigation derives safe awaiting previews for Chats and Projects", () => {
-  const base = {
-    agentKey: "zenmi",
-    createdAt: EPOCH_MS,
-    updatedAt: EPOCH_MS,
-  };
-  const chats = buildAssistantNavigationChatsFromPlatform([
-    {
-      ...base,
-      chatId: "question",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        title: "Question",
-        questions: [{ label: "Fallback label", question: "Which repository should I inspect?" }],
-      },
-    },
-    {
-      ...base,
-      chatId: "approval",
-      awaiting: {
-        mode: "approval",
-        status: "awaiting",
-        title: "Approval",
-        approvals: [{ summary: "Install the approved dependency", command: "rm -rf /" }],
-      },
-    },
-    {
-      ...base,
-      chatId: "question-label",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        questions: [{ label: "Choose the target branch" }],
-      },
-    },
-    {
-      ...base,
-      chatId: "question-header",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        questions: [{ header: "Confirm the migration window" }],
-      },
-    },
-    {
-      ...base,
-      chatId: "question-title",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        questions: [{ title: "Select the release environment" }],
-      },
-    },
-    {
-      ...base,
-      chatId: "form",
-      awaiting: {
-        mode: "form",
-        status: "awaiting",
-        title: "Fallback form title",
-        forms: [{ title: "Choose a deployment region" }],
-      },
-    },
-    {
-      ...base,
-      chatId: "planning",
-      awaiting: {
-        mode: "planning",
-        status: "awaiting",
-        title: "Confirm the implementation plan",
-        description: "This must not replace the title",
-      },
-    },
-  ]);
-
-  assert.deepEqual(
-    chats.map((chat) => [chat.chatId, chat.awaitingPreview]),
-    [
-      ["question", "Which repository should I inspect?"],
-      ["approval", "Install the approved dependency"],
-      ["question-label", "Choose the target branch"],
-      ["question-header", "Confirm the migration window"],
-      ["question-title", "Select the release environment"],
-      ["form", "Choose a deployment region"],
-      ["planning", "Confirm the implementation plan"],
-    ],
-  );
-  assert.equal(chats.find((chat) => chat.chatId === "approval")?.awaitingPreview?.includes("rm -rf"), false);
-
-  const [project] = buildAssistantNavigationAgentsFromPlatformAgents([{
-    key: "coder-project",
-    name: "Coder project",
-    mode: "CODER",
-    chats: [{
-      ...base,
-      chatId: "project-question",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        title: "Question",
-        questions: [{ label: "Fallback label", question: "Which repository should I inspect?" }],
-      },
-    }],
-  }]);
-  assert.equal(project?.recentChats[0]?.awaitingPreview, "Which repository should I inspect?");
 });
 
 test("assistant navigation ignores completed, answered, and cancelled approval awaitings", () => {
@@ -1167,160 +1199,138 @@ test("assistant navigation applies untimestamped read-all and archive pushes to 
   assert.equal(findChat(archived.items, "chat-1"), undefined);
 });
 
-test("assistant navigation applies standard awaiting.asking project pushes with createdAt", () => {
-  const createdAt = 1783938199453;
-  const result = applyAssistantNavigationPush([createAgent({
-    agentKey: "askUserBudget.demo",
-    mode: "CODER",
-  })], {
-    frame: "push",
-    type: "awaiting.asking",
-    data: {
-      agentKey: "askUserBudget.demo",
-      awaitingId: "call_function_7frdxe0cb31e_1",
-      chatId: "6bfee0ad-5263-41c9-9f13-4983882ff7ad",
-      createdAt,
-      mode: "question",
-      ownerType: "agent",
-      runId: "mrj2qklh",
-      timeout: 600,
-      viewportKey: "question",
-      viewportType: "builtin",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        questions: [{ question: "Which technical direction should we discuss?" }],
-      },
-    },
-  });
+test("assistant navigation applies the same push runtime status to Projects and Chats by chatId", () => {
+  for (const [index, mode] of ["question", "approval", "form", "planning"].entries()) {
+    const chatId = `shared-${mode}`;
+    const projectAgentKey = `project-${mode}`;
+    const originalChat = createNavigationChat({
+      chatId,
+      chatName: `Original ${mode} title`,
+      agentKey: projectAgentKey,
+      updatedAt: EPOCH_MS + index,
+      lastRunContent: `Original ${mode} preview`,
+      hasPendingAwaiting: true,
+      awaitingCount: 1,
+      awaitingMode: "approval",
+    });
+    let projects = [createAgent({
+      agentKey: projectAgentKey,
+      mode: index % 2 === 0 ? "CODER" : "KBASE",
+      chatCount: 1,
+      hasPendingAwaiting: true,
+      recentChats: [originalChat],
+    })];
+    let chats = [{ ...originalChat }];
 
-  const [agent] = result.items;
-  const chat = findChat(result.items, "6bfee0ad-5263-41c9-9f13-4983882ff7ad");
-  assert.equal(result.changed, true);
-  assert.equal(chat?.createdAt, createdAt);
-  assert.equal(chat?.updatedAt, createdAt);
-  assert.equal(chat?.hasPendingAwaiting, true);
-  assert.equal(chat?.awaitingCount, 1);
-  assert.equal(chat?.awaitingMode, "question");
-  assert.equal(chat?.awaitingPreview, "Which technical direction should we discuss?");
-  assert.equal(agent?.hasPendingAwaiting, true);
+    const started = {
+      frame: "push",
+      type: "run.started",
+      data: {
+        agentKey: "runtime-owner-does-not-match-project",
+        chatId,
+        runId: `run-${mode}`,
+        startedAt: EPOCH_MS + 10 + index,
+      },
+    };
+    const projectStarted = applyAssistantNavigationPush(projects, started);
+    const chatsStarted = applyAssistantNavigationChatPush(chats, started);
+    projects = projectStarted.items;
+    chats = chatsStarted.items;
+    assert.equal(findChat(projects, chatId)?.hasActiveRun, true);
+    assert.equal(findChat(projects, chatId)?.hasPendingAwaiting, false);
+    assert.equal(findChat(projects, chatId)?.awaitingMode, undefined);
+    assert.equal(chats[0]?.hasActiveRun, true);
+    assert.equal(chats[0]?.hasPendingAwaiting, false);
+    assert.equal(chats[0]?.awaitingMode, undefined);
+
+    const asking = {
+      frame: "push",
+      type: "awaiting.asking",
+      data: {
+        agentKey: "runtime-owner-does-not-match-project",
+        chatId,
+        createdAt: EPOCH_MS + 20 + index,
+        mode,
+      },
+    };
+    const projectAsked = applyAssistantNavigationPush(projects, asking);
+    const chatsAsked = applyAssistantNavigationChatPush(chats, asking);
+    projects = projectAsked.items;
+    chats = chatsAsked.items;
+    assert.equal(findChat(projects, chatId)?.hasPendingAwaiting, true);
+    assert.equal(findChat(projects, chatId)?.awaitingMode, mode);
+    assert.equal(chats[0]?.hasPendingAwaiting, true);
+    assert.equal(chats[0]?.awaitingMode, mode);
+    assert.equal(projects[0]?.hasPendingAwaiting, true);
+
+    const answered = {
+      frame: "push",
+      type: "awaiting.answered",
+      data: {
+        agentKey: "runtime-owner-does-not-match-project",
+        chatId,
+        answeredAt: EPOCH_MS + 30 + index,
+      },
+    };
+    const projectAnswered = applyAssistantNavigationPush(projects, answered);
+    const chatsAnswered = applyAssistantNavigationChatPush(chats, answered);
+    projects = projectAnswered.items;
+    chats = chatsAnswered.items;
+    assert.equal(findChat(projects, chatId)?.hasPendingAwaiting, false);
+    assert.equal(findChat(projects, chatId)?.hasActiveRun, true);
+    assert.equal(chats[0]?.hasPendingAwaiting, false);
+    assert.equal(chats[0]?.hasActiveRun, true);
+    assert.equal(projects[0]?.hasPendingAwaiting, false);
+
+    const finished = {
+      frame: "push",
+      type: "run.finished",
+      data: {
+        agentKey: "runtime-owner-does-not-match-project",
+        chatId,
+        runId: `run-${mode}`,
+        finishedAt: EPOCH_MS + 40 + index,
+      },
+    };
+    const projectFinished = applyAssistantNavigationPush(projects, finished);
+    const chatsFinished = applyAssistantNavigationChatPush(chats, finished);
+    const projectChat = findChat(projectFinished.items, chatId);
+    const chatsChat = chatsFinished.items[0];
+    assert.equal(projectChat?.hasActiveRun, false);
+    assert.equal(chatsChat?.hasActiveRun, false);
+    assert.equal(projectChat?.chatName, originalChat.chatName);
+    assert.equal(chatsChat?.chatName, originalChat.chatName);
+    assert.equal(projectChat?.lastRunContent, originalChat.lastRunContent);
+    assert.equal(chatsChat?.lastRunContent, originalChat.lastRunContent);
+    assert.equal(projectChat?.updatedAt, originalChat.updatedAt);
+    assert.equal(chatsChat?.updatedAt, originalChat.updatedAt);
+  }
 });
 
-test("assistant navigation applies standard awaiting.answered pushes with answeredAt", () => {
-  const chatId = "6bfee0ad-5263-41c9-9f13-4983882ff7ad";
-  const asked = applyAssistantNavigationPush([createAgent({
-    agentKey: "askUserBudget.demo",
-    mode: "CODER",
-  })], {
-    frame: "push",
-    type: "awaiting.asking",
-    data: {
-      agentKey: "askUserBudget.demo",
-      chatId,
-      createdAt: 1783938199453,
-      mode: "question",
-      runId: "mrj2qklh",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        questions: [{ question: "Choose a project direction" }],
-      },
-    },
-  });
-  const answeredAt = 1783938200453;
-  const answered = applyAssistantNavigationPush(asked.items, {
-    frame: "push",
-    type: "awaiting.answered",
-    data: {
-      agentKey: "askUserBudget.demo",
-      awaitingId: "call_function_7frdxe0cb31e_1",
-      chatId,
-      answeredAt,
-      runId: "mrj2qklh",
-    },
-  });
-
-  const [agent] = answered.items;
-  const chat = findChat(answered.items, chatId);
-  assert.equal(answered.changed, true);
-  assert.equal(chat?.updatedAt, answeredAt);
-  assert.equal(chat?.hasPendingAwaiting, false);
-  assert.equal(chat?.awaitingCount, 0);
-  assert.equal(chat?.awaitingMode, undefined);
-  assert.equal(chat?.awaitingPreview, undefined);
-  assert.equal(agent?.hasPendingAwaiting, false);
-});
-
-test("assistant navigation applies awaiting previews to Project and Chats lists together", () => {
-  const chatId = "shared-awaiting";
-  const asking = {
+test("assistant navigation does not create phantom chats from runtime status pushes", () => {
+  const frame = {
     frame: "push",
     type: "awaiting.asking",
     data: {
       agentKey: "coder-project",
-      chatId,
+      chatId: "unknown-chat",
       createdAt: EPOCH_MS + 1,
       mode: "question",
-      awaiting: {
-        mode: "question",
-        status: "awaiting",
-        questions: [{ question: "Which implementation should I continue with?" }],
-      },
     },
   };
-  const projectAsked = applyAssistantNavigationPush([createAgent({
-    agentKey: "coder-project",
-    mode: "CODER",
-    chatCount: 1,
-    recentChats: [createNavigationChat({
-      chatId,
-      agentKey: "coder-project",
-      lastRunContent: "Previous project reply",
-    })],
-  })], asking);
-  const chatsAsked = applyAssistantNavigationChatPush([
-    createNavigationChat({
-      chatId,
-      agentKey: "coder-project",
-      lastRunContent: "Previous project reply",
-    }),
-  ], asking);
+  const projects = applyAssistantNavigationPush([
+    createAgent({ agentKey: "coder-project", mode: "CODER" }),
+  ], frame);
+  const chats = applyAssistantNavigationChatPush([
+    createNavigationChat({ chatId: "known-chat" }),
+  ], frame);
 
-  assert.equal(findChat(projectAsked.items, chatId)?.awaitingPreview, "Which implementation should I continue with?");
-  assert.equal(chatsAsked.items[0]?.awaitingPreview, "Which implementation should I continue with?");
-
-  const cancelled = {
-    frame: "push",
-    type: "chat.updated",
-    data: {
-      agentKey: "coder-project",
-      chatId,
-      updatedAt: EPOCH_MS + 2,
-      awaiting: { status: "cancelled" },
-    },
-  };
-  const projectCancelled = applyAssistantNavigationPush(projectAsked.items, cancelled);
-  const chatsCancelled = applyAssistantNavigationChatPush(chatsAsked.items, cancelled);
-  assert.equal(findChat(projectCancelled.items, chatId)?.hasPendingAwaiting, false);
-  assert.equal(findChat(projectCancelled.items, chatId)?.awaitingPreview, undefined);
-  assert.equal(chatsCancelled.items[0]?.hasPendingAwaiting, false);
-  assert.equal(chatsCancelled.items[0]?.awaitingPreview, undefined);
-
-  const answered = {
-    frame: "push",
-    type: "awaiting.answered",
-    data: {
-      agentKey: "coder-project",
-      chatId,
-      answeredAt: EPOCH_MS + 2,
-    },
-  };
-  const projectAnswered = applyAssistantNavigationPush(projectAsked.items, answered);
-  const chatsAnswered = applyAssistantNavigationChatPush(chatsAsked.items, answered);
-  assert.equal(findChat(projectAnswered.items, chatId)?.awaitingPreview, undefined);
-  assert.equal(findChat(projectAnswered.items, chatId)?.lastRunContent, "Previous project reply");
-  assert.equal(chatsAnswered.items[0]?.awaitingPreview, undefined);
-  assert.equal(chatsAnswered.items[0]?.lastRunContent, "Previous project reply");
+  assert.equal(projects.changed, false);
+  assert.equal(projects.shouldRefresh, true);
+  assert.equal(findChat(projects.items, "unknown-chat"), undefined);
+  assert.equal(chats.changed, false);
+  assert.equal(chats.shouldRefresh, true);
+  assert.deepEqual(chats.items.map((chat) => chat.chatId), ["known-chat"]);
 });
 
 test("assistant navigation rejects timestamp-only awaiting.asking pushes", () => {
@@ -1392,9 +1402,15 @@ test("assistant navigation run.started preserves an existing real preview", () =
   assert.equal(chat?.hasActiveRun, true);
 });
 
-test("assistant navigation still applies real preview text from chat.updated and run.complete", () => {
+test("assistant navigation changes previews from chat.updated but not runtime status pushes", () => {
   const chatId = "preview-chat";
-  const started = applyAssistantNavigationPush([createAgent()], {
+  const started = applyAssistantNavigationPush([createAgent({
+    chatCount: 1,
+    recentChats: [createNavigationChat({
+      chatId,
+      lastRunContent: "Original preview",
+    })],
+  })], {
     frame: "push",
     type: "run.started",
     data: {
@@ -1430,9 +1446,9 @@ test("assistant navigation still applies real preview text from chat.updated and
   const updatedChat = findChat(updated.items, chatId);
   const completedChat = findChat(completed.items, chatId);
   assert.equal(updatedChat?.lastRunContent, "Updated elsewhere");
-  assert.equal(completedChat?.lastRunContent, "Final answer");
+  assert.equal(completedChat?.lastRunContent, "Updated elsewhere");
   assert.equal(completedChat?.hasActiveRun, false);
-  assert.equal(completed.shouldRefresh, true);
+  assert.equal(completed.shouldRefresh, false);
 });
 
 test("assistant navigation preserves chat creation time from summaries and pushes", () => {

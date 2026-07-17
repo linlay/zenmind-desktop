@@ -786,12 +786,6 @@ function getAssistantChatPreviewText(
   chat: AssistantNavChatItem,
   t: TranslateFunction,
 ) {
-  const awaitingPreview = chat.hasPendingAwaiting
-    ? chat.awaitingPreview?.trim() ?? ""
-    : "";
-  if (awaitingPreview) {
-    return awaitingPreview;
-  }
   return chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
     ? chat.chatName || t("sidebar.chat.noPreview")
     : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");

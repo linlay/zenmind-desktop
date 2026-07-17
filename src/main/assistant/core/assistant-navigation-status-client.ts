@@ -166,6 +166,20 @@ export type AssistantNavigationChatApplyResult = {
   shouldRefresh: boolean;
 };
 
+type AssistantNavigationChatRuntimeStatusPatch = {
+  chatId: string;
+  lastRunId?: string;
+  hasActiveRun?: boolean;
+  hasPendingAwaiting: boolean;
+  awaitingCount: number;
+  awaitingMode?: AssistantAwaitingMode;
+};
+
+type AssistantNavigationRecordedRuntimeStatusPush = {
+  sequence: number;
+  frame: NavigationPushFrame;
+};
+
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const NAVIGATION_AGENT_HISTORY_LIMIT = 50;
 const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
@@ -337,34 +351,6 @@ function toOptionalNonNegativeInteger(value: unknown) {
 
 function isFinishedAwaitingStatus(value: string) {
   return FINISHED_AWAITING_STATUSES.has(value);
-}
-
-function hasFinishedAwaitingPayload(value: unknown): boolean {
-  if (Array.isArray(value)) {
-    return value.some((item) => hasFinishedAwaitingPayload(item));
-  }
-  if (!isObjectRecord(value)) {
-    return false;
-  }
-
-  const type = toText(value.type).toLowerCase();
-  const status = toText(value.status).toLowerCase();
-  if (type === "awaiting.answered" || isFinishedAwaitingStatus(status)) {
-    return true;
-  }
-
-  if (isObjectRecord(value.answer)) {
-    const answerType = toText(value.answer.type).toLowerCase();
-    const answerStatus = toText(value.answer.status).toLowerCase();
-    if (
-      answerType === "awaiting.answered" ||
-      isFinishedAwaitingStatus(answerStatus)
-    ) {
-      return true;
-    }
-  }
-
-  return hasFinishedAwaitingPayload(value.awaiting);
 }
 
 function hasPendingAwaitingPayload(value: unknown): boolean {
@@ -610,101 +596,6 @@ function readChatAwaitingMode(chat: PlatformChatSummary): AssistantAwaitingMode 
   );
 }
 
-const NAVIGATION_AWAITING_PREVIEW_LIMIT = 160;
-
-function toNavigationAwaitingPreview(value: unknown) {
-  return toText(value)
-    .replace(/\s+/gu, " ")
-    .slice(0, NAVIGATION_AWAITING_PREVIEW_LIMIT);
-}
-
-function readAwaitingPreviewFromRecord(
-  value: unknown,
-  fields: readonly string[],
-): string {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const preview = readAwaitingPreviewFromRecord(item, fields);
-      if (preview) {
-        return preview;
-      }
-    }
-    return "";
-  }
-  if (!isObjectRecord(value)) {
-    return "";
-  }
-  for (const field of fields) {
-    const preview = toNavigationAwaitingPreview(value[field]);
-    if (preview) {
-      return preview;
-    }
-  }
-  return "";
-}
-
-function readAwaitingPreview(value: unknown): string {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const preview = readAwaitingPreview(item);
-      if (preview) {
-        return preview;
-      }
-    }
-    return "";
-  }
-  if (!isObjectRecord(value)) {
-    return "";
-  }
-
-  const mode = toAwaitingMode(value.mode);
-  const fallback = () =>
-    readAwaitingPreviewFromRecord(value, ["title", "description"]) ||
-    readAwaitingPreview(value.awaiting);
-
-  switch (mode) {
-    case "question":
-      return readAwaitingPreviewFromRecord(value.questions, [
-        "question",
-        "label",
-        "header",
-        "title",
-      ]) || readAwaitingPreviewFromRecord(value.question, [
-        "question",
-        "label",
-        "header",
-        "title",
-      ]) || readAwaitingPreviewFromRecord(value, [
-        "question",
-        "label",
-        "header",
-        "title",
-      ]) || fallback();
-    case "approval":
-      return readAwaitingPreviewFromRecord(value.approvals, [
-        "summary",
-        "description",
-      ]) || readAwaitingPreviewFromRecord(value.approval, [
-        "summary",
-        "description",
-      ]) || readAwaitingPreviewFromRecord(value, [
-        "summary",
-        "description",
-      ]) || fallback();
-    case "form":
-      return readAwaitingPreviewFromRecord(value.forms, ["title"]) ||
-        readAwaitingPreviewFromRecord(value.form, ["title"]) ||
-        fallback();
-    case "planning":
-      return readAwaitingPreviewFromRecord(value.planning, [
-        "title",
-        "description",
-      ]) || fallback();
-    default:
-      return fallback();
-  }
-}
-
 function readActiveRunValue(value: unknown): boolean | null {
   if (typeof value === "boolean") {
     return value;
@@ -883,10 +774,6 @@ function mapNavigationChat(
   }
   const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
   const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || t("assistant.newChat");
-  const hasPendingAwaiting = readChatPendingAwaiting(chat);
-  const awaitingPreview = hasPendingAwaiting
-    ? readAwaitingPreview(chat.awaiting)
-    : "";
   return {
     chatId,
     chatName,
@@ -897,10 +784,9 @@ function mapNavigationChat(
     lastRunContent,
     isRead: readChatIsRead(chat),
     hasActiveRun: readChatActiveRun(chat),
-    hasPendingAwaiting,
+    hasPendingAwaiting: readChatPendingAwaiting(chat),
     awaitingCount: readChatAwaitingCount(chat),
-    awaitingMode: readChatAwaitingMode(chat),
-    ...(awaitingPreview ? { awaitingPreview } : {})
+    awaitingMode: readChatAwaitingMode(chat)
   };
 }
 
@@ -1145,9 +1031,6 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
   ) {
     return false;
   }
-  if (hasFinishedAwaitingPayload(event.awaiting)) {
-    return false;
-  }
   if (event.hasPendingAwaiting === true) {
     return true;
   }
@@ -1160,11 +1043,7 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
   if (hasPendingAwaitingPayload(event.awaiting)) {
     return true;
   }
-  const status = toText(event.status).toLowerCase();
-  if (isFinishedAwaitingStatus(status)) {
-    return false;
-  }
-  if (status === "awaiting") {
+  if (toText(event.status).toLowerCase() === "awaiting") {
     return true;
   }
   return fallback;
@@ -1199,19 +1078,6 @@ function readPushAwaitingMode(
     readAwaitingPayloadMode(event.awaiting) ||
     fallback
   );
-}
-
-function readPushAwaitingPreview(
-  event: NavigationPushEvent,
-  hasPendingAwaiting: boolean,
-  fallback?: string,
-) {
-  if (!hasPendingAwaiting) {
-    return undefined;
-  }
-  return readAwaitingPreview(event.awaiting) ||
-    readAwaitingPreview(event) ||
-    fallback;
 }
 
 function readPushActiveRun(event: NavigationPushEvent, fallback: boolean) {
@@ -1274,11 +1140,6 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     isRead = event.read.isRead;
   }
   const hasPendingAwaiting = readPushPendingAwaiting(event, current?.hasPendingAwaiting ?? false);
-  const awaitingPreview = readPushAwaitingPreview(
-    event,
-    hasPendingAwaiting,
-    current?.awaitingPreview,
-  );
   return {
     chatId,
     chatName,
@@ -1291,8 +1152,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
     hasPendingAwaiting,
     awaitingCount: readPushAwaitingCount(event, hasPendingAwaiting, current?.awaitingCount),
-    awaitingMode: readPushAwaitingMode(event, hasPendingAwaiting, current?.awaitingMode),
-    ...(awaitingPreview ? { awaitingPreview } : {})
+    awaitingMode: readPushAwaitingMode(event, hasPendingAwaiting, current?.awaitingMode)
   };
 }
 
@@ -1335,16 +1195,130 @@ function refreshAgentDerivedFields(agent: AssistantNavAgentItem): AssistantNavAg
   };
 }
 
+function createChatRuntimeStatusPatch(
+  event: NavigationPushEvent,
+): AssistantNavigationChatRuntimeStatusPatch | null {
+  const chatId = readPushChatId(event);
+  if (!chatId) {
+    return null;
+  }
+  if (event.type === "run.start") {
+    return {
+      chatId,
+      lastRunId: toText(event.runId) || toText(event.lastRunId) || undefined,
+      hasActiveRun: true,
+      hasPendingAwaiting: false,
+      awaitingCount: 0,
+    };
+  }
+  if (event.type === "run.complete") {
+    return {
+      chatId,
+      lastRunId: toText(event.runId) || toText(event.lastRunId) || undefined,
+      hasActiveRun: false,
+      hasPendingAwaiting: false,
+      awaitingCount: 0,
+    };
+  }
+  if (event.type === "awaiting.asking") {
+    return {
+      chatId,
+      hasPendingAwaiting: true,
+      awaitingCount: readPushAwaitingCount(event, true),
+      awaitingMode: readPushAwaitingMode(event, true),
+    };
+  }
+  if (event.type === "awaiting.answered") {
+    return {
+      chatId,
+      hasPendingAwaiting: false,
+      awaitingCount: 0,
+    };
+  }
+  return null;
+}
+
+function applyChatRuntimeStatusPatch(
+  chat: AssistantNavChatItem,
+  patch: AssistantNavigationChatRuntimeStatusPatch,
+) {
+  const nextChat: AssistantNavChatItem = {
+    ...chat,
+    ...(patch.lastRunId ? { lastRunId: patch.lastRunId } : {}),
+    ...(patch.hasActiveRun !== undefined
+      ? { hasActiveRun: patch.hasActiveRun }
+      : {}),
+    hasPendingAwaiting: patch.hasPendingAwaiting,
+    awaitingCount: patch.awaitingCount,
+  };
+  if (patch.awaitingMode) {
+    nextChat.awaitingMode = patch.awaitingMode;
+  } else {
+    delete nextChat.awaitingMode;
+  }
+  return nextChat;
+}
+
+function applyChatRuntimeStatusToAgents(
+  currentItems: AssistantNavAgentItem[],
+  patch: AssistantNavigationChatRuntimeStatusPatch,
+): AssistantNavigationApplyResult {
+  let changed = false;
+  const nextItems = currentItems.map((agent) => {
+    let agentChanged = false;
+    const recentChats = agent.recentChats.map((chat) => {
+      if (chat.chatId !== patch.chatId) {
+        return chat;
+      }
+      agentChanged = true;
+      changed = true;
+      return applyChatRuntimeStatusPatch(chat, patch);
+    });
+    return agentChanged
+      ? refreshAgentDerivedFields({ ...agent, recentChats })
+      : agent;
+  });
+  return {
+    items: changed ? sortNavigationAgents(nextItems) : currentItems,
+    changed,
+    shouldRefresh: !changed,
+  };
+}
+
+function applyChatRuntimeStatusToChats(
+  currentItems: AssistantNavChatItem[],
+  patch: AssistantNavigationChatRuntimeStatusPatch,
+): AssistantNavigationChatApplyResult {
+  let changed = false;
+  const nextItems = currentItems.map((chat) => {
+    if (chat.chatId !== patch.chatId) {
+      return chat;
+    }
+    changed = true;
+    return applyChatRuntimeStatusPatch(chat, patch);
+  });
+  return {
+    items: changed ? nextItems : currentItems,
+    changed,
+    shouldRefresh: !changed,
+  };
+}
+
 function findAgentIndexForPush(items: AssistantNavAgentItem[], event: NavigationPushEvent) {
+  const chatId = readPushChatId(event);
+  if (chatId) {
+    const chatOwnerIndex = items.findIndex((item) =>
+      item.recentChats.some((chat) => chat.chatId === chatId),
+    );
+    if (chatOwnerIndex >= 0) {
+      return chatOwnerIndex;
+    }
+  }
   const agentKey = readPushAgentKey(event);
   if (agentKey) {
     return items.findIndex((item) => item.agentKey === agentKey);
   }
-  const chatId = readPushChatId(event);
-  if (!chatId) {
-    return -1;
-  }
-  return items.findIndex((item) => item.recentChats.some((chat) => chat.chatId === chatId));
+  return -1;
 }
 
 export function applyAssistantNavigationPush(
@@ -1361,6 +1335,11 @@ export function applyAssistantNavigationPush(
   }
   if (IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
+  }
+
+  const runtimeStatusPatch = createChatRuntimeStatusPatch(event);
+  if (runtimeStatusPatch) {
+    return applyChatRuntimeStatusToAgents(currentItems, runtimeStatusPatch);
   }
 
   const agentIndex = findAgentIndexForPush(currentItems, event);
@@ -1417,12 +1396,11 @@ export function applyAssistantNavigationPush(
 
   if (
     type === "chat.created" ||
-    type === "chat.updated" ||
-    type === "run.start" ||
-    type === "run.complete" ||
-    type === "awaiting.asking" ||
-    type === "awaiting.answered"
+    type === "chat.updated"
   ) {
+    if (!currentChat && type !== "chat.created") {
+      return { items: currentItems, changed: false, shouldRefresh: true };
+    }
     const patch = createChatPatchFromPush(event, currentChat);
     if (!patch) {
       return { items: currentItems, changed: false, shouldRefresh: true };
@@ -1431,18 +1409,14 @@ export function applyAssistantNavigationPush(
       nextAgent.recentChats[chatIndex] = patch;
     } else {
       nextAgent.recentChats.unshift(patch);
-      if (type === "chat.created") {
-        nextAgent.chatCount = Math.max(nextAgent.chatCount + 1, nextAgent.recentChats.length);
-      } else {
-        nextAgent.chatCount = Math.max(nextAgent.chatCount, nextAgent.recentChats.length);
-      }
+      nextAgent.chatCount = Math.max(nextAgent.chatCount + 1, nextAgent.recentChats.length);
     }
     nextAgent.unreadCount = readPushUnreadCount(event, nextAgent.unreadCount, "preserve");
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
     return {
       items: sortNavigationAgents(nextItems),
       changed: true,
-      shouldRefresh: type === "run.complete"
+      shouldRefresh: false
     };
   }
 
@@ -1463,6 +1437,11 @@ export function applyAssistantNavigationChatPush(
   }
   if (IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
+  }
+
+  const runtimeStatusPatch = createChatRuntimeStatusPatch(event);
+  if (runtimeStatusPatch) {
+    return applyChatRuntimeStatusToChats(currentItems, runtimeStatusPatch);
   }
 
   if (type === "chat.read_all") {
@@ -1498,11 +1477,7 @@ export function applyAssistantNavigationChatPush(
     type === "chat.created" ||
     type === "chat.updated" ||
     type === "chat.read" ||
-    type === "chat.unread" ||
-    type === "run.start" ||
-    type === "run.complete" ||
-    type === "awaiting.asking" ||
-    type === "awaiting.answered"
+    type === "chat.unread"
   ) {
     const patch = createChatPatchFromPush(event, currentItems[chatIndex]);
     if (!patch) {
@@ -1597,6 +1572,10 @@ export class AssistantNavigationStatusClient {
   private stopped = false;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshInFlight: Promise<AssistantNavAgentItemsResult> | null = null;
+  private refreshRequestedWhileInFlight = false;
+  private runtimeStatusPushSequence = 0;
+  private runtimeStatusPushes: AssistantNavigationRecordedRuntimeStatusPush[] = [];
   private latestResult: AssistantNavAgentItemsResult = {
     ok: false,
     items: [],
@@ -1631,6 +1610,8 @@ export class AssistantNavigationStatusClient {
 
   start() {
     this.stopped = false;
+    this.runtimeStatusPushSequence = 0;
+    this.runtimeStatusPushes = [];
     this.updateLiveStatus({
       phase: "idle",
       endpoint: null,
@@ -1646,6 +1627,8 @@ export class AssistantNavigationStatusClient {
 
   stop() {
     this.stopped = true;
+    this.refreshRequestedWhileInFlight = false;
+    this.runtimeStatusPushes = [];
     this.clearTimers();
     this.updateLiveStatus({
       phase: "idle",
@@ -1687,9 +1670,30 @@ export class AssistantNavigationStatusClient {
   }
 
   async refreshNow(): Promise<AssistantNavAgentItemsResult> {
+    if (this.refreshInFlight) {
+      this.refreshRequestedWhileInFlight = true;
+      return this.refreshInFlight;
+    }
+    const refresh = this.performRefreshNow();
+    this.refreshInFlight = refresh;
+    try {
+      return await refresh;
+    } finally {
+      if (this.refreshInFlight === refresh) {
+        this.refreshInFlight = null;
+      }
+      if (this.refreshRequestedWhileInFlight && !this.stopped) {
+        this.refreshRequestedWhileInFlight = false;
+        this.scheduleRefresh(0);
+      }
+    }
+  }
+
+  private async performRefreshNow(): Promise<AssistantNavAgentItemsResult> {
     if (this.stopped) {
       return this.latestResult;
     }
+    const runtimeStatusSequenceAtStart = this.runtimeStatusPushSequence;
     this.updateLiveStatus({ lastRefreshAt: nowEpochMillis() });
     try {
       const serviceState = await this.options.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID);
@@ -1743,14 +1747,18 @@ export class AssistantNavigationStatusClient {
       );
       await this.connectWebSocket(baseUrl, token);
       const chatSnapshot = await this.requestNavigationChats();
-      this.setSnapshot({
+      const refreshedResult = this.replayRuntimeStatusPushesSince({
         ok: true,
         items,
         activityItems,
         ...chatSnapshot,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowEpochMillis()
-      });
+      }, runtimeStatusSequenceAtStart);
+      this.setSnapshot(refreshedResult);
+      this.runtimeStatusPushes = this.runtimeStatusPushes.filter(
+        (recorded) => recorded.sequence > runtimeStatusSequenceAtStart,
+      );
       return this.latestResult;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1774,6 +1782,51 @@ export class AssistantNavigationStatusClient {
       this.scheduleRefresh(NAVIGATION_UNAVAILABLE_RETRY_MS);
       return this.latestResult;
     }
+  }
+
+  private recordRuntimeStatusPush(
+    frame: NavigationPushFrame,
+    event: NavigationPushEvent,
+  ) {
+    if (!createChatRuntimeStatusPatch(event)) {
+      return;
+    }
+    this.runtimeStatusPushSequence += 1;
+    this.runtimeStatusPushes.push({
+      sequence: this.runtimeStatusPushSequence,
+      frame,
+    });
+  }
+
+  private replayRuntimeStatusPushesSince(
+    result: AssistantNavAgentItemsResult,
+    sequence: number,
+  ) {
+    let nextResult = result;
+    for (const recorded of this.runtimeStatusPushes) {
+      if (recorded.sequence <= sequence) {
+        continue;
+      }
+      const next = applyAssistantNavigationPush(nextResult.items, recorded.frame);
+      const nextActivity = applyAssistantNavigationPush(
+        nextResult.activityItems ?? [],
+        recorded.frame,
+      );
+      const nextChats = applyAssistantNavigationChatPush(
+        nextResult.chatItems,
+        recorded.frame,
+      );
+      if (!next.changed && !nextActivity.changed && !nextChats.changed) {
+        continue;
+      }
+      nextResult = {
+        ...nextResult,
+        items: next.items,
+        activityItems: nextActivity.items,
+        chatItems: nextChats.items,
+      };
+    }
+    return nextResult;
   }
 
   private setSnapshot(result: AssistantNavAgentItemsResult) {
@@ -1937,6 +1990,7 @@ export class AssistantNavigationStatusClient {
     if (IGNORED_PUSH_TYPES.has(event.type)) {
       return;
     }
+    this.recordRuntimeStatusPush(frame, event);
     this.options.onPushEvent?.({
       type: event.type,
       chatId: readPushChatId(event) || null,

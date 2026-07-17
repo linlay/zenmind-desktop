@@ -1,6 +1,5 @@
-<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs><linearGradient id="g-sentinel" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#34D399"/><stop offset="100%" stop-color="#059669"/></linearGradient></defs>
-  <path d="M24 4 C34 4 40 8 40 18 C40 30 24 44 24 44 C24 44 8 30 8 18 C8 8 14 4 24 4Z" fill="url(#g-sentinel)" opacity="0.3"/>
-  <path d="M24 8 L12 14 V24 C12 31 24 38 24 38 Z" fill="url(#g-sentinel)" opacity="0.6"/>
-  <path d="M24 8 L36 14 V24 C36 31 24 38 24 38 Z" fill="url(#g-sentinel)" opacity="0.9"/>
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.5L19 6V11.5C19 15.85 16.15 18.7 12 20.5C7.85 18.7 5 15.85 5 11.5V6L12 3.5Z"/>
+  </g>
 </svg>
