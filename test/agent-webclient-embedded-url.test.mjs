@@ -100,14 +100,19 @@ test("main chat route comparison ignores host presentation params and their orde
   );
 });
 
-test("host presentation comparison detects a live theme change", () => {
-  const light =
-    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&lang=zh-CN&wsSource=desktop-chat";
-  const dark =
-    "http://127.0.0.1:19011/agent/cutej?wsSource=desktop-chat&lang=zh-CN&theme=dark&chatId=chat-1";
-  const reorderedLight =
-    "http://127.0.0.1:19011/agent/cutej?lang=zh-CN&theme=light&chatId=chat-1&wsSource=desktop-chat";
+test("host presentation comparison detects every host parameter change", () => {
+  const base =
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-chat";
+  const reorderedBase =
+    "http://127.0.0.1:19011/agent/cutej?wsSource=desktop-chat&lang=zh-CN&hostTheme=light&theme=light&chatId=chat-1";
 
-  assert.equal(areAgentWebclientHostRouteParamsEqual(light, dark), false);
-  assert.equal(areAgentWebclientHostRouteParamsEqual(light, reorderedLight), true);
+  assert.equal(areAgentWebclientHostRouteParamsEqual(base, reorderedBase), true);
+  for (const changed of [
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=dark&hostTheme=light&lang=zh-CN&wsSource=desktop-chat",
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=dark&lang=zh-CN&wsSource=desktop-chat",
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=en-US&wsSource=desktop-chat",
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-management"
+  ]) {
+    assert.equal(areAgentWebclientHostRouteParamsEqual(base, changed), false);
+  }
 });

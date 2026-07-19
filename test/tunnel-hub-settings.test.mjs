@@ -53,11 +53,6 @@ function writeSsoSiteToken(app, token = "desktop-site-token") {
   fs.writeFileSync(tokenPath, `${JSON.stringify({ accessToken: token })}\n`, "utf8");
 }
 
-function createTestJwt(expiresAtSeconds) {
-  const encode = (value) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
-  return `${encode({ alg: "RS256", typ: "JWT" })}.${encode({ exp: expiresAtSeconds })}.signature`;
-}
-
 function writeDesktopSsoAccessToken(app, token) {
   const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-access-token.txt");
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
@@ -87,22 +82,9 @@ test("Tunnel Hub settings normalize host-only relay URL with SSO site token", (t
   assert.equal(readTunnelHubSettings(app).enabled, true);
 });
 
-test("Tunnel Hub settings use the active Desktop SSO access token when no site-token bridge is configured", (t) => {
+test("Tunnel Hub settings require a site token even when an active Desktop SSO access token exists", (t) => {
   const app = createTempApp(t);
-  writeDesktopSsoAccessToken(app, createTestJwt(Math.floor(Date.now() / 1000) + 3600));
-
-  const result = saveTunnelHubSettings(app, {
-    enabled: true,
-    relayUrl: "tunnel-hub.zenmind.cc"
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.settings.enabled, true);
-});
-
-test("Tunnel Hub settings reject an expired Desktop SSO access token fallback", (t) => {
-  const app = createTempApp(t);
-  writeDesktopSsoAccessToken(app, createTestJwt(Math.floor(Date.now() / 1000) - 60));
+  writeDesktopSsoAccessToken(app, "active-desktop-login-token");
 
   const result = saveTunnelHubSettings(app, {
     enabled: true,

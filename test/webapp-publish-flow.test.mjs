@@ -56,11 +56,14 @@ test("Settings exposes one-click Tunnel publishing and mobile QR sharing", () =>
   assert.match(styles, /\.web-publish-share-card[\s\S]*?@media \(max-width: 760px\)/u);
 });
 
-test("bootstrap hands completed onboarding to the configured XiaoJun agent without gaining WebApp tools", () => {
+test("bootstrap keeps its Chat visible and hands off at most once per Desktop session", () => {
   const appShell = read("src/renderer/app-shell/AppShell.tsx");
 
-  assert.match(appShell, /chatRuntimeAgent\.bootstrapActive[\s\S]*?window\.setInterval\([\s\S]*?refreshAssistantNavAgents\(\)[\s\S]*?2_000/u);
-  assert.match(appShell, /visibleAssistantNavChatItems[\s\S]*?chat\.agentKey !== bootstrapAgentKey/u);
+  assert.match(appShell, /const bootstrapHandoffNavigationDoneRef = useRef\(false\)/u);
+  assert.match(appShell, /if \(bootstrapHandoffNavigationDoneRef\.current\) \{\s*return;/u);
+  assert.match(appShell, /bootstrapHandoffNavigationDoneRef\.current = true;[\s\S]*?navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/u);
+  assert.doesNotMatch(appShell, /window\.setInterval\([\s\S]*?refreshAssistantNavAgents\(\)[\s\S]*?2_000/u);
+  assert.doesNotMatch(appShell, /visibleAssistantNavChatItems/u);
+  assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/u);
   assert.match(appShell, /navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/u);
-  assert.doesNotMatch(appShell, /bootstrapHandoffNavigationDoneRef/u);
 });

@@ -5749,7 +5749,7 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
     );
     assert.match(
       fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
-      /^apiKey: dk_ProviderRegisterIntegrationKey$/m
+      /^apiKey: YOUR_TRANSIT_HUB_KEY$/m
     );
     assert.equal(fs.existsSync(registerPath), false);
   } finally {
@@ -5763,7 +5763,7 @@ test("ensurePreStartRequirements applies provider-register before agent-platform
   }
 });
 
-test("ensurePreStartRequirements skips provider-register request when provider keys already exist", async () => {
+test("ensurePreStartRequirements does not replace nonempty provider keys when legacy replaceExisting is set", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const tempRoot = fixture.tempRoot;
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -5796,6 +5796,7 @@ test("ensurePreStartRequirements skips provider-register request when provider k
     `${JSON.stringify({
       version: 1,
       enabled: true,
+      replaceExisting: true,
       endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
       grant: { type: "jwt", token: "jwt-token" },
       providers: ["th-deepseek", "th-minimax"]
@@ -5833,7 +5834,7 @@ test("ensurePreStartRequirements skips provider-register request when provider k
   }
 });
 
-test("ensurePreStartRequirements replaces existing provider keys for an explicit JWT switch", async () => {
+test("ensurePreStartRequirements fills null and blank provider keys", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const tempRoot = fixture.tempRoot;
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -5847,18 +5848,21 @@ test("ensurePreStartRequirements replaces existing provider keys for an explicit
   const providersRoot = path.join(getTestRuntimeRoot(userDataRoot), "registries", "providers");
   const registerPath = path.join(getTestRuntimeRoot(userDataRoot), "provider-register.json");
   const originalFetch = globalThis.fetch;
-  const issuedKey = "dk_rotated_by_cutej_web_2";
+  const issuedKey = "dk_registered_empty_keys";
   let fetchCalls = 0;
 
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
   fs.mkdirSync(providersRoot, { recursive: true });
-  for (const providerKey of ["th-deepseek", "th-minimax"]) {
-    fs.writeFileSync(
-      path.join(providersRoot, `${providerKey}.yml`),
-      `key: ${providerKey}\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: dk_existing_key\n`,
-      "utf8"
-    );
-  }
+  fs.writeFileSync(
+    path.join(providersRoot, "th-deepseek.yml"),
+    "key: th-deepseek\nbaseUrl: https://transit-hub.zenmind.cc\napiKey:\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(providersRoot, "th-minimax.yml"),
+    "key: th-minimax\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: \"   \"\n",
+    "utf8"
+  );
   fs.writeFileSync(
     registerPath,
     `${JSON.stringify({
@@ -5866,7 +5870,7 @@ test("ensurePreStartRequirements replaces existing provider keys for an explicit
       enabled: true,
       replaceExisting: true,
       endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
-      grant: { type: "jwt", token: "cutej-web-2-jwt" },
+      grant: { type: "jwt", token: "provider-register-jwt" },
       providers: ["th-deepseek", "th-minimax"]
     }, null, 2)}\n`,
     "utf8"
@@ -5887,12 +5891,14 @@ test("ensurePreStartRequirements replaces existing provider keys for an explicit
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
     assert.equal(fetchCalls, 1);
-    for (const providerKey of ["th-deepseek", "th-minimax"]) {
-      assert.match(
-        fs.readFileSync(path.join(providersRoot, `${providerKey}.yml`), "utf8"),
-        /^apiKey: dk_rotated_by_cutej_web_2$/m
-      );
-    }
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-deepseek.yml"), "utf8"),
+      /^apiKey: dk_registered_empty_keys$/m
+    );
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
+      /^apiKey: dk_registered_empty_keys$/m
+    );
     assert.equal(fs.existsSync(registerPath), false);
   } finally {
     if (originalFetch === undefined) {
@@ -7230,12 +7236,12 @@ test("runStartupPreparation applies provider-register before preparing builtin s
   fs.mkdirSync(providersRoot, { recursive: true });
   fs.writeFileSync(
     path.join(providersRoot, "th-deepseek.yml"),
-    "key: th-deepseek\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: YOUR_API_KEY\ndefaultModel: th-deepseek-v4-flash\n",
+    "key: th-deepseek\nbaseUrl: https://transit-hub.zenmind.cc\ndefaultModel: th-deepseek-v4-flash\n",
     "utf8"
   );
   fs.writeFileSync(
     path.join(providersRoot, "th-minimax.yml"),
-    "key: th-minimax\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: YOUR_API_KEY\ndefaultModel: th-minimax-m3\n",
+    "key: th-minimax\nbaseUrl: https://transit-hub.zenmind.cc\ndefaultModel: th-minimax-m3\n",
     "utf8"
   );
   fs.writeFileSync(

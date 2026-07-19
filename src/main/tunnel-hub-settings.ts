@@ -8,11 +8,10 @@ import type {
   TunnelHubSettingsInput,
   TunnelHubSettingsResult
 } from "../shared/contracts";
-import { getDesktopConfigRoot, getDesktopStateRoot, getSecretsRoot } from "./user-paths";
+import { getDesktopConfigRoot, getSecretsRoot } from "./user-paths";
 import { getDesktopDeviceId } from "./device-identity";
 
 const SSO_SITE_TOKEN_FILE_NAME = "sso-site-token.json";
-const SSO_ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
 const DEFAULT_RECONNECT_SECONDS = 3;
 const MIN_RECONNECT_SECONDS = 1;
 const MAX_RECONNECT_SECONDS = 3600;
@@ -72,10 +71,6 @@ function getRegistrationTokenPath(app: App, platform: NodeJS.Platform = process.
 
 function getSsoSiteTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getSecretsRoot(app, platform), SSO_SITE_TOKEN_FILE_NAME);
-}
-
-function getSsoAccessTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getDesktopStateRoot(app, platform), SSO_ACCESS_TOKEN_FILE_NAME);
 }
 
 function getDeviceSecretPath(app: App, platform: NodeJS.Platform = process.platform) {
@@ -282,17 +277,8 @@ function readSsoSiteToken(app: App, platform: NodeJS.Platform = process.platform
   }
 }
 
-function readSsoAccessToken(app: App, platform: NodeJS.Platform = process.platform) {
-  const token = readSecretFile(getSsoAccessTokenPath(app, platform));
-  const expiresAtMs = readJwtExpiresAtMs(token);
-  if (!token || (expiresAtMs > 0 && expiresAtMs <= Date.now())) {
-    return "";
-  }
-  return token;
-}
-
 export function readTunnelHubRegistrationBearerToken(app: App, platform: NodeJS.Platform = process.platform) {
-  return readSsoSiteToken(app, platform) || readSsoAccessToken(app, platform);
+  return readSsoSiteToken(app, platform);
 }
 
 export function ensureTunnelHubDeviceSecret(app: App, platform: NodeJS.Platform = process.platform) {
