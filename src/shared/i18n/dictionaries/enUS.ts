@@ -196,7 +196,7 @@ export const enUSMessages = {
   "sidebar.project.noRunningAcp": "No running ACP proxies",
   "sidebar.project.creating": "Creating...",
   "sidebar.project.create": "Create",
-  "sidebar.website.new": "New embedded website",
+  "sidebar.website.new": "Add website",
   "sidebar.website.addFailed": "Failed to add embedded website.",
   "sidebar.website.title": "New Embedded Website",
   "sidebar.website.name": "Website name",

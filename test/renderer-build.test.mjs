@@ -1019,6 +1019,34 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
 });
 
+test("sites add menu merges website actions into one modal entry", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css"
+  );
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.doesNotMatch(sidebarSource, /navigateWebsitesSettings/);
+  assert.doesNotMatch(sidebarSource, /t\("sidebar\.website\.manage"\)/);
+  assert.match(sidebarSource, /showWebsiteDialog\(\);[\s\S]{0,100}t\("sidebar\.website\.new"\)/);
+  assert.match(sidebarSource, /handleImportWebapp\(\);[\s\S]{0,100}t\("sidebar\.webapp\.import"\)/);
+  assert.match(sidebarSource, /function getGroupActionMenuPositionFromElement[\s\S]{0,320}rect\.left - 12/);
+  assert.match(navigationStyles, /\.sidebar-group-actions-menu-layer \.sidebar-group-actions-menu\s*\{[\s\S]{0,120}width:\s*196px;/);
+  assert.match(navigationStyles, /\.sidebar-group-actions-menu button span\s*\{[\s\S]{0,100}white-space:\s*nowrap;/);
+  assert.match(zhCN, /"sidebar\.website\.new":\s*"添加网站"/);
+  assert.match(enUS, /"sidebar\.website\.new":\s*"Add website"/);
+});
+
 test("primary sidebar navigation uses separate compact and rail SVG families", () => {
   const sidebarSource = readSourceFile(
     "src",
