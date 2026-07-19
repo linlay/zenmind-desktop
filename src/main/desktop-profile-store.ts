@@ -13,8 +13,6 @@ import {
 import { sanitizeDesktopCopilotPagePreferences } from "../shared/page-copilot";
 
 export const DESKTOP_PROFILE_FILE = "profile.json";
-export const LEGACY_DESKTOP_PREFERENCES_FILE = "preferences.json";
-export const LEGACY_ASSISTANT_SETTINGS_FILE = "settings.json";
 export const DEFAULT_VOICE_CORRECTION_ENABLED = true;
 
 export type DesktopThemePreference = "system" | "light" | "dark";
@@ -106,84 +104,28 @@ function normalizeTextArray(value: unknown) {
     .filter(Boolean);
 }
 
-function normalizeLegacyKanbanNavigation(value: unknown): { enabled?: boolean } {
-  const record = isRecord(value) ? value : {};
-  return {
-    ...(typeof record.enabled === "boolean" ? { enabled: record.enabled } : {})
-  };
-}
-
-function readLegacyKanbanDeviceAlias(rootDir: string) {
-  const parsed = readJsonFile(path.join(rootDir, "kanban.json"));
-  const record = isRecord(parsed) ? parsed : {};
-  const cloud = isRecord(record.cloud) ? record.cloud : {};
-  return readText(cloud.deviceAlias) || readText(record.deviceAlias);
-}
-
-function readLegacyPreferences(rootDir: string) {
-  const parsed = readJsonFile(path.join(rootDir, LEGACY_DESKTOP_PREFERENCES_FILE));
-  return isRecord(parsed) ? parsed : {};
-}
-
-function readLegacyAssistantSettings(rootDir: string) {
-  const parsed = readJsonFile(path.join(rootDir, LEGACY_ASSISTANT_SETTINGS_FILE));
-  return isRecord(parsed) ? parsed : {};
-}
-
-function hasLegacyProfileInputs(rootDir: string) {
-  return fs.existsSync(path.join(rootDir, LEGACY_DESKTOP_PREFERENCES_FILE)) ||
-    fs.existsSync(path.join(rootDir, LEGACY_ASSISTANT_SETTINGS_FILE));
-}
-
 function normalizeDesktopProfile(
   value: unknown,
-  rootDir: string,
   options: DesktopProfileReadOptions = {}
 ): DesktopProfile {
   const record = isRecord(value) ? value : {};
-  const legacyPreferences = value ? {} : readLegacyPreferences(rootDir);
-  const legacySettings = value ? {} : readLegacyAssistantSettings(rootDir);
   const general = isRecord(record.general) ? record.general : {};
   const appearance = isRecord(record.appearance) ? record.appearance : {};
   const assistant = isRecord(record.assistant) ? record.assistant : {};
   const copilot = isRecord(assistant.copilot) ? assistant.copilot : {};
   const chat = isRecord(assistant.chat) ? assistant.chat : {};
   const quick = isRecord(assistant.quick) ? assistant.quick : {};
-  const legacyQuickAssistant = isRecord(assistant.quickAssistant) ? assistant.quickAssistant : {};
   const navigation = isRecord(record.navigation) ? record.navigation : {};
-  const webOrder = normalizeTextArray(navigation.webOrder);
-  const legacyWebsiteOrder = normalizeTextArray(navigation.websiteOrder);
-  const legacyLocale = normalizeLocale(legacyPreferences.locale);
   const profileLocale = normalizeLocale(appearance.locale);
-  const copilotAgentKey =
-    readText(copilot.agentKey) ||
-    readText(assistant.desktopHelperAgentKey) ||
-    readText(legacySettings.desktopHelperAgentKey) ||
-    DEFAULT_DESKTOP_HELPER_AGENT_KEY;
-  const quickAgentKey =
-    readText(quick.agentKey) ||
-    readText(legacyQuickAssistant.agentKey) ||
-    readText(legacySettings.quickAssistantAgentKey) ||
-    DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
+  const copilotAgentKey = readText(copilot.agentKey) || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+  const quickAgentKey = readText(quick.agentKey) || DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
   const chatAgentKey = readText(chat.agentKey) || DEFAULT_CHAT_DEFAULT_AGENT_KEY;
-  const quickShortcut = normalizeQuickAssistantShortcut(
-    readText(quick.shortcut) ||
-    readText(legacyQuickAssistant.shortcut) ||
-    readText(legacySettings.quickAssistantShortcut)
-  );
-  const legacyQuickAssistantEnabled = typeof legacySettings.quickAssistantEnabled === "boolean"
-    ? legacySettings.quickAssistantEnabled
-    : DEFAULT_QUICK_ASSISTANT_ENABLED;
-  const legacyVoiceCorrectionEnabled = typeof legacySettings.voiceCorrectionEnabled === "boolean"
-    ? legacySettings.voiceCorrectionEnabled
-    : DEFAULT_VOICE_CORRECTION_ENABLED;
+  const quickShortcut = normalizeQuickAssistantShortcut(readText(quick.shortcut));
 
   return {
     schemaVersion: 1,
     general: {
-      deviceName: "deviceName" in general
-        ? readText(general.deviceName)
-        : readLegacyKanbanDeviceAlias(rootDir),
+      deviceName: readText(general.deviceName),
       preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
         ? general.preventSleepWhileRunning
         : true,
@@ -196,12 +138,12 @@ function normalizeDesktopProfile(
     },
     appearance: {
       theme: normalizeTheme(appearance.theme),
-      locale: profileLocale || legacyLocale || options.defaultLocale || DEFAULT_LOCALE
+      locale: profileLocale || options.defaultLocale || DEFAULT_LOCALE
     },
     assistant: {
       voiceCorrectionEnabled: typeof assistant.voiceCorrectionEnabled === "boolean"
         ? assistant.voiceCorrectionEnabled
-        : legacyVoiceCorrectionEnabled,
+        : DEFAULT_VOICE_CORRECTION_ENABLED,
       copilot: {
         agentKey: copilotAgentKey
       },
@@ -211,18 +153,16 @@ function normalizeDesktopProfile(
       quick: {
         enabled: typeof quick.enabled === "boolean"
           ? quick.enabled
-          : typeof legacyQuickAssistant.enabled === "boolean"
-            ? legacyQuickAssistant.enabled
-          : legacyQuickAssistantEnabled,
+          : DEFAULT_QUICK_ASSISTANT_ENABLED,
         agentKey: quickAgentKey,
         shortcut: quickShortcut
       }
     },
     navigation: {
       mainOrder: normalizeTextArray(navigation.mainOrder),
-      webOrder: webOrder.length > 0 ? webOrder : legacyWebsiteOrder,
+      webOrder: normalizeTextArray(navigation.webOrder),
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
-        navigation.desktopCopilotPages ?? legacySettings.desktopCopilotPages
+        navigation.desktopCopilotPages
       )
     }
   };
@@ -239,22 +179,11 @@ export function readDesktopProfileFromRoot(
   fs.mkdirSync(rootDir, { recursive: true });
   const profilePath = getDesktopProfilePath(rootDir);
   const parsed = readJsonFile(profilePath);
-  const profile = normalizeDesktopProfile(parsed, rootDir, options);
-  if (!parsed && hasLegacyProfileInputs(rootDir)) {
-    writeJsonFile(profilePath, profile);
-  }
-  return profile;
-}
-
-export function readLegacyKanbanNavigationPreferenceFromRoot(rootDir: string) {
-  const parsed = readJsonFile(path.join(rootDir, DESKTOP_PROFILE_FILE));
-  const record = isRecord(parsed) ? parsed : {};
-  const navigation = isRecord(record.navigation) ? record.navigation : {};
-  return normalizeLegacyKanbanNavigation(navigation.kanban);
+  return normalizeDesktopProfile(parsed, options);
 }
 
 export function writeDesktopProfileToRoot(rootDir: string, profile: DesktopProfile) {
-  const normalized = normalizeDesktopProfile(profile, rootDir);
+  const normalized = normalizeDesktopProfile(profile);
   writeJsonFile(getDesktopProfilePath(rootDir), normalized);
   return normalized;
 }
@@ -293,10 +222,3 @@ export function updateDesktopProfileInRoot(rootDir: string, patch: DesktopProfil
     }
   });
 }
-
-export const __testInternals = {
-  normalizeDesktopProfile,
-  readLegacyKanbanDeviceAlias,
-  readLegacyPreferences,
-  readLegacyAssistantSettings
-};

@@ -21,6 +21,45 @@ test("desktop profile defaults Desktop Action confirmation to enabled", (t) => {
   assert.equal(profile.general.desktopActionConfirmationEnabled, true);
 });
 
+test("desktop profile ignores retired files and nested aliases", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  fs.writeFileSync(path.join(root, "preferences.json"), JSON.stringify({ locale: "zh-CN" }), "utf8");
+  fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({
+    desktopHelperAgentKey: "legacy-helper",
+    quickAssistantAgentKey: "legacy-quick"
+  }), "utf8");
+  fs.writeFileSync(path.join(root, "kanban.json"), JSON.stringify({ deviceAlias: "legacy-device" }), "utf8");
+
+  const fromRetiredFiles = readDesktopProfileFromRoot(root);
+  assert.equal(fs.existsSync(path.join(root, "profile.json")), false);
+  assert.equal(fromRetiredFiles.general.deviceName, "");
+  assert.equal(fromRetiredFiles.assistant.copilot.agentKey, "desktopAssistant");
+  assert.equal(fromRetiredFiles.assistant.quick.agentKey, "desktopAssistant");
+
+  fs.writeFileSync(path.join(root, "profile.json"), JSON.stringify({
+    assistant: {
+      desktopHelperAgentKey: "legacy-helper",
+      quickAssistant: {
+        enabled: false,
+        agentKey: "legacy-quick",
+        shortcut: "CommandOrControl+Shift+K"
+      }
+    },
+    navigation: {
+      websiteOrder: ["legacy-site"]
+    }
+  }), "utf8");
+
+  const fromRetiredAliases = readDesktopProfileFromRoot(root);
+  assert.equal(fromRetiredAliases.assistant.copilot.agentKey, "desktopAssistant");
+  assert.equal(fromRetiredAliases.assistant.quick.enabled, true);
+  assert.equal(fromRetiredAliases.assistant.quick.agentKey, "desktopAssistant");
+  assert.equal(fromRetiredAliases.assistant.quick.shortcut, "Alt+Space");
+  assert.deepEqual(fromRetiredAliases.navigation.webOrder, []);
+});
+
 test("desktop profile preserves explicit Desktop Action confirmation disable", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

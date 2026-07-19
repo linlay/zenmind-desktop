@@ -249,21 +249,12 @@ function normalizeKanbanDefaults(value: unknown) {
   return Object.keys(settings).length > 0 ? settings : null;
 }
 
-function readLegacyProfileKanbanDefaults(profileDefaults: unknown) {
-  if (!isRecord(profileDefaults)) {
-    return null;
-  }
-  const navigation = isRecord(profileDefaults.navigation) ? profileDefaults.navigation : {};
-  return normalizeKanbanDefaults(navigation.kanban);
-}
-
 function normalizeDesktopInitAssistantDefaults(value: unknown): DesktopInitAssistantDefaults | null {
   if (!isRecord(value)) {
     return null;
   }
   const assistant: DesktopInitAssistantDefaults = {};
-  const defaultChatAgentKey =
-    readText(value.defaultChatAgentKey) || readText(value.defaultAgentKey);
+  const defaultChatAgentKey = readText(value.defaultChatAgentKey);
   const bootstrapAgentKey = readText(value.bootstrapAgentKey);
   const bootstrapChatId = readText(value.bootstrapChatId);
   if (defaultChatAgentKey) {
@@ -331,23 +322,19 @@ function applyProfileDefaults(
   const profile = isRecord(profileDefaults) ? profileDefaults : {};
   const general = isRecord(profile.general) ? profile.general : {};
   const appearance = isRecord(profile.appearance) ? profile.appearance : {};
-  const legacyAssistant = isRecord(profile.assistant) ? profile.assistant : {};
-  const assistantCopilot = isRecord(legacyAssistant.copilot) ? legacyAssistant.copilot : {};
-  const assistantQuick = isRecord(legacyAssistant.quick) ? legacyAssistant.quick : {};
-  const legacyQuickAssistant = isRecord(legacyAssistant.quickAssistant) ? legacyAssistant.quickAssistant : {};
+  const assistant = isRecord(profile.assistant) ? profile.assistant : {};
+  const assistantCopilot = isRecord(assistant.copilot) ? assistant.copilot : {};
+  const assistantQuick = isRecord(assistant.quick) ? assistant.quick : {};
   const navigation = isRecord(profile.navigation) ? profile.navigation : {};
   const current = readDesktopProfileFromRoot(profileRoot);
   const defaultAgentKey = readText(assistantCopilot.agentKey) ||
-    readText(legacyAssistant.desktopHelperAgentKey) ||
     current.assistant.copilot.agentKey ||
     DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const quickAgentKey = readText(assistantQuick.agentKey) ||
-    readText(legacyQuickAssistant.agentKey) ||
     current.assistant.quick.agentKey ||
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
   const quickShortcut = normalizeQuickAssistantShortcut(
     readText(assistantQuick.shortcut) ||
-    readText(legacyQuickAssistant.shortcut) ||
     current.assistant.quick.shortcut
   );
   updateDesktopProfileInRoot(profileRoot, {
@@ -369,8 +356,8 @@ function applyProfileDefaults(
       locale: normalizeLocale(appearance.locale) || current.appearance.locale || DEFAULT_LOCALE
     },
     assistant: {
-      voiceCorrectionEnabled: typeof legacyAssistant.voiceCorrectionEnabled === "boolean"
-        ? legacyAssistant.voiceCorrectionEnabled
+      voiceCorrectionEnabled: typeof assistant.voiceCorrectionEnabled === "boolean"
+        ? assistant.voiceCorrectionEnabled
         : current.assistant.voiceCorrectionEnabled,
       copilot: {
         agentKey: defaultAgentKey
@@ -378,9 +365,7 @@ function applyProfileDefaults(
       quick: {
         enabled: typeof assistantQuick.enabled === "boolean"
           ? assistantQuick.enabled
-          : typeof legacyQuickAssistant.enabled === "boolean"
-            ? legacyQuickAssistant.enabled
-            : current.assistant.quick.enabled,
+          : current.assistant.quick.enabled,
         agentKey: quickAgentKey,
         shortcut: quickShortcut
       }
@@ -391,9 +376,7 @@ function applyProfileDefaults(
         : current.navigation.mainOrder,
       webOrder: Array.isArray(navigation.webOrder)
         ? navigation.webOrder.map(readText).filter(Boolean)
-        : Array.isArray(navigation.websiteOrder)
-          ? navigation.websiteOrder.map(readText).filter(Boolean)
-          : current.navigation.webOrder,
+        : current.navigation.webOrder,
       desktopCopilotPages: isRecord(navigation.desktopCopilotPages)
         ? normalizeDesktopCopilotPageDefaults(navigation.desktopCopilotPages, current.navigation.desktopCopilotPages, defaultAgentKey)
         : current.navigation.desktopCopilotPages
@@ -543,27 +526,8 @@ type BootstrapWebsApplyResult = {
   report: BootstrapWebsReport;
 };
 
-function hasWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
-  return (isRecord(webs) && (Array.isArray(webs.items) || Array.isArray(webs.websites))) ||
-    Array.isArray(webs) ||
-    Array.isArray(legacyWebsites) ||
-    (isRecord(legacyWebsites) && Array.isArray(legacyWebsites.items));
-}
-
-function normalizeLegacyWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
-  if (isRecord(webs) && Array.isArray(webs.websites)) {
-    return webs.websites;
-  }
-  if (Array.isArray(webs)) {
-    return webs;
-  }
-  if (Array.isArray(legacyWebsites)) {
-    return legacyWebsites;
-  }
-  if (isRecord(legacyWebsites) && Array.isArray(legacyWebsites.items)) {
-    return legacyWebsites.items;
-  }
-  return [];
+function hasWebsiteDefaults(webs: unknown) {
+  return isRecord(webs) && Array.isArray(webs.items);
 }
 
 function assertSafeBootstrapId(rawId: unknown, itemIndex: number) {
@@ -604,11 +568,9 @@ function assertBootstrapTreeHasNoSymlinks(rootDir: string) {
 function prepareBootstrapSites(
   initPath: string,
   webs: unknown,
-  legacyWebsites: unknown,
   platform: NodeJS.Platform
 ) {
-  const canonicalItems = isRecord(webs) && Array.isArray(webs.items) ? webs.items : null;
-  const rawItems = canonicalItems ?? normalizeLegacyWebsiteDefaults(webs, legacyWebsites);
+  const rawItems = isRecord(webs) && Array.isArray(webs.items) ? webs.items : [];
   const pathApi = pathApiForRuntimeRoot(platform, path.dirname(initPath));
   const sitesRoot = pathApi.join(pathApi.dirname(initPath), "desktop-init", "sites");
   const seenIds = new Set<string>();
@@ -619,23 +581,18 @@ function prepareBootstrapSites(
     if (!isRecord(rawItem)) {
       throw new Error(`webs.items[${index}] must be an object.`);
     }
-    const kind = canonicalItems ? readText(rawItem.kind) : "website";
+    const kind = readText(rawItem.kind);
     if (kind !== "website" && kind !== "webapp") {
       throw new Error(`webs.items[${index}].kind must be website or webapp.`);
     }
-    const explicitId = canonicalItems
-      ? assertSafeBootstrapId(rawItem.id, index)
-      : readText(rawItem.id);
-    if (explicitId && normalizeWebId(explicitId) !== explicitId) {
-      throw new Error(`webs.items[${index}].id must be a normalized Site id.`);
-    }
+    const explicitId = assertSafeBootstrapId(rawItem.id, index);
 
     if (kind === "website") {
       const item = createWebsiteItem({
         id: explicitId || undefined,
         label: readText(rawItem.label) || undefined,
         url: readText(rawItem.url),
-        copilotAgentKey: readText(rawItem.copilotAgentKey) || readText(rawItem.agentKey) || undefined
+        copilotAgentKey: readText(rawItem.copilotAgentKey) || undefined
       });
       if (seenIds.has(item.id)) {
         throw new Error(`Duplicate Site id in desktop-init: ${item.id}`);
@@ -690,13 +647,12 @@ function applyWebsiteDefaults(
   app: App,
   initPath: string,
   webs: unknown,
-  legacyWebsites: unknown,
   preserve: boolean,
   platform: NodeJS.Platform = process.platform
 ): BootstrapWebsApplyResult {
   const mode = preserve ? "preserve" : "initialize";
   const emptyReport: BootstrapWebsReport = { mode, items: [], warnings: [] };
-  if (!hasWebsiteDefaults(webs, legacyWebsites)) {
+  if (!hasWebsiteDefaults(webs)) {
     return { status: "absent", report: emptyReport };
   }
   if (preserve) {
@@ -704,7 +660,7 @@ function applyWebsiteDefaults(
   }
 
   // Validate every declared Site and packaged WebApp before touching user data.
-  const prepared = prepareBootstrapSites(initPath, webs, legacyWebsites, platform);
+  const prepared = prepareBootstrapSites(initPath, webs, platform);
   const existingWebsites = readWebsiteItems(app, platform);
   const existingWebapps = readWebappItemsWithoutMigration(app, platform);
   const websiteById = new Map(existingWebsites.map((item) => [item.id, item] as const));
@@ -894,9 +850,7 @@ export function applyDesktopInitBootstrap(
     );
     const preserveSites = fs.existsSync(bootstrapStatePath);
     const assistant = normalizeDesktopInitAssistantDefaults(defaults.assistant);
-    const kanbanDefaults = isRecord(defaults.kanban)
-      ? defaults.kanban
-      : readLegacyProfileKanbanDefaults(defaults.profile);
+    const kanbanDefaults = isRecord(defaults.kanban) ? defaults.kanban : null;
     const errors: Record<string, string> = {};
     let websReport: BootstrapWebsReport = {
       mode: preserveSites ? "preserve" : "initialize",
@@ -916,7 +870,6 @@ export function applyDesktopInitBootstrap(
           app,
           initPath,
           defaults.webs,
-          defaults.websites,
           preserveSites,
           platform
         );

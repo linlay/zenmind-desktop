@@ -94,7 +94,7 @@ test("archive import filters follow internal service package platform formats", 
   assert.deepEqual(getArchiveExtensions("win32"), ["zip"]);
 });
 
-test("assistant settings keep bootstrapChatId optional for legacy environments", (t) => {
+test("assistant settings accept an omitted bootstrap chat id", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-assistant-settings-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, "assistant.json"), JSON.stringify({
@@ -106,6 +106,17 @@ test("assistant settings keep bootstrapChatId optional for legacy environments",
   const settings = getAssistantSettingsFromRoot(root);
   assert.equal(settings.bootstrapAgentKey, "bootstrap");
   assert.equal(settings.bootstrapChatId, "");
+});
+
+test("assistant settings ignore the retired default agent alias", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-assistant-settings-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "assistant.json"), JSON.stringify({
+    schemaVersion: 1,
+    defaultAgentKey: "legacy-chat-agent"
+  }), "utf8");
+
+  assert.equal(getAssistantSettingsFromRoot(root).chatDefaultAgentKey, "");
 });
 
 test("desktop-init bootstrap applies into canonical desktop files and rereads explicit init", (t) => {
@@ -125,7 +136,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
       },
       navigation: {
         mainOrder: [],
-        websiteOrder: []
+        webOrder: []
       }
     },
     assistant: {
@@ -149,14 +160,15 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
       enabled: true,
       identityProviderHost: "business.example.com"
     },
-    webs: [
-      {
+    webs: {
+      items: [{
+        kind: "website",
         id: "docs",
         label: "Docs",
         url: "https://docs.example.com/",
-        agentKey: "desktopAssistant"
-      }
-    ],
+        copilotAgentKey: "desktopAssistant"
+      }]
+    },
     desktopActionBridge: {
       port: 17988
     },
@@ -553,7 +565,7 @@ test("desktop-init rejects symbolic links inside a WebApp seed", (t) => {
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", "linked-app")), false);
 });
 
-test("desktop-init bootstrap canonicalizes the legacy Chat default agent field", (t) => {
+test("desktop-init bootstrap ignores the retired Chat default agent field", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-chat-agent-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -567,11 +579,82 @@ test("desktop-init bootstrap canonicalizes the legacy Chat default agent field",
 
   applyDesktopInitBootstrap(app, "darwin");
 
-  const assistantConfig = readJson(
-    path.join(desktopRoot(homePath), "config", "desktop", "assistant.json"),
+  const assistantConfigPath = path.join(desktopRoot(homePath), "config", "desktop", "assistant.json");
+  assert.equal(fs.existsSync(assistantConfigPath), false);
+});
+
+test("desktop-init bootstrap ignores retired profile, Kanban, and Website shapes", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-retired-inputs-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    profile: {
+      assistant: {
+        desktopHelperAgentKey: "legacy-helper",
+        quickAssistant: {
+          enabled: false,
+          agentKey: "legacy-quick"
+        }
+      },
+      navigation: {
+        websiteOrder: ["legacy-site"],
+        kanban: {
+          enabled: false
+        }
+      }
+    },
+    websites: [{
+      id: "top-level-site",
+      label: "Top-level site",
+      url: "https://top-level.example.test/"
+    }],
+    webs: {
+      websites: [{
+        id: "nested-site",
+        label: "Nested site",
+        url: "https://nested.example.test/",
+        agentKey: "legacy-helper"
+      }]
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  const desktop = desktopRoot(homePath);
+  const profile = readJson(path.join(desktop, "config", "desktop", "profile.json"));
+
+  assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
+  assert.equal(profile.assistant.quick.enabled, true);
+  assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
+  assert.deepEqual(profile.navigation.webOrder, []);
+  assert.equal(result.appliedResult.kanban, "absent");
+  assert.equal(result.appliedResult.webs, "absent");
+  assert.equal(fs.existsSync(path.join(desktop, "config", "desktop", "kanban.json")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "data", "webs", "websites", "top-level-site")), false);
+  assert.equal(fs.existsSync(path.join(desktop, "data", "webs", "websites", "nested-site")), false);
+});
+
+test("desktop-init bootstrap ignores the retired Website array form", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-retired-web-array-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    webs: [{
+      id: "array-site",
+      label: "Array site",
+      url: "https://array.example.test/"
+    }]
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(result.appliedResult.webs, "absent");
+  assert.equal(
+    fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "websites", "array-site")),
+    false
   );
-  assert.equal(assistantConfig.defaultChatAgentKey, "zenmi");
-  assert.equal("defaultAgentKey" in assistantConfig, false);
 });
 
 test("desktop-init bootstrap ignores legacy desktop-default file names", (t) => {
@@ -626,7 +709,7 @@ test("desktop-init bootstrap does not block startup on invalid JSON", (t) => {
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "state", "desktop", "bootstrap.json")), false);
 });
 
-test("desktop-init bootstrap migrates legacy navigation kanban fallback", (t) => {
+test("desktop-init bootstrap ignores retired navigation kanban defaults", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-kanban-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -651,10 +734,10 @@ test("desktop-init bootstrap migrates legacy navigation kanban fallback", (t) =>
 
   const desktopConfigRoot = path.join(desktopRoot(homePath), "config", "desktop");
   const profile = readJson(path.join(desktopConfigRoot, "profile.json"));
-  const kanban = readJson(path.join(desktopConfigRoot, "kanban.json"));
+  const kanbanPath = path.join(desktopConfigRoot, "kanban.json");
   assert.equal("kanban" in profile.navigation, false);
-  assert.equal(kanban.enabled, false);
-  assert.equal(result.appliedResult.kanban, "applied");
+  assert.equal(fs.existsSync(kanbanPath), false);
+  assert.equal(result.appliedResult.kanban, "absent");
 });
 
 test("desktop-init bootstrap leaves market absent without a market API", (t) => {
@@ -930,7 +1013,7 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
       },
       navigation: {
         mainOrder: [],
-        websiteOrder: [],
+        webOrder: [],
         desktopCopilotPages: {}
       }
     },
@@ -1139,48 +1222,28 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
   });
 });
 
-test("desktop-init bootstrap writes canonical SSO even when old configs exist", (t) => {
+test("desktop-init bootstrap writes canonical SSO over an existing canonical config", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-existing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const cases = [
-    {
-      name: "canonical",
-      existingPath: (homePath) => canonicalSsoPath(homePath)
-    },
-    {
-      name: "legacy",
-      existingPath: (homePath) => path.join(runtimeRoot(homePath), "desktop-sso.json")
-    },
-    {
-      name: "root",
-      existingPath: (homePath) => path.join(runtimeRoot(homePath), "sso.json")
+  const homePath = path.join(root, "canonical");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    sso: {
+      enabled: true,
+      provider: "google",
+      authMode: "server"
     }
-  ];
+  });
+  const existingPath = canonicalSsoPath(homePath);
+  fs.mkdirSync(path.dirname(existingPath), { recursive: true });
+  fs.writeFileSync(existingPath, `${JSON.stringify({ enabled: true, marker: "previous" })}\n`, "utf8");
 
-  for (const item of cases) {
-    const homePath = path.join(root, item.name);
-    const app = createApp(homePath);
-    writeDesktopInit(app, "darwin", {
-      sso: {
-        enabled: true,
-        provider: "google",
-        authMode: "server"
-      }
-    });
-    const existingPath = item.existingPath(homePath);
-    fs.mkdirSync(path.dirname(existingPath), { recursive: true });
-    fs.writeFileSync(existingPath, `${JSON.stringify({ enabled: true, marker: item.name })}\n`, "utf8");
+  const result = applyDesktopInitBootstrap(app, "darwin");
 
-    const result = applyDesktopInitBootstrap(app, "darwin");
-
-    assert.equal(result.appliedResult.sso, "applied", item.name);
-    assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
-    assert.equal(readJson(canonicalSsoPath(homePath)).authMode, "server");
-    if (existingPath !== canonicalSsoPath(homePath)) {
-      assert.equal(readJson(existingPath).marker, item.name);
-    }
-  }
+  assert.equal(result.appliedResult.sso, "applied");
+  assert.equal(readJson(existingPath).provider, "google");
+  assert.equal(readJson(existingPath).authMode, "server");
 });
 
 test("desktop-init bootstrap reads profile market and SSO from one init", (t) => {

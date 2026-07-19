@@ -5,7 +5,6 @@ import { DEFAULT_LOCALE, normalizeLocale, type LocaleSettings, type SupportedLoc
 import { getDesktopConfigRoot } from "../user-paths";
 import {
   DESKTOP_PROFILE_FILE,
-  LEGACY_DESKTOP_PREFERENCES_FILE,
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
 } from "../desktop-profile-store";
@@ -25,12 +24,8 @@ function getPreferencesPath(app: App) {
   return path.join(getDesktopConfigRoot(app), PREFERENCES_FILE);
 }
 
-function getLegacyPreferencesPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), LEGACY_DESKTOP_PREFERENCES_FILE);
-}
-
 function hasStoredPreferences(app: App) {
-  return fs.existsSync(getPreferencesPath(app)) || fs.existsSync(getLegacyPreferencesPath(app));
+  return fs.existsSync(getPreferencesPath(app));
 }
 
 function readStoredPreferences(app: App, options: DesktopLocaleReadOptions = {}): DesktopPreferences {
@@ -92,6 +87,5 @@ export function saveDesktopLocale(app: App, locale: SupportedLocale): LocaleSett
 export const __testInternals = {
   FIRST_INSTALL_DEFAULT_LOCALE,
   PREFERENCES_FILE,
-  LEGACY_DESKTOP_PREFERENCES_FILE,
   getPreferencesPath
 };

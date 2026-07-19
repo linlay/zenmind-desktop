@@ -69,8 +69,7 @@ function readDesktopInitAssistantSettingsFromRoot(rootDir: string) {
     return {
       bootstrapAgentKey: readText(parsed.bootstrapAgentKey),
       bootstrapChatId: readText(parsed.bootstrapChatId),
-      chatDefaultAgentKey:
-        readText(parsed.defaultChatAgentKey) || readText(parsed.defaultAgentKey),
+      chatDefaultAgentKey: readText(parsed.defaultChatAgentKey),
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {

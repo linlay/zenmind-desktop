@@ -9,6 +9,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
+  failDesktopSsoFlow,
+  getDesktopSsoStatus,
   logoutDesktopSso,
   startDesktopSsoLogin,
   startDesktopSsoSiteTokenBridge,
@@ -39,6 +41,17 @@ function writeSsoConfig(app, config) {
     encoding: "utf8",
     mode: 0o600
   });
+}
+
+function getDesktopStateRoot(app) {
+  const configPath = __testInternals.resolveDesktopSsoConfigPath(app, "darwin");
+  const desktopRoot = path.dirname(path.dirname(path.dirname(configPath)));
+  return path.join(desktopRoot, "state", "desktop");
+}
+
+function getRuntimeRoot(app) {
+  const configPath = __testInternals.resolveDesktopSsoConfigPath(app, "darwin");
+  return path.dirname(path.dirname(path.dirname(path.dirname(configPath))));
 }
 
 const embeddedLoginHost = ["ai", ["q", "i", "u", "e", "r"].join(""), "net"].join(".");
@@ -151,6 +164,78 @@ test("desktop sso parses provider-free system browser OIDC config", (t) => {
   assert.equal(__testInternals.shouldUseSystemBrowser(result.config), true);
 });
 
+test("desktop sso ignores retired config and session files", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  const runtimeRoot = getRuntimeRoot(app);
+  fs.mkdirSync(runtimeRoot, { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, "desktop-sso.json"), JSON.stringify({
+    enabled: true,
+    ...__testInternals.DEFAULT_OIDC_CONFIG
+  }), "utf8");
+  fs.writeFileSync(path.join(runtimeRoot, "sso.json"), JSON.stringify({
+    enabled: true,
+    ...__testInternals.DEFAULT_OIDC_CONFIG
+  }), "utf8");
+
+  const config = __testInternals.loadDesktopSsoConfig(app, "darwin");
+  assert.equal(config.configured, false);
+
+  writeSsoConfig(app, {
+    ...__testInternals.DEFAULT_OIDC_CONFIG,
+    enabled: true,
+    browserMode: "system",
+    redirectUri: "http://127.0.0.1:0/api/auth/oidc/callback",
+    logoutCallbackUri: "http://127.0.0.1:0/api/auth/oidc/logout-callback",
+    logoutUrl: ""
+  });
+  const stateRoot = getDesktopStateRoot(app);
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "oidc-sso-session.json"), JSON.stringify({
+    authenticated: true,
+    user: { sub: "legacy-user" }
+  }), "utf8");
+
+  failDesktopSsoFlow("reset test state");
+  const status = getDesktopSsoStatus(app);
+  assert.equal(status.authenticated, false);
+  assert.equal(status.user, null);
+});
+
+test("desktop SSO logout clears only canonical session and token files", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  const stateRoot = getDesktopStateRoot(app);
+  fs.mkdirSync(stateRoot, { recursive: true });
+  const canonicalSessionPath = path.join(stateRoot, "sso-session.json");
+  const canonicalTokenPath = path.join(stateRoot, "sso-access-token.txt");
+  const legacySessionPath = path.join(stateRoot, "oidc-sso-session.json");
+  const legacyTokenPath = path.join(stateRoot, "desktop-sso-access-token.txt");
+  fs.writeFileSync(canonicalSessionPath, JSON.stringify({
+    authenticated: true,
+    user: { sub: "canonical-user" }
+  }), "utf8");
+  fs.writeFileSync(canonicalTokenPath, "canonical-token\n", "utf8");
+  fs.writeFileSync(legacySessionPath, JSON.stringify({
+    authenticated: true,
+    user: { sub: "legacy-user" }
+  }), "utf8");
+  fs.writeFileSync(legacyTokenPath, "legacy-token\n", "utf8");
+
+  failDesktopSsoFlow("reset test state");
+  const result = await logoutDesktopSso(app);
+
+  assert.equal(result.ok, true);
+  assert.equal(fs.existsSync(canonicalSessionPath), false);
+  assert.equal(fs.existsSync(canonicalTokenPath), false);
+  assert.equal(fs.existsSync(legacySessionPath), true);
+  assert.equal(fs.existsSync(legacyTokenPath), true);
+});
+
 test("desktop sso keeps embedded browser default for ordinary OIDC without browserMode", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -234,7 +319,7 @@ test("desktop sso site token bridge open mode follows browserMode", async (t) =>
   await startDesktopSsoLogin(app);
   const bridgeStart = startDesktopSsoSiteTokenBridge(app);
 
-  assert.equal(bridgeStart.ok, true);
+  assert.equal(bridgeStart.ok, true, bridgeStart.message);
   assert.equal(bridgeStart.openMode, "embedded");
   assert.equal(bridgeStart.browserOrigin, "https://app.example.test");
   assert.equal(bridgeStart.required, true);
@@ -429,7 +514,7 @@ test("desktop sso system browser login uses localhost callback for explicit brow
   });
 
   return startDesktopSsoLogin(app).then((result) => {
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, true, result.message);
     assert.equal(result.openMode, "system");
     assert.equal(result.browserLabel, "ZenMind 登录");
     assert.equal(result.browserUrl, undefined);
@@ -495,7 +580,7 @@ test("desktop sso logout proxy failure renders signed-out page", async (t) => {
   }));
 
   const result = await logoutDesktopSso(app);
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, true, result.message);
   assert.match(result.browserUrl, /^http:\/\/localhost:8080\/auth\/ssoLogout/u);
 
   const response = await fetch(result.browserUrl);
