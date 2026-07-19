@@ -35,19 +35,200 @@ export interface KanbanCurrentUser {
   source: "sso" | "device";
 }
 
+export interface KanbanCloudUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  status?: string;
+}
+
+export interface KanbanIssueTypeDef {
+  key: string;
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  position?: number;
+  isSystem?: boolean;
+  isActive?: boolean;
+}
+
+export interface KanbanIssueFieldDef {
+  id: string;
+  key: string;
+  name: string;
+  valueType: string;
+  description?: string;
+  unit?: string;
+}
+
+export interface KanbanIssueFieldContext {
+  id: string;
+  fieldId: string;
+  projectId?: string | null;
+  issueTypeKey?: string | null;
+  workflowId?: string | null;
+  required: boolean;
+  position: number;
+  defaultValue?: unknown;
+  validation?: Record<string, unknown>;
+  ui?: Record<string, unknown>;
+  isActive: boolean;
+}
+
+export interface KanbanIssueFieldOption {
+  id: string;
+  fieldId: string;
+  key: string;
+  name: string;
+  value?: unknown;
+  color?: string;
+  position: number;
+  isActive: boolean;
+}
+
+export interface KanbanResolvedIssueField {
+  def: KanbanIssueFieldDef;
+  context: KanbanIssueFieldContext;
+  options: KanbanIssueFieldOption[];
+  projectDistance?: number;
+}
+
+export interface KanbanWorkflow {
+  id: string;
+  issueTypeKey?: string;
+  key: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+  transitionMode?: string;
+}
+
+export interface KanbanWorkflowStage {
+  id: string;
+  workflowId: string;
+  stageDefId?: string;
+  key: string;
+  name: string;
+  position?: number;
+  isStart?: boolean;
+  isEnd?: boolean;
+}
+
+export interface KanbanWorkflowStatus {
+  id: string;
+  workflowId: string;
+  stageId?: string;
+  statusDefId?: string;
+  key: string;
+  name: string;
+  columnKey?: string;
+  position?: number;
+  isStart?: boolean;
+  isTerminal?: boolean;
+  isActive?: boolean;
+  reviewRequired?: boolean;
+}
+
+export interface KanbanIssueLabel {
+  id: string;
+  projectId: string;
+  key: string;
+  name: string;
+  color?: string;
+}
+
+export interface KanbanIssueLabelLink {
+  issueId: string;
+  labelId: string;
+}
+
+export interface KanbanIssueDependency {
+  id: string;
+  fromIssueId: string;
+  toIssueId: string;
+  type: string;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+export interface KanbanIssueReview {
+  id: string;
+  issueId: string;
+  runId?: string | null;
+  reviewType: string;
+  reviewerId?: string | null;
+  status: string;
+  requestedBy?: string | null;
+  requestedAt: string;
+  submittedAt?: string | null;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanIssueComment {
+  id: string;
+  issueId: string;
+  authorUserId?: string | null;
+  authorAgent?: string | null;
+  body: string;
+  issueStageId?: string | null;
+  issueStatusId?: string | null;
+  issueRevision?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanRecentEvent {
+  id: number;
+  projectId?: string | null;
+  issueId?: string | null;
+  revision: number;
+  eventType: string;
+  actorId?: string | null;
+  actorAgent?: string | null;
+  payload?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface KanbanCloudDetailData {
+  users: KanbanCloudUser[];
+  issueTypes: KanbanIssueTypeDef[];
+  issueFieldDefs: KanbanIssueFieldDef[];
+  issueFieldContexts: KanbanIssueFieldContext[];
+  issueFieldOptions: KanbanIssueFieldOption[];
+  workflows: KanbanWorkflow[];
+  workflowStages: KanbanWorkflowStage[];
+  workflowStatuses: KanbanWorkflowStatus[];
+  issueLabels: KanbanIssueLabel[];
+  issueLabelLinks: KanbanIssueLabelLink[];
+  issueDependencies: KanbanIssueDependency[];
+  reviews: KanbanIssueReview[];
+  issueComments: KanbanIssueComment[];
+  recentEvents: KanbanRecentEvent[];
+}
+
 export interface KanbanIssue {
   id: string;
   localIssueId?: string;
   remoteIssueId?: string | null;
   boardId?: string;
   projectId?: string;
+  projectPath?: string;
+  projectName?: string;
+  parentIssueId?: string | null;
   workflowId?: string;
   typeId?: string;
+  issueTypeKey?: string;
   stageId?: string;
+  stageKey?: string;
   stageName?: string;
   statusId?: string;
   statusName?: string;
   statusKey?: string;
+  columnKey?: string;
   title: string;
   description: string;
   status: KanbanStatus;
@@ -66,6 +247,12 @@ export interface KanbanIssue {
   chatId: string | null;
   runId: string | null;
   runState: KanbanRunState | null;
+  runAgentKey?: string | null;
+  runCommandId?: string | null;
+  runStartedAt?: string | null;
+  runFinishedAt?: string | null;
+  runResultMessage?: string | null;
+  runErrorMessage?: string | null;
   dispatchState?: "waiting_for_device" | "delivered" | "running" | "completed" | "failed" | "cancelled" | null;
   dispatchDeviceId?: string | null;
   dispatchCommandId?: string | null;
@@ -77,6 +264,11 @@ export interface KanbanIssue {
   automationTimezone: string | null;
   attachmentChatId: string | null;
   attachments: AssistantAttachment[];
+  customFields?: Record<string, unknown>;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdByAgent?: string | null;
+  updatedByAgent?: string | null;
   syncMode?: KanbanSyncMode;
   syncState?: KanbanSyncState;
   origin?: KanbanOrigin;
@@ -266,6 +458,7 @@ export interface KanbanListResult {
   projects?: KanbanProject[];
   projectBindings?: KanbanProjectBinding[];
   projectBindingIssues?: KanbanProjectBindingIssue[];
+  cloudDetails?: KanbanCloudDetailData;
   storagePath?: string;
   boardId?: string;
   projectId?: string;

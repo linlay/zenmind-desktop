@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { App } from "electron";
 import type {
   AssistantAttachment,
+  KanbanCloudDetailData,
   KanbanCurrentUser,
   KanbanDeleteResult,
   KanbanIssue,
@@ -74,6 +75,7 @@ type KanbanIssueRow = {
   automation_timezone: string | null;
   attachment_chat_id: string | null;
   attachments_json: string;
+  detail_json: string;
   revision: number;
   created_at: string;
   updated_at: string;
@@ -129,6 +131,20 @@ export type KanbanCloudSnapshot = {
   projects?: unknown[];
   projectBindings?: unknown[];
   issues?: unknown[];
+  users?: unknown[];
+  issueTypes?: unknown[];
+  issueFieldDefs?: unknown[];
+  issueFieldContexts?: unknown[];
+  issueFieldOptions?: unknown[];
+  workflows?: unknown[];
+  workflowStages?: unknown[];
+  workflowStatuses?: unknown[];
+  issueLabels?: unknown[];
+  issueLabelLinks?: unknown[];
+  issueDependencies?: unknown[];
+  reviews?: unknown[];
+  issueComments?: unknown[];
+  recentEvents?: unknown[];
 };
 
 export type KanbanDesktopSyncCursor = {
@@ -163,7 +179,7 @@ const WORKFLOW_ID = "workflow-standard-requirement";
 const ISSUE_TYPE_ID = "issue-type-standard-requirement";
 const DATABASE_DIRECTORY = "desktop-kanban";
 const DATABASE_FILENAME = "kanban.db";
-const SYNC_CACHE_SCHEMA_VERSION = 2;
+const SYNC_CACHE_SCHEMA_VERSION = 3;
 
 function nowIso() {
   return new Date().toISOString();
@@ -216,6 +232,139 @@ function parseAttachmentsJson(value: string | null | undefined): AssistantAttach
   } catch {
     return [];
   }
+}
+
+function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeCustomFields(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function buildIssueDetailJson(issue: KanbanIssue) {
+  return JSON.stringify({
+    projectPath: issue.projectPath ?? "",
+    projectName: issue.projectName ?? "",
+    parentIssueId: issue.parentIssueId ?? null,
+    issueTypeKey: issue.issueTypeKey ?? issue.typeId ?? "",
+    stageKey: issue.stageKey ?? "",
+    statusKey: issue.statusKey ?? "",
+    columnKey: issue.columnKey ?? "",
+    customFields: issue.customFields ?? {},
+    runAgentKey: issue.runAgentKey ?? null,
+    runCommandId: issue.runCommandId ?? null,
+    runStartedAt: issue.runStartedAt ?? null,
+    runFinishedAt: issue.runFinishedAt ?? null,
+    runResultMessage: issue.runResultMessage ?? null,
+    runErrorMessage: issue.runErrorMessage ?? null,
+    createdBy: issue.createdBy ?? null,
+    updatedBy: issue.updatedBy ?? null,
+    createdByAgent: issue.createdByAgent ?? null,
+    updatedByAgent: issue.updatedByAgent ?? null
+  });
+}
+
+function emptyCloudDetailData(): KanbanCloudDetailData {
+  return {
+    users: [],
+    issueTypes: [],
+    issueFieldDefs: [],
+    issueFieldContexts: [],
+    issueFieldOptions: [],
+    workflows: [],
+    workflowStages: [],
+    workflowStatuses: [],
+    issueLabels: [],
+    issueLabelLinks: [],
+    issueDependencies: [],
+    reviews: [],
+    issueComments: [],
+    recentEvents: []
+  };
+}
+
+const CLOUD_DETAIL_KEYS = [
+  "users",
+  "issueTypes",
+  "issueFieldDefs",
+  "issueFieldContexts",
+  "issueFieldOptions",
+  "workflows",
+  "workflowStages",
+  "workflowStatuses",
+  "issueLabels",
+  "issueLabelLinks",
+  "issueDependencies",
+  "reviews",
+  "issueComments",
+  "recentEvents"
+] as const satisfies ReadonlyArray<keyof KanbanCloudDetailData>;
+
+function parseCloudDetailData(value: string | null | undefined): KanbanCloudDetailData {
+  const record = parseJsonRecord(value);
+  const detail = emptyCloudDetailData();
+  for (const key of CLOUD_DETAIL_KEYS) {
+    if (Array.isArray(record[key])) {
+      (detail[key] as unknown[]) = record[key] as unknown[];
+    }
+  }
+  return detail;
+}
+
+function detailItemKey(key: keyof KanbanCloudDetailData, item: unknown, index: number) {
+  const record = parseCloudIssue(item);
+  if (!record) return `${key}:${index}`;
+  if (key === "issueTypes") return trimText(record.key) || `${key}:${index}`;
+  if (key === "issueLabelLinks") return `${trimText(record.issueId)}:${trimText(record.labelId)}`;
+  return String(record.id ?? `${key}:${index}`);
+}
+
+function mergeCloudDetailArray(key: keyof KanbanCloudDetailData, current: unknown[], incoming: unknown[]) {
+  const merged = new Map(current.map((item, index) => [detailItemKey(key, item, index), item]));
+  incoming.forEach((item, index) => merged.set(detailItemKey(key, item, index), item));
+  return [...merged.values()];
+}
+
+function selectCloudDetailData(db: DatabaseSync, currentUser: KanbanCurrentUser): KanbanCloudDetailData {
+  const row = db.prepare(`
+    SELECT PAYLOAD_JSON_ AS payloadJson
+    FROM kanban_cloud_detail_cache
+    WHERE OWNER_USER_ID_ = ?
+  `).get(currentUser.id) as { payloadJson?: string } | undefined;
+  return parseCloudDetailData(row?.payloadJson);
+}
+
+function storeCloudDetailData(
+  db: DatabaseSync,
+  currentUser: KanbanCurrentUser,
+  snapshot: KanbanCloudSnapshot,
+  revision: number
+) {
+  const replace = snapshot.complete === true && snapshot.scope === "project_set";
+  const current = replace ? emptyCloudDetailData() : selectCloudDetailData(db, currentUser);
+  for (const key of CLOUD_DETAIL_KEYS) {
+    const incoming = snapshot[key];
+    if (replace) {
+      (current[key] as unknown[]) = Array.isArray(incoming) ? incoming : [];
+    } else if (Array.isArray(incoming)) {
+      (current[key] as unknown[]) = mergeCloudDetailArray(key, current[key] as unknown[], incoming);
+    }
+  }
+  db.prepare(`
+    INSERT INTO kanban_cloud_detail_cache (OWNER_USER_ID_, REVISION_, PAYLOAD_JSON_, UPDATED_AT_)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(OWNER_USER_ID_) DO UPDATE SET
+      REVISION_ = excluded.REVISION_,
+      PAYLOAD_JSON_ = excluded.PAYLOAD_JSON_,
+      UPDATED_AT_ = excluded.UPDATED_AT_
+  `).run(currentUser.id, revision, JSON.stringify(current), nowIso());
 }
 
 function parseCloudIssue(value: unknown): Record<string, unknown> | null {
@@ -344,6 +493,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       AUTOMATION_TIMEZONE_ TEXT,
       ATTACHMENT_CHAT_ID_ TEXT,
       ATTACHMENTS_JSON_ TEXT NOT NULL DEFAULT '[]',
+      DETAIL_JSON_ TEXT NOT NULL DEFAULT '{}',
       REVISION_ INTEGER NOT NULL DEFAULT 0,
       CREATED_AT_ TEXT NOT NULL,
       UPDATED_AT_ TEXT NOT NULL,
@@ -470,6 +620,13 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       UPDATED_AT_ TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS kanban_cloud_detail_cache (
+      OWNER_USER_ID_ TEXT PRIMARY KEY,
+      REVISION_ INTEGER NOT NULL DEFAULT 0,
+      PAYLOAD_JSON_ TEXT NOT NULL DEFAULT '{}',
+      UPDATED_AT_ TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_kanban_command_receipt_state
       ON kanban_command_receipt(STATE_, DELIVERY_SEQ_);
 
@@ -498,6 +655,9 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   }
   if (!columns.has("STATUS_NAME_")) {
     db.exec("ALTER TABLE issue ADD COLUMN STATUS_NAME_ TEXT");
+  }
+  if (!columns.has("DETAIL_JSON_")) {
+    db.exec("ALTER TABLE issue ADD COLUMN DETAIL_JSON_ TEXT NOT NULL DEFAULT '{}'");
   }
   for (const [name, definition] of [
     ["DISPATCH_STATE_", "TEXT"],
@@ -587,18 +747,26 @@ export function withDesktopKanbanDatabase<T>(
 }
 
 function issueFromRow(row: KanbanIssueRow): KanbanIssue {
+  const detail = parseJsonRecord(row.detail_json);
   return {
     id: row.id,
     localIssueId: row.id,
     remoteIssueId: row.remote_issue_id,
     boardId: row.board_id,
     projectId: row.project_id,
+    projectPath: trimText(detail.projectPath) || undefined,
+    projectName: trimText(detail.projectName) || undefined,
+    parentIssueId: nullableTrimmedText(detail.parentIssueId),
     workflowId: row.workflow_id,
     typeId: row.type_id ?? undefined,
+    issueTypeKey: trimText(detail.issueTypeKey) || row.type_id || undefined,
     stageId: row.stage_id ?? undefined,
+    stageKey: trimText(detail.stageKey) || undefined,
     stageName: row.stage_name ?? undefined,
     statusId: row.status_id ?? undefined,
     statusName: row.status_name ?? undefined,
+    statusKey: trimText(detail.statusKey) || undefined,
+    columnKey: trimText(detail.columnKey) || undefined,
     title: row.title,
     description: row.description,
     status: row.status,
@@ -617,6 +785,12 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     chatId: row.chat_id,
     runId: row.run_id,
     runState: row.run_state,
+    runAgentKey: nullableTrimmedText(detail.runAgentKey),
+    runCommandId: nullableTrimmedText(detail.runCommandId),
+    runStartedAt: nullableTrimmedText(detail.runStartedAt),
+    runFinishedAt: nullableTrimmedText(detail.runFinishedAt),
+    runResultMessage: nullableTrimmedText(detail.runResultMessage),
+    runErrorMessage: nullableTrimmedText(detail.runErrorMessage),
     dispatchState: row.dispatch_state,
     dispatchDeviceId: row.dispatch_device_id,
     dispatchCommandId: row.dispatch_command_id,
@@ -628,6 +802,11 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     automationTimezone: row.automation_timezone,
     attachmentChatId: row.attachment_chat_id,
     attachments: parseAttachmentsJson(row.attachments_json),
+    customFields: normalizeCustomFields(detail.customFields),
+    createdBy: nullableTrimmedText(detail.createdBy),
+    updatedBy: nullableTrimmedText(detail.updatedBy),
+    createdByAgent: nullableTrimmedText(detail.createdByAgent),
+    updatedByAgent: nullableTrimmedText(detail.updatedByAgent),
     syncMode: row.sync_mode,
     syncState: row.sync_state,
     origin: row.origin,
@@ -857,6 +1036,7 @@ function selectIssues(db: DatabaseSync, currentUser: KanbanCurrentUser): KanbanI
       issue.AUTOMATION_TIMEZONE_ AS automation_timezone,
       issue.ATTACHMENT_CHAT_ID_ AS attachment_chat_id,
       issue.ATTACHMENTS_JSON_ AS attachments_json,
+      issue.DETAIL_JSON_ AS detail_json,
       issue.REVISION_ AS revision,
       issue.CREATED_AT_ AS created_at,
       issue.UPDATED_AT_ AS updated_at,
@@ -1036,8 +1216,8 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
       WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
       CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
       AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_,
-      AUTOMATION_TIMEZONE_, ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      AUTOMATION_TIMEZONE_, ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, DETAIL_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     ON CONFLICT(ID_) DO UPDATE SET
       REMOTE_ISSUE_ID_ = excluded.REMOTE_ISSUE_ID_,
       BOARD_ID_ = excluded.BOARD_ID_,
@@ -1077,6 +1257,7 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
       AUTOMATION_TIMEZONE_ = excluded.AUTOMATION_TIMEZONE_,
       ATTACHMENT_CHAT_ID_ = excluded.ATTACHMENT_CHAT_ID_,
       ATTACHMENTS_JSON_ = excluded.ATTACHMENTS_JSON_,
+      DETAIL_JSON_ = excluded.DETAIL_JSON_,
       REVISION_ = excluded.REVISION_,
       UPDATED_AT_ = excluded.UPDATED_AT_,
       DELETED_AT_ = NULL
@@ -1120,6 +1301,7 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
     issue.automationTimezone,
     issue.attachmentChatId,
     JSON.stringify(issue.attachments ?? []),
+    buildIssueDetailJson(issue),
     issue.revision ?? 0,
     issue.createdAt,
     issue.updatedAt
@@ -1268,6 +1450,7 @@ export function listDesktopKanbanIssues(
     issues: selectIssues(db, currentUser),
     projects: selectProjects(db),
     projectBindings: selectProjectBindings(db),
+    cloudDetails: selectCloudDetailData(db, currentUser),
     storagePath: getDesktopKanbanDatabasePath(app),
     boardId: BOARD_ID,
     projectId: PROJECT_ID,
@@ -1503,13 +1686,19 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     remoteIssueId,
     boardId: trimText(rawIssue.boardId) || BOARD_ID,
     projectId: trimText(rawIssue.projectId) || PROJECT_ID,
+    projectPath: trimText(rawIssue.projectPath) || undefined,
+    projectName: trimText(rawIssue.projectName) || undefined,
+    parentIssueId: nullableTrimmedText(rawIssue.parentIssueId),
     workflowId: trimText(rawIssue.workflowId) || WORKFLOW_ID,
-    typeId: trimText(rawIssue.typeId) || ISSUE_TYPE_ID,
+    typeId: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || ISSUE_TYPE_ID,
+    issueTypeKey: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || ISSUE_TYPE_ID,
     stageId: trimText(rawIssue.stageId) || undefined,
+    stageKey: trimText(rawIssue.stageKey) || undefined,
     stageName: trimText(rawIssue.stageName) || undefined,
     statusId: trimText(rawIssue.statusId) || undefined,
     statusName: trimText(rawIssue.statusName) || undefined,
     statusKey: trimText(rawIssue.statusKey) || undefined,
+    columnKey: trimText(rawIssue.columnKey) || undefined,
     title,
     description: trimText(rawIssue.description),
     status: normalizeKanbanStatus(rawIssue.status),
@@ -1528,6 +1717,12 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     chatId: nullableTrimmedText(rawIssue.chatId),
     runId: nullableTrimmedText(rawIssue.runId),
     runState: normalizeKanbanRunState(rawIssue.runState),
+    runAgentKey: nullableTrimmedText(rawIssue.runAgentKey),
+    runCommandId: nullableTrimmedText(rawIssue.runCommandId),
+    runStartedAt: nullableTrimmedText(rawIssue.runStartedAt),
+    runFinishedAt: nullableTrimmedText(rawIssue.runFinishedAt),
+    runResultMessage: nullableTrimmedText(rawIssue.runResultMessage),
+    runErrorMessage: nullableTrimmedText(rawIssue.runErrorMessage),
     dispatchState: nullableTrimmedText(rawIssue.dispatchState) as KanbanIssue["dispatchState"],
     dispatchDeviceId: nullableTrimmedText(rawIssue.dispatchDeviceId),
     dispatchCommandId: nullableTrimmedText(rawIssue.dispatchCommandId),
@@ -1539,6 +1734,11 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     automationTimezone: nullableTrimmedText(rawIssue.automationTimezone),
     attachmentChatId: nullableTrimmedText(rawIssue.attachmentChatId),
     attachments: normalizeAttachments(rawIssue.attachments),
+    customFields: normalizeCustomFields(rawIssue.customFields),
+    createdBy: nullableTrimmedText(rawIssue.createdBy),
+    updatedBy: nullableTrimmedText(rawIssue.updatedBy),
+    createdByAgent: nullableTrimmedText(rawIssue.createdByAgent),
+    updatedByAgent: nullableTrimmedText(rawIssue.updatedByAgent),
     syncMode: "cloud",
     syncState: "synced",
     origin: "cloud_dispatch",
@@ -1731,6 +1931,7 @@ export function applyDesktopKanbanCloudSnapshot(
           }
         }
       }
+      storeCloudDetailData(db, currentUser, snapshot, revision);
       writeDesktopKanbanRevision(db, Math.max(currentRevision, revision));
       writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(currentRevision, revision) });
       db.exec("COMMIT");
@@ -1744,6 +1945,7 @@ export function applyDesktopKanbanCloudSnapshot(
       issues: selectIssues(db, currentUser),
       projects: selectProjects(db),
       projectBindings: selectProjectBindings(db),
+      cloudDetails: selectCloudDetailData(db, currentUser),
       storagePath: getDesktopKanbanDatabasePath(app),
       boardId: BOARD_ID,
       projectId: snapshotProjectId || PROJECT_ID,

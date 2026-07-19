@@ -22,6 +22,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  AppstoreOutlined,
   ArrowRightOutlined,
   DeleteOutlined,
   EyeOutlined,
@@ -38,6 +39,7 @@ import type {
   AssistantNavAgentItem,
   DesktopApi,
   DesktopPetAgentOption,
+  KanbanCloudDetailData,
   KanbanIssue,
   KanbanIssueInput,
   KanbanIssueUpdateInput,
@@ -55,6 +57,7 @@ import { PluginPage } from "../plugin/PluginPage";
 import { useI18n } from "../../i18n/useI18n";
 import { flattenKanbanProjectTree } from "./kanbanProjectTree";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
+import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
 
 type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "priority" | "severity" | "automation" | null;
@@ -186,6 +189,23 @@ const KANBAN_AUTOMATION_FILTER_OPTIONS = [
 ] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: KanbanAutomationFilter }>;
 
 const KANBAN_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
+
+const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
+  users: [],
+  issueTypes: [],
+  issueFieldDefs: [],
+  issueFieldContexts: [],
+  issueFieldOptions: [],
+  workflows: [],
+  workflowStages: [],
+  workflowStatuses: [],
+  issueLabels: [],
+  issueLabelLinks: [],
+  issueDependencies: [],
+  reviews: [],
+  issueComments: [],
+  recentEvents: []
+};
 
 const emptyForm: IssueFormState = {
   title: "",
@@ -763,13 +783,25 @@ function getIssueCardStatusPresentation(
   },
   t: TranslateFunction
 ): IssueCardStatusPresentation {
+  const granularStatusLabel = issue.statusName?.trim() || "";
+  const granularStatusKey = `${issue.statusKey ?? ""} ${granularStatusLabel}`.toLocaleLowerCase();
+  const granularStatusTone: IssueCardStatusPresentation["tone"] =
+    /failed|failure|error|失败|异常/u.test(granularStatusKey)
+      ? "failed"
+      : /cancelled|canceled|interrupted|中断|取消/u.test(granularStatusKey)
+        ? "cancelled"
+        : /success|succeeded|completed|成功|完成/u.test(granularStatusKey)
+          ? "succeeded"
+          : /review|approval|verify|test|审查|确认|验收|测试/u.test(granularStatusKey)
+            ? "in_review"
+            : issue.status;
   if (issue.runState === "cancelled") {
     return { label: t("kanban.run.cancelled"), tone: "cancelled", updatedTime: "" };
   }
   if (issue.runState === "failed") {
     return { label: t("kanban.run.failed"), tone: "failed", updatedTime: "" };
   }
-  if (issue.runState === "completed" || issue.status === "completed") {
+  if (issue.runState === "completed") {
     return { label: t("kanban.run.succeeded"), tone: "succeeded", updatedTime: "" };
   }
   if (options.awaitingConfirmation && issue.status === "in_progress") {
@@ -777,6 +809,13 @@ function getIssueCardStatusPresentation(
   }
   if (issue.runState === "running" || (issue.status === "in_progress" && Boolean(issue.runId))) {
     return { label: t("kanban.run.running"), tone: "running", updatedTime: "" };
+  }
+  if (issue.status === "backlog" && granularStatusLabel) {
+    return {
+      label: granularStatusLabel,
+      tone: granularStatusTone,
+      updatedTime: ""
+    };
   }
   if (issue.status === "backlog") {
     return {
@@ -794,6 +833,16 @@ function getIssueCardStatusPresentation(
       tone: "todo",
       updatedTime: ""
     };
+  }
+  if (granularStatusLabel) {
+    return {
+      label: granularStatusLabel,
+      tone: granularStatusTone,
+      updatedTime: ""
+    };
+  }
+  if (issue.status === "completed") {
+    return { label: t("kanban.run.succeeded"), tone: "succeeded", updatedTime: "" };
   }
   return {
     label: t(STATUS_META[issue.status].labelKey),
@@ -1134,8 +1183,9 @@ function buildKanbanChatEmbedPath(request: KanbanChatModalRequest) {
 }
 
 export function KanbanPage({ hostTheme }: KanbanPageProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [issues, setIssues] = useState<KanbanIssue[]>([]);
+  const [cloudDetails, setCloudDetails] = useState<KanbanCloudDetailData>(EMPTY_KANBAN_CLOUD_DETAILS);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [, setBusyIssueId] = useState<string | null>(null);
@@ -1154,6 +1204,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
   const [display, setDisplay] = useState<DisplayState>(defaultDisplayState);
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [detailIssueId, setDetailIssueId] = useState<string | null>(null);
+  const [detailInitialEditStatus, setDetailInitialEditStatus] = useState<KanbanStatus | null>(null);
   const [chatModalRequest, setChatModalRequest] = useState<KanbanChatModalRequest | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
@@ -1195,6 +1247,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         if (cancelled) return;
         setIssues(sortIssues(issueResult.issues));
         setCloudProjects(issueResult.projects ?? []);
+        setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
         setConnectionState(issueResult.connectionState ?? "disabled");
         setAgents(agentResult);
       } catch (error) {
@@ -1222,6 +1275,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     const issueResult = await kanbanApi.listIssues();
     setIssues(sortIssues(issueResult.issues));
     setCloudProjects(issueResult.projects ?? []);
+    setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
     setConnectionState(issueResult.connectionState ?? "disabled");
   }
 
@@ -1240,6 +1294,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       const result = await kanbanApi.resyncCloudBoard();
       setIssues(sortIssues(result.issues));
       setCloudProjects(result.projects ?? []);
+      setCloudDetails(result.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
       setConnectionState(result.connectionState ?? "disabled");
       setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
     } catch (error) {
@@ -1470,6 +1525,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   }, [filteredIssues]);
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
+  const detailIssue = detailIssueId ? issueMap.get(detailIssueId) ?? null : null;
   const filteredCount = filteredIssues.length;
   const totalCount = visibleIssues.length;
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
@@ -1495,22 +1551,13 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   const openEditModal = useCallback((issue: KanbanIssue) => {
     setContextMenu(null);
-    setForm(createFormFromIssue(issue));
-    setFormCompact(canEditKanbanIssueBody(issue) ? !hasIssueAutomation(issue) : false);
-    setAttachmentBusy(false);
-    setAutomationMenuOpen(null);
-    setModal({ mode: "edit", issue });
+    setDetailInitialEditStatus(null);
+    setDetailIssueId(issue.id);
   }, []);
 
   function openInProgressAssignmentModal(issue: KanbanIssue) {
-    setForm({
-      ...createFormFromIssue(issue),
-      status: "in_progress"
-    });
-    setFormCompact(true);
-    setAttachmentBusy(false);
-    setAutomationMenuOpen(null);
-    setModal({ mode: "edit", issue });
+    setDetailInitialEditStatus("in_progress");
+    setDetailIssueId(issue.id);
     setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForProgress") });
   }
 
@@ -1705,22 +1752,104 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
+  async function saveIssueDetail(issue: KanbanIssue, draft: KanbanIssueDetailDraft) {
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi || !canEditKanbanIssueBody(issue)) {
+      setFeedback({ tone: "error", message: missingKanbanApiMessage });
+      return false;
+    }
+    const title = draft.title.trim();
+    if (!title) {
+      setFeedback({ tone: "error", message: t("kanban.feedback.titleRequired") });
+      return false;
+    }
+    const resolvedAutomationMessage = draft.automationMessage.trim() || draft.description.trim() || title;
+    const shouldRunAfterSave = draft.status === "in_progress" && !draft.automationEnabled && !issue.runId;
+    const shouldRunTodoAssigneeAfterDelay = draft.status === "todo" && !draft.automationEnabled && Boolean(draft.assigneeAgentKey) && !issue.runId;
+    if (shouldRunAfterSave && !draft.assigneeAgentKey) {
+      setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForProgress") });
+      return false;
+    }
+    if (draft.automationEnabled && !draft.assigneeAgentKey) {
+      setFeedback({ tone: "error", message: t("kanban.feedback.assigneeRequiredForAutomation") });
+      return false;
+    }
+    if (draft.automationEnabled && !isFiveFieldCron(draft.automationCron)) {
+      setFeedback({ tone: "error", message: t("kanban.feedback.invalidCron") });
+      return false;
+    }
+    if (draft.automationEnabled && !resolvedAutomationMessage) {
+      setFeedback({ tone: "error", message: t("kanban.feedback.automationMessageRequired") });
+      return false;
+    }
+    const payload: KanbanIssueUpdateInput = {
+      title,
+      description: draft.description,
+      status: shouldRunAfterSave ? issue.status : draft.status,
+      priority: draft.priority,
+      assigneeAgentKey: draft.assigneeAgentKey || null,
+      automationId: issue.automationId,
+      automationEnabled: draft.automationEnabled,
+      automationCron: draft.automationEnabled ? draft.automationCron.trim() : null,
+      automationMessage: draft.automationEnabled ? resolvedAutomationMessage : null,
+      automationTimezone: draft.automationEnabled ? draft.automationTimezone.trim() || "Asia/Shanghai" : null,
+      attachmentChatId: draft.attachments.length > 0 ? draft.attachmentChatId : null,
+      attachments: draft.attachments,
+      syncToCloud: draft.syncToCloud
+    };
+
+    try {
+      const result = await kanbanApi.updateIssue(issue.id, payload);
+      let savedIssue = mergeKanbanIssueAttachmentDraft(result.issue, draft.attachmentChatId, draft.attachments);
+      let nextIssues = mergeKanbanIssuesAttachmentDraft(result.issues, savedIssue);
+      let nextMessage = result.message;
+      let nextTone: Feedback["tone"] = result.ok ? "success" : "error";
+      if (result.ok && savedIssue && (draft.automationEnabled || savedIssue.automationId)) {
+        const automationResult = await kanbanApi.syncIssueAutomation(savedIssue.id);
+        savedIssue = mergeKanbanIssueAttachmentDraft(automationResult.issue ?? savedIssue, draft.attachmentChatId, draft.attachments);
+        nextIssues = mergeKanbanIssuesAttachmentDraft(automationResult.issues, savedIssue);
+        nextTone = automationResult.ok ? "success" : "error";
+        nextMessage = automationResult.ok ? t("kanban.feedback.issueAndAutomationSaved") : automationResult.message;
+      }
+      setIssues(sortIssues(nextIssues));
+      setFeedback({ tone: nextTone, message: nextMessage });
+      if (!result.ok || nextTone !== "success" || !savedIssue) return false;
+      if (shouldRunAfterSave) {
+        void assignIssueToAssistant(savedIssue, draft.assigneeAgentKey);
+      } else if (shouldRunTodoAssigneeAfterDelay) {
+        const savedAgentKey = draft.assigneeAgentKey;
+        window.setTimeout(() => {
+          void assignIssueToAssistant(savedIssue, savedAgentKey);
+        }, KANBAN_TODO_ASSIGNEE_START_DELAY_MS);
+      }
+      return true;
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : t("kanban.feedback.saveFailed")
+      });
+      return false;
+    }
+  }
+
   const deleteIssue = useCallback(async (issue: KanbanIssue) => {
     setContextMenu(null);
     const kanbanApi = readKanbanApi();
     if (!kanbanApi) {
       setFeedback({ tone: "error", message: missingKanbanApiMessage });
-      return;
+      return false;
     }
     if (!window.confirm(t("kanban.confirm.delete", { title: issue.title }))) {
-      return;
+      return false;
     }
     const result = await kanbanApi.deleteIssue(issue.id);
     setIssues(sortIssues(result.issues));
     setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
     if (result.ok) {
       setModal(null);
+      setDetailIssueId(null);
     }
+    return result.ok;
   }, [missingKanbanApiMessage, t]);
 
   const openIssueContextMenu = useCallback((issue: KanbanIssue, event: MouseEvent<HTMLElement>) => {
@@ -1930,7 +2059,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   return (
     <section className="kanban-page" aria-label={t("kanban.title")}>
       <div className="kanban-toolbar">
-        <div className="kanban-toolbar-left">
+        <div className="kanban-toolbar-start">
+          <div className="kanban-page-title">
+            <AppstoreOutlined aria-hidden="true" />
+            <strong>{t("kanban.title")}</strong>
+          </div>
           <KanbanProjectFilter
             projects={cloudProjectOptions}
             selectedProjectIds={selectedProjectIds}
@@ -1946,6 +2079,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
             onToggleProject={toggleProjectFilter}
             onClear={() => setSelectedProjectIds([])}
           />
+        </div>
+        <div className="kanban-toolbar-center">
           <div className="kanban-search-wrap">
             <KanbanIcon kind="search" />
             <input
@@ -1976,7 +2111,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
             />
           </div>
         </div>
-        <div className="kanban-toolbar-right">
+        <div className="kanban-toolbar-end">
+          <span className="kanban-count">{t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
           <button
             type="button"
             className={`kanban-tool kanban-cloud-status is-${getKanbanConnectionTone(connectionState)} ${menu === "cloud" ? "is-active" : ""}`}
@@ -1996,7 +2132,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               </span>
             ) : null}
           </button>
-          <span className="kanban-count">{t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
           <button
             type="button"
             className={`kanban-tool is-icon-only ${menu === "display" ? "is-active" : ""}`}
@@ -2099,7 +2234,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 canAdd={kanbanReady}
                 onAdd={createIssueHandlersByStatus[status]}
                 onEdit={openEditModal}
-                onDelete={deleteIssue}
+                onDelete={async (issue) => { await deleteIssue(issue); }}
                 onOpenChat={openAssistantIssueChat}
                 onOpenContextMenu={openIssueContextMenu}
               />
@@ -2155,6 +2290,28 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         );
         return typeof document !== "undefined" ? createPortal(menu, document.body) : menu;
       })() : null}
+
+      {detailIssue ? (
+        <KanbanIssueDetailDialog
+          key={detailIssue.id}
+          issue={detailIssue}
+          issues={issues}
+          projects={cloudProjects}
+          cloudDetails={cloudDetails}
+          agents={agents.map((agent) => ({ agentKey: agent.agentKey, displayName: agent.displayName }))}
+          locale={locale}
+          t={t}
+          initialEditStatus={detailInitialEditStatus}
+          onClose={() => {
+            setDetailIssueId(null);
+            setDetailInitialEditStatus(null);
+          }}
+          onSave={(draft) => saveIssueDetail(detailIssue, draft)}
+          onDelete={() => deleteIssue(detailIssue)}
+          onOpenChat={() => void openAssistantIssueChat(detailIssue)}
+          onFeedback={(tone, message) => setFeedback({ tone, message })}
+        />
+      ) : null}
 
       {modal ? (
         <div className="kanban-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
@@ -2715,6 +2872,8 @@ const IssueCardContent = memo(function IssueCardContent({
   const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
   const unassignedLabel = t("kanban.form.unassigned");
+  const shouldShowAssignee = display.assignee
+    && (peopleLine.assigneeLabel !== unassignedLabel || canEditKanbanIssueBody(issue));
   const mainContent = (
     <>
       <div className="issue-card-header">
@@ -2732,7 +2891,7 @@ const IssueCardContent = memo(function IssueCardContent({
           ) : null}
         </div>
         <span
-          className="issue-card-status"
+          className={`issue-card-status is-${cardStatus.tone}`}
           title={cardStatus.updatedTime ? `${cardStatus.label} · ${cardStatus.updatedTime}` : cardStatus.label}
         >
           {cardStatus.tone !== "backlog" && cardStatus.tone !== "todo" ? (
@@ -2770,25 +2929,27 @@ const IssueCardContent = memo(function IssueCardContent({
           {mainContent}
         </div>
       )}
-      {automationLabel ? (
-        <div className="issue-card-meta-line" title={automationLabel}>
-          <KanbanIcon kind="clock" />
-          <span>{automationLabel}</span>
-        </div>
-      ) : null}
-      {hasVisibleAttachment ? (
-        <div className="issue-card-meta-line" title={t("kanban.form.attachments")}>
-          <KanbanIcon kind="attachment" />
-          <span>{visibleAttachments.length}</span>
-        </div>
-      ) : null}
       <footer className="issue-card-foot">
         <div className="issue-card-footer-badges">
           {display.priority ? <IssueCardFooterPriorityBadge priority={issue.priority} t={t} /> : null}
           <IssueCardFooterSeverityBadge severity={severity} t={t} />
         </div>
+        <div className="issue-card-footer-signals">
+          {automationLabel ? (
+            <span className="issue-card-footer-signal" title={automationLabel}>
+              <KanbanIcon kind="clock" />
+              <span>{automationLabel}</span>
+            </span>
+          ) : null}
+          {hasVisibleAttachment ? (
+            <span className="issue-card-footer-signal" title={t("kanban.form.attachments")}>
+              <KanbanIcon kind="attachment" />
+              <span>{visibleAttachments.length}</span>
+            </span>
+          ) : null}
+        </div>
         <div className="issue-card-footer-end">
-          {display.assignee ? (
+          {shouldShowAssignee ? (
             <div className="issue-card-assignee" title={peopleLine.title}>
               {peopleLine.assigneeLabel !== unassignedLabel ? (
                 <span className="issue-card-assignee-avatar" aria-hidden="true">
