@@ -22,14 +22,21 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  ApartmentOutlined,
   AppstoreOutlined,
-  ArrowRightOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
   DeleteOutlined,
   EyeOutlined,
   FlagOutlined,
+  HistoryOutlined,
+  HourglassOutlined,
   MessageOutlined,
+  OrderedListOutlined,
   RobotOutlined,
-  SettingOutlined,
+  StopOutlined,
+  TagOutlined,
   ThunderboltOutlined,
   UserOutlined
 } from "@ant-design/icons";
@@ -89,7 +96,6 @@ type IssueFormState = {
 };
 
 type DisplayState = {
-  description: boolean;
   assignee: boolean;
   priority: boolean;
 };
@@ -101,10 +107,14 @@ type KanbanIssueOriginPresentation = {
 
 type KanbanSeverity = NonNullable<KanbanIssue["severity"]>;
 
-type IssueCardStatusPresentation = {
+type IssueCardSignalTone = KanbanStatus | "running" | "awaiting" | "succeeded" | "failed" | "cancelled";
+
+type IssueCardSignalIconName = "history" | "order" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+
+type IssueCardSignalPresentation = {
   label: string;
-  tone: KanbanStatus | "running" | "awaiting" | "succeeded" | "failed" | "cancelled";
-  updatedTime: string;
+  tone: IssueCardSignalTone;
+  icon: IssueCardSignalIconName;
 };
 
 type Feedback = {
@@ -225,7 +235,6 @@ const emptyForm: IssueFormState = {
 };
 
 const defaultDisplayState: DisplayState = {
-  description: true,
   assignee: true,
   priority: true
 };
@@ -270,10 +279,6 @@ function sortIssues(issues: KanbanIssue[]) {
   });
 }
 
-function descriptionPreview(description: string) {
-  return description.replace(/\s+/gu, " ").trim();
-}
-
 function padAutomationNumber(value: number) {
   return String(value).padStart(2, "0");
 }
@@ -286,12 +291,11 @@ function isSameLocalDate(left: Date, right: Date) {
   );
 }
 
-function formatIssueUpdatedTime(updatedAt: string) {
+function formatIssueUpdatedTime(updatedAt: string, currentDate = new Date()) {
   const updatedDate = new Date(updatedAt);
   if (Number.isNaN(updatedDate.getTime())) {
     return "";
   }
-  const currentDate = new Date();
   const time = `${padAutomationNumber(updatedDate.getHours())}:${padAutomationNumber(updatedDate.getMinutes())}`;
   if (isSameLocalDate(updatedDate, currentDate)) {
     return time;
@@ -303,72 +307,35 @@ function formatIssueUpdatedTime(updatedAt: string) {
   return date;
 }
 
+function formatKanbanCompactDuration(value: string | null | undefined, now: Date) {
+  const timestamp = Date.parse(value ?? "");
+  const nowTimestamp = now.getTime();
+  if (!Number.isFinite(timestamp) || !Number.isFinite(nowTimestamp) || timestamp > nowTimestamp) {
+    return "";
+  }
+
+  const totalMinutes = Math.floor((nowTimestamp - timestamp) / 60_000);
+  if (totalMinutes < 1) {
+    return "<1m";
+  }
+
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  }
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  return `${minutes}m`;
+}
+
 function formatKanbanSortNumber(sortIndex: number | undefined, position: number) {
   if (typeof sortIndex === "number" && Number.isFinite(sortIndex) && sortIndex > 0) {
     return `#${Math.round(sortIndex)}`;
   }
   return Number.isFinite(position) ? `#${Math.max(1, Math.round(position))}` : "";
-}
-
-function getNextKanbanAutomationTime(issue: Pick<KanbanIssue, "automationEnabled" | "automationCron">, now: Date) {
-  if (!hasIssueAutomation(issue)) {
-    return null;
-  }
-  const automationForm = parseAutomationFormFromCron(issue.automationCron);
-  if (automationForm.automationPreset === "custom") {
-    return null;
-  }
-  const { hour, minute } = automationTimeParts(automationForm.automationTime);
-  const numericHour = Number(hour);
-  const numericMinute = Number(minute);
-  if (automationForm.automationPreset === "hourly") {
-    const candidate = new Date(now);
-    candidate.setSeconds(0, 0);
-    candidate.setMinutes(numericMinute);
-    if (candidate.getTime() <= now.getTime()) {
-      candidate.setHours(candidate.getHours() + 1);
-    }
-    return candidate;
-  }
-
-  for (let dayOffset = 0; dayOffset <= 7; dayOffset += 1) {
-    const candidate = new Date(now);
-    candidate.setDate(now.getDate() + dayOffset);
-    candidate.setHours(numericHour, numericMinute, 0, 0);
-    if (candidate.getTime() <= now.getTime()) {
-      continue;
-    }
-    const dayOfWeek = candidate.getDay();
-    if (automationForm.automationPreset === "weekdays" && (dayOfWeek === 0 || dayOfWeek === 6)) {
-      continue;
-    }
-    if (automationForm.automationPreset === "weekly" && dayOfWeek !== 1) {
-      continue;
-    }
-    return candidate;
-  }
-  return null;
-}
-
-function formatKanbanAutomationCountdown(issue: Pick<KanbanIssue, "automationEnabled" | "automationCron">, now: Date, t: TranslateFunction) {
-  const nextTime = getNextKanbanAutomationTime(issue, now);
-  if (!nextTime) {
-    return "";
-  }
-  const totalMinutes = Math.max(1, Math.ceil((nextTime.getTime() - now.getTime()) / 60_000));
-  if (totalMinutes < 60) {
-    return t("kanban.countdown.minutes", { minutes: totalMinutes });
-  }
-  const totalHours = Math.ceil(totalMinutes / 60);
-  if (totalHours < 24) {
-    return t("kanban.countdown.hours", { hours: totalHours });
-  }
-  const days = Math.floor(totalHours / 24);
-  const hours = totalHours % 24;
-  if (hours > 0) {
-    return t("kanban.countdown.daysHours", { days, hours });
-  }
-  return t("kanban.countdown.days", { days });
 }
 
 function buildAutomationTimeOptions() {
@@ -706,11 +673,7 @@ function getIssueCardWorkerPresentation(issue: KanbanIssue, t: TranslateFunction
       rawLabel
     };
   }
-  return {
-    icon: <SettingOutlined />,
-    label: "未指定",
-    rawLabel: "未指定"
-  };
+  return null;
 }
 
 function getIssueCardPeoplePresentation(
@@ -721,11 +684,10 @@ function getIssueCardPeoplePresentation(
   const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
   const assigneeLabel = formatKanbanPersonLabel(visibleAssigneeName, t("kanban.form.unassigned"));
   const worker = getIssueCardWorkerPresentation(issue, t);
-  const hasWorker = worker.rawLabel !== "未指定";
   return {
     assigneeLabel,
-    worker: hasWorker ? worker : null,
-    title: hasWorker ? `${assigneeLabel} -> ${worker.rawLabel}` : assigneeLabel
+    worker,
+    title: worker ? `${assigneeLabel} -> ${worker.rawLabel}` : assigneeLabel
   };
 }
 
@@ -759,22 +721,49 @@ function shouldShowIssueForAutomationFilter(
   return filter === "scheduled" ? hasAutomation : !hasAutomation;
 }
 
-function getAutomationDisplayLabel(issue: KanbanIssue, t: TranslateFunction) {
-  if (!hasIssueAutomation(issue)) {
-    return "";
+function getIssueGranularStatusTone(issue: KanbanIssue): IssueCardSignalTone {
+  const granularStatusLabel = issue.statusName?.trim() || "";
+  const granularStatusKey = `${issue.statusKey ?? ""} ${granularStatusLabel}`.toLocaleLowerCase();
+  if (/failed|failure|error|失败|异常/u.test(granularStatusKey)) {
+    return "failed";
   }
-  const automationForm = parseAutomationFormFromCron(issue.automationCron);
-  if (automationForm.automationPreset === "custom") {
-    return issue.automationCron;
+  if (/cancelled|canceled|interrupted|中断|取消/u.test(granularStatusKey)) {
+    return "cancelled";
   }
-  if (automationForm.automationPreset === "hourly") {
-    const minute = Number(automationForm.automationTime.split(":")[1]);
-    return t("kanban.automation.hourlyAtMinute", { minute: padAutomationNumber(minute) });
+  if (/success|succeeded|completed|成功|完成/u.test(granularStatusKey)) {
+    return "succeeded";
   }
-  return `${getAutomationPlanLabel(automationForm.automationPreset, t)} ${automationForm.automationTime}`;
+  if (/review|approval|verify|test|审查|确认|验收|测试/u.test(granularStatusKey)) {
+    return "in_review";
+  }
+  return issue.status;
 }
 
-function getIssueCardStatusPresentation(
+function getIssueGranularStatusLabel(issue: KanbanIssue, t: TranslateFunction) {
+  const label = issue.statusName?.trim() || "";
+  if (!label) {
+    return "";
+  }
+  const normalize = (value: string) => value.toLocaleLowerCase().replace(/[\s_-]+/gu, "");
+  const normalizedLabel = normalize(label);
+  const columnLabels = new Set([
+    normalize(issue.status),
+    normalize(t(STATUS_META[issue.status].labelKey)),
+    "backlog",
+    "todo",
+    "inprogress",
+    "inreview",
+    "completed",
+    "待办池",
+    "待办",
+    "进行中",
+    "评审中",
+    "已完成"
+  ]);
+  return columnLabels.has(normalizedLabel) ? "" : label;
+}
+
+function getIssueCardSignalPresentation(
   issue: KanbanIssue,
   options: {
     awaitingConfirmation: boolean;
@@ -782,72 +771,60 @@ function getIssueCardStatusPresentation(
     sortIndex?: number;
   },
   t: TranslateFunction
-): IssueCardStatusPresentation {
-  const granularStatusLabel = issue.statusName?.trim() || "";
-  const granularStatusKey = `${issue.statusKey ?? ""} ${granularStatusLabel}`.toLocaleLowerCase();
-  const granularStatusTone: IssueCardStatusPresentation["tone"] =
-    /failed|failure|error|失败|异常/u.test(granularStatusKey)
-      ? "failed"
-      : /cancelled|canceled|interrupted|中断|取消/u.test(granularStatusKey)
-        ? "cancelled"
-        : /success|succeeded|completed|成功|完成/u.test(granularStatusKey)
-          ? "succeeded"
-          : /review|approval|verify|test|审查|确认|验收|测试/u.test(granularStatusKey)
-            ? "in_review"
-            : issue.status;
+): IssueCardSignalPresentation {
   if (issue.runState === "cancelled") {
-    return { label: t("kanban.run.cancelled"), tone: "cancelled", updatedTime: "" };
+    return { label: t("kanban.run.cancelled"), tone: "cancelled", icon: "cancelled" };
   }
   if (issue.runState === "failed") {
-    return { label: t("kanban.run.failed"), tone: "failed", updatedTime: "" };
-  }
-  if (issue.runState === "completed") {
-    return { label: t("kanban.run.succeeded"), tone: "succeeded", updatedTime: "" };
+    return { label: t("kanban.run.failed"), tone: "failed", icon: "failed" };
   }
   if (options.awaitingConfirmation && issue.status === "in_progress") {
-    return { label: t("kanban.run.awaitingApproval"), tone: "awaiting", updatedTime: "" };
-  }
-  if (issue.runState === "running" || (issue.status === "in_progress" && Boolean(issue.runId))) {
-    return { label: t("kanban.run.running"), tone: "running", updatedTime: "" };
-  }
-  if (issue.status === "backlog" && granularStatusLabel) {
-    return {
-      label: granularStatusLabel,
-      tone: granularStatusTone,
-      updatedTime: ""
-    };
-  }
-  if (issue.status === "backlog") {
-    return {
-      label: formatIssueUpdatedTime(issue.updatedAt),
-      tone: "backlog",
-      updatedTime: ""
-    };
+    return { label: t("kanban.run.awaitingApproval"), tone: "awaiting", icon: "waiting" };
   }
   if (issue.status === "todo") {
-    const automationCountdown = hasIssueAutomation(issue)
-      ? formatKanbanAutomationCountdown(issue, options.now, t) || getAutomationDisplayLabel(issue, t)
-      : "";
     return {
-      label: automationCountdown || formatKanbanSortNumber(options.sortIndex, issue.position),
+      label: formatKanbanSortNumber(options.sortIndex, issue.position),
       tone: "todo",
-      updatedTime: ""
+      icon: "order"
     };
   }
-  if (granularStatusLabel) {
+  if (issue.status === "in_progress" && (issue.runState === "running" || Boolean(issue.runId))) {
+    const duration = formatKanbanCompactDuration(issue.runStartedAt, options.now)
+      || formatKanbanCompactDuration(issue.updatedAt, options.now);
     return {
-      label: granularStatusLabel,
-      tone: granularStatusTone,
-      updatedTime: ""
+      label: duration ? t("kanban.card.runningFor", { duration }) : t("kanban.run.running"),
+      tone: "running",
+      icon: "running"
     };
   }
-  if (issue.status === "completed") {
-    return { label: t("kanban.run.succeeded"), tone: "succeeded", updatedTime: "" };
+  if (issue.status === "completed" || issue.runState === "completed") {
+    const duration = formatKanbanCompactDuration(issue.runFinishedAt, options.now)
+      || formatKanbanCompactDuration(issue.updatedAt, options.now);
+    const updatedTime = formatIssueUpdatedTime(issue.runFinishedAt || issue.updatedAt, options.now);
+    return {
+      label: duration
+        ? t("kanban.card.completedAgo", { duration })
+        : updatedTime ? t("kanban.card.updatedAt", { time: updatedTime }) : "",
+      tone: "succeeded",
+      icon: "completed"
+    };
   }
+  if (issue.status === "in_review") {
+    const duration = formatKanbanCompactDuration(issue.updatedAt, options.now);
+    const updatedTime = formatIssueUpdatedTime(issue.updatedAt, options.now);
+    return {
+      label: duration
+        ? t("kanban.card.waitingFor", { duration })
+        : updatedTime ? t("kanban.card.updatedAt", { time: updatedTime }) : "",
+      tone: "in_review",
+      icon: "waiting"
+    };
+  }
+  const updatedTime = formatIssueUpdatedTime(issue.updatedAt, options.now);
   return {
-    label: t(STATUS_META[issue.status].labelKey),
+    label: updatedTime ? t("kanban.card.updatedAt", { time: updatedTime }) : "",
     tone: issue.status,
-    updatedTime: ""
+    icon: "history"
   };
 }
 
@@ -2155,7 +2132,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
             <>
               <strong>{t("kanban.display.cardFields")}</strong>
               {Object.entries({
-                description: t("kanban.display.description"),
                 assignee: t("kanban.display.assignee"),
                 priority: t("kanban.display.priority")
               } satisfies Record<keyof DisplayState, string>).map(([key, label]) => (
@@ -2855,13 +2831,11 @@ const IssueCardContent = memo(function IssueCardContent({
   onDelete: () => void;
   onOpenChat: () => void;
 }) {
-  const automationLabel = getAutomationDisplayLabel(issue, t);
-  const visibleAttachments = getVisibleKanbanAttachments(issue.attachments);
-  const hasVisibleAttachment = visibleAttachments.length > 0;
-  const description = display.description ? descriptionPreview(issue.description) : "";
   const severity = normalizeIssueSeverity(issue.severity);
   const stageLabel = getIssueStageLabel(issue);
-  const cardStatus = getIssueCardStatusPresentation(issue, {
+  const granularStatusLabel = getIssueGranularStatusLabel(issue, t);
+  const granularStatusTone = getIssueGranularStatusTone(issue);
+  const cardSignal = getIssueCardSignalPresentation(issue, {
     awaitingConfirmation,
     now,
     sortIndex
@@ -2872,38 +2846,48 @@ const IssueCardContent = memo(function IssueCardContent({
   const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
   const unassignedLabel = t("kanban.form.unassigned");
-  const shouldShowAssignee = display.assignee
-    && (peopleLine.assigneeLabel !== unassignedLabel || canEditKanbanIssueBody(issue));
+  const shouldShowAssignee = peopleLine.assigneeLabel !== unassignedLabel || canEditKanbanIssueBody(issue);
+  const shouldShowPeople = display.assignee && (shouldShowAssignee || Boolean(peopleLine.worker));
   const mainContent = (
     <>
-      <div className="issue-card-header">
-        <div className="issue-card-header-meta">
+      <section className="issue-card-section issue-card-context">
+        <div className="issue-card-context-line is-primary">
           <span className="issue-card-project" title={issueOrigin.title}>
             {issueOrigin.projectLabel}
           </span>
-          {stageLabel ? (
-            <>
-              <span className="issue-card-header-dot" aria-hidden="true" />
-              <span className="issue-card-stage-name" title={t("kanban.card.stage", { value: stageLabel })}>
-                {stageLabel}
-              </span>
-            </>
+          {cardSignal.label ? (
+            <span className={`issue-card-signal is-${cardSignal.tone}`} title={cardSignal.label}>
+              <IssueCardSignalIcon kind={cardSignal.icon} />
+              <span>{cardSignal.label}</span>
+            </span>
           ) : null}
         </div>
-        <span
-          className={`issue-card-status is-${cardStatus.tone}`}
-          title={cardStatus.updatedTime ? `${cardStatus.label} · ${cardStatus.updatedTime}` : cardStatus.label}
-        >
-          {cardStatus.tone !== "backlog" && cardStatus.tone !== "todo" ? (
-            <span className="issue-card-status-dot" aria-hidden="true" />
+        <div className="issue-card-context-line is-taxonomy">
+          {stageLabel ? (
+            <span
+              className="issue-card-taxonomy-item is-stage"
+              title={t("kanban.card.stage", { value: stageLabel })}
+            >
+              <ApartmentOutlined aria-hidden="true" />
+              <span>{stageLabel}</span>
+            </span>
           ) : null}
-          <span className="issue-card-status-label">{cardStatus.label}</span>
+          {granularStatusLabel ? (
+            <span
+              className={`issue-card-taxonomy-item is-status is-${granularStatusTone}`}
+              title={t("kanban.card.status", { value: granularStatusLabel })}
+            >
+              <TagOutlined aria-hidden="true" />
+              <span>{granularStatusLabel}</span>
+            </span>
+          ) : null}
+        </div>
+      </section>
+      <section className="issue-card-section issue-card-title-block" title={issue.title}>
+        <span>
+          {issue.title}
         </span>
-      </div>
-      <div className="issue-card-title-block" title={issue.title}>
-        {issue.title}
-      </div>
-      {description ? <p className="issue-card-description">{description}</p> : null}
+      </section>
     </>
   );
 
@@ -2929,88 +2913,111 @@ const IssueCardContent = memo(function IssueCardContent({
           {mainContent}
         </div>
       )}
-      <footer className="issue-card-foot">
+      <footer className="issue-card-section issue-card-foot">
         <div className="issue-card-footer-badges">
-          {display.priority ? <IssueCardFooterPriorityBadge priority={issue.priority} t={t} /> : null}
-          <IssueCardFooterSeverityBadge severity={severity} t={t} />
-        </div>
-        <div className="issue-card-footer-signals">
-          {automationLabel ? (
-            <span className="issue-card-footer-signal" title={automationLabel}>
-              <KanbanIcon kind="clock" />
-              <span>{automationLabel}</span>
-            </span>
-          ) : null}
-          {hasVisibleAttachment ? (
-            <span className="issue-card-footer-signal" title={t("kanban.form.attachments")}>
-              <KanbanIcon kind="attachment" />
-              <span>{visibleAttachments.length}</span>
-            </span>
+          {display.priority ? (
+            <>
+              <IssueCardFooterPriorityBadge priority={issue.priority} t={t} />
+              <IssueCardFooterSeverityBadge severity={severity} t={t} />
+            </>
           ) : null}
         </div>
         <div className="issue-card-footer-end">
-          {shouldShowAssignee ? (
-            <div className="issue-card-assignee" title={peopleLine.title}>
-              {peopleLine.assigneeLabel !== unassignedLabel ? (
-                <span className="issue-card-assignee-avatar" aria-hidden="true">
-                  {getPersonInitials(peopleLine.assigneeLabel)}
+          {shouldShowPeople ? (
+            <div className="issue-card-people" title={peopleLine.title}>
+              {shouldShowAssignee ? (
+                <span className="issue-card-person is-assignee">
+                  {peopleLine.assigneeLabel !== unassignedLabel ? (
+                    <span className="issue-card-assignee-avatar" aria-hidden="true">
+                      {getPersonInitials(peopleLine.assigneeLabel)}
+                    </span>
+                  ) : null}
+                  <span>{peopleLine.assigneeLabel}</span>
                 </span>
               ) : null}
-              <span className="issue-card-assignee-name">{peopleLine.assigneeLabel}</span>
+              {peopleLine.worker ? (
+                <span
+                  className={`issue-card-person is-worker is-${issue.workerType ?? "unknown"}`}
+                  title={t("kanban.card.worker", { value: peopleLine.worker.rawLabel })}
+                >
+                  <span className="issue-card-worker-icon" aria-hidden="true">
+                    {peopleLine.worker.icon}
+                  </span>
+                  <span>{peopleLine.worker.label}</span>
+                </span>
+              ) : null}
             </div>
           ) : null}
           {interactive ? (
             <span className="issue-card-actions">
-            <button
-              type="button"
-              className="issue-card-action"
-              aria-label={t("kanban.card.viewDetails")}
-              title={t("kanban.card.viewDetails")}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onEdit();
-              }}
-            >
-              <EyeOutlined />
-            </button>
-            {canOpenIssueChat ? (
               <button
                 type="button"
                 className="issue-card-action"
-                aria-label={t("kanban.chat.view")}
-                title={t("kanban.chat.view")}
+                aria-label={t("kanban.card.viewDetails")}
+                title={t("kanban.card.viewDetails")}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onOpenChat();
+                  onEdit();
                 }}
               >
-                <MessageOutlined />
+                <EyeOutlined />
               </button>
-            ) : null}
-            {canDeleteIssue ? (
-              <button
-                type="button"
-                className="issue-card-action is-danger"
-                aria-label={t("kanban.context.delete")}
-                title={t("kanban.context.delete")}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete();
-                }}
-              >
-                <DeleteOutlined />
-              </button>
-            ) : null}
-          </span>
-        ) : null}
+              {canOpenIssueChat ? (
+                <button
+                  type="button"
+                  className="issue-card-action"
+                  aria-label={t("kanban.chat.view")}
+                  title={t("kanban.chat.view")}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenChat();
+                  }}
+                >
+                  <MessageOutlined />
+                </button>
+              ) : null}
+              {canDeleteIssue ? (
+                <button
+                  type="button"
+                  className="issue-card-action is-danger"
+                  aria-label={t("kanban.context.delete")}
+                  title={t("kanban.context.delete")}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete();
+                  }}
+                >
+                  <DeleteOutlined />
+                </button>
+              ) : null}
+            </span>
+          ) : null}
         </div>
       </footer>
     </>
   );
 });
+
+function IssueCardSignalIcon({ kind }: { kind: IssueCardSignalIconName }) {
+  const Icon = {
+    history: HistoryOutlined,
+    order: OrderedListOutlined,
+    running: ClockCircleOutlined,
+    waiting: HourglassOutlined,
+    completed: CheckCircleOutlined,
+    failed: CloseCircleOutlined,
+    cancelled: StopOutlined
+  }[kind];
+  return <Icon aria-hidden="true" />;
+}
+
+/*
+ * The card intentionally keeps descriptions, automation, and attachments in the
+ * detail surface. The board uses the same three-section hierarchy in every state.
+ */
 
 function KanbanProjectFilter({
   projects,
