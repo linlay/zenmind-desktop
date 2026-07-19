@@ -531,6 +531,7 @@ export const zhCNMessages = {
   "settings.debug.logs.title": "Desktop 日志",
   "settings.debug.logs.openMain": "打开 main.log",
   "settings.debug.logs.openError": "打开 error.log",
+  "settings.debug.logs.openKanbanWs": "打开 Kanban WS 日志",
   "settings.debug.logs.openFolder": "打开日志目录",
   "settings.debug.logs.opened": "日志窗口已打开。",
   "settings.debug.logs.failed": "日志窗口打开失败。",

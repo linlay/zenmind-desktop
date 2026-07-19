@@ -7,6 +7,7 @@ import test from "node:test";
 const {
   getDesktopLogRoot,
   readDesktopLog,
+  appendKanbanWsLog,
   __testInternals
 } = await import("../dist-electron/main/logs/desktop.js");
 
@@ -58,4 +59,58 @@ test("desktop console error tee also writes error log", () => {
   const result = readDesktopLog(app, "error");
   assert.equal(result.exists, true);
   assert.match(result.content, /ERROR boom/);
+});
+
+test("kanban websocket entries use an independent, sanitized JSONL log", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-ws-logs-"));
+  const app = createApp(root);
+
+  appendKanbanWsLog(app, {
+    event: "frame",
+    direction: "send",
+    envelope: {
+      type: "sync.hello",
+      payload: {
+        title: "Visible cloud issue",
+        accessToken: "secret-access-token",
+        endpoint: "wss://kanban.example.test/ws?token=secret-url-token",
+        authorization: "Bearer secret-bearer-token",
+        filePath: "/Users/example/private.txt",
+        privateIssue: { syncMode: "private", title: "private task content" }
+      }
+    }
+  });
+
+  const logRoot = getDesktopLogRoot(app);
+  const logPath = path.join(logRoot, "kanban-ws.log");
+  const raw = fs.readFileSync(logPath, "utf8");
+  const entry = JSON.parse(raw.trim());
+  assert.equal(entry.event, "frame");
+  assert.equal(entry.envelope.payload.title, "Visible cloud issue");
+  assert.equal(raw.includes("secret-access-token"), false);
+  assert.equal(raw.includes("secret-url-token"), false);
+  assert.equal(raw.includes("secret-bearer-token"), false);
+  assert.equal(raw.includes("/Users/example/private.txt"), false);
+  assert.equal(raw.includes("private task content"), false);
+  assert.equal(entry.envelope.payload.privateIssue, "[REDACTED_PRIVATE_PAYLOAD]");
+  assert.equal(fs.existsSync(path.join(logRoot, "main.log")), false);
+
+  const result = readDesktopLog(app, "kanban-ws");
+  assert.equal(result.exists, true);
+  assert.equal(result.path, logPath);
+  assert.match(result.content, /Visible cloud issue/);
+});
+
+test("kanban websocket log trimming keeps complete JSONL records", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-ws-log-trim-"));
+  const logPath = path.join(root, "kanban-ws.log");
+  fs.writeFileSync(logPath, [
+    JSON.stringify({ event: "older", payload: "x".repeat(128) }),
+    JSON.stringify({ event: "latest" })
+  ].join("\n") + "\n", "utf8");
+
+  __testInternals.trimLogFileToLimit(logPath, 64);
+
+  const lines = fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean);
+  assert.deepEqual(lines.map((line) => JSON.parse(line).event), ["latest"]);
 });

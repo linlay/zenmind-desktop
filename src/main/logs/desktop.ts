@@ -22,15 +22,25 @@ type ConsoleWriter = (...args: unknown[]) => void;
 type DesktopLogStreamCallback = (event: ServiceLogStreamEvent) => void;
 
 const DESKTOP_LOG_SERVICE_ID = "desktop";
+const KANBAN_WS_LOG_LIMIT_BYTES = 10 * 1024 * 1024;
+const REDACTED_LOG_VALUE = "[REDACTED]";
+const REDACTED_PRIVATE_PAYLOAD = "[REDACTED_PRIVATE_PAYLOAD]";
 let consoleTeeInstalled = false;
 
 function getDesktopLogPath(app: App, target: DesktopLogTarget) {
-  const filename = target === "error" ? "error.log" : "main.log";
+  const filename = target === "error"
+    ? "error.log"
+    : target === "kanban-ws"
+      ? "kanban-ws.log"
+      : "main.log";
   return path.join(getDesktopLogRoot(app), filename);
 }
 
 function normalizeDesktopLogTarget(target: unknown): DesktopLogTarget {
-  return target === "error" ? "error" : "main";
+  if (target === "error" || target === "kanban-ws") {
+    return target;
+  }
+  return "main";
 }
 
 function stringifyConsoleArgs(args: unknown[]) {
@@ -55,6 +65,24 @@ function appendDesktopLogLine(filePath: string, line: string) {
   }
 }
 
+function trimLogFileToLimit(filePath: string, limitBytes: number) {
+  const stat = fs.statSync(filePath);
+  if (stat.size <= limitBytes) {
+    return;
+  }
+  const readStart = Math.max(0, stat.size - limitBytes);
+  const descriptor = fs.openSync(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(stat.size - readStart);
+    const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, readStart);
+    const content = buffer.subarray(0, bytesRead);
+    const firstNewline = content.indexOf(0x0a);
+    fs.writeFileSync(filePath, firstNewline === -1 ? "" : content.subarray(firstNewline + 1));
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
 function createConsoleTee(
   app: App,
   originalWriter: ConsoleWriter,
@@ -74,6 +102,131 @@ export function getDesktopLogRoot(app: App) {
   const root = path.join(getLogsRoot(app), "desktop");
   fs.mkdirSync(root, { recursive: true });
   return root;
+}
+
+function asLogRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : { event: "diagnostic", message: String(value ?? "") };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSensitiveLogKey(key: string) {
+  const normalized = key.replace(/[^a-z0-9]/giu, "").toLowerCase();
+  return [
+    "token",
+    "authtoken",
+    "authentication",
+    "authorization",
+    "cookie",
+    "session",
+    "secret",
+    "password",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "credential"
+  ].some((fragment) => normalized.includes(fragment));
+}
+
+function isLocalFilePath(value: string) {
+  return /^file:/iu.test(value) || /^\//u.test(value) || /^[A-Za-z]:[\\/]/u.test(value);
+}
+
+function redactLocalPathsInText(value: string) {
+  return value.replace(
+    /(^|[\s("'=])(?:file:\/\/|\/)[^\s"'<>]+|(^|[\s("'=])[A-Za-z]:[\\/][^\s"'<>]+/gmu,
+    (_match, unixPrefix = "", windowsPrefix = "") => `${unixPrefix || windowsPrefix}${REDACTED_LOG_VALUE}`
+  );
+}
+
+function redactSensitiveUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) {
+      return redactLocalPathsInText(value);
+    }
+    if (url.username || url.password) {
+      url.username = REDACTED_LOG_VALUE;
+      url.password = REDACTED_LOG_VALUE;
+    }
+    for (const [key] of url.searchParams) {
+      if (isSensitiveLogKey(key)) {
+        url.searchParams.set(key, REDACTED_LOG_VALUE);
+      }
+    }
+    return redactLocalPathsInText(url.toString());
+  } catch {
+    return redactLocalPathsInText(value)
+      .replace(/(bearer\s+)[^\s,;]+/giu, `$1${REDACTED_LOG_VALUE}`)
+      .replace(/\b(authorization|cookie|set-cookie|token|api[_-]?key|password)\s*[:=]\s*[^\s,;]+/giu, `$1=${REDACTED_LOG_VALUE}`)
+      .replace(/([?&](?:token|access_token|refresh_token|id_token|api_key|apikey|authorization|password)=)[^&#\s]*/giu, `$1${REDACTED_LOG_VALUE}`);
+  }
+}
+
+function sanitizeKanbanWsLogValue(value: unknown, key = "", seen = new WeakSet<object>()): unknown {
+  if (typeof value === "string") {
+    if ((key === "filePath" || key === "localFilePath" || key === "path") && isLocalFilePath(value)) {
+      return REDACTED_LOG_VALUE;
+    }
+    return redactSensitiveUrl(value);
+  }
+  if (value === null || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (value === undefined) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeKanbanWsLogValue(item, "", seen));
+  }
+  if (!isRecord(value)) {
+    return String(value);
+  }
+  if (seen.has(value)) {
+    return "[CIRCULAR]";
+  }
+  if (value.syncMode === "private") {
+    return REDACTED_PRIVATE_PAYLOAD;
+  }
+  seen.add(value);
+  const sanitized: Record<string, unknown> = {};
+  for (const [childKey, childValue] of Object.entries(value)) {
+    sanitized[childKey] = isSensitiveLogKey(childKey)
+      ? REDACTED_LOG_VALUE
+      : sanitizeKanbanWsLogValue(childValue, childKey, seen);
+  }
+  seen.delete(value);
+  return sanitized;
+}
+
+export function appendKanbanWsLog(app: App, entry: unknown) {
+  try {
+    const filePath = getDesktopLogPath(app, "kanban-ws");
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    if (fs.existsSync(filePath)) {
+      trimLogFileToLimit(filePath, KANBAN_WS_LOG_LIMIT_BYTES);
+    }
+    const sanitizedEntry = sanitizeKanbanWsLogValue(asLogRecord(entry));
+    const record = isRecord(sanitizedEntry)
+      ? sanitizedEntry
+      : { event: "diagnostic", data: sanitizedEntry };
+    let line = JSON.stringify({ timestamp: new Date().toISOString(), ...record });
+    if (Buffer.byteLength(line, "utf8") > KANBAN_WS_LOG_LIMIT_BYTES) {
+      line = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        event: "entry-omitted",
+        message: "Kanban WS log entry exceeded the 10 MiB retention limit."
+      });
+    }
+    fs.appendFileSync(filePath, `${line}\n`, "utf8");
+    trimLogFileToLimit(filePath, KANBAN_WS_LOG_LIMIT_BYTES);
+  } catch {
+    // Kanban diagnostics must never interrupt the WebSocket client.
+  }
 }
 
 export function installDesktopConsoleLogTee(app: App) {
@@ -217,5 +370,9 @@ export function watchDesktopLog(
 
 export const __testInternals = {
   createConsoleTee,
-  stringifyConsoleArgs
+  stringifyConsoleArgs,
+  getDesktopLogPath,
+  KANBAN_WS_LOG_LIMIT_BYTES,
+  trimLogFileToLimit,
+  sanitizeKanbanWsLogValue
 };

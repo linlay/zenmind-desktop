@@ -531,6 +531,7 @@ export const enUSMessages = {
   "settings.debug.logs.title": "Desktop Logs",
   "settings.debug.logs.openMain": "Open main.log",
   "settings.debug.logs.openError": "Open error.log",
+  "settings.debug.logs.openKanbanWs": "Open Kanban WS Log",
   "settings.debug.logs.openFolder": "Open log folder",
   "settings.debug.logs.opened": "Log viewer opened.",
   "settings.debug.logs.failed": "Could not open log viewer.",

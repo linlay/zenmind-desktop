@@ -20,6 +20,7 @@ import type {
   DesktopAppInfo,
   DesktopDeviceInfo,
   DesktopDeviceIdentityInfo,
+  DesktopLogTarget,
   DesktopGeneralSettings,
   DesktopWsProbeResult,
   DesktopPetAgentOption,
@@ -1777,10 +1778,10 @@ function DeviceIdentityDebugCard() {
 
 function DesktopLogsDebugCard() {
   const { t } = useI18n();
-  const [pendingAction, setPendingAction] = useState<"main" | "error" | "folder" | null>(null);
+  const [pendingAction, setPendingAction] = useState<DesktopLogTarget | "folder" | null>(null);
   const [message, setMessage] = useState("");
 
-  async function handleOpenDesktopLog(target: "main" | "error") {
+  async function handleOpenDesktopLog(target: DesktopLogTarget) {
     setPendingAction(target);
     setMessage("");
     try {
@@ -1817,6 +1818,9 @@ function DesktopLogsDebugCard() {
         </Button>
         <Button disabled={pendingAction !== null} onClick={() => void handleOpenDesktopLog("error")}>
           {pendingAction === "error" ? t("common.loading") : t("settings.debug.logs.openError")}
+        </Button>
+        <Button disabled={pendingAction !== null} onClick={() => void handleOpenDesktopLog("kanban-ws")}>
+          {pendingAction === "kanban-ws" ? t("common.loading") : t("settings.debug.logs.openKanbanWs")}
         </Button>
         <Button disabled={pendingAction !== null} onClick={() => void handleRevealDesktopLogFolder()}>
           {pendingAction === "folder" ? t("common.loading") : t("settings.debug.logs.openFolder")}

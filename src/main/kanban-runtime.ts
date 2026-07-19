@@ -73,6 +73,7 @@ import {
   type KanbanDesktopWsConfig
 } from "./kanban-desktop-ws-client";
 import { t } from "./i18n/main-i18n";
+import { appendKanbanWsLog } from "./logs/desktop";
 
 type AgentPlatformCaller<TApp> = <T = unknown>(
   app: TApp,
@@ -537,7 +538,11 @@ export class KanbanRuntime {
         this.connectionState = state;
         this.notifyChanged();
       },
-      onDebug: this.options.onDebug
+      onDebug: (message) => appendKanbanWsLog(this.options.app, {
+        event: "debug",
+        message
+      }),
+      onWsLog: (entry) => appendKanbanWsLog(this.options.app, entry)
     });
     this.cloudSync = new DesktopCloudSyncEngine({
       app: this.options.app,

@@ -10,7 +10,7 @@ export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
 export type ServiceMode = "service" | "resource";
 export type ServiceLogTarget = "main" | "error";
-export type DesktopLogTarget = "main" | "error";
+export type DesktopLogTarget = "main" | "error" | "kanban-ws";
 export type LogViewerSource = "service" | "desktop";
 export type ServiceStatus =
   | "not-installed"
@@ -175,7 +175,7 @@ export interface ServiceLogStreamOptions {
 
 export interface ServiceOpenLogViewerRequest {
   serviceId: ServiceId;
-  target: ServiceLogTarget;
+  target: ServiceLogTarget | DesktopLogTarget;
   title: string;
   source?: LogViewerSource;
 }

@@ -5533,6 +5533,25 @@ test("service logs open in a separate floating log viewer window", () => {
   assert.doesNotMatch(logViewerPage, /event\.key === "Escape"/);
 });
 
+test("Kanban websocket logs use the Desktop log viewer as an independent target", () => {
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  const desktopLogs = readSourceFile("src", "main", "logs", "desktop.ts");
+  const logViewerPage = readSourceFile("src", "renderer", "pages", "LogViewerPage.tsx");
+  const contracts = readSharedContractsSource();
+
+  assert.match(settingsPage, /handleOpenDesktopLog\("kanban-ws"\)/);
+  assert.match(settingsPage, /settings\.debug\.logs\.openKanbanWs/);
+  assert.match(shellHandlers, /target === "kanban-ws"/);
+  assert.match(shellHandlers, /Kanban WS Log/);
+  assert.match(desktopLogs, /"kanban-ws\.log"/);
+  assert.match(desktopLogs, /KANBAN_WS_LOG_LIMIT_BYTES = 10 \* 1024 \* 1024/);
+  assert.match(kanbanRuntime, /onWsLog: \(entry\) => appendKanbanWsLog/);
+  assert.match(logViewerPage, /value === "error" \|\| value === "kanban-ws"/);
+  assert.match(contracts, /DesktopLogTarget = "main" \| "error" \| "kanban-ws"/);
+});
+
 test("service log viewer lets users pause tail following and jump back to the latest log", () => {
   const logViewerPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "LogViewerPage.tsx"),

@@ -72,6 +72,8 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   const snapshots = [];
   const dispatches = [];
   const states = [];
+  const debugMessages = [];
+  const wsLogs = [];
   const client = new KanbanDesktopWsClient({
     capabilities: ["desktop.issue.dispatch"],
     getCurrentUser: () => ({
@@ -100,7 +102,9 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     onListAgents: async () => [{ agentKey: "cutej", displayName: "小君", role: "桌面智能体" }],
     onStartRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" }),
     onAutomationSync: async () => ({ ok: true }),
-    onStateChanged: (state) => states.push(state)
+    onStateChanged: (state) => states.push(state),
+    onDebug: (message) => debugMessages.push(message),
+    onWsLog: (entry) => wsLogs.push(entry)
   });
 
   client.start({
@@ -181,6 +185,10 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     revision: 13
   }]);
   assert.deepEqual(states.slice(0, 2), ["connecting", "open"]);
+  assert.equal(wsLogs.some((entry) => entry.direction === "send" && entry.envelope.type === "sync.hello"), true);
+  assert.equal(wsLogs.some((entry) => entry.direction === "recv" && entry.envelope.type === "sync.hello"), true);
+  assert.equal(JSON.stringify(wsLogs).includes("secret"), false);
+  assert.equal(debugMessages.some((message) => message.includes("secret") || message.includes("Desktop User")), false);
 
   client.stop();
 });

@@ -114,6 +114,13 @@ export type KanbanDesktopDeliveryApplyResult = {
 
 export type KanbanDesktopIssueEventApplyResult = KanbanDesktopDeliveryApplyResult;
 
+export type KanbanDesktopWsLogEntry = {
+  event: "frame";
+  direction: "send" | "recv";
+  bytes: number;
+  envelope: unknown;
+};
+
 export type KanbanDesktopWsClientOptions = {
   capabilities: string[];
   getCurrentUser: () => KanbanCurrentUser;
@@ -140,6 +147,7 @@ export type KanbanDesktopWsClientOptions = {
   onConnected?: () => void;
   onStateChanged?: (state: KanbanDesktopConnectionState) => void;
   onDebug?: (message: string) => void;
+  onWsLog?: (entry: KanbanDesktopWsLogEntry) => void;
 };
 
 const PROTOCOL_VERSION = 3;
@@ -470,6 +478,15 @@ export class KanbanDesktopWsClient {
 
   constructor(private readonly options: KanbanDesktopWsClientOptions) {}
 
+  private logFrame(direction: "send" | "recv", envelope: KanbanEnvelope, bytes: number) {
+    this.options.onWsLog?.({
+      event: "frame",
+      direction,
+      bytes,
+      envelope
+    });
+  }
+
   start(config: KanbanDesktopWsConfig | null, options: { forceReconnect?: boolean } = {}) {
     const normalizedConfig = config && config.serverUrl.trim()
       ? {
@@ -763,6 +780,7 @@ export class KanbanDesktopWsClient {
       this.options.onDebug?.(t("kanban.ws.messageParseFailed", { message: errorMessage(error) }));
       return;
     }
+    this.logFrame("recv", env, Buffer.byteLength(raw));
     if (!isV2Envelope(env) || !["request", "response", "push"].includes(readText(env.frame))) {
       this.closeProtocolError("kanban v3 envelope required");
       return;
@@ -1075,7 +1093,9 @@ export class KanbanDesktopWsClient {
       return false;
     }
     try {
-      socket.send(JSON.stringify(env));
+      const serialized = JSON.stringify(env);
+      socket.send(serialized);
+      this.logFrame("send", env, Buffer.byteLength(serialized));
       if (isResponseEnvelope(env)) {
         this.options.onDebug?.(t("kanban.ws.sentResponse", { type: envelopeBusinessType(env) || "unknown", id: env.id || "" }));
       }
@@ -1106,6 +1126,7 @@ export class KanbanDesktopWsClient {
     if (this.stopped || !this.config || this.reconnectTimer) {
       return;
     }
+    this.options.onDebug?.(`kanban websocket reconnect scheduled in ${RECONNECT_MS}ms`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
@@ -1150,6 +1171,7 @@ export class KanbanDesktopWsClient {
       return;
     }
     this.state = state;
+    this.options.onDebug?.(`kanban websocket state=${state}`);
     this.options.onStateChanged?.(state);
   }
 }

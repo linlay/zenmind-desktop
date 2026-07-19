@@ -112,7 +112,10 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   const desktopLogStreamSubscriptions = options.desktopLogStreamSubscriptions ?? createLogStreamSubscriptionRegistry();
 
   function normalizeDesktopLogTarget(value: unknown): DesktopLogTarget {
-    return value === "error" ? "error" : "main";
+    if (value === "error" || value === "kanban-ws") {
+      return value;
+    }
+    return "main";
   }
 
   function getApp() {
@@ -120,7 +123,9 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   }
 
   function getDesktopLogTitle(target: DesktopLogTarget) {
-    return target === "error" ? "Desktop Error Log" : "Desktop Main Log";
+    if (target === "error") return "Desktop Error Log";
+    if (target === "kanban-ws") return "Kanban WS Log";
+    return "Desktop Main Log";
   }
 
   function isDesktopDownloadPayload(input: unknown): input is DesktopDownloadPayload {

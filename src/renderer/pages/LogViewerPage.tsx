@@ -154,8 +154,11 @@ function renderLogContent(
 	return nodes;
 }
 
-function normalizeLogTarget(value: string | null): ServiceLogTarget {
-	return value === "error" ? "error" : "main";
+function normalizeLogTarget(value: string | null): ServiceLogTarget | DesktopLogTarget {
+	if (value === "error" || value === "kanban-ws") {
+		return value;
+	}
+	return "main";
 }
 
 function normalizeLogViewerSource(value: string | null): LogViewerSource {
@@ -337,7 +340,7 @@ export function LogViewerPage() {
 
 		const readInitialLog = source === "desktop"
 			? window.electronAPI.diagnostics.readDesktopLog(target as DesktopLogTarget)
-			: readLog(serviceId, target);
+			: readLog(serviceId, target as ServiceLogTarget);
 
 		readInitialLog
 			.then((result) => {
@@ -372,7 +375,7 @@ export function LogViewerPage() {
 					)
 					: watchLog(
 						serviceId,
-						target,
+						target as ServiceLogTarget,
 						{ fromOffset: result.endOffset },
 						handleLogStreamEvent,
 					);
