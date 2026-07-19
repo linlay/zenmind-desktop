@@ -6013,6 +6013,8 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-task-status-badge\.is-awaiting\s*\{[\s\S]{0,120}#fff2c2[\s\S]{0,120}#b45309/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy strong\s*\{[\s\S]{0,120}font-size:\s*13px;/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action span\s*\{[\s\S]{0,220}transform:\s*translateY\(2px\) rotate\(-135deg\);/);
+  assert.match(globalStyles, /\.desktop-pet-task-panel\.is-expanded \.desktop-pet-task-head-action span\s*\{[\s\S]{0,120}transform:\s*translateY\(-2px\) rotate\(45deg\);/);
   assert.match(globalStyles, /\.desktop-pet-task-copy strong\s*\{[\s\S]{0,120}font-size:\s*12px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*155px;/);
@@ -6028,6 +6030,8 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::after\s*\{[\s\S]{0,140}left:\s*10px;[\s\S]{0,80}top:\s*7px;[\s\S]{0,80}height:\s*5px;/);
   assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-running::after\s*\{[\s\S]{0,100}inset:\s*6px;[\s\S]{0,80}border-width:\s*2px;/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-reply[\s\S]*?opacity:\s*1;/);
+  assert.match(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,100}right:\s*8px;[\s\S]{0,80}bottom:\s*7px;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,120}top:\s*calc\(50%/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-main \.desktop-pet-task-status-badge[\s\S]*?opacity:\s*0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,160}min-height:\s*auto;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,220}max-height:\s*calc\(100% - 20px\);/);
