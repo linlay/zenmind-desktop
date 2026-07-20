@@ -2208,6 +2208,14 @@ test("settings dark mode themes Ant Design controls inside settings cards", () =
     settingsStyles,
     /:root\[data-theme="dark"\] :is\(\.settings-page, \.settings-debug-modal\) \.ant-select-arrow,[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
   );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.065\)\s*!important;[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default\.ant-btn-dangerous:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--danger\) 12%, transparent\)\s*!important;[\s\S]*?color:\s*var\(--danger\)\s*!important;/
+  );
   assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup\s*\{[\s\S]*?background:\s*var\(--surface-strong\);/);
   assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup \.ant-select-item-option-selected:not\(\.ant-select-item-option-disabled\)\s*\{[\s\S]*?background:\s*var\(--accent-soft\);/);
 });
