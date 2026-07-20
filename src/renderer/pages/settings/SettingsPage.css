@@ -1172,6 +1172,34 @@
   color: var(--ink) !important;
 }
 
+:root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text) {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.065) !important;
+  color: var(--ink-soft) !important;
+  text-shadow: none !important;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):hover:not(:disabled),
+:root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):focus-visible:not(:disabled) {
+  border-color: var(--line-strong) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-btn-default.ant-btn-dangerous:not(.ant-btn-link):not(.ant-btn-text) {
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent) !important;
+  background: color-mix(in srgb, var(--danger) 12%, transparent) !important;
+  color: var(--danger) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-btn-default.ant-btn-dangerous:not(.ant-btn-link):not(.ant-btn-text):hover:not(:disabled),
+:root[data-theme="dark"] .settings-page .ant-btn-default.ant-btn-dangerous:not(.ant-btn-link):not(.ant-btn-text):focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 58%, transparent) !important;
+  background: color-mix(in srgb, var(--danger) 18%, transparent) !important;
+  color: var(--danger) !important;
+}
+
 :root[data-theme="dark"] .settings-page .ant-btn:disabled:not(.ant-btn-link):not(.ant-btn-text),
 :root[data-theme="dark"] .settings-page .ant-btn.ant-btn-disabled:not(.ant-btn-link):not(.ant-btn-text),
 :root[data-theme="dark"] .settings-debug-modal .ant-btn:disabled:not(.ant-btn-link):not(.ant-btn-text),

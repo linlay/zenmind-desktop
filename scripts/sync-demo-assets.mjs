@@ -7,8 +7,10 @@ import { brandResourcesDir, resolveBrandId } from "./lib/brand-config.mjs";
 const projectRoot = process.cwd();
 
 export const DEMO_ENV_VAR = "DEMO";
+export const WEBAPP_BUILDER_SKILL_DIR_ENV_VAR = "WEBAPP_BUILDER_SKILL_DIR";
 export const BUNDLED_DEMO_MANIFEST_FILE_NAME = "manifest.json";
 export const BUNDLED_DEMO_WEBAPP_TEMPLATES_DIR_NAME = "webapp-templates";
+export const BUNDLED_DEMO_WEBAPP_ID = "demo-node-html";
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["", "0", "false", "no", "off"]);
@@ -17,8 +19,31 @@ function bundledDemoRoot(rootDir, env = process.env) {
   return path.join(brandResourcesDir(rootDir, resolveBrandId([], env)), "demo");
 }
 
-function webappTemplatesSourceRoot(rootDir) {
-  return path.join(rootDir, "public", BUNDLED_DEMO_WEBAPP_TEMPLATES_DIR_NAME);
+function webappDemoSourceDir(env = process.env) {
+  const skillDir = String(env[WEBAPP_BUILDER_SKILL_DIR_ENV_VAR] ?? "").trim();
+  if (!skillDir) {
+    throw new Error(
+      `${DEMO_ENV_VAR}=true requires ${WEBAPP_BUILDER_SKILL_DIR_ENV_VAR} to point to the webapp-builder skill`
+    );
+  }
+  return path.join(path.resolve(skillDir), "assets", BUNDLED_DEMO_WEBAPP_ID);
+}
+
+function assertWebappDemoSource(sourceDir) {
+  if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+    throw new Error(`missing webapp-builder demo asset: ${sourceDir}`);
+  }
+  const manifestPath = path.join(sourceDir, "webapp.json");
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    if (manifest?.id !== BUNDLED_DEMO_WEBAPP_ID) {
+      throw new Error(`expected id ${BUNDLED_DEMO_WEBAPP_ID}`);
+    }
+  } catch (error) {
+    throw new Error(
+      `invalid webapp-builder demo manifest ${manifestPath}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 function writeManifest(demoRoot, manifest) {
@@ -76,13 +101,12 @@ export async function prepareBundledDemoAssets({
     };
   }
 
-  const sourceRoot = webappTemplatesSourceRoot(rootDir);
-  if (!fs.existsSync(sourceRoot) || !fs.statSync(sourceRoot).isDirectory()) {
-    throw new Error(`missing webapp demo templates: ${sourceRoot}`);
-  }
+  const sourceDir = webappDemoSourceDir(env);
+  assertWebappDemoSource(sourceDir);
 
   const targetRoot = path.join(demoRoot, BUNDLED_DEMO_WEBAPP_TEMPLATES_DIR_NAME);
-  fs.cpSync(sourceRoot, targetRoot, {
+  fs.mkdirSync(targetRoot, { recursive: true });
+  fs.cpSync(sourceDir, path.join(targetRoot, BUNDLED_DEMO_WEBAPP_ID), {
     recursive: true,
     force: true
   });

@@ -13,6 +13,7 @@ import {
   type AgentWebclientResolvedRoute
 } from "../../../shared/agent-webclient-routes";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
+import type { WebEntryKey } from "../../../shared/contracts/webs";
 import { useI18n } from "../../i18n/useI18n";
 
 type ThemeMode = "light" | "dark";
@@ -176,12 +177,14 @@ export function PluginSurfaceHost({
 export function BuiltinBrowserSurfaceHost({
   active,
   mounted,
+  onCloseSurface,
   assistantDockOpen,
   onOpenAssistantDock,
   onCloseAssistantDock
 }: {
   active: boolean;
   mounted: boolean;
+  onCloseSurface?: () => void;
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
@@ -198,6 +201,7 @@ export function BuiltinBrowserSurfaceHost({
         active={active}
         title={BUILTIN_BROWSER_SURFACE_LABEL}
         url={BUILTIN_BROWSER_DEFAULT_URL}
+        onCloseSurface={onCloseSurface}
         assistantDockOpen={assistantDockOpen}
         onOpenAssistantDock={onOpenAssistantDock}
         onCloseAssistantDock={onCloseAssistantDock}
@@ -210,14 +214,16 @@ export function WebSurfaceHost({
   activeEntryKey,
   itemMap,
   mountedEntryKeys,
+  onCloseWebItem,
   onWebsiteFaviconDiscovered,
   assistantDockOpen,
   onOpenAssistantDock,
   onCloseAssistantDock
 }: {
-  activeEntryKey: string | null;
-  itemMap: Map<string, EmbeddedSidebarItem>;
-  mountedEntryKeys: string[];
+  activeEntryKey: WebEntryKey | null;
+  itemMap: Map<WebEntryKey, EmbeddedSidebarItem>;
+  mountedEntryKeys: WebEntryKey[];
+  onCloseWebItem?: (entryKey: WebEntryKey) => void;
   onWebsiteFaviconDiscovered?: (
     entryKey: string,
     websiteUrl: string,
@@ -270,6 +276,7 @@ export function WebSurfaceHost({
             url={item.url}
             chrome={item.chrome}
             partition={resolveWebsiteSsoPartition(item)}
+            onCloseSurface={onCloseWebItem ? () => onCloseWebItem(entryKey) : undefined}
             onFaviconDiscovered={
               isWebsite && onWebsiteFaviconDiscovered
                 ? (faviconUrl: string) =>
@@ -288,11 +295,13 @@ export function WebSurfaceHost({
 
 export function ExternalItemRoute({
   itemMap,
+  onCloseSurface,
   assistantDockOpen,
   onOpenAssistantDock,
   onCloseAssistantDock
 }: {
   itemMap: Map<string, EmbeddedSidebarItem>;
+  onCloseSurface?: () => void;
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
@@ -328,6 +337,7 @@ export function ExternalItemRoute({
         url={item.url}
         chrome={item.chrome}
         partition={resolveWebsiteSsoPartition(item)}
+        onCloseSurface={onCloseSurface}
         assistantDockOpen={assistantDockOpen}
         onOpenAssistantDock={onOpenAssistantDock}
         onCloseAssistantDock={onCloseAssistantDock}

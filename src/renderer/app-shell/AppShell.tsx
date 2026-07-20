@@ -3168,6 +3168,10 @@ export function AppShell() {
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}
             mounted={shouldMountBuiltinBrowserSurface}
+            onCloseSurface={() => {
+              setBuiltinBrowserSurfaceMounted(false);
+              requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
+            }}
             assistantDockOpen={assistantCopilotOpen}
             onOpenAssistantDock={() => openAssistantDock()}
             onCloseAssistantDock={closeAssistantDock}
@@ -3176,6 +3180,12 @@ export function AppShell() {
             activeEntryKey={activeWebEntryKey}
             itemMap={webItemMap}
             mountedEntryKeys={mountedWebEntryKeys}
+            onCloseWebItem={(entryKey) => {
+              const item = webItemMap.get(entryKey);
+              if (item) {
+                void handleCloseWebEntry(item);
+              }
+            }}
             onWebsiteFaviconDiscovered={handleWebsiteFaviconDiscovered}
             assistantDockOpen={assistantCopilotOpen}
             onOpenAssistantDock={() => openAssistantDock()}
@@ -3256,6 +3266,7 @@ export function AppShell() {
               element={
                 <ExternalItemRoute
                   itemMap={experimentalItemMap}
+                  onCloseSurface={() => requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE)}
                   assistantDockOpen={assistantCopilotOpen}
                   onOpenAssistantDock={() => openAssistantDock()}
                   onCloseAssistantDock={closeAssistantDock}

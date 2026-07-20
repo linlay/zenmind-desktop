@@ -552,7 +552,10 @@
 }
 
 .sidebar-nav-group>.Collapse-header:hover .Collapse-headerSupplement,
-.sidebar-nav-group>.Collapse-header:focus-within .Collapse-headerSupplement {
+.sidebar-nav-group>.Collapse-header:focus-within .Collapse-headerSupplement,
+/* 菜单打开时焦点会移入 portal 菜单（在 header 之外），
+   需要继续钉住触发器，否则菜单会失去锚点而移位 */
+.sidebar-nav-group>.Collapse-header:has(.sidebar-chats-agent-trigger[aria-expanded="true"]) .Collapse-headerSupplement {
   flex: 1 1 auto;
   max-width: 156px;
   opacity: 1;
@@ -2287,6 +2290,13 @@
 
 .sidebar-group-actions-menu-layer .sidebar-group-actions-menu {
   z-index: 90;
+  box-sizing: border-box;
+  width: 196px;
+}
+
+.sidebar-group-actions-menu button span {
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .assistant-chat-actions-menu button {

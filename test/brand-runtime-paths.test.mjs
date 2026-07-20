@@ -31,6 +31,7 @@ import { renderAppIconToPng, renderBrandMarkToPng, renderWindowsAppIconToPng } f
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
 import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
 import { ensureWindowsLatestAliases } from "../scripts/platform/dist-win-host.mjs";
+import { appendWebappBuilderSkillMount } from "../scripts/platform/dist-win-docker.mjs";
 import { removeRendererWebappTemplatesFromStage } from "../scripts/stage-app.mjs";
 
 const require = createRequire(import.meta.url);
@@ -953,9 +954,10 @@ test("dev startup syncs env zip resources before building the main process", () 
 
 test("sync-demo defaults to manifest only and copies webapp templates when enabled", async (t) => {
   const root = createBrandFixture(t);
-  const sourceDir = path.join(root, "public", "webapp-templates", "demo-node-html");
+  const skillDir = path.join(root, "skills", "webapp-builder");
+  const sourceDir = path.join(skillDir, "assets", "demo-node-html");
   fs.mkdirSync(sourceDir, { recursive: true });
-  fs.writeFileSync(path.join(sourceDir, "webapp.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(sourceDir, "webapp.json"), '{"id":"demo-node-html"}\n', "utf8");
 
   const defaultResult = await prepareBundledDemoAssets({
     rootDir: root,
@@ -969,7 +971,7 @@ test("sync-demo defaults to manifest only and copies webapp templates when enabl
 
   const enabledResult = await prepareBundledDemoAssets({
     rootDir: root,
-    env: { DEMO: "1" },
+    env: { DEMO: "1", WEBAPP_BUILDER_SKILL_DIR: skillDir },
     logger: silentLogger
   });
   assert.equal(enabledResult.bundled, true);
@@ -977,6 +979,29 @@ test("sync-demo defaults to manifest only and copies webapp templates when enabl
   assert.equal(
     fs.existsSync(path.join(brandResourcesDir(root, "zenmind"), "demo", "webapp-templates", "demo-node-html", "webapp.json")),
     true
+  );
+  assert.equal(
+    readJson(path.join(brandResourcesDir(root, "zenmind"), "demo", "webapp-templates", "demo-node-html", "webapp.json")).id,
+    "demo-node-html"
+  );
+
+  await assert.rejects(
+    () => prepareBundledDemoAssets({
+      rootDir: root,
+      env: { DEMO: "1" },
+      logger: silentLogger
+    }),
+    /WEBAPP_BUILDER_SKILL_DIR/u
+  );
+
+  fs.writeFileSync(path.join(sourceDir, "webapp.json"), '{"id":"wrong-demo"}\n', "utf8");
+  await assert.rejects(
+    () => prepareBundledDemoAssets({
+      rootDir: root,
+      env: { DEMO: "1", WEBAPP_BUILDER_SKILL_DIR: skillDir },
+      logger: silentLogger
+    }),
+    /invalid webapp-builder demo manifest/u
   );
 
   await assert.rejects(
@@ -999,6 +1024,21 @@ test("stage-app removes renderer webapp templates from staged app", (t) => {
   removeRendererWebappTemplatesFromStage(root);
 
   assert.equal(fs.existsSync(path.join(root, "dist-renderer", "webapp-templates")), false);
+});
+
+test("Windows Docker demo build mounts the webapp-builder skill read-only", () => {
+  const dockerArgs = ["run", "--rm"];
+  const skillDir = path.join("fixtures", "webapp-builder");
+
+  appendWebappBuilderSkillMount(dockerArgs, { WEBAPP_BUILDER_SKILL_DIR: skillDir });
+
+  assert.deepEqual(dockerArgs.slice(-4), [
+    "--volume",
+    `${path.resolve(skillDir)}:/webapp-builder-skill:ro`,
+    "--env",
+    "WEBAPP_BUILDER_SKILL_DIR=/webapp-builder-skill"
+  ]);
+  assert.deepEqual(appendWebappBuilderSkillMount(["run"], {}), ["run"]);
 });
 
 test("Windows dist latest metadata aliases spaced installer artifacts", (t) => {

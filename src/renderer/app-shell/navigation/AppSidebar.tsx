@@ -889,6 +889,21 @@ function getMenuPositionFromElement(
   };
 }
 
+function getGroupActionMenuPositionFromElement(
+  element: HTMLElement,
+  width: number,
+  height: number,
+) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: Math.min(
+      window.innerWidth - width - 8,
+      Math.max(8, rect.left - 12),
+    ),
+    y: Math.min(window.innerHeight - height, Math.max(8, rect.bottom + 4)),
+  };
+}
+
 type SidebarCollapseToggleVariant = "compact" | "nav";
 
 type SidebarCollapseToggleProps = {
@@ -2038,7 +2053,7 @@ export function AppSidebar({
     element: HTMLElement,
     groupId: SidebarGroupId,
   ) {
-    const position = getMenuPositionFromElement(element, 196, 156);
+    const position = getGroupActionMenuPositionFromElement(element, 196, 156);
     setGroupActionMenu({ groupId, ...position });
   }
 
@@ -2356,11 +2371,6 @@ export function AppSidebar({
     showWebsiteDialog();
   }
 
-  function navigateWebsitesSettings() {
-    onCloseAssistantDock?.();
-    requestNavigate(buildSettingsSectionPath("websites"));
-  }
-
   async function handleSaveWebsite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (websiteCreatePending) {
@@ -2642,11 +2652,15 @@ export function AppSidebar({
     const normalizedAgentKey = nextAgentKey.trim();
     if (
       !normalizedAgentKey ||
-      normalizedAgentKey === resolvedChatDefaultAgentKey ||
       !chatNavAgentOptions.some(
         (agent) => agent.agentKey === normalizedAgentKey,
       )
     ) {
+      return;
+    }
+    if (normalizedAgentKey === resolvedChatDefaultAgentKey) {
+      // 点击当前已选中的 agent：仅关闭菜单，避免菜单悬停且无任何反馈
+      closeChatsDefaultAgentMenu();
       return;
     }
 
@@ -4731,16 +4745,6 @@ export function AppSidebar({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setGroupActionMenu(null);
-                  navigateWebsitesSettings();
-                }}
-              >
-                <span>{t("sidebar.website.manage")}</span>
-              </button>
               <button
                 type="button"
                 role="menuitem"
