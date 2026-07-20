@@ -67,11 +67,18 @@ export interface DesktopSsoClaims {
   audience: string;
 }
 
+export interface DesktopSsoCompletedSteps {
+  session: boolean;
+  userInfo: boolean;
+  accessToken: boolean;
+}
+
 export interface DesktopSsoStatus {
   configured: boolean;
   authenticated: boolean;
   pending: boolean;
   user: DesktopSsoClaims | null;
+  completedSteps: DesktopSsoCompletedSteps;
   message: string;
   error?: string;
   updatedAt: string;

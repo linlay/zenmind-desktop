@@ -24,10 +24,22 @@ OIDC SSO：
 config/desktop/sso.json
   -> OIDC start
   -> local callback server
-  -> token exchange / user info / cookies
-  -> state/desktop/sso-session.json
+  -> validate id_token -> state/desktop/sso-session.json
+  -> base claims / userinfo -> state/desktop/sso-user-info.json
+  -> access_token -> state/desktop/sso-access-token.txt
   -> secrets/sso-site-token.json
 ```
+
+嵌入式 Cookie SSO 按同一文件协议分步完成：
+
+```text
+loginCompletionUrls 命中
+  -> browserSession Cookie 校验成功 -> sso-session.json
+  -> cookie userInfo 成功 -> sso-user-info.json
+  -> cookieAccessTokenExchange 成功 -> sso-access-token.txt
+```
+
+三个文件互不代写。后一步失败只更新运行时的 warning/error，不删除本次已经成功的文件；因此 access token 交换返回 401 时，Desktop 仍保持浏览器登录态和已经取得的用户信息。新 session 验证成功后才清理上一 session 的下游 user-info/access-token，避免不同账号的数据混用。标准 OIDC 从验证后的 ID token 先写基础 user-info，Bearer userinfo 成功时再增强该文件。
 
 Tunnel Hub 注册只使用由 `siteTokenBridge` 换取的 `sso-site-token.json`；普通 Desktop 登录写入的 `state/desktop/sso-access-token.txt` 不参与 Tunnel 注册。
 
@@ -47,7 +59,9 @@ Desktop WebSocket 鉴权：
 关键文件：
 
 - `config/desktop/sso.json`：SSO 配置。
-- `state/desktop/sso-session.json`：SSO 会话状态。
+- `state/desktop/sso-session.json`：schema v2 SSO 会话状态，不包含 user 或 access token；旧版内嵌 user 的会话仍可读取。
+- `state/desktop/sso-user-info.json`：schema v2 规范化用户信息及来源。
+- `state/desktop/sso-access-token.txt`：仅保存已成功取得的原始 access token。
 - `secrets/sso-site-token.json`：站点 token。
 - `config/services/identity-center/.env`：identity-center 配置。
 
@@ -61,6 +75,9 @@ Token bridge 类型：
 ## 约束与注意事项
 
 - Desktop 本地凭据写入 `secrets/` 或 `state/`，不要进入 `config/` 文档示例。
+- `DesktopSsoStatus.completedSteps` 分别反映 session、userInfo、accessToken 是否完成；session 成功即 `authenticated=true`，token 缺失时 UI 显示受限登录状态。
+- Cookie 只保存在 Electron 的持久化 SSO partition，不写入上述三个状态文件，也不得进入日志。
+- macOS/Linux 和 Windows 均通过 Electron home/runtime 路径解析状态目录；macOS/Linux 上三个文件保持 `0600`，不得硬编码用户目录。
 - `identity-center` 是 token 签发与校验基础，不进入 webview bridge 协议名称；嵌入页只依赖 Desktop agent auth bridge。
 - token cache 会根据 JWT `exp` 和刷新原因复用或失效；`unauthorized` 会强制丢弃缓存。JWT 原始 `iat`/`exp` 仅在解码和校验内部按 Unix 秒处理；需要进入 shared contract 的具体时间点必须转换为 `EpochMilliseconds`，详见[时间契约](时间契约.md)。
 - Desktop 先应用 `desktopAuthContext`、清理不匹配的旧 token，再写入响应 token；该上下文不再通过 agent-webclient URL 传递。

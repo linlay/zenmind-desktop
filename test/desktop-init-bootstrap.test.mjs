@@ -1085,7 +1085,13 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
       wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
       logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
       userInfo: {
-        url: "https://auth.zenmind.cc/application/o/userinfo/"
+        url: "https://auth.zenmind.cc/application/o/userinfo/",
+        authMode: "bearer",
+        required: false,
+        subPath: "sub",
+        namePath: "name",
+        emailPath: "email",
+        avatarUrlPath: "picture"
       },
       siteTokenBridge: {
         startUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
@@ -1112,7 +1118,13 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
     wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
     logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
     userInfo: {
-      url: "https://auth.zenmind.cc/application/o/userinfo/"
+      url: "https://auth.zenmind.cc/application/o/userinfo/",
+      authMode: "bearer",
+      required: false,
+      subPath: "sub",
+      namePath: "name",
+      emailPath: "email",
+      avatarUrlPath: "picture"
     },
     siteTokenBridge: {
       startUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",

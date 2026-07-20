@@ -10,6 +10,8 @@ const require = createRequire(import.meta.url);
 
 const {
   failDesktopSsoFlow,
+  failDesktopSsoStep,
+  getDesktopSsoAccessToken,
   getDesktopSsoStatus,
   logoutDesktopSso,
   startDesktopSsoLogin,
@@ -127,6 +129,7 @@ function createOidcTokenTestFixture() {
       userInfo: {
         enabled: true,
         required: false,
+        authMode: "bearer",
         url: userInfoUrl,
         subPath: "sub",
         namePath: "name",
@@ -350,12 +353,307 @@ test("desktop sso writes user info state after local authentication completes", 
   const status = __testInternals.completeDesktopSsoCookieLogin(app, token);
 
   assert.equal(status.authenticated, true);
+  assert.deepEqual(status.completedSteps, {
+    session: true,
+    userInfo: true,
+    accessToken: true
+  });
+  const sessionPath = path.join(getDesktopStateRoot(app), "sso-session.json");
+  const accessTokenPath = __testInternals.getDesktopSsoAccessTokenFilePath(app);
+  const session = JSON.parse(fs.readFileSync(sessionPath, "utf8"));
+  assert.equal(session.schemaVersion, 2);
+  assert.equal(session.authenticated, true);
+  assert.equal("user" in session, false);
+  assert.equal("accessToken" in session, false);
   const userInfoPath = __testInternals.getDesktopSsoUserInfoFilePath(app);
   const stored = JSON.parse(fs.readFileSync(userInfoPath, "utf8"));
+  assert.equal(stored.schemaVersion, 2);
   assert.equal(stored.sub, "user-1");
   assert.equal(stored.name, "Desktop User");
   assert.equal(stored.email, "desktop.user@example.test");
   assert.equal(stored.source, "sso");
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(sessionPath).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(userInfoPath).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(accessTokenPath).mode & 0o777, 0o600);
+  }
+});
+
+test("desktop sso persists browser session and cookie userinfo before access token", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-stepwise-cookie-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: embeddedLoginOrigin,
+    loginUrl: embeddedLoginUrl,
+    appendLoginState: false,
+    browserSession: {
+      url: `${embeddedLoginOrigin}/oauth2/auth`,
+      successStatuses: [200, 202]
+    },
+    userInfo: {
+      url: `${embeddedLoginOrigin}/oauth2/userinfo`,
+      authMode: "cookie",
+      required: true,
+      subPath: "email",
+      namePath: "preferredUsername",
+      emailPath: "email"
+    },
+    cookieAccessTokenExchange: {
+      url: embeddedTokenExchangeUrl,
+      method: "GET"
+    }
+  });
+
+  const sessionStatus = __testInternals.completeDesktopSsoBrowserSession(app);
+  const stateRoot = getDesktopStateRoot(app);
+  const sessionPath = path.join(stateRoot, "sso-session.json");
+  const userInfoPath = path.join(stateRoot, "sso-user-info.json");
+  const accessTokenPath = path.join(stateRoot, "sso-access-token.txt");
+
+  assert.equal(sessionStatus.authenticated, true);
+  assert.equal(sessionStatus.user, null);
+  assert.deepEqual(sessionStatus.completedSteps, {
+    session: true,
+    userInfo: false,
+    accessToken: false
+  });
+  assert.equal(fs.existsSync(sessionPath), true);
+  assert.equal(fs.existsSync(userInfoPath), false);
+  assert.equal(fs.existsSync(accessTokenPath), false);
+
+  const userStatus = __testInternals.completeDesktopSsoBrowserUserInfo(app, {
+    email: "cutej.user@example.test",
+    preferredUsername: "CuteJ User"
+  });
+  assert.equal(userStatus.authenticated, true);
+  assert.equal(userStatus.user.sub, "cutej.user@example.test");
+  assert.equal(userStatus.user.name, "CuteJ User");
+  assert.deepEqual(userStatus.completedSteps, {
+    session: true,
+    userInfo: true,
+    accessToken: false
+  });
+  assert.equal(fs.existsSync(userInfoPath), true);
+  assert.equal(fs.existsSync(accessTokenPath), false);
+
+  const failedStatus = failDesktopSsoStep("token exchange returned 401");
+  assert.equal(failedStatus.authenticated, true);
+  assert.equal(failedStatus.user.email, "cutej.user@example.test");
+  assert.equal(failedStatus.completedSteps.accessToken, false);
+  assert.equal(fs.existsSync(sessionPath), true);
+  assert.equal(fs.existsSync(userInfoPath), true);
+  assert.equal(fs.existsSync(accessTokenPath), false);
+
+  failDesktopSsoFlow("simulate restart");
+  const restoredStatus = getDesktopSsoStatus(app);
+  assert.equal(restoredStatus.authenticated, true);
+  assert.equal(restoredStatus.user.sub, "cutej.user@example.test");
+  assert.deepEqual(restoredStatus.completedSteps, {
+    session: true,
+    userInfo: true,
+    accessToken: false
+  });
+});
+
+test("desktop sso preserves the current login while a replacement session is pending or fails", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-relogin-preserve-"));
+  t.after(() => {
+    __testInternals.closeCallbackServer();
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const fixture = createOidcTokenTestFixture();
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    ...fixture.config,
+    enabled: true,
+    browserMode: "system",
+    redirectUri: "http://127.0.0.1:0/api/auth/oidc/callback",
+    logoutCallbackUri: "http://127.0.0.1:0/api/auth/oidc/logout-callback",
+    logoutUrl: ""
+  });
+  __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "current-user",
+    iss: fixture.config.issuer,
+    aud: fixture.config.clientId,
+    name: "Current User"
+  }));
+  const stateRoot = getDesktopStateRoot(app);
+  const credentialPaths = [
+    path.join(stateRoot, "sso-session.json"),
+    path.join(stateRoot, "sso-user-info.json"),
+    path.join(stateRoot, "sso-access-token.txt")
+  ];
+
+  const started = await startDesktopSsoLogin(app);
+  assert.equal(started.ok, true, started.message);
+  assert.equal(started.status.authenticated, true);
+  assert.equal(started.status.pending, true);
+  assert.equal(started.status.user.sub, "current-user");
+  assert.deepEqual(started.status.completedSteps, {
+    session: true,
+    userInfo: true,
+    accessToken: true
+  });
+
+  const failed = failDesktopSsoFlow("replacement session returned 401");
+  assert.equal(failed.authenticated, true);
+  assert.equal(failed.pending, false);
+  assert.equal(failed.user.sub, "current-user");
+  assert.equal(failed.completedSteps.accessToken, true);
+  assert.equal(credentialPaths.every((filePath) => fs.existsSync(filePath)), true);
+});
+
+test("desktop sso keeps completed credentials when a required site token bridge fails", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-bridge-preserve-"));
+  t.after(() => {
+    __testInternals.closeCallbackServer();
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const fixture = createOidcTokenTestFixture();
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    ...fixture.config,
+    enabled: true,
+    browserMode: "system",
+    redirectUri: "http://127.0.0.1:0/api/auth/oidc/callback",
+    logoutCallbackUri: "http://127.0.0.1:0/api/auth/oidc/logout-callback",
+    logoutUrl: "",
+    siteTokenBridge: {
+      startUrl: "https://site.example.test/api/auth/desktop-sso/start",
+      exchangeUrl: "/api/auth/desktop-sso/session",
+      required: true
+    }
+  });
+  __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "bridge-user",
+    iss: fixture.config.issuer,
+    aud: fixture.config.clientId,
+    name: "Bridge User"
+  }));
+  const stateRoot = getDesktopStateRoot(app);
+  const credentialPaths = [
+    path.join(stateRoot, "sso-session.json"),
+    path.join(stateRoot, "sso-user-info.json"),
+    path.join(stateRoot, "sso-access-token.txt")
+  ];
+
+  const started = await startDesktopSsoLogin(app, {
+    onSiteTokenBridgeTicket: async () => {
+      throw new Error("site bridge unavailable");
+    }
+  });
+  assert.equal(started.ok, true, started.message);
+  const bridge = startDesktopSsoSiteTokenBridge(app);
+  assert.equal(bridge.ok, true, bridge.message);
+  const state = new URL(bridge.startUrl).searchParams.get("state");
+
+  await assert.rejects(
+    __testInternals.handleSiteTokenBridgeCallback(
+      app,
+      new URL(`http://127.0.0.1/callback?state=${encodeURIComponent(state)}&ticket=ticket-1`)
+    ),
+    /site bridge unavailable/u
+  );
+  assert.equal(credentialPaths.every((filePath) => fs.existsSync(filePath)), true);
+  const status = getDesktopSsoStatus(app);
+  assert.equal(status.authenticated, true);
+  assert.equal(status.completedSteps.accessToken, true);
+});
+
+test("desktop sso restores legacy session user while new writes remain separated", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-legacy-session-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    ...__testInternals.DEFAULT_OIDC_CONFIG,
+    enabled: true,
+    browserMode: "system",
+    logoutUrl: ""
+  });
+  const stateRoot = getDesktopStateRoot(app);
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "sso-session.json"), JSON.stringify({
+    authenticated: true,
+    user: {
+      sub: "legacy-user",
+      issuer: "https://legacy.example.test",
+      audience: "desktop"
+    },
+    updatedAt: "2026-07-20T00:00:00.000Z"
+  }), "utf8");
+
+  failDesktopSsoFlow("load legacy session");
+  const status = getDesktopSsoStatus(app);
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user.sub, "legacy-user");
+  assert.equal(status.completedSteps.session, true);
+  assert.equal(status.completedSteps.userInfo, true);
+  assert.equal(status.completedSteps.accessToken, false);
+});
+
+test("desktop sso keeps validated OIDC session, base userinfo, and access token when enrichment fails", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-stepwise-oidc-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const fixture = createOidcTokenTestFixture();
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    ...fixture.config,
+    enabled: true,
+    browserMode: "system"
+  });
+  const claims = {
+    sub: "oidc-user",
+    issuer: fixture.config.issuer,
+    audience: fixture.config.clientId,
+    name: "OIDC User",
+    email: "oidc.user@example.test"
+  };
+
+  const status = await __testInternals.completeValidatedOidcLogin(app, {
+    claims,
+    idToken: "validated-id-token",
+    accessToken: "validated-access-token"
+  }, async () => createJsonResponse("temporarily unavailable", {
+    ok: false,
+    status: 503,
+    statusText: "Unavailable"
+  }), fixture.config);
+
+  assert.equal(status.authenticated, true);
+  assert.deepEqual(status.completedSteps, {
+    session: true,
+    userInfo: true,
+    accessToken: true
+  });
+  const stateRoot = getDesktopStateRoot(app);
+  const session = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-session.json"), "utf8"));
+  const userInfo = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-user-info.json"), "utf8"));
+  assert.equal(session.schemaVersion, 2);
+  assert.equal("user" in session, false);
+  assert.equal(userInfo.source, "id_token");
+  assert.equal(userInfo.sub, "oidc-user");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "validated-access-token");
+
+  failDesktopSsoFlow("simulate restart");
+  const restoredStatus = getDesktopSsoStatus(app);
+  assert.equal(restoredStatus.authenticated, true);
+  assert.equal(restoredStatus.completedSteps.accessToken, true);
+  assert.equal(getDesktopSsoAccessToken(), "validated-access-token");
 });
 
 test("desktop sso stores site token bridge response in secrets", (t) => {
@@ -428,6 +726,18 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     loginUrl: embeddedLoginUrl,
     appendLoginState: false,
     loginCompletionUrls: [`${embeddedLoginOrigin}/`],
+    browserSession: {
+      url: `${embeddedLoginOrigin}/oauth2/auth`,
+      successStatuses: [200, 202]
+    },
+    userInfo: {
+      url: `${embeddedLoginOrigin}/oauth2/userinfo`,
+      authMode: "cookie",
+      required: true,
+      subPath: "email",
+      namePath: "preferredUsername",
+      emailPath: "email"
+    },
     cookieAccessTokenExchange: {
       url: embeddedTokenExchangeUrl,
       method: "GET"
@@ -450,6 +760,22 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     method: "GET",
     headers: {},
     accessTokenPath: "access_token"
+  });
+  assert.deepEqual(result.config.browserSession, {
+    url: `${embeddedLoginOrigin}/oauth2/auth`,
+    method: "GET",
+    headers: {},
+    successStatuses: [200, 202]
+  });
+  assert.deepEqual(result.config.userInfo, {
+    enabled: true,
+    required: true,
+    authMode: "cookie",
+    url: `${embeddedLoginOrigin}/oauth2/userinfo`,
+    subPath: "email",
+    namePath: "preferredUsername",
+    emailPath: "email",
+    avatarUrlPath: "picture"
   });
   assert.deepEqual(__testInternals.getDesktopSsoAccessTokenCookieLookup(app), {
     url: `${embeddedLoginOrigin}/`,

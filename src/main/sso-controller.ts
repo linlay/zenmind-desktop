@@ -1,10 +1,14 @@
 import type { App, BrowserWindow, CookiesSetDetails, Session } from "electron";
 import {
   type DesktopSsoClaimsConfig,
+  completeDesktopSsoBrowserSession,
+  completeDesktopSsoBrowserUserInfo,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
   getDesktopSsoAccessTokenCookieDetails,
   getDesktopSsoCookieMirrorOrigins,
   getDesktopSsoCookieAccessTokenExchangeUrl,
+  getDesktopSsoBrowserSessionConfig,
+  getDesktopSsoCookieUserInfoConfig,
   getDesktopSsoProxyBrowserCookieDetails,
   getDesktopSsoStatus,
   getDesktopSsoSiteTokenBridgeConfig,
@@ -23,6 +27,19 @@ export { DESKTOP_SSO_WEBVIEW_PARTITION };
 
 type DesktopSsoStatus = ReturnType<typeof getDesktopSsoStatus>;
 type CookieAccessTokenFetch = Parameters<typeof exchangeConfiguredDesktopSsoCookieForAccessToken>[2];
+
+type BrowserCookieFetch = (url: string, init: {
+  method?: string;
+  headers: Record<string, string>;
+  body?: string;
+}) => Promise<{
+  ok: boolean;
+  status: number;
+  statusText?: string;
+  headers: Headers;
+  json?: () => Promise<unknown>;
+  text?: () => Promise<string>;
+}>;
 
 type WebSessionExchangeFetch = (url: string, init: {
   method: "POST";
@@ -523,6 +540,66 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           });
         }));
       }));
+    },
+    async validateBrowserSession(fetchImpl?: BrowserCookieFetch) {
+      const config = getDesktopSsoBrowserSessionConfig(options.app);
+      if (!config) {
+        return null;
+      }
+      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
+      const headers: Record<string, string> = {
+        Accept: "application/json,text/plain,*/*",
+        ...config.headers
+      };
+      if (cookieHeader) {
+        headers.Cookie = cookieHeader;
+      }
+      const request = fetchImpl || ((url, init) => ssoSession.fetch(url, init) as unknown as ReturnType<BrowserCookieFetch>);
+      const response = await request(config.url, {
+        method: config.method,
+        headers,
+        ...(config.body !== undefined ? { body: config.body } : {})
+      });
+      if (!config.successStatuses.includes(response.status)) {
+        throw new Error(`Desktop SSO browser session validation failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
+      }
+      await mirrorDesktopSsoSetCookieHeaders(
+        ssoSession,
+        config.url,
+        undefined,
+        getDesktopSsoSetCookieHeaders(response.headers)
+      );
+      return completeDesktopSsoBrowserSession(options.app);
+    },
+    async fetchBrowserUserInfo(fetchImpl?: BrowserCookieFetch) {
+      const config = getDesktopSsoCookieUserInfoConfig(options.app);
+      if (!config) {
+        return null;
+      }
+      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
+      const headers: Record<string, string> = {
+        Accept: "application/json"
+      };
+      if (cookieHeader) {
+        headers.Cookie = cookieHeader;
+      }
+      const request = fetchImpl || ((url, init) => ssoSession.fetch(url, init) as unknown as ReturnType<BrowserCookieFetch>);
+      const response = await request(config.url, { method: "GET", headers });
+      if (!response.ok) {
+        throw new Error(`Desktop SSO browser userinfo failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
+      }
+      if (typeof response.json !== "function") {
+        throw new Error("Desktop SSO browser userinfo response is not JSON.");
+      }
+      await mirrorDesktopSsoSetCookieHeaders(
+        ssoSession,
+        config.url,
+        undefined,
+        getDesktopSsoSetCookieHeaders(response.headers)
+      );
+      return completeDesktopSsoBrowserUserInfo(options.app, await response.json());
     },
     async exchangeBrowserCookieAccessToken(fetchImpl?: CookieAccessTokenFetch) {
       const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);

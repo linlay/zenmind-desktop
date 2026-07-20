@@ -2696,6 +2696,22 @@
   font-weight: 400;
 }
 
+.sidebar-account-menu-user-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-account-menu-status {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-account-menu-action {
   cursor: pointer;
 }

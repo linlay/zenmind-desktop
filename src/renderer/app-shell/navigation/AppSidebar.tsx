@@ -4511,8 +4511,15 @@ export function AppSidebar({
             avatarUrl={desktopSsoStatus.user?.avatarUrl}
             label={desktopSsoUserLabel}
           />
-          <span className="sidebar-account-menu-label">
-            {desktopSsoUserLabel}
+          <span className="sidebar-account-menu-user-copy">
+            <span className="sidebar-account-menu-label">
+              {desktopSsoUserLabel}
+            </span>
+            {!desktopSsoStatus.completedSteps.accessToken ? (
+              <span className="sidebar-account-menu-status">
+                {desktopSsoStatus.message}
+              </span>
+            ) : null}
           </span>
           <button
             type="button"

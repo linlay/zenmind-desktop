@@ -6495,6 +6495,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
   assert.match(contracts, /avatarUrl\?: string;/);
+  assert.match(contracts, /completedSteps: DesktopSsoCompletedSteps;/);
   assert.match(contracts, /DesktopSsoEmbeddedLoginRequest/);
   assert.match(contracts, /cancelLogin: \(\) => Promise<DesktopSsoCancelResult>;/);
   assert.match(contracts, /onEmbeddedLoginOpen: \(listener: DesktopSsoEmbeddedLoginListener\) => \(\) => void;/);
@@ -6507,9 +6508,11 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(ssoController, /\.\.\.\(avatarUrl \? \{ avatarUrl \} : \{\}\)/);
   assert.match(ssoController, /openEmbeddedLoginDialog/);
   assert.match(ssoController, /sso\.embeddedLogin\.open/);
-  assert.match(ssoWebviewCompletionHandler, /getDesktopSsoCookieAccessTokenExchangeUrl\(app\)/);
+  assert.match(ssoWebviewCompletionHandler, /validateBrowserSession\(\)/);
+  assert.match(ssoWebviewCompletionHandler, /fetchBrowserUserInfo\(\)[\s\S]{0,900}exchangeBrowserCookieAccessToken\(\)/);
   assert.match(ssoWebviewCompletionHandler, /t\("main\.ssoCookieExchangeNoAccessToken"\)/);
-  assert.match(ssoWebviewCompletionHandler, /completeDesktopSsoCookieLogin\(app, accessToken\);[\s\S]{0,120}openConfiguredDesktopSsoSiteTokenBridge\(\)/);
+  assert.match(ssoWebviewCompletionHandler, /failDesktopSsoStep\(stepErrors\.join\("; "\)\)/);
+  assert.match(ssoWebviewCompletionHandler, /if \(accessToken\) \{[\s\S]{0,180}openConfiguredDesktopSsoSiteTokenBridge\(\)/);
   assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
@@ -6530,6 +6533,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(appShell, /has-desktop-sso-status/);
 
   assert.match(sidebarSource, /desktopSsoStatus\?:\s*DesktopSsoStatus \| null;/);
+  assert.match(sidebarSource, /!desktopSsoStatus\.completedSteps\.accessToken/);
   assert.match(sidebarSource, /onRefreshDesktopSsoStatus\?:\s*\(\) => Promise<void> \| void;/);
   assert.match(sidebarSource, /function handleToolMenuOpenChange\(open: boolean\)[\s\S]{0,360}onRefreshDesktopSsoStatus\?\.\(\)[\s\S]{0,360}setToolMenuOpen\(true\);/);
   assert.match(sidebarSource, /toolMenuOpenRequestIdRef\.current === requestId/);

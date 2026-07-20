@@ -220,6 +220,11 @@ function createUnavailableDesktopSsoStatus(message: string): DesktopSsoStatus {
     authenticated: false,
     pending: false,
     user: null,
+    completedSteps: {
+      session: false,
+      userInfo: false,
+      accessToken: false,
+    },
     message,
     error: "Desktop SSO preload API unavailable.",
     updatedAt: new Date().toISOString()
