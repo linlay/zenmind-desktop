@@ -6744,7 +6744,7 @@ test("embedded browser address entry remains editable while preserving edits", (
   assert.doesNotMatch(externalWebviewPage, /onClick=\{\(\) => openTab\(url,\s*title\)\}/u);
 });
 
-test("embedded browser closing the final tab leaves a blank page", () => {
+test("embedded browser closing the final tab closes its webview surface", () => {
   const externalWebviewPage = readSourceFile(
     "src",
     "renderer",
@@ -6753,11 +6753,24 @@ test("embedded browser closing the final tab leaves a blank page", () => {
     "ExternalWebviewPage.tsx"
   );
 
-  assert.match(externalWebviewPage, /function createBlankTab\(\)/u);
-  assert.match(externalWebviewPage, /createTab\(BLANK_EXTERNAL_WEBVIEW_URL,\s*""\)/u);
-  assert.match(externalWebviewPage, /if \(currentState\.tabs\.length <= 1\) \{[\s\S]{0,220}tabs: \[blankTab\],[\s\S]{0,80}activeTabId: blankTab\.id/u);
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+
+  assert.match(externalWebviewPage, /currentState\.tabs\.length <= 1[\s\S]{0,100}onCloseSurface/u);
+  assert.match(externalWebviewPage, /webviewRefs\.current\.delete\(tabId\);[\s\S]{0,60}onCloseSurface\(\);/u);
+  assert.doesNotMatch(externalWebviewPage, /function createBlankTab\(\)/u);
+  assert.match(embeddedSurfaceHosts, /onCloseSurface=\{onCloseWebItem \? \(\) => onCloseWebItem\(entryKey\) : undefined\}/u);
+  assert.match(embeddedSurfaceHosts, /export function ExternalItemRoute\([\s\S]{0,120}onCloseSurface/u);
+  assert.match(appShell, /onCloseSurface=\{\(\) => \{[\s\S]{0,120}setBuiltinBrowserSurfaceMounted\(false\);[\s\S]{0,120}requestSidebarNavigation\(EMPTY_WEB_SURFACE_ROUTE\);/u);
+  assert.match(appShell, /onCloseWebItem=\{\(entryKey\) => \{[\s\S]{0,180}handleCloseWebEntry\(item\)/u);
   assert.match(externalWebviewPage, /const canClose = true;/u);
-  assert.doesNotMatch(externalWebviewPage, /embeddedError\("last_tab"/u);
+  assert.match(externalWebviewPage, /closedSurface: true/u);
 });
 
 test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overlay", () => {

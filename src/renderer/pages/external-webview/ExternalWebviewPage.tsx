@@ -54,6 +54,7 @@ type ExternalWebviewPageProps = {
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
+  onCloseSurface?: () => void;
   onFaviconDiscovered?: (faviconUrl: string) => void;
 };
 
@@ -418,6 +419,7 @@ export function ExternalWebviewPage({
   assistantDockOpen = false,
   onOpenAssistantDock,
   onCloseAssistantDock,
+  onCloseSurface,
   onFaviconDiscovered
 }: ExternalWebviewPageProps) {
   const { t } = useI18n();
@@ -470,10 +472,6 @@ export function ExternalWebviewPage({
       activeTabId: initialTab.id
     } satisfies ExternalWebviewBrowserState;
   };
-
-  function createBlankTab() {
-    return createTab(BLANK_EXTERNAL_WEBVIEW_URL, "");
-  }
 
   const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(() => createInitialBrowserState());
   const [addressInputValue, setAddressInputValue] = useState(() => url);
@@ -694,14 +692,17 @@ export function ExternalWebviewPage({
   };
 
   const closeTab = (tabId: string) => {
+    const currentState = browserStateRef.current;
+    if (currentState.tabs.length <= 1 && currentState.tabs[0]?.id === tabId && onCloseSurface) {
+      webviewRefs.current.delete(tabId);
+      onCloseSurface();
+      return;
+    }
+
     webviewRefs.current.delete(tabId);
     setBrowserState((currentState) => {
       if (currentState.tabs.length <= 1) {
-        const blankTab = createBlankTab();
-        return {
-          tabs: [blankTab],
-          activeTabId: blankTab.id
-        };
+        return currentState;
       }
 
       const closingIndex = currentState.tabs.findIndex((tab) => tab.id === tabId);
@@ -1288,18 +1289,18 @@ export function ExternalWebviewPage({
           if (!currentState.tabs.some((tab) => tab.id === tabId)) {
             return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });
           }
+          if (currentState.tabs.length <= 1 && onCloseSurface) {
+            webviewRefs.current.delete(tabId);
+            onCloseSurface();
+            return { ok: true, result: { closedTabId: tabId, closedSurface: true } };
+          }
           setBrowserState((state) => {
             const targetIndex = state.tabs.findIndex((tab) => tab.id === tabId);
             if (targetIndex === -1) {
               return state;
             }
             if (state.tabs.length <= 1) {
-              const blankTab = createBlankTab();
-              webviewRefs.current.delete(tabId);
-              return {
-                tabs: [blankTab],
-                activeTabId: blankTab.id
-              };
+              return state;
             }
             const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
             const nextActiveTabId = state.activeTabId === tabId
@@ -1325,7 +1326,7 @@ export function ExternalWebviewPage({
           return null;
       }
     });
-  }, [active, activeTab?.id, surfaceId, surfaceLabel, t, title, url]);
+  }, [active, activeTab?.id, onCloseSurface, surfaceId, surfaceLabel, t, title, url]);
 
   useEffect(() => {
     if (addressInputUnlocked) {
