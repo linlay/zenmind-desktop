@@ -1423,6 +1423,12 @@ export function AppSidebar({
     sidebarNavFocusId || defaultSidebarNavFocusId;
 
   useEffect(() => {
+    if (!isSettingsMode) {
+      setSettingsSearchQuery("");
+    }
+  }, [isSettingsMode]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         SIDEBAR_GROUP_STATE_STORAGE_KEY,

@@ -2164,6 +2164,21 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(zhCN, /"settings\.debug\.desktopWs\.title":\s*"本地 WebSocket 服务调试"/);
 });
 
+test("settings search resets after leaving settings mode", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(
+    sidebarSource,
+    /useEffect\(\(\) => \{\s*if \(!isSettingsMode\) \{\s*setSettingsSearchQuery\(""\);\s*\}\s*\}, \[isSettingsMode\]\);/
+  );
+});
+
 test("startup env import overlay uses packaged-relative brand icon", () => {
   const envImportOverlay = readSourceFile(
     "src",
