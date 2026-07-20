@@ -510,6 +510,19 @@ function writeFileModeBestEffort(filePath: string, mode: number) {
   }
 }
 
+function restoreImportedShellScriptPermissions(filePath: string, platform: NodeJS.Platform) {
+  const isPosixShellPlatform = platform === "darwin" || platform === "linux";
+  if (!isPosixShellPlatform || path.extname(filePath).toLowerCase() !== ".sh") {
+    return;
+  }
+
+  // JSZip writes a fresh file with the host default mode and does not reliably
+  // preserve the source ZIP's executable bit. env.zip carries user-invoked
+  // bootstrap and maintenance scripts, so restore the POSIX executable mode
+  // after both a copy and a skipped existing-file import.
+  fs.chmodSync(filePath, 0o755);
+}
+
 async function persistInitialEnvPackage(input: {
   targetRoot: string;
   zipPath: string;
@@ -668,11 +681,13 @@ export async function importEnvZipToRuntime(
 
     if (fs.existsSync(targetPath)) {
       skippedFiles += 1;
+      restoreImportedShellScriptPermissions(targetPath, platform);
       continue;
     }
 
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     await fs.promises.writeFile(targetPath, await entry.entry.async("nodebuffer"));
+    restoreImportedShellScriptPermissions(targetPath, platform);
     copiedFiles += 1;
   }
 

@@ -7,9 +7,11 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const JSZip = require("jszip");
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const {
+  importEnvZipToRuntime,
   resolveRuntimeRoot,
   resolveBundledEnvZipPath,
   shouldPromptEnvRootConflict,
@@ -43,6 +45,45 @@ function createPathApp(root) {
     }
   };
 }
+
+async function writeEnvZip(zipPath, entries) {
+  const zip = new JSZip();
+  for (const [entryPath, content] of Object.entries(entries)) {
+    zip.file(entryPath, content);
+  }
+  fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer" }));
+}
+
+test("env.zip import restores POSIX shell script permissions, including skipped files", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-script-mode-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createPathApp(root);
+  const runtimeRoot = resolveRuntimeRoot(app, "darwin");
+  const skippedShellPath = path.join(runtimeRoot, "agents", "existing", "repair.sh");
+  fs.mkdirSync(path.dirname(skippedShellPath), { recursive: true });
+  fs.writeFileSync(skippedShellPath, "#!/usr/bin/env bash\necho old\n", "utf8");
+  fs.chmodSync(skippedShellPath, 0o644);
+
+  const zipPath = path.join(root, "env.zip");
+  await writeEnvZip(zipPath, {
+    "env/VERSION": "1.0.0\n",
+    "env/agents/bootstrap/bootstrap.sh": "#!/usr/bin/env bash\necho bootstrap\n",
+    "env/agents/bootstrap/bootstrap.ps1": "Write-Output 'bootstrap'\n",
+    "env/agents/existing/repair.sh": "#!/usr/bin/env bash\necho replacement\n"
+  });
+
+  const result = await importEnvZipToRuntime(app, zipPath, "darwin", "1.0.0");
+  assert.equal(result.copiedFiles, 3);
+  assert.equal(result.skippedFiles, 1);
+  assert.equal(fs.readFileSync(skippedShellPath, "utf8"), "#!/usr/bin/env bash\necho old\n");
+
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(path.join(runtimeRoot, "agents", "bootstrap", "bootstrap.sh")).mode & 0o777, 0o755);
+    assert.equal(fs.statSync(skippedShellPath).mode & 0o777, 0o755);
+    assert.equal(fs.statSync(path.join(runtimeRoot, "agents", "bootstrap", "bootstrap.ps1")).mode & 0o777, 0o644);
+  }
+});
 
 test("bundled env.zip falls back to the packaged app resources directory", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-packaged-resources-"));
