@@ -331,6 +331,8 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
   position: relative;
   z-index: 1;
   app-region: no-drag;
@@ -1359,21 +1361,26 @@
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
 }
 
+.sidebar-nav::-webkit-scrollbar,
 .sidebar-website-children::-webkit-scrollbar {
   width: 6px;
 }
 
+.sidebar-nav::-webkit-scrollbar-track,
 .sidebar-website-children::-webkit-scrollbar-track {
   background: transparent;
 }
 
+.sidebar-nav::-webkit-scrollbar-thumb,
 .sidebar-website-children::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.32);
 }
 
+.sidebar-nav::-webkit-scrollbar-thumb:hover,
 .sidebar-website-children::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.48);
 }
