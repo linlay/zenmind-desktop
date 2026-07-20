@@ -868,7 +868,7 @@ test("web order stores entryKey values and sorts mixed website and webapp entrie
   assert.deepEqual(ordered.map((item) => item.entryKey), ["webapp:second", "website:first"]);
 });
 
-test("mobile WebApp catalog preserves sidebar order and removes local publishing details", async (t) => {
+test("mobile WebApp catalog uses the device m host and ignores the manual wa share route", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-mobile-webapp-catalog-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -880,6 +880,13 @@ test("mobile WebApp catalog preserves sidebar order and removes local publishing
   writeWebapp(webappsRoot(homePath), "first", { label: "First", frontendOnly: true });
   writeWebapp(webappsRoot(homePath), "second", { label: "Second", frontendOnly: true });
   writeWebOrderKeys(app, ["webapp:second", "webapp:first"]);
+  writeJson(path.join(desktopRoot(homePath), "config", "desktop", "tunnel-hub.json"), {
+    enabled: false,
+    relayUrl: "wss://tunnel.example.test/tunnel",
+    deviceId: "desktop-device",
+    publicHost: "desktop-device.m.example.test",
+    reconnectSeconds: 3
+  });
   const running = await webappRuntime.start(app, "second");
   assert.equal(running.ok, true);
   writeJson(path.join(desktopRoot(homePath), "state", "webs", "webapps", "second", "publish.json"), {
@@ -888,8 +895,8 @@ test("mobile WebApp catalog preserves sidebar order and removes local publishing
     status: "published",
     name: "second",
     routeId: "route-second-secret",
-    publicHost: "second.m.example.test",
-    url: "https://second.m.example.test/",
+    publicHost: "second.wa.example.test",
+    url: "https://second.wa.example.test/",
     targetUrl: running.state.webUrl,
     active: true,
     message: "published",
@@ -901,9 +908,13 @@ test("mobile WebApp catalog preserves sidebar order and removes local publishing
   assert.deepEqual(catalog.items.map((item) => item.order), [0, 1]);
   assert.equal(catalog.items[0].runtimeStatus, "running");
   assert.equal(catalog.items[0].publishStatus, "published");
-  assert.equal(catalog.items[0].publicUrl, "https://second.m.example.test/");
+  assert.equal(
+    catalog.items[0].publicUrl,
+    `https://desktop-device.m.example.test/webapps/${running.state.frontendPort}/`
+  );
+  assert.doesNotMatch(catalog.items[0].publicUrl, /\.wa\./u);
   assert.equal(catalog.items[0].availability, "desktop-offline");
-  assert.equal(catalog.items[1].availability, "not-published");
+  assert.equal(catalog.items[1].availability, "webapp-stopped");
   assert.equal(typeof catalog.desktopDeviceId, "string");
   const serialized = JSON.stringify(catalog);
   assert.doesNotMatch(serialized, /route-second-secret/u);

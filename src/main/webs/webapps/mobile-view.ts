@@ -3,7 +3,6 @@ import type {
   DesktopMobileWebappAvailability,
   DesktopMobileWebappItem,
   WebappEntry,
-  WebappPublishState,
   WebappPublishStatus,
   WebappRuntimeState,
   WebappRuntimeStatus
@@ -15,8 +14,18 @@ export function readOrderedWebappItems(app: App) {
   return applyWebOrder(app, readWebItems(app)).filter((item): item is WebappEntry => item.kind === "webapp");
 }
 
-function resolvePublishStatus(state: WebappPublishState | null): WebappPublishStatus {
-  return state?.status ?? "not-configured";
+function resolveMobileStatus(input: {
+  runtimeStatus: WebappRuntimeStatus;
+  mobileConfigured: boolean;
+  publicUrl: string;
+}): WebappPublishStatus {
+  if (input.runtimeStatus === "starting") {
+    return "publishing";
+  }
+  if (input.publicUrl) {
+    return "published";
+  }
+  return input.mobileConfigured ? "ready" : "not-configured";
 }
 
 function resolveAvailability(input: {
@@ -25,17 +34,17 @@ function resolveAvailability(input: {
   published: boolean;
   tunnelConnected: boolean;
 }): DesktopMobileWebappAvailability {
-  if (input.publishStatus === "publishing") {
+  if (input.runtimeStatus === "starting" || input.publishStatus === "publishing") {
     return "publishing";
   }
   if (input.publishStatus === "error") {
     return "publish-error";
   }
-  if (!input.published) {
-    return "not-published";
-  }
   if (input.runtimeStatus !== "running") {
     return "webapp-stopped";
+  }
+  if (!input.published) {
+    return "not-published";
   }
   if (!input.tunnelConnected) {
     return "desktop-offline";
@@ -47,14 +56,17 @@ export function createDesktopMobileWebappItem(input: {
   entry: WebappEntry;
   order: number;
   runtime: WebappRuntimeState | null;
-  publishState: WebappPublishState | null;
+  mobileConfigured: boolean;
+  mobilePublicUrl: string;
   tunnelConnected: boolean;
 }): DesktopMobileWebappItem {
   const runtimeStatus = input.runtime?.status ?? "stopped";
-  const publishStatus = resolvePublishStatus(input.publishState);
-  const publicUrl = input.publishState?.active === true && /^https:\/\//iu.test(input.publishState.url)
-    ? input.publishState.url
-    : "";
+  const publicUrl = /^https:\/\//iu.test(input.mobilePublicUrl) ? input.mobilePublicUrl : "";
+  const publishStatus = resolveMobileStatus({
+    runtimeStatus,
+    mobileConfigured: input.mobileConfigured,
+    publicUrl
+  });
   const availability = resolveAvailability({
     runtimeStatus,
     publishStatus,

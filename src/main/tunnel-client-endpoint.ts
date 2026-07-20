@@ -4,6 +4,7 @@ import https from "node:https";
 import { connectTunnelHubWebSocket, type TunnelHubWebSocketClient, type TunnelHubWebSocketMessage } from "./tunnel-hub-websocket-client";
 import { TunnelHubYamuxSession, type TunnelHubYamuxStream } from "./tunnel-hub-yamux";
 import {
+  authenticateDesktopWsProtocolSession,
   createDesktopWsProtocolSession,
   type DesktopWsProtocolSession,
   type DesktopWsServerOptions
@@ -283,6 +284,24 @@ function parseWebAppUpstreamTarget(
     path,
     url: `${scheme}://${hostForUrl(host)}:${port}${path}`
   };
+}
+
+function mobileWebAppCatalogAllowsPort(options: DesktopWsServerOptions, port: number) {
+  const catalog = options.listMobileWebapps?.();
+  if (!catalog) {
+    return false;
+  }
+  return catalog.items.some((item) => {
+    if (item.runtimeStatus !== "running" || !item.publicUrl) {
+      return false;
+    }
+    try {
+      const url = new URL(item.publicUrl);
+      return url.pathname === `/webapps/${port}/`;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function applyForwardHeaders(headers: HeaderRecord, publicRequest: WebAppPublicRequest, target: WebAppUpstreamTarget) {
@@ -606,6 +625,42 @@ export class TunnelClientEndpoint extends EventEmitter {
       await writeWebAppError(stream, envelope, 400, "webapp request frame with v=1 is required");
       stream.end();
       return;
+    }
+    const payload = payloadRecord(envelope);
+    if (readText(payload.source) === "mobile") {
+      const authToken = readText(payload.authToken);
+      if (!authToken) {
+        await writeWebAppError(stream, envelope, 401, "mobile authToken is required");
+        stream.end();
+        return;
+      }
+      try {
+        await authenticateDesktopWsProtocolSession(
+          this.options.desktopWsServerOptions,
+          authToken,
+          readText(payload.subprotocol) || undefined
+        );
+      } catch (error) {
+        await writeWebAppError(stream, envelope, 401, error);
+        stream.end();
+        return;
+      }
+      let port = 0;
+      try {
+        if (!isRecord(payload.upstream)) {
+          throw new Error("upstream must be an object");
+        }
+        port = readPort(payload.upstream.port);
+      } catch (error) {
+        await writeWebAppError(stream, envelope, 400, error);
+        stream.end();
+        return;
+      }
+      if (!mobileWebAppCatalogAllowsPort(this.options.desktopWsServerOptions, port)) {
+        await writeWebAppError(stream, envelope, 404, "mobile webapp is not running");
+        stream.end();
+        return;
+      }
     }
     const type = readText(envelope.type);
     switch (type) {

@@ -17,7 +17,6 @@ import {
 import {
   emitDesktopWsPush,
   getDesktopWsServerRuntimeState,
-  hasTunnelDesktopWsSubscriber,
   startDesktopWsServer,
   stopDesktopWsServer
 } from "../desktop-ws-server";
@@ -116,7 +115,6 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       pendingRequests: state.desktopActionConfirmationRequests
     }),
     cdpIntegration: options.cdpIntegration,
-    hasTunnelWebappSubscriber: () => hasTunnelDesktopWsSubscriber("webapp.changed"),
     emitWebappChanged,
     desktopPet: options.desktopPet
   });

@@ -5,7 +5,8 @@ import type {
 } from "../../../shared/contracts";
 import { getDesktopDeviceId } from "../../device-identity";
 import { getTunnelHubRuntimeStatus } from "../../tunnel-hub-runtime";
-import { readWebappPublishState } from "./publisher";
+import { readTunnelHubSettings } from "../../tunnel-hub-settings";
+import { createMobileTunnelWebappUrl } from "./mobile-access";
 import { webappRuntime } from "./runtime";
 import {
   createDesktopMobileWebappItem,
@@ -26,26 +27,34 @@ export function readDesktopMobileWebappItem(app: App, id: string): DesktopMobile
   if (!ordered) {
     return null;
   }
+  const runtime = webappRuntime.getStatus(app, ordered.entry.id);
+  const settings = readTunnelHubSettings(app);
   return createDesktopMobileWebappItem({
     ...ordered,
-    runtime: webappRuntime.getStatus(app, ordered.entry.id),
-    publishState: readWebappPublishState(app, ordered.entry.id),
+    runtime,
+    mobileConfigured: Boolean(settings.publicUrl),
+    mobilePublicUrl: createMobileTunnelWebappUrl(app, runtime),
     tunnelConnected: tunnelConnected()
   });
 }
 
 export function createDesktopMobileWebappCatalog(app: App): DesktopMobileWebappCatalog {
   const connected = tunnelConnected();
+  const settings = readTunnelHubSettings(app);
   return {
     desktopDeviceId: getDesktopDeviceId(app),
     tunnelConnected: connected,
     generatedAt: new Date().toISOString(),
-    items: readOrderedWebappItems(app).map((entry, order) => createDesktopMobileWebappItem({
-      entry,
-      order,
-      runtime: webappRuntime.getStatus(app, entry.id),
-      publishState: readWebappPublishState(app, entry.id),
-      tunnelConnected: connected
-    }))
+    items: readOrderedWebappItems(app).map((entry, order) => {
+      const runtime = webappRuntime.getStatus(app, entry.id);
+      return createDesktopMobileWebappItem({
+        entry,
+        order,
+        runtime,
+        mobileConfigured: Boolean(settings.publicUrl),
+        mobilePublicUrl: createMobileTunnelWebappUrl(app, runtime),
+        tunnelConnected: connected
+      });
+    })
   };
 }
