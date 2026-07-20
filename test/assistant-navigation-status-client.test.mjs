@@ -117,6 +117,10 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       lastRunId: "run-newest",
       lastRunContent: "latest response",
       read: { isRead: false },
+      activeRun: createPlatformActiveRun({
+        runId: "run-newest",
+        startedAt: EPOCH_MS + 60,
+      }),
     },
   ], [
     {

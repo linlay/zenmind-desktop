@@ -189,8 +189,6 @@ type AssistantNavigationRecordedRuntimeStatusPush = {
   frame: NavigationPushFrame;
 };
 
-const NAVIGATION_RUNTIME_ACTIVE_RUN_OVERRIDE_LIMIT = 256;
-
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const NAVIGATION_AGENT_HISTORY_LIMIT = 50;
 const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
@@ -1302,38 +1300,6 @@ function applyChatRuntimeStatusToChats(
   };
 }
 
-function applyActiveRunOverridesToChats(
-  currentItems: AssistantNavChatItem[],
-  overrides: ReadonlyMap<string, boolean>,
-) {
-  let changed = false;
-  const items = currentItems.map((chat) => {
-    const hasActiveRun = overrides.get(chat.chatId);
-    if (hasActiveRun === undefined || hasActiveRun === chat.hasActiveRun) {
-      return chat;
-    }
-    changed = true;
-    return { ...chat, hasActiveRun };
-  });
-  return changed ? items : currentItems;
-}
-
-function applyActiveRunOverridesToAgents(
-  currentItems: AssistantNavAgentItem[],
-  overrides: ReadonlyMap<string, boolean>,
-) {
-  let changed = false;
-  const items = currentItems.map((agent) => {
-    const recentChats = applyActiveRunOverridesToChats(agent.recentChats, overrides);
-    if (recentChats === agent.recentChats) {
-      return agent;
-    }
-    changed = true;
-    return refreshAgentDerivedFields({ ...agent, recentChats });
-  });
-  return changed ? sortNavigationAgents(items) : currentItems;
-}
-
 function findAgentIndexForPush(items: AssistantNavAgentItem[], event: NavigationPushEvent) {
   const chatId = readPushChatId(event);
   if (chatId) {
@@ -1606,7 +1572,6 @@ export class AssistantNavigationStatusClient {
   private refreshRequestedWhileInFlight = false;
   private runtimeStatusPushSequence = 0;
   private runtimeStatusPushes: AssistantNavigationRecordedRuntimeStatusPush[] = [];
-  private readonly activeRunOverrides = new Map<string, boolean>();
   private latestResult: AssistantNavAgentItemsResult = {
     ok: false,
     items: [],
@@ -1643,7 +1608,6 @@ export class AssistantNavigationStatusClient {
     this.stopped = false;
     this.runtimeStatusPushSequence = 0;
     this.runtimeStatusPushes = [];
-    this.activeRunOverrides.clear();
     this.updateLiveStatus({
       phase: "idle",
       endpoint: null,
@@ -1661,7 +1625,6 @@ export class AssistantNavigationStatusClient {
     this.stopped = true;
     this.refreshRequestedWhileInFlight = false;
     this.runtimeStatusPushes = [];
-    this.activeRunOverrides.clear();
     this.clearTimers();
     this.updateLiveStatus({
       phase: "idle",
@@ -1780,14 +1743,14 @@ export class AssistantNavigationStatusClient {
       );
       await this.connectWebSocket(baseUrl, token);
       const chatSnapshot = await this.requestNavigationChats();
-      const refreshedResult = this.applyActiveRunOverrides(this.replayRuntimeStatusPushesSince({
+      const refreshedResult = this.replayRuntimeStatusPushesSince({
         ok: true,
         items,
         activityItems,
         ...chatSnapshot,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowEpochMillis()
-      }, runtimeStatusSequenceAtStart));
+      }, runtimeStatusSequenceAtStart);
       this.setSnapshot(refreshedResult);
       this.runtimeStatusPushes = this.runtimeStatusPushes.filter(
         (recorded) => recorded.sequence > runtimeStatusSequenceAtStart,
@@ -1829,33 +1792,6 @@ export class AssistantNavigationStatusClient {
       sequence: this.runtimeStatusPushSequence,
       frame,
     });
-    const chatId = readPushChatId(event);
-    if (chatId && (event.type === "run.start" || event.type === "run.complete")) {
-      this.activeRunOverrides.delete(chatId);
-      this.activeRunOverrides.set(chatId, event.type === "run.start");
-      while (this.activeRunOverrides.size > NAVIGATION_RUNTIME_ACTIVE_RUN_OVERRIDE_LIMIT) {
-        const oldestChatId = this.activeRunOverrides.keys().next().value;
-        if (typeof oldestChatId !== "string") {
-          break;
-        }
-        this.activeRunOverrides.delete(oldestChatId);
-      }
-    }
-  }
-
-  private applyActiveRunOverrides(result: AssistantNavAgentItemsResult) {
-    if (this.activeRunOverrides.size === 0) {
-      return result;
-    }
-    return {
-      ...result,
-      items: applyActiveRunOverridesToAgents(result.items, this.activeRunOverrides),
-      activityItems: applyActiveRunOverridesToAgents(
-        result.activityItems ?? [],
-        this.activeRunOverrides,
-      ),
-      chatItems: applyActiveRunOverridesToChats(result.chatItems, this.activeRunOverrides),
-    };
   }
 
   private replayRuntimeStatusPushesSince(
