@@ -1019,6 +1019,34 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
 });
 
+test("sites add menu merges website actions into one modal entry", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css"
+  );
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.doesNotMatch(sidebarSource, /navigateWebsitesSettings/);
+  assert.doesNotMatch(sidebarSource, /t\("sidebar\.website\.manage"\)/);
+  assert.match(sidebarSource, /showWebsiteDialog\(\);[\s\S]{0,100}t\("sidebar\.website\.new"\)/);
+  assert.match(sidebarSource, /handleImportWebapp\(\);[\s\S]{0,100}t\("sidebar\.webapp\.import"\)/);
+  assert.match(sidebarSource, /function getGroupActionMenuPositionFromElement[\s\S]{0,320}rect\.left - 12/);
+  assert.match(navigationStyles, /\.sidebar-group-actions-menu-layer \.sidebar-group-actions-menu\s*\{[\s\S]{0,120}width:\s*196px;/);
+  assert.match(navigationStyles, /\.sidebar-group-actions-menu button span\s*\{[\s\S]{0,100}white-space:\s*nowrap;/);
+  assert.match(zhCN, /"sidebar\.website\.new":\s*"添加网站"/);
+  assert.match(enUS, /"sidebar\.website\.new":\s*"Add website"/);
+});
+
 test("primary sidebar navigation uses separate compact and rail SVG families", () => {
   const sidebarSource = readSourceFile(
     "src",
@@ -2179,6 +2207,14 @@ test("settings dark mode themes Ant Design controls inside settings cards", () =
   assert.match(
     settingsStyles,
     /:root\[data-theme="dark"\] :is\(\.settings-page, \.settings-debug-modal\) \.ant-select-arrow,[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.065\)\s*!important;[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
+  );
+  assert.match(
+    settingsStyles,
+    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default\.ant-btn-dangerous:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--danger\) 12%, transparent\)\s*!important;[\s\S]*?color:\s*var\(--danger\)\s*!important;/
   );
   assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup\s*\{[\s\S]*?background:\s*var\(--surface-strong\);/);
   assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup \.ant-select-item-option-selected:not\(\.ant-select-item-option-disabled\)\s*\{[\s\S]*?background:\s*var\(--accent-soft\);/);
@@ -6013,6 +6049,8 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-task-status-badge\.is-awaiting\s*\{[\s\S]{0,120}#fff2c2[\s\S]{0,120}#b45309/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy strong\s*\{[\s\S]{0,120}font-size:\s*13px;/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action span\s*\{[\s\S]{0,220}transform:\s*translateY\(2px\) rotate\(-135deg\);/);
+  assert.match(globalStyles, /\.desktop-pet-task-panel\.is-expanded \.desktop-pet-task-head-action span\s*\{[\s\S]{0,120}transform:\s*translateY\(-2px\) rotate\(45deg\);/);
   assert.match(globalStyles, /\.desktop-pet-task-copy strong\s*\{[\s\S]{0,120}font-size:\s*12px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*155px;/);
@@ -6028,6 +6066,8 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::after\s*\{[\s\S]{0,140}left:\s*10px;[\s\S]{0,80}top:\s*7px;[\s\S]{0,80}height:\s*5px;/);
   assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-running::after\s*\{[\s\S]{0,100}inset:\s*6px;[\s\S]{0,80}border-width:\s*2px;/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-reply[\s\S]*?opacity:\s*1;/);
+  assert.match(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,100}right:\s*8px;[\s\S]{0,80}bottom:\s*7px;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,120}top:\s*calc\(50%/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-main \.desktop-pet-task-status-badge[\s\S]*?opacity:\s*0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,160}min-height:\s*auto;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-panel-window\.has-bubble \.desktop-pet-status-panel\s*\{[\s\S]{0,220}max-height:\s*calc\(100% - 20px\);/);

@@ -638,11 +638,11 @@ body.desktop-pet-body,
   height: 16px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
-  transform: translateY(-2px) rotate(45deg);
+  transform: translateY(2px) rotate(-135deg);
 }
 
 .desktop-pet-task-panel.is-expanded .desktop-pet-task-head-action span {
-  transform: translateY(2px) rotate(-135deg);
+  transform: translateY(-2px) rotate(45deg);
 }
 
 .desktop-pet-task-panel.is-collapsed {
@@ -1558,7 +1558,7 @@ body.desktop-pet-body,
 .desktop-pet-message-reply {
   position: absolute;
   right: 8px;
-  top: calc(50% + 6px);
+  bottom: 7px;
   align-self: flex-end;
   min-height: 26px;
   padding: 0 10px;
@@ -1571,7 +1571,7 @@ body.desktop-pet-body,
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-50%) translateX(4px);
+  transform: translateX(4px);
   transition: opacity 0.14s ease, transform 0.14s ease;
   -webkit-app-region: no-drag;
 }
@@ -1580,7 +1580,7 @@ body.desktop-pet-body,
 .desktop-pet-message-reply:focus-visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(-50%) translateX(0);
+  transform: translateX(0);
 }
 
 .desktop-pet-message-card:hover .desktop-pet-message-main .desktop-pet-task-status-badge {
