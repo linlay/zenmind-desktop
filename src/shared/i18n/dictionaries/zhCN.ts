@@ -196,7 +196,7 @@ export const zhCNMessages = {
   "sidebar.project.noRunningAcp": "暂无正在运行的 ACP 代理",
   "sidebar.project.creating": "创建中...",
   "sidebar.project.create": "创建",
-  "sidebar.website.new": "新增内嵌网站",
+  "sidebar.website.new": "添加网站",
   "sidebar.website.addFailed": "添加内嵌网站失败。",
   "sidebar.website.title": "新增内嵌网站",
   "sidebar.website.name": "网站名",
