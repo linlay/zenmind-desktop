@@ -25,6 +25,20 @@ async function syncWindowsBuiltinAssets(brand) {
   }));
 }
 
+export function appendWebappBuilderSkillMount(dockerArgs, env = process.env) {
+  const webappBuilderSkillDir = String(env.WEBAPP_BUILDER_SKILL_DIR ?? "").trim();
+  if (!webappBuilderSkillDir) {
+    return dockerArgs;
+  }
+  dockerArgs.push(
+    "--volume",
+    `${path.resolve(webappBuilderSkillDir)}:/webapp-builder-skill:ro`,
+    "--env",
+    "WEBAPP_BUILDER_SKILL_DIR=/webapp-builder-skill"
+  );
+  return dockerArgs;
+}
+
 export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: resolveBrandId() })) {
   const target = { os: "win32", arch: "x64" };
   const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
@@ -58,6 +72,8 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     "--env",
     `DEMO=${process.env.DEMO ?? ""}`
   ];
+
+  appendWebappBuilderSkillMount(dockerArgs);
 
   if (electronBuilderCacheDir != null) {
     dockerArgs.push("--volume", `${electronBuilderCacheDir}:/root/.cache/electron-builder`);

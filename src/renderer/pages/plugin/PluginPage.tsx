@@ -103,6 +103,10 @@ function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: s
   return serviceId === "agent-webclient" && surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT;
 }
 
+function isAgentWebclientManagementSurface(serviceId: string | undefined, surfaceId: string | undefined) {
+  return serviceId === "agent-webclient" && surfaceId === "agent-webclient";
+}
+
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
   const readMetaDescription = () => {
@@ -1239,15 +1243,21 @@ export function PluginPage({
         ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
         : readCurrentWebviewUrl();
       updateWebviewCurrentUrl(resolvedUrl);
-      if (
-        isAgentWebclientChatSurface(service?.id, surfaceId)
-      ) {
+      if (isAgentWebclientChatSurface(service?.id, surfaceId)) {
         const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
           resolvedUrl,
           webviewSrcUrl,
         );
         if (nextChatRoute && nextChatRoute !== currentRoute) {
           navigate(nextChatRoute, { replace: true });
+        }
+      } else if (isAgentWebclientManagementSurface(service?.id, surfaceId)) {
+        const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
+          resolvedUrl,
+          webviewSrcUrl,
+        );
+        if (nextChatRoute) {
+          navigate(nextChatRoute);
         }
       }
       if (
