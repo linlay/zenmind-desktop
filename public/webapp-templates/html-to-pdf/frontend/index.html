@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>HTML 转 PDF</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <h1>HTML 转 PDF</h1>
+          <p id="document-meta">示例文档 · 等待分页</p>
+        </div>
+        <div class="header-actions">
+          <input id="file-input" type="file" accept=".html,.htm,text/html" hidden />
+          <button id="import-button" class="button secondary" type="button">导入 HTML</button>
+          <button id="export-button" class="button primary" type="button" disabled>导出 PDF</button>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-label="页面设置">
+        <label>
+          <span>纸张</span>
+          <select id="page-size">
+            <option value="A4">A4</option>
+            <option value="Letter">Letter</option>
+          </select>
+        </label>
+        <fieldset>
+          <legend>方向</legend>
+          <div class="segmented">
+            <button class="segment is-active" type="button" data-orientation="portrait">纵向</button>
+            <button class="segment" type="button" data-orientation="landscape">横向</button>
+          </div>
+        </fieldset>
+        <label class="margin-control">
+          <span>页边距</span>
+          <input id="page-margin" type="range" min="8" max="30" step="1" value="14" />
+          <output id="margin-value">14 mm</output>
+        </label>
+        <label class="check-control">
+          <input id="keep-background" type="checkbox" checked />
+          <span>保留背景</span>
+        </label>
+        <div class="toolbar-status" id="status" role="status">正在生成分页预览…</div>
+      </section>
+
+      <section class="workspace">
+        <aside class="source-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>HTML 源码</h2>
+              <span>ECharts 图表会安全固化，其余脚本和嵌入页面会被移除</span>
+            </div>
+            <button id="reset-button" class="text-button" type="button">恢复示例</button>
+          </div>
+          <textarea id="source-editor" spellcheck="false" aria-label="HTML 源码"></textarea>
+        </aside>
+
+        <section class="preview-panel">
+          <div class="panel-heading preview-heading">
+            <div>
+              <h2>分页预览</h2>
+              <span id="page-count">0 页</span>
+            </div>
+            <div class="zoom-control">
+              <label for="zoom">缩放</label>
+              <input id="zoom" type="range" min="55" max="100" step="5" value="75" />
+              <output id="zoom-value">75%</output>
+            </div>
+          </div>
+          <div id="preview-scroll" class="preview-scroll">
+            <div id="preview" class="preview"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="vendor/paged.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
