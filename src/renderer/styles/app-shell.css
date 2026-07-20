@@ -446,7 +446,7 @@
   background: transparent;
 }
 
-.app-shell.has-startup-surface .app-main {
+.app-shell.has-empty-content-surface .app-main {
   overflow: hidden;
   padding: 0;
   background: var(--bg-base);
@@ -456,12 +456,12 @@
   padding-top: calc(var(--windows-titlebar-overlay-height) + 12px);
 }
 
-/* Startup owns the full content surface; the window drag layer remains above it. */
-.app-shell.is-windows-platform.has-startup-surface:not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
+/* The empty-content fallback owns the content surface; the window drag layer remains above it. */
+.app-shell.is-windows-platform.has-empty-content-surface:not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
   padding-top: 0;
 }
 
-.app-shell.is-mac-platform.has-startup-surface .app-main {
+.app-shell.is-mac-platform.has-empty-content-surface .app-main {
   padding-top: 0;
 }
 

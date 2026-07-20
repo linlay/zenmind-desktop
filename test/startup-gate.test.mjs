@@ -21,7 +21,7 @@ function loadStartupGate() {
   return module.exports;
 }
 
-const { resolveStartupSurfaceMode } = loadStartupGate();
+const { shouldShowStartupProgressCard } = loadStartupGate();
 
 function createStartupState(phase) {
   return {
@@ -36,19 +36,19 @@ function createStartupState(phase) {
   };
 }
 
-test("startup surface stays in loading mode while core services prepare", () => {
-  assert.equal(resolveStartupSurfaceMode(null, false, false), "loading");
-  assert.equal(resolveStartupSurfaceMode(createStartupState("running"), false, false), "loading");
-  assert.equal(resolveStartupSurfaceMode(createStartupState("running"), false, true), "slow");
+test("startup progress card stays visible while core services prepare or fail", () => {
+  assert.equal(shouldShowStartupProgressCard(null, false), true);
+  assert.equal(shouldShowStartupProgressCard(createStartupState("idle"), false), true);
+  assert.equal(shouldShowStartupProgressCard(createStartupState("running"), false), true);
+  assert.equal(shouldShowStartupProgressCard(createStartupState("failed"), false), true);
 });
 
-test("startup surface exposes only terminal startup states as failures", () => {
-  assert.equal(resolveStartupSurfaceMode(createStartupState("failed"), false, false), "failed");
-  assert.equal(resolveStartupSurfaceMode(createStartupState("succeeded"), false, false), "failed");
-  assert.equal(resolveStartupSurfaceMode(createStartupState("succeeded"), true, false), null);
+test("startup progress card follows live readiness after startup completes", () => {
+  assert.equal(shouldShowStartupProgressCard(createStartupState("succeeded"), false), true);
+  assert.equal(shouldShowStartupProgressCard(createStartupState("succeeded"), true), false);
 });
 
-test("startup surface stays out of settings and env-import routes", () => {
-  assert.equal(resolveStartupSurfaceMode(createStartupState("running"), false, false, "/settings/control"), null);
-  assert.equal(resolveStartupSurfaceMode(createStartupState("env-import-required"), false, false), null);
+test("startup progress card stays out of settings and env-import routes", () => {
+  assert.equal(shouldShowStartupProgressCard(createStartupState("running"), false, "/settings/control"), false);
+  assert.equal(shouldShowStartupProgressCard(createStartupState("env-import-required"), false), false);
 });

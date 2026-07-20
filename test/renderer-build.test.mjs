@@ -593,7 +593,7 @@ test("embedded service previews load auth and platform entrypoints directly", ()
   assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
 });
 
-test("startup surface uses localized, minimal copy", () => {
+test("startup progress card shows localized core service state", () => {
   const startupGate = readSourceFile(
     "src",
     "renderer",
@@ -601,32 +601,44 @@ test("startup surface uses localized, minimal copy", () => {
     "startup",
     "StartupGate.tsx"
   );
-  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
-
   assert.match(startupGate, /useI18n\(\)/);
-  assert.match(startupGate, /export function StartupSurface/);
-  assert.match(startupGate, /t\("startup\.surface\.loading"\)/);
-  assert.match(startupGate, /t\("startup\.surface\.slow"\)/);
-  assert.match(startupGate, /t\("startup\.surface\.failed"\)/);
-  assert.match(startupGate, /role="status"/);
+  assert.match(startupGate, /export function StartupLoadingScreen/);
+  assert.match(startupGate, /startup-loading-card/);
+  assert.match(startupGate, /startup-loading-progress/);
+  assert.match(startupGate, /startup-loading-list/);
+  assert.match(startupGate, /t\("startup\.service\.authentication"\)/);
+  assert.match(startupGate, /t\("startup\.phase\.installing"\)/);
+  assert.match(startupGate, /t\("startup\.action\.refresh"\)/);
   assert.match(startupGate, /t\("startup\.action\.openControlCenter"\)/);
-  assert.doesNotMatch(startupGate, /startup-loading-card|startup-chat-guide|startup\.chatGuide/);
-  assert.doesNotMatch(startupGate, /startup-surface-mark|✦/);
-  assert.doesNotMatch(enUS, /"startup\.chatGuide\.title":\s*"Start a conversation"/);
+  assert.doesNotMatch(startupGate, /EmptyContentSurface|emptyContent\.surface/);
 });
 
-test("startup surface owns the main content area without a card frame", () => {
+test("empty content fallback is separate from the startup progress card", () => {
   const appShell = readAppShellSource();
+  const emptyContentSurface = readSourceFile("src", "renderer", "app-shell", "EmptyContentSurface.tsx");
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
   const appShellStyles = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const globalStyles = readRendererStyles();
 
-  assert.match(appShell, /has-startup-surface/);
-  assert.match(appShellStyles, /\.app-shell\.has-startup-surface \.app-main\s*\{[\s\S]*?padding:\s*0;/);
-  assert.match(appShellStyles, /is-windows-platform\.has-startup-surface[\s\S]*?padding-top:\s*0;/);
-  assert.match(appShellStyles, /is-mac-platform\.has-startup-surface \.app-main\s*\{[\s\S]*?padding-top:\s*0;/);
-  assert.match(globalStyles, /\.startup-surface\.is-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;/);
-  assert.doesNotMatch(globalStyles, /\.startup-loading-card|\.startup-loading-list|\.startup-chat-guide/);
-  assert.doesNotMatch(globalStyles, /\.startup-surface-mark/);
+  assert.match(emptyContentSurface, /export function EmptyContentSurface/);
+  assert.match(emptyContentSurface, /t\("emptyContent\.surface\.loading"\)/);
+  assert.match(emptyContentSurface, /empty-content-surface-loader/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<EmptyContentSurface \/>\}/);
+  assert.match(embeddedSurfaceHosts, /export function EmptyWebSurfaceRoute\(\)[\s\S]*?<EmptyContentSurface \/>/);
+  assert.match(appShell, /has-empty-content-surface/);
+  assert.match(appShellStyles, /\.app-shell\.has-empty-content-surface \.app-main\s*\{[\s\S]*?padding:\s*0;/);
+  assert.match(appShellStyles, /is-windows-platform\.has-empty-content-surface[\s\S]*?padding-top:\s*0;/);
+  assert.match(appShellStyles, /is-mac-platform\.has-empty-content-surface \.app-main\s*\{[\s\S]*?padding-top:\s*0;/);
+  assert.match(globalStyles, /\.startup-loading-screen\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;/);
+  assert.match(globalStyles, /\.startup-loading-card/);
+  assert.match(globalStyles, /\.empty-content-surface/);
+  assert.doesNotMatch(globalStyles, /\.startup-surface/);
 });
 
 test("desktop custom theme tokens are shared by control center and log viewer", () => {
@@ -2821,10 +2833,13 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.doesNotMatch(appShell, /showStartupPetGreeting/);
-  assert.match(appShell, /resolveStartupSurfaceMode\(/);
-  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?mode=\{startupRouteSurfaceMode\}/);
-  assert.match(appShell, /showStartupSurface && startupSurfaceMode[\s\S]*?<StartupSurface[\s\S]*?overlay/);
-  assert.doesNotMatch(appShell, /StartupLoadingScreen|showStartupCard|startupCardDismissed/);
+  assert.match(appShell, /shouldShowStartupProgressCard\(/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<EmptyContentSurface \/>\}/);
+  assert.match(appShell, /showStartupCard[\s\S]*?<StartupLoadingScreen/);
+  assert.match(appShell, /startupCardDismissed/);
+  assert.match(appShell, /const shouldPollStartup = startupRestoreState === null \|\| showStartupCard;/);
+  assert.match(appShell, /\}, \[shouldPollStartup\]\);/);
+  assert.doesNotMatch(appShell, /StartupSurface|resolveStartupSurfaceMode/);
   assert.match(appShell, /location\.pathname !== "\/"[\s\S]*?createAgentNewChatRoute\(chatRuntimeAgent\.agent\.agentKey\)/);
   assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);

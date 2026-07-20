@@ -5,7 +5,8 @@ import type { WebsiteFaviconCache } from "../components/Favicon";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
-import { StartupRoutePlaceholder, StartupSurface } from "./startup/StartupGate";
+import { EmptyContentSurface } from "./EmptyContentSurface";
+import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
 import { DebugModeContext } from "../debug/DebugModeContext";
@@ -30,7 +31,7 @@ import {
   resolveDesktopCopilotPreference,
   sanitizeDesktopCopilotPagePreferences
 } from "../../shared/page-copilot";
-import { resolveStartupSurfaceMode } from "../../shared/startup-gate";
+import { shouldShowStartupProgressCard } from "../../shared/startup-gate";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -446,7 +447,7 @@ export function AppShell() {
   const { locale, setLocale, t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
-  const { services, loading: servicesLoading, refresh: refreshServices } = useServices();
+  const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
@@ -531,6 +532,7 @@ export function AppShell() {
   });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
+  const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
   const [envImportBusy, setEnvImportBusy] = useState(false);
   const [envImportError, setEnvImportError] = useState("");
@@ -651,16 +653,12 @@ export function AppShell() {
     service.status === "running"
   );
   const resolvedStartupRestoreState = startupRestoreState ?? createFallbackStartupRestoreState();
-  const startupSurfaceMode = resolveStartupSurfaceMode(
-    startupRestoreState,
-    startupAllReady,
-    startupTimedOut,
-    location.pathname
-  );
-  const showStartupSurface = startupSurfaceMode !== null;
-  const startupRouteSurfaceMode = startupSurfaceMode ?? (
-    !assistantNavAgentsLoaded || chatRuntimeAgent.agent ? "loading" : "empty"
-  );
+  const showStartupCard =
+    !startupCardDismissed &&
+    shouldShowStartupProgressCard(startupRestoreState, startupAllReady, location.pathname);
+  const shouldPollStartup = startupRestoreState === null || showStartupCard;
+  const showsEmptyContentSurface =
+    location.pathname === "/" || location.pathname === EMPTY_WEB_SURFACE_ROUTE;
   const webItemMap = useMemo(() => {
     return new Map<WebEntryKey, WebNavigationEntry>(webItems.map((item) => {
       if (item.kind === "webapp") {
@@ -1597,6 +1595,20 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (startupRestoreState?.mode !== "bootstrap") {
+      setStartupCardDismissed(false);
+      return;
+    }
+
+    if (
+      startupRestoreState.phase === "idle" ||
+      startupRestoreState.phase === "running"
+    ) {
+      setStartupCardDismissed(false);
+    }
+  }, [startupRestoreState]);
+
+  useEffect(() => {
     refreshServicesRef.current = refreshServices;
   }, [refreshServices]);
 
@@ -1628,7 +1640,6 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    const shouldPollStartup = startupSurfaceMode !== null;
     if (!shouldPollStartup) {
       setStartupTimedOut(false);
       return;
@@ -1648,7 +1659,7 @@ export function AppShell() {
       window.clearInterval(startupStateInterval);
       window.clearTimeout(timer);
     };
-  }, [startupRestoreState, startupSurfaceMode]);
+  }, [shouldPollStartup]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3067,7 +3078,7 @@ export function AppShell() {
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
-        (location.pathname === "/" || showStartupSurface) ? "has-startup-surface" : "",
+        showsEmptyContentSurface ? "has-empty-content-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
@@ -3194,12 +3205,7 @@ export function AppShell() {
           <Routes>
             <Route
               path="/"
-              element={
-                <StartupRoutePlaceholder
-                  mode={startupRouteSurfaceMode}
-                  onOpenControlCenter={() => navigate("/control-center")}
-                />
-              }
+              element={<EmptyContentSurface />}
             />
             <Route
               path="/kanban"
@@ -3291,26 +3297,6 @@ export function AppShell() {
             />
             <Route path="/help" element={<RouteSuspense><HelpPage isWindows={isWindows} /></RouteSuspense>} />
           </Routes>
-          {showStartupSurface && startupSurfaceMode ? (
-            <StartupSurface
-              mode={startupSurfaceMode}
-              overlay
-              onOpenControlCenter={() => {
-                setStartupTimedOut(false);
-                navigate("/control-center", {
-                  replace: true,
-                  state: resolvedStartupRestoreState.phase === "failed"
-                    ? {
-                        startupFailure: {
-                          serviceId: resolvedStartupRestoreState.failedServiceId,
-                          message: resolvedStartupRestoreState.message
-                        }
-                      }
-                    : undefined
-                });
-              }}
-            />
-          ) : null}
         </main>
       </div>
       {isSidebarResizing ? (
@@ -3358,6 +3344,35 @@ export function AppShell() {
             </div>
           </section>
         </div>
+      ) : null}
+      {showStartupCard ? (
+        <StartupLoadingScreen
+          servicesLoading={servicesLoading}
+          servicesError={servicesError}
+          startupServices={startupServices}
+          startupRestoreState={resolvedStartupRestoreState}
+          timedOut={startupTimedOut}
+          onRefresh={() => {
+            setStartupCardDismissed(false);
+            void refreshServices();
+            void refreshStartupRestoreState().catch(() => undefined);
+          }}
+          onOpenControlCenter={() => {
+            setStartupCardDismissed(true);
+            setStartupTimedOut(false);
+            navigate("/control-center", {
+              replace: true,
+              state: resolvedStartupRestoreState.phase === "failed"
+                ? {
+                    startupFailure: {
+                      serviceId: resolvedStartupRestoreState.failedServiceId,
+                      message: resolvedStartupRestoreState.message
+                    }
+                  }
+                : undefined
+            });
+          }}
+        />
       ) : null}
       {resolvedStartupRestoreState.phase === "env-import-required" ? (
         <EnvImportOverlay

@@ -1601,11 +1601,8 @@ export const enUSMessages = {
   "externalWebview.error.tabNotFound": "Target embedded website tab not found.",
 
   "startup.defaultAction": "Starting...",
-  "startup.surface.loading": "Loading core components",
-  "startup.surface.slow": "Still loading core components",
-  "startup.surface.failed": "Core components aren’t ready",
-  "startup.surface.empty": "No chat available",
-  "startup.surface.loadingAria": "Loading core components",
+  "emptyContent.surface.loading": "Loading core components",
+  "emptyContent.surface.loadingAria": "Loading core components",
   "startup.title.starting": "Starting",
   "startup.title.slow": "Startup is slow",
   "startup.title.failed": "Services not ready",

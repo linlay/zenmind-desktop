@@ -1601,11 +1601,8 @@ export const zhCNMessages = {
   "externalWebview.error.tabNotFound": "未找到目标内嵌网站标签页。",
 
   "startup.defaultAction": "启动中...",
-  "startup.surface.loading": "正在加载核心组件",
-  "startup.surface.slow": "仍在加载核心组件",
-  "startup.surface.failed": "核心组件未就绪",
-  "startup.surface.empty": "暂无可用对话",
-  "startup.surface.loadingAria": "正在加载核心组件",
+  "emptyContent.surface.loading": "正在加载核心组件",
+  "emptyContent.surface.loadingAria": "正在加载核心组件",
   "startup.title.starting": "正在启动",
   "startup.title.slow": "启动较慢",
   "startup.title.failed": "服务未就绪",
