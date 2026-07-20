@@ -452,7 +452,7 @@
   border: 0;
   background: transparent;
   color: var(--browser-ink);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.2;
   outline: none;
   caret-color: var(--browser-accent);
