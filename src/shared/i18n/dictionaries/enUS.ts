@@ -153,6 +153,7 @@ export const enUSMessages = {
   "sidebar.chat.viewMoreSimple": "View more",
   "sidebar.chat.unreadSuffix": ", {count} unread",
   "sidebar.chats.newChat": "New chat",
+  "sidebar.chats.defaultAgentMenuLabel": "Set the default agent for chats",
   "sidebar.chats.defaultAgentUnavailable": "Choose an available Chat default agent in Assistant settings first.",
   "sidebar.chats.defaultAgentSaveFailed": "Failed to save the Chat default agent.",
   "sidebar.chats.empty": "No chats. Hover over 'Chats' to start.",

@@ -653,6 +653,13 @@
   gap: 2px;
 }
 
+.sidebar-chats-agent-menu-label {
+  padding: 4px 8px 3px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .sidebar-chats-agent-option {
   display: flex;
   align-items: center;

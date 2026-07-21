@@ -2894,10 +2894,11 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(sidebarSource, /assistantNavChatItemsHasMore\?: boolean/);
   assert.match(sidebarSource, /onChatsDefaultAgentChange\?: \(agentKey: string\) => Promise<void> \| void/);
   assert.match(sidebarSource, /function renderChatsDefaultAgentPicker/);
-  assert.match(sidebarSource, /const \[chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen\] = useState\(false\);/);
+  assert.match(sidebarSource, /const \[chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen\]\s*=\s*useState\(false\);/);
   assert.match(sidebarSource, /className=\{\[[\s\S]*?"sidebar-chats-agent-trigger"/);
   assert.match(sidebarSource, /aria-haspopup="menu"/);
   assert.match(sidebarSource, /className="sidebar-chats-agent-menu"[\s\S]*?role="menu"/);
+  assert.match(sidebarSource, /className="sidebar-chats-agent-menu-label"[\s\S]*?sidebar\.chats\.defaultAgentMenuLabel/);
   assert.match(sidebarSource, /role="menuitemradio"/);
   assert.match(sidebarSource, /sidebar-chats-agent-option-role/);
   assert.match(sidebarSource, /function handleChatsDefaultAgentTriggerKeyDown/);
@@ -2914,6 +2915,7 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement[\s\S]*?opacity:\s*0;/);
   assert.match(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement,[\s\S]*?:focus-within \.Collapse-headerSupplement/);
   assert.match(styles, /\.sidebar-chats-agent-trigger\s*\{/);
+  assert.match(styles, /\.sidebar-chats-agent-menu-label\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-option-role\s*\{/);
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-select\s*\{/);
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-label\s*\{/);
@@ -2931,6 +2933,8 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(appShell, /onChatsDefaultAgentChange=\{saveChatsDefaultAgent\}/);
   assert.match(zhCN, /"sidebar\.chats\.viewMoreHistory": "查看更多历史"/);
   assert.match(enUS, /"sidebar\.chats\.viewMoreHistory": "View more history"/);
+  assert.match(zhCN, /"sidebar\.chats\.defaultAgentMenuLabel": "设置对话的默认智能体"/);
+  assert.match(enUS, /"sidebar\.chats\.defaultAgentMenuLabel": "Set the default agent for chats"/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {
