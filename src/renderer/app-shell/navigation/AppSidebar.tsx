@@ -58,6 +58,7 @@ import {
   getAssistantNavAgentSortedChats,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
+  summarizeAssistantNavChatStatus,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
@@ -1203,12 +1204,8 @@ export function AppSidebar({
     },
   );
   const chatStatusSummary = useMemo(
-    () => ({
-      unreadCount: sidebarChatItems.filter((chat) => !chat.isRead).length,
-      pendingCount: sidebarChatItems.filter((chat) => chat.hasPendingAwaiting)
-        .length,
-    }),
-    [sidebarChatItems],
+    () => summarizeAssistantNavChatStatus(assistantNavAgents, sidebarChatItems),
+    [assistantNavAgents, sidebarChatItems],
   );
   const bootstrapSeedChatIndexed = Boolean(
     bootstrapActive &&

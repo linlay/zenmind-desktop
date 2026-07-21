@@ -40,10 +40,40 @@ function loadGlobalSearchRowsModule() {
   return mod.exports;
 }
 
+function loadAssistantNavigationModule() {
+  const sourcePath = path.join(projectRoot, "src", "renderer", "assistantNavigation.ts");
+  const source = fs.readFileSync(sourcePath, "utf8");
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+    fileName: sourcePath,
+  });
+  const mod = { exports: {} };
+  const fn = new Function("exports", "require", "module", "__filename", "__dirname", outputText);
+  fn(mod.exports, (specifier) => {
+    if (specifier === "../shared/time-contract") {
+      return {
+        parseOptionalNullableAgentPlatformEpochMillis(value) {
+          return value;
+        },
+        requireAgentPlatformEpochMillis(value) {
+          return value;
+        },
+      };
+    }
+    return require(specifier);
+  }, mod, sourcePath, path.dirname(sourcePath));
+  return mod.exports;
+}
+
 const {
   buildDesktopGlobalSearchSections,
   resolveDesktopGlobalSearchAgentKey,
 } = loadGlobalSearchRowsModule();
+const { summarizeAssistantNavChatStatus } = loadAssistantNavigationModule();
 
 const messages = {
   "assistant.newChat": "New chat",
@@ -162,6 +192,34 @@ test("desktop global search prioritizes awaiting and unread chats in the empty s
   assert.deepEqual(unreadRows.map((row) => row.chatId), ["chat-unread"]);
   assert.equal(recentRows.some((row) => row.chatId === "chat-awaiting" || row.chatId === "chat-unread"), false);
   assert.deepEqual(recentRows.map((row) => row.chatId), ["chat-recent"]);
+});
+
+test("desktop global search and collapsed Chats status agree beyond eight chats", () => {
+  const chats = Array.from({ length: 9 }, (_item, index) =>
+    chat({
+      chatId: `chat-${index + 1}`,
+      updatedAt: EPOCH_MS + 9 - index,
+      hasPendingAwaiting: index === 0 || index === 1 || index === 8,
+      isRead: index !== 2 && index !== 3,
+    }),
+  );
+  const agents = [agent({ agentKey: "zenmi", mode: "REACT", recentChats: chats })];
+  const sections = buildDesktopGlobalSearchSections({
+    agents,
+    query: "",
+    currentAgentKey: "zenmi",
+    t,
+  });
+  const awaitingRows = sections.find((section) => section.id === "awaiting")?.rows ?? [];
+  const unreadRows = sections.find((section) => section.id === "unread")?.rows ?? [];
+  const sidebarStatus = summarizeAssistantNavChatStatus(agents, chats.slice(0, 8));
+
+  assert.equal(awaitingRows.length, 3);
+  assert.equal(unreadRows.length, 2);
+  assert.deepEqual(sidebarStatus, {
+    unreadCount: unreadRows.length,
+    pendingCount: awaitingRows.length,
+  });
 });
 
 test("desktop global search keeps agents with absent or null updatedAt after timestamped agents", () => {

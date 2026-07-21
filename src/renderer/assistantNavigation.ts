@@ -332,6 +332,38 @@ export function getAssistantNavRecentChatsOverview(
     .slice(0, normalizedLimit);
 }
 
+export function summarizeAssistantNavChatStatus(
+  agents: AssistantNavAgentItem[],
+  visibleChats: AssistantNavChatItem[] = [],
+) {
+  const chatsById = new Map<string, AssistantNavChatItem>();
+  const upsertChat = (chat: AssistantNavChatItem) => {
+    const chatId = chat.chatId.trim();
+    if (!chatId) {
+      return;
+    }
+    const existing = chatsById.get(chatId);
+    if (!existing || compareAssistantNavChatFreshness(chat, existing) <= 0) {
+      chatsById.set(chatId, chat);
+    }
+  };
+
+  for (const agent of agents.filter(isAssistantNavChatAgent)) {
+    for (const chat of agent.recentChats) {
+      upsertChat(chat);
+    }
+  }
+  for (const chat of visibleChats) {
+    upsertChat(chat);
+  }
+
+  const chats = [...chatsById.values()];
+  return {
+    unreadCount: chats.filter((chat) => !chat.isRead).length,
+    pendingCount: chats.filter((chat) => chat.hasPendingAwaiting).length,
+  };
+}
+
 export function getAssistantNavAgentAttentionChat(
   agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
 ) {

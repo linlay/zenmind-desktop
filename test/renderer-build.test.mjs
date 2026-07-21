@@ -1786,6 +1786,21 @@ test("Chats sidebar retains global chatItems and adds a default-agent history en
   assert.match(sidebarSource, /webview\.send\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, \{\s*action: "openChatHistory"/);
 });
 
+test("Chats sidebar status uses the complete Chat history instead of the eight visible rows", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+
+  assert.match(
+    sidebarSource,
+    /summarizeAssistantNavChatStatus\(assistantNavAgents, sidebarChatItems\)/,
+  );
+});
+
 test("Chats sidebar reuses the Projects chat row status and unread layout", () => {
   const sidebarSource = readSourceFile(
     "src",

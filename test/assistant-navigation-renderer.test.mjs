@@ -75,6 +75,7 @@ const {
   normalizeAssistantNavAgents,
   normalizeAssistantNavAgentItemsResult,
   resolveAssistantNavChatRuntimeAgent,
+  summarizeAssistantNavChatStatus,
 } = loadAssistantNavigationModule();
 
 test("assistant nav maps awaiting modes to the shared chat status labels", () => {
@@ -236,6 +237,39 @@ test("assistant nav Chats overview shows ten most recent chats by default", () =
       "alpha-3",
     ],
   );
+});
+
+test("assistant nav Chats status includes attention beyond the eight visible rows", () => {
+  const visibleChats = Array.from({ length: 8 }, (_item, index) =>
+    chat({
+      chatId: `visible-${index + 1}`,
+      isRead: index >= 2,
+      hasPendingAwaiting: index < 2,
+      updatedAt: epoch(100 - index),
+    }),
+  );
+  const ninthChat = chat({
+    chatId: "ninth",
+    isRead: false,
+    hasPendingAwaiting: true,
+    updatedAt: epoch(1),
+  });
+  const summary = summarizeAssistantNavChatStatus([
+    {
+      agentKey: "zenmi",
+      displayName: "Zenmi",
+      mode: "REACT",
+      recentChats: [...visibleChats, ninthChat],
+    },
+    {
+      agentKey: "project",
+      displayName: "Project",
+      mode: "CODER",
+      recentChats: [chat({ chatId: "project-chat", isRead: false, hasPendingAwaiting: true })],
+    },
+  ], visibleChats);
+
+  assert.deepEqual(summary, { unreadCount: 3, pendingCount: 3 });
 });
 
 test("assistant nav project predicate only accepts CODER and KBASE modes", () => {
