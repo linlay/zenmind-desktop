@@ -4153,6 +4153,10 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.doesNotMatch(overlay, /desktop\.globalSearch\.status\.awaiting/);
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-unread-dot\s*\{/);
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-row-status\.is-unread\s*\{/);
+  assert.match(appShellCss, /\.desktop-global-search-layer\s*\{[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*padding:\s*16px;/);
+  assert.match(appShellCss, /\.desktop-global-search-panel\s*\{[^}]*width:\s*min\(640px,\s*100%\);[^}]*min-height:\s*240px;[^}]*max-height:\s*min\(680px,\s*calc\(100vh - 32px\)\);/);
+  assert.match(appShellCss, /\.desktop-global-search-results\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/);
+  assert.match(appShellCss, /@media \(max-width:\s*680px\)\s*\{[\s\S]*?\.desktop-global-search-layer\s*\{[^}]*padding:\s*16px 10px;[^}]*\}[\s\S]*?\.desktop-global-search-panel\s*\{[^}]*max-height:\s*calc\(100vh - 32px\);/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*var\(--bg-base\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row-icon\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /\.desktop-global-search-row-icon \.sidebar-illustration,[\s\S]*?\.desktop-global-search-row-icon \.sidebar-action-icon,[\s\S]*?\.desktop-global-search-row-icon \.settings-sidebar-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
