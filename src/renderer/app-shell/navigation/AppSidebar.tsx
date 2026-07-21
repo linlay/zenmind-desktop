@@ -43,6 +43,7 @@ import {
   sortSidebarNavItems,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
+import { getAssistantWorkspaceName } from "./workspaceName";
 import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
@@ -759,17 +760,6 @@ function formatAssistantChatDateTime(value?: EpochMilliseconds | null) {
     return "";
   }
   return formatEpochMillis(value);
-}
-
-function getAssistantWorkspaceName(
-  workspaceDir: string | undefined,
-  workspaceDirExists: boolean | undefined,
-) {
-  const normalized = workspaceDir?.trim().replace(/[\\/]+$/u, "") ?? "";
-  if (!normalized || normalized === "@chat" || workspaceDirExists === false) {
-    return "";
-  }
-  return normalized.split(/[\\/]/u).filter(Boolean).at(-1) ?? "";
 }
 
 function isAssistantRunningPreview(value: string) {
