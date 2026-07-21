@@ -4286,6 +4286,8 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(enDictionary, /"sidebar\.bootstrapChat\.cta":/);
   assert.match(appSidebar, /function renderBootstrapGuideCard\(\)/);
   assert.match(appSidebar, /function renderBootstrapGuideFloatingBubbles\(\)/);
+  assert.match(appSidebar, /closest\("\.app-shell"\)/);
+  assert.match(appSidebar, /createPortal\([\s\S]*?appShell,\s*\)/);
   assert.match(appSidebar, /BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000/);
   assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?setToolMenuOpen\(true\)/);
   assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: bootstrapActive/);
@@ -4294,6 +4296,8 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(enDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);
   assert.match(globalStyles, /\.sidebar-chats-item\.is-bootstrap-guide::after/);
   assert.match(globalStyles, /\.sidebar-tool-menu-item\.is-bootstrap-guide::after/);
+  assert.match(globalStyles, /\.sidebar-bootstrap-guide-layer\s*\{[\s\S]*?z-index:\s*70;/);
+  assert.match(globalStyles, /\.desktop-sso-login-modal-layer\s*\{[\s\S]*?z-index:\s*80;/);
   assert.match(globalStyles, /@media \(prefers-reduced-motion: reduce\)/);
 });
 

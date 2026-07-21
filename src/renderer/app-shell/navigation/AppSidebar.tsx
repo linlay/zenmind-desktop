@@ -4309,6 +4309,14 @@ export function AppSidebar({
       return null;
     }
 
+    const appShell = (
+      bootstrapGuideChatAnchorRef.current ??
+      bootstrapGuideToolHelpAnchorRef.current
+    )?.closest(".app-shell");
+    if (!appShell) {
+      return null;
+    }
+
     return createPortal(
       <div className="sidebar-bootstrap-guide-layer" aria-live="polite">
         {bootstrapGuideFloatingBubbles.map((bubble) => (
@@ -4328,7 +4336,7 @@ export function AppSidebar({
           </div>
         ))}
       </div>,
-      document.body,
+      appShell,
     );
   }
 
