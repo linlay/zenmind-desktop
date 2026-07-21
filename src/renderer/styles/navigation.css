@@ -1051,7 +1051,7 @@
 .sidebar-bootstrap-guide-layer {
   position: fixed;
   inset: 0;
-  z-index: 10020;
+  z-index: 70;
   pointer-events: none;
   app-region: no-drag;
   -webkit-app-region: no-drag;
@@ -1059,7 +1059,7 @@
 
 .sidebar-bootstrap-guide-bubble {
   position: fixed;
-  z-index: 10021;
+  z-index: 1;
   box-sizing: border-box;
   transform: translateY(-50%);
   padding: 7px 9px;
