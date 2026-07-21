@@ -740,7 +740,7 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
     /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.embedded-surface-page,\s*[\s\S]*?background:\s*var\(--embedded-surface-page-bg\);/
   );
   assert.doesNotMatch(globalStyles, /^\.app-shell\.is-windows-platform[^{]*\{[^}]*background:\s*var\(--bg-canvas\);/m);
-  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?border-left:\s*none;[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock \.embedded-surface-page,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-surface-frame-shell,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.embedded-surface-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);
