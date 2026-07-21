@@ -379,7 +379,7 @@ test("desktop sso writes user info state after local authentication completes", 
   }
 });
 
-test("desktop sso persists browser session and cookie userinfo before access token", (t) => {
+test("desktop sso persists verified browser-session user id before access token", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-stepwise-cookie-"));
   t.after(() => {
     failDesktopSsoFlow("reset test state");
@@ -395,13 +395,18 @@ test("desktop sso persists browser session and cookie userinfo before access tok
     appendLoginState: false,
     browserSession: {
       url: `${embeddedLoginOrigin}/oauth2/auth`,
-      successStatuses: [200, 202]
+      successStatuses: [200, 202],
+      userInfoHeaders: {
+        sub: "x-auth-request-user",
+        name: "x-auth-request-preferred-username",
+        email: "x-auth-request-email"
+      }
     },
     userInfo: {
       url: `${embeddedLoginOrigin}/oauth2/userinfo`,
       authMode: "cookie",
-      required: true,
-      subPath: "email",
+      required: false,
+      subPath: "user",
       namePath: "preferredUsername",
       emailPath: "email"
     },
@@ -428,13 +433,13 @@ test("desktop sso persists browser session and cookie userinfo before access tok
   assert.equal(fs.existsSync(userInfoPath), false);
   assert.equal(fs.existsSync(accessTokenPath), false);
 
-  const userStatus = __testInternals.completeDesktopSsoBrowserUserInfo(app, {
-    email: "cutej.user@example.test",
-    preferredUsername: "CuteJ User"
+  const userStatus = __testInternals.completeDesktopSsoBrowserSessionUserInfo(app, {
+    sub: "107078"
   });
   assert.equal(userStatus.authenticated, true);
-  assert.equal(userStatus.user.sub, "cutej.user@example.test");
-  assert.equal(userStatus.user.name, "CuteJ User");
+  assert.equal(userStatus.user.sub, "107078");
+  assert.equal(userStatus.user.name, "107078");
+  assert.equal(userStatus.user.email, undefined);
   assert.deepEqual(userStatus.completedSteps, {
     session: true,
     userInfo: true,
@@ -445,7 +450,7 @@ test("desktop sso persists browser session and cookie userinfo before access tok
 
   const failedStatus = failDesktopSsoStep("token exchange returned 401");
   assert.equal(failedStatus.authenticated, true);
-  assert.equal(failedStatus.user.email, "cutej.user@example.test");
+  assert.equal(failedStatus.user.sub, "107078");
   assert.equal(failedStatus.completedSteps.accessToken, false);
   assert.equal(fs.existsSync(sessionPath), true);
   assert.equal(fs.existsSync(userInfoPath), true);
@@ -454,7 +459,8 @@ test("desktop sso persists browser session and cookie userinfo before access tok
   failDesktopSsoFlow("simulate restart");
   const restoredStatus = getDesktopSsoStatus(app);
   assert.equal(restoredStatus.authenticated, true);
-  assert.equal(restoredStatus.user.sub, "cutej.user@example.test");
+  assert.equal(restoredStatus.user.sub, "107078");
+  assert.equal(restoredStatus.user.name, "107078");
   assert.deepEqual(restoredStatus.completedSteps, {
     session: true,
     userInfo: true,
@@ -728,13 +734,18 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     loginCompletionUrls: [`${embeddedLoginOrigin}/`],
     browserSession: {
       url: `${embeddedLoginOrigin}/oauth2/auth`,
-      successStatuses: [200, 202]
+      successStatuses: [200, 202],
+      userInfoHeaders: {
+        sub: "x-auth-request-user",
+        name: "x-auth-request-preferred-username",
+        email: "x-auth-request-email"
+      }
     },
     userInfo: {
       url: `${embeddedLoginOrigin}/oauth2/userinfo`,
       authMode: "cookie",
-      required: true,
-      subPath: "email",
+      required: false,
+      subPath: "user",
       namePath: "preferredUsername",
       emailPath: "email"
     },
@@ -765,14 +776,19 @@ test("desktop sso reads explicit embedded cookie token exchange config", (t) => 
     url: `${embeddedLoginOrigin}/oauth2/auth`,
     method: "GET",
     headers: {},
-    successStatuses: [200, 202]
+    successStatuses: [200, 202],
+    userInfoHeaders: {
+      sub: "x-auth-request-user",
+      name: "x-auth-request-preferred-username",
+      email: "x-auth-request-email"
+    }
   });
   assert.deepEqual(result.config.userInfo, {
     enabled: true,
-    required: true,
+    required: false,
     authMode: "cookie",
     url: `${embeddedLoginOrigin}/oauth2/userinfo`,
-    subPath: "email",
+    subPath: "user",
     namePath: "preferredUsername",
     emailPath: "email",
     avatarUrlPath: "picture"

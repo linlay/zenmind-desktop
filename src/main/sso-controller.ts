@@ -2,6 +2,7 @@ import type { App, BrowserWindow, CookiesSetDetails, Session } from "electron";
 import {
   type DesktopSsoClaimsConfig,
   completeDesktopSsoBrowserSession,
+  completeDesktopSsoBrowserSessionUserInfo,
   completeDesktopSsoBrowserUserInfo,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
   getDesktopSsoAccessTokenCookieDetails,
@@ -570,7 +571,22 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         undefined,
         getDesktopSsoSetCookieHeaders(response.headers)
       );
-      return completeDesktopSsoBrowserSession(options.app);
+      const sessionStatus = completeDesktopSsoBrowserSession(options.app);
+      if (!config.userInfoHeaders) {
+        return sessionStatus;
+      }
+      const sub = response.headers.get(config.userInfoHeaders.sub)?.trim() || "";
+      if (!sub) {
+        return sessionStatus;
+      }
+      const readOptionalHeader = (headerName: string | undefined) =>
+        headerName ? response.headers.get(headerName)?.trim() || "" : "";
+      return completeDesktopSsoBrowserSessionUserInfo(options.app, {
+        sub,
+        name: readOptionalHeader(config.userInfoHeaders.name),
+        email: readOptionalHeader(config.userInfoHeaders.email),
+        avatarUrl: readOptionalHeader(config.userInfoHeaders.avatarUrl)
+      });
     },
     async fetchBrowserUserInfo(fetchImpl?: BrowserCookieFetch) {
       const config = getDesktopSsoCookieUserInfoConfig(options.app);
@@ -588,9 +604,15 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       const request = fetchImpl || ((url, init) => ssoSession.fetch(url, init) as unknown as ReturnType<BrowserCookieFetch>);
       const response = await request(config.url, { method: "GET", headers });
       if (!response.ok) {
+        if (!config.required) {
+          return getDesktopSsoStatus(options.app);
+        }
         throw new Error(`Desktop SSO browser userinfo failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
       }
       if (typeof response.json !== "function") {
+        if (!config.required) {
+          return getDesktopSsoStatus(options.app);
+        }
         throw new Error("Desktop SSO browser userinfo response is not JSON.");
       }
       await mirrorDesktopSsoSetCookieHeaders(
@@ -599,7 +621,14 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         undefined,
         getDesktopSsoSetCookieHeaders(response.headers)
       );
-      return completeDesktopSsoBrowserUserInfo(options.app, await response.json());
+      try {
+        return completeDesktopSsoBrowserUserInfo(options.app, await response.json());
+      } catch (error) {
+        if (!config.required) {
+          return getDesktopSsoStatus(options.app);
+        }
+        throw error;
+      }
     },
     async exchangeBrowserCookieAccessToken(fetchImpl?: CookieAccessTokenFetch) {
       const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
@@ -787,9 +816,10 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     async clearBrowserCookies() {
       const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();
       const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(options.app);
+      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
       const targetSessions = [
         options.session.defaultSession,
-        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
+        ssoSession
       ];
       await Promise.all(cookieDetails.flatMap((details) =>
         targetSessions.map(async (targetSession) => {
@@ -812,6 +842,24 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           }));
         })
       ));
+      try {
+        const partitionCookies = await ssoSession.cookies.get({});
+        await Promise.all(partitionCookies.map(async (cookie) => {
+          const domain = cookie.domain?.replace(/^\./u, "") || "";
+          if (!domain) {
+            return;
+          }
+          const cookiePath = cookie.path?.startsWith("/") ? cookie.path : `/${cookie.path || ""}`;
+          const cookieUrl = `${cookie.secure ? "https" : "http"}://${domain}${cookiePath}`;
+          try {
+            await ssoSession.cookies.remove(cookieUrl, cookie.name);
+          } catch {
+            // Logout clears the dedicated partition on a best-effort basis.
+          }
+        }));
+      } catch {
+        // Failure to enumerate the dedicated partition does not block local logout.
+      }
     },
     async clearWebSessionCookies() {
       const clearCookies = getDesktopSsoWebSessionClearCookies(options.app);

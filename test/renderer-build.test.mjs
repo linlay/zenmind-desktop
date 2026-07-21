@@ -6496,6 +6496,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(contracts, /browserUrl\?: string;/);
   assert.match(contracts, /avatarUrl\?: string;/);
   assert.match(contracts, /completedSteps: DesktopSsoCompletedSteps;/);
+  assert.match(contracts, /startLogin: \(\) => Promise<DesktopSsoStartResult>;/);
+  assert.doesNotMatch(contracts, /DesktopSsoAccountMode|DesktopSsoStartOptions|accountMode/);
   assert.match(contracts, /DesktopSsoEmbeddedLoginRequest/);
   assert.match(contracts, /cancelLogin: \(\) => Promise<DesktopSsoCancelResult>;/);
   assert.match(contracts, /onEmbeddedLoginOpen: \(listener: DesktopSsoEmbeddedLoginListener\) => \(\) => void;/);
@@ -6511,7 +6513,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(ssoWebviewCompletionHandler, /validateBrowserSession\(\)/);
   assert.match(ssoWebviewCompletionHandler, /fetchBrowserUserInfo\(\)[\s\S]{0,900}exchangeBrowserCookieAccessToken\(\)/);
   assert.match(ssoWebviewCompletionHandler, /t\("main\.ssoCookieExchangeNoAccessToken"\)/);
-  assert.match(ssoWebviewCompletionHandler, /failDesktopSsoStep\(stepErrors\.join\("; "\)\)/);
+  assert.match(ssoWebviewCompletionHandler, /finalizeDesktopSsoLoginAttempt\(stepErrors\)/);
   assert.match(ssoWebviewCompletionHandler, /if \(accessToken\) \{[\s\S]{0,180}openConfiguredDesktopSsoSiteTokenBridge\(\)/);
   assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
@@ -6525,6 +6527,13 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(appShell, /useragent: desktopSsoLoginDialog\.userAgent/);
   assert.doesNotMatch(appShell, /desktop-sso-login-webview[\s\S]{0,220}allowpopups/);
   assert.match(appShell, /onDesktopSsoLogin=\{handleDesktopSsoLogin\}/);
+  assert.match(appShell, /startLogin\(\)/);
+  assert.match(appShell, /isCompleteDesktopSsoLogin\(status\)/);
+  assert.match(appShell, /desktopSsoLoginSettled && desktopSsoStatus/);
+  assert.match(appShell, /sidebar\.sso\.sessionStep/);
+  assert.match(appShell, /sidebar\.sso\.userInfoStep/);
+  assert.match(appShell, /sidebar\.sso\.accessTokenStep/);
+  assert.doesNotMatch(appShell, /handleDesktopSsoLogin\("switch"\)|sidebar\.sso\.switchAccount/);
   assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
   assert.match(appShell, /async function refreshDesktopSsoStatus\(\)[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
   assert.match(appShell, /onRefreshDesktopSsoStatus=\{refreshDesktopSsoStatus\}/);
@@ -6533,7 +6542,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(appShell, /has-desktop-sso-status/);
 
   assert.match(sidebarSource, /desktopSsoStatus\?:\s*DesktopSsoStatus \| null;/);
+  assert.match(sidebarSource, /!desktopSsoStatus\.completedSteps\.userInfo/);
   assert.match(sidebarSource, /!desktopSsoStatus\.completedSteps\.accessToken/);
+  assert.doesNotMatch(sidebarSource, /onDesktopSsoSwitchAccount|handleDesktopSsoSwitchAccount|sidebar\.sso\.switchAccount/);
   assert.match(sidebarSource, /onRefreshDesktopSsoStatus\?:\s*\(\) => Promise<void> \| void;/);
   assert.match(sidebarSource, /function handleToolMenuOpenChange\(open: boolean\)[\s\S]{0,360}onRefreshDesktopSsoStatus\?\.\(\)[\s\S]{0,360}setToolMenuOpen\(true\);/);
   assert.match(sidebarSource, /toolMenuOpenRequestIdRef\.current === requestId/);
@@ -6546,6 +6557,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /function getDesktopSsoUserLabel\(\)/);
   assert.match(sidebarSource, /if \(!desktopSsoStatus\) \{[\s\S]{0,80}return t\("sidebar\.sso\.signIn"\);/);
   assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name\?\.trim\(\)\s*\|\|[\s\S]{0,120}desktopSsoStatus\.user\?\.email\?\.trim\(\)/);
+  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.email\?\.trim\(\)\s*\|\|[\s\S]{0,120}desktopSsoStatus\.user\?\.sub\?\.trim\(\)/);
   assert.doesNotMatch(sidebarSource, /function renderDesktopSsoAccountMenuSection\(\)/);
   assert.match(sidebarSource, /function renderAccountMenuUserItem\(\)/);
   assert.match(sidebarSource, /function handleDesktopSsoMenuActionClick\(\)/);
@@ -6555,17 +6567,17 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/agents" \|\| item\.to === "\/archives" \|\| item\.to === "\/registries" \|\| item\.to === "\/market"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/skills"/);
   assert.doesNotMatch(sidebarSource, /const middleToolItems = fixedToolItems\.filter/);
   assert.doesNotMatch(sidebarSource, /const settingsToolItems = fixedToolItems\.filter/);
-  assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\(\(item\) => item\.to === "\/settings"\);/);
+  assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\([\s\S]{0,120}\(item\) => item\.to === "\/settings"[\s\S]{0,40}\);/);
   assert.match(sidebarSource, /shouldRenderDesktopSsoAccount \? \([\s\S]*?\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?\) : null/);
   assert.match(sidebarSource, /\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?renderToolLink\(helpToolItem,[\s\S]*?settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
   assert.match(sidebarSource, /className="sidebar-tool-menu-popover"/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
   assert.match(sidebarSource, /avatarUrl=\{desktopSsoStatus\.user\?\.avatarUrl\}/);
-  assert.match(sidebarSource, /renderAccountMenuIcon\(desktopSsoStatus\?\.authenticated \? "login" : "logout"\)/);
+  assert.match(sidebarSource, /renderAccountMenuIcon\([\s\S]{0,80}desktopSsoStatus\?\.authenticated \? "login" : "logout"[\s\S]{0,20}\)/);
   assert.match(sidebarSource, /<SidebarIllustration kind=\{kind\} \/>/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout-label"/);

@@ -2741,6 +2741,18 @@
   cursor: pointer;
 }
 
+.sidebar-account-menu-user-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.sidebar-account-menu-user-actions .sidebar-account-menu-logout {
+  min-width: 0;
+  margin-left: 0;
+}
+
 .sidebar-account-menu-logout-label {
   overflow: hidden;
   text-overflow: ellipsis;

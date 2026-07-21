@@ -231,6 +231,14 @@ function createUnavailableDesktopSsoStatus(message: string): DesktopSsoStatus {
   };
 }
 
+function isCompleteDesktopSsoLogin(status: DesktopSsoStatus) {
+  return status.authenticated &&
+    status.completedSteps.session &&
+    status.completedSteps.userInfo &&
+    status.completedSteps.accessToken &&
+    !status.error;
+}
+
 function getDesktopSsoApi() {
   return window.electronAPI.sso;
 }
@@ -521,6 +529,7 @@ export function AppShell() {
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
   const [desktopSsoLoginDialog, setDesktopSsoLoginDialog] = useState<DesktopSsoEmbeddedLoginRequest | null>(null);
+  const [desktopSsoLoginSettled, setDesktopSsoLoginSettled] = useState(false);
   const [webItems, setWebItems] = useState<WebEntry[]>([]);
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
@@ -1343,10 +1352,14 @@ export function AppShell() {
       setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
       return;
     }
+    setDesktopSsoLoginSettled(false);
     setDesktopSsoBusy(true);
     try {
       const result = await ssoApi.startLogin();
       setDesktopSsoStatus(result.status);
+      if (!result.status.pending && !isCompleteDesktopSsoLogin(result.status)) {
+        setDesktopSsoLoginSettled(true);
+      }
     } finally {
       setDesktopSsoBusy(false);
     }
@@ -1369,6 +1382,10 @@ export function AppShell() {
 
   async function handleDesktopSsoLoginDialogClose() {
     setDesktopSsoLoginDialog(null);
+    setDesktopSsoLoginSettled(false);
+    if (!desktopSsoStatus?.pending) {
+      return;
+    }
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
       setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
@@ -1522,11 +1539,17 @@ export function AppShell() {
       .catch(() => undefined);
     const dispose = ssoApi.onStatusChanged((status) => {
       setDesktopSsoStatus(status);
-      if (!status.pending) {
+      if (status.pending) {
+        setDesktopSsoLoginSettled(false);
+      } else if (isCompleteDesktopSsoLogin(status)) {
         setDesktopSsoLoginDialog(null);
+        setDesktopSsoLoginSettled(false);
+      } else {
+        setDesktopSsoLoginSettled(true);
       }
     });
     const disposeEmbeddedLoginOpen = ssoApi.onEmbeddedLoginOpen((request) => {
+      setDesktopSsoLoginSettled(false);
       setDesktopSsoLoginDialog(request);
     });
 
@@ -3325,27 +3348,61 @@ export function AppShell() {
             aria-label={desktopSsoLoginDialog.label}
           >
             <header className="desktop-sso-login-modal-head">
-              <strong>{desktopSsoLoginDialog.label}</strong>
+              <strong>
+                {desktopSsoLoginSettled ? t("sidebar.sso.resultTitle") : desktopSsoLoginDialog.label}
+              </strong>
               <button
                 type="button"
                 className="desktop-sso-login-modal-close"
-                aria-label={t("sidebar.sso.cancelLogin")}
-                title={t("sidebar.sso.cancelLogin")}
+                aria-label={desktopSsoLoginSettled ? t("sidebar.sso.closeResult") : t("sidebar.sso.cancelLogin")}
+                title={desktopSsoLoginSettled ? t("sidebar.sso.closeResult") : t("sidebar.sso.cancelLogin")}
                 onClick={() => void handleDesktopSsoLoginDialogClose()}
               >
                 <span aria-hidden="true">x</span>
               </button>
             </header>
             <div className="desktop-sso-login-modal-frame">
-              {createElement("webview", {
-                key: `${desktopSsoLoginDialog.partition}:${desktopSsoLoginDialog.url}`,
-                src: desktopSsoLoginDialog.url,
-                title: desktopSsoLoginDialog.label,
-                className: "desktop-sso-login-webview",
-                partition: desktopSsoLoginDialog.partition,
-                useragent: desktopSsoLoginDialog.userAgent,
-                style: { width: "100%", height: "100%", border: "none" }
-              })}
+              {desktopSsoLoginSettled && desktopSsoStatus ? (
+                <div className="desktop-sso-login-result" role="status">
+                  <div className="desktop-sso-login-result-copy">
+                    <strong>{desktopSsoStatus.message}</strong>
+                    {desktopSsoStatus.error ? <p>{desktopSsoStatus.error}</p> : null}
+                  </div>
+                  <div className="desktop-sso-login-result-steps">
+                    {([
+                      ["session", t("sidebar.sso.sessionStep")],
+                      ["userInfo", t("sidebar.sso.userInfoStep")],
+                      ["accessToken", t("sidebar.sso.accessTokenStep")]
+                    ] as const).map(([step, label]) => {
+                      const completed = desktopSsoStatus.completedSteps[step];
+                      return (
+                        <div className="desktop-sso-login-result-step" key={step}>
+                          <span>{label}</span>
+                          <span className={completed ? "is-complete" : "is-incomplete"}>
+                            {completed ? t("sidebar.sso.stepReady") : t("sidebar.sso.stepNotReady")}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="desktop-sso-login-result-actions">
+                    <button type="button" onClick={() => void handleDesktopSsoLogin()}>
+                      {t("sidebar.sso.retry")}
+                    </button>
+                    <button type="button" onClick={() => void handleDesktopSsoLoginDialogClose()}>
+                      {t("sidebar.sso.closeResult")}
+                    </button>
+                  </div>
+                </div>
+              ) : createElement("webview", {
+                  key: `${desktopSsoLoginDialog.partition}:${desktopSsoLoginDialog.url}`,
+                  src: desktopSsoLoginDialog.url,
+                  title: desktopSsoLoginDialog.label,
+                  className: "desktop-sso-login-webview",
+                  partition: desktopSsoLoginDialog.partition,
+                  useragent: desktopSsoLoginDialog.userAgent,
+                  style: { width: "100%", height: "100%", border: "none" }
+                })}
             </div>
           </section>
         </div>

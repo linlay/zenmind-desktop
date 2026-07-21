@@ -35,11 +35,16 @@ config/desktop/sso.json
 ```text
 loginCompletionUrls 命中
   -> browserSession Cookie 校验成功 -> sso-session.json
-  -> cookie userInfo 成功 -> sso-user-info.json
+  -> 已验证响应头取得稳定用户 ID -> sso-user-info.json
+  -> cookie userInfo 可选增强用户资料
   -> cookieAccessTokenExchange 成功 -> sso-access-token.txt
 ```
 
 三个文件互不代写。后一步失败只更新运行时的 warning/error，不删除本次已经成功的文件；因此 access token 交换返回 401 时，Desktop 仍保持浏览器登录态和已经取得的用户信息。新 session 验证成功后才清理上一 session 的下游 user-info/access-token，避免不同账号的数据混用。标准 OIDC 从验证后的 ID token 先写基础 user-info，Bearer userinfo 成功时再增强该文件。
+
+session 验证成功后 `authenticated=true`，但当前登录尝试继续保持 `pending=true`。userinfo 与 access token 两步都尝试结束后才统一 finalize；三步全成功时登录 WebView 自动关闭，部分成功或失败时 WebView 被逐项结果面板替换，由用户选择关闭或重试。Cookie SSO 的基础用户信息来自同一次已验证 `/oauth2/auth` 响应中配置的 `userInfoHeaders`：`sub`（稳定用户 ID）是唯一必需字段，email 与 name 均可为空，name 缺失时使用 `sub` 显示。`/oauth2/userinfo` 仅做可选增强，空 email 不会把已经完成的 userInfo 步骤改为失败。只有响应头和增强接口都没有稳定用户 ID 时，token 成功才形成 `{session:true,userInfo:false,accessToken:true}` 的两文件状态。
+
+普通登录或部分成功页的“重试”继续复用专用 SSO partition 的上游会话。已登录账号菜单只显示“退出登录”；注销同时清理三个凭据文件、专用 SSO partition 的全部 Cookie，以及默认 session 中配置所知 SSO origins 的 Cookie，但不触碰其他网站 Cookie。用户需要切换账号时，先退出，再重新登录选择账号。
 
 Tunnel Hub 注册只使用由 `siteTokenBridge` 换取的 `sso-site-token.json`；普通 Desktop 登录写入的 `state/desktop/sso-access-token.txt` 不参与 Tunnel 注册。
 
@@ -75,7 +80,8 @@ Token bridge 类型：
 ## 约束与注意事项
 
 - Desktop 本地凭据写入 `secrets/` 或 `state/`，不要进入 `config/` 文档示例。
-- `DesktopSsoStatus.completedSteps` 分别反映 session、userInfo、accessToken 是否完成；session 成功即 `authenticated=true`，token 缺失时 UI 显示受限登录状态。
+- `DesktopSsoStatus.completedSteps` 分别反映 session、userInfo、accessToken 是否完成；session 成功即 `authenticated=true`，但在剩余步骤 finalize 前保持 `pending=true`。userinfo 或 token 任一缺失时，侧栏和结果面板必须显示对应受限登录状态。
+- Cookie SSO 只信任已验证 browserSession 响应头或 Cookie userinfo 返回的稳定用户 ID；不得从未经验证的 access token claims 伪造用户信息。email 不是身份成功条件，显示名缺失时回退到稳定用户 ID。
 - Cookie 只保存在 Electron 的持久化 SSO partition，不写入上述三个状态文件，也不得进入日志。
 - macOS/Linux 和 Windows 均通过 Electron home/runtime 路径解析状态目录；macOS/Linux 上三个文件保持 `0600`，不得硬编码用户目录。
 - `identity-center` 是 token 签发与校验基础，不进入 webview bridge 协议名称；嵌入页只依赖 Desktop agent auth bridge。

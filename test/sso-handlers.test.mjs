@@ -9,7 +9,13 @@ const require = createRequire(import.meta.url);
 
 const { registerSsoIpcHandlers } = require("../dist-electron/main/ipc/sso-handlers.js");
 const { createDesktopSsoController } = require("../dist-electron/main/sso-controller.js");
-const { __testInternals, failDesktopSsoFlow, getDesktopSsoStatus } = require("../dist-electron/main/oidc-sso.js");
+const {
+  __testInternals,
+  failDesktopSsoFlow,
+  finalizeDesktopSsoLoginAttempt,
+  getDesktopSsoStatus,
+  startDesktopSsoLogin
+} = require("../dist-electron/main/oidc-sso.js");
 
 function createApp(homePath) {
   return {
@@ -61,6 +67,7 @@ function createHarness(startResult, options = {}) {
     openEmbeddedLoginDialog: [],
     openSystemBrowserUrl: [],
     siteTokenBridgeTickets: [],
+    clearBrowserCookies: [],
     broadcasts: [],
     kanbanRefreshes: 0,
     tunnelHubStops: 0
@@ -81,7 +88,7 @@ function createHarness(startResult, options = {}) {
         calls.siteTokenBridgeTickets.push(ticket);
         return true;
       },
-      clearBrowserCookies: async () => undefined,
+      clearBrowserCookies: async () => { calls.clearBrowserCookies.push(true); },
       clearWebSessionCookies: async () => undefined,
       clearSiteTokenBridgeCookies: async () => undefined,
       openBrowserUrl: async (input) => {
@@ -256,6 +263,7 @@ test("desktop sso logout stops Tunnel Hub runtime", async () => {
 
   assert.equal(result.ok, true);
   assert.equal(calls.tunnelHubStops, 1);
+  assert.deepEqual(calls.clearBrowserCookies, [true]);
 });
 
 test("desktop sso web session exchange uses configured provider", async (t) => {
@@ -324,6 +332,7 @@ test("desktop sso web session exchange uses configured provider", async (t) => {
 function createCookieSsoControllerFixture(t, name) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), name));
   t.after(() => {
+    __testInternals.closeCallbackServer();
     failDesktopSsoFlow("reset test state");
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -337,13 +346,18 @@ function createCookieSsoControllerFixture(t, name) {
     loginCompletionUrls: ["https://ai.example.test/"],
     browserSession: {
       url: "https://ai.example.test/oauth2/auth",
-      successStatuses: [200, 202]
+      successStatuses: [200, 202],
+      userInfoHeaders: {
+        sub: "x-auth-request-user",
+        name: "x-auth-request-preferred-username",
+        email: "x-auth-request-email"
+      }
     },
     userInfo: {
       url: "https://ai.example.test/oauth2/userinfo",
       authMode: "cookie",
-      required: true,
-      subPath: "email",
+      required: false,
+      subPath: "user",
       namePath: "preferredUsername",
       emailPath: "email"
     },
@@ -374,13 +388,77 @@ function createCookieSsoControllerFixture(t, name) {
   return { app, controller };
 }
 
+test("desktop sso logout clears every dedicated-partition cookie but scopes default-session cleanup", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-switch-cookies-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: "https://ai.example.test",
+    loginUrl: "https://ai.example.test/login",
+    appendLoginState: false,
+    loginCompletionUrls: ["https://ai.example.test/"]
+  });
+
+  const defaultGets = [];
+  const defaultRemoves = [];
+  const partitionGets = [];
+  const partitionRemoves = [];
+  const defaultSession = {
+    cookies: {
+      set: async () => undefined,
+      get: async (filter) => {
+        defaultGets.push(filter);
+        return filter.url ? [{ name: "_oauth2_proxy", value: "default", domain: "ai.example.test", path: "/", secure: true }] : [];
+      },
+      remove: async (url, name) => { defaultRemoves.push({ url, name }); }
+    }
+  };
+  const partitionSession = {
+    cookies: {
+      set: async () => undefined,
+      get: async (filter) => {
+        partitionGets.push(filter);
+        if (Object.keys(filter).length === 0) {
+          return [
+            { name: "_oauth2_proxy", value: "sso", domain: ".ai.example.test", path: "/", secure: true },
+            { name: "eiam_session", value: "identity", domain: ".identity.example.test", path: "/oauth2", secure: true }
+          ];
+        }
+        return [{ name: "_oauth2_proxy", value: "sso", domain: ".ai.example.test", path: "/", secure: true }];
+      },
+      remove: async (url, name) => { partitionRemoves.push({ url, name }); }
+    }
+  };
+  const controller = createDesktopSsoController({
+    app,
+    platform: "darwin",
+    session: {
+      defaultSession,
+      fromPartition: () => partitionSession
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
+    openExternal: async () => undefined
+  });
+
+  await controller.clearBrowserCookies();
+
+  assert.equal(defaultGets.every((filter) => typeof filter.url === "string"), true);
+  assert.equal(partitionGets.some((filter) => Object.keys(filter).length === 0), true);
+  assert.equal(defaultRemoves.some(({ url }) => url.includes("identity.example.test")), false);
+  assert.equal(partitionRemoves.some(({ url, name }) =>
+    url === "https://identity.example.test/oauth2" && name === "eiam_session"), true);
+});
+
 test("desktop sso cookie flow keeps session and userinfo when access token returns 401", async (t) => {
   const { app, controller } = createCookieSsoControllerFixture(t, "zenmind-sso-cookie-401-");
   const sessionStatus = await controller.validateBrowserSession(async () => ({
     ok: true,
     status: 202,
     statusText: "Accepted",
-    headers: new Headers(),
+    headers: new Headers({ "x-auth-request-user": "107078" }),
     text: async () => ""
   }));
   assert.equal(sessionStatus.authenticated, true);
@@ -390,10 +468,7 @@ test("desktop sso cookie flow keeps session and userinfo when access token retur
     status: 200,
     statusText: "OK",
     headers: new Headers({ "content-type": "application/json" }),
-    json: async () => ({
-      email: "cutej.user@example.test",
-      preferredUsername: "CuteJ User"
-    })
+    json: async () => ({ email: "" })
   }));
 
   await assert.rejects(
@@ -414,7 +489,60 @@ test("desktop sso cookie flow keeps session and userinfo when access token retur
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), false);
   const status = getDesktopSsoStatus(app);
   assert.equal(status.authenticated, true);
-  assert.equal(status.user.sub, "cutej.user@example.test");
+  assert.equal(status.user.sub, "107078");
+  assert.equal(status.user.name, "107078");
+  assert.equal(status.user.email, undefined);
+});
+
+test("desktop sso accepts a verified user id when email and name are empty", async (t) => {
+  const { app, controller } = createCookieSsoControllerFixture(t, "zenmind-sso-cookie-user-id-");
+  const sessionStatus = await controller.validateBrowserSession(async () => ({
+    ok: true,
+    status: 202,
+    statusText: "Accepted",
+    headers: new Headers({
+      "x-auth-request-user": "107078",
+      "x-auth-request-email": ""
+    }),
+    text: async () => ""
+  }));
+  assert.equal(sessionStatus.authenticated, true);
+  assert.equal(sessionStatus.user.sub, "107078");
+  assert.equal(sessionStatus.user.name, "107078");
+  assert.equal(sessionStatus.user.email, undefined);
+
+  const optionalUserInfoStatus = await controller.fetchBrowserUserInfo(async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers({ "content-type": "application/json" }),
+    json: async () => ({ email: "" })
+  }));
+  assert.equal(optionalUserInfoStatus.user.sub, "107078");
+
+  await controller.exchangeBrowserCookieAccessToken(async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers({ "content-type": "text/plain" }),
+    json: async () => ({}),
+    text: async () => "access-token-user-id"
+  }));
+  const finalStatus = finalizeDesktopSsoLoginAttempt();
+  assert.equal(finalStatus.pending, false);
+  assert.deepEqual(finalStatus.completedSteps, {
+    session: true,
+    userInfo: true,
+    accessToken: true
+  });
+
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoUserInfoFilePath(app));
+  const storedUser = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-user-info.json"), "utf8"));
+  assert.equal(storedUser.sub, "107078");
+  assert.equal(storedUser.name, "107078");
+  assert.equal(storedUser.email, undefined);
+  assert.equal(storedUser.source, "browser_session");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "access-token-user-id");
 });
 
 test("desktop sso cookie flow still stores access token when userinfo fails", async (t) => {
@@ -426,16 +554,13 @@ test("desktop sso cookie flow still stores access token when userinfo fails", as
     headers: new Headers(),
     text: async () => ""
   }));
-  await assert.rejects(
-    controller.fetchBrowserUserInfo(async () => ({
-      ok: false,
-      status: 503,
-      statusText: "Unavailable",
-      headers: new Headers(),
-      text: async () => "temporarily unavailable"
-    })),
-    /503/u
-  );
+  await controller.fetchBrowserUserInfo(async () => ({
+    ok: false,
+    status: 503,
+    statusText: "Unavailable",
+    headers: new Headers(),
+    text: async () => "temporarily unavailable"
+  }));
   const accessToken = await controller.exchangeBrowserCookieAccessToken(async () => ({
     ok: true,
     status: 200,
@@ -456,6 +581,70 @@ test("desktop sso cookie flow still stores access token when userinfo fails", as
     userInfo: false,
     accessToken: true
   });
+});
+
+test("desktop sso keeps the webview pending until cookie userinfo and token settle", async (t) => {
+  const { app, controller } = createCookieSsoControllerFixture(t, "zenmind-sso-cookie-finalize-");
+  const broadcasts = [];
+  const started = await startDesktopSsoLogin(app, {
+    onStatusChanged: (status) => broadcasts.push(status)
+  });
+  assert.equal(started.ok, true, started.message);
+
+  const sessionStatus = await controller.validateBrowserSession(async () => ({
+    ok: true,
+    status: 202,
+    statusText: "Accepted",
+    headers: new Headers(),
+    text: async () => ""
+  }));
+  assert.equal(sessionStatus.authenticated, true);
+  assert.equal(sessionStatus.pending, true);
+  assert.equal(broadcasts.at(-1).pending, true);
+
+  await controller.fetchBrowserUserInfo(async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers({ "content-type": "application/json" }),
+    json: async () => ({ email: "", preferredUsername: "Missing Email" })
+  }));
+  await controller.exchangeBrowserCookieAccessToken(async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers({ "content-type": "text/plain" }),
+    json: async () => ({}),
+    text: async () => "access-token-2"
+  }));
+
+  const pendingStatus = getDesktopSsoStatus(app);
+  assert.equal(pendingStatus.pending, true);
+  assert.deepEqual(pendingStatus.completedSteps, {
+    session: true,
+    userInfo: false,
+    accessToken: true
+  });
+
+  const finalStatus = finalizeDesktopSsoLoginAttempt();
+  assert.equal(finalStatus.authenticated, true);
+  assert.equal(finalStatus.pending, false);
+  assert.equal(finalStatus.user, null);
+  assert.match(finalStatus.message, /用户信息未就绪|user information is not ready/ui);
+  assert.equal(finalStatus.error, undefined);
+  assert.equal(broadcasts.at(-1).pending, false);
+
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), false);
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "access-token-2");
+
+  failDesktopSsoFlow("simulate restart");
+  const restoredStatus = getDesktopSsoStatus(app);
+  assert.equal(restoredStatus.authenticated, true);
+  assert.equal(restoredStatus.user, null);
+  assert.deepEqual(restoredStatus.completedSteps, finalStatus.completedSteps);
+  assert.match(restoredStatus.message, /用户信息未就绪|user information is not ready/ui);
 });
 
 test("desktop sso cookie flow writes no state when browser session validation fails", async (t) => {

@@ -4515,25 +4515,30 @@ export function AppSidebar({
             <span className="sidebar-account-menu-label">
               {desktopSsoUserLabel}
             </span>
-            {!desktopSsoStatus.completedSteps.accessToken ? (
+            {desktopSsoStatus.pending ||
+            desktopSsoStatus.error ||
+            !desktopSsoStatus.completedSteps.userInfo ||
+            !desktopSsoStatus.completedSteps.accessToken ? (
               <span className="sidebar-account-menu-status">
                 {desktopSsoStatus.message}
               </span>
             ) : null}
           </span>
-          <button
-            type="button"
-            className="sidebar-account-menu-logout"
-            onClick={handleDesktopSsoLogoutClick}
-            disabled={desktopSsoBusy}
-            role="menuitem"
-            aria-label={desktopSsoLogoutLabel}
-            title={desktopSsoLogoutLabel}
-          >
-            <span className="sidebar-account-menu-logout-label">
-              {desktopSsoLogoutLabel}
-            </span>
-          </button>
+          <span className="sidebar-account-menu-user-actions">
+            <button
+              type="button"
+              className="sidebar-account-menu-logout"
+              onClick={handleDesktopSsoLogoutClick}
+              disabled={desktopSsoBusy}
+              role="menuitem"
+              aria-label={desktopSsoLogoutLabel}
+              title={desktopSsoLogoutLabel}
+            >
+              <span className="sidebar-account-menu-logout-label">
+                {desktopSsoLogoutLabel}
+              </span>
+            </button>
+          </span>
         </div>
       );
     }
@@ -4574,6 +4579,7 @@ export function AppSidebar({
       return (
         desktopSsoStatus.user?.name?.trim() ||
         desktopSsoStatus.user?.email?.trim() ||
+        desktopSsoStatus.user?.sub?.trim() ||
         t("sidebar.sso.signedIn")
       );
     }

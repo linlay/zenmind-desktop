@@ -71,6 +71,14 @@ export type DesktopSsoBrowserSessionConfig = {
   headers: Record<string, string>;
   body?: string;
   successStatuses: number[];
+  userInfoHeaders?: DesktopSsoBrowserSessionUserInfoHeaders;
+};
+
+export type DesktopSsoBrowserSessionUserInfoHeaders = {
+  sub: string;
+  name?: string;
+  email?: string;
+  avatarUrl?: string;
 };
 
 type AccessTokenCookieSameSite = "lax" | "strict" | "no_restriction";
@@ -423,12 +431,12 @@ function createAuthenticatedStatus(
     userInfo: Boolean(claims),
     accessToken: Boolean(currentAccessToken)
   }),
-  options: { message?: string; error?: string } = {}
+  options: { message?: string; error?: string; pending?: boolean } = {}
 ): DesktopSsoStatus {
   return {
     configured: true,
     authenticated: true,
-    pending: false,
+    pending: options.pending ?? false,
     user: claims,
     completedSteps: { ...completedSteps },
     message: options.message || (
@@ -439,6 +447,19 @@ function createAuthenticatedStatus(
     ...(options.error ? { error: options.error } : {}),
     updatedAt: new Date().toISOString()
   };
+}
+
+function getCompletedDesktopSsoMessage(
+  completedSteps: DesktopSsoStatus["completedSteps"],
+  hasError = false
+) {
+  if (!completedSteps.userInfo) {
+    return t("sso.completedWithoutUserInfo");
+  }
+  if (!completedSteps.accessToken) {
+    return t("sso.completedWithoutAccessToken");
+  }
+  return hasError ? t("sso.completedWithWarning") : t("sso.completed");
 }
 
 function createFailedStatus(message: string): DesktopSsoStatus {
@@ -839,6 +860,31 @@ function normalizeBrowserSessionSuccessStatuses(record: Record<string, unknown>)
   return [...new Set(statuses)];
 }
 
+function normalizeBrowserSessionUserInfoHeaders(
+  record: Record<string, unknown>
+): DesktopSsoBrowserSessionUserInfoHeaders | undefined {
+  if (!("userInfoHeaders" in record)) {
+    return undefined;
+  }
+  const headersRecord = getRecordObject(record, "userInfoHeaders");
+  if (!headersRecord) {
+    throw new Error(t("sso.config.browserSessionUserInfoHeadersObject"));
+  }
+  const sub = getRecordString(headersRecord, "sub");
+  if (!sub) {
+    throw new Error(t("sso.config.browserSessionUserInfoSubHeaderRequired"));
+  }
+  const name = getRecordString(headersRecord, "name");
+  const email = getRecordString(headersRecord, "email");
+  const avatarUrl = getRecordString(headersRecord, "avatarUrl");
+  return {
+    sub,
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(avatarUrl ? { avatarUrl } : {})
+  };
+}
+
 function normalizeBrowserSessionConfig(
   record: Record<string, unknown>,
   config: OidcConfig
@@ -857,13 +903,15 @@ function normalizeBrowserSessionConfig(
   const method = normalizeCookieAccessTokenExchangeMethod(sessionRecord);
   const headers = normalizeCookieAccessTokenExchangeHeaders(sessionRecord);
   const body = normalizeCookieAccessTokenExchangeBody(sessionRecord, method, headers);
+  const userInfoHeaders = normalizeBrowserSessionUserInfoHeaders(sessionRecord);
   const baseUrl = config.browserOrigin || config.loginUrl || config.authorizeUrl;
   return {
     url: normalizeHttpUrl(rawUrl, baseUrl, "browserSession.url"),
     method,
     headers,
     ...(body !== undefined ? { body } : {}),
-    successStatuses: normalizeBrowserSessionSuccessStatuses(sessionRecord)
+    successStatuses: normalizeBrowserSessionSuccessStatuses(sessionRecord),
+    ...(userInfoHeaders ? { userInfoHeaders } : {})
   };
 }
 
@@ -1315,6 +1363,13 @@ type DesktopSsoSessionMetadata = {
   authMode?: "oidc" | "browser-cookie" | "server";
 };
 
+type DesktopSsoUserInfoSource =
+  | "id_token"
+  | "userinfo"
+  | "browser_session"
+  | "cookie_userinfo"
+  | "sso";
+
 function saveSession(
   app: App,
   status: DesktopSsoStatus,
@@ -1337,7 +1392,7 @@ function saveSession(
 function saveUserInfoFile(
   app: Pick<App, "getPath">,
   user: DesktopSsoClaims,
-  source: "id_token" | "userinfo" | "cookie_userinfo" | "sso" = "sso"
+  source: DesktopSsoUserInfoSource = "sso"
 ) {
   const filePath = getDesktopSsoUserInfoFilePath(app);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -1492,9 +1547,7 @@ function loadSession(app: App) {
         accessToken: Boolean(currentAccessToken)
       });
       currentStatus = createAuthenticatedStatus(restoredUser, completedSteps, {
-        message: completedSteps.accessToken
-          ? t("sso.completed")
-          : t("sso.completedWithoutAccessToken")
+        message: getCompletedDesktopSsoMessage(completedSteps)
       });
       currentStatus.updatedAt = typeof parsed.updatedAt === "string"
         ? parsed.updatedAt
@@ -1511,13 +1564,15 @@ function beginAuthenticatedSession(
   metadata: Required<Pick<DesktopSsoSessionMetadata, "issuer" | "audience" | "authMode">>,
   idToken = ""
 ) {
-  const status = createAuthenticatedStatus(null, createCompletedSteps({ session: true }));
+  const status = createAuthenticatedStatus(null, createCompletedSteps({ session: true }), {
+    pending: currentStatus.pending,
+    message: currentStatus.pending ? t("sso.completingLogin") : t("sso.completedWithoutUserInfo")
+  });
   saveSession(app, status, idToken, metadata);
   removeUserInfoFile(app);
   removeAccessTokenFile(app);
   currentAccessToken = "";
   currentIdToken = idToken.trim();
-  pendingLogin = null;
   setCurrentStatus(status);
   return cloneStatus(status);
 }
@@ -1525,18 +1580,29 @@ function beginAuthenticatedSession(
 function completeUserInfoStep(
   app: App,
   user: DesktopSsoClaims,
-  source: "id_token" | "userinfo" | "cookie_userinfo" | "sso"
+  source: DesktopSsoUserInfoSource
 ) {
   if (!currentStatus.authenticated || !currentStatus.completedSteps.session) {
     throw new Error(t("sso.sessionRequiredForUserInfo"));
   }
-  saveUserInfoFile(app, user, source);
+  const sub = user.sub.trim();
+  const normalizedUser: DesktopSsoClaims = {
+    ...user,
+    sub,
+    name: user.name?.trim() || sub
+  };
+  saveUserInfoFile(app, normalizedUser, source);
   const completedSteps = createCompletedSteps({
     ...currentStatus.completedSteps,
     session: true,
     userInfo: true
   });
-  const status = createAuthenticatedStatus(user, completedSteps);
+  const status = createAuthenticatedStatus(normalizedUser, completedSteps, {
+    pending: currentStatus.pending,
+    message: currentStatus.pending
+      ? t("sso.completingLogin")
+      : getCompletedDesktopSsoMessage(completedSteps)
+  });
   setCurrentStatus(status);
   return cloneStatus(status);
 }
@@ -1554,23 +1620,37 @@ function completeAccessTokenStep(app: Pick<App, "getPath">, accessToken: string)
       session: true,
       accessToken: true
     });
-    const status = createAuthenticatedStatus(currentStatus.user, completedSteps);
+    const status = createAuthenticatedStatus(currentStatus.user, completedSteps, {
+      pending: currentStatus.pending,
+      message: currentStatus.pending
+        ? t("sso.completingLogin")
+        : getCompletedDesktopSsoMessage(completedSteps)
+    });
     setCurrentStatus(status);
   }
   return cloneStatus(currentStatus);
 }
 
 export function failDesktopSsoStep(message: string): DesktopSsoStatus {
-  pendingLogin = null;
-  pendingSiteTokenBridge = null;
   if (!currentStatus.authenticated || !currentStatus.completedSteps.session) {
     return failDesktopSsoFlow(message);
   }
+  return finalizeDesktopSsoLoginAttempt(message);
+}
+
+export function finalizeDesktopSsoLoginAttempt(
+  errors: string | string[] = []
+): DesktopSsoStatus {
+  const messages = (Array.isArray(errors) ? errors : [errors])
+    .map((message) => message.trim())
+    .filter(Boolean);
+  pendingLogin = null;
+  if (!currentStatus.authenticated || !currentStatus.completedSteps.session) {
+    return failDesktopSsoFlow(messages.join("; ") || t("sso.loginFailed"));
+  }
   const status = createAuthenticatedStatus(currentStatus.user, currentStatus.completedSteps, {
-    message: currentStatus.completedSteps.accessToken
-      ? t("sso.completedWithWarning")
-      : t("sso.completedWithoutAccessToken"),
-    error: message
+    message: getCompletedDesktopSsoMessage(currentStatus.completedSteps, messages.length > 0),
+    ...(messages.length > 0 ? { error: messages.join("; ") } : {})
   });
   setCurrentStatus(status);
   return cloneStatus(status);
@@ -2745,7 +2825,7 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
     });
     const exchangedStatus = completeUserInfoStep(app, hookClaims, "sso");
     await callbackHooks.onAfterStatusChanged?.(exchangedStatus, statusContext);
-    return exchangedStatus;
+    return finalizeDesktopSsoLoginAttempt();
   }
   const { code } = normalizeCallbackRequest(requestUrl, pendingLogin.state);
   const loginConfig = pendingLogin.config;
@@ -2770,7 +2850,7 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
     status = completeUserInfoStep(app, hookClaims, "sso");
   }
   await callbackHooks.onAfterStatusChanged?.(status, statusContext);
-  return status;
+  return finalizeDesktopSsoLoginAttempt();
 }
 
 function isSiteTokenBridgeCallbackRequest(requestUrl: URL) {
@@ -3056,9 +3136,7 @@ export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
   pendingSiteTokenBridge = null;
   if (currentStatus.authenticated && currentStatus.pending && currentStatus.completedSteps.session) {
     const status = createAuthenticatedStatus(currentStatus.user, currentStatus.completedSteps, {
-      message: currentStatus.completedSteps.accessToken
-        ? t("sso.completedWithWarning")
-        : t("sso.completedWithoutAccessToken"),
+      message: getCompletedDesktopSsoMessage(currentStatus.completedSteps, true),
       error: message
     });
     setCurrentStatus(status);
@@ -3228,7 +3306,8 @@ export function getDesktopSsoBrowserSessionConfig(app: Pick<App, "getPath">) {
   return {
     ...config,
     headers: { ...config.headers },
-    successStatuses: [...config.successStatuses]
+    successStatuses: [...config.successStatuses],
+    ...(config.userInfoHeaders ? { userInfoHeaders: { ...config.userInfoHeaders } } : {})
   };
 }
 
@@ -3261,6 +3340,35 @@ export function completeDesktopSsoBrowserSession(app: App): DesktopSsoStatus {
   });
 }
 
+export function completeDesktopSsoBrowserSessionUserInfo(
+  app: App,
+  userInfo: { sub: string; name?: string; email?: string; avatarUrl?: string }
+): DesktopSsoStatus {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured) {
+    return createUnconfiguredStatus(configResult.message);
+  }
+  if (configResult.error || !configResult.config?.browserSession) {
+    return createFailedStatus(configResult.error || t("sso.config.browserSessionMissing"));
+  }
+  const sub = normalizeStringClaim(userInfo.sub);
+  if (!sub) {
+    return cloneStatus(currentStatus);
+  }
+  const name = normalizeStringClaim(userInfo.name);
+  const email = normalizeStringClaim(userInfo.email);
+  const avatarUrl = normalizeStringClaim(userInfo.avatarUrl);
+  const claimsConfig = configResult.config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG;
+  return completeUserInfoStep(app, {
+    sub,
+    issuer: configResult.config.browserOrigin || new URL(configResult.config.browserSession.url).origin,
+    audience: claimsConfig.audience,
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(avatarUrl ? { avatarUrl } : {})
+  }, "browser_session");
+}
+
 export function completeDesktopSsoBrowserUserInfo(app: App, userInfo: unknown): DesktopSsoStatus {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured) {
@@ -3269,7 +3377,16 @@ export function completeDesktopSsoBrowserUserInfo(app: App, userInfo: unknown): 
   if (configResult.error || !configResult.config) {
     return createFailedStatus(configResult.error || t("sso.missingOidcConfig"));
   }
-  const claims = createDesktopSsoCookieUserInfoClaims(userInfo, configResult.config);
+  let claims = createDesktopSsoCookieUserInfoClaims(userInfo, configResult.config);
+  if (currentStatus.user?.sub && currentStatus.user.sub !== claims.sub) {
+    if (configResult.config.userInfo?.required) {
+      throw new Error(t("sso.token.userInfoSubMismatch"));
+    }
+    return cloneStatus(currentStatus);
+  }
+  if (currentStatus.user?.sub === claims.sub) {
+    claims = { ...currentStatus.user, ...claims };
+  }
   return completeUserInfoStep(app, claims, "cookie_userinfo");
 }
 
@@ -3531,6 +3648,7 @@ export const __testInternals = {
   cancelDesktopSsoLogin,
   completeDesktopSsoBrowserLogin,
   completeDesktopSsoBrowserSession,
+  completeDesktopSsoBrowserSessionUserInfo,
   completeDesktopSsoBrowserUserInfo,
   completeDesktopSsoCookieLogin,
   getDesktopSsoAccessTokenFilePath,

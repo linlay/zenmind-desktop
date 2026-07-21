@@ -18,6 +18,7 @@ import { issueAgentAccessToken } from "../agent-auth";
 import {
   cancelDesktopSsoLogin,
   completeDesktopSsoCookieLogin,
+  finalizeDesktopSsoLoginAttempt,
   failDesktopSsoFlow,
   failDesktopSsoStep,
   getDesktopSsoStatus,
@@ -549,6 +550,7 @@ export function createMainProcessRuntime() {
         }
         completeDesktopSsoCookieLogin(app, accessToken);
         await openConfiguredDesktopSsoSiteTokenBridge();
+        finalizeDesktopSsoLoginAttempt();
         return;
       }
       sessionCompleted = true;
@@ -582,9 +584,7 @@ export function createMainProcessRuntime() {
           safeConsoleError("failed to open desktop sso site token bridge", { url, error: message });
         }
       }
-      if (stepErrors.length > 0) {
-        failDesktopSsoStep(stepErrors.join("; "));
-      }
+      finalizeDesktopSsoLoginAttempt(stepErrors);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (sessionCompleted) {
