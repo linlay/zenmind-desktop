@@ -74,6 +74,7 @@ export interface ShellIpcHandlerContextDependencies {
   openLogViewerWindow?: (...args: any[]) => unknown;
   issueAgentPlatformAccessToken?: (...args: any[]) => unknown;
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
+  setGlobalSearchOverlayVisible?: (visible: boolean) => void;
 }
 
 export function createShellIpcHandlerOptions(
@@ -90,7 +91,8 @@ export function createShellIpcHandlerOptions(
     reportRendererDiagnostic: dependencies.reportRendererDiagnostic,
     openLogViewerWindow: dependencies.openLogViewerWindow,
     issueAgentPlatformAccessToken: dependencies.issueAgentPlatformAccessToken,
-    desktopLogStreamSubscriptions: dependencies.desktopLogStreamSubscriptions
+    desktopLogStreamSubscriptions: dependencies.desktopLogStreamSubscriptions,
+    setGlobalSearchOverlayVisible: dependencies.setGlobalSearchOverlayVisible
   };
 }
 

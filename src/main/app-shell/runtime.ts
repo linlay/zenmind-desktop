@@ -296,6 +296,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     showMainWindow,
     navigateMainWindow,
     refreshMainWindowAppearance,
+    setGlobalSearchOverlayVisible: (visible: boolean) => mainWindowLifecycle.setGlobalSearchOverlayVisible(visible),
     createAppTray,
     buildApplicationMenu,
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),

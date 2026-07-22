@@ -1195,6 +1195,7 @@ export function createMainProcessRuntime() {
         buildApplicationMenu,
         refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
         refreshMainWindowAppearance: () => appShellRuntime.refreshMainWindowAppearance(),
+        setGlobalSearchOverlayVisible: (visible) => appShellRuntime.setGlobalSearchOverlayVisible(visible),
         emitLocaleChanged: settingsRuntime.emitLocaleChanged,
       captureDesktopScreenshotForWebview,
       reportRendererDiagnostic,

@@ -77,6 +77,7 @@ const api: DesktopApi = {
     moveWindowBy: (delta: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.moveWindowBy", delta),
     beginWindowDrag: (point: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.beginWindowDrag", point),
     endWindowDrag: () => ipcRenderer.invoke("desktopShell.endWindowDrag"),
+    setGlobalSearchOverlayVisible: (visible: boolean) => ipcRenderer.send("desktopShell.setGlobalSearchOverlayVisible", visible),
     getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
     onWindowStateChanged: (listener: DesktopWindowStateListener) => {
       const handleWindowStateChanged = (

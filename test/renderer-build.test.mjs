@@ -4128,6 +4128,10 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(contracts, /interface AssistantChatSearchResponse/);
   assert.match(contracts, /searchChats: \(request: AssistantChatSearchRequest\) => Promise<AssistantChatSearchResponse>/);
   assert.match(contracts, /onOpenGlobalSearch: \(listener: \(\) => void\) => \(\) => void/);
+  assert.match(contracts, /setGlobalSearchOverlayVisible: \(visible: boolean\) => void/);
+  assert.match(preload, /setGlobalSearchOverlayVisible:\s*\(visible: boolean\) => ipcRenderer\.send\("desktopShell\.setGlobalSearchOverlayVisible", visible\)/);
+  assert.match(overlay, /setGlobalSearchOverlayVisible\(true\)/);
+  assert.match(overlay, /setGlobalSearchOverlayVisible\(false\)/);
   assert.match(preload, /searchChats: \(request: AssistantChatSearchRequest\) => ipcRenderer\.invoke\("assistant\.searchChats", request\)/);
   assert.match(preload, /ipcRenderer\.on\("app\.openGlobalSearch"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.searchChats"/);
