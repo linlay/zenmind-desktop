@@ -86,6 +86,7 @@ type ShellIpcOptions = {
     message: string;
   }>;
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
+  setGlobalSearchOverlayVisible?: (visible: boolean) => void;
 };
 
 type DesktopDownloadPayload = {
@@ -311,6 +312,10 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   });
 
   ipcMain.handle("desktopShell.endWindowDrag", async () => endWindowDrag());
+
+  ipcMain.on("desktopShell.setGlobalSearchOverlayVisible", (_event: IpcMainEvent, visible: unknown) => {
+    options.setGlobalSearchOverlayVisible?.(visible === true);
+  });
 
   ipcMain.handle("clipboard.writeText", async (_event: IpcMainInvokeEvent, text: string) => {
     try {

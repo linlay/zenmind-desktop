@@ -441,6 +441,7 @@ export interface DesktopApi {
     moveWindowBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
+    setGlobalSearchOverlayVisible: (visible: boolean) => void;
     getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
     onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
   };

@@ -139,6 +139,7 @@ export type MainIpcRegistrationOptions = {
   buildApplicationMenu: () => void;
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance: () => void;
+  setGlobalSearchOverlayVisible: (visible: boolean) => void;
   emitLocaleChanged: (...args: any[]) => unknown;
   captureDesktopScreenshotForWebview: () => unknown;
   reportRendererDiagnostic: (...args: any[]) => unknown;
@@ -167,7 +168,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     reportRendererDiagnostic: options.reportRendererDiagnostic,
     openLogViewerWindow: options.openLogViewerWindow,
     issueAgentPlatformAccessToken: issueAgentAccessToken,
-    desktopLogStreamSubscriptions: logsRuntime.getDesktopLogSubscriptions()
+    desktopLogStreamSubscriptions: logsRuntime.getDesktopLogSubscriptions(),
+    setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible
   }));
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {

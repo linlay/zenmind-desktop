@@ -16,6 +16,8 @@ const WINDOWS_TITLEBAR_DARK = {
   color: "#111111",
   symbolColor: "#F2F2F2"
 };
+const WINDOWS_TITLEBAR_MASKED_LIGHT = "#D4D5D9";
+const WINDOWS_TITLEBAR_MASKED_DARK = "#0E0E0E";
 const WINDOWS_BACKGROUND_LIGHT = "#FFFFFF";
 const WINDOWS_BACKGROUND_DARK = "#111111";
 
@@ -166,7 +168,15 @@ export function buildMainWindowOptions(input: {
   };
 }
 
-function resolveWindowsTitleBarOverlay(shouldUseDarkColors: boolean) {
+function resolveWindowsTitleBarOverlay(shouldUseDarkColors: boolean, masked = false) {
+  if (masked) {
+    const color = shouldUseDarkColors ? WINDOWS_TITLEBAR_MASKED_DARK : WINDOWS_TITLEBAR_MASKED_LIGHT;
+    return {
+      color,
+      symbolColor: color,
+      height: WINDOWS_TITLEBAR_OVERLAY_HEIGHT
+    };
+  }
   const palette = shouldUseDarkColors ? WINDOWS_TITLEBAR_DARK : WINDOWS_TITLEBAR_LIGHT;
   return {
     ...palette,
@@ -663,6 +673,7 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
   options: MainWindowLifecycleControllerOptions<TWindow>
 ) {
   let pendingCloseCancel: (() => void) | null = null;
+  let globalSearchOverlayVisible = false;
 
   function cancelPendingClose() {
     pendingCloseCancel?.();
@@ -801,10 +812,15 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     if (options.platform === "win32") {
       const shouldUseDarkColors = options.nativeTheme?.shouldUseDarkColors ?? false;
       targetWindow.setBackgroundColor(resolveWindowsBackgroundColor(shouldUseDarkColors));
-      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors));
+      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors, globalSearchOverlayVisible));
       return;
     }
     targetWindow.setBackgroundColor("#FFFFFF");
+  }
+
+  function setGlobalSearchOverlayVisible(visible: boolean) {
+    globalSearchOverlayVisible = options.platform === "win32" && visible;
+    applyAppearance(options.getWindow());
   }
 
   function attachRendererDiagnostics(targetWindow: TWindow) {
@@ -833,7 +849,8 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     cancelPendingClose,
     getWindowForActivation,
     hideForClose,
-    normalizeBeforeShow
+    normalizeBeforeShow,
+    setGlobalSearchOverlayVisible
   };
 }
 
