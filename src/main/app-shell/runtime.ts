@@ -69,7 +69,6 @@ export type AppShellRuntimeOptions = {
   beginAppQuitWithoutConfirmation: () => void;
   requestAppQuit: () => void;
   openAssistantWorker: (request: AssistantWorkerOpenRequest) => Promise<void> | void;
-  showAssistantTargetWindow: (source: string) => Promise<unknown> | unknown;
   getDesktopPetEnabled: () => boolean;
   isDesktopPetSupported: () => boolean;
   showDesktopPetWindow: () => unknown;
@@ -130,9 +129,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
         focusComposerOnComplete: true
       });
     },
-    openAssistantTarget: (source) => {
-      void options.showAssistantTargetWindow(source);
-    },
+    showMainWindow: () => showMainWindow(),
     openSettings: () => showMainWindow("/settings"),
     showDesktopPet: () => options.showDesktopPetWindow(),
     hideDesktopPet: () => options.hideDesktopPetWindow(true),

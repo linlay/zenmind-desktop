@@ -5400,10 +5400,6 @@ test("assistant entrypoints restore core services before opening embedded webcli
     path.join(projectRoot, "src", "main", "assistant", "quick", "routing.ts"),
     "utf8"
   );
-  const trayController = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "app-shell", "tray.ts"),
-    "utf8"
-  );
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
@@ -5436,8 +5432,18 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /showAssistantTargetWindow\(\s*"assistant-worker",[\s\S]*?createAgentWebclientRoute/);
   assert.doesNotMatch(mainProcess, /AGENT_WEBCLIENT_APP_PATHNAMES/);
   assert.doesNotMatch(mainProcess, /scheduleAgentWebclientOpenRequest/);
-  assert.match(trayController, /openAssistantTarget\("tray-click"\)/);
-  assert.doesNotMatch(trayController, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
+});
+
+test("tray activation restores the app without replacing the current route", () => {
+  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+
+  assert.match(trayController, /showMainWindow:\s*\(\) => void;/);
+  assert.match(trayController, /tray\.on\("click", \(\) => \{\s*this\.options\.showMainWindow\(\);\s*\}\);/);
+  assert.match(trayController, /label: t\("tray\.openApp"[\s\S]{0,120}click: \(\) => this\.options\.showMainWindow\(\)/);
+  assert.doesNotMatch(trayController, /openAssistantTarget/);
+  assert.match(runtime, /showMainWindow:\s*\(\) => showMainWindow\(\)/);
+  assert.doesNotMatch(runtime, /showAssistantTargetWindow:\s*\(source: string\)/);
 });
 
 test("quit menu entries skip confirmation except keyboard accelerator", () => {
