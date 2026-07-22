@@ -381,7 +381,6 @@ export function createMainProcessRuntime() {
     beginAppQuitWithoutConfirmation,
     requestAppQuit,
     openAssistantWorker,
-    showAssistantTargetWindow,
     getDesktopPetEnabled: () => appState.desktopPetSettings?.enabled === true,
     isDesktopPetSupported: () => isDesktopPetSupportedPlatform(mainProcessContext.platform),
     showDesktopPetWindow,
