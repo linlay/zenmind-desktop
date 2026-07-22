@@ -3195,6 +3195,9 @@ export function AppSidebar({
         aria-label={t("settings.chat.defaultAgent")}
         onKeyDown={handleChatsDefaultAgentMenuKeyDown}
       >
+        <div className="sidebar-chats-agent-menu-label" role="presentation">
+          {t("sidebar.chats.defaultAgentMenuLabel")}
+        </div>
         {chatNavAgentOptions.map((agent) => (
           <button
             key={agent.agentKey}

@@ -153,6 +153,7 @@ export const zhCNMessages = {
   "sidebar.chat.viewMoreSimple": "查看更多",
   "sidebar.chat.unreadSuffix": "，未读 {count} 条",
   "sidebar.chats.newChat": "新建对话",
+  "sidebar.chats.defaultAgentMenuLabel": "设置对话的默认智能体",
   "sidebar.chats.defaultAgentUnavailable": "请先在助理设置中选择可用的 Chat 默认智能体。",
   "sidebar.chats.defaultAgentSaveFailed": "保存 Chat 默认智能体失败。",
   "sidebar.chats.empty": "暂无对话。鼠标悬停「对话」即可新建。",
