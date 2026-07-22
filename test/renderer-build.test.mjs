@@ -5969,6 +5969,27 @@ test("desktop pet drag ignores transient capture loss while the pointer is still
   assert.match(desktopPetController, /webContents\.on\("context-menu"[\s\S]{0,120}options\.endDrag\(\)/);
 });
 
+test("desktop pet drag restores the panel mode that was open before moving", () => {
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+  const globalStyles = readRendererStyles();
+
+  assert.match(
+    desktopPet,
+    /const desiredWindowMode: DesktopPetWindowMode = isPanelWindow[\s\S]{0,100}: isDragging[\s\S]{0,80}\? activeDragAnchorMode \?\? "base"/
+  );
+  assert.match(
+    desktopPet,
+    /function resolveCurrentDragAnchorMode\(\): DesktopPetDragAnchorMode \{[\s\S]{0,100}if \(shouldShowTaskPanel\)[\s\S]{0,160}if \(shouldShowPreviewPanel\)[\s\S]{0,100}if \(shouldShowStatusPanel\)[\s\S]{0,60}return "bubble";/
+  );
+  assert.match(
+    globalStyles,
+    /\.desktop-pet-root\.is-pet-window\.is-dragging\s*\{[\s\S]{0,100}--desktop-pet-button-left:\s*22px;[\s\S]{0,80}--desktop-pet-button-top:\s*36px;/
+  );
+});
+
 test("desktop pet click opens the branded app without assistant sidebar copy", () => {
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
