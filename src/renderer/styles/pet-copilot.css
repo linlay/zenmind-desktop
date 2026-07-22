@@ -130,6 +130,13 @@ body.desktop-pet-body,
   --desktop-pet-stage-top: 298px;
 }
 
+.desktop-pet-root.is-pet-window.is-dragging {
+  --desktop-pet-button-left: 22px;
+  --desktop-pet-button-top: 36px;
+  --desktop-pet-stage-left: 32px;
+  --desktop-pet-stage-top: 106px;
+}
+
 .desktop-pet-root.is-pet-window.is-edge-dock-top {
   --desktop-pet-button-top: -16px;
   --desktop-pet-stage-top: 54px;
