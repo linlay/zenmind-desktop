@@ -118,6 +118,8 @@ export const zhCNMessages = {
   "sidebar.assistants.awaitingStatus.form": "等待提交",
   "sidebar.assistants.awaitingStatus.planning": "等待实施",
   "sidebar.assistants.awaitingStatus.question": "等待回答",
+  "sidebar.assistants.refresh": "刷新项目",
+  "sidebar.assistants.refreshing": "正在刷新项目",
   "sidebar.assistants.sort": "排序智能体",
   "sidebar.assistants.sortByName": "按名称",
   "sidebar.assistants.sortByTime": "按时间",

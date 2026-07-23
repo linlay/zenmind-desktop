@@ -25,6 +25,7 @@ import type {
   AssistantCreateProjectRequest,
   AssistantNavAgentItem,
   AssistantNavChatItem,
+  AssistantNavigationListOptions,
   DesktopSsoStatus,
   ServiceState,
   WebEntry,
@@ -984,7 +985,9 @@ type AppSidebarProps = {
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
   onRefreshDesktopSsoStatus?: () => Promise<void> | void;
-  onRefreshAssistantNavAgents?: () => Promise<void> | void;
+  onRefreshAssistantNavAgents?: (
+    options?: AssistantNavigationListOptions,
+  ) => Promise<void> | void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (input: WebsiteInput) => Promise<WebsiteResult>;
@@ -1066,6 +1069,8 @@ export function AppSidebar({
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
+  const [refreshingAssistantNavAgents, setRefreshingAssistantNavAgents] =
+    useState(false);
   const [chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen] =
     useState(false);
   const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
@@ -3067,6 +3072,22 @@ export function AppSidebar({
     );
   }
 
+  async function handleRefreshAssistantNavAgents(
+    event: MouseEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (refreshingAssistantNavAgents) {
+      return;
+    }
+    setRefreshingAssistantNavAgents(true);
+    try {
+      await onRefreshAssistantNavAgents?.({ force: true });
+    } finally {
+      setRefreshingAssistantNavAgents(false);
+    }
+  }
+
   function renderStatusBadges(summary: SidebarStatusSummary, className = "") {
     const unreadLabel = formatUnreadCount(summary.unreadCount);
     if (summary.pendingCount <= 0 && !unreadLabel) {
@@ -4158,6 +4179,34 @@ export function AppSidebar({
             {args.groupId === "assistants"
               ? renderAssistantSortButton({ tabIndex: -1 })
               : null}
+            {args.groupId === "assistants" ? (
+              <Tooltip
+                content={
+                  refreshingAssistantNavAgents
+                    ? t("sidebar.assistants.refreshing")
+                    : t("sidebar.assistants.refresh")
+                }
+              >
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-assistant-refresh-button"
+                  aria-label={t("sidebar.assistants.refresh")}
+                  title={t("sidebar.assistants.refresh")}
+                  tabIndex={-1}
+                  disabled={refreshingAssistantNavAgents}
+                  onClick={handleRefreshAssistantNavAgents}
+                >
+                  {refreshingAssistantNavAgents ? (
+                    <span
+                      className="assistant-material-icon is-loading"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <SidebarActionIcon kind="refresh" />
+                  )}
+                </button>
+              </Tooltip>
+            ) : null}
             {args.groupId === "assistants" ? (
               <Tooltip content={t("sidebar.project.new")}>
                 <button
