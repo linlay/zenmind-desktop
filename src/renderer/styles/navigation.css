@@ -221,6 +221,12 @@
   position: static !important;
 }
 
+.sidebar-global-search-button .settings-sidebar-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .sidebar-history-controls {
   display: inline-flex;
   align-items: center;
@@ -3030,6 +3036,11 @@
 }
 
 .app-sidebar.is-collapsed .sidebar-top-actions .sidebar-assistant-top-button {
+  display: none;
+  pointer-events: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-top-actions .sidebar-global-search-button {
   display: none;
   pointer-events: none;
 }

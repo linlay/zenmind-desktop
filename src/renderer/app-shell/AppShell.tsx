@@ -3170,6 +3170,7 @@ export function AppShell() {
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
           onNavigateItem={undefined}
+          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
           onToggleCollapsed={toggleSidebarCollapsed}
           isSettingsMode={isSettingsRoute}
           settingsSections={visibleSettingsSections}
