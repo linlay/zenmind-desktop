@@ -1,66 +1,38 @@
+# Dependencies
 node_modules/
-.pnpm-store/
 package-lock.json
-.claude/
-dist/
-dist-renderer/
-dist-electron/
-out/
-release/
 
+# Build and generated outputs
 build/
-build-all.sh
-
-public/brand-icon.png
-public/brand-mark.png
-public/tray-icon.png
-public/tray-icon.svg
-
+dist/
+dist-electron/
 src/shared/generated/
 
-tmp/
-
-.vite/
-.cache/
-coverage/
-*.tsbuildinfo
-
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-.DS_Store
-Thumbs.db
-
-.idea/
-.vscode/
-
+# Local environment
+.env
 .env.local
 .env.*.local
 
-test-results/
-playwright-report/
+# Temporary files and caches
+tmp/
+.vite/
+.cache/
 
-*.pid
-*.pid.lock
+# Logs
+*.log
+npm-debug.log*
 
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editors and IDEs
+.idea/
+.vscode/
+
+# Local assistant state
+.claude/
 .antigravitycli/
 .serena/
-
-# Local assistant files
-agent.md
-!.doc/rules/agent.md
-.agents/skills/
-skills-lock.json
 .codegraph/
-\\Users\\*\\.zenmind/
-
-<!-- xgraph:start -->
-# xgraph local state
-.doc/.cache/
-.doc/local/
-.doc/tmp/
-<!-- xgraph:end -->
-prototypes/kanban-issue-detail-v2/
+.doc/
