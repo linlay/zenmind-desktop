@@ -1098,6 +1098,14 @@ test("primary sidebar navigation uses separate compact and rail SVG families", (
   assert.match(navigationStyles, /\.sidebar-link-active \.sidebar-illustration-rail\.sidebar-illustration-kanban[\s\S]*?\.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?fill:\s*#3b82f6;/);
 });
 
+test("expanded sidebar uses one total vertical scrollbar", () => {
+  const navigationStyles = readSourceFile("src", "renderer", "styles", "navigation.css");
+
+  assert.match(navigationStyles, /\.sidebar-nav\s*\{[\s\S]*?overflow-y:\s*auto;/);
+  assert.match(navigationStyles, /\.worker-popover-content\.sidebar-website-children\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto;/);
+  assert.doesNotMatch(navigationStyles, /(?:^|\n)\.sidebar-website-children\s*\{[\s\S]*?overflow-y:\s*auto;/);
+});
+
 test("sidebar renders Kanban and section groups above the fixed tool menu", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
