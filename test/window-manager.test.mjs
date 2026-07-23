@@ -22,6 +22,7 @@ class FakeWindow extends EventEmitter {
   restored = false;
   vibrancy = undefined;
   backgroundColor = "";
+  titleBarOverlay = null;
   minimized = false;
   shown = false;
   focused = false;
@@ -81,6 +82,10 @@ class FakeWindow extends EventEmitter {
 
   setBackgroundColor(value) {
     this.backgroundColor = value;
+  }
+
+  setTitleBarOverlay(value) {
+    this.titleBarOverlay = value;
   }
 
   async loadURL(url) {
@@ -279,6 +284,40 @@ test("main window lifecycle applies macOS translucency only outside fullscreen",
   controller.applyAppearance(target);
   assert.equal(target.vibrancy, null);
   assert.equal(target.backgroundColor, "#FFFFFF");
+});
+
+test("main window lifecycle masks Windows caption controls while global search is open", () => {
+  const target = new FakeWindow();
+  const nativeTheme = { shouldUseDarkColors: false };
+  const controller = createMainWindowLifecycleController({
+    platform: "win32",
+    getWindow: () => target,
+    createWindow: () => target,
+    clearWindow: () => {},
+    nativeTheme
+  });
+
+  controller.setGlobalSearchOverlayVisible(true);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#D4D5D9",
+    symbolColor: "#D4D5D9",
+    height: 44
+  });
+
+  nativeTheme.shouldUseDarkColors = true;
+  controller.applyAppearance(target);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#0E0E0E",
+    symbolColor: "#0E0E0E",
+    height: 44
+  });
+
+  controller.setGlobalSearchOverlayVisible(false);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#111111",
+    symbolColor: "#F2F2F2",
+    height: 44
+  });
 });
 
 test("main window activation restores, shows and focuses the window before navigating", () => {

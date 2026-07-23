@@ -1082,15 +1082,17 @@ export function DesktopPet() {
     showPreviewPanel ||
     activeDragAnchorMode === "preview-expanded";
   const hasBubbleAnchor = showStatusPanel || activeDragAnchorMode === "bubble";
-  const desiredWindowMode: DesktopPetWindowMode = isDragging || isPanelWindow
+  const desiredWindowMode: DesktopPetWindowMode = isPanelWindow
     ? "base"
-    : shouldShowTaskPanel
-      ? useCompactTaskPanel ? "task-list-compact" : "task-list"
-      : shouldShowPreviewPanel
-        ? "preview-expanded"
-        : shouldShowStatusPanel
-          ? "bubble"
-          : "base";
+    : isDragging
+      ? activeDragAnchorMode ?? "base"
+      : shouldShowTaskPanel
+        ? useCompactTaskPanel ? "task-list-compact" : "task-list"
+        : shouldShowPreviewPanel
+          ? "preview-expanded"
+          : shouldShowStatusPanel
+            ? "bubble"
+            : "base";
 
   useEffect(() => {
     if (isPanelWindow) {
@@ -1103,13 +1105,13 @@ export function DesktopPet() {
   }, [desiredWindowMode, isPanelWindow]);
 
   function resolveCurrentDragAnchorMode(): DesktopPetDragAnchorMode {
-    if (showTaskPanel) {
+    if (shouldShowTaskPanel) {
       return useCompactTaskPanel ? "task-list-compact" : "task-list";
     }
-    if (showPreviewPanel) {
+    if (shouldShowPreviewPanel) {
       return "preview-expanded";
     }
-    if (showStatusPanel) {
+    if (shouldShowStatusPanel) {
       return "bubble";
     }
     return null;

@@ -18,7 +18,7 @@ export type AppTrayControllerOptions = {
   getDesktopPetEnabled: () => boolean;
   isDesktopPetSupported: () => boolean;
   openAssistantChat: () => void;
-  openAssistantTarget: (source: "tray-click" | "tray-menu") => void;
+  showMainWindow: () => void;
   openSettings: () => void;
   showDesktopPet: () => void;
   hideDesktopPet: () => void;
@@ -163,7 +163,7 @@ export class AppTrayController {
       this.tray.setContextMenu(this.buildMenu());
     }
     this.tray.on("click", () => {
-      this.options.openAssistantTarget("tray-click");
+      this.options.showMainWindow();
     });
     this.tray.on("right-click", () => this.tray?.popUpContextMenu(this.buildMenu()));
 
@@ -211,7 +211,7 @@ export class AppTrayController {
       },
       {
         label: t("tray.openApp", { appName: this.options.appName }),
-        click: () => this.options.openAssistantTarget("tray-menu")
+        click: () => this.options.showMainWindow()
       },
       {
         label: t("tray.settings"),

@@ -18,8 +18,9 @@ import { issueAgentAccessToken } from "../agent-auth";
 import {
   cancelDesktopSsoLogin,
   completeDesktopSsoCookieLogin,
+  finalizeDesktopSsoLoginAttempt,
   failDesktopSsoFlow,
-  getDesktopSsoCookieAccessTokenExchangeUrl,
+  failDesktopSsoStep,
   getDesktopSsoStatus,
   isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
@@ -380,7 +381,6 @@ export function createMainProcessRuntime() {
     beginAppQuitWithoutConfirmation,
     requestAppQuit,
     openAssistantWorker,
-    showAssistantTargetWindow,
     getDesktopPetEnabled: () => appState.desktopPetSettings?.enabled === true,
     isDesktopPetSupported: () => isDesktopPetSupportedPlatform(mainProcessContext.platform),
     showDesktopPetWindow,
@@ -531,28 +531,66 @@ export function createMainProcessRuntime() {
   });
   
   async function handleDesktopSsoWebviewNavigation(url: string) {
+    let sessionCompleted = false;
     try {
       const status = getDesktopSsoStatus(app);
       if (appState.desktopSsoWebviewCompletionInFlight || !status.pending || !isDesktopSsoLoginCompletionUrl(app, url)) {
         return;
       }
       appState.desktopSsoWebviewCompletionInFlight = true;
-      const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(app);
-      if (!exchangeUrl) {
-        failDesktopSsoFlow(t("main.ssoCookieExchangeMissing"));
-        return;
-      }
       await desktopSsoController.syncBrowserCookies();
-      const accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
-      if (!accessToken) {
-        failDesktopSsoFlow(t("main.ssoCookieExchangeNoAccessToken"));
+
+      const browserSessionStatus = await desktopSsoController.validateBrowserSession();
+      if (!browserSessionStatus) {
+        const accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
+        if (!accessToken) {
+          failDesktopSsoFlow(t("main.ssoCookieExchangeNoAccessToken"));
+          return;
+        }
+        completeDesktopSsoCookieLogin(app, accessToken);
+        await openConfiguredDesktopSsoSiteTokenBridge();
+        finalizeDesktopSsoLoginAttempt();
         return;
       }
-      completeDesktopSsoCookieLogin(app, accessToken);
-      await openConfiguredDesktopSsoSiteTokenBridge();
+      sessionCompleted = true;
+      const stepErrors: string[] = [];
+      try {
+        await desktopSsoController.fetchBrowserUserInfo();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        stepErrors.push(message);
+        safeConsoleError("failed to fetch desktop sso browser userinfo", { url, error: message });
+      }
+
+      let accessToken = "";
+      try {
+        accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
+        if (!accessToken) {
+          stepErrors.push(t("main.ssoCookieExchangeNoAccessToken"));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        stepErrors.push(message);
+        safeConsoleError("failed to exchange desktop sso browser access token", { url, error: message });
+      }
+
+      if (accessToken) {
+        try {
+          await openConfiguredDesktopSsoSiteTokenBridge();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          stepErrors.push(message);
+          safeConsoleError("failed to open desktop sso site token bridge", { url, error: message });
+        }
+      }
+      finalizeDesktopSsoLoginAttempt(stepErrors);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      failDesktopSsoFlow(message);
+      if (sessionCompleted) {
+        failDesktopSsoStep(message);
+      } else {
+        failDesktopSsoFlow(message);
+      }
       safeConsoleError("failed to complete desktop sso from webview navigation", {
         url,
         error: message
@@ -1156,6 +1194,7 @@ export function createMainProcessRuntime() {
         buildApplicationMenu,
         refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
         refreshMainWindowAppearance: () => appShellRuntime.refreshMainWindowAppearance(),
+        setGlobalSearchOverlayVisible: (visible) => appShellRuntime.setGlobalSearchOverlayVisible(visible),
         emitLocaleChanged: settingsRuntime.emitLocaleChanged,
       captureDesktopScreenshotForWebview,
       reportRendererDiagnostic,

@@ -593,7 +593,7 @@ test("embedded service previews load auth and platform entrypoints directly", ()
   assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
 });
 
-test("startup surface uses localized, minimal copy", () => {
+test("startup progress card shows localized core service state", () => {
   const startupGate = readSourceFile(
     "src",
     "renderer",
@@ -601,32 +601,44 @@ test("startup surface uses localized, minimal copy", () => {
     "startup",
     "StartupGate.tsx"
   );
-  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
-
   assert.match(startupGate, /useI18n\(\)/);
-  assert.match(startupGate, /export function StartupSurface/);
-  assert.match(startupGate, /t\("startup\.surface\.loading"\)/);
-  assert.match(startupGate, /t\("startup\.surface\.slow"\)/);
-  assert.match(startupGate, /t\("startup\.surface\.failed"\)/);
-  assert.match(startupGate, /role="status"/);
+  assert.match(startupGate, /export function StartupLoadingScreen/);
+  assert.match(startupGate, /startup-loading-card/);
+  assert.match(startupGate, /startup-loading-progress/);
+  assert.match(startupGate, /startup-loading-list/);
+  assert.match(startupGate, /t\("startup\.service\.authentication"\)/);
+  assert.match(startupGate, /t\("startup\.phase\.installing"\)/);
+  assert.match(startupGate, /t\("startup\.action\.refresh"\)/);
   assert.match(startupGate, /t\("startup\.action\.openControlCenter"\)/);
-  assert.doesNotMatch(startupGate, /startup-loading-card|startup-chat-guide|startup\.chatGuide/);
-  assert.doesNotMatch(startupGate, /startup-surface-mark|✦/);
-  assert.doesNotMatch(enUS, /"startup\.chatGuide\.title":\s*"Start a conversation"/);
+  assert.doesNotMatch(startupGate, /EmptyContentSurface|emptyContent\.surface/);
 });
 
-test("startup surface owns the main content area without a card frame", () => {
+test("empty content fallback is separate from the startup progress card", () => {
   const appShell = readAppShellSource();
+  const emptyContentSurface = readSourceFile("src", "renderer", "app-shell", "EmptyContentSurface.tsx");
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
   const appShellStyles = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const globalStyles = readRendererStyles();
 
-  assert.match(appShell, /has-startup-surface/);
-  assert.match(appShellStyles, /\.app-shell\.has-startup-surface \.app-main\s*\{[\s\S]*?padding:\s*0;/);
-  assert.match(appShellStyles, /is-windows-platform\.has-startup-surface[\s\S]*?padding-top:\s*0;/);
-  assert.match(appShellStyles, /is-mac-platform\.has-startup-surface \.app-main\s*\{[\s\S]*?padding-top:\s*0;/);
-  assert.match(globalStyles, /\.startup-surface\.is-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;/);
-  assert.doesNotMatch(globalStyles, /\.startup-loading-card|\.startup-loading-list|\.startup-chat-guide/);
-  assert.doesNotMatch(globalStyles, /\.startup-surface-mark/);
+  assert.match(emptyContentSurface, /export function EmptyContentSurface/);
+  assert.match(emptyContentSurface, /t\("emptyContent\.surface\.loading"\)/);
+  assert.match(emptyContentSurface, /empty-content-surface-loader/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<EmptyContentSurface \/>\}/);
+  assert.match(embeddedSurfaceHosts, /export function EmptyWebSurfaceRoute\(\)[\s\S]*?<EmptyContentSurface \/>/);
+  assert.match(appShell, /has-empty-content-surface/);
+  assert.match(appShellStyles, /\.app-shell\.has-empty-content-surface \.app-main\s*\{[\s\S]*?padding:\s*0;/);
+  assert.match(appShellStyles, /is-windows-platform\.has-empty-content-surface[\s\S]*?padding-top:\s*0;/);
+  assert.match(appShellStyles, /is-mac-platform\.has-empty-content-surface \.app-main\s*\{[\s\S]*?padding-top:\s*0;/);
+  assert.match(globalStyles, /\.startup-loading-screen\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;/);
+  assert.match(globalStyles, /\.startup-loading-card/);
+  assert.match(globalStyles, /\.empty-content-surface/);
+  assert.doesNotMatch(globalStyles, /\.startup-surface/);
 });
 
 test("desktop custom theme tokens are shared by control center and log viewer", () => {
@@ -728,7 +740,7 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
     /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.embedded-surface-page,\s*[\s\S]*?background:\s*var\(--embedded-surface-page-bg\);/
   );
   assert.doesNotMatch(globalStyles, /^\.app-shell\.is-windows-platform[^{]*\{[^}]*background:\s*var\(--bg-canvas\);/m);
-  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);[\s\S]*?box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?border-left:\s*none;[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock \.embedded-surface-page,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-surface-frame-shell,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.embedded-surface-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);
@@ -2078,14 +2090,16 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "assistant"/);
   assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
   assert.match(settingsPage, /case "debug"[\s\S]*?<DebugSettingsPanel \/>/);
-  assert.match(settingsPage, /const DEBUG_CATEGORY_IDS:\s*DebugCategoryId\[\]\s*=\s*\["device", "logs", "wsServer", "authTokens", "other"\]/);
+  assert.match(settingsPage, /const DEBUG_CATEGORY_IDS:\s*DebugCategoryId\[\]\s*=\s*\["device", "state", "logs", "wsServer", "authTokens", "other"\]/);
   assert.match(settingsPage, /function DebugSettingsPanel/);
   assert.match(settingsPage, /case "device"[\s\S]*?return <DeviceIdentityDebugCard \/>/);
+  assert.match(settingsPage, /case "state"[\s\S]*?return <DesktopStateDebugCard \/>/);
   assert.match(settingsPage, /case "logs"[\s\S]*?return <DesktopLogsDebugCard \/>/);
   assert.match(settingsPage, /case "wsServer"[\s\S]*?return <LocalWsServerDebugCard \/>/);
   assert.match(settingsPage, /case "authTokens"[\s\S]*?return <IdentityTokenDebugCard \/>/);
   assert.match(settingsPage, /case "other"[\s\S]*?<DesktopActionDebugCard \/>[\s\S]*?<TunnelDebugCard \/>/);
   assert.match(settingsPage, /function DeviceIdentityDebugCard/);
+  assert.match(settingsPage, /function DesktopStateDebugCard/);
   assert.match(settingsPage, /function DesktopActionDebugDialog/);
   assert.match(settingsPage, /function WsServerDebugDialog/);
   assert.match(settingsPage, /window\.electronAPI\.desktopActions\.list\(\)/);
@@ -2096,8 +2110,11 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /settings\.debug\.desktopWs\.consoleAction/);
   assert.match(settingsPage, /settings\.debug\.wsConsole\.command/);
   assert.match(settingsPage, /window\.electronAPI\.settings\.getDeviceIdentity\(\)/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.getDesktopStateSnapshot\(\)/);
   assert.match(settingsPage, /settings\.debug\.device\.identityPath/);
   assert.match(settingsPage, /settings\.debug\.device\.copyDeviceId/);
+  assert.match(settingsPage, /settings\.debug\.state\.copyContent/);
+  assert.match(settingsPage, /settings-debug-state-files/);
   assert.match(settingsPage, /settings-debug-layout/);
   assert.match(settingsPage, /settings-debug-nav/);
   assert.match(settingsPage, /function LocalWsServerDebugCard/);
@@ -2127,6 +2144,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsStyles, /\.settings-desktop-ws-status/);
   assert.match(settingsStyles, /\.settings-debug-layout\s*\{[\s\S]*?grid-template-columns:\s*148px minmax\(0, 1fr\);/);
   assert.match(settingsStyles, /\.settings-debug-nav-item\.is-selected\s*\{[\s\S]*?background:\s*var\(--accent-soft\)/);
+  assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
   assert.match(settingsStyles, /\.settings-debug-dialog-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(settingsStyles, /\.settings-debug-log-entry\.is-out\s*\{[\s\S]*?border-color:\s*var\(--accent-border-subtle\)/);
   assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
@@ -2146,6 +2164,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(enUS, /"settings\.debug\.label":\s*"Debug"/);
   assert.match(enUS, /"settings\.about\.deviceId":\s*"Device ID"/);
   assert.match(enUS, /"settings\.debug\.categories\.device":\s*"Device"/);
+  assert.match(enUS, /"settings\.debug\.categories\.state":\s*"State"/);
+  assert.match(zhCN, /"settings\.debug\.categories\.state":\s*"状态"/u);
   assert.match(enUS, /"settings\.debug\.categories\.authTokens":\s*"Auth Tokens"/);
   assert.match(enUS, /"settings\.debug\.device\.title":\s*"Device identity"/);
   assert.match(enUS, /"settings\.debug\.desktopActions\.title":\s*"Desktop Actions"/);
@@ -2162,6 +2182,50 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(zhCN, /"settings\.debug\.desktopWs\.consoleAction":\s*"打开 WS 控制台"/);
   assert.match(zhCN, /"settings\.debug\.wsConsole\.title":\s*"WS 服务控制台"/);
   assert.match(zhCN, /"settings\.debug\.desktopWs\.title":\s*"本地 WebSocket 服务调试"/);
+});
+
+test("desktop state debug tab is wired through the fixed read-only IPC contract", () => {
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
+  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const settingsHandlers = readSourceFile("src", "main", "ipc", "settings-handlers.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+
+  assert.match(settingsPage, /const DEBUG_CATEGORY_IDS:[\s\S]*?\["device", "state", "logs", "wsServer", "authTokens", "other"\]/);
+  assert.match(settingsPage, /case "state"[\s\S]*?return <DesktopStateDebugCard \/>/);
+  assert.match(settingsPage, /function DesktopStateDebugCard/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.getDesktopStateSnapshot\(\)/);
+  assert.match(settingsPage, /snapshot\.files\.map/);
+  assert.match(settingsPage, /handleCopy\(file\.content\)/);
+  assert.match(settingsPage, /value=\{file\.content\}/);
+  assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
+  assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-state-file-head/);
+
+  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(desktopApi, /getDesktopStateSnapshot:\s*\(\) => Promise<DesktopStateSnapshot>/);
+  assert.match(preload, /getDesktopStateSnapshot:\s*\(\) => ipcRenderer\.invoke\("settings\.getDesktopStateSnapshot"\)/);
+  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(settingsHandlers, /getDesktopStateRoot\(app, platform\)/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopStateSnapshot", async \(\) =>/);
+  assert.match(enUS, /"settings\.debug\.categories\.state":\s*"State"/);
+  assert.match(zhCN, /"settings\.debug\.categories\.state":\s*"状态"/u);
+});
+
+test("settings search resets after leaving settings mode", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(
+    sidebarSource,
+    /useEffect\(\(\) => \{\s*if \(!isSettingsMode\) \{\s*setSettingsSearchQuery\(""\);\s*\}\s*\}, \[isSettingsMode\]\);/
+  );
 });
 
 test("startup env import overlay uses packaged-relative brand icon", () => {
@@ -2821,10 +2885,13 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.doesNotMatch(appShell, /showStartupPetGreeting/);
-  assert.match(appShell, /resolveStartupSurfaceMode\(/);
-  assert.match(appShell, /path="\/"[\s\S]*?<StartupRoutePlaceholder[\s\S]*?mode=\{startupRouteSurfaceMode\}/);
-  assert.match(appShell, /showStartupSurface && startupSurfaceMode[\s\S]*?<StartupSurface[\s\S]*?overlay/);
-  assert.doesNotMatch(appShell, /StartupLoadingScreen|showStartupCard|startupCardDismissed/);
+  assert.match(appShell, /shouldShowStartupProgressCard\(/);
+  assert.match(appShell, /path="\/"[\s\S]*?element=\{<EmptyContentSurface \/>\}/);
+  assert.match(appShell, /showStartupCard[\s\S]*?<StartupLoadingScreen/);
+  assert.match(appShell, /startupCardDismissed/);
+  assert.match(appShell, /const shouldPollStartup = startupRestoreState === null \|\| showStartupCard;/);
+  assert.match(appShell, /\}, \[shouldPollStartup\]\);/);
+  assert.doesNotMatch(appShell, /StartupSurface|resolveStartupSurfaceMode/);
   assert.match(appShell, /location\.pathname !== "\/"[\s\S]*?createAgentNewChatRoute\(chatRuntimeAgent\.agent\.agentKey\)/);
   assert.doesNotMatch(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.match(appShell, /if \(!navigationPreferencesLoaded \|\| !kanbanSettingsLoaded\) \{\s*return;\s*\}/);
@@ -2864,10 +2931,11 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(sidebarSource, /assistantNavChatItemsHasMore\?: boolean/);
   assert.match(sidebarSource, /onChatsDefaultAgentChange\?: \(agentKey: string\) => Promise<void> \| void/);
   assert.match(sidebarSource, /function renderChatsDefaultAgentPicker/);
-  assert.match(sidebarSource, /const \[chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen\] = useState\(false\);/);
+  assert.match(sidebarSource, /const \[chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen\]\s*=\s*useState\(false\);/);
   assert.match(sidebarSource, /className=\{\[[\s\S]*?"sidebar-chats-agent-trigger"/);
   assert.match(sidebarSource, /aria-haspopup="menu"/);
   assert.match(sidebarSource, /className="sidebar-chats-agent-menu"[\s\S]*?role="menu"/);
+  assert.match(sidebarSource, /className="sidebar-chats-agent-menu-label"[\s\S]*?sidebar\.chats\.defaultAgentMenuLabel/);
   assert.match(sidebarSource, /role="menuitemradio"/);
   assert.match(sidebarSource, /sidebar-chats-agent-option-role/);
   assert.match(sidebarSource, /function handleChatsDefaultAgentTriggerKeyDown/);
@@ -2884,6 +2952,7 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement[\s\S]*?opacity:\s*0;/);
   assert.match(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement,[\s\S]*?:focus-within \.Collapse-headerSupplement/);
   assert.match(styles, /\.sidebar-chats-agent-trigger\s*\{/);
+  assert.match(styles, /\.sidebar-chats-agent-menu-label\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-option-role\s*\{/);
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-select\s*\{/);
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-label\s*\{/);
@@ -2901,6 +2970,8 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(appShell, /onChatsDefaultAgentChange=\{saveChatsDefaultAgent\}/);
   assert.match(zhCN, /"sidebar\.chats\.viewMoreHistory": "查看更多历史"/);
   assert.match(enUS, /"sidebar\.chats\.viewMoreHistory": "View more history"/);
+  assert.match(zhCN, /"sidebar\.chats\.defaultAgentMenuLabel": "设置对话的默认智能体"/);
+  assert.match(enUS, /"sidebar\.chats\.defaultAgentMenuLabel": "Set the default agent for chats"/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {
@@ -4098,6 +4169,10 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(contracts, /interface AssistantChatSearchResponse/);
   assert.match(contracts, /searchChats: \(request: AssistantChatSearchRequest\) => Promise<AssistantChatSearchResponse>/);
   assert.match(contracts, /onOpenGlobalSearch: \(listener: \(\) => void\) => \(\) => void/);
+  assert.match(contracts, /setGlobalSearchOverlayVisible: \(visible: boolean\) => void/);
+  assert.match(preload, /setGlobalSearchOverlayVisible:\s*\(visible: boolean\) => ipcRenderer\.send\("desktopShell\.setGlobalSearchOverlayVisible", visible\)/);
+  assert.match(overlay, /setGlobalSearchOverlayVisible\(true\)/);
+  assert.match(overlay, /setGlobalSearchOverlayVisible\(false\)/);
   assert.match(preload, /searchChats: \(request: AssistantChatSearchRequest\) => ipcRenderer\.invoke\("assistant\.searchChats", request\)/);
   assert.match(preload, /ipcRenderer\.on\("app\.openGlobalSearch"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.searchChats"/);
@@ -4138,6 +4213,10 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.doesNotMatch(overlay, /desktop\.globalSearch\.status\.awaiting/);
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-unread-dot\s*\{/);
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-row-status\.is-unread\s*\{/);
+  assert.match(appShellCss, /\.desktop-global-search-layer\s*\{[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*padding:\s*16px;/);
+  assert.match(appShellCss, /\.desktop-global-search-panel\s*\{[^}]*width:\s*min\(640px,\s*100%\);[^}]*min-height:\s*240px;[^}]*max-height:\s*min\(680px,\s*calc\(100vh - 32px\)\);/);
+  assert.match(appShellCss, /\.desktop-global-search-results\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/);
+  assert.match(appShellCss, /@media \(max-width:\s*680px\)\s*\{[\s\S]*?\.desktop-global-search-layer\s*\{[^}]*padding:\s*16px 10px;[^}]*\}[\s\S]*?\.desktop-global-search-panel\s*\{[^}]*max-height:\s*calc\(100vh - 32px\);/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*var\(--bg-base\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row-icon\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /\.desktop-global-search-row-icon \.sidebar-illustration,[\s\S]*?\.desktop-global-search-row-icon \.sidebar-action-icon,[\s\S]*?\.desktop-global-search-row-icon \.settings-sidebar-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
@@ -4267,6 +4346,8 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(enDictionary, /"sidebar\.bootstrapChat\.cta":/);
   assert.match(appSidebar, /function renderBootstrapGuideCard\(\)/);
   assert.match(appSidebar, /function renderBootstrapGuideFloatingBubbles\(\)/);
+  assert.match(appSidebar, /closest\("\.app-shell"\)/);
+  assert.match(appSidebar, /createPortal\([\s\S]*?appShell,\s*\)/);
   assert.match(appSidebar, /BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000/);
   assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?setToolMenuOpen\(true\)/);
   assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: bootstrapActive/);
@@ -4275,6 +4356,8 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(enDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);
   assert.match(globalStyles, /\.sidebar-chats-item\.is-bootstrap-guide::after/);
   assert.match(globalStyles, /\.sidebar-tool-menu-item\.is-bootstrap-guide::after/);
+  assert.match(globalStyles, /\.sidebar-bootstrap-guide-layer\s*\{[\s\S]*?z-index:\s*70;/);
+  assert.match(globalStyles, /\.desktop-sso-login-modal-layer\s*\{[\s\S]*?z-index:\s*80;/);
   assert.match(globalStyles, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
@@ -5362,10 +5445,6 @@ test("assistant entrypoints restore core services before opening embedded webcli
     path.join(projectRoot, "src", "main", "assistant", "quick", "routing.ts"),
     "utf8"
   );
-  const trayController = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "app-shell", "tray.ts"),
-    "utf8"
-  );
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
@@ -5398,8 +5477,18 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /showAssistantTargetWindow\(\s*"assistant-worker",[\s\S]*?createAgentWebclientRoute/);
   assert.doesNotMatch(mainProcess, /AGENT_WEBCLIENT_APP_PATHNAMES/);
   assert.doesNotMatch(mainProcess, /scheduleAgentWebclientOpenRequest/);
-  assert.match(trayController, /openAssistantTarget\("tray-click"\)/);
-  assert.doesNotMatch(trayController, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
+});
+
+test("tray activation restores the app without replacing the current route", () => {
+  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+
+  assert.match(trayController, /showMainWindow:\s*\(\) => void;/);
+  assert.match(trayController, /tray\.on\("click", \(\) => \{\s*this\.options\.showMainWindow\(\);\s*\}\);/);
+  assert.match(trayController, /label: t\("tray\.openApp"[\s\S]{0,120}click: \(\) => this\.options\.showMainWindow\(\)/);
+  assert.doesNotMatch(trayController, /openAssistantTarget/);
+  assert.match(runtime, /showMainWindow:\s*\(\) => showMainWindow\(\)/);
+  assert.doesNotMatch(runtime, /showAssistantTargetWindow:\s*\(source: string\)/);
 });
 
 test("quit menu entries skip confirmation except keyboard accelerator", () => {
@@ -5929,6 +6018,27 @@ test("desktop pet drag ignores transient capture loss while the pointer is still
   assert.match(desktopPetController, /clearTimer\(\);/);
   assert.match(desktopPetController, /forceEndMs = typeof options\.forceEndMs === "number" \? options\.forceEndMs : 30000;/);
   assert.match(desktopPetController, /webContents\.on\("context-menu"[\s\S]{0,120}options\.endDrag\(\)/);
+});
+
+test("desktop pet drag restores the panel mode that was open before moving", () => {
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+  const globalStyles = readRendererStyles();
+
+  assert.match(
+    desktopPet,
+    /const desiredWindowMode: DesktopPetWindowMode = isPanelWindow[\s\S]{0,100}: isDragging[\s\S]{0,80}\? activeDragAnchorMode \?\? "base"/
+  );
+  assert.match(
+    desktopPet,
+    /function resolveCurrentDragAnchorMode\(\): DesktopPetDragAnchorMode \{[\s\S]{0,100}if \(shouldShowTaskPanel\)[\s\S]{0,160}if \(shouldShowPreviewPanel\)[\s\S]{0,100}if \(shouldShowStatusPanel\)[\s\S]{0,60}return "bubble";/
+  );
+  assert.match(
+    globalStyles,
+    /\.desktop-pet-root\.is-pet-window\.is-dragging\s*\{[\s\S]{0,100}--desktop-pet-button-left:\s*22px;[\s\S]{0,80}--desktop-pet-button-top:\s*36px;/
+  );
 });
 
 test("desktop pet click opens the branded app without assistant sidebar copy", () => {
@@ -6480,6 +6590,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
   assert.match(contracts, /avatarUrl\?: string;/);
+  assert.match(contracts, /completedSteps: DesktopSsoCompletedSteps;/);
+  assert.match(contracts, /startLogin: \(\) => Promise<DesktopSsoStartResult>;/);
+  assert.doesNotMatch(contracts, /DesktopSsoAccountMode|DesktopSsoStartOptions|accountMode/);
   assert.match(contracts, /DesktopSsoEmbeddedLoginRequest/);
   assert.match(contracts, /cancelLogin: \(\) => Promise<DesktopSsoCancelResult>;/);
   assert.match(contracts, /onEmbeddedLoginOpen: \(listener: DesktopSsoEmbeddedLoginListener\) => \(\) => void;/);
@@ -6492,9 +6605,11 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(ssoController, /\.\.\.\(avatarUrl \? \{ avatarUrl \} : \{\}\)/);
   assert.match(ssoController, /openEmbeddedLoginDialog/);
   assert.match(ssoController, /sso\.embeddedLogin\.open/);
-  assert.match(ssoWebviewCompletionHandler, /getDesktopSsoCookieAccessTokenExchangeUrl\(app\)/);
+  assert.match(ssoWebviewCompletionHandler, /validateBrowserSession\(\)/);
+  assert.match(ssoWebviewCompletionHandler, /fetchBrowserUserInfo\(\)[\s\S]{0,900}exchangeBrowserCookieAccessToken\(\)/);
   assert.match(ssoWebviewCompletionHandler, /t\("main\.ssoCookieExchangeNoAccessToken"\)/);
-  assert.match(ssoWebviewCompletionHandler, /completeDesktopSsoCookieLogin\(app, accessToken\);[\s\S]{0,120}openConfiguredDesktopSsoSiteTokenBridge\(\)/);
+  assert.match(ssoWebviewCompletionHandler, /finalizeDesktopSsoLoginAttempt\(stepErrors\)/);
+  assert.match(ssoWebviewCompletionHandler, /if \(accessToken\) \{[\s\S]{0,180}openConfiguredDesktopSsoSiteTokenBridge\(\)/);
   assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
@@ -6507,6 +6622,13 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(appShell, /useragent: desktopSsoLoginDialog\.userAgent/);
   assert.doesNotMatch(appShell, /desktop-sso-login-webview[\s\S]{0,220}allowpopups/);
   assert.match(appShell, /onDesktopSsoLogin=\{handleDesktopSsoLogin\}/);
+  assert.match(appShell, /startLogin\(\)/);
+  assert.match(appShell, /isCompleteDesktopSsoLogin\(status\)/);
+  assert.match(appShell, /desktopSsoLoginSettled && desktopSsoStatus/);
+  assert.match(appShell, /sidebar\.sso\.sessionStep/);
+  assert.match(appShell, /sidebar\.sso\.userInfoStep/);
+  assert.match(appShell, /sidebar\.sso\.accessTokenStep/);
+  assert.doesNotMatch(appShell, /handleDesktopSsoLogin\("switch"\)|sidebar\.sso\.switchAccount/);
   assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
   assert.match(appShell, /async function refreshDesktopSsoStatus\(\)[\s\S]{0,240}ssoApi\.getStatus\(\)[\s\S]{0,120}setDesktopSsoStatus\(status\);/);
   assert.match(appShell, /onRefreshDesktopSsoStatus=\{refreshDesktopSsoStatus\}/);
@@ -6515,6 +6637,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(appShell, /has-desktop-sso-status/);
 
   assert.match(sidebarSource, /desktopSsoStatus\?:\s*DesktopSsoStatus \| null;/);
+  assert.match(sidebarSource, /!desktopSsoStatus\.completedSteps\.userInfo/);
+  assert.match(sidebarSource, /!desktopSsoStatus\.completedSteps\.accessToken/);
+  assert.doesNotMatch(sidebarSource, /onDesktopSsoSwitchAccount|handleDesktopSsoSwitchAccount|sidebar\.sso\.switchAccount/);
   assert.match(sidebarSource, /onRefreshDesktopSsoStatus\?:\s*\(\) => Promise<void> \| void;/);
   assert.match(sidebarSource, /function handleToolMenuOpenChange\(open: boolean\)[\s\S]{0,360}onRefreshDesktopSsoStatus\?\.\(\)[\s\S]{0,360}setToolMenuOpen\(true\);/);
   assert.match(sidebarSource, /toolMenuOpenRequestIdRef\.current === requestId/);
@@ -6527,6 +6652,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /function getDesktopSsoUserLabel\(\)/);
   assert.match(sidebarSource, /if \(!desktopSsoStatus\) \{[\s\S]{0,80}return t\("sidebar\.sso\.signIn"\);/);
   assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name\?\.trim\(\)\s*\|\|[\s\S]{0,120}desktopSsoStatus\.user\?\.email\?\.trim\(\)/);
+  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.email\?\.trim\(\)\s*\|\|[\s\S]{0,120}desktopSsoStatus\.user\?\.sub\?\.trim\(\)/);
   assert.doesNotMatch(sidebarSource, /function renderDesktopSsoAccountMenuSection\(\)/);
   assert.match(sidebarSource, /function renderAccountMenuUserItem\(\)/);
   assert.match(sidebarSource, /function handleDesktopSsoMenuActionClick\(\)/);
@@ -6536,17 +6662,17 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/agents" \|\| item\.to === "\/archives" \|\| item\.to === "\/registries" \|\| item\.to === "\/market"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/skills"/);
   assert.doesNotMatch(sidebarSource, /const middleToolItems = fixedToolItems\.filter/);
   assert.doesNotMatch(sidebarSource, /const settingsToolItems = fixedToolItems\.filter/);
-  assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\(\(item\) => item\.to === "\/settings"\);/);
+  assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\([\s\S]{0,120}\(item\) => item\.to === "\/settings"[\s\S]{0,40}\);/);
   assert.match(sidebarSource, /shouldRenderDesktopSsoAccount \? \([\s\S]*?\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?\) : null/);
   assert.match(sidebarSource, /\{renderAccountMenuUserItem\(\)\}[\s\S]*?sidebar-account-menu-divider[\s\S]*?topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?renderToolLink\(helpToolItem,[\s\S]*?settingsToolItem \? renderToolLink\(settingsToolItem\) : null/);
   assert.match(sidebarSource, /className="sidebar-tool-menu-popover"/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
   assert.match(sidebarSource, /avatarUrl=\{desktopSsoStatus\.user\?\.avatarUrl\}/);
-  assert.match(sidebarSource, /renderAccountMenuIcon\(desktopSsoStatus\?\.authenticated \? "login" : "logout"\)/);
+  assert.match(sidebarSource, /renderAccountMenuIcon\([\s\S]{0,80}desktopSsoStatus\?\.authenticated \? "login" : "logout"[\s\S]{0,20}\)/);
   assert.match(sidebarSource, /<SidebarIllustration kind=\{kind\} \/>/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout-label"/);

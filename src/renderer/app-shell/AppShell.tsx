@@ -5,7 +5,8 @@ import type { WebsiteFaviconCache } from "../components/Favicon";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
-import { StartupRoutePlaceholder, StartupSurface } from "./startup/StartupGate";
+import { EmptyContentSurface } from "./EmptyContentSurface";
+import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
 import { DebugModeContext } from "../debug/DebugModeContext";
@@ -30,7 +31,7 @@ import {
   resolveDesktopCopilotPreference,
   sanitizeDesktopCopilotPagePreferences
 } from "../../shared/page-copilot";
-import { resolveStartupSurfaceMode } from "../../shared/startup-gate";
+import { shouldShowStartupProgressCard } from "../../shared/startup-gate";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -219,10 +220,23 @@ function createUnavailableDesktopSsoStatus(message: string): DesktopSsoStatus {
     authenticated: false,
     pending: false,
     user: null,
+    completedSteps: {
+      session: false,
+      userInfo: false,
+      accessToken: false,
+    },
     message,
     error: "Desktop SSO preload API unavailable.",
     updatedAt: new Date().toISOString()
   };
+}
+
+function isCompleteDesktopSsoLogin(status: DesktopSsoStatus) {
+  return status.authenticated &&
+    status.completedSteps.session &&
+    status.completedSteps.userInfo &&
+    status.completedSteps.accessToken &&
+    !status.error;
 }
 
 function getDesktopSsoApi() {
@@ -446,7 +460,7 @@ export function AppShell() {
   const { locale, setLocale, t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
-  const { services, loading: servicesLoading, refresh: refreshServices } = useServices();
+  const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
@@ -515,6 +529,7 @@ export function AppShell() {
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
   const [desktopSsoLoginDialog, setDesktopSsoLoginDialog] = useState<DesktopSsoEmbeddedLoginRequest | null>(null);
+  const [desktopSsoLoginSettled, setDesktopSsoLoginSettled] = useState(false);
   const [webItems, setWebItems] = useState<WebEntry[]>([]);
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
@@ -531,6 +546,7 @@ export function AppShell() {
   });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
+  const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
   const [envImportBusy, setEnvImportBusy] = useState(false);
   const [envImportError, setEnvImportError] = useState("");
@@ -651,16 +667,12 @@ export function AppShell() {
     service.status === "running"
   );
   const resolvedStartupRestoreState = startupRestoreState ?? createFallbackStartupRestoreState();
-  const startupSurfaceMode = resolveStartupSurfaceMode(
-    startupRestoreState,
-    startupAllReady,
-    startupTimedOut,
-    location.pathname
-  );
-  const showStartupSurface = startupSurfaceMode !== null;
-  const startupRouteSurfaceMode = startupSurfaceMode ?? (
-    !assistantNavAgentsLoaded || chatRuntimeAgent.agent ? "loading" : "empty"
-  );
+  const showStartupCard =
+    !startupCardDismissed &&
+    shouldShowStartupProgressCard(startupRestoreState, startupAllReady, location.pathname);
+  const shouldPollStartup = startupRestoreState === null || showStartupCard;
+  const showsEmptyContentSurface =
+    location.pathname === "/" || location.pathname === EMPTY_WEB_SURFACE_ROUTE;
   const webItemMap = useMemo(() => {
     return new Map<WebEntryKey, WebNavigationEntry>(webItems.map((item) => {
       if (item.kind === "webapp") {
@@ -1340,10 +1352,14 @@ export function AppShell() {
       setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
       return;
     }
+    setDesktopSsoLoginSettled(false);
     setDesktopSsoBusy(true);
     try {
       const result = await ssoApi.startLogin();
       setDesktopSsoStatus(result.status);
+      if (!result.status.pending && !isCompleteDesktopSsoLogin(result.status)) {
+        setDesktopSsoLoginSettled(true);
+      }
     } finally {
       setDesktopSsoBusy(false);
     }
@@ -1366,6 +1382,10 @@ export function AppShell() {
 
   async function handleDesktopSsoLoginDialogClose() {
     setDesktopSsoLoginDialog(null);
+    setDesktopSsoLoginSettled(false);
+    if (!desktopSsoStatus?.pending) {
+      return;
+    }
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
       setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
@@ -1519,11 +1539,17 @@ export function AppShell() {
       .catch(() => undefined);
     const dispose = ssoApi.onStatusChanged((status) => {
       setDesktopSsoStatus(status);
-      if (!status.pending) {
+      if (status.pending) {
+        setDesktopSsoLoginSettled(false);
+      } else if (isCompleteDesktopSsoLogin(status)) {
         setDesktopSsoLoginDialog(null);
+        setDesktopSsoLoginSettled(false);
+      } else {
+        setDesktopSsoLoginSettled(true);
       }
     });
     const disposeEmbeddedLoginOpen = ssoApi.onEmbeddedLoginOpen((request) => {
+      setDesktopSsoLoginSettled(false);
       setDesktopSsoLoginDialog(request);
     });
 
@@ -1597,6 +1623,20 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (startupRestoreState?.mode !== "bootstrap") {
+      setStartupCardDismissed(false);
+      return;
+    }
+
+    if (
+      startupRestoreState.phase === "idle" ||
+      startupRestoreState.phase === "running"
+    ) {
+      setStartupCardDismissed(false);
+    }
+  }, [startupRestoreState]);
+
+  useEffect(() => {
     refreshServicesRef.current = refreshServices;
   }, [refreshServices]);
 
@@ -1628,7 +1668,6 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    const shouldPollStartup = startupSurfaceMode !== null;
     if (!shouldPollStartup) {
       setStartupTimedOut(false);
       return;
@@ -1648,7 +1687,7 @@ export function AppShell() {
       window.clearInterval(startupStateInterval);
       window.clearTimeout(timer);
     };
-  }, [startupRestoreState, startupSurfaceMode]);
+  }, [shouldPollStartup]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3067,7 +3106,7 @@ export function AppShell() {
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
-        (location.pathname === "/" || showStartupSurface) ? "has-startup-surface" : "",
+        showsEmptyContentSurface ? "has-empty-content-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
@@ -3194,12 +3233,7 @@ export function AppShell() {
           <Routes>
             <Route
               path="/"
-              element={
-                <StartupRoutePlaceholder
-                  mode={startupRouteSurfaceMode}
-                  onOpenControlCenter={() => navigate("/control-center")}
-                />
-              }
+              element={<EmptyContentSurface />}
             />
             <Route
               path="/kanban"
@@ -3291,26 +3325,6 @@ export function AppShell() {
             />
             <Route path="/help" element={<RouteSuspense><HelpPage isWindows={isWindows} /></RouteSuspense>} />
           </Routes>
-          {showStartupSurface && startupSurfaceMode ? (
-            <StartupSurface
-              mode={startupSurfaceMode}
-              overlay
-              onOpenControlCenter={() => {
-                setStartupTimedOut(false);
-                navigate("/control-center", {
-                  replace: true,
-                  state: resolvedStartupRestoreState.phase === "failed"
-                    ? {
-                        startupFailure: {
-                          serviceId: resolvedStartupRestoreState.failedServiceId,
-                          message: resolvedStartupRestoreState.message
-                        }
-                      }
-                    : undefined
-                });
-              }}
-            />
-          ) : null}
         </main>
       </div>
       {isSidebarResizing ? (
@@ -3334,30 +3348,93 @@ export function AppShell() {
             aria-label={desktopSsoLoginDialog.label}
           >
             <header className="desktop-sso-login-modal-head">
-              <strong>{desktopSsoLoginDialog.label}</strong>
+              <strong>
+                {desktopSsoLoginSettled ? t("sidebar.sso.resultTitle") : desktopSsoLoginDialog.label}
+              </strong>
               <button
                 type="button"
                 className="desktop-sso-login-modal-close"
-                aria-label={t("sidebar.sso.cancelLogin")}
-                title={t("sidebar.sso.cancelLogin")}
+                aria-label={desktopSsoLoginSettled ? t("sidebar.sso.closeResult") : t("sidebar.sso.cancelLogin")}
+                title={desktopSsoLoginSettled ? t("sidebar.sso.closeResult") : t("sidebar.sso.cancelLogin")}
                 onClick={() => void handleDesktopSsoLoginDialogClose()}
               >
                 <span aria-hidden="true">x</span>
               </button>
             </header>
             <div className="desktop-sso-login-modal-frame">
-              {createElement("webview", {
-                key: `${desktopSsoLoginDialog.partition}:${desktopSsoLoginDialog.url}`,
-                src: desktopSsoLoginDialog.url,
-                title: desktopSsoLoginDialog.label,
-                className: "desktop-sso-login-webview",
-                partition: desktopSsoLoginDialog.partition,
-                useragent: desktopSsoLoginDialog.userAgent,
-                style: { width: "100%", height: "100%", border: "none" }
-              })}
+              {desktopSsoLoginSettled && desktopSsoStatus ? (
+                <div className="desktop-sso-login-result" role="status">
+                  <div className="desktop-sso-login-result-copy">
+                    <strong>{desktopSsoStatus.message}</strong>
+                    {desktopSsoStatus.error ? <p>{desktopSsoStatus.error}</p> : null}
+                  </div>
+                  <div className="desktop-sso-login-result-steps">
+                    {([
+                      ["session", t("sidebar.sso.sessionStep")],
+                      ["userInfo", t("sidebar.sso.userInfoStep")],
+                      ["accessToken", t("sidebar.sso.accessTokenStep")]
+                    ] as const).map(([step, label]) => {
+                      const completed = desktopSsoStatus.completedSteps[step];
+                      return (
+                        <div className="desktop-sso-login-result-step" key={step}>
+                          <span>{label}</span>
+                          <span className={completed ? "is-complete" : "is-incomplete"}>
+                            {completed ? t("sidebar.sso.stepReady") : t("sidebar.sso.stepNotReady")}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="desktop-sso-login-result-actions">
+                    <button type="button" onClick={() => void handleDesktopSsoLogin()}>
+                      {t("sidebar.sso.retry")}
+                    </button>
+                    <button type="button" onClick={() => void handleDesktopSsoLoginDialogClose()}>
+                      {t("sidebar.sso.closeResult")}
+                    </button>
+                  </div>
+                </div>
+              ) : createElement("webview", {
+                  key: `${desktopSsoLoginDialog.partition}:${desktopSsoLoginDialog.url}`,
+                  src: desktopSsoLoginDialog.url,
+                  title: desktopSsoLoginDialog.label,
+                  className: "desktop-sso-login-webview",
+                  partition: desktopSsoLoginDialog.partition,
+                  useragent: desktopSsoLoginDialog.userAgent,
+                  style: { width: "100%", height: "100%", border: "none" }
+                })}
             </div>
           </section>
         </div>
+      ) : null}
+      {showStartupCard ? (
+        <StartupLoadingScreen
+          servicesLoading={servicesLoading}
+          servicesError={servicesError}
+          startupServices={startupServices}
+          startupRestoreState={resolvedStartupRestoreState}
+          timedOut={startupTimedOut}
+          onRefresh={() => {
+            setStartupCardDismissed(false);
+            void refreshServices();
+            void refreshStartupRestoreState().catch(() => undefined);
+          }}
+          onOpenControlCenter={() => {
+            setStartupCardDismissed(true);
+            setStartupTimedOut(false);
+            navigate("/control-center", {
+              replace: true,
+              state: resolvedStartupRestoreState.phase === "failed"
+                ? {
+                    startupFailure: {
+                      serviceId: resolvedStartupRestoreState.failedServiceId,
+                      message: resolvedStartupRestoreState.message
+                    }
+                  }
+                : undefined
+            });
+          }}
+        />
       ) : null}
       {resolvedStartupRestoreState.phase === "env-import-required" ? (
         <EnvImportOverlay

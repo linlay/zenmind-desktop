@@ -9,7 +9,7 @@
   width: var(--assistant-dock-embedded-width);
   min-width: 0;
   overflow: hidden;
-  border-left: 1px solid rgba(148, 163, 184, 0.14);
+  border-left: none;
   background: var(--embedded-surface-shell-bg);
   box-shadow: none;
   opacity: 0;

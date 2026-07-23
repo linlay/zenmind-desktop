@@ -43,6 +43,7 @@ import {
   sortSidebarNavItems,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
+import { getAssistantWorkspaceName } from "./workspaceName";
 import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
@@ -761,17 +762,6 @@ function formatAssistantChatDateTime(value?: EpochMilliseconds | null) {
   return formatEpochMillis(value);
 }
 
-function getAssistantWorkspaceName(
-  workspaceDir: string | undefined,
-  workspaceDirExists: boolean | undefined,
-) {
-  const normalized = workspaceDir?.trim().replace(/[\\/]+$/u, "") ?? "";
-  if (!normalized || normalized === "@chat" || workspaceDirExists === false) {
-    return "";
-  }
-  return normalized.split(/[\\/]/u).filter(Boolean).at(-1) ?? "";
-}
-
 function isAssistantRunningPreview(value: string) {
   const normalized = value.trim().toLowerCase();
   return [
@@ -1421,6 +1411,12 @@ export function AppSidebar({
   ]);
   const resolvedSidebarNavFocusId =
     sidebarNavFocusId || defaultSidebarNavFocusId;
+
+  useEffect(() => {
+    if (!isSettingsMode) {
+      setSettingsSearchQuery("");
+    }
+  }, [isSettingsMode]);
 
   useEffect(() => {
     try {
@@ -3199,6 +3195,9 @@ export function AppSidebar({
         aria-label={t("settings.chat.defaultAgent")}
         onKeyDown={handleChatsDefaultAgentMenuKeyDown}
       >
+        <div className="sidebar-chats-agent-menu-label" role="presentation">
+          {t("sidebar.chats.defaultAgentMenuLabel")}
+        </div>
         {chatNavAgentOptions.map((agent) => (
           <button
             key={agent.agentKey}
@@ -4309,6 +4308,14 @@ export function AppSidebar({
       return null;
     }
 
+    const appShell = (
+      bootstrapGuideChatAnchorRef.current ??
+      bootstrapGuideToolHelpAnchorRef.current
+    )?.closest(".app-shell");
+    if (!appShell) {
+      return null;
+    }
+
     return createPortal(
       <div className="sidebar-bootstrap-guide-layer" aria-live="polite">
         {bootstrapGuideFloatingBubbles.map((bubble) => (
@@ -4328,7 +4335,7 @@ export function AppSidebar({
           </div>
         ))}
       </div>,
-      document.body,
+      appShell,
     );
   }
 
@@ -4511,22 +4518,34 @@ export function AppSidebar({
             avatarUrl={desktopSsoStatus.user?.avatarUrl}
             label={desktopSsoUserLabel}
           />
-          <span className="sidebar-account-menu-label">
-            {desktopSsoUserLabel}
-          </span>
-          <button
-            type="button"
-            className="sidebar-account-menu-logout"
-            onClick={handleDesktopSsoLogoutClick}
-            disabled={desktopSsoBusy}
-            role="menuitem"
-            aria-label={desktopSsoLogoutLabel}
-            title={desktopSsoLogoutLabel}
-          >
-            <span className="sidebar-account-menu-logout-label">
-              {desktopSsoLogoutLabel}
+          <span className="sidebar-account-menu-user-copy">
+            <span className="sidebar-account-menu-label">
+              {desktopSsoUserLabel}
             </span>
-          </button>
+            {desktopSsoStatus.pending ||
+            desktopSsoStatus.error ||
+            !desktopSsoStatus.completedSteps.userInfo ||
+            !desktopSsoStatus.completedSteps.accessToken ? (
+              <span className="sidebar-account-menu-status">
+                {desktopSsoStatus.message}
+              </span>
+            ) : null}
+          </span>
+          <span className="sidebar-account-menu-user-actions">
+            <button
+              type="button"
+              className="sidebar-account-menu-logout"
+              onClick={handleDesktopSsoLogoutClick}
+              disabled={desktopSsoBusy}
+              role="menuitem"
+              aria-label={desktopSsoLogoutLabel}
+              title={desktopSsoLogoutLabel}
+            >
+              <span className="sidebar-account-menu-logout-label">
+                {desktopSsoLogoutLabel}
+              </span>
+            </button>
+          </span>
         </div>
       );
     }
@@ -4567,6 +4586,7 @@ export function AppSidebar({
       return (
         desktopSsoStatus.user?.name?.trim() ||
         desktopSsoStatus.user?.email?.trim() ||
+        desktopSsoStatus.user?.sub?.trim() ||
         t("sidebar.sso.signedIn")
       );
     }

@@ -184,6 +184,76 @@
   background: var(--embedded-surface-frame-bg);
 }
 
+.desktop-sso-login-result {
+  width: min(620px, calc(100% - 48px));
+  margin: 48px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  color: var(--ink);
+}
+
+.desktop-sso-login-result-copy strong {
+  font-size: 18px;
+}
+
+.desktop-sso-login-result-copy p {
+  margin: 10px 0 0;
+  color: var(--ink-muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.desktop-sso-login-result-steps {
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+}
+
+.desktop-sso-login-result-step {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.desktop-sso-login-result-step:last-child {
+  border-bottom: 0;
+}
+
+.desktop-sso-login-result-step .is-complete {
+  color: #16a34a;
+}
+
+.desktop-sso-login-result-step .is-incomplete {
+  color: #d97706;
+}
+
+.desktop-sso-login-result-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.desktop-sso-login-result-actions button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 8px;
+  background: var(--embedded-surface-shell-bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.desktop-sso-login-result-actions button:hover,
+.desktop-sso-login-result-actions button:focus-visible {
+  border-color: rgba(59, 130, 246, 0.6);
+  outline: none;
+}
+
 .desktop-action-confirmation-layer {
   position: absolute;
   inset: 0;
@@ -446,7 +516,7 @@
   background: transparent;
 }
 
-.app-shell.has-startup-surface .app-main {
+.app-shell.has-empty-content-surface .app-main {
   overflow: hidden;
   padding: 0;
   background: var(--bg-base);
@@ -456,12 +526,12 @@
   padding-top: calc(var(--windows-titlebar-overlay-height) + 12px);
 }
 
-/* Startup owns the full content surface; the window drag layer remains above it. */
-.app-shell.is-windows-platform.has-startup-surface:not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
+/* The empty-content fallback owns the content surface; the window drag layer remains above it. */
+.app-shell.is-windows-platform.has-empty-content-surface:not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
   padding-top: 0;
 }
 
-.app-shell.is-mac-platform.has-startup-surface .app-main {
+.app-shell.is-mac-platform.has-empty-content-surface .app-main {
   padding-top: 0;
 }
 
@@ -504,9 +574,9 @@
   inset: 0;
   z-index: 3200;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 48px 16px 16px;
+  padding: 16px;
   background: var(--modal-mask-bg);
   app-region: no-drag;
   -webkit-app-region: no-drag;
@@ -514,7 +584,8 @@
 
 .desktop-global-search-panel {
   width: min(640px, 100%);
-  max-height: min(680px, calc(100vh - 72px));
+  min-height: 240px;
+  max-height: min(680px, calc(100vh - 32px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -571,8 +642,8 @@
 }
 
 .desktop-global-search-results {
-  flex: 1;
-  min-height: 180px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding: 4px 10px 12px;
 }
@@ -776,11 +847,11 @@
 
 @media (max-width: 680px) {
   .desktop-global-search-layer {
-    padding: 42px 10px 10px;
+    padding: 16px 10px;
   }
 
   .desktop-global-search-panel {
-    max-height: calc(100vh - 72px);
+    max-height: calc(100vh - 32px);
   }
 
   .desktop-global-search-row {

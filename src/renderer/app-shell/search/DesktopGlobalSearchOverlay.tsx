@@ -70,6 +70,17 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
 
   useEffect(() => {
     if (!props.open) {
+      window.electronAPI.desktopShell.setGlobalSearchOverlayVisible(false);
+      return;
+    }
+    window.electronAPI.desktopShell.setGlobalSearchOverlayVisible(true);
+    return () => {
+      window.electronAPI.desktopShell.setGlobalSearchOverlayVisible(false);
+    };
+  }, [props.open]);
+
+  useEffect(() => {
+    if (!props.open) {
       return;
     }
     setActiveIndex(0);
