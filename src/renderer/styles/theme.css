@@ -85,9 +85,6 @@
   --embedded-surface-loading-bg: rgba(255, 255, 255, 0.96);
   --embedded-surface-dock-bg: #fff;
   --embedded-surface-dock-shadow: -14px 0 42px rgba(15, 23, 42, 0.08);
-  --embedded-surface-quick-bg: #fff;
-  --embedded-surface-quick-border: rgba(148, 163, 184, 0.24);
-  --embedded-surface-quick-shadow: 0 18px 50px rgba(15, 23, 42, 0.16);
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
 }
@@ -144,7 +141,4 @@
   --embedded-surface-loading-bg: rgba(35, 37, 40, 0.96);
   --embedded-surface-dock-bg: rgba(35, 37, 40, 0.98);
   --embedded-surface-dock-shadow: -14px 0 42px rgba(0, 0, 0, 0.24);
-  --embedded-surface-quick-bg: #232528;
-  --embedded-surface-quick-border: rgba(255, 255, 255, 0.12);
-  --embedded-surface-quick-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
 }

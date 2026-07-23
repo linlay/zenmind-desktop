@@ -2366,17 +2366,11 @@ test("settings page configures desktop helper default agent separately from desk
 
   assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
   assert.match(sharedSettings, /DEFAULT_CHAT_DEFAULT_AGENT_KEY\s*=\s*""/);
-  assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_ENABLED\s*=\s*true/);
-  assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_AGENT_KEY\s*=\s*DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
-  assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_SHORTCUT\s*=\s*"Alt\+Space"/);
-  assert.match(sharedSettings, /normalizeQuickAssistantShortcut/);
   assert.match(sharedSettings, /DESKTOP_COPILOT_PAGE_KEYS/);
   assert.match(sharedSettings, /controlCenter/);
   assert.match(sharedSettings, /schedules/);
   assert.match(contracts, /bootstrapAgentKey:\s*string/);
   assert.match(contracts, /bootstrapChatId:\s*string/);
-  assert.match(contracts, /quickAssistantShortcut:\s*string/);
-  assert.match(contracts, /quickAssistantShortcut\?:\s*string/);
   assert.match(settingsStore, /const DESKTOP_INIT_ASSISTANT_FILE = "assistant\.json"/);
   assert.match(settingsStore, /function readDesktopInitAssistantSettingsFromRoot\(rootDir: string\)/);
   assert.match(settingsStore, /defaultChatAgentKey/);
@@ -2387,9 +2381,6 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStore, /bootstrapAgentKey:\s*current\.bootstrapAgentKey/);
   assert.match(settingsStore, /bootstrapChatId:\s*current\.bootstrapChatId/);
   assert.match(settingsStore, /desktopHelperAgentKey:\s*settings\.desktopHelperAgentKey/);
-  assert.match(settingsStore, /quickAssistantEnabled:\s*settings\.quickAssistantEnabled/);
-  assert.match(settingsStore, /quickAssistantAgentKey:\s*settings\.quickAssistantAgentKey/);
-  assert.match(settingsStore, /quickAssistantShortcut:\s*settings\.quickAssistantShortcut/);
   assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
   assert.doesNotMatch(settingsPage, /<p className="eyebrow">NAVIGATION<\/p>/);
   assert.match(settingsPageSections, /settings\.navigation\.label/);
@@ -2486,7 +2477,6 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /自定义入口/);
   assert.doesNotMatch(settingsPage, /DESKTOP ASSISTANT/);
   assert.doesNotMatch(settingsPage, /DESKTOP PET/);
-  assert.doesNotMatch(settingsPage, /单独配置 Option\+Space 唤起的快捷助手，和侧边助手、宠物助手相互独立/);
   assert.doesNotMatch(settingsPage, /宠物只服务侧边助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭/);
   assert.doesNotMatch(settingsPage, /将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改/);
   assert.doesNotMatch(settingsPage, /按模块管理桌面工作台、助手能力和本地数据行为/);
@@ -2497,27 +2487,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /settings\.navigation\.defaultAssistant/);
   assert.match(settingsPage, /desktopPetSupported/);
   assert.match(settingsPage, /handleToggleDesktopPet/);
-  assert.match(settingsPage, /quickAssistantEnabled/);
-  assert.match(settingsPage, /quickAssistantAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.listCopilotAgents\(\),[\s\S]*?window\.electronAPI\.assistant\.listAgents\(\)/);
   assert.match(settingsPage, /readAssistantAgentOptions\(agentsResult, fallbackAgents\)/);
-  assert.match(settingsPage, /handleToggleQuickAssistantEnabled/);
-  assert.match(settingsPage, /handleSelectQuickAssistantAgentKey/);
-  assert.match(settingsPage, /quickAssistantShortcut/);
-  assert.match(settingsPage, /function shortcutAcceleratorFromKeyboardEvent\(event: ReactKeyboardEvent<HTMLInputElement>\)/);
-  assert.match(settingsPage, /event\.ctrlKey \? "Control" : ""/);
-  assert.match(settingsPage, /key === " " \|\| key === "Spacebar" \|\| key === "Space"[\s\S]*?return "Space";/);
-  assert.match(settingsPage, /function handleQuickAssistantShortcutKeyDown\(event: ReactKeyboardEvent<HTMLInputElement>\)/);
-  assert.match(settingsPage, /setQuickAssistantShortcutDraft\(accelerator\)/);
-  assert.match(settingsPage, /onChange=\{\(event\) => setQuickAssistantShortcutDraft\(event\.target\.value\)\}/);
-  assert.match(settingsPage, /onKeyDown=\{handleQuickAssistantShortcutKeyDown\}/);
-  assert.doesNotMatch(settingsPage, /readOnly[\s\S]{0,240}onKeyDown=\{handleQuickAssistantShortcutKeyDown\}/);
-  assert.match(settingsPage, /handleSaveQuickAssistantShortcut/);
-  assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*quickAssistantAgentKey: normalizedAgentKey\s*\}\)/);
-  assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*quickAssistantShortcut: normalizedShortcut\s*\}\)/);
-  assert.match(settingsPage, /settings\.quickAssistant\.shortcut/);
-  assert.match(enUS, /"settings\.quickAssistant\.shortcut":\s*"Shortcut"/);
-  assert.match(zhCN, /"settings\.quickAssistant\.shortcut":\s*"快捷键"/);
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
@@ -3923,7 +3894,6 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appState, /startupPhase: initialState\.startupPhase \?\? "booting"/);
   assert.match(nonCoreStartupBlock, /appState\.desktopPetSettings\?\.enabled === true/);
   assert.match(nonCoreStartupBlock, /createAppTray\(\)/);
-  assert.match(nonCoreStartupBlock, /registerQuickAssistantShortcut\(\)/);
   assert.doesNotMatch(nonCoreStartupBlock, /registerFocusedWebviewDevToolsShortcut/);
   assert.match(nonCoreStartupBlock, /pluginBridgeRuntime\.setDesktopReady\(\)/);
   assert.match(nonCoreStartupBlock, /startDesktopWsServerIfEnabled/);
@@ -4499,14 +4469,11 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(appShell, /registerDesktopActionProviderForScope\("global"/);
   assert.match(appShell, /desktop\.setting\.getState/);
   assert.match(appShell, /settingSectionIds = \[/);
-  assert.match(appShell, /"quick"/);
   assert.match(appShell, /"copilot"/);
   assert.match(appShell, /"pet"/);
   assert.match(appShell, /"general\.desktopActionConfirmationEnabled"/);
   assert.match(appShell, /"kanban\.remoteControlEnabled"/);
   assert.match(appShell, /"market\.apiBaseUrl"/);
-  assert.match(appShell, /quickAssistantEnabled: quickPatch\.enabled/);
-  assert.match(appShell, /quickAssistantAgentKey: quickPatch\.agentKey\.trim\(\) \|\| DEFAULT_QUICK_ASSISTANT_AGENT_KEY/);
   assert.match(appShell, /desktop\.web\.listSurfaces/);
   assert.match(settingsPage, /registerDesktopActionProvider/);
   assert.match(settingsPage, /desktopHelperAgentKey/);
@@ -5174,38 +5141,17 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.doesNotMatch(mainProcess, /registerWebviewDevToolsIpcHandlers/);
 });
 
-test("web copilot dock yields to native dialogs while quick assistant keeps outside-dismiss handling", () => {
+test("web copilot dock yields to native dialogs", () => {
   const appShell = readAppShellSource();
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const mainProcess = readMainProcessRuntimeSource();
   const nativeDialogs = fs.readFileSync(
     path.join(projectRoot, "src", "main", "app-shell", "native-dialogs.ts"),
     "utf8"
   );
-  const quickCopilotWindowController = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "quick", "window.ts"),
-    "utf8"
-  );
-  const quickCopilotDismissLayer = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "quick", "dismiss-layer.ts"),
-    "utf8"
-  );
   const globalStyles = readRendererStyles();
-  const quickAssistantBlurHandler = quickCopilotWindowController.slice(
-    quickCopilotWindowController.indexOf('this.quickWindow.on("blur"'),
-    quickCopilotWindowController.indexOf('this.quickWindow.on("closed"')
-  );
 
   assert.match(nativeDialogs, /app\.nativeDialogVisibility/);
   assert.match(nativeDialogs, /platform === "darwin"/);
-  assert.match(mainProcess, /hideQuickCopilot:\s*\(\) => options\.quickCopilotWindowController\.hideForNativeDialog\(\)/);
-  assert.match(mainProcess, /restoreQuickCopilot:\s*\(\) => options\.quickCopilotWindowController\.restoreAfterNativeDialog\(\)/);
-  assert.match(mainProcess, /options\.quickCopilotWindowController\.hideAfterOutsideFocus\(\)/);
-  assert.match(mainProcess, /options\.app\.on\("activate"[\s\S]{0,160}options\.isNativeDialogOpen\(\)[\s\S]{0,80}return;/);
-  assert.match(quickCopilotWindowController, /dismissWindow/);
-  assert.match(quickCopilotDismissLayer, /QUICK_COPILOT_DISMISS_URL/);
-  assert.match(mainProcess, /showQuickAssistantDismissWindow/);
-  assert.doesNotMatch(quickAssistantBlurHandler, /mouseInside/);
   assert.match(preload, /onNativeDialogVisibility/);
   assert.match(appShell, /nativeDialogVisible/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
@@ -5456,10 +5402,7 @@ test("assistant chat export writes directly to the download location", () => {
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
-  const quickRouting = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "quick", "routing.ts"),
-    "utf8"
-  );
+  const agentWebclientRoutes = readSourceFile("src", "shared", "agent-webclient-routes.ts");
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
@@ -5471,18 +5414,10 @@ test("assistant entrypoints restore core services before opening embedded webcli
   );
   assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
-  assert.match(quickRouting, /function createAgentWebclientRoute/);
-  assert.match(quickRouting, /return AGENT_WEBCLIENT_TARGET_PATH;/);
-  assert.doesNotMatch(quickRouting, /return "\/service\/agent-webclient";/);
-  assert.match(quickRouting, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
-  assert.match(quickRouting, /pathname === "\/copilot" \|\| pathname\.startsWith\("\/copilot\/"\)/);
-  assert.match(quickRouting, /getAllWebContents\(\)/);
-  assert.match(quickRouting, /contents\.getType\(\) !== "webview"/);
-  assert.match(quickRouting, /hostWebContents\.id !== targetWindow\.webContents\.id/);
-  assert.match(quickRouting, /workerKey:\s*`agent:\$\{agentKey\}`/);
-  assert.match(quickRouting, /const QUICK_AGENT_OPEN_RETRY_COUNT = 80;/);
-  assert.doesNotMatch(quickRouting, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
-  assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);
+  assert.match(agentWebclientRoutes, /function createAgentWebclientRoute/);
+  assert.match(agentWebclientRoutes, /return AGENT_WEBCLIENT_TARGET_PATH;/);
+  assert.doesNotMatch(agentWebclientRoutes, /return "\/service\/agent-webclient";/);
+  assert.match(agentWebclientRoutes, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet\(\) \{[\s\S]{0,120}petRuntime\.openAssistant\(\)/);
   assert.match(petRuntime, /async function openAssistant\(\)[\s\S]{0,120}options\.showMainWindow\(\);/);
@@ -5879,76 +5814,6 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
   assert.doesNotMatch(appShell, /onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\("compact"\)/);
 });
 
-test("option-space quick assistant route opens the agent webclient copilot surface", () => {
-  const nativeQuickAssistantPath = path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx");
-  const appShell = readAppShellSource();
-  const quickCopilotRoute = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "copilot", "quick-copilot", "QuickCopilotRoute.tsx"),
-    "utf8"
-  );
-  const globalStyles = readRendererStyles();
-  const mainProcess = readMainProcessRuntimeSource();
-  const quickCopilotWindowController = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "quick", "window.ts"),
-    "utf8"
-  );
-  const quickAssistantWindow = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "quick", "quick-copilot.ts"), "utf8");
-  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = readSharedContractsSource();
-  const quickWebCopilotStyles = globalStyles.slice(
-    globalStyles.indexOf(".quick-web-copilot,"),
-    globalStyles.indexOf(".quick-web-copilot .embedded-surface-page")
-  );
-  const quickAssistantWindowCreation = quickCopilotWindowController.slice(
-    quickCopilotWindowController.indexOf("private createWindow()"),
-    quickCopilotWindowController.indexOf("hideForNativeDialog()")
-  );
-  const preloadQuickAssistantApi = preload.slice(
-    preload.indexOf("quickAssistant: {"),
-    preload.indexOf("webs:", preload.indexOf("quickAssistant: {"))
-  );
-  const contractQuickAssistantApi = contracts.slice(
-    contracts.indexOf("quickAssistant: {"),
-    contracts.indexOf("webs:", contracts.indexOf("quickAssistant: {"))
-  );
-
-  assert.equal(fs.existsSync(nativeQuickAssistantPath), false);
-  assert.match(quickCopilotRoute, /function QuickCopilotRoute/);
-  assert.match(appShell, /location\.pathname === "\/quick-assistant"[\s\S]{0,180}<QuickCopilotRoute \/>/);
-  assert.match(quickCopilotRoute, /function buildAgentWebclientCopilotPath\(agentKey: string\)/);
-  assert.match(quickCopilotRoute, /encodeURIComponent\(normalizedAgentKey\)/);
-  assert.match(quickCopilotRoute, /const quickAssistantEmbedPath = buildAgentWebclientCopilotPath\(quickAssistantAgentKey\);/);
-  assert.match(quickCopilotRoute, /embedPath=\{quickAssistantEmbedPath\}/);
-  assert.match(quickCopilotRoute, /pluginId="agent-webclient"/);
-  assert.match(quickCopilotRoute, /devToolsTarget="copilot"/);
-  assert.match(quickCopilotRoute, /loadInitialEmbeddedUrlDirectly/);
-  assert.match(quickCopilotRoute, /quickAssistantAgentKey/);
-  assert.match(quickCopilotRoute, /data-open-agent-key=\{quickAssistantAgentKey\}/);
-  assert.match(quickCopilotRoute, /quickAssistant\.openControlCenter/);
-  assert.match(globalStyles, /\.quick-web-copilot\s*,/);
-  assert.match(globalStyles, /\.quick-web-copilot-status/);
-  assert.match(quickWebCopilotStyles, /border-radius:\s*10px;/);
-  assert.doesNotMatch(quickWebCopilotStyles, /border-radius:\s*24px;/);
-  assert.match(quickCopilotWindowController, /getQuickAssistantWebCopilotBounds/);
-  assert.match(quickCopilotWindowController, /readAssistantSettings\(this\.options\.app\)/);
-  assert.match(quickCopilotWindowController, /!quickSettings\.quickAssistantEnabled/);
-  assert.match(mainProcess, /ensureAssistantTargetServicesRunning\("quick-assistant"\)/);
-  assert.match(quickCopilotWindowController, /agentKey:\s*quickSettings\.quickAssistantAgentKey/);
-  assert.match(mainProcess, /quickCopilotWindowController\.getWindow\(\)/);
-  assert.match(quickAssistantWindowCreation, /webviewTag:\s*true/);
-  assert.doesNotMatch(mainProcess, /createQuickAssistantWindowState|getQuickAssistantBounds|QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL|QuickAssistantDisplayMode|requestQuickAssistantCompactMode|applyQuickAssistantBounds/);
-  assert.doesNotMatch(mainProcess, /quickAssistant\.(setExpanded|setDisplayMode|setInteractionState|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings)/);
-  assert.match(quickAssistantWindow, /QUICK_ASSISTANT_WEB_COPILOT_SIZE/);
-  assert.doesNotMatch(quickAssistantWindow, /QUICK_ASSISTANT_COMPACT|QuickAssistantDisplayMode|createQuickAssistantWindowState|getQuickAssistantBounds/);
-  assert.match(preloadQuickAssistantApi, /hide/);
-  assert.match(preloadQuickAssistantApi, /openControlCenter/);
-  assert.doesNotMatch(preloadQuickAssistantApi, /setExpanded|setDisplayMode|setInteractionState|onCompactModeRequested|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings/);
-  assert.match(contractQuickAssistantApi, /hide/);
-  assert.match(contractQuickAssistantApi, /openControlCenter/);
-  assert.doesNotMatch(contractQuickAssistantApi, /setExpanded|setDisplayMode|setInteractionState|onCompactModeRequested|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings/);
-  assert.doesNotMatch(globalStyles, /\.quick-(?!(?:web|assistant-settings))|quick-message|quick-artifact|quick-composer|quick-attachment|attachment-action-menu/u);
-});
-
 test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", () => {
   const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
   const preload = readSourceFile("src", "preload", "index.ts");
@@ -5962,7 +5827,7 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(preload, /copilot:\s*\{[\s\S]{0,140}publishDevToolsTarget:\s*\(target\) => ipcRenderer\.invoke\("copilot\.publishDevToolsTarget", target\)/);
   assert.match(contracts, /interface CopilotDevToolsTargetInput/);
   assert.match(contracts, /copilot:\s*\{[\s\S]{0,180}publishDevToolsTarget:\s*\(target: CopilotDevToolsTargetInput\)/);
-  assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}"agent-webclient-copilot-dock"[\s\S]{0,120}"agent-webclient-quick-copilot"/);
+  assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}"agent-webclient-copilot-dock"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
   assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*appState\.copilotDevToolsTarget/);

@@ -205,9 +205,7 @@ test("main window lifecycle hides macOS close requests without destroying the wi
       quitStateChecks += 1;
       return false;
     },
-    clearWindow: () => {},
-    isNativeDialogOpen: () => false,
-    hideQuickAssistantAfterOutsideFocus: () => {}
+    clearWindow: () => {}
   });
 
   target.emit("close", {
@@ -488,7 +486,6 @@ test("window manager reports renderer load failures and quits the app", async ()
 test("window manager wires main window readiness, focus and fullscreen lifecycle events", () => {
   const target = new FakeWindow();
   const appearances = [];
-  let hiddenOutsideFocus = 0;
   let restoredFloatingWindows = 0;
 
   configureMainWindowLifecycleEvents(target, {
@@ -501,10 +498,6 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
     isDevToolsShortcut: () => false,
     isHandlingQuit: () => false,
     clearWindow: () => {},
-    isNativeDialogOpen: () => false,
-    hideQuickAssistantAfterOutsideFocus: () => {
-      hiddenOutsideFocus += 1;
-    },
     restoreFloatingWindowsForFullscreen: () => {
       restoredFloatingWindows += 1;
     }
@@ -519,7 +512,6 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
 
   assert.equal(target.showCount, 1);
   assert.equal(target.focusCount, 1);
-  assert.equal(hiddenOutsideFocus, 1);
   assert.equal(restoredFloatingWindows, 2);
   assert.deepEqual(appearances, [target, target]);
   assert.deepEqual(target.webContents.sentMessages, [
@@ -543,9 +535,7 @@ test("window manager wires DevTools shortcuts and close lifecycle events", () =>
     },
     isDevToolsShortcut: (_platform, input) => input.key === "i",
     isHandlingQuit: () => false,
-    clearWindow: (window) => events.push({ type: "clear", window }),
-    isNativeDialogOpen: () => false,
-    hideQuickAssistantAfterOutsideFocus: () => {}
+    clearWindow: (window) => events.push({ type: "clear", window })
   });
 
   target.webContents.emit("before-input-event", {
@@ -584,9 +574,7 @@ test("window manager opens Desktop global search from the main window shortcut",
     isDevToolsShortcut: () => false,
     isGlobalSearchShortcut: (_platform, input) => input.key === "k",
     isHandlingQuit: () => false,
-    clearWindow: () => {},
-    isNativeDialogOpen: () => false,
-    hideQuickAssistantAfterOutsideFocus: () => {}
+    clearWindow: () => {}
   });
 
   target.webContents.emit("before-input-event", {
@@ -764,23 +752,16 @@ test("attached webviews open Desktop global search without opening DevTools", ()
   assert.equal(guest.devtoolsOpenOptions, null);
 });
 
-test("window manager grants media permissions only to the main or quick assistant window", async () => {
+test("window manager grants media permissions only to the main window", async () => {
   const permissionSession = new FakePermissionSession();
   const mainWindow = new FakeWindow();
-  const quickWindow = new FakeWindow();
   mainWindow.webContents.id = 101;
-  quickWindow.webContents.id = 202;
   let nativePromptCount = 0;
 
   configureMediaPermissions({
     platform: "win32",
     permissionSession,
     getMainWindow: () => mainWindow,
-    getQuickAssistantWindow: () => quickWindow,
-    isMediaPermissionAllowed: ({ permission, contentsId, mainContentsId, quickContentsId, mediaTypes }) =>
-      permission === "media" &&
-      (contentsId === mainContentsId || contentsId === quickContentsId) &&
-      mediaTypes.includes("audio"),
     askForMicrophoneAccess: async () => {
       nativePromptCount += 1;
       return false;
@@ -788,7 +769,7 @@ test("window manager grants media permissions only to the main or quick assistan
   });
 
   assert.equal(await permissionSession.request({ id: 101 }, "media", { mediaTypes: ["audio"] }), true);
-  assert.equal(await permissionSession.request({ id: 202 }, "media", { mediaTypes: ["audio"] }), true);
+  assert.equal(await permissionSession.request({ id: 202 }, "media", { mediaTypes: ["audio"] }), false);
   assert.equal(await permissionSession.request({ id: 303 }, "media", { mediaTypes: ["audio"] }), false);
   assert.equal(await permissionSession.request({ id: 101 }, "media", { mediaTypes: ["video"] }), false);
   assert.equal(nativePromptCount, 0);
@@ -804,8 +785,6 @@ test("window manager uses macOS native microphone access for allowed media reque
     platform: "darwin",
     permissionSession,
     getMainWindow: () => mainWindow,
-    getQuickAssistantWindow: () => null,
-    isMediaPermissionAllowed: () => true,
     askForMicrophoneAccess: async () => {
       prompts.push("microphone");
       return true;
@@ -819,8 +798,6 @@ test("window manager uses macOS native microphone access for allowed media reque
     platform: "darwin",
     permissionSession,
     getMainWindow: () => mainWindow,
-    getQuickAssistantWindow: () => null,
-    isMediaPermissionAllowed: () => true,
     askForMicrophoneAccess: async () => {
       throw new Error("denied");
     }

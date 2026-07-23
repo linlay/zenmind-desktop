@@ -23,7 +23,6 @@ export type MainAppEventsOptions = {
   stopAssistantBridgeRuntime: () => void;
   stopTunnelHubRuntime: () => unknown;
   stopAgentPlatformPetStatusClient: () => void;
-  unregisterQuickAssistantShortcut: () => void;
   unregisterPluginGlobalShortcuts: () => void;
   stopResourceDirectoryWatcher: () => void;
   stopPluginBridgeRuntime: () => void;
@@ -72,7 +71,6 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     options.stopAssistantBridgeRuntime();
     void options.stopTunnelHubRuntime();
     options.stopAgentPlatformPetStatusClient();
-    options.unregisterQuickAssistantShortcut();
     options.unregisterPluginGlobalShortcuts();
     options.globalShortcut.unregister(options.focusedWebviewDevToolsShortcut);
     options.stopResourceDirectoryWatcher();

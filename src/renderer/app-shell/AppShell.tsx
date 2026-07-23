@@ -21,10 +21,7 @@ import {
 import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_SHORTCUT,
   DESKTOP_COPILOT_PAGE_KEYS,
-  normalizeQuickAssistantShortcut,
   type DesktopCopilotPageKey
 } from "../../shared/assistant-settings";
 import {
@@ -2263,7 +2260,6 @@ export function AppShell() {
       "general",
       "appearance",
       "usage",
-      "quick",
       "copilot",
       "pet",
       "kanban",
@@ -2276,8 +2272,6 @@ export function AppShell() {
       "general.deviceName",
       "appearance.themeMode",
       "appearance.locale",
-      "quick.enabled",
-      "quick.agentKey",
       "copilot.desktopCopilotPages",
       "pet.enabled",
       "pet.boundAgentKey",
@@ -2305,7 +2299,6 @@ export function AppShell() {
       ["general", new Set(["deviceName", "preventSleepWhileRunning", "desktopActionConfirmationEnabled"])],
       ["appearance", new Set(["themeMode", "locale"])],
       ["usage", new Set(["*"])],
-      ["quick", new Set(["enabled", "agentKey"])],
       ["copilot", new Set(["desktopCopilotPages"])],
       ["pet", new Set(["enabled", "boundAgentKey", "appearanceId"])],
       ["kanban", new Set(["remoteControlEnabled", "deviceAlias"])],
@@ -2462,23 +2455,6 @@ export function AppShell() {
                 profileError: profile.status === "rejected" ? settingError(profile.reason) : null,
                 ssoStatus: ssoStatus.status === "fulfilled" ? ssoStatus.value : null,
                 ssoError: ssoStatus.status === "rejected" ? settingError(ssoStatus.reason) : null
-              };
-            })] as const;
-          case "quick":
-            return [section, await readSettingSection(async () => {
-              const [settings, agentOptions] = await Promise.all([
-                window.electronAPI.assistant.getSettings(),
-                window.electronAPI.assistant.listAgents()
-              ]);
-              setAssistantSettings(settings);
-              return {
-                enabled: settings.quickAssistantEnabled,
-                agentKey: settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-                shortcut: normalizeQuickAssistantShortcut(settings.quickAssistantShortcut),
-                configured: settings.configured,
-                source: settings.source,
-                sourceLabel: settings.sourceLabel,
-                agentOptions
               };
             })] as const;
           case "copilot":
@@ -2639,19 +2615,6 @@ export function AppShell() {
         addIssue("appearance.locale", "appearance.locale is not supported.", appearancePatch.locale);
       }
 
-      const quickPatch = validateObjectSection("quick");
-      if (hasOwn(quickPatch, "enabled") && typeof quickPatch.enabled !== "boolean") {
-        addIssue("quick.enabled", "quick.enabled must be boolean.", quickPatch.enabled);
-      }
-      if (hasOwn(quickPatch, "agentKey")) {
-        const agentKey = readString(quickPatch.agentKey);
-        if (typeof quickPatch.agentKey !== "string") {
-          addIssue("quick.agentKey", "quick.agentKey must be a string.", quickPatch.agentKey);
-        } else if (agentKey && !hasAgentKey(state.assistantAgents, agentKey)) {
-          addIssue("quick.agentKey", t("settings.navigation.helperAgentInvalid"), quickPatch.agentKey);
-        }
-      }
-
       const copilotPatch = validateObjectSection("copilot");
       if (hasOwn(copilotPatch, "desktopCopilotPages")) {
         const nextPages = sanitizeDesktopCopilotPagePreferences({
@@ -2763,7 +2726,6 @@ export function AppShell() {
       const changes: Array<{ section: string; field: string; from: unknown; to: unknown }> = [];
       const generalPatch = asRecord(patch.general);
       const appearancePatch = asRecord(patch.appearance);
-      const quickPatch = asRecord(patch.quick);
       const copilotPatch = asRecord(patch.copilot);
       const petPatch = asRecord(patch.pet);
       const kanbanPatch = asRecord(patch.kanban);
@@ -2778,25 +2740,6 @@ export function AppShell() {
       }
       if (hasOwn(appearancePatch, "locale")) {
         changes.push({ section: "appearance", field: "locale", from: locale, to: appearancePatch.locale });
-      }
-      if (hasOwn(quickPatch, "enabled")) {
-        changes.push({ section: "quick", field: "enabled", from: state.assistantSettings.quickAssistantEnabled, to: quickPatch.enabled });
-      }
-      if (hasOwn(quickPatch, "agentKey")) {
-        changes.push({
-          section: "quick",
-          field: "agentKey",
-          from: state.assistantSettings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-          to: quickPatch.agentKey
-        });
-      }
-      if (hasOwn(quickPatch, "shortcut")) {
-        changes.push({
-          section: "quick",
-          field: "shortcut",
-          from: normalizeQuickAssistantShortcut(state.assistantSettings.quickAssistantShortcut),
-          to: normalizeQuickAssistantShortcut(quickPatch.shortcut)
-        });
       }
       if (hasOwn(copilotPatch, "desktopCopilotPages")) {
         changes.push({
@@ -2840,7 +2783,6 @@ export function AppShell() {
       const affectedSections = new Set<string>();
       const generalPatch = asRecord(patch.general);
       const appearancePatch = asRecord(patch.appearance);
-      const quickPatch = asRecord(patch.quick);
       const copilotPatch = asRecord(patch.copilot);
       const petPatch = asRecord(patch.pet);
       const kanbanPatch = asRecord(patch.kanban);
@@ -2862,31 +2804,15 @@ export function AppShell() {
         await setLocale(appearancePatch.locale as SupportedLocale);
         affectedSections.add("appearance");
       }
-      if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey") || hasOwn(quickPatch, "shortcut") || hasOwn(copilotPatch, "desktopCopilotPages")) {
+      if (hasOwn(copilotPatch, "desktopCopilotPages")) {
         const nextSettings = await window.electronAPI.assistant.saveSettings({
-          ...(typeof quickPatch.enabled === "boolean" ? { quickAssistantEnabled: quickPatch.enabled } : {}),
-          ...(typeof quickPatch.agentKey === "string"
-            ? { quickAssistantAgentKey: quickPatch.agentKey.trim() || DEFAULT_QUICK_ASSISTANT_AGENT_KEY }
-            : {}),
-          ...(typeof quickPatch.shortcut === "string"
-            ? { quickAssistantShortcut: normalizeQuickAssistantShortcut(quickPatch.shortcut || DEFAULT_QUICK_ASSISTANT_SHORTCUT) }
-            : {}),
-          ...(hasOwn(copilotPatch, "desktopCopilotPages")
-            ? {
-                desktopCopilotPages: sanitizeDesktopCopilotPagePreferences({
-                  ...state.assistantSettings.desktopCopilotPages,
-                  ...asRecord(copilotPatch.desktopCopilotPages)
-                })
-              }
-            : {})
+          desktopCopilotPages: sanitizeDesktopCopilotPagePreferences({
+            ...state.assistantSettings.desktopCopilotPages,
+            ...asRecord(copilotPatch.desktopCopilotPages)
+          })
         });
         setAssistantSettings(nextSettings);
-        if (hasOwn(quickPatch, "enabled") || hasOwn(quickPatch, "agentKey") || hasOwn(quickPatch, "shortcut")) {
-          affectedSections.add("quick");
-        }
-        if (hasOwn(copilotPatch, "desktopCopilotPages")) {
-          affectedSections.add("copilot");
-        }
+        affectedSections.add("copilot");
       }
       if (Object.keys(petPatch).some((field) => ["enabled", "boundAgentKey", "appearanceId"].includes(field))) {
         await window.electronAPI.desktopPet.saveSettings({

@@ -51,7 +51,7 @@ export type AssistantMessageRole = "user" | "assistant";
 
 export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";
 export type AssistantPermissionMode = "default" | "page_control" | "full_access";
-export type AssistantRunSource = "sidebar" | "quick-assistant" | "copilot";
+export type AssistantRunSource = "sidebar" | "copilot";
 
 export interface AssistantPageContext {
   url: string;
@@ -326,9 +326,6 @@ export interface AssistantSettingsPublic {
   chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
   bootstrapChatId: string;
-  quickAssistantEnabled: boolean;
-  quickAssistantAgentKey: string;
-  quickAssistantShortcut: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
   source?: "desktop" | "agent-platform";
   sourceLabel?: string;
@@ -338,9 +335,6 @@ export interface AssistantSettingsInput {
   voiceCorrectionEnabled?: boolean;
   desktopHelperAgentKey?: string;
   chatDefaultAgentKey?: string;
-  quickAssistantEnabled?: boolean;
-  quickAssistantAgentKey?: string;
-  quickAssistantShortcut?: string;
   desktopCopilotPages?: DesktopCopilotPagePreferencesInput;
 }
 

@@ -93,7 +93,6 @@ import type { LogsRuntime } from "../logs/runtime";
 import { registerAssistantIpcHandlers } from "./assistant-handlers";
 import { registerDesktopPetIpcHandlers } from "./desktop-pet-handlers";
 import { registerMarketplaceIpcHandlers } from "./marketplace-handlers";
-import { registerQuickCopilotIpcHandlers } from "../assistant/quick/ipc";
 import { registerServicesIpcHandlers } from "./services-handlers";
 import { registerSettingsIpcHandlers } from "./settings-handlers";
 import { registerShellIpcHandlers } from "./shell-handlers";
@@ -113,7 +112,6 @@ export type MainIpcRegistrationOptions = {
   logsRuntime: LogsRuntime;
   petRuntime: DesktopPetRuntime;
   browserSurfaces: BrowserSurfaceRegistry;
-  quickCopilotWindowController: any;
   desktopSsoController: any;
   startupRestoreController: any;
   desktopAppInfo: any;
@@ -148,7 +146,6 @@ export type MainIpcRegistrationOptions = {
   reportRendererDiagnostic: (...args: any[]) => unknown;
   emitAssistantAttachmentProgress: (...args: any[]) => unknown;
   captureAssistantScreenshot: (...args: any[]) => unknown;
-  refreshQuickAssistantShortcut: (accelerator?: string) => unknown;
 };
 
 export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
@@ -191,11 +188,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     createAssistantAttachmentFromPastedImage,
     cancelAssistantAttachmentTask,
     createAssistantAttachmentsFromFiles,
-    captureAssistantScreenshot: options.captureAssistantScreenshot as any,
-    refreshQuickAssistantShortcut: options.refreshQuickAssistantShortcut
+    captureAssistantScreenshot: options.captureAssistantScreenshot as any
   }));
 
-  registerQuickCopilotIpcHandlers(ipcMain, options.quickCopilotWindowController);
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
 
   registerServicesIpcHandlers(ipcMain, createServicesIpcHandlerOptions(context, {

@@ -91,7 +91,7 @@ npm test
 - [市场系统](docs/市场系统.md)：市场 catalog、安装记录、下载缓存和各资源分区。
 - [外部网站](docs/外部网站.md)：URL 网站入口、排序、Copilot 绑定和数据文件。
 - [本地网站应用](docs/本地网站应用.md)：webapp 包结构、Node 后端、静态前端代理、运行状态。
-- [智能助理集成](docs/智能助理集成.md)：agent-platform bridge、聊天、附件、quick/copilot。
+- [智能助理集成](docs/智能助理集成.md)：agent-platform bridge、聊天、附件和 Copilot。
 - [桌宠系统](docs/桌宠系统.md)：桌宠设置、资产、窗口、状态和 agent 绑定。
 - [看板与云同步](docs/看板与云同步.md)：本地 SQLite、云只读缓存、远端控制和 automation。
 - [桌面协议与动作桥](docs/桌面协议与动作桥.md)：Desktop WebSocket、HTTP action bridge 和动作命名。

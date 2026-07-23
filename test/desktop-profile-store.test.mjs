@@ -27,8 +27,7 @@ test("desktop profile ignores retired files and nested aliases", (t) => {
 
   fs.writeFileSync(path.join(root, "preferences.json"), JSON.stringify({ locale: "zh-CN" }), "utf8");
   fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({
-    desktopHelperAgentKey: "legacy-helper",
-    quickAssistantAgentKey: "legacy-quick"
+    desktopHelperAgentKey: "legacy-helper"
   }), "utf8");
   fs.writeFileSync(path.join(root, "kanban.json"), JSON.stringify({ deviceAlias: "legacy-device" }), "utf8");
 
@@ -36,16 +35,10 @@ test("desktop profile ignores retired files and nested aliases", (t) => {
   assert.equal(fs.existsSync(path.join(root, "profile.json")), false);
   assert.equal(fromRetiredFiles.general.deviceName, "");
   assert.equal(fromRetiredFiles.assistant.copilot.agentKey, "desktopAssistant");
-  assert.equal(fromRetiredFiles.assistant.quick.agentKey, "desktopAssistant");
 
   fs.writeFileSync(path.join(root, "profile.json"), JSON.stringify({
     assistant: {
-      desktopHelperAgentKey: "legacy-helper",
-      quickAssistant: {
-        enabled: false,
-        agentKey: "legacy-quick",
-        shortcut: "CommandOrControl+Shift+K"
-      }
+      desktopHelperAgentKey: "legacy-helper"
     },
     navigation: {
       websiteOrder: ["legacy-site"]
@@ -54,9 +47,6 @@ test("desktop profile ignores retired files and nested aliases", (t) => {
 
   const fromRetiredAliases = readDesktopProfileFromRoot(root);
   assert.equal(fromRetiredAliases.assistant.copilot.agentKey, "desktopAssistant");
-  assert.equal(fromRetiredAliases.assistant.quick.enabled, true);
-  assert.equal(fromRetiredAliases.assistant.quick.agentKey, "desktopAssistant");
-  assert.equal(fromRetiredAliases.assistant.quick.shortcut, "Alt+Space");
   assert.deepEqual(fromRetiredAliases.navigation.webOrder, []);
 });
 
@@ -74,23 +64,6 @@ test("desktop profile preserves explicit Desktop Action confirmation disable", (
   const profile = readDesktopProfileFromRoot(root);
 
   assert.equal(profile.general.desktopActionConfirmationEnabled, false);
-});
-
-test("desktop profile stores custom quick assistant shortcut", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  updateDesktopProfileInRoot(root, {
-    assistant: {
-      quick: {
-        shortcut: "CommandOrControl+Shift+K"
-      }
-    }
-  });
-
-  const profile = readDesktopProfileFromRoot(root);
-
-  assert.equal(profile.assistant.quick.shortcut, "CommandOrControl+Shift+K");
 });
 
 test("desktop profile leaves Chat agent unset instead of inheriting the sidebar helper", (t) => {

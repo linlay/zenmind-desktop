@@ -5,9 +5,6 @@ import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../../s
 import {
   DEFAULT_CHAT_DEFAULT_AGENT_KEY,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_ENABLED,
-  normalizeQuickAssistantShortcut,
   type DesktopCopilotPagePreferences
 } from "../../../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../../../shared/page-copilot";
@@ -32,9 +29,6 @@ export type AssistantSettingsPrivate = {
   chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
   bootstrapChatId: string;
-  quickAssistantEnabled: boolean;
-  quickAssistantAgentKey: string;
-  quickAssistantShortcut: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
 };
 
@@ -89,10 +83,6 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
   const chatDefaultAgentKey = typeof candidate.chatDefaultAgentKey === "string" && candidate.chatDefaultAgentKey.trim()
     ? candidate.chatDefaultAgentKey.trim()
     : DEFAULT_CHAT_DEFAULT_AGENT_KEY;
-  const quickAssistantAgentKey = typeof candidate.quickAssistantAgentKey === "string" && candidate.quickAssistantAgentKey.trim()
-    ? candidate.quickAssistantAgentKey.trim()
-    : DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
-  const quickAssistantShortcut = normalizeQuickAssistantShortcut(candidate.quickAssistantShortcut);
   const desktopCopilotPages = sanitizeDesktopCopilotPagePreferences(candidate.desktopCopilotPages);
   return {
     baseURL: "",
@@ -105,11 +95,6 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
     chatDefaultAgentKey,
     bootstrapAgentKey: typeof candidate.bootstrapAgentKey === "string" ? candidate.bootstrapAgentKey.trim() : "",
     bootstrapChatId: typeof candidate.bootstrapChatId === "string" ? candidate.bootstrapChatId.trim() : "",
-    quickAssistantEnabled: typeof candidate.quickAssistantEnabled === "boolean"
-      ? candidate.quickAssistantEnabled
-      : DEFAULT_QUICK_ASSISTANT_ENABLED,
-    quickAssistantAgentKey,
-    quickAssistantShortcut,
     desktopCopilotPages
   };
 }
@@ -119,9 +104,6 @@ function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
     chatDefaultAgentKey: settings.chatDefaultAgentKey,
-    quickAssistantEnabled: settings.quickAssistantEnabled,
-    quickAssistantAgentKey: settings.quickAssistantAgentKey,
-    quickAssistantShortcut: settings.quickAssistantShortcut,
     desktopCopilotPages: settings.desktopCopilotPages
   };
 }
@@ -162,9 +144,6 @@ export function toPublicAssistantSettings(
     chatDefaultAgentKey: settings.chatDefaultAgentKey,
     bootstrapAgentKey: settings.bootstrapAgentKey,
     bootstrapChatId: settings.bootstrapChatId,
-    quickAssistantEnabled: settings.quickAssistantEnabled,
-    quickAssistantAgentKey: settings.quickAssistantAgentKey,
-    quickAssistantShortcut: settings.quickAssistantShortcut,
     desktopCopilotPages: settings.desktopCopilotPages,
     source,
     ...(sourceLabel ? { sourceLabel } : {})
@@ -182,9 +161,6 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
       profile.assistant.chat.agentKey || desktopInitAssistant.chatDefaultAgentKey,
     bootstrapAgentKey: desktopInitAssistant.bootstrapAgentKey,
     bootstrapChatId: desktopInitAssistant.bootstrapChatId,
-    quickAssistantEnabled: profile.assistant.quick.enabled,
-    quickAssistantAgentKey: profile.assistant.quick.agentKey,
-    quickAssistantShortcut: profile.assistant.quick.shortcut,
     desktopCopilotPages: profile.navigation.desktopCopilotPages
   });
   return settings;
@@ -215,15 +191,6 @@ export function saveAssistantSettingsToRoot(
       : current.chatDefaultAgentKey,
     bootstrapAgentKey: current.bootstrapAgentKey,
     bootstrapChatId: current.bootstrapChatId,
-    quickAssistantEnabled: typeof input.quickAssistantEnabled === "boolean"
-      ? input.quickAssistantEnabled
-      : current.quickAssistantEnabled,
-    quickAssistantAgentKey: typeof input.quickAssistantAgentKey === "string" && input.quickAssistantAgentKey.trim()
-      ? input.quickAssistantAgentKey.trim()
-      : current.quickAssistantAgentKey,
-    quickAssistantShortcut: typeof input.quickAssistantShortcut === "string"
-      ? normalizeQuickAssistantShortcut(input.quickAssistantShortcut)
-      : current.quickAssistantShortcut,
     desktopCopilotPages: mergeDesktopCopilotPagePreferences(current.desktopCopilotPages, input.desktopCopilotPages)
   };
 
@@ -235,11 +202,6 @@ export function saveAssistantSettingsToRoot(
       },
       chat: {
         agentKey: next.chatDefaultAgentKey
-      },
-      quick: {
-        enabled: next.quickAssistantEnabled,
-        agentKey: next.quickAssistantAgentKey,
-        shortcut: next.quickAssistantShortcut
       }
     },
     navigation: {

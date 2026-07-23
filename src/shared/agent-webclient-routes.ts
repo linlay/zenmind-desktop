@@ -105,9 +105,26 @@ const AGENT_WEBCLIENT_CHAT_SURFACE_IDS = new Set([
 ]);
 const AGENT_WEBCLIENT_COPILOT_SURFACE_IDS = new Set([
   "agent-webclient-copilot",
-  "agent-webclient-copilot-dock",
-  "agent-webclient-quick-copilot"
+  "agent-webclient-copilot-dock"
 ]);
+
+export function createAgentWebclientRoute(request: {
+  agentKey?: string | null;
+  chatId?: string | null;
+}) {
+  const agentKey = request.agentKey?.trim() ?? "";
+  if (!agentKey) {
+    return AGENT_WEBCLIENT_TARGET_PATH;
+  }
+
+  const params = new URLSearchParams();
+  const chatId = request.chatId?.trim() ?? "";
+  if (chatId) {
+    params.set("chatId", chatId);
+  }
+  const query = params.toString();
+  return `/agent/${encodeURIComponent(agentKey)}${query ? `?${query}` : ""}`;
+}
 
 export function resolveAgentWebclientWsSource(
   surfaceId: string,

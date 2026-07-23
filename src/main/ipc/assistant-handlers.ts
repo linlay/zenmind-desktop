@@ -37,13 +37,12 @@ export interface AssistantIpcHandlerOptions {
   emitAssistantAttachmentProgress: ((progress: any) => void) | null;
   getAssistantSettings: ((app: any) => any) | null;
   saveAssistantSettings: ((app: any, input: any) => any) | null;
-  refreshQuickAssistantShortcut?: ((accelerator?: string) => any) | null;
   getAgentPlatformMinimaxSettingsPublic: ((app: any) => any) | null;
   resolveAssistantAttachmentPath: ((app: any, chatId: string, attachmentId: string) => string) | null;
   createAssistantAttachmentFromPastedImage: ((app: any, chatId: any, input: any) => any) | null;
   cancelAssistantAttachmentTask: ((taskId: string) => any) | null;
   createAssistantAttachmentsFromFiles: ((app: any, chatId: any, filePaths: string[], opts: any) => any) | null;
-  captureAssistantScreenshot: ((chatId: any, source: string) => any) | null;
+  captureAssistantScreenshot: ((chatId: any) => any) | null;
   platform?: string;
 }
 
@@ -66,8 +65,7 @@ async function saveAssistantChatExport(
 }
 
 const COPILOT_DEVTOOLS_SURFACE_IDS = new Set([
-  "agent-webclient-copilot-dock",
-  "agent-webclient-quick-copilot"
+  "agent-webclient-copilot-dock"
 ]);
 
 function readOptionalString(value: unknown) {
@@ -114,7 +112,6 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     emitAssistantAttachmentProgress,
     getAssistantSettings,
     saveAssistantSettings,
-    refreshQuickAssistantShortcut,
     getAgentPlatformMinimaxSettingsPublic,
     resolveAssistantAttachmentPath,
     createAssistantAttachmentFromPastedImage,
@@ -238,11 +235,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   );
 
   ipcMain.handle("assistant.saveSettings", async (_event: any, input: any) => {
-    const nextSettings = await saveAssistantSettings?.(app, input);
-    if (nextSettings && input && typeof input.quickAssistantShortcut === "string") {
-      refreshQuickAssistantShortcut?.(nextSettings.quickAssistantShortcut);
-    }
-    return nextSettings;
+    return saveAssistantSettings?.(app, input);
   });
 
   ipcMain.handle("assistant.getMemorySettings", async () =>
@@ -492,7 +485,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   );
 
   ipcMain.handle("assistant.captureScreenshot", async (_event: any, chatId?: string | null) =>
-    captureAssistantScreenshot?.(chatId, "sidebar")
+    captureAssistantScreenshot?.(chatId)
   );
 
   ipcMain.handle("assistant.openAttachment", async (_event: any, chatId: string, attachmentId: string) => {

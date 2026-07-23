@@ -289,9 +289,6 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
     chatDefaultAgentKey: localSettings.chatDefaultAgentKey,
     bootstrapAgentKey: localSettings.bootstrapAgentKey,
     bootstrapChatId: localSettings.bootstrapChatId,
-    quickAssistantEnabled: localSettings.quickAssistantEnabled,
-    quickAssistantAgentKey: localSettings.quickAssistantAgentKey,
-    quickAssistantShortcut: localSettings.quickAssistantShortcut,
     desktopCopilotPages: localSettings.desktopCopilotPages
   };
 }
@@ -347,9 +344,6 @@ export function loadAgentPlatformProviderSettings(
     chatDefaultAgentKey: localSettings.chatDefaultAgentKey,
     bootstrapAgentKey: localSettings.bootstrapAgentKey,
     bootstrapChatId: localSettings.bootstrapChatId,
-    quickAssistantEnabled: localSettings.quickAssistantEnabled,
-    quickAssistantAgentKey: localSettings.quickAssistantAgentKey,
-    quickAssistantShortcut: localSettings.quickAssistantShortcut,
     desktopCopilotPages: localSettings.desktopCopilotPages
   };
 }

@@ -532,10 +532,6 @@ const api: DesktopApi = {
       };
     }
   },
-  quickAssistant: {
-    hide: () => ipcRenderer.invoke("quickAssistant.hide"),
-    openControlCenter: () => ipcRenderer.invoke("quickAssistant.openControlCenter")
-  },
   webs: {
     list: () => ipcRenderer.invoke("webs.list"),
     onChanged: (listener: WebsChangedListener) => {

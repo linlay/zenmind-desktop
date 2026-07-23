@@ -9,8 +9,6 @@ import {
 export type NativeDialogVisibilityControllerOptions = {
   platform: NodeJS.Platform;
   getTargetWindows: () => Array<BrowserWindow | null>;
-  hideQuickCopilot: () => void;
-  restoreQuickCopilot: () => void;
 };
 
 export class NativeDialogVisibilityController {
@@ -71,7 +69,6 @@ export class NativeDialogVisibilityController {
 
     this.visibilityDepth += 1;
     if (this.visibilityDepth === 1) {
-      this.options.hideQuickCopilot();
       this.emitVisibility(true);
     }
 
@@ -79,7 +76,6 @@ export class NativeDialogVisibilityController {
       this.visibilityDepth = Math.max(0, this.visibilityDepth - 1);
       if (this.visibilityDepth === 0) {
         this.emitVisibility(false);
-        this.options.restoreQuickCopilot();
       }
     };
   }

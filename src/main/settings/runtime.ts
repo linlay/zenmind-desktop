@@ -11,7 +11,6 @@ export type SettingsRuntimeOptions = {
   app: App;
   platform: NodeJS.Platform;
   state: MainAppState;
-  getQuickAssistantWindow: () => BrowserWindow | null;
   getLogViewerWindow: () => BrowserWindow | null;
   buildApplicationMenu: () => void;
   refreshTrayContextMenu: () => void;
@@ -29,7 +28,6 @@ export function createSettingsRuntime(options: SettingsRuntimeOptions) {
     for (const targetWindow of [
       options.state.mainWindow,
       options.state.desktopPetWindow,
-      options.getQuickAssistantWindow(),
       options.getLogViewerWindow()
     ]) {
       if (!targetWindow || targetWindow.isDestroyed()) {
@@ -47,7 +45,6 @@ export function createSettingsRuntime(options: SettingsRuntimeOptions) {
     for (const targetWindow of [
       options.state.mainWindow,
       options.state.desktopPetWindow,
-      options.getQuickAssistantWindow(),
       options.getLogViewerWindow()
     ]) {
       if (!targetWindow || targetWindow.isDestroyed()) {

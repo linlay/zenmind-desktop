@@ -12,8 +12,6 @@ import { PRODUCT_NAME } from "../../../shared/brand";
 import { t } from "../../i18n/main-i18n";
 import { createAssistantAttachmentFromImageBuffer } from "../attachments/attachment-store";
 
-export type ScreenshotCaptureSource = "sidebar" | "quick-assistant";
-
 export type BridgeScreenshotCaptureResult = {
   ok: boolean;
   message: string;
@@ -35,12 +33,8 @@ type ScreenshotSelectionRect = {
 type CaptureAssistantScreenshotOptions = {
   app: App;
   chatId: string | null | undefined;
-  source: ScreenshotCaptureSource;
   platform: NodeJS.Platform;
   getMainWindow: () => BrowserWindow | null;
-  getQuickCopilotWindow: () => BrowserWindow | null;
-  hideQuickCopilotDismissWindow: () => void;
-  showQuickCopilotDismissWindow: () => void;
   delay: (ms: number) => Promise<void>;
 };
 
@@ -287,8 +281,7 @@ function getScreenshotSelectionGlobalRect(
 }
 
 function getScreenshotWindowFallbackTargets(
-  source: ScreenshotCaptureSource,
-  options: Pick<CaptureAssistantScreenshotOptions, "getMainWindow" | "getQuickCopilotWindow">
+  options: Pick<CaptureAssistantScreenshotOptions, "getMainWindow">
 ) {
   const targets: BrowserWindow[] = [];
   const addTarget = (targetWindow: BrowserWindow | null) => {
@@ -302,12 +295,6 @@ function getScreenshotWindowFallbackTargets(
     }
   };
 
-  if (source === "quick-assistant") {
-    addTarget(options.getMainWindow());
-    addTarget(options.getQuickCopilotWindow());
-    return targets;
-  }
-
   addTarget(options.getMainWindow());
   return targets;
 }
@@ -315,11 +302,10 @@ function getScreenshotWindowFallbackTargets(
 async function captureWindowSelectionFallback(
   displayBounds: Rectangle,
   selection: ScreenshotSelectionRect,
-  source: ScreenshotCaptureSource,
-  options: Pick<CaptureAssistantScreenshotOptions, "getMainWindow" | "getQuickCopilotWindow">
+  options: Pick<CaptureAssistantScreenshotOptions, "getMainWindow">
 ) {
   const selectionBounds = getScreenshotSelectionGlobalRect(displayBounds, selection);
-  for (const targetWindow of getScreenshotWindowFallbackTargets(source, options)) {
+  for (const targetWindow of getScreenshotWindowFallbackTargets(options)) {
     const contentBounds = targetWindow.getContentBounds();
     const intersection = intersectRect(selectionBounds, contentBounds);
     if (!intersection) {
@@ -360,8 +346,7 @@ function cropScreenshotImage(
 async function captureScreenshotImage(
   display: Display,
   selection: ScreenshotSelectionRect,
-  source: ScreenshotCaptureSource,
-  options: Pick<CaptureAssistantScreenshotOptions, "platform" | "getMainWindow" | "getQuickCopilotWindow">
+  options: Pick<CaptureAssistantScreenshotOptions, "platform" | "getMainWindow">
 ) {
   let screenCaptureFailure: Error | null = null;
   try {
@@ -375,7 +360,7 @@ async function captureScreenshotImage(
     screenCaptureFailure = error instanceof Error ? error : new Error(String(error));
   }
 
-  const fallback = await captureWindowSelectionFallback(display.bounds, selection, source, options);
+  const fallback = await captureWindowSelectionFallback(display.bounds, selection, options);
   if (fallback && !fallback.isEmpty()) {
     return fallback;
   }
@@ -410,17 +395,6 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
     };
   }
 
-  const quickAssistantWindow = options.getQuickCopilotWindow();
-  const shouldRestoreQuickAssistant = options.source === "quick-assistant" &&
-    Boolean(quickAssistantWindow && !quickAssistantWindow.isDestroyed() && quickAssistantWindow.isVisible());
-  if (options.source === "quick-assistant") {
-    options.hideQuickCopilotDismissWindow();
-    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-      quickAssistantWindow.hide();
-    }
-    await options.delay(140);
-  }
-
   try {
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const selection = await selectScreenshotRegion(display, options.platform);
@@ -434,7 +408,7 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
     }
 
     await options.delay(80);
-    const cropped = await captureScreenshotImage(display, selection, options.source, options);
+    const cropped = await captureScreenshotImage(display, selection, options);
     return createAssistantAttachmentFromImageBuffer(options.app, options.chatId, {
       name: createScreenshotAttachmentName(),
       mimeType: "image/png",
@@ -451,14 +425,6 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
       message: error instanceof Error ? error.message : String(error),
       attachments: []
     };
-  } finally {
-    if (options.source === "quick-assistant") {
-      if (shouldRestoreQuickAssistant && quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-        options.showQuickCopilotDismissWindow();
-        quickAssistantWindow.show();
-        quickAssistantWindow.focus();
-      }
-    }
   }
 }
 
@@ -485,7 +451,7 @@ export async function captureScreenshotForBridge(
     }
 
     await options.delay(80);
-    const cropped = await captureScreenshotImage(display, selection, options.source, options);
+    const cropped = await captureScreenshotImage(display, selection, options);
     const buffer = cropped.toPNG();
     if (buffer.length > MAX_BRIDGE_SCREENSHOT_BYTES) {
       return {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, SunOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -45,12 +45,8 @@ import { formatEpochMillis } from "../../../shared/time-contract";
 import {
   DEFAULT_CHAT_DEFAULT_AGENT_KEY,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_SHORTCUT,
-  DEFAULT_QUICK_ASSISTANT_ENABLED,
   DESKTOP_COPILOT_PAGE_KEYS,
   createDefaultDesktopCopilotPagePreferences,
-  normalizeQuickAssistantShortcut,
   type DesktopCopilotPageKey,
   type DesktopCopilotPagePreferences
 } from "../../../shared/assistant-settings";
@@ -445,9 +441,6 @@ function getLocaleLabel(nextLocale: SupportedLocale, t: TranslateFunction) {
 const SETTINGS_ACTION_PATCH_FIELDS = [
   "desktopHelperAgentKey",
   "chatDefaultAgentKey",
-  "quickAssistantEnabled",
-  "quickAssistantAgentKey",
-  "quickAssistantShortcut",
   "desktopCopilotPages"
 ] as const;
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
@@ -593,59 +586,6 @@ function buildSettingsActionPatch(
   }
 
   return patch;
-}
-
-function shortcutKeyFromKeyboardEvent(event: ReactKeyboardEvent<HTMLInputElement>) {
-  const key = event.key;
-  if (key === " " || key === "Spacebar" || key === "Space") {
-    return "Space";
-  }
-  if (/^F(?:[1-9]|1[0-9]|2[0-4])$/u.test(key)) {
-    return key;
-  }
-  switch (key) {
-    case "ArrowUp":
-      return "Up";
-    case "ArrowDown":
-      return "Down";
-    case "ArrowLeft":
-      return "Left";
-    case "ArrowRight":
-      return "Right";
-    case "Escape":
-      return "Esc";
-    case "Enter":
-    case "Tab":
-    case "Backspace":
-    case "Delete":
-    case "Home":
-    case "End":
-    case "PageUp":
-    case "PageDown":
-      return key;
-    default:
-      return key.length === 1 ? key.toUpperCase() : "";
-  }
-}
-
-function shortcutAcceleratorFromKeyboardEvent(event: ReactKeyboardEvent<HTMLInputElement>) {
-  const key = shortcutKeyFromKeyboardEvent(event);
-  if (!key || key === "Control" || key === "Alt" || key === "Shift" || key === "Meta") {
-    return "";
-  }
-  const modifiers = [
-    event.metaKey ? "Command" : "",
-    event.ctrlKey ? "Control" : "",
-    event.altKey ? "Alt" : "",
-    event.shiftKey ? "Shift" : ""
-  ].filter(Boolean);
-  if (modifiers.length === 0 && !/^F(?:[1-9]|1[0-9]|2[0-4])$/u.test(key)) {
-    return "";
-  }
-  if (modifiers.length === 1 && modifiers[0] === "Shift" && key.length === 1) {
-    return "";
-  }
-  return [...modifiers, key].join("+");
 }
 
 function getCopilotPageKeyForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): DesktopCopilotPageKey | null {
@@ -2586,19 +2526,12 @@ export function SettingsPage({
   const [chatAgentOptions, setChatAgentOptions] = useState<DesktopPetAgentOption[]>([]);
   const [desktopHelperAgentKey, setDesktopHelperAgentKey] = useState(DEFAULT_DESKTOP_HELPER_AGENT_KEY);
   const [chatDefaultAgentKey, setChatDefaultAgentKey] = useState(DEFAULT_CHAT_DEFAULT_AGENT_KEY);
-  const [quickAssistantEnabled, setQuickAssistantEnabled] = useState(DEFAULT_QUICK_ASSISTANT_ENABLED);
-  const [quickAssistantAgentKey, setQuickAssistantAgentKey] = useState(DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
-  const [quickAssistantShortcut, setQuickAssistantShortcut] = useState(DEFAULT_QUICK_ASSISTANT_SHORTCUT);
-  const [quickAssistantShortcutDraft, setQuickAssistantShortcutDraft] = useState(DEFAULT_QUICK_ASSISTANT_SHORTCUT);
   const [desktopCopilotPages, setDesktopCopilotPages] = useState<DesktopCopilotPagePreferences>(
     createDefaultDesktopCopilotPagePreferences
   );
   const [desktopHelperAgentPending, setDesktopHelperAgentPending] = useState(false);
   const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
   const chatDefaultAgentMigrationRef = useRef("");
-  const [quickAssistantPending, setQuickAssistantPending] = useState(false);
-  const [quickAssistantAgentPending, setQuickAssistantAgentPending] = useState(false);
-  const [quickAssistantShortcutPending, setQuickAssistantShortcutPending] = useState(false);
   const [desktopCopilotPagePending, setDesktopCopilotPagePending] = useState("");
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
@@ -3048,10 +2981,6 @@ export function SettingsPage({
         setAssistantSettings(settings);
         setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
         setChatDefaultAgentKey(settings.chatDefaultAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY);
-        setQuickAssistantEnabled(settings.quickAssistantEnabled);
-        setQuickAssistantAgentKey(settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
-        setQuickAssistantShortcut(normalizeQuickAssistantShortcut(settings.quickAssistantShortcut));
-        setQuickAssistantShortcutDraft(normalizeQuickAssistantShortcut(settings.quickAssistantShortcut));
         setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
         setAssistantAgentOptions(assistantAgents);
         setChatAgentOptions(chatAgents);
@@ -3164,10 +3093,6 @@ export function SettingsPage({
     resolvedChatDefaultAgentKey,
   ]);
 
-  function getAgentLabel(agentKey: string) {
-    return assistantAgentOptions.find((agent) => agent.agentKey === agentKey)?.displayName || agentKey;
-  }
-
   function readCopilotPatch(args: Record<string, unknown>) {
     const patch = args.patch && typeof args.patch === "object" && !Array.isArray(args.patch)
       ? args.patch as Record<string, unknown>
@@ -3209,19 +3134,6 @@ export function SettingsPage({
           value: chatDefaultAgentKey,
           saved: assistantSettings?.chatDefaultAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY,
           valid: Boolean(chatAgentOptions.find((agent) => agent.agentKey === chatDefaultAgentKey))
-        },
-        quickAssistantEnabled: {
-          value: quickAssistantEnabled,
-          saved: assistantSettings?.quickAssistantEnabled ?? DEFAULT_QUICK_ASSISTANT_ENABLED
-        },
-        quickAssistantAgentKey: {
-          value: quickAssistantAgentKey,
-          saved: assistantSettings?.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-          valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === quickAssistantAgentKey))
-        },
-        quickAssistantShortcut: {
-          value: quickAssistantShortcut,
-          saved: normalizeQuickAssistantShortcut(assistantSettings?.quickAssistantShortcut)
         },
         desktopCopilotPages,
       },
@@ -3326,25 +3238,6 @@ export function SettingsPage({
           : chatDefaultAgentKey.trim();
       const chatDefaultTouched = typeof request.args?.chatDefaultAgentKey === "string" || typeof patch.chatDefaultAgentKey === "string";
       const nextChatDefaultAgent = chatAgentOptions.find((agent) => agent.agentKey === requestedChatDefaultAgentKey);
-      const requestedQuickAssistantAgentKey = typeof request.args?.quickAssistantAgentKey === "string"
-        ? request.args.quickAssistantAgentKey.trim()
-        : typeof patch.quickAssistantAgentKey === "string"
-          ? patch.quickAssistantAgentKey.trim()
-          : quickAssistantAgentKey.trim();
-      const quickAssistantAgentTouched = typeof request.args?.quickAssistantAgentKey === "string" || typeof patch.quickAssistantAgentKey === "string";
-      const quickAssistantEnabledTouched = typeof request.args?.quickAssistantEnabled === "boolean" || typeof patch.quickAssistantEnabled === "boolean";
-      const requestedQuickAssistantEnabled = typeof request.args?.quickAssistantEnabled === "boolean"
-        ? request.args.quickAssistantEnabled
-        : typeof patch.quickAssistantEnabled === "boolean"
-          ? patch.quickAssistantEnabled
-          : quickAssistantEnabled;
-      const requestedQuickAssistantShortcut = typeof request.args?.quickAssistantShortcut === "string"
-        ? normalizeQuickAssistantShortcut(request.args.quickAssistantShortcut)
-        : typeof patch.quickAssistantShortcut === "string"
-          ? normalizeQuickAssistantShortcut(patch.quickAssistantShortcut)
-          : quickAssistantShortcut;
-      const quickAssistantShortcutTouched = typeof request.args?.quickAssistantShortcut === "string" || typeof patch.quickAssistantShortcut === "string";
-      const nextQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === requestedQuickAssistantAgentKey);
       const helperValidation = {
         field: "desktopHelperAgentKey",
         value: requestedHelperAgentKey,
@@ -3361,38 +3254,18 @@ export function SettingsPage({
           ? t("settings.chat.agentValid")
           : t("settings.chat.agentInvalid")
       };
-      const quickAssistantValidation = {
-        field: "quickAssistantAgentKey",
-        value: requestedQuickAssistantAgentKey,
-        valid: Boolean(requestedQuickAssistantAgentKey && nextQuickAssistantAgent),
-        message: nextQuickAssistantAgent
-          ? t("settings.quickAssistant.agentValid")
-          : t("settings.quickAssistant.agentInvalid")
-      };
       const actionPatchHelperAgentKey = typeof actionPatch.desktopHelperAgentKey === "string"
         ? actionPatch.desktopHelperAgentKey.trim()
         : desktopHelperAgentKey.trim();
       const actionPatchChatDefaultAgentKey = typeof actionPatch.chatDefaultAgentKey === "string"
         ? actionPatch.chatDefaultAgentKey.trim()
         : chatDefaultAgentKey.trim();
-      const actionPatchQuickAssistantEnabled = typeof actionPatch.quickAssistantEnabled === "boolean"
-        ? actionPatch.quickAssistantEnabled
-        : quickAssistantEnabled;
-      const actionPatchQuickAssistantAgentKey = typeof actionPatch.quickAssistantAgentKey === "string"
-        ? actionPatch.quickAssistantAgentKey.trim()
-        : quickAssistantAgentKey.trim();
-      const actionPatchQuickAssistantShortcut = typeof actionPatch.quickAssistantShortcut === "string"
-        ? normalizeQuickAssistantShortcut(actionPatch.quickAssistantShortcut)
-        : quickAssistantShortcut;
       const actionPatchCopilotPages = sanitizeDesktopCopilotPagePreferences({
         ...desktopCopilotPages,
         ...readCopilotPatch(actionPatch)
       });
       const actionPatchHelperTouched = typeof actionPatch.desktopHelperAgentKey === "string";
       const actionPatchChatDefaultTouched = typeof actionPatch.chatDefaultAgentKey === "string";
-      const actionPatchQuickAssistantEnabledTouched = typeof actionPatch.quickAssistantEnabled === "boolean";
-      const actionPatchQuickAssistantAgentTouched = typeof actionPatch.quickAssistantAgentKey === "string";
-      const actionPatchQuickAssistantShortcutTouched = typeof actionPatch.quickAssistantShortcut === "string";
       const actionPatchCopilotTouched =
         "desktopCopilotPages" in actionPatch ||
         Object.keys(readCopilotPatch(actionPatch)).some((key) =>
@@ -3400,7 +3273,6 @@ export function SettingsPage({
         );
       const actionPatchHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === actionPatchHelperAgentKey);
       const actionPatchChatDefaultAgent = chatAgentOptions.find((agent) => agent.agentKey === actionPatchChatDefaultAgentKey);
-      const actionPatchQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === actionPatchQuickAssistantAgentKey);
       const actionPatchHelperValidation = {
         field: "desktopHelperAgentKey",
         value: actionPatchHelperAgentKey,
@@ -3416,14 +3288,6 @@ export function SettingsPage({
         message: actionPatchChatDefaultAgent
           ? t("settings.chat.agentValid")
           : t("settings.chat.agentInvalid")
-      };
-      const actionPatchQuickAssistantValidation = {
-        field: "quickAssistantAgentKey",
-        value: actionPatchQuickAssistantAgentKey,
-        valid: Boolean(actionPatchQuickAssistantAgentKey && actionPatchQuickAssistantAgent),
-        message: actionPatchQuickAssistantAgent
-          ? t("settings.quickAssistant.agentValid")
-          : t("settings.quickAssistant.agentInvalid")
       };
       const actionPatchCopilotValidation = validateCopilotPages(actionPatchCopilotPages);
 
@@ -3459,7 +3323,6 @@ export function SettingsPage({
           if (
             (actionPatchHelperTouched && !actionPatchHelperValidation.valid) ||
             (actionPatchChatDefaultTouched && !actionPatchChatDefaultValidation.valid) ||
-            (actionPatchQuickAssistantAgentTouched && !actionPatchQuickAssistantValidation.valid) ||
             (actionPatchCopilotTouched && !actionPatchCopilotValidation.valid)
           ) {
             return {
@@ -3470,13 +3333,10 @@ export function SettingsPage({
                   ? actionPatchHelperValidation.message
                   : actionPatchChatDefaultTouched && !actionPatchChatDefaultValidation.valid
                     ? actionPatchChatDefaultValidation.message
-                  : actionPatchQuickAssistantAgentTouched && !actionPatchQuickAssistantValidation.valid
-                    ? actionPatchQuickAssistantValidation.message
                     : t("settings.navigation.sideAssistantUnavailable"),
                 details: {
                   helperValidation: actionPatchHelperValidation,
                   chatDefaultValidation: actionPatchChatDefaultValidation,
-                  quickAssistantValidation: actionPatchQuickAssistantValidation,
                   copilotValidation: actionPatchCopilotValidation
                 }
               }
@@ -3487,16 +3347,6 @@ export function SettingsPage({
           }
           if (actionPatchChatDefaultTouched) {
             setChatDefaultAgentKey(actionPatchChatDefaultAgentKey || DEFAULT_CHAT_DEFAULT_AGENT_KEY);
-          }
-          if (actionPatchQuickAssistantEnabledTouched) {
-            setQuickAssistantEnabled(actionPatchQuickAssistantEnabled);
-          }
-          if (actionPatchQuickAssistantAgentTouched) {
-            setQuickAssistantAgentKey(actionPatchQuickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
-          }
-          if (actionPatchQuickAssistantShortcutTouched) {
-            setQuickAssistantShortcut(actionPatchQuickAssistantShortcut);
-            setQuickAssistantShortcutDraft(actionPatchQuickAssistantShortcut);
           }
           if (actionPatchCopilotTouched) {
             setDesktopCopilotPages(actionPatchCopilotPages);
@@ -3517,31 +3367,16 @@ export function SettingsPage({
             : {
                 desktopHelperAgentKey,
                 chatDefaultAgentKey,
-                quickAssistantEnabled,
-                quickAssistantAgentKey,
-                quickAssistantShortcut,
                 desktopCopilotPages
               };
           const submitPatchHelperTouched = typeof submitPatch.desktopHelperAgentKey === "string";
           const submitPatchChatDefaultTouched = typeof submitPatch.chatDefaultAgentKey === "string";
-          const submitPatchQuickAssistantEnabledTouched = typeof submitPatch.quickAssistantEnabled === "boolean";
-          const submitPatchQuickAssistantAgentTouched = typeof submitPatch.quickAssistantAgentKey === "string";
-          const submitPatchQuickAssistantShortcutTouched = typeof submitPatch.quickAssistantShortcut === "string";
           const submitPatchHelperAgentKey = typeof submitPatch.desktopHelperAgentKey === "string"
             ? submitPatch.desktopHelperAgentKey.trim()
             : desktopHelperAgentKey.trim();
           const submitPatchChatDefaultAgentKey = typeof submitPatch.chatDefaultAgentKey === "string"
             ? submitPatch.chatDefaultAgentKey.trim()
             : chatDefaultAgentKey.trim();
-          const submitPatchQuickAssistantEnabled = typeof submitPatch.quickAssistantEnabled === "boolean"
-            ? submitPatch.quickAssistantEnabled
-            : quickAssistantEnabled;
-          const submitPatchQuickAssistantAgentKey = typeof submitPatch.quickAssistantAgentKey === "string"
-            ? submitPatch.quickAssistantAgentKey.trim()
-            : quickAssistantAgentKey.trim();
-          const submitPatchQuickAssistantShortcut = typeof submitPatch.quickAssistantShortcut === "string"
-            ? normalizeQuickAssistantShortcut(submitPatch.quickAssistantShortcut)
-            : quickAssistantShortcut;
           const submitPatchCopilotPages = sanitizeDesktopCopilotPagePreferences({
             ...desktopCopilotPages,
             ...readCopilotPatch(submitPatch)
@@ -3553,7 +3388,6 @@ export function SettingsPage({
             );
           const submitPatchHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === submitPatchHelperAgentKey);
           const submitPatchChatDefaultAgent = chatAgentOptions.find((agent) => agent.agentKey === submitPatchChatDefaultAgentKey);
-          const submitPatchQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === submitPatchQuickAssistantAgentKey);
           const submitPatchHelperValidation = {
             field: "desktopHelperAgentKey",
             value: submitPatchHelperAgentKey,
@@ -3570,19 +3404,10 @@ export function SettingsPage({
               ? t("settings.chat.agentValid")
               : t("settings.chat.agentInvalid")
           };
-          const submitPatchQuickAssistantValidation = {
-            field: "quickAssistantAgentKey",
-            value: submitPatchQuickAssistantAgentKey,
-            valid: Boolean(submitPatchQuickAssistantAgentKey && submitPatchQuickAssistantAgent),
-            message: submitPatchQuickAssistantAgent
-              ? t("settings.quickAssistant.agentValid")
-              : t("settings.quickAssistant.agentInvalid")
-          };
           const submitPatchCopilotValidation = validateCopilotPages(submitPatchCopilotPages);
           if (
             (submitPatchHelperTouched && !submitPatchHelperValidation.valid) ||
             (submitPatchChatDefaultTouched && !submitPatchChatDefaultValidation.valid) ||
-            (submitPatchQuickAssistantAgentTouched && !submitPatchQuickAssistantValidation.valid) ||
             (submitPatchCopilotTouched && !submitPatchCopilotValidation.valid)
           ) {
             return {
@@ -3593,13 +3418,10 @@ export function SettingsPage({
                   ? submitPatchHelperValidation.message
                   : submitPatchChatDefaultTouched && !submitPatchChatDefaultValidation.valid
                     ? submitPatchChatDefaultValidation.message
-                  : submitPatchQuickAssistantAgentTouched && !submitPatchQuickAssistantValidation.valid
-                    ? submitPatchQuickAssistantValidation.message
                     : t("settings.navigation.sideAssistantUnavailable"),
                 details: {
                   helperValidation: submitPatchHelperValidation,
                   chatDefaultValidation: submitPatchChatDefaultValidation,
-                  quickAssistantValidation: submitPatchQuickAssistantValidation,
                   copilotValidation: submitPatchCopilotValidation
                 }
               }
@@ -3610,35 +3432,6 @@ export function SettingsPage({
           }
           if (submitPatchChatDefaultTouched) {
             await handleSelectChatDefaultAgentKey(submitPatchChatDefaultAgentKey);
-          }
-          if (submitPatchQuickAssistantEnabledTouched) {
-            const nextSettings = await window.electronAPI.assistant.saveSettings({
-              quickAssistantEnabled: submitPatchQuickAssistantEnabled
-            });
-            setAssistantSettings(nextSettings);
-            setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
-            onAssistantSettingsChange?.(nextSettings);
-            setReadErrorSections(["assistant"], "");
-            showSectionNotice(
-              "assistant",
-              nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
-              "success"
-            );
-          }
-          if (submitPatchQuickAssistantAgentTouched) {
-            await handleSelectQuickAssistantAgentKey(submitPatchQuickAssistantAgentKey);
-          }
-          if (submitPatchQuickAssistantShortcutTouched) {
-            const nextSettings = await window.electronAPI.assistant.saveSettings({
-              quickAssistantShortcut: submitPatchQuickAssistantShortcut
-            });
-            const nextShortcut = normalizeQuickAssistantShortcut(nextSettings.quickAssistantShortcut);
-            setAssistantSettings(nextSettings);
-            setQuickAssistantShortcut(nextShortcut);
-            setQuickAssistantShortcutDraft(nextShortcut);
-            onAssistantSettingsChange?.(nextSettings);
-            setReadErrorSections(["assistant"], "");
-            showSectionNotice("assistant", t("settings.quickAssistant.noticeShortcutChanged"), "success");
           }
           if (submitPatchCopilotTouched) {
             await saveDesktopCopilotPages(submitPatchCopilotPages, "all");
@@ -3663,22 +3456,15 @@ export function SettingsPage({
           return {
             ok: true,
             result: {
-              valid: helperValidation.valid && chatDefaultValidation.valid && quickAssistantValidation.valid && copilotValidation.valid,
+              valid: helperValidation.valid && chatDefaultValidation.valid && copilotValidation.valid,
               issues: [
                 ...(helperValidation.valid ? [] : [helperValidation]),
                 ...(chatDefaultValidation.valid ? [] : [chatDefaultValidation]),
-                ...(quickAssistantValidation.valid ? [] : [quickAssistantValidation]),
                 ...copilotValidation.issues
               ],
               fields: {
                 desktopHelperAgentKey: helperValidation,
                 chatDefaultAgentKey: chatDefaultValidation,
-                quickAssistantAgentKey: quickAssistantValidation,
-                quickAssistantShortcut: {
-                  field: "quickAssistantShortcut",
-                  value: quickAssistantShortcut,
-                  valid: true
-                },
                 desktopCopilotPages: copilotValidation
               }
             }
@@ -3701,22 +3487,6 @@ export function SettingsPage({
                 displayName: nextChatDefaultAgent?.displayName ?? requestedChatDefaultAgentKey,
                 valid: chatDefaultValidation.valid
               }, {
-                field: "quickAssistantEnabled",
-                from: quickAssistantEnabled,
-                to: requestedQuickAssistantEnabled,
-                valid: true
-              }, {
-                field: "quickAssistantAgentKey",
-                from: quickAssistantAgentKey,
-                to: requestedQuickAssistantAgentKey,
-                displayName: nextQuickAssistantAgent?.displayName ?? requestedQuickAssistantAgentKey,
-                valid: quickAssistantValidation.valid
-              }, {
-                field: "quickAssistantShortcut",
-                from: quickAssistantShortcut,
-                to: requestedQuickAssistantShortcut,
-                valid: true
-              }, {
                 field: "desktopCopilotPages",
                 from: desktopCopilotPages,
                 to: nextCopilotPages,
@@ -3725,7 +3495,7 @@ export function SettingsPage({
             }
           };
         case "desktop.page.applyPatch":
-          if ((helperTouched && !helperValidation.valid) || (chatDefaultTouched && !chatDefaultValidation.valid) || (quickAssistantAgentTouched && !quickAssistantValidation.valid) || !copilotValidation.valid) {
+          if ((helperTouched && !helperValidation.valid) || (chatDefaultTouched && !chatDefaultValidation.valid) || !copilotValidation.valid) {
             return {
               ok: false,
               error: {
@@ -3734,10 +3504,8 @@ export function SettingsPage({
                   ? helperValidation.message
                   : chatDefaultTouched && !chatDefaultValidation.valid
                     ? chatDefaultValidation.message
-                  : quickAssistantAgentTouched && !quickAssistantValidation.valid
-                    ? quickAssistantValidation.message
                     : t("settings.navigation.sideAssistantUnavailable"),
-                details: { helperValidation, chatDefaultValidation, quickAssistantValidation, copilotValidation }
+                details: { helperValidation, chatDefaultValidation, copilotValidation }
               }
             };
           }
@@ -3746,35 +3514,6 @@ export function SettingsPage({
           }
           if (chatDefaultTouched) {
             await handleSelectChatDefaultAgentKey(requestedChatDefaultAgentKey);
-          }
-          if (quickAssistantEnabledTouched) {
-            const nextSettings = await window.electronAPI.assistant.saveSettings({
-              quickAssistantEnabled: requestedQuickAssistantEnabled
-            });
-            setAssistantSettings(nextSettings);
-            setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
-            onAssistantSettingsChange?.(nextSettings);
-            setReadErrorSections(["assistant"], "");
-            showSectionNotice(
-              "assistant",
-              nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
-              "success"
-            );
-          }
-          if (quickAssistantAgentTouched) {
-            await handleSelectQuickAssistantAgentKey(requestedQuickAssistantAgentKey);
-          }
-          if (quickAssistantShortcutTouched) {
-            const nextSettings = await window.electronAPI.assistant.saveSettings({
-              quickAssistantShortcut: requestedQuickAssistantShortcut
-            });
-            const nextShortcut = normalizeQuickAssistantShortcut(nextSettings.quickAssistantShortcut);
-            setAssistantSettings(nextSettings);
-            setQuickAssistantShortcut(nextShortcut);
-            setQuickAssistantShortcutDraft(nextShortcut);
-            onAssistantSettingsChange?.(nextSettings);
-            setReadErrorSections(["assistant"], "");
-            showSectionNotice("assistant", t("settings.quickAssistant.noticeShortcutChanged"), "success");
           }
           if ("desktopCopilotPages" in args || Object.keys(readCopilotPatch(args)).some((key) => DESKTOP_COPILOT_PAGE_KEYS.includes(key as DesktopCopilotPageKey))) {
             await saveDesktopCopilotPages(nextCopilotPages, "all");
@@ -3785,9 +3524,6 @@ export function SettingsPage({
               applied: true,
               desktopHelperAgentKey: requestedHelperAgentKey,
               chatDefaultAgentKey: requestedChatDefaultAgentKey,
-              quickAssistantEnabled: requestedQuickAssistantEnabled,
-              quickAssistantAgentKey: requestedQuickAssistantAgentKey,
-              quickAssistantShortcut: requestedQuickAssistantShortcut,
               desktopCopilotPages: nextCopilotPages
             }
           };
@@ -3800,15 +3536,9 @@ export function SettingsPage({
     chatAgentOptions,
     assistantSettings?.desktopHelperAgentKey,
     assistantSettings?.chatDefaultAgentKey,
-    assistantSettings?.quickAssistantAgentKey,
-    assistantSettings?.quickAssistantEnabled,
-    assistantSettings?.quickAssistantShortcut,
     desktopHelperAgentKey,
     chatDefaultAgentKey,
     desktopCopilotPages,
-    quickAssistantAgentKey,
-    quickAssistantEnabled,
-    quickAssistantShortcut,
     t
   ]);
 
@@ -4325,112 +4055,6 @@ export function SettingsPage({
       showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setChatDefaultAgentPending(false);
-    }
-  }
-
-  async function handleToggleQuickAssistantEnabled() {
-    const previousEnabled = quickAssistantEnabled;
-    const nextEnabled = !quickAssistantEnabled;
-    setQuickAssistantEnabled(nextEnabled);
-    setQuickAssistantPending(true);
-    try {
-      const nextSettings = await window.electronAPI.assistant.saveSettings({
-        quickAssistantEnabled: nextEnabled
-      });
-      setAssistantSettings(nextSettings);
-      setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
-      setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
-      setQuickAssistantShortcut(normalizeQuickAssistantShortcut(nextSettings.quickAssistantShortcut));
-      setQuickAssistantShortcutDraft(normalizeQuickAssistantShortcut(nextSettings.quickAssistantShortcut));
-      onAssistantSettingsChange?.(nextSettings);
-      setReadErrorSections(["assistant"], "");
-      showSectionNotice(
-        "assistant",
-        nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
-        "success"
-      );
-    } catch (reason) {
-      setQuickAssistantEnabled(previousEnabled);
-      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setQuickAssistantPending(false);
-    }
-  }
-
-  async function handleSelectQuickAssistantAgentKey(nextAgentKey: string) {
-    const normalizedAgentKey = nextAgentKey.trim();
-    const previousAgentKey = quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
-    if (!normalizedAgentKey || normalizedAgentKey === previousAgentKey) {
-      return;
-    }
-
-    setQuickAssistantAgentKey(normalizedAgentKey);
-    setQuickAssistantAgentPending(true);
-    try {
-      const nextSettings = await window.electronAPI.assistant.saveSettings({
-        quickAssistantAgentKey: normalizedAgentKey
-      });
-      const nextAgent = assistantAgentOptions.find((agent) => agent.agentKey === nextSettings.quickAssistantAgentKey);
-      setAssistantSettings(nextSettings);
-      setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
-      setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey);
-      setQuickAssistantShortcut(normalizeQuickAssistantShortcut(nextSettings.quickAssistantShortcut));
-      setQuickAssistantShortcutDraft(normalizeQuickAssistantShortcut(nextSettings.quickAssistantShortcut));
-      onAssistantSettingsChange?.(nextSettings);
-      setReadErrorSections(["assistant"], "");
-      showSectionNotice(
-        "assistant",
-        t("settings.quickAssistant.noticeAgentChanged", { name: nextAgent?.displayName ?? nextSettings.quickAssistantAgentKey }),
-        "success"
-      );
-    } catch (reason) {
-      setQuickAssistantAgentKey(previousAgentKey);
-      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setQuickAssistantAgentPending(false);
-    }
-  }
-
-  function handleQuickAssistantShortcutKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    const accelerator = shortcutAcceleratorFromKeyboardEvent(event);
-    if (!accelerator) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    setQuickAssistantShortcutDraft(accelerator);
-  }
-
-  async function handleSaveQuickAssistantShortcut(event?: FormEvent) {
-    event?.preventDefault();
-    const normalizedShortcut = normalizeQuickAssistantShortcut(quickAssistantShortcutDraft);
-    const previousShortcut = quickAssistantShortcut;
-    const previousDraft = quickAssistantShortcutDraft;
-    if (normalizedShortcut === previousShortcut) {
-      setQuickAssistantShortcutDraft(normalizedShortcut);
-      return;
-    }
-
-    setQuickAssistantShortcut(normalizedShortcut);
-    setQuickAssistantShortcutDraft(normalizedShortcut);
-    setQuickAssistantShortcutPending(true);
-    try {
-      const nextSettings = await window.electronAPI.assistant.saveSettings({
-        quickAssistantShortcut: normalizedShortcut
-      });
-      const nextShortcut = normalizeQuickAssistantShortcut(nextSettings.quickAssistantShortcut);
-      setAssistantSettings(nextSettings);
-      setQuickAssistantShortcut(nextShortcut);
-      setQuickAssistantShortcutDraft(nextShortcut);
-      onAssistantSettingsChange?.(nextSettings);
-      setReadErrorSections(["assistant"], "");
-      showSectionNotice("assistant", t("settings.quickAssistant.noticeShortcutChanged"), "success");
-    } catch (reason) {
-      setQuickAssistantShortcut(previousShortcut);
-      setQuickAssistantShortcutDraft(previousDraft);
-      showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setQuickAssistantShortcutPending(false);
     }
   }
 
@@ -5129,87 +4753,6 @@ export function SettingsPage({
                   ) : null}
                 </label>
               </div>
-            </div>
-            <div className="settings-item-card desktop-helper-settings-card" aria-label={t("settings.assistant.panelAria")}>
-              <div className="settings-item-header">
-                <div className="settings-appearance-row-copy">
-                  <strong>{t("settings.quickAssistant.label")}</strong>
-                  <span>
-                    {quickAssistantEnabled
-                      ? t("settings.quickAssistant.statusEnabled", {
-                          name: getAgentLabel(quickAssistantAgentKey),
-                          shortcut: quickAssistantShortcut
-                        })
-                      : t("settings.quickAssistant.statusDisabled")}
-                  </span>
-                  {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
-                    <em>{t("settings.quickAssistant.defaultUnavailable")}</em>
-                  ) : null}
-                </div>
-                <Switch
-                  checked={quickAssistantEnabled}
-                  aria-label={t("settings.quickAssistant.label")}
-                  disabled={quickAssistantPending}
-                  onChange={() => void handleToggleQuickAssistantEnabled()}
-                />
-              </div>
-              <div className="settings-item-form desktop-pet-agent-form">
-                <label className="desktop-pet-agent-field">
-                  <span>{t("settings.quickAssistant.defaultAgent")}</span>
-                  <span className="desktop-pet-agent-select-wrap">
-                    <Select
-                      classNames={SETTINGS_SELECT_CLASS_NAMES}
-                      style={{ width: "100%" }}
-                      value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
-                      onChange={(value) => void handleSelectQuickAssistantAgentKey(value)}
-                      disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
-                      aria-label={t("settings.quickAssistant.defaultAgent")}
-                      options={[
-                        {
-                          value: "",
-                          label: assistantAgentOptions.length === 0
-                            ? t("settings.navigation.agentsLoading")
-                            : isKnownAssistantAgent(quickAssistantAgentKey)
-                              ? t("settings.navigation.selectAgent")
-                              : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })
-                        },
-                        ...assistantAgentOptions.map((agent) => ({
-                          value: agent.agentKey,
-                          label: `${agent.displayName}${agent.role ? ` · ${agent.role}` : ""}`
-                        }))
-                      ]}
-                    />
-                  </span>
-                </label>
-              </div>
-              <form className="settings-item-form quick-assistant-shortcut-form" onSubmit={(event) => void handleSaveQuickAssistantShortcut(event)}>
-                <label className="desktop-pet-agent-field">
-                  <span>{t("settings.quickAssistant.shortcut")}</span>
-                  <span className="settings-control-row-inline">
-                    <Input
-                      className="settings-control-row-control"
-                      value={quickAssistantShortcutDraft}
-                      placeholder={DEFAULT_QUICK_ASSISTANT_SHORTCUT}
-                      disabled={quickAssistantShortcutPending}
-                      aria-label={t("settings.quickAssistant.shortcut")}
-                      onChange={(event) => setQuickAssistantShortcutDraft(event.target.value)}
-                      onFocus={(event) => event.currentTarget.select()}
-                      onKeyDown={handleQuickAssistantShortcutKeyDown}
-                    />
-                    <Button
-                      type="primary"
-                      htmlType="submit"
-                      disabled={
-                        quickAssistantShortcutPending ||
-                        normalizeQuickAssistantShortcut(quickAssistantShortcutDraft) === quickAssistantShortcut
-                      }
-                      loading={quickAssistantShortcutPending}
-                    >
-                      {t("common.save")}
-                    </Button>
-                  </span>
-                </label>
-              </form>
             </div>
           </>
         );

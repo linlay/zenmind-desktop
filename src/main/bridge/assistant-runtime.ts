@@ -41,7 +41,6 @@ export type AssistantBridgeRuntimeOptions = {
   callAgentPlatform: (...args: any[]) => unknown;
   showMainWindow: (targetPath?: string) => void;
   openLogViewerWindow: (...args: any[]) => unknown;
-  getQuickAssistantWindow: () => BrowserWindow | null;
   listKanbanLocalAgents: () => any[];
   emitKanbanChanged: () => void;
   emitAssistantNavigationAgentsChanged: (result: AssistantNavAgentItemsResult) => void;
@@ -70,10 +69,8 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     onEvent: (event) => {
       state.kanbanRuntime?.sendAssistantEvent(event);
       emitDesktopWsPush("assistant.event", event);
-      for (const targetWindow of [state.mainWindow, options.getQuickAssistantWindow()]) {
-        if (!targetWindow || targetWindow.isDestroyed()) {
-          continue;
-        }
+      const targetWindow = state.mainWindow;
+      if (targetWindow && !targetWindow.isDestroyed()) {
         targetWindow.webContents.send("assistant.event", event);
       }
       options.handleDesktopPetAssistantEvent(event);

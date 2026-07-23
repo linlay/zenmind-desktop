@@ -223,8 +223,6 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isHandlingQuit(): boolean;
     clearWindow(targetWindow: TWindow): void;
-    isNativeDialogOpen(): boolean;
-    hideQuickAssistantAfterOutsideFocus(): void;
     restoreFloatingWindowsForFullscreen?: () => void;
   }
 ) {
@@ -242,13 +240,6 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     targetWindow.show();
     targetWindow.focus();
     sendWindowState();
-  });
-
-  targetWindow.on("focus", () => {
-    if (options.isNativeDialogOpen()) {
-      return;
-    }
-    options.hideQuickAssistantAfterOutsideFocus();
   });
 
   targetWindow.on("enter-full-screen", () => {
@@ -392,35 +383,20 @@ export function configureMediaPermissions<TWindow extends MediaPermissionWindowL
     ): void;
   };
   getMainWindow(): TWindow | null;
-  getQuickAssistantWindow(): TWindow | null;
-  isMediaPermissionAllowed(input: {
-    permission: string;
-    contentsId: number;
-    mainContentsId?: number | null;
-    quickContentsId?: number | null;
-    mediaTypes?: string[];
-  }): boolean;
   askForMicrophoneAccess(): Promise<boolean>;
 }) {
   options.permissionSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const mainWindow = options.getMainWindow();
-    const quickAssistantWindow = options.getQuickAssistantWindow();
     const mainContentsId = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : null;
-    const quickContentsId = quickAssistantWindow && !quickAssistantWindow.isDestroyed()
-      ? quickAssistantWindow.webContents.id
-      : null;
     const mediaTypes = details && typeof details === "object" && "mediaTypes" in details &&
       Array.isArray((details as { mediaTypes?: unknown }).mediaTypes)
       ? (details as { mediaTypes: string[] }).mediaTypes
       : undefined;
 
-    if (!options.isMediaPermissionAllowed({
-      permission,
-      contentsId: contents.id,
-      mainContentsId,
-      quickContentsId,
-      mediaTypes
-    })) {
+    const allowed = permission === "media" &&
+      contents.id === mainContentsId &&
+      (!mediaTypes || mediaTypes.includes("audio"));
+    if (!allowed) {
       callback(false);
       return;
     }

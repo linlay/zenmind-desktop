@@ -55,7 +55,6 @@ import {
   INSTALLER_SHUTDOWN_ARG,
   PRODUCT_NAME,
 } from "../../shared/brand";
-import { normalizeQuickAssistantShortcut } from "../../shared/assistant-settings";
 import {
   desktopDataRootExists,
   ensureDataRoot,
@@ -83,7 +82,10 @@ import {
   startTunnelHubRuntimeIfEnabled,
   stopTunnelHubRuntime,
 } from "../tunnel-hub-runtime";
-import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
+import {
+  AGENT_WEBCLIENT_TARGET_PATH,
+  createAgentWebclientRoute
+} from "../../shared/agent-webclient-routes";
 import {
   registerDesktopPetAssetProtocol,
   registerDesktopPetAssetProtocolScheme,
@@ -97,25 +99,10 @@ import {
   saveDesktopPetSettings,
 } from "../assistant/pet/desktop-pet";
 import { createDesktopPetRuntime, type DesktopPetRuntime } from "../assistant/pet/runtime";
-import {
-  isQuickAssistantMediaPermissionAllowed,
-} from "../assistant/quick/quick-copilot";
-import { QuickCopilotWindowController } from "../assistant/quick/window";
 import { registerMainIpcHandlers } from "../ipc/register";
 import {
-  createAgentWebclientRoute,
-  scheduleQuickAgentOpenRequest,
-} from "../assistant/quick/routing";
-import {
-  registerQuickCopilotShortcut,
-  type QuickCopilotShortcutRegistrationResult,
-  unregisterQuickCopilotShortcut,
-} from "../assistant/quick/shortcut";
-import { readAssistantSettings } from "../assistant/core/settings-store";
-import {
   captureAssistantScreenshot as captureCopilotScreenshot,
-  captureScreenshotForBridge,
-  type ScreenshotCaptureSource,
+  captureScreenshotForBridge
 } from "../assistant/copilot/screenshot";
 import { initializeMainI18n, setMainLocale, t } from "../i18n/main-i18n";
 import { createStartupRestoreController } from "../startup-restore";
@@ -206,7 +193,6 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
-  let registeredQuickAssistantShortcut = "";
   
   const startupRestoreController = createStartupRestoreController({
     onChange: (state) => {
@@ -334,17 +320,6 @@ export function createMainProcessRuntime() {
     });
   }
   
-  const quickCopilotWindowController = new QuickCopilotWindowController({
-    app,
-    platform: () => mainProcessContext.platform,
-    preloadPath: MAIN_PRELOAD_PATH,
-    loadRendererRoute,
-    prepareServices: () =>
-      servicesRuntime.runServiceMutation(() => servicesRuntime.ensureAssistantTargetServicesRunning("quick-assistant")),
-    showControlCenter: () => showMainWindow("/control-center"),
-    openAgent: scheduleQuickAgentOpenRequest
-  });
-  
   const logsRuntime = createLogsRuntime({
     app,
     preloadPath: MAIN_PRELOAD_PATH,
@@ -366,13 +341,11 @@ export function createMainProcessRuntime() {
     nativeTheme,
     systemPreferences,
     t,
-    quickCopilotWindowController,
     logsRuntime,
     loadRendererRoute,
     parseSafeLoopbackWebUrl,
     isDevToolsShortcut,
     isGlobalSearchShortcut,
-    isMediaPermissionAllowed: isQuickAssistantMediaPermissionAllowed,
     handleDesktopSsoWebviewNavigation,
     collectWebviewLoadDiagnostics,
     reportRendererDiagnostic,
@@ -463,7 +436,6 @@ export function createMainProcessRuntime() {
     app,
     platform: mainProcessContext.platform,
     state: appState,
-    getQuickAssistantWindow: () => quickCopilotWindowController.getWindow(),
     getLogViewerWindow: () => logsRuntime.getLogViewerWindow(),
     buildApplicationMenu,
     refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
@@ -485,7 +457,6 @@ export function createMainProcessRuntime() {
     callAgentPlatform,
     showMainWindow,
     openLogViewerWindow,
-    getQuickAssistantWindow: () => quickCopilotWindowController.getWindow(),
     listKanbanLocalAgents: () => petRuntime.listKanbanLocalAgents(),
     emitKanbanChanged,
     emitAssistantNavigationAgentsChanged,
@@ -709,14 +680,6 @@ export function createMainProcessRuntime() {
     return petRuntime.handleAssistantEvent(event);
   }
   
-  function showQuickAssistantDismissWindow() {
-    quickCopilotWindowController.showDismissWindow();
-  }
-  
-  function hideQuickAssistantDismissWindow() {
-    quickCopilotWindowController.hideDismissWindow();
-  }
-  
   async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
     return logsRuntime.openLogViewerWindow(request);
   }
@@ -745,105 +708,22 @@ export function createMainProcessRuntime() {
     return logsRuntime.maximizeLogViewerWindow();
   }
   
-  function showQuickAssistantWindow() {
-    quickCopilotWindowController.showWindow();
-  }
-  
-  function toggleQuickAssistantWindow() {
-    quickCopilotWindowController.toggleWindow();
-  }
-  
-  async function captureAssistantScreenshot(
-    chatId: string | null | undefined,
-    source: ScreenshotCaptureSource
-  ) {
+  async function captureAssistantScreenshot(chatId: string | null | undefined) {
     return captureCopilotScreenshot({
       app,
       chatId,
-      source,
       platform: mainProcessContext.platform,
       getMainWindow: () => appState.mainWindow,
-      getQuickCopilotWindow: () => quickCopilotWindowController.getWindow(),
-      hideQuickCopilotDismissWindow: hideQuickAssistantDismissWindow,
-      showQuickCopilotDismissWindow: showQuickAssistantDismissWindow,
       delay
     });
   }
   
   async function captureDesktopScreenshotForWebview() {
     return captureScreenshotForBridge({
-      source: "sidebar",
       platform: mainProcessContext.platform,
       getMainWindow: () => appState.mainWindow,
-      getQuickCopilotWindow: () => quickCopilotWindowController.getWindow(),
-      hideQuickCopilotDismissWindow: hideQuickAssistantDismissWindow,
-      showQuickCopilotDismissWindow: showQuickAssistantDismissWindow,
       delay
     });
-  }
-  
-  function registerQuickAssistantShortcut() {
-    const quickSettings = readAssistantSettings(app);
-    const result = registerQuickCopilotShortcut({
-      platform: mainProcessContext.platform,
-      globalShortcut,
-      controller: quickCopilotWindowController,
-      accelerator: quickSettings.quickAssistantShortcut
-    });
-    if (result.registered) {
-      registeredQuickAssistantShortcut = result.accelerator;
-    }
-    return result;
-  }
-
-  function refreshQuickAssistantShortcut(accelerator?: string): QuickCopilotShortcutRegistrationResult {
-    const nextAccelerator = normalizeQuickAssistantShortcut(accelerator ?? readAssistantSettings(app).quickAssistantShortcut);
-    const previousAccelerator = registeredQuickAssistantShortcut;
-    if (previousAccelerator && previousAccelerator === nextAccelerator) {
-      return {
-        accelerator: previousAccelerator,
-        registered: true
-      };
-    }
-    if (previousAccelerator && previousAccelerator !== nextAccelerator) {
-      unregisterQuickCopilotShortcut({
-        platform: mainProcessContext.platform,
-        globalShortcut,
-        accelerator: previousAccelerator
-      });
-      registeredQuickAssistantShortcut = "";
-    }
-    const result = registerQuickCopilotShortcut({
-      platform: mainProcessContext.platform,
-      globalShortcut,
-      controller: quickCopilotWindowController,
-      accelerator: nextAccelerator
-    });
-    if (result.registered) {
-      registeredQuickAssistantShortcut = result.accelerator;
-      return result;
-    }
-    if (previousAccelerator && previousAccelerator !== nextAccelerator) {
-      const restored = registerQuickCopilotShortcut({
-        platform: mainProcessContext.platform,
-        globalShortcut,
-        controller: quickCopilotWindowController,
-        accelerator: previousAccelerator
-      });
-      if (restored.registered) {
-        registeredQuickAssistantShortcut = restored.accelerator;
-      }
-    }
-    return result;
-  }
-
-  function unregisterQuickAssistantShortcut() {
-    unregisterQuickCopilotShortcut({
-      platform: mainProcessContext.platform,
-      globalShortcut,
-      accelerator: registeredQuickAssistantShortcut || readAssistantSettings(app).quickAssistantShortcut
-    });
-    registeredQuickAssistantShortcut = "";
   }
   
   function refreshPluginDesktopGlobalShortcuts() {
@@ -941,10 +821,8 @@ export function createMainProcessRuntime() {
     void pluginBridgeRuntime.publishServiceStates();
     emitDesktopWsPush("service.changed", { changedAt: new Date().toISOString() });
     appState.assistantNavigationStatusClient?.scheduleRefresh(1000);
-    for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
-      if (!targetWindow || targetWindow.isDestroyed()) {
-        continue;
-      }
+    const targetWindow = appState.mainWindow;
+    if (targetWindow && !targetWindow.isDestroyed()) {
       targetWindow.webContents.send("services.changed");
     }
   }
@@ -1003,10 +881,8 @@ export function createMainProcessRuntime() {
   }
   
   function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResult) {
-    for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
-      if (!targetWindow || targetWindow.isDestroyed()) {
-        continue;
-      }
+    const targetWindow = appState.mainWindow;
+    if (targetWindow && !targetWindow.isDestroyed()) {
       targetWindow.webContents.send("assistant.navigationAgentsChanged", result);
     }
     if (petRuntime.isVisible()) {
@@ -1015,10 +891,8 @@ export function createMainProcessRuntime() {
   }
 
   function emitAssistantNavigationPushEvent(event: AssistantNavigationPushEvent) {
-    for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
-      if (!targetWindow || targetWindow.isDestroyed()) {
-        continue;
-      }
+    const targetWindow = appState.mainWindow;
+    if (targetWindow && !targetWindow.isDestroyed()) {
       targetWindow.webContents.send("assistant.navigationPushEvent", event);
     }
   }
@@ -1084,7 +958,6 @@ export function createMainProcessRuntime() {
     });
     runNonCoreStartupTask("app tray", () => createAppTray());
     runNonCoreStartupTask("application menu", () => buildApplicationMenu());
-    runNonCoreStartupTask("quick assistant shortcut", () => registerQuickAssistantShortcut());
     runNonCoreStartupTask("plugin desktop bridge", () => pluginBridgeRuntime.setDesktopReady());
     runNonCoreStartupTask("desktop ws server", () => {
       assistantBridgeRuntime.startDesktopWsServerIfEnabled(
@@ -1114,10 +987,8 @@ export function createMainProcessRuntime() {
   }
   
   function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) {
-    for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
-      if (!targetWindow || targetWindow.isDestroyed()) {
-        continue;
-      }
+    const targetWindow = appState.mainWindow;
+    if (targetWindow && !targetWindow.isDestroyed()) {
       targetWindow.webContents.send("assistant.attachmentProgress", progress);
     }
   }
@@ -1166,7 +1037,6 @@ export function createMainProcessRuntime() {
       logsRuntime,
       petRuntime,
       browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
-      quickCopilotWindowController,
       desktopSsoController,
       startupRestoreController,
       desktopAppInfo,
@@ -1200,8 +1070,7 @@ export function createMainProcessRuntime() {
       captureDesktopScreenshotForWebview,
       reportRendererDiagnostic,
       emitAssistantAttachmentProgress,
-      captureAssistantScreenshot,
-      refreshQuickAssistantShortcut
+      captureAssistantScreenshot
     });
     configureAppMediaPermissions();
     registerFocusedWebviewDevToolsShortcut();
@@ -1233,7 +1102,6 @@ export function createMainProcessRuntime() {
       stopAssistantBridgeRuntime: () => assistantBridgeRuntime.stop(),
       stopTunnelHubRuntime,
       stopAgentPlatformPetStatusClient,
-      unregisterQuickAssistantShortcut,
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,
       stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop()

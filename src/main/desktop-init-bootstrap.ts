@@ -3,9 +3,7 @@ import path from "node:path";
 import type { App } from "electron";
 import {
   DESKTOP_COPILOT_PAGE_KEYS,
-  DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-  normalizeQuickAssistantShortcut
+  DEFAULT_DESKTOP_HELPER_AGENT_KEY
 } from "../shared/assistant-settings";
 import { DEFAULT_LOCALE, normalizeLocale } from "../shared/i18n";
 import type { WebappEntry, WebEntryKey, WebsiteEntry } from "../shared/contracts";
@@ -324,19 +322,11 @@ function applyProfileDefaults(
   const appearance = isRecord(profile.appearance) ? profile.appearance : {};
   const assistant = isRecord(profile.assistant) ? profile.assistant : {};
   const assistantCopilot = isRecord(assistant.copilot) ? assistant.copilot : {};
-  const assistantQuick = isRecord(assistant.quick) ? assistant.quick : {};
   const navigation = isRecord(profile.navigation) ? profile.navigation : {};
   const current = readDesktopProfileFromRoot(profileRoot);
   const defaultAgentKey = readText(assistantCopilot.agentKey) ||
     current.assistant.copilot.agentKey ||
     DEFAULT_DESKTOP_HELPER_AGENT_KEY;
-  const quickAgentKey = readText(assistantQuick.agentKey) ||
-    current.assistant.quick.agentKey ||
-    DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
-  const quickShortcut = normalizeQuickAssistantShortcut(
-    readText(assistantQuick.shortcut) ||
-    current.assistant.quick.shortcut
-  );
   updateDesktopProfileInRoot(profileRoot, {
     general: {
       deviceName: "deviceName" in general
@@ -361,13 +351,6 @@ function applyProfileDefaults(
         : current.assistant.voiceCorrectionEnabled,
       copilot: {
         agentKey: defaultAgentKey
-      },
-      quick: {
-        enabled: typeof assistantQuick.enabled === "boolean"
-          ? assistantQuick.enabled
-          : current.assistant.quick.enabled,
-        agentKey: quickAgentKey,
-        shortcut: quickShortcut
       }
     },
     navigation: {

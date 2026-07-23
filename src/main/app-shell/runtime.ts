@@ -48,19 +48,11 @@ export type AppShellRuntimeOptions = {
   nativeTheme: Pick<NativeTheme, "shouldUseDarkColors" | "on">;
   systemPreferences: Pick<SystemPreferences, "askForMediaAccess">;
   t: (...args: any[]) => string;
-  quickCopilotWindowController: any;
   logsRuntime: LogsRuntime;
   loadRendererRoute: (targetWindow: BrowserWindow, routePath: string) => Promise<unknown>;
   parseSafeLoopbackWebUrl: (value: string) => unknown;
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
-  isMediaPermissionAllowed: (input: {
-    permission: string;
-    contentsId: number;
-    mainContentsId?: number | null;
-    quickContentsId?: number | null;
-    mediaTypes?: string[];
-  }) => boolean;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
   collectWebviewLoadDiagnostics: (contents: Electron.WebContents, validatedUrl: string) => Promise<Record<string, unknown>>;
   reportRendererDiagnostic: (source: string, details: Record<string, unknown>) => void;
@@ -102,9 +94,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   });
   const nativeDialogController = new NativeDialogVisibilityController({
     platform: options.platform,
-    getTargetWindows: () => [options.state.mainWindow, options.quickCopilotWindowController.getWindow()],
-    hideQuickCopilot: () => options.quickCopilotWindowController.hideForNativeDialog(),
-    restoreQuickCopilot: () => options.quickCopilotWindowController.restoreAfterNativeDialog()
+    getTargetWindows: () => [options.state.mainWindow]
   });
   const quitConfirmationController = createQuitConfirmationController({
     platform: options.platform,
@@ -227,8 +217,6 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
           options.state.mainWindow = null;
         }
       },
-      isNativeDialogOpen: () => nativeDialogController.isOpen(),
-      hideQuickAssistantAfterOutsideFocus: () => options.quickCopilotWindowController.hideAfterOutsideFocus(),
       restoreFloatingWindowsForFullscreen: () => options.restoreDesktopPetWindowLayering()
     });
 
@@ -240,8 +228,6 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       permissionSession: options.session.defaultSession,
       getMainWindow: () => options.state.mainWindow,
-      getQuickAssistantWindow: () => options.quickCopilotWindowController.getWindow(),
-      isMediaPermissionAllowed: options.isMediaPermissionAllowed,
       askForMicrophoneAccess: () => options.systemPreferences.askForMediaAccess("microphone")
     });
   }

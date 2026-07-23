@@ -11,9 +11,6 @@ export { EXTERNAL_EXPERIMENTAL_ITEMS } from "./app-shell/AppShell";
 const DesktopPet = lazy(() =>
   import("./copilot/pet-copilot/DesktopPet").then((module) => ({ default: module.DesktopPet }))
 );
-const QuickCopilotRoute = lazy(() =>
-  import("./copilot/quick-copilot/QuickCopilotRoute").then((module) => ({ default: module.QuickCopilotRoute }))
-);
 const LogViewerPage = lazy(() =>
   import("./pages/LogViewerPage").then((module) => ({ default: module.LogViewerPage }))
 );
@@ -22,17 +19,7 @@ export function App() {
   const location = useLocation();
   const resetKey = `${location.pathname}${location.search}${location.hash}`;
   let content;
-  if (location.pathname === "/quick-assistant") {
-    content = (
-      <AppErrorBoundary resetKey={resetKey}>
-        <ServicesProvider>
-          <Suspense fallback={null}>
-            <QuickCopilotRoute />
-          </Suspense>
-        </ServicesProvider>
-      </AppErrorBoundary>
-    );
-  } else if (location.pathname === DESKTOP_PET_ROUTE) {
+  if (location.pathname === DESKTOP_PET_ROUTE) {
     content = (
       <AppErrorBoundary resetKey={resetKey}>
         <Suspense fallback={null}>

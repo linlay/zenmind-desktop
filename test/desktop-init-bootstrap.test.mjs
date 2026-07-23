@@ -249,15 +249,12 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profile.appearance.locale, "en-US");
   assert.equal(profile.general.desktopActionConfirmationEnabled, false);
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
-  assert.equal(profile.assistant.quick.enabled, true);
-  assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
   assert.equal(assistantConfig.defaultChatAgentKey, "zenmi");
   assert.equal(assistantConfig.bootstrapAgentKey, "zenmi");
   assert.equal(assistantConfig.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
   const publicAssistantSettings = getAssistantSettingsFromRoot(path.join(desktop, "config", "desktop"));
   assert.equal(publicAssistantSettings.bootstrapChatId, "00000000-0000-4000-8000-000000000001");
   assert.equal("desktopHelperAgentKey" in profile.assistant, false);
-  assert.equal("quickAssistant" in profile.assistant, false);
   assert.equal("kanban" in profile.navigation, false);
   assert.equal(kanban.enabled, false);
   assert.deepEqual(kanban.cloud, {
@@ -592,11 +589,7 @@ test("desktop-init bootstrap ignores retired profile, Kanban, and Website shapes
   writeDesktopInit(app, "darwin", {
     profile: {
       assistant: {
-        desktopHelperAgentKey: "legacy-helper",
-        quickAssistant: {
-          enabled: false,
-          agentKey: "legacy-quick"
-        }
+        desktopHelperAgentKey: "legacy-helper"
       },
       navigation: {
         websiteOrder: ["legacy-site"],
@@ -625,8 +618,6 @@ test("desktop-init bootstrap ignores retired profile, Kanban, and Website shapes
   const profile = readJson(path.join(desktop, "config", "desktop", "profile.json"));
 
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
-  assert.equal(profile.assistant.quick.enabled, true);
-  assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
   assert.deepEqual(profile.navigation.webOrder, []);
   assert.equal(result.appliedResult.kanban, "absent");
   assert.equal(result.appliedResult.webs, "absent");
@@ -973,10 +964,6 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
     assistant: {
       copilot: {
         agentKey: "desktopAssistant"
-      },
-      quick: {
-        enabled: true,
-        agentKey: "desktopAssistant"
       }
     },
     navigation: {
@@ -1051,7 +1038,6 @@ test("desktop-init bootstrap applies defaults over pre-created desktop config fi
   assert.equal(profile.appearance.theme, "system");
   assert.equal(profile.appearance.locale, "zh-CN");
   assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
-  assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
   assert.deepEqual(profile.navigation.mainOrder, []);
   assert.deepEqual(profile.navigation.webOrder, []);
   assert.equal(profile.navigation.desktopCopilotPages.controlCenter.agentKey, "desktopAssistant");
