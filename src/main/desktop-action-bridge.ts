@@ -55,6 +55,7 @@ import {
   updateWebsiteItem
 } from "./webs/websites/actions";
 import { webappRuntime } from "./webs/webapps/runtime";
+import { readDesktopMobileWebappItem } from "./webs/webapps/mobile-catalog";
 import {
   getWebappPublishInfo,
   publishWebapp,
@@ -106,7 +107,6 @@ type DesktopActionBridgeOptions = {
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
   getKanbanRuntime?: () => KanbanRuntime | null;
-  hasTunnelWebappSubscriber?: () => boolean;
   emitWebappChanged?: (reason: DesktopWebappChangedReason, webappId: string) => void;
   desktopPet?: {
     refreshState: () => DesktopPetState | Promise<DesktopPetState>;
@@ -1187,18 +1187,15 @@ async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action:
   options.navigate(route);
   options.emitWebappChanged?.(previousItemIds.has(webappId) ? "updated" : "installed", webappId);
 
-  let mobilePublish: Record<string, unknown> = {
-    attempted: false,
-    reason: "no-mobile-subscriber"
+  const mobileItem = readDesktopMobileWebappItem(options.app, webappId);
+  const mobilePublish: Record<string, unknown> = {
+    attempted: true,
+    mode: "direct-mobile-tunnel",
+    ok: Boolean(mobileItem?.publicUrl),
+    publicUrl: mobileItem?.publicUrl ?? "",
+    available: mobileItem?.available === true,
+    availability: mobileItem?.availability ?? "not-published"
   };
-  if (options.hasTunnelWebappSubscriber?.()) {
-    const result = await publishWebapp(options.app, webappId, command.state);
-    options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", webappId);
-    mobilePublish = {
-      attempted: true,
-      ...result
-    };
-  }
   return ok(action, {
     install: installResult,
     command,

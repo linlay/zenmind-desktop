@@ -1020,6 +1020,136 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
   });
 });
 
+test("Tunnel Client endpoint authenticates mobile ns=wa streams before proxying", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-mobile-webapp-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  let localRequests = 0;
+  const local = http.createServer((_req, res) => {
+    localRequests += 1;
+    res.writeHead(200, { "Content-Length": "2" });
+    res.end("ok");
+  });
+  const localAddress = await listen(local);
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      v: 1,
+      ns: "wa",
+      frame: "request",
+      type: "http.request",
+      id: "req_mobile_http",
+      payload: {
+        source: "mobile",
+        authToken: "paired-mobile-token",
+        public: {
+          method: "GET",
+          path: "/",
+          host: "device.m.zenmind.cc",
+          headers: {}
+        },
+        upstream: {
+          scheme: "http",
+          host: "127.0.0.1",
+          port: localAddress.port,
+          basePath: ""
+        },
+        bodyLength: 0
+      }
+    }));
+    const head = await streamReader.readJson();
+    const body = await streamReader.readRaw(head.data.bodyLength);
+    return { head, body: body.toString("utf8") };
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  let verified = 0;
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    deviceId: "mac-mini-office",
+    desktopWsServerOptions: createDesktopWsServerOptions(app, {
+      listMobileWebapps: () => ({
+        desktopDeviceId: "mac-mini-office",
+        tunnelConnected: true,
+        generatedAt: new Date().toISOString(),
+        items: [{
+          id: "notes",
+          label: "Notes",
+          order: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          runtimeStatus: "running",
+          publishStatus: "published",
+          available: true,
+          publicUrl: `https://device-${localAddress.port}.m.zenmind.cc/`,
+          availability: "available"
+        }]
+      }),
+      verifyToken: async (token) => {
+        verified += 1;
+        assert.equal(token, "paired-mobile-token");
+        return { subject: "app", deviceId: "mac-mini-office", expiresAt: Date.now() + 60_000, scope: "app" };
+      }
+    }),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    await closeServer(fakeRelay.server);
+    await closeServer(local);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(response.head.code, 0);
+  assert.equal(response.head.data.statusCode, 200);
+  assert.equal(response.body, "ok");
+  assert.equal(verified, 1);
+  assert.equal(localRequests, 1);
+});
+
+test("Tunnel Client endpoint rejects unauthenticated mobile ns=wa streams", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-mobile-webapp-auth-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const fakeRelay = createFakeRelay(async ({ streamReader, sendStreamData }) => {
+    sendStreamData(encodeTunnelJson({
+      v: 1,
+      ns: "wa",
+      frame: "request",
+      type: "http.request",
+      id: "req_mobile_missing_auth",
+      payload: {
+        source: "mobile",
+        public: { method: "GET", path: "/", host: "device.m.zenmind.cc", headers: {} },
+        upstream: { scheme: "http", host: "127.0.0.1", port: 12345, basePath: "" },
+        bodyLength: 0
+      }
+    }));
+    return streamReader.readJson();
+  });
+  const relayAddress = await listen(fakeRelay.server);
+  const client = new TunnelClientEndpoint({
+    relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
+    relayToken: "relay-token",
+    deviceId: "mac-mini-office",
+    desktopWsServerOptions: createDesktopWsServerOptions(app),
+    logger: { log() {}, warn() {}, error() {} }
+  });
+  t.after(async () => {
+    client.close();
+    fakeRelay.close();
+    await closeServer(fakeRelay.server);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await client.connect();
+  const response = await fakeRelay.start();
+  assert.equal(response.code, 401);
+  assert.equal(response.msg, "mobile authToken is required");
+});
+
 test("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body length", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-wa-http-stream-"));
   const homePath = path.join(root, "home");
