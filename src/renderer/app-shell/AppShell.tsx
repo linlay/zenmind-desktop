@@ -668,8 +668,7 @@ export function AppShell() {
     !startupCardDismissed &&
     shouldShowStartupProgressCard(startupRestoreState, startupAllReady, location.pathname);
   const shouldPollStartup = startupRestoreState === null || showStartupCard;
-  const showsEmptyContentSurface =
-    location.pathname === "/" || location.pathname === EMPTY_WEB_SURFACE_ROUTE;
+  const showsEmptyContentSurface = location.pathname === "/";
   const webItemMap = useMemo(() => {
     return new Map<WebEntryKey, WebNavigationEntry>(webItems.map((item) => {
       if (item.kind === "webapp") {

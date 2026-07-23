@@ -630,7 +630,14 @@ test("empty content fallback is separate from the startup progress card", () => 
   assert.match(emptyContentSurface, /t\("emptyContent\.surface\.loading"\)/);
   assert.match(emptyContentSurface, /empty-content-surface-loader/);
   assert.match(appShell, /path="\/"[\s\S]*?element=\{<EmptyContentSurface \/>\}/);
-  assert.match(embeddedSurfaceHosts, /export function EmptyWebSurfaceRoute\(\)[\s\S]*?<EmptyContentSurface \/>/);
+  assert.match(
+    embeddedSurfaceHosts,
+    /export function EmptyWebSurfaceRoute\(\)[\s\S]*?webapp\.emptySurfaceTitle[\s\S]*?webapp\.emptySurfaceDescription/
+  );
+  assert.doesNotMatch(
+    embeddedSurfaceHosts,
+    /export function EmptyWebSurfaceRoute\(\)[\s\S]*?<EmptyContentSurface \/>/
+  );
   assert.match(appShell, /has-empty-content-surface/);
   assert.match(appShellStyles, /\.app-shell\.has-empty-content-surface \.app-main\s*\{[\s\S]*?padding:\s*0;/);
   assert.match(appShellStyles, /is-windows-platform\.has-empty-content-surface[\s\S]*?padding-top:\s*0;/);

@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { PlaceholderPage } from "../../pages/PlaceholderPage";
-import { EmptyContentSurface } from "../EmptyContentSurface";
 import { setActivePluginSurfaceId } from "../../services/pluginSurfaceWebviewRefs";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
@@ -368,5 +367,11 @@ export function WebRouteFallback({
 }
 
 export function EmptyWebSurfaceRoute() {
-  return <EmptyContentSurface />;
+  const { t } = useI18n();
+  return (
+    <PlaceholderPage
+      title={t("webapp.emptySurfaceTitle")}
+      description={t("webapp.emptySurfaceDescription")}
+    />
+  );
 }
