@@ -1146,7 +1146,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
   assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
-  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
+  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "refresh"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
   assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*?\| "chat"[\s\S]*?\| "project"/);
   assert.match(brandMarkSource, /SidebarIllustrationVariant = "compact" \| "rail"/);
@@ -1162,6 +1162,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_project" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="double_check" \/>/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="refresh" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="more_actions" \/>/);
 
   assert.doesNotMatch(sidebarSource, /EditSquareIcon|AddIcon/);
@@ -1730,6 +1731,35 @@ test("assistant sidebar empty state waits for navigation load", () => {
   assert.match(sidebarSource, /assistantNavAgentsLoaded\?: boolean;/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded = true,/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="sidebar-empty-hint">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>\s*\) : null/);
+});
+
+test("Projects header refresh force-loads navigation agents without toggling the group", () => {
+  const appShell = readAppShellSource();
+  const contracts = readSharedContractsSource();
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const assistantHandlers = readSourceFile(
+    "src",
+    "main",
+    "ipc",
+    "assistant-handlers.ts",
+  );
+
+  assert.match(sidebarSource, /const \[refreshingAssistantNavAgents, setRefreshingAssistantNavAgents\] =\s*useState\(false\);/);
+  assert.match(sidebarSource, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);[\s\S]{0,260}onRefreshAssistantNavAgents\?\.\(\{ force: true \}\)/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-refresh-button"[\s\S]{0,500}disabled=\{refreshingAssistantNavAgents\}[\s\S]{0,500}<SidebarActionIcon kind="refresh" \/>/);
+  assert.match(appShell, /async function refreshAssistantNavAgents\(options\?: AssistantNavigationListOptions\)[\s\S]{0,260}listNavigationAgents\(options\)/);
+  assert.match(contracts, /interface AssistantNavigationListOptions \{\s*force\?: boolean;/);
+  assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
+  assert.match(preload, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) =>\s*ipcRenderer\.invoke\("assistant\.listNavigationAgents", options\)/);
+  assert.match(assistantHandlers, /if \(options\?\.force !== true\) \{[\s\S]{0,180}getSnapshot\(\)/);
+  assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.refreshNow\(\)/);
 });
 
 test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", () => {
@@ -3989,13 +4019,13 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
   assert.match(contracts, /AssistantNavigationPushEventListener/);
   assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
-  assert.match(contracts, /listNavigationAgents: \(\) => Promise<AssistantNavAgentItemsResult>/);
+  assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
   assert.match(contracts, /getNavigationLiveStatus: \(\) => Promise<AssistantNavigationLiveStatus>/);
   assert.match(contracts, /createProject:\s*\(input: AssistantCreateProjectRequest\) => Promise<AssistantCreateProjectResult>/);
   assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
-  assert.match(preload, /listNavigationAgents: \(\) => ipcRenderer\.invoke\("assistant\.listNavigationAgents"\)/);
+  assert.match(preload, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) =>\s*ipcRenderer\.invoke\("assistant\.listNavigationAgents", options\)/);
   assert.match(preload, /getNavigationLiveStatus: \(\) => ipcRenderer\.invoke\("assistant\.getNavigationLiveStatus"\)/);
   assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createProject:\s*\(input: AssistantCreateProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createProject", input\)/);
@@ -4126,7 +4156,9 @@ test("desktop global search contract is wired across main preload renderer and h
   const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
   const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const overlay = readSourceFile("src", "renderer", "app-shell", "search", "DesktopGlobalSearchOverlay.tsx");
   const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
@@ -4155,6 +4187,16 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appRuntime, /isGlobalSearchShortcut/);
   assert.match(appShellRuntime, /isGlobalSearchShortcut/);
   assert.match(appShell, /onOpenGlobalSearch/);
+  assert.match(appShell, /onOpenGlobalSearch=\{\(\) => setGlobalSearchOpen\(true\)\}/);
+  assert.match(sidebar, /onOpenGlobalSearch\?:\s*\(\)\s*=>\s*void;/);
+  assert.match(
+    sidebar,
+    /className="app-sidebar-collapse-button sidebar-global-search-button is-compact"[\s\S]*?onClick=\{onOpenGlobalSearch\}[\s\S]*?<SettingsSidebarIcon kind="search" \/>/
+  );
+  assert.match(
+    navigationCss,
+    /\.app-sidebar\.is-collapsed \.sidebar-top-actions \.sidebar-global-search-button\s*\{[\s\S]*?display:\s*none;/
+  );
   assert.match(appShell, /<DesktopGlobalSearchOverlay/);
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
   assert.match(overlay, /return `\/agent\/\$\{encodeURIComponent\(currentAgentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);

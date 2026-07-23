@@ -6,6 +6,7 @@ import type {
   AssistantCreateProjectRequest,
   AssistantEventListener,
   AssistantNavigationAgentsChangedListener,
+  AssistantNavigationListOptions,
   AssistantNavigationPushEventListener,
   AssistantAttachmentProgressListener,
   AssistantMemorySettingsInput,
@@ -134,7 +135,8 @@ const api: DesktopApi = {
       ipcRenderer.invoke("assistant.saveMemorySettings", input),
     getMemorySummary: () => ipcRenderer.invoke("assistant.getMemorySummary"),
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
-    listNavigationAgents: () => ipcRenderer.invoke("assistant.listNavigationAgents"),
+    listNavigationAgents: (options?: AssistantNavigationListOptions) =>
+      ipcRenderer.invoke("assistant.listNavigationAgents", options),
     getNavigationLiveStatus: () => ipcRenderer.invoke("assistant.getNavigationLiveStatus"),
     listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
     createProject: (input: AssistantCreateProjectRequest) =>

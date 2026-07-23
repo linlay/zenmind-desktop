@@ -118,6 +118,8 @@ export const enUSMessages = {
   "sidebar.assistants.awaitingStatus.form": "Await Submit",
   "sidebar.assistants.awaitingStatus.planning": "Await Impl",
   "sidebar.assistants.awaitingStatus.question": "Await Ques",
+  "sidebar.assistants.refresh": "Refresh projects",
+  "sidebar.assistants.refreshing": "Refreshing projects",
   "sidebar.assistants.sort": "Sort assistants",
   "sidebar.assistants.sortByName": "By name",
   "sidebar.assistants.sortByTime": "By time",

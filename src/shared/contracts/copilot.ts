@@ -15,6 +15,10 @@ export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) 
 
 export type AssistantNavigationAgentsChangedListener = (result: AssistantNavAgentItemsResult) => void;
 
+export interface AssistantNavigationListOptions {
+  force?: boolean;
+}
+
 export interface AssistantNavigationPushEvent {
   type: string;
   chatId: string | null;

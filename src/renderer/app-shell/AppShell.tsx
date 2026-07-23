@@ -18,7 +18,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -1005,11 +1005,11 @@ export function AppShell() {
     });
   }
 
-  async function refreshAssistantNavAgents() {
+  async function refreshAssistantNavAgents(options?: AssistantNavigationListOptions) {
     const refreshId = assistantNavAgentsRefreshIdRef.current + 1;
     assistantNavAgentsRefreshIdRef.current = refreshId;
     try {
-      const result = await window.electronAPI.assistant.listNavigationAgents();
+      const result = await window.electronAPI.assistant.listNavigationAgents(options);
       if (assistantNavAgentsRefreshIdRef.current === refreshId) {
         if (!result.ok) {
           return;
@@ -3096,6 +3096,7 @@ export function AppShell() {
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
           onNavigateItem={undefined}
+          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
           onToggleCollapsed={toggleSidebarCollapsed}
           isSettingsMode={isSettingsRoute}
           settingsSections={visibleSettingsSections}

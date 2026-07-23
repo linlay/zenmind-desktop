@@ -6,6 +6,7 @@ import {
 } from "../download-paths";
 import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
+import type { AssistantNavigationListOptions } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
 
@@ -296,11 +297,16 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     }
   });
 
-  ipcMain.handle("assistant.listNavigationAgents", async (): Promise<any> => {
+  ipcMain.handle("assistant.listNavigationAgents", async (
+    _event: unknown,
+    options?: AssistantNavigationListOptions
+  ): Promise<any> => {
     try {
-      const cached = assistantNavigationStatusClient?.getSnapshot();
-      if (cached?.ok) {
-        return cached;
+      if (options?.force !== true) {
+        const cached = assistantNavigationStatusClient?.getSnapshot();
+        if (cached?.ok) {
+          return cached;
+        }
       }
       return await (assistantNavigationStatusClient?.refreshNow() ?? assistantBridge?.listNavigationAgents());
     } catch (error) {

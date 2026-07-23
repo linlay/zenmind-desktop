@@ -267,3 +267,32 @@ test("assistant IPC rethrows time contract violations while keeping ordinary nav
   assert.equal(typeof navigationResult.updatedAt, "number");
   assert.equal(typeof copilotResult.updatedAt, "number");
 });
+
+test("assistant.listNavigationAgents force refresh bypasses the cached navigation snapshot", async () => {
+  const cachedResult = { ok: true, items: [{ agentKey: "cached" }] };
+  const refreshedResult = { ok: true, items: [{ agentKey: "fresh" }] };
+  let snapshotReads = 0;
+  let refreshCalls = 0;
+  const { handlers } = registerProjectHandlers({
+    assistantNavigationStatusClient: {
+      getSnapshot() {
+        snapshotReads += 1;
+        return cachedResult;
+      },
+      async refreshNow() {
+        refreshCalls += 1;
+        return refreshedResult;
+      },
+      scheduleRefresh() {},
+    },
+  });
+  const handler = handlers.get("assistant.listNavigationAgents");
+
+  assert.equal(await handler(null), cachedResult);
+  assert.equal(snapshotReads, 1);
+  assert.equal(refreshCalls, 0);
+
+  assert.equal(await handler(null, { force: true }), refreshedResult);
+  assert.equal(snapshotReads, 1);
+  assert.equal(refreshCalls, 1);
+});

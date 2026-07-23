@@ -11,6 +11,20 @@ type RuntimeRootPathOptions = {
   registryDataRootPath?: string;
 };
 
+type WindowsRegistryExecFileSync = (
+  command: string,
+  args: string[],
+  options: {
+    stdio: ["ignore", "pipe", "ignore"];
+    windowsHide: true;
+  }
+) => Buffer;
+
+type WindowsRegistryReadOptions = {
+  platform?: NodeJS.Platform;
+  execFileSyncImpl?: WindowsRegistryExecFileSync;
+};
+
 let cachedRegistryDataRoot: string | undefined;
 
 function pathApiForRoot(platform: NodeJS.Platform | undefined, rootPath: string) {
@@ -49,9 +63,67 @@ function normalizeConfiguredRuntimeRoot(value: string | undefined, platform: Nod
   return pathApi.resolve(expanded);
 }
 
-function parseRegQueryValue(output: string) {
-  const valuePattern = new RegExp(`^\\s*${WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE}\\s+REG_\\w+\\s+(.+?)\\s*$`, "imu");
-  return output.match(valuePattern)?.[1]?.trim() ?? "";
+function windowsPowerShellPath() {
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+  return path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+function quotePowerShellLiteral(value: string) {
+  return `'${value.replace(/'/gu, "''")}'`;
+}
+
+function buildWindowsRegistryReadScript() {
+  const registryKey = quotePowerShellLiteral(WINDOWS_RUNTIME_ROOT_REGISTRY_KEY);
+  const registryValue = quotePowerShellLiteral(WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE);
+  return `
+$ErrorActionPreference = 'Stop'
+$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(${registryKey})
+if ($null -ne $key) {
+  try {
+    $value = $key.GetValue(${registryValue}, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    if ($null -ne $value) {
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$value)
+      [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+      [Console]::Out.Write([System.Convert]::ToBase64String($bytes))
+    }
+  } finally {
+    $key.Dispose()
+  }
+}
+`;
+}
+
+function decodeBase64Utf8(value: Buffer) {
+  const encoded = value.toString("ascii").trim();
+  if (!encoded) {
+    return "";
+  }
+  return Buffer.from(encoded, "base64").toString("utf8");
+}
+
+function readWindowsRuntimeRootFromRegistryUncached({
+  platform = process.platform,
+  execFileSyncImpl = execFileSync as WindowsRegistryExecFileSync
+}: WindowsRegistryReadOptions = {}) {
+  if (platform !== "win32") {
+    return "";
+  }
+
+  try {
+    const encodedCommand = Buffer.from(buildWindowsRegistryReadScript(), "utf16le").toString("base64");
+    const output = execFileSyncImpl(windowsPowerShellPath(), [
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      encodedCommand
+    ], {
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true
+    });
+    return decodeBase64Utf8(output);
+  } catch {
+    return "";
+  }
 }
 
 export function readWindowsRuntimeRootFromRegistry(platform: NodeJS.Platform = process.platform) {
@@ -62,21 +134,7 @@ export function readWindowsRuntimeRootFromRegistry(platform: NodeJS.Platform = p
     return cachedRegistryDataRoot;
   }
 
-  try {
-    const output = execFileSync("reg.exe", [
-      "query",
-      `HKCU\\${WINDOWS_RUNTIME_ROOT_REGISTRY_KEY}`,
-      "/v",
-      WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE
-    ], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      windowsHide: true
-    });
-    cachedRegistryDataRoot = parseRegQueryValue(String(output ?? ""));
-  } catch {
-    cachedRegistryDataRoot = "";
-  }
+  cachedRegistryDataRoot = readWindowsRuntimeRootFromRegistryUncached({ platform });
   return cachedRegistryDataRoot;
 }
 
@@ -95,6 +153,6 @@ export function resolveRuntimeRootPath({
 
 export const __testInternals = {
   normalizeConfiguredRuntimeRoot,
-  parseRegQueryValue,
+  readWindowsRuntimeRootFromRegistryUncached,
   resolveRuntimeRootPath
 };
