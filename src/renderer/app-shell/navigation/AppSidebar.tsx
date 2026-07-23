@@ -997,6 +997,7 @@ type AppSidebarProps = {
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
+  onOpenGlobalSearch?: () => void;
   onToggleCollapsed?: () => void;
   isSettingsMode?: boolean;
   settingsSections?: SettingsSidebarSection[];
@@ -1052,6 +1053,7 @@ export function AppSidebar({
   onSidebarNavigateBack,
   onSidebarNavigateForward,
   onNavigateItem,
+  onOpenGlobalSearch,
   onToggleCollapsed,
   isSettingsMode = false,
   settingsSections = [],
@@ -5552,6 +5554,17 @@ export function AppSidebar({
         <div className="sidebar-chrome">
           <div className={chromeToolbarClassName}>
             <div className="sidebar-top-actions">
+              {!isSettingsMode ? (
+                <button
+                  type="button"
+                  className="app-sidebar-collapse-button sidebar-global-search-button is-compact"
+                  aria-label={t("desktop.globalSearch.title")}
+                  title={t("desktop.globalSearch.shortcutHint")}
+                  onClick={onOpenGlobalSearch}
+                >
+                  <SettingsSidebarIcon kind="search" />
+                </button>
+              ) : null}
               {!isSettingsMode ? (
                 <SidebarCollapseToggle
                   className="sidebar-collapsed-toggle-button"

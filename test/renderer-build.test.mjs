@@ -4156,7 +4156,9 @@ test("desktop global search contract is wired across main preload renderer and h
   const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
   const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const overlay = readSourceFile("src", "renderer", "app-shell", "search", "DesktopGlobalSearchOverlay.tsx");
   const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
@@ -4185,6 +4187,16 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appRuntime, /isGlobalSearchShortcut/);
   assert.match(appShellRuntime, /isGlobalSearchShortcut/);
   assert.match(appShell, /onOpenGlobalSearch/);
+  assert.match(appShell, /onOpenGlobalSearch=\{\(\) => setGlobalSearchOpen\(true\)\}/);
+  assert.match(sidebar, /onOpenGlobalSearch\?:\s*\(\)\s*=>\s*void;/);
+  assert.match(
+    sidebar,
+    /className="app-sidebar-collapse-button sidebar-global-search-button is-compact"[\s\S]*?onClick=\{onOpenGlobalSearch\}[\s\S]*?<SettingsSidebarIcon kind="search" \/>/
+  );
+  assert.match(
+    navigationCss,
+    /\.app-sidebar\.is-collapsed \.sidebar-top-actions \.sidebar-global-search-button\s*\{[\s\S]*?display:\s*none;/
+  );
   assert.match(appShell, /<DesktopGlobalSearchOverlay/);
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
   assert.match(overlay, /return `\/agent\/\$\{encodeURIComponent\(currentAgentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
