@@ -1165,6 +1165,7 @@ export function createMainProcessRuntime() {
       assistantRunWakeLock,
       logsRuntime,
       petRuntime,
+      browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
       quickCopilotWindowController,
       desktopSsoController,
       startupRestoreController,

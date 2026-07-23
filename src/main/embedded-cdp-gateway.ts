@@ -4,7 +4,8 @@ import type { AddressInfo, Socket } from "node:net";
 import type { WebContents } from "electron";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
-  EMBEDDED_CDP_GATEWAY_PORT
+  EMBEDDED_CDP_GATEWAY_PORT,
+  type EmbeddedCdpSurfaceKind
 } from "../shared/embedded-cdp";
 import { PRODUCT_NAME } from "../shared/brand";
 import {
@@ -26,6 +27,8 @@ export type EmbeddedCdpSurface = {
   copilotAgentKey?: string;
   surfaceRoute?: string;
   embedPath?: string;
+  surfaceKind: EmbeddedCdpSurfaceKind;
+  open: boolean;
 };
 
 type EmbeddedCdpGatewayOptions = {
@@ -74,6 +77,11 @@ const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const DEFAULT_PROTOCOL_VERSION = "1.3";
 const DEFAULT_CDP_TIMEOUT_MS = 15_000;
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
+type EmbeddedCdpTargetScope = "sites" | "all";
+
+export class EmbeddedCdpInvalidArgsError extends Error {
+  readonly code = "invalid_args";
+}
 
 function stableTargetId(surface: EmbeddedCdpSurface) {
   const source = `webview:${surface.id || surface.url || surface.label}`;
@@ -138,6 +146,8 @@ function targetDescriptor(
     url,
     webSocketDebuggerUrl: `${origins.wsOrigin}/devtools/page/${encodedTargetId}`,
     surfaceId: surface.id,
+    surfaceKind: surface.surfaceKind,
+    open: surface.open,
     surfaceRoute: surface.surfaceRoute || "",
     copilotAgentKey: surface.copilotAgentKey || ""
   };
@@ -156,6 +166,8 @@ function targetInfoDescriptor(surface: EmbeddedCdpSurface, targetId: string, cur
     type: "webview",
     url,
     surfaceId: surface.id,
+    surfaceKind: surface.surfaceKind,
+    open: surface.open,
     surfaceRoute: surface.surfaceRoute || "",
     copilotAgentKey: surface.copilotAgentKey || ""
   };
@@ -394,35 +406,34 @@ export class EmbeddedCdpGateway {
     }
     const params = request.params ?? {};
     if (method === "Target.getTargets" || method === "Target.getCurrentTarget") {
-      const surfaces = await this.listValidSurfaces();
+      const scope = this.readTargetScope(params);
+      const surfaces = await this.listTargetSurfaces(scope);
       const surface = this.resolveCurrentSurface(surfaces);
-      if (!surface) {
-        throw new Error("Target not found.");
-      }
-      const targetId = stableTargetId(surface);
-      const targetInfo = targetInfoDescriptor(surface, targetId, true);
+      const targetId = surface ? stableTargetId(surface) : null;
+      const targetInfo = surface && targetId
+        ? targetInfoDescriptor(surface, targetId, true)
+        : null;
       if (method === "Target.getCurrentTarget") {
         return {
-          targetId,
-          surfaceId: surface.id,
+          ...(targetId && surface ? { targetId, surfaceId: surface.id } : {}),
           result: {
             targetInfo,
             currentTargetId: targetId,
-            currentSurfaceId: surface.id
+            currentSurfaceId: surface?.id ?? null
           }
         };
       }
       return {
-        targetId,
-        surfaceId: surface.id,
+        ...(targetId && surface ? { targetId, surfaceId: surface.id } : {}),
         result: {
           targetInfos: surfaces
             .map((candidate) => {
               const candidateTargetId = stableTargetId(candidate);
               return targetInfoDescriptor(candidate, candidateTargetId, candidateTargetId === targetId);
             }),
+          currentTargetInfo: targetInfo,
           currentTargetId: targetId,
-          currentSurfaceId: surface.id
+          currentSurfaceId: surface?.id ?? null
         }
       };
     }
@@ -707,8 +718,29 @@ export class EmbeddedCdpGateway {
     return surfaces.filter((surface) => surface.id && surface.url);
   }
 
+  private readTargetScope(params: Record<string, unknown>): EmbeddedCdpTargetScope {
+    if (params.scope === undefined) {
+      return "sites";
+    }
+    if (params.scope === "sites" || params.scope === "all") {
+      return params.scope;
+    }
+    throw new EmbeddedCdpInvalidArgsError('params.scope must be either "sites" or "all".');
+  }
+
+  private async listTargetSurfaces(scope: EmbeddedCdpTargetScope) {
+    const surfaces = await this.listValidSurfaces();
+    if (scope === "all") {
+      return surfaces;
+    }
+    return surfaces.filter((surface) =>
+      (surface.surfaceKind === "website" || surface.surfaceKind === "webapp") &&
+      surface.open
+    );
+  }
+
   private resolveCurrentSurface(surfaces: EmbeddedCdpSurface[]) {
-    return surfaces.find((surface) => surface.active) ?? surfaces[0] ?? null;
+    return surfaces.find((surface) => surface.active) ?? null;
   }
 
   private async resolveCommandSurface(request: EmbeddedCdpCommandRequest) {

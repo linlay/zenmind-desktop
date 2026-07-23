@@ -59,6 +59,8 @@ export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): Emb
     currentUrl: snapshotCurrentUrl || input.contents?.getURL(),
     title: documentTitle || input.service.name || input.service.id,
     webContentsId: input.contents?.id,
+    surfaceKind: "service",
+    open: Boolean(input.contents),
     ...(surfaceRoute ? { surfaceRoute } : {}),
     ...(snapshotMatchesService && currentPageSnapshot?.embedPath ? { embedPath: currentPageSnapshot.embedPath } : {})
   };
@@ -99,6 +101,12 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
   }
 
   function resolveWebContents(surface: EmbeddedCdpSurface): WebContents | null {
+    if (surface.surfaceKind === "website" || surface.surfaceKind === "webapp") {
+      const registeredContents = options.browserSurfaces.findRegisteredSiteWebContents(surface.id);
+      if (registeredContents) {
+        return registeredContents;
+      }
+    }
     if (surface.webContentsId) {
       const contents = options.browserSurfaces.findWebContentsForSurfaceUrl(surface.currentUrl || surface.url);
       if (contents && contents.id === surface.webContentsId && !contents.isDestroyed() && contents.getType() === "webview") {

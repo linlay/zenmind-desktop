@@ -7,6 +7,7 @@ import type {
 import { useLocation } from "react-router-dom";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
+import type { EmbeddedCdpSiteSurfaceKind } from "../../../shared/embedded-cdp";
 import {
   EXTRACT_STRUCTURED_SCRIPT,
   READ_PAGE_DATA_SCRIPT,
@@ -48,6 +49,7 @@ type ExternalWebviewPageProps = {
   url: string;
   active?: boolean | undefined;
   surfaceId?: string;
+  surfaceKind?: EmbeddedCdpSiteSurfaceKind;
   surfaceLabel?: string;
   chrome?: "browser" | "app";
   partition?: string;
@@ -113,6 +115,12 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
 })()`;
 
 const BLANK_EXTERNAL_WEBVIEW_URL = "about:blank";
+let siteSurfaceRegistrationSequence = 0;
+
+function createSiteSurfaceRegistrationId() {
+  siteSurfaceRegistrationSequence += 1;
+  return `site-surface-${Date.now()}-${siteSurfaceRegistrationSequence}`;
+}
 
 type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
@@ -413,6 +421,7 @@ export function ExternalWebviewPage({
   url,
   active,
   surfaceId,
+  surfaceKind,
   surfaceLabel,
   chrome = "browser",
   partition,
@@ -430,6 +439,7 @@ export function ExternalWebviewPage({
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
   const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
+  const [siteSurfaceRegistrationId] = useState(createSiteSurfaceRegistrationId);
   const faviconReportedRef = useRef(false);
   const initialFaviconTabIdRef = useRef("");
   const surfaceClassName = [
@@ -833,6 +843,54 @@ export function ExternalWebviewPage({
   }, []);
 
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
+
+  useEffect(() => {
+    if (!surfaceKind || !surfaceId) {
+      return;
+    }
+    if (typeof activeTab?.guestId !== "number") {
+      void window.electronAPI.embeddedCdp.unregisterSiteSurface({
+        registrationId: siteSurfaceRegistrationId,
+        surfaceId
+      }).catch(() => undefined);
+      return;
+    }
+    void window.electronAPI.embeddedCdp.registerSiteSurface({
+      registrationId: siteSurfaceRegistrationId,
+      surfaceId,
+      surfaceKind,
+      label: surfaceLabel ?? title,
+      url,
+      currentUrl: activeTab.currentUrl || url,
+      title: activeTab.title || title,
+      webContentsId: activeTab.guestId,
+      active: active !== false
+    }).catch(() => undefined);
+  }, [
+    active,
+    activeTab?.currentUrl,
+    activeTab?.guestId,
+    activeTab?.id,
+    activeTab?.title,
+    siteSurfaceRegistrationId,
+    surfaceId,
+    surfaceKind,
+    surfaceLabel,
+    title,
+    url
+  ]);
+
+  useEffect(() => {
+    if (!surfaceKind || !surfaceId) {
+      return undefined;
+    }
+    return () => {
+      void window.electronAPI.embeddedCdp.unregisterSiteSurface({
+        registrationId: siteSurfaceRegistrationId,
+        surfaceId
+      }).catch(() => undefined);
+    };
+  }, [siteSurfaceRegistrationId, surfaceId, surfaceKind]);
 
   useEffect(() => {
     setAddressInputUnlocked(false);

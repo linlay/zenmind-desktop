@@ -101,6 +101,8 @@ import { registerSsoIpcHandlers } from "./sso-handlers";
 import { registerKanbanIpcHandlers } from "./kanban-handlers";
 import { registerTunnelHubIpcHandlers } from "./tunnel-hub-handlers";
 import { registerWebIpcHandlers } from "./web-handlers";
+import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
+import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 
 export type MainIpcRegistrationOptions = {
   app: App;
@@ -110,6 +112,7 @@ export type MainIpcRegistrationOptions = {
   assistantRunWakeLock: AssistantRunWakeLock;
   logsRuntime: LogsRuntime;
   petRuntime: DesktopPetRuntime;
+  browserSurfaces: BrowserSurfaceRegistry;
   quickCopilotWindowController: any;
   desktopSsoController: any;
   startupRestoreController: any;
@@ -193,6 +196,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   }));
 
   registerQuickCopilotIpcHandlers(ipcMain, options.quickCopilotWindowController);
+  registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
 
   registerServicesIpcHandlers(ipcMain, createServicesIpcHandlerOptions(context, {
     listServices,

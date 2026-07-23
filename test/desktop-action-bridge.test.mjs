@@ -541,6 +541,24 @@ test("desktop cdp bridge surfaces target timeout distinctly", async (t) => {
   assert.deepEqual(response.error.details.paramKeys, ["expression", "returnByValue"]);
 });
 
+test("desktop cdp bridge preserves invalid target scope errors", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.executeCdpCommand = async () => {
+    const error = new Error('params.scope must be either "sites" or "all".');
+    error.code = "invalid_args";
+    throw error;
+  };
+
+  const response = await handleDesktopCdpRequest(options, {
+    method: "Target.getTargets",
+    params: { scope: "browser" }
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "invalid_args");
+  assert.match(response.error.message, /scope/u);
+});
+
 test("desktop action confirmation detail exposes debug context with redacted args", () => {
   const detail = __testInternals.buildDesktopActionConfirmationDetail({
     requestId: "request-123",

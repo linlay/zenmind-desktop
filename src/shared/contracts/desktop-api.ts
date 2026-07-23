@@ -10,6 +10,10 @@ import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, As
 import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
+import type {
+  EmbeddedCdpSiteSurfaceRegistration,
+  EmbeddedCdpSiteSurfaceRemoval
+} from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
 
 export type AgentAuthRefreshReason = "missing" | "unauthorized";
@@ -674,6 +678,10 @@ export interface DesktopApi {
     publishSnapshot: (snapshot: DesktopPageContextSnapshot | null) => Promise<{ ok: boolean }>;
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
   };
+  embeddedCdp: {
+    registerSiteSurface: (input: EmbeddedCdpSiteSurfaceRegistration) => Promise<{ ok: boolean }>;
+    unregisterSiteSurface: (input: EmbeddedCdpSiteSurfaceRemoval) => Promise<{ ok: boolean }>;
+  };
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;
     openDesktopLogViewer: (target: DesktopLogTarget) => Promise<{ ok: boolean }>;
@@ -712,10 +720,6 @@ export interface DesktopApi {
     setWindowMode: (mode: DesktopPetWindowMode) => Promise<{ ok: boolean }>;
     onStateChanged: (listener: DesktopPetStateListener) => () => void;
     onSignatureRequested: (listener: DesktopPetSignatureRequestedListener) => () => void;
-  };
-  quickAssistant: {
-    hide: () => Promise<{ ok: boolean }>;
-    openControlCenter: () => Promise<{ ok: boolean }>;
   };
   webs: {
     list: () => Promise<WebListResult>;

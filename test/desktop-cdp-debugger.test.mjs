@@ -15,6 +15,9 @@ const {
   sendDesktopCdpCommand,
   isDesktopCdpTimeoutError
 } = require("../dist-electron/main/desktop-cdp-debugger.js");
+const {
+  createBrowserSurfaceRegistry
+} = require("../dist-electron/main/browser-surface-registry.js");
 
 function createLoggerSink() {
   const events = [];
@@ -127,6 +130,257 @@ test("embedded cdp gateway command execution times out instead of hanging", asyn
   assert.equal(error.details.url, "https://example.test/live");
   assert.deepEqual(error.details.paramKeys, ["expression", "returnByValue"]);
   assert.equal(hanging.attached, false);
+});
+
+test("embedded cdp target queries default to open sites and expose the current target directly", async () => {
+  const surfaces = [
+    {
+      id: "chrome",
+      label: "Chrome",
+      url: "https://www.google.com/",
+      currentUrl: "https://www.google.com/",
+      surfaceKind: "browser",
+      open: true,
+      active: false
+    },
+    {
+      id: "website:background",
+      label: "Background",
+      url: "https://background.example/",
+      currentUrl: "https://background.example/live",
+      surfaceKind: "website",
+      open: true,
+      active: false
+    },
+    {
+      id: "website:current",
+      label: "Current Site",
+      url: "https://current.example/",
+      currentUrl: "https://current.example/page",
+      surfaceKind: "website",
+      open: true,
+      active: true
+    },
+    {
+      id: "webapp:open",
+      label: "Open App",
+      url: "http://127.0.0.1:19001/",
+      surfaceKind: "webapp",
+      open: true,
+      active: false
+    },
+    {
+      id: "website:closed",
+      label: "Closed Site",
+      url: "https://closed.example/",
+      surfaceKind: "website",
+      open: false,
+      active: false
+    },
+    {
+      id: "identity-center",
+      label: "Identity",
+      url: "http://127.0.0.1:17080/",
+      surfaceKind: "service",
+      open: true,
+      active: false
+    }
+  ];
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: () => null
+  });
+
+  const response = await gateway.executeCommand({ method: "Target.getTargets" });
+  assert.deepEqual(
+    response.result.targetInfos.map((target) => target.surfaceId),
+    ["website:background", "website:current", "webapp:open"]
+  );
+  assert.equal(response.result.currentTargetInfo.surfaceId, "website:current");
+  assert.deepEqual(
+    response.result.currentTargetInfo,
+    response.result.targetInfos.find((target) => target.surfaceId === "website:current")
+  );
+  assert.equal(response.result.currentTargetId, response.result.currentTargetInfo.targetId);
+  assert.equal(response.result.currentSurfaceId, "website:current");
+  assert.equal(response.surfaceId, "website:current");
+  assert.equal(response.result.targetInfos.filter((target) => target.current).length, 1);
+  assert.equal(response.result.targetInfos.every((target) => target.open), true);
+
+  const allResponse = await gateway.executeCommand({
+    method: "Target.getTargets",
+    params: { scope: "all" }
+  });
+  assert.equal(allResponse.result.targetInfos.length, surfaces.length);
+  assert.deepEqual(
+    allResponse.result.targetInfos.map((target) => target.surfaceKind),
+    ["browser", "website", "website", "webapp", "website", "service"]
+  );
+  assert.equal(
+    allResponse.result.targetInfos.find((target) => target.surfaceId === "website:closed").open,
+    false
+  );
+});
+
+test("embedded cdp target queries return an explicit empty current state without first-item fallback", async () => {
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => [{
+      id: "website:background",
+      label: "Background",
+      url: "https://background.example/",
+      surfaceKind: "website",
+      open: true,
+      active: false
+    }],
+    resolveWebContents: () => null
+  });
+
+  const targetsResponse = await gateway.executeCommand({ method: "Target.getTargets" });
+  assert.equal(targetsResponse.result.targetInfos.length, 1);
+  assert.equal(targetsResponse.result.currentTargetInfo, null);
+  assert.equal(targetsResponse.result.currentTargetId, null);
+  assert.equal(targetsResponse.result.currentSurfaceId, null);
+  assert.equal(Object.hasOwn(targetsResponse, "targetId"), false);
+  assert.equal(Object.hasOwn(targetsResponse, "surfaceId"), false);
+
+  const currentResponse = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
+  assert.equal(currentResponse.result.targetInfo, null);
+  assert.equal(currentResponse.result.currentTargetId, null);
+  assert.equal(currentResponse.result.currentSurfaceId, null);
+
+  const emptyGateway = new EmbeddedCdpGateway({
+    getSurfaces: () => [{
+      id: "website:closed",
+      label: "Closed",
+      url: "https://closed.example/",
+      surfaceKind: "website",
+      open: false,
+      active: false
+    }],
+    resolveWebContents: () => null
+  });
+  const emptyResponse = await emptyGateway.executeCommand({ method: "Target.getTargets" });
+  assert.deepEqual(emptyResponse.result.targetInfos, []);
+  assert.equal(emptyResponse.result.currentTargetInfo, null);
+
+  await assert.rejects(
+    gateway.executeCommand({
+      method: "Target.getTargets",
+      params: { scope: "browser" }
+    }),
+    (error) => error?.code === "invalid_args" && /scope/u.test(error.message)
+  );
+});
+
+test("browser surface registry uses explicit guest registrations for open site state", () => {
+  let currentPageSnapshot = {
+    pageKind: "webview",
+    surfaceId: "website:docs",
+    webContentsId: 101,
+    pageContext: {
+      browserTarget: {
+        kind: "webview",
+        surfaceId: "website:docs",
+        currentUrl: "https://redirected.example/live"
+      }
+    }
+  };
+  const contentsById = new Map();
+  const docsContents = {
+    id: 101,
+    destroyed: false,
+    isDestroyed() {
+      return this.destroyed;
+    },
+    getType: () => "webview",
+    getURL: () => "https://redirected.example/live",
+    getTitle: () => "Redirected Docs"
+  };
+  const appContents = {
+    id: 102,
+    destroyed: false,
+    isDestroyed() {
+      return this.destroyed;
+    },
+    getType: () => "webview",
+    getURL: () => "http://127.0.0.1:19001/dashboard",
+    getTitle: () => "Local App"
+  };
+  contentsById.set(docsContents.id, docsContents);
+  contentsById.set(appContents.id, appContents);
+
+  const registry = createBrowserSurfaceRegistry({
+    webContents: {
+      getAllWebContents: () => [...contentsById.values()],
+      fromId: (id) => contentsById.get(id)
+    },
+    listWebEntries: () => ({
+      items: [
+        {
+          id: "docs",
+          entryKey: "website:docs",
+          kind: "website",
+          label: "Docs",
+          url: "https://docs.example/"
+        },
+        {
+          id: "app",
+          entryKey: "webapp:app",
+          kind: "webapp",
+          label: "App",
+          url: "http://127.0.0.1:19001/"
+        }
+      ]
+    }),
+    getCurrentPageSnapshot: () => currentPageSnapshot
+  });
+
+  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "website:docs").open, false);
+  assert.equal(registry.registerSiteSurface({
+    registrationId: "docs-registration",
+    surfaceId: "website:docs",
+    surfaceKind: "website",
+    label: "Docs",
+    url: "https://docs.example/",
+    currentUrl: "https://redirected.example/live",
+    title: "Redirected Docs",
+    webContentsId: 101,
+    active: true
+  }, 7), true);
+  assert.equal(registry.registerSiteSurface({
+    registrationId: "app-registration",
+    surfaceId: "webapp:app",
+    surfaceKind: "webapp",
+    label: "App",
+    url: "http://127.0.0.1:19001/",
+    currentUrl: "http://127.0.0.1:19001/dashboard",
+    title: "Local App",
+    webContentsId: 102,
+    active: false
+  }, 7), true);
+
+  const surfaces = registry.listBrowserSurfaces();
+  const docs = surfaces.find((surface) => surface.id === "website:docs");
+  const app = surfaces.find((surface) => surface.id === "webapp:app");
+  assert.equal(docs.open, true);
+  assert.equal(docs.active, true);
+  assert.equal(docs.currentUrl, "https://redirected.example/live");
+  assert.equal(docs.title, "Redirected Docs");
+  assert.equal(docs.webContentsId, 101);
+  assert.equal(app.open, true);
+  assert.equal(app.active, false);
+  assert.equal(registry.findRegisteredSiteWebContents("website:docs"), docsContents);
+
+  assert.equal(registry.unregisterSiteSurface({
+    registrationId: "wrong-registration",
+    surfaceId: "website:docs"
+  }, 7), false);
+  docsContents.destroyed = true;
+  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "website:docs").open, false);
+
+  currentPageSnapshot = null;
+  registry.unregisterSiteSurfacesForOwner(7);
+  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "webapp:app").open, false);
 });
 
 test("current page cdp executor uses the shared command timeout helper", () => {

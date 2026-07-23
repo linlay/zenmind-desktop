@@ -105,7 +105,11 @@ type DesktopActionBridgeOptions = {
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
-  executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
+  executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{
+    targetId?: string;
+    surfaceId?: string;
+    result: unknown;
+  }>;
   getKanbanRuntime?: () => KanbanRuntime | null;
   emitWebappChanged?: (reason: DesktopWebappChangedReason, webappId: string) => void;
   desktopPet?: {
@@ -1726,14 +1730,17 @@ export async function handleDesktopCdpRequest(
       ok: true,
       method,
       result: response.result,
-      targetId: response.targetId,
-      surfaceId: response.surfaceId
+      ...(response.targetId ? { targetId: response.targetId } : {}),
+      ...(response.surfaceId ? { surfaceId: response.surfaceId } : {})
     };
   } catch (error) {
     if (isDesktopCdpTimeoutError(error)) {
       return cdpFail(method, DESKTOP_CDP_TARGET_TIMEOUT_CODE, error.message, readDesktopCdpErrorDetails(error));
     }
-    return cdpFail(method, "cdp_failed", error instanceof Error ? error.message : String(error));
+    const errorCode = error && typeof error === "object" && "code" in error && error.code === "invalid_args"
+      ? "invalid_args"
+      : "cdp_failed";
+    return cdpFail(method, errorCode, error instanceof Error ? error.message : String(error));
   }
 }
 

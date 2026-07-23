@@ -26,15 +26,36 @@ export type WebSurfaceRuntimeOptions = {
 export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
   function listBrowserRegistryWebItems() {
     const entries = listWebEntries(options.app).items;
-    const items: Array<{ id: string; entryKey: string; label: string; url: string; copilotAgentKey?: string }> = [];
+    const items: Array<{
+      id: string;
+      entryKey: string;
+      kind: "website" | "webapp";
+      label: string;
+      url: string;
+      copilotAgentKey?: string;
+    }> = [];
     for (const item of entries) {
       if (item.kind === "website") {
-        items.push({ id: item.id, entryKey: item.entryKey, label: item.label, url: item.url, copilotAgentKey: item.copilotAgentKey });
+        items.push({
+          id: item.id,
+          entryKey: item.entryKey,
+          kind: item.kind,
+          label: item.label,
+          url: item.url,
+          copilotAgentKey: item.copilotAgentKey
+        });
         continue;
       }
       const state = webappRuntime.getStatus(options.app, item.id);
       if (state?.webUrl) {
-        items.push({ id: item.id, entryKey: item.entryKey, label: item.label, url: state.webUrl, copilotAgentKey: item.copilotAgentKey });
+        items.push({
+          id: item.id,
+          entryKey: item.entryKey,
+          kind: item.kind,
+          label: item.label,
+          url: state.webUrl,
+          copilotAgentKey: item.copilotAgentKey
+        });
       }
     }
     return { items };

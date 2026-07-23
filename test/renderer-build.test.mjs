@@ -5421,6 +5421,21 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
   assert.doesNotMatch(cdpIntegration, /failed to list iframe targets/);
 });
 
+test("site webviews publish exact open-target registrations for embedded cdp", () => {
+  const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
+  const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
+  const browserRegistry = readSourceFile("src", "main", "browser-surface-registry.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+
+  assert.match(surfaceHosts, /surfaceKind=\{item\.kind\}/u);
+  assert.match(externalWebview, /embeddedCdp\.registerSiteSurface\(\{/u);
+  assert.match(externalWebview, /webContentsId:\s*activeTab\.guestId/u);
+  assert.match(externalWebview, /embeddedCdp\.unregisterSiteSurface\(\{/u);
+  assert.match(preload, /embeddedCdp\.registerSiteSurface/u);
+  assert.match(browserRegistry, /findRegisteredSiteWebContents/u);
+  assert.match(browserRegistry, /contents\.getType\(\) !== "webview"/u);
+});
+
 test("assistant chat export writes directly to the download location", () => {
   const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
   const downloadPaths = readSourceFile("src", "main", "download-paths.ts");

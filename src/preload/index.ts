@@ -448,6 +448,10 @@ const api: DesktopApi = {
     publishSnapshot: (snapshot) => ipcRenderer.invoke("currentPage.publishSnapshot", snapshot),
     getSnapshot: () => ipcRenderer.invoke("currentPage.getSnapshot")
   },
+  embeddedCdp: {
+    registerSiteSurface: (input) => ipcRenderer.invoke("embeddedCdp.registerSiteSurface", input),
+    unregisterSiteSurface: (input) => ipcRenderer.invoke("embeddedCdp.unregisterSiteSurface", input)
+  },
   copilot: {
     publishDevToolsTarget: (target) => ipcRenderer.invoke("copilot.publishDevToolsTarget", target)
   },

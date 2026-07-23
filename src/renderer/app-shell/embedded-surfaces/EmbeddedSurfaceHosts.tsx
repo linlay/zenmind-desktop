@@ -272,6 +272,7 @@ export function WebSurfaceHost({
             key={entryKey}
             active={activeEntryKey === entryKey}
             surfaceId={entryKey}
+            surfaceKind={item.kind}
             surfaceLabel={item.label}
             title={item.label}
             url={item.url}
