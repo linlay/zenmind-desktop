@@ -67,6 +67,7 @@ Desktop WebSocket 鉴权：
 - `state/desktop/sso-session.json`：schema v2 SSO 会话状态，不包含 user 或 access token；旧版内嵌 user 的会话仍可读取。
 - `state/desktop/sso-user-info.json`：schema v2 规范化用户信息及来源。
 - `state/desktop/sso-access-token.txt`：仅保存已成功取得的原始 access token。
+- 已解锁的 Settings → Debug → State 会把 access token 文件作为固定白名单状态文件明文展示并允许复制；普通设置页和未解锁会话不显示这一入口。
 - `secrets/sso-site-token.json`：站点 token。
 - `config/services/identity-center/.env`：identity-center 配置。
 

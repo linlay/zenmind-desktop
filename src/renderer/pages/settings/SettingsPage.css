@@ -1836,6 +1836,59 @@
   gap: 12px;
 }
 
+.settings-debug-state-summary > div:first-child,
+.settings-debug-state-file-meta > div:first-child {
+  grid-column: 1 / -1;
+}
+
+.settings-debug-state-files {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-debug-state-file {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+}
+
+.settings-debug-state-file-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-debug-state-file-head > code {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.settings-debug-state-file-meta div,
+.settings-debug-state-file .settings-debug-textarea.ant-input {
+  background: var(--surface-strong);
+}
+
+.settings-debug-state-missing {
+  padding: 18px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .settings-debug-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2053,6 +2106,11 @@
   }
 
   .settings-debug-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-debug-state-file-head {
     align-items: flex-start;
     flex-direction: column;
   }

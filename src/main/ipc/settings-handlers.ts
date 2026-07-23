@@ -1,6 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
 import type {
   DesktopGeneralSettings,
   DesktopGeneralSettingsInput,
+  DesktopStateFileName,
+  DesktopStateFileSnapshot,
+  DesktopStateSnapshot,
   DesktopUsageProfileResult,
   DesktopWsServerStartOptions,
   DesktopWsServerState,
@@ -16,16 +21,17 @@ import {
 } from "../../shared/desktop-ws";
 import { readTunnelHubSettings, saveTunnelHubSettings } from "../tunnel-hub-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
-import { getDesktopConfigRoot } from "../user-paths";
+import { getDesktopConfigRoot, getDesktopStateRoot } from "../user-paths";
 import { getDesktopDeviceInfo } from "../desktop-device-info";
 import { getDesktopDeviceIdentityInfo } from "../device-identity";
 import { getDesktopUsageProfile } from "../usage-profile";
 import { readWebOrderKeys, writeWebOrderKeys } from "../webs/order-store";
 import { t } from "../i18n/main-i18n";
+import { requireEpochMillis } from "../../shared/time-contract";
 
 export interface SettingsIpcHandlerOptions {
   app: any;
-  platform?: string;
+  platform?: NodeJS.Platform;
   nativeTheme: { themeSource: string };
   getDataRoot: (app: any) => string;
   resetRuntimeEnv?: (app: any, platform: string) => Promise<{
@@ -53,6 +59,112 @@ export interface SettingsIpcHandlerOptions {
   stopDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
   applyTunnelHubSettings?: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
   getTunnelHubRuntimeStatus?: () => TunnelHubRuntimeStatus;
+}
+
+const DESKTOP_STATE_DEBUG_FILES: ReadonlyArray<{
+  name: DesktopStateFileName;
+  format: DesktopStateFileSnapshot["format"];
+}> = [
+  { name: "bootstrap.json", format: "json" },
+  { name: "env-bootstrap.json", format: "json" },
+  { name: "pet-state.json", format: "json" },
+  { name: "sso-session.json", format: "json" },
+  { name: "sso-access-token.txt", format: "text" }
+];
+
+function desktopStateFileSnapshot(
+  rootPath: string,
+  definition: (typeof DESKTOP_STATE_DEBUG_FILES)[number]
+): DesktopStateFileSnapshot {
+  const filePath = path.join(rootPath, definition.name);
+  try {
+    const stats = fs.statSync(filePath);
+    const modifiedAt = requireEpochMillis(
+      Math.trunc(stats.mtimeMs),
+      `settings.desktopState.${definition.name}.modifiedAt`
+    );
+    if (!stats.isFile()) {
+      return {
+        ...definition,
+        path: filePath,
+        exists: true,
+        size: stats.size,
+        modifiedAt,
+        content: "",
+        error: "Expected a regular file."
+      };
+    }
+
+    const rawContent = fs.readFileSync(filePath, "utf8");
+    if (definition.format === "text") {
+      return {
+        ...definition,
+        path: filePath,
+        exists: true,
+        size: stats.size,
+        modifiedAt,
+        content: rawContent
+      };
+    }
+
+    try {
+      return {
+        ...definition,
+        path: filePath,
+        exists: true,
+        size: stats.size,
+        modifiedAt,
+        content: JSON.stringify(JSON.parse(rawContent), null, 2)
+      };
+    } catch (error) {
+      return {
+        ...definition,
+        path: filePath,
+        exists: true,
+        size: stats.size,
+        modifiedAt,
+        content: rawContent,
+        error: `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+    if (code === "ENOENT") {
+      return {
+        ...definition,
+        path: filePath,
+        exists: false,
+        size: 0,
+        modifiedAt: null,
+        content: ""
+      };
+    }
+    return {
+      ...definition,
+      path: filePath,
+      exists: fs.existsSync(filePath),
+      size: 0,
+      modifiedAt: null,
+      content: "",
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+export function getDesktopStateSnapshot(
+  app: any,
+  platform: NodeJS.Platform = process.platform
+): DesktopStateSnapshot {
+  const rootPath = getDesktopStateRoot(app, platform);
+  return {
+    rootPath,
+    readAt: requireEpochMillis(Date.now(), "settings.desktopState.readAt"),
+    files: DESKTOP_STATE_DEBUG_FILES.map((definition) =>
+      desktopStateFileSnapshot(rootPath, definition)
+    )
+  };
 }
 
 export function setNativeThemeSource(nativeTheme: { themeSource: string }, themeMode: string) {
@@ -132,6 +244,9 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     buildTime: ""
   });
   ipcMain.handle("settings.getDeviceIdentity", async () => getDesktopDeviceIdentityInfo(app));
+  ipcMain.handle("settings.getDesktopStateSnapshot", async () =>
+    getDesktopStateSnapshot(app, platform)
+  );
   ipcMain.handle("settings.getUsageProfile", async () =>
     getUsageProfile ? getUsageProfile(app) : getDesktopUsageProfile(app)
   );

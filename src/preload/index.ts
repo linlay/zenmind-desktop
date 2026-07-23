@@ -366,6 +366,7 @@ const api: DesktopApi = {
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     getAppInfo: () => ipcRenderer.invoke("settings.getAppInfo"),
     getDeviceIdentity: () => ipcRenderer.invoke("settings.getDeviceIdentity"),
+    getDesktopStateSnapshot: () => ipcRenderer.invoke("settings.getDesktopStateSnapshot"),
     getUsageProfile: () => ipcRenderer.invoke("settings.getUsageProfile"),
     getDesktopDeviceInfo: () => ipcRenderer.invoke("settings.getDesktopDeviceInfo"),
     getDesktopWsServerState: () => ipcRenderer.invoke("settings.getDesktopWsServerState"),

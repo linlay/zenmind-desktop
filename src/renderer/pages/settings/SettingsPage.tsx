@@ -27,6 +27,7 @@ import type {
   DesktopPetState,
   DesktopRuntimeEnvResetResult,
   DesktopSsoStatus,
+  DesktopStateSnapshot,
   DesktopUsageProfileLogEntry,
   DesktopUsageProfileRateLimitStatus,
   DesktopUsageProfileResult,
@@ -40,6 +41,7 @@ import type {
   TunnelHubRuntimeStatus,
   TunnelHubSettings
 } from "../../../shared/contracts";
+import { formatEpochMillis } from "../../../shared/time-contract";
 import {
   DEFAULT_CHAT_DEFAULT_AGENT_KEY,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
@@ -80,7 +82,7 @@ import type { DesktopActionCallRequest, DesktopActionDefinition } from "../../..
 
 type ThemePreference = "light" | "dark" | "system";
 type KanbanConnectionState = "disabled" | "connecting" | "open" | "closed" | "error";
-type DebugCategoryId = "device" | "logs" | "wsServer" | "authTokens" | "other";
+type DebugCategoryId = "device" | "state" | "logs" | "wsServer" | "authTokens" | "other";
 type UsageHeatmapMode = "day" | "week" | "cumulative";
 type DebugLogDirection = "in" | "out" | "system";
 
@@ -140,7 +142,7 @@ type SettingsDebugTextAreaFieldProps = {
 };
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
-const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "logs", "wsServer", "authTokens", "other"];
+const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "wsServer", "authTokens", "other"];
 const SETTINGS_SELECT_CLASS_NAMES = {
   popup: {
     root: "settings-select-popup"
@@ -214,6 +216,8 @@ function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction
   switch (categoryId) {
     case "device":
       return t("settings.debug.categories.device");
+    case "state":
+      return t("settings.debug.categories.state");
     case "logs":
       return t("settings.debug.categories.logs");
     case "wsServer":
@@ -1776,6 +1780,133 @@ function DeviceIdentityDebugCard() {
   );
 }
 
+function DesktopStateDebugCard() {
+  const { locale, t } = useI18n();
+  const [snapshot, setSnapshot] = useState<DesktopStateSnapshot | null>(null);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function handleRefresh() {
+    setPending(true);
+    setMessage("");
+    try {
+      setSnapshot(await window.electronAPI.settings.getDesktopStateSnapshot());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleCopy(text: string) {
+    if (!text) {
+      return;
+    }
+    await window.electronAPI.clipboard.writeText(text);
+  }
+
+  useEffect(() => {
+    void handleRefresh();
+  }, []);
+
+  return (
+    <div className="data-root-card settings-debug-panel settings-debug-state-panel">
+      <div className="settings-debug-panel-head">
+        <h2>{t("settings.debug.state.title")}</h2>
+        <span className={`settings-desktop-ws-status ${message ? "is-error" : pending ? "is-pending" : snapshot ? "is-running" : "is-closed"}`}>
+          {pending ? t("common.loading") : message ? t("common.error") : snapshot ? t("settings.debug.state.loaded") : t("settings.debug.empty")}
+        </span>
+      </div>
+      <div className="settings-debug-actions">
+        <Button disabled={pending} onClick={() => void handleRefresh()}>
+          {pending ? t("common.loading") : t("common.refresh")}
+        </Button>
+      </div>
+      {message ? (
+        <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
+          {message}
+        </div>
+      ) : null}
+      {snapshot ? (
+        <>
+          <dl className="settings-debug-facts settings-debug-state-summary">
+            <div>
+              <dt>{t("settings.debug.state.directory")}</dt>
+              <dd>{snapshot.rootPath}</dd>
+            </div>
+            <div>
+              <dt>{t("settings.debug.state.readAt")}</dt>
+              <dd>{formatEpochMillis(snapshot.readAt, locale)}</dd>
+            </div>
+          </dl>
+          <div className="settings-debug-state-files">
+            {snapshot.files.map((file) => {
+              const statusClass = file.error ? "is-error" : file.exists ? "is-running" : "is-closed";
+              const statusLabel = file.error
+                ? t("common.error")
+                : file.exists
+                  ? t("settings.debug.state.exists")
+                  : t("settings.debug.state.missing");
+              return (
+                <article className="settings-debug-state-file" key={file.name}>
+                  <div className="settings-debug-state-file-head">
+                    <code>{file.name}</code>
+                    <div className="settings-debug-actions">
+                      <span className={`settings-desktop-ws-status ${statusClass}`}>
+                        {statusLabel}
+                      </span>
+                      <Button
+                        disabled={!file.exists || !file.content}
+                        onClick={() => void handleCopy(file.content)}
+                      >
+                        {t("settings.debug.state.copyContent")}
+                      </Button>
+                    </div>
+                  </div>
+                  <dl className="settings-debug-facts settings-debug-state-file-meta">
+                    <div>
+                      <dt>{t("settings.debug.state.path")}</dt>
+                      <dd>{file.path}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("settings.debug.state.size")}</dt>
+                      <dd>{file.size}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("settings.debug.state.modifiedAt")}</dt>
+                      <dd>{file.modifiedAt === null ? t("settings.debug.empty") : formatEpochMillis(file.modifiedAt, locale)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("settings.debug.state.format")}</dt>
+                      <dd>{file.format === "json" ? "JSON" : "Text"}</dd>
+                    </div>
+                  </dl>
+                  {file.error ? (
+                    <div className="feedback-banner warning-banner settings-desktop-ws-message" role="status">
+                      {file.error}
+                    </div>
+                  ) : null}
+                  {file.exists ? (
+                    <SettingsDebugTextAreaField
+                      label={t("settings.debug.state.content")}
+                      value={file.content}
+                      readOnly
+                    />
+                  ) : (
+                    <div className="settings-debug-state-missing">
+                      {t("settings.debug.state.missing")}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function DesktopLogsDebugCard() {
   const { t } = useI18n();
   const [pendingAction, setPendingAction] = useState<DesktopLogTarget | "folder" | null>(null);
@@ -2062,6 +2193,8 @@ function DebugSettingsPanel() {
     switch (activeCategoryId) {
       case "device":
         return <DeviceIdentityDebugCard />;
+      case "state":
+        return <DesktopStateDebugCard />;
       case "logs":
         return <DesktopLogsDebugCard />;
       case "wsServer":

@@ -10,6 +10,7 @@ import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, As
 import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
+import type { EpochMilliseconds } from "../time-contract";
 
 export type AgentAuthRefreshReason = "missing" | "unauthorized";
 
@@ -352,6 +353,30 @@ export interface DesktopRuntimeEnvResetResult {
   sourceZipPath?: string;
 }
 
+export type DesktopStateFileName =
+  | "bootstrap.json"
+  | "env-bootstrap.json"
+  | "pet-state.json"
+  | "sso-session.json"
+  | "sso-access-token.txt";
+
+export interface DesktopStateFileSnapshot {
+  name: DesktopStateFileName;
+  path: string;
+  exists: boolean;
+  size: number;
+  modifiedAt: EpochMilliseconds | null;
+  format: "json" | "text";
+  content: string;
+  error?: string;
+}
+
+export interface DesktopStateSnapshot {
+  rootPath: string;
+  readAt: EpochMilliseconds;
+  files: DesktopStateFileSnapshot[];
+}
+
 export interface DesktopGeneralSettings {
   deviceName: string;
   preventSleepWhileRunning: boolean;
@@ -616,6 +641,7 @@ export interface DesktopApi {
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;
     getDeviceIdentity: () => Promise<DesktopDeviceIdentityInfo>;
+    getDesktopStateSnapshot: () => Promise<DesktopStateSnapshot>;
     getUsageProfile: () => Promise<DesktopUsageProfileResult>;
     getDesktopDeviceInfo: () => Promise<DesktopDeviceInfo>;
     getDesktopWsServerState: () => Promise<DesktopWsServerState>;

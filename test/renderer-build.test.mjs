@@ -2090,14 +2090,16 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "assistant"/);
   assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
   assert.match(settingsPage, /case "debug"[\s\S]*?<DebugSettingsPanel \/>/);
-  assert.match(settingsPage, /const DEBUG_CATEGORY_IDS:\s*DebugCategoryId\[\]\s*=\s*\["device", "logs", "wsServer", "authTokens", "other"\]/);
+  assert.match(settingsPage, /const DEBUG_CATEGORY_IDS:\s*DebugCategoryId\[\]\s*=\s*\["device", "state", "logs", "wsServer", "authTokens", "other"\]/);
   assert.match(settingsPage, /function DebugSettingsPanel/);
   assert.match(settingsPage, /case "device"[\s\S]*?return <DeviceIdentityDebugCard \/>/);
+  assert.match(settingsPage, /case "state"[\s\S]*?return <DesktopStateDebugCard \/>/);
   assert.match(settingsPage, /case "logs"[\s\S]*?return <DesktopLogsDebugCard \/>/);
   assert.match(settingsPage, /case "wsServer"[\s\S]*?return <LocalWsServerDebugCard \/>/);
   assert.match(settingsPage, /case "authTokens"[\s\S]*?return <IdentityTokenDebugCard \/>/);
   assert.match(settingsPage, /case "other"[\s\S]*?<DesktopActionDebugCard \/>[\s\S]*?<TunnelDebugCard \/>/);
   assert.match(settingsPage, /function DeviceIdentityDebugCard/);
+  assert.match(settingsPage, /function DesktopStateDebugCard/);
   assert.match(settingsPage, /function DesktopActionDebugDialog/);
   assert.match(settingsPage, /function WsServerDebugDialog/);
   assert.match(settingsPage, /window\.electronAPI\.desktopActions\.list\(\)/);
@@ -2108,8 +2110,11 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /settings\.debug\.desktopWs\.consoleAction/);
   assert.match(settingsPage, /settings\.debug\.wsConsole\.command/);
   assert.match(settingsPage, /window\.electronAPI\.settings\.getDeviceIdentity\(\)/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.getDesktopStateSnapshot\(\)/);
   assert.match(settingsPage, /settings\.debug\.device\.identityPath/);
   assert.match(settingsPage, /settings\.debug\.device\.copyDeviceId/);
+  assert.match(settingsPage, /settings\.debug\.state\.copyContent/);
+  assert.match(settingsPage, /settings-debug-state-files/);
   assert.match(settingsPage, /settings-debug-layout/);
   assert.match(settingsPage, /settings-debug-nav/);
   assert.match(settingsPage, /function LocalWsServerDebugCard/);
@@ -2139,6 +2144,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsStyles, /\.settings-desktop-ws-status/);
   assert.match(settingsStyles, /\.settings-debug-layout\s*\{[\s\S]*?grid-template-columns:\s*148px minmax\(0, 1fr\);/);
   assert.match(settingsStyles, /\.settings-debug-nav-item\.is-selected\s*\{[\s\S]*?background:\s*var\(--accent-soft\)/);
+  assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
   assert.match(settingsStyles, /\.settings-debug-dialog-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(settingsStyles, /\.settings-debug-log-entry\.is-out\s*\{[\s\S]*?border-color:\s*var\(--accent-border-subtle\)/);
   assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
@@ -2158,6 +2164,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(enUS, /"settings\.debug\.label":\s*"Debug"/);
   assert.match(enUS, /"settings\.about\.deviceId":\s*"Device ID"/);
   assert.match(enUS, /"settings\.debug\.categories\.device":\s*"Device"/);
+  assert.match(enUS, /"settings\.debug\.categories\.state":\s*"State"/);
+  assert.match(zhCN, /"settings\.debug\.categories\.state":\s*"状态"/u);
   assert.match(enUS, /"settings\.debug\.categories\.authTokens":\s*"Auth Tokens"/);
   assert.match(enUS, /"settings\.debug\.device\.title":\s*"Device identity"/);
   assert.match(enUS, /"settings\.debug\.desktopActions\.title":\s*"Desktop Actions"/);
@@ -2174,6 +2182,35 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(zhCN, /"settings\.debug\.desktopWs\.consoleAction":\s*"打开 WS 控制台"/);
   assert.match(zhCN, /"settings\.debug\.wsConsole\.title":\s*"WS 服务控制台"/);
   assert.match(zhCN, /"settings\.debug\.desktopWs\.title":\s*"本地 WebSocket 服务调试"/);
+});
+
+test("desktop state debug tab is wired through the fixed read-only IPC contract", () => {
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
+  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const settingsHandlers = readSourceFile("src", "main", "ipc", "settings-handlers.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+
+  assert.match(settingsPage, /const DEBUG_CATEGORY_IDS:[\s\S]*?\["device", "state", "logs", "wsServer", "authTokens", "other"\]/);
+  assert.match(settingsPage, /case "state"[\s\S]*?return <DesktopStateDebugCard \/>/);
+  assert.match(settingsPage, /function DesktopStateDebugCard/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.getDesktopStateSnapshot\(\)/);
+  assert.match(settingsPage, /snapshot\.files\.map/);
+  assert.match(settingsPage, /handleCopy\(file\.content\)/);
+  assert.match(settingsPage, /value=\{file\.content\}/);
+  assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
+  assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-state-file-head/);
+
+  assert.match(desktopApi, /export type DesktopStateFileName[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(desktopApi, /getDesktopStateSnapshot:\s*\(\) => Promise<DesktopStateSnapshot>/);
+  assert.match(preload, /getDesktopStateSnapshot:\s*\(\) => ipcRenderer\.invoke\("settings\.getDesktopStateSnapshot"\)/);
+  assert.match(settingsHandlers, /const DESKTOP_STATE_DEBUG_FILES:[\s\S]*?"sso-access-token\.txt"/);
+  assert.match(settingsHandlers, /getDesktopStateRoot\(app, platform\)/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopStateSnapshot", async \(\) =>/);
+  assert.match(enUS, /"settings\.debug\.categories\.state":\s*"State"/);
+  assert.match(zhCN, /"settings\.debug\.categories\.state":\s*"状态"/u);
 });
 
 test("settings search resets after leaving settings mode", () => {
