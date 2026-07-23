@@ -144,6 +144,27 @@ test("Windows runtime root can come from the installer selected data directory",
   );
 });
 
+test("Windows registry runtime root preserves non-ASCII values from encoded PowerShell output", () => {
+  const selectedRoot = "D:\\OneDrive\\中文目录\\.cutej";
+  const encodedRoot = Buffer.from(selectedRoot, "utf8").toString("base64");
+  let capturedArgs;
+
+  const actual = runtimeRootInternals.readWindowsRuntimeRootFromRegistryUncached({
+    platform: "win32",
+    execFileSyncImpl(command, args) {
+      assert.match(command, /WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/iu);
+      capturedArgs = args;
+      return Buffer.from(encodedRoot, "ascii");
+    }
+  });
+
+  assert.equal(actual, selectedRoot);
+  assert.deepEqual(capturedArgs?.slice(0, 3), ["-NoProfile", "-NonInteractive", "-EncodedCommand"]);
+  const registryScript = Buffer.from(capturedArgs[3], "base64").toString("utf16le");
+  assert.match(registryScript, /\[Microsoft\.Win32\.Registry\]::CurrentUser\.OpenSubKey/u);
+  assert.match(registryScript, new RegExp(WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE, "u"));
+});
+
 test("Windows program root stays under roaming app data when data root is selected", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-program-root-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
