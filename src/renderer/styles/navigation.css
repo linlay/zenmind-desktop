@@ -564,8 +564,8 @@
 /* 菜单打开时焦点会移入 portal 菜单（在 header 之外），
    需要继续钉住触发器，否则菜单会失去锚点而移位 */
 .sidebar-nav-group>.Collapse-header:has(.sidebar-chats-agent-trigger[aria-expanded="true"]) .Collapse-headerSupplement {
-  flex: 1 1 auto;
-  max-width: 156px;
+  flex: 0 0 100px;
+  max-width: 100px;
   opacity: 1;
   pointer-events: auto;
 }
@@ -573,17 +573,17 @@
 .sidebar-chats-agent-picker {
   position: relative;
   display: inline-flex;
-  flex: 1 1 auto;
-  width: 100%;
+  flex: 0 0 100px;
+  width: 100px;
   min-width: 0;
-  max-width: 156px;
+  max-width: 100px;
 }
 
 .sidebar-chats-agent-trigger {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  width: auto;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   height: 24px;
@@ -621,8 +621,8 @@
 }
 
 .sidebar-chats-agent-picker.is-in-popover {
-  flex: 1 1 auto;
-  max-width: 164px;
+  flex: 0 0 100px;
+  max-width: 100px;
 }
 
 .sidebar-chats-agent-trigger.is-in-popover {
