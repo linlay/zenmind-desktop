@@ -910,7 +910,7 @@ test("mobile WebApp catalog uses the device m host and ignores the manual wa sha
   assert.equal(catalog.items[0].publishStatus, "published");
   assert.equal(
     catalog.items[0].publicUrl,
-    `https://desktop-device.m.example.test/webapps/${running.state.frontendPort}/`
+    `https://desktop-device-${running.state.frontendPort}.m.example.test/`
   );
   assert.doesNotMatch(catalog.items[0].publicUrl, /\.wa\./u);
   assert.equal(catalog.items[0].availability, "desktop-offline");

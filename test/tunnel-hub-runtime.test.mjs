@@ -1080,7 +1080,7 @@ test("Tunnel Client endpoint authenticates mobile ns=wa streams before proxying"
           runtimeStatus: "running",
           publishStatus: "published",
           available: true,
-          publicUrl: `https://device.m.zenmind.cc/webapps/${localAddress.port}/`,
+          publicUrl: `https://device-${localAddress.port}.m.zenmind.cc/`,
           availability: "available"
         }]
       }),

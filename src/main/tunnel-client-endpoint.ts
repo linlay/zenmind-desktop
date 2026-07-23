@@ -297,7 +297,14 @@ function mobileWebAppCatalogAllowsPort(options: DesktopWsServerOptions, port: nu
     }
     try {
       const url = new URL(item.publicUrl);
-      return url.pathname === `/webapps/${port}/`;
+      const markerIndex = url.hostname.indexOf(".m.");
+      if (markerIndex <= 0 || url.pathname !== "/") {
+        return false;
+      }
+      const deviceAndPort = url.hostname.slice(0, markerIndex);
+      const separator = deviceAndPort.lastIndexOf("-");
+      const portText = separator > 0 ? deviceAndPort.slice(separator + 1) : "";
+      return /^\d+$/u.test(portText) && Number.parseInt(portText, 10) === port;
     } catch {
       return false;
     }

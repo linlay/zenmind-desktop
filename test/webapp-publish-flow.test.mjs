@@ -51,7 +51,9 @@ test("mobile WebApp catalog derives m URLs while manual publishing remains on th
   const publisher = read("src/main/webs/webapps/publisher.ts");
 
   assert.match(mobileAccess, /readTunnelHubSettings/u);
-  assert.match(mobileAccess, /url\.pathname = `\/webapps\/\$\{frontendPort\}\/`/u);
+  assert.match(mobileAccess, /url\.hostname = mobileWebappHost/u);
+  assert.match(mobileAccess, /url\.pathname = "\/"/u);
+  assert.match(mobileAccess, /-\$\{frontendPort\}/u);
   assert.match(mobileAccess, /isMobileTunnelHost/u);
   assert.match(mobileCatalog, /createMobileTunnelWebappUrl/u);
   assert.doesNotMatch(mobileCatalog, /readWebappPublishState/u);

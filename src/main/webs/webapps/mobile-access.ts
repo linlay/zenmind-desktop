@@ -6,6 +6,15 @@ function isMobileTunnelHost(hostname: string) {
   return /(?:^|\.)m\./iu.test(hostname.trim().toLowerCase());
 }
 
+function withMobileWebappPort(hostname: string, frontendPort: number) {
+  const normalized = hostname.trim().toLowerCase();
+  const markerIndex = normalized.indexOf(".m.");
+  if (markerIndex <= 0 || normalized.slice(0, markerIndex).includes(".")) {
+    return "";
+  }
+  return `${normalized.slice(0, markerIndex)}-${frontendPort}${normalized.slice(markerIndex)}`;
+}
+
 function readRuntimeFrontendPort(runtime: WebappRuntimeState | null) {
   if (runtime?.status !== "running") {
     return 0;
@@ -33,10 +42,15 @@ export function createMobileTunnelWebappUrl(app: App, runtime: WebappRuntimeStat
     if (url.protocol !== "https:" || !isMobileTunnelHost(url.hostname)) {
       return "";
     }
+    const mobileWebappHost = withMobileWebappPort(url.hostname, frontendPort);
+    if (!mobileWebappHost) {
+      return "";
+    }
     url.username = "";
     url.password = "";
     url.port = "";
-    url.pathname = `/webapps/${frontendPort}/`;
+    url.hostname = mobileWebappHost;
+    url.pathname = "/";
     url.search = "";
     url.hash = "";
     return url.toString();
@@ -47,5 +61,6 @@ export function createMobileTunnelWebappUrl(app: App, runtime: WebappRuntimeStat
 
 export const __testInternals = {
   isMobileTunnelHost,
+  withMobileWebappPort,
   readRuntimeFrontendPort
 };
