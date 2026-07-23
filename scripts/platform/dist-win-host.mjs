@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { electronBuilderConfigPath, syncBrandArtifacts, resolveBrandId } from "../lib/brand-config.mjs";
+import { buildSafeRepair } from "../build-safe-repair.mjs";
 import { npmCmd, runAndWait, withBrandEnv } from "./spawn.mjs";
 
 const projectRoot = process.cwd();
@@ -143,6 +144,7 @@ export async function buildOnWindowsHost(brand = syncBrandArtifacts({ brandId: r
     }
   }));
   ensureWindowsLatestAliases(brand);
+  buildSafeRepair({ brand });
   await runAndWait(nodeBin(), ["./scripts/verify-win-package.mjs"], brandProcessOptions({ cwd: projectRoot }));
 }
 

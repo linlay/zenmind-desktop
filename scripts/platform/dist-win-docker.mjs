@@ -91,6 +91,7 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
       "node ./scripts/sync-demo-assets.mjs",
       "node ./scripts/stage-app.mjs --os=win32 --arch=x64",
       `npx electron-builder --config ${path.posix.relative("/project", electronBuilderConfigPath("/project", brand.id))} --win --x64`,
+      "node ./scripts/build-safe-repair.mjs",
       "node ./scripts/verify-win-package.mjs"
     ].join(" && ")
   );
