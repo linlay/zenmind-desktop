@@ -19,13 +19,16 @@ import {
   brandRuntimeAssetDir,
   copyBrandDesktopPetAssets,
   copyBrandRuntimeIconAssets,
+  electronBuilderWindowsGuid,
   electronBuilderConfigPath,
   loadBrandConfig,
   removeStaleRendererBuild,
   renderRendererIndexHtml,
   resolveBrandId,
+  safeRepairScriptPath,
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
+import { safeRepairArtifactName } from "../scripts/build-safe-repair.mjs";
 import { desktopBuiltinServicesRelativePath } from "../scripts/lib/desktop-resources.mjs";
 import { renderAppIconToPng, renderBrandMarkToPng, renderWindowsAppIconToPng } from "../scripts/generate-app-icons.mjs";
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
@@ -76,6 +79,11 @@ test("default dev brand resolves to ZenMind when no brand is provided", () => {
   assert.equal(resolveBrandId([], {}), "zenmind");
   assert.equal(resolveBrandId(["--brand", "zenmind"], {}), "zenmind");
   assert.equal(resolveBrandId([], { BRAND: "zenmind" }), "zenmind");
+});
+
+test("electron-builder Windows registry GUIDs stay aligned with the installed toolchain", () => {
+  assert.equal(electronBuilderWindowsGuid("cc.cutej.desktop"), "6a975fec-3ca7-58ef-bfce-86a97ccbe0ca");
+  assert.equal(electronBuilderWindowsGuid("cc.zenmind.desktop"), "498936cc-d13d-526e-80bb-92867e6e1874");
 });
 
 function createBrandFixture(t) {
@@ -639,6 +647,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   const generatedBrandTs = fs.readFileSync(path.join(brandGeneratedDir(root, brand), "brand.ts"), "utf8");
   const electronBuilderConfig = readJson(electronBuilderConfigPath(root, brand.id));
   const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const safeRepairScript = fs.readFileSync(safeRepairScriptPath(root, brand), "utf8");
   const uninstallScript = fs.readFileSync(path.join(brandInstallerDir(root, brand), "uninstall.sh"), "utf8");
   const rendererIndex = renderRendererIndexHtml(fs.readFileSync(path.join(root, "index.html"), "utf8"), brand);
 
@@ -714,9 +723,48 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(installerInclude, /\$APPDATA\\CuteJ/u);
   assert.doesNotMatch(installerInclude, /\$DesktopDataRoot\\programs/u);
   assert.match(installerInclude, /customPageAfterChangeDir/u);
+  assert.doesNotMatch(installerInclude, /CuteJInstallDirectoryPage/u);
+  assert.doesNotMatch(installerInclude, /CuteJBrowseInstallDirectory/u);
   assert.match(installerInclude, /CuteJDataDirectoryPage/u);
+  assert.match(installerInclude, /!macro customPageAfterChangeDir\s+Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave\s+!macroend/u);
+  assert.match(installerInclude, /StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
+  assert.match(installerInclude, /\$INSTDIR != \$DesktopDefaultInstallDir/u);
   assert.match(installerInclude, /nsDialogs::SelectFolderDialog/u);
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\cutej-desktop" "DataRoot"/u);
+  assert.match(installerInclude, /WriteRegDWORD HKCU "Software\\cutej-desktop" "DataRootLayoutVersion" 2/u);
+  assert.match(installerInclude, /ReadRegDWORD \$R0 HKCU "Software\\cutej-desktop" "LayoutVersion"[\s\S]*?\$DesktopDataRootLayoutVersion "2"/u);
+  assert.match(installerInclude, /DeleteRegValue HKCU "Software\\cutej-desktop" "LayoutVersion"/u);
+  assert.match(installerInclude, /\$DesktopDataParent\\\.cutej/u);
+  assert.match(installerInclude, /cc\.cutej\.desktop\|cutej-desktop\|data-root\|v1/u);
+  assert.match(installerInclude, /!macro customInit/u);
+  assert.match(installerInclude, /!macro customUnInit/u);
+  assert.match(installerInclude, /!macro customUnInit\s+SetOutPath \$TEMP\s+!insertmacro stopManagedServiceProcesses/u);
+  assert.match(installerInclude, /!macro customUnInit[\s\S]*?!insertmacro stopManagedServiceProcesses/u);
+  assert.match(installerInclude, /\$\$path\.Equals\(\$\$appExecutable/u);
+  assert.match(installerInclude, /\$\$deadline = \[DateTime\]::UtcNow\.AddSeconds\(15\)/u);
+  assert.match(installerInclude, /\$\$targets\.Count -eq 0/u);
+  assert.match(installerInclude, /DESKTOP_OWNED_ROOT_TO_REMOVE/u);
+  assert.match(installerInclude, /Remove-Item -LiteralPath \$\$target -Recurse -Force/u);
+  assert.match(installerInclude, /"\$SYSDIR\\WindowsPowerShell\\v1\.0\\powershell\.exe"/u);
+  assert.doesNotMatch(installerInclude, /%SYSTEMROOT%\\System32/u);
+  assert.doesNotMatch(installerInclude, /!macro customRemoveFiles/u);
+  assert.match(installerInclude, /\$\{FileExists\} "\$DesktopDataRoot\\\*\.\*"[\s\S]*?\$DesktopDataRootStored "0"/u);
+  assert.match(installerInclude, /\$\{GetParent\} "\$DesktopDataRoot" \$DesktopDataParent/u);
+  assert.match(installerInclude, /Function CuteJEnsureDataRootDefault[\s\S]*?\$DesktopDataRoot != ""[\s\S]*?Return/u);
+  assert.match(installerInclude, /CuteJ\.recovery-\$0\$1\$2-\$4\$5\$6/u);
+  assert.match(installerInclude, /removeDesktopOwnedDataRetry:[\s\S]*?DesktopForceRemoveOwnedRoot \$DesktopOwnedDataRoot[\s\S]*?\$R4 < 2[\s\S]*?DesktopRestoreOwnerMarker \$DesktopOwnedDataRoot/u);
+  assert.match(installerInclude, /\$APPDATA\\CuteJ\.desktop-owner/u);
+  assert.match(installerInclude, /DesktopReadOwnerFile \$DesktopProgramOwnerMarker[^\r]+program-root/u);
+  assert.match(installerInclude, /removeDesktopProgramDataRetry:[\s\S]*?DesktopForceRemoveOwnedRoot \$DesktopProgramDataRoot[\s\S]*?\$R5 < 2[\s\S]*?DesktopWriteOwnerFile \$DesktopProgramOwnerMarker/u);
+  assert.match(installerInclude, /Delete "\$DesktopProgramOwnerMarker"/u);
+  assert.match(installerInclude, /RMDir \/r "\$DesktopOwnedDataRoot"/u);
+  assert.doesNotMatch(installerInclude, /RMDir \/r "\$DesktopDataRoot"/u);
+  assert.match(installerInclude, /历史自定义运行数据目录缺少所有权信息/u);
+  assert.match(safeRepairScript, /6a975fec-3ca7-58ef-bfce-86a97ccbe0ca/u);
+  assert.match(safeRepairScript, /reg\.exe.* export/u);
+  assert.match(safeRepairScript, /不会删除或移动该目录中的任何文件/u);
+  assert.doesNotMatch(safeRepairScript, /RMDir|Delete\s+"\$LegacyInstallLocation/u);
+  assert.equal(safeRepairArtifactName(brand, "0.3.20"), "CuteJ Safe Repair 0.3.20.exe");
   assert.doesNotMatch(installerInclude, /\\.desktop\\state/u);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/CuteJ"/u);
@@ -756,6 +804,7 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   const generatedBrand = readJson(path.join(brandGeneratedDir(root, brand), "brand.json"));
   const electronBuilderConfig = readJson(electronBuilderConfigPath(root, brand.id));
   const installerInclude = fs.readFileSync(path.join(brandInstallerDir(root, brand), "installer.nsh"), "utf8");
+  const safeRepairScript = fs.readFileSync(safeRepairScriptPath(root, brand), "utf8");
   const uninstallScript = fs.readFileSync(path.join(brandInstallerDir(root, brand), "uninstall.sh"), "utf8");
   const rendererIndex = renderRendererIndexHtml(fs.readFileSync(path.join(root, "index.html"), "utf8"), brand);
 
@@ -783,8 +832,17 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.match(installerInclude, /\$APPDATA\\ZenMind/u);
   assert.doesNotMatch(installerInclude, /\$DesktopDataRoot\\programs/u);
   assert.match(installerInclude, /customPageAfterChangeDir/u);
+  assert.doesNotMatch(installerInclude, /ZenMindInstallDirectoryPage/u);
+  assert.doesNotMatch(installerInclude, /ZenMindBrowseInstallDirectory/u);
   assert.match(installerInclude, /ZenMindDataDirectoryPage/u);
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\zenmind-desktop" "DataRoot"/u);
+  assert.match(installerInclude, /WriteRegDWORD HKCU "Software\\zenmind-desktop" "DataRootLayoutVersion" 2/u);
+  assert.match(installerInclude, /\$DesktopDataParent\\\.zenmind/u);
+  assert.match(installerInclude, /cc\.zenmind\.desktop\|zenmind-desktop\|data-root\|v1/u);
+  assert.doesNotMatch(installerInclude, /RMDir \/r "\$DesktopDataRoot"/u);
+  assert.match(safeRepairScript, /498936cc-d13d-526e-80bb-92867e6e1874/u);
+  assert.match(safeRepairScript, /ZenMind 旧版安装安全修复/u);
+  assert.doesNotMatch(safeRepairScript, /RMDir|Delete\s+"\$LegacyInstallLocation/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
   assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "ZenMind 使用麦克风将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 使用系统语音识别将你的语音输入转成文字。");
@@ -1091,17 +1149,93 @@ test("Windows dist latest metadata refreshes stale installer aliases", (t) => {
   assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.12.exe.blockmap"), "utf8"), "fresh-blockmap");
 });
 
-test("Windows installer data directory page clears stale NSIS errors before first create check", () => {
+test("Windows installer data directory page validates the parent before creating an owned root", () => {
   const installerInclude = fs.readFileSync(
     path.join(projectRoot, "build", "brands", "cutej", "installer", "installer.nsh"),
     "utf8"
   );
-  const createDirectoryIndex = installerInclude.indexOf('CreateDirectory "$DesktopDataRoot"');
+  const dataDirectoryPageLeave = installerInclude.match(/Function CuteJDataDirectoryPageLeave\s+([\s\S]*?)FunctionEnd/u)?.[1] ?? "";
+  const createDirectoryIndex = installerInclude.indexOf('CreateDirectory "$DesktopDataParent"');
   assert.notEqual(createDirectoryIndex, -1);
-  const beforeCreateDirectory = installerInclude.slice(Math.max(0, createDirectoryIndex - 200), createDirectoryIndex);
+  for (const guard of [
+    'StrCmp "$DesktopDataParent" "$WINDIR"',
+    'StrCmp "$DesktopDataParent" "$PROGRAMFILES"',
+    'StrCmp "$DesktopDataParent" "$PROGRAMFILES64"'
+  ]) {
+    const guardIndex = installerInclude.indexOf(guard);
+    assert.notEqual(guardIndex, -1, guard);
+    assert.ok(guardIndex < createDirectoryIndex, `${guard} must run before parent creation`);
+  }
+  assert.match(installerInclude, /StrCpy \$R0 "\$DesktopDataParent" 2\s+StrCmp \$R0 "\\\\"/u);
+  assert.match(installerInclude, /GetFullPathName \$DesktopDataParent/u);
+  assert.match(installerInclude, /\$\{FileExists\} "\$DesktopDataRoot\\\*\.\*"/u);
+  assert.match(installerInclude, /DesktopReadOwnerMarker \$DesktopDataRoot/u);
+  assert.match(installerInclude, /DesktopValidateOwnedRoot \$DesktopDataRoot/u);
+  assert.match(installerInclude, /StrCmp "\$\{ROOT\}" "\$PROFILE\\Downloads"/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$DesktopDataParent\\\.cutej"/u);
+  assert.match(installerInclude, /可选择数据父目录或已有的 \.cutej 数据目录/u);
+  assert.doesNotMatch(installerInclude, /StrCmp "\$DesktopDataParent" "\$(?:PROFILE|DESKTOP|DOCUMENTS|APPDATA|LOCALAPPDATA)"/u);
+  assert.ok(
+    dataDirectoryPageLeave.indexOf('CreateDirectory "$DesktopDataParent"') <
+      dataDirectoryPageLeave.indexOf('GetFullPathName $DesktopDataParent "$DesktopDataParent"'),
+    "the selected parent must exist before NSIS canonicalizes it"
+  );
+  assert.ok(
+    dataDirectoryPageLeave.indexOf('CreateDirectory "$DesktopDataRoot"') <
+      dataDirectoryPageLeave.indexOf('GetFullPathName $DesktopDataRoot "$DesktopDataRoot"'),
+    "the owned data root must exist before NSIS canonicalizes it"
+  );
+});
 
-  assert.match(beforeCreateDirectory, /IfFileExists "\$DesktopDataRoot\\\*" .*DataDirectoryReady/u);
-  assert.match(beforeCreateDirectory, /ClearErrors/u);
+test("Windows installer keeps the program root fixed while the data root remains selectable", () => {
+  const installerInclude = fs.readFileSync(
+    path.join(projectRoot, "build", "brands", "cutej", "installer", "installer.nsh"),
+    "utf8"
+  );
+  const dataDirectoryPage = installerInclude.match(/Function CuteJDataDirectoryPage\s+([\s\S]*?)FunctionEnd/u)?.[1] ?? "";
+
+  assert.doesNotMatch(installerInclude, /InstallDirectoryPage|BrowseInstallDirectory|DesktopInstallParent/u);
+  assert.match(installerInclude, /!macro customPageAfterChangeDir\s+Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave\s+!macroend/u);
+  assert.match(dataDirectoryPage, /Call CuteJEnsureDataRootDefault/u);
+  assert.doesNotMatch(dataDirectoryPage, /DesktopDataRootStored[\s\S]*?Abort/u);
+  assert.match(dataDirectoryPage, /GetParent[\s\S]*?DesktopDataParent/u);
+  assert.match(installerInclude, /GetFileName\} "\$DesktopDataParent" \$R3[\s\S]*?\$R3 == "\.cutej"[\s\S]*?StrCpy \$DesktopDataRoot "\$DesktopDataParent"/u);
+  assert.match(installerInclude, /!macro customInit[\s\S]*?setInstallModePerUser[\s\S]*?DesktopResolveDefaultInstallDir[\s\S]*?StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
+  assert.match(installerInclude, /\$DesktopPreviousInstallDir != \$DesktopDefaultInstallDir[\s\S]*?SetErrorLevel 3[\s\S]*?Quit/u);
+  assert.match(installerInclude, /!macro customCheckAppRunning[\s\S]*?setInstallModePerUser[\s\S]*?DesktopResolveDefaultInstallDir[\s\S]*?ReadRegStr \$DesktopPreviousInstallDir[\s\S]*?StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
+  assert.match(installerInclude, /!macro customUnInstallCheck\s+!insertmacro DesktopHandleOldUninstallAndRestoreInstallDir/u);
+  assert.match(installerInclude, /!macro DesktopHandleOldUninstallAndRestoreInstallDir[\s\S]*?DesktopResolveDefaultInstallDir[\s\S]*?StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
+  assert.match(installerInclude, /!macro DesktopValidateInstallRoot ROOT RESULT[\s\S]*?\$\{GetFileName\} "\$\{ROOT\}" \$R6/u);
+  assert.match(installerInclude, /StrCmp "\$R6" "\$\{APP_FILENAME\}"/u);
+  assert.match(installerInclude, /DesktopReadOwnerMarker \$INSTDIR[^\n]+install-root/u);
+  assert.match(installerInclude, /!macro DesktopDirectoryHasEntries ROOT RESULT[\s\S]*?FindFirst \$R4 \$R5/u);
+  assert.match(installerInclude, /!macro customCheckAppRunning[\s\S]*?DesktopDirectoryHasEntries \$INSTDIR \$R2[\s\S]*?DesktopReadOwnerMarker \$INSTDIR/u);
+  assert.match(installerInclude, /!macro customUnInit[\s\S]*?DesktopReadOwnerMarker \$DesktopPreviousInstallDir[\s\S]*?DesktopValidateInstallRoot \$DesktopPreviousInstallDir/u);
+});
+
+test("Windows uninstall safety requires path validation in addition to owner markers", () => {
+  const installerInclude = fs.readFileSync(
+    path.join(projectRoot, "build", "brands", "cutej", "installer", "installer.nsh"),
+    "utf8"
+  );
+
+  assert.match(installerInclude, /DesktopReadOwnerMarker \$DesktopPreviousInstallDir[^\n]+install-root/u);
+  assert.match(installerInclude, /DesktopValidateInstallRoot \$DesktopPreviousInstallDir/u);
+  assert.match(installerInclude, /DesktopReadOwnerMarker \$DesktopOwnedDataRoot[^\n]+data-root/u);
+  assert.match(installerInclude, /DesktopValidateOwnedRoot \$DesktopOwnedDataRoot/u);
+  assert.match(installerInclude, /RMDir \/r "\$DesktopOwnedDataRoot"/u);
+  assert.match(installerInclude, /RMDir \/r "\$DesktopProgramDataRoot"/u);
+  assert.match(installerInclude, /\$\{FileExists\} "\$DesktopOwnedDataRoot\\\*\.\*"/u);
+  assert.match(installerInclude, /\$\{FileExists\} "\$DesktopProgramDataRoot\\\*\.\*"/u);
+  assert.doesNotMatch(installerInclude, /\$R[0-9] (?:==|!=) -1/u);
+  assert.match(installerInclude, /!ifdef DELETE_APP_DATA_ON_UNINSTALL[\s\S]+!error/u);
+  assert.match(installerInclude, /\$\{GetOptions\} \$R2 "--delete-app-data"/u);
+  assert.match(installerInclude, /卸载器不接受 --delete-app-data/u);
+  assert.match(installerInclude, /\$DesktopDataRemoved == "1"[\s\S]+DeleteRegValue HKCU[^\n]+"DataRoot"/u);
+  assert.doesNotMatch(
+    installerInclude,
+    /RMDir \/r "\$(?:DesktopDataRoot|DesktopPreviousInstallDir|DesktopDataParent|PROFILE|DESKTOP|DOCUMENTS)"/u
+  );
 });
 
 test("critical runtime path modules use shared brand-aware roots", () => {
