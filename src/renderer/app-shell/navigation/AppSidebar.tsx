@@ -2502,15 +2502,6 @@ export function AppSidebar({
     expanded: boolean,
   ) {
     setExpandedAssistantAgentKey(expanded ? agent.agentKey : "");
-    if (!expanded) {
-      return;
-    }
-    requestNavigate(
-      createAgentSelectionRoute(agent, { preferNewChat: !isCollapsed }),
-      {
-        retriggerAgentRoute: true,
-      },
-    );
   }
 
   function handleAssistantNewChat(
@@ -3955,23 +3946,6 @@ export function AppSidebar({
         }
         headerActions={
           <span className="assistant-worker-actions">
-            {unreadCount > 0 ? (
-              <Tooltip content={t("sidebar.agent.markAllRead")}>
-                <button
-                  type="button"
-                  className="assistant-worker-icon-button"
-                  aria-label={t("sidebar.agent.markAllReadFor", {
-                    name: agent.displayName,
-                  })}
-                  tabIndex={-1}
-                  onClick={(event) =>
-                    void handleAssistantMarkAllRead(event, agent)
-                  }
-                >
-                  <SidebarActionIcon kind="double_check" />
-                </button>
-              </Tooltip>
-            ) : null}
             <Tooltip content={t("sidebar.agent.newChat")}>
               <button
                 type="button"
