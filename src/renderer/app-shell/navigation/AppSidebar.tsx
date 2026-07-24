@@ -887,10 +887,7 @@ function getGroupActionMenuPositionFromElement(
 ) {
   const rect = element.getBoundingClientRect();
   return {
-    x: Math.min(
-      window.innerWidth - width - 8,
-      Math.max(8, rect.left - 12),
-    ),
+    x: Math.min(window.innerWidth - width - 8, Math.max(8, rect.left - 12)),
     y: Math.min(window.innerHeight - height, Math.max(8, rect.bottom + 4)),
   };
 }
@@ -3095,8 +3092,7 @@ export function AppSidebar({
       >
         {summary.pendingCount > 0 ? (
           <span className="sidebar-status-badge is-pending">
-            {t("sidebar.assistants.awaitingStatus.question")}
-            {summary.pendingCount > 1 ? summary.pendingCount : ""}
+            {summary.pendingCount}
           </span>
         ) : null}
         {unreadLabel ? (
@@ -3106,18 +3102,9 @@ export function AppSidebar({
     );
   }
 
-  function renderSidebarGroupStatusBadges(
-    groupId: SidebarGroupId,
-    status?: SidebarStatusSummary,
-  ) {
+  function renderSidebarGroupStatusBadges(status?: SidebarStatusSummary) {
     if (!status) {
       return null;
-    }
-    if (groupId === "assistants") {
-      return renderStatusBadges(
-        { ...status, pendingCount: 0 },
-        "sidebar-group-status",
-      );
     }
     return renderStatusBadges(status, "sidebar-group-status");
   }
@@ -3853,13 +3840,14 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
     const rowUnreadCount = allRecentChats.filter((chat) => !chat.isRead).length;
-    const awaitingChat = allRecentChats.find(
+    const awaitingChats = allRecentChats.filter(
       (chat) => chat.hasPendingAwaiting === true,
     );
+    const awaitingChat = awaitingChats[0] ?? null;
+    const awaitingChatsCount = awaitingChats.length;
     const activeRunChat = allRecentChats.find(
       (chat) => chat.hasActiveRun === true,
     );
-    const previewChat = awaitingChat || activeRunChat || recentChats[0] || null;
     const previewStatus =
       awaitingChat || agent.hasPendingAwaiting
         ? "awaiting"
@@ -3918,13 +3906,6 @@ export function AppSidebar({
                 ) : null}
               </span>
               <Flex align="center" gap={4}>
-                {previewStatus === "awaiting" ? (
-                  <span className="chat-awaiting-status">
-                    {t(
-                      getAssistantAwaitingStatusKey(awaitingChat?.awaitingMode),
-                    )}
-                  </span>
-                ) : null}
                 {previewStatus ? (
                   <span
                     className="assistant-material-icon is-loading sidebar-assistant-preview-loading"
@@ -3934,6 +3915,11 @@ export function AppSidebar({
                         : t("sidebar.agent.running")
                     }
                   />
+                ) : null}
+                {awaitingChatsCount > 0 ? (
+                  <span className="chat-awaiting-status">
+                    {awaitingChatsCount}
+                  </span>
                 ) : null}
                 {unreadCount > 0 ? (
                   <div className="assistant-worker-badge">
@@ -4111,7 +4097,7 @@ export function AppSidebar({
               args.headerLabel
             )}
             {!expanded
-              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
+              ? renderSidebarGroupStatusBadges(args.status)
               : null}
           </span>
         </button>
@@ -4145,9 +4131,7 @@ export function AppSidebar({
               expanded={expanded}
               width={18}
             />
-            {!expanded
-              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
-              : null}
+            {!expanded ? renderSidebarGroupStatusBadges(args.status) : null}
           </span>
         }
         headerActions={
