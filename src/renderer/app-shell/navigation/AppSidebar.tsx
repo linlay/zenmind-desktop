@@ -3267,8 +3267,9 @@ export function AppSidebar({
         onKeyDown={handleChatsDefaultAgentTriggerKeyDown}
       >
         <span className="sidebar-chats-agent-trigger-name">
-          {selectedAgent?.displayName ||
-            t("sidebar.chats.defaultAgentUnavailable")}
+          {selectedAgent?.displayName
+            ? getCollapsedSidebarLabel(selectedAgent.displayName)
+            : t("sidebar.chats.defaultAgentUnavailable")}
         </span>
         <span
           className="sidebar-chats-agent-trigger-caret"

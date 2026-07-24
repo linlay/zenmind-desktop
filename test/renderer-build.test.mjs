@@ -2943,6 +2943,10 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(sidebarSource, /const \[chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen\]\s*=\s*useState\(false\);/);
   assert.match(sidebarSource, /className=\{\[[\s\S]*?"sidebar-chats-agent-trigger"/);
   assert.match(sidebarSource, /aria-haspopup="menu"/);
+  assert.match(
+    sidebarSource,
+    /getCollapsedSidebarLabel\(selectedAgent\.displayName\)/,
+  );
   assert.match(sidebarSource, /className="sidebar-chats-agent-menu"[\s\S]*?role="menu"/);
   assert.match(sidebarSource, /className="sidebar-chats-agent-menu-label"[\s\S]*?sidebar\.chats\.defaultAgentMenuLabel/);
   assert.match(sidebarSource, /role="menuitemradio"/);
@@ -2960,6 +2964,10 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-select/);
   assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement[\s\S]*?opacity:\s*0;/);
   assert.match(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement,[\s\S]*?:focus-within \.Collapse-headerSupplement/);
+  assert.match(
+    styles,
+    /\.sidebar-chats-agent-picker\s*\{[\s\S]*?flex:\s*0 0 100px;[\s\S]*?width:\s*100px;/,
+  );
   assert.match(styles, /\.sidebar-chats-agent-trigger\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-menu-label\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-option-role\s*\{/);
