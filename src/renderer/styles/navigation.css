@@ -2581,7 +2581,7 @@
 }
 
 .sidebar-tool-menu.sidebar-account-menu {
-  --sidebar-account-menu-bg: rgba(255, 255, 255, 0.8);
+  --sidebar-account-menu-bg: rgba(255, 255, 255, 0.94);
   --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.8);
   --sidebar-account-menu-avatar-bg: rgba(255, 255, 255, 0.8);
   --sidebar-account-menu-divider-bg: rgba(15, 23, 42, 0.12);
