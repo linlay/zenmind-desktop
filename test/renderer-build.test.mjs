@@ -914,7 +914,7 @@ test("fixed sidebar tool menu uses controlled popover state", () => {
   assert.doesNotMatch(sidebarSource, /toolMenuPanelRef/);
 });
 
-test("fixed sidebar settings trigger keeps Settings label and exposes Help affordance", () => {
+test("fixed sidebar tool trigger exposes account state and Help affordance", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1353,7 +1353,11 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.fixedTools"\)\}/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}/);
   assert.match(sidebarSource, /title=\{t\("nav\.settings"\)\}/);
-  assert.match(sidebarSource, /<span className="sidebar-link-label">\{settingsToolTriggerLabel\}<\/span>/);
+  assert.match(sidebarSource, /const shouldRenderDesktopSsoTrigger =[\s\S]{0,100}desktopSsoStatus\?\.configured === true;/);
+  assert.match(sidebarSource, /const shouldRenderDesktopSsoTriggerAvatar =[\s\S]{0,140}desktopSsoStatus\.authenticated;/);
+  assert.match(sidebarSource, /const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger[\s\S]{0,220}t\("sidebar\.sso\.signedOut"\)[\s\S]{0,80}t\("nav\.settings"\);/);
+  assert.match(sidebarSource, /<span className="sidebar-link-label">\s*\{toolMenuTriggerLabel\}\s*<\/span>/);
+  assert.match(sidebarSource, /className="sidebar-link-icon sidebar-tool-menu-trigger-settings-icon"/);
   assert.match(sidebarSource, /getCollapsedSidebarLabel\(t\("nav\.settings"\)\)/);
   assert.match(sidebarSource, /createPortal/);
   assert.match(sidebarSource, /sidebar-tool-menu-trigger/);
@@ -6525,6 +6529,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   const mainProcess = readMainProcessRuntimeSource();
   const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
   const ssoController = readSourceFile("src", "main", "sso-controller.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const globalStyles = readRendererStyles();
   const accountMenuRule = globalStyles.match(/\.sidebar-tool-menu\.sidebar-account-menu\s*\{(?<body>[\s\S]*?)^\}/m);
   const ssoWebviewCompletionHandler = mainProcess.slice(
@@ -6589,6 +6594,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /function handleToolMenuOpenChange\(open: boolean\)[\s\S]{0,360}onRefreshDesktopSsoStatus\?\.\(\)[\s\S]{0,360}setToolMenuOpen\(true\);/);
   assert.match(sidebarSource, /toolMenuOpenRequestIdRef\.current === requestId/);
   assert.match(sidebarSource, /const shouldRenderDesktopSsoAccount = desktopSsoStatus\?\.configured === true;/);
+  assert.match(sidebarSource, /const shouldRenderDesktopSsoTrigger =[\s\S]{0,100}desktopSsoStatus\?\.configured === true;/);
+  assert.match(sidebarSource, /const shouldRenderDesktopSsoTriggerAvatar =[\s\S]{0,140}desktopSsoStatus\.authenticated;/);
+  assert.match(sidebarSource, /const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger[\s\S]{0,220}getDesktopSsoUserLabel\(\)[\s\S]{0,100}t\("sidebar\.sso\.signedOut"\)[\s\S]{0,80}t\("nav\.settings"\);/);
   assert.doesNotMatch(sidebarSource, /visibleToolItems/);
   assert.doesNotMatch(sidebarSource, /function renderDesktopSsoEntry\(\)/);
   assert.match(sidebarSource, /function AccountMenuAvatar\(\{ avatarUrl = "", label \}: AccountMenuAvatarProps\)/);
@@ -6617,6 +6625,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
   assert.match(sidebarSource, /avatarUrl=\{desktopSsoStatus\.user\?\.avatarUrl\}/);
+  assert.match(sidebarSource, /shouldRenderDesktopSsoTriggerAvatar \? \([\s\S]{0,220}<AccountMenuAvatar[\s\S]{0,160}label=\{toolMenuTriggerLabel\}/);
+  assert.match(sidebarSource, /className="sidebar-link-icon sidebar-tool-menu-trigger-settings-icon"/);
+  assert.match(sidebarSource, /<span className="sidebar-link-label">\s*\{toolMenuTriggerLabel\}\s*<\/span>/);
   assert.match(sidebarSource, /renderAccountMenuIcon\([\s\S]{0,80}desktopSsoStatus\?\.authenticated \? "login" : "logout"[\s\S]{0,20}\)/);
   assert.match(sidebarSource, /<SidebarIllustration kind=\{kind\} \/>/);
   assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
@@ -6638,6 +6649,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /\{renderDesktopSsoEntry\(\)\}/);
   assert.match(sidebarSource, /<SidebarIllustration kind="settings" \/>/);
   assert.match(sidebarSource, /activeFixedToolItem[\s\S]{0,80}\? "sidebar-link-active"/);
+  assert.match(enUS, /"sidebar\.sso\.signedOut": "Not signed in"/);
 
   assert.doesNotMatch(globalStyles, /\.sidebar-sso-entry\s*\{/);
   assert.ok(accountMenuRule?.groups?.body, "missing .sidebar-tool-menu.sidebar-account-menu rule");
@@ -6665,6 +6677,10 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu-avatar\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?border-radius:\s*999px;/);
   assert.match(globalStyles, /\.sidebar-account-menu-avatar-image\s*\{[\s\S]*?object-fit:\s*cover;/);
   assert.match(globalStyles, /\.sidebar-account-menu-avatar-fallback\s*\{/);
+  assert.match(globalStyles, /\.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?flex:\s*0 0 24px;/);
+  assert.match(globalStyles, /\.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*auto;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger>\.sidebar-account-menu-avatar\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger-settings-icon\s*\{[\s\S]*?margin-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout\s*\{[\s\S]*?min-width:\s*58px;[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.sidebar-account-menu-logout-label\s*\{[\s\S]*?white-space:\s*nowrap;/);
   assert.doesNotMatch(globalStyles, /\.sidebar-tool-status-label\s*\{/);

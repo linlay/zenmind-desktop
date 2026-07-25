@@ -46,6 +46,8 @@ session 验证成功后 `authenticated=true`，但当前登录尝试继续保持
 
 普通登录或部分成功页的“重试”继续复用专用 SSO partition 的上游会话。已登录账号菜单只显示“退出登录”；注销同时清理三个凭据文件、专用 SSO partition 的全部 Cookie，以及默认 session 中配置所知 SSO origins 的 Cookie，但不触碰其他网站 Cookie。用户需要切换账号时，先退出，再重新登录选择账号。
 
+展开态侧栏底部的 Settings 菜单触发器同时展示账户状态：已登录时使用规范化用户信息显示头像与 `name -> email -> sub -> 已登录` 回退名称，未登录时显示“未登录”，齿轮始终位于最右侧。SSO 未配置或状态尚未加载时继续显示原“设置”入口；侧栏收起时只显示齿轮。该展示不改变菜单内容、打开前状态刷新、登录或退出流程。
+
 Tunnel Hub 注册只使用由 `siteTokenBridge` 换取的 `sso-site-token.json`；普通 Desktop 登录写入的 `state/desktop/sso-access-token.txt` 不参与 Tunnel 注册。
 
 `siteTokenBridge` 的打开方式跟随顶层 `sso.browserMode`：`system` 使用系统浏览器，`embedded` 使用 Desktop SSO WebView 与同一 SSO partition。嵌入式 cookie 登录完成后也会继续启动 `siteTokenBridge`，但 Desktop 不根据 brand 做任何分支。

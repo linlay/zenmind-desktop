@@ -2554,6 +2554,14 @@
   flex: 1;
 }
 
+.sidebar-tool-menu-trigger>.sidebar-account-menu-avatar {
+  flex: 0 0 24px;
+}
+
+.sidebar-tool-menu-trigger-settings-icon {
+  margin-left: auto;
+}
+
 .sidebar-tool-menu {
   display: flex;
   flex-direction: column;
@@ -3173,6 +3181,14 @@
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-icon {
   width: 16px;
   height: 16px;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-menu-trigger>.sidebar-account-menu-avatar {
+  display: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-menu-trigger-settings-icon {
+  margin-left: 0;
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-label-collapsed {

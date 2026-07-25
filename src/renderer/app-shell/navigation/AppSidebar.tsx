@@ -5592,7 +5592,16 @@ export function AppSidebar({
   const activeFixedToolItem = fixedToolItems.find((item) =>
     isFixedToolRouteActive(item.to),
   );
-  const settingsToolTriggerLabel = t("nav.settings");
+  const shouldRenderDesktopSsoTrigger =
+    desktopSsoStatus?.configured === true;
+  const shouldRenderDesktopSsoTriggerAvatar =
+    shouldRenderDesktopSsoTrigger &&
+    desktopSsoStatus.authenticated;
+  const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger
+    ? desktopSsoStatus.authenticated
+      ? getDesktopSsoUserLabel()
+      : t("sidebar.sso.signedOut")
+    : t("nav.settings");
 
   return (
     <>
@@ -5727,12 +5736,27 @@ export function AppSidebar({
                     aria-expanded={toolMenuOpen}
                     title={t("nav.settings")}
                   >
-                    <span className="sidebar-link-icon">
-                      <SidebarIllustration kind="settings" />
-                    </span>
+                    {!shouldRenderDesktopSsoTrigger ? (
+                      <span className="sidebar-link-icon">
+                        <SidebarIllustration kind="settings" />
+                      </span>
+                    ) : shouldRenderDesktopSsoTriggerAvatar ? (
+                      <AccountMenuAvatar
+                        avatarUrl={desktopSsoStatus.user?.avatarUrl}
+                        label={toolMenuTriggerLabel}
+                      />
+                    ) : null}
                     <span className="sidebar-link-label">
-                      {settingsToolTriggerLabel}
+                      {toolMenuTriggerLabel}
                     </span>
+                    {shouldRenderDesktopSsoTrigger ? (
+                      <span
+                        className="sidebar-link-icon sidebar-tool-menu-trigger-settings-icon"
+                        aria-hidden="true"
+                      >
+                        <SidebarIllustration kind="settings" />
+                      </span>
+                    ) : null}
                     <span
                       className="sidebar-link-label-collapsed"
                       aria-hidden="true"
