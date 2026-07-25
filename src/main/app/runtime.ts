@@ -441,7 +441,7 @@ export function createMainProcessRuntime() {
     refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
     refreshDesktopPetState: () => refreshDesktopPetState(),
     showDesktopPetWindow: () => showDesktopPetWindow(),
-    hideDesktopPetWindow: (disable = false) => hideDesktopPetWindow(disable),
+    hideDesktopPetWindow: () => hideDesktopPetWindow(),
     broadcastDesktopSsoStatus: (status) => desktopSsoController.broadcastStatus(status),
     notifyServicesChanged,
     emitKanbanChanged,
@@ -466,7 +466,7 @@ export function createMainProcessRuntime() {
     desktopPet: {
       refreshState: () => petRuntime.refreshState(),
       showWindow: () => petRuntime.showWindow(),
-      hideWindow: (disable = false) => petRuntime.hideWindow(disable),
+      hideWindow: () => petRuntime.hideWindow(),
       saveSettings: (input) => {
         appState.desktopPetSettings = saveDesktopPetSettings(app, input, mainProcessContext.platform);
         return petRuntime.refreshState();
@@ -610,8 +610,8 @@ export function createMainProcessRuntime() {
     return petRuntime.endDrag();
   }
   
-  function hideDesktopPetWindow(disable = false) {
-    return petRuntime.hideWindow(disable);
+  function hideDesktopPetWindow() {
+    return petRuntime.hideWindow();
   }
   
   function setDesktopPetWindowMouseInteractive(interactive: boolean) {

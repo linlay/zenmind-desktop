@@ -95,6 +95,7 @@ import type { KanbanRuntime } from "./kanban-runtime";
 import { t } from "./i18n/main-i18n";
 import { getConfiguredDesktopActionBridgePort } from "./desktop-action-bridge-settings";
 import { getAssistantSettings } from "./assistant/core/settings-store";
+import { getDesktopDeviceInfo } from "./desktop-device-info";
 
 type DesktopActionBridgeOptions = {
   app: App;
@@ -116,7 +117,7 @@ type DesktopActionBridgeOptions = {
     refreshState: () => DesktopPetState | Promise<DesktopPetState>;
     saveSettings: (input: { enabled?: boolean; appearanceId?: string }) => DesktopPetState | Promise<DesktopPetState>;
     show: () => DesktopPetState | Promise<DesktopPetState>;
-    hide: (disable?: boolean) => DesktopPetState | Promise<DesktopPetState>;
+    hide: () => DesktopPetState | Promise<DesktopPetState>;
   };
 };
 
@@ -1330,10 +1331,17 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
     });
   }
   if (action === "desktop.pet.show") {
-    return ok(action, await desktopPet.show());
+    if (!state.supported) {
+      return fail(action, "pet_unsupported", t("settings.desktopPet.enableUnavailable"), state);
+    }
+    const nextState = await desktopPet.show();
+    if (!nextState.enabled) {
+      return fail(action, "pet_enable_failed", "Desktop pet could not be shown.", nextState);
+    }
+    return ok(action, nextState);
   }
   if (action === "desktop.pet.hide") {
-    return ok(action, await desktopPet.hide(true));
+    return ok(action, await desktopPet.hide());
   }
   if (action !== "desktop.pet.set") {
     return fail(action, "unknown_action", `unknown action: ${action}`);
@@ -1474,10 +1482,12 @@ async function executeAction(
     case "desktop.page.validateForm":
     case "desktop.page.previewPatch":
     case "desktop.page.applyPatch":
-    case "desktop.setting.getState":
-    case "desktop.setting.validatePatch":
-    case "desktop.setting.previewPatch":
-    case "desktop.setting.applyPatch":
+    case "desktop.theme.get":
+    case "desktop.theme.set":
+    case "desktop.locale.get":
+    case "desktop.locale.set":
+    case "desktop.copilot.getPagePreferences":
+    case "desktop.copilot.setPagePreference":
     case "desktop.web.listSurfaces":
     case "desktop.web.getActiveSurface":
     case "desktop.web.activateSurface":
@@ -1488,6 +1498,13 @@ async function executeAction(
     case "desktop.web.closeTab":
     case "desktop.web.switchTab":
       return callRendererPageAction(options, request, args);
+    case "desktop.general.deviceName": {
+      const deviceInfo = getDesktopDeviceInfo(options.app);
+      return ok(action, {
+        deviceName: deviceInfo.deviceName,
+        configuredDeviceName: deviceInfo.configuredDeviceName
+      });
+    }
     case "desktop.navigate.toRoute": {
       const route = readString(args, "route") || readString(args, "path");
       if (!route.startsWith("/")) {

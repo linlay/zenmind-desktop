@@ -144,7 +144,7 @@ const SETTINGS_SELECT_CLASS_NAMES = {
     root: "settings-select-popup"
   }
 };
-const DEFAULT_DESKTOP_ACTION_NAME = "desktop.setting.getState";
+const DEFAULT_DESKTOP_ACTION_NAME = "desktop.theme.get";
 const DEFAULT_WS_DEBUG_COMMAND = {
   type: "runtime.info",
   payload: {}
@@ -3955,6 +3955,10 @@ export function SettingsPage({
       });
       setDesktopPetState(nextState);
       setReadErrorSections(["assistant"], "");
+      if (nextEnabled && !nextState.enabled) {
+        showSectionNotice("assistant", t("settings.desktopPet.enableUnavailable"), "error");
+        return;
+      }
       showSectionNotice("assistant", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
     } catch (reason) {
       showSectionNotice("assistant", reason instanceof Error ? reason.message : String(reason), "error");

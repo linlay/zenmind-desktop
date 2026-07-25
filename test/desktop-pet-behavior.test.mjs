@@ -168,6 +168,75 @@ test("closing desktop pet destroys its window until the user explicitly enables 
   assert.equal(stopStatusClientCount, 1);
 });
 
+test("desktop pet show rolls persisted enabled back when the window cannot become visible", () => {
+  let settings = createSettings({ enabled: true, unreadCount: 4 });
+  let createdWindow = null;
+  let stopStatusClientCount = 0;
+
+  class HiddenDesktopPetWindow extends EventEmitter {
+    constructor() {
+      super();
+      this.destroyed = false;
+      this.webContents = new EventEmitter();
+    }
+
+    isDestroyed() {
+      return this.destroyed;
+    }
+
+    isVisible() {
+      return false;
+    }
+
+    setBounds() {}
+    showInactive() {}
+    moveTop() {}
+
+    destroy() {
+      this.destroyed = true;
+      this.emit("closed");
+    }
+  }
+
+  const controller = createDesktopPetWindowController({
+    platform: "darwin",
+    createWindow: () => {
+      createdWindow = new HiddenDesktopPetWindow();
+      return createdWindow;
+    },
+    getSettings: () => settings,
+    saveSettings: (patch) => {
+      settings = { ...settings, ...patch };
+    },
+    getMode: () => "base",
+    getBounds: () => ({ x: 10, y: 20, width: 240, height: 240 }),
+    isHandlingQuit: () => false,
+    loadRendererRoute: async () => {},
+    buildContextMenu: () => null,
+    startStatusClient: () => {},
+    stopStatusClient: () => {
+      stopStatusClientCount += 1;
+    },
+    endDrag: () => {},
+    clearIdleResetTimer: () => {},
+    clearPreviewRefreshTimer: () => {},
+    clearPreview: () => {},
+    refreshState: () => ({ enabled: controller.isVisible() }),
+    setMouseInteractive: () => {}
+  });
+
+  const result = controller.showWindow();
+  assert.equal(result.enabled, false);
+  assert.equal(settings.enabled, false);
+  assert.equal(settings.unreadCount, 0);
+  assert.equal(createdWindow.isDestroyed(), true);
+  assert.equal(controller.getWindow(), null);
+  assert.equal(stopStatusClientCount, 1);
+
+  assert.doesNotThrow(() => controller.hideWindow());
+  assert.equal(controller.isVisible(), false);
+});
+
 function visibleFootprintRect(bounds, footprint) {
   return {
     x: bounds.x + footprint.x,
@@ -504,7 +573,7 @@ function writeStrictUserPet(petRoot, overrides = {}) {
 test("desktop pet state exposes awaiting when the bound agent has a pending awaiting prompt", () => {
   const state = createDesktopPetState(createSettings(), {
     supported: true,
-    visible: true,
+    enabled: true,
     localStatus: createDefaultDesktopPetLocalStatus(),
     agentStatus: createAgentStatus({
       presence: "busy",
@@ -517,10 +586,26 @@ test("desktop pet state exposes awaiting when the bound agent has a pending awai
   assert.equal(state.hint, "需要你确认计划");
 });
 
+test("desktop pet state uses enabled as the only top-level window visibility field", () => {
+  const hiddenState = createDesktopPetState(createSettings({ enabled: true }), {
+    supported: true,
+    enabled: false
+  });
+  const shownState = createDesktopPetState(createSettings({ enabled: false }), {
+    supported: true,
+    enabled: true
+  });
+
+  assert.equal(hiddenState.enabled, false);
+  assert.equal(shownState.enabled, true);
+  assert.equal("visible" in hiddenState, false);
+  assert.equal("visible" in shownState, false);
+});
+
 test("desktop pet state exposes panel placement for detached panel rendering", () => {
   const state = createDesktopPetState(createSettings(), {
     supported: true,
-    visible: true,
+    enabled: true,
     windowMode: "bubble",
     panelPlacement: "below",
     localStatus: createDefaultDesktopPetLocalStatus()
@@ -1283,7 +1368,7 @@ test("desktop pet idle and unread states keep base window bounds for stable drag
 test("desktop pet state exposes awaiting when any active task is awaiting", () => {
   const state = createDesktopPetState(createSettings(), {
     supported: true,
-    visible: true,
+    enabled: true,
     localStatus: createDefaultDesktopPetLocalStatus(),
     agentStatus: createAgentStatus({
       presence: "busy",

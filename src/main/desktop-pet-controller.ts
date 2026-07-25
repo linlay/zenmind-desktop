@@ -439,7 +439,7 @@ export function createDesktopPetMessagesFromNavigationSnapshot(
 export function computeDesktopPetStateRefresh(input: {
   settings: DesktopPetSettingsLike;
   supported: boolean;
-  visible: boolean;
+  enabled: boolean;
   windowMode?: DesktopPetWindowMode;
   localStatus: DesktopPetLocalStatus;
   patch?: Partial<DesktopPetLocalStatus>;
@@ -463,7 +463,7 @@ export function computeDesktopPetStateRefresh(input: {
     : input.localStatus;
   const state = createDesktopPetState(input.settings, {
     supported: input.supported,
-    visible: input.visible,
+    enabled: input.enabled,
     windowMode: input.windowMode ?? "base",
     localStatus,
     agentStatus: input.agentStatus,
@@ -967,7 +967,7 @@ export interface DesktopPetWindowController {
   setWindow(window: any): void;
   createWindow(): any;
   showWindow(): any;
-  hideWindow(disable?: boolean): any;
+  hideWindow(): any;
   isVisible(): boolean;
 }
 
@@ -986,7 +986,6 @@ export function createDesktopPetWindowController(
 
   function isVisible() {
     return Boolean(
-      options.getSettings().enabled &&
       window &&
       !window.isDestroyed() &&
       window.isVisible()
@@ -1016,6 +1015,10 @@ export function createDesktopPetWindowController(
 
     window.on("hide", () => {
       options.setMouseInteractive(false);
+      if (!options.isHandlingQuit() && options.getSettings().enabled) {
+        hideWindow();
+        return;
+      }
       options.refreshState();
     });
 
@@ -1024,13 +1027,23 @@ export function createDesktopPetWindowController(
         return;
       }
       event.preventDefault();
-      hideWindow(true);
+      hideWindow();
     });
 
     window.on("closed", () => {
       options.endDrag();
       window = null;
       options.setMouseInteractive(true);
+      if (!options.isHandlingQuit() && options.getSettings().enabled) {
+        options.clearIdleResetTimer();
+        options.clearPreviewRefreshTimer();
+        options.clearPreview();
+        options.saveSettings({
+          enabled: false,
+          unreadCount: 0
+        });
+        options.stopStatusClient();
+      }
       options.refreshState();
     });
 
@@ -1051,8 +1064,12 @@ export function createDesktopPetWindowController(
       });
     }
 
-    options.loadRendererRoute(window, "/desktop-pet").catch((error) => {
+    const createdWindow = window;
+    options.loadRendererRoute(createdWindow, "/desktop-pet").catch((error) => {
       console.error("failed to load desktop pet renderer", error);
+      if (window === createdWindow && !createdWindow.isDestroyed()) {
+        hideWindow();
+      }
     });
 
     return window;
@@ -1060,46 +1077,48 @@ export function createDesktopPetWindowController(
 
   function showWindow() {
     if (!isDesktopPetSupportedPlatform(options.platform)) {
-      return options.refreshState();
+      return hideWindow();
     }
-    options.saveSettings({
-      enabled: true
-    });
-    options.startStatusClient();
-    const targetWindow = createWindow();
-    if (!targetWindow || targetWindow.isDestroyed()) {
-      return options.refreshState();
-    }
+    try {
+      const targetWindow = createWindow();
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        throw new Error("Desktop pet window was not created.");
+      }
 
-    const bounds = options.getBounds();
-    targetWindow.setBounds(bounds, true);
-    targetWindow.showInactive();
-    targetWindow.moveTop();
-    return options.refreshState();
+      const bounds = options.getBounds();
+      targetWindow.setBounds(bounds, true);
+      targetWindow.showInactive();
+      targetWindow.moveTop();
+      if (!targetWindow.isVisible()) {
+        throw new Error("Desktop pet window did not become visible.");
+      }
+      options.saveSettings({
+        enabled: true
+      });
+      options.startStatusClient();
+      return options.refreshState();
+    } catch (error) {
+      console.error("failed to show desktop pet window", error);
+      return hideWindow();
+    }
   }
 
-  function hideWindow(disable = false) {
+  function hideWindow() {
     options.endDrag();
     options.setMouseInteractive(false);
-    if (disable && options.getSettings().enabled) {
-      options.clearIdleResetTimer();
-      options.clearPreviewRefreshTimer();
-      options.clearPreview();
-      options.saveSettings({
-        enabled: false,
-        unreadCount: 0
-      });
-      options.stopStatusClient();
-    }
+    options.clearIdleResetTimer();
+    options.clearPreviewRefreshTimer();
+    options.clearPreview();
+    options.saveSettings({
+      enabled: false,
+      unreadCount: 0
+    });
+    options.stopStatusClient();
     if (window && !window.isDestroyed()) {
-      if (disable) {
-        window.destroy();
-      } else if (window.isVisible()) {
-        window.hide();
-      }
+      window.destroy();
     }
     return options.refreshState({
-      ...(disable ? { unreadCount: 0 } : {})
+      unreadCount: 0
     });
   }
 

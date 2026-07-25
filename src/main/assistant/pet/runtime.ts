@@ -262,7 +262,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     state.desktopPetAgentOptions = [];
     state.desktopPetState = createDesktopPetState(state.desktopPetSettings, {
       supported: isDesktopPetSupportedPlatform(options.platform),
-      visible: false,
+      enabled: false,
       localStatus: state.desktopPetLocalStatus,
       agentStatus: state.desktopPetAgentStatus,
       agentOptions: state.desktopPetAgentOptions,
@@ -451,14 +451,14 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   function refreshState(patch: Partial<DesktopPetLocalStatus> = {}) {
-    const visible = isVisible();
+    const enabled = isVisible();
     const activeTasks = getActiveTasks();
     const messages = getMessagesForState();
     const runningTaskCount = Math.max(getRunningTaskCount(), activeTasks.length);
     const refresh = computeDesktopPetStateRefresh({
       settings: state.desktopPetSettings,
       supported: isDesktopPetSupportedPlatform(options.platform),
-      visible,
+      enabled,
       localStatus: state.desktopPetLocalStatus,
       patch,
       agentStatus: getAgentStatusForState(),
@@ -783,9 +783,9 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return desktopPetDragController.endDrag();
   }
 
-  function hideWindow(disable = false) {
-    hidePanelWindow(disable);
-    return desktopPetWindowController.hideWindow(disable);
+  function hideWindow() {
+    hidePanelWindow(true);
+    return desktopPetWindowController.hideWindow();
   }
 
   function setMouseInteractive(interactive: boolean) {
@@ -914,7 +914,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
             requestSignature(item.signatureId);
             return;
           }
-          hideWindow(true);
+          hideWindow();
         }
       }));
     return Menu.buildFromTemplate(template);

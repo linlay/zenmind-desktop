@@ -371,7 +371,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   registerDesktopPetIpcHandlers(ipcMain, createDesktopPetIpcHandlerOptions(context, {
     clearActiveRuns: () => petRuntime.clearActiveRuns(),
     showWindow: () => petRuntime.showWindow(),
-    hideWindow: (disable: boolean) => petRuntime.hideWindow(disable),
+    hideWindow: () => petRuntime.hideWindow(),
     openAssistant: () => petRuntime.openAssistant(),
     openTaskChat: (input: any) => petRuntime.openTaskChat(input),
     moveWindowBy: (delta: any) => petRuntime.moveWindowBy(delta),

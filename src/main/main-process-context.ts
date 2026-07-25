@@ -60,7 +60,7 @@ export function createDesktopActionOptions(
           refreshState: () => dependencies.desktopPet?.refreshState(),
           saveSettings: (input: unknown) => dependencies.desktopPet?.saveSettings(input),
           show: () => dependencies.desktopPet?.showWindow(),
-          hide: (disable?: boolean) => dependencies.desktopPet?.hideWindow(disable)
+          hide: () => dependencies.desktopPet?.hideWindow()
         }
       : undefined
   };

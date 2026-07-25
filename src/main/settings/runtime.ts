@@ -16,7 +16,7 @@ export type SettingsRuntimeOptions = {
   refreshTrayContextMenu: () => void;
   refreshDesktopPetState: () => void;
   showDesktopPetWindow: () => void;
-  hideDesktopPetWindow: (disable?: boolean) => void;
+  hideDesktopPetWindow: () => void;
   broadcastDesktopSsoStatus: (status: ReturnType<typeof getDesktopSsoStatus>) => void;
   notifyServicesChanged: () => void;
   emitKanbanChanged: () => void;
@@ -65,7 +65,7 @@ export function createSettingsRuntime(options: SettingsRuntimeOptions) {
     if (isDesktopPetSupportedPlatform(options.platform) && options.state.desktopPetSettings.enabled) {
       void options.showDesktopPetWindow();
     } else {
-      options.hideDesktopPetWindow(false);
+      options.hideDesktopPetWindow();
     }
 
     options.broadcastDesktopSsoStatus(getDesktopSsoStatus(options.app));

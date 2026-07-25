@@ -65,7 +65,6 @@ function createDesktopActionOptions(t) {
   const state = {
     supported: true,
     enabled: true,
-    visible: false,
     appearanceId: "classic",
     appearanceOptions: appearances,
     updatedAt: "2026-01-01T00:00:00.000Z"
@@ -110,8 +109,8 @@ function createDesktopActionOptions(t) {
           calls.saveSettings.push(input);
           return { ...state, appearanceId: input.appearanceId };
         },
-        show: async () => ({ ...state, enabled: true, visible: true }),
-        hide: async () => ({ ...state, enabled: false, visible: false })
+        show: async () => ({ ...state, enabled: true }),
+        hide: async () => ({ ...state, enabled: false })
       }
     }
   };
@@ -264,6 +263,7 @@ test("desktop pet actions expose the simplified local pet API", async (t) => {
     updatedAt: Date.parse(state.updatedAt)
   });
   assert.equal(state.updatedAt, "2026-01-01T00:00:00.000Z");
+  assert.equal("visible" in stateResponse.result, false);
   assert.equal(calls.refreshState, 1);
 
   const listResponse = await handleDesktopActionRequest(options, {
@@ -283,6 +283,96 @@ test("desktop pet actions expose the simplified local pet API", async (t) => {
   assert.equal(setResponse.ok, true);
   assert.deepEqual(calls.saveSettings, [{ appearanceId: "user:dario" }]);
   assert.equal(setResponse.result.appearanceId, "user:dario");
+
+  const showResponse = await handleDesktopActionRequest(options, {
+    action: "desktop.pet.show",
+    permissionMode: "full_access"
+  });
+  assert.equal(showResponse.ok, true);
+  assert.equal(showResponse.result.enabled, true);
+
+  const hideResponse = await handleDesktopActionRequest(options, {
+    action: "desktop.pet.hide",
+    permissionMode: "full_access"
+  });
+  assert.equal(hideResponse.ok, true);
+  assert.equal(hideResponse.result.enabled, false);
+});
+
+test("desktop pet show reports a failure unless the window is actually enabled", async (t) => {
+  const { options, state } = createDesktopActionOptions(t);
+  options.desktopPet.show = async () => ({ ...state, enabled: false });
+
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.pet.show",
+    permissionMode: "full_access"
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "pet_enable_failed");
+  assert.equal(response.error.details.enabled, false);
+});
+
+test("dedicated Desktop setting actions replace the removed generic Setting family", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererActions = [];
+  options.callRendererAction = async (request) => {
+    rendererActions.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: { handled: request.action }
+    };
+  };
+
+  for (const action of [
+    "desktop.theme.get",
+    "desktop.theme.set",
+    "desktop.locale.get",
+    "desktop.locale.set",
+    "desktop.copilot.getPagePreferences",
+    "desktop.copilot.setPagePreference"
+  ]) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      args: {},
+      permissionMode: "full_access"
+    });
+    assert.equal(response.ok, true, action);
+    assert.equal(response.result.handled, action);
+  }
+  assert.deepEqual(rendererActions.map((request) => request.action), [
+    "desktop.theme.get",
+    "desktop.theme.set",
+    "desktop.locale.get",
+    "desktop.locale.set",
+    "desktop.copilot.getPagePreferences",
+    "desktop.copilot.setPagePreference"
+  ]);
+
+  for (const action of [
+    "desktop.setting.getState",
+    "desktop.setting.validatePatch",
+    "desktop.setting.previewPatch",
+    "desktop.setting.applyPatch"
+  ]) {
+    const response = await handleDesktopActionRequest(options, { action });
+    assert.equal(response.ok, false, action);
+    assert.equal(response.error.code, "unknown_action", action);
+  }
+});
+
+test("desktop general deviceName is read-only and exposes only the two name fields", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.general.deviceName"
+  });
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(Object.keys(response.result).sort(), ["configuredDeviceName", "deviceName"]);
+  assert.equal(typeof response.result.deviceName, "string");
+  assert.equal(response.result.configuredDeviceName, "");
 });
 
 test("desktop action time normalization follows an explicit output schema", () => {

@@ -47,7 +47,6 @@ function createFallbackDesktopPetState(): DesktopPetState {
   return {
     supported: true,
     enabled: true,
-    visible: true,
     windowMode: "base",
     status: "idle",
     hint: "",
@@ -742,20 +741,20 @@ export function DesktopPet() {
     void window.electronAPI.desktopPet.getState().then((nextState) => {
       setPetState(nextState);
       rememberMessagesFromState(nextState);
-      if (!nextState.visible || shouldInterruptSignature(nextState)) {
+      if (!nextState.enabled || shouldInterruptSignature(nextState)) {
         stopSignature();
       }
-      if (!nextState.visible || shouldInterruptStandardAction(nextState)) {
+      if (!nextState.enabled || shouldInterruptStandardAction(nextState)) {
         stopStandardAction();
       }
     }).catch(() => undefined);
     const dispose = window.electronAPI.desktopPet.onStateChanged((nextState) => {
       setPetState(nextState);
       rememberMessagesFromState(nextState);
-      if (!nextState.visible || shouldInterruptSignature(nextState)) {
+      if (!nextState.enabled || shouldInterruptSignature(nextState)) {
         stopSignature();
       }
-      if (!nextState.visible || shouldInterruptStandardAction(nextState)) {
+      if (!nextState.enabled || shouldInterruptStandardAction(nextState)) {
         stopStandardAction();
       }
     });

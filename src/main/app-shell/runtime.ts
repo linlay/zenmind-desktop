@@ -64,7 +64,7 @@ export type AppShellRuntimeOptions = {
   getDesktopPetEnabled: () => boolean;
   isDesktopPetSupported: () => boolean;
   showDesktopPetWindow: () => unknown;
-  hideDesktopPetWindow: (disable?: boolean) => unknown;
+  hideDesktopPetWindow: () => unknown;
   restoreDesktopPetWindowLayering: () => void;
 };
 
@@ -122,7 +122,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     showMainWindow: () => showMainWindow(),
     openSettings: () => showMainWindow("/settings"),
     showDesktopPet: () => options.showDesktopPetWindow(),
-    hideDesktopPet: () => options.hideDesktopPetWindow(true),
+    hideDesktopPet: () => options.hideDesktopPetWindow(),
     quitWithoutConfirmation: options.beginAppQuitWithoutConfirmation
   });
 

@@ -4431,6 +4431,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
   ].join("\n");
   const petActionBlock = bridge.match(/async function executePetAction[\s\S]*?\n}\n\nasync function executeAction/)?.[0] ?? "";
+  const petStateContract = contracts.match(/export interface DesktopPetState \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
@@ -4441,13 +4442,19 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(bridge, /server\.listen\(DESKTOP_ACTION_BRIDGE_PORT/);
   assert.match(actionCatalog, /page_control/);
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
-  assert.match(actionCatalog, /desktop\.setting\.applyPatch/);
-  assert.doesNotMatch(actionCatalog, /desktop\.settings\./);
+  assert.match(actionCatalog, /desktop\.general\.deviceName/);
+  assert.match(actionCatalog, /desktop\.theme\.get/);
+  assert.match(actionCatalog, /desktop\.theme\.set/);
+  assert.match(actionCatalog, /desktop\.locale\.get/);
+  assert.match(actionCatalog, /desktop\.locale\.set/);
+  assert.match(actionCatalog, /desktop\.copilot\.getPagePreferences/);
+  assert.match(actionCatalog, /desktop\.copilot\.setPagePreference/);
+  assert.doesNotMatch(actionCatalog, /desktop\.settings?\./);
   assert.doesNotMatch(actionCatalog, /desktop\.page\./);
   assert.match(actionCatalog, /desktop\.web\.listSurfaces/);
   assert.match(actionCatalog, /desktop\.web\.navigate/);
   assert.match(actionCatalog, /desktop\.web\.interactElement/);
-  assert.match(actionCatalog, /desktop\.web\.webapps\.installAndOpen/);
+  assert.match(actionCatalog, /desktop\.web\.webapp\.installAndOpen/);
   assert.match(actionCatalog, /desktop\.pet\.state/);
   assert.match(actionCatalog, /desktop\.pet\.list/);
   assert.match(actionCatalog, /desktop\.pet\.set/);
@@ -4456,6 +4463,8 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(actionCatalog, /desktop\.pet\.setEnabled/);
   assert.doesNotMatch(actionCatalog, /desktop\.pet\.listAppearances/);
   assert.doesNotMatch(actionCatalog, /desktop\.pet\.setAppearance/);
+  assert.match(petStateContract, /enabled: boolean/);
+  assert.doesNotMatch(petStateContract, /\n\s*visible: boolean/);
   assert.match(actionCatalog, /desktop\.kanban\.listIssues/);
   assert.match(actionCatalog, /desktop\.kanban\.moveIssue/);
   assert.match(actionCatalog, /desktop\.help\.openTopic/);
@@ -4476,6 +4485,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(petActionBlock, /desktop\.pet\.state/);
   assert.match(petActionBlock, /desktop\.pet\.list/);
   assert.match(petActionBlock, /desktop\.pet\.set/);
+  assert.match(petActionBlock, /pet_enable_failed/);
   assert.doesNotMatch(petActionBlock, /desktop\.pet\.getState/);
   assert.doesNotMatch(petActionBlock, /desktop\.pet\.getSettings/);
   assert.doesNotMatch(petActionBlock, /desktop\.pet\.setEnabled/);
@@ -4536,13 +4546,17 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(appShell, /desktopActions\.onConfirm/);
   assert.match(appShell, /desktopActions\.respondConfirmation/);
   assert.match(appShell, /registerDesktopActionProviderForScope\("global"/);
-  assert.match(appShell, /desktop\.setting\.getState/);
-  assert.match(appShell, /settingSectionIds = \[/);
-  assert.match(appShell, /"copilot"/);
-  assert.match(appShell, /"pet"/);
-  assert.match(appShell, /"general\.desktopActionConfirmationEnabled"/);
-  assert.match(appShell, /"kanban\.remoteControlEnabled"/);
-  assert.match(appShell, /"market\.apiBaseUrl"/);
+  assert.doesNotMatch(appShell, /desktop\.setting\./);
+  assert.doesNotMatch(appShell, /settingSectionIds = \[/);
+  assert.match(appShell, /desktop\.theme\.get/);
+  assert.match(appShell, /desktop\.theme\.set/);
+  assert.match(appShell, /desktop\.locale\.get/);
+  assert.match(appShell, /desktop\.locale\.set/);
+  assert.match(appShell, /desktop\.copilot\.getPagePreferences/);
+  assert.match(appShell, /desktop\.copilot\.setPagePreference/);
+  assert.match(appShell, /isDesktopCopilotPageKey\(pageKey\)/);
+  assert.match(appShell, /enabled or agentKey is required/);
+  assert.match(appShell, /desktopCopilotPages:\s*\{\s*\[pageKey\]: nextPreference/);
   assert.match(appShell, /desktop\.web\.listSurfaces/);
   assert.match(settingsPage, /registerDesktopActionProvider/);
   assert.match(settingsPage, /desktopHelperAgentKey/);

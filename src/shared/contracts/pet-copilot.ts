@@ -177,7 +177,6 @@ export type DesktopPetStateAssets = Partial<Record<string, DesktopPetStateAsset>
 export interface DesktopPetState {
   supported: boolean;
   enabled: boolean;
-  visible: boolean;
   windowMode: DesktopPetWindowMode;
   status: DesktopPetStatus;
   hint: string;

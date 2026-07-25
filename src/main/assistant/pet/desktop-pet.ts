@@ -890,7 +890,7 @@ export function createDesktopPetState(
   settings: DesktopPetStoredState,
   options: {
     supported?: boolean;
-    visible?: boolean;
+    enabled?: boolean;
     windowMode?: DesktopPetWindowMode;
     localStatus?: DesktopPetLocalStatus;
     agentStatus?: DesktopPetBoundAgentStatus | null;
@@ -930,8 +930,7 @@ export function createDesktopPetState(
   const agentDefaults = createDefaultDesktopPetAgentStatus(activeAgentKey);
   return {
     supported: options.supported ?? isDesktopPetSupportedPlatform(process.platform),
-    enabled: settings.enabled,
-    visible: Boolean(options.visible),
+    enabled: Boolean(options.enabled),
     windowMode: options.windowMode ?? "base",
     ...mergedStatus,
     unreadCount: Math.max(mergedStatus.unreadCount, agentUnreadCount),

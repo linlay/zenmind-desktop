@@ -46,10 +46,16 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.assistant.translate", kind: "execute", category: "assistant", description: "Translate text with the Desktop assistant model. Args: { text, targetLanguage: en|ja|zh }." },
   { name: "desktop.assistant.complete", kind: "execute", category: "assistant", description: "Generate text with the Desktop helper agent. Args: { prompt, instruction? }." },
 
-  { name: "desktop.setting.getState", kind: "read", category: "setting", description: "Read Desktop setting state." },
-  { name: "desktop.setting.validatePatch", kind: "validate", category: "setting", description: "Validate a Desktop setting patch." },
-  { name: "desktop.setting.previewPatch", kind: "preview", category: "setting", description: "Preview Desktop setting changes." },
-  { name: "desktop.setting.applyPatch", kind: "apply", category: "setting", description: "Apply Desktop setting changes." },
+  { name: "desktop.general.deviceName", kind: "read", category: "general", description: "Read the effective and configured Desktop device names. Args: none. Returns: { deviceName, configuredDeviceName }." },
+
+  { name: "desktop.theme.get", kind: "read", category: "theme", description: "Read the Desktop theme. Args: none. Returns: { themeMode, resolvedTheme }." },
+  { name: "desktop.theme.set", kind: "execute", category: "theme", description: "Set and persist the Desktop theme. Args: { themeMode: light|dark|system }. Returns: { themeMode, resolvedTheme }." },
+
+  { name: "desktop.locale.get", kind: "read", category: "locale", description: "Read the Desktop locale settings. Args: none. Returns LocaleSettings." },
+  { name: "desktop.locale.set", kind: "execute", category: "locale", description: "Set and persist the Desktop locale, then broadcast the change. Args: { locale: zh-CN|en-US }. Returns LocaleSettings." },
+
+  { name: "desktop.copilot.getPagePreferences", kind: "read", category: "copilot", description: "Read all Desktop Copilot page preferences and available agent options. Args: none." },
+  { name: "desktop.copilot.setPagePreference", kind: "execute", category: "copilot", description: "Update one Desktop Copilot page preference without replacing other pages. Args: { pageKey, enabled?, agentKey? }; pageKey: controlCenter|market|help|agents|schedules|skills." },
 
   { name: "desktop.web.listSurfaces", kind: "read", category: "web", description: "List Desktop web surfaces." },
   { name: "desktop.web.getActiveSurface", kind: "read", category: "web", description: "Read the active Desktop web surface." },

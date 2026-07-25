@@ -53,11 +53,11 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   });
 
   ipcMain.handle("desktopPet.getState", async () => {
-    const settings = options.getSettings();
-    if (settings.enabled) {
+    const state = options.refreshState();
+    if (state.enabled) {
       options.scheduleStatusRefresh(0);
     }
-    return options.refreshState();
+    return state;
   });
 
   ipcMain.handle("desktopPet.saveSettings", async (_event: any, input: DesktopPetSettingsInput) => {
@@ -80,14 +80,14 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
       if (input.enabled) {
         options.showWindow();
       } else {
-        options.hideWindow(true);
+        options.hideWindow();
       }
     }
     return options.refreshState();
   });
 
   ipcMain.handle("desktopPet.show", async () => options.showWindow());
-  ipcMain.handle("desktopPet.hide", async () => options.hideWindow(true));
+  ipcMain.handle("desktopPet.hide", async () => options.hideWindow());
   ipcMain.handle("desktopPet.openAssistant", async () => options.openAssistant());
   ipcMain.handle("desktopPet.openTaskChat", async (_event: any, input: DesktopPetOpenTaskChatInput) =>
     options.openTaskChat(input)
