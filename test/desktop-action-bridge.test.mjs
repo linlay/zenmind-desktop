@@ -43,6 +43,9 @@ function createApp(homePath) {
       if (name === "temp") {
         return path.join(homePath, "tmp");
       }
+      if (name === "documents") {
+        return path.join(homePath, "Documents");
+      }
       assert.fail(`unexpected app.getPath(${name})`);
     },
     getAppPath() {
@@ -72,7 +75,8 @@ function createDesktopActionOptions(t) {
   const calls = {
     refreshState: 0,
     saveSettings: [],
-    translations: []
+    translations: [],
+    fileDialogs: []
   };
 
   return {
@@ -96,6 +100,13 @@ function createDesktopActionOptions(t) {
       getCurrentPageSnapshot: () => null,
       navigate: () => {},
       openLogViewer: async () => ({ ok: true }),
+      showFileDialog: async (dialogOptions) => {
+        calls.fileDialogs.push(dialogOptions);
+        return {
+          canceled: false,
+          filePaths: [path.join(homePath, "Documents", "Writing")]
+        };
+      },
       callRendererAction: async () => ({ ok: false }),
       executeCdpCommand: async () => {
         throw new Error("unexpected cdp call");
@@ -162,6 +173,22 @@ test("desktop assistant complete uses the configured helper without exposing cre
   });
   assert.equal(invalid.ok, false);
   assert.equal(invalid.error.code, "invalid_args");
+});
+
+test("local WebApp directory action uses the native picker and returns one selected folder", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.web.webapp.selectDirectory",
+    args: {},
+    permissionMode: "full_access"
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.result.canceled, false);
+  assert.equal(response.result.name, "Writing");
+  assert.match(response.result.path, /Documents[\\/]Writing$/u);
+  assert.equal(calls.fileDialogs.length, 1);
+  assert.deepEqual(calls.fileDialogs[0].properties, ["openDirectory", "createDirectory"]);
 });
 
 function waitForListening(server) {

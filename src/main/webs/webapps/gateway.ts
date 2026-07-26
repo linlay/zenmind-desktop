@@ -13,7 +13,8 @@ const DESKTOP_RESERVED_PREFIX = "/__desktop/";
 const DESKTOP_ASSISTANT_PATH = "/__desktop/actions/call";
 const DESKTOP_ASSISTANT_ACTIONS = new Set([
   "desktop.assistant.complete",
-  "desktop.assistant.translate"
+  "desktop.assistant.translate",
+  "desktop.web.webapp.selectDirectory"
 ]);
 const DESKTOP_ASSISTANT_BODY_LIMIT = 64 * 1024;
 

@@ -457,6 +457,7 @@ export function createMainProcessRuntime() {
     issueAgentAccessToken,
     callAgentPlatform,
     showMainWindow,
+    showFileDialog,
     openLogViewerWindow,
     listKanbanLocalAgents: () => petRuntime.listKanbanLocalAgents(),
     emitKanbanChanged,

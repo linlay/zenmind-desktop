@@ -40,6 +40,7 @@ export type AssistantBridgeRuntimeOptions = {
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
   callAgentPlatform: (...args: any[]) => unknown;
   showMainWindow: (targetPath?: string) => void;
+  showFileDialog: (...args: any[]) => Promise<any>;
   openLogViewerWindow: (...args: any[]) => unknown;
   listKanbanLocalAgents: () => any[];
   emitKanbanChanged: () => void;
@@ -103,6 +104,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     assistantBridge,
     navigate: options.showMainWindow,
     openLogViewer: options.openLogViewerWindow,
+    showFileDialog: options.showFileDialog,
     callRendererAction: (request) => callDesktopActionRenderer(request, {
       getMainWindow: () => state.mainWindow,
       pendingRequests: state.desktopActionRendererRequests

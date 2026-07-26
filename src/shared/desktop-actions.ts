@@ -83,6 +83,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.webapp.restart", kind: "execute", category: "web", description: "Restart a local webapp." },
   { name: "desktop.web.webapp.open", kind: "execute", category: "web", description: "Start and open a local webapp." },
   { name: "desktop.web.webapp.installAndOpen", kind: "execute", category: "web", description: "Install and open a website app." },
+  { name: "desktop.web.webapp.selectDirectory", kind: "execute", category: "web", description: "Open the native directory picker for a local WebApp. Args: none. Returns: { canceled, path?, name? }." },
   { name: "desktop.web.webapp.getPublishInfo", kind: "read", category: "web", description: "Read one local webapp's Tunnel publishing prerequisites, state, and public URL. Args: { webappId|id }." },
   { name: "desktop.web.webapp.publish", kind: "execute", category: "web", description: "Start a local webapp and publish or refresh its public URL through the configured Tunnel. Args: { webappId|id }." },
   { name: "desktop.web.webapp.unpublish", kind: "execute", category: "web", description: "Stop publishing a local webapp through Tunnel. Args: { webappId|id }." },

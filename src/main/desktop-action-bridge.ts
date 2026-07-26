@@ -1,7 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { App, BrowserWindow } from "electron";
+import type { App, BrowserWindow, OpenDialogOptions } from "electron";
 import { dialog } from "electron";
 import type {
   DesktopActionConfirmationDecision,
@@ -105,6 +105,10 @@ type DesktopActionBridgeOptions = {
   getCurrentPageSnapshot: () => DesktopPageContextSnapshot | null;
   navigate: (targetPath: string) => void;
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
+  showFileDialog?: (
+    options: OpenDialogOptions,
+    ownerWindow?: BrowserWindow | null
+  ) => Promise<{ canceled: boolean; filePaths: string[] }>;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{
@@ -1212,6 +1216,28 @@ async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action:
 }
 
 async function executeWebAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
+  if (action === "desktop.web.webapp.selectDirectory") {
+    const owner = options.getMainWindow();
+    const dialogOptions: OpenDialogOptions = {
+      title: t("desktopAction.webappSelectDirectoryTitle"),
+      buttonLabel: t("desktopAction.webappSelectDirectoryButton"),
+      defaultPath: options.app.getPath("documents"),
+      properties: ["openDirectory", "createDirectory"]
+    };
+    const result = options.showFileDialog
+      ? await options.showFileDialog(dialogOptions, owner)
+      : owner && !owner.isDestroyed()
+        ? await dialog.showOpenDialog(owner, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+    const selectedPath = result.canceled ? "" : String(result.filePaths[0] || "").trim();
+    return ok(action, selectedPath
+      ? {
+          canceled: false,
+          path: selectedPath,
+          name: selectedPath.split(/[\\/]/u).filter(Boolean).at(-1) || selectedPath
+        }
+      : { canceled: true });
+  }
   if (action === "desktop.web.list") {
     return ok(action, listWebEntries(options.app));
   }
@@ -1560,6 +1586,7 @@ async function executeAction(
     case "desktop.web.webapp.restart":
     case "desktop.web.webapp.open":
     case "desktop.web.webapp.installAndOpen":
+    case "desktop.web.webapp.selectDirectory":
     case "desktop.web.webapp.getPublishInfo":
     case "desktop.web.webapp.publish":
     case "desktop.web.webapp.unpublish":

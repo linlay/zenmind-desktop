@@ -2027,6 +2027,8 @@ export const enUSMessages = {
   "shell.chooseProjectDirectory": "Choose project directory",
   "shell.chooseDirectoryCancelled": "Directory selection cancelled.",
   "shell.directorySelected": "Directory selected.",
+  "desktopAction.webappSelectDirectoryTitle": "Choose a document workspace",
+  "desktopAction.webappSelectDirectoryButton": "Use this folder",
   "shell.downloadInvalid": "Invalid download request.",
   "shell.downloaded": "File downloaded.",
   "shell.screenshotUnavailable": "Screenshot capability is unavailable.",
