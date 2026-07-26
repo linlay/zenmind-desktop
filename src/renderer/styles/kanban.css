@@ -20,7 +20,7 @@
   --kanban-status-progress: #2663eb;
   --kanban-status-review: #f97316;
   --kanban-status-completed: #00b42a;
-  --kanban-column-gap: 8px;
+  --kanban-column-gap: 0px;
   --kanban-column-min-width: 252px;
   --kanban-column-width: max(
     calc((100% - (4 * var(--kanban-column-gap))) / 5),
@@ -825,13 +825,17 @@
   max-width: none;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--kanban-column-border);
+  border: 0;
   border-radius: 12px;
   background: var(--kanban-column-tint);
   box-shadow: none;
   padding: 0;
   overflow: hidden;
   transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.kanban-column + .kanban-column {
+  border-left: 1px solid var(--kanban-column-border);
 }
 
 :root[data-theme="dark"] .kanban-column {
@@ -860,70 +864,60 @@
 .kanban-column.is-backlog {
   --kanban-accent: #3b82f6;
   --kanban-accent-soft: #eef5ff;
-  --kanban-column-tint: #f3f7ff;
   --kanban-column-border: rgba(147, 197, 253, 0.42);
 }
 
 .kanban-column.is-todo {
   --kanban-accent: #a855f7;
   --kanban-accent-soft: #f5edff;
-  --kanban-column-tint: #f7f2ff;
   --kanban-column-border: rgba(196, 181, 253, 0.48);
 }
 
 .kanban-column.is-in_progress {
   --kanban-accent: #f59e0b;
   --kanban-accent-soft: #fff7ed;
-  --kanban-column-tint: #fff8ec;
   --kanban-column-border: rgba(253, 186, 116, 0.52);
 }
 
 .kanban-column.is-in_review {
   --kanban-accent: #0f766e;
   --kanban-accent-soft: #ecfeff;
-  --kanban-column-tint: #effefa;
   --kanban-column-border: rgba(94, 234, 212, 0.52);
 }
 
 .kanban-column.is-completed {
   --kanban-accent: #22c55e;
   --kanban-accent-soft: #ecfdf3;
-  --kanban-column-tint: #f1fff6;
   --kanban-column-border: rgba(134, 239, 172, 0.52);
 }
 
 :root[data-theme="dark"] .kanban-column.is-backlog {
   --kanban-accent: #60a5fa;
   --kanban-accent-soft: rgba(96, 165, 250, 0.18);
-  --kanban-column-tint: #121c2d;
   --kanban-column-border: rgba(96, 165, 250, 0.34);
 }
 
 :root[data-theme="dark"] .kanban-column.is-todo {
   --kanban-accent: #c084fc;
   --kanban-accent-soft: rgba(192, 132, 252, 0.18);
-  --kanban-column-tint: #20172d;
   --kanban-column-border: rgba(192, 132, 252, 0.34);
 }
 
 :root[data-theme="dark"] .kanban-column.is-in_progress {
   --kanban-accent: #fbbf24;
   --kanban-accent-soft: rgba(251, 191, 36, 0.18);
-  --kanban-column-tint: #241b10;
   --kanban-column-border: rgba(251, 191, 36, 0.36);
 }
 
 :root[data-theme="dark"] .kanban-column.is-in_review {
   --kanban-accent: #2dd4bf;
   --kanban-accent-soft: rgba(45, 212, 191, 0.18);
-  --kanban-column-tint: #0f2522;
   --kanban-column-border: rgba(45, 212, 191, 0.34);
 }
 
 :root[data-theme="dark"] .kanban-column.is-completed {
   --kanban-accent: #4ade80;
   --kanban-accent-soft: rgba(74, 222, 128, 0.18);
-  --kanban-column-tint: #102119;
   --kanban-column-border: rgba(74, 222, 128, 0.34);
 }
 
@@ -1909,7 +1903,7 @@
   padding: 12px;
   border: 1.5px dashed color-mix(in srgb, var(--kanban-accent) 30%, rgba(148, 163, 184, 0.4));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--kanban-accent) 4%, transparent);
+  background: transparent;
   color: #7c8da5;
   text-align: center;
 }
@@ -1926,7 +1920,7 @@
 }
 
 :root[data-theme="dark"] .kanban-empty-column {
-  background: color-mix(in srgb, var(--kanban-accent) 8%, transparent);
+  background: transparent;
   border-color: color-mix(in srgb, var(--kanban-accent) 34%, rgba(148, 163, 184, 0.24));
   color: #cbd5e1;
 }
