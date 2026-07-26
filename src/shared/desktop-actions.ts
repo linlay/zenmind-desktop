@@ -77,6 +77,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.website.update", kind: "execute", category: "web", description: "Update one Desktop website entry. Args: id or websiteId plus { input|patch: { label?, url?, copilotAgentKey? } }.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
   { name: "desktop.web.website.remove", kind: "execute", category: "web", description: "Remove one Desktop website entry.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
   { name: "desktop.web.webapp.getStatus", kind: "read", category: "web", description: "Read a local webapp runtime status." },
+  { name: "desktop.web.webapp.checkPrerequisites", kind: "validate", category: "web", description: "Check a local webapp's runtime prerequisites without starting it." },
   { name: "desktop.web.webapp.start", kind: "execute", category: "web", description: "Start a local webapp." },
   { name: "desktop.web.webapp.stop", kind: "execute", category: "web", description: "Stop a local webapp." },
   { name: "desktop.web.webapp.restart", kind: "execute", category: "web", description: "Restart a local webapp." },
@@ -150,6 +151,7 @@ export interface DesktopActionSource {
   runId?: string;
   chatId?: string;
   agentKey?: string;
+  webappId?: string;
 }
 
 export interface DesktopActionCallRequest {

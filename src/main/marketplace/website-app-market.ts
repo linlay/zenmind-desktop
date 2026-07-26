@@ -1,13 +1,22 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
 import { extractArchiveToDir, listArchiveEntriesAsync } from "../archive-utils";
 import { t } from "../i18n/main-i18n";
-import { getDesktopWebappsDataRoot } from "../user-paths";
+import {
+  getDesktopWebappInstallStagingRoot,
+  getDesktopWebappsDataRoot
+} from "../user-paths";
+import { removeWebappItem } from "../webs/webapps/actions";
 import { getWebappDir, readWebappItemFromDir } from "../webs/webapps/store";
 import { webappRuntime } from "../webs/webapps/runtime";
+import {
+  activateWebappInstall,
+  commitWebappInstall,
+  rollbackWebappInstall,
+  type WebappInstallTransaction
+} from "../webs/webapps/install-transaction";
 import {
   downloadAsset,
   findCatalogItem,
@@ -130,12 +139,12 @@ function listLocalWebsiteApps(app: App): MarketItem[] {
             id: item.id,
             type: "website-app" as const,
             name: item.label,
-            version: "0.0.0",
+            version: item.version,
             description: "",
             tags: [],
             state: "local-imported" as const,
             source: "local" as const,
-            installedVersion: "0.0.0",
+            installedVersion: item.version,
             installPath,
             websiteKind: "local-app" as const
           };
@@ -189,7 +198,12 @@ export async function installWebsiteAppArchiveFromPath(
 ): Promise<MarketCommandResult> {
   const expectedId = normalizeWebappDirectoryName(options.expectedId);
   const tempId = expectedId || `local-${Date.now()}`;
-  const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "desktop-market-webapps", `${tempId}-${Date.now()}`);
+  const stagingRoot = getDesktopWebappInstallStagingRoot(app);
+  fs.mkdirSync(stagingRoot, { recursive: true });
+  const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const tempRoot = path.join(stagingRoot, `${tempId}-${nonce}`);
+  const preparedPath = path.join(stagingRoot, `${tempId}-${nonce}-package`);
+  let transaction: WebappInstallTransaction | null = null;
   try {
     const entries = await listArchiveEntriesAsync(archivePath);
     assertSafeArchiveEntries(entries);
@@ -216,14 +230,52 @@ export async function installWebsiteAppArchiveFromPath(
 
     const targetRoot = getDesktopWebappsDataRoot(app);
     const installPath = path.join(targetRoot, safeWebappDirName);
+    const replacingExisting = fs.existsSync(installPath);
+    const previousState = replacingExisting ? webappRuntime.getStatus(app, safeWebappDirName) : null;
+    const previousWasRunning = previousState?.status === "running";
+    if (replacingExisting) {
+      const prerequisites = webappRuntime.checkItemPrerequisites(app, webapp, webappRoot);
+      if (!prerequisites.ok) {
+        throw new Error(prerequisites.message);
+      }
+    }
     await webappRuntime.stop(app, safeWebappDirName, t("market.websiteApp.replaced")).catch(() => undefined);
     fs.mkdirSync(targetRoot, { recursive: true });
-    fs.rmSync(installPath, { recursive: true, force: true });
-    fs.cpSync(webappRoot, installPath, { recursive: true });
+    if (webappRoot === tempRoot) {
+      fs.renameSync(tempRoot, preparedPath);
+    } else {
+      fs.renameSync(webappRoot, preparedPath);
+    }
+    transaction = activateWebappInstall({
+      app,
+      id: safeWebappDirName,
+      installPath,
+      stagingPath: preparedPath
+    });
+
+    if (replacingExisting) {
+      const started = await webappRuntime.start(app, safeWebappDirName);
+      if (!started.ok) {
+        await webappRuntime.stop(app, safeWebappDirName).catch(() => undefined);
+        rollbackWebappInstall(app, transaction);
+        transaction = null;
+        if (previousWasRunning) {
+          await webappRuntime.start(app, safeWebappDirName).catch(() => undefined);
+        }
+        throw new Error(`Updated WebApp failed startup validation: ${started.message}`);
+      }
+      if (!previousWasRunning) {
+        await webappRuntime.stop(app, safeWebappDirName);
+      }
+    }
+    commitWebappInstall(app, transaction);
+    transaction = null;
     upsertInstalledRecord(app, {
       id: webapp.id,
       type: "website-app",
-      version: options.version ?? "0.0.0",
+      version: webapp.schemaVersion === 4
+        ? webapp.version
+        : options.version ?? webapp.version,
       source: options.source ?? "local",
       ...(options.assetUrl ? { assetUrl: options.assetUrl } : {}),
       ...(options.sha256 ? { sha256: options.sha256 } : {}),
@@ -240,6 +292,9 @@ export async function installWebsiteAppArchiveFromPath(
       installPath
     };
   } finally {
+    if (transaction) {
+      rollbackWebappInstall(app, transaction);
+    }
     if (options.removeArchive) {
       fs.rmSync(archivePath, { force: true });
     }
@@ -252,12 +307,10 @@ export async function uninstallWebsiteAppMarketItem(app: App, itemId: string): P
   if (!safeWebappDirName) {
     throw new Error(t("market.websiteApp.invalidId"));
   }
-  await webappRuntime.stop(
-    app,
-    safeWebappDirName,
-    t("market.websiteApp.uninstalled", { name: itemId })
-  ).catch(() => undefined);
-  fs.rmSync(path.join(getDesktopWebappsDataRoot(app), safeWebappDirName), { recursive: true, force: true });
+  const removed = await removeWebappItem(app, safeWebappDirName);
+  if (!removed.ok && removed.item) {
+    throw new Error(removed.message);
+  }
   removeInstalledRecord(app, itemId, "website-app");
   return {
     ok: true,

@@ -23,6 +23,11 @@ import {
 import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
 import { webappRuntime } from "../webs/webapps/runtime";
+import {
+  readWebappRuntimeSettings,
+  writeWebappRuntimeSettings
+} from "../webs/webapps/runtime-settings";
+import { resetWebappRuntimeProbeCaches } from "../webs/webapps/launchers";
 import { getWebappPublishInfo, publishWebapp, unpublishWebapp } from "../webs/webapps/publisher";
 import { installWebsiteAppArchiveFromPath } from "../marketplace/website-app-market";
 import { t } from "../i18n/main-i18n";
@@ -215,6 +220,23 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       ok: Boolean(state),
       state,
       message: state ? t("webapp.stateRead") : t("webapp.notFound")
+    };
+  });
+  ipcMain.handle("webs.webapps.checkPrerequisites", async (_event: any, id: string) =>
+    webappRuntime.checkPrerequisites(app, id)
+  );
+  ipcMain.handle("webs.webapps.getRuntimeSettings", async () => ({
+    ok: true,
+    settings: readWebappRuntimeSettings(app),
+    message: "WebApp runtime settings loaded."
+  }));
+  ipcMain.handle("webs.webapps.saveRuntimeSettings", async (_event: any, input: any) => {
+    const settings = writeWebappRuntimeSettings(app, input && typeof input === "object" ? input : {});
+    resetWebappRuntimeProbeCaches();
+    return {
+      ok: true,
+      settings,
+      message: "WebApp runtime settings saved."
     };
   });
   ipcMain.handle("webs.webapps.getPublishInfo", async (_event: any, id: string) =>

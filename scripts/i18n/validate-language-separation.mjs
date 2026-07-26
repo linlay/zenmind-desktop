@@ -13,6 +13,7 @@ const allowedLatinTerms = [
   /Desktop/g,
   /Application Support/g,
   /Node\.js/g,
+  /Java/g,
   /macOS/g,
   /MacBook/g,
   /Windows/g,

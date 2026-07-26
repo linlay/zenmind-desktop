@@ -283,6 +283,7 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "web.website.update": "desktop.web.website.update",
   "web.website.remove": "desktop.web.website.remove",
   "web.webapp.getStatus": "desktop.web.webapp.getStatus",
+  "web.webapp.checkPrerequisites": "desktop.web.webapp.checkPrerequisites",
   "web.webapp.start": "desktop.web.webapp.start",
   "web.webapp.stop": "desktop.web.webapp.stop",
   "web.webapp.restart": "desktop.web.webapp.restart",

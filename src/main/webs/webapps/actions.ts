@@ -3,6 +3,11 @@ import type { App } from "electron";
 import type { WebappDeleteResult, WebappEntry, WebappResult, WebappUpdateInput } from "../../../shared/contracts";
 import { t } from "../../i18n/main-i18n";
 import { removeInstalledRecord } from "../../marketplace/common";
+import {
+  getDesktopWebappDataRoot,
+  getDesktopWebappLogsRoot,
+  getDesktopWebappStateRoot
+} from "../../user-paths";
 import { isRecord, readString } from "../common";
 import { getWebappDir, readWebappItems, writeWebappPreferenceFields } from "./store";
 import { webappRuntime } from "./runtime";
@@ -95,6 +100,9 @@ export async function removeWebappItem(app: App, id: string): Promise<WebappDele
     }
     await webappRuntime.stop(app, target.id, t("webapp.deleted", { label: target.label })).catch(() => undefined);
     fs.rmSync(target.installPath || getWebappDir(app, target.id), { recursive: true, force: true });
+    fs.rmSync(getDesktopWebappDataRoot(app, target.id), { recursive: true, force: true });
+    fs.rmSync(getDesktopWebappStateRoot(app, target.id), { recursive: true, force: true });
+    fs.rmSync(getDesktopWebappLogsRoot(app, target.id), { recursive: true, force: true });
     if (target.sourceKind === "market") {
       removeInstalledRecord(app, target.id, "website-app");
     }

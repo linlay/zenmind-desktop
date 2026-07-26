@@ -159,6 +159,7 @@ import {
   createResourceDirectoryWatcher,
   type ResourceDirectoryWatcher
 } from "../resource-directory-watcher";
+import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
 
 export function createMainProcessRuntime() {
   const appState = createMainAppState();
@@ -949,6 +950,9 @@ export function createMainProcessRuntime() {
     }
     nonCoreDesktopRuntimeStarted = true;
 
+    runNonCoreStartupTask("webapp install recovery", () => {
+      recoverWebappInstallTransactions(app);
+    });
     runNonCoreStartupTask("desktop pet", () => {
       if (isDesktopPetSupportedPlatform(mainProcessContext.platform) && appState.desktopPetSettings?.enabled === true) {
         showDesktopPetWindow();

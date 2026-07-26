@@ -116,6 +116,7 @@ function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "data", "webs"));
   ensureDirectory(path.join(dataRoot, "data", "webs", "websites"));
   ensureDirectory(path.join(dataRoot, "data", "webs", "webapps"));
+  ensureDirectory(path.join(dataRoot, "data", "webs", "webapp-data"));
   ensureDirectory(path.join(dataRoot, "data", "env-initial"));
   ensureDirectory(path.join(dataRoot, "state", "desktop"));
   ensureDirectory(path.join(dataRoot, "state", "services"));
@@ -204,6 +205,28 @@ export function getDesktopWebsitesDataRoot(app: App, platform: NodeJS.Platform =
 
 export function getDesktopWebappsDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDesktopWebsDataRoot(app, platform), "webapps");
+}
+
+export function getDesktopWebappDataRoot(
+  app: App,
+  webappId: string,
+  platform: NodeJS.Platform = process.platform
+) {
+  return path.join(getDesktopWebsDataRoot(app, platform), "webapp-data", webappId);
+}
+
+export function getDesktopWebappInstallStagingRoot(
+  app: App,
+  platform: NodeJS.Platform = process.platform
+) {
+  return path.join(getDesktopWebsDataRoot(app, platform), ".staging");
+}
+
+export function getDesktopWebappInstallBackupRoot(
+  app: App,
+  platform: NodeJS.Platform = process.platform
+) {
+  return path.join(getDesktopWebsDataRoot(app, platform), ".backup");
 }
 
 export function getDesktopWebsConfigRoot(app: App, platform: NodeJS.Platform = process.platform) {

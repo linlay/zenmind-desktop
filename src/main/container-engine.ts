@@ -25,6 +25,7 @@ type ContainerEnginePathOptions = {
 
 type ContainerEngineResolveOptions = ContainerEnginePathOptions & {
   timeoutMs?: number;
+  preferredName?: ContainerEngineName;
 };
 
 function splitPathList(value: string | undefined) {
@@ -163,7 +164,10 @@ export function resolveContainerEngine(options: ContainerEngineResolveOptions = 
   const env = buildContainerEngineEnv(options);
   const timeoutMs = options.timeoutMs ?? 5_000;
 
-  for (const name of CONTAINER_ENGINES) {
+  const engineNames = options.preferredName
+    ? [options.preferredName]
+    : CONTAINER_ENGINES;
+  for (const name of engineNames) {
     const command = resolveCommandPath(name, env, platform);
     if (!command) {
       continue;

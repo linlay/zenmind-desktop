@@ -88,6 +88,7 @@ export const DESKTOP_WS_RESERVED_REQUEST_TYPES = [
   "web.website.update",
   "web.website.remove",
   "web.webapp.getStatus",
+  "web.webapp.checkPrerequisites",
   "web.webapp.start",
   "web.webapp.stop",
   "web.webapp.restart",

@@ -2,25 +2,100 @@ import type { ServiceLogReadOptions, ServiceLogReadResult } from "./services";
 
 export type WebKind = "website" | "webapp";
 export type WebEntryKey = `website:${string}` | `webapp:${string}`;
-export type WebappRuntimeStatus = "stopped" | "starting" | "running" | "error";
+export type WebappRuntimeStatus = "stopped" | "starting" | "running" | "blocked" | "error";
 export type WebappLogTarget = "main" | "error";
 export type WebappSourceKind = "market" | "local" | "plugin" | "bundled";
+export type WebappLauncherKind = "none" | "node" | "native" | "java" | "container";
+export type WebappBackendOwnership = "desktop" | "external";
+export type WebappTarget =
+  | "universal"
+  | "darwin-arm64"
+  | "darwin-x64"
+  | "windows-arm64"
+  | "windows-x64";
+export type WebappContainerEngine = "auto" | "docker" | "podman";
 
-export interface WebappFrontendConfig {
+export interface WebappRuntimeSettings {
+  schemaVersion: 1;
+  javaExecutable: string;
+  containerEngine: WebappContainerEngine;
+}
+
+export interface WebappRuntimeSettingsInput {
+  javaExecutable?: string;
+  containerEngine?: WebappContainerEngine;
+}
+
+export interface WebappRuntimeSettingsResult {
+  ok: boolean;
+  settings: WebappRuntimeSettings;
+  message: string;
+}
+
+export interface WebappStaticFrontendConfig {
+  mode: "static";
   root: string;
   index: string;
   spa: boolean;
   apiPrefix: string;
 }
 
-export interface WebappBackendConfig {
-  runtime: "node";
+export interface WebappProxyFrontendConfig {
+  mode: "proxy";
+}
+
+export type WebappFrontendConfig = WebappStaticFrontendConfig | WebappProxyFrontendConfig;
+
+export interface WebappHttpHealthConfig {
+  type: "http";
+  path: string;
+  timeoutMs: number;
+}
+
+export interface WebappTcpHealthConfig {
+  type: "tcp";
+  timeoutMs: number;
+}
+
+export type WebappHealthConfig = WebappHttpHealthConfig | WebappTcpHealthConfig;
+
+export interface WebappManagedBackendBase {
   entry: string;
   args: string[];
   env: Record<string, string>;
   port: number;
-  healthPath: string;
+  health: WebappHealthConfig;
 }
+
+export interface WebappNodeBackendConfig extends WebappManagedBackendBase {
+  launcher: "node";
+  runtime: "node";
+}
+
+export interface WebappNativeBackendConfig extends WebappManagedBackendBase {
+  launcher: "native";
+}
+
+export interface WebappJavaBackendConfig extends WebappManagedBackendBase {
+  launcher: "java";
+  jvmArgs: string[];
+}
+
+export interface WebappContainerBackendConfig {
+  launcher: "container";
+  management: "external";
+  engine: WebappContainerEngine;
+  containerName: string;
+  image: string;
+  containerPort: number;
+  health: WebappHealthConfig;
+}
+
+export type WebappBackendConfig =
+  | WebappNodeBackendConfig
+  | WebappNativeBackendConfig
+  | WebappJavaBackendConfig
+  | WebappContainerBackendConfig;
 
 export interface WebEntryBase {
   id: string;
@@ -41,6 +116,9 @@ export interface WebsiteEntry extends WebEntryBase {
 export interface WebappEntry extends WebEntryBase {
   kind: "webapp";
   entryKey: `webapp:${string}`;
+  schemaVersion: 2 | 3 | 4;
+  version: string;
+  target: WebappTarget;
   frontend: WebappFrontendConfig;
   backend?: WebappBackendConfig;
   sourceKind?: WebappSourceKind;
@@ -52,11 +130,25 @@ export interface WebappEntry extends WebEntryBase {
 
 export type WebEntry = WebsiteEntry | WebappEntry;
 
+export interface WebappPrerequisiteIssue {
+  code: string;
+  message: string;
+  required?: string;
+  detected?: string;
+}
+
 export interface WebappRuntimeState {
   id: string;
   entryKey: `webapp:${string}`;
   kind: "webapp";
   status: WebappRuntimeStatus;
+  version: string;
+  target: WebappTarget;
+  launcher: WebappLauncherKind;
+  ownership: WebappBackendOwnership | null;
+  runtimeVersion: string;
+  externalId: string;
+  prerequisiteIssues: WebappPrerequisiteIssue[];
   webUrl: string;
   backendUrl: string;
   frontendPort: number | null;
@@ -177,6 +269,18 @@ export interface WebappDeleteResult {
 export interface WebappStatusResult {
   ok: boolean;
   state: WebappRuntimeState | null;
+  message: string;
+}
+
+export interface WebappPrerequisiteResult {
+  ok: boolean;
+  launcher: WebappLauncherKind;
+  ownership: WebappBackendOwnership | null;
+  runtimeVersion: string;
+  externalId: string;
+  backendUrl: string;
+  backendPort: number | null;
+  issues: WebappPrerequisiteIssue[];
   message: string;
 }
 

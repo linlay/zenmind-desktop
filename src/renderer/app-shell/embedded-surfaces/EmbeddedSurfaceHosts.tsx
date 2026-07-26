@@ -32,7 +32,7 @@ type EmbeddedSidebarItem = {
   label: string;
   url: string;
   chrome?: "browser" | "app";
-  runtimeStatus?: "idle" | "starting" | "running" | "error";
+  runtimeStatus?: "idle" | "starting" | "running" | "blocked" | "error";
   runtimeMessage?: string;
 };
 

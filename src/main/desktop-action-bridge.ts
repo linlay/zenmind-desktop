@@ -96,6 +96,7 @@ import { t } from "./i18n/main-i18n";
 import { getConfiguredDesktopActionBridgePort } from "./desktop-action-bridge-settings";
 import { getAssistantSettings } from "./assistant/core/settings-store";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
+import { authorizeWebappActionToken } from "./webs/webapps/action-tokens";
 
 type DesktopActionBridgeOptions = {
   app: App;
@@ -1229,6 +1230,9 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   if (action === "desktop.web.webapp.getStatus") {
     return ok(action, webappRuntime.getStatus(options.app, readWebappId(args)));
   }
+  if (action === "desktop.web.webapp.checkPrerequisites") {
+    return ok(action, webappRuntime.checkPrerequisites(options.app, readWebappId(args)));
+  }
   if (action === "desktop.web.webapp.start") {
     return ok(action, await webappRuntime.start(options.app, readWebappId(args)));
   }
@@ -1771,6 +1775,13 @@ function hasJsonContentType(req: http.IncomingMessage) {
   return contentType.split(";")[0].trim() === "application/json";
 }
 
+function readBearerToken(req: http.IncomingMessage) {
+  const authorization = String(req.headers.authorization || "").trim();
+  return authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice("bearer ".length).trim()
+    : "";
+}
+
 export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
   const bridgePort = getConfiguredDesktopActionBridgePort(options.app);
   if (activeServer) {
@@ -1811,6 +1822,31 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
         const body = await readBody(req);
         const parsed = JSON.parse(body) as DesktopActionCallRequest;
         const response = await handleActionCall(options, parsed);
+        writeJSON(res, response.ok ? 200 : 400, response);
+      } catch (error) {
+        writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
+      }
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/webapps/actions/call") {
+      if (!hasJsonContentType(req)) {
+        writeJSON(res, 415, fail("unknown", "unsupported_media_type", "Content-Type must be application/json."));
+        return;
+      }
+      try {
+        const body = await readBody(req);
+        const parsed = JSON.parse(body) as DesktopActionCallRequest;
+        const authorization = authorizeWebappActionToken(readBearerToken(req), parsed.action);
+        if (!authorization.ok) {
+          writeJSON(res, 403, fail(parsed.action || "unknown", "forbidden", "WebApp action token is missing, expired, or not authorized for this action."));
+          return;
+        }
+        const response = await handleActionCall(options, {
+          ...parsed,
+          source: {
+            webappId: authorization.webappId
+          }
+        });
         writeJSON(res, response.ok ? 200 : 400, response);
       } catch (error) {
         writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));

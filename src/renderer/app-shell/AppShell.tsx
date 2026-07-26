@@ -83,7 +83,7 @@ import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
 type WebappRuntimeViewState = {
-  status: "idle" | "starting" | "running" | "error";
+  status: "idle" | "starting" | "running" | "blocked" | "error";
   webUrl: string;
   message: string;
   state: WebappRuntimeState | null;

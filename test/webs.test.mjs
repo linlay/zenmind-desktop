@@ -15,6 +15,7 @@ const {
   writeWebsiteItems
 } = require("../dist-electron/main/webs/websites/store.js");
 const {
+  readWebappItemFromDir,
   readWebappItems
 } = require("../dist-electron/main/webs/webapps/store.js");
 const {
@@ -33,6 +34,25 @@ const {
 const {
   webappRuntime
 } = require("../dist-electron/main/webs/webapps/runtime.js");
+const {
+  __actionTokenTestInternals,
+  authorizeWebappActionToken,
+  issueWebappActionToken,
+  revokeWebappActionToken
+} = require("../dist-electron/main/webs/webapps/action-tokens.js");
+const {
+  activateWebappInstall,
+  commitWebappInstall,
+  recoverWebappInstallTransactions,
+  rollbackWebappInstall
+} = require("../dist-electron/main/webs/webapps/install-transaction.js");
+const {
+  __launcherTestInternals,
+  resetWebappRuntimeProbeCaches
+} = require("../dist-electron/main/webs/webapps/launchers.js");
+const {
+  writeWebappRuntimeSettings
+} = require("../dist-electron/main/webs/webapps/runtime-settings.js");
 const {
   createDesktopMobileWebappCatalog
 } = require("../dist-electron/main/webs/webapps/mobile-catalog.js");
@@ -136,13 +156,28 @@ function writeWebapp(root, id, options = {}) {
   if (!options.frontendOnly) {
     fs.mkdirSync(path.join(appDir, "backend"), { recursive: true });
     fs.writeFileSync(path.join(appDir, "backend", "server.mjs"), `
+import { createHash } from "node:crypto";
 import http from "node:http";
 const host = process.env.HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.PORT || "0", 10);
 const server = http.createServer((req, res) => {
+  if (req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end("<!doctype html><div>backend proxy page</div>");
+    return;
+  }
   if (req.url === "/api/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  if (req.url === "/api/events") {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache"
+    });
+    res.write("data: first\\n\\n");
+    setTimeout(() => res.end("data: second\\n\\n"), 10);
     return;
   }
   if (req.url === "/api/demo") {
@@ -153,40 +188,150 @@ const server = http.createServer((req, res) => {
       root: process.env.WEBAPP_ROOT,
       stateDir: process.env.WEBAPP_STATE_DIR,
       logDir: process.env.WEBAPP_LOG_DIR,
-      desktopActionBridgeUrl: process.env.DESKTOP_ACTION_BRIDGE_URL
+      dataDir: process.env.WEBAPP_DATA_DIR,
+      desktopActionBridgeUrl: process.env.DESKTOP_ACTION_BRIDGE_URL,
+      desktopActionBridgeToken: process.env.DESKTOP_ACTION_BRIDGE_TOKEN || ""
     }));
     return;
   }
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ ok: false }));
 });
+server.on("upgrade", (req, socket) => {
+  if (req.url !== "/api/socket" || !req.headers["sec-websocket-key"]) {
+    socket.end("HTTP/1.1 404 Not Found\\r\\nConnection: close\\r\\n\\r\\n");
+    return;
+  }
+  const accept = createHash("sha1")
+    .update(String(req.headers["sec-websocket-key"]) + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    .digest("base64");
+  socket.write([
+    "HTTP/1.1 101 Switching Protocols",
+    "Upgrade: websocket",
+    "Connection: Upgrade",
+    "Sec-WebSocket-Accept: " + accept,
+    "",
+    ""
+  ].join("\\r\\n"));
+  const payload = Buffer.from("gateway-websocket", "utf8");
+  socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]));
+});
 server.listen(port, host);
 `, "utf8");
   }
+  const schemaVersion = options.schemaVersion ?? 1;
   writeJson(path.join(appDir, "webapp.json"), {
-    schemaVersion: 1,
+    schemaVersion,
     id,
     kind: "webapp",
+    ...(schemaVersion === 4 ? {
+      version: options.version ?? "1.0.0",
+      target: options.target ?? "universal"
+    } : {}),
     label: options.label ?? "Local Demo",
     agentKey: options.agentKey,
     frontend: {
+      ...(schemaVersion === 4 ? { mode: "static" } : {}),
       root: options.frontendRoot ?? "frontend",
       index: options.frontendIndex ?? "index.html",
       spa: true,
       apiPrefix: "/api"
     },
     ...(!options.frontendOnly ? { backend: {
-      runtime: options.runtime ?? "node",
+      ...(schemaVersion === 4
+        ? { launcher: "node" }
+        : { runtime: options.runtime ?? "node" }),
       entry: options.entry ?? "backend/server.mjs",
       args: [],
       env: {},
       port: 0,
-      healthPath: "/api/health"
+      ...(schemaVersion === 4
+        ? { health: { type: "http", path: "/api/health", timeoutMs: 10_000 } }
+        : { healthPath: "/api/health" })
     } } : {}),
     createdAt: options.createdAt ?? "2026-01-02T00:00:00.000Z",
     updatedAt: options.updatedAt ?? "2026-01-02T00:00:00.000Z"
   });
   return appDir;
+}
+
+function writeV4BackendWebapp(root, id, launcher, options = {}) {
+  const appDir = path.join(root, id);
+  fs.mkdirSync(appDir, { recursive: true });
+  let backend;
+  if (launcher === "container") {
+    backend = {
+      launcher,
+      management: "external",
+      engine: options.engine ?? "auto",
+      containerName: `${id}-container`,
+      image: `${id}:1.0.0`,
+      containerPort: 8080,
+      health: { type: "http", path: "/health", timeoutMs: 10_000 }
+    };
+  } else {
+    const extension = launcher === "java"
+      ? ".jar"
+      : launcher === "native" && process.platform === "win32"
+        ? ".exe"
+        : "";
+    const entry = `backend/server${extension}`;
+    fs.mkdirSync(path.join(appDir, "backend"), { recursive: true });
+    fs.writeFileSync(path.join(appDir, entry), launcher === "java" ? "jar-placeholder" : "binary-placeholder", "utf8");
+    backend = {
+      launcher,
+      entry,
+      args: [],
+      env: {},
+      port: 0,
+      health: { type: "tcp", timeoutMs: 10_000 },
+      ...(launcher === "java" ? { jvmArgs: ["-Xmx256m"] } : {})
+    };
+  }
+  writeJson(path.join(appDir, "webapp.json"), {
+    schemaVersion: 4,
+    id,
+    kind: "webapp",
+    version: "1.0.0",
+    target: "universal",
+    label: id,
+    frontend: { mode: "proxy" },
+    backend
+  });
+  return appDir;
+}
+
+function writeFakeJava(root, major) {
+  const executable = path.join(root, `java-${major}`);
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, [
+    "#!/bin/sh",
+    `printf '    java.specification.version = ${major}\\n' >&2`,
+    `printf '    java.version = ${major}.0.1\\n' >&2`,
+    `printf '    java.home = /fake/java-${major}\\n' >&2`,
+    ""
+  ].join("\n"), "utf8");
+  fs.chmodSync(executable, 0o755);
+  return executable;
+}
+
+function writeFakeDocker(root) {
+  const executable = path.join(root, "docker");
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(executable, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"info\" ]; then exit 0; fi",
+    "if [ \"$1\" = \"image\" ] && [ \"$2\" = \"inspect\" ]; then printf 'sha256:expected-image\\n'; exit 0; fi",
+    "if [ \"$1\" = \"container\" ] && [ \"$2\" = \"inspect\" ]; then",
+    "  host_ip=\"${FAKE_DOCKER_HOST_IP:-127.0.0.1}\"",
+    "  printf '[{\"State\":{\"Running\":true},\"Image\":\"sha256:expected-image\",\"NetworkSettings\":{\"Ports\":{\"8080/tcp\":[{\"HostIp\":\"%s\",\"HostPort\":\"49123\"}]}}}]\\n' \"$host_ip\"",
+    "  exit 0",
+    "fi",
+    "exit 1",
+    ""
+  ].join("\n"), "utf8");
+  fs.chmodSync(executable, 0o755);
+  return executable;
 }
 
 async function writeWebappArchive(root, options = {}) {
@@ -291,6 +436,26 @@ function postUrl(target, body, headers = {}) {
     });
     request.on("error", reject);
     request.end(body);
+  });
+}
+
+function readWebSocketMessage(target) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(target);
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error("WebSocket message timed out"));
+    }, 3_000);
+    socket.addEventListener("message", (event) => {
+      clearTimeout(timer);
+      const value = typeof event.data === "string" ? event.data : String(event.data);
+      socket.close();
+      resolve(value);
+    }, { once: true });
+    socket.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error("WebSocket proxy failed"));
+    }, { once: true });
   });
 }
 
@@ -457,6 +622,106 @@ test("webapp store rejects unsafe manifests", (t) => {
   assert.equal(warnings.length, 3);
 });
 
+test("schema v4 normalizes static, Node, native, Java, and external container packages", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapps-v4-store-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const packageRoot = webappsRoot(homePath);
+
+  writeWebapp(packageRoot, "v4-static", {
+    schemaVersion: 4,
+    version: "2.1.0",
+    frontendOnly: true
+  });
+  const nodeDir = writeWebapp(packageRoot, "v4-node", { schemaVersion: 4 });
+  const nodeManifest = JSON.parse(fs.readFileSync(path.join(nodeDir, "webapp.json"), "utf8"));
+  writeJson(path.join(nodeDir, "webapp.json"), {
+    ...nodeManifest,
+    frontend: { mode: "proxy" }
+  });
+  writeV4BackendWebapp(packageRoot, "v4-native", "native");
+  writeV4BackendWebapp(packageRoot, "v4-java", "java");
+  writeV4BackendWebapp(packageRoot, "v4-container", "container");
+
+  const items = Object.fromEntries(readWebappItems(app).map((item) => [item.id, item]));
+  assert.equal(items["v4-static"].schemaVersion, 4);
+  assert.equal(items["v4-static"].version, "2.1.0");
+  assert.equal(items["v4-static"].target, "universal");
+  assert.equal(items["v4-static"].frontend.mode, "static");
+  assert.equal(items["v4-static"].backend, undefined);
+  assert.equal(items["v4-node"].frontend.mode, "proxy");
+  assert.equal(items["v4-node"].backend.launcher, "node");
+  assert.equal(items["v4-native"].backend.launcher, "native");
+  assert.equal(items["v4-java"].backend.launcher, "java");
+  assert.deepEqual(items["v4-java"].backend.jvmArgs, ["-Xmx256m"]);
+  assert.equal(items["v4-container"].backend.launcher, "container");
+  assert.equal(items["v4-container"].backend.management, "external");
+
+  const updated = updateWebappItem(app, "v4-java", { label: "Java Updated" });
+  assert.equal(updated.ok, true);
+  const updatedManifest = JSON.parse(fs.readFileSync(webappManifestPath(homePath, "v4-java"), "utf8"));
+  assert.equal(updatedManifest.schemaVersion, 4);
+  assert.equal(updatedManifest.backend.launcher, "java");
+  assert.deepEqual(updatedManifest.backend.jvmArgs, ["-Xmx256m"]);
+});
+
+test("schema v4 rejects incompatible targets and invalid launcher combinations", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapps-v4-invalid-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const packageRoot = path.join(root, "packages");
+
+  const targetDir = writeWebapp(packageRoot, "bad-target", { schemaVersion: 4, frontendOnly: true });
+  const targetManifest = JSON.parse(fs.readFileSync(path.join(targetDir, "webapp.json"), "utf8"));
+  writeJson(path.join(targetDir, "webapp.json"), {
+    ...targetManifest,
+    target: process.platform === "darwin" ? "windows-x64" : "darwin-x64"
+  });
+  assert.throws(
+    () => readWebappItemFromDir(targetDir),
+    /not compatible/u
+  );
+
+  const containerDir = writeV4BackendWebapp(packageRoot, "bad-container", "container");
+  const containerManifest = JSON.parse(fs.readFileSync(path.join(containerDir, "webapp.json"), "utf8"));
+  writeJson(path.join(containerDir, "webapp.json"), {
+    ...containerManifest,
+    backend: {
+      ...containerManifest.backend,
+      env: { SHOULD_NOT_EXIST: "1" }
+    }
+  });
+  assert.throws(
+    () => readWebappItemFromDir(containerDir),
+    /not allowed for an external container/u
+  );
+
+  const proxyDir = writeWebapp(packageRoot, "bad-proxy", { schemaVersion: 4, frontendOnly: true });
+  const proxyManifest = JSON.parse(fs.readFileSync(path.join(proxyDir, "webapp.json"), "utf8"));
+  writeJson(path.join(proxyDir, "webapp.json"), {
+    ...proxyManifest,
+    frontend: { mode: "proxy" }
+  });
+  assert.throws(
+    () => readWebappItemFromDir(proxyDir),
+    /requires a backend/u
+  );
+
+  const javaDir = writeV4BackendWebapp(packageRoot, "bad-java-args", "java");
+  const javaManifest = JSON.parse(fs.readFileSync(path.join(javaDir, "webapp.json"), "utf8"));
+  writeJson(path.join(javaDir, "webapp.json"), {
+    ...javaManifest,
+    backend: {
+      ...javaManifest.backend,
+      jvmArgs: ["-jar", "backend/other.jar"]
+    }
+  });
+  assert.throws(
+    () => readWebappItemFromDir(javaDir),
+    /JVM options only/u
+  );
+});
+
 test("webapp items include source management metadata", (t) => {
   registryInternals.clearServices();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapps-metadata-"));
@@ -555,6 +820,13 @@ test("webapps remove deletes removable installs and rejects managed sources", as
   const app = createApp(homePath);
 
   const localDir = writeWebapp(webappsRoot(homePath), "local-remove", { label: "Local Remove" });
+  const localDataDir = path.join(desktopRoot(homePath), "data", "webs", "webapp-data", "local-remove");
+  const localStateDir = path.join(desktopRoot(homePath), "state", "webs", "webapps", "local-remove");
+  const localLogDir = path.join(desktopRoot(homePath), "logs", "webs", "webapps", "local-remove");
+  for (const directory of [localDataDir, localStateDir, localLogDir]) {
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, "marker.txt"), "remove-me", "utf8");
+  }
   const marketDir = writeWebapp(webappsRoot(homePath), "market-remove", { label: "Market Remove" });
   const pluginDir = writeWebapp(webappsRoot(homePath), "plugin-managed", { label: "Plugin Managed" });
   const bundledDir = writeWebapp(webappsRoot(homePath), "demo-node-html", { label: "Bundled Demo" });
@@ -571,6 +843,9 @@ test("webapps remove deletes removable installs and rejects managed sources", as
   const localResult = await removeWebappItem(app, "local-remove");
   assert.equal(localResult.ok, true);
   assert.equal(fs.existsSync(localDir), false);
+  assert.equal(fs.existsSync(localDataDir), false);
+  assert.equal(fs.existsSync(localStateDir), false);
+  assert.equal(fs.existsSync(localLogDir), false);
 
   const marketResult = await removeWebappItem(app, "market-remove");
   assert.equal(marketResult.ok, true);
@@ -684,6 +959,190 @@ test("webapp ipc import installs local archive and returns refreshed web entries
     "website:docs",
     "webapp:reg-report-excelx-webapp"
   ]);
+});
+
+test("webapp IPC exposes prerequisite checks and persistent runtime settings", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-runtime-settings-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeWebapp(webappsRoot(homePath), "static-settings", {
+    schemaVersion: 4,
+    frontendOnly: true
+  });
+  const ipcMain = createIpcMain();
+  registerWebIpcHandlers(ipcMain, {
+    app,
+    showFileDialog: async () => ({ canceled: true, filePaths: [] }),
+    showSaveDialog: async () => ({ canceled: true, filePath: "" }),
+    getDataRoot: () => desktopRoot(homePath)
+  });
+
+  const initial = await ipcMain.invoke("webs.webapps.getRuntimeSettings");
+  assert.equal(initial.ok, true);
+  assert.deepEqual(initial.settings, {
+    schemaVersion: 1,
+    javaExecutable: "",
+    containerEngine: "auto"
+  });
+
+  const javaExecutable = path.join(root, "runtime", "bin", process.platform === "win32" ? "java.exe" : "java");
+  const saved = await ipcMain.invoke("webs.webapps.saveRuntimeSettings", {
+    javaExecutable: ` ${javaExecutable} `,
+    containerEngine: "podman"
+  });
+  assert.equal(saved.ok, true);
+  assert.deepEqual(saved.settings, {
+    schemaVersion: 1,
+    javaExecutable,
+    containerEngine: "podman"
+  });
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(desktopRoot(homePath), "config", "webs", "runtime.json"), "utf8")),
+    saved.settings
+  );
+
+  const prerequisites = await ipcMain.invoke("webs.webapps.checkPrerequisites", "static-settings");
+  assert.equal(prerequisites.ok, true);
+  assert.equal(prerequisites.launcher, "none");
+  assert.equal(prerequisites.ownership, null);
+});
+
+test("Java prerequisites block Java 17 and accept Java 21 from the configured executable", {
+  skip: process.platform === "win32"
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-java-prerequisites-"));
+  t.after(() => {
+    resetWebappRuntimeProbeCaches();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeV4BackendWebapp(webappsRoot(homePath), "java-runtime", "java");
+
+  const java17 = writeFakeJava(path.join(root, "fake-java"), 17);
+  writeWebappRuntimeSettings(app, {
+    javaExecutable: java17,
+    containerEngine: "auto"
+  });
+  resetWebappRuntimeProbeCaches();
+  const blocked = webappRuntime.checkPrerequisites(app, "java-runtime");
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.launcher, "java");
+  assert.equal(blocked.runtimeVersion, "17.0.1");
+  assert.equal(blocked.externalId, java17);
+  assert.equal(blocked.issues[0]?.code, "java_version_unsupported");
+
+  const java21 = writeFakeJava(path.join(root, "fake-java"), 21);
+  writeWebappRuntimeSettings(app, {
+    javaExecutable: java21,
+    containerEngine: "auto"
+  });
+  resetWebappRuntimeProbeCaches();
+  const ready = webappRuntime.checkPrerequisites(app, "java-runtime");
+  assert.equal(ready.ok, true);
+  assert.equal(ready.runtimeVersion, "21.0.1");
+  assert.equal(ready.externalId, java21);
+});
+
+test("external container prerequisites attach to a pre-running loopback container and reject public bindings", {
+  skip: process.platform === "win32"
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-container-prerequisites-"));
+  const previousEnginePaths = process.env.DESKTOP_CONTAINER_ENGINE_PATHS;
+  const previousHostIp = process.env.FAKE_DOCKER_HOST_IP;
+  t.after(() => {
+    if (previousEnginePaths === undefined) {
+      delete process.env.DESKTOP_CONTAINER_ENGINE_PATHS;
+    } else {
+      process.env.DESKTOP_CONTAINER_ENGINE_PATHS = previousEnginePaths;
+    }
+    if (previousHostIp === undefined) {
+      delete process.env.FAKE_DOCKER_HOST_IP;
+    } else {
+      process.env.FAKE_DOCKER_HOST_IP = previousHostIp;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeV4BackendWebapp(webappsRoot(homePath), "container-runtime", "container", { engine: "docker" });
+  const item = readWebappItems(app).find((candidate) => candidate.id === "container-runtime");
+  assert.equal(item?.backend?.launcher, "container");
+  const fakeBin = path.join(root, "fake-bin");
+  writeFakeDocker(fakeBin);
+  process.env.DESKTOP_CONTAINER_ENGINE_PATHS = fakeBin;
+  process.env.FAKE_DOCKER_HOST_IP = "127.0.0.1";
+
+  const ready = __launcherTestInternals.inspectExternalContainer(app, item.backend);
+  assert.equal(ready.ok, true);
+  assert.equal(ready.ownership, "external");
+  assert.equal(ready.backendUrl, "http://127.0.0.1:49123");
+  assert.equal(ready.externalId, "container-runtime-container");
+
+  process.env.FAKE_DOCKER_HOST_IP = "::1";
+  const ipv6Ready = __launcherTestInternals.inspectExternalContainer(app, item.backend);
+  assert.equal(ipv6Ready.ok, true);
+  assert.equal(ipv6Ready.backendUrl, "http://[::1]:49123");
+
+  process.env.FAKE_DOCKER_HOST_IP = "0.0.0.0";
+  const exposed = __launcherTestInternals.inspectExternalContainer(app, item.backend);
+  assert.equal(exposed.ok, false);
+  assert.equal(exposed.issues[0]?.code, "container_port_exposed");
+});
+
+test("WebApp install transactions rollback, commit, and recover without version directories", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-transaction-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const installPath = path.join(webappsRoot(homePath), "transaction-demo");
+  const stagingRoot = path.join(desktopRoot(homePath), "data", "webs", ".staging");
+  fs.mkdirSync(installPath, { recursive: true });
+  fs.writeFileSync(path.join(installPath, "marker.txt"), "old", "utf8");
+
+  const rollbackStaging = path.join(stagingRoot, "transaction-demo-rollback");
+  fs.mkdirSync(rollbackStaging, { recursive: true });
+  fs.writeFileSync(path.join(rollbackStaging, "marker.txt"), "new-rollback", "utf8");
+  const rollbackTransaction = activateWebappInstall({
+    app,
+    id: "transaction-demo",
+    installPath,
+    stagingPath: rollbackStaging
+  });
+  assert.equal(fs.readFileSync(path.join(installPath, "marker.txt"), "utf8"), "new-rollback");
+  assert.equal(fs.existsSync(rollbackTransaction.backupPath), true);
+  rollbackWebappInstall(app, rollbackTransaction);
+  assert.equal(fs.readFileSync(path.join(installPath, "marker.txt"), "utf8"), "old");
+  assert.equal(fs.existsSync(rollbackTransaction.backupPath), false);
+
+  const commitStaging = path.join(stagingRoot, "transaction-demo-commit");
+  fs.mkdirSync(commitStaging, { recursive: true });
+  fs.writeFileSync(path.join(commitStaging, "marker.txt"), "new-commit", "utf8");
+  const commitTransaction = activateWebappInstall({
+    app,
+    id: "transaction-demo",
+    installPath,
+    stagingPath: commitStaging
+  });
+  commitWebappInstall(app, commitTransaction);
+  assert.equal(fs.readFileSync(path.join(installPath, "marker.txt"), "utf8"), "new-commit");
+  assert.equal(fs.existsSync(commitTransaction.backupPath), false);
+
+  const recoveryStaging = path.join(stagingRoot, "transaction-demo-recovery");
+  fs.mkdirSync(recoveryStaging, { recursive: true });
+  fs.writeFileSync(path.join(recoveryStaging, "marker.txt"), "interrupted-new", "utf8");
+  const recoveryTransaction = activateWebappInstall({
+    app,
+    id: "transaction-demo",
+    installPath,
+    stagingPath: recoveryStaging
+  });
+  fs.rmSync(installPath, { recursive: true, force: true });
+  assert.deepEqual(recoverWebappInstallTransactions(app), ["transaction-demo"]);
+  assert.equal(fs.readFileSync(path.join(installPath, "marker.txt"), "utf8"), "new-commit");
+  assert.equal(fs.existsSync(recoveryTransaction.backupPath), false);
+  assert.equal(fs.existsSync(path.join(installPath, "versions")), false);
 });
 
 test("webapp publisher reports Tunnel readiness without exposing the SSO site token", async (t) => {
@@ -950,6 +1409,15 @@ test("webapp runtime starts frontend, proxies api, writes logs, and stops", asyn
   assert.match(body.logDir, /logs[\\/]webs[\\/]webapps[\\/]runtime-demo/u);
   assert.equal(body.desktopActionBridgeUrl, "http://127.0.0.1:11788");
 
+  const events = await readUrl(new URL("/api/events", result.state.webUrl).toString());
+  assert.equal(events.statusCode, 200);
+  assert.match(events.contentType, /^text\/event-stream/u);
+  assert.equal(events.body, "data: first\n\ndata: second\n\n");
+
+  const socketUrl = new URL("/api/socket", result.state.webUrl);
+  socketUrl.protocol = "ws:";
+  assert.equal(await readWebSocketMessage(socketUrl.toString()), "gateway-websocket");
+
   const logResult = webappRuntime.readLog(app, "runtime-demo", "main");
   assert.equal(logResult.ok, true);
   assert.equal(logResult.exists, true);
@@ -957,6 +1425,91 @@ test("webapp runtime starts frontend, proxies api, writes logs, and stops", asyn
   const stopResult = await webappRuntime.stop(app, "runtime-demo");
   assert.equal(stopResult.ok, true);
   assert.equal(stopResult.state?.status, "stopped");
+});
+
+test("schema v4 Node runtime uses scoped startup credentials and revokes them on stop", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-v4-runtime-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  __actionTokenTestInternals.clear();
+  t.after(async () => {
+    await webappRuntime.stopAll(app);
+    __actionTokenTestInternals.clear();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  writeWebapp(webappsRoot(homePath), "runtime-v4", {
+    schemaVersion: 4,
+    version: "4.2.0"
+  });
+
+  const result = await webappRuntime.start(app, "runtime-v4");
+  assert.equal(result.ok, true);
+  assert.equal(result.state?.version, "4.2.0");
+  assert.equal(result.state?.target, "universal");
+  assert.equal(result.state?.launcher, "node");
+  assert.equal(result.state?.ownership, "desktop");
+  assert.equal(result.state?.runtimeVersion.length > 0, true);
+  assert.equal(__actionTokenTestInternals.size(), 1);
+
+  const api = await readUrl(new URL("/api/demo", result.state.webUrl).toString());
+  const body = JSON.parse(api.body);
+  assert.equal(body.desktopActionBridgeUrl, "http://127.0.0.1:11788/webapps");
+  assert.equal(typeof body.desktopActionBridgeToken, "string");
+  assert.equal(body.desktopActionBridgeToken.length >= 32, true);
+  assert.match(body.dataDir, /data[\\/]webs[\\/]webapp-data[\\/]runtime-v4/u);
+
+  const runtimeFile = fs.readFileSync(
+    path.join(desktopRoot(homePath), "state", "webs", "webapps", "runtime-v4", "runtime.json"),
+    "utf8"
+  );
+  assert.doesNotMatch(runtimeFile, new RegExp(body.desktopActionBridgeToken, "u"));
+
+  const stopped = await webappRuntime.stop(app, "runtime-v4");
+  assert.equal(stopped.ok, true);
+  assert.equal(__actionTokenTestInternals.size(), 0);
+});
+
+test("schema v4 proxy frontend routes the whole site through the gateway and preserves reserved paths", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-v4-proxy-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  t.after(async () => {
+    await webappRuntime.stopAll(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const appDir = writeWebapp(webappsRoot(homePath), "proxy-v4", { schemaVersion: 4 });
+  const manifestPath = path.join(appDir, "webapp.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  writeJson(manifestPath, {
+    ...manifest,
+    frontend: { mode: "proxy" }
+  });
+
+  const started = await webappRuntime.start(app, "proxy-v4");
+  assert.equal(started.ok, true);
+  const page = await readUrl(started.state.webUrl);
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /backend proxy page/u);
+  const reserved = await readUrl(new URL("/__desktop/not-a-route", started.state.webUrl).toString());
+  assert.equal(reserved.statusCode, 404);
+});
+
+test("WebApp action tokens are scoped to the issuing app and assistant allowlist", () => {
+  __actionTokenTestInternals.clear();
+  const token = issueWebappActionToken("scoped-app");
+  assert.deepEqual(
+    authorizeWebappActionToken(token, "desktop.assistant.complete"),
+    { ok: true, webappId: "scoped-app" }
+  );
+  assert.deepEqual(
+    authorizeWebappActionToken(token, "desktop.web.webapp.remove"),
+    { ok: false, webappId: "" }
+  );
+  revokeWebappActionToken(token);
+  assert.deepEqual(
+    authorizeWebappActionToken(token, "desktop.assistant.complete"),
+    { ok: false, webappId: "" }
+  );
 });
 
 test("webapp runtime starts a frontend-only package without a backend process", async (t) => {
@@ -987,6 +1540,12 @@ test("webapp runtime starts a frontend-only package without a backend process", 
   );
   assert.equal(publicOriginAttempt.statusCode, 403);
   assert.match(publicOriginAttempt.body, /local WebApp origin/u);
+  const missingOriginAttempt = await postUrl(
+    new URL("/__desktop/actions/call", result.state.webUrl).toString(),
+    JSON.stringify({ action: "desktop.assistant.complete", args: { prompt: "hello" } })
+  );
+  assert.equal(missingOriginAttempt.statusCode, 403);
+  assert.match(missingOriginAttempt.body, /require the local WebApp origin/u);
 });
 
 test("bundled webapp template installer is gated by demo manifest and refreshes demo on macOS and Windows branches", (t) => {
