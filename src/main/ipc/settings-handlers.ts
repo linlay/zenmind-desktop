@@ -272,7 +272,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
             deviceName: current.general.deviceName,
             preventSleepWhileRunning: current.general.preventSleepWhileRunning,
             desktopWsServerEnabled: true,
-            desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled
+            desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled,
+            enterpriseChatEnabled: current.general.enterpriseChatEnabled
           }
         });
         onGeneralSettingsChanged?.(profile.general);
@@ -299,7 +300,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         deviceName: current.general.deviceName,
         preventSleepWhileRunning: current.general.preventSleepWhileRunning,
         desktopWsServerEnabled: false,
-        desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled
+        desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled,
+        enterpriseChatEnabled: current.general.enterpriseChatEnabled
       }
     });
     onGeneralSettingsChanged?.(profile.general);
@@ -318,6 +320,9 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         desktopActionConfirmationEnabled: typeof input?.desktopActionConfirmationEnabled === "boolean"
           ? input.desktopActionConfirmationEnabled
           : current.general.desktopActionConfirmationEnabled,
+        enterpriseChatEnabled: typeof input?.enterpriseChatEnabled === "boolean"
+          ? input.enterpriseChatEnabled
+          : current.general.enterpriseChatEnabled,
         desktopWsServerEnabled: current.general.desktopWsServerEnabled
       }
     });

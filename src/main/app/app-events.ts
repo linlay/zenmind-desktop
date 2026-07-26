@@ -26,6 +26,7 @@ export type MainAppEventsOptions = {
   unregisterPluginGlobalShortcuts: () => void;
   stopResourceDirectoryWatcher: () => void;
   stopPluginBridgeRuntime: () => void;
+  stopEnterpriseChatRuntime: () => void;
 };
 
 export function registerMainAppEvents(options: MainAppEventsOptions) {
@@ -75,6 +76,7 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     options.globalShortcut.unregister(options.focusedWebviewDevToolsShortcut);
     options.stopResourceDirectoryWatcher();
     options.stopPluginBridgeRuntime();
+    options.stopEnterpriseChatRuntime();
   });
 
   options.app.on("window-all-closed", () => {

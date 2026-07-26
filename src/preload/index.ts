@@ -26,6 +26,7 @@ import type {
   DesktopConfigChangedListener,
   DesktopActionConfirmationListener,
   DesktopActionConfirmationResponse,
+  EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
   DesktopPetStateListener,
   DesktopLogTarget,
@@ -360,6 +361,26 @@ const api: DesktopApi = {
       ipcRenderer.on("sso.embeddedLogin.open", handleEmbeddedLoginOpen);
       return () => {
         ipcRenderer.off("sso.embeddedLogin.open", handleEmbeddedLoginOpen);
+      };
+    }
+  },
+  enterpriseChat: {
+    getState: () => ipcRenderer.invoke("enterpriseChat.getState"),
+    refresh: () => ipcRenderer.invoke("enterpriseChat.refresh"),
+    openDirectConversation: (input) =>
+      ipcRenderer.invoke("enterpriseChat.openDirectConversation", input),
+    sendMessage: (input) => ipcRenderer.invoke("enterpriseChat.sendMessage", input),
+    markRead: (input) => ipcRenderer.invoke("enterpriseChat.markRead", input),
+    onStateChanged: (listener: EnterpriseChatSnapshotListener) => {
+      const handleStateChanged = (
+        _event: Electron.IpcRendererEvent,
+        snapshot: Parameters<EnterpriseChatSnapshotListener>[0]
+      ) => {
+        listener(snapshot);
+      };
+      ipcRenderer.on("enterpriseChat.stateChanged", handleStateChanged);
+      return () => {
+        ipcRenderer.off("enterpriseChat.stateChanged", handleStateChanged);
       };
     }
   },

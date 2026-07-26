@@ -337,7 +337,10 @@ function applyProfileDefaults(
         : current.general.preventSleepWhileRunning,
       desktopActionConfirmationEnabled: typeof general.desktopActionConfirmationEnabled === "boolean"
         ? general.desktopActionConfirmationEnabled
-        : current.general.desktopActionConfirmationEnabled
+        : current.general.desktopActionConfirmationEnabled,
+      enterpriseChatEnabled: typeof general.enterpriseChatEnabled === "boolean"
+        ? general.enterpriseChatEnabled
+        : current.general.enterpriseChatEnabled
     },
     appearance: {
       theme: appearance.theme === "light" || appearance.theme === "dark" || appearance.theme === "system"

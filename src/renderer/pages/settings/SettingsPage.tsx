@@ -463,7 +463,8 @@ const defaultGeneralSettings: DesktopGeneralSettings = {
   deviceName: "",
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false,
-  desktopActionConfirmationEnabled: true
+  desktopActionConfirmationEnabled: true,
+  enterpriseChatEnabled: true
 };
 
 function createFallbackDesktopWsServerState(message?: string): DesktopWsServerState {
@@ -3681,6 +3682,36 @@ export function SettingsPage({
     }
   }
 
+  async function handleToggleEnterpriseChat() {
+    const previousSettings = generalSettings;
+    const nextSettings = {
+      ...generalSettings,
+      enterpriseChatEnabled: !generalSettings.enterpriseChatEnabled
+    };
+    setGeneralSettings(nextSettings);
+    setGeneralSettingsSaving(true);
+    try {
+      const savedSettings = await window.electronAPI.settings.saveGeneralSettings(nextSettings);
+      setGeneralSettings({
+        ...defaultGeneralSettings,
+        ...savedSettings
+      });
+      setReadErrorSections(["general"], "");
+      showSectionNotice(
+        "general",
+        savedSettings.enterpriseChatEnabled
+          ? t("settings.general.noticeEnterpriseChatEnabled")
+          : t("settings.general.noticeEnterpriseChatDisabled"),
+        "success"
+      );
+    } catch (reason) {
+      setGeneralSettings(previousSettings);
+      showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+    }
+  }
+
   async function refreshWebItemsFromSettings() {
     await onWebItemsRefresh();
   }
@@ -4613,6 +4644,18 @@ export function SettingsPage({
                 aria-label={t("settings.general.desktopActionConfirmation")}
                 disabled={generalSettingsSaving}
                 onChange={() => void handleToggleDesktopActionConfirmation()}
+              />
+            </div>
+            <div className="settings-appearance-row">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.general.enterpriseChat")}</strong>
+                <span>{t("settings.general.enterpriseChatDescription")}</span>
+              </div>
+              <Switch
+                checked={generalSettings.enterpriseChatEnabled}
+                aria-label={t("settings.general.enterpriseChat")}
+                disabled={generalSettingsSaving}
+                onChange={() => void handleToggleEnterpriseChat()}
               />
             </div>
           </div>

@@ -19,6 +19,21 @@ test("desktop profile defaults Desktop Action confirmation to enabled", (t) => {
   const profile = readDesktopProfileFromRoot(root);
 
   assert.equal(profile.general.desktopActionConfirmationEnabled, true);
+  assert.equal(profile.general.enterpriseChatEnabled, true);
+});
+
+test("desktop profile preserves an explicit enterprise chat disable", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  fs.writeFileSync(path.join(root, "profile.json"), JSON.stringify({
+    schemaVersion: 1,
+    general: {
+      enterpriseChatEnabled: false
+    }
+  }), "utf8");
+
+  assert.equal(readDesktopProfileFromRoot(root).general.enterpriseChatEnabled, false);
 });
 
 test("desktop profile ignores retired files and nested aliases", (t) => {

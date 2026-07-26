@@ -6,6 +6,10 @@ Desktop 以 `identity-center` 为本地认证基础。主进程负责 bootstrap 
 
 `agent-webclient` 是当前明确接入 postMessage token bridge 的服务。
 
+企业聊天不使用 webview token bridge。主进程把 canonical SSO access token 直接提交给
+`zenmind-collaboration-server /api/v1/session/exchange`，换取只保存在内存中的短期
+collaboration token，再申请一次性 WebSocket ticket。renderer 不接触上述三类凭据。
+
 ## 核心流程
 
 ```text
@@ -28,6 +32,16 @@ config/desktop/sso.json
   -> base claims / userinfo -> state/desktop/sso-user-info.json
   -> access_token -> state/desktop/sso-access-token.txt
   -> secrets/sso-site-token.json
+```
+
+企业聊天：
+
+```text
+state/desktop/sso-access-token.txt
+  -> main enterprise chat runtime
+  -> collaboration session exchange
+  -> short-lived token + one-time WS ticket
+  -> sync.resume / direct messages
 ```
 
 嵌入式 Cookie SSO 按同一文件协议分步完成：
@@ -88,6 +102,7 @@ Token bridge 类型：
 - Cookie 只保存在 Electron 的持久化 SSO partition，不写入上述三个状态文件，也不得进入日志。
 - macOS/Linux 和 Windows 均通过 Electron home/runtime 路径解析状态目录；macOS/Linux 上三个文件保持 `0600`，不得硬编码用户目录。
 - `identity-center` 是 token 签发与校验基础，不进入 webview bridge 协议名称；嵌入页只依赖 Desktop agent auth bridge。
+- collaboration server 独立校验企业 access token；Desktop 不把 collaboration token 或 ticket 发送到 renderer、webview 或日志。
 - token cache 会根据 JWT `exp` 和刷新原因复用或失效；`unauthorized` 会强制丢弃缓存。JWT 原始 `iat`/`exp` 仅在解码和校验内部按 Unix 秒处理；需要进入 shared contract 的具体时间点必须转换为 `EpochMilliseconds`，详见[时间契约](时间契约.md)。
 - Desktop 先应用 `desktopAuthContext`、清理不匹配的旧 token，再写入响应 token；该上下文不再通过 agent-webclient URL 传递。
 - Windows 身份脚本走 PowerShell，macOS / Linux 优先走 `.sh`，需要显式平台分支。
@@ -99,6 +114,7 @@ Token bridge 类型：
 - `src/main/agent-auth.ts`
 - `src/main/oidc-sso.ts`
 - `src/main/sso-site-token.ts`
+- `src/main/enterprise-chat-runtime.ts`
 - `src/main/device-identity.ts`
 - `src/shared/auth-bridge.ts`
 - `src/preload/service-webview-main-world.ts`

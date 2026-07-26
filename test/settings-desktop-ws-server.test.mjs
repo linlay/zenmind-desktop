@@ -170,10 +170,20 @@ test("general settings persist desktop device name and expose device info", asyn
   assert.equal(saved.deviceName, "Studio Mac");
   assert.equal(saved.preventSleepWhileRunning, false);
   assert.equal(saved.desktopActionConfirmationEnabled, false);
+  assert.equal(saved.enterpriseChatEnabled, true);
   assert.equal(changedSettings.at(-1).deviceName, "Studio Mac");
   let general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
   assert.equal(general.deviceName, "Studio Mac");
   assert.equal(general.desktopActionConfirmationEnabled, false);
+  assert.equal(general.enterpriseChatEnabled, true);
+
+  const chatDisabled = await ipcMain.invoke("settings.saveGeneralSettings", {
+    enterpriseChatEnabled: false
+  });
+  assert.equal(chatDisabled.enterpriseChatEnabled, false);
+  assert.equal(changedSettings.at(-1).enterpriseChatEnabled, false);
+  general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
+  assert.equal(general.enterpriseChatEnabled, false);
 
   const info = await ipcMain.invoke("settings.getDesktopDeviceInfo");
   assert.equal(info.configuredDeviceName, "Studio Mac");
@@ -189,6 +199,7 @@ test("general settings persist desktop device name and expose device info", asyn
   });
   assert.equal(cleared.deviceName, "");
   assert.equal(cleared.desktopActionConfirmationEnabled, false);
+  assert.equal(cleared.enterpriseChatEnabled, false);
   const fallbackInfo = await ipcMain.invoke("settings.getDesktopDeviceInfo");
   assert.equal(fallbackInfo.configuredDeviceName, "");
   assert.equal(typeof fallbackInfo.deviceName, "string");

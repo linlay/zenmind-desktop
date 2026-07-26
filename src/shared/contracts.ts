@@ -8,5 +8,6 @@ export * from "./contracts/copilot";
 export * from "./contracts/attachments";
 export * from "./contracts/marketplace";
 export * from "./contracts/kanban";
+export * from "./contracts/enterprise-chat";
 export * from "./contracts/desktop-api";
 export * from "./time-contract";

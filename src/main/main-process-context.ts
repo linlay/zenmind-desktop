@@ -340,6 +340,8 @@ export interface SsoIpcHandlerContextDependencies {
   issueAgentAccessToken: (...args: any[]) => unknown;
   refreshKanbanConnection?: (...args: any[]) => unknown;
   stopTunnelHubRuntime?: (...args: any[]) => unknown;
+  refreshEnterpriseChat?: (...args: any[]) => unknown;
+  stopEnterpriseChat?: (...args: any[]) => unknown;
 }
 
 export function createSsoIpcHandlerOptions(
@@ -357,7 +359,9 @@ export function createSsoIpcHandlerOptions(
     cancelDesktopSsoLogin: dependencies.cancelDesktopSsoLogin,
     issueAgentAccessToken: dependencies.issueAgentAccessToken,
     refreshKanbanConnection: dependencies.refreshKanbanConnection,
-    stopTunnelHubRuntime: dependencies.stopTunnelHubRuntime
+    stopTunnelHubRuntime: dependencies.stopTunnelHubRuntime,
+    refreshEnterpriseChat: dependencies.refreshEnterpriseChat,
+    stopEnterpriseChat: dependencies.stopEnterpriseChat
   };
 }
 

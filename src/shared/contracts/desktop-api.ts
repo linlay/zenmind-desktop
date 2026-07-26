@@ -15,6 +15,13 @@ import type {
   EmbeddedCdpSiteSurfaceRemoval
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
+import type {
+  EnterpriseChatMarkReadInput,
+  EnterpriseChatOpenDirectInput,
+  EnterpriseChatSendMessageInput,
+  EnterpriseChatSnapshot,
+  EnterpriseChatSnapshotListener
+} from "./enterprise-chat";
 
 export type AgentAuthRefreshReason = "missing" | "unauthorized";
 
@@ -386,12 +393,14 @@ export interface DesktopGeneralSettings {
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
   desktopActionConfirmationEnabled: boolean;
+  enterpriseChatEnabled: boolean;
 }
 
 export interface DesktopGeneralSettingsInput {
   deviceName?: string;
   preventSleepWhileRunning?: boolean;
   desktopActionConfirmationEnabled?: boolean;
+  enterpriseChatEnabled?: boolean;
 }
 
 export interface DesktopWsServerState {
@@ -639,6 +648,14 @@ export interface DesktopApi {
     logout: () => Promise<DesktopSsoLogoutResult>;
     onStatusChanged: (listener: DesktopSsoStatusListener) => () => void;
     onEmbeddedLoginOpen: (listener: DesktopSsoEmbeddedLoginListener) => () => void;
+  };
+  enterpriseChat: {
+    getState: () => Promise<EnterpriseChatSnapshot>;
+    refresh: () => Promise<EnterpriseChatSnapshot>;
+    openDirectConversation: (input: EnterpriseChatOpenDirectInput) => Promise<EnterpriseChatSnapshot>;
+    sendMessage: (input: EnterpriseChatSendMessageInput) => Promise<EnterpriseChatSnapshot>;
+    markRead: (input: EnterpriseChatMarkReadInput) => Promise<EnterpriseChatSnapshot>;
+    onStateChanged: (listener: EnterpriseChatSnapshotListener) => () => void;
   };
   settings: {
     getDataRoot: () => Promise<string>;

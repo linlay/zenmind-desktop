@@ -79,6 +79,7 @@ import {
   type AgentWebclientResolvedRoute
 } from "../../shared/agent-webclient-routes";
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
+import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
@@ -2745,6 +2746,7 @@ export function AppShell() {
         onRunningRunIdChange={setAssistantRunningRunId}
         onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
       />
+      <EnterpriseChatFloatingPanel desktopSsoStatus={desktopSsoStatus} />
       {desktopSsoLoginDialog ? (
         <div className="desktop-sso-login-modal-layer" role="presentation">
           <section

@@ -51,6 +51,8 @@ export interface SsoIpcHandlerOptions {
   issueAgentAccessToken: (app: any, reason: any) => Promise<any> | any;
   refreshKanbanConnection?: () => void;
   stopTunnelHubRuntime?: () => Promise<unknown> | unknown;
+  refreshEnterpriseChat?: () => Promise<unknown> | unknown;
+  stopEnterpriseChat?: () => Promise<unknown> | unknown;
 }
 
 export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptions) {
@@ -99,6 +101,9 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       onAfterStatusChanged: async (status: any) => {
         if (status.authenticated) {
           await openConfiguredDesktopSsoSiteTokenBridge();
+          void Promise.resolve(options.refreshEnterpriseChat?.()).catch((error) => {
+            safeConsoleError("failed to refresh enterprise chat after desktop sso login", error);
+          });
         }
       },
       onSiteTokenBridgeTicket: async (ticket: string) => {
@@ -163,6 +168,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       onStatusChanged: desktopSsoController.broadcastStatus
     });
     if (result.ok) {
+      try {
+        await options.stopEnterpriseChat?.();
+      } catch (error) {
+        safeConsoleError("failed to stop enterprise chat after desktop sso logout", error);
+      }
       try {
         await options.stopTunnelHubRuntime?.();
       } catch (error) {

@@ -102,6 +102,8 @@ import { registerTunnelHubIpcHandlers } from "./tunnel-hub-handlers";
 import { registerWebIpcHandlers } from "./web-handlers";
 import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
+import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
+import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
 
 export type MainIpcRegistrationOptions = {
   app: App;
@@ -112,6 +114,7 @@ export type MainIpcRegistrationOptions = {
   logsRuntime: LogsRuntime;
   petRuntime: DesktopPetRuntime;
   browserSurfaces: BrowserSurfaceRegistry;
+  enterpriseChatRuntime: EnterpriseChatRuntime;
   desktopSsoController: any;
   startupRestoreController: any;
   desktopAppInfo: any;
@@ -287,8 +290,11 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     cancelDesktopSsoLogin,
     issueAgentAccessToken,
     refreshKanbanConnection: () => state.kanbanRuntime?.refreshDeviceInfo(),
-    stopTunnelHubRuntime
+    stopTunnelHubRuntime,
+    refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
+    stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
   }));
+  registerEnterpriseChatIpcHandlers(ipcMain, options.enterpriseChatRuntime);
   registerTunnelHubIpcHandlers(ipcMain);
   registerKanbanIpcHandlers(ipcMain, createKanbanIpcHandlerOptions(context, {
     listKanbanIssues: () => state.kanbanRuntime?.listIssues() ?? {
@@ -398,9 +404,10 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     refreshMainWindowAppearance: options.refreshMainWindowAppearance,
     emitLocaleChanged: options.emitLocaleChanged,
     createAppPairingPayload,
-    onGeneralSettingsChanged: () => {
+    onGeneralSettingsChanged: (settings) => {
       assistantRunWakeLock.sync();
       state.kanbanRuntime?.refreshDeviceInfo();
+      void options.enterpriseChatRuntime.setEnabled(settings.enterpriseChatEnabled);
     },
     getDesktopWsServerRuntimeState: assistantBridgeRuntime.getDesktopWsServerRuntimeStateForSettings,
     startDesktopWsServer: assistantBridgeRuntime.startDesktopWsServerForSettings,

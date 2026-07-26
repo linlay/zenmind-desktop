@@ -62,6 +62,7 @@ import {
   getDesktopConfigRoot,
   getElectronUserDataRoot,
 } from "../user-paths";
+import { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { createLogsRuntime } from "../logs/runtime";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
 import {
@@ -221,6 +222,18 @@ export function createMainProcessRuntime() {
     navigateMainWindow,
     delay,
     t
+  });
+  const enterpriseChatRuntime = new EnterpriseChatRuntime({
+    app,
+    initialEnabled: readDesktopProfileFromRoot(
+      getDesktopConfigRoot(app)
+    ).general.enterpriseChatEnabled,
+    onStateChanged: (snapshot) => {
+      const targetWindow = appState.mainWindow;
+      if (targetWindow && !targetWindow.isDestroyed()) {
+        targetWindow.webContents.send("enterpriseChat.stateChanged", snapshot);
+      }
+    }
   });
   const cdpIntegration = createCdpIntegration({
     browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
@@ -969,6 +982,11 @@ export function createMainProcessRuntime() {
         readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled
       );
     });
+    runNonCoreStartupTask("enterprise chat", () => {
+      void enterpriseChatRuntime.setEnabled(
+        readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.enterpriseChatEnabled
+      );
+    });
     void startTunnelHubRuntimeIfEnabled().catch((error) => {
       safeConsoleError("failed to start Desktop Tunnel Hub", {
         error: error instanceof Error ? error.message : String(error)
@@ -1042,6 +1060,7 @@ export function createMainProcessRuntime() {
       logsRuntime,
       petRuntime,
       browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
+      enterpriseChatRuntime,
       desktopSsoController,
       startupRestoreController,
       desktopAppInfo,
@@ -1109,7 +1128,8 @@ export function createMainProcessRuntime() {
       stopAgentPlatformPetStatusClient,
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,
-      stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop()
+      stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop(),
+      stopEnterpriseChatRuntime: () => enterpriseChatRuntime.stop()
     });
   }
   
