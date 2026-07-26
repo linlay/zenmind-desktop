@@ -14,6 +14,8 @@ export const DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE = "desktop:download:file";
 export const DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE = "desktop:download:file:response";
 export const DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE = "desktop:screenshot:capture";
 export const DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE = "desktop:screenshot:capture:response";
+export const DESKTOP_WEBS_LIST_REQUEST_TYPE = "desktop:webs:list";
+export const DESKTOP_WEBS_LIST_RESPONSE_TYPE = "desktop:webs:list:response";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -27,6 +29,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
+  DESKTOP_WEBS_LIST_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -37,6 +40,7 @@ export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
+  DESKTOP_WEBS_LIST_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -83,6 +87,14 @@ export type ServiceWebviewBridgeMessage = {
   width?: number;
   height?: number;
   sizeBytes?: number;
+  items?: Array<{
+    id: string;
+    entryKey: string;
+    label: string;
+    kind: "website" | "webapp";
+    url?: string;
+    updatedAt: number;
+  }>;
   cancelled?: boolean;
   values?: Record<string, unknown>;
   defaults?: Record<string, unknown>;

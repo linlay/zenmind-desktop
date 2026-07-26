@@ -13,6 +13,7 @@ const {
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
+  DESKTOP_WEBS_LIST_REQUEST_TYPE,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
 const {
@@ -209,6 +210,23 @@ test("service webview main-world script dispatches desktop bridge requests from 
 
   assert.equal(originalPostMessageCalls.length, 1);
   assert.equal(originalPostMessageCalls[0].value, payload);
+  assert.deepEqual(captured, [payload]);
+});
+
+test("service webview main-world script dispatches desktop webs list requests", () => {
+  const { window } = createFakeWindow();
+  const captured = [];
+  const payload = {
+    type: DESKTOP_WEBS_LIST_REQUEST_TYPE,
+    requestId: "webs-list-1"
+  };
+
+  runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
+  window.postMessage(payload, "*");
+
   assert.deepEqual(captured, [payload]);
 });
 

@@ -5365,6 +5365,10 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /DESKTOP_WEBS_LIST_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /DESKTOP_WEBS_LIST_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /window\.electronAPI\.webs/);
+  assert.match(serviceWebviewBridgeHost, /\.list\(\)/);
   assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "DESKTOP", "SCREENSHOT", "CAPTURE", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE/);
@@ -5379,6 +5383,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action"/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_WEBS_LIST_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_WEBS_LIST_RESPONSE_TYPE/);
   assert.doesNotMatch(serviceWebviewBridgeContracts, /CHAT_ROUTE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /ACTION_CHANNEL/);
   assert.match(serviceWebviewBridgeContracts, /desktopAuthContext\?: string;/);

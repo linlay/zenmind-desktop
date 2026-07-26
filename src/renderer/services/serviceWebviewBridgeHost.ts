@@ -13,6 +13,8 @@ import {
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
+  DESKTOP_WEBS_LIST_REQUEST_TYPE,
+  DESKTOP_WEBS_LIST_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
@@ -190,6 +192,32 @@ export function handleServiceWebviewBridgeMessage(
           height: result.height,
           sizeBytes: result.sizeBytes,
           cancelled: result.cancelled
+        });
+      })
+      .catch((reason) => {
+        sendFailure(context, responseType, payload.requestId, errorMessage(reason));
+      });
+    return true;
+  }
+
+  if (isServiceWebviewBridgeMessageType(payload.type, DESKTOP_WEBS_LIST_REQUEST_TYPE)) {
+    const responseType = DESKTOP_WEBS_LIST_RESPONSE_TYPE;
+    void window.electronAPI.webs
+      .list()
+      .then((result) => {
+        context.sendBridgeMessageToWebview({
+          type: responseType,
+          requestId: payload.requestId,
+          ok: result.ok,
+          message: result.message ?? "",
+          items: result.items.map((item) => ({
+            id: item.id,
+            entryKey: item.entryKey,
+            label: item.label,
+            kind: item.kind,
+            ...(item.kind === "website" ? { url: item.url } : {}),
+            updatedAt: item.updatedAt
+          }))
         });
       })
       .catch((reason) => {
