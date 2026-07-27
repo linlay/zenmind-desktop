@@ -756,6 +756,7 @@ export interface DesktopApi {
       update: (id: string, input: WebappUpdateInput) => Promise<WebappResult>;
       remove: (id: string) => Promise<WebappDeleteResult>;
       start: (id: string) => Promise<WebappCommandResult>;
+      openWindow: (id: string) => Promise<WebappCommandResult>;
       stop: (id: string) => Promise<WebappCommandResult>;
       restart: (id: string) => Promise<WebappCommandResult>;
       getStatus: (id: string) => Promise<WebappStatusResult>;

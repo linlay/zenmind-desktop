@@ -8,6 +8,7 @@ import type {
   WebappFrontendConfig,
   WebappHealthConfig,
   WebappManagedBackendBase,
+  WebappOpenMode,
   WebappTarget
 } from "../../../shared/contracts";
 import { getDesktopWebappsDataRoot } from "../../user-paths";
@@ -367,6 +368,7 @@ export function normalizeWebappManifest(value: unknown, projectDir: string, fall
     schemaVersion,
     version: normalizeVersion(value.version, schemaVersion),
     target,
+    openMode: value.openMode === "dialog" ? "dialog" : "workspace",
     label: normalizeWebsiteLabel(readString(value.label), id),
     frontend,
     ...(backend ? { backend } : {}),
@@ -440,6 +442,7 @@ export function writeWebappPreferenceFields(
   input: {
     label?: string;
     copilotAgentKey?: string;
+    openMode?: WebappOpenMode;
   },
   platform: NodeJS.Platform = process.platform
 ) {
@@ -465,6 +468,7 @@ export function writeWebappPreferenceFields(
       : WEBAPP_LEGACY_CANONICAL_SCHEMA_VERSION,
     id: item.id,
     kind: "webapp",
+    openMode: input.openMode ?? item.openMode,
     ...(requestedCopilotAgentKey ? { copilotAgentKey: requestedCopilotAgentKey } : {}),
     updatedAt: toIsoTimestamp(updatedAt)
   };
@@ -526,6 +530,7 @@ export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "")
     id: item.id,
     kind: "webapp",
     label: item.label,
+    openMode: item.openMode,
     ...(schemaVersion === 4 ? {
       version: item.version,
       target: item.target,

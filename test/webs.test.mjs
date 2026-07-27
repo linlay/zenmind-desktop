@@ -229,6 +229,7 @@ server.listen(port, host);
       target: options.target ?? "universal"
     } : {}),
     label: options.label ?? "Local Demo",
+    ...(options.openMode ? { openMode: options.openMode } : {}),
     agentKey: options.agentKey,
     frontend: {
       ...(schemaVersion === 4 ? { mode: "static" } : {}),
@@ -632,6 +633,7 @@ test("schema v4 normalizes static, Node, native, Java, and external container pa
   writeWebapp(packageRoot, "v4-static", {
     schemaVersion: 4,
     version: "2.1.0",
+    openMode: "dialog",
     frontendOnly: true
   });
   const nodeDir = writeWebapp(packageRoot, "v4-node", { schemaVersion: 4 });
@@ -648,8 +650,10 @@ test("schema v4 normalizes static, Node, native, Java, and external container pa
   assert.equal(items["v4-static"].schemaVersion, 4);
   assert.equal(items["v4-static"].version, "2.1.0");
   assert.equal(items["v4-static"].target, "universal");
+  assert.equal(items["v4-static"].openMode, "dialog");
   assert.equal(items["v4-static"].frontend.mode, "static");
   assert.equal(items["v4-static"].backend, undefined);
+  assert.equal(items["v4-node"].openMode, "workspace");
   assert.equal(items["v4-node"].frontend.mode, "proxy");
   assert.equal(items["v4-node"].backend.launcher, "node");
   assert.equal(items["v4-native"].backend.launcher, "native");
@@ -783,17 +787,20 @@ test("webapps update writes canonical Copilot preferences and preserves manifest
 
   const result = updateWebappItem(app, "prefs-demo", {
     label: "After",
-    copilotAgentKey: "desktopAssistant"
+    copilotAgentKey: "desktopAssistant",
+    openMode: "dialog"
   });
   assert.equal(result.ok, true);
   assert.equal(result.item.label, "After");
   assert.equal(result.item.copilotAgentKey, "desktopAssistant");
+  assert.equal(result.item.openMode, "dialog");
   assert.equal("agentKey" in result.item, false);
 
   const after = JSON.parse(fs.readFileSync(webappManifestPath(homePath, "prefs-demo"), "utf8"));
   assert.equal(after.label, "After");
   assert.equal(after.schemaVersion, 3);
   assert.equal(after.copilotAgentKey, "desktopAssistant");
+  assert.equal(after.openMode, "dialog");
   assert.equal(Object.hasOwn(after, "agentKey"), false);
   assert.notEqual(after.updatedAt, before.updatedAt);
   assert.deepEqual(after.frontend, before.frontend);
@@ -959,6 +966,45 @@ test("webapp ipc import installs local archive and returns refreshed web entries
     "website:docs",
     "webapp:reg-report-excelx-webapp"
   ]);
+});
+
+test("webapp IPC delegates floating-window opens to the main-process window manager", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-window-ipc-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeWebapp(webappsRoot(homePath), "floating-notes", {
+    schemaVersion: 4,
+    frontendOnly: true,
+    openMode: "dialog"
+  });
+  const calls = [];
+  const ipcMain = createIpcMain();
+  registerWebIpcHandlers(ipcMain, {
+    app,
+    showFileDialog: async () => ({ canceled: true, filePaths: [] }),
+    showSaveDialog: async () => ({ canceled: true, filePath: "" }),
+    getDataRoot: () => desktopRoot(homePath),
+    openWebappWindow: async (targetApp, id, sender) => {
+      calls.push({ targetApp, id, sender });
+      const item = readWebappItems(targetApp).find((candidate) => candidate.id === id) ?? null;
+      return {
+        ok: true,
+        item,
+        state: null,
+        message: "opened"
+      };
+    }
+  });
+
+  const result = await ipcMain.invoke("webs.webapps.openWindow", "floating-notes");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.item?.id, "floating-notes");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].targetApp, app);
+  assert.equal(calls[0].id, "floating-notes");
+  assert.equal(calls[0].sender, undefined);
 });
 
 test("webapp IPC exposes prerequisite checks and persistent runtime settings", async (t) => {

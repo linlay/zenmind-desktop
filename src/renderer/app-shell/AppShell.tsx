@@ -835,7 +835,6 @@ export function AppShell() {
     if (activeWebEntryKey === item.entryKey) {
       requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
     }
-
     if (item.kind === "webapp") {
       webappStopInFlightRef.current.add(item.id);
       try {
@@ -860,6 +859,107 @@ export function AppShell() {
     setMountedWebEntryKeys((current) =>
       current.filter((entryKey) => entryKey !== item.entryKey)
     );
+  }
+
+  async function handleOpenWebappWindow(item: WebappEntry) {
+    if (webappStartInFlightRef.current.has(item.id)) {
+      return;
+    }
+
+    webappStartInFlightRef.current.add(item.id);
+    try {
+      if (item.openMode !== "dialog") {
+        const preferenceResult = await window.electronAPI.webs.webapps.update(
+          item.id,
+          { openMode: "dialog" }
+        );
+        if (!preferenceResult.ok) {
+          throw new Error(preferenceResult.message);
+        }
+        updateWebItems(preferenceResult.items);
+      }
+
+      setMountedWebEntryKeys((current) =>
+        current.filter((entryKey) => entryKey !== item.entryKey)
+      );
+      if (activeWebEntryKey === item.entryKey) {
+        requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
+      }
+      setWebappRuntimeById((current) => ({
+        ...current,
+        [item.id]: {
+          status: "starting",
+          webUrl: current[item.id]?.webUrl ?? "",
+          message: t("webapp.starting"),
+          state: current[item.id]?.state ?? null
+        }
+      }));
+
+      const result = await window.electronAPI.webs.webapps.openWindow(item.id);
+      setWebappRuntimeById((current) => ({
+        ...current,
+        [item.id]: {
+          status: result.ok && result.state?.webUrl ? "running" : "error",
+          webUrl: result.state?.webUrl ?? "",
+          message: result.message,
+          state: result.state
+        }
+      }));
+    } catch (error) {
+      setWebappRuntimeById((current) => ({
+        ...current,
+        [item.id]: {
+          status: "error",
+          webUrl: "",
+          message: error instanceof Error ? error.message : String(error),
+          state: null
+        }
+      }));
+    } finally {
+      webappStartInFlightRef.current.delete(item.id);
+    }
+  }
+
+  async function handleOpenWebappWorkspace(item: WebappEntry) {
+    if (webappStartInFlightRef.current.has(item.id)) {
+      return;
+    }
+
+    webappStartInFlightRef.current.add(item.id);
+    try {
+      if (item.openMode !== "workspace") {
+        const preferenceResult = await window.electronAPI.webs.webapps.update(
+          item.id,
+          { openMode: "workspace" }
+        );
+        if (!preferenceResult.ok) {
+          throw new Error(preferenceResult.message);
+        }
+        updateWebItems(preferenceResult.items);
+      }
+
+      setMountedWebEntryKeys((current) =>
+        current.includes(item.entryKey)
+          ? current
+          : [...current, item.entryKey]
+      );
+      requestSidebarNavigation(`/webs/${item.entryKey}`);
+    } catch (error) {
+      setWebappRuntimeById((current) => {
+        const existing = current[item.id];
+        return {
+          ...current,
+          [item.id]: {
+            status: existing?.status ?? "error",
+            webUrl: existing?.webUrl ?? "",
+            message: error instanceof Error ? error.message : String(error),
+            state: existing?.state ?? null
+          }
+        };
+      });
+    } finally {
+      webappStartInFlightRef.current.delete(item.id);
+    }
   }
 
   const handleWebsiteFaviconDiscovered = useCallback(
@@ -1903,10 +2003,11 @@ export function AppShell() {
   }, [activeWebEntryKey]);
 
   useEffect(() => {
-    if (!activeWebEntryKey) {
+    const requestedWebappEntryKey = activeWebEntryKey;
+    if (!requestedWebappEntryKey) {
       return;
     }
-    const item = webItems.find((candidate) => candidate.entryKey === activeWebEntryKey);
+    const item = webItems.find((candidate) => candidate.entryKey === requestedWebappEntryKey);
     if (!item || item.kind !== "webapp") {
       return;
     }
@@ -2570,6 +2671,12 @@ export function AppShell() {
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateWebsiteItem={createWebsiteItem}
           onImportWebappItem={importWebappItem}
+          onOpenWebappWindow={(item) => {
+            void handleOpenWebappWindow(item);
+          }}
+          onOpenWebappWorkspace={(item) => {
+            void handleOpenWebappWorkspace(item);
+          }}
           onCloseWebItem={handleCloseWebEntry}
           onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}

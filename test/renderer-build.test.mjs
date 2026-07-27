@@ -3808,14 +3808,16 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const appState = readSourceFile("src", "main", "app-state.ts");
   const shutdownRunner = readSourceFile("src", "main", "lifecycle", "shutdown.ts");
   const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
+  const webappWindowManager = readSourceFile("src", "main", "webs", "webapps", "window-manager.ts");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const webappStartEffectStart = appShell.indexOf(
-    "const item = webItems.find((candidate) => candidate.entryKey === activeWebEntryKey);"
+    "const item = webItems.find((candidate) => candidate.entryKey === requestedWebappEntryKey);"
   );
   const webappStartEffect = appShell.slice(
     webappStartEffectStart,
@@ -3835,7 +3837,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
 
   assert.match(webContracts, /export interface WebappEntry/);
   assert.match(webContracts, /export type WebappSourceKind = "market" \| "local" \| "plugin" \| "bundled"/);
+  assert.match(webContracts, /export type WebappOpenMode = "workspace" \| "dialog"/);
   assert.match(webContracts, /sourceKind\?: WebappSourceKind/);
+  assert.match(webContracts, /openMode: WebappOpenMode/);
   assert.match(webContracts, /removable\?: boolean/);
   assert.match(webContracts, /export interface WebappUpdateInput/);
   assert.match(contracts, /webs:\s*\{[\s\S]*list: \(\) => Promise<WebListResult>/);
@@ -3843,17 +3847,20 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(contracts, /webapps:\s*\{[\s\S]*update: \(id: string, input: WebappUpdateInput\) => Promise<WebappResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*remove: \(id: string\) => Promise<WebappDeleteResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*start: \(id: string\) => Promise<WebappCommandResult>/);
+  assert.match(contracts, /webapps:\s*\{[\s\S]*openWindow: \(id: string\) => Promise<WebappCommandResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*stop: \(id: string\) => Promise<WebappCommandResult>/);
   assert.match(preload, /webs:\s*\{[\s\S]*list: \(\) => ipcRenderer\.invoke\("webs\.list"\)/);
   assert.match(preload, /list: \(\) => ipcRenderer\.invoke\("webs\.webapps\.list"\)/);
   assert.match(preload, /update: \(id: string, input\) => ipcRenderer\.invoke\("webs\.webapps\.update", id, input\)/);
   assert.match(preload, /remove: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.remove", id\)/);
   assert.match(preload, /start: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.start", id\)/);
+  assert.match(preload, /openWindow: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.openWindow", id\)/);
   assert.match(preload, /stop: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.stop", id\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.list"[\s\S]*listWebappItems\(app\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.update"[\s\S]*updateWebappItem\(app, id, input\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.remove"[\s\S]*removeWebappItem\(app, id\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.start"[\s\S]*webappRuntime\.start\(app, id\)/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.openWindow"/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.stop"[\s\S]*webappRuntime\.stop\(app, id\)/);
   assert.match(appShell, /window\.electronAPI\.webs\.list\(\)/);
   assert.match(appShell, /item\.kind !== "webapp"/);
@@ -3868,13 +3875,29 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appShell, /async function handleCloseWebEntry\(item: WebEntry\)[\s\S]*?window\.electronAPI\.webs\.webapps\.stop\(item\.id\)/);
   assert.match(appShell, /async function removeWebappItem\(item: WebEntry\): Promise<WebappDeleteResult>[\s\S]*?window\.electronAPI\.webs\.webapps\.remove\(item\.id\)/);
   assert.match(appShell, /onRemoveWebappItem=\{removeWebappItem\}/);
+  assert.match(appShell, /async function handleOpenWebappWindow\(item: WebappEntry\)/);
+  assert.match(appShell, /item\.openMode !== "dialog"[\s\S]*?webapps\.update\([\s\S]*?openMode: "dialog"/);
+  assert.match(appShell, /window\.electronAPI\.webs\.webapps\.openWindow\(item\.id\)/);
+  assert.doesNotMatch(appShell, /WebappDialogSurface|dialogWebappEntryKey/);
   assert.match(appSidebar, /onRemoveWebappItem\?: \(item: WebEntry\) => Promise<WebappDeleteResult>/);
+  assert.match(appSidebar, /webItem\.openMode === "dialog"/);
+  assert.match(appSidebar, /onOpenWebappWindow\(webItem\)/);
+  assert.match(appSidebar, /sidebar\.webapp\.openInWindow/);
+  assert.match(appSidebar, /sidebar\.webapp\.openInWorkspace/);
+  assert.match(appSidebar, /onOpenWebappWindow\?\.\(item\)/);
+  assert.match(appSidebar, /onOpenWebappWorkspace\?\.\(item\)/);
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
   assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
   assert.match(appSidebar, /void removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
   assert.match(zhCN, /"sidebar\.webapp\.remove": "卸载 WebApp"/);
+  assert.match(zhCN, /"sidebar\.webapp\.openInWindow": "在新窗口打开"/);
+  assert.match(zhCN, /"sidebar\.webapp\.openInWorkspace": "在内置窗口打开"/);
+  assert.doesNotMatch(zhCN, /webapp\.window\.restoreToWorkspace/);
   assert.match(enUS, /"sidebar\.webapp\.remove": "Uninstall WebApp"/);
+  assert.match(appShell, /handleOpenWebappWorkspace/);
+  assert.match(appShell, /\{ openMode: "workspace" \}/);
+  assert.match(appShell, /requestSidebarNavigation\(`\/webs\/\$\{item\.entryKey\}`\)/);
   assert.match(webappStartEffect, /\.finally\(\(\) => \{[\s\S]*?webappStartInFlightRef\.current\.delete\(item\.id\)/);
   assert.doesNotMatch(webappStartEffect, /let cancelled = false/);
   assert.match(externalWebviewPage, /chrome\?: "browser" \| "app"/);
@@ -3886,7 +3909,36 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?if \(appChrome\) \{[\s\S]*?return;[\s\S]*?\}/);
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
   assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
-  assert.match(embeddedSurfaceHosts, /t\("webapp\.starting"\)/);
+  assert.doesNotMatch(embeddedSurfaceHosts, /WebappDialogSurface|<Modal/);
+  assert.match(webappWindowManager, /new BrowserWindow\(buildWindowOptions\(app, item\)\)/);
+  assert.match(webappWindowManager, /modal:\s*false/);
+  assert.doesNotMatch(webappWindowManager, /parent:\s*ownerWindow/);
+  assert.match(webappWindowManager, /existing\.window\.focus\(\);\s*existing\.window\.moveTop\(\);/);
+  assert.match(webappWindowManager, /targetWindow\.focus\(\);\s*targetWindow\.moveTop\(\);/);
+  assert.match(webappWindowManager, /contextIsolation:\s*true/);
+  assert.match(webappWindowManager, /nodeIntegration:\s*false/);
+  assert.match(webappWindowManager, /sandbox:\s*true/);
+  assert.match(webappWindowManager, /private readonly windows = new Map<string, WebappWindowRecord>\(\)/);
+  assert.match(webappWindowManager, /setWindowOpenHandler/);
+  assert.match(webappWindowManager, /isAllowedWebappWindowNavigation/);
+  assert.match(webappWindowManager, /buildWebappWindowShellHtml/);
+  assert.match(webappWindowManager, /buildWebappWindowShellHtml\(item\.label\)/);
+  assert.match(webappWindowManager, /new WebContentsView\(/);
+  assert.match(webappWindowManager, /targetWindow\.contentView\.addChildView\(webappView\)/);
+  assert.match(webappWindowManager, /y:\s*0/);
+  assert.doesNotMatch(webappWindowManager, /WEBAPP_WINDOW_TOOLBAR_HEIGHT|WEBAPP_RESTORE_ACTION_URL/);
+  assert.match(webappWindowManager, /targetWindow\.webContents\.on\("did-finish-load", layoutWebappView\)/);
+  assert.match(webappWindowManager, /webappView\.webContents\.loadURL\(gatewayUrl\)[\s\S]*?layoutWebappView\(\)/);
+  assert.doesNotMatch(webappWindowManager, /executeJavaScript\(/);
+  assert.doesNotMatch(webappWindowManager, /还原到内置窗口|restoreToWorkspace/);
+  assert.match(webHandlers, /input\?\.openMode === "workspace"[\s\S]*?webappWindowManager\.close\(id\)/);
+  assert.match(settingsPage, /openMode: webappOpenMode/);
+  assert.match(settingsPage, /settings\.webapps\.openModeDialog/);
+  assert.match(settingsPage, /<div className="web-detail-form-item">[\s\S]*?settings\.webapps\.openMode[\s\S]*?<Segmented/);
+  assert.doesNotMatch(settingsPage, /<label className="web-detail-form-item">[\s\S]{0,180}settings\.webapps\.openMode/);
+  assert.match(settingsPage, /const webappDraftSourceRef = useRef<WebappDraftSnapshot \| null>\(null\)/);
+  assert.match(settingsPage, /const hasDraft = sameSource && \([\s\S]*?webappOpenMode !== previousSnapshot\.openMode/);
+  assert.match(settingsPage, /if \(!sameSource \|\| !hasDraft\) \{\s*applyWebappDraftSnapshot\(nextSnapshot\)/);
   assert.match(mainProcess, /installBundledWebappTemplates\(app\)/);
   const initializeUserDataIndex = mainProcess.indexOf("function initializeUserDataRootsAndSettings()");
   const initializeUserDataEndIndex = mainProcess.indexOf("const gotSingleInstanceLock", initializeUserDataIndex);

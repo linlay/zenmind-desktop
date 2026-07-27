@@ -23,6 +23,7 @@ import {
 import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
 import { webappRuntime } from "../webs/webapps/runtime";
+import { webappWindowManager } from "../webs/webapps/window-manager";
 import {
   readWebappRuntimeSettings,
   writeWebappRuntimeSettings
@@ -44,6 +45,11 @@ export interface WebIpcHandlerOptions {
     webappId: string,
     item?: DesktopMobileWebappItem | null
   ) => void;
+  openWebappWindow?: (
+    app: App,
+    id: string,
+    sender?: any
+  ) => ReturnType<typeof webappWindowManager.open>;
 }
 
 function normalizeLogTarget(value: unknown): WebappLogTarget {
@@ -142,6 +148,10 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   ipcMain.handle("webs.webapps.start", async (_event: any, id: string) =>
     webappRuntime.start(app, id)
   );
+  ipcMain.handle("webs.webapps.openWindow", async (event: any, id: string) =>
+    (options.openWebappWindow ?? ((targetApp, webappId, sender) =>
+      webappWindowManager.open(targetApp, webappId, sender)))(app, id, event?.sender)
+  );
   ipcMain.handle("webs.webapps.list", async () => listWebappItems(app));
   ipcMain.handle("webs.webapps.import", async () => {
     const result = await showFileDialog({
@@ -197,6 +207,9 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) => {
     const result = updateWebappItem(app, id, input);
     if (result.ok) {
+      if (input?.openMode === "workspace") {
+        webappWindowManager.close(id);
+      }
       options.emitWebappChanged?.("updated", id);
     }
     return result;
@@ -204,16 +217,24 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   ipcMain.handle("webs.webapps.remove", async (_event: any, id: string) => {
     const result = await removeWebappItem(app, id);
     if (result.ok) {
+      webappWindowManager.close(id);
       options.emitWebappChanged?.("removed", id, null);
     }
     return result;
   });
-  ipcMain.handle("webs.webapps.stop", async (_event: any, id: string) =>
-    webappRuntime.stop(app, id)
-  );
-  ipcMain.handle("webs.webapps.restart", async (_event: any, id: string) =>
-    webappRuntime.restart(app, id)
-  );
+  ipcMain.handle("webs.webapps.stop", async (_event: any, id: string) => {
+    webappWindowManager.close(id);
+    return webappRuntime.stop(app, id);
+  });
+  ipcMain.handle("webs.webapps.restart", async (_event: any, id: string) => {
+    const result = await webappRuntime.restart(app, id);
+    if (result.ok && result.state?.webUrl) {
+      await webappWindowManager.reload(id, result.state);
+    } else {
+      webappWindowManager.close(id);
+    }
+    return result;
+  });
   ipcMain.handle("webs.webapps.getStatus", async (_event: any, id: string) => {
     const state = webappRuntime.getStatus(app, id);
     return {
