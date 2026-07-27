@@ -2506,15 +2506,6 @@ export function AppSidebar({
     expanded: boolean,
   ) {
     setExpandedAssistantAgentKey(expanded ? agent.agentKey : "");
-    if (!expanded) {
-      return;
-    }
-    requestNavigate(
-      createAgentSelectionRoute(agent, { preferNewChat: !isCollapsed }),
-      {
-        retriggerAgentRoute: true,
-      },
-    );
   }
 
   function handleAssistantNewChat(
@@ -3108,8 +3099,7 @@ export function AppSidebar({
       >
         {summary.pendingCount > 0 ? (
           <span className="sidebar-status-badge is-pending">
-            {t("sidebar.assistants.awaitingStatus.question")}
-            {summary.pendingCount > 1 ? summary.pendingCount : ""}
+            {summary.pendingCount}
           </span>
         ) : null}
         {unreadLabel ? (
@@ -3119,18 +3109,9 @@ export function AppSidebar({
     );
   }
 
-  function renderSidebarGroupStatusBadges(
-    groupId: SidebarGroupId,
-    status?: SidebarStatusSummary,
-  ) {
+  function renderSidebarGroupStatusBadges(status?: SidebarStatusSummary) {
     if (!status) {
       return null;
-    }
-    if (groupId === "assistants") {
-      return renderStatusBadges(
-        { ...status, pendingCount: 0 },
-        "sidebar-group-status",
-      );
     }
     return renderStatusBadges(status, "sidebar-group-status");
   }
@@ -3878,13 +3859,14 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
     const rowUnreadCount = allRecentChats.filter((chat) => !chat.isRead).length;
-    const awaitingChat = allRecentChats.find(
+    const awaitingChats = allRecentChats.filter(
       (chat) => chat.hasPendingAwaiting === true,
     );
+    const awaitingChat = awaitingChats[0] ?? null;
+    const awaitingChatsCount = awaitingChats.length;
     const activeRunChat = allRecentChats.find(
       (chat) => chat.hasActiveRun === true,
     );
-    const previewChat = awaitingChat || activeRunChat || recentChats[0] || null;
     const previewStatus =
       awaitingChat || agent.hasPendingAwaiting
         ? "awaiting"
@@ -3943,13 +3925,6 @@ export function AppSidebar({
                 ) : null}
               </span>
               <Flex align="center" gap={4}>
-                {previewStatus === "awaiting" ? (
-                  <span className="chat-awaiting-status">
-                    {t(
-                      getAssistantAwaitingStatusKey(awaitingChat?.awaitingMode),
-                    )}
-                  </span>
-                ) : null}
                 {previewStatus ? (
                   <span
                     className="assistant-material-icon is-loading sidebar-assistant-preview-loading"
@@ -3959,6 +3934,11 @@ export function AppSidebar({
                         : t("sidebar.agent.running")
                     }
                   />
+                ) : null}
+                {awaitingChatsCount > 0 ? (
+                  <span className="chat-awaiting-status">
+                    {awaitingChatsCount}
+                  </span>
                 ) : null}
                 {unreadCount > 0 ? (
                   <div className="assistant-worker-badge">
@@ -3971,23 +3951,6 @@ export function AppSidebar({
         }
         headerActions={
           <span className="assistant-worker-actions">
-            {unreadCount > 0 ? (
-              <Tooltip content={t("sidebar.agent.markAllRead")}>
-                <button
-                  type="button"
-                  className="assistant-worker-icon-button"
-                  aria-label={t("sidebar.agent.markAllReadFor", {
-                    name: agent.displayName,
-                  })}
-                  tabIndex={-1}
-                  onClick={(event) =>
-                    void handleAssistantMarkAllRead(event, agent)
-                  }
-                >
-                  <SidebarActionIcon kind="double_check" />
-                </button>
-              </Tooltip>
-            ) : null}
             <Tooltip content={t("sidebar.agent.newChat")}>
               <button
                 type="button"
@@ -4153,7 +4116,7 @@ export function AppSidebar({
               args.headerLabel
             )}
             {!expanded
-              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
+              ? renderSidebarGroupStatusBadges(args.status)
               : null}
           </span>
         </button>
@@ -4187,9 +4150,7 @@ export function AppSidebar({
               expanded={expanded}
               width={18}
             />
-            {!expanded
-              ? renderSidebarGroupStatusBadges(args.groupId, args.status)
-              : null}
+            {!expanded ? renderSidebarGroupStatusBadges(args.status) : null}
           </span>
         }
         headerActions={
