@@ -172,6 +172,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     desktopActionBridge: {
       port: 17988
     },
+    imServer: {
+      baseUrl: "https://im.example.test/api/"
+    },
     services: {
       "agent-container-hub": {
         defaultPort: 7909
@@ -240,6 +243,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
   const desktopActionBridge = readJson(path.join(desktop, "config", "desktop", "desktop-action-bridge.json"));
+  const imServer = readJson(path.join(desktop, "config", "desktop", "im-server.json"));
   const serviceLifecycleArgs = readJson(path.join(desktop, "config", "desktop", "service-lifecycle-args.json"));
   const servicePortDefaults = readJson(path.join(desktop, "config", "desktop", "service-port-defaults.json"));
   const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
@@ -275,6 +279,10 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.deepEqual(desktopActionBridge, {
     schemaVersion: 1,
     port: 17988
+  });
+  assert.deepEqual(imServer, {
+    schemaVersion: 1,
+    baseUrl: "https://im.example.test/api"
   });
   assert.deepEqual(serviceLifecycleArgs, {
     schemaVersion: 1,
@@ -336,6 +344,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.webs, "applied");
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
   assert.equal(bootstrapState.appliedResult.desktopActionBridge, "applied");
+  assert.equal(bootstrapState.appliedResult.imServer, "applied");
   assert.equal(bootstrapState.appliedResult.services, "applied");
   assert.equal(bootstrapState.websReport.mode, "initialize");
   assert.deepEqual(bootstrapState.websReport.items.map(({ entryKey, status }) => ({ entryKey, status })), [
@@ -363,6 +372,33 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(profileAfterSecondRun.appearance.locale, "zh-CN");
   assert.equal(profileAfterSecondRun.general.desktopActionConfirmationEnabled, false);
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
+});
+
+test("desktop-init rejects an insecure remote IM server without replacing canonical config", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-im-server-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
+    imServer: {
+      baseUrl: "http://im.example.test"
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  const imServerPath = path.join(
+    desktopRoot(homePath),
+    "config",
+    "desktop",
+    "im-server.json"
+  );
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.imServer, "failed");
+  assert.deepEqual(result.failedSections, ["imServer"]);
+  assert.match(result.errors.imServer, /loopback HTTP or remote HTTPS/u);
+  assert.equal(fs.existsSync(imServerPath), false);
 });
 
 test("desktop-init v2 installs mixed Sites once, keeps declared order, and later preserves user changes", (t) => {

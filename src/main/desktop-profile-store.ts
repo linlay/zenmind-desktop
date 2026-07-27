@@ -126,7 +126,7 @@ function normalizeDesktopProfile(
         : true,
       enterpriseChatEnabled: typeof general.enterpriseChatEnabled === "boolean"
         ? general.enterpriseChatEnabled
-        : true
+        : false
     },
     appearance: {
       theme: normalizeTheme(appearance.theme),

@@ -12,28 +12,28 @@ const {
   updateDesktopProfileInRoot
 } = require("../dist-electron/main/desktop-profile-store.js");
 
-test("desktop profile defaults Desktop Action confirmation to enabled", (t) => {
+test("desktop profile enables Desktop Action confirmation and disables enterprise chat by default", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const profile = readDesktopProfileFromRoot(root);
 
   assert.equal(profile.general.desktopActionConfirmationEnabled, true);
-  assert.equal(profile.general.enterpriseChatEnabled, true);
+  assert.equal(profile.general.enterpriseChatEnabled, false);
 });
 
-test("desktop profile preserves an explicit enterprise chat disable", (t) => {
+test("desktop profile preserves an explicit enterprise chat enable", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   fs.writeFileSync(path.join(root, "profile.json"), JSON.stringify({
     schemaVersion: 1,
     general: {
-      enterpriseChatEnabled: false
+      enterpriseChatEnabled: true
     }
   }), "utf8");
 
-  assert.equal(readDesktopProfileFromRoot(root).general.enterpriseChatEnabled, false);
+  assert.equal(readDesktopProfileFromRoot(root).general.enterpriseChatEnabled, true);
 });
 
 test("desktop profile ignores retired files and nested aliases", (t) => {

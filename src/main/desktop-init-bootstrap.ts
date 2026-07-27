@@ -51,6 +51,10 @@ import {
   normalizeDesktopActionBridgeSettingsConfig,
   writeDesktopActionBridgeSettingsConfig
 } from "./desktop-action-bridge-settings";
+import {
+  normalizeImServerSettings,
+  writeImServerSettings
+} from "./im-server-settings";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -71,6 +75,7 @@ type BootstrapApplyResult = {
   webs: BootstrapSectionResult;
   assistant: BootstrapAssistantResult;
   desktopActionBridge: BootstrapSectionResult;
+  imServer: BootstrapSectionResult;
   services: BootstrapSectionResult;
 };
 
@@ -788,6 +793,22 @@ function applyDesktopActionBridgeDefaults(
   return "applied";
 }
 
+function applyImServerDefaults(
+  app: App,
+  imServerDefaults: unknown,
+  platform: NodeJS.Platform
+): Exclude<BootstrapSectionResult, "failed"> {
+  if (!isRecord(imServerDefaults)) {
+    return "absent";
+  }
+  const settings = normalizeImServerSettings(imServerDefaults);
+  if (!settings) {
+    throw new Error("IM server base URL must use loopback HTTP or remote HTTPS.");
+  }
+  writeImServerSettings(app, settings, platform);
+  return "applied";
+}
+
 function runBootstrapSection<T extends string>(
   sectionId: keyof BootstrapApplyResult,
   errors: Record<string, string>,
@@ -868,6 +889,11 @@ export function applyDesktopInitBootstrap(
         errors,
         () => applyDesktopActionBridgeDefaults(app, defaults.desktopActionBridge, platform)
       ),
+      imServer: runBootstrapSection(
+        "imServer",
+        errors,
+        () => applyImServerDefaults(app, defaults.imServer, platform)
+      ),
       services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform))
     };
     const failedSections = getFailedSections(applied);
@@ -911,5 +937,6 @@ export const __testInternals = {
   applyTunnelHubDefaults,
   applyWebsiteDefaults,
   applyDesktopActionBridgeDefaults,
+  applyImServerDefaults,
   applyServiceDefaults
 };

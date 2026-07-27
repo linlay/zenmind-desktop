@@ -21,6 +21,7 @@ export type SettingsRuntimeOptions = {
   notifyServicesChanged: () => void;
   emitKanbanChanged: () => void;
   refreshDesktopActionBridge: () => void;
+  refreshEnterpriseChat: () => void;
 };
 
 export function createSettingsRuntime(options: SettingsRuntimeOptions) {
@@ -72,6 +73,7 @@ export function createSettingsRuntime(options: SettingsRuntimeOptions) {
     options.notifyServicesChanged();
     options.emitKanbanChanged();
     options.refreshDesktopActionBridge();
+    options.refreshEnterpriseChat();
     emitDesktopConfigChanged(reason);
   }
 

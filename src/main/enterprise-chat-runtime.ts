@@ -11,9 +11,12 @@ import type {
 } from "../shared/contracts";
 import type { EpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
+import {
+  DEFAULT_IM_SERVER_BASE_URL,
+  normalizeImServerBaseUrl
+} from "./im-server-settings";
 import { getDesktopSsoAccessToken } from "./oidc-sso";
 
-const DEFAULT_ENTERPRISE_CHAT_SERVER_URL = "http://127.0.0.1:11956";
 const ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS = 15_000;
 const ENTERPRISE_CHAT_RECONNECT_MAX_MS = 30_000;
 
@@ -55,6 +58,7 @@ type PendingWebSocketRequest = {
 type EnterpriseChatRuntimeOptions = {
   app: App;
   serverUrl?: string;
+  getServerUrl?: () => string;
   initialEnabled?: boolean;
   fetchImpl?: FetchLike;
   createWebSocket?: (url: string) => WebSocketLike;
@@ -181,23 +185,11 @@ function normalizeMessages(value: unknown) {
 }
 
 function normalizeServerUrl(value: string | undefined) {
-  const candidate = readText(value) || DEFAULT_ENTERPRISE_CHAT_SERVER_URL;
-  const url = new URL(candidate);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Enterprise chat server URL must use HTTP or HTTPS.");
+  const normalized = normalizeImServerBaseUrl(readText(value) || DEFAULT_IM_SERVER_BASE_URL);
+  if (!normalized) {
+    throw new Error("IM server base URL must use loopback HTTP or remote HTTPS.");
   }
-  if (
-    url.protocol === "http:" &&
-    url.hostname !== "127.0.0.1" &&
-    url.hostname !== "localhost" &&
-    url.hostname !== "::1"
-  ) {
-    throw new Error("Remote enterprise chat servers must use HTTPS.");
-  }
-  url.pathname = url.pathname.replace(/\/+$/u, "");
-  url.search = "";
-  url.hash = "";
-  return url.toString().replace(/\/$/u, "");
+  return normalized;
 }
 
 function toWebSocketUrl(serverUrl: string, ticket: string) {
@@ -252,15 +244,16 @@ function mergeMessage(messages: EnterpriseChatMessage[], message: EnterpriseChat
 
 export class EnterpriseChatRuntime {
   private readonly app: App;
-  private readonly serverUrl: string;
+  private serverUrl: string;
+  private readonly getServerUrl: () => string;
   private readonly fetchImpl: FetchLike;
   private readonly createWebSocket: (url: string) => WebSocketLike;
   private readonly getIdentityToken: () => string | null;
   private readonly getDeviceInfo: () => { deviceId: string; deviceName: string };
   private readonly onStateChanged?: (snapshot: EnterpriseChatSnapshot) => void;
   private snapshot: EnterpriseChatSnapshot;
-  private collaborationToken = "";
-  private collaborationTokenExpiresAt = 0;
+  private imSessionToken = "";
+  private imSessionTokenExpiresAt = 0;
   private socket: WebSocketLike | null = null;
   private socketSynced = false;
   private socketClosing = false;
@@ -274,15 +267,16 @@ export class EnterpriseChatRuntime {
 
   constructor(options: EnterpriseChatRuntimeOptions) {
     this.app = options.app;
-    this.serverUrl = normalizeServerUrl(
-      options.serverUrl ?? process.env.DESKTOP_COLLABORATION_SERVER_URL
+    this.getServerUrl = options.getServerUrl ?? (() =>
+      options.serverUrl ?? DEFAULT_IM_SERVER_BASE_URL
     );
+    this.serverUrl = normalizeServerUrl(this.getServerUrl());
     this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
     this.createWebSocket = options.createWebSocket ?? createDefaultWebSocket;
     this.getIdentityToken = options.getIdentityToken ?? getDesktopSsoAccessToken;
     this.getDeviceInfo = options.getDeviceInfo ?? (() => getDesktopDeviceInfo(this.app));
     this.onStateChanged = options.onStateChanged;
-    const initialEnabled = options.initialEnabled ?? true;
+    const initialEnabled = options.initialEnabled ?? false;
     this.snapshot = {
       enabled: initialEnabled,
       connectionState: initialEnabled ? "signed_out" : "disabled",
@@ -355,6 +349,17 @@ export class EnterpriseChatRuntime {
     return this.refreshPromise;
   }
 
+  async reloadConfiguration(enabled: boolean) {
+    const nextServerUrl = normalizeServerUrl(this.getServerUrl());
+    if (nextServerUrl !== this.serverUrl) {
+      this.disconnect();
+      this.clearSession();
+      this.serverUrl = nextServerUrl;
+      this.updateSnapshot({ serverUrl: nextServerUrl });
+    }
+    return this.setEnabled(enabled);
+  }
+
   private async performRefresh() {
     if (!this.snapshot.enabled) {
       return this.getState();
@@ -377,11 +382,17 @@ export class EnterpriseChatRuntime {
     }
 
     this.disconnect();
-    this.updateSnapshot({ connectionState: "connecting", message: "" });
+    this.clearSession();
     try {
+      this.updateServerUrl();
+      this.updateSnapshot({
+        connectionState: "connecting",
+        message: "",
+        serverUrl: this.serverUrl
+      });
       const session = await this.exchangeSession(identityToken);
-      this.collaborationToken = session.token;
-      this.collaborationTokenExpiresAt = session.expiresAt;
+      this.imSessionToken = session.token;
+      this.imSessionTokenExpiresAt = session.expiresAt;
       this.scheduleSessionRefresh();
 
       const [bootstrap, users] = await Promise.all([
@@ -416,6 +427,10 @@ export class EnterpriseChatRuntime {
     return this.getState();
   }
 
+  private updateServerUrl() {
+    this.serverUrl = normalizeServerUrl(this.getServerUrl());
+  }
+
   async openDirectConversation(input: EnterpriseChatOpenDirectInput) {
     const userId = readText(input?.userId);
     if (!userId || userId === this.snapshot.currentUser?.id) {
@@ -435,7 +450,7 @@ export class EnterpriseChatRuntime {
       });
       conversation = normalizeConversation(created) ?? undefined;
       if (!conversation) {
-        throw new Error("The collaboration server returned an invalid direct conversation.");
+        throw new Error("The IM server returned an invalid direct conversation.");
       }
       this.snapshot.conversations = [
         conversation,
@@ -532,13 +547,13 @@ export class EnterpriseChatRuntime {
 
   private async ensureSession() {
     if (
-      this.collaborationToken &&
-      this.collaborationTokenExpiresAt > Date.now() + 30_000
+      this.imSessionToken &&
+      this.imSessionTokenExpiresAt > Date.now() + 30_000
     ) {
       return;
     }
     const state = await this.refresh();
-    if (!this.collaborationToken || state.connectionState === "error") {
+    if (!this.imSessionToken || state.connectionState === "error") {
       throw new Error(state.message || "Enterprise chat session is unavailable.");
     }
   }
@@ -560,7 +575,7 @@ export class EnterpriseChatRuntime {
     const expiresAt = readNumber(record.expiresAt);
     const user = normalizeUser(record.user);
     if (!token || expiresAt <= Date.now() || !user.id) {
-      throw new Error("The collaboration server returned an invalid session.");
+      throw new Error("The IM server returned an invalid session.");
     }
     return { token, expiresAt, user };
   }
@@ -570,7 +585,7 @@ export class EnterpriseChatRuntime {
     const record = isRecord(response) ? response : {};
     const user = normalizeUser(record.user);
     if (!user.id) {
-      throw new Error("The collaboration server returned an invalid employee identity.");
+      throw new Error("The IM server returned an invalid employee identity.");
     }
     return {
       user,
@@ -605,7 +620,7 @@ export class EnterpriseChatRuntime {
       headers?: Record<string, string>;
       body?: string;
     } = {},
-    useCollaborationToken = true
+    useImSessionToken = true
   ): Promise<T> {
     if (!this.fetchImpl) {
       throw new Error("This Desktop runtime does not provide fetch support.");
@@ -617,12 +632,12 @@ export class EnterpriseChatRuntime {
       ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...init.headers
     };
-    if (useCollaborationToken) {
-      if (!this.collaborationToken) {
+    if (useImSessionToken) {
+      if (!this.imSessionToken) {
         clearTimeout(timeout);
         throw new Error("Enterprise chat session is unavailable.");
       }
-      headers.Authorization = `Bearer ${this.collaborationToken}`;
+      headers.Authorization = `Bearer ${this.imSessionToken}`;
     }
     try {
       const response = await this.fetchImpl(`${this.serverUrl}${path}`, {
@@ -649,7 +664,7 @@ export class EnterpriseChatRuntime {
   }
 
   private async connectWebSocket() {
-    if (!this.snapshot.enabled || !this.collaborationToken) {
+    if (!this.snapshot.enabled || !this.imSessionToken) {
       return;
     }
     const ticketResponse = await this.requestJson<unknown>("/api/v1/ws-tickets", {
@@ -659,7 +674,7 @@ export class EnterpriseChatRuntime {
     const ticketRecord = isRecord(ticketResponse) ? ticketResponse : {};
     const ticket = readText(ticketRecord.ticket);
     if (!ticket) {
-      throw new Error("The collaboration server did not issue a WebSocket ticket.");
+      throw new Error("The IM server did not issue a WebSocket ticket.");
     }
     const socket = this.createWebSocket(toWebSocketUrl(this.serverUrl, ticket));
     this.socket = socket;
@@ -940,7 +955,7 @@ export class EnterpriseChatRuntime {
     if (this.sessionRefreshTimer) {
       clearTimeout(this.sessionRefreshTimer);
     }
-    const delay = Math.max(5_000, this.collaborationTokenExpiresAt - Date.now() - 60_000);
+    const delay = Math.max(5_000, this.imSessionTokenExpiresAt - Date.now() - 60_000);
     this.sessionRefreshTimer = setTimeout(() => {
       this.sessionRefreshTimer = null;
       void this.refresh();
@@ -971,8 +986,8 @@ export class EnterpriseChatRuntime {
   }
 
   private clearSession() {
-    this.collaborationToken = "";
-    this.collaborationTokenExpiresAt = 0;
+    this.imSessionToken = "";
+    this.imSessionTokenExpiresAt = 0;
     if (this.sessionRefreshTimer) {
       clearTimeout(this.sessionRefreshTimer);
       this.sessionRefreshTimer = null;

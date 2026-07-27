@@ -464,7 +464,7 @@ const defaultGeneralSettings: DesktopGeneralSettings = {
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false,
   desktopActionConfirmationEnabled: true,
-  enterpriseChatEnabled: true
+  enterpriseChatEnabled: false
 };
 
 function createFallbackDesktopWsServerState(message?: string): DesktopWsServerState {

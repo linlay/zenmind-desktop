@@ -63,6 +63,7 @@ import {
   getElectronUserDataRoot,
 } from "../user-paths";
 import { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
+import { readImServerSettings } from "../im-server-settings";
 import { createLogsRuntime } from "../logs/runtime";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
 import {
@@ -225,6 +226,8 @@ export function createMainProcessRuntime() {
   });
   const enterpriseChatRuntime = new EnterpriseChatRuntime({
     app,
+    getServerUrl: () =>
+      readImServerSettings(app, mainProcessContext.platform).baseUrl,
     initialEnabled: readDesktopProfileFromRoot(
       getDesktopConfigRoot(app)
     ).general.enterpriseChatEnabled,
@@ -459,7 +462,14 @@ export function createMainProcessRuntime() {
     broadcastDesktopSsoStatus: (status) => desktopSsoController.broadcastStatus(status),
     notifyServicesChanged,
     emitKanbanChanged,
-    refreshDesktopActionBridge: () => assistantBridgeRuntime.refreshDesktopActionBridge()
+    refreshDesktopActionBridge: () => assistantBridgeRuntime.refreshDesktopActionBridge(),
+    refreshEnterpriseChat: () => {
+      void enterpriseChatRuntime.reloadConfiguration(
+        readDesktopProfileFromRoot(
+          getDesktopConfigRoot(app, mainProcessContext.platform)
+        ).general.enterpriseChatEnabled
+      );
+    }
   });
   assistantBridgeRuntime = createAssistantBridgeRuntime({
     app,

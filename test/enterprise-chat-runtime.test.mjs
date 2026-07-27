@@ -149,7 +149,8 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   const snapshots = [];
   const runtime = new EnterpriseChatRuntime({
     app: {},
-    serverUrl: "http://127.0.0.1:11956",
+    initialEnabled: true,
+    getServerUrl: () => "http://127.0.0.1:11956",
     fetchImpl,
     createWebSocket(url) {
       const socket = new FakeWebSocket(url);
@@ -228,6 +229,7 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
 test("enterprise chat remains signed out without an SSO access token", async (t) => {
   const runtime = new EnterpriseChatRuntime({
     app: {},
+    initialEnabled: true,
     getIdentityToken: () => null,
     fetchImpl: async () => {
       assert.fail("fetch should not run while signed out");
@@ -239,10 +241,9 @@ test("enterprise chat remains signed out without an SSO access token", async (t)
   assert.equal((await runtime.setEnabled(false)).connectionState, "disabled");
 });
 
-test("enterprise chat honors an initially disabled persisted setting", async (t) => {
+test("enterprise chat is disabled by default", async (t) => {
   const runtime = new EnterpriseChatRuntime({
     app: {},
-    initialEnabled: false,
     getIdentityToken: () => "identity-token",
     fetchImpl: async () => {
       assert.fail("fetch should not run while enterprise chat is disabled");
@@ -256,6 +257,26 @@ test("enterprise chat honors an initially disabled persisted setting", async (t)
   assert.equal(snapshot.connectionState, "disabled");
 });
 
+test("enterprise chat reloads the canonical IM server URL while disabled", async (t) => {
+  let serverUrl = "http://127.0.0.1:11956";
+  const runtime = new EnterpriseChatRuntime({
+    app: {},
+    getServerUrl: () => serverUrl,
+    getIdentityToken: () => "identity-token",
+    fetchImpl: async () => {
+      assert.fail("fetch should not run while enterprise chat is disabled");
+    }
+  });
+  t.after(() => runtime.stop());
+
+  serverUrl = "https://im.example.test/api/";
+  const snapshot = await runtime.reloadConfiguration(false);
+
+  assert.equal(snapshot.enabled, false);
+  assert.equal(snapshot.connectionState, "disabled");
+  assert.equal(snapshot.serverUrl, "https://im.example.test/api");
+});
+
 test("enterprise chat server URL accepts loopback HTTP and requires TLS remotely", () => {
   assert.equal(
     __testInternals.normalizeServerUrl("http://localhost:11956/"),
@@ -267,7 +288,7 @@ test("enterprise chat server URL accepts loopback HTTP and requires TLS remotely
   );
   assert.throws(
     () => __testInternals.normalizeServerUrl("http://chat.example.com"),
-    /must use HTTPS/
+    /loopback HTTP or remote HTTPS/
   );
 });
 
