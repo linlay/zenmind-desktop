@@ -12,6 +12,7 @@ import type {
   WebEntry,
   WebappEntry,
   WebappLogTarget,
+  WebappOpenMode,
   WebappPublishInfo,
   WebappPrerequisiteResult,
   WebappPublishState,
@@ -125,6 +126,13 @@ type WebsiteDraftSnapshot = {
   copilotAgentKey: string;
 };
 
+type WebappDraftSnapshot = {
+  id: string;
+  label: string;
+  copilotAgentKey: string;
+  openMode: WebappOpenMode;
+};
+
 type AboutAppCardProps = {
   isWindows: boolean;
   runtimeResetPending: boolean;
@@ -197,6 +205,15 @@ function areWebsiteDraftSnapshotsEqual(left: WebsiteDraftSnapshot, right: Websit
 
 function isWebappEntry(item: WebEntry): item is WebappEntry {
   return item.kind === "webapp";
+}
+
+function createWebappDraftSnapshot(item: WebappEntry): WebappDraftSnapshot {
+  return {
+    id: item.id,
+    label: item.label,
+    copilotAgentKey: item.copilotAgentKey || "",
+    openMode: item.openMode
+  };
 }
 
 function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunction) {
@@ -2514,6 +2531,7 @@ export function SettingsPage({
   const [selectedWebappId, setSelectedWebappId] = useState("");
   const [webappLabel, setWebappLabel] = useState("");
   const [webappAgentKey, setWebappAgentKey] = useState("");
+  const [webappOpenMode, setWebappOpenMode] = useState<WebappOpenMode>("workspace");
   const [webappPending, setWebappPending] = useState(false);
   const [webappDeletingId, setWebappDeletingId] = useState("");
   const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
@@ -2564,6 +2582,7 @@ export function SettingsPage({
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
   const websiteDraftSourceRef = useRef<WebsiteDraftSnapshot | null>(null);
+  const webappDraftSourceRef = useRef<WebappDraftSnapshot | null>(null);
   const pendingWebsiteSelectionIdRef = useRef("");
   const pendingWebsiteSnapshotRef = useRef<WebsiteDraftSnapshot | null>(null);
   const assistantSettingsLoadedRef = useRef(false);
@@ -2636,6 +2655,20 @@ export function SettingsPage({
     setWebsiteAgentKey("");
   }
 
+  function applyWebappDraftSnapshot(snapshot: WebappDraftSnapshot) {
+    setWebappLabel(snapshot.label);
+    setWebappAgentKey(snapshot.copilotAgentKey);
+    setWebappOpenMode(snapshot.openMode);
+  }
+
+  function clearWebappDraft() {
+    webappDraftSourceRef.current = null;
+    setWebappLabel("");
+    setWebappAgentKey("");
+    setWebappOpenMode("workspace");
+    setWebappLogContent("");
+  }
+
   useEffect(() => {
     if (activeSection !== "websites") {
       return;
@@ -2686,8 +2719,18 @@ export function SettingsPage({
       return;
     }
     if (selectedWebapp) {
-      setWebappLabel(selectedWebapp.label);
-      setWebappAgentKey(selectedWebapp.copilotAgentKey || "");
+      const nextSnapshot = createWebappDraftSnapshot(selectedWebapp);
+      const previousSnapshot = webappDraftSourceRef.current;
+      const sameSource = previousSnapshot?.id === selectedWebapp.id;
+      const hasDraft = sameSource && (
+        webappLabel !== previousSnapshot.label ||
+        webappAgentKey !== previousSnapshot.copilotAgentKey ||
+        webappOpenMode !== previousSnapshot.openMode
+      );
+      if (!sameSource || !hasDraft) {
+        applyWebappDraftSnapshot(nextSnapshot);
+      }
+      webappDraftSourceRef.current = nextSnapshot;
       return;
     }
     const firstWebapp = webappItems[0] ?? null;
@@ -2695,11 +2738,16 @@ export function SettingsPage({
       setSelectedWebappId(firstWebapp.id);
     } else {
       setSelectedWebappId("");
-      setWebappLabel("");
-      setWebappAgentKey("");
-      setWebappLogContent("");
+      clearWebappDraft();
     }
-  }, [activeSection, selectedWebapp, webappItems]);
+  }, [
+    activeSection,
+    selectedWebapp,
+    webappAgentKey,
+    webappItems,
+    webappLabel,
+    webappOpenMode
+  ]);
 
   useEffect(() => {
     if (activeSection !== "webapps" || !selectedWebapp) {
@@ -3888,6 +3936,7 @@ export function SettingsPage({
     setSelectedWebappId(item.id);
     setWebappLabel(item.label);
     setWebappAgentKey(item.copilotAgentKey || "");
+    setWebappOpenMode(item.openMode);
     setWebappLogContent("");
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
@@ -3954,7 +4003,8 @@ export function SettingsPage({
     try {
       const result = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
         label: webappLabel,
-        copilotAgentKey: webappAgentKey
+        copilotAgentKey: webappAgentKey,
+        openMode: webappOpenMode
       });
       showSectionResultNotice("webapps", result);
       if (result.ok) {
@@ -5586,6 +5636,25 @@ export function SettingsPage({
                           required
                         />
                       </label>
+                      <div className="web-detail-form-item">
+                        <span>{t("settings.webapps.openMode")}</span>
+                        <Segmented
+                          block
+                          value={webappOpenMode}
+                          onChange={(value) => setWebappOpenMode(value as WebappOpenMode)}
+                          aria-label={t("settings.webapps.openMode")}
+                          options={[
+                            {
+                              value: "workspace",
+                              label: t("settings.webapps.openModeWorkspace")
+                            },
+                            {
+                              value: "dialog",
+                              label: t("settings.webapps.openModeDialog")
+                            }
+                          ]}
+                        />
+                      </div>
                       <label className="web-detail-form-item">
                         <span>{t("settings.websites.agentEnhancement")}</span>
                         <span className="settings-control-row-select desktop-pet-agent-select-wrap">
@@ -5776,6 +5845,12 @@ export function SettingsPage({
                       {renderWebDetailRow(t("settings.webapps.installPath"), selectedWebapp.installPath)}
                       {renderWebDetailRow(t("settings.webapps.schemaVersion"), selectedWebapp.schemaVersion)}
                       {renderWebDetailRow(t("settings.webapps.appVersion"), selectedWebapp.version)}
+                      {renderWebDetailRow(
+                        t("settings.webapps.openMode"),
+                        selectedWebapp.openMode === "dialog"
+                          ? t("settings.webapps.openModeDialog")
+                          : t("settings.webapps.openModeWorkspace")
+                      )}
                       {renderWebDetailRow(t("settings.webapps.target"), selectedWebapp.target)}
                       {renderWebDetailRow(t("settings.webapps.frontendMode"), selectedWebapp.frontend.mode)}
                       {selectedWebapp.frontend.mode === "static" ? (

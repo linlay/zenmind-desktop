@@ -5,6 +5,7 @@ export type WebEntryKey = `website:${string}` | `webapp:${string}`;
 export type WebappRuntimeStatus = "stopped" | "starting" | "running" | "blocked" | "error";
 export type WebappLogTarget = "main" | "error";
 export type WebappSourceKind = "market" | "local" | "plugin" | "bundled";
+export type WebappOpenMode = "workspace" | "dialog";
 export type WebappLauncherKind = "none" | "node" | "native" | "java" | "container";
 export type WebappBackendOwnership = "desktop" | "external";
 export type WebappTarget =
@@ -119,6 +120,7 @@ export interface WebappEntry extends WebEntryBase {
   schemaVersion: 2 | 3 | 4;
   version: string;
   target: WebappTarget;
+  openMode: WebappOpenMode;
   frontend: WebappFrontendConfig;
   backend?: WebappBackendConfig;
   sourceKind?: WebappSourceKind;
@@ -235,6 +237,7 @@ export interface WebsiteTransferResult {
 export interface WebappUpdateInput {
   label?: string;
   copilotAgentKey?: string;
+  openMode?: WebappOpenMode;
 }
 
 export interface WebappItemsResult {

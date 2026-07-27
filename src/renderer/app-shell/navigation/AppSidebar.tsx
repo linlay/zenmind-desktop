@@ -992,6 +992,8 @@ type AppSidebarProps = {
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (input: WebsiteInput) => Promise<WebsiteResult>;
   onImportWebappItem?: () => Promise<WebappImportResult>;
+  onOpenWebappWindow?: (item: Extract<WebEntry, { kind: "webapp" }>) => void;
+  onOpenWebappWorkspace?: (item: Extract<WebEntry, { kind: "webapp" }>) => void;
   webOpenEntryKeys?: WebEntryKey[];
   faviconCache?: WebsiteFaviconCache;
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
@@ -1048,6 +1050,8 @@ export function AppSidebar({
   onRefreshCopilotAgentOptions,
   onCreateWebsiteItem,
   onImportWebappItem,
+  onOpenWebappWindow,
+  onOpenWebappWorkspace,
   webOpenEntryKeys = [],
   faviconCache,
   onCloseWebItem,
@@ -3557,7 +3561,19 @@ export function AppSidebar({
         >
           <NavLink
             to={item.to}
-            onClick={(event) => handleItemClick(event, item.to)}
+            onClick={(event) => {
+              if (
+                webItem.kind === "webapp" &&
+                webItem.openMode === "dialog" &&
+                onOpenWebappWindow
+              ) {
+                event.preventDefault();
+                onOpenWebappWindow(webItem);
+                onNavigateItem?.();
+                return;
+              }
+              handleItemClick(event, item.to);
+            }}
             onContextMenu={(event) => handleWebItemContextMenu(event, webItem)}
             aria-label={item.label}
             title={item.label}
@@ -4876,26 +4892,55 @@ export function AppSidebar({
           <span>{t("sidebar.website.close")}</span>
         </button>
         {isWebapp ? (
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!canRemoveWebapp || Boolean(webItemRemovePendingId)}
-            title={
-              canRemoveWebapp
-                ? t("sidebar.webapp.remove")
-                : t("sidebar.webapp.managedNotRemovable", { name: item.label })
-            }
-            onClick={() => {
-              setWebItemMenu(null);
-              void removeWebappItem(item);
-            }}
-          >
-            <span>
-              {removePending
-                ? t("sidebar.webapp.removing")
-                : t("sidebar.webapp.remove")}
-            </span>
-          </button>
+          <>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={
+                item.openMode === "dialog"
+                  ? !onOpenWebappWorkspace
+                  : !onOpenWebappWindow
+              }
+              onClick={() => {
+                setWebItemMenu(null);
+                if (item.kind === "webapp") {
+                  if (item.openMode === "dialog") {
+                    onOpenWebappWorkspace?.(item);
+                  } else {
+                    onOpenWebappWindow?.(item);
+                  }
+                }
+              }}
+            >
+              <span>
+                {t(
+                  item.openMode === "dialog"
+                    ? "sidebar.webapp.openInWorkspace"
+                    : "sidebar.webapp.openInWindow",
+                )}
+              </span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canRemoveWebapp || Boolean(webItemRemovePendingId)}
+              title={
+                canRemoveWebapp
+                  ? t("sidebar.webapp.remove")
+                  : t("sidebar.webapp.managedNotRemovable", { name: item.label })
+              }
+              onClick={() => {
+                setWebItemMenu(null);
+                void removeWebappItem(item);
+              }}
+            >
+              <span>
+                {removePending
+                  ? t("sidebar.webapp.removing")
+                  : t("sidebar.webapp.remove")}
+              </span>
+            </button>
+          </>
         ) : null}
       </div>,
       document.body,
