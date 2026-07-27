@@ -46,7 +46,10 @@ export function updateWebappItem(app: App, id: string, input: WebappUpdateInput)
         typeof input.copilotAgentKey === "string" || typeof rawInput.agentKey === "string"
           ? { copilotAgentKey: readString(input.copilotAgentKey) || readString(rawInput.agentKey) }
           : {}
-      )
+      ),
+      ...(input.openMode === "workspace" || input.openMode === "dialog"
+        ? { openMode: input.openMode }
+        : {})
     });
     const nextItems = readWebappItems(app);
     return {

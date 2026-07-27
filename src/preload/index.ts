@@ -585,6 +585,7 @@ const api: DesktopApi = {
       update: (id: string, input) => ipcRenderer.invoke("webs.webapps.update", id, input),
       remove: (id: string) => ipcRenderer.invoke("webs.webapps.remove", id),
       start: (id: string) => ipcRenderer.invoke("webs.webapps.start", id),
+      openWindow: (id: string) => ipcRenderer.invoke("webs.webapps.openWindow", id),
       stop: (id: string) => ipcRenderer.invoke("webs.webapps.stop", id),
       restart: (id: string) => ipcRenderer.invoke("webs.webapps.restart", id),
       getStatus: (id: string) => ipcRenderer.invoke("webs.webapps.getStatus", id),
