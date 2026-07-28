@@ -2317,6 +2317,13 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(zhCN, /"settings\.debug\.desktopWs\.title":\s*"本地 WebSocket 服务调试"/);
 });
 
+test("debug category navigation keeps theme text colors in interactive states", () => {
+  const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
+
+  assert.match(settingsStyles, /\.settings-page \.settings-debug-nav-item\.ant-btn:not\(:disabled\):not\(\.ant-btn-disabled\):hover,[\s\S]*?color:\s*var\(--ink\);/);
+  assert.match(settingsStyles, /\.settings-page \.settings-debug-nav-item\.ant-btn\.is-selected,[\s\S]*?\.settings-debug-nav-item\.ant-btn\.is-selected:not\(:disabled\):not\(\.ant-btn-disabled\):hover,[\s\S]*?color:\s*var\(--accent-strong\);/);
+});
+
 test("desktop state debug tab is wired through the fixed read-only IPC contract", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
