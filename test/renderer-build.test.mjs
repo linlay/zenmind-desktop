@@ -3898,6 +3898,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const startupPhases = readSourceFile("src", "main", "lifecycle", "startup-phases.ts");
   const appState = readSourceFile("src", "main", "app-state.ts");
   const shutdownRunner = readSourceFile("src", "main", "lifecycle", "shutdown.ts");
+  const globalStyles = readRendererStyles();
   const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
   const webappWindowManager = readSourceFile("src", "main", "webs", "webapps", "window-manager.ts");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
@@ -3978,6 +3979,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appSidebar, /onOpenWebappWindow\?\.\(item\)/);
   assert.match(appSidebar, /onOpenWebappWorkspace\?\.\(item\)/);
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
+  assert.match(appSidebar, /disabled=\{\s*isCollapsed \|\| !isOpen \|\| Boolean\(webClosePendingEntryKey\)\s*\}/);
+  assert.match(appSidebar, /\{!isCollapsed \? \(\s*<button[\s\S]{0,700}t\("sidebar\.webapp\.remove"\)/);
+  assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,80}z-index:\s*10001;/);
   assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
   assert.match(appSidebar, /void removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
