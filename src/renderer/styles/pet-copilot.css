@@ -625,31 +625,30 @@ body.desktop-pet-body,
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 0.5px solid rgba(22, 22, 22, 0.2);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.38);
-  color: #111;
+  padding: 0;
+  border: 1px solid rgba(120, 139, 176, 0.22);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #52606d;
   cursor: pointer;
   font: inherit;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
   -webkit-app-region: no-drag;
 }
 
 .desktop-pet-task-head-action:hover,
 .desktop-pet-task-head-action:focus-visible {
-  background: rgba(22, 22, 22, 0.08);
+  border-color: rgba(120, 139, 176, 0.34);
+  background: rgba(120, 139, 176, 0.14);
   outline: none;
 }
 
-.desktop-pet-task-head-action span {
-  width: 16px;
-  height: 16px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: translateY(2px) rotate(-135deg);
-}
-
-.desktop-pet-task-panel.is-expanded .desktop-pet-task-head-action span {
-  transform: translateY(-2px) rotate(45deg);
+.desktop-pet-task-head-action .anticon {
+  font-size: 14px;
+  line-height: 1;
 }
 
 .desktop-pet-task-panel.is-collapsed {
@@ -741,10 +740,18 @@ body.desktop-pet-body,
 
 .desktop-pet-task-status-badge {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   justify-self: end;
   width: 34px;
   height: 34px;
   border-radius: 999px;
+}
+
+.desktop-pet-task-status-badge .anticon {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .desktop-pet-task-status-badge.is-idle {
@@ -752,33 +759,9 @@ body.desktop-pet-body,
   color: #2d7a2f;
 }
 
-.desktop-pet-task-status-badge.is-idle::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: currentColor;
-  transform: translate(-50%, -50%);
-}
-
 .desktop-pet-task-status-badge.is-done {
   background: #e7f0d8;
   color: #246b24;
-}
-
-.desktop-pet-task-status-badge.is-done::after {
-  content: "";
-  position: absolute;
-  left: 13px;
-  top: 9px;
-  width: 7px;
-  height: 13px;
-  border-right: 2.5px solid currentColor;
-  border-bottom: 2.5px solid currentColor;
-  transform: rotate(43deg);
 }
 
 .desktop-pet-task-status-badge.is-running {
@@ -786,43 +769,9 @@ body.desktop-pet-body,
   color: #356db7;
 }
 
-.desktop-pet-task-status-badge.is-running::after {
-  content: "";
-  position: absolute;
-  inset: 9px;
-  border: 2.5px solid currentColor;
-  border-right-color: transparent;
-  border-bottom-color: transparent;
-  border-radius: 999px;
-  animation: desktop-pet-task-spin 0.9s linear infinite;
-}
-
 .desktop-pet-task-status-badge.is-message {
   background: #dcf0ea;
   color: #176f62;
-}
-
-.desktop-pet-task-status-badge.is-message::before {
-  content: "";
-  position: absolute;
-  left: 9px;
-  top: 10px;
-  width: 16px;
-  height: 11px;
-  border: 2.4px solid currentColor;
-  border-radius: 5px;
-}
-
-.desktop-pet-task-status-badge.is-message::after {
-  content: "";
-  position: absolute;
-  left: 15px;
-  top: 20px;
-  width: 6px;
-  height: 6px;
-  border-left: 2.4px solid currentColor;
-  border-bottom: 2.4px solid currentColor;
-  transform: skewY(-28deg);
 }
 
 .desktop-pet-task-status-badge.is-awaiting {
@@ -831,69 +780,14 @@ body.desktop-pet-body,
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
 }
 
-.desktop-pet-task-status-badge.is-awaiting::before {
-  content: "";
-  position: absolute;
-  left: 10px;
-  top: 9px;
-  width: 14px;
-  height: 14px;
-  border: 2.4px solid currentColor;
-  border-radius: 999px;
-}
-
-.desktop-pet-task-status-badge.is-awaiting::after {
-  content: "";
-  position: absolute;
-  left: 17px;
-  top: 12px;
-  width: 5px;
-  height: 8px;
-  border-left: 2.2px solid currentColor;
-  border-bottom: 2.2px solid currentColor;
-}
-
 .desktop-pet-task-status-badge.is-error {
   background: #f5ded8;
   color: #a33a2f;
 }
 
-.desktop-pet-task-status-badge.is-error::before,
-.desktop-pet-task-status-badge.is-error::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 10px;
-  width: 2.5px;
-  height: 14px;
-  margin-left: -1.25px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.desktop-pet-task-status-badge.is-error::before {
-  transform: rotate(45deg);
-}
-
-.desktop-pet-task-status-badge.is-error::after {
-  transform: rotate(-45deg);
-}
-
 .desktop-pet-task-status-badge.is-cancelled {
   background: #e7e6e2;
   color: #6f6f6a;
-}
-
-.desktop-pet-task-status-badge.is-cancelled::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 12px;
-  height: 2.5px;
-  margin: -1.25px 0 0 -6px;
-  border-radius: 999px;
-  background: currentColor;
 }
 
 .desktop-pet-task-actions {
@@ -1425,14 +1319,13 @@ body.desktop-pet-body,
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid rgba(120, 139, 176, 0.2);
-  border-radius: 6px;
-  background: #fff;
-  box-shadow: 0 2px 6px rgba(30, 54, 105, 0.14);
+  border: 1px solid rgba(120, 139, 176, 0.22);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #52606d;
   cursor: pointer;
-  opacity: 0.72;
   transition:
-    opacity 0.15s ease,
+    background 0.15s ease,
     border-color 0.15s ease,
     color 0.15s ease;
   z-index: 1;
@@ -1443,33 +1336,12 @@ body.desktop-pet-body,
 .desktop-pet-message-dismiss:focus-visible {
   border-color: rgba(120, 139, 176, 0.34);
   background: rgba(120, 139, 176, 0.14);
-  opacity: 1;
+  outline: none;
 }
 
-.desktop-pet-message-dismiss span {
-  position: relative;
-  width: 16px;
-  height: 16px;
-}
-
-.desktop-pet-message-dismiss span::before,
-.desktop-pet-message-dismiss span::after {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  width: 12px;
-  height: 1.6px;
-  border-radius: 2px;
-  background: #6b7785;
-}
-
-.desktop-pet-message-dismiss span::before {
-  transform: translateY(-50%) rotate(45deg);
-}
-
-.desktop-pet-message-dismiss span::after {
-  transform: translateY(-50%) rotate(-45deg);
+.desktop-pet-message-dismiss .anticon {
+  font-size: 14px;
+  line-height: 1;
 }
 
 .desktop-pet-message-main {
@@ -1517,49 +1389,20 @@ body.desktop-pet-body,
 
 .desktop-pet-message-main .desktop-pet-task-status-badge {
   position: absolute;
-  top: calc(50% + 5px);
-  right: 15px;
-  width: 22px;
-  height: 22px;
-  transform: translateY(-50%);
+  top: 43px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
   transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.desktop-pet-message-main .desktop-pet-task-status-badge .anticon {
+  font-size: 14px;
 }
 
 .desktop-pet-message-card.is-replying .desktop-pet-message-main .desktop-pet-task-status-badge {
   opacity: 0;
   pointer-events: none;
-}
-
-.desktop-pet-message-main .desktop-pet-task-status-badge.is-done::after {
-  left: 8px;
-  top: 5px;
-  width: 5px;
-  height: 9px;
-  border-right-width: 2.4px;
-  border-bottom-width: 2.4px;
-  transform: rotate(43deg);
-}
-
-.desktop-pet-message-main .desktop-pet-task-status-badge.is-awaiting::before {
-  left: 5px;
-  top: 5px;
-  width: 8px;
-  height: 8px;
-  border-width: 2px;
-}
-
-.desktop-pet-message-main .desktop-pet-task-status-badge.is-awaiting::after {
-  left: 10px;
-  top: 7px;
-  width: 4px;
-  height: 5px;
-  border-left-width: 2px;
-  border-bottom-width: 2px;
-}
-
-.desktop-pet-message-main .desktop-pet-task-status-badge.is-running::after {
-  inset: 6px;
-  border-width: 2px;
 }
 
 .desktop-pet-message-reply {

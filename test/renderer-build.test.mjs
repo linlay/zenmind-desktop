@@ -6226,6 +6226,26 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
 });
 
+test("desktop pet overview icons share one compact outlined visual language", () => {
+  const desktopPet = readSourceFile("src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx");
+  const globalStyles = readRendererStyles();
+
+  assert.match(desktopPet, /import UpOutlined from "@ant-design\/icons\/UpOutlined";/);
+  assert.match(desktopPet, /import DownOutlined from "@ant-design\/icons\/DownOutlined";/);
+  assert.match(desktopPet, /import ClockCircleOutlined from "@ant-design\/icons\/ClockCircleOutlined";/);
+  assert.match(desktopPet, /import CheckOutlined from "@ant-design\/icons\/CheckOutlined";/);
+  assert.match(desktopPet, /import CloseOutlined from "@ant-design\/icons\/CloseOutlined";/);
+  assert.match(desktopPet, /function renderDesktopPetStatusIcon\(status: string\)/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action\s*\{[\s\S]{0,180}width:\s*24px;[\s\S]{0,80}height:\s*24px;[\s\S]{0,140}border-radius:\s*7px;[\s\S]{0,100}color:\s*#52606d;/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-dismiss\s*\{[\s\S]{0,220}width:\s*24px;[\s\S]{0,80}height:\s*24px;[\s\S]{0,140}border-radius:\s*7px;[\s\S]{0,100}color:\s*#52606d;/);
+  assert.match(globalStyles, /\.desktop-pet-message-dismiss \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\s*\{[\s\S]{0,120}top:\s*43px;[\s\S]{0,80}right:\s*8px;[\s\S]{0,80}width:\s*24px;[\s\S]{0,80}height:\s*24px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-task-head-action span\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-dismiss span::before/);
+});
+
 test("desktop pet message reaction collapses to an unread badge without an expand button", () => {
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
@@ -6278,8 +6298,8 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-task-status-badge\.is-awaiting\s*\{[\s\S]{0,120}#fff2c2[\s\S]{0,120}#b45309/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy strong\s*\{[\s\S]{0,120}font-size:\s*13px;/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
-  assert.match(globalStyles, /\.desktop-pet-task-head-action span\s*\{[\s\S]{0,220}transform:\s*translateY\(2px\) rotate\(-135deg\);/);
-  assert.match(globalStyles, /\.desktop-pet-task-panel\.is-expanded \.desktop-pet-task-head-action span\s*\{[\s\S]{0,120}transform:\s*translateY\(-2px\) rotate\(45deg\);/);
+  assert.match(desktopPet, /isWidgetExpanded \? \([\s\S]{0,80}<UpOutlined aria-hidden="true" \/>[\s\S]{0,80}<DownOutlined aria-hidden="true" \/>/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy strong\s*\{[\s\S]{0,120}font-size:\s*12px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*155px;/);
@@ -6291,9 +6311,9 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/);
   assert.match(globalStyles, /\.desktop-pet-message-card \.desktop-pet-task-copy span\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::before\s*\{[\s\S]{0,140}left:\s*5px;[\s\S]{0,80}top:\s*5px;[\s\S]{0,80}width:\s*8px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::after\s*\{[\s\S]{0,140}left:\s*10px;[\s\S]{0,80}top:\s*7px;[\s\S]{0,80}height:\s*5px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-running::after\s*\{[\s\S]{0,100}inset:\s*6px;[\s\S]{0,80}border-width:\s*2px;/);
+  assert.match(desktopPet, /case "awaiting":[\s\S]{0,80}<ClockCircleOutlined aria-hidden="true" \/>/);
+  assert.match(desktopPet, /case "running":[\s\S]{0,80}<LoadingOutlined spin aria-hidden="true" \/>/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-reply[\s\S]*?opacity:\s*1;/);
   assert.match(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,100}right:\s*8px;[\s\S]{0,80}bottom:\s*7px;/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,120}top:\s*calc\(50%/);
