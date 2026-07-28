@@ -2041,6 +2041,14 @@ test("settings route moves section navigation into the app sidebar and uses sect
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),
     "utf8"
   );
+  const desktopActionWorkbenchPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "DesktopActionWorkbenchPage.tsx"),
+    "utf8"
+  );
+  const desktopActionWorkbenchStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "DesktopActionWorkbenchPage.css"),
+    "utf8"
+  );
   const settingsSections = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "settingsPageSections.ts"),
     "utf8"
@@ -2094,6 +2102,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /debugSettingsUnlocked/);
   assert.match(appShell, /debugVisible:\s*debugSettingsUnlocked/);
   assert.match(appShell, /debugVisible=\{debugSettingsUnlocked\}/);
+  assert.match(appShell, /function handleCloseDebugSettings\(\)[\s\S]*?aboutSettingsClickCountRef\.current = 0;[\s\S]*?setDebugSettingsUnlocked\(false\);[\s\S]*?buildSettingsSectionPath\("about"\)[\s\S]*?navigate\(targetPath, \{ replace: true \}\)/);
+  assert.match(appShell, /onCloseDebug=\{handleCloseDebugSettings\}/);
   assert.doesNotMatch(brandMarkSource, /assets\/sidebar-icons/);
   assert.match(brandMarkSource, /function createSidebarIconProps/);
   assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*\| "archive"/);
@@ -2233,13 +2243,14 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "other"[\s\S]*?<DesktopActionDebugCard \/>[\s\S]*?<TunnelDebugCard \/>/);
   assert.match(settingsPage, /function DeviceIdentityDebugCard/);
   assert.match(settingsPage, /function DesktopStateDebugCard/);
-  assert.match(settingsPage, /function DesktopActionDebugDialog/);
+  assert.doesNotMatch(settingsPage, /function DesktopActionDebugDialog/);
   assert.match(settingsPage, /function WsServerDebugDialog/);
-  assert.match(settingsPage, /window\.electronAPI\.desktopActions\.list\(\)/);
-  assert.match(settingsPage, /window\.electronAPI\.desktopActions\.call\(request\)/);
+  assert.match(settingsPage, /window\.electronAPI\.desktopActions\.openWorkbench\(\)/);
+  assert.match(desktopActionWorkbenchPage, /window\.electronAPI\.desktopActions\.list\(\)/);
+  assert.match(desktopActionWorkbenchPage, /window\.electronAPI\.desktopActions\.call\(request\)/);
   assert.match(settingsPage, /window\.electronAPI\.agentAuth\.issueAccessToken\("missing"\)/);
   assert.match(settingsPage, /new WebSocket\(wsUrl\.toString\(\)\)/);
-  assert.match(settingsPage, /settings\.debug\.desktopActions\.openDialog/);
+  assert.match(settingsPage, /settings\.debug\.desktopActions\.openWorkbench/);
   assert.match(settingsPage, /settings\.debug\.desktopWs\.consoleAction/);
   assert.match(settingsPage, /settings\.debug\.wsConsole\.command/);
   assert.match(settingsPage, /window\.electronAPI\.settings\.getDeviceIdentity\(\)/);
@@ -2278,7 +2289,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsStyles, /\.settings-debug-layout\s*\{[\s\S]*?grid-template-columns:\s*148px minmax\(0, 1fr\);/);
   assert.match(settingsStyles, /\.settings-debug-nav-item\.is-selected\s*\{[\s\S]*?background:\s*var\(--accent-soft\)/);
   assert.match(settingsStyles, /\.settings-debug-state-file\s*\{[\s\S]*?border:\s*1px solid var\(--line\)/);
-  assert.match(settingsStyles, /\.settings-debug-dialog-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(desktopActionWorkbenchStyles, /\.desktop-action-workbench-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(settingsStyles, /\.settings-debug-log-entry\.is-out\s*\{[\s\S]*?border-color:\s*var\(--accent-border-subtle\)/);
   assert.match(settingsStyles, /@media \(max-width: 720px\)[\s\S]*?\.settings-debug-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
   assert.match(settingsStyles, /\.settings-page \.settings-reset-card/);
@@ -2627,6 +2638,9 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true;\s*\}/);
   assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "assistant"[\s\S]*handleToggleDesktopPet[\s\S]*case "kanban"[\s\S]*handleToggleControlRemoteControl[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /case "debug":[\s\S]*?<Button onClick=\{onCloseDebug\}>[\s\S]*?settings\.debug\.closeAction/);
+  assert.match(zhCN, /"settings\.debug\.closeAction": "关闭调试"/);
+  assert.match(enUS, /"settings\.debug\.closeAction": "Close debug"/);
   const sectionHeaderActionBody = settingsPage.match(
     /function renderSectionHeaderAction\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  function renderActiveSection/
   )?.groups?.body ?? "";
@@ -4750,6 +4764,47 @@ test("desktop action confirmation detail keeps debug context and redaction keys"
   }
 });
 
+test("desktop action confirmation keeps supporting information inside details", () => {
+  const dialog = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "DesktopActionConfirmationDialog.tsx"
+  );
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const detailsIndex = dialog.indexOf("<details");
+  const layerRule = styles.match(
+    /\.desktop-action-confirmation-layer\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+  const dialogRule = styles.match(
+    /\.desktop-action-confirmation-dialog\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+  const titleRule = styles.match(
+    /\.desktop-action-confirmation-head h2\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+  const buttonRule = styles.match(
+    /\.desktop-action-confirmation-button\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+
+  assert.ok(detailsIndex > 0);
+  assert.ok(dialog.indexOf("desktop-action-confirmation-summary") < detailsIndex);
+  assert.ok(dialog.indexOf("desktop-action-confirmation-description") > detailsIndex);
+  assert.ok(dialog.indexOf("desktop-action-confirmation-fields") > detailsIndex);
+  assert.match(layerRule, /position:\s*fixed;/);
+  assert.match(layerRule, /padding:\s*16px;/);
+  assert.match(dialogRule, /border-radius:\s*12px;/);
+  assert.match(dialogRule, /background:\s*rgba\(255, 255, 255, 0\.94\);/);
+  assert.match(dialogRule, /box-shadow:\s*0 18px 54px rgba\(15, 23, 42, 0\.2\);/);
+  assert.match(titleRule, /font-size:\s*12px;/);
+  assert.match(titleRule, /font-weight:\s*400;/);
+  assert.match(buttonRule, /min-height:\s*32px;/);
+  assert.match(buttonRule, /font-weight:\s*500;/);
+  assert.match(
+    styles,
+    /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*var\(--bg-base\);[\s\S]*?box-shadow:\s*none;/
+  );
+});
+
 test("built index uses relative asset paths", (t) => {
   const generatedBrandPath = newestGeneratedBrandPath();
   if (!generatedBrandPath) {
@@ -5827,6 +5882,63 @@ test("control center renderer text is routed through i18n", () => {
   assert.match(controlCenter, /useI18n/);
   assert.doesNotMatch(controlCenter, /[\p{Script=Han}]/u);
   assert.doesNotMatch(controlCenter, /getServiceDisplayName/);
+});
+
+test("desktop action workbench opens in a separate movable native window", () => {
+  const mainRuntime = readSourceFile("src", "main", "app", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const windowController = readSourceFile(
+    "src",
+    "main",
+    "app-shell",
+    "desktop-action-workbench-window.ts"
+  );
+  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const contracts = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const rendererApp = readSourceFile("src", "renderer", "App.tsx");
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const settingsPage = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "settings",
+    "SettingsPage.tsx"
+  );
+  const workbenchPage = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "DesktopActionWorkbenchPage.tsx"
+  );
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(mainRuntime, /DESKTOP_ACTION_WORKBENCH_ROUTE = "\/desktop-action-workbench"/);
+  assert.match(appShellRuntime, /DesktopActionWorkbenchWindowController/);
+  assert.match(windowController, /private window: BrowserWindow \| null = null/);
+  assert.match(windowController, /frame:\s*true/);
+  assert.match(windowController, /modal:\s*false/);
+  assert.doesNotMatch(windowController, /parent:\s*ownerWindow|getOwnerWindow/);
+  assert.match(windowController, /platform === "darwin"[\s\S]*?platform === "win32"/);
+  assert.match(windowController, /isMinimized\(\)[\s\S]*?restore\(\)[\s\S]*?focus\(\)[\s\S]*?moveTop\(\)/);
+  assert.match(windowController, /loadRendererRoute\(targetWindow, this\.options\.routePath\)/);
+  assert.doesNotMatch(windowController, /setAlwaysOnTop|setVisibleOnAllWorkspaces/);
+  assert.match(assistantHandlers, /desktopActions\.openWorkbench/);
+  assert.match(assistantHandlers, /desktopActions\.closeWorkbench/);
+  assert.match(preload, /openWorkbench: \(\) => ipcRenderer\.invoke\("desktopActions\.openWorkbench"\)/);
+  assert.match(preload, /closeWorkbench: \(\) => ipcRenderer\.invoke\("desktopActions\.closeWorkbench"\)/);
+  assert.match(contracts, /openWorkbench: \(\) => Promise<\{ ok: boolean; message\?: string \}>/);
+  assert.match(contracts, /closeWorkbench: \(\) => Promise<\{ ok: boolean; message\?: string \}>/);
+  assert.match(rendererApp, /location\.pathname === "\/desktop-action-workbench"/);
+  assert.match(workbenchPage, /window\.electronAPI\.desktopActions\.list\(\)/);
+  assert.match(workbenchPage, /window\.electronAPI\.desktopActions\.call\(request\)/);
+  assert.doesNotMatch(workbenchPage, /<Modal|from "antd".*Modal/);
+  assert.match(settingsPage, /window\.electronAPI\.desktopActions\.openWorkbench\(\)/);
+  assert.doesNotMatch(settingsPage, /function DesktopActionDebugDialog/);
+  assert.match(appShell, /window\.electronAPI\.desktopActions\.closeWorkbench\(\)/);
+  assert.match(zhCN, /"settings\.debug\.desktopActions\.openWorkbench": "打开动作工作台"/);
+  assert.match(enUS, /"settings\.debug\.desktopActions\.openWorkbench": "Open action workbench"/);
 });
 
 test("service logs open in a separate floating log viewer window", () => {

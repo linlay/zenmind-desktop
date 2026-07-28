@@ -369,7 +369,19 @@ const api: DesktopApi = {
     refresh: () => ipcRenderer.invoke("enterpriseChat.refresh"),
     openDirectConversation: (input) =>
       ipcRenderer.invoke("enterpriseChat.openDirectConversation", input),
+    openConversation: (input) =>
+      ipcRenderer.invoke("enterpriseChat.openConversation", input),
+    createGroup: (input) => ipcRenderer.invoke("enterpriseChat.createGroup", input),
     sendMessage: (input) => ipcRenderer.invoke("enterpriseChat.sendMessage", input),
+    sendFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendFiles", input),
+    sendScreenshot: (input) => ipcRenderer.invoke("enterpriseChat.sendScreenshot", input),
+    sendDesktopAction: (input) =>
+      ipcRenderer.invoke("enterpriseChat.sendDesktopAction", input),
+    loadAttachment: (input) => ipcRenderer.invoke("enterpriseChat.loadAttachment", input),
+    downloadAttachment: (input) =>
+      ipcRenderer.invoke("enterpriseChat.downloadAttachment", input),
+    executeDesktopAction: (input) =>
+      ipcRenderer.invoke("enterpriseChat.executeDesktopAction", input),
     markRead: (input) => ipcRenderer.invoke("enterpriseChat.markRead", input),
     onStateChanged: (listener: EnterpriseChatSnapshotListener) => {
       const handleStateChanged = (
@@ -438,6 +450,8 @@ const api: DesktopApi = {
     respond: (response: DesktopActionRendererResponse) => ipcRenderer.invoke("desktopActions.respond", response),
     respondConfirmation: (response: DesktopActionConfirmationResponse) =>
       ipcRenderer.invoke("desktopActions.respondConfirmation", response),
+    openWorkbench: () => ipcRenderer.invoke("desktopActions.openWorkbench"),
+    closeWorkbench: () => ipcRenderer.invoke("desktopActions.closeWorkbench"),
     list: () => ipcRenderer.invoke("desktopActions.list"),
     call: (request: DesktopActionCallRequest) => ipcRenderer.invoke("desktopActions.call", request),
     onCall: (listener: DesktopActionCallListener) => {

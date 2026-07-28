@@ -132,6 +132,8 @@ export type MainIpcRegistrationOptions = {
   minimizeLogViewerWindow: (...args: any[]) => unknown;
   maximizeLogViewerWindow: (...args: any[]) => unknown;
   openAgentPlatformMonitorWindow: (...args: any[]) => unknown;
+  openDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
+  closeDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
   revealPathInFileManager: (...args: any[]) => unknown;
   getServiceWebviewPreloadPath: () => string;
   getServiceWebviewPreloadUrl: () => string;
@@ -191,7 +193,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     createAssistantAttachmentFromPastedImage,
     cancelAssistantAttachmentTask,
     createAssistantAttachmentsFromFiles,
-    captureAssistantScreenshot: options.captureAssistantScreenshot as any
+    captureAssistantScreenshot: options.captureAssistantScreenshot as any,
+    openDesktopActionWorkbenchWindow: options.openDesktopActionWorkbenchWindow,
+    closeDesktopActionWorkbenchWindow: options.closeDesktopActionWorkbenchWindow
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);

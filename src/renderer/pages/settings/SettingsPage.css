@@ -2027,21 +2027,6 @@
   gap: 8px;
 }
 
-.settings-debug-action-select {
-  min-width: min(100%, 360px);
-  flex: 1 1 260px;
-}
-
-.settings-debug-dialog-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.settings-debug-dialog-grid .settings-debug-field .settings-debug-textarea.ant-input {
-  min-height: 260px;
-}
-
 .settings-debug-log {
   display: flex;
   min-height: 180px;
@@ -2119,10 +2104,6 @@
 
   .settings-debug-nav-item {
     width: auto;
-  }
-
-  .settings-debug-dialog-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-page .usage-profile-card,

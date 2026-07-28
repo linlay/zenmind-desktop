@@ -1,14 +1,31 @@
+import { openAsBlob } from "node:fs";
+import fs from "node:fs";
+import path from "node:path";
 import type { App } from "electron";
 import type {
+  EnterpriseChatAttachment,
+  EnterpriseChatAttachmentData,
+  EnterpriseChatAttachmentInput,
   EnterpriseChatConnectionState,
   EnterpriseChatConversation,
+  EnterpriseChatCreateGroupInput,
+  EnterpriseChatDesktopAction,
+  EnterpriseChatDownloadResult,
+  EnterpriseChatExecuteActionInput,
+  EnterpriseChatExecuteActionResult,
   EnterpriseChatMarkReadInput,
   EnterpriseChatMessage,
+  EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
+  EnterpriseChatSendDesktopActionInput,
+  EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
+  EnterpriseChatSendScreenshotInput,
   EnterpriseChatSnapshot,
   EnterpriseChatUser
 } from "../shared/contracts";
+import { ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX } from "../shared/contracts/enterprise-chat";
+import { getDesktopActionDefinition } from "../shared/desktop-actions";
 import type { EpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import {
@@ -19,12 +36,16 @@ import { getDesktopSsoAccessToken } from "./oidc-sso";
 
 const ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS = 15_000;
 const ENTERPRISE_CHAT_RECONNECT_MAX_MS = 30_000;
+const ENTERPRISE_CHAT_INLINE_ATTACHMENT_MAX_BYTES = 32 * 1024 * 1024;
+const ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES = 110 * 1024 * 1024;
+const ENTERPRISE_CHAT_MAX_SELECTED_FILES = 10;
 
 type FetchResponseLike = {
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
   text: () => Promise<string>;
+  arrayBuffer?: () => Promise<ArrayBuffer>;
 };
 
 type FetchLike = (
@@ -32,7 +53,7 @@ type FetchLike = (
   init?: {
     method?: string;
     headers?: Record<string, string>;
-    body?: string;
+    body?: unknown;
     signal?: AbortSignal;
   }
 ) => Promise<FetchResponseLike>;
@@ -64,6 +85,22 @@ type EnterpriseChatRuntimeOptions = {
   createWebSocket?: (url: string) => WebSocketLike;
   getIdentityToken?: () => string | null;
   getDeviceInfo?: () => { deviceId: string; deviceName: string };
+  platform?: NodeJS.Platform;
+  selectFiles?: () => Promise<string[]>;
+  captureScreenshot?: () => Promise<{
+    ok: boolean;
+    message?: string;
+    dataBase64?: string;
+    mimeType?: string;
+    cancelled?: boolean;
+  }>;
+  executeDesktopAction?: (
+    request: EnterpriseChatDesktopAction & {
+      messageId: string;
+      conversationId: string;
+      senderId: string;
+    }
+  ) => Promise<EnterpriseChatExecuteActionResult>;
   onStateChanged?: (snapshot: EnterpriseChatSnapshot) => void;
 };
 
@@ -115,18 +152,70 @@ function normalizeUser(value: unknown): EnterpriseChatUser {
   };
 }
 
+function normalizeAttachment(value: unknown): EnterpriseChatAttachment | null {
+  const record = isRecord(value) ? value : {};
+  const id = readText(record.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    name: readText(record.name) || "attachment",
+    contentType: readText(record.contentType) || "application/octet-stream",
+    sizeBytes: Math.max(0, Math.trunc(readNumber(record.sizeBytes))),
+    sha256: readText(record.sha256),
+    createdAt: readEpochMilliseconds(record.createdAt)
+  };
+}
+
+function parseDesktopActionEnvelope(body: string): EnterpriseChatDesktopAction | undefined {
+  if (!body.startsWith(ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX)) {
+    return undefined;
+  }
+  try {
+    const payload = JSON.parse(
+      body.slice(ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX.length)
+    ) as unknown;
+    if (!isRecord(payload)) {
+      return undefined;
+    }
+    const action = readText(payload.action);
+    if (!action || !getDesktopActionDefinition(action)) {
+      return undefined;
+    }
+    const args = isRecord(payload.args) ? payload.args : {};
+    const summary = readText(payload.summary) || action;
+    return {
+      action,
+      args,
+      summary: summary.slice(0, 500)
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function normalizeMessage(value: unknown): EnterpriseChatMessage {
   const record = isRecord(value) ? value : {};
   const editedAt = readNumber(record.editedAt);
   const revokedAt = readNumber(record.revokedAt);
+  const rawBody = typeof record.body === "string" ? record.body.trim() : "";
+  const desktopAction = parseDesktopActionEnvelope(rawBody);
+  const attachments = Array.isArray(record.attachments)
+    ? record.attachments
+      .map(normalizeAttachment)
+      .filter((item): item is EnterpriseChatAttachment => item !== null)
+    : [];
   return {
     id: readText(record.id),
     conversationId: readText(record.conversationId),
     seq: Math.max(0, Math.trunc(readNumber(record.seq))),
     senderId: readText(record.senderId),
     clientMessageId: readText(record.clientMessageId),
-    kind: readText(record.kind) || "text",
-    body: readText(record.body),
+    kind: desktopAction ? "desktop_action" : readText(record.kind) || "text",
+    body: desktopAction?.summary ?? rawBody,
+    attachments,
+    ...(desktopAction ? { desktopAction } : {}),
     createdAt: readEpochMilliseconds(record.createdAt),
     ...(editedAt > 0 ? { editedAt: readEpochMilliseconds(editedAt) } : {}),
     ...(revokedAt > 0 ? { revokedAt: readEpochMilliseconds(revokedAt) } : {})
@@ -135,7 +224,8 @@ function normalizeMessage(value: unknown): EnterpriseChatMessage {
 
 function normalizeConversation(value: unknown): EnterpriseChatConversation | null {
   const record = isRecord(value) ? value : {};
-  if (readText(record.type) !== "direct") {
+  const type = readText(record.type);
+  if (type !== "direct" && type !== "group") {
     return null;
   }
   const members = Array.isArray(record.members)
@@ -160,8 +250,10 @@ function normalizeConversation(value: unknown): EnterpriseChatConversation | nul
   }
   return {
     id,
-    type: "direct",
+    type,
     title: readText(record.title),
+    createdBy: readText(record.createdBy),
+    role: readText(record.role),
     lastReadSeq: Math.max(0, Math.trunc(readNumber(record.lastReadSeq))),
     lastSeq: Math.max(0, Math.trunc(readNumber(record.lastSeq))),
     unreadCount: Math.max(0, Math.trunc(readNumber(record.unreadCount))),
@@ -242,6 +334,57 @@ function mergeMessage(messages: EnterpriseChatMessage[], message: EnterpriseChat
   return next.sort((left, right) => left.seq - right.seq);
 }
 
+function contentTypeForFile(filePath: string) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".bmp":
+      return "image/bmp";
+    case ".svg":
+      return "image/svg+xml";
+    case ".pdf":
+      return "application/pdf";
+    case ".txt":
+    case ".md":
+    case ".log":
+      return "text/plain";
+    case ".json":
+      return "application/json";
+    case ".zip":
+      return "application/zip";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function safeDownloadName(value: string, platform: NodeJS.Platform) {
+  const base = path.basename(value.trim()) || "attachment";
+  if (platform === "win32") {
+    const sanitized = base.replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_").replace(/[. ]+$/u, "");
+    return sanitized || "attachment";
+  }
+  if (platform === "darwin") {
+    return base.replace(/[:/\u0000]/gu, "_") || "attachment";
+  }
+  return base.replace(/[/\u0000]/gu, "_") || "attachment";
+}
+
+function numberedDownloadName(filename: string, attempt: number) {
+  if (attempt === 0) {
+    return filename;
+  }
+  const extension = path.extname(filename);
+  const stem = extension ? filename.slice(0, -extension.length) : filename;
+  return `${stem} (${attempt})${extension}`;
+}
+
 export class EnterpriseChatRuntime {
   private readonly app: App;
   private serverUrl: string;
@@ -250,6 +393,10 @@ export class EnterpriseChatRuntime {
   private readonly createWebSocket: (url: string) => WebSocketLike;
   private readonly getIdentityToken: () => string | null;
   private readonly getDeviceInfo: () => { deviceId: string; deviceName: string };
+  private readonly platform: NodeJS.Platform;
+  private readonly selectFiles: () => Promise<string[]>;
+  private readonly captureScreenshot?: EnterpriseChatRuntimeOptions["captureScreenshot"];
+  private readonly executeDesktopAction?: EnterpriseChatRuntimeOptions["executeDesktopAction"];
   private readonly onStateChanged?: (snapshot: EnterpriseChatSnapshot) => void;
   private snapshot: EnterpriseChatSnapshot;
   private imSessionToken = "";
@@ -262,6 +409,7 @@ export class EnterpriseChatRuntime {
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private requestSequence = 0;
   private presenceRevision = 0;
+  private executedDesktopActionMessageIds = new Set<string>();
   private pendingRequests = new Map<string, PendingWebSocketRequest>();
   private refreshPromise: Promise<EnterpriseChatSnapshot> | null = null;
 
@@ -275,6 +423,10 @@ export class EnterpriseChatRuntime {
     this.createWebSocket = options.createWebSocket ?? createDefaultWebSocket;
     this.getIdentityToken = options.getIdentityToken ?? getDesktopSsoAccessToken;
     this.getDeviceInfo = options.getDeviceInfo ?? (() => getDesktopDeviceInfo(this.app));
+    this.platform = options.platform ?? process.platform;
+    this.selectFiles = options.selectFiles ?? (async () => []);
+    this.captureScreenshot = options.captureScreenshot;
+    this.executeDesktopAction = options.executeDesktopAction;
     this.onStateChanged = options.onStateChanged;
     const initialEnabled = options.initialEnabled ?? false;
     this.snapshot = {
@@ -299,13 +451,35 @@ export class EnterpriseChatRuntime {
       users: this.snapshot.users.map((user) => ({ ...user })),
       conversations: this.snapshot.conversations.map((conversation) => ({
         ...conversation,
-        lastMessage: conversation.lastMessage ? { ...conversation.lastMessage } : null,
+        lastMessage: conversation.lastMessage ? {
+          ...conversation.lastMessage,
+          attachments: conversation.lastMessage.attachments.map((attachment) => ({ ...attachment })),
+          ...(conversation.lastMessage.desktopAction
+            ? {
+                desktopAction: {
+                  ...conversation.lastMessage.desktopAction,
+                  args: { ...conversation.lastMessage.desktopAction.args }
+                }
+              }
+            : {})
+        } : null,
         members: conversation.members.map((member) => ({
           ...member,
           user: { ...member.user }
         }))
       })),
-      activeMessages: this.snapshot.activeMessages.map((message) => ({ ...message }))
+      activeMessages: this.snapshot.activeMessages.map((message) => ({
+        ...message,
+        attachments: message.attachments.map((attachment) => ({ ...attachment })),
+        ...(message.desktopAction
+          ? {
+              desktopAction: {
+                ...message.desktopAction,
+                args: { ...message.desktopAction.args }
+              }
+            }
+          : {})
+      }))
     };
   }
 
@@ -313,6 +487,7 @@ export class EnterpriseChatRuntime {
     if (!enabled) {
       this.disconnect();
       this.clearSession();
+      this.executedDesktopActionMessageIds.clear();
       this.updateSnapshot({
         enabled: false,
         connectionState: "disabled",
@@ -438,6 +613,7 @@ export class EnterpriseChatRuntime {
     }
     await this.ensureSession();
     let conversation = this.snapshot.conversations.find((item) =>
+      item.type === "direct" &&
       item.members.some((member) => member.user.id === userId)
     );
     if (!conversation) {
@@ -456,6 +632,25 @@ export class EnterpriseChatRuntime {
         conversation,
         ...this.snapshot.conversations.filter((item) => item.id !== conversation?.id)
       ];
+    }
+    return this.openConversation({ conversationId: conversation.id });
+  }
+
+  async openConversation(input: EnterpriseChatOpenConversationInput) {
+    const conversationId = readText(input?.conversationId);
+    if (!conversationId) {
+      throw new Error("conversationId is required.");
+    }
+    await this.ensureSession();
+    let conversation = this.snapshot.conversations.find((item) => item.id === conversationId);
+    if (!conversation) {
+      const response = await this.requestJson<unknown>(
+        `/api/v1/conversations/${encodeURIComponent(conversationId)}`
+      );
+      conversation = normalizeConversation(response) ?? undefined;
+    }
+    if (!conversation) {
+      throw new Error("The IM server returned an invalid conversation.");
     }
     const response = await this.requestJson<unknown>(
       `/api/v1/conversations/${encodeURIComponent(conversation.id)}/messages?limit=50`
@@ -477,6 +672,39 @@ export class EnterpriseChatRuntime {
     return this.getState();
   }
 
+  async createGroup(input: EnterpriseChatCreateGroupInput) {
+    const title = readText(input?.title);
+    const currentUserId = this.snapshot.currentUser?.id ?? "";
+    const memberIds = Array.from(new Set(
+      Array.isArray(input?.memberIds)
+        ? input.memberIds.map(readText).filter((id) => id && id !== currentUserId)
+        : []
+    ));
+    if (!title || memberIds.length === 0) {
+      throw new Error("A group title and at least one other member are required.");
+    }
+    await this.ensureSession();
+    const created = await this.requestJson<unknown>("/api/v1/conversations", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "group",
+        title,
+        memberIds
+      })
+    });
+    const conversation = normalizeConversation(created);
+    if (!conversation || conversation.type !== "group") {
+      throw new Error("The IM server returned an invalid group conversation.");
+    }
+    this.updateSnapshot({
+      conversations: [
+        conversation,
+        ...this.snapshot.conversations.filter((item) => item.id !== conversation.id)
+      ]
+    });
+    return this.openConversation({ conversationId: conversation.id });
+  }
+
   async sendMessage(input: EnterpriseChatSendMessageInput) {
     const conversationId = readText(input?.conversationId);
     const clientMessageId = readText(input?.clientMessageId);
@@ -484,15 +712,204 @@ export class EnterpriseChatRuntime {
     if (!conversationId || !clientMessageId || !body) {
       throw new Error("conversationId, clientMessageId, and body are required.");
     }
+    return this.sendMessagePayload({
+      conversationId,
+      clientMessageId,
+      body,
+      fileIds: []
+    });
+  }
+
+  async sendFiles(input: EnterpriseChatSendFilesInput) {
+    const conversationId = readText(input?.conversationId);
+    const clientMessageId = readText(input?.clientMessageId);
+    if (!conversationId || !clientMessageId) {
+      throw new Error("conversationId and clientMessageId are required.");
+    }
+    const selected = (await this.selectFiles())
+      .map((filePath) => filePath.trim())
+      .filter(Boolean)
+      .slice(0, ENTERPRISE_CHAT_MAX_SELECTED_FILES);
+    if (selected.length === 0) {
+      return this.getState();
+    }
+    await this.ensureSession();
+    const fileIds: string[] = [];
+    for (const filePath of selected) {
+      const attachment = await this.uploadFilePath(filePath);
+      fileIds.push(attachment.id);
+    }
+    return this.sendMessagePayload({
+      conversationId,
+      clientMessageId,
+      body: "",
+      fileIds
+    });
+  }
+
+  async sendScreenshot(input: EnterpriseChatSendScreenshotInput) {
+    const conversationId = readText(input?.conversationId);
+    const clientMessageId = readText(input?.clientMessageId);
+    if (!conversationId || !clientMessageId) {
+      throw new Error("conversationId and clientMessageId are required.");
+    }
+    if (!this.captureScreenshot) {
+      throw new Error("Screenshot capture is unavailable.");
+    }
+    const capture = await this.captureScreenshot();
+    if (!capture.ok) {
+      if (capture.cancelled) {
+        return this.getState();
+      }
+      throw new Error(capture.message || "Screenshot capture failed.");
+    }
+    const bytes = Buffer.from(capture.dataBase64 ?? "", "base64");
+    if (bytes.length === 0) {
+      throw new Error("Screenshot capture returned no image.");
+    }
+    await this.ensureSession();
+    const attachment = await this.uploadBlob(
+      new Blob([bytes], { type: capture.mimeType || "image/png" }),
+      `screenshot-${new Date().toISOString().replace(/[:.]/gu, "-")}.png`
+    );
+    return this.sendMessagePayload({
+      conversationId,
+      clientMessageId,
+      body: "",
+      fileIds: [attachment.id]
+    });
+  }
+
+  async sendDesktopAction(input: EnterpriseChatSendDesktopActionInput) {
+    const conversationId = readText(input?.conversationId);
+    const clientMessageId = readText(input?.clientMessageId);
+    const action = readText(input?.action);
+    const conversation = this.snapshot.conversations.find((item) => item.id === conversationId);
+    if (
+      !conversationId ||
+      !clientMessageId ||
+      !getDesktopActionDefinition(action) ||
+      conversation?.type !== "direct"
+    ) {
+      throw new Error("Desktop actions require a valid action and a direct conversation.");
+    }
+    const args = isRecord(input?.args) ? input.args : {};
+    const summary = readText(input?.summary) || action;
+    const body = `${ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX}${JSON.stringify({
+      action,
+      args,
+      summary: summary.slice(0, 500)
+    })}`;
+    if (body.length > 20_000) {
+      throw new Error("Desktop action payload is too large.");
+    }
+    return this.sendMessagePayload({
+      conversationId,
+      clientMessageId,
+      body,
+      fileIds: []
+    });
+  }
+
+  async loadAttachment(input: EnterpriseChatAttachmentInput): Promise<EnterpriseChatAttachmentData> {
+    const fileId = readText(input?.fileId);
+    if (!fileId) {
+      throw new Error("fileId is required.");
+    }
+    const { buffer, contentType } = await this.fetchAttachment(
+      fileId,
+      ENTERPRISE_CHAT_INLINE_ATTACHMENT_MAX_BYTES
+    );
+    return {
+      fileId,
+      contentType: readText(input?.contentType) || contentType,
+      sizeBytes: buffer.length,
+      dataBase64: buffer.toString("base64")
+    };
+  }
+
+  async downloadAttachment(input: EnterpriseChatAttachmentInput): Promise<EnterpriseChatDownloadResult> {
+    const fileId = readText(input?.fileId);
+    if (!fileId) {
+      throw new Error("fileId is required.");
+    }
+    const { buffer } = await this.fetchAttachment(fileId, ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES);
+    const filename = safeDownloadName(readText(input?.name) || "attachment", this.platform);
+    const downloadsRoot = this.app.getPath("downloads");
+    await fs.promises.mkdir(downloadsRoot, { recursive: true });
+    for (let attempt = 0; attempt < 10_000; attempt += 1) {
+      const target = path.join(downloadsRoot, numberedDownloadName(filename, attempt));
+      try {
+        if (this.platform === "win32") {
+          await fs.promises.writeFile(target, buffer, { flag: "wx" });
+        } else if (this.platform === "darwin") {
+          await fs.promises.writeFile(target, buffer, { flag: "wx", mode: 0o600 });
+        } else {
+          await fs.promises.writeFile(target, buffer, { flag: "wx", mode: 0o600 });
+        }
+        return { ok: true, path: target, message: "" };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error("Unable to allocate a download filename.");
+  }
+
+  async executeMessageDesktopAction(
+    input: EnterpriseChatExecuteActionInput
+  ): Promise<EnterpriseChatExecuteActionResult> {
+    const messageId = readText(input?.messageId);
+    const message = this.snapshot.activeMessages.find((item) => item.id === messageId);
+    const conversation = message
+      ? this.snapshot.conversations.find((item) => item.id === message.conversationId)
+      : undefined;
+    if (
+      !message ||
+      !message.desktopAction ||
+      !conversation ||
+      conversation.type !== "direct" ||
+      message.senderId === this.snapshot.currentUser?.id ||
+      !getDesktopActionDefinition(message.desktopAction.action)
+    ) {
+      throw new Error("This Desktop action request is not executable.");
+    }
+    if (this.executedDesktopActionMessageIds.has(message.id)) {
+      throw new Error("This Desktop action request was already handled.");
+    }
+    if (!this.executeDesktopAction) {
+      throw new Error("Desktop action execution is unavailable.");
+    }
+    const result = await this.executeDesktopAction({
+      ...message.desktopAction,
+      args: { ...message.desktopAction.args },
+      messageId: message.id,
+      conversationId: message.conversationId,
+      senderId: message.senderId
+    });
+    if (result.confirmed) {
+      this.executedDesktopActionMessageIds.add(message.id);
+    }
+    return result;
+  }
+
+  private async sendMessagePayload(input: {
+    conversationId: string;
+    clientMessageId: string;
+    body: string;
+    fileIds: string[];
+  }) {
     if (!this.socket || !this.socketSynced || this.socket.readyState !== 1) {
       throw new Error("Enterprise chat is reconnecting. Try again in a moment.");
     }
     const result = await this.sendWebSocketRequest("message.send", {
-      conversationId,
-      clientMessageId,
-      body,
+      conversationId: input.conversationId,
+      clientMessageId: input.clientMessageId,
+      body: input.body,
       mentionUserIds: [],
-      fileIds: []
+      fileIds: input.fileIds
     });
     const record = isRecord(result) ? result : {};
     const message = normalizeMessage(record.message);
@@ -528,6 +945,7 @@ export class EnterpriseChatRuntime {
   handleSignedOut() {
     this.disconnect();
     this.clearSession();
+    this.executedDesktopActionMessageIds.clear();
     this.updateSnapshot({
       connectionState: this.snapshot.enabled ? "signed_out" : "disabled",
       message: "",
@@ -555,6 +973,58 @@ export class EnterpriseChatRuntime {
     const state = await this.refresh();
     if (!this.imSessionToken || state.connectionState === "error") {
       throw new Error(state.message || "Enterprise chat session is unavailable.");
+    }
+  }
+
+  private async uploadFilePath(filePath: string) {
+    const blob = await openAsBlob(filePath, { type: contentTypeForFile(filePath) });
+    return this.uploadBlob(blob, path.basename(filePath));
+  }
+
+  private async uploadBlob(blob: Blob, filename: string) {
+    const form = new FormData();
+    form.append("file", blob, safeDownloadName(filename, this.platform));
+    const response = await this.requestJson<unknown>("/api/v1/files", {
+      method: "POST",
+      body: form
+    });
+    const attachment = normalizeAttachment(response);
+    if (!attachment) {
+      throw new Error("The IM server returned invalid attachment metadata.");
+    }
+    return attachment;
+  }
+
+  private async fetchAttachment(fileId: string, maxBytes: number) {
+    await this.ensureSession();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await this.fetchImpl(
+        `${this.serverUrl}/api/v1/files/${encodeURIComponent(fileId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.imSessionToken}`
+          },
+          signal: controller.signal
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`Attachment download failed (${response.status}).`);
+      }
+      if (typeof response.arrayBuffer !== "function") {
+        throw new Error("Attachment response cannot be read.");
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length > maxBytes) {
+        throw new Error("Attachment exceeds the local preview or download limit.");
+      }
+      return {
+        buffer,
+        contentType: "application/octet-stream"
+      };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -618,7 +1088,7 @@ export class EnterpriseChatRuntime {
     init: {
       method?: string;
       headers?: Record<string, string>;
-      body?: string;
+      body?: unknown;
     } = {},
     useImSessionToken = true
   ): Promise<T> {
@@ -629,7 +1099,7 @@ export class EnterpriseChatRuntime {
     const timeout = setTimeout(() => controller.abort(), ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS);
     const headers: Record<string, string> = {
       Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...init.headers
     };
     if (useImSessionToken) {

@@ -1,0 +1,176 @@
+.desktop-action-workbench-page {
+  width: 100%;
+  min-width: 0;
+  height: 100vh;
+  padding: 18px;
+  overflow: hidden;
+  background: var(--desktop-ui-bg);
+  color: var(--desktop-ui-text);
+}
+
+.desktop-action-workbench-panel {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.desktop-action-workbench-head {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: 10px;
+  background: var(--desktop-ui-card);
+}
+
+.desktop-action-workbench-copy {
+  min-width: 0;
+}
+
+.desktop-action-workbench-copy h1 {
+  margin: 0;
+  color: var(--desktop-ui-text);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.desktop-action-workbench-copy p {
+  margin: 6px 0 0;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.desktop-action-workbench-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.desktop-action-workbench-select {
+  min-width: min(100%, 360px);
+  flex: 1 1 320px;
+}
+
+.desktop-action-workbench-page .ant-btn-default {
+  border-color: var(--desktop-ui-border);
+  background: var(--desktop-ui-card);
+  color: var(--desktop-ui-text);
+  box-shadow: none;
+}
+
+.desktop-action-workbench-page .ant-btn-default:hover:not(:disabled),
+.desktop-action-workbench-page .ant-btn-default:focus-visible:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--desktop-ui-card-soft);
+  color: var(--desktop-ui-text);
+}
+
+.desktop-action-workbench-page .ant-select:not(.ant-select-customize-input) .ant-select-selector {
+  border-color: var(--desktop-ui-border);
+  background: var(--desktop-ui-card);
+  color: var(--desktop-ui-text);
+}
+
+.desktop-action-workbench-page .ant-select-selection-item,
+.desktop-action-workbench-page .ant-select-selection-search-input,
+.desktop-action-workbench-page .ant-select-arrow {
+  color: var(--desktop-ui-text);
+}
+
+.desktop-action-workbench-message {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.desktop-action-workbench-grid {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.desktop-action-workbench-field {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+}
+
+.desktop-action-workbench-field > span {
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.desktop-action-workbench-field .ant-input {
+  width: 100%;
+  min-height: 240px;
+  flex: 1 1 auto;
+  resize: none;
+  padding: 12px;
+  border-color: var(--desktop-ui-border);
+  border-radius: 10px;
+  background: var(--desktop-ui-card);
+  color: var(--desktop-ui-text);
+  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.desktop-action-workbench-field .ant-input:hover,
+.desktop-action-workbench-field .ant-input:focus {
+  border-color: var(--accent-border);
+}
+
+.desktop-action-workbench-select-popup {
+  max-width: min(720px, calc(100vw - 24px));
+}
+
+:root[data-theme="dark"] .desktop-action-workbench-select-popup {
+  border: 1px solid var(--desktop-ui-border);
+  background: var(--desktop-ui-card);
+}
+
+:root[data-theme="dark"] .desktop-action-workbench-select-popup .ant-select-item {
+  color: var(--desktop-ui-text);
+}
+
+:root[data-theme="dark"] .desktop-action-workbench-select-popup .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--desktop-ui-card-soft);
+}
+
+:root[data-theme="dark"] .desktop-action-workbench-select-popup .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+@media (max-width: 760px) {
+  .desktop-action-workbench-page {
+    padding: 12px;
+    overflow: auto;
+  }
+
+  .desktop-action-workbench-panel {
+    height: auto;
+    min-height: calc(100vh - 24px);
+  }
+
+  .desktop-action-workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop-action-workbench-field .ant-input {
+    min-height: 280px;
+  }
+}

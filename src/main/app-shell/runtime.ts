@@ -32,6 +32,7 @@ import {
 } from "../electron-bundle-paths";
 import { buildApplicationMenu as installApplicationMenu } from "./app-menu";
 import { AgentPlatformMonitorWindowController } from "./agent-platform-monitor-window";
+import { DesktopActionWorkbenchWindowController } from "./desktop-action-workbench-window";
 import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
 import { AppTrayController } from "./tray";
@@ -49,6 +50,7 @@ export type AppShellRuntimeOptions = {
   systemPreferences: Pick<SystemPreferences, "askForMediaAccess">;
   t: (...args: any[]) => string;
   logsRuntime: LogsRuntime;
+  desktopActionWorkbenchRoute: string;
   loadRendererRoute: (targetWindow: BrowserWindow, routePath: string) => Promise<unknown>;
   parseSafeLoopbackWebUrl: (value: string) => unknown;
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
@@ -90,6 +92,13 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   });
   const agentPlatformMonitorWindowController = new AgentPlatformMonitorWindowController({
     platform: options.platform,
+    onRendererError: options.safeConsoleError
+  });
+  const desktopActionWorkbenchWindowController = new DesktopActionWorkbenchWindowController({
+    preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
+    routePath: options.desktopActionWorkbenchRoute,
+    platform: options.platform,
+    loadRendererRoute: options.loadRendererRoute,
     onRendererError: options.safeConsoleError
   });
   const nativeDialogController = new NativeDialogVisibilityController({
@@ -140,6 +149,14 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
 
   async function openAgentPlatformMonitorWindow(url: string) {
     return agentPlatformMonitorWindowController.open(url);
+  }
+
+  async function openDesktopActionWorkbenchWindow() {
+    return desktopActionWorkbenchWindowController.open();
+  }
+
+  function closeDesktopActionWorkbenchWindow() {
+    return desktopActionWorkbenchWindowController.close();
   }
 
   async function showFileDialog(
@@ -270,6 +287,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,
     openAgentPlatformMonitorWindow,
+    openDesktopActionWorkbenchWindow,
+    closeDesktopActionWorkbenchWindow,
     showFileDialog,
     showSaveDialog,
     showMessageBox,

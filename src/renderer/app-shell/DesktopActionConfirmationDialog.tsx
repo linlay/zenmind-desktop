@@ -64,17 +64,6 @@ export function DesktopActionConfirmationDialog({
         </header>
         <div className="desktop-action-confirmation-body">
           <p className="desktop-action-confirmation-summary">{request.summary}</p>
-          {request.description ? (
-            <p className="desktop-action-confirmation-description">{request.description}</p>
-          ) : null}
-          <dl className="desktop-action-confirmation-fields">
-            {request.fields.map((field) => (
-              <div key={field.label} className="desktop-action-confirmation-field">
-                <dt>{field.label}</dt>
-                <dd>{field.value}</dd>
-              </div>
-            ))}
-          </dl>
           <details
             className="desktop-action-confirmation-details"
             open={detailsOpen}
@@ -85,6 +74,17 @@ export function DesktopActionConfirmationDialog({
                 ? t("desktopAction.confirmHideDetails")
                 : t("desktopAction.confirmShowDetails")}
             </summary>
+            {request.description ? (
+              <p className="desktop-action-confirmation-description">{request.description}</p>
+            ) : null}
+            <dl className="desktop-action-confirmation-fields">
+              {request.fields.map((field) => (
+                <div key={field.label} className="desktop-action-confirmation-field">
+                  <dt>{field.label}</dt>
+                  <dd>{field.value}</dd>
+                </div>
+              ))}
+            </dl>
             <pre>{request.details}</pre>
           </details>
         </div>

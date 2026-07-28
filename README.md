@@ -87,7 +87,8 @@ npm test
 - [服务生命周期](docs/服务生命周期.md)：安装、初始化、启动、停止、日志和健康检查。
 - [前端嵌入与导航](docs/前端嵌入与导航.md)：webview、独立/内嵌前端、导航入口和路由同步。
 - [鉴权SSO与TokenBridge](docs/鉴权SSO与TokenBridge.md)：identity-center、OIDC、JWK、access token 与 postMessage bridge。
-- [企业聊天](docs/企业聊天.md)：企业 SSO 换票、员工目录、一对一消息和右下角聊天浮层。
+- [企业聊天](docs/企业聊天.md)：企业 SSO 换票、私聊/群聊、文件图片、截图、桌面动作和可拖动聊天浮层。
+- [企业聊天架构评估](docs/企业聊天架构评估.md)：IM Server 的 SQLite、对象存储与局域网快传决策。
 - [插件开发](docs/插件开发.md)：插件包、manifest、脚本、初始化和卸载。
 - [市场系统](docs/市场系统.md)：市场 catalog、安装记录、下载缓存和各资源分区。
 - [外部网站](docs/外部网站.md)：URL 网站入口、排序、Copilot 绑定和数据文件。

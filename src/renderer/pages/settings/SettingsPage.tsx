@@ -77,7 +77,6 @@ import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shel
 import { useI18n } from "../../i18n/useI18n";
 import { isAssistantNavChatAgent } from "../../assistantNavigation";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
-import type { DesktopActionCallRequest, DesktopActionDefinition } from "../../../shared/desktop-actions";
 
 type ThemePreference = "light" | "dark" | "system";
 type KanbanConnectionState = "disabled" | "connecting" | "open" | "closed" | "error";
@@ -106,6 +105,7 @@ type SettingsPageProps = {
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   debugVisible: boolean;
+  onCloseDebug: () => void;
 };
 
 type NoticeTone = "success" | "error";
@@ -1251,48 +1251,6 @@ function readDebugJsonObject(text: string, invalidJsonMessage: string, objectMes
   return parsed as Record<string, unknown>;
 }
 
-function buildDesktopActionRequestText(action = DEFAULT_DESKTOP_ACTION_NAME) {
-  return formatDebugJson({
-    action,
-    args: {},
-    permissionMode: "full_access"
-  });
-}
-
-function normalizeDesktopActionDebugRequest(
-  input: Record<string, unknown>,
-  selectedAction: string,
-  requestId: string,
-  missingActionMessage: string
-): DesktopActionCallRequest {
-  const action = typeof input.action === "string" && input.action.trim()
-    ? input.action.trim()
-    : selectedAction.trim();
-  if (!action) {
-    throw new Error(missingActionMessage);
-  }
-  const request: DesktopActionCallRequest = {
-    requestId,
-    action,
-    args: asRecord(input.args)
-  };
-  const source = asRecord(input.source);
-  if (Object.keys(source).length > 0) {
-    request.source = source as DesktopActionCallRequest["source"];
-  }
-  if (
-    input.permissionMode === "default" ||
-    input.permissionMode === "page_control" ||
-    input.permissionMode === "full_access"
-  ) {
-    request.permissionMode = input.permissionMode;
-  }
-  if (typeof input.expectedPageKey === "string" && input.expectedPageKey.trim()) {
-    request.expectedPageKey = input.expectedPageKey.trim();
-  }
-  return request;
-}
-
 function buildWsDebugCommandText(command: Record<string, unknown> = DEFAULT_WS_DEBUG_COMMAND) {
   return formatDebugJson(command);
 }
@@ -1327,133 +1285,31 @@ function appendDebugLogEntry(
   ]);
 }
 
-function DesktopActionDebugDialog({
-  open,
-  onClose
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+function DesktopActionDebugCard() {
   const { t } = useI18n();
-  const [actions, setActions] = useState<DesktopActionDefinition[]>([]);
-  const [selectedAction, setSelectedAction] = useState(DEFAULT_DESKTOP_ACTION_NAME);
-  const [requestText, setRequestText] = useState(buildDesktopActionRequestText());
-  const [responseText, setResponseText] = useState("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
 
-  async function handleLoadActions() {
-    setMessage("");
-    try {
-      const result = await window.electronAPI.desktopActions.list();
-      const nextActions = Array.isArray(result.actions) ? result.actions : [];
-      setActions(nextActions);
-      if (!nextActions.some((action) => action.name === selectedAction) && nextActions[0]?.name) {
-        setSelectedAction(nextActions[0].name);
-        setRequestText(buildDesktopActionRequestText(nextActions[0].name));
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function handleRunAction() {
+  async function handleOpenWorkbench() {
     setPending(true);
     setMessage("");
     try {
-      const record = readDebugJsonObject(
-        requestText,
-        t("settings.debug.console.invalidJson"),
-        t("settings.debug.console.jsonObjectRequired")
+      const result = await window.electronAPI.desktopActions.openWorkbench();
+      setMessageIsError(!result.ok);
+      setMessage(
+        result.ok
+          ? t("settings.debug.desktopActions.opened")
+          : result.message || t("settings.debug.desktopActions.openFailed")
       );
-      const request = normalizeDesktopActionDebugRequest(
-        record,
-        selectedAction,
-        createDebugRequestId("settings_debug_action"),
-        t("settings.debug.desktopActions.missingAction")
-      );
-      const response = await window.electronAPI.desktopActions.call(request);
-      setResponseText(formatDebugJson(response));
-      setMessage(response.ok ? t("settings.debug.desktopActions.completed") : response.error?.message || t("common.error"));
     } catch (error) {
+      setMessageIsError(true);
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setPending(false);
     }
   }
 
-  async function handleCopyResponse() {
-    if (!responseText) {
-      return;
-    }
-    await window.electronAPI.clipboard.writeText(responseText);
-  }
-
-  useEffect(() => {
-    if (open) {
-      void handleLoadActions();
-    }
-  }, [open]);
-
-  return (
-    <Modal
-      className="settings-debug-modal"
-      footer={null}
-      open={open}
-      title={t("settings.debug.desktopActions.dialogTitle")}
-      width={820}
-      onCancel={onClose}
-    >
-      <div className="settings-debug-dialog-body">
-        <div className="settings-debug-dialog-actions">
-          <Select
-            className="settings-debug-action-select"
-            classNames={SETTINGS_SELECT_CLASS_NAMES}
-            showSearch
-            value={selectedAction}
-            optionFilterProp="label"
-            options={actions.map((action) => ({
-              value: action.name,
-              label: `${action.name} · ${action.kind}`
-            }))}
-            onChange={(value) => {
-              setSelectedAction(value);
-              setRequestText(buildDesktopActionRequestText(value));
-            }}
-          />
-          <Button onClick={() => void handleLoadActions()}>{t("common.refresh")}</Button>
-          <Button type="primary" disabled={pending} onClick={() => void handleRunAction()}>
-            {pending ? t("common.loading") : t("settings.debug.desktopActions.run")}
-          </Button>
-          <Button disabled={!responseText} onClick={() => void handleCopyResponse()}>
-            {t("settings.debug.desktopActions.copyResponse")}
-          </Button>
-        </div>
-        {message ? (
-          <div className={`feedback-banner settings-desktop-ws-message${responseText && !/"ok": true/u.test(responseText) ? " warning-banner" : ""}`} role="status">
-            {message}
-          </div>
-        ) : null}
-        <div className="settings-debug-dialog-grid">
-          <SettingsDebugTextAreaField
-            label={t("settings.debug.desktopActions.request")}
-            value={requestText}
-            onChange={setRequestText}
-          />
-          <SettingsDebugTextAreaField
-            label={t("settings.debug.desktopActions.response")}
-            value={responseText}
-            readOnly
-          />
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function DesktopActionDebugCard() {
-  const { t } = useI18n();
-  const [dialogOpen, setDialogOpen] = useState(false);
   return (
     <div className="data-root-card settings-debug-panel">
       <div className="settings-debug-panel-head">
@@ -1463,11 +1319,23 @@ function DesktopActionDebugCard() {
         </div>
       </div>
       <div className="settings-debug-actions">
-        <Button type="primary" onClick={() => setDialogOpen(true)}>
-          {t("settings.debug.desktopActions.openDialog")}
+        <Button
+          type="primary"
+          disabled={pending}
+          loading={pending}
+          onClick={() => void handleOpenWorkbench()}
+        >
+          {t("settings.debug.desktopActions.openWorkbench")}
         </Button>
       </div>
-      <DesktopActionDebugDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      {message ? (
+        <div
+          className={`feedback-banner settings-desktop-ws-message${messageIsError ? " warning-banner" : ""}`}
+          role="status"
+        >
+          {message}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2500,7 +2368,8 @@ export function SettingsPage({
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
   onAssistantSettingsChange,
-  debugVisible
+  debugVisible,
+  onCloseDebug
 }: SettingsPageProps) {
   const { locale, setLocale, t } = useI18n();
   const location = useLocation();
@@ -4515,6 +4384,12 @@ export function SettingsPage({
           label: t("settings.tunnelHub.label"),
           onClick: () => void handleToggleTunnelHubEnabled()
         });
+      case "debug":
+        return (
+          <Button onClick={onCloseDebug}>
+            {t("settings.debug.closeAction")}
+          </Button>
+        );
       default:
         return null;
     }

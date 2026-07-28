@@ -115,6 +115,8 @@ export interface AssistantIpcHandlerContextDependencies {
   cancelAssistantAttachmentTask: (...args: any[]) => unknown;
   createAssistantAttachmentsFromFiles: (...args: any[]) => unknown;
   captureAssistantScreenshot: (...args: any[]) => unknown;
+  openDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
+  closeDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
 }
 
 export function createAssistantIpcHandlerOptions(
@@ -143,6 +145,8 @@ export function createAssistantIpcHandlerOptions(
     cancelAssistantAttachmentTask: dependencies.cancelAssistantAttachmentTask,
     createAssistantAttachmentsFromFiles: dependencies.createAssistantAttachmentsFromFiles,
     captureAssistantScreenshot: dependencies.captureAssistantScreenshot,
+    openDesktopActionWorkbenchWindow: dependencies.openDesktopActionWorkbenchWindow,
+    closeDesktopActionWorkbenchWindow: dependencies.closeDesktopActionWorkbenchWindow,
     platform: context.platform,
     getCurrentPageSnapshot: () => context.state.currentPageSnapshot,
     setCurrentPageSnapshot: (snapshot: unknown) => {

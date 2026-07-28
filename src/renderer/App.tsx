@@ -14,6 +14,11 @@ const DesktopPet = lazy(() =>
 const LogViewerPage = lazy(() =>
   import("./pages/LogViewerPage").then((module) => ({ default: module.LogViewerPage }))
 );
+const DesktopActionWorkbenchPage = lazy(() =>
+  import("./pages/DesktopActionWorkbenchPage").then((module) => ({
+    default: module.DesktopActionWorkbenchPage
+  }))
+);
 
 export function App() {
   const location = useLocation();
@@ -35,6 +40,14 @@ export function App() {
             <LogViewerPage />
           </Suspense>
         </ServicesProvider>
+      </AppErrorBoundary>
+    );
+  } else if (location.pathname === "/desktop-action-workbench") {
+    content = (
+      <AppErrorBoundary resetKey={resetKey}>
+        <Suspense fallback={null}>
+          <DesktopActionWorkbenchPage />
+        </Suspense>
       </AppErrorBoundary>
     );
   } else {

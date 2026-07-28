@@ -1,4 +1,7 @@
 import type { EpochMilliseconds } from "../time-contract";
+import type { DesktopActionCallResponse } from "../desktop-actions";
+
+export const ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX = "zenmind-desktop-action:v1\n";
 
 export type EnterpriseChatConnectionState =
   | "disabled"
@@ -23,6 +26,21 @@ export interface EnterpriseChatMember {
   joinedSeq: number;
 }
 
+export interface EnterpriseChatAttachment {
+  id: string;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: EpochMilliseconds;
+}
+
+export interface EnterpriseChatDesktopAction {
+  action: string;
+  args: Record<string, unknown>;
+  summary: string;
+}
+
 export interface EnterpriseChatMessage {
   id: string;
   conversationId: string;
@@ -31,6 +49,8 @@ export interface EnterpriseChatMessage {
   clientMessageId: string;
   kind: string;
   body: string;
+  attachments: EnterpriseChatAttachment[];
+  desktopAction?: EnterpriseChatDesktopAction;
   createdAt: EpochMilliseconds;
   editedAt?: EpochMilliseconds;
   revokedAt?: EpochMilliseconds;
@@ -38,8 +58,10 @@ export interface EnterpriseChatMessage {
 
 export interface EnterpriseChatConversation {
   id: string;
-  type: "direct";
+  type: "direct" | "group";
   title: string;
+  createdBy: string;
+  role: string;
   lastReadSeq: number;
   lastSeq: number;
   unreadCount: number;
@@ -67,10 +89,66 @@ export interface EnterpriseChatOpenDirectInput {
   userId: string;
 }
 
+export interface EnterpriseChatOpenConversationInput {
+  conversationId: string;
+}
+
+export interface EnterpriseChatCreateGroupInput {
+  title: string;
+  memberIds: string[];
+}
+
 export interface EnterpriseChatSendMessageInput {
   conversationId: string;
   clientMessageId: string;
-  body: string;
+  body?: string;
+}
+
+export interface EnterpriseChatSendFilesInput {
+  conversationId: string;
+  clientMessageId: string;
+}
+
+export interface EnterpriseChatSendScreenshotInput {
+  conversationId: string;
+  clientMessageId: string;
+}
+
+export interface EnterpriseChatSendDesktopActionInput {
+  conversationId: string;
+  clientMessageId: string;
+  action: string;
+  args?: Record<string, unknown>;
+  summary?: string;
+}
+
+export interface EnterpriseChatAttachmentInput {
+  fileId: string;
+  name?: string;
+  contentType?: string;
+}
+
+export interface EnterpriseChatAttachmentData {
+  fileId: string;
+  contentType: string;
+  sizeBytes: number;
+  dataBase64: string;
+}
+
+export interface EnterpriseChatDownloadResult {
+  ok: boolean;
+  path: string;
+  message: string;
+}
+
+export interface EnterpriseChatExecuteActionInput {
+  messageId: string;
+}
+
+export interface EnterpriseChatExecuteActionResult {
+  confirmed: boolean;
+  response?: DesktopActionCallResponse;
+  message: string;
 }
 
 export interface EnterpriseChatMarkReadInput {

@@ -16,9 +16,19 @@ import type {
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
 import type {
+  EnterpriseChatAttachmentData,
+  EnterpriseChatAttachmentInput,
+  EnterpriseChatCreateGroupInput,
+  EnterpriseChatDownloadResult,
+  EnterpriseChatExecuteActionInput,
+  EnterpriseChatExecuteActionResult,
   EnterpriseChatMarkReadInput,
+  EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
+  EnterpriseChatSendDesktopActionInput,
+  EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
+  EnterpriseChatSendScreenshotInput,
   EnterpriseChatSnapshot,
   EnterpriseChatSnapshotListener
 } from "./enterprise-chat";
@@ -653,7 +663,15 @@ export interface DesktopApi {
     getState: () => Promise<EnterpriseChatSnapshot>;
     refresh: () => Promise<EnterpriseChatSnapshot>;
     openDirectConversation: (input: EnterpriseChatOpenDirectInput) => Promise<EnterpriseChatSnapshot>;
+    openConversation: (input: EnterpriseChatOpenConversationInput) => Promise<EnterpriseChatSnapshot>;
+    createGroup: (input: EnterpriseChatCreateGroupInput) => Promise<EnterpriseChatSnapshot>;
     sendMessage: (input: EnterpriseChatSendMessageInput) => Promise<EnterpriseChatSnapshot>;
+    sendFiles: (input: EnterpriseChatSendFilesInput) => Promise<EnterpriseChatSnapshot>;
+    sendScreenshot: (input: EnterpriseChatSendScreenshotInput) => Promise<EnterpriseChatSnapshot>;
+    sendDesktopAction: (input: EnterpriseChatSendDesktopActionInput) => Promise<EnterpriseChatSnapshot>;
+    loadAttachment: (input: EnterpriseChatAttachmentInput) => Promise<EnterpriseChatAttachmentData>;
+    downloadAttachment: (input: EnterpriseChatAttachmentInput) => Promise<EnterpriseChatDownloadResult>;
+    executeDesktopAction: (input: EnterpriseChatExecuteActionInput) => Promise<EnterpriseChatExecuteActionResult>;
     markRead: (input: EnterpriseChatMarkReadInput) => Promise<EnterpriseChatSnapshot>;
     onStateChanged: (listener: EnterpriseChatSnapshotListener) => () => void;
   };
@@ -686,6 +704,8 @@ export interface DesktopApi {
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;
     respondConfirmation: (response: DesktopActionConfirmationResponse) => Promise<{ ok: boolean }>;
+    openWorkbench: () => Promise<{ ok: boolean; message?: string }>;
+    closeWorkbench: () => Promise<{ ok: boolean; message?: string }>;
     list: () => Promise<{ ok: boolean; actions: DesktopActionDefinition[] }>;
     call: (request: DesktopActionCallRequest) => Promise<DesktopActionCallResponse>;
     onCall: (listener: DesktopActionCallListener) => () => void;

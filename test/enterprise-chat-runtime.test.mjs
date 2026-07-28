@@ -102,6 +102,13 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     createdAt: now,
     updatedAt: now
   };
+  const groupConversation = {
+    ...directConversation,
+    id: "group-1",
+    type: "group",
+    title: "Launch team",
+    role: "owner"
+  };
 
   const fetchImpl = async (url, init = {}) => {
     requests.push({ url, init });
@@ -130,14 +137,35 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     if (parsed.pathname === "/api/v1/ws-tickets") {
       return jsonResponse(201, { ticket: "ticket-1", expiresAt: now + 30_000 });
     }
-    if (parsed.pathname === "/api/v1/conversations" && init.method === "POST") {
-      assert.deepEqual(JSON.parse(init.body), {
-        type: "direct",
-        memberIds: ["bob"]
+    if (parsed.pathname === "/api/v1/files" && init.method === "POST") {
+      assert.equal(init.body instanceof FormData, true);
+      assert.equal(init.headers["Content-Type"], undefined);
+      return jsonResponse(201, {
+        id: "file-image-1",
+        name: "screenshot.png",
+        contentType: "image/png",
+        sizeBytes: 8,
+        sha256: "image-hash",
+        createdAt: now
       });
+    }
+    if (parsed.pathname === "/api/v1/conversations" && init.method === "POST") {
+      const payload = JSON.parse(init.body);
+      if (payload.type === "group") {
+        assert.deepEqual(payload, {
+          type: "group",
+          title: "Launch team",
+          memberIds: ["bob"]
+        });
+        return jsonResponse(201, groupConversation);
+      }
+      assert.deepEqual(payload, { type: "direct", memberIds: ["bob"] });
       return jsonResponse(201, directConversation);
     }
     if (parsed.pathname === "/api/v1/conversations/direct-1/messages") {
+      return jsonResponse(200, { items: [] });
+    }
+    if (parsed.pathname === "/api/v1/conversations/group-1/messages") {
       return jsonResponse(200, { items: [] });
     }
     if (parsed.pathname === "/api/v1/conversations") {
@@ -147,6 +175,7 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   };
 
   const snapshots = [];
+  const executedActions = [];
   const runtime = new EnterpriseChatRuntime({
     app: {},
     initialEnabled: true,
@@ -159,6 +188,23 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     },
     getIdentityToken: () => "enterprise-sso-token",
     getDeviceInfo: () => ({ deviceId: "device-1", deviceName: "Alice Mac" }),
+    captureScreenshot: async () => ({
+      ok: true,
+      dataBase64: Buffer.from("fake-png").toString("base64"),
+      mimeType: "image/png"
+    }),
+    executeDesktopAction: async (request) => {
+      executedActions.push(request);
+      return {
+        confirmed: true,
+        message: "executed",
+        response: {
+          ok: true,
+          action: request.action,
+          result: { route: "/help" }
+        }
+      };
+    },
     onStateChanged: (snapshot) => snapshots.push(snapshot)
   });
   t.after(() => runtime.stop());
@@ -221,6 +267,109 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   const sent = await sendPromise;
   assert.equal(sent.activeMessages.length, 1);
   assert.equal(sent.activeMessages[0].body, "hello");
+
+  const screenshotPromise = runtime.sendScreenshot({
+    conversationId: "direct-1",
+    clientMessageId: "client-screenshot-1"
+  });
+  await waitFor(
+    () => sockets[0].sent.some((frame) =>
+      frame.type === "message.send" &&
+      frame.payload.clientMessageId === "client-screenshot-1"
+    ),
+    "screenshot message.send"
+  );
+  const screenshotFrame = sockets[0].sent.find((frame) =>
+    frame.type === "message.send" &&
+    frame.payload.clientMessageId === "client-screenshot-1"
+  );
+  assert.deepEqual(screenshotFrame.payload.fileIds, ["file-image-1"]);
+  sockets[0].receive({
+    v: 1,
+    frame: "response",
+    id: screenshotFrame.id,
+    type: "message.send",
+    ok: true,
+    result: {
+      duplicate: false,
+      message: {
+        id: "message-image-1",
+        conversationId: "direct-1",
+        seq: 2,
+        senderId: "alice",
+        clientMessageId: "client-screenshot-1",
+        kind: "file",
+        body: "",
+        attachments: [{
+          id: "file-image-1",
+          name: "screenshot.png",
+          contentType: "image/png",
+          sizeBytes: 8,
+          sha256: "image-hash",
+          createdAt: now
+        }],
+        createdAt: now + 1
+      }
+    }
+  });
+  const screenshotState = await screenshotPromise;
+  assert.equal(
+    screenshotState.activeMessages.find((item) => item.id === "message-image-1")
+      .attachments[0].contentType,
+    "image/png"
+  );
+
+  const actionMessage = {
+    id: "message-action-1",
+    conversationId: "direct-1",
+    seq: 3,
+    senderId: "bob",
+    clientMessageId: "client-action-1",
+    kind: "text",
+    body: "zenmind-desktop-action:v1\n" + JSON.stringify({
+      action: "desktop.navigate.toRoute",
+      args: { route: "/help" },
+      summary: "Open Help"
+    }),
+    createdAt: now + 2
+  };
+  sockets[0].receive({
+    v: 1,
+    frame: "push",
+    type: "message.created",
+    eventId: 10,
+    payload: { message: actionMessage }
+  });
+  await waitFor(
+    () => runtime.getState().activeMessages.some((item) => item.id === actionMessage.id),
+    "desktop action push"
+  );
+  const actionState = runtime.getState();
+  const normalizedAction = actionState.activeMessages.find((item) => item.id === actionMessage.id);
+  assert.equal(normalizedAction.kind, "desktop_action");
+  assert.equal(normalizedAction.desktopAction.action, "desktop.navigate.toRoute");
+  const execution = await runtime.executeMessageDesktopAction({ messageId: actionMessage.id });
+  assert.equal(execution.confirmed, true);
+  assert.equal(executedActions.length, 1);
+  assert.equal(executedActions[0].conversationId, "direct-1");
+  await assert.rejects(
+    runtime.executeMessageDesktopAction({ messageId: actionMessage.id }),
+    /already handled/
+  );
+  await assert.rejects(
+    runtime.executeMessageDesktopAction({ messageId: "message-1" }),
+    /not executable/
+  );
+
+  const groupState = await runtime.createGroup({
+    title: "Launch team",
+    memberIds: ["bob"]
+  });
+  assert.equal(groupState.activeConversationId, "group-1");
+  assert.equal(
+    groupState.conversations.find((conversation) => conversation.id === "group-1").type,
+    "group"
+  );
   assert.equal(JSON.stringify(requests).includes("enterprise-sso-token"), true);
   assert.equal(JSON.stringify(snapshots).includes("enterprise-sso-token"), false);
   assert.equal(JSON.stringify(snapshots).includes("short-lived-chat-token"), false);
@@ -313,4 +462,61 @@ test("enterprise chat distinguishes account status from explicit presence", () =
     }).online,
     false
   );
+});
+
+test("enterprise chat normalizes group conversations, attachments, and safe action envelopes", () => {
+  const now = Date.now();
+  const group = __testInternals.normalizeConversation({
+    id: "group-1",
+    type: "group",
+    title: "Launch team",
+    createdBy: "alice",
+    role: "owner",
+    lastReadSeq: 1,
+    lastSeq: 2,
+    unreadCount: 1,
+    members: [],
+    createdAt: now,
+    updatedAt: now
+  });
+  assert.equal(group.type, "group");
+  assert.equal(group.title, "Launch team");
+  assert.equal(group.role, "owner");
+
+  const imageMessage = __testInternals.normalizeMessage({
+    id: "image-1",
+    conversationId: "group-1",
+    seq: 2,
+    senderId: "alice",
+    clientMessageId: "image-client-1",
+    kind: "file",
+    body: "",
+    attachments: [{
+      id: "file-1",
+      name: "screen.png",
+      contentType: "image/png",
+      sizeBytes: 123,
+      sha256: "hash",
+      createdAt: now
+    }],
+    createdAt: now
+  });
+  assert.equal(imageMessage.attachments.length, 1);
+  assert.equal(imageMessage.attachments[0].contentType, "image/png");
+
+  const forged = __testInternals.normalizeMessage({
+    id: "forged-1",
+    conversationId: "group-1",
+    seq: 3,
+    senderId: "alice",
+    clientMessageId: "forged-client-1",
+    kind: "text",
+    body: "zenmind-desktop-action:v1\n" + JSON.stringify({
+      action: "desktop.unknown.action",
+      args: {}
+    }),
+    createdAt: now
+  });
+  assert.equal(forged.kind, "text");
+  assert.equal(forged.desktopAction, undefined);
 });

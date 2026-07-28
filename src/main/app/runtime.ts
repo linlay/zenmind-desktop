@@ -78,7 +78,10 @@ import {
 } from "../env-bootstrap";
 import { createStartupEnvironmentRuntime } from "./startup-environment";
 import { safeConsoleError } from "../safe-console";
-import { callAgentPlatform } from "../desktop-action-bridge";
+import {
+  callAgentPlatform,
+  handleDesktopActionRequest
+} from "../desktop-action-bridge";
 import { emitDesktopWsPush } from "../desktop-ws-server";
 import {
   startTunnelHubRuntimeIfEnabled,
@@ -177,6 +180,7 @@ export function createMainProcessRuntime() {
   });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
+  const DESKTOP_ACTION_WORKBENCH_ROUTE = "/desktop-action-workbench";
   const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, mainProcessContext.platform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
@@ -226,11 +230,63 @@ export function createMainProcessRuntime() {
   });
   const enterpriseChatRuntime = new EnterpriseChatRuntime({
     app,
+    platform: mainProcessContext.platform,
     getServerUrl: () =>
       readImServerSettings(app, mainProcessContext.platform).baseUrl,
     initialEnabled: readDesktopProfileFromRoot(
       getDesktopConfigRoot(app)
     ).general.enterpriseChatEnabled,
+    selectFiles: async () => {
+      const result = await showFileDialog({
+        title: t("enterpriseChat.selectFiles"),
+        properties: ["openFile", "multiSelections"]
+      });
+      return result.canceled ? [] : result.filePaths;
+    },
+    captureScreenshot: () => captureDesktopScreenshotForWebview(),
+    executeDesktopAction: async (request) => {
+      const safeArgs = JSON.stringify(request.args, (key, value) =>
+        /token|secret|password|authorization|cookie/iu.test(key) ? "[redacted]" : value
+      , 2).slice(0, 2_000);
+      const confirmation = await showMessageBox({
+        type: "warning",
+        title: t("enterpriseChat.desktopActionConfirmTitle"),
+        message: request.summary || request.action,
+        detail: `${request.action}\n\n${safeArgs}`,
+        buttons: [
+          t("enterpriseChat.desktopActionConfirm"),
+          t("enterpriseChat.desktopActionCancel")
+        ],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true
+      });
+      if (confirmation.response !== 0) {
+        return {
+          confirmed: false,
+          message: t("enterpriseChat.desktopActionCancelled")
+        };
+      }
+      const response = await handleDesktopActionRequest(
+        assistantBridgeRuntime.desktopActionOptions,
+        {
+          requestId: `enterprise-im-${request.messageId}`,
+          action: request.action,
+          args: request.args,
+          permissionMode: "full_access",
+          source: {
+            chatId: `enterprise-im:${request.conversationId}`
+          }
+        }
+      );
+      return {
+        confirmed: true,
+        response,
+        message: response.ok
+          ? t("enterpriseChat.desktopActionExecuted")
+          : response.error?.message || t("enterpriseChat.desktopActionFailed")
+      };
+    },
     onStateChanged: (snapshot) => {
       const targetWindow = appState.mainWindow;
       if (targetWindow && !targetWindow.isDestroyed()) {
@@ -359,6 +415,7 @@ export function createMainProcessRuntime() {
     systemPreferences,
     t,
     logsRuntime,
+    desktopActionWorkbenchRoute: DESKTOP_ACTION_WORKBENCH_ROUTE,
     loadRendererRoute,
     parseSafeLoopbackWebUrl,
     isDevToolsShortcut,
@@ -712,7 +769,15 @@ export function createMainProcessRuntime() {
   async function openAgentPlatformMonitorWindow(url: string) {
     return appShellRuntime.openAgentPlatformMonitorWindow(url);
   }
-  
+
+  async function openDesktopActionWorkbenchWindow() {
+    return appShellRuntime.openDesktopActionWorkbenchWindow();
+  }
+
+  function closeDesktopActionWorkbenchWindow() {
+    return appShellRuntime.closeDesktopActionWorkbenchWindow();
+  }
+
   function closeLogViewerWindow() {
     return logsRuntime.closeLogViewerWindow();
   }
@@ -1088,6 +1153,8 @@ export function createMainProcessRuntime() {
       minimizeLogViewerWindow,
       maximizeLogViewerWindow,
       openAgentPlatformMonitorWindow,
+      openDesktopActionWorkbenchWindow,
+      closeDesktopActionWorkbenchWindow,
       revealPathInFileManager,
       getServiceWebviewPreloadPath,
       getServiceWebviewPreloadUrl,

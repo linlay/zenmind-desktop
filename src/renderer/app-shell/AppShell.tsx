@@ -2184,6 +2184,19 @@ export function AppShell() {
     requestSidebarNavigation(targetPath);
   }
 
+  function handleCloseDebugSettings() {
+    aboutSettingsClickCountRef.current = 0;
+    setDebugSettingsUnlocked(false);
+    void window.electronAPI.desktopActions.closeWorkbench();
+
+    const targetPath = buildSettingsSectionPath("about");
+    setSidebarNavigationHistory((current) => ({
+      back: current.back.at(-1) === targetPath ? current.back.slice(0, -1) : current.back,
+      forward: []
+    }));
+    navigate(targetPath, { replace: true });
+  }
+
   function handleExitSettingsMode() {
     const targetPath = resolveSettingsExitTargetPath(
       lastNonSettingsRouteRef.current || getSettingsExitFallbackPath(kanbanEnabled),
@@ -2783,6 +2796,7 @@ export function AppShell() {
                     onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
                     onAssistantSettingsChange={setAssistantSettings}
                     debugVisible={debugSettingsUnlocked}
+                    onCloseDebug={handleCloseDebugSettings}
                   />
                 </RouteSuspense>
               }

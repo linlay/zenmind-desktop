@@ -44,6 +44,8 @@ export interface AssistantIpcHandlerOptions {
   cancelAssistantAttachmentTask: ((taskId: string) => any) | null;
   createAssistantAttachmentsFromFiles: ((app: any, chatId: any, filePaths: string[], opts: any) => any) | null;
   captureAssistantScreenshot: ((chatId: any) => any) | null;
+  openDesktopActionWorkbenchWindow?: () => Promise<{ ok: boolean }> | { ok: boolean };
+  closeDesktopActionWorkbenchWindow?: () => Promise<{ ok: boolean }> | { ok: boolean };
   platform?: string;
 }
 
@@ -119,6 +121,8 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     cancelAssistantAttachmentTask,
     createAssistantAttachmentsFromFiles,
     captureAssistantScreenshot,
+    openDesktopActionWorkbenchWindow,
+    closeDesktopActionWorkbenchWindow,
     platform = process.platform
   } = options;
 
@@ -559,6 +563,14 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     pending.resolve(response);
     return { ok: true };
   });
+
+  ipcMain.handle("desktopActions.openWorkbench", async () =>
+    openDesktopActionWorkbenchWindow?.() ?? { ok: false }
+  );
+
+  ipcMain.handle("desktopActions.closeWorkbench", async () =>
+    closeDesktopActionWorkbenchWindow?.() ?? { ok: false }
+  );
 
   ipcMain.handle("desktopActions.list", async () => ({
     ok: true,
