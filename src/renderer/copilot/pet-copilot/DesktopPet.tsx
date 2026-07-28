@@ -1,3 +1,11 @@
+import CheckOutlined from "@ant-design/icons/CheckOutlined";
+import ClockCircleOutlined from "@ant-design/icons/ClockCircleOutlined";
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import DownOutlined from "@ant-design/icons/DownOutlined";
+import LoadingOutlined from "@ant-design/icons/LoadingOutlined";
+import MessageOutlined from "@ant-design/icons/MessageOutlined";
+import MinusOutlined from "@ant-design/icons/MinusOutlined";
+import UpOutlined from "@ant-design/icons/UpOutlined";
 import {
   useEffect,
   useMemo,
@@ -140,6 +148,25 @@ function mapDesktopPetPreviewBadgeStatus(status: string): string {
       return "cancelled";
     default:
       return "idle";
+  }
+}
+
+function renderDesktopPetStatusIcon(status: string) {
+  switch (status) {
+    case "done":
+      return <CheckOutlined aria-hidden="true" />;
+    case "running":
+      return <LoadingOutlined spin aria-hidden="true" />;
+    case "message":
+      return <MessageOutlined aria-hidden="true" />;
+    case "awaiting":
+      return <ClockCircleOutlined aria-hidden="true" />;
+    case "error":
+      return <CloseOutlined aria-hidden="true" />;
+    case "cancelled":
+    case "idle":
+    default:
+      return <MinusOutlined aria-hidden="true" />;
   }
 }
 
@@ -1443,7 +1470,11 @@ export function DesktopPet() {
                 aria-expanded={isWidgetExpanded}
                 onClick={toggleWidgetExpanded}
               >
-                <span aria-hidden="true" />
+                {isWidgetExpanded ? (
+                  <UpOutlined aria-hidden="true" />
+                ) : (
+                  <DownOutlined aria-hidden="true" />
+                )}
               </button>
             </div>
             {isWidgetExpanded ? (
@@ -1463,7 +1494,9 @@ export function DesktopPet() {
                       <span
                         className={`desktop-pet-task-status-badge is-${task.status}`}
                         aria-label={formatTaskStatus(task, t)}
-                      />
+                      >
+                        {renderDesktopPetStatusIcon(task.status)}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -1509,7 +1542,11 @@ export function DesktopPet() {
                   aria-expanded={previewPanel.expanded}
                   onClick={togglePreviewExpanded}
                 >
-                  <span aria-hidden="true" />
+                  {previewPanel.expanded ? (
+                    <UpOutlined aria-hidden="true" />
+                  ) : (
+                    <DownOutlined aria-hidden="true" />
+                  )}
                 </button>
               ) : null}
             </div>
@@ -1534,7 +1571,9 @@ export function DesktopPet() {
                       <span
                         className={`desktop-pet-task-status-badge is-${itemBadgeStatus}`}
                         aria-label={formatPreviewStatus(item.status, t)}
-                      />
+                      >
+                        {renderDesktopPetStatusIcon(itemBadgeStatus)}
+                      </span>
                     </div>
                   );
                 })}
@@ -1563,7 +1602,11 @@ export function DesktopPet() {
                 aria-expanded={isWidgetExpanded}
                 onClick={toggleWidgetExpanded}
               >
-                <span aria-hidden="true" />
+                {isWidgetExpanded ? (
+                  <UpOutlined aria-hidden="true" />
+                ) : (
+                  <DownOutlined aria-hidden="true" />
+                )}
               </button>
             </div>
             {isWidgetExpanded ? (
@@ -1590,7 +1633,7 @@ export function DesktopPet() {
                             aria-label={t("desktopPet.message.close")}
                             onClick={(event) => handleDismissMessageClick(event, message)}
                           >
-                            <span aria-hidden="true" />
+                            <CloseOutlined aria-hidden="true" />
                           </button>
                         </div>
                         <button
@@ -1605,7 +1648,9 @@ export function DesktopPet() {
                           <span
                             className={`desktop-pet-task-status-badge is-${cardStatus}`}
                             aria-label={message.title}
-                          />
+                          >
+                            {renderDesktopPetStatusIcon(cardStatus)}
+                          </span>
                         </button>
                         {isReplying ? (
                           <div
@@ -1678,7 +1723,9 @@ export function DesktopPet() {
                       <span
                         className={`desktop-pet-task-status-badge is-${statusPanelStatus}`}
                         aria-label={statusPanelTitle}
-                      />
+                      >
+                        {renderDesktopPetStatusIcon(statusPanelStatus)}
+                      </span>
                     </button>
                   )}
                 </div>
