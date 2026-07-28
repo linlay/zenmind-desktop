@@ -1987,7 +1987,8 @@
   box-shadow: none;
 }
 
-.settings-debug-nav-item.ant-btn:hover {
+.settings-page .settings-debug-nav-item.ant-btn:not(:disabled):not(.ant-btn-disabled):hover,
+.settings-page .settings-debug-nav-item.ant-btn:not(:disabled):not(.ant-btn-disabled):focus-visible {
   border-color: var(--line);
   background: var(--control-select-bg);
   color: var(--ink);
@@ -1999,7 +2000,9 @@
   color: var(--accent-strong);
 }
 
-.settings-debug-nav-item.ant-btn.is-selected {
+.settings-page .settings-debug-nav-item.ant-btn.is-selected,
+.settings-page .settings-debug-nav-item.ant-btn.is-selected:not(:disabled):not(.ant-btn-disabled):hover,
+.settings-page .settings-debug-nav-item.ant-btn.is-selected:not(:disabled):not(.ant-btn-disabled):focus-visible {
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent-strong);

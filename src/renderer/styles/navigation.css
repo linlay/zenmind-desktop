@@ -2296,6 +2296,10 @@
   background: var(--desktop-ui-card-soft);
 }
 
+.sidebar-web-item-actions-menu {
+  z-index: 10001;
+}
+
 .sidebar-group-actions-menu-layer {
   position: fixed;
   inset: 0;

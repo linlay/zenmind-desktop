@@ -2328,6 +2328,13 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(zhCN, /"settings\.debug\.desktopWs\.title":\s*"本地 WebSocket 服务调试"/);
 });
 
+test("debug category navigation keeps theme text colors in interactive states", () => {
+  const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
+
+  assert.match(settingsStyles, /\.settings-page \.settings-debug-nav-item\.ant-btn:not\(:disabled\):not\(\.ant-btn-disabled\):hover,[\s\S]*?color:\s*var\(--ink\);/);
+  assert.match(settingsStyles, /\.settings-page \.settings-debug-nav-item\.ant-btn\.is-selected,[\s\S]*?\.settings-debug-nav-item\.ant-btn\.is-selected:not\(:disabled\):not\(\.ant-btn-disabled\):hover,[\s\S]*?color:\s*var\(--accent-strong\);/);
+});
+
 test("desktop state debug tab is wired through the fixed read-only IPC contract", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
@@ -3905,6 +3912,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const startupPhases = readSourceFile("src", "main", "lifecycle", "startup-phases.ts");
   const appState = readSourceFile("src", "main", "app-state.ts");
   const shutdownRunner = readSourceFile("src", "main", "lifecycle", "shutdown.ts");
+  const globalStyles = readRendererStyles();
   const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
   const webappWindowManager = readSourceFile("src", "main", "webs", "webapps", "window-manager.ts");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
@@ -3985,6 +3993,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appSidebar, /onOpenWebappWindow\?\.\(item\)/);
   assert.match(appSidebar, /onOpenWebappWorkspace\?\.\(item\)/);
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
+  assert.match(appSidebar, /disabled=\{\s*isCollapsed \|\| !isOpen \|\| Boolean\(webClosePendingEntryKey\)\s*\}/);
+  assert.match(appSidebar, /\{!isCollapsed \? \(\s*<button[\s\S]{0,700}t\("sidebar\.webapp\.remove"\)/);
+  assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,80}z-index:\s*10001;/);
   assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
   assert.match(appSidebar, /void removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
@@ -6327,6 +6338,26 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
 });
 
+test("desktop pet overview icons share one compact outlined visual language", () => {
+  const desktopPet = readSourceFile("src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx");
+  const globalStyles = readRendererStyles();
+
+  assert.match(desktopPet, /import UpOutlined from "@ant-design\/icons\/UpOutlined";/);
+  assert.match(desktopPet, /import DownOutlined from "@ant-design\/icons\/DownOutlined";/);
+  assert.match(desktopPet, /import ClockCircleOutlined from "@ant-design\/icons\/ClockCircleOutlined";/);
+  assert.match(desktopPet, /import CheckOutlined from "@ant-design\/icons\/CheckOutlined";/);
+  assert.match(desktopPet, /import CloseOutlined from "@ant-design\/icons\/CloseOutlined";/);
+  assert.match(desktopPet, /function renderDesktopPetStatusIcon\(status: string\)/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action\s*\{[\s\S]{0,180}width:\s*24px;[\s\S]{0,80}height:\s*24px;[\s\S]{0,140}border-radius:\s*7px;[\s\S]{0,100}color:\s*#52606d;/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-dismiss\s*\{[\s\S]{0,220}width:\s*24px;[\s\S]{0,80}height:\s*24px;[\s\S]{0,140}border-radius:\s*7px;[\s\S]{0,100}color:\s*#52606d;/);
+  assert.match(globalStyles, /\.desktop-pet-message-dismiss \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\s*\{[\s\S]{0,120}top:\s*43px;[\s\S]{0,80}right:\s*8px;[\s\S]{0,80}width:\s*24px;[\s\S]{0,80}height:\s*24px;/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-task-head-action span\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-message-dismiss span::before/);
+});
+
 test("desktop pet message reaction collapses to an unread badge without an expand button", () => {
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
@@ -6379,8 +6410,8 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-task-status-badge\.is-awaiting\s*\{[\s\S]{0,120}#fff2c2[\s\S]{0,120}#b45309/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy strong\s*\{[\s\S]{0,120}font-size:\s*13px;/);
   assert.match(globalStyles, /\.desktop-pet-task-head-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
-  assert.match(globalStyles, /\.desktop-pet-task-head-action span\s*\{[\s\S]{0,220}transform:\s*translateY\(2px\) rotate\(-135deg\);/);
-  assert.match(globalStyles, /\.desktop-pet-task-panel\.is-expanded \.desktop-pet-task-head-action span\s*\{[\s\S]{0,120}transform:\s*translateY\(-2px\) rotate\(45deg\);/);
+  assert.match(desktopPet, /isWidgetExpanded \? \([\s\S]{0,80}<UpOutlined aria-hidden="true" \/>[\s\S]{0,80}<DownOutlined aria-hidden="true" \/>/);
+  assert.match(globalStyles, /\.desktop-pet-task-head-action \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy strong\s*\{[\s\S]{0,120}font-size:\s*12px;/);
   assert.match(globalStyles, /\.desktop-pet-task-copy span\s*\{[\s\S]{0,160}font-size:\s*11px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s*\{[\s\S]{0,180}--desktop-pet-task-panel-bottom:\s*138px;[\s\S]{0,100}--desktop-pet-task-list-max:\s*155px;/);
@@ -6392,9 +6423,9 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.desktop-pet-message-card\s*\{[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/);
   assert.match(globalStyles, /\.desktop-pet-message-card \.desktop-pet-task-copy span\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::before\s*\{[\s\S]{0,140}left:\s*5px;[\s\S]{0,80}top:\s*5px;[\s\S]{0,80}width:\s*8px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-awaiting::after\s*\{[\s\S]{0,140}left:\s*10px;[\s\S]{0,80}top:\s*7px;[\s\S]{0,80}height:\s*5px;/);
-  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge\.is-running::after\s*\{[\s\S]{0,100}inset:\s*6px;[\s\S]{0,80}border-width:\s*2px;/);
+  assert.match(desktopPet, /case "awaiting":[\s\S]{0,80}<ClockCircleOutlined aria-hidden="true" \/>/);
+  assert.match(desktopPet, /case "running":[\s\S]{0,80}<LoadingOutlined spin aria-hidden="true" \/>/);
+  assert.match(globalStyles, /\.desktop-pet-message-main \.desktop-pet-task-status-badge \.anticon\s*\{[\s\S]{0,80}font-size:\s*14px;/);
   assert.match(globalStyles, /\.desktop-pet-message-card:hover \.desktop-pet-message-reply[\s\S]*?opacity:\s*1;/);
   assert.match(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,100}right:\s*8px;[\s\S]{0,80}bottom:\s*7px;/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-message-reply\s*\{[\s\S]{0,120}top:\s*calc\(50%/);
