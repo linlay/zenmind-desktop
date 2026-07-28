@@ -11,6 +11,11 @@ const DEFAULT_ENDPOINT = "";
 const DEFAULT_PROVIDERS = ["th-deepseek", "th-minimax"] as const;
 const MAX_ERROR_BODY_LENGTH = 240;
 const PROVIDER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/u;
+const SQLITE_BUSY_MAX_ATTEMPTS = 6;
+const SQLITE_BUSY_RETRY_BASE_DELAY_MS = 250;
+const SQLITE_BUSY_RETRY_MAX_DELAY_MS = 2_000;
+const SQLITE_BUSY_BACKGROUND_RETRY_BASE_DELAY_MS = 15_000;
+const SQLITE_BUSY_BACKGROUND_RETRY_MAX_DELAY_MS = 5 * 60_000;
 
 type AppPathReader = Pick<App, "getPath">;
 
@@ -44,18 +49,38 @@ type ProviderRegisterFetch = (
   }
 ) => Promise<ProviderRegisterFetchResponse>;
 
+type ProviderRegisterSleep = (delayMs: number) => Promise<void>;
+
 type ProviderYaml = {
   apiKey?: unknown;
 };
 
 export type ProviderRegisterResult =
   | { status: "skipped"; reason: "missing" | "disabled" | "unchanged" }
+  | { status: "deferred"; reason: "sqlite-busy" }
   | { status: "applied"; providers: string[]; updatedProviders: string[] };
 
 export type ProviderRegisterOptions = {
   platform?: NodeJS.Platform;
   fetchImpl?: ProviderRegisterFetch;
+  sleepImpl?: ProviderRegisterSleep;
+  deviceId?: string;
+  deferSqliteBusy?: boolean;
+  backgroundRetryBaseDelayMs?: number;
 };
+
+const inFlightProviderRegistrations = new Map<string, Promise<ProviderRegisterResult>>();
+const backgroundProviderRegistrationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const backgroundProviderRegistrationAttempts = new Map<string, number>();
+
+class ProviderRegisterSqliteBusyError extends Error {
+  readonly code = "SQLITE_BUSY";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderRegisterSqliteBusyError";
+  }
+}
 
 export function resolveProviderRegisterPath(
   app: AppPathReader,
@@ -158,53 +183,113 @@ function summarizeResponseBody(value: string) {
   return `${normalized.slice(0, MAX_ERROR_BODY_LENGTH)}...`;
 }
 
+function isTransientSqliteBusyResponse(status: number, responseText: string) {
+  return (
+    status >= 500 &&
+    status < 600 &&
+    /(?:\bSQLITE_BUSY\b|database (?:table )?is locked)/iu.test(responseText)
+  );
+}
+
+function providerRegisterRetryDelayMs(attempt: number) {
+  return Math.min(
+    SQLITE_BUSY_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1)),
+    SQLITE_BUSY_RETRY_MAX_DELAY_MS
+  );
+}
+
+function providerRegisterBackgroundRetryDelayMs(
+  attempt: number,
+  baseDelayMs = SQLITE_BUSY_BACKGROUND_RETRY_BASE_DELAY_MS
+) {
+  return Math.min(
+    Math.max(0, baseDelayMs) * (2 ** Math.max(0, attempt - 1)),
+    SQLITE_BUSY_BACKGROUND_RETRY_MAX_DELAY_MS
+  );
+}
+
+function isProviderRegisterSqliteBusyError(
+  error: unknown
+): error is ProviderRegisterSqliteBusyError {
+  return error instanceof ProviderRegisterSqliteBusyError ||
+    (
+      error instanceof Error &&
+      (error as Error & { code?: unknown }).code === "SQLITE_BUSY"
+    );
+}
+
+function defaultSleepImpl(delayMs: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
 async function requestApiKey(input: {
   endpoint: string;
   token: string;
   deviceId: string;
   fetchImpl: ProviderRegisterFetch;
+  sleepImpl: ProviderRegisterSleep;
 }) {
-  let response: ProviderRegisterFetchResponse;
-  try {
-    response = await input.fetchImpl(input.endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${input.token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ name: input.deviceId })
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(t("providerRegister.requestFailed", { message: redactSensitiveText(message) }));
-  }
+  for (let attempt = 1; attempt <= SQLITE_BUSY_MAX_ATTEMPTS; attempt += 1) {
+    let response: ProviderRegisterFetchResponse;
+    try {
+      response = await input.fetchImpl(input.endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${input.token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: input.deviceId })
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(t("providerRegister.requestFailed", { message: redactSensitiveText(message) }));
+    }
 
-  const responseText = await response.text();
-  if (!response.ok) {
-    const suffix = summarizeResponseBody(responseText);
-    throw new Error(
-      t("providerRegister.httpFailed", {
+    const responseText = await response.text();
+    if (!response.ok) {
+      const sqliteBusy = isTransientSqliteBusyResponse(response.status, responseText);
+      if (
+        attempt < SQLITE_BUSY_MAX_ATTEMPTS &&
+        sqliteBusy
+      ) {
+        const delayMs = providerRegisterRetryDelayMs(attempt);
+        console.warn(
+          `[provider-register] Transit Hub database busy; retrying attempt=${attempt + 1}/${SQLITE_BUSY_MAX_ATTEMPTS} delayMs=${delayMs}`
+        );
+        await input.sleepImpl(delayMs);
+        continue;
+      }
+      const suffix = summarizeResponseBody(responseText);
+      const message = t("providerRegister.httpFailed", {
         status: response.status,
         statusText: response.statusText ? ` ${response.statusText}` : "",
         suffix: suffix ? `: ${suffix}` : ""
-      })
-    );
+      });
+      if (sqliteBusy) {
+        throw new ProviderRegisterSqliteBusyError(message);
+      }
+      throw new Error(message);
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(responseText);
+    } catch {
+      throw new Error(t("providerRegister.responseNotJson"));
+    }
+
+    const key = typeof (parsed as { key?: unknown })?.key === "string"
+      ? (parsed as { key: string }).key.trim()
+      : "";
+    if (!key) {
+      throw new Error(t("providerRegister.responseMissingKey"));
+    }
+    return key;
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(responseText);
-  } catch {
-    throw new Error(t("providerRegister.responseNotJson"));
-  }
-
-  const key = typeof (parsed as { key?: unknown })?.key === "string"
-    ? (parsed as { key: string }).key.trim()
-    : "";
-  if (!key) {
-    throw new Error(t("providerRegister.responseMissingKey"));
-  }
-  return key;
+  throw new Error(t("providerRegister.requestFailed", { message: "retry attempts exhausted" }));
 }
 
 function parseProviderYaml(content: string, providerKey: string) {
@@ -334,12 +419,12 @@ function defaultFetchImpl(): ProviderRegisterFetch {
   return globalThis.fetch as unknown as ProviderRegisterFetch;
 }
 
-export async function ensureProviderRegisterApiKey(
+async function ensureProviderRegisterApiKeyInternal(
   app: App,
-  options: ProviderRegisterOptions = {}
+  options: ProviderRegisterOptions,
+  registerPath: string
 ): Promise<ProviderRegisterResult> {
   const platform = options.platform ?? process.platform;
-  const registerPath = resolveProviderRegisterPath(app, platform);
   if (!fs.existsSync(registerPath)) {
     return { status: "skipped", reason: "missing" };
   }
@@ -368,12 +453,13 @@ export async function ensureProviderRegisterApiKey(
 
   const endpoint = normalizeEndpoint(config.endpoint);
   const token = normalizeGrant(config.grant);
-  const deviceId = getDesktopDeviceId(app);
+  const deviceId = options.deviceId ?? getDesktopDeviceId(app);
   const apiKey = await requestApiKey({
     endpoint,
     token,
     deviceId,
-    fetchImpl: options.fetchImpl ?? defaultFetchImpl()
+    fetchImpl: options.fetchImpl ?? defaultFetchImpl(),
+    sleepImpl: options.sleepImpl ?? defaultSleepImpl
   });
   const updatedProviders = applyProviderApiKey({ targets, apiKey });
   safetyCleanRegister(registerPath, config, platform);
@@ -383,12 +469,116 @@ export async function ensureProviderRegisterApiKey(
   return { status: "applied", providers, updatedProviders };
 }
 
+function scheduleProviderRegisterBackgroundRetry(
+  app: App,
+  options: ProviderRegisterOptions,
+  registerPath: string
+) {
+  if (backgroundProviderRegistrationTimers.has(registerPath)) {
+    return;
+  }
+
+  const attempt = (backgroundProviderRegistrationAttempts.get(registerPath) ?? 0) + 1;
+  backgroundProviderRegistrationAttempts.set(registerPath, attempt);
+  const delayMs = providerRegisterBackgroundRetryDelayMs(
+    attempt,
+    options.backgroundRetryBaseDelayMs
+  );
+  console.warn(
+    `[provider-register] Transit Hub database remains busy; startup will continue and registration will retry in ${delayMs}ms`
+  );
+
+  const timer = setTimeout(() => {
+    backgroundProviderRegistrationTimers.delete(registerPath);
+    void ensureProviderRegisterApiKey(app, {
+      ...options,
+      deferSqliteBusy: false
+    })
+      .then((result) => {
+        backgroundProviderRegistrationAttempts.delete(registerPath);
+        if (result.status === "applied") {
+          console.info("[provider-register] background registration completed");
+        }
+      })
+      .catch((error) => {
+        if (
+          isProviderRegisterSqliteBusyError(error) &&
+          fs.existsSync(registerPath)
+        ) {
+          scheduleProviderRegisterBackgroundRetry(app, options, registerPath);
+          return;
+        }
+        backgroundProviderRegistrationAttempts.delete(registerPath);
+        console.error(
+          "[provider-register] background registration stopped",
+          error instanceof Error ? error.message : String(error)
+        );
+      });
+  }, delayMs);
+  timer.unref?.();
+  backgroundProviderRegistrationTimers.set(registerPath, timer);
+}
+
+function clearProviderRegisterBackgroundRetries() {
+  for (const timer of backgroundProviderRegistrationTimers.values()) {
+    clearTimeout(timer);
+  }
+  backgroundProviderRegistrationTimers.clear();
+  backgroundProviderRegistrationAttempts.clear();
+}
+
+export function ensureProviderRegisterApiKey(
+  app: App,
+  options: ProviderRegisterOptions = {}
+): Promise<ProviderRegisterResult> {
+  const platform = options.platform ?? process.platform;
+  const registerPath = resolveProviderRegisterPath(app, platform);
+  const existing = inFlightProviderRegistrations.get(registerPath);
+  if (existing) {
+    if (!options.deferSqliteBusy) {
+      return existing;
+    }
+    return existing.catch((error) => {
+      if (!isProviderRegisterSqliteBusyError(error)) {
+        throw error;
+      }
+      scheduleProviderRegisterBackgroundRetry(app, options, registerPath);
+      return { status: "deferred", reason: "sqlite-busy" };
+    });
+  }
+
+  const task = ensureProviderRegisterApiKeyInternal(app, options, registerPath);
+  const trackedTask = task.finally(() => {
+    if (inFlightProviderRegistrations.get(registerPath) === trackedTask) {
+      inFlightProviderRegistrations.delete(registerPath);
+    }
+  });
+  inFlightProviderRegistrations.set(registerPath, trackedTask);
+  if (!options.deferSqliteBusy) {
+    return trackedTask;
+  }
+  return trackedTask.catch((error) => {
+    if (!isProviderRegisterSqliteBusyError(error)) {
+      throw error;
+    }
+    scheduleProviderRegisterBackgroundRetry(app, options, registerPath);
+    return { status: "deferred", reason: "sqlite-busy" };
+  });
+}
+
 export const __testInternals = {
   DEFAULT_ENDPOINT,
   DEFAULT_PROVIDERS,
   PROVIDER_REGISTER_FILE,
+  SQLITE_BUSY_MAX_ATTEMPTS,
   normalizeProviders,
   resolveProviderRegisterPath,
   buildResetContent,
+  isTransientSqliteBusyResponse,
+  isProviderRegisterSqliteBusyError,
+  providerRegisterBackgroundRetryDelayMs,
+  providerRegisterRetryDelayMs,
+  clearProviderRegisterBackgroundRetries,
+  requestApiKey,
   upsertProviderApiKeyContent
 };

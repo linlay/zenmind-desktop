@@ -1690,7 +1690,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   prepareServiceExecutionLayout(service, layout);
 
   if (service.id === "agent-platform") {
-    await ensureProviderRegisterApiKey(app);
+    await ensureProviderRegisterApiKey(app, { deferSqliteBusy: true });
   }
 
   if (service.id !== "agent-platform") {
@@ -3061,7 +3061,7 @@ export async function runStartupPreparation(
   options: StartupPreparationOptions = {}
 ): Promise<StartupPreparationResult> {
   try {
-    await ensureProviderRegisterApiKey(app);
+    await ensureProviderRegisterApiKey(app, { deferSqliteBusy: true });
 
     const initialMode = await resolveStartupPreparationMode(app);
     options.onModeResolved?.(initialMode);
