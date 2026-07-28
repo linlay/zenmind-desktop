@@ -4844,7 +4844,9 @@ export function AppSidebar({
         <button
           type="button"
           role="menuitem"
-          disabled={!isOpen || Boolean(webClosePendingEntryKey)}
+          disabled={
+            isCollapsed || !isOpen || Boolean(webClosePendingEntryKey)
+          }
           onClick={() => {
             setWebItemMenu(null);
             void closeWebItem(item);
@@ -4881,26 +4883,30 @@ export function AppSidebar({
                 )}
               </span>
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={!canRemoveWebapp || Boolean(webItemRemovePendingId)}
-              title={
-                canRemoveWebapp
-                  ? t("sidebar.webapp.remove")
-                  : t("sidebar.webapp.managedNotRemovable", { name: item.label })
-              }
-              onClick={() => {
-                setWebItemMenu(null);
-                void removeWebappItem(item);
-              }}
-            >
-              <span>
-                {removePending
-                  ? t("sidebar.webapp.removing")
-                  : t("sidebar.webapp.remove")}
-              </span>
-            </button>
+            {!isCollapsed ? (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!canRemoveWebapp || Boolean(webItemRemovePendingId)}
+                title={
+                  canRemoveWebapp
+                    ? t("sidebar.webapp.remove")
+                    : t("sidebar.webapp.managedNotRemovable", {
+                        name: item.label,
+                      })
+                }
+                onClick={() => {
+                  setWebItemMenu(null);
+                  void removeWebappItem(item);
+                }}
+              >
+                <span>
+                  {removePending
+                    ? t("sidebar.webapp.removing")
+                    : t("sidebar.webapp.remove")}
+                </span>
+              </button>
+            ) : null}
           </>
         ) : null}
       </div>,
