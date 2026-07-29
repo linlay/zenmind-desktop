@@ -47,6 +47,14 @@ export const enUSMessages = {
   "quitConfirm.detail": "Quitting will interrupt active local tasks and services. Enabled automations will not run while the app is closed.",
   "quitConfirm.quit": "Quit",
 
+  "shutdown.progress.title": "Quitting safely",
+  "shutdown.progress.preparing": "Closing windows and collecting active tasks…",
+  "shutdown.progress.stopping": "Stopping local features and background services…",
+  "shutdown.progress.forcing": "Cleaning up processes that did not stop normally…",
+  "shutdown.progress.verifying": "Verifying that processes and ports were released…",
+  "shutdown.progress.complete": "Cleanup complete. Quitting…",
+  "shutdown.progress.failed": "Some resources could not be cleaned up. Preparing the shutdown report…",
+
   "tray.chatWithApp": "Chat with {appName}",
   "tray.openApp": "Open {appName}",
   "tray.settings": "Settings",

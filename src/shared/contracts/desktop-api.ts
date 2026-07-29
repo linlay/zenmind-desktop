@@ -15,6 +15,7 @@ import type {
   EmbeddedCdpSiteSurfaceRemoval
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
+import type { ShutdownProgressListener } from "../shutdown";
 import type {
   EnterpriseChatAttachmentData,
   EnterpriseChatAttachmentInput,
@@ -492,6 +493,7 @@ export interface DesktopApi {
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
     getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
     onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
+    onShutdownProgress: (listener: ShutdownProgressListener) => (() => void);
   };
   desktopDownloads: {
     saveFile: (input: {

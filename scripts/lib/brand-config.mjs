@@ -1161,6 +1161,7 @@ function writeInstallerInclude(rootDir, brand) {
   const dataRegistryKey = `Software\\${brand.storageNamespace}`;
   const nsisPrefix = nsisIdentifier(brand.productName);
   const shutdownArg = brand.installer.shutdownArg;
+  const storageNamespace = escapeNsisText(brand.storageNamespace);
   const programDataDirName = escapeNsisText(brand.paths.programDataDirName);
   const runtimeRootDirName = escapeNsisText(brand.paths.runtimeRootDirName);
   const installOwnerToken = `${brand.appId}|${brand.storageNamespace}|install-root|v1`;
@@ -1179,6 +1180,11 @@ Var /GLOBAL DesktopDefaultInstallDir
 Var /GLOBAL DesktopPreviousInstallDir
 Var /GLOBAL DesktopProgramDataRoot
 Var /GLOBAL DesktopProgramOwnerMarker
+Var /GLOBAL DesktopShutdownAckPath
+Var /GLOBAL DesktopShutdownStatus
+Var /GLOBAL DesktopProcessCleanupDone
+Var /GLOBAL DesktopProcessCleanupStatus
+Var /GLOBAL DesktopProcessSurvivors
 !ifdef BUILD_UNINSTALLER
 Var /GLOBAL DesktopOwnedDataRoot
 Var /GLOBAL DesktopDataRemoved
@@ -1528,9 +1534,29 @@ FunctionEnd
 !macroend
 
 !macro stopManagedServiceProcesses
-  DetailPrint "Stopping ${productName} app and managed service processes..."
-  nsExec::ExecToLog \`"$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; $$appExecutable = [System.IO.Path]::GetFullPath('$INSTDIR\\\${APP_EXECUTABLE_FILENAME}'); $$programRoot = [System.IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables('$APPDATA\\${programDataDirName}')).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar; $$deadline = [DateTime]::UtcNow.AddSeconds(15); do { $$targets = @(Get-CimInstance Win32_Process | Where-Object { $$path = [string]$$_.ExecutablePath; $$path -and ($$path.Equals($$appExecutable, [StringComparison]::OrdinalIgnoreCase) -or $$path.StartsWith($$programRoot, [StringComparison]::OrdinalIgnoreCase)) }); $$targets | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }; if ($$targets.Count -eq 0) { break }; Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt $$deadline); exit 0"\`
-  Pop $R2
+  \${if} $DesktopProcessCleanupDone != "1"
+    DetailPrint "Stopping ${productName} app and managed service processes..."
+    System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_APP_EXE", "$INSTDIR\\\${APP_EXECUTABLE_FILENAME}").r0'
+    StrCpy $DesktopProgramOwnerMarker "$APPDATA\\${programDataDirName}.desktop-owner"
+    !insertmacro DesktopReadOwnerFile $DesktopProgramOwnerMarker "${programOwnerToken}" $R0
+    \${if} $R0 == "1"
+      System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_PROGRAM_ROOT", "$APPDATA\\${programDataDirName}").r0'
+    \${else}
+      System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_PROGRAM_ROOT", "").r0'
+    \${endif}
+    !insertmacro DesktopReadOwnerMarker $DesktopDataRoot "${dataOwnerToken}" $R0
+    !insertmacro DesktopValidateOwnedRoot $DesktopDataRoot $R1
+    \${if} $R0 == "1"
+    \${andIf} $R1 == "1"
+      System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_DATA_ROOT", "$DesktopDataRoot").r0'
+    \${else}
+      System::Call 'Kernel32::SetEnvironmentVariable(t,t)i("DESKTOP_MANAGED_DATA_ROOT", "").r0'
+    \${endif}
+    nsExec::ExecToStack \`"$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'Stop'; try { $$appExecutable = [System.IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_APP_EXE')); $$programRootValue = [Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_PROGRAM_ROOT'); $$programRoot = if ([string]::IsNullOrWhiteSpace($$programRootValue)) { '' } else { [System.IO.Path]::GetFullPath($$programRootValue).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar }; $$dataRootValue = [Environment]::GetEnvironmentVariable('DESKTOP_MANAGED_DATA_ROOT'); $$dataRoot = if ([string]::IsNullOrWhiteSpace($$dataRootValue)) { '' } else { [System.IO.Path]::GetFullPath($$dataRootValue).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar }; $$snapshot = @(Get-CimInstance Win32_Process -ErrorAction Stop) } catch { Write-Output 'PROBE_FAILED'; exit 21 }; function Test-DesktopExecutableUnlocked { if (-not (Test-Path -LiteralPath $$appExecutable)) { return $$true }; try { $$stream = [System.IO.File]::Open($$appExecutable, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None); $$stream.Dispose(); return $$true } catch { return $$false } }; $$roots = @($$snapshot | Where-Object { $$path = [string]$$_.ExecutablePath; $$command = [string]$$_.CommandLine; ($$path -and ($$path.Equals($$appExecutable, [StringComparison]::OrdinalIgnoreCase) -or ($$programRoot -and $$path.StartsWith($$programRoot, [StringComparison]::OrdinalIgnoreCase)) -or ($$dataRoot -and $$path.StartsWith($$dataRoot, [StringComparison]::OrdinalIgnoreCase)))) -or ($$command -and (($$programRoot -and $$command.IndexOf($$programRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -ge 0) -or ($$dataRoot -and $$command.IndexOf($$dataRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -ge 0))) }); $$children = @{}; foreach ($$entry in $$snapshot) { $$parent = [int]$$entry.ParentProcessId; if (-not $$children.ContainsKey($$parent)) { $$children[$$parent] = [System.Collections.Generic.List[int]]::new() }; $$children[$$parent].Add([int]$$entry.ProcessId) }; $$ids = [System.Collections.Generic.HashSet[int]]::new(); $$depth = @{}; function Add-DesktopTree([int]$$processId, [int]$$level) { if (-not $$ids.Add($$processId)) { return }; $$depth[$$processId] = $$level; if ($$children.ContainsKey($$processId)) { foreach ($$child in $$children[$$processId]) { Add-DesktopTree $$child ($$level + 1) } } }; foreach ($$root in $$roots) { Add-DesktopTree ([int]$$root.ProcessId) 0 }; if ($$ids.Count -eq 0) { if (Test-DesktopExecutableUnlocked) { exit 0 }; Write-Output 'FILE_LOCKED'; exit 22 }; $$ordered = @($$ids | Sort-Object { -[int]$$depth[$$_] }); foreach ($$processId in $$ordered) { Stop-Process -Id $$processId -Force -ErrorAction SilentlyContinue }; foreach ($$root in $$roots) { if (Get-Process -Id $$root.ProcessId -ErrorAction SilentlyContinue) { & taskkill.exe /PID $$root.ProcessId /T /F 2>$$null | Out-Null } }; $$deadline = [DateTime]::UtcNow.AddSeconds(5); do { $$remaining = @($$ids | Where-Object { Get-Process -Id $$_ -ErrorAction SilentlyContinue }); if ($$remaining.Count -eq 0) { if (Test-DesktopExecutableUnlocked) { exit 0 }; Write-Output 'FILE_LOCKED'; exit 22 }; Start-Sleep -Milliseconds 200 } while ([DateTime]::UtcNow -lt $$deadline); Write-Output ('SURVIVORS=' + ($$remaining -join ',')); exit 20"\`
+    Pop $DesktopProcessCleanupStatus
+    Pop $DesktopProcessSurvivors
+    StrCpy $DesktopProcessCleanupDone "1"
+  \${endif}
 !macroend
 
 !ifndef BUILD_UNINSTALLER
@@ -1565,8 +1591,7 @@ FunctionEnd
 !ifdef BUILD_UNINSTALLER
 !macro customUnInit
   SetOutPath $TEMP
-  !insertmacro stopManagedServiceProcesses
-  Sleep 500
+  Call un.${nsisPrefix}EnsureDataRootDefault
   ClearErrors
   \${GetParameters} $R2
   \${GetOptions} $R2 "--delete-app-data" $R3
@@ -1669,40 +1694,41 @@ FunctionEnd
       \${endif}
     \${endif}
   !endif
-  !insertmacro FIND_PROCESS "\${APP_EXECUTABLE_FILENAME}" $R0
-  \${if} $R0 == 0
-    DetailPrint "Requesting ${productName} to exit before installing..."
-    \${if} \${FileExists} "$INSTDIR\\\${APP_EXECUTABLE_FILENAME}"
-      nsExec::ExecToLog \`"$INSTDIR\\\${APP_EXECUTABLE_FILENAME}" ${shutdownArg}\`
-      Pop $R2
-      Sleep 500
-    \${endif}
-
+  System::Call 'kernel32::GetCurrentProcessId() i .R6'
+  System::Call 'kernel32::GetTickCount() i .R7'
+  StrCpy $DesktopShutdownAckPath "$TEMP\\${storageNamespace}-shutdown-$R6-$R7.status"
+  Delete "$DesktopShutdownAckPath"
+  StrCpy $DesktopShutdownStatus ""
+  \${if} \${FileExists} "$INSTDIR\\\${APP_EXECUTABLE_FILENAME}"
+    DetailPrint "Requesting ${productName} to exit and waiting for shutdown acknowledgement..."
+    nsExec::ExecToLog \`"$INSTDIR\\\${APP_EXECUTABLE_FILENAME}" ${shutdownArg} "--desktop-shutdown-ack=$DesktopShutdownAckPath"\`
+    Pop $R2
     StrCpy $R1 0
-    waitAppExit:
-      !insertmacro FIND_PROCESS "\${APP_EXECUTABLE_FILENAME}" $R0
-      \${if} $R0 != 0
-        Goto appExited
+    waitShutdownAck:
+      \${if} \${FileExists} "$DesktopShutdownAckPath"
+        ClearErrors
+        FileOpen $R8 "$DesktopShutdownAckPath" r
+        \${ifNot} \${Errors}
+          FileRead $R8 $R9
+          FileClose $R8
+          StrCpy $DesktopShutdownStatus $R9 2
+        \${endif}
+        Goto shutdownAckFinished
       \${endif}
       IntOp $R1 $R1 + 1
-      \${if} $R1 < 12
+      \${if} $R1 < 24
         Sleep 500
-        Goto waitAppExit
+        Goto waitShutdownAck
       \${endif}
-
-      DetailPrint "Force closing ${productName} before installing..."
-      !ifdef INSTALL_MODE_PER_ALL_USERS
-        nsExec::ExecToLog \`taskkill /f /im "\${APP_EXECUTABLE_FILENAME}"\`
-        Pop $R2
-      !else
-        nsExec::ExecToLog \`"$SYSDIR\\cmd.exe" /c taskkill /f /im "\${APP_EXECUTABLE_FILENAME}" /fi "USERNAME eq %USERNAME%"\`
-        Pop $R2
-      !endif
-
-    appExited:
+    shutdownAckFinished:
   \${endif}
-
   !insertmacro stopManagedServiceProcesses
+  Delete "$DesktopShutdownAckPath"
+  \${if} $DesktopProcessCleanupStatus != "0"
+    MessageBox MB_ICONSTOP "${productName} 仍有受管进程未退出，覆盖安装或卸载已中止。$\\r$\\n$DesktopProcessSurvivors" /SD IDOK
+    SetErrorLevel 20
+    Abort
+  \${endif}
 !macroend
 
 !ifndef BUILD_UNINSTALLER
@@ -1973,6 +1999,8 @@ function shellDoubleQuoted(value) {
 
 function writeMacUninstallScript(rootDir, brand) {
   const appName = shellDoubleQuoted(brand.productName);
+  const storageNamespace = shellDoubleQuoted(brand.storageNamespace);
+  const shutdownArg = shellDoubleQuoted(brand.installer.shutdownArg);
   const runtimeRootDirName = shellDoubleQuoted(brand.paths.runtimeRootDirName);
   const desktopDataSubdir = shellDoubleQuoted(brand.paths.desktopDataSubdir);
   const programDataDirName = shellDoubleQuoted(brand.paths.programDataDirName);
@@ -1984,6 +2012,16 @@ APP_NAME="${appName}"
 APP_PATH="/Applications/\${APP_NAME}.app"
 DATA_PATH="\${HOME}/${runtimeRootDirName}/${desktopDataSubdir}"
 PROGRAM_DATA_PATH="\${HOME}/Library/Application Support/${programDataDirName}"
+STORAGE_NAMESPACE="${storageNamespace}"
+SHUTDOWN_ARG="${shutdownArg}"
+ACK_PATH="\${TMPDIR:-/tmp}/\${STORAGE_NAMESPACE}-shutdown-\$\$-\$(date +%s).status"
+SNAPSHOT_PATH="\${TMPDIR:-/tmp}/\${STORAGE_NAMESPACE}-processes-\$\$-\$(date +%s).snapshot"
+
+cleanup_temp_files() {
+  rm -f "$ACK_PATH" "$SNAPSHOT_PATH"
+}
+
+trap cleanup_temp_files EXIT
 
 show_dialog() {
   local message="$1"
@@ -1991,8 +2029,126 @@ show_dialog() {
   osascript -e "display dialog \\"$message\\" buttons {\\"OK\\"} default button \\"OK\\" with icon caution" >/dev/null
 }
 
-is_app_running() {
-  osascript -e "tell application \\"System Events\\" to return (name of processes) contains \\"$APP_NAME\\""
+request_desktop_shutdown() {
+  local executable="$APP_PATH/Contents/MacOS/$APP_NAME"
+  local attempt=0
+
+  rm -f "$ACK_PATH"
+  if [ ! -x "$executable" ]; then
+    return 0
+  fi
+
+  "$executable" "$SHUTDOWN_ARG" "--desktop-shutdown-ack=$ACK_PATH" >/dev/null 2>&1 &
+  while [ "$attempt" -lt 24 ]; do
+    if [ -f "$ACK_PATH" ]; then
+      head -n 1 "$ACK_PATH" 2>/dev/null || true
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 0.5
+  done
+  printf '%s\\n' "NO_ACK"
+}
+
+append_unique_pid() {
+  local candidate="$1"
+  case " $MANAGED_PIDS " in
+    *" $candidate "*) ;;
+    *) MANAGED_PIDS="$MANAGED_PIDS $candidate" ;;
+  esac
+}
+
+capture_managed_processes() {
+  if ! ps -axo pid=,ppid=,command= >"$SNAPSHOT_PATH"; then
+    return 1
+  fi
+
+  ROOT_PIDS=""
+  MANAGED_PIDS=""
+  while read -r pid ppid command; do
+    [ -n "\${pid:-}" ] || continue
+    [ "$pid" = "\$\$" ] && continue
+    local matched=0
+    case "$command" in *"$APP_PATH"*) matched=1 ;; esac
+    if [ "$matched" = "0" ]; then
+      case "$command" in *"$PROGRAM_DATA_PATH"*) matched=1 ;; esac
+    fi
+    if [ "$matched" = "0" ]; then
+      case "$command" in *"$DATA_PATH"*) matched=1 ;; esac
+    fi
+    if [ "$matched" = "1" ]; then
+      ROOT_PIDS="$ROOT_PIDS $pid"
+      append_unique_pid "$pid"
+    fi
+  done <"$SNAPSHOT_PATH"
+
+  local pending="$ROOT_PIDS"
+  while [ -n "\${pending// /}" ]; do
+    local next=""
+    for parent in $pending; do
+      while read -r child; do
+        [ -n "$child" ] || continue
+        append_unique_pid "$child"
+        next="$next $child"
+      done < <(awk -v parent="$parent" '$2 == parent { print $1 }' "$SNAPSHOT_PATH")
+    done
+    pending="$next"
+  done
+}
+
+signal_managed_processes() {
+  local signal="$1"
+  local current_pgid
+  current_pgid="$(ps -o pgid= -p \$\$ | tr -d ' ')"
+
+  for root in $ROOT_PIDS; do
+    local pgid
+    pgid="$(ps -o pgid= -p "$root" 2>/dev/null | tr -d ' ' || true)"
+    if [ -n "$pgid" ] && [ "$pgid" != "$current_pgid" ]; then
+      kill "-$signal" "-$pgid" 2>/dev/null || true
+    fi
+  done
+
+  for pid in $MANAGED_PIDS; do
+    kill "-$signal" "$pid" 2>/dev/null || true
+  done
+}
+
+wait_for_managed_processes() {
+  local timeout_steps="$1"
+  local step=0
+  while [ "$step" -lt "$timeout_steps" ]; do
+    SURVIVOR_PIDS=""
+    for pid in $MANAGED_PIDS; do
+      if kill -0 "$pid" 2>/dev/null; then
+        SURVIVOR_PIDS="$SURVIVOR_PIDS $pid"
+      fi
+    done
+    if [ -z "\${SURVIVOR_PIDS// /}" ]; then
+      return 0
+    fi
+    step=$((step + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+stop_managed_processes() {
+  if ! capture_managed_processes; then
+    SURVIVOR_PIDS="process snapshot failed"
+    return 2
+  fi
+  if [ -z "\${MANAGED_PIDS// /}" ]; then
+    SURVIVOR_PIDS=""
+    return 0
+  fi
+
+  signal_managed_processes TERM
+  if wait_for_managed_processes 20; then
+    return 0
+  fi
+  signal_managed_processes KILL
+  wait_for_managed_processes 10
 }
 
 remove_application_bundle() {
@@ -2011,10 +2167,13 @@ prompt_for_data_cleanup() {
   osascript -e "button returned of (display dialog \\"Do you also want to delete $APP_NAME app data?\\n\\nThis removes $DATA_PATH and $PROGRAM_DATA_PATH, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles.\\" buttons {\\"Keep Data\\", \\"Delete Data\\"} default button \\"Keep Data\\" with icon caution)"
 }
 
-if [ "$(is_app_running)" = "true" ]; then
-  show_dialog "$APP_NAME is still running. Quit the app and run this uninstall script again."
-  printf '%s\\n' "$APP_NAME is still running. Quit it and rerun this script."
-  exit 1
+ACK_STATUS="$(request_desktop_shutdown)"
+printf '%s\\n' "Desktop shutdown acknowledgement: $ACK_STATUS"
+
+if ! stop_managed_processes; then
+  show_dialog "$APP_NAME still has managed processes running. Uninstall was stopped. Remaining PIDs: $SURVIVOR_PIDS"
+  printf '%s\\n' "$APP_NAME uninstall stopped; remaining managed PIDs:$SURVIVOR_PIDS"
+  exit 20
 fi
 
 remove_application_bundle

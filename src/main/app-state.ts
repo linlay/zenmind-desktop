@@ -16,6 +16,7 @@ import type {
 } from "./assistant/pet/desktop-pet";
 import type { StartupPhase } from "./lifecycle/startup-phases";
 import type { KanbanRuntime } from "./kanban-runtime";
+import type { ShutdownMode, ShutdownReport } from "../shared/shutdown";
 
 type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
 
@@ -25,8 +26,11 @@ export interface MainAppState {
   desktopPetPanelWindow: BrowserWindow | null;
   isHandlingQuit: boolean;
   desktopSsoWebviewCompletionInFlight: boolean;
-  shutdownCleanupPromise: Promise<void> | null;
+  shutdownCleanupPromise: Promise<ShutdownReport> | null;
   shutdownCleanupComplete: boolean;
+  shutdownMode: ShutdownMode;
+  shutdownAckPaths: Set<string>;
+  shutdownReport: ShutdownReport | null;
   serviceMutationQueue: Promise<void>;
   mainWindowSidebarTranslucencyEnabled: boolean;
   currentPageSnapshot: DesktopPageContextSnapshot | null;
@@ -63,6 +67,9 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     desktopSsoWebviewCompletionInFlight: initialState.desktopSsoWebviewCompletionInFlight ?? false,
     shutdownCleanupPromise: initialState.shutdownCleanupPromise ?? null,
     shutdownCleanupComplete: initialState.shutdownCleanupComplete ?? false,
+    shutdownMode: initialState.shutdownMode ?? "user",
+    shutdownAckPaths: initialState.shutdownAckPaths ?? new Set(),
+    shutdownReport: initialState.shutdownReport ?? null,
     serviceMutationQueue: initialState.serviceMutationQueue ?? Promise.resolve(),
     mainWindowSidebarTranslucencyEnabled: initialState.mainWindowSidebarTranslucencyEnabled ?? true,
     currentPageSnapshot: initialState.currentPageSnapshot ?? null,

@@ -169,6 +169,8 @@ export interface WebListResult {
 
 export interface WebsChangedEvent {
   changedAt: string;
+  phase?: "changed" | "disposing";
+  webappId?: string;
 }
 
 export type WebsChangedListener = (event: WebsChangedEvent) => void;

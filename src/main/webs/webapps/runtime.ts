@@ -16,13 +16,23 @@ import type {
   WebappRuntimeState
 } from "../../../shared/contracts";
 import { readServiceLogFile } from "../../services/manager/logs";
-import { isProcessRunning, terminateProcessTree } from "../../services/manager/process-cleanup";
-import { pidMatchesInstallDir } from "../../services/manager/process-identity";
+import {
+  isProcessRunning,
+  listProcessTreePidsAsync,
+  requestWindowsProcessTreeExitAsync,
+  terminateCapturedProcessTreeAsync,
+  terminateProcessTree
+} from "../../services/manager/process-cleanup";
+import {
+  matchProcessInstallDirAsync,
+  pidMatchesInstallDir,
+} from "../../services/manager/process-identity";
 import { delay, probeHttpUrl } from "../../services/manager/service-probes";
 import {
   getDesktopWebappDataRoot,
   getDesktopWebappLogsRoot,
-  getDesktopWebappStateRoot
+  getDesktopWebappStateRoot,
+  getDesktopWebappsStateRoot
 } from "../../user-paths";
 import { t } from "../../i18n/main-i18n";
 import { startWebappGateway, type WebappGateway } from "./gateway";
@@ -84,12 +94,41 @@ function writeState(app: App, state: WebappRuntimeState) {
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
-function readStoredState(app: App, item: WebappEntry): WebappRuntimeState | null {
+function normalizeStoredTarget(
+  value: unknown,
+  fallback: WebappRuntimeState["target"]
+): WebappRuntimeState["target"] {
+  return value === "universal" ||
+    value === "darwin-arm64" ||
+    value === "darwin-x64" ||
+    value === "windows-arm64" ||
+    value === "windows-x64"
+    ? value
+    : fallback;
+}
+
+function normalizeStoredLauncher(
+  value: unknown,
+  fallback: WebappRuntimeState["launcher"]
+): WebappRuntimeState["launcher"] {
+  return value === "none" ||
+    value === "node" ||
+    value === "native" ||
+    value === "java" ||
+    value === "container"
+    ? value
+    : fallback;
+}
+
+function readStoredStateById(
+  app: App,
+  webappId: string,
+  item: WebappEntry | null = null
+): WebappRuntimeState | null {
   try {
-    const parsed = JSON.parse(fs.readFileSync(getStatePath(app, item.id), "utf8")) as Partial<WebappRuntimeState>;
-    if (typeof parsed.id !== "string") {
-      return null;
-    }
+    const parsed = JSON.parse(
+      fs.readFileSync(getStatePath(app, webappId), "utf8")
+    ) as Partial<WebappRuntimeState>;
     const status = parsed.status === "running" ||
       parsed.status === "starting" ||
       parsed.status === "blocked" ||
@@ -97,16 +136,21 @@ function readStoredState(app: App, item: WebappEntry): WebappRuntimeState | null
       ? parsed.status
       : "stopped";
     return {
-      id: parsed.id,
-      entryKey: typeof parsed.entryKey === "string" && parsed.entryKey.startsWith("webapp:")
-        ? parsed.entryKey as `webapp:${string}`
-        : item.entryKey,
+      id: webappId,
+      entryKey: `webapp:${webappId}`,
       kind: "webapp",
       status,
-      version: typeof parsed.version === "string" ? parsed.version : item.version,
-      target: parsed.target ?? item.target,
-      launcher: parsed.launcher ?? launcherForItem(item),
-      ownership: parsed.ownership ?? ownershipForItem(item),
+      version: typeof parsed.version === "string" ? parsed.version : item?.version ?? "",
+      target: normalizeStoredTarget(parsed.target, item?.target ?? "universal"),
+      launcher: normalizeStoredLauncher(
+        parsed.launcher,
+        item ? launcherForItem(item) : "none"
+      ),
+      ownership: parsed.ownership === "desktop" || parsed.ownership === "external"
+        ? parsed.ownership
+        : item
+          ? ownershipForItem(item)
+          : null,
       runtimeVersion: typeof parsed.runtimeVersion === "string" ? parsed.runtimeVersion : "",
       externalId: typeof parsed.externalId === "string" ? parsed.externalId : "",
       prerequisiteIssues: Array.isArray(parsed.prerequisiteIssues) ? parsed.prerequisiteIssues : [],
@@ -121,6 +165,26 @@ function readStoredState(app: App, item: WebappEntry): WebappRuntimeState | null
     };
   } catch {
     return null;
+  }
+}
+
+function readStoredState(app: App, item: WebappEntry): WebappRuntimeState | null {
+  return readStoredStateById(app, item.id, item);
+}
+
+function listStoredRuntimeStates(app: App) {
+  try {
+    return fs.readdirSync(getDesktopWebappsStateRoot(app), {
+      withFileTypes: true
+    }).flatMap((entry) => {
+      if (!entry.isDirectory()) {
+        return [];
+      }
+      const state = readStoredStateById(app, entry.name);
+      return state ? [state] : [];
+    });
+  } catch {
+    return [] as WebappRuntimeState[];
   }
 }
 
@@ -208,26 +272,45 @@ function waitForChildExit(child: ChildProcess, timeoutMs: number) {
 async function terminateRuntimeChild(child: ChildProcess) {
   const pid = child.pid;
   if (!pid) {
-    return;
+    return true;
   }
+  const treePids = await listProcessTreePidsAsync(pid).catch(() => [pid]);
+  const capturedPids = treePids.length > 0 ? treePids : [pid];
   if (process.platform === "win32") {
-    terminateProcessTree(pid);
-    return;
+    const exitedGracefully = await requestWindowsProcessTreeExitAsync(
+      pid,
+      capturedPids
+    );
+    if (exitedGracefully) {
+      return true;
+    }
+    const terminated = await terminateCapturedProcessTreeAsync(pid, capturedPids);
+    return terminated && capturedPids.every((candidatePid) => !isProcessRunning(candidatePid));
   }
   try {
     process.kill(-pid, "SIGTERM");
   } catch {
-    terminateProcessTree(pid);
-    return;
+    return terminateCapturedProcessTreeAsync(pid, capturedPids);
   }
   await waitForChildExit(child, 1_000);
-  await delay(100);
+  const gracefulDeadline = Date.now() + 1_000;
+  while (Date.now() < gracefulDeadline && capturedPids.some((candidatePid) => isProcessRunning(candidatePid))) {
+    await delay(100);
+  }
+  if (capturedPids.every((candidatePid) => !isProcessRunning(candidatePid))) {
+    return true;
+  }
   try {
     process.kill(-pid, "SIGKILL");
   } catch {
     // The detached process group has exited.
   }
   await waitForChildExit(child, 500);
+  const forceDeadline = Date.now() + 500;
+  while (Date.now() < forceDeadline && capturedPids.some((candidatePid) => isProcessRunning(candidatePid))) {
+    await delay(100);
+  }
+  return capturedPids.every((candidatePid) => !isProcessRunning(candidatePid));
 }
 
 async function listen(server: http.Server, port: number) {
@@ -351,6 +434,17 @@ export class WebappRuntime {
     listener: ((reason: DesktopWebappChangedReason, webappId: string) => void) | null
   ) {
     this.publicationChangeListener = listener;
+  }
+
+  emitLifecycleChange(reason: DesktopWebappChangedReason, webappId: string) {
+    try {
+      this.publicationChangeListener?.(reason, webappId);
+    } catch (error) {
+      console.warn(
+        `[webapp] failed to emit ${reason} for ${webappId}: ` +
+        `${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private syncPublishedRoute(app: App, item: WebappEntry, state: WebappRuntimeState) {
@@ -693,13 +787,62 @@ export class WebappRuntime {
     const item = findWebapp(app, id);
     const record = this.records.get(id);
     if (record) {
-      await record.gateway?.close().catch(() => undefined);
-      record.gateway = null;
-      if (record.child) {
-        await terminateRuntimeChild(record.child);
+      let gatewayFailureMessage = "";
+      try {
+        await record.gateway?.close();
+      } catch (error) {
+        const gatewayMessage = error instanceof Error ? error.message : String(error);
+        gatewayFailureMessage = `WebApp gateway failed to close: ${gatewayMessage}`;
       }
+      record.gateway = null;
       revokeWebappActionToken(record.actionToken);
       record.actionToken = "";
+      if (record.child) {
+        const terminated = await terminateRuntimeChild(record.child);
+        if (!terminated) {
+          const pid = record.child.pid ?? record.state.pid;
+          const failureMessage = `WebApp process tree is still running${pid ? ` (PID ${pid})` : ""}.`;
+          record.state = {
+            ...record.state,
+            status: "error",
+            webUrl: "",
+            frontendPort: null,
+            message: failureMessage,
+            updatedAt: nowIso()
+          };
+          writeState(app, record.state);
+          writeLogLine(getLogPath(app, id, "error"), `[${nowIso()}] ${failureMessage}`);
+          return {
+            ok: false,
+            item: item ?? record.item,
+            state: record.state,
+            message: failureMessage
+          };
+        }
+        record.child = null;
+      }
+      if (gatewayFailureMessage) {
+        record.state = {
+          ...record.state,
+          status: "error",
+          webUrl: "",
+          frontendPort: null,
+          pid: null,
+          message: gatewayFailureMessage,
+          updatedAt: nowIso()
+        };
+        writeState(app, record.state);
+        writeLogLine(
+          getLogPath(app, id, "error"),
+          `[${nowIso()}] ${gatewayFailureMessage}`
+        );
+        return {
+          ok: false,
+          item: item ?? record.item,
+          state: record.state,
+          message: gatewayFailureMessage
+        };
+      }
       record.state = {
         ...record.state,
         status: "stopped",
@@ -715,19 +858,71 @@ export class WebappRuntime {
       writeLogLine(getLogPath(app, id, "main"), `[${nowIso()}] stopped ${id}`);
       return { ok: true, item: item ?? record.item, state: record.state, message };
     }
-    if (!item) {
+    const stored = item
+      ? readStoredState(app, item)
+      : readStoredStateById(app, id);
+    if (!item && !stored) {
       return { ok: false, item: null, state: null, message: t("webapp.notFound") };
     }
-    const stored = readStoredState(app, item);
-    if (
-      stored?.ownership === "desktop" &&
-      stored.pid &&
-      isProcessRunning(stored.pid) &&
-      pidMatchesInstallDir(stored.pid, getWebappDir(app, id))
-    ) {
-      terminateRuntimeProcessTree(stored.pid);
+    if (stored?.ownership === "desktop" && stored.pid && isProcessRunning(stored.pid)) {
+      const identityMatch = await matchProcessInstallDirAsync(
+        stored.pid,
+        getWebappDir(app, id)
+      );
+      if (identityMatch === "unknown") {
+        const failureMessage = `Unable to verify WebApp process ownership (PID ${stored.pid}).`;
+        const failedState = {
+          ...stored,
+          status: "error" as const,
+          message: failureMessage,
+          updatedAt: nowIso()
+        };
+        writeState(app, failedState);
+        return {
+          ok: false,
+          item,
+          state: failedState,
+          message: failureMessage
+        };
+      }
+      if (identityMatch === "matched") {
+        const capturedPids = await listProcessTreePidsAsync(stored.pid).catch(() => [stored.pid!]);
+        const exitedGracefully = process.platform === "win32"
+          ? await requestWindowsProcessTreeExitAsync(stored.pid, capturedPids)
+          : false;
+        const terminated = exitedGracefully ||
+          await terminateCapturedProcessTreeAsync(stored.pid, capturedPids);
+        const remainingPids = capturedPids.filter((pid) => isProcessRunning(pid));
+        if (!terminated || remainingPids.length > 0) {
+          const failureMessage =
+            `WebApp process tree is still running (PID ${remainingPids.join(", ") || stored.pid}).`;
+          const failedState = {
+            ...stored,
+            status: "error" as const,
+            message: failureMessage,
+            updatedAt: nowIso()
+          };
+          writeState(app, failedState);
+          return {
+            ok: false,
+            item,
+            state: failedState,
+            message: failureMessage
+          };
+        }
+      }
     }
-    const state = createStoppedState(item, message);
+    const state = item
+      ? createStoppedState(item, message)
+      : {
+          ...stored!,
+          status: "stopped" as const,
+          webUrl: "",
+          frontendPort: null,
+          pid: null,
+          message,
+          updatedAt: nowIso()
+        };
     writeState(app, state);
     return { ok: true, item, state, message };
   }
@@ -738,8 +933,63 @@ export class WebappRuntime {
   }
 
   async stopAll(app: App) {
-    await Promise.all([...this.records.keys()].map((id) => this.stop(app, id)));
+    const ids = new Set([
+      ...this.records.keys(),
+      ...readWebappItems(app)
+        .filter((item) => {
+          const stored = readStoredState(app, item);
+          return stored?.ownership === "desktop" && Boolean(stored.pid);
+        })
+        .map((item) => item.id),
+      ...listStoredRuntimeStates(app)
+        .filter((state) =>
+          state.ownership === "desktop" && Boolean(state.pid)
+        )
+        .map((state) => state.id)
+    ]);
+    const results = await Promise.all([...ids].map((id) => this.stop(app, id)));
     this.stopExternalMonitorIfIdle();
+    return results;
+  }
+
+  listActivePorts(app: App) {
+    const ports = new Map<string, { id: string; port: number }>();
+    const items = readWebappItems(app);
+    for (const item of items) {
+      const record = this.records.get(item.id);
+      const state = record?.state ?? readStoredState(app, item);
+      if (state?.frontendPort) {
+        ports.set(`${item.id}:gateway:${state.frontendPort}`, {
+          id: `${item.id}:gateway`,
+          port: state.frontendPort
+        });
+      }
+      if (state?.ownership === "desktop" && state.backendPort) {
+        ports.set(`${item.id}:backend:${state.backendPort}`, {
+          id: `${item.id}:backend`,
+          port: state.backendPort
+        });
+      }
+    }
+    const installedIds = new Set(items.map((item) => item.id));
+    for (const state of listStoredRuntimeStates(app)) {
+      if (installedIds.has(state.id)) {
+        continue;
+      }
+      if (state.frontendPort) {
+        ports.set(`${state.id}:gateway:${state.frontendPort}`, {
+          id: `${state.id}:gateway`,
+          port: state.frontendPort
+        });
+      }
+      if (state.ownership === "desktop" && state.backendPort) {
+        ports.set(`${state.id}:backend:${state.backendPort}`, {
+          id: `${state.id}:backend`,
+          port: state.backendPort
+        });
+      }
+    }
+    return [...ports.values()];
   }
 
   readLog(
@@ -781,6 +1031,10 @@ export const webappRuntime = new WebappRuntime();
 
 export function stopAllWebapps(app: App) {
   return webappRuntime.stopAll(app);
+}
+
+export function listActiveWebappPorts(app: App) {
+  return webappRuntime.listActivePorts(app);
 }
 
 export const __testInternals = {

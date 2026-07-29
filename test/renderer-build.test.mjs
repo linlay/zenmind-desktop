@@ -4135,7 +4135,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(startupPipeline, /if \(startupEnvImportFailureMessage !== null\)/);
   assert.doesNotMatch(startupPipeline, /if \(startupEnvImportFailureMessage\)/);
   assert.match(mainProcess, /message: getDefaultEnvImportRequiredMessage\(\)/);
-  assert.match(shutdownRunner, /stopAllWebapps\(options\.app\)/);
+  assert.match(shutdownRunner, /stopWebapps:\s*\(app\) => stopAllWebapps\(app\)/);
   assert.match(startupPipeline, /notifyCoreServicesChanged/);
   assert.doesNotMatch(startupPipeline, /notifyServicesChanged/);
   assert.doesNotMatch(startupPipeline, /startTunnelHubRuntimeIfEnabled/);
@@ -5795,7 +5795,9 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
   assert.doesNotMatch(beforeQuitHandler, /platform === "darwin"[\s\S]*?requestAppQuit/);
   assert.match(beforeQuitHandler, /event\.preventDefault\(\);/);
   assert.match(beforeQuitHandler, /options\.state\.isHandlingQuit = true;/);
-  assert.match(beforeQuitHandler, /void options\.runShutdownCleanup\(\)\.finally\(\(\) => \{/);
+  assert.match(beforeQuitHandler, /void options\.runShutdownCleanup\(\)\.then\(async \(report\) => \{/);
+  assert.match(beforeQuitHandler, /options\.writeInstallerShutdownAcks\(report\);/);
+  assert.match(beforeQuitHandler, /\.finally\(\(\) => \{/);
   assert.match(beforeQuitHandler, /options\.beginAppQuitWithoutConfirmation\(\);/);
 });
 

@@ -3,8 +3,11 @@ import path from "node:path";
 import type { App } from "electron";
 import type { ServiceDefinition } from "./manifest-utils";
 import { getAllServices } from "./services/service-registry";
-import { getDesktopWebappsDataRoot, getServiceStateRoot } from "./user-paths";
-import { webappRuntime } from "./webs/webapps/runtime";
+import {
+  getDesktopWebappsDataRoot,
+  getServiceStateRoot
+} from "./user-paths";
+import { disposeWebappInstallation } from "./webs/webapps/actions";
 import { t } from "./i18n/main-i18n";
 
 type AgentPlatformCaller = (app: App, path: string, options?: { method?: string; body?: unknown }) => Promise<unknown>;
@@ -126,8 +129,18 @@ function copyWebappResource(app: App, service: ServiceDefinition, pluginDir: str
 async function removeWebappResources(app: App, service: ServiceDefinition, ownership: PluginResourceOwnership) {
   const webappsRoot = getDesktopWebappsDataRoot(app);
   for (const webappId of Object.keys(ownership.webapps ?? {})) {
-    await webappRuntime.stop(app, webappId, t("pluginResources.webappRemoved")).catch(() => undefined);
-    fs.rmSync(path.join(webappsRoot, webappId), { recursive: true, force: true });
+    const disposed = await disposeWebappInstallation(
+      app,
+      {
+        id: webappId,
+        label: `plugin WebApp ${webappId}`,
+        installPath: path.join(webappsRoot, webappId)
+      },
+      t("pluginResources.webappRemoved")
+    );
+    if (!disposed.ok) {
+      throw new Error(disposed.message);
+    }
   }
 }
 

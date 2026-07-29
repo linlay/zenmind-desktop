@@ -36,6 +36,7 @@ import {
 } from "../services/manager";
 import { installBundledWebappTemplates } from "../webs/webapps/template-installer";
 import { restorePublishedWebapps } from "../webs/webapps/publication-runtime";
+import { webappWindowManager } from "../webs/webapps/window-manager";
 import { loadInstalledPlugins } from "../plugin-loader";
 import { configurePluginResources, retryPendingPluginResourceSync } from "../plugin-resources";
 import { revealPathInFileManager } from "../reveal-path";
@@ -49,11 +50,13 @@ import type {
   AssistantNavigationPushEvent,
   AssistantWorkerOpenRequest,
   ServiceOpenLogViewerRequest,
+  WebsChangedEvent,
 } from "../../shared/contracts";
 import {
   APP_ID,
   INSTALLER_SHUTDOWN_ARG,
   PRODUCT_NAME,
+  STORAGE_NAMESPACE,
 } from "../../shared/brand";
 import {
   desktopDataRootExists,
@@ -150,7 +153,6 @@ import { createPluginClipboardBridge } from "../bridge/plugin-clipboard";
 import { createPluginBridgeRuntime, type PluginBridgeRuntime } from "../bridge/plugin-runtime";
 import {
   createInstallerShutdownArgs,
-  hasInstallerShutdownArg,
   requestMainSingleInstanceLock,
 } from "../lifecycle/single-instance";
 import { createStartupPipeline } from "../lifecycle/startup";
@@ -159,6 +161,11 @@ import {
   type StartupPhase,
 } from "../lifecycle/startup-phases";
 import { createShutdownCleanupRunner } from "../lifecycle/shutdown";
+import {
+  createNoPrimaryShutdownReport,
+  parseInstallerShutdownRequest,
+  writeShutdownAck
+} from "../lifecycle/shutdown-ack";
 import { registerMainAppEvents } from "./app-events";
 import {
   createResourceDirectoryWatcher,
@@ -184,7 +191,6 @@ export function createMainProcessRuntime() {
   const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, mainProcessContext.platform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
-  const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
   const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(INSTALLER_SHUTDOWN_ARG);
   
   const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform, {
@@ -383,8 +389,28 @@ export function createMainProcessRuntime() {
   
   const gotSingleInstanceLock = requestMainSingleInstanceLock(app);
   
-  if (hasInstallerShutdownArg(process.argv, INSTALLER_SHUTDOWN_ARGS)) {
+  const startupInstallerShutdownRequest = parseInstallerShutdownRequest(
+    process.argv,
+    INSTALLER_SHUTDOWN_ARGS,
+    STORAGE_NAMESPACE
+  );
+  if (startupInstallerShutdownRequest.requested && gotSingleInstanceLock) {
+    if (startupInstallerShutdownRequest.ackPath) {
+      try {
+        writeShutdownAck(
+          startupInstallerShutdownRequest.ackPath,
+          "NO_PRIMARY",
+          createNoPrimaryShutdownReport()
+        );
+      } catch (error) {
+        console.error("[main] failed to write NO_PRIMARY shutdown acknowledgement", error);
+      }
+    }
     app.exit(0);
+    return { start() {} };
+  }
+  if (!gotSingleInstanceLock) {
+    return { start() {} };
   }
   
   function delay(ms: number) {
@@ -433,6 +459,12 @@ export function createMainProcessRuntime() {
     showDesktopPetWindow,
     hideDesktopPetWindow,
     restoreDesktopPetWindowLayering
+  });
+  webappWindowManager.setDisposalListener((webappId) => {
+    emitWebsChanged({
+      phase: "disposing",
+      webappId
+    });
   });
   const startupEnvironmentRuntime = createStartupEnvironmentRuntime({
     app,
@@ -573,13 +605,25 @@ export function createMainProcessRuntime() {
   });
   const runShutdownCleanup = createShutdownCleanupRunner({
     app,
-    timeoutMs: SHUTDOWN_CLEANUP_DEADLINE_MS,
+    getMode: () => appState.shutdownMode,
     getExistingPromise: () => appState.shutdownCleanupPromise,
     setPromise: (promise) => {
       appState.shutdownCleanupPromise = promise;
     },
-    markComplete: () => {
+    markComplete: (report) => {
+      appState.shutdownReport = report;
       appState.shutdownCleanupComplete = true;
+    },
+    emitProgress: (progress) => {
+      const targetWindow = appState.mainWindow;
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        return;
+      }
+      try {
+        targetWindow.webContents.send("desktopShell.shutdownProgress", progress);
+      } catch (error) {
+        console.warn("[main] failed to render shutdown progress", error);
+      }
     }
   });
   
@@ -927,8 +971,13 @@ export function createMainProcessRuntime() {
     scheduleAgentPlatformPetStatusRefresh(1000);
   }
 
-  function emitWebsChanged() {
-    const payload = { changedAt: new Date().toISOString() };
+  function emitWebsChanged(
+    details: Partial<Omit<WebsChangedEvent, "changedAt">> = {}
+  ) {
+    const payload: WebsChangedEvent = {
+      changedAt: new Date().toISOString(),
+      ...details
+    };
     const targetWindow = appState.mainWindow;
     if (!targetWindow || targetWindow.isDestroyed()) {
       return;
@@ -1194,10 +1243,12 @@ export function createMainProcessRuntime() {
       onReady: handleAppReady,
       showMainWindow: () => showMainWindow(),
       beginAppQuitWithoutConfirmation,
+      beginInstallerShutdown,
       isNativeDialogOpen: () => appShellRuntime.isNativeDialogOpen(),
       emitPluginBeforeQuit: () => pluginBridgeRuntime.emitBeforeQuit(),
       prepareQuitUi,
       runShutdownCleanup,
+      writeInstallerShutdownAcks,
       releaseAssistantRunWakeLock: () => assistantRunWakeLock.release(),
       clearDesktopPetIdleResetTimer,
       stopAssistantBridgeRuntime: () => assistantBridgeRuntime.stop(),
@@ -1218,6 +1269,45 @@ export function createMainProcessRuntime() {
     appState.isHandlingQuit = true;
     prepareQuitUi();
     app.quit();
+  }
+
+  function beginInstallerShutdown(commandLine: string[]) {
+    const request = parseInstallerShutdownRequest(
+      commandLine,
+      INSTALLER_SHUTDOWN_ARGS,
+      STORAGE_NAMESPACE
+    );
+    appState.shutdownMode = "installer";
+    if (request.ackPath) {
+      if (appState.shutdownReport) {
+        writeInstallerShutdownAck(request.ackPath, appState.shutdownReport);
+      } else {
+        appState.shutdownAckPaths.add(request.ackPath);
+      }
+    }
+    beginAppQuitWithoutConfirmation();
+  }
+
+  function writeInstallerShutdownAck(
+    ackPath: string,
+    report: import("../../shared/shutdown").ShutdownReport
+  ) {
+    const status = report.ok ? "OK" : "FAILED";
+    try {
+      writeShutdownAck(ackPath, status, report);
+    } catch (error) {
+      console.error(`[main] failed to write shutdown acknowledgement ${ackPath}`, error);
+    }
+  }
+
+  function writeInstallerShutdownAcks(report: import("../../shared/shutdown").ShutdownReport) {
+    if (appState.shutdownAckPaths.size === 0) {
+      return;
+    }
+    for (const ackPath of appState.shutdownAckPaths) {
+      writeInstallerShutdownAck(ackPath, report);
+    }
+    appState.shutdownAckPaths.clear();
   }
   
   function requestAppQuit() {

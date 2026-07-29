@@ -4,6 +4,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -32,6 +33,7 @@ const {
   writeWebOrderKeys
 } = require("../dist-electron/main/webs/order-store.js");
 const {
+  WebappRuntime,
   webappRuntime
 } = require("../dist-electron/main/webs/webapps/runtime.js");
 const {
@@ -1424,6 +1426,86 @@ test("mobile WebApp catalog uses the device m host and ignores the manual wa sha
   const serialized = JSON.stringify(catalog);
   assert.doesNotMatch(serialized, /route-second-secret/u);
   assert.doesNotMatch(serialized, /targetUrl|frontendPort|backendPort|installPath/u);
+});
+
+test("shutdown stops a persisted Desktop-owned WebApp PID after its program record is gone", { timeout: 10_000 }, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-orphan-state-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const webappId = "orphan-runtime";
+  const installPath = path.join(webappsRoot(homePath), webappId);
+  fs.mkdirSync(installPath, { recursive: true });
+
+  const child = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => undefined, 1000)", installPath],
+    {
+      detached: true,
+      stdio: "ignore"
+    }
+  );
+  assert.equal(typeof child.pid, "number");
+  const childPid = child.pid;
+  await new Promise((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  });
+  const childExit = new Promise((resolve) => {
+    child.once("exit", resolve);
+  });
+  t.after(() => {
+    try {
+      if (process.platform === "win32") {
+        process.kill(childPid, "SIGKILL");
+      } else {
+        process.kill(-childPid, "SIGKILL");
+      }
+    } catch {
+      // The shutdown cleanup already reaped the detached child.
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  writeJson(
+    path.join(
+      desktopRoot(homePath),
+      "state",
+      "webs",
+      "webapps",
+      webappId,
+      "runtime.json"
+    ),
+    {
+      id: webappId,
+      entryKey: `webapp:${webappId}`,
+      kind: "webapp",
+      status: "running",
+      version: "1.0.0",
+      target: "universal",
+      launcher: "node",
+      ownership: "desktop",
+      runtimeVersion: process.version,
+      externalId: "",
+      prerequisiteIssues: [],
+      webUrl: "",
+      backendUrl: "",
+      frontendPort: null,
+      backendPort: null,
+      pid: childPid,
+      message: "running",
+      updatedAt: new Date().toISOString()
+    }
+  );
+  fs.rmSync(installPath, { recursive: true, force: true });
+
+  const orphanRuntime = new WebappRuntime();
+  const results = await orphanRuntime.stopAll(app);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].ok, true);
+  assert.equal(results[0].state?.id, webappId);
+  assert.equal(results[0].state?.status, "stopped");
+  assert.equal(results[0].state?.pid, null);
+  await childExit;
 });
 
 test("webapp runtime starts frontend, proxies api, writes logs, and stops", async (t) => {

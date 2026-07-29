@@ -738,11 +738,32 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(installerInclude, /cc\.cutej\.desktop\|cutej-desktop\|data-root\|v1/u);
   assert.match(installerInclude, /!macro customInit/u);
   assert.match(installerInclude, /!macro customUnInit/u);
-  assert.match(installerInclude, /!macro customUnInit\s+SetOutPath \$TEMP\s+!insertmacro stopManagedServiceProcesses/u);
-  assert.match(installerInclude, /!macro customUnInit[\s\S]*?!insertmacro stopManagedServiceProcesses/u);
+  const customUnInitBlock = installerInclude.match(/!macro customUnInit[\s\S]*?!macroend/u)?.[0] ?? "";
+  assert.match(customUnInitBlock, /SetOutPath \$TEMP\s+Call un\.CuteJEnsureDataRootDefault/u);
+  assert.doesNotMatch(customUnInitBlock, /stopManagedServiceProcesses/u);
+  assert.match(
+    installerInclude,
+    /!macro customCheckAppRunning[\s\S]*?waitShutdownAck:[\s\S]*?!insertmacro stopManagedServiceProcesses/u
+  );
   assert.match(installerInclude, /\$\$path\.Equals\(\$\$appExecutable/u);
-  assert.match(installerInclude, /\$\$deadline = \[DateTime\]::UtcNow\.AddSeconds\(15\)/u);
-  assert.match(installerInclude, /\$\$targets\.Count -eq 0/u);
+  assert.match(installerInclude, /--desktop-shutdown-ack=\$DesktopShutdownAckPath/u);
+  assert.match(installerInclude, /\$R1 < 24/u);
+  assert.match(installerInclude, /Get-CimInstance Win32_Process -ErrorAction Stop/u);
+  assert.match(installerInclude, /DesktopProcessCleanupDone/u);
+  assert.match(
+    installerInclude,
+    /Pop \$DesktopProcessCleanupStatus\s+Pop \$DesktopProcessSurvivors\s+StrCpy \$DesktopProcessCleanupDone "1"/u
+  );
+  assert.doesNotMatch(
+    installerInclude,
+    /StrCpy \$DesktopProcessCleanupStatus "0"\s+StrCpy \$DesktopProcessSurvivors ""/u
+  );
+  assert.match(installerInclude, /foreach \(\$\$processId in \$\$ordered\)/u);
+  assert.doesNotMatch(installerInclude, /foreach \(\$\$pid in \$\$ordered\)/u);
+  assert.match(installerInclude, /SURVIVORS=/u);
+  assert.match(installerInclude, /FILE_LOCKED/u);
+  assert.match(installerInclude, /SetErrorLevel 20/u);
+  assert.doesNotMatch(installerInclude, /taskkill \/f \/im/u);
   assert.match(installerInclude, /DESKTOP_OWNED_ROOT_TO_REMOVE/u);
   assert.match(installerInclude, /Remove-Item -LiteralPath \$\$target -Recurse -Force/u);
   assert.match(installerInclude, /"\$SYSDIR\\WindowsPowerShell\\v1\.0\\powershell\.exe"/u);
@@ -768,6 +789,11 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.doesNotMatch(installerInclude, /\\.desktop\\state/u);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/CuteJ"/u);
+  assert.match(uninstallScript, /--desktop-shutdown-ack=\$ACK_PATH/u);
+  assert.match(uninstallScript, /ps -axo pid=,ppid=,command=/u);
+  assert.match(uninstallScript, /\[ "\$pid" = "\$\$" \] && continue/u);
+  assert.match(uninstallScript, /signal_managed_processes TERM[\s\S]*?signal_managed_processes KILL/u);
+  assert.match(uninstallScript, /remaining managed PIDs/u);
   assert.match(rendererIndex, /<title>CuteJ<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*cutej-pet:/u);
   assert.match(rendererIndex, /img-src[^"]*cutej-website-favicon:/u);
@@ -844,6 +870,10 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.match(safeRepairScript, /ZenMind 旧版安装安全修复/u);
   assert.doesNotMatch(safeRepairScript, /RMDir|Delete\s+"\$LegacyInstallLocation/u);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/u);
+  assert.match(uninstallScript, /STORAGE_NAMESPACE="zenmind-desktop"/u);
+  assert.match(uninstallScript, /Desktop shutdown acknowledgement/u);
+  assert.match(uninstallScript, /\[ "\$pid" = "\$\$" \] && continue/u);
+  assert.match(uninstallScript, /exit 20/u);
   assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "ZenMind 使用麦克风将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 使用系统语音识别将你的语音输入转成文字。");
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);

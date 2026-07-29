@@ -478,7 +478,7 @@ export async function uninstallMarketItem(
         : type === "cli"
           ? await uninstallCliMarketItem(app, itemId, options)
           : await uninstallSkillMarketItem(app, itemId);
-  if (result.ok) {
+  if (result.ok && type !== "website-app") {
     removeInstalledRecord(app, itemId, type);
   }
   return result;
