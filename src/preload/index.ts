@@ -388,6 +388,7 @@ const api: DesktopApi = {
     createGroup: (input) => ipcRenderer.invoke("enterpriseChat.createGroup", input),
     sendMessage: (input) => ipcRenderer.invoke("enterpriseChat.sendMessage", input),
     sendFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendFiles", input),
+    sendPastedFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendPastedFiles", input),
     sendScreenshot: (input) => ipcRenderer.invoke("enterpriseChat.sendScreenshot", input),
     sendDesktopAction: (input) =>
       ipcRenderer.invoke("enterpriseChat.sendDesktopAction", input),

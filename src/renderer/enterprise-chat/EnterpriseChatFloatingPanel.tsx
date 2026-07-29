@@ -19,11 +19,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   type PointerEvent
 } from "react";
+import {
+  ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES,
+  ENTERPRISE_CHAT_MAX_PASTED_FILES
+} from "../../shared/contracts";
 import type {
   DesktopSsoStatus,
   EnterpriseChatAttachment,
@@ -169,6 +174,40 @@ function isImageAttachment(attachment: EnterpriseChatAttachment) {
     "image/webp",
     "image/bmp"
   ].includes(attachment.contentType.toLowerCase());
+}
+
+function pastedFileName(file: File, index: number) {
+  const explicitName = file.name.trim();
+  if (explicitName) {
+    return explicitName;
+  }
+  const extension = file.type === "image/jpeg"
+    ? "jpg"
+    : file.type === "image/gif"
+      ? "gif"
+      : file.type === "image/webp"
+        ? "webp"
+        : file.type === "image/bmp"
+          ? "bmp"
+          : "png";
+  return `pasted-image-${Date.now()}-${index + 1}.${extension}`;
+}
+
+function readFileAsBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read pasted file."));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const separator = result.indexOf(",");
+      if (separator < 0) {
+        reject(new Error("Unable to read pasted file."));
+        return;
+      }
+      resolve(result.slice(separator + 1));
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export function EnterpriseChatFloatingPanel({
@@ -334,8 +373,8 @@ export function EnterpriseChatFloatingPanel({
   );
   const visible = signedIn && snapshot?.enabled === true;
 
-  const panelWidth = Math.min(500, viewport.width - 24);
-  const panelHeight = Math.min(580, viewport.height - 82);
+  const panelWidth = Math.min(460, viewport.width - 24);
+  const panelHeight = Math.min(540, viewport.height - 82);
   const panelLeft = Math.max(
     12,
     Math.min(
@@ -504,6 +543,51 @@ export function EnterpriseChatFloatingPanel({
     }
   }
 
+  async function sendPastedFiles(files: File[]) {
+    const conversationId = snapshot?.activeConversationId ?? "";
+    if (!conversationId || files.length === 0) {
+      return;
+    }
+    if (busy) {
+      setError(t("enterpriseChat.sendBusy"));
+      return;
+    }
+    if (files.length > ENTERPRISE_CHAT_MAX_PASTED_FILES) {
+      setError(t("enterpriseChat.pastedFilesTooMany", {
+        count: ENTERPRISE_CHAT_MAX_PASTED_FILES
+      }));
+      return;
+    }
+    const oversized = files.find((file) => file.size > ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES);
+    if (oversized) {
+      setError(t("enterpriseChat.pastedFileTooLarge", {
+        name: pastedFileName(oversized, 0),
+        size: formatFileSize(ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES)
+      }));
+      return;
+    }
+
+    setBusy("paste");
+    setError("");
+    try {
+      const payloadFiles = await Promise.all(files.map(async (file, index) => ({
+        name: pastedFileName(file, index),
+        contentType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        dataBase64: await readFileAsBase64(file)
+      })));
+      setSnapshot(await window.electronAPI.enterpriseChat.sendPastedFiles({
+        conversationId,
+        clientMessageId: newClientMessageId(),
+        files: payloadFiles
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function sendScreenshot() {
     const conversationId = snapshot?.activeConversationId ?? "";
     if (!conversationId || busy) {
@@ -603,6 +687,21 @@ export function EnterpriseChatFloatingPanel({
       event.preventDefault();
       void sendMessage();
     }
+  }
+
+  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const itemFiles = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    const files = itemFiles.length > 0
+      ? itemFiles
+      : Array.from(event.clipboardData.files);
+    if (files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    void sendPastedFiles(files);
   }
 
   function handleLauncherPointerDown(event: PointerEvent<HTMLButtonElement>) {
@@ -907,6 +1006,11 @@ export function EnterpriseChatFloatingPanel({
                   >
                     <CameraOutlined />
                   </button>
+                  <span className="enterprise-chat-paste-hint" aria-live="polite">
+                    {busy === "paste"
+                      ? t("enterpriseChat.uploadingPastedFiles")
+                      : t("enterpriseChat.pasteFilesHint")}
+                  </span>
                 </div>
                 <div className="enterprise-chat-composer-row">
                   <textarea
@@ -917,6 +1021,7 @@ export function EnterpriseChatFloatingPanel({
                     aria-label={t("enterpriseChat.messagePlaceholder")}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={handleComposerKeyDown}
+                    onPaste={handleComposerPaste}
                   />
                   <button
                     type="submit"

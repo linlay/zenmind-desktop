@@ -2,6 +2,8 @@ import type { EpochMilliseconds } from "../time-contract";
 import type { DesktopActionCallResponse } from "../desktop-actions";
 
 export const ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX = "zenmind-desktop-action:v1\n";
+export const ENTERPRISE_CHAT_MAX_PASTED_FILES = 10;
+export const ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES = 32 * 1024 * 1024;
 
 export type EnterpriseChatConnectionState =
   | "disabled"
@@ -107,6 +109,19 @@ export interface EnterpriseChatSendMessageInput {
 export interface EnterpriseChatSendFilesInput {
   conversationId: string;
   clientMessageId: string;
+}
+
+export interface EnterpriseChatPastedFile {
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  dataBase64: string;
+}
+
+export interface EnterpriseChatSendPastedFilesInput {
+  conversationId: string;
+  clientMessageId: string;
+  files: EnterpriseChatPastedFile[];
 }
 
 export interface EnterpriseChatSendScreenshotInput {

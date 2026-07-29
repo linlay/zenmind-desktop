@@ -20,11 +20,16 @@ import type {
   EnterpriseChatSendDesktopActionInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
+  EnterpriseChatSendPastedFilesInput,
   EnterpriseChatSendScreenshotInput,
   EnterpriseChatSnapshot,
   EnterpriseChatUser
 } from "../shared/contracts";
-import { ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX } from "../shared/contracts/enterprise-chat";
+import {
+  ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX,
+  ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES,
+  ENTERPRISE_CHAT_MAX_PASTED_FILES
+} from "../shared/contracts/enterprise-chat";
 import { getDesktopActionDefinition } from "../shared/desktop-actions";
 import type { EpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
@@ -268,6 +273,28 @@ function normalizeConversations(value: unknown) {
   return Array.isArray(value)
     ? value.map(normalizeConversation).filter((item): item is EnterpriseChatConversation => item !== null)
     : [];
+}
+
+function mergeConversationUsers(
+  conversations: EnterpriseChatConversation[],
+  users: EnterpriseChatUser[]
+) {
+  const usersById = new Map(users.map((user) => [user.id, user] as const));
+  return conversations.map((conversation) => ({
+    ...conversation,
+    members: conversation.members.map((member) => {
+      const directoryUser = usersById.get(member.user.id);
+      return directoryUser
+        ? {
+            ...member,
+            user: {
+              ...member.user,
+              ...directoryUser
+            }
+          }
+        : member;
+    })
+  }));
 }
 
 function normalizeMessages(value: unknown) {
@@ -574,10 +601,19 @@ export class EnterpriseChatRuntime {
         this.requestBootstrap(),
         this.requestUsers()
       ]);
+      const bootstrapCurrentUser = bootstrap.user.id ? bootstrap.user : session.user;
+      const directoryCurrentUser = users.find((user) => user.id === bootstrapCurrentUser.id);
+      const currentUser = directoryCurrentUser
+        ? { ...bootstrapCurrentUser, ...directoryCurrentUser }
+        : bootstrapCurrentUser;
+      const visibleUsers = users.filter((user) => user.id && user.id !== currentUser.id);
       this.updateSnapshot({
-        currentUser: bootstrap.user.id ? bootstrap.user : session.user,
-        users: users.filter((user) => user.id && user.id !== bootstrap.user.id),
-        conversations: bootstrap.conversations,
+        currentUser,
+        users: visibleUsers,
+        conversations: mergeConversationUsers(
+          bootstrap.conversations,
+          [currentUser, ...visibleUsers]
+        ),
         latestEventId: bootstrap.latestEventId,
         activeConversationId: "",
         activeMessages: [],
@@ -652,6 +688,13 @@ export class EnterpriseChatRuntime {
     if (!conversation) {
       throw new Error("The IM server returned an invalid conversation.");
     }
+    [conversation] = mergeConversationUsers(
+      [conversation],
+      [
+        ...(this.snapshot.currentUser ? [this.snapshot.currentUser] : []),
+        ...this.snapshot.users
+      ]
+    );
     const response = await this.requestJson<unknown>(
       `/api/v1/conversations/${encodeURIComponent(conversation.id)}/messages?limit=50`
     );
@@ -692,10 +735,17 @@ export class EnterpriseChatRuntime {
         memberIds
       })
     });
-    const conversation = normalizeConversation(created);
+    let conversation = normalizeConversation(created);
     if (!conversation || conversation.type !== "group") {
       throw new Error("The IM server returned an invalid group conversation.");
     }
+    [conversation] = mergeConversationUsers(
+      [conversation],
+      [
+        ...(this.snapshot.currentUser ? [this.snapshot.currentUser] : []),
+        ...this.snapshot.users
+      ]
+    );
     this.updateSnapshot({
       conversations: [
         conversation,
@@ -734,9 +784,69 @@ export class EnterpriseChatRuntime {
       return this.getState();
     }
     await this.ensureSession();
+    this.assertMessageSendReady();
     const fileIds: string[] = [];
     for (const filePath of selected) {
       const attachment = await this.uploadFilePath(filePath);
+      fileIds.push(attachment.id);
+    }
+    return this.sendMessagePayload({
+      conversationId,
+      clientMessageId,
+      body: "",
+      fileIds
+    });
+  }
+
+  async sendPastedFiles(input: EnterpriseChatSendPastedFilesInput) {
+    const conversationId = readText(input?.conversationId);
+    const clientMessageId = readText(input?.clientMessageId);
+    const files = Array.isArray(input?.files) ? input.files : [];
+    if (!conversationId || !clientMessageId) {
+      throw new Error("conversationId and clientMessageId are required.");
+    }
+    if (files.length === 0 || files.length > ENTERPRISE_CHAT_MAX_PASTED_FILES) {
+      throw new Error(`Paste between 1 and ${ENTERPRISE_CHAT_MAX_PASTED_FILES} files.`);
+    }
+
+    const blobs = files.map((file, index) => {
+      const value: unknown = file;
+      const record = isRecord(value) ? value : {};
+      const name = readText(record.name) || `pasted-file-${Date.now()}-${index + 1}`;
+      const contentType = readText(record.contentType) || contentTypeForFile(name);
+      const sizeBytes = Math.max(0, Math.trunc(readNumber(record.sizeBytes)));
+      const rawDataBase64 = record.dataBase64;
+      const hasData = typeof rawDataBase64 === "string";
+      const dataBase64 = hasData
+        ? rawDataBase64.trim()
+        : "";
+      const maxBase64Length = Math.ceil(ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES / 3) * 4 + 4;
+      if (
+        !hasData ||
+        dataBase64.length > maxBase64Length ||
+        dataBase64.length % 4 === 1 ||
+        !/^[A-Za-z0-9+/]*={0,2}$/u.test(dataBase64)
+      ) {
+        throw new Error(`Pasted file "${name}" has invalid data.`);
+      }
+      const bytes = Buffer.from(dataBase64, "base64");
+      if (
+        bytes.length > ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES ||
+        bytes.length !== sizeBytes
+      ) {
+        throw new Error(`Pasted file "${name}" exceeds the local attachment limit.`);
+      }
+      return {
+        blob: new Blob([bytes], { type: contentType }),
+        name
+      };
+    });
+
+    await this.ensureSession();
+    this.assertMessageSendReady();
+    const fileIds: string[] = [];
+    for (const file of blobs) {
+      const attachment = await this.uploadBlob(file.blob, file.name);
       fileIds.push(attachment.id);
     }
     return this.sendMessagePayload({
@@ -768,6 +878,7 @@ export class EnterpriseChatRuntime {
       throw new Error("Screenshot capture returned no image.");
     }
     await this.ensureSession();
+    this.assertMessageSendReady();
     const attachment = await this.uploadBlob(
       new Blob([bytes], { type: capture.mimeType || "image/png" }),
       `screenshot-${new Date().toISOString().replace(/[:.]/gu, "-")}.png`
@@ -901,9 +1012,7 @@ export class EnterpriseChatRuntime {
     body: string;
     fileIds: string[];
   }) {
-    if (!this.socket || !this.socketSynced || this.socket.readyState !== 1) {
-      throw new Error("Enterprise chat is reconnecting. Try again in a moment.");
-    }
+    this.assertMessageSendReady();
     const result = await this.sendWebSocketRequest("message.send", {
       conversationId: input.conversationId,
       clientMessageId: input.clientMessageId,
@@ -917,6 +1026,12 @@ export class EnterpriseChatRuntime {
       this.applyMessage(message);
     }
     return this.getState();
+  }
+
+  private assertMessageSendReady() {
+    if (!this.socket || !this.socketSynced || this.socket.readyState !== 1) {
+      throw new Error("Enterprise chat is reconnecting. Try again in a moment.");
+    }
   }
 
   async markRead(input: EnterpriseChatMarkReadInput) {
@@ -1340,7 +1455,13 @@ export class EnterpriseChatRuntime {
       const response = await this.requestJson<unknown>("/api/v1/conversations");
       const record = isRecord(response) ? response : {};
       this.updateSnapshot({
-        conversations: normalizeConversations(record.items)
+        conversations: mergeConversationUsers(
+          normalizeConversations(record.items),
+          [
+            ...(this.snapshot.currentUser ? [this.snapshot.currentUser] : []),
+            ...this.snapshot.users
+          ]
+        )
       });
     } catch {
       // The next durable event or manual refresh will retry the summary projection.
@@ -1353,7 +1474,10 @@ export class EnterpriseChatRuntime {
       let users = await this.requestUsers();
       if (this.presenceRevision !== revisionAtRequestStart) {
         const livePresence = new Map(
-          this.snapshot.users.map((user) => [user.id, user.online] as const)
+          [
+            ...(this.snapshot.currentUser ? [this.snapshot.currentUser] : []),
+            ...this.snapshot.users
+          ].map((user) => [user.id, user.online] as const)
         );
         users = users.map((user) =>
           livePresence.has(user.id)
@@ -1362,8 +1486,21 @@ export class EnterpriseChatRuntime {
         );
       }
       const currentUserId = this.snapshot.currentUser?.id ?? "";
+      const directoryCurrentUser = users.find((user) => user.id === currentUserId);
+      const currentUser = this.snapshot.currentUser && directoryCurrentUser
+        ? { ...this.snapshot.currentUser, ...directoryCurrentUser }
+        : this.snapshot.currentUser;
+      const visibleUsers = users.filter((user) => user.id !== currentUserId);
       this.updateSnapshot({
-        users: users.filter((user) => user.id !== currentUserId)
+        currentUser,
+        users: visibleUsers,
+        conversations: mergeConversationUsers(
+          this.snapshot.conversations,
+          [
+            ...(currentUser ? [currentUser] : []),
+            ...visibleUsers
+          ]
+        )
       });
     } catch {
       // Presence pushes remain usable; the next sync or manual refresh retries the directory.
@@ -1474,6 +1611,7 @@ export class EnterpriseChatRuntime {
 }
 
 export const __testInternals = {
+  mergeConversationUsers,
   normalizeConversation,
   normalizeMessage,
   normalizeServerUrl,

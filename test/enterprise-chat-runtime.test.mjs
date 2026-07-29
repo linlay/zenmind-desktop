@@ -216,6 +216,27 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   assert.equal(connecting.users[0].online, true);
   assert.equal(sockets.length, 1);
   assert.equal(new URL(sockets[0].url).searchParams.get("ticket"), "ticket-1");
+  const blockedPasteBytes = Buffer.from("wait for websocket");
+  await assert.rejects(
+    runtime.sendPastedFiles({
+      conversationId: "direct-1",
+      clientMessageId: "client-pasted-too-early",
+      files: [{
+        name: "early.txt",
+        contentType: "text/plain",
+        sizeBytes: blockedPasteBytes.length,
+        dataBase64: blockedPasteBytes.toString("base64")
+      }]
+    }),
+    /reconnecting/
+  );
+  assert.equal(
+    requests.filter(({ url, init }) =>
+      new URL(url).pathname === "/api/v1/files" &&
+      init.method === "POST"
+    ).length,
+    0
+  );
 
   sockets[0].open();
   assert.equal(sockets[0].sent[0].type, "sync.resume");
@@ -238,6 +259,13 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   const opened = await runtime.openDirectConversation({ userId: "bob" });
   assert.equal(opened.activeConversationId, "direct-1");
   assert.equal(opened.activeMessages.length, 0);
+  assert.equal(
+    opened.conversations
+      .find((conversation) => conversation.id === "direct-1")
+      .members.find((member) => member.user.id === "bob")
+      .user.online,
+    false
+  );
 
   const sendPromise = runtime.sendMessage({
     conversationId: "direct-1",
@@ -319,10 +347,77 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     "image/png"
   );
 
+  const pastedBytes = Buffer.from("pasted attachment");
+  const pastedPromise = runtime.sendPastedFiles({
+    conversationId: "direct-1",
+    clientMessageId: "client-pasted-1",
+    files: [{
+      name: "clipboard.txt",
+      contentType: "text/plain",
+      sizeBytes: pastedBytes.length,
+      dataBase64: pastedBytes.toString("base64")
+    }]
+  });
+  await waitFor(
+    () => sockets[0].sent.some((frame) =>
+      frame.type === "message.send" &&
+      frame.payload.clientMessageId === "client-pasted-1"
+    ),
+    "pasted attachment message.send"
+  );
+  const pastedUploadRequest = requests
+    .filter(({ url, init }) =>
+      new URL(url).pathname === "/api/v1/files" &&
+      init.method === "POST"
+    )
+    .at(-1);
+  const pastedUpload = pastedUploadRequest.init.body.get("file");
+  assert.equal(pastedUpload.name, "clipboard.txt");
+  assert.equal(pastedUpload.type, "text/plain");
+  assert.equal(await pastedUpload.text(), "pasted attachment");
+  const pastedFrame = sockets[0].sent.find((frame) =>
+    frame.type === "message.send" &&
+    frame.payload.clientMessageId === "client-pasted-1"
+  );
+  sockets[0].receive({
+    v: 1,
+    frame: "response",
+    id: pastedFrame.id,
+    type: "message.send",
+    ok: true,
+    result: {
+      duplicate: false,
+      message: {
+        id: "message-pasted-1",
+        conversationId: "direct-1",
+        seq: 3,
+        senderId: "alice",
+        clientMessageId: "client-pasted-1",
+        kind: "file",
+        body: "",
+        attachments: [{
+          id: "file-image-1",
+          name: "clipboard.txt",
+          contentType: "text/plain",
+          sizeBytes: pastedBytes.length,
+          sha256: "pasted-hash",
+          createdAt: now
+        }],
+        createdAt: now + 2
+      }
+    }
+  });
+  const pastedState = await pastedPromise;
+  assert.equal(
+    pastedState.activeMessages.find((item) => item.id === "message-pasted-1")
+      .attachments[0].name,
+    "clipboard.txt"
+  );
+
   const actionMessage = {
     id: "message-action-1",
     conversationId: "direct-1",
-    seq: 3,
+    seq: 4,
     senderId: "bob",
     clientMessageId: "client-action-1",
     kind: "text",

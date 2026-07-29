@@ -8,6 +8,7 @@ import type {
   EnterpriseChatSendDesktopActionInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
+  EnterpriseChatSendPastedFilesInput,
   EnterpriseChatSendScreenshotInput
 } from "../../shared/contracts";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
@@ -42,6 +43,11 @@ export function registerEnterpriseChatIpcHandlers(
     "enterpriseChat.sendFiles",
     async (_event: unknown, input: EnterpriseChatSendFilesInput) =>
       runtime.sendFiles(input)
+  );
+  ipcMain.handle(
+    "enterpriseChat.sendPastedFiles",
+    async (_event: unknown, input: EnterpriseChatSendPastedFilesInput) =>
+      runtime.sendPastedFiles(input)
   );
   ipcMain.handle(
     "enterpriseChat.sendScreenshot",
