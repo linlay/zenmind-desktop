@@ -33,6 +33,7 @@ type TunnelHubRegistrationResponse = {
 
 type TunnelHubRegistrationControllerOptions = {
   fetch?: FetchLike;
+  refreshIdentityToken?: () => Promise<string>;
   logger?: Pick<typeof console, "log" | "warn" | "error">;
 };
 
@@ -103,19 +104,31 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     throw new Error("current runtime does not provide fetch for Tunnel Hub registration.");
   }
 
-  const response = await fetchImpl(`${origin}/api/desktop/devices/register`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${siteToken}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      deviceId,
-      deviceName: deviceInfo.deviceName || deviceId,
-      rotateToken
-    })
-  });
-  const raw = await response.text();
+  const requestRegistration = async (identityToken: string) => {
+    const response = await fetchImpl(`${origin}/api/desktop/devices/register`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${identityToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        deviceId,
+        deviceName: deviceInfo.deviceName || deviceId,
+        rotateToken
+      })
+    });
+    return {
+      response,
+      raw: await response.text()
+    };
+  };
+  let { response, raw } = await requestRegistration(siteToken);
+  if (response.status === 401 && controllerOptions.refreshIdentityToken) {
+    const refreshedIdentityToken = (await controllerOptions.refreshIdentityToken()).trim();
+    if (refreshedIdentityToken) {
+      ({ response, raw } = await requestRegistration(refreshedIdentityToken));
+    }
+  }
   if (!response.ok) {
     if (response.status === 405) {
       throw new Error(t("tunnelHub.registrationApiUnavailable"));

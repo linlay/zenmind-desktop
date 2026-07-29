@@ -59,6 +59,7 @@ type OidcConfig = {
 
 type CookieAccessTokenExchangeConfig = {
   url: string;
+  csrfUrl?: string;
   method: "GET" | "POST";
   headers: Record<string, string>;
   body?: string;
@@ -287,6 +288,7 @@ const SESSION_FILE_NAME = "sso-session.json";
 const USER_INFO_FILE_NAME = "sso-user-info.json";
 const ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
 const SITE_TOKEN_FILE_NAME = "sso-site-token.json";
+const DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS = 15 * 60_000;
 export const DESKTOP_SSO_CONFIG_FILE_NAME = "sso.json";
 const IDENTITY_PROVIDER_URL_FIELDS = [
   "issuer",
@@ -834,8 +836,10 @@ function normalizeCookieAccessTokenExchangeConfig(
   const headers = normalizeCookieAccessTokenExchangeHeaders(exchangeRecord);
   const body = normalizeCookieAccessTokenExchangeBody(exchangeRecord, method, headers);
   const accessTokenPath = getRecordString(exchangeRecord, "accessTokenPath") || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
+  const rawCsrfUrl = getRecordString(exchangeRecord, "csrfUrl");
   return {
     url: new URL(rawUrl, baseOrigin).toString(),
+    ...(rawCsrfUrl ? { csrfUrl: new URL(rawCsrfUrl, baseOrigin).toString() } : {}),
     method,
     headers,
     ...(body !== undefined ? { body } : {}),
@@ -1517,6 +1521,21 @@ function readAccessTokenFile(app: Pick<App, "getPath">) {
   } catch {
     return "";
   }
+}
+
+export function desktopSsoAccessTokenNeedsRefresh(
+  app: Pick<App, "getPath">,
+  minValidityMs = DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS
+) {
+  const token = currentAccessToken || readAccessTokenFile(app);
+  if (!token) {
+    return true;
+  }
+  const expiresAtSeconds = Number(getJwtPayload(token).exp);
+  if (!Number.isFinite(expiresAtSeconds) || expiresAtSeconds <= 0) {
+    return true;
+  }
+  return expiresAtSeconds * 1000 <= Date.now() + Math.max(0, minValidityMs);
 }
 
 function loadSession(app: App) {
@@ -2407,6 +2426,26 @@ async function exchangeCookieForAccessToken(
   const request = buildCookieAccessTokenExchangeRequest(cookieHeader, config);
   if (!request) {
     return "";
+  }
+  if (config.cookieAccessTokenExchange?.csrfUrl) {
+    const csrfHeaders: Record<string, string> = { Accept: "application/json" };
+    if (cookieHeader.trim()) {
+      csrfHeaders.Cookie = cookieHeader.trim();
+    }
+    const csrfResponse = await fetchImpl(config.cookieAccessTokenExchange.csrfUrl, {
+      method: "GET",
+      headers: csrfHeaders
+    });
+    if (!csrfResponse.ok) {
+      const detail = await readFetchErrorBody(csrfResponse);
+      throw new Error(`OIDC CSRF request failed: ${readFetchErrorStatus(csrfResponse)}${detail ? ` - ${detail}` : ""}`);
+    }
+    const csrfBody = await csrfResponse.json();
+    const csrfToken = normalizeStringClaim(readJsonPathValue(csrfBody, "csrfToken"));
+    if (!csrfToken) {
+      throw new Error("OIDC CSRF response did not include csrfToken.");
+    }
+    request.headers["X-CSRF-Token"] = csrfToken;
   }
   const response = await fetchImpl(request.url, {
     method: request.method,
@@ -3398,6 +3437,14 @@ export function getDesktopSsoCookieAccessTokenExchangeUrl(app: Pick<App, "getPat
   return configResult.config.cookieAccessTokenExchange.url;
 }
 
+export function getDesktopSsoCookieCSRFUrl(app: Pick<App, "getPath">) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config?.cookieAccessTokenExchange) {
+    return null;
+  }
+  return configResult.config.cookieAccessTokenExchange.csrfUrl || null;
+}
+
 export function isDesktopSsoLoginCompletionUrl(app: Pick<App, "getPath">, value: string) {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured || configResult.error || !configResult.config) {
@@ -3505,6 +3552,18 @@ export async function exchangeConfiguredDesktopSsoCookieForAccessToken(
   const accessToken = await exchangeCookieForAccessToken(cookieHeader, fetchImpl, configResult.config);
   if (accessToken) {
     completeAccessTokenStep(app, accessToken);
+    const payload = getJwtPayload(accessToken);
+    const expiresAtSeconds = Number(payload.exp);
+    saveDesktopSsoSiteTokenFile(app, {
+      accessToken,
+      tokenType: "Bearer",
+      ...(Number.isFinite(expiresAtSeconds) && expiresAtSeconds > 0
+        ? { expiresAt: new Date(expiresAtSeconds * 1000).toISOString() }
+        : {}),
+      issuer: normalizeStringClaim(payload.iss),
+      audience: payload.aud,
+      scope: normalizeStringClaim(payload.scope)
+    });
   }
   return accessToken;
 }
@@ -3651,6 +3710,7 @@ export const __testInternals = {
   completeDesktopSsoBrowserSessionUserInfo,
   completeDesktopSsoBrowserUserInfo,
   completeDesktopSsoCookieLogin,
+  desktopSsoAccessTokenNeedsRefresh,
   getDesktopSsoAccessTokenFilePath,
   getDesktopSsoUserInfoFilePath,
   getDesktopSsoSiteTokenFilePath,

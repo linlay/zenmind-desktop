@@ -66,6 +66,65 @@ class FakeWebSocket {
   }
 }
 
+test("enterprise chat refreshes the Desktop JWT once after session exchange returns 401", async () => {
+  const now = Date.now();
+  const user = {
+    id: "alice",
+    displayName: "Alice",
+    email: "alice@example.com",
+    status: "active",
+    createdAt: now,
+    updatedAt: now
+  };
+  const identityAuthorizations = [];
+  let identityToken = "stale-desktop-jwt";
+  let refreshCalls = 0;
+  const runtime = new EnterpriseChatRuntime({
+    app: {},
+    initialEnabled: true,
+    getIdentityToken: () => identityToken,
+    refreshIdentityToken: async () => {
+      refreshCalls += 1;
+      identityToken = "fresh-desktop-jwt";
+      return identityToken;
+    },
+    fetchImpl: async (url, init = {}) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === "/api/v1/session/exchange") {
+        identityAuthorizations.push(init.headers.Authorization);
+        if (init.headers.Authorization === "Bearer stale-desktop-jwt") {
+          return jsonResponse(401, { message: "expired" });
+        }
+        return jsonResponse(200, {
+          token: "im-session-token",
+          expiresAt: now + 15 * 60_000,
+          user
+        });
+      }
+      if (pathname === "/api/v1/sync/bootstrap") {
+        return jsonResponse(200, { user, conversations: [], latestEventId: 0 });
+      }
+      if (pathname === "/api/v1/users") {
+        return jsonResponse(200, { items: [user], limit: 100, offset: 0 });
+      }
+      if (pathname === "/api/v1/ws-tickets") {
+        return jsonResponse(201, { ticket: "ws-ticket", expiresAt: now + 30_000 });
+      }
+      assert.fail(`unexpected enterprise chat request ${pathname}`);
+    },
+    createWebSocket: (url) => new FakeWebSocket(url)
+  });
+
+  const state = await runtime.refresh();
+  assert.notEqual(state.connectionState, "error");
+  assert.equal(refreshCalls, 1);
+  assert.deepEqual(identityAuthorizations, [
+    "Bearer stale-desktop-jwt",
+    "Bearer fresh-desktop-jwt"
+  ]);
+  runtime.stop();
+});
+
 test("enterprise chat exchanges the SSO token and completes a direct message flow", async (t) => {
   const sockets = [];
   const requests = [];

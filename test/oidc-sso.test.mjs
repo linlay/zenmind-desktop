@@ -9,6 +9,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
+  desktopSsoAccessTokenNeedsRefresh,
+  exchangeConfiguredDesktopSsoCookieForAccessToken,
   failDesktopSsoFlow,
   failDesktopSsoStep,
   getDesktopSsoAccessToken,
@@ -697,6 +699,89 @@ test("desktop sso strips a Bearer scheme from cookie token responses", () => {
     __testInternals.readCookieAccessTokenFromResponse({ access_token: `bearer ${token}` }),
     token
   );
+});
+
+test("desktop sso exchanges Cookie plus CSRF into one JWT for both token files", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-cookie-token-exchange-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  const issuer = "https://www.zenmind.cc";
+  const csrfUrl = `${issuer}/api/auth/csrf`;
+  const tokenUrl = `${issuer}/api/auth/desktop-sso/token`;
+  writeSsoConfig(app, {
+    enabled: true,
+    authMode: "server",
+    browserMode: "system",
+    issuer,
+    authorizeUrl: `${issuer}/api/auth/desktop-sso/start`,
+    serverAuthorizeUrl: `${issuer}/api/auth/desktop-sso/start`,
+    tokenUrl,
+    clientId: "zenmind-desktop",
+    logoutUrl: `${issuer}/api/auth/logout`,
+    webSessionExchange: {
+      url: `${issuer}/api/auth/desktop-sso/session`,
+      provider: "zenmind",
+      cookieOrigins: [issuer]
+    },
+    cookieAccessTokenExchange: {
+      url: tokenUrl,
+      csrfUrl,
+      method: "POST",
+      body: {},
+      accessTokenPath: "accessToken"
+    }
+  });
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const token = createUnsignedJwt({
+    sub: "desktop-user",
+    iss: issuer,
+    aud: ["market", "tunnel", "kanban", "zenmind-im-server"],
+    scope: "profile market tunnel kanban im",
+    iat: nowSeconds,
+    nbf: nowSeconds,
+    exp: nowSeconds + 12 * 60 * 60
+  });
+  const requests = [];
+  const fetchImpl = async (url, init) => {
+    requests.push({ url, init });
+    if (url === csrfUrl) {
+      return {
+        ...createJsonResponse({ csrfToken: "csrf-token-1" }),
+        headers: { get: () => "application/json" }
+      };
+    }
+    assert.equal(url, tokenUrl);
+    return {
+      ...createJsonResponse({ accessToken: token }),
+      headers: { get: () => "application/json" }
+    };
+  };
+
+  const exchanged = await exchangeConfiguredDesktopSsoCookieForAccessToken(
+    app,
+    "zenmind_session=session-secret",
+    fetchImpl
+  );
+
+  assert.equal(exchanged, token);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].init.headers.Cookie, "zenmind_session=session-secret");
+  assert.equal(requests[1].init.headers.Cookie, "zenmind_session=session-secret");
+  assert.equal(requests[1].init.headers["X-CSRF-Token"], "csrf-token-1");
+  assert.equal(
+    fs.readFileSync(__testInternals.getDesktopSsoAccessTokenFilePath(app), "utf8").trim(),
+    token
+  );
+  const legacyToken = JSON.parse(
+    fs.readFileSync(__testInternals.getDesktopSsoSiteTokenFilePath(app), "utf8")
+  );
+  assert.equal(legacyToken.accessToken, token);
+  assert.equal(desktopSsoAccessTokenNeedsRefresh(app), false);
 });
 
 test("desktop sso does not infer cookie token exchange from ai browser origin", (t) => {

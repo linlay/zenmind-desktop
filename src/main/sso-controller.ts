@@ -4,10 +4,13 @@ import {
   completeDesktopSsoBrowserSession,
   completeDesktopSsoBrowserSessionUserInfo,
   completeDesktopSsoBrowserUserInfo,
+  desktopSsoAccessTokenNeedsRefresh,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
+  getDesktopSsoAccessToken,
   getDesktopSsoAccessTokenCookieDetails,
   getDesktopSsoCookieMirrorOrigins,
   getDesktopSsoCookieAccessTokenExchangeUrl,
+  getDesktopSsoCookieCSRFUrl,
   getDesktopSsoBrowserSessionConfig,
   getDesktopSsoCookieUserInfoConfig,
   getDesktopSsoProxyBrowserCookieDetails,
@@ -43,9 +46,9 @@ type BrowserCookieFetch = (url: string, init: {
 }>;
 
 type WebSessionExchangeFetch = (url: string, init: {
-  method: "POST";
+  method: "GET" | "POST";
   headers: Record<string, string>;
-  body: string;
+  body?: string;
 }) => Promise<{
   ok: boolean;
   status?: number;
@@ -425,6 +428,7 @@ export function openDesktopSsoSiteTokenBridge(
 }
 
 export function createDesktopSsoController(options: DesktopSsoControllerOptions) {
+  let accessTokenRefreshPromise: Promise<string> | null = null;
   return {
     returnToApp() {
       focusMainWindowAfterDesktopSso(options);
@@ -654,6 +658,23 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       ));
       return accessToken;
     },
+    async refreshBrowserCookieAccessTokenIfNeeded(force = false, fetchImpl?: CookieAccessTokenFetch) {
+      const status = getDesktopSsoStatus(options.app);
+      if (!status.authenticated || !getDesktopSsoCookieAccessTokenExchangeUrl(options.app)) {
+        return "";
+      }
+      if (!force && !desktopSsoAccessTokenNeedsRefresh(options.app)) {
+        return getDesktopSsoAccessToken() || "";
+      }
+      if (accessTokenRefreshPromise) {
+        return accessTokenRefreshPromise;
+      }
+      accessTokenRefreshPromise = this.exchangeBrowserCookieAccessToken(fetchImpl)
+        .finally(() => {
+          accessTokenRefreshPromise = null;
+        });
+      return accessTokenRefreshPromise;
+    },
     async exchangeWebSession(idToken: string, fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
       const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);
       const token = idToken.trim();
@@ -778,6 +799,24 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       };
       if (cookieHeader) {
         headers.Cookie = cookieHeader;
+      }
+      const csrfUrl = getDesktopSsoCookieCSRFUrl(options.app);
+      if (csrfUrl) {
+        const csrfResponse = await fetchImpl(csrfUrl, {
+          method: "GET",
+          headers: { ...headers }
+        });
+        if (!csrfResponse.ok || typeof csrfResponse.json !== "function") {
+          throw new Error(`Desktop SSO CSRF request failed: ${await readDesktopSsoWebSessionExchangeError(csrfResponse)}`);
+        }
+        const csrfBody = await csrfResponse.json();
+        const csrfToken = csrfBody && typeof csrfBody === "object" && !Array.isArray(csrfBody)
+          ? String((csrfBody as Record<string, unknown>).csrfToken || "").trim()
+          : "";
+        if (!csrfToken) {
+          throw new Error("Desktop SSO CSRF response did not include csrfToken.");
+        }
+        headers["X-CSRF-Token"] = csrfToken;
       }
       const response = await fetchImpl(logoutUrl, {
         method: "POST",

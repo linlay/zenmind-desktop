@@ -158,6 +158,60 @@ test("Tunnel Hub registration uses SSO site token and stores agent token", async
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), true);
 });
 
+test("Tunnel Hub registration refreshes the Desktop JWT once after a 401", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-refresh-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeSsoSiteToken(homePath, "stale-desktop-jwt");
+  const saved = saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "wss://relay.example.test/tunnel",
+    deviceId: "mac-mini-office"
+  });
+  assert.equal(saved.ok, true);
+
+  const authorizations = [];
+  let refreshCalls = 0;
+  configureTunnelHubRegistrationController({
+    fetch: async (_url, init) => {
+      authorizations.push(init.headers.Authorization);
+      if (init.headers.Authorization === "Bearer stale-desktop-jwt") {
+        return {
+          ok: false,
+          status: 401,
+          statusText: "Unauthorized",
+          text: async () => "unauthorized"
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => JSON.stringify({
+          deviceId: "mac-mini-office",
+          relayUrl: "wss://relay.example.test/tunnel",
+          relayToken: "relay-token"
+        })
+      };
+    },
+    refreshIdentityToken: async () => {
+      refreshCalls += 1;
+      return "fresh-desktop-jwt";
+    },
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  const result = await ensureTunnelHubRegistrationReady(app);
+  assert.equal(result.registered, true);
+  assert.equal(refreshCalls, 1);
+  assert.deepEqual(authorizations, [
+    "Bearer stale-desktop-jwt",
+    "Bearer fresh-desktop-jwt"
+  ]);
+});
+
 test("Tunnel Hub registration ignores legacy registration token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-site-token-"));
   const homePath = path.join(root, "home");

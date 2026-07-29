@@ -9,6 +9,7 @@ export interface SsoIpcHandlerOptions {
     returnToApp: () => void;
     syncBrowserCookies: () => Promise<void>;
     exchangeBrowserCookieAccessToken: () => Promise<string>;
+    refreshBrowserCookieAccessTokenIfNeeded?: (force?: boolean) => Promise<string>;
     exchangeWebSession: (idToken: string) => Promise<boolean>;
     exchangeWebSessionTicket?: (ticket: string) => Promise<any>;
     exchangeSiteTokenBridgeTicket?: (ticket: string) => Promise<any>;
@@ -67,7 +68,14 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
     issueAgentAccessToken
   } = options;
 
-  ipcMain.handle("sso.getStatus", async () => getDesktopSsoStatus(app));
+  ipcMain.handle("sso.getStatus", async () => {
+    try {
+      await desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded?.();
+    } catch (error) {
+      safeConsoleError("failed to refresh desktop sso token while reading status", error);
+    }
+    return getDesktopSsoStatus(app);
+  });
 
   ipcMain.handle("agentAuth.issueAccessToken", async (_event: any, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
@@ -81,9 +89,12 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
         if (!bridgeOpenResult.ok && bridgeStart.required) {
           throw new Error(bridgeOpenResult.message || bridgeStart.message || "Desktop SSO site token bridge open failed");
         }
-      } else if (bridgeStart?.configured && bridgeStart.required) {
+        return true;
+      }
+      if (bridgeStart?.configured && bridgeStart.required) {
         throw new Error(bridgeStart.message || "Desktop SSO site token bridge is unavailable");
       }
+      return false;
     }
 
     const result = await startDesktopSsoLogin(app, {
@@ -100,7 +111,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       },
       onAfterStatusChanged: async (status: any) => {
         if (status.authenticated) {
-          await openConfiguredDesktopSsoSiteTokenBridge();
+          const openedLegacyBridge = await openConfiguredDesktopSsoSiteTokenBridge();
+          if (!openedLegacyBridge) {
+            await desktopSsoController.exchangeBrowserCookieAccessToken();
+          }
+          options.refreshKanbanConnection?.();
           void Promise.resolve(options.refreshEnterpriseChat?.()).catch((error) => {
             safeConsoleError("failed to refresh enterprise chat after desktop sso login", error);
           });

@@ -22,16 +22,16 @@ identity-center prepare
   -> desktop:agent-auth:response
 ```
 
-OIDC SSO：
+官网 Server Broker SSO：
 
 ```text
 config/desktop/sso.json
-  -> OIDC start
+  -> 官网 desktop-sso/start
   -> local callback server
-  -> validate id_token -> state/desktop/sso-session.json
-  -> base claims / userinfo -> state/desktop/sso-user-info.json
-  -> access_token -> state/desktop/sso-access-token.txt
-  -> secrets/sso-site-token.json
+  -> one-time ticket -> 官网 HttpOnly Cookie
+  -> Cookie + CSRF -> 单个 12 小时 JWT
+  -> state/desktop/sso-access-token.txt
+  -> 同一 JWT 兼容写入 secrets/sso-site-token.json
 ```
 
 企业聊天：
@@ -62,9 +62,11 @@ session 验证成功后 `authenticated=true`，但当前登录尝试继续保持
 
 展开态侧栏底部的 Settings 菜单触发器同时展示账户状态：已登录时使用规范化用户信息显示头像与 `name -> email -> sub -> 已登录` 回退名称，未登录时显示“未登录”，齿轮始终位于最右侧。SSO 未配置或状态尚未加载时继续显示原“设置”入口；侧栏收起时只显示齿轮。该展示不改变菜单内容、打开前状态刷新、登录或退出流程。
 
-Tunnel Hub 注册只使用由 `siteTokenBridge` 换取的 `sso-site-token.json`；普通 Desktop 登录写入的 `state/desktop/sso-access-token.txt` 不参与 Tunnel 注册。
-
-`siteTokenBridge` 的打开方式跟随顶层 `sso.browserMode`：`system` 使用系统浏览器，`embedded` 使用 Desktop SSO WebView 与同一 SSO partition。嵌入式 cookie 登录完成后也会继续启动 `siteTokenBridge`，但 Desktop 不根据 brand 做任何分支。
+Tunnel Hub、Kanban 与 Market 继续读取 `sso-site-token.json`，企业聊天读取
+`state/desktop/sso-access-token.txt`；两个文件保存的是官网同一次 Cookie 换取的同一枚 JWT，
+不再启动第二次 `siteTokenBridge` 浏览器登录。Desktop 不验证该 JWT，也不依赖 JWKS。
+Desktop 启动时、JWT 剩余不足 15 分钟时，以及 Market、Tunnel Hub 或企业聊天返回 401 时，
+会使用持久化官网 Cookie 和 CSRF Token 重新换取 JWT；只有 Cookie 失效才需要重新打开浏览器登录。
 
 Desktop 只读取上述 canonical SSO 文件。历史配置、会话和 access-token 文件不会被读取、迁移或在 logout 时清理。
 

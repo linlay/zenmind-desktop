@@ -18,9 +18,11 @@ import { issueAgentAccessToken } from "../agent-auth";
 import {
   cancelDesktopSsoLogin,
   completeDesktopSsoCookieLogin,
+  desktopSsoAccessTokenNeedsRefresh,
   finalizeDesktopSsoLoginAttempt,
   failDesktopSsoFlow,
   failDesktopSsoStep,
+  getDesktopSsoAccessToken,
   getDesktopSsoStatus,
   isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
@@ -234,6 +236,7 @@ export function createMainProcessRuntime() {
     delay,
     t
   });
+  let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
   const enterpriseChatRuntime = new EnterpriseChatRuntime({
     app,
     platform: mainProcessContext.platform,
@@ -242,6 +245,7 @@ export function createMainProcessRuntime() {
     initialEnabled: readDesktopProfileFromRoot(
       getDesktopConfigRoot(app)
     ).general.enterpriseChatEnabled,
+    refreshIdentityToken: () => refreshDesktopSsoIdentityToken(true),
     selectFiles: async () => {
       const result = await showFileDialog({
         title: t("enterpriseChat.selectFiles"),
@@ -525,6 +529,19 @@ export function createMainProcessRuntime() {
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
     openExternal: shell.openExternal
   });
+  refreshDesktopSsoIdentityToken = async (force = false) => {
+    const needsRefresh = force || desktopSsoAccessTokenNeedsRefresh(app);
+    const accessToken = await desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(force);
+    if (needsRefresh && accessToken) {
+      appState.kanbanRuntime?.refreshDeviceInfo();
+      void enterpriseChatRuntime.refresh().catch((error) => {
+        safeConsoleError("failed to refresh enterprise chat after desktop sso token renewal", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }
+    return accessToken;
+  };
 
   async function openConfiguredDesktopSsoSiteTokenBridge() {
     const bridgeStart = startDesktopSsoSiteTokenBridge(app);
@@ -567,6 +584,7 @@ export function createMainProcessRuntime() {
     cdpIntegration,
     getResponsiveServiceState,
     issueAgentAccessToken,
+    refreshDesktopSsoAccessToken: () => refreshDesktopSsoIdentityToken(true),
     callAgentPlatform,
     showMainWindow,
     showFileDialog,
@@ -1087,6 +1105,21 @@ export function createMainProcessRuntime() {
       return;
     }
     nonCoreDesktopRuntimeStarted = true;
+
+    void refreshDesktopSsoIdentityToken().catch((error) => {
+      safeConsoleError("failed to refresh desktop sso token during startup", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+    const desktopSsoRefreshTimer = setInterval(() => {
+      void refreshDesktopSsoIdentityToken().catch((error) => {
+        safeConsoleError("failed to refresh desktop sso token before expiry", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }, 5 * 60_000);
+    desktopSsoRefreshTimer.unref();
+    app.once("before-quit", () => clearInterval(desktopSsoRefreshTimer));
 
     runNonCoreStartupTask("webapp install recovery", () => {
       recoverWebappInstallTransactions(app);

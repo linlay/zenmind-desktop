@@ -104,6 +104,7 @@ import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
+import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
 
 export type MainIpcRegistrationOptions = {
   app: App;
@@ -264,7 +265,19 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     saveMarketSettings,
     listMarketItems,
     refreshMarketCatalog,
-    toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, { issueAgentAccessToken }),
+    toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, {
+      issueAgentAccessToken: async (_app, reason) => {
+        let token = readDesktopSsoSiteAccessToken(marketApp);
+        if (reason === "unauthorized" || !token) {
+          token = await options.desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded?.(true) || "";
+        }
+        return {
+          ok: Boolean(token),
+          token,
+          message: token ? "Desktop SSO access token ready." : "Sign in before using Market favorites."
+        };
+      }
+    }),
     installMarketItem,
     updateMarketItem,
     uninstallMarketItem,

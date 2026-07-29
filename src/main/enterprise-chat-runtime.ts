@@ -89,6 +89,7 @@ type EnterpriseChatRuntimeOptions = {
   fetchImpl?: FetchLike;
   createWebSocket?: (url: string) => WebSocketLike;
   getIdentityToken?: () => string | null;
+  refreshIdentityToken?: () => Promise<string | null>;
   getDeviceInfo?: () => { deviceId: string; deviceName: string };
   platform?: NodeJS.Platform;
   selectFiles?: () => Promise<string[]>;
@@ -120,6 +121,15 @@ type ServerBootstrap = {
   conversations: EnterpriseChatConversation[];
   latestEventId: number;
 };
+
+class EnterpriseChatRequestError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -419,6 +429,7 @@ export class EnterpriseChatRuntime {
   private readonly fetchImpl: FetchLike;
   private readonly createWebSocket: (url: string) => WebSocketLike;
   private readonly getIdentityToken: () => string | null;
+  private readonly refreshIdentityToken?: () => Promise<string | null>;
   private readonly getDeviceInfo: () => { deviceId: string; deviceName: string };
   private readonly platform: NodeJS.Platform;
   private readonly selectFiles: () => Promise<string[]>;
@@ -449,6 +460,7 @@ export class EnterpriseChatRuntime {
     this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
     this.createWebSocket = options.createWebSocket ?? createDefaultWebSocket;
     this.getIdentityToken = options.getIdentityToken ?? getDesktopSsoAccessToken;
+    this.refreshIdentityToken = options.refreshIdentityToken;
     this.getDeviceInfo = options.getDeviceInfo ?? (() => getDesktopDeviceInfo(this.app));
     this.platform = options.platform ?? process.platform;
     this.selectFiles = options.selectFiles ?? (async () => []);
@@ -592,7 +604,19 @@ export class EnterpriseChatRuntime {
         message: "",
         serverUrl: this.serverUrl
       });
-      const session = await this.exchangeSession(identityToken);
+      let session: ServerSession;
+      try {
+        session = await this.exchangeSession(identityToken);
+      } catch (error) {
+        if (!(error instanceof EnterpriseChatRequestError) || error.status !== 401 || !this.refreshIdentityToken) {
+          throw error;
+        }
+        const refreshedIdentityToken = readText(await this.refreshIdentityToken());
+        if (!refreshedIdentityToken) {
+          throw error;
+        }
+        session = await this.exchangeSession(refreshedIdentityToken);
+      }
       this.imSessionToken = session.token;
       this.imSessionTokenExpiresAt = session.expiresAt;
       this.scheduleSessionRefresh();
@@ -1240,7 +1264,10 @@ export class EnterpriseChatRuntime {
         } catch {
           detail = readText(await response.text().catch(() => ""));
         }
-        throw new Error(detail || `Enterprise chat request failed (${response.status}).`);
+        throw new EnterpriseChatRequestError(
+          response.status,
+          detail || `Enterprise chat request failed (${response.status}).`
+        );
       }
       return await response.json() as T;
     } finally {

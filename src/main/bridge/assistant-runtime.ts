@@ -38,6 +38,7 @@ export type AssistantBridgeRuntimeOptions = {
   cdpIntegration: any;
   getResponsiveServiceState: (app: App, serviceId: string) => Promise<any>;
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
+  refreshDesktopSsoAccessToken?: () => Promise<string>;
   callAgentPlatform: (...args: any[]) => unknown;
   showMainWindow: (targetPath?: string) => void;
   showFileDialog: (...args: any[]) => Promise<any>;
@@ -169,6 +170,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
   function configureRemoteRuntimes() {
     refreshDesktopActionBridge();
     configureTunnelHubRegistrationController({
+      refreshIdentityToken: options.refreshDesktopSsoAccessToken,
       logger: console
     });
     configureTunnelHubRuntime({
