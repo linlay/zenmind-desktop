@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { execFile, spawnSync } from "node:child_process";
 import type { App } from "electron";
 import type { ServiceId } from "../../../shared/contracts";
 import type { ServiceDefinition } from "../../manifest-utils";
@@ -14,7 +15,8 @@ import {
   buildServiceEnv
 } from "./command-env";
 import {
-  IS_WINDOWS
+  IS_WINDOWS,
+  windowsPowerShellPath
 } from "./command-runner";
 import {
   isProcessRunning,
@@ -23,6 +25,10 @@ import {
   terminateProcessList,
   terminateProcessTree
 } from "./process-cleanup";
+import {
+  buildProcessTreePids,
+  type ProcessTreeRow
+} from "./process-tree";
 import {
   matchProcessInstallDir,
   pidMatchesInstallDir
@@ -66,11 +72,26 @@ export type ForceCleanupManagedProcessesOptions = {
   collectManagedProcessCleanupTargetsImpl?: (app: App) => ManagedProcessCleanupTargets;
   terminateProcessTreeImpl?: typeof terminateProcessTree;
   terminateProcessListImpl?: typeof terminateProcessList;
+  terminateCapturedProcessTreeImpl?: (
+    rootPid: number,
+    capturedPids: number[]
+  ) => Promise<boolean>;
   listProcessTreePidsImpl?: typeof listProcessTreePids;
   isProcessRunningImpl?: (pid: number | null) => boolean;
   pidMatchesInstallDirImpl?: typeof pidMatchesInstallDir;
   removePidFileImpl?: typeof removePidFile;
   consoleError?: (message: string) => void;
+  maxConcurrency?: number;
+};
+
+export type ForceCleanupManagedProcessesResult = {
+  ok: boolean;
+  failures: Array<{
+    serviceId: ServiceId;
+    rootPid: number;
+    pids: number[];
+  }>;
+  survivors: number[];
 };
 
 export function listListeningPids(port: number) {
@@ -234,6 +255,128 @@ export function captureManagedProcessCleanupSnapshot(app: App) {
   }));
 }
 
+type ManagedProcessInventoryRow = ProcessTreeRow & {
+  identity: string;
+};
+
+function runInventoryCommand(command: string, args: string[], timeoutMs: number) {
+  return new Promise<string>((resolve, reject) => {
+    execFile(command, args, {
+      encoding: "utf8",
+      env: buildServiceEnv(),
+      timeout: timeoutMs,
+      windowsHide: true,
+      maxBuffer: 16 * 1024 * 1024
+    }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(String(stderr || error.message || "process inventory failed").trim()));
+        return;
+      }
+      resolve(String(stdout ?? ""));
+    });
+  });
+}
+
+function parseWindowsManagedProcessInventory(stdout: string): ManagedProcessInventoryRow[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const parsed = JSON.parse(trimmed) as unknown;
+  const entries = Array.isArray(parsed) ? parsed : [parsed];
+  return entries.flatMap((entry) => {
+    const value = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+    const pid = Number(value.ProcessId);
+    const ppid = Number(value.ParentProcessId);
+    if (!Number.isFinite(pid) || pid <= 0 || !Number.isFinite(ppid) || ppid < 0) {
+      return [];
+    }
+    return [{
+      pid,
+      ppid,
+      identity: [value.ExecutablePath, value.CommandLine]
+        .filter((item): item is string => typeof item === "string")
+        .join("\n")
+    }];
+  });
+}
+
+function parsePosixManagedProcessInventory(stdout: string): ManagedProcessInventoryRow[] {
+  return stdout.split(/\r?\n/u).flatMap((line) => {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/u);
+    if (!match) {
+      return [];
+    }
+    return [{
+      pid: Number.parseInt(match[1], 10),
+      ppid: Number.parseInt(match[2], 10),
+      identity: match[3]
+    }];
+  });
+}
+
+function inventoryIdentityMatchesInstallDir(
+  identity: string,
+  installDir: string,
+  platform: NodeJS.Platform | string
+) {
+  const normalizedIdentity = identity.replace(/\\/gu, "/");
+  const normalizedInstallDir = path.normalize(installDir).replace(/\\/gu, "/");
+  return platform === "win32"
+    ? normalizedIdentity.toLowerCase().includes(normalizedInstallDir.toLowerCase())
+    : normalizedIdentity.includes(normalizedInstallDir);
+}
+
+export async function captureManagedProcessCleanupSnapshotAsync(
+  app: App,
+  platform: NodeJS.Platform | string = process.platform
+) {
+  const inventory = platform === "win32"
+    ? parseWindowsManagedProcessInventory(await runInventoryCommand(
+        windowsPowerShellPath(),
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | " +
+            "Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"
+        ],
+        3500
+      ))
+    : parsePosixManagedProcessInventory(await runInventoryCommand(
+        "ps",
+        ["-axo", "pid=,ppid=,command="],
+        3000
+      ));
+  const rows: ProcessTreeRow[] = inventory.map(({ pid, ppid }) => ({ pid, ppid }));
+  const targets: ManagedProcessCleanupTarget[] = [];
+
+  for (const service of getAllServices()) {
+    const installDir = getInstallDir(app, service);
+    if (!fs.existsSync(installDir)) {
+      continue;
+    }
+    const matchedRows = inventory.filter((row) =>
+      inventoryIdentityMatchesInstallDir(row.identity, installDir, platform)
+    );
+    const matchedPids = new Set(matchedRows.map((row) => row.pid));
+    for (const root of matchedRows.filter((row) => !matchedPids.has(row.ppid))) {
+      const layout = getServiceLayout(app, service);
+      const pidFilePaths = getManagedPidFilePaths(service, layout)
+        .filter((pidFilePath) => readPid(pidFilePath) === root.pid);
+      targets.push({
+        pid: root.pid,
+        serviceId: service.id,
+        installDir,
+        pidFilePaths,
+        treePids: buildProcessTreePids(root.pid, rows)
+      });
+    }
+  }
+
+  return targets;
+}
+
 export function mergeCleanupTargets(targets: ManagedProcessCleanupTarget[], roots: ManagedRootPid[]) {
   const merged = new Map<number, ManagedProcessCleanupTarget>();
 
@@ -286,6 +429,32 @@ function shouldRemoveManagedPidFile(
   return false;
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  maxConcurrency: number,
+  task: (item: T) => Promise<R>
+) {
+  if (items.length === 0) {
+    return [] as R[];
+  }
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(
+    items.length,
+    Math.max(1, Math.floor(maxConcurrency))
+  );
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await task(items[index]);
+      }
+    })
+  );
+  return results;
+}
+
 export async function forceCleanupManagedProcesses(
   app: App,
   snapshot: ManagedProcessCleanupTarget[] = [],
@@ -295,44 +464,75 @@ export async function forceCleanupManagedProcesses(
     options.collectManagedProcessCleanupTargetsImpl ?? collectManagedProcessCleanupTargets;
   const terminateProcessTreeImpl = options.terminateProcessTreeImpl ?? terminateProcessTree;
   const terminateProcessListImpl = options.terminateProcessListImpl ?? terminateProcessList;
+  const terminateCapturedProcessTreeImpl = options.terminateCapturedProcessTreeImpl;
   const listProcessTreePidsImpl = options.listProcessTreePidsImpl ?? listProcessTreePids;
   const isProcessRunningImpl = options.isProcessRunningImpl ?? isProcessRunning;
   const pidMatchesInstallDirImpl = options.pidMatchesInstallDirImpl ?? pidMatchesInstallDir;
   const removePidFileImpl = options.removePidFileImpl ?? removePidFile;
   const consoleError = options.consoleError ?? console.error;
   const platform = options.platform ?? process.platform;
+  const maxConcurrency = options.maxConcurrency ?? 8;
   const collected = collectManagedProcessCleanupTargetsImpl(app);
   const roots = mergeCleanupTargets(snapshot, collected.roots);
-  const failures: string[] = [];
+  const failureMessages: string[] = [];
+  const cleanupFailures: ForceCleanupManagedProcessesResult["failures"] = [];
+  const survivors = new Set<number>();
 
   for (const stalePidFilePath of collected.stalePidFilePaths) {
     removePidFileImpl(stalePidFilePath);
   }
 
-  for (const root of roots) {
+  const rootResults = await mapWithConcurrency(roots, maxConcurrency, async (root) => {
     const treePids = buildCleanupTreePids(root, listProcessTreePidsImpl);
-    const terminated = platform === "win32"
-      ? terminateProcessTreeImpl(root.pid, {
-          platform,
-          isProcessRunningImpl,
-          listProcessTreePidsImpl,
-          terminateProcessListImpl
-        })
-      : terminateProcessListImpl(treePids);
+    let terminated = false;
+    try {
+      terminated = terminateCapturedProcessTreeImpl
+        ? await terminateCapturedProcessTreeImpl(root.pid, treePids)
+        : platform === "win32"
+          ? terminateProcessTreeImpl(root.pid, {
+            platform,
+            isProcessRunningImpl,
+            listProcessTreePidsImpl,
+            terminateProcessListImpl
+          })
+          : terminateProcessListImpl(treePids);
+    } catch (error) {
+      consoleError(
+        `failed to terminate managed process tree for ${root.serviceId}: ` +
+        `${error instanceof Error ? error.message : String(error)}`
+      );
+    }
     if (terminated || shouldRemoveManagedPidFile(root, isProcessRunningImpl, pidMatchesInstallDirImpl)) {
       for (const pidFilePath of root.pidFilePaths) {
         removePidFileImpl(pidFilePath);
       }
     }
 
-    if (!terminated && treePids.some((pid) => isProcessRunningImpl(pid))) {
-      failures.push(`${root.serviceId}: PID ${root.pid}`);
+    const remainingPids = treePids.filter((pid) => isProcessRunningImpl(pid));
+    return { root, remainingPids };
+  });
+
+  for (const { root, remainingPids } of rootResults) {
+    if (remainingPids.length > 0) {
+      remainingPids.forEach((pid) => survivors.add(pid));
+      cleanupFailures.push({
+        serviceId: root.serviceId,
+        rootPid: root.pid,
+        pids: remainingPids
+      });
+      failureMessages.push(`${root.serviceId}: PID ${remainingPids.join(", ")}`);
     }
   }
 
-  if (failures.length > 0) {
-    consoleError(`failed to force-clean managed service processes: ${failures.join("; ")}`);
+  if (failureMessages.length > 0) {
+    consoleError(`failed to force-clean managed service processes: ${failureMessages.join("; ")}`);
   }
+
+  return {
+    ok: cleanupFailures.length === 0,
+    failures: cleanupFailures,
+    survivors: [...survivors].sort((left, right) => left - right)
+  };
 }
 
 export function collectManagedServiceStopState(

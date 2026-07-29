@@ -28,6 +28,7 @@ import type {
   DesktopActionConfirmationResponse,
   EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
+  ShutdownProgressListener,
   DesktopPetStateListener,
   DesktopLogTarget,
   DesktopApi,
@@ -92,6 +93,19 @@ const api: DesktopApi = {
       ipcRenderer.on("desktopShell.windowStateChanged", handleWindowStateChanged);
       return () => {
         ipcRenderer.off("desktopShell.windowStateChanged", handleWindowStateChanged);
+      };
+    },
+    onShutdownProgress: (listener: ShutdownProgressListener) => {
+      const handleShutdownProgress = (
+        _event: Electron.IpcRendererEvent,
+        progress: Parameters<ShutdownProgressListener>[0]
+      ) => {
+        listener(progress);
+      };
+
+      ipcRenderer.on("desktopShell.shutdownProgress", handleShutdownProgress);
+      return () => {
+        ipcRenderer.off("desktopShell.shutdownProgress", handleShutdownProgress);
       };
     }
   },

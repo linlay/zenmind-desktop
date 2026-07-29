@@ -1,5 +1,5 @@
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import {
   buildServiceEnv
 } from "./command-env";
@@ -110,4 +110,50 @@ export function matchProcessInstallDir(pid: number, installDir: string): Process
 
 export function pidMatchesInstallDir(pid: number, installDir: string) {
   return matchProcessInstallDir(pid, installDir) === "matched";
+}
+
+function readProcessCommandAsync(pid: number) {
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return Promise.resolve("");
+  }
+  const command = IS_WINDOWS
+    ? windowsPowerShellPath()
+    : "ps";
+  const args = IS_WINDOWS
+    ? [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$process = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"; ` +
+          "if ($null -ne $process) { @($process.ExecutablePath, $process.CommandLine) -join [Environment]::NewLine }"
+      ]
+    : ["-p", String(pid), "-o", "command="];
+  return new Promise<string>((resolve) => {
+    execFile(command, args, {
+      encoding: "utf8",
+      env: buildServiceEnv(),
+      timeout: IS_WINDOWS ? 3000 : 1500,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024
+    }, (error, stdout) => {
+      resolve(error ? "" : String(stdout ?? "").trim());
+    });
+  });
+}
+
+export async function matchProcessInstallDirAsync(
+  pid: number,
+  installDir: string
+): Promise<ProcessInstallDirMatch> {
+  const identity = await readProcessCommandAsync(pid);
+  if (!identity) {
+    return "unknown";
+  }
+  return processIdentityMatchesInstallDir(identity, installDir)
+    ? "matched"
+    : "mismatched";
+}
+
+export async function pidMatchesInstallDirAsync(pid: number, installDir: string) {
+  return await matchProcessInstallDirAsync(pid, installDir) === "matched";
 }

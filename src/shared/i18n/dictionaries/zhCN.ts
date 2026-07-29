@@ -47,6 +47,14 @@ export const zhCNMessages = {
   "quitConfirm.detail": "退出后，本机正在运行的任务和服务将中断；已启用的自动化在应用关闭期间不会运行。",
   "quitConfirm.quit": "退出",
 
+  "shutdown.progress.title": "正在安全退出",
+  "shutdown.progress.preparing": "正在关闭窗口并整理运行中的任务…",
+  "shutdown.progress.stopping": "正在停止本地功能与后台服务…",
+  "shutdown.progress.forcing": "正在清理未正常退出的进程…",
+  "shutdown.progress.verifying": "正在确认进程和端口已释放…",
+  "shutdown.progress.complete": "清理完成，即将退出…",
+  "shutdown.progress.failed": "部分资源未能清理，正在生成退出报告…",
+
   "tray.chatWithApp": "和 {appName} 聊天",
   "tray.openApp": "打开 {appName}",
   "tray.settings": "设置",

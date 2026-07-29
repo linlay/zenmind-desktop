@@ -4,6 +4,7 @@ import { AppSidebar } from "./navigation/AppSidebar";
 import type { WebsiteFaviconCache } from "../components/Favicon";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
+import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
 import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
@@ -18,7 +19,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -442,6 +443,7 @@ export function AppShell() {
   const chatDefaultAgentMigrationRef = useRef("");
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
+  const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
   const [themePreferenceLoaded, setThemePreferenceLoaded] = useState(false);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
@@ -503,6 +505,7 @@ export function AppShell() {
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
   const [faviconCache, setFaviconCache] = useState<WebsiteFaviconCache>({});
   const webItemsRef = useRef<WebEntry[]>([]);
+  const activeWebEntryKeyRef = useRef<WebEntryKey | null>(null);
   const webappStartInFlightRef = useRef<Set<string>>(new Set());
   const webappStopInFlightRef = useRef<Set<string>>(new Set());
   const websiteAgentSyncRequestRef = useRef("");
@@ -540,6 +543,7 @@ export function AppShell() {
       ? null
       : resolvePluginRouteId(location.pathname);
   const activeWebEntryKey = resolveWebRouteEntryKey(location.pathname);
+  activeWebEntryKeyRef.current = activeWebEntryKey;
   const [mountedPluginIds, setMountedPluginIds] = useState<string[]>(() =>
     activePluginId ? [activePluginId] : []
   );
@@ -789,19 +793,28 @@ export function AppShell() {
       };
     }
 
+    const wasActive = activeWebEntryKey === item.entryKey;
+    if (wasActive) {
+      requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
+    }
+    setMountedWebEntryKeys((current) =>
+      current.filter((entryKey) => entryKey !== item.entryKey)
+    );
+
     const result = await window.electronAPI.webs.webapps.remove(item.id);
     if (result.ok) {
-      if (activeWebEntryKey === item.entryKey) {
-        requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
-      }
-      setMountedWebEntryKeys((current) =>
-        current.filter((entryKey) => entryKey !== item.entryKey)
-      );
       setWebappRuntimeById((current) => {
         const next = { ...current };
         delete next[item.id];
         return next;
       });
+    } else {
+      setMountedWebEntryKeys((current) =>
+        current.includes(item.entryKey) ? current : [...current, item.entryKey]
+      );
+      if (wasActive) {
+        requestSidebarNavigation(`/webs/${item.entryKey}`);
+      }
     }
     await refreshWebItems().catch(() => undefined);
     return result;
@@ -1480,6 +1493,18 @@ export function AppShell() {
     startDesktopActionRendererBridge();
   }, []);
 
+  useEffect(() => window.electronAPI.desktopShell.onShutdownProgress((progress) => {
+    if (progress.phase === "preparing") {
+      if (activeWebEntryKeyRef.current?.startsWith("webapp:")) {
+        requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
+      }
+      setMountedWebEntryKeys((current) =>
+        current.filter((entryKey) => !entryKey.startsWith("webapp:"))
+      );
+    }
+    setShutdownProgress(progress);
+  }), []);
+
   useEffect(() => {
     setDesktopActionTranslator(t);
   }, [t]);
@@ -1662,7 +1687,17 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    return window.electronAPI.webs.onChanged(() => {
+    return window.electronAPI.webs.onChanged((event) => {
+      if (event.phase === "disposing" && event.webappId) {
+        const entryKey: WebEntryKey = `webapp:${event.webappId}`;
+        if (activeWebEntryKeyRef.current === entryKey) {
+          requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
+        }
+        setMountedWebEntryKeys((current) =>
+          current.filter((currentEntryKey) => currentEntryKey !== entryKey)
+        );
+        return;
+      }
       refreshWebItems().catch(() => undefined);
     });
   }, []);
@@ -2985,6 +3020,7 @@ export function AppShell() {
         onClose={() => setGlobalSearchOpen(false)}
         onNavigate={requestSidebarNavigation}
       />
+      <DesktopShutdownOverlay progress={shutdownProgress} t={t} />
       </div>
     </DebugModeContext.Provider>
   );

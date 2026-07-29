@@ -279,6 +279,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   function prepareQuitUi() {
     prepareQuitUiFromCleanup({
       getAllWindows: () => BrowserWindow.getAllWindows(),
+      keepVisibleWindow: options.state.mainWindow,
       destroyTray: () => appTrayController.destroy()
     });
   }

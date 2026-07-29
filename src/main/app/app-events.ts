@@ -1,7 +1,7 @@
 import type { App, GlobalShortcut } from "electron";
 import type { MainAppState } from "../app-state";
 import { hasInstallerShutdownArg } from "../lifecycle/single-instance";
-import { hideWindowsForShutdown } from "../shutdown-cleanup";
+import type { ShutdownReport } from "../../shared/shutdown";
 
 export type MainAppEventsOptions = {
   app: App;
@@ -14,10 +14,12 @@ export type MainAppEventsOptions = {
   onReady: () => Promise<void> | void;
   showMainWindow: () => void;
   beginAppQuitWithoutConfirmation: () => void;
+  beginInstallerShutdown: (commandLine: string[]) => void;
   isNativeDialogOpen: () => boolean;
   emitPluginBeforeQuit: () => void;
   prepareQuitUi: () => void;
-  runShutdownCleanup: () => Promise<void>;
+  runShutdownCleanup: () => Promise<ShutdownReport>;
+  writeInstallerShutdownAcks: (report: ShutdownReport) => void;
   releaseAssistantRunWakeLock: () => void;
   clearDesktopPetIdleResetTimer: () => void;
   stopAssistantBridgeRuntime: () => void;
@@ -36,7 +38,7 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
 
   options.app.on("second-instance", (_event, commandLine) => {
     if (hasInstallerShutdownArg(commandLine, options.installerShutdownArgs)) {
-      options.beginAppQuitWithoutConfirmation();
+      options.beginInstallerShutdown(commandLine);
       return;
     }
     options.showMainWindow();
@@ -60,8 +62,16 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     options.state.isHandlingQuit = true;
     options.emitPluginBeforeQuit();
     options.prepareQuitUi();
-    hideWindowsForShutdown(options.state);
-    void options.runShutdownCleanup().finally(() => {
+    void options.runShutdownCleanup().then(async (report) => {
+      options.writeInstallerShutdownAcks(report);
+      if (report.mode === "user") {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 160);
+        });
+      }
+    }).catch((error) => {
+      console.error("[main] shutdown cleanup failed before report generation", error);
+    }).finally(() => {
       options.beginAppQuitWithoutConfirmation();
     });
   });

@@ -218,7 +218,6 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     const result = await removeWebappItem(app, id);
     if (result.ok) {
       webappWindowManager.close(id);
-      options.emitWebappChanged?.("removed", id, null);
     }
     return result;
   });

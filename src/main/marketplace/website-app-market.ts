@@ -11,6 +11,7 @@ import {
 import { removeWebappItem } from "../webs/webapps/actions";
 import { getWebappDir, readWebappItemFromDir } from "../webs/webapps/store";
 import { webappRuntime } from "../webs/webapps/runtime";
+import { webappWindowManager } from "../webs/webapps/window-manager";
 import {
   activateWebappInstall,
   commitWebappInstall,
@@ -204,6 +205,7 @@ export async function installWebsiteAppArchiveFromPath(
   const tempRoot = path.join(stagingRoot, `${tempId}-${nonce}`);
   const preparedPath = path.join(stagingRoot, `${tempId}-${nonce}-package`);
   let transaction: WebappInstallTransaction | null = null;
+  let releaseWebappDisposal: (() => void) | null = null;
   try {
     const entries = await listArchiveEntriesAsync(archivePath);
     assertSafeArchiveEntries(entries);
@@ -234,12 +236,16 @@ export async function installWebsiteAppArchiveFromPath(
     const previousState = replacingExisting ? webappRuntime.getStatus(app, safeWebappDirName) : null;
     const previousWasRunning = previousState?.status === "running";
     if (replacingExisting) {
+      releaseWebappDisposal = webappWindowManager.beginDisposal(safeWebappDirName);
       const prerequisites = webappRuntime.checkItemPrerequisites(app, webapp, webappRoot);
       if (!prerequisites.ok) {
         throw new Error(prerequisites.message);
       }
+      const stopped = await webappRuntime.stop(app, safeWebappDirName, t("market.websiteApp.replaced"));
+      if (!stopped.ok) {
+        throw new Error(`Unable to replace WebApp while its runtime is active: ${stopped.message}`);
+      }
     }
-    await webappRuntime.stop(app, safeWebappDirName, t("market.websiteApp.replaced")).catch(() => undefined);
     fs.mkdirSync(targetRoot, { recursive: true });
     if (webappRoot === tempRoot) {
       fs.renameSync(tempRoot, preparedPath);
@@ -292,6 +298,7 @@ export async function installWebsiteAppArchiveFromPath(
       installPath
     };
   } finally {
+    releaseWebappDisposal?.();
     if (transaction) {
       rollbackWebappInstall(app, transaction);
     }
@@ -308,10 +315,9 @@ export async function uninstallWebsiteAppMarketItem(app: App, itemId: string): P
     throw new Error(t("market.websiteApp.invalidId"));
   }
   const removed = await removeWebappItem(app, safeWebappDirName);
-  if (!removed.ok && removed.item) {
+  if (!removed.ok) {
     throw new Error(removed.message);
   }
-  removeInstalledRecord(app, itemId, "website-app");
   return {
     ok: true,
     itemId,

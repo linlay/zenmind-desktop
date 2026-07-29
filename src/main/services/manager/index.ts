@@ -180,6 +180,7 @@ import {
 export { getInstallDir } from "./layout";
 export { fixShellScriptPermissions } from "./program-layout";
 export {
+  captureManagedProcessCleanupSnapshotAsync,
   captureManagedProcessCleanupSnapshot,
   forceCleanupManagedProcesses
 } from "./managed-cleanup";
@@ -2588,6 +2589,11 @@ export async function stopRunningServicesForShutdown(
       timeoutMs,
       elapsedMs: Date.now() - startedAt,
       runningServiceIds: runningServices.map((service) => service.id),
+      runningServicePorts: runningServices.flatMap((service) =>
+        service.healthMeta.port
+          ? [{ serviceId: service.id, port: service.healthMeta.port }]
+          : []
+      ),
       stopped: [] as ShutdownServiceStopResult[],
       failures: [] as ShutdownServiceStopResult[]
     };
@@ -2609,6 +2615,11 @@ export async function stopRunningServicesForShutdown(
     timeoutMs,
     elapsedMs,
     runningServiceIds: runningServices.map((service) => service.id),
+    runningServicePorts: runningServices.flatMap((service) =>
+      service.healthMeta.port
+        ? [{ serviceId: service.id, port: service.healthMeta.port }]
+        : []
+    ),
     stopped,
     failures
   };

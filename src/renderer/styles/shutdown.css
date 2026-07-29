@@ -1,0 +1,82 @@
+.desktop-shutdown-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  color: var(--text-primary, #17202a);
+  background: color-mix(in srgb, var(--surface-primary, #f6f7f9) 94%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-app-region: drag;
+  user-select: none;
+  cursor: wait;
+}
+
+.desktop-shutdown-card {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 28px 30px 24px;
+  border: 1px solid var(--border-subtle, rgba(23, 32, 42, 0.12));
+  border-radius: 16px;
+  background: var(--surface-elevated, #ffffff);
+  box-shadow: 0 20px 56px rgba(21, 28, 38, 0.14);
+}
+
+.desktop-shutdown-brand-mark {
+  width: 28px;
+  height: 4px;
+  margin-bottom: 22px;
+  border-radius: 999px;
+  background: var(--accent-primary, #3b82f6);
+}
+
+.desktop-shutdown-copy h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.desktop-shutdown-copy p {
+  min-height: 22px;
+  margin: 8px 0 22px;
+  color: var(--text-secondary, #667085);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.desktop-shutdown-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-secondary, #e8ebef);
+}
+
+.desktop-shutdown-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-primary, #3b82f6);
+  transition: width 180ms ease-out;
+}
+
+.desktop-shutdown-percent {
+  margin-top: 10px;
+  color: var(--text-tertiary, #8a94a3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+[data-theme="dark"] .desktop-shutdown-overlay {
+  color: var(--text-primary, #f2f4f7);
+  background: color-mix(in srgb, var(--surface-primary, #11151c) 94%, transparent);
+}
+
+[data-theme="dark"] .desktop-shutdown-card {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--surface-elevated, #1b2029);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.32);
+}

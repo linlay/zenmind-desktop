@@ -142,12 +142,59 @@ function buildWindowOptions(app: App, item: WebappEntry) {
 
 class WebappWindowManager {
   private readonly windows = new Map<string, WebappWindowRecord>();
+  private readonly disposingIds = new Map<string, number>();
+  private disposalListener: ((id: string) => void) | null = null;
+
+  setDisposalListener(listener: ((id: string) => void) | null) {
+    this.disposalListener = listener;
+  }
+
+  has(id: string) {
+    const record = this.windows.get(id.trim());
+    return Boolean(record && !record.window.isDestroyed());
+  }
+
+  openIds() {
+    return [...this.windows.entries()]
+      .filter(([, record]) => !record.window.isDestroyed())
+      .map(([id]) => id);
+  }
+
+  beginDisposal(id: string) {
+    const normalizedId = id.trim();
+    const previousCount = this.disposingIds.get(normalizedId) ?? 0;
+    this.disposingIds.set(normalizedId, previousCount + 1);
+    if (previousCount === 0) {
+      try {
+        this.disposalListener?.(normalizedId);
+      } catch (error) {
+        console.warn(`[webapp-window] failed to announce disposal for ${normalizedId}`, error);
+      }
+      this.close(normalizedId);
+    }
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      const nextCount = (this.disposingIds.get(normalizedId) ?? 1) - 1;
+      if (nextCount <= 0) {
+        this.disposingIds.delete(normalizedId);
+      } else {
+        this.disposingIds.set(normalizedId, nextCount);
+      }
+    };
+  }
 
   async open(app: App, id: string, sender?: WebContents | null): Promise<WebappCommandResult> {
     const normalizedId = id.trim();
     const item = findWebapp(app, normalizedId);
     if (!item) {
       return fail(null, null, t("webapp.notFound"));
+    }
+    if (this.disposingIds.has(normalizedId)) {
+      return fail(item, webappRuntime.getStatus(app, normalizedId), "WebApp is being removed.");
     }
 
     const existing = this.windows.get(normalizedId);
@@ -296,6 +343,14 @@ class WebappWindowManager {
     if (!record.window.isDestroyed()) {
       record.window.destroy();
     }
+  }
+
+  closeAll() {
+    const openIds = this.openIds();
+    for (const id of openIds) {
+      this.close(id);
+    }
+    return openIds;
   }
 
   async reload(id: string, state: WebappRuntimeState | null) {

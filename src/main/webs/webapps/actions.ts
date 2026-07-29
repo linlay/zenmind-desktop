@@ -12,10 +12,63 @@ import { isRecord, readString } from "../common";
 import { getWebappDir, readWebappItems, writeWebappPreferenceFields } from "./store";
 import { webappRuntime } from "./runtime";
 import { readWebappPublishState, unpublishWebapp } from "./publisher";
+import { webappWindowManager } from "./window-manager";
 
 function findWebapp(items: WebappEntry[], id: string) {
   const normalizedId = id.trim();
   return items.find((item) => item.id === normalizedId) ?? null;
+}
+
+export type WebappDisposalTarget = {
+  id: string;
+  label: string;
+  installPath?: string;
+  removeMarketRecord?: boolean;
+};
+
+export async function disposeWebappInstallation(
+  app: App,
+  target: WebappDisposalTarget,
+  stopMessage: string
+) {
+  const releaseDisposal = webappWindowManager.beginDisposal(target.id);
+  try {
+    if (readWebappPublishState(app, target.id)?.active === true) {
+      const unpublished = await unpublishWebapp(app, target.id);
+      if (!unpublished.ok) {
+        return {
+          ok: false,
+          message: `Stop Tunnel publishing before removing ${target.label}: ${unpublished.message}`
+        };
+      }
+    }
+    const stopped = await webappRuntime.stop(app, target.id, stopMessage);
+    if (!stopped.ok) {
+      return {
+        ok: false,
+        message: `Unable to remove ${target.label}: ${stopped.message}`
+      };
+    }
+    fs.rmSync(target.installPath || getWebappDir(app, target.id), {
+      recursive: true,
+      force: true
+    });
+    fs.rmSync(getDesktopWebappDataRoot(app, target.id), { recursive: true, force: true });
+    fs.rmSync(getDesktopWebappStateRoot(app, target.id), { recursive: true, force: true });
+    fs.rmSync(getDesktopWebappLogsRoot(app, target.id), { recursive: true, force: true });
+    if (target.removeMarketRecord) {
+      removeInstalledRecord(app, target.id, "website-app");
+    }
+    webappRuntime.emitLifecycleChange("removed", target.id);
+    return { ok: true, message: stopMessage };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    releaseDisposal();
+  }
 }
 
 export function listWebappItems(app: App) {
@@ -89,38 +142,29 @@ export async function removeWebappItem(app: App, id: string): Promise<WebappDele
     };
   }
 
-  try {
-    if (readWebappPublishState(app, target.id)?.active === true) {
-      const unpublished = await unpublishWebapp(app, target.id);
-      if (!unpublished.ok) {
-        return {
-          ok: false,
-          item: target,
-          items,
-          message: `Stop Tunnel publishing before removing this WebApp: ${unpublished.message}`
-        };
-      }
-    }
-    await webappRuntime.stop(app, target.id, t("webapp.deleted", { label: target.label })).catch(() => undefined);
-    fs.rmSync(target.installPath || getWebappDir(app, target.id), { recursive: true, force: true });
-    fs.rmSync(getDesktopWebappDataRoot(app, target.id), { recursive: true, force: true });
-    fs.rmSync(getDesktopWebappStateRoot(app, target.id), { recursive: true, force: true });
-    fs.rmSync(getDesktopWebappLogsRoot(app, target.id), { recursive: true, force: true });
-    if (target.sourceKind === "market") {
-      removeInstalledRecord(app, target.id, "website-app");
-    }
-    return {
-      ok: true,
-      item: target,
-      items: readWebappItems(app),
-      message: t("webapp.deleted", { label: target.label })
-    };
-  } catch (error) {
+  const message = t("webapp.deleted", { label: target.label });
+  const disposed = await disposeWebappInstallation(
+    app,
+    {
+      id: target.id,
+      label: target.label,
+      installPath: target.installPath,
+      removeMarketRecord: target.sourceKind === "market"
+    },
+    message
+  );
+  if (!disposed.ok) {
     return {
       ok: false,
       item: target,
       items,
-      message: error instanceof Error ? error.message : String(error)
+      message: disposed.message
     };
   }
+  return {
+    ok: true,
+    item: target,
+    items: readWebappItems(app),
+    message
+  };
 }
