@@ -1177,7 +1177,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_project" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
   assert.doesNotMatch(sidebarSource, /<SidebarActionIcon kind="double_check" \/>/);
-  assert.match(sidebarSource, /<SidebarActionIcon kind="refresh" \/>/);
+  assert.match(sidebarSource, /<ReloadOutlined aria-hidden="true" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="more_actions" \/>/);
 
   assert.doesNotMatch(sidebarSource, /EditSquareIcon|AddIcon/);
@@ -1856,7 +1856,7 @@ test("Projects header refresh force-loads navigation agents without toggling the
 
   assert.match(sidebarSource, /const \[refreshingAssistantNavAgents, setRefreshingAssistantNavAgents\] =\s*useState\(false\);/);
   assert.match(sidebarSource, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);[\s\S]{0,260}onRefreshAssistantNavAgents\?\.\(\{ force: true \}\)/);
-  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-refresh-button"[\s\S]{0,500}disabled=\{refreshingAssistantNavAgents\}[\s\S]{0,500}<SidebarActionIcon kind="refresh" \/>/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-refresh-button"[\s\S]{0,500}disabled=\{refreshingAssistantNavAgents\}[\s\S]{0,500}<ReloadOutlined aria-hidden="true" \/>/);
   assert.match(appShell, /async function refreshAssistantNavAgents\(options\?: AssistantNavigationListOptions\)[\s\S]{0,260}listNavigationAgents\(options\)/);
   assert.match(contracts, /interface AssistantNavigationListOptions \{\s*force\?: boolean;/);
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
