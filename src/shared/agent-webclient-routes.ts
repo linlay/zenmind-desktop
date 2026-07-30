@@ -7,6 +7,7 @@ export type AgentWebclientRouteKey =
   | "schedules"
   | "memory"
   | "registries"
+  | "mcp-servers"
   | "skills"
   | "copilot"
   | "agent-chat"
@@ -72,6 +73,14 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     routePath: "/registries",
     embedPath: "/registries",
     labelKey: "nav.registries",
+    kind: "management",
+    mode: "embedded"
+  },
+  {
+    key: "mcp-servers",
+    routePath: "/mcp-servers",
+    embedPath: "/mcp-servers",
+    labelKey: "nav.mcpConnectors",
     kind: "management",
     mode: "embedded"
   },

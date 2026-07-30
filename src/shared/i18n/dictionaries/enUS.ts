@@ -87,6 +87,7 @@ export const enUSMessages = {
   "nav.agents": "Agents",
   "nav.archives": "Archived Chats",
   "nav.registries": "Registries",
+  "nav.mcpConnectors": "MCP Connectors",
   "nav.skills": "Skills",
   "nav.schedules": "Automations",
   "nav.schedulesCollapsed": "Autos",

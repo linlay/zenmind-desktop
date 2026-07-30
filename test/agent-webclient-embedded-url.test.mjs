@@ -57,6 +57,7 @@ test("management embedded URLs do not carry WebSocket source or auth context", (
     "/archives",
     "/automations",
     "/memory",
+    "/mcp-servers",
     "/registries"
   ];
 

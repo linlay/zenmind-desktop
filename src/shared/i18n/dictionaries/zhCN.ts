@@ -87,6 +87,7 @@ export const zhCNMessages = {
   "nav.agents": "智能体",
   "nav.archives": "已归档对话",
   "nav.registries": "注册配置",
+  "nav.mcpConnectors": "MCP 连接器",
   "nav.skills": "技能",
   "nav.schedules": "自动化",
   "nav.schedulesCollapsed": "自动化",

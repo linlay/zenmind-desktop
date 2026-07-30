@@ -309,6 +309,7 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
     "/automations",
     "/copilot",
     "/memory",
+    "/mcp-servers",
     "/registries"
   ],
   proxyRoutes: [

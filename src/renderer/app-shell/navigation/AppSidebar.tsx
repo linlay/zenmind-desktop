@@ -325,6 +325,7 @@ const fixedToolRowsBase: Array<
         | "nav.agents"
         | "nav.archives"
         | "nav.registries"
+        | "nav.mcpConnectors"
         | "nav.skills"
         | "nav.market"
         | "nav.settings";
@@ -355,6 +356,12 @@ const fixedToolRowsBase: Array<
       to: "/market",
       labelKey: "nav.market",
       icon: "market",
+    },
+    {
+      orderKey: "mcp-servers",
+      to: "/mcp-servers",
+      labelKey: "nav.mcpConnectors",
+      icon: "connector",
     },
     {
       orderKey: "skills",
@@ -4683,6 +4690,7 @@ export function AppSidebar({
         item.to === "/archives" ||
         item.to === "/registries" ||
         item.to === "/market" ||
+        item.to === "/mcp-servers" ||
         item.to === "/skills",
     );
 

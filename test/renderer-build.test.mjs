@@ -293,6 +293,10 @@ test("agent webclient management routes render embedded webclient pages", () => 
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const globalStyles = readSourceFile("src", "renderer", "styles.css");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
+  const brandMark = readSourceFile("src", "renderer", "components", "BrandMark.tsx");
+  const enDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const zhDictionary = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const manifestContracts = readSourceFile("src", "shared", "contracts", "manifest.ts");
   const surfaceHosts = readSourceFile(
     "src",
@@ -307,14 +311,20 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(routeDefinitions, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/copilot"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(sidebar, /to:\s*"\/market"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/skills"/);
+  assert.match(sidebar, /item\.to === "\/mcp-servers"/);
+  assert.match(brandMark, /\|\s*"connector"[\s\S]*?case "connector":[\s\S]*?<circle cx="6" cy="12" r="3" \/>/);
+  assert.match(enDictionary, /"nav\.mcpConnectors":\s*"MCP Connectors"/);
+  assert.match(zhDictionary, /"nav\.mcpConnectors":\s*"MCP 连接器"/);
   assert.match(routeDefinitions, /"\/agents\/:agentKey"/);
   assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?element=\{null\}/);
   assert.match(appShell, /path=\{routePattern\}[\s\S]*?element=\{null\}/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
-  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/registries"[\s\S]*?\]/);
   assert.match(routeDefinitions, /function resolveAgentWebclientWsSource\([\s\S]*?return undefined;/);
   assert.doesNotMatch(routeDefinitions, /desktop-agent-webclient/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
@@ -1347,7 +1357,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(archiveChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/skills"[\s\S]*?labelKey:\s*"nav\.skills"[\s\S]*?icon:\s*"skill"/);
+  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/skills"[\s\S]*?labelKey:\s*"nav\.skills"[\s\S]*?icon:\s*"skill"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(fixedToolRowsBaseSource, /to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/control-center"/);
@@ -1460,6 +1470,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"archives"[\s\S]*?routePath:\s*"\/archives"[\s\S]*?embedPath:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/copilot\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
   assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
@@ -6919,7 +6930,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/skills"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/mcp-servers" \|\|[\s\S]*?item\.to === "\/skills"/);
   assert.doesNotMatch(sidebarSource, /const middleToolItems = fixedToolItems\.filter/);
   assert.doesNotMatch(sidebarSource, /const settingsToolItems = fixedToolItems\.filter/);
   assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\([\s\S]{0,120}\(item\) => item\.to === "\/settings"[\s\S]{0,40}\);/);
