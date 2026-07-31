@@ -118,7 +118,7 @@ function createHarness(startResult, options = {}) {
       return startResult;
     },
     startDesktopSsoSiteTokenBridge: options.startDesktopSsoSiteTokenBridge,
-    logoutDesktopSso: async () => ({ ok: true, status: createStatus(false) }),
+    logoutDesktopSso: async () => options.logoutResult ?? ({ ok: true, status: createStatus(false) }),
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
     issueAgentAccessToken: async () => ({ ok: false, token: "", message: "unavailable" }),
@@ -264,6 +264,35 @@ test("desktop sso logout stops Tunnel Hub runtime", async () => {
   assert.equal(result.ok, true);
   assert.equal(calls.tunnelHubStops, 1);
   assert.deepEqual(calls.clearBrowserCookies, [true]);
+  assert.equal(calls.openSystemBrowserUrl.length, 0);
+  assert.equal(calls.openBrowserUrl.length, 0);
+});
+
+test("desktop sso OIDC logout still opens the configured system-browser endpoint", async () => {
+  const logoutUrl = "https://auth.example.test/application/o/desktop/end-session/";
+  const { handlers, calls } = createHarness({
+    ok: true,
+    status: createStatus(false),
+    message: "started"
+  }, {
+    logoutResult: {
+      ok: true,
+      openMode: "system",
+      logoutUrl,
+      browserLabel: "ZenMind 退出登录",
+      status: createStatus(false),
+      message: "signed out"
+    }
+  });
+
+  const result = await handlers.get("sso.logout")();
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.openSystemBrowserUrl, [{
+    url: logoutUrl,
+    label: "ZenMind 退出登录"
+  }]);
+  assert.equal(calls.openBrowserUrl.length, 0);
 });
 
 test("desktop sso web session exchange uses configured provider", async (t) => {

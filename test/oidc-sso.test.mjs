@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
+  cancelDesktopSsoLogin,
   desktopSsoAccessTokenNeedsRefresh,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
   failDesktopSsoFlow,
@@ -51,6 +52,15 @@ function getDesktopStateRoot(app) {
   const configPath = __testInternals.resolveDesktopSsoConfigPath(app, "darwin");
   const desktopRoot = path.dirname(path.dirname(path.dirname(configPath)));
   return path.join(desktopRoot, "state", "desktop");
+}
+
+function writeSsoSession(app, session) {
+  const stateRoot = getDesktopStateRoot(app);
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "sso-session.json"), `${JSON.stringify(session, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600
+  });
 }
 
 function getRuntimeRoot(app) {
@@ -167,6 +177,79 @@ test("desktop sso parses provider-free system browser OIDC config", (t) => {
   assert.equal(result.config.logoutCallbackUri, "http://localhost:8080/api/auth/oidc/logout-callback");
   assert.equal(result.config.usePkce, true);
   assert.equal(__testInternals.shouldUseSystemBrowser(result.config), true);
+});
+
+test("desktop sso server config does not inherit a browser logout URL", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-server-sso-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  const config = {
+    enabled: true,
+    authMode: "server",
+    browserMode: "system",
+    issuer: "https://www.zenmind.cc",
+    authorizeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+    serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+    tokenUrl: "https://www.zenmind.cc/api/auth/desktop-sso/token",
+    clientId: "zenmind-desktop",
+    webSessionExchange: {
+      url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+      provider: "zenmind"
+    }
+  };
+
+  for (const logoutUrl of [undefined, ""]) {
+    writeSsoConfig(app, {
+      ...config,
+      ...(logoutUrl === undefined ? {} : { logoutUrl })
+    });
+    const result = __testInternals.loadDesktopSsoConfig(app, "darwin");
+    assert.equal(result.configured, true);
+    assert.equal(result.error, undefined);
+    assert.equal(result.config.logoutUrl, "");
+  }
+});
+
+test("desktop sso server session logout never returns a browser URL", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-server-sso-logout-"));
+  t.after(() => {
+    __testInternals.closeCallbackServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    authMode: "server",
+    browserMode: "system",
+    issuer: "https://www.zenmind.cc",
+    authorizeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+    serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+    tokenUrl: "https://www.zenmind.cc/api/auth/desktop-sso/token",
+    clientId: "zenmind-desktop",
+    logoutUrl: "https://www.zenmind.cc/api/auth/logout",
+    webSessionExchange: {
+      url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+      provider: "zenmind"
+    }
+  });
+  writeSsoSession(app, {
+    schemaVersion: 2,
+    authenticated: true,
+    issuer: "https://www.zenmind.cc",
+    audience: "zenmind-desktop",
+    authMode: "server",
+    updatedAt: "2026-07-30T15:31:26.402Z"
+  });
+
+  cancelDesktopSsoLogin(app, "simulate restart");
+  const result = await logoutDesktopSso(app);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.logoutUrl, undefined);
+  assert.equal(result.browserUrl, undefined);
+  assert.equal(result.openMode, undefined);
 });
 
 test("desktop sso ignores retired config and session files", (t) => {
@@ -980,6 +1063,88 @@ test("desktop sso authorize and logout URLs use standard OIDC defaults", () => {
   assert.equal(logoutUrl.searchParams.has("callback"), false);
 });
 
+test("desktop sso OIDC session logout keeps the front-channel end-session flow", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-front-channel-logout-"));
+  t.after(() => {
+    __testInternals.closeCallbackServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  for (const [name, session] of [
+    ["current", { authMode: "oidc", idToken: "id-token-current" }],
+    ["legacy", { idToken: "id-token-legacy" }]
+  ]) {
+    const app = createApp(path.join(root, name));
+    writeSsoConfig(app, {
+      enabled: true,
+      authMode: "oidc",
+      browserMode: "system",
+      issuer: "https://auth.example.test/application/o/desktop/",
+      authorizeUrl: "https://auth.example.test/o/authorize/",
+      tokenUrl: "https://auth.example.test/application/o/token/",
+      clientId: "zenmind-desktop",
+      usePkce: true,
+      wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
+      logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
+      logoutCallbackUri: "http://127.0.0.1:0/api/auth/oidc/logout-callback"
+    });
+    writeSsoSession(app, {
+      schemaVersion: 2,
+      authenticated: true,
+      issuer: "https://auth.example.test/application/o/desktop/",
+      audience: "zenmind-desktop",
+      ...session,
+      updatedAt: "2026-07-30T15:31:26.402Z"
+    });
+
+    cancelDesktopSsoLogin(app, `simulate ${name} restart`);
+    const result = await logoutDesktopSso(app);
+    const logoutUrl = new URL(result.logoutUrl);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.openMode, "system");
+    assert.equal(logoutUrl.origin, "https://auth.example.test");
+    assert.equal(logoutUrl.pathname, "/application/o/desktop/end-session/");
+    assert.equal(logoutUrl.searchParams.get("id_token_hint"), session.idToken);
+    const postLogoutRedirect = new URL(logoutUrl.searchParams.get("post_logout_redirect_uri"));
+    assert.equal(postLogoutRedirect.hostname, "127.0.0.1");
+    assert.equal(postLogoutRedirect.pathname, "/api/auth/oidc/logout-callback");
+    assert.notEqual(postLogoutRedirect.port, "");
+    __testInternals.closeCallbackServer();
+  }
+});
+
+test("desktop sso browser-cookie logout never returns a browser URL", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-browser-cookie-logout-"));
+  t.after(() => {
+    __testInternals.closeCallbackServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: "https://app.example.test",
+    loginUrl: "https://app.example.test/login",
+    appendLoginState: false,
+    loginCompletionUrls: ["https://app.example.test/"],
+    logoutUrl: "https://app.example.test/logout"
+  });
+  __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "user-1",
+    iss: "https://app.example.test",
+    aud: "desktop-client"
+  }));
+
+  const result = await logoutDesktopSso(app);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.logoutUrl, undefined);
+  assert.equal(result.browserUrl, undefined);
+  assert.equal(result.openMode, undefined);
+});
+
 test("desktop sso logout proxy failure renders signed-out page", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
   t.after(() => {
@@ -999,12 +1164,15 @@ test("desktop sso logout proxy failure renders signed-out page", async (t) => {
     loginUrl: "http://127.0.0.1:65530/login",
     logoutUrl: "http://127.0.0.1:65530/auth/ssoLogout"
   });
-  __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
-    sub: "user-1",
-    iss: "http://127.0.0.1:65530",
-    aud: "desktop-client",
-    name: "Desktop User"
-  }));
+  writeSsoSession(app, {
+    schemaVersion: 2,
+    authenticated: true,
+    issuer: "http://127.0.0.1:65530/application/o/desktop/",
+    audience: "desktop-client",
+    authMode: "oidc",
+    updatedAt: "2026-07-30T15:31:26.402Z"
+  });
+  cancelDesktopSsoLogin(app, "simulate restart");
 
   const result = await logoutDesktopSso(app);
   assert.equal(result.ok, true, result.message);

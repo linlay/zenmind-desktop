@@ -380,6 +380,7 @@ let pendingSiteTokenBridge: PendingSiteTokenBridge | null = null;
 let desktopSsoProxyState: DesktopSsoProxyState | null = null;
 let currentAccessToken = "";
 let currentIdToken = "";
+let currentSessionAuthMode: DesktopSsoSessionMetadata["authMode"] | null = null;
 const usedAuthorizationCodes = new Set<string>();
 const usedDesktopSsoTickets = new Set<string>();
 
@@ -1238,6 +1239,7 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   if (!useGoogleDesktopFlow) {
     config.wellKnownUrl = getRecordString(record, "wellKnownUrl") || undefined;
     config.jwksUrl = getRecordString(record, "jwksUrl") || undefined;
+    config.logoutUrl = getRecordString(record, "logoutUrl");
   }
   const normalizedProvider = normalizeProviderName(config.provider);
   config.provider = useGoogleDesktopFlow ? "google" : (normalizedProvider || undefined);
@@ -1541,6 +1543,7 @@ export function desktopSsoAccessTokenNeedsRefresh(
 function loadSession(app: App) {
   currentIdToken = "";
   currentAccessToken = "";
+  currentSessionAuthMode = null;
   const filePath = getSessionPath(app);
   if (!fs.existsSync(filePath)) {
     return;
@@ -1550,6 +1553,7 @@ function loadSession(app: App) {
       schemaVersion?: unknown;
       issuer?: unknown;
       audience?: unknown;
+      authMode?: unknown;
       idToken?: unknown;
     };
     if (parsed.authenticated) {
@@ -1572,6 +1576,14 @@ function loadSession(app: App) {
         ? parsed.updatedAt
         : new Date().toISOString();
       currentIdToken = typeof parsed.idToken === "string" ? parsed.idToken.trim() : "";
+      currentSessionAuthMode =
+        parsed.authMode === "oidc" ||
+        parsed.authMode === "browser-cookie" ||
+        parsed.authMode === "server"
+          ? parsed.authMode
+          : currentIdToken
+            ? "oidc"
+            : null;
     }
   } catch {
     currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
@@ -1592,6 +1604,7 @@ function beginAuthenticatedSession(
   removeAccessTokenFile(app);
   currentAccessToken = "";
   currentIdToken = idToken.trim();
+  currentSessionAuthMode = metadata.authMode;
   setCurrentStatus(status);
   return cloneStatus(status);
 }
@@ -1680,6 +1693,7 @@ function clearSession(app: App) {
   pendingSiteTokenBridge = null;
   currentAccessToken = "";
   currentIdToken = "";
+  currentSessionAuthMode = null;
   removeAccessTokenFile(app);
   removeDesktopSsoSiteTokenFile(app);
   removeUserInfoFile(app);
@@ -3183,6 +3197,7 @@ export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
   }
   currentAccessToken = "";
   currentIdToken = "";
+  currentSessionAuthMode = null;
   const status = createFailedStatus(message);
   setCurrentStatus(status);
   return cloneStatus(status);
@@ -3606,6 +3621,7 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
     loadSession(app);
   }
   const logoutIdToken = currentIdToken;
+  const logoutAuthMode = currentSessionAuthMode;
   clearSession(app);
   const status = configResult.configured
     ? createSignedOutStatus(t("sso.signedOut"))
@@ -3637,15 +3653,18 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
       message: failedStatus.message
     };
   }
-  const useSystemBrowser = shouldUseSystemBrowser(oidcConfig);
-  if (useSystemBrowser && !oidcConfig.logoutUrl.trim()) {
-    closeCallbackServer();
+  if (
+    logoutAuthMode !== "oidc" ||
+    isServerBrokerAuthMode(oidcConfig) ||
+    !oidcConfig.logoutUrl.trim()
+  ) {
     return {
       ok: true,
       status: cloneStatus(status),
       message: t("sso.loginStateCleared")
     };
   }
+  const useSystemBrowser = shouldUseSystemBrowser(oidcConfig);
   try {
     const callbackInfo = await ensureCallbackServer(
       app,

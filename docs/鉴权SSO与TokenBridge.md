@@ -58,7 +58,7 @@ loginCompletionUrls 命中
 
 session 验证成功后 `authenticated=true`，但当前登录尝试继续保持 `pending=true`。userinfo 与 access token 两步都尝试结束后才统一 finalize；三步全成功时登录 WebView 自动关闭，部分成功或失败时 WebView 被逐项结果面板替换，由用户选择关闭或重试。Cookie SSO 的基础用户信息来自同一次已验证 `/oauth2/auth` 响应中配置的 `userInfoHeaders`：`sub`（稳定用户 ID）是唯一必需字段，email 与 name 均可为空，name 缺失时使用 `sub` 显示。`/oauth2/userinfo` 仅做可选增强，空 email 不会把已经完成的 userInfo 步骤改为失败。只有响应头和增强接口都没有稳定用户 ID 时，token 成功才形成 `{session:true,userInfo:false,accessToken:true}` 的两文件状态。
 
-普通登录或部分成功页的“重试”继续复用专用 SSO partition 的上游会话。已登录账号菜单只显示“退出登录”；注销同时清理三个凭据文件、专用 SSO partition 的全部 Cookie，以及默认 session 中配置所知 SSO origins 的 Cookie，但不触碰其他网站 Cookie。用户需要切换账号时，先退出，再重新登录选择账号。
+普通登录或部分成功页的“重试”继续复用专用 SSO partition 的上游会话。已登录账号菜单只显示“退出登录”；注销同时清理三个凭据文件、专用 SSO partition 的全部 Cookie，以及默认 session 中配置所知 SSO origins 的 Cookie，但不触碰其他网站 Cookie。server 与 browser-cookie 会话通过 Cookie、CSRF Token 和后台 `POST /api/auth/logout` 注销，不把该状态修改接口作为网页打开；只有标准 OIDC 会话使用配置中的 `logoutUrl` 打开 IdP end-session endpoint。用户需要切换账号时，先退出，再重新登录选择账号。
 
 展开态侧栏底部的 Settings 菜单触发器同时展示账户状态：已登录时使用规范化用户信息显示头像与 `name -> email -> sub -> 已登录` 回退名称，未登录时显示“未登录”，齿轮始终位于最右侧。SSO 未配置或状态尚未加载时继续显示原“设置”入口；侧栏收起时只显示齿轮。该展示不改变菜单内容、打开前状态刷新、登录或退出流程。
 
