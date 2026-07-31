@@ -1150,6 +1150,10 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
       clientId: "zenmind-desktop",
       wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
       logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
+      avatarCache: {
+        enabled: true,
+        trustedOrigin: "https://www.zenmind.cc"
+      },
       userInfo: {
         url: "https://auth.zenmind.cc/application/o/userinfo/",
         authMode: "bearer",
@@ -1183,6 +1187,10 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
     clientId: "zenmind-desktop",
     wellKnownUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/.well-known/openid-configuration",
     logoutUrl: "https://auth.zenmind.cc/application/o/zenmind-desktop/end-session/",
+    avatarCache: {
+      enabled: true,
+      trustedOrigin: "https://www.zenmind.cc"
+    },
     userInfo: {
       url: "https://auth.zenmind.cc/application/o/userinfo/",
       authMode: "bearer",

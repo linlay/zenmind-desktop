@@ -21,6 +21,9 @@ const {
   startDesktopSsoSiteTokenBridge,
   __testInternals
 } = require("../dist-electron/main/oidc-sso.js");
+const {
+  DESKTOP_SSO_AVATAR_PROTOCOL
+} = require("../dist-electron/shared/sso-avatar.js");
 
 function createApp(homePath) {
   return {
@@ -209,6 +212,74 @@ test("desktop sso server config does not inherit a browser logout URL", (t) => {
     assert.equal(result.error, undefined);
     assert.equal(result.config.logoutUrl, "");
   }
+});
+
+test("desktop sso avatar cache exposes only the configured local protocol URL", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-avatar-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    authMode: "server",
+    browserMode: "system",
+    issuer: "https://www.zenmind.cc",
+    authorizeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+    serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
+    tokenUrl: "https://www.zenmind.cc/api/auth/desktop-sso/token",
+    clientId: "zenmind-desktop",
+    avatarCache: {
+      enabled: true,
+      trustedOrigin: "https://www.zenmind.cc"
+    },
+    webSessionExchange: {
+      url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+      provider: "zenmind"
+    }
+  });
+
+  const sourceUrl = "https://www.zenmind.cc/api/auth/avatar/abc123";
+  const status = __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "zenmind-user:6",
+    iss: "https://www.zenmind.cc",
+    aud: "zenmind-desktop",
+    name: "Frank Linlay",
+    picture: sourceUrl
+  }));
+
+  assert.equal(status.authenticated, true);
+  assert.match(
+    status.user.avatarUrl,
+    new RegExp(`^${DESKTOP_SSO_AVATAR_PROTOCOL}://[a-f0-9]{24}/avatar$`, "u")
+  );
+  const stored = JSON.parse(
+    fs.readFileSync(path.join(getDesktopStateRoot(app), "sso-user-info.json"), "utf8")
+  );
+  assert.equal(stored.avatarUrl, sourceUrl);
+  const version = new URL(status.user.avatarUrl).hostname;
+  assert.deepEqual(__testInternals.resolveDesktopSsoAvatarRequest(app, version), {
+    sourceUrl,
+    trustedOrigin: "https://www.zenmind.cc",
+    version
+  });
+
+  const untrustedStatus = __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "zenmind-user:6",
+    iss: "https://www.zenmind.cc",
+    aud: "zenmind-desktop",
+    name: "Frank Linlay",
+    picture: "https://lh3.googleusercontent.com/avatar.png"
+  }));
+  assert.equal(untrustedStatus.user.avatarUrl, undefined);
+
+  const emailStatus = __testInternals.completeDesktopSsoCookieLogin(app, createUnsignedJwt({
+    sub: "zenmind-user:9",
+    iss: "https://www.zenmind.cc",
+    aud: "zenmind-desktop",
+    name: "Email User",
+    email: "email-user@example.com"
+  }));
+  assert.equal(emailStatus.user.avatarUrl, undefined);
 });
 
 test("desktop sso server session logout never returns a browser URL", async (t) => {

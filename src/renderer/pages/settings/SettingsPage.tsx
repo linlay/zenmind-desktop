@@ -728,6 +728,11 @@ function UsageSettingsPanel({
 }: UsageSettingsPanelProps) {
   const { locale, t } = useI18n();
   const user = ssoStatus?.user ?? null;
+  const avatarSource = user?.avatarUrl?.trim() || "";
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarSource]);
   const isSsoStatusUnavailable = ssoStatusUnavailable || Boolean(ssoStatus?.error);
   const isSsoStatusLoading = !ssoStatus && !isSsoStatusUnavailable;
   const isSignedIn = Boolean(ssoStatus?.authenticated) && !isSsoStatusUnavailable;
@@ -871,8 +876,14 @@ function UsageSettingsPanel({
     if (!isSignedIn) {
       return <UserOutlined aria-hidden="true" />;
     }
-    if (user?.avatarUrl) {
-      return <img src={user.avatarUrl} alt={`${displayName} ${t("settings.usage.profile.avatarAlt")}`} />;
+    if (avatarSource && !avatarFailed) {
+      return (
+        <img
+          src={avatarSource}
+          alt={`${displayName} ${t("settings.usage.profile.avatarAlt")}`}
+          onError={() => setAvatarFailed(true)}
+        />
+      );
     }
     return <span aria-hidden="true">{usageAvatarInitials(displayName, displayAccount)}</span>;
   }

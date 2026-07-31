@@ -62,6 +62,14 @@ session 验证成功后 `authenticated=true`，但当前登录尝试继续保持
 
 展开态侧栏底部的 Settings 菜单触发器同时展示账户状态：已登录时使用规范化用户信息显示头像与 `name -> email -> sub -> 已登录` 回退名称，未登录时显示“未登录”，齿轮始终位于最右侧。SSO 未配置或状态尚未加载时继续显示原“设置”入口；侧栏收起时只显示齿轮。该展示不改变菜单内容、打开前状态刷新、登录或退出流程。
 
+官网账号头像不按 Google、邮箱或其他登录方式分支。official-server 根据当前账号保存的头像
+URL 决定是否返回认证头像地址；没有头像 URL 的账号继续显示姓名首字符。启用
+`sso.avatarCache` 后，Desktop 只接受 `trustedOrigin` 对应的官网头像 URL，主进程使用已经
+同步到 default session 的官网 Cookie 下载并写入 `data/desktop/sso-avatar/`，renderer
+只接收品牌隔离的 `<brand>-sso-avatar:` 本地协议 URL。第三方头像 URL、官网 Cookie 和本地
+文件路径都不得进入 renderer；下载、类型或来源校验失败时显示姓名首字符。登录新账号和退出
+登录都会清理本地头像缓存。标准 OIDC 未配置 `avatarCache` 时维持原头像 URL 行为。
+
 Tunnel Hub、Kanban 与 Market 继续读取 `sso-site-token.json`，企业聊天读取
 `state/desktop/sso-access-token.txt`；两个文件保存的是官网同一次 Cookie 换取的同一枚 JWT，
 不再启动第二次 `siteTokenBridge` 浏览器登录。Desktop 不验证该 JWT，也不依赖 JWKS。
@@ -85,6 +93,7 @@ Desktop WebSocket 鉴权：
 - `state/desktop/sso-session.json`：schema v2 SSO 会话状态，不包含 user 或 access token；旧版内嵌 user 的会话仍可读取。
 - `state/desktop/sso-user-info.json`：schema v2 规范化用户信息及来源。
 - `state/desktop/sso-access-token.txt`：仅保存已成功取得的原始 access token。
+- `data/desktop/sso-avatar/`：认证官网头像的本地缓存；文件名仅含用户/来源摘要，登录切换和退出时清理。
 - 已解锁的 Settings → Debug → State 会把 access token 文件作为固定白名单状态文件明文展示并允许复制；普通设置页和未解锁会话不显示这一入口。
 - `secrets/sso-site-token.json`：站点 token。
 - `config/services/identity-center/.env`：identity-center 配置。
@@ -102,6 +111,9 @@ Token bridge 类型：
 - `DesktopSsoStatus.completedSteps` 分别反映 session、userInfo、accessToken 是否完成；session 成功即 `authenticated=true`，但在剩余步骤 finalize 前保持 `pending=true`。userinfo 或 token 任一缺失时，侧栏和结果面板必须显示对应受限登录状态。
 - Cookie SSO 只信任已验证 browserSession 响应头或 Cookie userinfo 返回的稳定用户 ID；不得从未经验证的 access token claims 伪造用户信息。email 不是身份成功条件，显示名缺失时回退到稳定用户 ID。
 - Cookie 只保存在 Electron 的持久化 SSO partition，不写入上述三个状态文件，也不得进入日志。
+- `sso.avatarCache` 只配置 `{ enabled, trustedOrigin }`；下载超时、大小、图片类型和重定向限制是
+  Desktop 安全策略，不下放到环境配置。server/browser-cookie 模式只应把官网认证头像 URL
+  交给该链路，不应把 Google 等 provider URL 暴露到 renderer。
 - macOS/Linux 和 Windows 均通过 Electron home/runtime 路径解析状态目录；macOS/Linux 上三个文件保持 `0600`，不得硬编码用户目录。
 - `identity-center` 是 token 签发与校验基础，不进入 webview bridge 协议名称；嵌入页只依赖 Desktop agent auth bridge。
 - `zenmind-im-server` 独立校验企业 access token；Desktop 不把 IM session token 或 ticket 发送到 renderer、webview 或日志。

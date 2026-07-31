@@ -19,9 +19,14 @@ import type {
   DesktopSsoStatus
 } from "../shared/contracts";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../shared/brand";
+import {
+  buildDesktopSsoAvatarUrl,
+  DESKTOP_SSO_AVATAR_PROTOCOL
+} from "../shared/sso-avatar";
 import { getDesktopStateRoot, getSecretsRoot } from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { t } from "./i18n/main-i18n";
+import { clearCachedDesktopSsoAvatar } from "./sso-avatar-storage";
 
 type OidcConfig = {
   provider?: string;
@@ -52,6 +57,7 @@ type OidcConfig = {
   accessTokenCookies?: AccessTokenCookieConfig[];
   browserSession?: DesktopSsoBrowserSessionConfig;
   userInfo?: DesktopSsoUserInfoConfig;
+  avatarCache?: DesktopSsoAvatarCacheConfig;
   claims?: DesktopSsoClaimsConfig;
   webSessionExchange?: DesktopSsoWebSessionExchangeConfig;
   siteTokenBridge?: DesktopSsoSiteTokenBridgeConfig;
@@ -116,6 +122,11 @@ export type DesktopSsoUserInfoConfig = {
   namePath: string;
   emailPath: string;
   avatarUrlPath: string;
+};
+
+export type DesktopSsoAvatarCacheConfig = {
+  enabled: true;
+  trustedOrigin: string;
 };
 
 export type DesktopSsoWebSessionExchangeConfig = {
@@ -1091,6 +1102,45 @@ function normalizeUserInfoConfig(
   };
 }
 
+function normalizeAvatarCacheConfig(
+  record: Record<string, unknown>
+): DesktopSsoAvatarCacheConfig | undefined {
+  if (!("avatarCache" in record)) {
+    return undefined;
+  }
+  const avatarCache = getRecordObject(record, "avatarCache");
+  if (!avatarCache) {
+    throw new Error(t("sso.config.avatarCacheObject"));
+  }
+  if (getRecordBoolean(avatarCache, "enabled", true) === false) {
+    return undefined;
+  }
+  const rawTrustedOrigin = getRecordString(avatarCache, "trustedOrigin");
+  if (!rawTrustedOrigin) {
+    throw new Error(t("sso.config.avatarCacheTrustedOriginRequired"));
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(rawTrustedOrigin);
+  } catch {
+    throw new Error(t("sso.config.avatarCacheTrustedOriginHttps"));
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username ||
+    parsed.password ||
+    (parsed.pathname !== "" && parsed.pathname !== "/") ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error(t("sso.config.avatarCacheTrustedOriginHttps"));
+  }
+  return {
+    enabled: true,
+    trustedOrigin: parsed.origin
+  };
+}
+
 function normalizeWebSessionCookieOrigins(
   exchangeRecord: Record<string, unknown>,
   exchangeUrl: string
@@ -1283,6 +1333,10 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   const userInfo = normalizeUserInfoConfig(record, config);
   if (userInfo) {
     config.userInfo = userInfo;
+  }
+  const avatarCache = normalizeAvatarCacheConfig(record);
+  if (avatarCache) {
+    config.avatarCache = avatarCache;
   }
   const webSessionExchange = normalizeWebSessionExchangeConfig(record, config);
   if (webSessionExchange) {
@@ -1513,6 +1567,59 @@ function readUserInfoFile(app: Pick<App, "getPath">) {
   }
 }
 
+function isDesktopSsoAvatarSourceTrusted(config: DesktopSsoAvatarCacheConfig, sourceUrl: string) {
+  try {
+    return new URL(sourceUrl).origin === config.trustedOrigin;
+  } catch {
+    return false;
+  }
+}
+
+function desktopSsoAvatarVersion(user: DesktopSsoClaims) {
+  const sourceUrl = user.avatarUrl?.trim() || "";
+  return createHash("sha256")
+    .update(`${user.sub.trim()}\x00${sourceUrl}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+function withoutAvatarUrl(user: DesktopSsoClaims): DesktopSsoClaims {
+  const { avatarUrl: _avatarUrl, ...rest } = user;
+  return rest;
+}
+
+function presentDesktopSsoUser(app: Pick<App, "getPath">, user: DesktopSsoClaims | null) {
+  if (!user) {
+    return null;
+  }
+  const config = getDesktopSsoAvatarCacheConfig(app);
+  if (!config) {
+    return { ...user };
+  }
+  const sourceUrl = user.avatarUrl?.trim() || "";
+  if (!sourceUrl || !isDesktopSsoAvatarSourceTrusted(config, sourceUrl)) {
+    return withoutAvatarUrl(user);
+  }
+  return {
+    ...user,
+    avatarUrl: buildDesktopSsoAvatarUrl(desktopSsoAvatarVersion(user))
+  };
+}
+
+function persistedDesktopSsoUser(
+  app: Pick<App, "getPath">,
+  user: DesktopSsoClaims
+): DesktopSsoClaims {
+  const avatarUrl = user.avatarUrl?.trim() || "";
+  if (!avatarUrl.startsWith(`${DESKTOP_SSO_AVATAR_PROTOCOL}:`)) {
+    return user;
+  }
+  const existing = readUserInfoFile(app);
+  return existing?.avatarUrl
+    ? { ...user, avatarUrl: existing.avatarUrl }
+    : withoutAvatarUrl(user);
+}
+
 function readAccessTokenFile(app: Pick<App, "getPath">) {
   const filePath = getDesktopSsoAccessTokenFilePath(app);
   if (!fs.existsSync(filePath)) {
@@ -1562,7 +1669,7 @@ function loadSession(app: App) {
       const user = separateUser || legacyUser;
       const sessionIssuer = typeof parsed.issuer === "string" ? parsed.issuer.trim() : "";
       const userMatchesSession = !user || !sessionIssuer || !user.issuer || user.issuer === sessionIssuer;
-      const restoredUser = userMatchesSession ? user : null;
+      const restoredUser = presentDesktopSsoUser(app, userMatchesSession ? user : null);
       currentAccessToken = readAccessTokenFile(app);
       const completedSteps = createCompletedSteps({
         session: true,
@@ -1600,6 +1707,7 @@ function beginAuthenticatedSession(
     message: currentStatus.pending ? t("sso.completingLogin") : t("sso.completedWithoutUserInfo")
   });
   saveSession(app, status, idToken, metadata);
+  clearCachedDesktopSsoAvatar(app);
   removeUserInfoFile(app);
   removeAccessTokenFile(app);
   currentAccessToken = "";
@@ -1619,7 +1727,7 @@ function completeUserInfoStep(
   }
   const sub = user.sub.trim();
   const normalizedUser: DesktopSsoClaims = {
-    ...user,
+    ...persistedDesktopSsoUser(app, user),
     sub,
     name: user.name?.trim() || sub
   };
@@ -1629,7 +1737,7 @@ function completeUserInfoStep(
     session: true,
     userInfo: true
   });
-  const status = createAuthenticatedStatus(normalizedUser, completedSteps, {
+  const status = createAuthenticatedStatus(presentDesktopSsoUser(app, normalizedUser), completedSteps, {
     pending: currentStatus.pending,
     message: currentStatus.pending
       ? t("sso.completingLogin")
@@ -1697,6 +1805,7 @@ function clearSession(app: App) {
   removeAccessTokenFile(app);
   removeDesktopSsoSiteTokenFile(app);
   removeUserInfoFile(app);
+  clearCachedDesktopSsoAvatar(app);
   const filePath = getSessionPath(app);
   try {
     fs.rmSync(filePath, { force: true });
@@ -3378,6 +3487,41 @@ export function getDesktopSsoCookieUserInfoConfig(app: Pick<App, "getPath">) {
   return { ...configResult.config.userInfo };
 }
 
+export function getDesktopSsoAvatarCacheConfig(app: Pick<App, "getPath">) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config?.avatarCache) {
+    return null;
+  }
+  return { ...configResult.config.avatarCache };
+}
+
+export function resolveDesktopSsoAvatarRequest(
+  app: Pick<App, "getPath">,
+  version: string
+) {
+  const normalizedVersion = version.trim().toLowerCase();
+  if (!/^[a-f0-9]{24}$/u.test(normalizedVersion)) {
+    return null;
+  }
+  const config = getDesktopSsoAvatarCacheConfig(app);
+  const user = readUserInfoFile(app);
+  const sourceUrl = user?.avatarUrl?.trim() || "";
+  if (
+    !config ||
+    !user ||
+    !sourceUrl ||
+    !isDesktopSsoAvatarSourceTrusted(config, sourceUrl) ||
+    desktopSsoAvatarVersion(user) !== normalizedVersion
+  ) {
+    return null;
+  }
+  return {
+    sourceUrl,
+    trustedOrigin: config.trustedOrigin,
+    version: normalizedVersion
+  };
+}
+
 export function completeDesktopSsoBrowserSession(app: App): DesktopSsoStatus {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured) {
@@ -3736,6 +3880,8 @@ export const __testInternals = {
   getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoBrowserSessionConfig,
   getDesktopSsoCookieUserInfoConfig,
+  getDesktopSsoAvatarCacheConfig,
+  resolveDesktopSsoAvatarRequest,
   getDesktopSsoAccessTokenCookieLookup,
   getDesktopSsoAccessTokenCookieLookups,
   getDesktopSsoWebSessionExchangeConfig,

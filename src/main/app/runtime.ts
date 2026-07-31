@@ -105,6 +105,10 @@ import {
   registerWebsiteFaviconProtocolScheme,
 } from "../webs/websites/favicon-protocol";
 import {
+  registerDesktopSsoAvatarProtocol,
+  registerDesktopSsoAvatarProtocolScheme,
+} from "../sso-avatar-protocol";
+import {
   isDesktopPetSupportedPlatform,
   saveDesktopPetSettings,
 } from "../assistant/pet/desktop-pet";
@@ -227,6 +231,7 @@ export function createMainProcessRuntime() {
   
   registerDesktopPetAssetProtocolScheme(protocol);
   registerWebsiteFaviconProtocolScheme(protocol);
+  registerDesktopSsoAvatarProtocolScheme(protocol);
   
   const webSurfaceRuntime = createWebSurfaceRuntime({
     app,
@@ -1186,6 +1191,13 @@ export function createMainProcessRuntime() {
     systemIdentityRuntime.ensureDockIdentity();
     registerDesktopPetAssetProtocol(app, protocol, net, mainProcessContext.platform);
     registerWebsiteFaviconProtocol(app, protocol, net, mainProcessContext.platform);
+    registerDesktopSsoAvatarProtocol(
+      app,
+      protocol,
+      net,
+      session,
+      mainProcessContext.platform,
+    );
   
     setStartupPhase("runtime-env");
     const canContinueStartup = await startupEnvironmentRuntime.handleStartupEnvRootConflict();

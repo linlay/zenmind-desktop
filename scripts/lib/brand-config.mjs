@@ -1012,6 +1012,10 @@ function rendererWebsiteFaviconProtocol(brand) {
   return `${brand.id}-website-favicon`;
 }
 
+function rendererSsoAvatarProtocol(brand) {
+  return `${brand.id}-sso-avatar`;
+}
+
 function escapeHtmlText(value) {
   return String(value)
     .replace(/&/gu, "&amp;")
@@ -1027,7 +1031,7 @@ function defaultRendererIndexHtml(brand) {
     "    <meta charset=\"UTF-8\" />",
     "    <meta",
     "      http-equiv=\"Content-Security-Policy\"",
-    `      content="default-src 'self'; img-src 'self' data: ${rendererPetProtocol(brand)}: ${rendererWebsiteFaviconProtocol(brand)}:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src 'self' http://127.0.0.1:*;"`,
+    `      content="default-src 'self'; img-src 'self' data: ${rendererPetProtocol(brand)}: ${rendererWebsiteFaviconProtocol(brand)}: ${rendererSsoAvatarProtocol(brand)}:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src 'self' http://127.0.0.1:*;"`,
     "    />",
     "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />",
     `    <title>${escapeHtmlText(brand.productName)}</title>`,
@@ -1044,6 +1048,7 @@ function defaultRendererIndexHtml(brand) {
 export function renderRendererIndexHtml(content, brand) {
   const petProtocol = `${rendererPetProtocol(brand)}:`;
   const websiteFaviconProtocol = `${rendererWebsiteFaviconProtocol(brand)}:`;
+  const ssoAvatarProtocol = `${rendererSsoAvatarProtocol(brand)}:`;
   let next = content.replace(/<title>[\s\S]*?<\/title>/u, () =>
     `<title>${escapeHtmlText(brand.productName)}</title>`
   );
@@ -1053,9 +1058,10 @@ export function renderRendererIndexHtml(content, brand) {
       .trim()
       .split(/\s+/u)
       .filter(Boolean)
-      .filter((source) => !/^[a-z0-9][a-z0-9_-]*-(?:pet|website-favicon):$/iu.test(source));
+      .filter((source) => !/^[a-z0-9][a-z0-9_-]*-(?:pet|website-favicon|sso-avatar):$/iu.test(source));
     sourceList.push(petProtocol);
     sourceList.push(websiteFaviconProtocol);
+    sourceList.push(ssoAvatarProtocol);
     return `${prefix}${sourceList.join(" ")}${suffix}`;
   });
 
