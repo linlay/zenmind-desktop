@@ -4006,7 +4006,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
   assert.match(appSidebar, /disabled=\{\s*isCollapsed \|\| !isOpen \|\| Boolean\(webClosePendingEntryKey\)\s*\}/);
   assert.match(appSidebar, /\{!isCollapsed \? \(\s*<button[\s\S]{0,700}t\("sidebar\.webapp\.remove"\)/);
-  assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,80}z-index:\s*10001;/);
+  assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}z-index:\s*10001;/);
+  assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}width:\s*max-content;/);
+  assert.match(globalStyles, /\.sidebar-web-item-actions-menu button span\s*\{[\s\S]{0,80}white-space:\s*nowrap;/);
   assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
   assert.match(appSidebar, /void removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
