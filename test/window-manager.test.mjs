@@ -14,6 +14,7 @@ const {
   createMainWindowLifecycleController
 } = await import("../dist-electron/main/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
+const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -136,9 +137,13 @@ class FakeWebContents extends EventEmitter {
   windowOpenHandler = null;
   editCommands = [];
 
-  constructor(id = 7) {
+  constructor(id = 7, partition = "") {
     super();
     this.id = id;
+    this.partition = partition;
+    this.session = {
+      partition
+    };
   }
 
   downloadURL(url) {
@@ -668,6 +673,100 @@ test("window manager wires webview preload validation and guest webview behavior
     }
   });
   assert.deepEqual(guest.devtoolsOpenOptions, { mode: "detach" });
+});
+
+test("window manager blocks an unexpected initial URL in the Help partition", () => {
+  const target = new FakeWindow();
+  const reports = [];
+  let prevented = false;
+
+  configureMainWindowWebContents(target, {
+    platform: "darwin",
+    getMainWindow: () => target,
+    servicePreloadPath: "/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => true,
+    isDevToolsShortcut: () => false,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: (source, details) => reports.push({ source, details }),
+    getHelpUrl: () => "https://www.zenmind.cc/help/",
+    openExternal: async () => {},
+    schedule: (callback) => callback()
+  });
+
+  target.webContents.emit("will-attach-webview", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  }, {}, {
+    partition: DESKTOP_HELP_WEBVIEW_PARTITION,
+    src: "https://example.test/phishing"
+  });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(reports, [{
+    source: "blocked Help webview with unexpected url",
+    details: {
+      src: "https://example.test/phishing"
+    }
+  }]);
+});
+
+test("attached Help webviews isolate cross-origin navigation and open popups externally", async () => {
+  const guest = new FakeWebContents(81, DESKTOP_HELP_WEBVIEW_PARTITION);
+  const openedUrls = [];
+  const reports = [];
+  let prevented = false;
+
+  configureAttachedWebview(guest, {
+    platform: "darwin",
+    getMainWindow: () => null,
+    isDevToolsShortcut: () => false,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "tab",
+    collectLoadDiagnostics: async () => ({}),
+    report: (source, details) => reports.push({ source, details }),
+    getHelpUrl: () => "https://www.zenmind.cc/help/",
+    isHelpWebview: (contents) => contents.session.partition === DESKTOP_HELP_WEBVIEW_PARTITION,
+    openExternal: async (url) => {
+      openedUrls.push(url);
+    },
+    schedule: (callback) => callback()
+  });
+
+  guest.emit("will-navigate", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  }, "https://example.test/outside");
+  await Promise.resolve();
+
+  assert.equal(prevented, true);
+  assert.deepEqual(openedUrls, ["https://example.test/outside"]);
+  assert.equal(reports[0].source, "blocked cross-origin Help navigation");
+
+  let redirectPrevented = false;
+  guest.emit("will-redirect", {
+    preventDefault: () => {
+      redirectPrevented = true;
+    }
+  }, "https://redirect.example.test/help");
+  await Promise.resolve();
+  assert.equal(redirectPrevented, true);
+
+  const popupResult = guest.windowOpenHandler({
+    url: "https://www.zenmind.cc/help/topic"
+  });
+  await Promise.resolve();
+
+  assert.deepEqual(popupResult, { action: "deny" });
+  assert.deepEqual(openedUrls, [
+    "https://example.test/outside",
+    "https://redirect.example.test/help",
+    "https://www.zenmind.cc/help/topic"
+  ]);
 });
 
 test("attached webviews forward native edit shortcuts to the focused guest", () => {

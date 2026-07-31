@@ -12,3 +12,4 @@ export * from "./contracts/enterprise-chat";
 export * from "./contracts/desktop-api";
 export * from "./shutdown";
 export * from "./time-contract";
+export * from "./help";

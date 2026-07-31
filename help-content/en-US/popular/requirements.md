@@ -1,4 +1,0 @@
-- **Operating system**: macOS (arm64) or Windows (x64)
-- **Node.js**: v18 or later for development
-- **Docker / Podman**: Required when using the container hub (`agent-container-hub`) service
-- **Disk space**: At least 2 GB of available space is recommended

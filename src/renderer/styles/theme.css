@@ -75,7 +75,6 @@
   --workspace-wide-max: 1680px;
   --workspace-measure-max: 1280px;
   --settings-content-max: 700px;
-  --help-content-max: 960px;
   --assistant-dock-embedded-width: 360px;
   /* Keep embedded surfaces on a solid host-backed layer to avoid theme flashes during route swaps. */
   --embedded-surface-body-bg: #fff;

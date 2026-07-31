@@ -55,6 +55,10 @@ import {
   normalizeImServerSettings,
   writeImServerSettings
 } from "./im-server-settings";
+import {
+  normalizeHelpSettings,
+  writeHelpSettings
+} from "./help-settings";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -76,6 +80,7 @@ type BootstrapApplyResult = {
   assistant: BootstrapAssistantResult;
   desktopActionBridge: BootstrapSectionResult;
   imServer: BootstrapSectionResult;
+  help: BootstrapSectionResult;
   services: BootstrapSectionResult;
 };
 
@@ -809,6 +814,22 @@ function applyImServerDefaults(
   return "applied";
 }
 
+function applyHelpDefaults(
+  app: App,
+  helpDefaults: unknown,
+  platform: NodeJS.Platform
+): Exclude<BootstrapSectionResult, "failed"> {
+  if (!isRecord(helpDefaults)) {
+    return "absent";
+  }
+  const settings = normalizeHelpSettings(helpDefaults);
+  if (!settings) {
+    throw new Error("Help URL must use loopback HTTP or remote HTTPS.");
+  }
+  writeHelpSettings(app, settings, platform);
+  return "applied";
+}
+
 function runBootstrapSection<T extends string>(
   sectionId: keyof BootstrapApplyResult,
   errors: Record<string, string>,
@@ -894,6 +915,11 @@ export function applyDesktopInitBootstrap(
         errors,
         () => applyImServerDefaults(app, defaults.imServer, platform)
       ),
+      help: runBootstrapSection(
+        "help",
+        errors,
+        () => applyHelpDefaults(app, defaults.help, platform)
+      ),
       services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform))
     };
     const failedSections = getFailedSections(applied);
@@ -938,5 +964,6 @@ export const __testInternals = {
   applyWebsiteDefaults,
   applyDesktopActionBridgeDefaults,
   applyImServerDefaults,
+  applyHelpDefaults,
   applyServiceDefaults
 };

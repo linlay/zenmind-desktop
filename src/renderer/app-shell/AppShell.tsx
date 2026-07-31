@@ -561,6 +561,7 @@ export function AppShell() {
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
     location.pathname === EMPTY_WEB_SURFACE_ROUTE ||
+    location.pathname === "/help" ||
     location.pathname.startsWith("/webs/");
   const usesBuiltinBrowserSurface = location.pathname === BUILTIN_BROWSER_ROUTE;
   const shouldMountBuiltinBrowserSurface =
@@ -2886,7 +2887,7 @@ export function AppShell() {
                     : <Navigate to="/control-center" replace />
               }
             />
-            <Route path="/help" element={<RouteSuspense><HelpPage isWindows={isWindows} /></RouteSuspense>} />
+            <Route path="/help" element={<RouteSuspense><HelpPage /></RouteSuspense>} />
           </Routes>
         </main>
       </div>

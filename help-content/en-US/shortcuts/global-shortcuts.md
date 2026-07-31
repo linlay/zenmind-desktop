@@ -1,7 +1,0 @@
-- `Cmd` + `R` / `Ctrl` + `R`: Refresh the current page.
-- `Cmd` + `K` / `Ctrl` + `K`: Open Desktop Search for actions, agents, and chats.
-- `Cmd` + `Option` + `I` / `Ctrl` + `Shift` + `I`: Open DevTools for the currently focused surface.
-- `Cmd` + `Shift` + `D` / `Ctrl` + `Shift` + `D`: When focus is inside an embedded page, open detached Chromium DevTools for that webview. When focus is outside an embedded page, nothing happens.
-- When focus is in the main shell, use `Cmd` + `Option` + `I` / `Ctrl` + `Shift` + `I` to debug the {{productName}} React shell. When focus is inside an embedded page, it debugs that webview content.
-- The browser toolbar DevTools button opens DevTools for the current webpage. The pg button is used for `desktop.page` action debugging.
-- `Cmd` + `Q` / `Alt` + `F4`: Quit the app.

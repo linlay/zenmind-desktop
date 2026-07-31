@@ -378,6 +378,9 @@ const api: DesktopApi = {
       };
     }
   },
+  help: {
+    getSettings: () => ipcRenderer.invoke("help.getSettings")
+  },
   enterpriseChat: {
     getState: () => ipcRenderer.invoke("enterpriseChat.getState"),
     refresh: () => ipcRenderer.invoke("enterpriseChat.refresh"),

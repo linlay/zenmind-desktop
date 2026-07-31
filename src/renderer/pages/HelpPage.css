@@ -1,346 +1,91 @@
-.help-page {
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.45;
+.help-webview-page {
+  height: 100vh;
+  overflow: hidden;
+  background: var(--embedded-surface-page-bg);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
-.help-page-single {
-  width: 100%;
-  min-height: 0;
-  margin: 0;
-  padding: 20px 0 0;
-  background: transparent;
+.app-shell.is-windows-platform .help-webview-page {
+  padding-top: var(--windows-titlebar-overlay-height);
 }
 
-.help-content-panel {
-  min-width: 0;
-  width: min(100%, var(--help-content-max, 960px));
-  max-width: var(--help-content-max, 960px);
-  margin: 0 auto;
-  padding: 0;
-}
-
-.help-content-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  min-width: 0;
-}
-
-.help-page-head {
-  width: 100%;
-}
-
-.help-page-head h1 {
-  margin: 0 0 6px;
-  font-size: 18px;
-  line-height: 1.35;
-  font-weight: 700;
-  letter-spacing: 0;
-  color: var(--ink);
-}
-
-.help-page-head .page-copy {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--ink-soft);
-}
-
-.help-section-body {
+.help-webview-frame-shell {
   position: relative;
   width: 100%;
+  height: 100%;
 }
 
-.help-workspace {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+.help-webview-frame {
   width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
-.help-category-card,
-.help-item-card {
+.help-webview-status,
+.help-webview-overlay {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ink-soft);
+  background: var(--embedded-surface-loading-bg);
+}
+
+.help-webview-status {
   width: 100%;
-  min-width: 0;
-  padding: 0;
+  height: 100%;
+  min-height: 320px;
+}
+
+.help-webview-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.help-webview-status p,
+.help-webview-overlay p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.help-webview-status button,
+.help-webview-overlay button {
+  min-height: 32px;
+  padding: 6px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-soft);
-  overflow: hidden;
-}
-
-.help-category-card {
-  position: sticky;
-  top: 12px;
-}
-
-.help-category-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px;
-}
-
-.help-category-btn {
-  width: 100%;
-  min-height: 32px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink-soft);
-  text-align: left;
-  font-size: 13px;
-  line-height: 1.35;
-  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
   cursor: pointer;
-  transition: background-color 0.16s ease, color 0.16s ease;
 }
 
-.help-category-btn:hover {
-  background: rgba(136, 151, 172, 0.1);
-  color: var(--ink);
-}
-
-:root[data-theme="dark"] .help-category-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--ink);
-}
-
-.help-category-btn.is-active {
-  background: rgba(136, 151, 172, 0.1);
-  color: var(--ink);
-}
-
-:root[data-theme="dark"] .help-category-btn.is-active {
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--ink);
-}
-
-.help-category-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--control-focus-ring);
-}
-
-.help-item-section-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px 10px;
-  color: var(--ink);
-}
-
-.help-item-section-head strong {
-  font-size: 13px;
-  line-height: 1.35;
-  font-weight: 600;
-}
-
-.help-item-section-head span {
-  display: block;
-  margin-top: 4px;
-  color: var(--ink-soft);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.help-item-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  width: 100%;
-}
-
-.help-item-card > .help-item-list {
-  border-top: 1px solid var(--line);
-}
-
-.help-item-row {
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.help-item-list > .help-item-row + .help-item-row {
-  border-top: 1px solid var(--line);
-}
-
-.help-faq-trigger {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: inherit;
-  text-align: left;
-}
-
-.help-faq-trigger:focus-visible {
-  outline: none;
-  box-shadow: inset var(--control-focus-ring);
-}
-
-.help-faq-question {
-  color: var(--ink);
-  font-size: 13px;
-  line-height: 1.45;
-  font-weight: 600;
-  transition: color 0.16s ease;
-}
-
-.help-faq-trigger:hover .help-faq-question {
+.help-webview-status button:hover,
+.help-webview-overlay button:hover {
+  border-color: var(--accent);
   color: var(--accent);
 }
 
-.help-faq-chevron {
-  flex: none;
-  color: var(--ink-muted);
-  transition: transform 0.2s ease, color 0.16s ease;
+.help-webview-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid color-mix(in srgb, var(--ink-muted) 24%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: help-webview-spin 0.8s linear infinite;
 }
 
-.help-faq-item.is-open .help-faq-chevron {
-  transform: rotate(180deg);
-  color: var(--accent);
-}
-
-.help-faq-body {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.28s cubic-bezier(0.25, 0.8, 0.25, 1);
+@keyframes help-webview-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .help-faq-body {
-    transition: none;
-  }
-
-  .help-faq-chevron {
-    transition: none;
-  }
-}
-
-.help-faq-answer {
-  padding: 0 16px 14px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--ink-soft);
-}
-
-.help-inline-link {
-  display: inline-flex;
-  align-items: center;
-  margin: 0 2px;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.help-inline-link:hover {
-  text-decoration: underline;
-}
-
-.help-inline-link strong {
-  color: inherit;
-}
-
-.help-faq-answer p {
-  margin: 0 0 10px;
-}
-
-.help-faq-answer p:last-child {
-  margin-bottom: 0;
-}
-
-.help-faq-answer ul,
-.help-faq-answer ol {
-  margin: 0 0 10px;
-  padding-left: 20px;
-}
-
-.help-faq-answer li {
-  margin-bottom: 6px;
-}
-
-.help-faq-answer li:last-child {
-  margin-bottom: 0;
-}
-
-.help-faq-answer pre {
-  margin: 10px 0;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: var(--control-select-bg);
-  overflow-x: auto;
-  border: 1px solid var(--line);
-}
-
-.help-faq-answer code {
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(var(--accent-rgb), 0.08);
-  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
-  font-size: 12px;
-}
-
-.help-faq-answer pre code {
-  padding: 0;
-  background: transparent;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.help-faq-answer kbd {
-  display: inline-block;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--control-select-bg);
-  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
-  font-size: 12px;
-  border: 1px solid var(--line);
-}
-
-.help-faq-answer strong {
-  color: var(--ink);
-}
-
-.help-main-card {
-  max-height: calc(100vh - 160px);
-  overflow: auto;
-}
-
-@media (max-width: 900px) {
-  .help-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .help-category-card {
-    position: static;
-  }
-
-  .help-category-list {
-    flex-direction: row;
-    overflow: auto;
-    white-space: nowrap;
-    padding: 10px;
-  }
-
-  .help-category-btn {
-    width: auto;
-    flex: none;
-  }
-
-  .help-main-card {
-    max-height: none;
+  .help-webview-spinner {
+    animation: none;
   }
 }

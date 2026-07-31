@@ -16,6 +16,7 @@ import type {
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
+import type { DesktopHelpSettings } from "../help";
 import type {
   EnterpriseChatAttachmentData,
   EnterpriseChatAttachmentInput,
@@ -661,6 +662,9 @@ export interface DesktopApi {
     logout: () => Promise<DesktopSsoLogoutResult>;
     onStatusChanged: (listener: DesktopSsoStatusListener) => () => void;
     onEmbeddedLoginOpen: (listener: DesktopSsoEmbeddedLoginListener) => () => void;
+  };
+  help: {
+    getSettings: () => Promise<DesktopHelpSettings>;
   };
   enterpriseChat: {
     getState: () => Promise<EnterpriseChatSnapshot>;

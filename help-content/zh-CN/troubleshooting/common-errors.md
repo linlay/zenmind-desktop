@@ -1,4 +1,0 @@
-- **EADDRINUSE**：端口已被占用，参考上方的端口排查方法
-- **EACCES**：权限不足，检查桌面端数据目录和脚本的执行权限
-- **ENOENT**：文件不存在，确认服务已正确安装且资源文件完整
-- **Docker 守护进程未运行**（常见英文提示：`Docker daemon not running`）：需要启动 Docker Desktop 或 Podman

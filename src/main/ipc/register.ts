@@ -104,6 +104,7 @@ import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
+import { registerHelpIpcHandlers } from "./help-handlers";
 import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
 
 export type MainIpcRegistrationOptions = {
@@ -200,6 +201,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  registerHelpIpcHandlers(ipcMain, app);
 
   registerServicesIpcHandlers(ipcMain, createServicesIpcHandlerOptions(context, {
     listServices,

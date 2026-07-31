@@ -175,6 +175,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     imServer: {
       baseUrl: "https://im.example.test/api/"
     },
+    help: {
+      url: "https://www.zenmind.cc/help/"
+    },
     services: {
       "agent-container-hub": {
         defaultPort: 7909
@@ -244,6 +247,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
   const desktopActionBridge = readJson(path.join(desktop, "config", "desktop", "desktop-action-bridge.json"));
   const imServer = readJson(path.join(desktop, "config", "desktop", "im-server.json"));
+  const help = readJson(path.join(desktop, "config", "desktop", "help.json"));
   const serviceLifecycleArgs = readJson(path.join(desktop, "config", "desktop", "service-lifecycle-args.json"));
   const servicePortDefaults = readJson(path.join(desktop, "config", "desktop", "service-port-defaults.json"));
   const website = readJson(path.join(desktop, "data", "webs", "websites", "docs", "website.json"));
@@ -283,6 +287,10 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.deepEqual(imServer, {
     schemaVersion: 1,
     baseUrl: "https://im.example.test/api"
+  });
+  assert.deepEqual(help, {
+    schemaVersion: 1,
+    url: "https://www.zenmind.cc/help/"
   });
   assert.deepEqual(serviceLifecycleArgs, {
     schemaVersion: 1,
@@ -345,6 +353,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
   assert.equal(bootstrapState.appliedResult.desktopActionBridge, "applied");
   assert.equal(bootstrapState.appliedResult.imServer, "applied");
+  assert.equal(bootstrapState.appliedResult.help, "applied");
   assert.equal(bootstrapState.appliedResult.services, "applied");
   assert.equal(bootstrapState.websReport.mode, "initialize");
   assert.deepEqual(bootstrapState.websReport.items.map(({ entryKey, status }) => ({ entryKey, status })), [
@@ -399,6 +408,41 @@ test("desktop-init rejects an insecure remote IM server without replacing canoni
   assert.deepEqual(result.failedSections, ["imServer"]);
   assert.match(result.errors.imServer, /loopback HTTP or remote HTTPS/u);
   assert.equal(fs.existsSync(imServerPath), false);
+});
+
+test("desktop-init rejects an insecure Help URL without replacing canonical config", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-help-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const helpPath = path.join(
+    desktopRoot(homePath),
+    "config",
+    "desktop",
+    "help.json"
+  );
+  fs.mkdirSync(path.dirname(helpPath), { recursive: true });
+  fs.writeFileSync(helpPath, `${JSON.stringify({
+    schemaVersion: 1,
+    url: "https://www.zenmind.cc/help/"
+  }, null, 2)}\n`, "utf8");
+  writeDesktopInit(app, "darwin", {
+    help: {
+      url: "http://help.example.test/"
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.help, "failed");
+  assert.deepEqual(result.failedSections, ["help"]);
+  assert.match(result.errors.help, /loopback HTTP or remote HTTPS/u);
+  assert.deepEqual(readJson(helpPath), {
+    schemaVersion: 1,
+    url: "https://www.zenmind.cc/help/"
+  });
 });
 
 test("desktop-init v2 installs mixed Sites once, keeps declared order, and later preserves user changes", (t) => {

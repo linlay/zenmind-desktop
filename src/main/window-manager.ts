@@ -1,5 +1,10 @@
 import type { App, BrowserWindow, NativeTheme } from "electron";
 import { PRODUCT_NAME } from "../shared/brand";
+import {
+  DESKTOP_HELP_WEBVIEW_PARTITION,
+  isAllowedHelpNavigationUrl,
+  isSafeHelpExternalUrl
+} from "../shared/help";
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
 import type { DesktopPlatform } from "./platform-adapter";
@@ -80,6 +85,7 @@ type WebviewAttachInput = {
   params: {
     preload?: unknown;
     src?: unknown;
+    partition?: unknown;
   };
   servicePreloadPath: string;
   servicePreloadUrl: string;
@@ -92,6 +98,7 @@ type WebviewAttachResult =
 
 type AttachedWebviewLike = {
   id: number;
+  session?: unknown;
   on(eventName: string, listener: (...args: any[]) => void): unknown;
   copy(): void;
   cut(): void;
@@ -104,16 +111,21 @@ type AttachedWebviewLike = {
 
 type WebviewEditCommand = "copy" | "cut" | "paste" | "selectAll";
 
-type AttachedWebviewOptions<TMainWindow> = {
+type AttachedWebviewOptions<
+  TMainWindow,
+  TGuestContents extends AttachedWebviewLike = AttachedWebviewLike
+> = {
   platform: DesktopPlatform;
   getMainWindow(): TMainWindow | null;
   isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
   isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
   shouldDownloadUrl(url: string): boolean;
   resolveOpenDisposition(url: string): "download" | "tab" | "external";
-  collectLoadDiagnostics(contents: AttachedWebviewLike, validatedUrl: string): Promise<Record<string, unknown>>;
+  collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
   report(source: string, details: Record<string, unknown>): void;
   onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
+  getHelpUrl?(): string;
+  isHelpWebview?(contents: TGuestContents): boolean;
   openExternal(url: string): Promise<unknown>;
   schedule(callback: () => void): void;
 };
@@ -304,6 +316,8 @@ export function configureMainWindowWebContents<
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
     report(source: string, details: Record<string, unknown>): void;
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
+    getHelpUrl?(): string;
+    isHelpWebview?(contents: TGuestContents): boolean;
     openExternal(url: string): Promise<unknown>;
     schedule(callback: () => void): void;
   }
@@ -350,6 +364,21 @@ export function configureMainWindowWebContents<
       options.report("blocked service webview with unsafe url", {
         src: result.src
       });
+      return;
+    }
+
+    if (
+      params.partition === DESKTOP_HELP_WEBVIEW_PARTITION &&
+      options.getHelpUrl &&
+      !isAllowedHelpNavigationUrl(
+        options.getHelpUrl(),
+        typeof params.src === "string" ? params.src : ""
+      )
+    ) {
+      event.preventDefault();
+      options.report("blocked Help webview with unexpected url", {
+        src: typeof params.src === "string" ? params.src : ""
+      });
     }
   });
 
@@ -364,6 +393,8 @@ export function configureMainWindowWebContents<
       collectLoadDiagnostics: options.collectLoadDiagnostics,
       report: options.report,
       onWebviewNavigation: options.onWebviewNavigation,
+      getHelpUrl: options.getHelpUrl,
+      isHelpWebview: options.isHelpWebview,
       openExternal: options.openExternal,
       schedule: options.schedule
     });
@@ -500,21 +531,45 @@ function runWebviewEditCommand(
   }
 }
 
-export function configureAttachedWebview<TMainWindow extends {
+export function configureAttachedWebview<
+  TMainWindow extends {
   isDestroyed(): boolean;
   webContents: {
     send(channel: string, payload: unknown): void;
   };
-}>(
-  contents: AttachedWebviewLike,
-  options: AttachedWebviewOptions<TMainWindow>
+  },
+  TGuestContents extends AttachedWebviewLike = AttachedWebviewLike
+>(
+  contents: TGuestContents,
+  options: AttachedWebviewOptions<TMainWindow, TGuestContents>
 ) {
+  const isHelpWebview = options.isHelpWebview?.(contents) === true;
   const downloadFromWebview = (url: string) => {
     try {
       contents.downloadURL(url);
     } catch (error) {
       options.report("failed to start webview download", { url, error });
     }
+  };
+  const blockUnexpectedHelpNavigation = (event: { preventDefault(): void }, url: string) => {
+    if (
+      !isHelpWebview ||
+      !options.getHelpUrl ||
+      isAllowedHelpNavigationUrl(options.getHelpUrl(), url)
+    ) {
+      return false;
+    }
+    event.preventDefault();
+    if (isSafeHelpExternalUrl(url)) {
+      void options.openExternal(url).catch((error) => {
+        options.report("failed to open blocked Help navigation externally", { url, error });
+      });
+    }
+    options.report("blocked cross-origin Help navigation", {
+      guestId: contents.id,
+      url
+    });
+    return true;
   };
 
   contents.on("before-input-event", (event, input) => {
@@ -569,12 +624,20 @@ export function configureAttachedWebview<TMainWindow extends {
   });
 
   contents.on("will-navigate", (event, url) => {
+    if (blockUnexpectedHelpNavigation(event, url)) {
+      return;
+    }
+
     if (!options.shouldDownloadUrl(url)) {
       return;
     }
 
     event.preventDefault();
     downloadFromWebview(url);
+  });
+
+  contents.on("will-redirect", (event, url) => {
+    blockUnexpectedHelpNavigation(event, url);
   });
 
   contents.on("did-navigate", (_guestEvent, url) => {
@@ -607,6 +670,15 @@ export function configureAttachedWebview<TMainWindow extends {
     const disposition = options.resolveOpenDisposition(url);
     if (disposition === "download") {
       downloadFromWebview(url);
+      return { action: "deny" };
+    }
+
+    if (isHelpWebview) {
+      if (isSafeHelpExternalUrl(url)) {
+        void options.openExternal(url).catch((error) => {
+          options.report("failed to open Help popup externally", { url, error });
+        });
+      }
       return { action: "deny" };
     }
 

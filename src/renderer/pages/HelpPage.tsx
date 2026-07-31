@@ -1,144 +1,156 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MarkdownContent } from "../help/MarkdownContent";
-import { getHelpContent } from "../help/helpContent";
+import { createElement, useCallback, useEffect, useRef, useState } from "react";
+import type { DesktopHelpSettings } from "../../shared/help";
+import { DESKTOP_HELP_WEBVIEW_PARTITION } from "../../shared/help";
 import { useI18n } from "../i18n/useI18n";
 import "./HelpPage.css";
 
-type HelpPageProps = {
-  isWindows: boolean;
-};
+type SettingsState =
+  | { status: "loading"; settings: null; message: "" }
+  | { status: "ready"; settings: DesktopHelpSettings; message: "" }
+  | { status: "error"; settings: null; message: string };
 
-const ACCORDION_FALLBACK_HEIGHT = 800;
+export function HelpPage() {
+  const { t } = useI18n();
+  const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const requestSequenceRef = useRef(0);
+  const [settingsState, setSettingsState] = useState<SettingsState>({
+    status: "loading",
+    settings: null,
+    message: ""
+  });
+  const [webviewKey, setWebviewKey] = useState(0);
+  const [webviewLoading, setWebviewLoading] = useState(true);
+  const [webviewError, setWebviewError] = useState("");
 
-export function HelpPage({ isWindows }: HelpPageProps) {
-  const { locale } = useI18n();
-  const helpContent = useMemo(() => getHelpContent(locale, isWindows), [isWindows, locale]);
-  const [activeCat, setActiveCat] = useState(() => helpContent.categories[0]?.id ?? "");
-  const [openItems, setOpenItems] = useState<Set<string>>(new Set());
-  const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const contentRef = useRef<HTMLDivElement>(null);
+  const loadSettings = useCallback(() => {
+    requestSequenceRef.current += 1;
+    const requestSequence = requestSequenceRef.current;
+    setSettingsState({ status: "loading", settings: null, message: "" });
+    void window.electronAPI.help.getSettings().then((settings) => {
+      if (requestSequence !== requestSequenceRef.current) {
+        return;
+      }
+      if (!settings.url) {
+        setSettingsState({
+          status: "error",
+          settings: null,
+          message: t("help.error.notConfigured")
+        });
+        return;
+      }
+      setSettingsState({ status: "ready", settings, message: "" });
+    }).catch(() => {
+      if (requestSequence === requestSequenceRef.current) {
+        setSettingsState({
+          status: "error",
+          settings: null,
+          message: t("help.error.notConfigured")
+        });
+      }
+    });
+  }, [t]);
 
   useEffect(() => {
-    const categoryExists = helpContent.categories.some((category) => category.id === activeCat);
-    if (!categoryExists) {
-      setActiveCat(helpContent.categories[0]?.id ?? "");
-      setOpenItems(new Set());
-      contentRef.current?.scrollTo({ top: 0 });
+    loadSettings();
+    return () => {
+      requestSequenceRef.current += 1;
+    };
+  }, [loadSettings]);
+
+  const helpUrl = settingsState.status === "ready" ? settingsState.settings.url : "";
+
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview || !helpUrl) {
+      return;
     }
-  }, [activeCat, helpContent.categories]);
 
-  const currentCategory = helpContent.categories.find((category) => category.id === activeCat) ?? helpContent.categories[0];
-
-  const switchCategory = useCallback((catId: string) => {
-    setActiveCat(catId);
-    setOpenItems(new Set());
-    contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
-
-  const toggleItem = useCallback((key: string) => {
-    setOpenItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
+    const handleDidStartLoading = () => {
+      setWebviewLoading(true);
+      setWebviewError("");
+    };
+    const handleDidStopLoading = () => {
+      setWebviewLoading(false);
+    };
+    const handleDomReady = () => {
+      setWebviewLoading(false);
+    };
+    const handleDidFailLoad = (event: Event) => {
+      const details = event as Event & {
+        errorCode?: number;
+        isMainFrame?: boolean;
+      };
+      if (details.errorCode === -3 || details.isMainFrame === false) {
+        return;
       }
-      return next;
-    });
-  }, []);
+      setWebviewLoading(false);
+      setWebviewError(t("help.error.loadFailed"));
+    };
+    webview.addEventListener("did-start-loading", handleDidStartLoading);
+    webview.addEventListener("did-stop-loading", handleDidStopLoading);
+    webview.addEventListener("dom-ready", handleDomReady);
+    webview.addEventListener("did-fail-load", handleDidFailLoad);
+    return () => {
+      webview.removeEventListener("did-start-loading", handleDidStartLoading);
+      webview.removeEventListener("did-stop-loading", handleDidStopLoading);
+      webview.removeEventListener("dom-ready", handleDomReady);
+      webview.removeEventListener("did-fail-load", handleDidFailLoad);
+    };
+  }, [helpUrl, t, webviewKey]);
+
+  const retryWebview = () => {
+    setWebviewError("");
+    setWebviewLoading(true);
+    setWebviewKey((current) => current + 1);
+  };
+
+  if (settingsState.status !== "ready") {
+    return (
+      <section className="help-webview-page embedded-surface-page">
+        <div className="help-webview-status" role="status">
+          <p>
+            {settingsState.status === "loading"
+              ? t("help.loading")
+              : settingsState.message}
+          </p>
+          {settingsState.status === "error" ? (
+            <button type="button" onClick={loadSettings}>
+              {t("common.retry")}
+            </button>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className="help-page help-page-single">
-      <div className="help-content-panel">
-        <div className="help-content-shell">
-          <div className="help-page-head">
-            <h1>{helpContent.sidebarTitle}</h1>
-            <p className="page-copy">{helpContent.heroDescription}</p>
+    <section className="help-webview-page embedded-surface-page">
+      <div className="embedded-surface-frame-shell help-webview-frame-shell">
+        {createElement("webview", {
+          key: webviewKey,
+          ref: (node: Electron.WebviewTag | null): void => {
+            webviewRef.current = node;
+          },
+          src: settingsState.settings.url,
+          title: t("nav.help"),
+          partition: DESKTOP_HELP_WEBVIEW_PARTITION,
+          allowpopups: "true",
+          className: "embedded-surface-frame help-webview-frame"
+        })}
+        {webviewLoading && !webviewError ? (
+          <div className="help-webview-overlay" role="status">
+            <span className="help-webview-spinner" aria-hidden="true" />
+            <p>{t("help.loading")}</p>
           </div>
-
-          <div className="help-section-body">
-            <div className="help-workspace">
-              <aside className="help-sidebar help-category-card">
-                <nav className="help-category-list" aria-label={helpContent.sidebarTitle}>
-                  {helpContent.categories.map((cat) => (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      className={`help-category-btn${activeCat === cat.id ? " is-active" : ""}`}
-                      onClick={() => switchCategory(cat.id)}
-                      aria-current={activeCat === cat.id ? "page" : undefined}
-                    >
-                      {cat.label}
-                    </button>
-                  ))}
-                </nav>
-              </aside>
-
-              <div className="help-main-card help-item-card" ref={contentRef}>
-                <div className="help-item-section-head">
-                  <div>
-                    <strong>{currentCategory?.label ?? helpContent.sidebarTitle}</strong>
-                    <span>{helpContent.heroTitle}</span>
-                  </div>
-                </div>
-
-                <div className="help-faq-list help-item-list">
-                  {currentCategory?.items.map((item) => {
-                    const key = `${currentCategory.id}-${item.id}`;
-                    const isOpen = openItems.has(key);
-                    return (
-                      <div
-                        key={key}
-                        className={`help-faq-item help-item-row${isOpen ? " is-open" : ""}`}
-                      >
-                        <button
-                          type="button"
-                          className="help-faq-trigger"
-                          onClick={() => toggleItem(key)}
-                          aria-expanded={isOpen}
-                        >
-                          <span className="help-faq-question">{item.title}</span>
-                          <svg
-                            className="help-faq-chevron"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 20 20"
-                            fill="none"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="M5 7.5L10 12.5L15 7.5"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </button>
-                        <div
-                          className="help-faq-body"
-                          ref={(el) => {
-                            if (el) bodyRefs.current.set(key, el);
-                            else bodyRefs.current.delete(key);
-                          }}
-                          style={{
-                            maxHeight: isOpen
-                              ? `${bodyRefs.current.get(key)?.scrollHeight ?? ACCORDION_FALLBACK_HEIGHT}px`
-                              : "0px",
-                          }}
-                        >
-                          <div className="help-faq-answer">
-                            <MarkdownContent markdown={item.markdown} />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+        ) : null}
+        {webviewError ? (
+          <div className="help-webview-overlay" role="alert">
+            <p>{webviewError}</p>
+            <button type="button" onClick={retryWebview}>
+              {t("common.retry")}
+            </button>
           </div>
-        </div>
+        ) : null}
       </div>
     </section>
   );

@@ -4,13 +4,14 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const dictionariesRoot = path.join(projectRoot, "src", "shared", "i18n", "dictionaries");
-const helpRoot = path.join(projectRoot, "help-content");
 
 const allowedLatinTerms = [
   /ZenMind/g,
   /Codex/g,
   /Docker Desktop/g,
   /Desktop/g,
+  /Bootstrap/g,
+  /Manifest/g,
   /Application Support/g,
   /Node\.js/g,
   /Java/g,
@@ -68,6 +69,7 @@ const allowedLatinTerms = [
   /TOKEN/g,
   /DEVICE/g,
   /VERSION/g,
+  /version/g,
   /VM/g,
   /GET/g,
   /POST/g,
@@ -139,29 +141,6 @@ function extractDictionaryEntries(filePath) {
   return entries;
 }
 
-function collectHelpIndexText(filePath) {
-  const parsed = JSON.parse(readFile(filePath));
-  const entries = [
-    ["sidebarTitle", parsed.sidebarTitle],
-    ["heroTitle", parsed.heroTitle],
-    ["heroDescription", parsed.heroDescription]
-  ];
-
-  for (const [categoryIndex, category] of parsed.categories.entries()) {
-    entries.push([`categories[${categoryIndex}].label`, category.label]);
-    for (const [itemIndex, item] of category.items.entries()) {
-      entries.push([`categories[${categoryIndex}].items[${itemIndex}].title`, item.title]);
-    }
-  }
-
-  return entries
-    .filter(([, text]) => typeof text === "string")
-    .map(([key, text]) => ({
-      context: `${path.relative(projectRoot, filePath)}:${key}`,
-      text
-    }));
-}
-
 function stripMarkdownCodeBlocks(text) {
   return text.replace(/```[\s\S]*?```/g, "");
 }
@@ -212,21 +191,11 @@ function checkChineseLatin(entries) {
 }
 
 const enEntries = [
-  ...extractDictionaryEntries(path.join(dictionariesRoot, "enUS.ts")),
-  ...collectHelpIndexText(path.join(helpRoot, "en-US", "index.json")),
-  ...walkFiles(path.join(helpRoot, "en-US"), (filePath) => filePath.endsWith(".md")).map((filePath) => ({
-    context: path.relative(projectRoot, filePath),
-    text: stripMarkdownCodeBlocks(readFile(filePath))
-  }))
+  ...extractDictionaryEntries(path.join(dictionariesRoot, "enUS.ts"))
 ];
 
 const zhEntries = [
-  ...extractDictionaryEntries(path.join(dictionariesRoot, "zhCN.ts")),
-  ...collectHelpIndexText(path.join(helpRoot, "zh-CN", "index.json")),
-  ...walkFiles(path.join(helpRoot, "zh-CN"), (filePath) => filePath.endsWith(".md")).map((filePath) => ({
-    context: path.relative(projectRoot, filePath),
-    text: readFile(filePath)
-  }))
+  ...extractDictionaryEntries(path.join(dictionariesRoot, "zhCN.ts"))
 ];
 
 checkNoHan(enEntries, "en-US");

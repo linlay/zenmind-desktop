@@ -4366,8 +4366,6 @@ test("desktop global search contract is wired across main preload renderer and h
   const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
   const i18nEn = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const i18nZh = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
-  const helpEn = readSourceFile("help-content", "en-US", "shortcuts", "global-shortcuts.md");
-  const helpZh = readSourceFile("help-content", "zh-CN", "shortcuts", "global-shortcuts.md");
 
   assert.match(contracts, /interface AssistantChatSearchRequest/);
   assert.match(contracts, /interface AssistantChatSearchResponse/);
@@ -4456,8 +4454,6 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.awaiting": "等待中"/);
   assert.doesNotMatch(i18nZh, /desktop\.globalSearch\.status\.awaiting/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.unread": "未读聊天"/);
-  assert.match(helpEn, /Cmd` \+ `K` \/ `Ctrl` \+ `K`/);
-  assert.match(helpZh, /Cmd` \+ `K` \/ `Ctrl` \+ `K`/);
 });
 
 test("assistant navigation agents stay empty before platform data is ready", () => {
@@ -7216,7 +7212,7 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
   assert.match(externalWebviewStyles, /\.embedded-surface-page \.webview-debug-url-overlay/u);
 });
 
-test("help page uses settings-aligned layout shell", () => {
+test("help page uses the configured anonymous Help webview", () => {
   const helpPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "HelpPage.tsx"),
     "utf8"
@@ -7225,23 +7221,26 @@ test("help page uses settings-aligned layout shell", () => {
     path.join(projectRoot, "src", "renderer", "pages", "HelpPage.css"),
     "utf8"
   );
-  const themeStyles = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "styles", "theme.css"),
-    "utf8"
-  );
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const helpHandlers = readSourceFile("src", "main", "ipc", "help-handlers.ts");
 
-  assert.match(helpPage, /help-page help-page-single/);
-  assert.match(helpPage, /help-content-panel/);
-  assert.match(helpPage, /help-page-head/);
-  assert.match(helpPage, /help-item-card/);
-  assert.match(helpPage, /help-item-section-head/);
-  assert.match(helpPage, /className="help-sidebar help-category-card"/);
-  assert.doesNotMatch(helpPage, /split-workspace/);
-  assert.doesNotMatch(helpPage, /theme-help/);
-  assert.match(helpPageCss, /\.help-item-card[\s\S]*?border-radius:\s*8px;/u);
-  assert.match(helpPageCss, /\.help-page-head h1[\s\S]*?font-size:\s*18px;/u);
-  assert.match(helpPageCss, /\.help-item-section-head strong[\s\S]*?font-size:\s*13px;/u);
-  assert.match(themeStyles, /--help-content-max:\s*960px;/);
+  assert.match(helpPage, /window\.electronAPI\.help\.getSettings\(\)/);
+  assert.match(helpPage, /DESKTOP_HELP_WEBVIEW_PARTITION/);
+  assert.match(helpPage, /createElement\("webview"/);
+  assert.doesNotMatch(helpPage, /MarkdownContent|getHelpContent/);
+  assert.match(
+    helpPageCss,
+    /\.app-shell\.is-windows-platform \.help-webview-page\s*\{[\s\S]*?padding-top:\s*var\(--windows-titlebar-overlay-height\);/u
+  );
+  assert.match(preload, /getSettings:\s*\(\) => ipcRenderer\.invoke\("help\.getSettings"\)/);
+  assert.match(desktopApi, /help:\s*\{[\s\S]*?getSettings:\s*\(\) => Promise<DesktopHelpSettings>/u);
+  assert.match(helpHandlers, /ipcMain\.handle\("help\.getSettings"/);
+  assert.match(
+    appShellRuntime,
+    /contents\.session === options\.session\.fromPartition\(DESKTOP_HELP_WEBVIEW_PARTITION\)/
+  );
 });
 
 test("websites and webapps settings use split workspace detail panes", () => {

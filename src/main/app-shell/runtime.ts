@@ -8,6 +8,7 @@ import {
   type SystemPreferences
 } from "electron";
 import type { AssistantWorkerOpenRequest } from "../../shared/contracts";
+import { DESKTOP_HELP_WEBVIEW_PARTITION } from "../../shared/help";
 import type { MainAppState } from "../app-state";
 import type { LogsRuntime } from "../logs/runtime";
 import { getMainLocaleSettings } from "../i18n/main-i18n";
@@ -36,6 +37,7 @@ import { DesktopActionWorkbenchWindowController } from "./desktop-action-workben
 import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
 import { AppTrayController } from "./tray";
+import { readHelpSettings } from "../help-settings";
 
 export type AppShellRuntimeOptions = {
   app: App;
@@ -44,7 +46,10 @@ export type AppShellRuntimeOptions = {
   mainProcessDir: string;
   productName: string;
   resourcesPath: string;
-  session: { defaultSession: Session };
+  session: {
+    defaultSession: Session;
+    fromPartition(partition: string): Session;
+  };
   shell: Pick<Shell, "openExternal">;
   nativeTheme: Pick<NativeTheme, "shouldUseDarkColors" | "on">;
   systemPreferences: Pick<SystemPreferences, "askForMediaAccess">;
@@ -200,7 +205,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     mainWindowLifecycle.applyAppearance(targetWindow);
     mainWindowLifecycle.attachRendererDiagnostics(targetWindow);
 
-    configureMainWindowWebContents(targetWindow, {
+    configureMainWindowWebContents<BrowserWindow, Electron.WebContents>(targetWindow, {
       platform: options.platform,
       getMainWindow: () => options.state.mainWindow,
       servicePreloadPath: getServiceWebviewPreloadPath(),
@@ -213,6 +218,9 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       collectLoadDiagnostics: options.collectWebviewLoadDiagnostics,
       report: options.safeConsoleError,
       onWebviewNavigation: options.handleDesktopSsoWebviewNavigation,
+      getHelpUrl: () => readHelpSettings(options.app, options.platform).url,
+      isHelpWebview: (contents) =>
+        contents.session === options.session.fromPartition(DESKTOP_HELP_WEBVIEW_PARTITION),
       openExternal: options.shell.openExternal,
       schedule: setImmediate
     });
