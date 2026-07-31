@@ -43,7 +43,7 @@ const PET_STATE_OUTPUT_SCHEMA = {
 export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
-  { name: "desktop.assistant.translate", kind: "execute", category: "assistant", description: "Translate text with the Desktop assistant model. Args: { text, targetLanguage: en|ja|zh }." },
+  { name: "desktop.assistant.translate", kind: "execute", category: "assistant", description: "Translate text with the Desktop assistant model. Args: { text, targetLanguage: en|ja|zh, domain?: general|futures, terminology?: Array<{ source, target }> }. Missing domain keeps general translation behavior." },
   { name: "desktop.assistant.complete", kind: "execute", category: "assistant", description: "Generate text with the Desktop helper agent. Args: { prompt, instruction? }." },
 
   { name: "desktop.general.deviceName", kind: "read", category: "general", description: "Read the effective and configured Desktop device names. Args: none. Returns: { deviceName, configuredDeviceName }." },
