@@ -7,6 +7,7 @@ import path from "node:path";
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const {
   recordTunnelHubRegistrationResult,
+  readDefaultTunnelHubRelayUrl,
   readTunnelHubSettings,
   saveTunnelHubSettings
 } = await import("../dist-electron/main/tunnel-hub-settings.js");
@@ -132,7 +133,7 @@ test("Tunnel Hub settings reject non-loopback WS relay URLs", (t) => {
   assert.match(result.message, /Relay URL/u);
 });
 
-test("Tunnel Hub settings keep relay URL empty until explicitly configured", (t) => {
+test("Tunnel Hub settings expose the brand relay default without enabling it", (t) => {
   const app = createTempApp(t);
 
   const result = saveTunnelHubSettings(app, {
@@ -141,12 +142,12 @@ test("Tunnel Hub settings keep relay URL empty until explicitly configured", (t)
 
   assert.equal(result.ok, true);
   assert.equal(result.settings.enabled, false);
-  assert.equal(result.settings.relayUrl, "");
+  assert.equal(result.settings.relayUrl, readDefaultTunnelHubRelayUrl());
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
-  assert.equal(stored.relayUrl, "");
+  assert.equal(stored.relayUrl, readDefaultTunnelHubRelayUrl());
 });
 
-test("Tunnel Hub enable requires an explicit relay URL", (t) => {
+test("Tunnel Hub enable uses the brand relay default without manual configuration", (t) => {
   const app = createTempApp(t);
   writeSsoSiteToken(app);
 
@@ -154,10 +155,34 @@ test("Tunnel Hub enable requires an explicit relay URL", (t) => {
     enabled: true
   });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.settings.enabled, false);
-  assert.equal(result.settings.relayUrl, "");
-  assert.match(result.message, /Relay URL/u);
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.enabled, true);
+  assert.equal(result.settings.relayUrl, readDefaultTunnelHubRelayUrl());
+});
+
+test("Tunnel Hub relay changes clear stale public state and request a token rotation", (t) => {
+  const app = createTempApp(t);
+  writeSsoSiteToken(app);
+  fs.mkdirSync(path.dirname(tunnelSettingsPath(app)), { recursive: true });
+  fs.writeFileSync(tunnelSettingsPath(app), `${JSON.stringify({
+    enabled: true,
+    relayUrl: "ws://127.0.0.1:11961/tunnel",
+    deviceId: "mac-mini-office",
+    publicHost: "legacy-device.m.10.0.0.5.nip.io",
+    lastRegisteredAt: "2026-01-01T00:00:00.000Z",
+    reconnectSeconds: 3
+  })}\n`, "utf8");
+
+  const result = saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: readDefaultTunnelHubRelayUrl()
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.publicHost, "");
+  assert.equal(result.settings.lastRegisteredAt, undefined);
+  const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
+  assert.equal(stored.rotateRelayToken, true);
 });
 
 test("Tunnel Hub settings persist device ID without storing registration token", (t) => {

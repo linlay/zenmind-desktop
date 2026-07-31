@@ -10,14 +10,19 @@ import type {
   WebappPublishState,
   WebappRuntimeState
 } from "../../../shared/contracts";
-import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
+import {
+  deriveTunnelHubRegistrationApiOrigin,
+  tunnelHubErrorMessage
+} from "../../tunnel-hub-registration";
 import { getTunnelHubRuntimeStatus, startTunnelHubRuntime } from "../../tunnel-hub-runtime";
 import {
   readTunnelHubRegistrationBearerToken,
+  readDefaultTunnelHubRelayUrl,
   readTunnelHubSettings,
   saveTunnelHubSettings
 } from "../../tunnel-hub-settings";
 import { getDesktopWebappStateRoot } from "../../user-paths";
+import { createMobileTunnelWebappUrlFromTarget } from "./mobile-access";
 import { readWebappItems } from "./store";
 
 const PUBLISH_STATE_FILE = "publish.json";
@@ -42,7 +47,7 @@ function readText(value: unknown) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return tunnelHubErrorMessage(error);
 }
 
 function findWebapp(app: App, id: string) {
@@ -79,6 +84,7 @@ export function readWebappPublishState(app: App, id: string): WebappPublishState
       routeId: readText(value.routeId),
       publicHost: readText(value.publicHost),
       url: readText(value.url),
+      mobileUrl: createMobileTunnelWebappUrlFromTarget(app, readText(value.targetUrl)) || readText(value.mobileUrl),
       targetUrl: readText(value.targetUrl),
       active,
       message: readText(value.message),
@@ -171,9 +177,10 @@ async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: strin
   }
   const name = stableWebappName(item.id);
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
-  const response = await fetch(
-    `${origin}/api/desktop/devices/${encodeURIComponent(settings.deviceId)}/webapps/${encodeURIComponent(name)}`,
-    {
+  const endpoint = `${origin}/api/desktop/devices/${encodeURIComponent(settings.deviceId)}/webapps/${encodeURIComponent(name)}`;
+  let response;
+  try {
+    response = await fetch(endpoint, {
       method: "PUT",
       headers: {
         "Authorization": `Bearer ${siteToken}`,
@@ -181,8 +188,10 @@ async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: strin
       },
       body: JSON.stringify({ targetUrl: requireLoopbackTarget(targetUrl), active }),
       signal: AbortSignal.timeout(30_000)
-    }
-  );
+    });
+  } catch (error) {
+    throw new Error(`Tunnel Hub WebApp route request could not reach ${origin}: ${errorMessage(error)}`);
+  }
   const raw = await response.text();
   if (!response.ok) {
     throw new Error(`Tunnel Hub WebApp registration failed (${response.status} ${response.statusText}): ${raw}`);
@@ -196,6 +205,7 @@ async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: strin
   }
   const publicHost = readText(data.publicHost);
   const publicUrl = readText(data.publicUrl) || (publicHost ? `https://${publicHost}` : "");
+  const resolvedTargetUrl = readText(data.targetUrl) || requireLoopbackTarget(targetUrl);
   if (!readText(data.routeId) || !publicHost || !/^https:\/\//iu.test(publicUrl)) {
     throw new Error("Tunnel Hub did not return a complete WebApp route.");
   }
@@ -204,7 +214,8 @@ async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: strin
     routeId: readText(data.routeId),
     publicHost,
     url: publicUrl,
-    targetUrl: readText(data.targetUrl) || requireLoopbackTarget(targetUrl),
+    mobileUrl: createMobileTunnelWebappUrlFromTarget(app, resolvedTargetUrl),
+    targetUrl: resolvedTargetUrl,
     active: data.active === undefined ? active : data.active === true
   };
 }
@@ -221,6 +232,7 @@ function createState(
     routeId: values.routeId ?? "",
     publicHost: values.publicHost ?? "",
     url: values.url ?? "",
+    mobileUrl: values.mobileUrl ?? "",
     targetUrl: values.targetUrl ?? "",
     active: values.active === true,
     message: values.message ?? "",
@@ -238,6 +250,44 @@ async function ensureTunnelConnected(app: App) {
     throw new Error(result.message || "Tunnel Hub is not connected.");
   }
   return result.status;
+}
+
+function isLegacyLocalRelayUrl(relayUrl: string) {
+  try {
+    const parsed = new URL(relayUrl);
+    return parsed.protocol === "ws:" &&
+      LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase()) &&
+      parsed.port === "11961";
+  } catch {
+    return false;
+  }
+}
+
+async function ensureTunnelConnectedForPublish(app: App) {
+  try {
+    return await ensureTunnelConnected(app);
+  } catch (error) {
+    const settings = readTunnelHubSettings(app);
+    const defaultRelayUrl = readDefaultTunnelHubRelayUrl();
+    if (
+      !defaultRelayUrl ||
+      settings.relayUrl === defaultRelayUrl ||
+      !isLegacyLocalRelayUrl(settings.relayUrl)
+    ) {
+      throw error;
+    }
+    const migrated = saveTunnelHubSettings(app, {
+      enabled: true,
+      relayUrl: defaultRelayUrl,
+      rotateRelayToken: true
+    });
+    if (!migrated.ok || !migrated.settings.enabled) {
+      throw new Error(
+        `${errorMessage(error)} Production Tunnel fallback failed: ${migrated.message || "settings could not be migrated."}`
+      );
+    }
+    return ensureTunnelConnected(app);
+  }
 }
 
 function enableTunnelForPublish(app: App) {
@@ -277,7 +327,7 @@ export async function publishWebapp(
       throw new Error("Start the WebApp before publishing.");
     }
     enableTunnelForPublish(app);
-    await ensureTunnelConnected(app);
+    await ensureTunnelConnectedForPublish(app);
     const route = await registerTunnelRoute(app, item, runtime.webUrl, true);
     state = createState(item, {
       status: "published",
@@ -341,7 +391,7 @@ export async function syncPublishedWebappRoute(app: App, item: WebappEntry, runt
     return previous;
   }
   try {
-    await ensureTunnelConnected(app);
+    await ensureTunnelConnectedForPublish(app);
     const route = await registerTunnelRoute(app, item, runtime.webUrl, true);
     const state = createState(item, {
       status: "published",
@@ -374,5 +424,7 @@ export const __testInternals = {
   stableWebappName,
   requireLoopbackTarget,
   registerTunnelRoute,
+  ensureTunnelConnectedForPublish,
+  isLegacyLocalRelayUrl,
   enableTunnelForPublish
 };

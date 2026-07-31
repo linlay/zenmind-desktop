@@ -15,15 +15,9 @@ function withMobileWebappPort(hostname: string, frontendPort: number) {
   return `${normalized.slice(0, markerIndex)}-${frontendPort}${normalized.slice(markerIndex)}`;
 }
 
-function readRuntimeFrontendPort(runtime: WebappRuntimeState | null) {
-  if (runtime?.status !== "running") {
-    return 0;
-  }
-  if (Number.isInteger(runtime.frontendPort) && (runtime.frontendPort ?? 0) > 0) {
-    return runtime.frontendPort as number;
-  }
+function readFrontendPortFromUrl(value: string) {
   try {
-    const parsed = new URL(runtime.webUrl);
+    const parsed = new URL(value);
     const port = Number.parseInt(parsed.port, 10);
     return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 0;
   } catch {
@@ -31,9 +25,18 @@ function readRuntimeFrontendPort(runtime: WebappRuntimeState | null) {
   }
 }
 
-export function createMobileTunnelWebappUrl(app: App, runtime: WebappRuntimeState | null) {
+function readRuntimeFrontendPort(runtime: WebappRuntimeState | null) {
+  if (runtime?.status !== "running") {
+    return 0;
+  }
+  if (Number.isInteger(runtime.frontendPort) && (runtime.frontendPort ?? 0) > 0) {
+    return runtime.frontendPort as number;
+  }
+  return readFrontendPortFromUrl(runtime.webUrl);
+}
+
+function createMobileTunnelWebappUrlForPort(app: App, frontendPort: number) {
   const settings = readTunnelHubSettings(app);
-  const frontendPort = readRuntimeFrontendPort(runtime);
   if (!settings.publicUrl || !frontendPort) {
     return "";
   }
@@ -59,8 +62,17 @@ export function createMobileTunnelWebappUrl(app: App, runtime: WebappRuntimeStat
   }
 }
 
+export function createMobileTunnelWebappUrl(app: App, runtime: WebappRuntimeState | null) {
+  return createMobileTunnelWebappUrlForPort(app, readRuntimeFrontendPort(runtime));
+}
+
+export function createMobileTunnelWebappUrlFromTarget(app: App, targetUrl: string) {
+  return createMobileTunnelWebappUrlForPort(app, readFrontendPortFromUrl(targetUrl));
+}
+
 export const __testInternals = {
   isMobileTunnelHost,
   withMobileWebappPort,
+  readFrontendPortFromUrl,
   readRuntimeFrontendPort
 };

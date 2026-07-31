@@ -317,6 +317,7 @@ export interface WebappPublishState {
   routeId: string;
   publicHost: string;
   url: string;
+  mobileUrl: string;
   targetUrl: string;
   active: boolean;
   message: string;

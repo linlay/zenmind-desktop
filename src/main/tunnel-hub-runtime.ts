@@ -12,7 +12,8 @@ import type {
 } from "../shared/contracts";
 import type { DesktopWsServerOptions } from "./desktop-ws-server";
 import {
-  ensureTunnelHubRegistrationReady
+  ensureTunnelHubRegistrationReady,
+  tunnelHubErrorMessage
 } from "./tunnel-hub-registration";
 import {
   clearLegacyTunnelHubRegistrationToken,
@@ -90,7 +91,7 @@ function readCurrentNetworkSignature() {
 }
 
 function messageFromError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return tunnelHubErrorMessage(error);
 }
 
 function readSettingsStatus(settings: TunnelHubSettings, phase: TunnelHubRuntimePhase, lastError = "", lastConnectedAt = ""): TunnelHubRuntimeStatus {

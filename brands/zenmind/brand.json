@@ -5,6 +5,9 @@
   "productName": "ZenMind",
   "appId": "cc.zenmind.desktop",
   "description": "ZenMind 应用壳",
+  "endpoints": {
+    "tunnelHubRelayUrl": "wss://tunnel-hub.zenmind.cc/tunnel"
+  },
   "paths": {
     "desktopDataSubdir": ".desktop",
     "programDataDirName": "ZenMind"

@@ -372,6 +372,8 @@ test("brand runtime root directory is derived from brand id", () => {
   assert.equal(cutej.packageName, "desktop");
   assert.equal(zenmind.storageNamespace, "zenmind-desktop");
   assert.equal(cutej.storageNamespace, "cutej-desktop");
+  assert.equal(zenmind.endpoints.tunnelHubRelayUrl, "wss://tunnel-hub.zenmind.cc/tunnel");
+  assert.equal(cutej.endpoints.tunnelHubRelayUrl, "wss://tunnel-hub.zenmind.cc/tunnel");
   assert.equal(zenmind.paths.programDataDirName, "ZenMind");
   assert.equal(cutej.paths.programDataDirName, "CuteJ");
   assert.deepEqual(zenmind.desktopPet, zenmindPet);

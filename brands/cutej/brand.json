@@ -5,6 +5,9 @@
   "productName": "CuteJ",
   "appId": "cc.cutej.desktop",
   "description": "CuteJ 应用壳",
+  "endpoints": {
+    "tunnelHubRelayUrl": "wss://tunnel-hub.zenmind.cc/tunnel"
+  },
   "paths": {
     "desktopDataSubdir": ".desktop",
     "programDataDirName": "CuteJ"

@@ -5627,10 +5627,10 @@ export function SettingsPage({
                         ? new Date(publishState.updatedAt).toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US")
                         : "")}
                     </div>
-                    {publishState?.active && publishState.url ? (
+                    {publishState?.active && publishState.mobileUrl ? (
                       <div className="web-publish-share-card">
                         <QRCode
-                          value={publishState.url}
+                          value={publishState.mobileUrl}
                           size={156}
                           bordered={false}
                           color="var(--ink)"
@@ -5639,12 +5639,12 @@ export function SettingsPage({
                         <div className="web-publish-share-copy">
                           <strong>{t("settings.webapps.publishQrTitle")}</strong>
                           <span>{t("settings.webapps.publishQrDescription")}</span>
-                          <code>{publishState.url}</code>
+                          <code>{publishState.mobileUrl}</code>
                           <div className="web-detail-actions">
-                            <Button onClick={() => void handleCopyWebappPublishUrl(publishState.url)}>
+                            <Button onClick={() => void handleCopyWebappPublishUrl(publishState.mobileUrl)}>
                               {t("settings.webapps.publishCopyUrl")}
                             </Button>
-                            <Button onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}>
+                            <Button onClick={() => void window.electronAPI.shell.openExternal(publishState.mobileUrl)}>
                               {t("settings.webapps.publishOpenUrl")}
                             </Button>
                           </div>

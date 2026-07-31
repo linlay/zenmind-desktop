@@ -300,3 +300,39 @@ test("Tunnel Hub registration reports an unavailable Desktop API without exposin
     }
   );
 });
+
+test("Tunnel Hub registration preserves endpoint and network cause in fetch failures", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-network-error-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeSsoSiteToken(homePath);
+  const saved = saveTunnelHubSettings(app, {
+    enabled: true,
+    relayUrl: "ws://127.0.0.1:11961/tunnel",
+    deviceId: "mac-mini-office"
+  });
+  assert.equal(saved.ok, true);
+  configureTunnelHubRegistrationController({
+    fetch: async () => {
+      const cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:11961"), {
+        code: "ECONNREFUSED",
+        address: "127.0.0.1",
+        port: 11961
+      });
+      throw new Error("fetch failed", { cause });
+    },
+    logger: { log() {}, warn() {}, error() {} }
+  });
+
+  await assert.rejects(
+    ensureTunnelHubRegistrationReady(app),
+    (error) => {
+      assert.match(error.message, /registration request could not reach http:\/\/127\.0\.0\.1:11961/u);
+      assert.match(error.message, /fetch failed/u);
+      assert.match(error.message, /ECONNREFUSED/u);
+      return true;
+    }
+  );
+});

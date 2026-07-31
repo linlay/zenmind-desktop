@@ -40,6 +40,9 @@ export type AppBrand = {
   productName: string;
   appId: string;
   description: string;
+  endpoints: {
+    tunnelHubRelayUrl: string;
+  };
   paths: {
     runtimeRootDirName: string;
     desktopDataSubdir: string;

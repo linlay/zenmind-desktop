@@ -640,6 +640,18 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
 
   const productName = requireString(manifest, "productName");
   const description = requireString(manifest, "description");
+  const tunnelHubRelayUrl = optionalNestedString(manifest, "endpoints", "tunnelHubRelayUrl") ?? "";
+  if (tunnelHubRelayUrl) {
+    let parsedTunnelHubRelayUrl;
+    try {
+      parsedTunnelHubRelayUrl = new URL(tunnelHubRelayUrl);
+    } catch {
+      throw new Error('Brand manifest field "endpoints.tunnelHubRelayUrl" must be a valid URL.');
+    }
+    if (parsedTunnelHubRelayUrl.protocol !== "wss:") {
+      throw new Error('Brand manifest field "endpoints.tunnelHubRelayUrl" must use wss.');
+    }
+  }
   const runtimeRootDirName = `.${id}`;
   const configuredRuntimeRootDirName = optionalNestedString(manifest, "paths", "runtimeRootDirName");
   if (configuredRuntimeRootDirName && configuredRuntimeRootDirName !== runtimeRootDirName) {
@@ -663,6 +675,9 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
     productName,
     appId,
     description,
+    endpoints: {
+      tunnelHubRelayUrl
+    },
     paths: {
       runtimeRootDirName,
       desktopDataSubdir,
@@ -908,6 +923,7 @@ export function runtimeBrandPayload(brand) {
     productName: brand.productName,
     appId: brand.appId,
     description: brand.description,
+    endpoints: brand.endpoints,
     paths: brand.paths,
     installer: brand.installer,
     desktopPet: brand.desktopPet,

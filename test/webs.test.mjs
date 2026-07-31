@@ -1247,6 +1247,49 @@ test("one-click WebApp publishing enables a configured Tunnel Hub", (t) => {
   assert.equal(stored.enabled, true);
 });
 
+test("one-click WebApp publishing enables the brand Tunnel without manual relay settings", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-default-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeJson(path.join(desktopRoot(homePath), "secrets", "sso-site-token.json"), {
+    accessToken: "publisher-site-secret"
+  });
+
+  const settings = webappPublisherInternals.enableTunnelForPublish(app);
+
+  assert.equal(settings.enabled, true);
+  assert.equal(settings.relayUrl, APP_BRAND.endpoints.tunnelHubRelayUrl);
+});
+
+test("one-click WebApp publishing falls back from an unavailable legacy local relay", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-fallback-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const settingsPath = path.join(desktopRoot(homePath), "config", "desktop", "tunnel-hub.json");
+  writeJson(settingsPath, {
+    enabled: true,
+    relayUrl: "ws://127.0.0.1:11961/tunnel",
+    deviceId: "mac-mini-office",
+    publicHost: "legacy-device.m.10.0.0.5.nip.io",
+    reconnectSeconds: 3
+  });
+  writeJson(path.join(desktopRoot(homePath), "secrets", "sso-site-token.json"), {
+    accessToken: "publisher-site-secret"
+  });
+
+  await assert.rejects(
+    webappPublisherInternals.ensureTunnelConnectedForPublish(app),
+    /Tunnel Hub runtime is not configured/u
+  );
+
+  const stored = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  assert.equal(stored.relayUrl, APP_BRAND.endpoints.tunnelHubRelayUrl);
+  assert.equal(stored.publicHost, "");
+  assert.equal(stored.rotateRelayToken, true);
+});
+
 test("webapp publisher registers a stable loopback route with Tunnel Hub", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-route-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -1257,6 +1300,7 @@ test("webapp publisher registers a stable loopback route with Tunnel Hub", async
     enabled: true,
     relayUrl: "wss://relay.example.test/tunnel",
     deviceId: "mac-mini-office",
+    publicHost: "device-code.m.zenmind.cc",
     reconnectSeconds: 3
   });
   writeJson(path.join(desktopRoot(homePath), "secrets", "sso-site-token.json"), {
@@ -1287,6 +1331,7 @@ test("webapp publisher registers a stable loopback route with Tunnel Hub", async
   assert.deepEqual(JSON.parse(requests[0].init.body), { targetUrl: "http://127.0.0.1:43123/", active: true });
   assert.equal(route.routeId, "route-publish-demo");
   assert.equal(route.url, "https://publish-demo.mac-mini-office.example.test");
+  assert.equal(route.mobileUrl, "https://device-code-43123.m.zenmind.cc/");
 });
 
 test("webapp publisher limits route names and rejects non-loopback targets", () => {

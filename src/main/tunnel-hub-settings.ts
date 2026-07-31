@@ -8,6 +8,7 @@ import type {
   TunnelHubSettingsInput,
   TunnelHubSettingsResult
 } from "../shared/contracts";
+import { APP_BRAND } from "../shared/brand";
 import { getDesktopConfigRoot, getSecretsRoot } from "./user-paths";
 import { getDesktopDeviceId } from "./device-identity";
 
@@ -113,6 +114,10 @@ export function normalizeRelayUrl(value: unknown) {
   } catch {
     return trimmed;
   }
+}
+
+export function readDefaultTunnelHubRelayUrl() {
+  return normalizeRelayUrl(APP_BRAND.endpoints?.tunnelHubRelayUrl);
 }
 
 function isLoopbackRelayHost(hostname: string) {
@@ -308,13 +313,14 @@ export function readTunnelHubSettings(
   const stored = readStoredSettings(app, platform);
   const token = readTunnelHubRelayToken(app, platform);
   const ssoSiteToken = readTunnelHubRegistrationBearerToken(app, platform);
-  const relayUrl = normalizeRelayUrl(stored.relayUrl);
+  const storedRelayUrl = normalizeRelayUrl(stored.relayUrl);
+  const relayUrl = storedRelayUrl || readDefaultTunnelHubRelayUrl();
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
   const publicHost = readStoredPublicHost(stored);
   const complete = Boolean(ssoSiteToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
     ? stored.enabled && complete
-    : complete;
+    : Boolean(storedRelayUrl) && complete;
   return {
     enabled,
     relayUrl,
@@ -418,6 +424,7 @@ export function saveTunnelHubSettings(
 ): TunnelHubSettingsResult {
   clearLegacyTunnelHubRegistrationToken(app, platform);
   const current = readTunnelHubSettings(app, platform);
+  const stored = readStoredSettings(app, platform);
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
   const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
     ? normalizeTunnelHubDeviceId(input.deviceId)
@@ -439,13 +446,14 @@ export function saveTunnelHubSettings(
   }
 
   const deviceIdChanged = deviceId !== current.deviceId;
+  const relayUrlChanged = relayUrl !== current.relayUrl;
   const nextSettings = {
     enabled: requestedEnabled && issues.length === 0,
     relayUrl,
     deviceId,
-    publicHost: deviceIdChanged ? "" : current.publicHost,
-    lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
-    rotateRelayToken: input.rotateRelayToken === true,
+    publicHost: deviceIdChanged || relayUrlChanged ? "" : current.publicHost,
+    lastRegisteredAt: deviceIdChanged || relayUrlChanged ? "" : current.lastRegisteredAt,
+    rotateRelayToken: input.rotateRelayToken === true || relayUrlChanged || stored.rotateRelayToken === true,
     tlsInsecureSkipVerify: false,
     reconnectSeconds
   };

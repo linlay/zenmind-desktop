@@ -61,13 +61,15 @@ test("mobile WebApp catalog derives m URLs while manual publishing remains on th
   assert.match(publisher, /registerTunnelRoute\(app, item, runtime\.webUrl, true\)/u);
 });
 
-test("Settings exposes one-click Tunnel publishing and mobile QR sharing", () => {
+test("Settings keeps wa public sharing separate from the m mobile QR address", () => {
   const page = read("src/renderer/pages/settings/SettingsPage.tsx");
   const styles = read("src/renderer/pages/settings/SettingsPage.css");
 
   assert.match(page, /onClick=\{\(\) => void handlePublishWebapp\(selectedWebapp\)\}/u);
   assert.doesNotMatch(page, /disabled=\{!publishReady \|\| webappPublishPendingId !== ""\}/u);
-  assert.match(page, /<QRCode[\s\S]*?value=\{publishState\.url\}/u);
+  assert.match(page, /<QRCode[\s\S]*?value=\{publishState\.mobileUrl\}/u);
+  assert.match(page, /publishUrl[\s\S]*?publishState\.url/u);
+  assert.doesNotMatch(page, /<QRCode[\s\S]*?value=\{publishState\.url\}/u);
   assert.match(page, /handleCopyWebappPublishUrl/u);
   assert.match(page, /buildSettingsSectionPath\("tunnelHub"\)/u);
   assert.match(styles, /\.web-publish-share-card[\s\S]*?@media \(max-width: 760px\)/u);

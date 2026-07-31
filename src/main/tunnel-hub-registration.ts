@@ -43,6 +43,39 @@ function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export function tunnelHubErrorMessage(error: unknown) {
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof Error && current.message.trim()) {
+      messages.push(current.message.trim());
+    } else if (typeof current === "string" && current.trim()) {
+      messages.push(current.trim());
+    }
+    if (typeof current !== "object") {
+      break;
+    }
+    const details = current as {
+      cause?: unknown;
+      code?: unknown;
+      address?: unknown;
+      port?: unknown;
+    };
+    const networkDetails = [
+      typeof details.code === "string" ? details.code : "",
+      typeof details.address === "string" ? details.address : "",
+      typeof details.port === "number" || typeof details.port === "string" ? String(details.port) : ""
+    ].filter(Boolean).join(" ");
+    if (networkDetails && !messages.some((message) => message.includes(networkDetails))) {
+      messages.push(networkDetails);
+    }
+    current = details.cause;
+  }
+  return messages.join(": ") || String(error);
+}
+
 function parseRegistrationResponse(raw: string): TunnelHubRegistrationResponse {
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -104,19 +137,25 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     throw new Error("current runtime does not provide fetch for Tunnel Hub registration.");
   }
 
+  const endpoint = `${origin}/api/desktop/devices/register`;
   const requestRegistration = async (identityToken: string) => {
-    const response = await fetchImpl(`${origin}/api/desktop/devices/register`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${identityToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        deviceId,
-        deviceName: deviceInfo.deviceName || deviceId,
-        rotateToken
-      })
-    });
+    let response;
+    try {
+      response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${identityToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          deviceId,
+          deviceName: deviceInfo.deviceName || deviceId,
+          rotateToken
+        })
+      });
+    } catch (error) {
+      throw new Error(`Tunnel Hub registration request could not reach ${origin}: ${tunnelHubErrorMessage(error)}`);
+    }
     return {
       response,
       raw: await response.text()
