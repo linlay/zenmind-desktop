@@ -1,6 +1,10 @@
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { DesktopHelpSettings } from "../../shared/help";
-import { DESKTOP_HELP_WEBVIEW_PARTITION } from "../../shared/help";
+import {
+  buildDesktopHelpUrl,
+  DESKTOP_HELP_WEBVIEW_PARTITION,
+  type DesktopHelpTheme
+} from "../../shared/help";
 import { useI18n } from "../i18n/useI18n";
 import "./HelpPage.css";
 
@@ -9,8 +13,12 @@ type SettingsState =
   | { status: "ready"; settings: DesktopHelpSettings; message: "" }
   | { status: "error"; settings: null; message: string };
 
-export function HelpPage() {
-  const { t } = useI18n();
+type HelpPageProps = {
+  hostTheme: DesktopHelpTheme;
+};
+
+export function HelpPage({ hostTheme }: HelpPageProps) {
+  const { locale, t } = useI18n();
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const requestSequenceRef = useRef(0);
   const [settingsState, setSettingsState] = useState<SettingsState>({
@@ -57,7 +65,20 @@ export function HelpPage() {
     };
   }, [loadSettings]);
 
-  const helpUrl = settingsState.status === "ready" ? settingsState.settings.url : "";
+  const helpUrl = settingsState.status === "ready"
+    ? buildDesktopHelpUrl(settingsState.settings.url, {
+        locale,
+        theme: hostTheme
+      })
+    : "";
+
+  useEffect(() => {
+    if (!helpUrl) {
+      return;
+    }
+    setWebviewLoading(true);
+    setWebviewError("");
+  }, [helpUrl]);
 
   useEffect(() => {
     const webview = webviewRef.current;
@@ -127,11 +148,11 @@ export function HelpPage() {
     <section className="help-webview-page embedded-surface-page">
       <div className="embedded-surface-frame-shell help-webview-frame-shell">
         {createElement("webview", {
-          key: webviewKey,
+          key: `${webviewKey}:${helpUrl}`,
           ref: (node: Electron.WebviewTag | null): void => {
             webviewRef.current = node;
           },
-          src: settingsState.settings.url,
+          src: helpUrl,
           title: t("nav.help"),
           partition: DESKTOP_HELP_WEBVIEW_PARTITION,
           allowpopups: "true",

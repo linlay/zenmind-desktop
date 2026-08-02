@@ -14,6 +14,7 @@ const {
   writeHelpSettings
 } = require("../dist-electron/main/help-settings.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
+const { buildDesktopHelpUrl } = require("../dist-electron/shared/help.js");
 
 function createApp(homePath) {
   return {
@@ -31,6 +32,30 @@ test("Help settings accept remote HTTPS and loopback HTTP only", () => {
   assert.equal(normalizeHelpUrl("http://example.com/help/"), "");
   assert.equal(normalizeHelpUrl("file:///tmp/help.html"), "");
   assert.equal(normalizeHelpUrl("https://user:secret@example.com/help/"), "");
+});
+
+test("Desktop Help URL carries the current host presentation parameters", () => {
+  const url = new URL(buildDesktopHelpUrl(
+    "https://www.zenmind.cc/help/?source=desktop&desktop=0&lang=en-US&theme=light#quick-start",
+    {
+      locale: "zh-CN",
+      theme: "dark"
+    }
+  ));
+
+  assert.equal(url.pathname, "/help/");
+  assert.equal(url.searchParams.get("source"), "desktop");
+  assert.equal(url.searchParams.get("desktop"), "1");
+  assert.equal(url.searchParams.get("lang"), "zh-CN");
+  assert.equal(url.searchParams.get("theme"), "dark");
+  assert.equal(url.hash, "#quick-start");
+});
+
+test("Desktop Help URL rejects unsafe configured origins", () => {
+  assert.equal(buildDesktopHelpUrl("http://example.com/help/", {
+    locale: "en-US",
+    theme: "light"
+  }), "");
 });
 
 test("Help settings use the canonical Desktop config file", (t) => {

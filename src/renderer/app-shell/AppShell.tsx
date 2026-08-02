@@ -2887,7 +2887,7 @@ export function AppShell() {
                     : <Navigate to="/control-center" replace />
               }
             />
-            <Route path="/help" element={<RouteSuspense><HelpPage /></RouteSuspense>} />
+            <Route path="/help" element={<RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>} />
           </Routes>
         </main>
       </div>

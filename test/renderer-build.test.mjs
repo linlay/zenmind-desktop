@@ -7224,11 +7224,15 @@ test("help page uses the configured anonymous Help webview", () => {
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
   const helpHandlers = readSourceFile("src", "main", "ipc", "help-handlers.ts");
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
 
   assert.match(helpPage, /window\.electronAPI\.help\.getSettings\(\)/);
   assert.match(helpPage, /DESKTOP_HELP_WEBVIEW_PARTITION/);
+  assert.match(helpPage, /buildDesktopHelpUrl\(settingsState\.settings\.url/);
+  assert.match(helpPage, /src:\s*helpUrl/);
   assert.match(helpPage, /createElement\("webview"/);
   assert.doesNotMatch(helpPage, /MarkdownContent|getHelpContent/);
+  assert.match(appShell, /<HelpPage hostTheme=\{resolvedTheme\} \/>/);
   assert.match(
     helpPageCss,
     /\.app-shell\.is-windows-platform \.help-webview-page\s*\{[\s\S]*?padding-top:\s*var\(--windows-titlebar-overlay-height\);/u

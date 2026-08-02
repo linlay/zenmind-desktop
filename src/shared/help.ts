@@ -1,10 +1,18 @@
 import { STORAGE_NAMESPACE } from "./brand";
+import type { SupportedLocale } from "./i18n";
 
 export const DESKTOP_HELP_WEBVIEW_PARTITION = `persist:${STORAGE_NAMESPACE}-help`;
 
 export type DesktopHelpSettings = {
   schemaVersion: 1;
   url: string;
+};
+
+export type DesktopHelpTheme = "light" | "dark";
+
+export type BuildDesktopHelpUrlOptions = {
+  locale: SupportedLocale;
+  theme: DesktopHelpTheme;
 };
 
 function isLoopbackHost(hostname: string) {
@@ -33,6 +41,21 @@ export function isSafeHelpUrl(value: string) {
   }
   const url = new URL(value);
   return url.protocol === "https:" || isLoopbackHost(url.hostname);
+}
+
+export function buildDesktopHelpUrl(
+  configuredUrl: string,
+  options: BuildDesktopHelpUrlOptions
+) {
+  if (!isSafeHelpUrl(configuredUrl)) {
+    return "";
+  }
+
+  const url = new URL(configuredUrl);
+  url.searchParams.set("desktop", "1");
+  url.searchParams.set("lang", options.locale);
+  url.searchParams.set("theme", options.theme);
+  return url.toString();
 }
 
 export function isAllowedHelpNavigationUrl(configuredUrl: string, candidateUrl: string) {
