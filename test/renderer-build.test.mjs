@@ -2837,7 +2837,6 @@ test("sidebar translucency is fixed and not user configurable", () => {
 
   assert.match(appShell, /"has-translucent-sidebar"/);
   assert.match(appShell, /isMac \? "is-mac-translucent-sidebar" : ""/);
-  assert.match(appShell, /sidebarTranslucencyEnabled:\s*true/);
   assert.match(appShell, /window\.electronAPI\.settings\.setNativeThemeSource\(themeMode\)/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_STORAGE_KEY/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY/);
@@ -2862,14 +2861,14 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.doesNotMatch(globalStyles, /--sidebar-translucency-opacity/);
   assert.match(globalStyles, /\.app-shell\.is-mac-translucent-sidebar::before\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-shell::before\s*\{[\s\S]*?(?:radial-gradient|linear-gradient)/);
-  assert.match(lightSidebarRule, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.05\);/);
-  assert.match(darkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.15\);/);
+  assert.match(lightSidebarRule, /background:\s*transparent;/);
+  assert.match(darkSidebarRule, /background:\s*transparent;/);
   assert.doesNotMatch(darkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)/);
   assert.doesNotMatch(darkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)/);
   assert.doesNotMatch(darkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)/);
-  assert.match(macSidebarRule, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.05\);/);
-  assert.match(macSidebarRule, /box-shadow:[\s\S]*?10px 0 28px rgba\(60,\s*60,\s*67,\s*0\.08\);/);
-  assert.match(macDarkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.15\);/);
+  assert.match(macSidebarRule, /background:\s*transparent;/);
+  assert.match(macSidebarRule, /box-shadow:\s*none;/);
+  assert.match(macDarkSidebarRule, /background:\s*rgba\(64,\s*64,\s*64,\s*0\.3\);/);
   assert.match(macDarkSidebarRule, /backdrop-filter:\s*none;/);
   assert.match(macDarkSidebarRule, /-webkit-backdrop-filter:\s*none;/);
   assert.doesNotMatch(macDarkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)/);

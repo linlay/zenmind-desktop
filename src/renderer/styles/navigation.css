@@ -155,7 +155,7 @@
 }
 
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background: transparent;
+  background: rgba(64, 64, 64, 0.3);
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow: none;
   backdrop-filter: none;
