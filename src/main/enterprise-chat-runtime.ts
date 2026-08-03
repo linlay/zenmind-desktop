@@ -34,9 +34,9 @@ import { getDesktopActionDefinition } from "../shared/desktop-actions";
 import type { EpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import {
-  DEFAULT_IM_SERVER_BASE_URL,
-  normalizeImServerBaseUrl
-} from "./im-server-settings";
+  DEFAULT_ENTERPRISE_IM_BASE_URL,
+  normalizeEnterpriseImBaseUrl
+} from "./enterprise-im-settings";
 import { getDesktopSsoAccessToken } from "./oidc-sso";
 
 const ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS = 15_000;
@@ -314,7 +314,7 @@ function normalizeMessages(value: unknown) {
 }
 
 function normalizeServerUrl(value: string | undefined) {
-  const normalized = normalizeImServerBaseUrl(readText(value) || DEFAULT_IM_SERVER_BASE_URL);
+  const normalized = normalizeEnterpriseImBaseUrl(readText(value) || DEFAULT_ENTERPRISE_IM_BASE_URL);
   if (!normalized) {
     throw new Error("IM server base URL must use loopback HTTP or remote HTTPS.");
   }
@@ -454,7 +454,7 @@ export class EnterpriseChatRuntime {
   constructor(options: EnterpriseChatRuntimeOptions) {
     this.app = options.app;
     this.getServerUrl = options.getServerUrl ?? (() =>
-      options.serverUrl ?? DEFAULT_IM_SERVER_BASE_URL
+      options.serverUrl ?? DEFAULT_ENTERPRISE_IM_BASE_URL
     );
     this.serverUrl = normalizeServerUrl(this.getServerUrl());
     this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);

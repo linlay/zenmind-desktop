@@ -1,15 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
+import type { EnterpriseImSettings } from "../shared/contracts";
 import { getDesktopConfigRoot } from "./user-paths";
 
-export const IM_SERVER_SETTINGS_FILE = "im-server.json";
-export const DEFAULT_IM_SERVER_BASE_URL = "http://127.0.0.1:11956";
+export type { EnterpriseImSettings } from "../shared/contracts";
 
-export type ImServerSettings = {
-  schemaVersion: 1;
-  baseUrl: string;
-};
+export const ENTERPRISE_IM_SETTINGS_FILE = "enterprise-im.json";
+export const DEFAULT_ENTERPRISE_IM_ENABLED = false;
+export const DEFAULT_ENTERPRISE_IM_BASE_URL = "http://127.0.0.1:11956";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -23,7 +22,7 @@ function isLoopbackHost(hostname: string) {
     normalized === "[::1]";
 }
 
-export function normalizeImServerBaseUrl(value: unknown) {
+export function normalizeEnterpriseImBaseUrl(value: unknown) {
   const candidate = typeof value === "string" ? value.trim() : "";
   if (!candidate) {
     return "";
@@ -46,32 +45,33 @@ export function normalizeImServerBaseUrl(value: unknown) {
   return url.toString().replace(/\/$/u, "");
 }
 
-export function normalizeImServerSettings(value: unknown): ImServerSettings | null {
+export function normalizeEnterpriseImSettings(value: unknown): EnterpriseImSettings | null {
   if (!isRecord(value)) {
     return null;
   }
-  const baseUrl = normalizeImServerBaseUrl(value.baseUrl);
-  return baseUrl
+  const baseUrl = normalizeEnterpriseImBaseUrl(value.baseUrl);
+  return typeof value.enabled === "boolean" && baseUrl
     ? {
         schemaVersion: 1,
+        enabled: value.enabled,
         baseUrl
       }
     : null;
 }
 
-export function getImServerSettingsPath(
+export function getEnterpriseImSettingsPath(
   app: App,
   platform: NodeJS.Platform = process.platform
 ) {
-  return path.join(getDesktopConfigRoot(app, platform), IM_SERVER_SETTINGS_FILE);
+  return path.join(getDesktopConfigRoot(app, platform), ENTERPRISE_IM_SETTINGS_FILE);
 }
 
-export function writeImServerSettings(
+export function writeEnterpriseImSettings(
   app: App,
-  settings: ImServerSettings,
+  settings: EnterpriseImSettings,
   platform: NodeJS.Platform = process.platform
 ) {
-  const filePath = getImServerSettingsPath(app, platform);
+  const filePath = getEnterpriseImSettingsPath(app, platform);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`, {
     encoding: "utf8",
@@ -79,21 +79,33 @@ export function writeImServerSettings(
   });
 }
 
-export function readImServerSettings(
+export function readEnterpriseImSettings(
   app: App,
   platform: NodeJS.Platform = process.platform
-): ImServerSettings {
-  const filePath = getImServerSettingsPath(app, platform);
+): EnterpriseImSettings {
+  const fallback: EnterpriseImSettings = {
+    schemaVersion: 1,
+    enabled: DEFAULT_ENTERPRISE_IM_ENABLED,
+    baseUrl: DEFAULT_ENTERPRISE_IM_BASE_URL
+  };
+  const filePath = getEnterpriseImSettingsPath(app, platform);
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
-    return normalizeImServerSettings(parsed) ?? {
-      schemaVersion: 1,
-      baseUrl: DEFAULT_IM_SERVER_BASE_URL
-    };
+    return normalizeEnterpriseImSettings(parsed) ?? fallback;
   } catch {
-    return {
-      schemaVersion: 1,
-      baseUrl: DEFAULT_IM_SERVER_BASE_URL
-    };
+    return fallback;
   }
+}
+
+export function setEnterpriseImEnabled(
+  app: App,
+  enabled: boolean,
+  platform: NodeJS.Platform = process.platform
+) {
+  const settings = {
+    ...readEnterpriseImSettings(app, platform),
+    enabled: enabled === true
+  };
+  writeEnterpriseImSettings(app, settings, platform);
+  return settings;
 }

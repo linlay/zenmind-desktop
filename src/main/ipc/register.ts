@@ -426,7 +426,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     onGeneralSettingsChanged: (settings) => {
       assistantRunWakeLock.sync();
       state.kanbanRuntime?.refreshDeviceInfo();
-      void options.enterpriseChatRuntime.setEnabled(settings.enterpriseChatEnabled);
+    },
+    onEnterpriseImSettingsChanged: (settings) => {
+      void options.enterpriseChatRuntime.reloadConfiguration(settings.enabled);
     },
     getDesktopWsServerRuntimeState: assistantBridgeRuntime.getDesktopWsServerRuntimeStateForSettings,
     startDesktopWsServer: assistantBridgeRuntime.startDesktopWsServerForSettings,

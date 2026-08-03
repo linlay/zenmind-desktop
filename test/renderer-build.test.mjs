@@ -2917,6 +2917,9 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /getDeviceIdentity: \(\) => Promise<DesktopDeviceIdentityInfo>/);
   assert.match(contracts, /getUsageProfile: \(\) => Promise<DesktopUsageProfileResult>/);
   assert.match(contracts, /getDesktopDeviceInfo: \(\) => Promise<DesktopDeviceInfo>/);
+  assert.match(contracts, /interface EnterpriseImSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?baseUrl:\s*string;/);
+  assert.match(contracts, /getEnterpriseImSettings: \(\) => Promise<EnterpriseImSettings>/);
+  assert.match(contracts, /setEnterpriseImEnabled: \(enabled: boolean\) => Promise<EnterpriseImSettings>/);
   assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
   assert.match(contracts, /getNavigationPreferences: \(\) => Promise<\{ mainOrder: string\[\]; webOrder: string\[\]; desktopCopilotPages: DesktopCopilotPagePreferences \}>/);
@@ -2935,6 +2938,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopDeviceInfo", async \(\) => getDesktopDeviceInfo\(app\)\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getDesktopWsServerState"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setDesktopWsServerEnabled"/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getEnterpriseImSettings"/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setEnterpriseImEnabled"/);
   assert.match(settingsHandlers, /desktopActionConfirmationEnabled:\s*current\.general\.desktopActionConfirmationEnabled/);
   assert.match(settingsHandlers, /desktopActionConfirmationEnabled:\s*typeof input\?\.desktopActionConfirmationEnabled === "boolean"/);
   assert.match(settingsPage, /settings\.about\.buildTime/);
@@ -2953,6 +2958,10 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(mainIpcRegister, /registerSettingsIpcHandlers\(/);
   assert.match(mainProcess, /general\.desktopWsServerEnabled/);
   assert.match(settingsPage, /desktopActionConfirmationEnabled:\s*true/);
+  assert.match(settingsPage, /defaultEnterpriseImSettings:[\s\S]*?enabled:\s*false/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.getEnterpriseImSettings\(\)/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.setEnterpriseImEnabled\(nextSettings\.enabled\)/);
+  assert.doesNotMatch(settingsPage, /enterpriseChatEnabled/);
   assert.match(settingsPage, /handleToggleDesktopActionConfirmation/);
   assert.match(settingsPage, /settings\.general\.desktopActionConfirmation/);
   assert.match(assistantRuntime, /startDesktopWsServerForSettings/);

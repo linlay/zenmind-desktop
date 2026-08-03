@@ -19,7 +19,6 @@ export type DesktopGeneralSettings = {
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
   desktopActionConfirmationEnabled: boolean;
-  enterpriseChatEnabled: boolean;
 };
 
 export type DesktopProfile = {
@@ -123,10 +122,7 @@ function normalizeDesktopProfile(
         : false,
       desktopActionConfirmationEnabled: typeof general.desktopActionConfirmationEnabled === "boolean"
         ? general.desktopActionConfirmationEnabled
-        : true,
-      enterpriseChatEnabled: typeof general.enterpriseChatEnabled === "boolean"
-        ? general.enterpriseChatEnabled
-        : false
+        : true
     },
     appearance: {
       theme: normalizeTheme(appearance.theme),

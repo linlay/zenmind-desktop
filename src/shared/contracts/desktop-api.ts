@@ -405,14 +405,18 @@ export interface DesktopGeneralSettings {
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
   desktopActionConfirmationEnabled: boolean;
-  enterpriseChatEnabled: boolean;
 }
 
 export interface DesktopGeneralSettingsInput {
   deviceName?: string;
   preventSleepWhileRunning?: boolean;
   desktopActionConfirmationEnabled?: boolean;
-  enterpriseChatEnabled?: boolean;
+}
+
+export interface EnterpriseImSettings {
+  schemaVersion: 1;
+  enabled: boolean;
+  baseUrl: string;
 }
 
 export interface DesktopWsServerState {
@@ -693,6 +697,8 @@ export interface DesktopApi {
     setDesktopWsServerEnabled: (enabled: boolean) => Promise<DesktopWsServerState>;
     getGeneralSettings: () => Promise<DesktopGeneralSettings>;
     saveGeneralSettings: (input: DesktopGeneralSettingsInput) => Promise<DesktopGeneralSettings>;
+    getEnterpriseImSettings: () => Promise<EnterpriseImSettings>;
+    setEnterpriseImEnabled: (enabled: boolean) => Promise<EnterpriseImSettings>;
     getTunnelHubSettings: () => Promise<TunnelHubSettings>;
     saveTunnelHubSettings: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;

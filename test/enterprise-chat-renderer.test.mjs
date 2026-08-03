@@ -10,6 +10,26 @@ function readSource(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 }
 
+test("enterprise IM configuration is independent from the enterprise chat business API", () => {
+  const appRuntime = readSource("src", "main", "app", "runtime.ts");
+  const bootstrap = readSource("src", "main", "desktop-init-bootstrap.ts");
+  const profile = readSource("src", "main", "desktop-profile-store.ts");
+  const settingsHandlers = readSource("src", "main", "ipc", "settings-handlers.ts");
+  const preload = readSource("src", "preload", "index.ts");
+
+  assert.match(appRuntime, /readEnterpriseImSettings\(app, mainProcessContext\.platform\)\.baseUrl/);
+  assert.match(appRuntime, /initialEnabled:\s*readEnterpriseImSettings\([\s\S]*?\)\.enabled/);
+  assert.match(appRuntime, /reloadConfiguration\([\s\S]*?readEnterpriseImSettings\(app, mainProcessContext\.platform\)\.enabled/);
+  assert.match(bootstrap, /defaults\.enterpriseIm/);
+  assert.doesNotMatch(bootstrap, /defaults\.imServer/);
+  assert.doesNotMatch(profile, /enterpriseChatEnabled/);
+  assert.match(settingsHandlers, /settings\.getEnterpriseImSettings/);
+  assert.match(settingsHandlers, /settings\.setEnterpriseImEnabled/);
+  assert.match(preload, /getEnterpriseImSettings/);
+  assert.match(preload, /setEnterpriseImEnabled/);
+  assert.match(preload, /enterpriseChat:\s*\{/);
+});
+
 test("enterprise chat renderer uses the compact panel and persistent list searches", () => {
   const panel = readSource(
     "src",

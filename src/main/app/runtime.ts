@@ -69,7 +69,7 @@ import {
   getElectronUserDataRoot,
 } from "../user-paths";
 import { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
-import { readImServerSettings } from "../im-server-settings";
+import { readEnterpriseImSettings } from "../enterprise-im-settings";
 import { createLogsRuntime } from "../logs/runtime";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
 import {
@@ -249,10 +249,11 @@ export function createMainProcessRuntime() {
     app,
     platform: mainProcessContext.platform,
     getServerUrl: () =>
-      readImServerSettings(app, mainProcessContext.platform).baseUrl,
-    initialEnabled: readDesktopProfileFromRoot(
-      getDesktopConfigRoot(app)
-    ).general.enterpriseChatEnabled,
+      readEnterpriseImSettings(app, mainProcessContext.platform).baseUrl,
+    initialEnabled: readEnterpriseImSettings(
+      app,
+      mainProcessContext.platform
+    ).enabled,
     refreshIdentityToken: () => refreshDesktopSsoIdentityToken(true),
     selectFiles: async () => {
       const result = await showFileDialog({
@@ -557,9 +558,7 @@ export function createMainProcessRuntime() {
     refreshDesktopActionBridge: () => assistantBridgeRuntime.refreshDesktopActionBridge(),
     refreshEnterpriseChat: () => {
       void enterpriseChatRuntime.reloadConfiguration(
-        readDesktopProfileFromRoot(
-          getDesktopConfigRoot(app, mainProcessContext.platform)
-        ).general.enterpriseChatEnabled
+        readEnterpriseImSettings(app, mainProcessContext.platform).enabled
       );
     }
   });
@@ -1155,7 +1154,7 @@ export function createMainProcessRuntime() {
     });
     runNonCoreStartupTask("enterprise chat", () => {
       void enterpriseChatRuntime.setEnabled(
-        readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.enterpriseChatEnabled
+        readEnterpriseImSettings(app, mainProcessContext.platform).enabled
       );
     });
     void startTunnelHubRuntimeIfEnabled().catch((error) => {

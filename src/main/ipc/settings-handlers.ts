@@ -9,6 +9,7 @@ import type {
   DesktopUsageProfileResult,
   DesktopWsServerStartOptions,
   DesktopWsServerState,
+  EnterpriseImSettings,
   TunnelHubSettingsInput,
   TunnelHubSettingsResult,
   TunnelHubRuntimeStatus
@@ -20,6 +21,10 @@ import {
   DESKTOP_WS_URL
 } from "../../shared/desktop-ws";
 import { readTunnelHubSettings, saveTunnelHubSettings } from "../tunnel-hub-settings";
+import {
+  readEnterpriseImSettings,
+  setEnterpriseImEnabled
+} from "../enterprise-im-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot, getDesktopStateRoot } from "../user-paths";
 import { getDesktopDeviceInfo } from "../desktop-device-info";
@@ -54,6 +59,7 @@ export interface SettingsIpcHandlerOptions {
   }) => Promise<any>;
   getUsageProfile?: (app: any) => Promise<DesktopUsageProfileResult>;
   onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
+  onEnterpriseImSettingsChanged?: (settings: EnterpriseImSettings) => void;
   getDesktopWsServerRuntimeState?: () => Omit<DesktopWsServerState, "enabled">;
   startDesktopWsServer?: (options?: DesktopWsServerStartOptions) => Promise<Omit<DesktopWsServerState, "enabled">>;
   stopDesktopWsServer?: () => Promise<Omit<DesktopWsServerState, "enabled">>;
@@ -229,6 +235,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     createAppPairingPayload,
     getUsageProfile,
     onGeneralSettingsChanged,
+    onEnterpriseImSettingsChanged,
     getDesktopWsServerRuntimeState,
     startDesktopWsServer,
     stopDesktopWsServer,
@@ -272,8 +279,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
             deviceName: current.general.deviceName,
             preventSleepWhileRunning: current.general.preventSleepWhileRunning,
             desktopWsServerEnabled: true,
-            desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled,
-            enterpriseChatEnabled: current.general.enterpriseChatEnabled
+            desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled
           }
         });
         onGeneralSettingsChanged?.(profile.general);
@@ -300,8 +306,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         deviceName: current.general.deviceName,
         preventSleepWhileRunning: current.general.preventSleepWhileRunning,
         desktopWsServerEnabled: false,
-        desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled,
-        enterpriseChatEnabled: current.general.enterpriseChatEnabled
+        desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled
       }
     });
     onGeneralSettingsChanged?.(profile.general);
@@ -320,14 +325,19 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         desktopActionConfirmationEnabled: typeof input?.desktopActionConfirmationEnabled === "boolean"
           ? input.desktopActionConfirmationEnabled
           : current.general.desktopActionConfirmationEnabled,
-        enterpriseChatEnabled: typeof input?.enterpriseChatEnabled === "boolean"
-          ? input.enterpriseChatEnabled
-          : current.general.enterpriseChatEnabled,
         desktopWsServerEnabled: current.general.desktopWsServerEnabled
       }
     });
     onGeneralSettingsChanged?.(profile.general);
     return profile.general;
+  });
+  ipcMain.handle("settings.getEnterpriseImSettings", async () =>
+    readEnterpriseImSettings(app, platform)
+  );
+  ipcMain.handle("settings.setEnterpriseImEnabled", async (_event: any, enabled: boolean) => {
+    const settings = setEnterpriseImEnabled(app, enabled, platform);
+    onEnterpriseImSettingsChanged?.(settings);
+    return settings;
   });
   ipcMain.handle("settings.getTunnelHubSettings", async () => readTunnelHubSettings(app));
   ipcMain.handle("settings.saveTunnelHubSettings", async (_event: any, input: TunnelHubSettingsInput) =>

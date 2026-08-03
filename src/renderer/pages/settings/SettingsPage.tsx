@@ -25,6 +25,7 @@ import type {
   DesktopDeviceIdentityInfo,
   DesktopLogTarget,
   DesktopGeneralSettings,
+  EnterpriseImSettings,
   DesktopWsProbeResult,
   DesktopPetAgentOption,
   DesktopPetState,
@@ -480,8 +481,13 @@ const defaultGeneralSettings: DesktopGeneralSettings = {
   deviceName: "",
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false,
-  desktopActionConfirmationEnabled: true,
-  enterpriseChatEnabled: false
+  desktopActionConfirmationEnabled: true
+};
+
+const defaultEnterpriseImSettings: EnterpriseImSettings = {
+  schemaVersion: 1,
+  enabled: false,
+  baseUrl: ""
 };
 
 function createFallbackDesktopWsServerState(message?: string): DesktopWsServerState {
@@ -2396,6 +2402,7 @@ export function SettingsPage({
   const [usageProfileLoading, setUsageProfileLoading] = useState(false);
   const [usageHeatmapMode, setUsageHeatmapMode] = useState<UsageHeatmapMode>("day");
   const [generalSettings, setGeneralSettings] = useState<DesktopGeneralSettings>(defaultGeneralSettings);
+  const [enterpriseImSettings, setEnterpriseImSettings] = useState<EnterpriseImSettings>(defaultEnterpriseImSettings);
   const [generalDeviceNameDraft, setGeneralDeviceNameDraft] = useState(defaultGeneralSettings.deviceName);
   const [desktopDeviceInfo, setDesktopDeviceInfo] = useState<DesktopDeviceInfo | null>(null);
   const [desktopDeviceInfoLoading, setDesktopDeviceInfoLoading] = useState(false);
@@ -2771,9 +2778,10 @@ export function SettingsPage({
     setDesktopDeviceInfoLoading(true);
     Promise.all([
       window.electronAPI.settings.getGeneralSettings(),
-      window.electronAPI.settings.getDesktopDeviceInfo()
+      window.electronAPI.settings.getDesktopDeviceInfo(),
+      window.electronAPI.settings.getEnterpriseImSettings()
     ])
-      .then(([settings, deviceInfo]) => {
+      .then(([settings, deviceInfo, enterpriseIm]) => {
         if (cancelled) {
           return;
         }
@@ -2784,6 +2792,7 @@ export function SettingsPage({
         setGeneralSettings(nextSettings);
         setGeneralDeviceNameDraft(nextSettings.deviceName);
         setDesktopDeviceInfo(deviceInfo);
+        setEnterpriseImSettings(enterpriseIm);
         setDeviceIdCopied(false);
         setReadErrorSections(["general"], "");
       })
@@ -3610,30 +3619,27 @@ export function SettingsPage({
     }
   }
 
-  async function handleToggleEnterpriseChat() {
-    const previousSettings = generalSettings;
+  async function handleToggleEnterpriseIm() {
+    const previousSettings = enterpriseImSettings;
     const nextSettings = {
-      ...generalSettings,
-      enterpriseChatEnabled: !generalSettings.enterpriseChatEnabled
+      ...enterpriseImSettings,
+      enabled: !enterpriseImSettings.enabled
     };
-    setGeneralSettings(nextSettings);
+    setEnterpriseImSettings(nextSettings);
     setGeneralSettingsSaving(true);
     try {
-      const savedSettings = await window.electronAPI.settings.saveGeneralSettings(nextSettings);
-      setGeneralSettings({
-        ...defaultGeneralSettings,
-        ...savedSettings
-      });
+      const savedSettings = await window.electronAPI.settings.setEnterpriseImEnabled(nextSettings.enabled);
+      setEnterpriseImSettings(savedSettings);
       setReadErrorSections(["general"], "");
       showSectionNotice(
         "general",
-        savedSettings.enterpriseChatEnabled
+        savedSettings.enabled
           ? t("settings.general.noticeEnterpriseChatEnabled")
           : t("settings.general.noticeEnterpriseChatDisabled"),
         "success"
       );
     } catch (reason) {
-      setGeneralSettings(previousSettings);
+      setEnterpriseImSettings(previousSettings);
       showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setGeneralSettingsSaving(false);
@@ -4588,10 +4594,10 @@ export function SettingsPage({
                 <span>{t("settings.general.enterpriseChatDescription")}</span>
               </div>
               <Switch
-                checked={generalSettings.enterpriseChatEnabled}
+                checked={enterpriseImSettings.enabled}
                 aria-label={t("settings.general.enterpriseChat")}
                 disabled={generalSettingsSaving}
-                onChange={() => void handleToggleEnterpriseChat()}
+                onChange={() => void handleToggleEnterpriseIm()}
               />
             </div>
           </div>

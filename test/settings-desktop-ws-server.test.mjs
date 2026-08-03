@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 
 const { registerSettingsIpcHandlers } = require("../dist-electron/main/ipc/settings-handlers.js");
 const { readDesktopProfileFromRoot } = require("../dist-electron/main/desktop-profile-store.js");
+const { readEnterpriseImSettings } = require("../dist-electron/main/enterprise-im-settings.js");
 const {
   getDesktopConfigRoot,
   getDesktopStateRoot
@@ -170,28 +171,10 @@ test("general settings persist desktop device name and expose device info", asyn
   assert.equal(saved.deviceName, "Studio Mac");
   assert.equal(saved.preventSleepWhileRunning, false);
   assert.equal(saved.desktopActionConfirmationEnabled, false);
-  assert.equal(saved.enterpriseChatEnabled, false);
   assert.equal(changedSettings.at(-1).deviceName, "Studio Mac");
   let general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
   assert.equal(general.deviceName, "Studio Mac");
   assert.equal(general.desktopActionConfirmationEnabled, false);
-  assert.equal(general.enterpriseChatEnabled, false);
-
-  const chatEnabled = await ipcMain.invoke("settings.saveGeneralSettings", {
-    enterpriseChatEnabled: true
-  });
-  assert.equal(chatEnabled.enterpriseChatEnabled, true);
-  assert.equal(changedSettings.at(-1).enterpriseChatEnabled, true);
-  general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
-  assert.equal(general.enterpriseChatEnabled, true);
-
-  const chatDisabled = await ipcMain.invoke("settings.saveGeneralSettings", {
-    enterpriseChatEnabled: false
-  });
-  assert.equal(chatDisabled.enterpriseChatEnabled, false);
-  assert.equal(changedSettings.at(-1).enterpriseChatEnabled, false);
-  general = readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general;
-  assert.equal(general.enterpriseChatEnabled, false);
 
   const info = await ipcMain.invoke("settings.getDesktopDeviceInfo");
   assert.equal(info.configuredDeviceName, "Studio Mac");
@@ -207,11 +190,62 @@ test("general settings persist desktop device name and expose device info", asyn
   });
   assert.equal(cleared.deviceName, "");
   assert.equal(cleared.desktopActionConfirmationEnabled, false);
-  assert.equal(cleared.enterpriseChatEnabled, false);
   const fallbackInfo = await ipcMain.invoke("settings.getDesktopDeviceInfo");
   assert.equal(fallbackInfo.configuredDeviceName, "");
   assert.equal(typeof fallbackInfo.deviceName, "string");
   assert.ok(fallbackInfo.deviceName.length > 0);
+});
+
+test("enterprise IM settings use independent persistence and notify runtime changes", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-enterprise-im-settings-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createApp(path.join(root, "home"));
+  const changedSettings = [];
+  const ipcMain = registerSettingsHandlers(app, {
+    onEnterpriseImSettingsChanged: (settings) => {
+      changedSettings.push(settings);
+    }
+  });
+
+  assert.deepEqual(await ipcMain.invoke("settings.getEnterpriseImSettings"), {
+    schemaVersion: 1,
+    enabled: false,
+    baseUrl: "http://127.0.0.1:11956"
+  });
+
+  const configRoot = getDesktopConfigRoot(app);
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(path.join(configRoot, "enterprise-im.json"), `${JSON.stringify({
+    schemaVersion: 1,
+    enabled: false,
+    baseUrl: "https://im.example.test/api"
+  }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(path.join(configRoot, "im-server.json"), JSON.stringify({
+    schemaVersion: 1,
+    baseUrl: "https://legacy-im.example.test"
+  }), "utf8");
+  fs.writeFileSync(path.join(configRoot, "profile.json"), JSON.stringify({
+    schemaVersion: 1,
+    general: {
+      enterpriseChatEnabled: true
+    }
+  }), "utf8");
+
+  const enabled = await ipcMain.invoke("settings.setEnterpriseImEnabled", true);
+  assert.deepEqual(enabled, {
+    schemaVersion: 1,
+    enabled: true,
+    baseUrl: "https://im.example.test/api"
+  });
+  assert.deepEqual(changedSettings.at(-1), enabled);
+  assert.deepEqual(readEnterpriseImSettings(app, "darwin"), enabled);
+  assert.equal("enterpriseChatEnabled" in readDesktopProfileFromRoot(configRoot).general, false);
+
+  const disabled = await ipcMain.invoke("settings.setEnterpriseImEnabled", false);
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.baseUrl, "https://im.example.test/api");
+  assert.equal(changedSettings.at(-1).enabled, false);
 });
 
 test("desktop state snapshot reads the fixed file whitelist including the raw access token", async (t) => {

@@ -172,7 +172,8 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     desktopActionBridge: {
       port: 17988
     },
-    imServer: {
+    enterpriseIm: {
+      enabled: true,
       baseUrl: "https://im.example.test/api/"
     },
     help: {
@@ -246,7 +247,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   const market = readJson(path.join(desktop, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktop, "config", "desktop", "sso.json"));
   const desktopActionBridge = readJson(path.join(desktop, "config", "desktop", "desktop-action-bridge.json"));
-  const imServer = readJson(path.join(desktop, "config", "desktop", "im-server.json"));
+  const enterpriseIm = readJson(path.join(desktop, "config", "desktop", "enterprise-im.json"));
   const help = readJson(path.join(desktop, "config", "desktop", "help.json"));
   const serviceLifecycleArgs = readJson(path.join(desktop, "config", "desktop", "service-lifecycle-args.json"));
   const servicePortDefaults = readJson(path.join(desktop, "config", "desktop", "service-port-defaults.json"));
@@ -284,8 +285,9 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
     schemaVersion: 1,
     port: 17988
   });
-  assert.deepEqual(imServer, {
+  assert.deepEqual(enterpriseIm, {
     schemaVersion: 1,
+    enabled: true,
     baseUrl: "https://im.example.test/api"
   });
   assert.deepEqual(help, {
@@ -352,7 +354,7 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(bootstrapState.appliedResult.webs, "applied");
   assert.equal(bootstrapState.appliedResult.assistant, "recorded");
   assert.equal(bootstrapState.appliedResult.desktopActionBridge, "applied");
-  assert.equal(bootstrapState.appliedResult.imServer, "applied");
+  assert.equal(bootstrapState.appliedResult.enterpriseIm, "applied");
   assert.equal(bootstrapState.appliedResult.help, "applied");
   assert.equal(bootstrapState.appliedResult.services, "applied");
   assert.equal(bootstrapState.websReport.mode, "initialize");
@@ -383,31 +385,111 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
 });
 
-test("desktop-init rejects an insecure remote IM server without replacing canonical config", (t) => {
+test("desktop-init rejects an insecure remote enterprise IM server without replacing canonical config", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-im-server-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   writeDesktopInit(app, "darwin", {
-    imServer: {
+    enterpriseIm: {
+      enabled: true,
       baseUrl: "http://im.example.test"
     }
   });
 
   const result = applyDesktopInitBootstrap(app, "darwin");
-  const imServerPath = path.join(
+  const enterpriseImPath = path.join(
     desktopRoot(homePath),
     "config",
     "desktop",
-    "im-server.json"
+    "enterprise-im.json"
   );
 
   assert.equal(result.applied, true);
-  assert.equal(result.appliedResult.imServer, "failed");
-  assert.deepEqual(result.failedSections, ["imServer"]);
-  assert.match(result.errors.imServer, /loopback HTTP or remote HTTPS/u);
-  assert.equal(fs.existsSync(imServerPath), false);
+  assert.equal(result.appliedResult.enterpriseIm, "failed");
+  assert.deepEqual(result.failedSections, ["enterpriseIm"]);
+  assert.match(result.errors.enterpriseIm, /loopback HTTP or remote HTTPS/u);
+  assert.equal(fs.existsSync(enterpriseImPath), false);
+});
+
+test("desktop-init requires an explicit enterprise IM enabled flag", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-enterprise-im-enabled-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const enterpriseImPath = path.join(
+    desktopRoot(homePath),
+    "config",
+    "desktop",
+    "enterprise-im.json"
+  );
+  fs.mkdirSync(path.dirname(enterpriseImPath), { recursive: true });
+  fs.writeFileSync(enterpriseImPath, `${JSON.stringify({
+    schemaVersion: 1,
+    enabled: true,
+    baseUrl: "https://existing-im.example.test"
+  }, null, 2)}\n`, "utf8");
+  writeDesktopInit(app, "darwin", {
+    enterpriseIm: {
+      baseUrl: "https://replacement-im.example.test"
+    }
+  });
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+
+  assert.equal(result.appliedResult.enterpriseIm, "failed");
+  assert.match(result.errors.enterpriseIm, /enabled must be boolean/u);
+  assert.deepEqual(readJson(enterpriseImPath), {
+    schemaVersion: 1,
+    enabled: true,
+    baseUrl: "https://existing-im.example.test"
+  });
+});
+
+test("desktop-init ignores retired imServer and overwrites canonical enterprise IM on reapply", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-enterprise-im-reapply-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const enterpriseImPath = path.join(
+    desktopRoot(homePath),
+    "config",
+    "desktop",
+    "enterprise-im.json"
+  );
+  writeDesktopInit(app, "darwin", {
+    imServer: {
+      baseUrl: "https://legacy-im.example.test"
+    }
+  });
+  const legacy = applyDesktopInitBootstrap(app, "darwin");
+  assert.equal(legacy.appliedResult.enterpriseIm, "absent");
+  assert.equal(fs.existsSync(enterpriseImPath), false);
+
+  writeDesktopInit(app, "darwin", {
+    enterpriseIm: {
+      enabled: true,
+      baseUrl: "https://first-im.example.test"
+    }
+  });
+  applyDesktopInitBootstrap(app, "darwin");
+  writeDesktopInit(app, "darwin", {
+    enterpriseIm: {
+      enabled: false,
+      baseUrl: "https://second-im.example.test/api/"
+    }
+  });
+  const reapplied = applyDesktopInitBootstrap(app, "darwin");
+
+  assert.equal(reapplied.appliedResult.enterpriseIm, "applied");
+  assert.deepEqual(readJson(enterpriseImPath), {
+    schemaVersion: 1,
+    enabled: false,
+    baseUrl: "https://second-im.example.test/api"
+  });
 });
 
 test("desktop-init rejects an insecure Help URL without replacing canonical config", (t) => {

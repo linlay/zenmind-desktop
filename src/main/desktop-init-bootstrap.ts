@@ -52,9 +52,9 @@ import {
   writeDesktopActionBridgeSettingsConfig
 } from "./desktop-action-bridge-settings";
 import {
-  normalizeImServerSettings,
-  writeImServerSettings
-} from "./im-server-settings";
+  normalizeEnterpriseImSettings,
+  writeEnterpriseImSettings
+} from "./enterprise-im-settings";
 import {
   normalizeHelpSettings,
   writeHelpSettings
@@ -79,7 +79,7 @@ type BootstrapApplyResult = {
   webs: BootstrapSectionResult;
   assistant: BootstrapAssistantResult;
   desktopActionBridge: BootstrapSectionResult;
-  imServer: BootstrapSectionResult;
+  enterpriseIm: BootstrapSectionResult;
   help: BootstrapSectionResult;
   services: BootstrapSectionResult;
 };
@@ -347,10 +347,7 @@ function applyProfileDefaults(
         : current.general.preventSleepWhileRunning,
       desktopActionConfirmationEnabled: typeof general.desktopActionConfirmationEnabled === "boolean"
         ? general.desktopActionConfirmationEnabled
-        : current.general.desktopActionConfirmationEnabled,
-      enterpriseChatEnabled: typeof general.enterpriseChatEnabled === "boolean"
-        ? general.enterpriseChatEnabled
-        : current.general.enterpriseChatEnabled
+        : current.general.desktopActionConfirmationEnabled
     },
     appearance: {
       theme: appearance.theme === "light" || appearance.theme === "dark" || appearance.theme === "system"
@@ -798,19 +795,22 @@ function applyDesktopActionBridgeDefaults(
   return "applied";
 }
 
-function applyImServerDefaults(
+function applyEnterpriseImDefaults(
   app: App,
-  imServerDefaults: unknown,
+  enterpriseImDefaults: unknown,
   platform: NodeJS.Platform
 ): Exclude<BootstrapSectionResult, "failed"> {
-  if (!isRecord(imServerDefaults)) {
+  if (typeof enterpriseImDefaults === "undefined") {
     return "absent";
   }
-  const settings = normalizeImServerSettings(imServerDefaults);
-  if (!settings) {
-    throw new Error("IM server base URL must use loopback HTTP or remote HTTPS.");
+  if (!isRecord(enterpriseImDefaults)) {
+    throw new Error("Enterprise IM must be an object with boolean enabled and a valid base URL.");
   }
-  writeImServerSettings(app, settings, platform);
+  const settings = normalizeEnterpriseImSettings(enterpriseImDefaults);
+  if (!settings) {
+    throw new Error("Enterprise IM enabled must be boolean and base URL must use loopback HTTP or remote HTTPS.");
+  }
+  writeEnterpriseImSettings(app, settings, platform);
   return "applied";
 }
 
@@ -910,10 +910,10 @@ export function applyDesktopInitBootstrap(
         errors,
         () => applyDesktopActionBridgeDefaults(app, defaults.desktopActionBridge, platform)
       ),
-      imServer: runBootstrapSection(
-        "imServer",
+      enterpriseIm: runBootstrapSection(
+        "enterpriseIm",
         errors,
-        () => applyImServerDefaults(app, defaults.imServer, platform)
+        () => applyEnterpriseImDefaults(app, defaults.enterpriseIm, platform)
       ),
       help: runBootstrapSection(
         "help",
@@ -963,7 +963,7 @@ export const __testInternals = {
   applyTunnelHubDefaults,
   applyWebsiteDefaults,
   applyDesktopActionBridgeDefaults,
-  applyImServerDefaults,
+  applyEnterpriseImDefaults,
   applyHelpDefaults,
   applyServiceDefaults
 };
