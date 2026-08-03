@@ -20,7 +20,7 @@ test("agent webclient management restores switch the Desktop shell to the chat r
   );
   assert.match(
     navigationHandler,
-    /isAgentWebclientManagementSurface\(service\?\.id, surfaceId\)[\s\S]*?resolveAgentWebclientChatRouteFromUrl\([\s\S]*?navigate\(nextChatRoute\);/u,
+    /isAgentWebclientManagementSurface\(service\?\.id, surfaceId\)[\s\S]*?resolveAgentWebclientDesktopChatRouteFromUrl\([\s\S]*?navigate\(nextChatRoute\);/u,
   );
   assert.match(
     navigationHandler,

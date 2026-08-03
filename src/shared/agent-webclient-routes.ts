@@ -1,3 +1,8 @@
+import {
+  decodeRoutePathSegment,
+  encodeRoutePathSegment
+} from "./route-path";
+
 export const AGENT_WEBCLIENT_SERVICE_ID = "agent-webclient";
 export const AGENT_WEBCLIENT_TARGET_PATH = "/agents";
 
@@ -117,6 +122,68 @@ const AGENT_WEBCLIENT_COPILOT_SURFACE_IDS = new Set([
   "agent-webclient-copilot-dock"
 ]);
 
+const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
+  "theme",
+  "hostTheme",
+  "lang",
+  "wsSource"
+]);
+
+function normalizeRouteSearch(
+  search: string | URLSearchParams | null | undefined
+) {
+  const query = search instanceof URLSearchParams
+    ? search.toString()
+    : (search ?? "").trim().replace(/^\?/u, "");
+  return query ? `?${query}` : "";
+}
+
+export function createAgentWebclientBusinessSearch(
+  search: string | URLSearchParams | null | undefined
+) {
+  const source = search instanceof URLSearchParams
+    ? search
+    : new URLSearchParams(search ?? "");
+  const businessParams = new URLSearchParams();
+  for (const [key, value] of source.entries()) {
+    if (!AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS.has(key)) {
+      businessParams.append(key, value);
+    }
+  }
+  return businessParams.toString();
+}
+
+export function createAgentWebclientAgentPath(
+  agentKey: string,
+  search?: string | URLSearchParams | null
+) {
+  const encodedAgentKey = encodeRoutePathSegment(agentKey);
+  if (!encodedAgentKey) {
+    return AGENT_WEBCLIENT_TARGET_PATH;
+  }
+  return `/agent/${encodedAgentKey}${normalizeRouteSearch(search)}`;
+}
+
+export function createAgentWebclientManagementPath(
+  agentKey: string,
+  search?: string | URLSearchParams | null
+) {
+  const encodedAgentKey = encodeRoutePathSegment(agentKey);
+  if (!encodedAgentKey) {
+    return AGENT_WEBCLIENT_TARGET_PATH;
+  }
+  return `/agents/${encodedAgentKey}${normalizeRouteSearch(search)}`;
+}
+
+export function createAgentWebclientCopilotPath(
+  agentKey: string,
+  search?: string | URLSearchParams | null
+) {
+  const encodedAgentKey = encodeRoutePathSegment(agentKey);
+  const basePath = encodedAgentKey ? `/copilot/${encodedAgentKey}` : "/copilot";
+  return `${basePath}${normalizeRouteSearch(search)}`;
+}
+
 export function createAgentWebclientRoute(request: {
   agentKey?: string | null;
   chatId?: string | null;
@@ -131,8 +198,7 @@ export function createAgentWebclientRoute(request: {
   if (chatId) {
     params.set("chatId", chatId);
   }
-  const query = params.toString();
-  return `/agent/${encodeURIComponent(agentKey)}${query ? `?${query}` : ""}`;
+  return createAgentWebclientAgentPath(agentKey, params);
 }
 
 export function resolveAgentWebclientWsSource(
@@ -161,13 +227,6 @@ export function resolveAgentWebclientWsSource(
   return undefined;
 }
 
-const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
-  "theme",
-  "hostTheme",
-  "lang",
-  "wsSource"
-]);
-
 export function areAgentWebclientHostRouteParamsEqual(
   currentUrl: string,
   targetUrl: string
@@ -190,22 +249,13 @@ interface AgentWebclientChatNavigationIdentity {
   businessQueryEntries: Array<readonly [string, string]>;
 }
 
-function decodeAgentKey(value: string): string | null {
-  try {
-    const decoded = decodeURIComponent(value).trim();
-    return decoded || null;
-  } catch {
-    return null;
-  }
-}
-
 function resolveAgentWebclientChatNavigationIdentity(
   value: string
 ): AgentWebclientChatNavigationIdentity | null {
   try {
-    const url = new URL(value);
+    const url = new URL(value, "http://desktop.local");
     const match = /^\/agent\/([^/]+)$/.exec(url.pathname);
-    const agentKey = match ? decodeAgentKey(match[1]) : null;
+    const agentKey = match ? decodeRoutePathSegment(match[1]) : null;
     if (!agentKey) {
       return null;
     }
@@ -228,6 +278,27 @@ function resolveAgentWebclientChatNavigationIdentity(
   }
 }
 
+function areAgentWebclientChatRouteIdentitiesEqual(
+  current: AgentWebclientChatNavigationIdentity,
+  target: AgentWebclientChatNavigationIdentity,
+  compareOrigin: boolean
+) {
+  if (
+    (compareOrigin && current.origin !== target.origin) ||
+    current.agentKey !== target.agentKey ||
+    current.hash !== target.hash ||
+    current.businessQueryEntries.length !== target.businessQueryEntries.length
+  ) {
+    return false;
+  }
+
+  return current.businessQueryEntries.every(
+    ([key, value], index) =>
+      target.businessQueryEntries[index]?.[0] === key &&
+      target.businessQueryEntries[index]?.[1] === value
+  );
+}
+
 /**
  * Compare an embedded main-chat URL by its WebClient business route identity.
  *
@@ -246,20 +317,51 @@ export function areAgentWebclientChatNavigationUrlsEquivalent(
     return false;
   }
 
-  if (
-    current.origin !== target.origin ||
-    current.agentKey !== target.agentKey ||
-    current.hash !== target.hash ||
-    current.businessQueryEntries.length !== target.businessQueryEntries.length
-  ) {
+  return areAgentWebclientChatRouteIdentitiesEqual(current, target, true);
+}
+
+export function areAgentWebclientChatBusinessRoutesEquivalent(
+  currentRoute: string,
+  targetRoute: string
+): boolean {
+  const current = resolveAgentWebclientChatNavigationIdentity(currentRoute);
+  const target = resolveAgentWebclientChatNavigationIdentity(targetRoute);
+  if (!current || !target) {
     return false;
   }
 
-  return current.businessQueryEntries.every(
-    ([key, value], index) =>
-      target.businessQueryEntries[index]?.[0] === key &&
-      target.businessQueryEntries[index]?.[1] === value
-  );
+  return areAgentWebclientChatRouteIdentitiesEqual(current, target, false);
+}
+
+export function resolveAgentWebclientDesktopChatRouteFromUrl(
+  value: string,
+  webviewSrcUrl: string
+) {
+  let parsed: URL;
+  let src: URL;
+  try {
+    parsed = new URL(value);
+    src = new URL(webviewSrcUrl);
+  } catch {
+    return "";
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    (src.protocol !== "http:" && src.protocol !== "https:") ||
+    parsed.origin !== src.origin
+  ) {
+    return "";
+  }
+
+  const match = /^\/agent\/([^/]+)$/u.exec(parsed.pathname);
+  const agentKey = match ? decodeRoutePathSegment(match[1]) : null;
+  const chatId = parsed.searchParams.get("chatId")?.trim() ?? "";
+  if (!agentKey || !chatId) {
+    return "";
+  }
+
+  const businessSearch = createAgentWebclientBusinessSearch(parsed.searchParams);
+  return createAgentWebclientAgentPath(agentKey, businessSearch);
 }
 
 export function findAgentWebclientRouteDefinition(pathname: string) {

@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
+import { createAgentWebclientCopilotPath } from "../../../shared/agent-webclient-routes";
+import { decodeRoutePathSegment } from "../../../shared/route-path";
 import { useI18n } from "../../i18n/useI18n";
 
 const PluginPage = lazy(() =>
@@ -30,13 +32,11 @@ function buildAgentWebclientCopilotPath(openRequest: AssistantWorkerOpenRequest 
     return `${AGENT_WEBCLIENT_COPILOT_PATH}?${params.toString()}`;
   }
 
-  if (!chatId) {
-    return `${AGENT_WEBCLIENT_COPILOT_PATH}/${encodeURIComponent(agentKey)}`;
-  }
-
   const params = new URLSearchParams();
-  params.set("chatId", chatId);
-  return `${AGENT_WEBCLIENT_COPILOT_PATH}/${encodeURIComponent(agentKey)}?${params.toString()}`;
+  if (chatId) {
+    params.set("chatId", chatId);
+  }
+  return createAgentWebclientCopilotPath(agentKey, params);
 }
 
 function readCopilotAgentKeyFromPathname(pathname: string) {
@@ -49,11 +49,7 @@ function readCopilotAgentKeyFromPathname(pathname: string) {
     return "";
   }
 
-  try {
-    return decodeURIComponent(rawAgentKey).trim();
-  } catch {
-    return rawAgentKey;
-  }
+  return decodeRoutePathSegment(rawAgentKey) ?? "";
 }
 
 function readCopilotAgentKeyFromUrl(value: string) {

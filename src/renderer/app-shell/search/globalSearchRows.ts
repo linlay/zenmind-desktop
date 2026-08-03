@@ -5,6 +5,7 @@ import type {
 } from "../../../shared/contracts";
 import type { EpochMilliseconds } from "../../../shared/time-contract";
 import type { TranslateFunction } from "../../../shared/i18n";
+import { decodeRoutePathSegment } from "../../../shared/route-path";
 
 export type DesktopGlobalSearchActionId = "newChat" | "agents" | "skills" | "controlCenter" | "settings";
 export type DesktopGlobalSearchSectionId = "awaiting" | "unread" | "actions" | "agents" | "chats";
@@ -68,7 +69,7 @@ export function resolveDesktopGlobalSearchAgentKey(currentRoute: string) {
   const [pathname, search = ""] = currentRoute.split("?", 2);
   const pathMatch = /^\/(?:agent|agents|copilot)\/([^/?#]+)/u.exec(pathname);
   if (pathMatch?.[1]) {
-    return decodeURIComponentSafe(pathMatch[1]);
+    return decodeRoutePathSegment(pathMatch[1]) ?? "";
   }
   try {
     return new URLSearchParams(search).get("agentKey")?.trim() ?? "";
@@ -384,12 +385,4 @@ function rowMatches(row: DesktopGlobalSearchRow, normalizedQuery: string) {
 
 function normalizeSearchText(value: unknown) {
   return String(value ?? "").trim().toLocaleLowerCase();
-}
-
-function decodeURIComponentSafe(value: string) {
-  try {
-    return decodeURIComponent(value).trim();
-  } catch {
-    return value.trim();
-  }
 }

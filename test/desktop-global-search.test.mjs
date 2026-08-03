@@ -35,6 +35,9 @@ function loadGlobalSearchRowsModule() {
         },
       };
     }
+    if (specifier === "../../../shared/route-path") {
+      return require("../dist-electron/shared/route-path.js");
+    }
     return sourceRequire(specifier);
   }, mod, sourcePath, path.dirname(sourcePath));
   return mod.exports;
@@ -106,6 +109,11 @@ function rowsOfKind(sections, kind) {
 test("desktop global search resolves the current agent and default sections", () => {
   assert.equal(resolveDesktopGlobalSearchAgentKey("/agent/coder?chatId=chat-1"), "coder");
   assert.equal(resolveDesktopGlobalSearchAgentKey("/agents/team%20agent"), "team agent");
+  assert.equal(
+    resolveDesktopGlobalSearchAgentKey("/copilot/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3"),
+    "AI建设文档",
+  );
+  assert.equal(resolveDesktopGlobalSearchAgentKey("/agent/%E5%A"), "");
 
   const sections = buildDesktopGlobalSearchSections({
     agents: [agent({})],

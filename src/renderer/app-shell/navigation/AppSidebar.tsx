@@ -63,7 +63,13 @@ import {
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
-import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../../../shared/agent-webclient-routes";
+import {
+  AGENT_WEBCLIENT_ROUTE_DEFINITIONS,
+  createAgentWebclientAgentPath,
+  createAgentWebclientManagementPath,
+  createAgentWebclientRoute,
+} from "../../../shared/agent-webclient-routes";
+import { decodeRoutePathSegment } from "../../../shared/route-path";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
@@ -559,7 +565,7 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string): AgentRouteInfo {
     const url = new URL(normalized, "http://agent-webclient.local");
     const match = /^\/agent\/([^/?#]+)/u.exec(url.pathname);
     return {
-      agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
+      agentKey: decodeRoutePathSegment(match?.[1]) ?? "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
       historyRequested: url.searchParams.get("history")?.trim() === "1",
       newChatRequested: url.searchParams.has("newChat"),
@@ -643,13 +649,11 @@ function resolveSidebarNavigationOwner(
 }
 
 function createAgentRoute(agentKey: string) {
-  return `/agent/${encodeURIComponent(agentKey)}`;
+  return createAgentWebclientAgentPath(agentKey);
 }
 
 function createAgentChatRoute(agentKey: string, chatId: string) {
-  const params = new URLSearchParams();
-  params.set("chatId", chatId.trim());
-  return `${createAgentRoute(agentKey)}?${params.toString()}`;
+  return createAgentWebclientRoute({ agentKey, chatId });
 }
 
 function createAgentNewChatRoute(agentKey: string) {
@@ -4959,7 +4963,7 @@ export function AppSidebar({
   }
 
   function createAgentEditRoute(agent: AssistantNavAgentItem) {
-    return `/agents/${encodeURIComponent(agent.agentKey)}`;
+    return createAgentWebclientManagementPath(agent.agentKey);
   }
 
   async function handleOpenWorkspace(agent: AssistantNavAgentItem) {

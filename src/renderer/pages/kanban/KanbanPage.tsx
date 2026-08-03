@@ -55,6 +55,10 @@ import type {
   KanbanStatus
 } from "../../../shared/contracts";
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
+import {
+  createAgentWebclientAgentPath,
+  createAgentWebclientRoute,
+} from "../../../shared/agent-webclient-routes";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import {
   getAssistantNavAgentRecentChats,
@@ -1151,12 +1155,10 @@ function buildKanbanChatEmbedPath(request: KanbanChatModalRequest) {
   }
 
   if (!chatId) {
-    return `/agent/${encodeURIComponent(agentKey)}`;
+    return createAgentWebclientAgentPath(agentKey);
   }
 
-  const params = new URLSearchParams();
-  params.set("chatId", chatId);
-  return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
+  return createAgentWebclientRoute({ agentKey, chatId });
 }
 
 export function KanbanPage({ hostTheme }: KanbanPageProps) {

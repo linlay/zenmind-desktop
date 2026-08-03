@@ -49,11 +49,33 @@ test("agent chat mirrors its business URL and only receives changed host params"
   );
 
   assert.match(pluginPage, /function isAgentWebclientChatSurface/);
-  assert.match(pluginPage, /function resolveAgentWebclientChatRouteFromUrl/);
+  assert.match(pluginPage, /resolveAgentWebclientDesktopChatRouteFromUrl/);
+  assert.match(pluginPage, /lastHostAppliedChatRouteRef/);
   assert.match(routeDeliveryBlock, /!areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)/);
   assert.match(routeDeliveryBlock, /areAgentWebclientHostRouteParamsEqual\(currentUrl, targetUrl\)/);
   assert.match(contextBridgeBlock, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)/);
   assert.doesNotMatch(pluginPage, /ChatRouteMessage/);
+});
+
+test("agent chat suppresses host route echoes and semantic no-op navigations", () => {
+  const pluginPage = readPluginPageSource();
+  const navigationHandlerBlock = pluginPage.slice(
+    pluginPage.indexOf("const syncNavigationRoute = (event: Event) =>"),
+    pluginPage.indexOf("const handleDidFailLoad = () =>"),
+  );
+
+  assert.match(
+    navigationHandlerBlock,
+    /areAgentWebclientChatNavigationUrlsEquivalent\([\s\S]*?lastHostAppliedChatRouteRef\.current[\s\S]*?resolvedUrl/u,
+  );
+  assert.match(
+    navigationHandlerBlock,
+    /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/u,
+  );
+  assert.match(
+    navigationHandlerBlock,
+    /!isHostRouteEcho[\s\S]*?!isSameDesktopBusinessRoute[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/u,
+  );
 });
 
 test("inactive agent webclient surfaces cannot take ownership of the Desktop route", () => {

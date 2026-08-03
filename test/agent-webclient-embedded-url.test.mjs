@@ -9,7 +9,12 @@ const {
 } = require("../dist-electron/shared/auth-bridge.js");
 const {
   areAgentWebclientHostRouteParamsEqual,
+  areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientChatNavigationUrlsEquivalent,
+  createAgentWebclientAgentPath,
+  createAgentWebclientCopilotPath,
+  createAgentWebclientManagementPath,
+  resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
 
@@ -116,4 +121,126 @@ test("host presentation comparison detects every host parameter change", () => {
   ]) {
     assert.equal(areAgentWebclientHostRouteParamsEqual(base, changed), false);
   }
+});
+
+test("agent family paths keep non-ASCII keys at one encoding layer", () => {
+  assert.equal(
+    createAgentWebclientAgentPath("AI建设文档"),
+    "/agent/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3"
+  );
+  assert.equal(
+    createAgentWebclientManagementPath("AI建设文档"),
+    "/agents/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3"
+  );
+  assert.equal(
+    createAgentWebclientCopilotPath("AI建设文档"),
+    "/copilot/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3"
+  );
+  assert.equal(
+    createAgentWebclientAgentPath("100%助手"),
+    "/agent/100%25%E5%8A%A9%E6%89%8B"
+  );
+  assert.doesNotMatch(createAgentWebclientAgentPath("AI建设文档"), /%25E5/u);
+});
+
+test("agent chat business routes compare semantic keys and ignore host params", () => {
+  const desktopRoute =
+    "/agent/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3?chatId=chat-1&custom=%E4%B8%AD%E6%96%87";
+  const webviewUrl =
+    "http://127.0.0.1:19011/agent/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3?theme=dark&custom=%E4%B8%AD%E6%96%87&chatId=chat-1&lang=zh-CN&wsSource=desktop-chat";
+
+  assert.equal(
+    areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, webviewUrl),
+    true
+  );
+  assert.equal(
+    areAgentWebclientChatBusinessRoutesEquivalent(
+      desktopRoute,
+      webviewUrl.replace("chat-1", "chat-2")
+    ),
+    false
+  );
+});
+
+test("webview chat routes mirror all business params but no host params", () => {
+  const webviewSrcUrl = "http://127.0.0.1:19011/agents";
+  const webviewUrl =
+    "http://127.0.0.1:19011/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?theme=dark&chatId=chat-1&custom=%E4%B8%AD%E6%96%87&lang=zh-CN&wsSource=desktop-chat";
+
+  assert.equal(
+    resolveAgentWebclientDesktopChatRouteFromUrl(webviewUrl, webviewSrcUrl),
+    "/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?chatId=chat-1&custom=%E4%B8%AD%E6%96%87"
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopChatRouteFromUrl(
+      webviewUrl.replace("127.0.0.1:19011", "127.0.0.1:19012"),
+      webviewSrcUrl
+    ),
+    ""
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopChatRouteFromUrl(
+      webviewUrl.replace("chatId=chat-1&", ""),
+      webviewSrcUrl
+    ),
+    ""
+  );
+});
+
+test("desktop and webview chat routing stays byte-stable for 100 sync rounds", () => {
+  const webviewOrigin = "http://127.0.0.1:19011";
+  const initialRoute =
+    "/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?chatId=chat-1&custom=%E4%B8%AD%E6%96%87";
+  let desktopRoute = initialRoute;
+
+  for (let index = 0; index < 100; index += 1) {
+    const parsed = new URL(desktopRoute, "http://desktop.local");
+    const rawAgentKey = /^\/agent\/([^/]+)$/u.exec(parsed.pathname)?.[1] ?? "";
+    const agentKey = decodeURIComponent(rawAgentKey);
+    const webviewUrl = new URL(
+      createAgentWebclientAgentPath(agentKey, parsed.searchParams),
+      webviewOrigin
+    ).toString();
+    desktopRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
+      webviewUrl,
+      `${webviewOrigin}/agents`
+    );
+    assert.equal(desktopRoute, initialRoute, `sync round ${index + 1}`);
+  }
+});
+
+test("newChat converges to chatId once and stable guest routes are no-ops", () => {
+  const webviewOrigin = "http://127.0.0.1:19011";
+  let desktopRoute =
+    "/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?newChat=1710000000000";
+  const stableWebviewUrl =
+    `${webviewOrigin}/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?chatId=chat-1&theme=dark&lang=zh-CN&wsSource=desktop-chat`;
+  let replaceCount = 0;
+
+  for (let index = 0; index < 100; index += 1) {
+    const nextRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
+      stableWebviewUrl,
+      `${webviewOrigin}/agents`
+    );
+    if (!areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, nextRoute)) {
+      desktopRoute = nextRoute;
+      replaceCount += 1;
+    }
+  }
+
+  assert.equal(replaceCount, 1);
+  assert.equal(
+    desktopRoute,
+    "/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?chatId=chat-1"
+  );
+});
+
+test("copilot path generation uses the semantic catalog key", () => {
+  const requestedPath = "/copilot/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3";
+  const rawAgentKey = /^\/copilot\/([^/]+)$/u.exec(requestedPath)?.[1] ?? "";
+  const semanticAgentKey = decodeURIComponent(rawAgentKey);
+  const catalogKeys = ["冒烟文档", "AI建设文档"];
+
+  assert.equal(catalogKeys.includes(semanticAgentKey), true);
+  assert.equal(createAgentWebclientCopilotPath(semanticAgentKey), requestedPath);
 });

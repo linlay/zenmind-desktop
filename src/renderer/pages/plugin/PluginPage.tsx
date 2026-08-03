@@ -15,8 +15,10 @@ import {
 } from "../../../shared/auth-bridge";
 import { buildAgentWebclientAccessTokenInjectionScript } from "../../../shared/agent-webclient-auth-injection";
 import {
+  areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
+  resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource,
 } from "../../../shared/agent-webclient-routes";
 import { useI18n } from "../../i18n/useI18n";
@@ -261,23 +263,6 @@ function resolvePluginCurrentUrl(
   return actual.toString();
 }
 
-function resolveAgentWebclientChatRouteFromUrl(value: string, webviewSrcUrl: string) {
-  const parsed = parseHttpUrl(value);
-  const src = parseHttpUrl(webviewSrcUrl);
-  if (!parsed || !src || parsed.origin !== src.origin) {
-    return "";
-  }
-  const match = /^\/agent\/([^/?#]+)/u.exec(parsed.pathname);
-  const agentKey = match?.[1] ? decodeURIComponent(match[1]).trim() : "";
-  const chatId = parsed.searchParams.get("chatId")?.trim() ?? "";
-  if (!agentKey || !chatId) {
-    return "";
-  }
-  const params = new URLSearchParams();
-  params.set("chatId", chatId);
-  return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
-}
-
 function buildPluginRouteChangedMessage(
   targetUrl: string,
   reason: "initial" | "navigation" | "route-sync",
@@ -428,6 +413,7 @@ export function PluginPage({
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const lastDirectWebviewRouteRef = useRef("");
+  const lastHostAppliedChatRouteRef = useRef("");
   const lastReportedCurrentUrlRef = useRef("");
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
   const surfaceVisibilityProps =
@@ -981,6 +967,12 @@ export function PluginPage({
     if (!payload) {
       return;
     }
+    if (
+      reason !== "navigation" &&
+      isAgentWebclientChatSurface(service?.id, surfaceId)
+    ) {
+      lastHostAppliedChatRouteRef.current = targetUrl;
+    }
     dispatchPluginRouteEventToWebview(payload);
   }
 
@@ -995,6 +987,9 @@ export function PluginPage({
         reason: "webview-unavailable",
       });
       return;
+    }
+    if (isAgentWebclientChatSurface(service?.id, surfaceId)) {
+      lastHostAppliedChatRouteRef.current = embeddedUrl;
     }
 
     try {
@@ -1248,18 +1243,29 @@ export function PluginPage({
         canSyncDesktopRoute &&
         isAgentWebclientChatSurface(service?.id, surfaceId)
       ) {
-        const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
+        const nextChatRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
           resolvedUrl,
           webviewSrcUrl,
         );
-        if (nextChatRoute && nextChatRoute !== currentRoute) {
+        const isHostRouteEcho = Boolean(lastHostAppliedChatRouteRef.current) &&
+          areAgentWebclientChatNavigationUrlsEquivalent(
+            lastHostAppliedChatRouteRef.current,
+            resolvedUrl,
+          );
+        const isSameDesktopBusinessRoute = Boolean(nextChatRoute) &&
+          areAgentWebclientChatBusinessRoutesEquivalent(currentRoute, nextChatRoute);
+        if (
+          nextChatRoute &&
+          !isHostRouteEcho &&
+          !isSameDesktopBusinessRoute
+        ) {
           navigate(nextChatRoute, { replace: true });
         }
       } else if (
         canSyncDesktopRoute &&
         isAgentWebclientManagementSurface(service?.id, surfaceId)
       ) {
-        const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
+        const nextChatRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
           resolvedUrl,
           webviewSrcUrl,
         );

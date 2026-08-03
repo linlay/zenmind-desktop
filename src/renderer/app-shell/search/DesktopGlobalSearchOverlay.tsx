@@ -9,6 +9,10 @@ import type {
   AssistantNavAgentItem
 } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
+import {
+  createAgentWebclientAgentPath,
+  createAgentWebclientRoute,
+} from "../../../shared/agent-webclient-routes";
 import { getAssistantAwaitingStatusKey } from "../../assistantNavigation";
 import { SidebarActionIcon, SidebarIllustration } from "../../components/BrandMark";
 import { AgentIcon } from "../navigation/AgentIcon";
@@ -271,10 +275,13 @@ function activateRow(
 
 function resolveRowTargetPath(row: DesktopGlobalSearchRow, currentAgentKey: string) {
   if (row.kind === "agent") {
-    return `/agent/${encodeURIComponent(row.agentKey)}`;
+    return createAgentWebclientAgentPath(row.agentKey);
   }
   if (row.kind === "chat") {
-    return `/agent/${encodeURIComponent(row.agentKey)}?chatId=${encodeURIComponent(row.chatId)}`;
+    return createAgentWebclientRoute({
+      agentKey: row.agentKey,
+      chatId: row.chatId,
+    });
   }
   return resolveActionTargetPath(row.actionId, currentAgentKey);
 }
@@ -284,7 +291,9 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, currentA
     if (!currentAgentKey) {
       return "";
     }
-    return `/agent/${encodeURIComponent(currentAgentKey)}?newChat=${Date.now()}`;
+    const params = new URLSearchParams();
+    params.set("newChat", String(Date.now()));
+    return createAgentWebclientAgentPath(currentAgentKey, params);
   }
   if (actionId === "agents") {
     return "/agents";
