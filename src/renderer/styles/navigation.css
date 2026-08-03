@@ -2308,11 +2308,14 @@
 
 .sidebar-web-item-actions-menu {
   z-index: 10001;
+  box-sizing: border-box;
   width: max-content;
-  min-width: 160px;
+  min-width: 196px;
+  max-width: min(240px, calc(100vw - 24px));
 }
 
 .sidebar-web-item-actions-menu button span {
+  min-width: 0;
   white-space: nowrap;
 }
 
@@ -3662,6 +3665,17 @@
   backdrop-filter: blur(22px) saturate(132%);
   -webkit-backdrop-filter: blur(22px) saturate(132%);
   pointer-events: auto;
+}
+
+.startup-loading-version {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 :root[data-theme="dark"] .startup-loading-card {

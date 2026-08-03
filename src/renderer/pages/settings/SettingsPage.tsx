@@ -336,6 +336,33 @@ function formatUsageDateTime(value: string, locale: SupportedLocale, fallback: s
   }).format(timestamp);
 }
 
+function formatBuildTimeInShanghai(value: string, locale: SupportedLocale) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return value;
+  }
+  const formatter = new Intl.DateTimeFormat(locale, {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(timestamp);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  ) as Partial<Record<"year" | "month" | "day" | "hour" | "minute" | "second", string>>;
+  if (!values.year || !values.month || !values.day || !values.hour || !values.minute || !values.second) {
+    return value;
+  }
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second} UTC+8`;
+}
+
 function buildUsageDailyMap(items: DesktopUsageProfileTrafficBucket[]) {
   const dailyMap = new Map<string, DesktopUsageProfileTrafficBucket>();
   for (const item of items) {
@@ -2225,7 +2252,7 @@ function AboutAppCard({
   runtimeResetResult,
   onResetRuntimeEnv
 }: AboutAppCardProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
   const [deviceIdentity, setDeviceIdentity] = useState<DesktopDeviceIdentityInfo | null>(null);
 
@@ -2287,8 +2314,8 @@ function AboutAppCard({
     if (!appInfo.buildTime) {
       return t("common.error");
     }
-    return appInfo.buildTime;
-  }, [appInfo, t]);
+    return formatBuildTimeInShanghai(appInfo.buildTime, locale);
+  }, [appInfo, locale, t]);
   const deviceId = useMemo(() => {
     if (deviceIdentity === null) {
       return t("common.loading");

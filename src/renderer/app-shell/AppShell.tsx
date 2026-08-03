@@ -149,6 +149,11 @@ function readStoredThemePreference(): ThemePreference {
   }
 }
 
+function normalizeDesktopAppVersion(version: string) {
+  const normalized = version.trim().replace(/^v/iu, "");
+  return normalized ? `v${normalized}` : "";
+}
+
 function resolveThemePreference(preference: ThemePreference): ResolvedThemeMode {
   if (preference === "system") {
     if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
@@ -450,6 +455,7 @@ export function AppShell() {
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
+  const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
   const [themePreferenceLoaded, setThemePreferenceLoaded] = useState(false);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
@@ -1498,6 +1504,18 @@ export function AppShell() {
 
   useEffect(() => {
     startDesktopActionRendererBridge();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void window.electronAPI.settings.getAppInfo().then((appInfo) => {
+      if (active) {
+        setDesktopAppVersion(normalizeDesktopAppVersion(appInfo.version));
+      }
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => window.electronAPI.desktopShell.onShutdownProgress((progress) => {
@@ -2980,6 +2998,7 @@ export function AppShell() {
       ) : null}
       {showStartupCard ? (
         <StartupLoadingScreen
+          version={desktopAppVersion}
           servicesLoading={servicesLoading}
           servicesError={servicesError}
           startupServices={startupServices}
@@ -3027,7 +3046,7 @@ export function AppShell() {
         onClose={() => setGlobalSearchOpen(false)}
         onNavigate={requestSidebarNavigation}
       />
-      <DesktopShutdownOverlay progress={shutdownProgress} t={t} />
+      <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
       </div>
     </DebugModeContext.Provider>
   );
