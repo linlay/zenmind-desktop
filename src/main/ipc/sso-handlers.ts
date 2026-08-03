@@ -10,6 +10,7 @@ export interface SsoIpcHandlerOptions {
     syncBrowserCookies: () => Promise<void>;
     exchangeBrowserCookieAccessToken: () => Promise<string>;
     refreshBrowserCookieAccessTokenIfNeeded?: (force?: boolean) => Promise<string>;
+    retryDesktopSsoSessionRestoreIfNeeded?: () => Promise<any>;
     exchangeWebSession: (idToken: string) => Promise<boolean>;
     exchangeWebSessionTicket?: (ticket: string) => Promise<any>;
     exchangeSiteTokenBridgeTicket?: (ticket: string) => Promise<any>;
@@ -70,6 +71,7 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
 
   ipcMain.handle("sso.getStatus", async () => {
     try {
+      await desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded?.();
       await desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded?.();
     } catch (error) {
       safeConsoleError("failed to refresh desktop sso token while reading status", error);

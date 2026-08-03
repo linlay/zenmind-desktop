@@ -197,6 +197,7 @@ type FetchLike = (url: string, init?: {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  signal?: AbortSignal;
 }) => Promise<FetchResponseLike>;
 
 type ElectronFetchRuntime = {
@@ -283,6 +284,7 @@ export type DesktopSsoAccessTokenCookieDetails = {
   value: string;
   path: string;
   domain?: string;
+  expirationDate?: number;
   secure: boolean;
   httpOnly: boolean;
   sameSite: AccessTokenCookieSameSite;
@@ -392,6 +394,10 @@ let desktopSsoProxyState: DesktopSsoProxyState | null = null;
 let currentAccessToken = "";
 let currentIdToken = "";
 let currentSessionAuthMode: DesktopSsoSessionMetadata["authMode"] | null = null;
+let currentSessionApp: App | null = null;
+let currentSessionMetadata: DesktopSsoSessionMetadata | null = null;
+let loadedSessionPath = "";
+let unverifiedCookieSessionCandidate = false;
 const usedAuthorizationCodes = new Set<string>();
 const usedDesktopSsoTickets = new Set<string>();
 
@@ -1433,7 +1439,7 @@ type DesktopSsoUserInfoSource =
 function saveSession(
   app: App,
   status: DesktopSsoStatus,
-  idToken = "",
+  _idToken = "",
   metadata: DesktopSsoSessionMetadata = {}
 ) {
   fs.mkdirSync(path.dirname(getSessionPath(app)), { recursive: true });
@@ -1444,9 +1450,15 @@ function saveSession(
     audience: metadata.audience || status.user?.audience || "",
     authMode: metadata.authMode || "oidc",
     message: status.message,
-    updatedAt: status.updatedAt,
-    ...(idToken.trim() ? { idToken: idToken.trim() } : {})
+    updatedAt: status.updatedAt
   }, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+}
+
+function persistCurrentSessionStatus() {
+  if (!currentSessionApp || !currentSessionMetadata || !currentStatus.authenticated) {
+    return;
+  }
+  saveSession(currentSessionApp, currentStatus, currentIdToken, currentSessionMetadata);
 }
 
 function saveUserInfoFile(
@@ -1640,7 +1652,8 @@ export function desktopSsoAccessTokenNeedsRefresh(
   if (!token) {
     return true;
   }
-  const expiresAtSeconds = Number(getJwtPayload(token).exp);
+  const expirationClaim = getJwtPayload(token).exp;
+  const expiresAtSeconds = typeof expirationClaim === "number" ? expirationClaim : Number.NaN;
   if (!Number.isFinite(expiresAtSeconds) || expiresAtSeconds <= 0) {
     return true;
   }
@@ -1648,9 +1661,14 @@ export function desktopSsoAccessTokenNeedsRefresh(
 }
 
 function loadSession(app: App) {
+  loadedSessionPath = getSessionPath(app);
+  unverifiedCookieSessionCandidate = false;
+  currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
   currentIdToken = "";
   currentAccessToken = "";
   currentSessionAuthMode = null;
+  currentSessionApp = null;
+  currentSessionMetadata = null;
   const filePath = getSessionPath(app);
   if (!fs.existsSync(filePath)) {
     return;
@@ -1691,6 +1709,12 @@ function loadSession(app: App) {
           : currentIdToken
             ? "oidc"
             : null;
+      currentSessionApp = app;
+      currentSessionMetadata = {
+        issuer: sessionIssuer,
+        audience: typeof parsed.audience === "string" ? parsed.audience.trim() : "",
+        authMode: currentSessionAuthMode || undefined
+      };
     }
   } catch {
     currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
@@ -1710,9 +1734,14 @@ function beginAuthenticatedSession(
   clearCachedDesktopSsoAvatar(app);
   removeUserInfoFile(app);
   removeAccessTokenFile(app);
+  removeDesktopSsoSiteTokenFile(app);
   currentAccessToken = "";
   currentIdToken = idToken.trim();
   currentSessionAuthMode = metadata.authMode;
+  currentSessionApp = app;
+  currentSessionMetadata = { ...metadata };
+  loadedSessionPath = getSessionPath(app);
+  unverifiedCookieSessionCandidate = false;
   setCurrentStatus(status);
   return cloneStatus(status);
 }
@@ -1744,6 +1773,7 @@ function completeUserInfoStep(
       : getCompletedDesktopSsoMessage(completedSteps)
   });
   setCurrentStatus(status);
+  persistCurrentSessionStatus();
   return cloneStatus(status);
 }
 
@@ -1793,6 +1823,7 @@ export function finalizeDesktopSsoLoginAttempt(
     ...(messages.length > 0 ? { error: messages.join("; ") } : {})
   });
   setCurrentStatus(status);
+  persistCurrentSessionStatus();
   return cloneStatus(status);
 }
 
@@ -1802,6 +1833,10 @@ function clearSession(app: App) {
   currentAccessToken = "";
   currentIdToken = "";
   currentSessionAuthMode = null;
+  currentSessionApp = null;
+  currentSessionMetadata = null;
+  loadedSessionPath = getSessionPath(app);
+  unverifiedCookieSessionCandidate = false;
   removeAccessTokenFile(app);
   removeDesktopSsoSiteTokenFile(app);
   removeUserInfoFile(app);
@@ -3287,10 +3322,104 @@ export function getDesktopSsoStatus(app?: App): DesktopSsoStatus {
       return createFailedStatus(configResult.error);
     }
   }
-  if (app && !currentStatus.authenticated && !currentStatus.pending) {
+  if (app && loadedSessionPath !== getSessionPath(app)) {
     loadSession(app);
   }
   return cloneStatus(currentStatus);
+}
+
+export type DesktopSsoRestorePreparation = {
+  requiresCookieValidation: boolean;
+  clearCookies?: boolean;
+  status: DesktopSsoStatus;
+};
+
+export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePreparation {
+  const configResult = loadDesktopSsoConfig(app);
+  const sessionPath = getSessionPath(app);
+  loadedSessionPath = sessionPath;
+  currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
+  currentAccessToken = "";
+  currentIdToken = "";
+  currentSessionAuthMode = null;
+  currentSessionApp = null;
+  currentSessionMetadata = null;
+  unverifiedCookieSessionCandidate = false;
+
+  if (!configResult.configured) {
+    currentStatus = createUnconfiguredStatus(configResult.message);
+    return { requiresCookieValidation: false, status: cloneStatus(currentStatus) };
+  }
+  if (configResult.error || !configResult.config) {
+    currentStatus = createFailedStatus(configResult.error || t("sso.missingOidcConfig"));
+    return { requiresCookieValidation: false, status: cloneStatus(currentStatus) };
+  }
+  if (!fs.existsSync(sessionPath)) {
+    return { requiresCookieValidation: false, status: cloneStatus(currentStatus) };
+  }
+
+  let parsed: {
+    authenticated?: unknown;
+    issuer?: unknown;
+    audience?: unknown;
+    authMode?: unknown;
+  };
+  try {
+    parsed = JSON.parse(fs.readFileSync(sessionPath, "utf8")) as typeof parsed;
+  } catch {
+    return { requiresCookieValidation: false, status: cloneStatus(currentStatus) };
+  }
+
+  const requiresCookieValidation =
+    parsed.authenticated === true &&
+    Boolean(configResult.config.browserSession) &&
+    Boolean(configResult.config.cookieAccessTokenExchange) &&
+    parsed.authMode !== "oidc" &&
+    parsed.authMode !== "server";
+  if (!requiresCookieValidation) {
+    loadSession(app);
+    return { requiresCookieValidation: false, status: cloneStatus(currentStatus) };
+  }
+
+  const expectedIssuer = configResult.config.browserOrigin ||
+    new URL(configResult.config.browserSession!.url).origin;
+  const expectedAudience = (configResult.config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG).audience;
+  const storedIssuer = typeof parsed.issuer === "string" ? parsed.issuer.trim() : "";
+  const storedAudience = typeof parsed.audience === "string" ? parsed.audience.trim() : "";
+  if (
+    (storedIssuer && storedIssuer !== expectedIssuer) ||
+    (storedAudience && storedAudience !== expectedAudience)
+  ) {
+    return {
+      requiresCookieValidation: false,
+      clearCookies: true,
+      status: clearDesktopSsoLocalSession(app, t("sso.restoreConfigurationChanged"))
+    };
+  }
+
+  currentStatus = createPendingStatus(t("sso.restoringLogin"));
+  unverifiedCookieSessionCandidate = true;
+  return { requiresCookieValidation: true, status: cloneStatus(currentStatus) };
+}
+
+export function markDesktopSsoRestoreTemporarilyUnavailable(app: App, message: string) {
+  loadedSessionPath = getSessionPath(app);
+  currentAccessToken = "";
+  currentIdToken = "";
+  currentSessionAuthMode = null;
+  currentSessionApp = null;
+  currentSessionMetadata = null;
+  const status = createFailedStatus(t("sso.restoreTemporarilyUnavailable"));
+  status.error = message;
+  setCurrentStatus(status);
+  return cloneStatus(status);
+}
+
+export function clearDesktopSsoLocalSession(app: App, message = t("sso.signedOut")) {
+  clearSession(app);
+  const status = createSignedOutStatus(message);
+  setCurrentStatus(status);
+  return cloneStatus(status);
 }
 
 export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
@@ -3307,6 +3436,11 @@ export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
   currentAccessToken = "";
   currentIdToken = "";
   currentSessionAuthMode = null;
+  currentSessionApp = null;
+  currentSessionMetadata = null;
+  if (!unverifiedCookieSessionCandidate) {
+    loadedSessionPath = "";
+  }
   const status = createFailedStatus(message);
   setCurrentStatus(status);
   return cloneStatus(status);
@@ -3358,7 +3492,9 @@ export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): D
   pendingLogin = null;
   pendingSiteTokenBridge = null;
   currentAccessToken = "";
-  loadSession(app);
+  if (!unverifiedCookieSessionCandidate) {
+    loadSession(app);
+  }
   const status = currentStatus.authenticated && !currentStatus.pending
     ? {
       ...cloneStatus(currentStatus),
@@ -3400,7 +3536,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
       message: status.message
     };
   }
-  if (!currentStatus.authenticated && !currentStatus.pending) {
+  if (loadedSessionPath !== getSessionPath(app)) {
     loadSession(app);
   }
   try {
@@ -3588,6 +3724,20 @@ export function completeDesktopSsoBrowserUserInfo(app: App, userInfo: unknown): 
   return completeUserInfoStep(app, claims, "cookie_userinfo");
 }
 
+export function parseDesktopSsoCookieUserInfo(
+  app: Pick<App, "getPath">,
+  userInfo: unknown
+) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured) {
+    throw new Error(configResult.message);
+  }
+  if (configResult.error || !configResult.config) {
+    throw new Error(configResult.error || t("sso.missingOidcConfig"));
+  }
+  return createDesktopSsoCookieUserInfoClaims(userInfo, configResult.config);
+}
+
 export function getDesktopSsoCookieAccessTokenExchangeUrl(app: Pick<App, "getPath">) {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured || configResult.error || !configResult.config?.cookieAccessTokenExchange) {
@@ -3624,12 +3774,17 @@ export function buildDesktopSsoAccessTokenCookieDetails(
   if (!token || cookieConfigs.length === 0) {
     return [];
   }
+  const expiresAtSeconds = Number(getJwtPayload(token).exp);
+  const expirationDate = Number.isFinite(expiresAtSeconds) && expiresAtSeconds > Date.now() / 1000
+    ? expiresAtSeconds
+    : undefined;
   return cookieConfigs.map((details) => ({
     url: details.url,
     name: details.name,
     value: token,
     path: details.path,
     ...(details.domain ? { domain: details.domain } : {}),
+    ...(expirationDate ? { expirationDate } : {}),
     secure: details.secure,
     httpOnly: details.httpOnly,
     sameSite: details.sameSite
@@ -3702,33 +3857,72 @@ export function getDesktopSsoSiteTokenBridgeCookieOrigins(app: Pick<App, "getPat
 export async function exchangeConfiguredDesktopSsoCookieForAccessToken(
   app: Pick<App, "getPath">,
   cookieHeader: string,
-  fetchImpl: FetchLike = fetch as unknown as FetchLike
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+  options: { persist?: boolean } = {}
 ) {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured || configResult.error || !configResult.config) {
     return "";
   }
   const accessToken = await exchangeCookieForAccessToken(cookieHeader, fetchImpl, configResult.config);
-  if (accessToken) {
-    completeAccessTokenStep(app, accessToken);
-    const payload = getJwtPayload(accessToken);
-    const expiresAtSeconds = Number(payload.exp);
-    saveDesktopSsoSiteTokenFile(app, {
-      accessToken,
-      tokenType: "Bearer",
-      ...(Number.isFinite(expiresAtSeconds) && expiresAtSeconds > 0
-        ? { expiresAt: new Date(expiresAtSeconds * 1000).toISOString() }
-        : {}),
-      issuer: normalizeStringClaim(payload.iss),
-      audience: payload.aud,
-      scope: normalizeStringClaim(payload.scope)
-    });
+  if (accessToken && options.persist !== false) {
+    persistDesktopSsoAccessToken(app, accessToken);
   }
   return accessToken;
 }
 
+function persistDesktopSsoAccessToken(app: Pick<App, "getPath">, accessToken: string) {
+  completeAccessTokenStep(app, accessToken);
+  const payload = getJwtPayload(accessToken);
+  const expiresAtSeconds = Number(payload.exp);
+  saveDesktopSsoSiteTokenFile(app, {
+    accessToken,
+    tokenType: "Bearer",
+    ...(Number.isFinite(expiresAtSeconds) && expiresAtSeconds > 0
+      ? { expiresAt: new Date(expiresAtSeconds * 1000).toISOString() }
+      : {}),
+    issuer: normalizeStringClaim(payload.iss),
+    audience: payload.aud,
+    scope: normalizeStringClaim(payload.scope)
+  });
+}
+
+export function completeDesktopSsoRestoredBrowserSession(
+  app: App,
+  accessToken: string,
+  browserUserInfo: { sub: string; name?: string; email?: string; avatarUrl?: string }
+) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured) {
+    return createUnconfiguredStatus(configResult.message);
+  }
+  if (configResult.error || !configResult.config) {
+    return createFailedStatus(configResult.error || t("sso.missingOidcConfig"));
+  }
+  const token = accessToken.trim();
+  if (!token) {
+    return createFailedStatus(t("sso.cookieAccessTokenEmpty"));
+  }
+
+  completeDesktopSsoBrowserSession(app);
+  if (!browserUserInfo.sub.trim()) {
+    throw new Error(t("sso.token.cookieUserInfoSubMissing", { path: "sub" }));
+  }
+  completeDesktopSsoBrowserSessionUserInfo(app, browserUserInfo);
+  persistDesktopSsoAccessToken(app, token);
+  return finalizeDesktopSsoLoginAttempt();
+}
+
 export function getDesktopSsoAccessToken() {
   return currentAccessToken || null;
+}
+
+export function isDesktopSsoCredentialRuntimeReady() {
+  return currentStatus.authenticated &&
+    !currentStatus.pending &&
+    currentStatus.completedSteps.session &&
+    currentStatus.completedSteps.accessToken &&
+    Boolean(currentAccessToken);
 }
 
 export function completeDesktopSsoBrowserLogin(app: App, completionUrl: string): DesktopSsoStatus {
@@ -3761,7 +3955,7 @@ export function completeDesktopSsoCookieLogin(app: App, accessToken: string): De
 export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Promise<DesktopSsoLogoutResult> {
   callbackHooks = hooks;
   const configResult = loadDesktopSsoConfig(app);
-  if (!currentStatus.authenticated && !currentStatus.pending) {
+  if (loadedSessionPath !== getSessionPath(app)) {
     loadSession(app);
   }
   const logoutIdToken = currentIdToken;

@@ -4102,6 +4102,10 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const initializeMainI18nIndex = mainProcess.indexOf("initializeMainI18n(app", initializeUserDataIndex);
   const prepareStartupRuntimeIndex = mainProcess.indexOf("await startupEnvironmentRuntime.prepareStartupRuntimeEnvironment()");
   const initializeUserDataCallIndex = mainProcess.indexOf("initializeUserDataRootsAndSettings();", prepareStartupRuntimeIndex);
+  const restoreDesktopSsoIndex = mainProcess.indexOf(
+    "await desktopSsoController.restoreDesktopSsoSession()",
+    initializeUserDataCallIndex
+  );
   const createWindowCallIndex = mainProcess.indexOf("createWindow();", initializeUserDataCallIndex);
   const handleReadyIndex = indexOfRequired(mainProcess, "async function handleAppReady()");
   const handleReadyEndIndex = indexOfRequiredAfter(mainProcess, "function start()", handleReadyIndex);
@@ -4137,12 +4141,14 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.notEqual(initializeMainI18nIndex, -1);
   assert.notEqual(prepareStartupRuntimeIndex, -1);
   assert.notEqual(initializeUserDataCallIndex, -1);
+  assert.notEqual(restoreDesktopSsoIndex, -1);
   assert.notEqual(createWindowCallIndex, -1);
   assert.equal(ensureDataRootIndex < applyDesktopInitIndex, true);
   assert.equal(applyDesktopInitIndex < installDemoIndex, true);
   assert.equal(applyDesktopInitIndex < initializeMainI18nIndex, true);
   assert.equal(prepareStartupRuntimeIndex < initializeUserDataCallIndex, true);
-  assert.equal(initializeUserDataCallIndex < createWindowCallIndex, true);
+  assert.equal(initializeUserDataCallIndex < restoreDesktopSsoIndex, true);
+  assert.equal(restoreDesktopSsoIndex < createWindowCallIndex, true);
   assert.equal(phasePlatformPreflightIndex < phaseRuntimeEnvIndex, true);
   assert.equal(phaseRuntimeEnvIndex < phaseRuntimeEnvReadyIndex, true);
   assert.equal(phaseRuntimeEnvReadyIndex < phaseDesktopStateReadyIndex, true);
@@ -4162,7 +4168,8 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.doesNotMatch(nonCoreStartupBlock, /registerFocusedWebviewDevToolsShortcut/);
   assert.match(nonCoreStartupBlock, /pluginBridgeRuntime\.setDesktopReady\(\)/);
   assert.match(nonCoreStartupBlock, /startDesktopWsServerIfEnabled/);
-  assert.match(nonCoreStartupBlock, /startTunnelHubRuntimeIfEnabled\(\)/);
+  assert.match(nonCoreStartupBlock, /startSsoCredentialDependentRuntimes\(\)/);
+  assert.match(mainProcess, /function startSsoCredentialDependentRuntimes\(\)[\s\S]{0,500}!isDesktopSsoCredentialRuntimeReady\(\)[\s\S]{0,900}startTunnelHubRuntimeIfEnabled\(\)/);
   assert.match(nonCoreStartupBlock, /setStartupPhase\("non-core-ready"\)/);
   assert.match(notifyCoreBlock, /isStartupPhaseAtLeast\(appState\.startupPhase, "shell-ready"\)/);
   assert.doesNotMatch(notifyCoreBlock, /scheduleAgentPlatformPetStatusRefresh/);
@@ -7142,10 +7149,10 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.doesNotMatch(mainProcess, /openInternalAuthBrowserWindow/u);
   assert.doesNotMatch(mainProcess, /shouldOpenAuthUrlInInternalBrowser/u);
   assert.doesNotMatch(windowManager, /openInternalAuthFromWebview/u);
-  assert.match(externalWebviewPage, /function shouldRefreshWebviewAfterDesktopSso\(value: string\)/u);
+  assert.match(externalWebviewPage, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/u);
   assert.match(externalWebviewPage, /window\.electronAPI\.sso\.onStatusChanged/u);
   assert.match(externalWebviewPage, /if \(!status\.authenticated\) \{/u);
-  assert.match(externalWebviewPage, /shouldRefreshWebviewAfterDesktopSso\(currentUrl\)/u);
+  assert.match(externalWebviewPage, /tab\.partition !== DESKTOP_SSO_WEBVIEW_PARTITION/u);
   assert.match(externalWebviewPage, /webview\.reload\(\)/u);
   assert.match(externalWebviewPage, /const isHostOpenRequest = sourceGuestId < 0;/);
   assert.match(externalWebviewPage, /if \(isHostOpenRequest\) \{[\s\S]{0,220}if \(!activeRef\.current\) \{[\s\S]{0,80}return;[\s\S]{0,180}openTab\(nextUrl, "", \{[\s\S]{0,160}partition,[\s\S]{0,80}userAgent/);

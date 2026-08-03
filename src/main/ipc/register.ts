@@ -5,6 +5,7 @@ import {
   cancelDesktopSsoLogin,
   failDesktopSsoFlow,
   getDesktopSsoStatus,
+  isDesktopSsoCredentialRuntimeReady,
   logoutDesktopSso,
   startDesktopSsoLogin,
   startDesktopSsoSiteTokenBridge
@@ -270,7 +271,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     refreshMarketCatalog,
     toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, {
       issueAgentAccessToken: async (_app, reason) => {
-        let token = readDesktopSsoSiteAccessToken(marketApp);
+        let token = isDesktopSsoCredentialRuntimeReady()
+          ? readDesktopSsoSiteAccessToken(marketApp)
+          : "";
         if (reason === "unauthorized" || !token) {
           token = await options.desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded?.(true) || "";
         }

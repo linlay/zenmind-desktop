@@ -88,6 +88,31 @@ function createUnsignedJwt(payload) {
   ].join(".");
 }
 
+test("desktop sso access-token Cookie uses JWT exp and falls back to a session Cookie", () => {
+  const expirationDate = Math.floor(Date.now() / 1000) + 3_600;
+  const cookieConfig = {
+    accessTokenCookie: {
+      url: "https://ai.example.test",
+      name: "access_token",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "lax"
+    }
+  };
+  const persistent = __testInternals.buildDesktopSsoAccessTokenCookieDetails(
+    createUnsignedJwt({ sub: "user-1", exp: expirationDate }),
+    cookieConfig
+  );
+  const sessionOnly = __testInternals.buildDesktopSsoAccessTokenCookieDetails(
+    createUnsignedJwt({ sub: "user-1" }),
+    cookieConfig
+  );
+
+  assert.equal(persistent[0].expirationDate, expirationDate);
+  assert.equal("expirationDate" in sessionOnly[0], false);
+});
+
 function createSignedJwt(payload, privateKey) {
   const data = [
     encodeJwtPart({ alg: "RS256", kid: "test-key", typ: "JWT" }),
@@ -807,6 +832,7 @@ test("desktop sso keeps validated OIDC session, base userinfo, and access token 
   const userInfo = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-user-info.json"), "utf8"));
   assert.equal(session.schemaVersion, 2);
   assert.equal("user" in session, false);
+  assert.equal("idToken" in session, false);
   assert.equal(userInfo.source, "id_token");
   assert.equal(userInfo.sub, "oidc-user");
   assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), "validated-access-token");

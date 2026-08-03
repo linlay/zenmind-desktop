@@ -14,6 +14,7 @@ const {
   failDesktopSsoFlow,
   finalizeDesktopSsoLoginAttempt,
   getDesktopSsoStatus,
+  isDesktopSsoCredentialRuntimeReady,
   startDesktopSsoLogin
 } = require("../dist-electron/main/oidc-sso.js");
 
@@ -58,6 +59,44 @@ function createStatus(pending = true) {
     message: pending ? "pending" : "signed out",
     updatedAt: "2026-06-17T00:00:00.000Z"
   };
+}
+
+function createUnsignedJwt(payload) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.signature`;
+}
+
+function writeBrowserCookieRestoreCandidate(app, {
+  accessToken = "old-access-token",
+  userSub = "old-user"
+} = {}) {
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "sso-session.json"), `${JSON.stringify({
+    schemaVersion: 2,
+    authenticated: true,
+    issuer: "https://ai.example.test",
+    audience: "desktop",
+    authMode: "browser-cookie",
+    message: "Single sign-on completed.",
+    updatedAt: "2026-08-01T00:00:00.000Z"
+  }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-user-info.json"), `${JSON.stringify({
+    schemaVersion: 2,
+    sub: userSub,
+    name: userSub,
+    issuer: "https://ai.example.test",
+    audience: "desktop",
+    source: "browser_session",
+    updatedAt: "2026-08-01T00:00:00.000Z"
+  }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${accessToken}\n`, "utf8");
+  const siteTokenPath = __testInternals.getDesktopSsoSiteTokenFilePath(app);
+  fs.mkdirSync(path.dirname(siteTokenPath), { recursive: true });
+  fs.writeFileSync(siteTokenPath, `${JSON.stringify({
+    accessToken: "old-site-token"
+  })}\n`, "utf8");
+  return stateRoot;
 }
 
 function createHarness(startResult, options = {}) {
@@ -416,6 +455,342 @@ function createCookieSsoControllerFixture(t, name) {
   });
   return { app, controller };
 }
+
+function createCookieSsoRestoreFixture(t, name, fetchHandler) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), name));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: "https://ai.example.test",
+    loginUrl: "https://ai.example.test/login",
+    appendLoginState: false,
+    claims: {
+      audience: "desktop",
+      cookieFallbackSub: "cookie-fallback"
+    },
+    browserSession: {
+      url: "https://ai.example.test/oauth2/auth",
+      successStatuses: [200, 202],
+      userInfoHeaders: {
+        sub: "x-auth-request-user",
+        name: "x-auth-request-preferred-username",
+        email: "x-auth-request-email"
+      }
+    },
+    cookieAccessTokenExchange: {
+      url: "https://ai.example.test/authorization",
+      method: "GET",
+      accessTokenPath: "access_token"
+    }
+  });
+
+  const calls = {
+    defaultSets: [],
+    partitionSets: [],
+    defaultRemoves: [],
+    partitionRemoves: [],
+    defaultFlushes: 0,
+    partitionFlushes: 0,
+    fetches: []
+  };
+  const browserCookie = {
+    name: "_oauth2_proxy",
+    value: "browser-session",
+    domain: ".ai.example.test",
+    path: "/",
+    secure: true,
+    httpOnly: true
+  };
+  const defaultSession = {
+    cookies: {
+      set: async (details) => { calls.defaultSets.push(details); },
+      get: async ({ url } = {}) => url ? [{ ...browserCookie }] : [],
+      remove: async (url, cookieName) => { calls.defaultRemoves.push({ url, name: cookieName }); }
+    },
+    flushStorageData: async () => { calls.defaultFlushes += 1; }
+  };
+  const partitionSession = {
+    cookies: {
+      set: async (details) => { calls.partitionSets.push(details); },
+      get: async (filter = {}) => Object.keys(filter).length === 0
+        ? [{ ...browserCookie }]
+        : [{ ...browserCookie }],
+      remove: async (url, cookieName) => { calls.partitionRemoves.push({ url, name: cookieName }); }
+    },
+    flushStorageData: async () => { calls.partitionFlushes += 1; },
+    fetch: async (url, init) => {
+      calls.fetches.push({ url, init });
+      return fetchHandler(url, init, calls);
+    }
+  };
+  const controller = createDesktopSsoController({
+    app,
+    platform: "darwin",
+    session: {
+      defaultSession,
+      fromPartition: () => partitionSession
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
+    openExternal: async () => undefined
+  });
+  return { app, controller, calls };
+}
+
+test("desktop sso restart always validates Cookie, exchanges a fresh JWT, and flushes both sessions", async (t) => {
+  const expiresAt = Math.floor(Date.now() / 1000) + 7_200;
+  const oldToken = createUnsignedJwt({ sub: "old-user", exp: expiresAt + 7_200 });
+  const freshToken = createUnsignedJwt({
+    sub: "new-user",
+    name: "New User",
+    email: "new.user@example.test",
+    iss: "https://ai.example.test",
+    aud: "desktop",
+    exp: expiresAt
+  });
+  const { app, controller, calls } = createCookieSsoRestoreFixture(
+    t,
+    "zenmind-sso-restore-success-",
+    async (url) => url.endsWith("/oauth2/auth")
+      ? {
+        ok: true,
+        status: 202,
+        statusText: "Accepted",
+        headers: new Headers({
+          "x-auth-request-user": "new-user",
+          "x-auth-request-preferred-username": "New User",
+          "x-auth-request-email": "new.user@example.test"
+        }),
+        text: async () => ""
+      }
+      : {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers({ "content-type": "text/plain" }),
+        json: async () => ({}),
+        text: async () => freshToken
+      }
+  );
+  const stateRoot = writeBrowserCookieRestoreCandidate(app, {
+    accessToken: oldToken,
+    userSub: "old-user"
+  });
+
+  const result = await controller.restoreDesktopSsoSession();
+
+  assert.equal(result.state, "authenticated");
+  assert.equal(result.status.authenticated, true);
+  assert.equal(result.status.user.sub, "new-user");
+  assert.deepEqual(result.status.completedSteps, {
+    session: true,
+    userInfo: true,
+    accessToken: true
+  });
+  assert.equal(calls.fetches.length, 2, "a still-valid local JWT must not skip upstream validation and exchange");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), freshToken);
+  const storedUser = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-user-info.json"), "utf8"));
+  assert.equal(storedUser.sub, "new-user");
+  const storedSession = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-session.json"), "utf8"));
+  assert.deepEqual(Object.keys(storedSession).sort(), [
+    "audience",
+    "authMode",
+    "authenticated",
+    "issuer",
+    "message",
+    "schemaVersion",
+    "updatedAt"
+  ]);
+  assert.equal(storedSession.schemaVersion, 2);
+  assert.equal(storedSession.authMode, "browser-cookie");
+  assert.match(storedSession.message, /单点登录已完成|Single sign-on completed/ui);
+  for (const cookieWrites of [calls.defaultSets, calls.partitionSets]) {
+    const accessTokenCookie = cookieWrites.find((cookie) => cookie.name === "access_token");
+    assert.ok(accessTokenCookie);
+    assert.equal(accessTokenCookie.value, freshToken);
+    assert.equal(accessTokenCookie.expirationDate, expiresAt);
+  }
+  assert.equal(calls.defaultFlushes, 2, "stale derived Cookie removal and fresh Cookie write are both flushed");
+  assert.equal(calls.partitionFlushes, 2, "stale derived Cookie removal and fresh Cookie write are both flushed");
+});
+
+test("desktop sso restart 401 clears canonical files and known cookies", async (t) => {
+  const { app, controller, calls } = createCookieSsoRestoreFixture(
+    t,
+    "zenmind-sso-restore-401-",
+    async () => ({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      headers: new Headers({ "content-type": "text/plain" }),
+      text: async () => "Unauthorized"
+    })
+  );
+  const stateRoot = writeBrowserCookieRestoreCandidate(app);
+
+  const result = await controller.restoreDesktopSsoSession();
+
+  assert.equal(result.state, "signed_out");
+  assert.equal(result.status.authenticated, false);
+  for (const fileName of [
+    "sso-session.json",
+    "sso-user-info.json",
+    "sso-access-token.txt"
+  ]) {
+    assert.equal(fs.existsSync(path.join(stateRoot, fileName)), false, `${fileName} should be removed`);
+  }
+  assert.equal(fs.existsSync(__testInternals.getDesktopSsoSiteTokenFilePath(app)), false);
+  assert.ok(calls.defaultRemoves.some(({ name }) => name === "_oauth2_proxy"));
+  assert.ok(calls.partitionRemoves.some(({ name }) => name === "_oauth2_proxy"));
+});
+
+test("desktop sso restart keeps files unavailable on 5xx and retries with single-flight", async (t) => {
+  let upstreamAvailable = false;
+  const freshToken = createUnsignedJwt({
+    sub: "restored-user",
+    iss: "https://ai.example.test",
+    aud: "desktop",
+    exp: Math.floor(Date.now() / 1000) + 3_600
+  });
+  const { app, controller, calls } = createCookieSsoRestoreFixture(
+    t,
+    "zenmind-sso-restore-retry-",
+    async (url) => {
+      if (!upstreamAvailable) {
+        return {
+          ok: false,
+          status: 503,
+          statusText: "Unavailable",
+          headers: new Headers(),
+          text: async () => "temporarily unavailable"
+        };
+      }
+      return url.endsWith("/oauth2/auth")
+        ? {
+          ok: true,
+          status: 202,
+          statusText: "Accepted",
+          headers: new Headers({ "x-auth-request-user": "restored-user" }),
+          text: async () => ""
+        }
+        : {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          headers: new Headers({ "content-type": "text/plain" }),
+          text: async () => freshToken,
+          json: async () => ({})
+        };
+    }
+  );
+  const stateRoot = writeBrowserCookieRestoreCandidate(app);
+
+  const unavailable = await controller.restoreDesktopSsoSession();
+  assert.equal(unavailable.state, "temporarily_unavailable");
+  assert.equal(unavailable.status.authenticated, false);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), true);
+  assert.ok(calls.defaultRemoves.some(({ name }) => name === "access_token"));
+  assert.ok(calls.partitionRemoves.some(({ name }) => name === "access_token"));
+  assert.equal(getDesktopSsoStatus(app).authenticated, false);
+  assert.equal(isDesktopSsoCredentialRuntimeReady(), false);
+  assert.equal(getDesktopSsoStatus(app).authenticated, false, "status reads must not resurrect the disk candidate");
+
+  upstreamAvailable = true;
+  const [firstRetry, secondRetry] = await Promise.all([
+    controller.retryDesktopSsoSessionRestoreIfNeeded(),
+    controller.retryDesktopSsoSessionRestoreIfNeeded()
+  ]);
+  assert.equal(firstRetry.state, "authenticated");
+  assert.equal(secondRetry.state, "authenticated");
+  assert.equal(isDesktopSsoCredentialRuntimeReady(), true);
+  assert.equal(calls.fetches.length, 3, "one failed validation plus one shared validation/exchange retry");
+  assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), freshToken);
+});
+
+test("desktop sso restart timeout preserves the candidate without publishing a token", async (t) => {
+  const { app, controller } = createCookieSsoRestoreFixture(
+    t,
+    "zenmind-sso-restore-timeout-",
+    async (_url, init) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    })
+  );
+  const stateRoot = writeBrowserCookieRestoreCandidate(app);
+
+  const result = await controller.restoreDesktopSsoSession(10);
+
+  assert.equal(result.state, "temporarily_unavailable");
+  assert.equal(result.status.authenticated, false);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), true);
+  assert.equal(getDesktopSsoStatus(app).completedSteps.accessToken, false);
+});
+
+test("standard OIDC restart keeps file recovery and does not probe Cookie endpoints", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-restore-oidc-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    authMode: "oidc",
+    browserMode: "system",
+    issuer: "https://auth.example.test/application/o/desktop/",
+    authorizeUrl: "https://auth.example.test/o/authorize/",
+    tokenUrl: "https://auth.example.test/application/o/token/",
+    clientId: "desktop",
+    usePkce: true,
+    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration"
+  });
+  const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "sso-session.json"), `${JSON.stringify({
+    schemaVersion: 2,
+    authenticated: true,
+    issuer: "https://auth.example.test/application/o/desktop/",
+    audience: "desktop",
+    authMode: "oidc",
+    message: "Single sign-on completed.",
+    updatedAt: "2026-08-01T00:00:00.000Z"
+  })}\n`, "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), "oidc-access-token\n", "utf8");
+  let fetchCount = 0;
+  const fakeSession = {
+    cookies: {
+      set: async () => undefined,
+      get: async () => [],
+      remove: async () => undefined
+    },
+    fetch: async () => {
+      fetchCount += 1;
+      throw new Error("unexpected Cookie probe");
+    }
+  };
+  const controller = createDesktopSsoController({
+    app,
+    platform: "darwin",
+    session: { defaultSession: fakeSession, fromPartition: () => fakeSession },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
+    openExternal: async () => undefined
+  });
+
+  const result = await controller.restoreDesktopSsoSession();
+
+  assert.equal(result.state, "authenticated");
+  assert.equal(result.status.authenticated, true);
+  assert.equal(result.status.completedSteps.accessToken, true);
+  assert.equal(fetchCount, 0);
+});
 
 test("desktop sso logout clears every dedicated-partition cookie but scopes default-session cleanup", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-switch-cookies-"));

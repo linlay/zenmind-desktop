@@ -8,6 +8,7 @@ import { useLocation } from "react-router-dom";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
 import type { EmbeddedCdpSiteSurfaceKind } from "../../../shared/embedded-cdp";
+import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import {
   EXTRACT_STRUCTURED_SCRIPT,
   READ_PAGE_DATA_SCRIPT,
@@ -164,22 +165,6 @@ function normalizeEditableUrl(rawValue: string) {
     } catch {
       return null;
     }
-  }
-}
-
-function shouldRefreshWebviewAfterDesktopSso(value: string) {
-  try {
-    const parsedUrl = new URL(value);
-    if (parsedUrl.pathname === "/auth/oauth2/authorize") {
-      return true;
-    }
-    const hash = parsedUrl.hash.toLowerCase();
-    if (!hash.startsWith("#/login") && !hash.startsWith("#/prevent")) {
-      return false;
-    }
-    return parsedUrl.hash.includes("service=");
-  } catch {
-    return false;
   }
 }
 
@@ -437,6 +422,7 @@ export function ExternalWebviewPage({
   const appChrome = chrome === "app";
   const tabSequenceRef = useRef(0);
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
+  const desktopSsoAuthenticatedRef = useRef(false);
   const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
   const [siteSurfaceRegistrationId] = useState(createSiteSurfaceRegistrationId);
@@ -822,11 +808,18 @@ export function ExternalWebviewPage({
     }
     return window.electronAPI.sso.onStatusChanged((status) => {
       if (!status.authenticated) {
+        desktopSsoAuthenticatedRef.current = false;
         return;
       }
+      if (status.pending || !status.completedSteps.accessToken) {
+        return;
+      }
+      if (desktopSsoAuthenticatedRef.current) {
+        return;
+      }
+      desktopSsoAuthenticatedRef.current = true;
       for (const tab of browserStateRef.current.tabs) {
-        const currentUrl = tab.currentUrl;
-        if (!shouldRefreshWebviewAfterDesktopSso(currentUrl)) {
+        if (tab.partition !== DESKTOP_SSO_WEBVIEW_PARTITION) {
           continue;
         }
         const webview = webviewRefs.current.get(tab.id);

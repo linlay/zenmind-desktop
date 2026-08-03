@@ -39,6 +39,7 @@ export type AssistantBridgeRuntimeOptions = {
   getResponsiveServiceState: (app: App, serviceId: string) => Promise<any>;
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
   refreshDesktopSsoAccessToken?: () => Promise<string>;
+  canUseDesktopSsoCredentials?: () => boolean;
   callAgentPlatform: (...args: any[]) => unknown;
   showMainWindow: (targetPath?: string) => void;
   showFileDialog: (...args: any[]) => Promise<any>;
@@ -139,6 +140,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       assistantBridge,
       callAgentPlatform: options.callAgentPlatform as any,
       listLocalAgents: options.listKanbanLocalAgents,
+      canUseDesktopSsoCredentials: options.canUseDesktopSsoCredentials,
       onChanged: options.emitKanbanChanged,
       onDebug: (message) => {
         options.logger.warn(`[kanban] ${message}`);
@@ -177,6 +179,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       app: options.app,
       desktopWsServerOptions,
       onConnected: options.onTunnelConnected,
+      canUseDesktopSsoCredentials: options.canUseDesktopSsoCredentials,
       logger: console
     });
   }

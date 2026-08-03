@@ -48,6 +48,7 @@ type TunnelHubRuntimeOptions = {
   createTunnelClient?: (input: TunnelClientFactoryInput) => TunnelClient;
   readNetworkSignature?: () => string;
   networkMonitorIntervalMs?: number;
+  canUseDesktopSsoCredentials?: () => boolean;
 };
 
 const LOG_LIMIT_BYTES = 128 * 1024;
@@ -215,6 +216,11 @@ export class TunnelHubRuntime {
 
   private async startInternal(): Promise<TunnelHubRuntimeCommandResult> {
     clearLegacyTunnelHubRegistrationToken(this.options.app);
+    if (this.options.canUseDesktopSsoCredentials?.() === false) {
+      this.stopNetworkMonitor();
+      this.phase = "stopped";
+      return this.commandResult(false, "Desktop single sign-on is not ready.");
+    }
     const settings = readTunnelHubSettings(this.options.app);
     if (!settings.enabled) {
       this.stopNetworkMonitor();

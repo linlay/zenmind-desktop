@@ -98,6 +98,7 @@ type KanbanRuntimeOptions = {
   assistantBridge: AssistantBridgeLike;
   callAgentPlatform: AgentPlatformCaller<App>;
   listLocalAgents?: () => DesktopPetAgentOption[];
+  canUseDesktopSsoCredentials?: () => boolean;
   onChanged?: () => void;
   onDebug?: (message: string) => void;
 };
@@ -874,7 +875,9 @@ export class KanbanRuntime {
         source: "sso"
       };
     }
-    const siteTokenUser = readDesktopSsoSiteTokenUser(this.options.app);
+    const siteTokenUser = this.options.canUseDesktopSsoCredentials?.() === false
+      ? null
+      : readDesktopSsoSiteTokenUser(this.options.app);
     if (siteTokenUser?.sub) {
       return {
         id: siteTokenUser.sub,
@@ -894,7 +897,10 @@ export class KanbanRuntime {
   }
 
   private refreshConnection(options: { forceReconnect?: boolean } = {}) {
-    this.wsClient.start(readKanbanWsConfig(this.options.app), options.forceReconnect ? { forceReconnect: true } : undefined);
+    const config = this.options.canUseDesktopSsoCredentials?.() === false
+      ? null
+      : readKanbanWsConfig(this.options.app);
+    this.wsClient.start(config, options.forceReconnect ? { forceReconnect: true } : undefined);
     this.connectionState = this.wsClient.getState();
   }
 

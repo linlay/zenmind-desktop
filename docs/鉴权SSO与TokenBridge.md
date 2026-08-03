@@ -56,6 +56,14 @@ loginCompletionUrls 命中
 
 三个文件互不代写。后一步失败只更新运行时的 warning/error，不删除本次已经成功的文件；因此 access token 交换返回 401 时，Desktop 仍保持浏览器登录态和已经取得的用户信息。新 session 验证成功后才清理上一 session 的下游 user-info/access-token，避免不同账号的数据混用。标准 OIDC 从验证后的 ID token 先写基础 user-info，Bearer userinfo 成功时再增强该文件。
 
+上述分步语义只用于当前进程中的交互式登录。Desktop 重启时，Cookie SSO 的三个文件一律先作为“恢复候选”，不得直接发布 `authenticated=true`。在 Electron `userData` 确定后、创建主窗口前，主进程只执行一次 `restoreDesktopSsoSession()`：最长等待 5 秒校验 `browserSession`，成功后无条件重新执行 `cookieAccessTokenExchange`，即使磁盘 JWT 仍有超过 15 分钟的有效期也不得跳过。只有 session 校验、稳定用户 ID 处理、access token 换票、双 session Cookie 写入和存储刷新全部完成后，才提交完整已登录状态。标准 OIDC 且没有 Cookie 换票配置时继续按原文件恢复语义处理。
+
+恢复校验的结果分为三类：
+
+- `authenticated`：上游 Cookie 有效，换取新 JWT，并用本次账号覆盖旧 user/token，防止账号数据混用。
+- `signed_out`：`401/403`、明确无 Cookie 会话或登录重定向；立即删除 session/user/token/site-token/头像缓存，并清理专用 SSO partition 与 default session 中配置已知的 SSO Cookie。
+- `temporarily_unavailable`：断网、超时、`429`、`5xx` 或其他不能证明会话失效的错误；保留磁盘文件和作为权威来源的上游 session Cookie，但从两个 Electron session 移除派生的旧 `access_token` Cookie。当前运行态为 `authenticated=false`，不注入旧 JWT，也不启动依赖 SSO 凭据的企业聊天与 Tunnel Hub。5 分钟定时器和 `sso.getStatus` 复用同一个单飞重试；恢复后广播状态并刷新 Website、Kanban、Market、企业聊天和 Tunnel Hub。
+
 session 验证成功后 `authenticated=true`，但当前登录尝试继续保持 `pending=true`。userinfo 与 access token 两步都尝试结束后才统一 finalize；三步全成功时登录 WebView 自动关闭，部分成功或失败时 WebView 被逐项结果面板替换，由用户选择关闭或重试。Cookie SSO 的基础用户信息来自同一次已验证 `/oauth2/auth` 响应中配置的 `userInfoHeaders`：`sub`（稳定用户 ID）是唯一必需字段，email 与 name 均可为空，name 缺失时使用 `sub` 显示。`/oauth2/userinfo` 仅做可选增强，空 email 不会把已经完成的 userInfo 步骤改为失败。只有响应头和增强接口都没有稳定用户 ID 时，token 成功才形成 `{session:true,userInfo:false,accessToken:true}` 的两文件状态。
 
 普通登录或部分成功页的“重试”继续复用专用 SSO partition 的上游会话。已登录账号菜单只显示“退出登录”；注销同时清理三个凭据文件、专用 SSO partition 的全部 Cookie，以及默认 session 中配置所知 SSO origins 的 Cookie，但不触碰其他网站 Cookie。server 与 browser-cookie 会话通过 Cookie、CSRF Token 和后台 `POST /api/auth/logout` 注销，不把该状态修改接口作为网页打开；只有标准 OIDC 会话使用配置中的 `logoutUrl` 打开 IdP end-session endpoint。用户需要切换账号时，先退出，再重新登录选择账号。
@@ -73,8 +81,10 @@ URL 决定是否返回认证头像地址；没有头像 URL 的账号继续显�
 Tunnel Hub、Kanban 与 Market 继续读取 `sso-site-token.json`，企业聊天读取
 `state/desktop/sso-access-token.txt`；两个文件保存的是官网同一次 Cookie 换取的同一枚 JWT，
 不再启动第二次 `siteTokenBridge` 浏览器登录。Desktop 不验证该 JWT，也不依赖 JWKS。
-Desktop 启动时、JWT 剩余不足 15 分钟时，以及 Market、Tunnel Hub 或企业聊天返回 401 时，
-会使用持久化官网 Cookie 和 CSRF Token 重新换取 JWT；只有 Cookie 失效才需要重新打开浏览器登录。
+当前严格启动恢复只适用于同时配置 `browserSession + cookieAccessTokenExchange` 的 Cookie SSO。
+官网 Server Broker 在官网提供可由 Electron Cookie 调用的 session 验证 API，并接入 Desktop 的
+`server` 恢复分支后，才能同样以上游 Cookie 为启动权威并强制换票；在此之前仍维持既有文件恢复
+和 JWT 临近过期时换票的语义，不得宣称已经覆盖官网 Cookie 失效但本地 JWT 仍有效的启动场景。
 
 Desktop 只读取上述 canonical SSO 文件。历史配置、会话和 access-token 文件不会被读取、迁移或在 logout 时清理。
 
@@ -90,7 +100,21 @@ Desktop WebSocket 鉴权：
 关键文件：
 
 - `config/desktop/sso.json`：SSO 配置。
-- `state/desktop/sso-session.json`：schema v2 SSO 会话状态，不包含 user 或 access token；旧版内嵌 user 的会话仍可读取。
+- `state/desktop/sso-session.json`：schema v2 SSO 会话状态，不包含 JWT、Cookie、user 或重复过期时间；旧版内嵌 user / idToken 的会话仍可读取，但新写入不再包含这些字段。Cookie SSO 完整成功示例：
+
+  ```json
+  {
+    "schemaVersion": 2,
+    "authenticated": true,
+    "issuer": "https://ai.qiuer.net",
+    "audience": "cutej-desktop",
+    "authMode": "browser-cookie",
+    "message": "单点登录已完成。",
+    "updatedAt": "2026-08-03T02:14:16.411Z"
+  }
+  ```
+
+  其中 `authenticated` 仅表示最近一次持久化验证成功，重启时仍须重新验证；临时网络失败保留该成功记录，但运行态不得据此显示已登录。明确失效或注销时直接删除文件，不写 `authenticated:false` 文件。
 - `state/desktop/sso-user-info.json`：schema v2 规范化用户信息及来源。
 - `state/desktop/sso-access-token.txt`：仅保存已成功取得的原始 access token。
 - `data/desktop/sso-avatar/`：认证官网头像的本地缓存；文件名仅含用户/来源摘要，登录切换和退出时清理。
@@ -110,7 +134,8 @@ Token bridge 类型：
 - Desktop 本地凭据写入 `secrets/` 或 `state/`，不要进入 `config/` 文档示例。
 - `DesktopSsoStatus.completedSteps` 分别反映 session、userInfo、accessToken 是否完成；session 成功即 `authenticated=true`，但在剩余步骤 finalize 前保持 `pending=true`。userinfo 或 token 任一缺失时，侧栏和结果面板必须显示对应受限登录状态。
 - Cookie SSO 只信任已验证 browserSession 响应头或 Cookie userinfo 返回的稳定用户 ID；不得从未经验证的 access token claims 伪造用户信息。email 不是身份成功条件，显示名缺失时回退到稳定用户 ID。
-- Cookie 只保存在 Electron 的持久化 SSO partition，不写入上述三个状态文件，也不得进入日志。
+- Cookie 只保存在 Electron session，不写入上述三个状态文件，也不得进入日志。`persist:<storageNamespace>-sso` 只表示 partition 的存储目录可持久化，并不把没有 `Expires/Max-Age` 的 session Cookie 自动变成跨进程 Cookie。上游 Cookie 是否跨重启由服务端属性决定；Desktop 写入的 `access_token` Cookie 从 JWT `exp` 生成 `expirationDate`，同一枚 JWT 同时写入专用 SSO partition 和 default session。JWT 缺少合法未来 `exp` 时只写当前进程 session Cookie，下次启动仍强制重新校验和换票。
+- Cookie 写入完成后必须刷新两个 Electron session 的存储，再发布 `authenticated=true`；从临时失败恢复成功时，只 reload 使用专用 SSO partition 的 Website WebView。Help、WebApp、agent-webclient 和普通服务 partition 不参与。
 - `sso.avatarCache` 只配置 `{ enabled, trustedOrigin }`；下载超时、大小、图片类型和重定向限制是
   Desktop 安全策略，不下放到环境配置。server/browser-cookie 模式只应把官网认证头像 URL
   交给该链路，不应把 Google 等 provider URL 暴露到 renderer。

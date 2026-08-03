@@ -24,6 +24,7 @@ import {
   failDesktopSsoStep,
   getDesktopSsoAccessToken,
   getDesktopSsoStatus,
+  isDesktopSsoCredentialRuntimeReady,
   isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
   startDesktopSsoLogin,
@@ -128,7 +129,11 @@ import {
 } from "../platform-adapter";
 import { configureSystemIdentity } from "./system-identity";
 import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
-import { createDesktopSsoController, openDesktopSsoSiteTokenBridge } from "../sso-controller";
+import {
+  createDesktopSsoController,
+  openDesktopSsoSiteTokenBridge,
+  type DesktopSsoRestoreResult
+} from "../sso-controller";
 import { createCdpIntegration } from "../cdp-integration";
 import { createWebSurfaceRuntime } from "../webs/surface-runtime";
 import { createSettingsRuntime } from "../settings/runtime";
@@ -179,6 +184,7 @@ import {
   type ResourceDirectoryWatcher
 } from "../resource-directory-watcher";
 import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
+import { refreshMarketCatalog } from "../marketplace";
 
 export function createMainProcessRuntime() {
   const appState = createMainAppState();
@@ -337,6 +343,8 @@ export function createMainProcessRuntime() {
   const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
   let startupEnvImportFailureMessage: string | null = null;
   let nonCoreDesktopRuntimeStarted = false;
+  let ssoCredentialDependentRuntimesStarted = false;
+  let desktopSsoRestoreState: DesktopSsoRestoreResult["state"] = "signed_out";
   let focusedWebviewDevToolsShortcutRegistered = false;
   function setStartupPhase(phase: StartupPhase) {
     if (appState.startupPhase === phase) {
@@ -514,9 +522,15 @@ export function createMainProcessRuntime() {
     session,
     getMainWindow: () => appState.mainWindow,
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
-    openExternal: shell.openExternal
+    openExternal: shell.openExternal,
+    onRestoreResult: applyDesktopSsoRestoreResult
   });
   refreshDesktopSsoIdentityToken = async (force = false) => {
+    const restoreResult = await desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded();
+    applyDesktopSsoRestoreResult(restoreResult);
+    if (desktopSsoRestoreState === "temporarily_unavailable") {
+      return "";
+    }
     const needsRefresh = force || desktopSsoAccessTokenNeedsRefresh(app);
     const accessToken = await desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(force);
     if (needsRefresh && accessToken) {
@@ -570,6 +584,7 @@ export function createMainProcessRuntime() {
     getResponsiveServiceState,
     issueAgentAccessToken,
     refreshDesktopSsoAccessToken: () => refreshDesktopSsoIdentityToken(true),
+    canUseDesktopSsoCredentials: isDesktopSsoCredentialRuntimeReady,
     callAgentPlatform,
     showMainWindow,
     showFileDialog,
@@ -1115,6 +1130,55 @@ export function createMainProcessRuntime() {
     }
   }
 
+  function startSsoCredentialDependentRuntimes() {
+    if (
+      !nonCoreDesktopRuntimeStarted ||
+      ssoCredentialDependentRuntimesStarted ||
+      !isDesktopSsoCredentialRuntimeReady()
+    ) {
+      return;
+    }
+    ssoCredentialDependentRuntimesStarted = true;
+    runNonCoreStartupTask("enterprise chat", () => {
+      void enterpriseChatRuntime.setEnabled(
+        readEnterpriseImSettings(app, mainProcessContext.platform).enabled
+      );
+    });
+    void startTunnelHubRuntimeIfEnabled().catch((error) => {
+      safeConsoleError("failed to start Desktop Tunnel Hub", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+  }
+
+  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) {
+    const previousRestoreState = desktopSsoRestoreState;
+    desktopSsoRestoreState = result.state;
+    if (result.state === "signed_out") {
+      ssoCredentialDependentRuntimesStarted = false;
+      return;
+    }
+    if (
+      result.state !== "authenticated" ||
+      previousRestoreState === "authenticated" ||
+      !isDesktopSsoCredentialRuntimeReady()
+    ) {
+      return;
+    }
+    startSsoCredentialDependentRuntimes();
+    appState.kanbanRuntime?.refreshDeviceInfo();
+    void refreshMarketCatalog(app).catch((error) => {
+      safeConsoleError("failed to refresh Market after desktop sso restore", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+    void enterpriseChatRuntime.refresh().catch((error) => {
+      safeConsoleError("failed to refresh enterprise chat after desktop sso restore", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+  }
+
   function startNonCoreDesktopRuntime() {
     if (nonCoreDesktopRuntimeStarted) {
       return;
@@ -1154,16 +1218,7 @@ export function createMainProcessRuntime() {
         readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled
       );
     });
-    runNonCoreStartupTask("enterprise chat", () => {
-      void enterpriseChatRuntime.setEnabled(
-        readEnterpriseImSettings(app, mainProcessContext.platform).enabled
-      );
-    });
-    void startTunnelHubRuntimeIfEnabled().catch((error) => {
-      safeConsoleError("failed to start Desktop Tunnel Hub", {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    });
+    startSsoCredentialDependentRuntimes();
 
     setStartupPhase("non-core-ready");
     notifyDesktopDecorationsChanged();
@@ -1226,6 +1281,8 @@ export function createMainProcessRuntime() {
   
     initializeUserDataRootsAndSettings();
     setStartupPhase("desktop-state-ready");
+    const desktopSsoRestoreResult = await desktopSsoController.restoreDesktopSsoSession();
+    applyDesktopSsoRestoreResult(desktopSsoRestoreResult);
     logsRuntime.installConsoleTee();
     pluginBridgeRuntime.configure();
     configurePluginResources({ callAgentPlatform });
