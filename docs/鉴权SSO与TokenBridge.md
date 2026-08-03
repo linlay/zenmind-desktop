@@ -60,7 +60,7 @@ session 验证成功后 `authenticated=true`，但当前登录尝试继续保持
 
 普通登录或部分成功页的“重试”继续复用专用 SSO partition 的上游会话。已登录账号菜单只显示“退出登录”；注销同时清理三个凭据文件、专用 SSO partition 的全部 Cookie，以及默认 session 中配置所知 SSO origins 的 Cookie，但不触碰其他网站 Cookie。server 与 browser-cookie 会话通过 Cookie、CSRF Token 和后台 `POST /api/auth/logout` 注销，不把该状态修改接口作为网页打开；只有标准 OIDC 会话使用配置中的 `logoutUrl` 打开 IdP end-session endpoint。用户需要切换账号时，先退出，再重新登录选择账号。
 
-展开态侧栏底部的 Settings 菜单触发器同时展示账户状态：已登录时使用规范化用户信息显示头像与 `name -> email -> sub -> 已登录` 回退名称，未登录时显示“未登录”，齿轮始终位于最右侧。SSO 未配置或状态尚未加载时继续显示原“设置”入口；侧栏收起时只显示齿轮。该展示不改变菜单内容、打开前状态刷新、登录或退出流程。
+展开态侧栏底部的 Settings 菜单触发器同时展示账户状态：已登录且未选中 Settings 菜单中的固定路由时，使用规范化用户信息显示“头像 + `name -> email -> sub -> 已登录` 回退名称 + 齿轮”；选中 Agents、Skills Center、MCP Connectors、Registries、Archived Chats 或 Market 后，触发器改为“当前路由名 + 用户头像 + 齿轮”，头像紧邻齿轮左侧，头像回退字符仍从用户名而非路由名取值。未登录时显示“未登录 + 齿轮”。SSO 未配置或状态尚未加载时继续显示原“设置”入口；侧栏收起时所有状态均只显示齿轮。该展示不改变菜单内容、打开前状态刷新、登录或退出流程。
 
 官网账号头像不按 Google、邮箱或其他登录方式分支。official-server 根据当前账号保存的头像
 URL 决定是否返回认证头像地址；没有头像 URL 的账号继续显示姓名首字符。启用

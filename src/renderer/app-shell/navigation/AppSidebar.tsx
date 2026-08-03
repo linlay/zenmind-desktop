@@ -340,22 +340,10 @@ const fixedToolRowsBase: Array<
       icon: "agent",
     },
     {
-      orderKey: "archives",
-      to: "/archives",
-      labelKey: "nav.archives",
-      icon: "archive",
-    },
-    {
-      orderKey: "registries",
-      to: "/registries",
-      labelKey: "nav.registries",
-      icon: "service",
-    },
-    {
-      orderKey: "market",
-      to: "/market",
-      labelKey: "nav.market",
-      icon: "market",
+      orderKey: "skills",
+      to: "/skills",
+      labelKey: "nav.skills",
+      icon: "skill",
     },
     {
       orderKey: "mcp-servers",
@@ -364,10 +352,22 @@ const fixedToolRowsBase: Array<
       icon: "connector",
     },
     {
-      orderKey: "skills",
-      to: "/skills",
-      labelKey: "nav.skills",
-      icon: "skill",
+      orderKey: "registries",
+      to: "/registries",
+      labelKey: "nav.registries",
+      icon: "service",
+    },
+    {
+      orderKey: "archives",
+      to: "/archives",
+      labelKey: "nav.archives",
+      icon: "archive",
+    },
+    {
+      orderKey: "market",
+      to: "/market",
+      labelKey: "nav.market",
+      icon: "market",
     },
   ],
   [
@@ -5617,9 +5617,14 @@ export function AppSidebar({
   const shouldRenderDesktopSsoTriggerAvatar =
     shouldRenderDesktopSsoTrigger &&
     desktopSsoStatus.authenticated;
+  const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar
+    ? getDesktopSsoUserLabel()
+    : "";
+  const shouldRenderActiveFixedToolLabel =
+    shouldRenderDesktopSsoTriggerAvatar && Boolean(activeFixedToolItem);
   const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger
     ? desktopSsoStatus.authenticated
-      ? getDesktopSsoUserLabel()
+      ? activeFixedToolItem?.label || desktopSsoUserLabel
       : t("sidebar.sso.signedOut")
     : t("nav.settings");
 
@@ -5760,15 +5765,22 @@ export function AppSidebar({
                       <span className="sidebar-link-icon">
                         <SidebarIllustration kind="settings" />
                       </span>
-                    ) : shouldRenderDesktopSsoTriggerAvatar ? (
+                    ) : shouldRenderDesktopSsoTriggerAvatar &&
+                      !shouldRenderActiveFixedToolLabel ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}
-                        label={toolMenuTriggerLabel}
+                        label={desktopSsoUserLabel}
                       />
                     ) : null}
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
+                    {shouldRenderActiveFixedToolLabel ? (
+                      <AccountMenuAvatar
+                        avatarUrl={desktopSsoStatus.user?.avatarUrl}
+                        label={desktopSsoUserLabel}
+                      />
+                    ) : null}
                     {shouldRenderDesktopSsoTrigger ? (
                       <span
                         className="sidebar-link-icon sidebar-tool-menu-trigger-settings-icon"
