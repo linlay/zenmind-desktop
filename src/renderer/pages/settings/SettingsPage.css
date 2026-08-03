@@ -4,6 +4,11 @@
   line-height: 1.45;
 }
 
+:root[data-theme="dark"] .settings-page {
+  --surface-soft: #232323;
+  --control-select-bg: #232323;
+}
+
 .settings-page-single {
   width: 100%;
   min-height: 0;
