@@ -1,6 +1,6 @@
 const WEBAPP_ASSISTANT_ACTIONS = Object.freeze([
   "desktop.assistant.complete",
-  "desktop.assistant.translate"
+  "desktop.assistant.chat"
 ] as const);
 
 export const WEBAPP_CAPABILITY_POLICY = Object.freeze({

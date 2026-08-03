@@ -1634,6 +1634,14 @@ test("WebApp action tokens are scoped to the issuing app and assistant allowlist
     { ok: true, webappId: "scoped-app" }
   );
   assert.deepEqual(
+    authorizeWebappActionToken(token, "desktop.assistant.chat"),
+    { ok: true, webappId: "scoped-app" }
+  );
+  assert.deepEqual(
+    authorizeWebappActionToken(token, "desktop.assistant.translate"),
+    { ok: false, webappId: "" }
+  );
+  assert.deepEqual(
     authorizeWebappActionToken(token, "desktop.web.webapp.remove"),
     { ok: false, webappId: "" }
   );
@@ -1647,15 +1655,16 @@ test("WebApp action tokens are scoped to the issuing app and assistant allowlist
 test("WebApp capability policy keeps backend tokens narrower than the local page gateway", () => {
   assert.deepEqual([...WEBAPP_CAPABILITY_POLICY.backendActionToken], [
     "desktop.assistant.complete",
-    "desktop.assistant.translate"
+    "desktop.assistant.chat"
   ]);
   assert.deepEqual([...WEBAPP_CAPABILITY_POLICY.localPageGateway], [
     "desktop.assistant.complete",
-    "desktop.assistant.translate",
+    "desktop.assistant.chat",
     "desktop.web.webapp.selectDirectory"
   ]);
   assert.equal(isWebappActionAllowed("backendActionToken", "desktop.web.webapp.selectDirectory"), false);
   assert.equal(isWebappActionAllowed("localPageGateway", "desktop.web.webapp.selectDirectory"), true);
+  assert.equal(isWebappActionAllowed("localPageGateway", "desktop.assistant.translate"), false);
   assert.equal(isWebappActionAllowed("localPageGateway", "desktop.web.webapp.remove"), false);
 });
 
