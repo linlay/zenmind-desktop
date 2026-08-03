@@ -56,6 +56,36 @@ test("agent chat mirrors its business URL and only receives changed host params"
   assert.doesNotMatch(pluginPage, /ChatRouteMessage/);
 });
 
+test("inactive agent webclient surfaces cannot take ownership of the Desktop route", () => {
+  const pluginPage = readPluginPageSource();
+  const navigationHandlerBlock = pluginPage.slice(
+    pluginPage.indexOf("const syncNavigationRoute = (event: Event) =>"),
+    pluginPage.indexOf("const handleDidFailLoad = () =>"),
+  );
+
+  assert.match(
+    navigationHandlerBlock,
+    /const canSyncDesktopRoute = active !== false;/,
+  );
+  assert.match(
+    navigationHandlerBlock,
+    /canSyncDesktopRoute\s*&&\s*isAgentWebclientChatSurface\(service\?\.id, surfaceId\)/,
+  );
+  assert.match(
+    navigationHandlerBlock,
+    /canSyncDesktopRoute\s*&&\s*isAgentWebclientManagementSurface\(service\?\.id, surfaceId\)/,
+  );
+  assert.ok(
+    navigationHandlerBlock.indexOf("updateWebviewCurrentUrl(resolvedUrl)") <
+      navigationHandlerBlock.indexOf("const canSyncDesktopRoute = active !== false"),
+    "inactive surfaces should still record their current WebView URL",
+  );
+  assert.match(
+    navigationHandlerBlock,
+    /sendPluginRouteToWebview\(resolvedUrl, "navigation"\)/,
+  );
+});
+
 test("plugin page reports webview breadcrumbs for post-crash diagnosis", () => {
   const pluginPage = readPluginPageSource();
 

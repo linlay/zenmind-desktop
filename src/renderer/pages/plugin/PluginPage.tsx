@@ -1243,7 +1243,11 @@ export function PluginPage({
         ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
         : readCurrentWebviewUrl();
       updateWebviewCurrentUrl(resolvedUrl);
-      if (isAgentWebclientChatSurface(service?.id, surfaceId)) {
+      const canSyncDesktopRoute = active !== false;
+      if (
+        canSyncDesktopRoute &&
+        isAgentWebclientChatSurface(service?.id, surfaceId)
+      ) {
         const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
           resolvedUrl,
           webviewSrcUrl,
@@ -1251,7 +1255,10 @@ export function PluginPage({
         if (nextChatRoute && nextChatRoute !== currentRoute) {
           navigate(nextChatRoute, { replace: true });
         }
-      } else if (isAgentWebclientManagementSurface(service?.id, surfaceId)) {
+      } else if (
+        canSyncDesktopRoute &&
+        isAgentWebclientManagementSurface(service?.id, surfaceId)
+      ) {
         const nextChatRoute = resolveAgentWebclientChatRouteFromUrl(
           resolvedUrl,
           webviewSrcUrl,
