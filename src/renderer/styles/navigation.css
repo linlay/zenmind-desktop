@@ -2308,6 +2308,12 @@
 
 .sidebar-web-item-actions-menu {
   z-index: 10001;
+  width: max-content;
+  min-width: 160px;
+}
+
+.sidebar-web-item-actions-menu button span {
+  white-space: nowrap;
 }
 
 .sidebar-group-actions-menu-layer {
