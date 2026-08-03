@@ -3321,9 +3321,15 @@ export function getDesktopSsoStatus(app?: App): DesktopSsoStatus {
     if (configResult.error) {
       return createFailedStatus(configResult.error);
     }
-  }
-  if (app && loadedSessionPath !== getSessionPath(app)) {
-    loadSession(app);
+    const sessionPath = getSessionPath(app);
+    if (loadedSessionPath !== sessionPath) {
+      loadSession(app);
+    } else if (!currentStatus.configured) {
+      // A first-run env import can make sso.json available after this runtime was
+      // initialized as unconfigured. Enable the interactive login entry without
+      // reloading an unverified credential candidate from disk.
+      currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
+    }
   }
   return cloneStatus(currentStatus);
 }

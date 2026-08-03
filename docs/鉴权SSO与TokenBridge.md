@@ -58,6 +58,11 @@ loginCompletionUrls 命中
 
 上述分步语义只用于当前进程中的交互式登录。Desktop 重启时，Cookie SSO 的三个文件一律先作为“恢复候选”，不得直接发布 `authenticated=true`。在 Electron `userData` 确定后、创建主窗口前，主进程只执行一次 `restoreDesktopSsoSession()`：最长等待 5 秒校验 `browserSession`，成功后无条件重新执行 `cookieAccessTokenExchange`，即使磁盘 JWT 仍有超过 15 分钟的有效期也不得跳过。只有 session 校验、稳定用户 ID 处理、access token 换票、双 session Cookie 写入和存储刷新全部完成后，才提交完整已登录状态。标准 OIDC 且没有 Cookie 换票配置时继续按原文件恢复语义处理。
 
+首次启动先进入未配置状态、随后由运行中的 env.zip 导入生成合法 `sso.json` 时，状态查询只把
+内存状态协调为“已配置、未登录”，用于启用交互式登录入口；不得因此调用文件恢复或把磁盘上的
+Cookie SSO session、用户信息、access token 候选重新发布为已登录。严格凭据恢复仍只能由上述
+启动恢复控制器执行。
+
 恢复校验的结果分为三类：
 
 - `authenticated`：上游 Cookie 有效，换取新 JWT，并用本次账号覆盖旧 user/token，防止账号数据混用。

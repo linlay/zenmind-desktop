@@ -17,6 +17,7 @@ const {
   getDesktopSsoAccessToken,
   getDesktopSsoStatus,
   logoutDesktopSso,
+  prepareDesktopSsoSessionRestore,
   startDesktopSsoLogin,
   startDesktopSsoSiteTokenBridge,
   __testInternals
@@ -386,6 +387,112 @@ test("desktop sso ignores retired config and session files", (t) => {
   const status = getDesktopSsoStatus(app);
   assert.equal(status.authenticated, false);
   assert.equal(status.user, null);
+});
+
+test("desktop sso exposes interactive login when config appears after runtime initialization", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-late-config-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  const initial = prepareDesktopSsoSessionRestore(app);
+  assert.equal(initial.status.configured, false);
+
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: "https://sso.example.test",
+    loginUrl: "https://sso.example.test/api/login/oidc/start",
+    loginCompletionUrls: ["https://sso.example.test/"],
+    browserSession: {
+      url: "https://sso.example.test/oauth2/auth",
+      method: "GET",
+      successStatuses: [200, 202],
+      userInfoHeaders: { sub: "x-auth-request-user" }
+    },
+    cookieAccessTokenExchange: {
+      url: "https://sso.example.test/authorization",
+      method: "GET"
+    }
+  });
+
+  const status = getDesktopSsoStatus(app);
+  assert.equal(status.configured, true);
+  assert.equal(status.authenticated, false);
+  assert.equal(status.pending, false);
+  assert.equal(status.user, null);
+  assert.deepEqual(status.completedSteps, {
+    session: false,
+    userInfo: false,
+    accessToken: false
+  });
+  assert.equal(status.error, undefined);
+});
+
+test("desktop sso late config status refresh does not revive persisted credential candidates", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-late-config-candidate-"));
+  t.after(() => {
+    failDesktopSsoFlow("reset test state");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const app = createApp(path.join(root, "home"));
+  const stateRoot = getDesktopStateRoot(app);
+  fs.mkdirSync(stateRoot, { recursive: true });
+  writeSsoSession(app, {
+    schemaVersion: 2,
+    authenticated: true,
+    issuer: "https://sso.example.test",
+    audience: "desktop",
+    authMode: "browser-cookie",
+    updatedAt: "2026-08-03T00:00:00.000Z"
+  });
+  const userInfoPath = path.join(stateRoot, "sso-user-info.json");
+  const accessTokenPath = path.join(stateRoot, "sso-access-token.txt");
+  fs.writeFileSync(userInfoPath, `${JSON.stringify({
+    schemaVersion: 2,
+    source: "browser_session",
+    sub: "persisted-user",
+    issuer: "https://sso.example.test",
+    audience: "desktop"
+  })}\n`, "utf8");
+  fs.writeFileSync(accessTokenPath, "persisted-access-token\n", "utf8");
+
+  const initial = prepareDesktopSsoSessionRestore(app);
+  assert.equal(initial.status.configured, false);
+
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: "https://sso.example.test",
+    loginUrl: "https://sso.example.test/api/login/oidc/start",
+    loginCompletionUrls: ["https://sso.example.test/"],
+    browserSession: {
+      url: "https://sso.example.test/oauth2/auth",
+      method: "GET",
+      successStatuses: [200],
+      userInfoHeaders: { sub: "x-auth-request-user" }
+    },
+    cookieAccessTokenExchange: {
+      url: "https://sso.example.test/authorization",
+      method: "GET"
+    }
+  });
+
+  const status = getDesktopSsoStatus(app);
+  assert.equal(status.configured, true);
+  assert.equal(status.authenticated, false);
+  assert.deepEqual(status.completedSteps, {
+    session: false,
+    userInfo: false,
+    accessToken: false
+  });
+  assert.equal(getDesktopSsoAccessToken(), null);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
+  assert.equal(fs.existsSync(userInfoPath), true);
+  assert.equal(fs.existsSync(accessTokenPath), true);
 });
 
 test("desktop SSO logout clears only canonical session and token files", async (t) => {
