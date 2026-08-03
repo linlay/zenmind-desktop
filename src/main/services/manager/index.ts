@@ -176,6 +176,13 @@ import {
   getConfiguredServiceLifecycleArgs,
   type ServiceLifecycleCommandKind
 } from "../../service-lifecycle-args";
+import {
+  completeDesktopServiceConfigUpgrade,
+  DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,
+  prepareDesktopServiceConfigUpgrade,
+  recordDesktopServiceConfigCoreHealthFailure,
+  type DesktopServiceConfigResetContext
+} from "./desktop-config-upgrade";
 
 export { getInstallDir } from "./layout";
 export { fixShellScriptPermissions } from "./program-layout";
@@ -208,6 +215,8 @@ type StartupPreparationResult = {
 };
 
 type StartupPreparationOptions = {
+  desktopVersion?: string;
+  isFirstDesktopInstall?: boolean;
   onModeResolved?: (mode: StartupRestoreMode) => void;
   onStarting?: (serviceId: ServiceId) => void;
   onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
@@ -463,7 +472,8 @@ async function buildDesktopManagedDeployCommand(
   app: App,
   service: ServiceDefinition,
   command: string[],
-  layout: ServiceLayout
+  layout: ServiceLayout,
+  desktopConfigReset?: DesktopServiceConfigResetContext
 ) {
   const commandWithConfiguredArgs = appendConfiguredServiceLifecycleArgs(app, service, command, "deploy");
   if (service.id === "agent-platform") {
@@ -471,27 +481,53 @@ async function buildDesktopManagedDeployCommand(
       getDesktopManagedAgentPlatformContainerHubBaseUrl(app),
       resolveAgentPlatformDeployPublicKeySourceFile(app)
     ]);
-    return appendAgentPlatformDesktopDeployArgs(
+    const desktopCommand = appendAgentPlatformDesktopDeployArgs(
       commandWithConfiguredArgs,
       app,
       layout,
       containerHubBaseUrl,
       publicKeySourceFile
     );
+    return appendDesktopConfigResetDeployArgs(desktopCommand, desktopConfigReset);
   }
   if (service.id === "agent-container-hub") {
-    return appendAgentContainerHubDesktopDeployArgs(commandWithConfiguredArgs, layout);
+    return appendDesktopConfigResetDeployArgs(
+      appendAgentContainerHubDesktopDeployArgs(commandWithConfiguredArgs, layout),
+      desktopConfigReset
+    );
   }
   if (service.id === "identity-center") {
-    return appendIdentityCenterDesktopDeployArgs(commandWithConfiguredArgs, layout);
+    return appendDesktopConfigResetDeployArgs(
+      appendIdentityCenterDesktopDeployArgs(commandWithConfiguredArgs, layout),
+      desktopConfigReset
+    );
   }
   if (service.id === "agent-webclient") {
-    return appendAgentWebclientDesktopDeployArgs(
-      commandWithConfiguredArgs,
-      layout
+    return appendDesktopConfigResetDeployArgs(
+      appendAgentWebclientDesktopDeployArgs(
+        commandWithConfiguredArgs,
+        layout
+      ),
+      desktopConfigReset
     );
   }
   return commandWithConfiguredArgs;
+}
+
+function appendDesktopConfigResetDeployArgs(
+  command: string[],
+  context: DesktopServiceConfigResetContext | undefined
+) {
+  if (!context) {
+    return command;
+  }
+  return [
+    ...command,
+    "--desktop-config-reset",
+    "--desktop-config-backup-dir", context.backupDir,
+    "--desktop-version-from", context.fromVersion,
+    "--desktop-version-to", context.toVersion
+  ];
 }
 
 function appendDesktopManagedLayoutFlags(
@@ -648,6 +684,7 @@ type InstallBuiltinServiceOptions = {
   force?: boolean;
   archivePath?: string;
   source?: string;
+  skipInitialize?: boolean;
 };
 
 export async function installBuiltinService(
@@ -690,6 +727,7 @@ function createBuiltinInstallKey(app: App, service: ServiceDefinition, options: 
     service.id,
     service.version,
     options.force ? "force" : "normal",
+    options.skipInitialize ? "skip-initialize" : "initialize",
     assetScope
   ].join("\0");
 }
@@ -727,6 +765,9 @@ async function installBuiltinServiceInternal(
     await reconcileBuiltinSiblingInstallDirs(app, service, finalInstallDir);
 
     if (!needsExtract) {
+      if (options.skipInitialize) {
+        return finalInstallDir;
+      }
       const initialization = await initializeServiceInternal(app, serviceId, {
         skipInstallRefresh: true,
         assetSignatureOverride: initializationAssetSignature
@@ -759,6 +800,9 @@ async function installBuiltinServiceInternal(
       }
       fs.rmSync(finalInstallDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       moveExtractedBuiltinRoot(extractedRoot, finalInstallDir);
+      if (options.skipInitialize) {
+        return finalInstallDir;
+      }
       const initialization = await initializeServiceInternal(app, serviceId, {
         skipInstallRefresh: true,
         assetSignatureOverride: initializationAssetSignature
@@ -782,7 +826,11 @@ export async function initializeService(app: App, serviceId: ServiceId): Promise
 async function initializeServiceInternal(
   app: App,
   serviceId: ServiceId,
-  options: { skipInstallRefresh?: boolean; assetSignatureOverride?: string } = {}
+  options: {
+    skipInstallRefresh?: boolean;
+    assetSignatureOverride?: string;
+    desktopConfigReset?: DesktopServiceConfigResetContext;
+  } = {}
 ): Promise<ServiceCommandResult> {
   const timing = beginStartupTiming("initializeServiceInternal", {
     serviceId,
@@ -840,7 +888,13 @@ async function initializeServiceInternal(
         ensureDefaultConfig(service, layout);
       }
       if (service.deployCommand) {
-        const deployCommand = await buildDesktopManagedDeployCommand(app, service, service.deployCommand, layout);
+        const deployCommand = await buildDesktopManagedDeployCommand(
+          app,
+          service,
+          service.deployCommand,
+          layout,
+          options.desktopConfigReset
+        );
         await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, {
           env: buildDesktopServiceCommandEnv(app, service, layout, undefined)
         });
@@ -3067,15 +3121,115 @@ async function waitForBackgroundStartupPreparations() {
   await Promise.allSettled([...backgroundStartupPreparationTasks]);
 }
 
+async function stopServiceForDesktopConfigUpgrade(app: App, serviceId: ServiceId) {
+  const service = getService(serviceId);
+  const current = await getServiceState(app, serviceId, getStartupResponsiveServiceStateReadOptions());
+  if (isHostManagedService(service)) {
+    await stopAgentWebclientHost(service.id);
+    if (getAgentWebclientHostState(service.id)?.running) {
+      throw new Error(`${serviceId} host process is still running`);
+    }
+    return;
+  }
+  if (!current.installed) {
+    return;
+  }
+  if (current.status === "running") {
+    const result = await stopService(app, serviceId);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+  }
+
+  const layout = getServiceLayout(app, service);
+  const env = fs.existsSync(layout.envPath) ? readEnvFile(layout.envPath) : new Map<string, string>();
+  const stopState = collectManagedServiceStopState(service, layout, env);
+  const survivingPids = [
+    stopState.managedMainPid,
+    ...stopState.managedPortPids
+  ].filter((pid): pid is number => typeof pid === "number");
+  if (survivingPids.length > 0) {
+    throw new Error(`${serviceId} process is still running (pid=${[...new Set(survivingPids)].join(", ")})`);
+  }
+}
+
+async function runDesktopServiceConfigUpgradePreparation(
+  app: App,
+  desktopVersion: string,
+  options: StartupPreparationOptions,
+  onBegin: () => void
+) {
+  const currentDesktopDefaultPorts = Object.fromEntries(
+    DESKTOP_SERVICE_CONFIG_UPGRADE_IDS.map((serviceId) => {
+      const service = getService(serviceId);
+      return [serviceId, service.web.defaultPort];
+    })
+  );
+  return prepareDesktopServiceConfigUpgrade(app, desktopVersion, {
+    currentDesktopDefaultPorts,
+    isFirstDesktopInstall: options.isFirstDesktopInstall,
+    onBegin,
+    onProgress: (serviceId, message) => {
+      options.onProgress?.(serviceId, "initializing", message);
+    },
+    stopService: (serviceId) => stopServiceForDesktopConfigUpgrade(app, serviceId),
+    installCurrentService: async (serviceId) => {
+      await installBuiltinService(app, serviceId, {
+        source: "desktop-service-config-upgrade",
+        skipInitialize: true
+      });
+    },
+    resetServiceConfig: async (serviceId, context) => {
+      const result = await initializeServiceInternal(app, serviceId, {
+        skipInstallRefresh: true,
+        desktopConfigReset: context
+      });
+      if (!result.ok) {
+        throw new Error(result.message);
+      }
+    }
+  });
+}
+
 export async function runStartupPreparation(
   app: App,
   options: StartupPreparationOptions = {}
 ): Promise<StartupPreparationResult> {
   try {
+    let modeResolved = false;
+    const resolveMode = (mode: StartupRestoreMode) => {
+      if (modeResolved) {
+        return;
+      }
+      modeResolved = true;
+      options.onModeResolved?.(mode);
+    };
+    const desktopConfigUpgrade = options.desktopVersion
+      ? await runDesktopServiceConfigUpgradePreparation(
+          app,
+          options.desktopVersion,
+          options,
+          () => resolveMode("bootstrap")
+        )
+      : null;
+    if (desktopConfigUpgrade && desktopConfigUpgrade.mode !== "none") {
+      resolveMode("bootstrap");
+    }
+    if (desktopConfigUpgrade && desktopConfigUpgrade.failures.length > 0) {
+      return {
+        mode: "bootstrap",
+        started: [],
+        failures: desktopConfigUpgrade.failures,
+        preparedChanged: true
+      };
+    }
+
     await ensureProviderRegisterApiKey(app);
 
-    const initialMode = await resolveStartupPreparationMode(app);
-    options.onModeResolved?.(initialMode);
+    const initialMode = desktopConfigUpgrade && desktopConfigUpgrade.mode !== "none"
+      ? "bootstrap"
+      : await resolveStartupPreparationMode(app);
+    resolveMode(initialMode);
     const started: ServiceId[] = [];
     const failures: string[] = [];
 
@@ -3114,6 +3268,7 @@ export async function runStartupPreparation(
         )
     );
     const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
+    const coreFailures: string[] = [];
     for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
       const result = startResultById.get(serviceId);
       if (!result) {
@@ -3122,7 +3277,38 @@ export async function runStartupPreparation(
       if (result.ok && result.running) {
         started.push(serviceId);
       } else {
-        failures.push(`${serviceId}: ${result.message}`);
+        const failure = `${serviceId}: ${result.message}`;
+        failures.push(failure);
+        coreFailures.push(failure);
+      }
+    }
+
+    for (const failure of failures) {
+      if (!coreFailures.includes(failure)) {
+        coreFailures.push(failure);
+      }
+    }
+
+    if (desktopConfigUpgrade && desktopConfigUpgrade.mode !== "none") {
+      if (coreFailures.length > 0) {
+        recordDesktopServiceConfigCoreHealthFailure(
+          app,
+          desktopConfigUpgrade.desktopVersion,
+          coreFailures
+        );
+      } else {
+        try {
+          completeDesktopServiceConfigUpgrade(app, desktopConfigUpgrade.desktopVersion);
+        } catch (error) {
+          const failure = `service config version commit: ${error instanceof Error ? error.message : String(error)}`;
+          failures.push(failure);
+          coreFailures.push(failure);
+          recordDesktopServiceConfigCoreHealthFailure(
+            app,
+            desktopConfigUpgrade.desktopVersion,
+            [failure]
+          );
+        }
       }
     }
 
@@ -3141,10 +3327,12 @@ export async function runStartupPreparation(
     });
 
     return {
-      mode: initialMode === "bootstrap" || preparedChanged ? "bootstrap" : "restore",
+      mode: initialMode === "bootstrap" || preparedChanged || desktopConfigUpgrade?.mode === "version-change"
+        ? "bootstrap"
+        : "restore",
       started,
       failures,
-      preparedChanged
+      preparedChanged: preparedChanged || Boolean(desktopConfigUpgrade && desktopConfigUpgrade.mode !== "none")
     };
   } finally {
     flushStartupTimingSummary();
@@ -3173,6 +3361,7 @@ export const __testInternals = {
   appendConfiguredServiceLifecycleArgs,
   appendDesktopManagedLayoutFlags,
   appendAgentPlatformDesktopDeployArgs,
+  appendDesktopConfigResetDeployArgs,
   resolveAgentWebclientHostStartOverrides,
   buildDesktopManagedDeployCommand,
   resolveAgentPlatformDeployPublicKeySourceFile,

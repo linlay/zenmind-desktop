@@ -84,10 +84,13 @@ export interface ServicesIpcHandlerOptions {
   loadInstalledPlugins?: (app: any) => void;
   notifyServicesChanged?: () => void;
   runStartupPreparation?: (app: any, callbacks: {
+    desktopVersion?: string;
+    isFirstDesktopInstall?: boolean;
     onModeResolved: (mode: string) => void;
     onStarting: (serviceId: string) => void;
     onProgress: (serviceId: string, phase: any, message: string) => void;
   }) => Promise<{ mode: string; failures: any[] }>;
+  desktopVersion?: string;
 
   // Session cache clearing (injected to allow testing without electron)
   clearSessionCache?: () => Promise<void>;
@@ -198,6 +201,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     loadInstalledPlugins,
     notifyServicesChanged,
     runStartupPreparation,
+    desktopVersion,
     issueAgentPlatformAccessToken,
     oldRootDecisionRef,
     generateBackupDirName,
@@ -234,6 +238,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     notifyServicesChanged?.();
 
     void runServiceMutation(() => runStartupPreparation(app, {
+      desktopVersion,
+      isFirstDesktopInstall: Boolean(isFirstDesktopInstall),
       onModeResolved: (mode: string) => {
         startupRestoreController?.beginSession(mode);
       },

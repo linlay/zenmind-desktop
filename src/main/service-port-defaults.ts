@@ -8,12 +8,14 @@ export const SERVICE_PORT_DEFAULTS_FILE = "service-port-defaults.json";
 
 const MAX_TCP_PORT = 65535;
 
-const CORE_SERVICE_IDS = new Set([
+export const CORE_SERVICE_PORT_IDS = [
   "agent-container-hub",
   "agent-platform",
   "agent-webclient",
   "identity-center"
-]);
+] as const satisfies readonly ServiceId[];
+
+const CORE_SERVICE_IDS = new Set<ServiceId>(CORE_SERVICE_PORT_IDS);
 
 export type ServicePortDefaultsConfig = {
   schemaVersion: 1;
@@ -98,21 +100,50 @@ export function writeServicePortDefaultsConfig(
   platform: NodeJS.Platform = process.platform
 ) {
   const filePath = getServicePortDefaultsConfigPath(app, platform);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  if (platform !== "win32") {
+    fs.chmodSync(path.dirname(filePath), 0o700);
+    fs.chmodSync(filePath, 0o600);
+  }
 }
 
 export function readServicePortDefaultsConfig(
   app: App,
   platform: NodeJS.Platform = process.platform
 ) {
-  const filePath = getServicePortDefaultsConfigPath(app);
+  const filePath = getServicePortDefaultsConfigPath(app, platform);
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
     return normalizeServicePortDefaultsConfig(parsed, platform);
   } catch {
     return null;
   }
+}
+
+export function rewriteServicePortDefaultsForDesktopConfigUpgrade(
+  app: App,
+  currentDesktopDefaults: Record<string, number>,
+  platform: NodeJS.Platform = process.platform
+) {
+  const current = readServicePortDefaultsConfig(app, platform);
+  const services: ServicePortDefaultsConfig["services"] = {};
+  for (const serviceId of CORE_SERVICE_PORT_IDS) {
+    const configuredPort = current?.services[serviceId]?.defaultPort;
+    const fallbackPort = readTcpPort(currentDesktopDefaults[serviceId]);
+    const defaultPort = readTcpPort(configuredPort) ?? fallbackPort;
+    if (!defaultPort) {
+      throw new Error(`missing current Desktop default port for ${serviceId}`);
+    }
+    services[serviceId] = { defaultPort };
+  }
+
+  const config: ServicePortDefaultsConfig = {
+    schemaVersion: 1,
+    services
+  };
+  writeServicePortDefaultsConfig(app, config, platform);
+  return config;
 }
 
 export function getConfiguredServiceDefaultPort(

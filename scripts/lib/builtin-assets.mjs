@@ -25,13 +25,19 @@ const STALE_AGENT_PLATFORM_DEPLOY_PROTOCOL_MARKERS = [
   "DEPLOY_LOCAL_PUBLIC_KEY_FILE",
   "DeployLocalPublicKeyFile"
 ];
+const DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS = [
+  "--desktop-config-reset",
+  "--desktop-config-backup-dir",
+  "--desktop-version-from",
+  "--desktop-version-to"
+];
 const LIFECYCLE_DEPLOY_PROTOCOLS = {
   "identity-center": {
-    required: ["--output-dir"],
+    required: ["--output-dir", ...DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS],
     message: "Please rebuild the Desktop-ready identity-center bundle with deploy.sh --output-dir support."
   },
   "agent-container-hub": {
-    required: ["--output-dir"],
+    required: ["--output-dir", ...DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS],
     forbidden: [
       "program_prepare_runtime_dirs",
       "Prepare-ProgramRuntimeDirs",
@@ -41,7 +47,7 @@ const LIFECYCLE_DEPLOY_PROTOCOLS = {
     message: "Please rebuild the Desktop-ready agent-container-hub bundle with deploy-only --output-dir support."
   },
   "agent-webclient": {
-    required: ["--output-dir"],
+    required: ["--output-dir", ...DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS],
     forbidden: ["deploy is intentionally a no-op"],
     message: "Please rebuild the Desktop-ready agent-webclient bundle so deploy.sh initializes the host-managed .env."
   }
@@ -999,24 +1005,32 @@ function findAgentContainerHubAcceptedDeployLayoutArg(content) {
 
 function validateAgentPlatformDeployProtocolText(service, sourceLabel, relativePath, content) {
   const staleMarker = findStaleAgentPlatformDeployProtocolMarker(content);
-  if (!staleMarker) {
-    if (
-      content.includes("program_sync_deploy_env_values") ||
-      content.includes("Sync-ProgramDeployEnvValues")
-    ) {
-      return;
-    }
+  if (staleMarker) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+        `Detected stale deploy protocol marker ${JSON.stringify(staleMarker)} in ${relativePath}.\n` +
+        `Please rebuild the Desktop-ready agent-platform bundle with --public-key-source-file launcher support.`
+    );
+  }
+  if (
+    !content.includes("program_sync_deploy_env_values") &&
+    !content.includes("Sync-ProgramDeployEnvValues")
+  ) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
         `Missing deploy-owned env upsert support in ${relativePath}.\n` +
         `Please rebuild the Desktop-ready agent-platform bundle so deploy.sh updates existing .env files.`
     );
   }
-  throw new Error(
-    `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-      `Detected stale deploy protocol marker ${JSON.stringify(staleMarker)} in ${relativePath}.\n` +
-      `Please rebuild the Desktop-ready agent-platform bundle with --public-key-source-file launcher support.`
-  );
+  for (const marker of DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS) {
+    if (!content.includes(marker)) {
+      throw new Error(
+        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+          `Missing Desktop config reset marker ${JSON.stringify(marker)} in ${relativePath}.\n` +
+          "Please rebuild the Desktop-ready agent-platform bundle with the current reset deploy protocol."
+      );
+    }
+  }
 }
 
 function validateAgentPlatformArchiveDeployProtocol(service, archivePath) {

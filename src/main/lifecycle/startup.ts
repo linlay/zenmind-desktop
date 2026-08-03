@@ -3,6 +3,8 @@ import type { StartupPhase } from "./startup-phases";
 
 export type StartupPipelineOptions = {
   app: App;
+  desktopVersion: string;
+  isFirstDesktopInstall: boolean;
   getEnvImportFailureMessage: () => string | null;
   startupRestoreController: any;
   loadBuiltinServices: (app: App) => void;
@@ -12,6 +14,8 @@ export type StartupPipelineOptions = {
   setStartupPhase: (phase: StartupPhase) => void;
   runServiceMutation: <T>(task: () => Promise<T>) => Promise<T>;
   runStartupPreparation: (app: App, callbacks: {
+    desktopVersion?: string;
+    isFirstDesktopInstall?: boolean;
     onModeResolved: (mode: string) => void;
     onStarting: (serviceId: string) => void;
     onProgress: (serviceId: string, phase: any, message: string) => void;
@@ -35,6 +39,8 @@ export function createStartupPipeline(options: StartupPipelineOptions) {
       options.notifyCoreServicesChanged();
 
       void options.runServiceMutation(() => options.runStartupPreparation(options.app, {
+        desktopVersion: options.desktopVersion,
+        isFirstDesktopInstall: options.isFirstDesktopInstall,
         onModeResolved: (mode) => {
           options.startupRestoreController.beginSession(mode);
         },

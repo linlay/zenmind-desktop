@@ -2368,13 +2368,11 @@ test("desktop managed service commands insert configured lifecycle args before m
       "start"
     );
     const startCommand = __testInternals.appendDesktopManagedLayoutFlags(service, startCommandWithArgs, layout, "start");
-    assert.deepEqual(startCommand.slice(0, 4), [
+    assert.deepEqual(startCommand.slice(0, 2), [
       "start.sh",
-      "--manifest-arg",
-      "--extra-start",
-      "alpha"
+      "--manifest-arg"
     ]);
-    assert.ok(startCommand.indexOf("--config-dir") > startCommand.indexOf("alpha"));
+    assert.ok(startCommand.indexOf("--config-dir") > startCommand.indexOf("--manifest-arg"));
     assertFlag(startCommand, "--config-dir", layout.configDir);
     assertFlag(startCommand, "--data-dir", layout.dataDir);
     assertFlag(startCommand, "--state-dir", layout.stateDir);
@@ -2411,7 +2409,7 @@ test("desktop managed service commands insert configured lifecycle args before m
     const webclient = getBuiltinService("agent-webclient");
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, webclient, ["deploy.sh"], "deploy"),
-      ["deploy.sh", "--extra-webclient-deploy"]
+      ["deploy.sh"]
     );
     const webclientLayout = {
       programDir: getTestServiceProgramDir(userDataRoot, webclient.id, webclient.version),
@@ -2422,7 +2420,7 @@ test("desktop managed service commands insert configured lifecycle args before m
       envPath: getTestEnvPath(userDataRoot, webclient.id)
     };
     const webclientDeployCommand = await __testInternals.buildDesktopManagedDeployCommand(app, webclient, ["deploy.sh"], webclientLayout);
-    assert.deepEqual(webclientDeployCommand.slice(0, 2), ["deploy.sh", "--extra-webclient-deploy"]);
+    assert.deepEqual(webclientDeployCommand.slice(0, 2), ["deploy.sh", "--output-dir"]);
     assertFlag(webclientDeployCommand, "--output-dir", webclientLayout.configDir);
     assert.equal(webclientDeployCommand.includes("--base-url"), false);
     assert.equal(webclientDeployCommand.includes("--port"), false);
@@ -2467,7 +2465,7 @@ test("agent-webclient host-managed start args require base-url only", () => {
     }, null, 2)}\n`, "utf8");
     assert.throws(
       () => __testInternals.resolveAgentWebclientHostStartOverrides(app),
-      /unsupported agent-webclient host start argument: --port/u
+      /requires lifecycleArgs\.start --base-url/u
     );
 
     fs.writeFileSync(configPath, `${JSON.stringify({
@@ -2638,7 +2636,7 @@ test("agent-platform deploy passes explicit lifecycle args without backfilling m
   }
 });
 
-test("agent-platform lifecycle args drop legacy runtime-dir flags", () => {
+test("agent-platform lifecycle args only keep supported model deploy flags", () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2662,11 +2660,11 @@ test("agent-platform lifecycle args drop legacy runtime-dir flags", () => {
 
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["start.sh"], "start"),
-      ["start.sh", "--extra-start"]
+      ["start.sh"]
     );
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["deploy.sh"], "deploy"),
-      ["deploy.sh", "--extra-deploy"]
+      ["deploy.sh"]
     );
   } finally {
     restore();
@@ -2674,7 +2672,7 @@ test("agent-platform lifecycle args drop legacy runtime-dir flags", () => {
   }
 });
 
-test("identity-center lifecycle args only keep deploy and start commands", () => {
+test("identity-center lifecycle args only keep the supported deploy issuer", () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2703,7 +2701,7 @@ test("identity-center lifecycle args only keep deploy and start commands", () =>
     );
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["start.sh"], "start"),
-      ["start.sh", "--extra-start"]
+      ["start.sh"]
     );
     assert.deepEqual(
       __testInternals.appendConfiguredServiceLifecycleArgs(app, service, ["stop.sh"], "stop"),

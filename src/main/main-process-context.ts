@@ -202,6 +202,7 @@ export interface ServicesIpcHandlerContextDependencies {
   loadInstalledPlugins?: (...args: any[]) => unknown;
   notifyServicesChanged?: (...args: any[]) => unknown;
   runStartupPreparation?: (...args: any[]) => unknown;
+  desktopVersion?: string;
   logStreamSubscriptions: LogStreamSubscriptionRegistry;
   oldRootDecisionRef?: { current: "migrate" | "keep" | "cancel" | undefined };
   generateBackupDirName?: (...args: any[]) => unknown;
@@ -262,6 +263,7 @@ export function createServicesIpcHandlerOptions(
     loadInstalledPlugins: dependencies.loadInstalledPlugins,
     notifyServicesChanged: dependencies.notifyServicesChanged,
     runStartupPreparation: dependencies.runStartupPreparation,
+    desktopVersion: dependencies.desktopVersion,
     oldRootDecisionRef: dependencies.oldRootDecisionRef,
     generateBackupDirName: dependencies.generateBackupDirName,
     migrateOldRootToBackup: dependencies.migrateOldRootToBackup,

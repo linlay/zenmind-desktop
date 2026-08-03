@@ -594,6 +594,8 @@ export function createMainProcessRuntime() {
   });
   const startupPipeline = createStartupPipeline({
     app,
+    desktopVersion: desktopAppInfo.version,
+    isFirstDesktopInstall,
     getEnvImportFailureMessage: () => startupEnvImportFailureMessage,
     startupRestoreController,
     loadBuiltinServices,

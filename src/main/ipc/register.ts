@@ -242,6 +242,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     loadInstalledPlugins,
     notifyServicesChanged: options.notifyServicesChanged,
     runStartupPreparation,
+    desktopVersion: options.desktopAppInfo.version,
     logStreamSubscriptions: logsRuntime.getServiceLogSubscriptions(),
     applyDesktopInitBootstrap,
     refreshDesktopRuntimeConfigFromCanonicalFiles: options.refreshDesktopRuntimeConfigFromCanonicalFiles,

@@ -106,6 +106,8 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
     "  while [[ $# -gt 0 ]]; do",
     "    case \"$1\" in",
     "      --public-key-source-file) shift 2 ;;",
+    "      --desktop-config-reset) shift ;;",
+    "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
     "      *) shift ;;",
     "    esac",
     "  done",
@@ -168,6 +170,8 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         "  while [[ $# -gt 0 ]]; do",
         "    case \"$1\" in",
         "      --output-dir) shift 2 ;;",
+        "      --desktop-config-reset) shift ;;",
+        "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
         "      --config-dir|--data-dir|--state-dir|--log-dir|--bind-addr|--daemon) echo 'start/runtime argument' >&2; exit 1 ;;",
         "      *) echo \"unsupported deploy argument: $1\" >&2; exit 1 ;;",
         "    esac",
@@ -209,6 +213,8 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         "while [[ $# -gt 0 ]]; do",
         "  case \"$1\" in",
         "    --output-dir) shift 2 ;;",
+        "    --desktop-config-reset) shift ;;",
+        "    --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
         "    *) shift ;;",
         "  esac",
         "done"
@@ -245,6 +251,8 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         "while [[ $# -gt 0 ]]; do",
         "  case \"$1\" in",
         "    --output-dir|--auth-issuer) shift 2 ;;",
+        "    --desktop-config-reset) shift ;;",
+        "    --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
         "    *) shift ;;",
         "  esac",
         "done"
@@ -900,6 +908,40 @@ test("syncBuiltinAssets rejects identity-center deploy scripts without output-di
   );
 });
 
+test("syncBuiltinAssets rejects core deploy scripts without Desktop config reset support", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-missing-config-reset-"));
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const archivePath = path.join(sourceRoot, "identity-center-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-missing-config-reset-stage-"));
+  execFileSync("tar", ["-xzf", archivePath, "-C", stagingRoot]);
+  writeText(
+    path.join(stagingRoot, "identity-center", "deploy.sh"),
+    "#!/usr/bin/env bash\n# supports --output-dir only\n"
+  );
+  execFileSync("tar", ["-czf", archivePath, "-C", stagingRoot, "identity-center"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    else process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-missing-config-reset-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, { os: "darwin", arch: "arm64", brandId: "cutej" }),
+    /identity-center[\s\S]*Missing lifecycle contract marker "--desktop-config-reset"/u
+  );
+});
+
 test("syncBuiltinAssets rejects agent-container-hub deploy scripts that reuse start layout args", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-hub-old-deploy-"));
   t.after(() => {
@@ -923,6 +965,8 @@ test("syncBuiltinAssets rejects agent-container-hub deploy scripts that reuse st
 	      "while [[ $# -gt 0 ]]; do",
 	      "  case \"$1\" in",
 	      "    --output-dir) config_dir=\"$2\"; shift 2 ;;",
+	      "    --desktop-config-reset) shift ;;",
+	      "    --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
 	      "    --data-dir) data_dir=\"$2\"; shift 2 ;;",
 	      "    *) shift ;;",
 	      "  esac",
@@ -974,6 +1018,8 @@ test("syncBuiltinAssets rejects agent-container-hub deploy scripts that prepare 
       "#!/usr/bin/env bash",
       "case \"$1\" in",
       "  --output-dir) shift 2 ;;",
+      "  --desktop-config-reset) shift ;;",
+      "  --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
       "esac",
       "program_prepare_runtime_dirs"
     ].join("\n") + "\n"

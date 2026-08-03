@@ -304,17 +304,12 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
             "--ai-vision-ocr-model-key", "explicit-vision-ocr",
             "--ai-web-fetch-model-key", "explicit-web-fetch",
             "--coder-model-key", "explicit-coder-model",
-            "--coder-reasoning-effort", "HIGH",
-            "--platform-deploy",
-            "--platform-deploy-darwin"
-          ],
-          start: ["--platform-start", "alpha", "--platform-start-darwin"],
-          stop: ["--platform-stop", "--platform-stop-darwin"]
+            "--coder-reasoning-effort", "HIGH"
+          ]
         }
       },
       "agent-webclient": {
         lifecycleArgs: {
-          deploy: ["--webclient-deploy"],
           start: ["--base-url", "http://127.0.0.1:7908"]
         }
       }
@@ -1369,8 +1364,7 @@ test("desktop-init bootstrap applies Windows service lifecycle args branch", (t)
     services: {
       "identity-center": {
         lifecycleArgs: {
-          deploy: ["--auth-issuer", "https://zenmind.cc"],
-          start: ["--identity-start", "-IdentityStartWindows"]
+          deploy: ["--auth-issuer", "https://zenmind.cc"]
         }
       },
       "agent-webclient": {
