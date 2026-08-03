@@ -605,7 +605,7 @@ test("embedded service previews load auth and platform entrypoints directly", ()
   assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
 });
 
-test("startup progress card shows localized core service state", () => {
+test("startup and shutdown progress cards show the desktop version", () => {
   const startupGate = readSourceFile(
     "src",
     "renderer",
@@ -613,9 +613,18 @@ test("startup progress card shows localized core service state", () => {
     "startup",
     "StartupGate.tsx"
   );
+  const shutdownOverlay = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "DesktopShutdownOverlay.tsx"
+  );
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const shutdownStyles = readSourceFile("src", "renderer", "styles", "shutdown.css");
   assert.match(startupGate, /useI18n\(\)/);
   assert.match(startupGate, /export function StartupLoadingScreen/);
   assert.match(startupGate, /startup-loading-card/);
+  assert.match(startupGate, /startup-loading-version/);
   assert.match(startupGate, /startup-loading-progress/);
   assert.match(startupGate, /startup-loading-list/);
   assert.match(startupGate, /t\("startup\.service\.authentication"\)/);
@@ -623,6 +632,11 @@ test("startup progress card shows localized core service state", () => {
   assert.match(startupGate, /t\("startup\.action\.refresh"\)/);
   assert.match(startupGate, /t\("startup\.action\.openControlCenter"\)/);
   assert.doesNotMatch(startupGate, /EmptyContentSurface|emptyContent\.surface/);
+  assert.match(shutdownOverlay, /desktop-shutdown-version/);
+  assert.match(shutdownStyles, /\.desktop-shutdown-version\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*18px;[\s\S]*?right:\s*20px;/);
+  assert.match(appShell, /settings\.getAppInfo\(\)[\s\S]*?setDesktopAppVersion\(normalizeDesktopAppVersion\(appInfo\.version\)\)/);
+  assert.match(appShell, /<StartupLoadingScreen[\s\S]*?version=\{desktopAppVersion\}/);
+  assert.match(appShell, /<DesktopShutdownOverlay[^>]*version=\{desktopAppVersion\}/);
 });
 
 test("empty content fallback is separate from the startup progress card", () => {
@@ -656,6 +670,7 @@ test("empty content fallback is separate from the startup progress card", () => 
   assert.match(appShellStyles, /is-mac-platform\.has-empty-content-surface \.app-main\s*\{[\s\S]*?padding-top:\s*0;/);
   assert.match(globalStyles, /\.startup-loading-screen\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;/);
   assert.match(globalStyles, /\.startup-loading-card/);
+  assert.match(globalStyles, /\.startup-loading-version\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*18px;[\s\S]*?right:\s*20px;/);
   assert.match(globalStyles, /\.empty-content-surface/);
   assert.doesNotMatch(globalStyles, /\.startup-surface/);
 });

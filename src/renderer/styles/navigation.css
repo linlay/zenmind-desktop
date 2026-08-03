@@ -3667,6 +3667,17 @@
   pointer-events: auto;
 }
 
+.startup-loading-version {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 :root[data-theme="dark"] .startup-loading-card {
   background: rgba(42, 44, 48, 0.82);
   border-color: rgba(255, 255, 255, 0.06);
