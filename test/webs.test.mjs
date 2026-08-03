@@ -43,6 +43,10 @@ const {
   revokeWebappActionToken
 } = require("../dist-electron/main/webs/webapps/action-tokens.js");
 const {
+  WEBAPP_CAPABILITY_POLICY,
+  isWebappActionAllowed
+} = require("../dist-electron/main/webs/webapps/capability-policy.js");
+const {
   activateWebappInstall,
   commitWebappInstall,
   recoverWebappInstallTransactions,
@@ -1638,6 +1642,21 @@ test("WebApp action tokens are scoped to the issuing app and assistant allowlist
     authorizeWebappActionToken(token, "desktop.assistant.complete"),
     { ok: false, webappId: "" }
   );
+});
+
+test("WebApp capability policy keeps backend tokens narrower than the local page gateway", () => {
+  assert.deepEqual([...WEBAPP_CAPABILITY_POLICY.backendActionToken], [
+    "desktop.assistant.complete",
+    "desktop.assistant.translate"
+  ]);
+  assert.deepEqual([...WEBAPP_CAPABILITY_POLICY.localPageGateway], [
+    "desktop.assistant.complete",
+    "desktop.assistant.translate",
+    "desktop.web.webapp.selectDirectory"
+  ]);
+  assert.equal(isWebappActionAllowed("backendActionToken", "desktop.web.webapp.selectDirectory"), false);
+  assert.equal(isWebappActionAllowed("localPageGateway", "desktop.web.webapp.selectDirectory"), true);
+  assert.equal(isWebappActionAllowed("localPageGateway", "desktop.web.webapp.remove"), false);
 });
 
 test("webapp runtime starts a frontend-only package without a backend process", async (t) => {

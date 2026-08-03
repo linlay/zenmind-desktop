@@ -7,15 +7,11 @@ import type { App } from "electron";
 import type { WebappEntry } from "../../../shared/contracts";
 import { getConfiguredDesktopActionBridgePort } from "../../desktop-action-bridge-settings";
 import { resolveWebappRelativePath } from "../common";
+import { isWebappActionAllowed } from "./capability-policy";
 
 const HOST = "127.0.0.1";
 const DESKTOP_RESERVED_PREFIX = "/__desktop/";
 const DESKTOP_ASSISTANT_PATH = "/__desktop/actions/call";
-const DESKTOP_ASSISTANT_ACTIONS = new Set([
-  "desktop.assistant.complete",
-  "desktop.assistant.translate",
-  "desktop.web.webapp.selectDirectory"
-]);
 const DESKTOP_ASSISTANT_BODY_LIMIT = 64 * 1024;
 
 export type WebappGateway = {
@@ -380,8 +376,8 @@ async function handleDesktopAssistantRequest(
       args?: unknown;
     };
     const action = typeof parsed.action === "string" ? parsed.action : "";
-    if (!DESKTOP_ASSISTANT_ACTIONS.has(action)) {
-      writeText(res, 403, "only Desktop assistant actions are allowed");
+    if (!isWebappActionAllowed("localPageGateway", action)) {
+      writeText(res, 403, "action is not allowed by the local WebApp capability policy");
       return;
     }
     const response = await fetch(

@@ -1,9 +1,5 @@
 import { randomBytes } from "node:crypto";
-
-const DEFAULT_WEBAPP_BACKEND_ACTIONS = new Set([
-  "desktop.assistant.complete",
-  "desktop.assistant.translate"
-]);
+import { WEBAPP_CAPABILITY_POLICY } from "./capability-policy";
 
 type WebappActionGrant = {
   webappId: string;
@@ -16,7 +12,7 @@ export function issueWebappActionToken(webappId: string) {
   const token = randomBytes(32).toString("base64url");
   grants.set(token, {
     webappId,
-    actions: new Set(DEFAULT_WEBAPP_BACKEND_ACTIONS)
+    actions: new Set(WEBAPP_CAPABILITY_POLICY.backendActionToken)
   });
   return token;
 }
