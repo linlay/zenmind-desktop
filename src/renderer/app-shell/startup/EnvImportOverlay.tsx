@@ -3,10 +3,12 @@ import { PRODUCT_NAME } from "../../../shared/brand";
 import { BrandMark } from "../../components/BrandMark";
 
 export function EnvImportOverlay({
+  version,
   onImport,
   errorMessage,
   busy
 }: {
+  version: string;
   onImport: () => Promise<void>;
   errorMessage: string;
   busy: boolean;
@@ -18,6 +20,7 @@ export function EnvImportOverlay({
       <div className="env-import-backdrop" aria-hidden="true" />
 
       <div className="env-import-card">
+        {version ? <span className="env-import-version">{version}</span> : null}
         <div className="brand-logo-wrapper">
           <BrandMark className="brand-logo-image" ariaLabel={`${PRODUCT_NAME} Logo`} />
         </div>

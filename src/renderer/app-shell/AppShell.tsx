@@ -3022,6 +3022,7 @@ export function AppShell() {
       ) : null}
       {resolvedStartupRestoreState.phase === "env-import-required" ? (
         <EnvImportOverlay
+          version={desktopAppVersion}
           errorMessage={envImportError || resolvedStartupRestoreState.message}
           busy={envImportBusy}
           onImport={handleEnvImport}

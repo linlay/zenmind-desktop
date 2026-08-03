@@ -2421,10 +2421,15 @@ test("startup env import overlay uses packaged-relative brand icon", () => {
     "startup",
     "EnvImportOverlay.tsx"
   );
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const globalStyles = readRendererStyles();
   const brandMark = readSourceFile("src", "renderer", "components", "BrandMark.tsx");
 
   assert.match(envImportOverlay, /import \{ BrandMark \} from "\.\.\/\.\.\/components\/BrandMark";/);
   assert.match(envImportOverlay, /<BrandMark className="brand-logo-image"/);
+  assert.match(envImportOverlay, /env-import-version/);
+  assert.match(appShell, /<EnvImportOverlay[\s\S]*?version=\{desktopAppVersion\}/);
+  assert.match(globalStyles, /\.env-import-version\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*20px;[\s\S]*?right:\s*24px;/);
   assert.doesNotMatch(envImportOverlay, /src=["']\/brand-icon\.png["']/);
   assert.match(brandMark, /src=\{`\.\//);
   assert.match(brandMark, /APP_ICON_ASSET_FILENAMES\.brandMark/);

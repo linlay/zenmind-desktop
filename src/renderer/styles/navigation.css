@@ -4277,6 +4277,17 @@
   gap: 24px;
 }
 
+.env-import-version {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 :root[data-theme="dark"] .env-import-card {
   background: #1e293b;
   border-color: rgba(255, 255, 255, 0.08);
