@@ -4,14 +4,17 @@ import {
   CheckOutlined,
   CloseOutlined,
   DeleteOutlined,
+  DesktopOutlined,
   DownloadOutlined,
   FileOutlined,
+  LaptopOutlined,
   MessageOutlined,
   MoreOutlined,
   PaperClipOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
+  ScissorOutlined,
   SendOutlined,
   TeamOutlined,
   ThunderboltOutlined,
@@ -28,6 +31,7 @@ import {
   type KeyboardEvent,
   type PointerEvent
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES,
   ENTERPRISE_CHAT_MAX_PASTED_FILES
@@ -37,6 +41,7 @@ import type {
   EnterpriseChatAttachment,
   EnterpriseChatConversation,
   EnterpriseChatMessage,
+  EnterpriseChatScreenshotMode,
   EnterpriseChatSnapshot,
   EnterpriseChatUser
 } from "../../shared/contracts";
@@ -47,7 +52,7 @@ type EnterpriseChatFloatingPanelProps = {
   desktopSsoStatus: DesktopSsoStatus | null;
 };
 
-type PanelView = "chats" | "contacts" | "new-group" | "conversation" | "new-action";
+type PanelView = "chats" | "contacts" | "new-group" | "conversation";
 type LauncherPosition = { x: number; y: number };
 type HiddenConversationPreference = {
   scope: string;
@@ -263,6 +268,12 @@ function readFileAsBase64(file: File) {
   });
 }
 
+function desktopActionArgsPreview(args: Record<string, unknown>) {
+  return JSON.stringify(args, (key, value) =>
+    /token|secret|password|authorization|cookie/iu.test(key) ? "[redacted]" : value
+  , 2).slice(0, 2_000);
+}
+
 export function EnterpriseChatFloatingPanel({
   desktopSsoStatus
 }: EnterpriseChatFloatingPanelProps) {
@@ -275,14 +286,15 @@ export function EnterpriseChatFloatingPanel({
   const [error, setError] = useState("");
   const [groupTitle, setGroupTitle] = useState("");
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([]);
-  const [actionName, setActionName] = useState("");
-  const [actionArgs, setActionArgs] = useState("{}");
-  const [actionSummary, setActionSummary] = useState("");
   const [actionResults, setActionResults] = useState<Record<string, string>>({});
+  const [handledActionMessageIds, setHandledActionMessageIds] = useState<Record<string, true>>({});
+  const [pendingActionMessage, setPendingActionMessage] = useState<EnterpriseChatMessage | null>(null);
   const [attachmentData, setAttachmentData] = useState<Record<string, string>>({});
+  const [previewImage, setPreviewImage] = useState<{ src: string; name: string } | null>(null);
   const [chatSearch, setChatSearch] = useState("");
   const [contactSearch, setContactSearch] = useState("");
   const [openConversationMenuId, setOpenConversationMenuId] = useState("");
+  const [screenshotMenuOpen, setScreenshotMenuOpen] = useState(false);
   const [hiddenConversationPreferences, setHiddenConversationPreferences] = useState(
     readHiddenConversationPreferences
   );
@@ -302,6 +314,7 @@ export function EnterpriseChatFloatingPanel({
   } | null>(null);
   const suppressLauncherClickRef = useRef(false);
   const searchPreferenceScopeRef = useRef("");
+  const reviewedActionMessageIdsRef = useRef(new Set<string>());
   const signedIn = hasCompleteEnterpriseLogin(desktopSsoStatus);
   const preferenceScope = conversationPreferenceScope(snapshot);
 
@@ -368,8 +381,17 @@ export function EnterpriseChatFloatingPanel({
       setChatSearch("");
       setContactSearch("");
       setOpenConversationMenuId("");
+      setPendingActionMessage(null);
+      setHandledActionMessageIds({});
+      reviewedActionMessageIdsRef.current.clear();
     }
   }, [preferenceScope]);
+
+  useEffect(() => {
+    if (!open || view !== "conversation") {
+      setScreenshotMenuOpen(false);
+    }
+  }, [open, view]);
 
   useEffect(() => {
     if (!preferenceScope || !snapshot) {
@@ -478,7 +500,89 @@ export function EnterpriseChatFloatingPanel({
   const activeConversation = snapshot?.conversations.find(
     (conversation) => conversation.id === snapshot.activeConversationId
   );
+
+  useEffect(() => {
+    if (
+      !open ||
+      view !== "conversation" ||
+      activeConversation?.type !== "direct"
+    ) {
+      if (pendingActionMessage) {
+        reviewedActionMessageIdsRef.current.delete(pendingActionMessage.id);
+        setPendingActionMessage(null);
+      }
+      return;
+    }
+    if (
+      pendingActionMessage &&
+      pendingActionMessage.conversationId !== activeConversation.id
+    ) {
+      reviewedActionMessageIdsRef.current.delete(pendingActionMessage.id);
+      setPendingActionMessage(null);
+      return;
+    }
+    if (pendingActionMessage) {
+      return;
+    }
+    const nextAction = [...(snapshot?.activeMessages ?? [])]
+      .reverse()
+      .find((message) =>
+        message.kind === "desktop_action" &&
+        Boolean(message.desktopAction) &&
+        !message.revokedAt &&
+        message.senderId !== snapshot?.currentUser?.id &&
+        !handledActionMessageIds[message.id] &&
+        !reviewedActionMessageIdsRef.current.has(message.id)
+      );
+    if (!nextAction) {
+      return;
+    }
+    reviewedActionMessageIdsRef.current.add(nextAction.id);
+    setError("");
+    setPendingActionMessage(nextAction);
+  }, [
+    activeConversation?.id,
+    activeConversation?.type,
+    handledActionMessageIds,
+    open,
+    pendingActionMessage,
+    snapshot?.activeMessages,
+    snapshot?.currentUser?.id,
+    view
+  ]);
+
+  useEffect(() => {
+    if (!pendingActionMessage) {
+      return;
+    }
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelDesktopAction();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [busy, pendingActionMessage, t]);
+
+  useEffect(() => {
+    if (!previewImage) {
+      return;
+    }
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setPreviewImage(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewImage]);
+
   const activePeer = directPeer(activeConversation, snapshot?.currentUser?.id ?? "");
+  const pendingActionSender = activeConversation?.members.find(
+    (member) => member.user.id === pendingActionMessage?.senderId
+  )?.user;
   const visible = signedIn && snapshot?.enabled === true;
 
   const panelWidth = Math.min(CHAT_PANEL_WIDTH, viewport.width - 24);
@@ -756,56 +860,23 @@ export function EnterpriseChatFloatingPanel({
     }
   }
 
-  async function sendScreenshot() {
+  async function sendScreenshot(mode: EnterpriseChatScreenshotMode) {
     const conversationId = snapshot?.activeConversationId ?? "";
     if (!conversationId || busy) {
       return;
     }
+    setScreenshotMenuOpen(false);
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
     setBusy("screenshot");
     setError("");
     try {
       setSnapshot(await window.electronAPI.enterpriseChat.sendScreenshot({
         conversationId,
-        clientMessageId: newClientMessageId()
-      }));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function sendDesktopAction(event: FormEvent) {
-    event.preventDefault();
-    const conversationId = snapshot?.activeConversationId ?? "";
-    if (!conversationId || !actionName.trim() || busy) {
-      return;
-    }
-    let args: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(actionArgs || "{}") as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error(t("enterpriseChat.desktopActionArgsObject"));
-      }
-      args = parsed as Record<string, unknown>;
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-      return;
-    }
-    setBusy("action");
-    setError("");
-    try {
-      setSnapshot(await window.electronAPI.enterpriseChat.sendDesktopAction({
-        conversationId,
         clientMessageId: newClientMessageId(),
-        action: actionName.trim(),
-        args,
-        summary: actionSummary.trim()
+        mode
       }));
-      setActionName("");
-      setActionArgs("{}");
-      setActionSummary("");
-      setView("conversation");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -835,14 +906,45 @@ export function EnterpriseChatFloatingPanel({
     }
   }
 
-  async function executeDesktopAction(message: EnterpriseChatMessage) {
+  function openDesktopActionConfirmation(message: EnterpriseChatMessage) {
+    if (busy || !message.desktopAction || message.senderId === snapshot?.currentUser?.id) {
+      return;
+    }
+    reviewedActionMessageIdsRef.current.add(message.id);
+    setError("");
+    setPendingActionMessage(message);
+  }
+
+  function cancelDesktopAction() {
+    const messageId = pendingActionMessage?.id;
+    if (!messageId || busy) {
+      return;
+    }
+    setActionResults((current) => ({
+      ...current,
+      [messageId]: t("enterpriseChat.desktopActionCancelled")
+    }));
+    setError("");
+    setPendingActionMessage(null);
+  }
+
+  async function confirmDesktopAction() {
+    const message = pendingActionMessage;
+    if (!message?.desktopAction || busy) {
+      return;
+    }
     setBusy(`action:${message.id}`);
     setError("");
     try {
       const result = await window.electronAPI.enterpriseChat.executeDesktopAction({
-        messageId: message.id
+        messageId: message.id,
+        confirmed: true
       });
       setActionResults((current) => ({ ...current, [message.id]: result.message }));
+      if (result.confirmed) {
+        setHandledActionMessageIds((current) => ({ ...current, [message.id]: true }));
+      }
+      setPendingActionMessage(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -953,19 +1055,6 @@ export function EnterpriseChatFloatingPanel({
             {subtitle}
           </span>
         </div>
-        {activeConversation?.type === "direct" ? (
-          <button
-            type="button"
-            className="enterprise-chat-icon-button"
-            aria-label={t("enterpriseChat.desktopAction")}
-            onClick={() => {
-              setError("");
-              setView("new-action");
-            }}
-          >
-            <ThunderboltOutlined />
-          </button>
-        ) : null}
       </>
     );
   }
@@ -975,11 +1064,18 @@ export function EnterpriseChatFloatingPanel({
     return (
       <div className="enterprise-chat-attachment" key={attachment.id}>
         {isImageAttachment(attachment) && imageData?.startsWith("data:") ? (
-          <img
-            className="enterprise-chat-image"
-            src={imageData}
-            alt={attachment.name}
-          />
+          <button
+            type="button"
+            className="enterprise-chat-image-preview-trigger"
+            aria-label={t("enterpriseChat.previewImage", { name: attachment.name })}
+            onClick={() => setPreviewImage({ src: imageData, name: attachment.name })}
+          >
+            <img
+              className="enterprise-chat-image"
+              src={imageData}
+              alt={attachment.name}
+            />
+          </button>
         ) : (
           <span className="enterprise-chat-file-icon" aria-hidden="true">
             {isImageAttachment(attachment) ? <CameraOutlined /> : <FileOutlined />}
@@ -1019,7 +1115,7 @@ export function EnterpriseChatFloatingPanel({
           aria-label={t("enterpriseChat.title")}
         >
           <header className="enterprise-chat-header">
-            {view === "conversation" || view === "new-action" ? (
+            {view === "conversation" ? (
               renderConversationHeader()
             ) : view === "new-group" ? (
               <>
@@ -1153,17 +1249,15 @@ export function EnterpriseChatFloatingPanel({
                           <span className="enterprise-chat-action-icon"><ThunderboltOutlined /></span>
                           <strong>{message.desktopAction.summary}</strong>
                           <code>{message.desktopAction.action}</code>
-                          {!mine ? (
+                          {!mine && activeConversation?.type === "direct" && !handledActionMessageIds[message.id] ? (
                             <button
                               type="button"
-                              disabled={busy === `action:${message.id}`}
-                              onClick={() => void executeDesktopAction(message)}
+                              disabled={Boolean(busy)}
+                              onClick={() => openDesktopActionConfirmation(message)}
                             >
                               {t("enterpriseChat.reviewAndExecute")}
                             </button>
-                          ) : (
-                            <small>{t("enterpriseChat.desktopActionSent")}</small>
-                          )}
+                          ) : null}
                           {actionResults[message.id] ? (
                             <small>{actionResults[message.id]}</small>
                           ) : null}
@@ -1205,15 +1299,54 @@ export function EnterpriseChatFloatingPanel({
                   >
                     <PaperClipOutlined />
                   </button>
-                  <button
-                    type="button"
-                    title={t("enterpriseChat.sendScreenshot")}
-                    aria-label={t("enterpriseChat.sendScreenshot")}
+                  <Popover
+                    placement="top-start"
+                    open={screenshotMenuOpen}
+                    onOpenChange={setScreenshotMenuOpen}
                     disabled={Boolean(busy)}
-                    onClick={() => void sendScreenshot()}
+                    content={(
+                      <div
+                        className="enterprise-chat-screenshot-menu"
+                        role="menu"
+                        aria-label={t("enterpriseChat.screenshotOptions")}
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void sendScreenshot("region")}
+                        >
+                          <ScissorOutlined />
+                          <span>{t("enterpriseChat.screenshotRegion")}</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void sendScreenshot("window")}
+                        >
+                          <LaptopOutlined />
+                          <span>{t("enterpriseChat.screenshotWindow")}</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void sendScreenshot("desktop")}
+                        >
+                          <DesktopOutlined />
+                          <span>{t("enterpriseChat.screenshotDesktop")}</span>
+                        </button>
+                      </div>
+                    )}
                   >
-                    <CameraOutlined />
-                  </button>
+                    <button
+                      type="button"
+                      title={t("enterpriseChat.sendScreenshot")}
+                      aria-label={t("enterpriseChat.screenshotOptions")}
+                      aria-haspopup="menu"
+                      disabled={Boolean(busy)}
+                    >
+                      <CameraOutlined />
+                    </button>
+                  </Popover>
                   <span className="enterprise-chat-paste-hint" aria-live="polite">
                     {busy === "paste"
                       ? t("enterpriseChat.uploadingPastedFiles")
@@ -1242,39 +1375,6 @@ export function EnterpriseChatFloatingPanel({
                 </div>
               </form>
             </>
-          ) : view === "new-action" ? (
-            <form className="enterprise-chat-form" onSubmit={(event) => void sendDesktopAction(event)}>
-              <label>
-                <span>{t("enterpriseChat.desktopActionName")}</span>
-                <input
-                  value={actionName}
-                  placeholder={t("enterpriseChat.desktopActionNamePlaceholder")}
-                  onChange={(event) => setActionName(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>{t("enterpriseChat.desktopActionSummary")}</span>
-                <input
-                  value={actionSummary}
-                  placeholder={t("enterpriseChat.desktopActionSummaryPlaceholder")}
-                  onChange={(event) => setActionSummary(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>{t("enterpriseChat.desktopActionArgs")}</span>
-                <textarea
-                  rows={9}
-                  value={actionArgs}
-                  spellCheck={false}
-                  onChange={(event) => setActionArgs(event.target.value)}
-                />
-              </label>
-              <p>{t("enterpriseChat.desktopActionSafety")}</p>
-              <button type="submit" disabled={!actionName.trim() || Boolean(busy)}>
-                <ThunderboltOutlined />
-                {t("enterpriseChat.sendDesktopAction")}
-              </button>
-            </form>
           ) : view === "new-group" ? (
             <form className="enterprise-chat-form enterprise-chat-group-form" onSubmit={(event) => void createGroup(event)}>
               <label>
@@ -1477,6 +1577,74 @@ export function EnterpriseChatFloatingPanel({
               </button>
             </nav>
           ) : null}
+
+          {pendingActionMessage?.desktopAction ? (
+            <div className="enterprise-chat-action-confirm-backdrop">
+              <div
+                className="enterprise-chat-action-confirm"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="enterprise-chat-action-confirm-title"
+                aria-describedby="enterprise-chat-action-confirm-hint"
+              >
+                <div className="enterprise-chat-action-confirm-heading">
+                  <span className="enterprise-chat-action-icon" aria-hidden="true">
+                    <ThunderboltOutlined />
+                  </span>
+                  <div>
+                    <strong id="enterprise-chat-action-confirm-title">
+                      {t("enterpriseChat.desktopActionConfirmTitle")}
+                    </strong>
+                    <span>
+                      {t("enterpriseChat.desktopActionRequestedBy", {
+                        name: pendingActionSender?.displayName || pendingActionMessage.senderId
+                      })}
+                    </span>
+                  </div>
+                </div>
+                <p className="enterprise-chat-action-confirm-summary">
+                  {pendingActionMessage.desktopAction.summary}
+                </p>
+                <dl>
+                  <div>
+                    <dt>{t("enterpriseChat.desktopActionCommand")}</dt>
+                    <dd><code>{pendingActionMessage.desktopAction.action}</code></dd>
+                  </div>
+                  <div>
+                    <dt>{t("enterpriseChat.desktopActionArguments")}</dt>
+                    <dd>
+                      <pre>{desktopActionArgsPreview(pendingActionMessage.desktopAction.args)}</pre>
+                    </dd>
+                  </div>
+                </dl>
+                <p id="enterprise-chat-action-confirm-hint" className="enterprise-chat-action-confirm-hint">
+                  {t("enterpriseChat.desktopActionConfirmationHint")}
+                </p>
+                {error ? (
+                  <div className="enterprise-chat-action-confirm-error" role="alert">{error}</div>
+                ) : null}
+                <div className="enterprise-chat-action-confirm-buttons">
+                  <button
+                    type="button"
+                    autoFocus
+                    disabled={Boolean(busy)}
+                    onClick={cancelDesktopAction}
+                  >
+                    {t("enterpriseChat.desktopActionCancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="is-confirm"
+                    disabled={Boolean(busy)}
+                    onClick={() => void confirmDesktopAction()}
+                  >
+                    <ThunderboltOutlined />
+                    {t("enterpriseChat.desktopActionConfirm")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
       <button
@@ -1501,6 +1669,35 @@ export function EnterpriseChatFloatingPanel({
           <span className="enterprise-chat-launcher-badge">{Math.min(99, unreadCount)}</span>
         ) : null}
       </button>
+      {previewImage ? createPortal(
+        <div
+          className="enterprise-chat-image-preview-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("enterpriseChat.previewImage", { name: previewImage.name })}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setPreviewImage(null);
+            }
+          }}
+        >
+          <button
+            type="button"
+            className="enterprise-chat-image-preview-close"
+            autoFocus
+            aria-label={t("enterpriseChat.close")}
+            title={t("enterpriseChat.close")}
+            onClick={() => setPreviewImage(null)}
+          >
+            <CloseOutlined />
+          </button>
+          <figure>
+            <img src={previewImage.src} alt={previewImage.name} />
+            <figcaption>{previewImage.name}</figcaption>
+          </figure>
+        </div>,
+        document.body
+      ) : null}
     </aside>
   );
 }

@@ -5,7 +5,6 @@ import type {
   EnterpriseChatMarkReadInput,
   EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
-  EnterpriseChatSendDesktopActionInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
@@ -53,11 +52,6 @@ export function registerEnterpriseChatIpcHandlers(
     "enterpriseChat.sendScreenshot",
     async (_event: unknown, input: EnterpriseChatSendScreenshotInput) =>
       runtime.sendScreenshot(input)
-  );
-  ipcMain.handle(
-    "enterpriseChat.sendDesktopAction",
-    async (_event: unknown, input: EnterpriseChatSendDesktopActionInput) =>
-      runtime.sendDesktopAction(input)
   );
   ipcMain.handle(
     "enterpriseChat.loadAttachment",

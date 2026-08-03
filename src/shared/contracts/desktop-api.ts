@@ -27,7 +27,6 @@ import type {
   EnterpriseChatMarkReadInput,
   EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
-  EnterpriseChatSendDesktopActionInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
@@ -676,7 +675,6 @@ export interface DesktopApi {
     sendFiles: (input: EnterpriseChatSendFilesInput) => Promise<EnterpriseChatSnapshot>;
     sendPastedFiles: (input: EnterpriseChatSendPastedFilesInput) => Promise<EnterpriseChatSnapshot>;
     sendScreenshot: (input: EnterpriseChatSendScreenshotInput) => Promise<EnterpriseChatSnapshot>;
-    sendDesktopAction: (input: EnterpriseChatSendDesktopActionInput) => Promise<EnterpriseChatSnapshot>;
     loadAttachment: (input: EnterpriseChatAttachmentInput) => Promise<EnterpriseChatAttachmentData>;
     downloadAttachment: (input: EnterpriseChatAttachmentInput) => Promise<EnterpriseChatDownloadResult>;
     executeDesktopAction: (input: EnterpriseChatExecuteActionInput) => Promise<EnterpriseChatExecuteActionResult>;

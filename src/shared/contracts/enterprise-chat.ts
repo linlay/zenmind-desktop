@@ -124,17 +124,12 @@ export interface EnterpriseChatSendPastedFilesInput {
   files: EnterpriseChatPastedFile[];
 }
 
+export type EnterpriseChatScreenshotMode = "region" | "window" | "desktop";
+
 export interface EnterpriseChatSendScreenshotInput {
   conversationId: string;
   clientMessageId: string;
-}
-
-export interface EnterpriseChatSendDesktopActionInput {
-  conversationId: string;
-  clientMessageId: string;
-  action: string;
-  args?: Record<string, unknown>;
-  summary?: string;
+  mode: EnterpriseChatScreenshotMode;
 }
 
 export interface EnterpriseChatAttachmentInput {
@@ -158,6 +153,7 @@ export interface EnterpriseChatDownloadResult {
 
 export interface EnterpriseChatExecuteActionInput {
   messageId: string;
+  confirmed: true;
 }
 
 export interface EnterpriseChatExecuteActionResult {

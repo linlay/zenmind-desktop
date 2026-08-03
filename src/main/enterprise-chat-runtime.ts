@@ -17,10 +17,10 @@ import type {
   EnterpriseChatMessage,
   EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
-  EnterpriseChatSendDesktopActionInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
+  EnterpriseChatScreenshotMode,
   EnterpriseChatSendScreenshotInput,
   EnterpriseChatSnapshot,
   EnterpriseChatUser
@@ -93,7 +93,7 @@ type EnterpriseChatRuntimeOptions = {
   getDeviceInfo?: () => { deviceId: string; deviceName: string };
   platform?: NodeJS.Platform;
   selectFiles?: () => Promise<string[]>;
-  captureScreenshot?: () => Promise<{
+  captureScreenshot?: (mode: EnterpriseChatScreenshotMode) => Promise<{
     ok: boolean;
     message?: string;
     dataBase64?: string;
@@ -786,6 +786,9 @@ export class EnterpriseChatRuntime {
     if (!conversationId || !clientMessageId || !body) {
       throw new Error("conversationId, clientMessageId, and body are required.");
     }
+    if (body.startsWith(ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX)) {
+      throw new Error("Desktop action envelopes can only be sent by the IM service.");
+    }
     return this.sendMessagePayload({
       conversationId,
       clientMessageId,
@@ -884,13 +887,17 @@ export class EnterpriseChatRuntime {
   async sendScreenshot(input: EnterpriseChatSendScreenshotInput) {
     const conversationId = readText(input?.conversationId);
     const clientMessageId = readText(input?.clientMessageId);
+    const mode = readText(input?.mode);
     if (!conversationId || !clientMessageId) {
       throw new Error("conversationId and clientMessageId are required.");
+    }
+    if (mode !== "region" && mode !== "window" && mode !== "desktop") {
+      throw new Error("Screenshot mode is invalid.");
     }
     if (!this.captureScreenshot) {
       throw new Error("Screenshot capture is unavailable.");
     }
-    const capture = await this.captureScreenshot();
+    const capture = await this.captureScreenshot(mode);
     if (!capture.ok) {
       if (capture.cancelled) {
         return this.getState();
@@ -912,37 +919,6 @@ export class EnterpriseChatRuntime {
       clientMessageId,
       body: "",
       fileIds: [attachment.id]
-    });
-  }
-
-  async sendDesktopAction(input: EnterpriseChatSendDesktopActionInput) {
-    const conversationId = readText(input?.conversationId);
-    const clientMessageId = readText(input?.clientMessageId);
-    const action = readText(input?.action);
-    const conversation = this.snapshot.conversations.find((item) => item.id === conversationId);
-    if (
-      !conversationId ||
-      !clientMessageId ||
-      !getDesktopActionDefinition(action) ||
-      conversation?.type !== "direct"
-    ) {
-      throw new Error("Desktop actions require a valid action and a direct conversation.");
-    }
-    const args = isRecord(input?.args) ? input.args : {};
-    const summary = readText(input?.summary) || action;
-    const body = `${ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX}${JSON.stringify({
-      action,
-      args,
-      summary: summary.slice(0, 500)
-    })}`;
-    if (body.length > 20_000) {
-      throw new Error("Desktop action payload is too large.");
-    }
-    return this.sendMessagePayload({
-      conversationId,
-      clientMessageId,
-      body,
-      fileIds: []
     });
   }
 
@@ -997,6 +973,9 @@ export class EnterpriseChatRuntime {
     input: EnterpriseChatExecuteActionInput
   ): Promise<EnterpriseChatExecuteActionResult> {
     const messageId = readText(input?.messageId);
+    if (input?.confirmed !== true) {
+      throw new Error("Desktop action execution requires local confirmation.");
+    }
     const message = this.snapshot.activeMessages.find((item) => item.id === messageId);
     const conversation = message
       ? this.snapshot.conversations.find((item) => item.id === message.conversationId)

@@ -23,6 +23,8 @@ export type BridgeScreenshotCaptureResult = {
   cancelled?: boolean;
 };
 
+export type BridgeScreenshotCaptureMode = "region" | "window" | "desktop";
+
 type ScreenshotSelectionRect = {
   x: number;
   y: number;
@@ -250,6 +252,39 @@ async function captureDisplayImage(display: Display) {
   return source.thumbnail;
 }
 
+async function captureMainWindowImage(
+  options: Pick<CaptureAssistantScreenshotOptions, "getMainWindow">
+) {
+  const targetWindow = options.getMainWindow();
+  if (
+    !targetWindow ||
+    targetWindow.isDestroyed() ||
+    targetWindow.webContents.isDestroyed() ||
+    !targetWindow.isVisible()
+  ) {
+    throw new Error(t("screenshot.windowUnavailable", { appName: PRODUCT_NAME }));
+  }
+  const captured = await targetWindow.webContents.capturePage();
+  if (captured.isEmpty()) {
+    throw new Error(t("screenshot.windowUnavailable", { appName: PRODUCT_NAME }));
+  }
+  return captured;
+}
+
+function translateScreenCaptureError(error: unknown, platform: NodeJS.Platform) {
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  if (normalized.message !== SCREENSHOT_SOURCE_UNAVAILABLE) {
+    return normalized;
+  }
+  if (platform === "darwin") {
+    return new Error(t("screenshot.noSourceMac", { appName: PRODUCT_NAME }));
+  }
+  if (platform === "win32") {
+    return new Error(t("screenshot.noSourceWindows", { appName: PRODUCT_NAME }));
+  }
+  return normalized;
+}
+
 function intersectRect(a: Rectangle, b: Rectangle): Rectangle | null {
   const left = Math.max(a.x, b.x);
   const top = Math.max(a.y, b.y);
@@ -429,9 +464,15 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
 }
 
 export async function captureScreenshotForBridge(
-  options: CaptureBridgeScreenshotOptions
+  options: CaptureBridgeScreenshotOptions,
+  requestedMode: BridgeScreenshotCaptureMode = "region"
 ): Promise<BridgeScreenshotCaptureResult> {
-  const permissionMessage = getScreenshotPermissionMessage(options.platform);
+  const mode = requestedMode === "window" || requestedMode === "desktop"
+    ? requestedMode
+    : "region";
+  const permissionMessage = mode === "window"
+    ? ""
+    : getScreenshotPermissionMessage(options.platform);
   if (permissionMessage) {
     return {
       ok: false,
@@ -440,26 +481,42 @@ export async function captureScreenshotForBridge(
   }
 
   try {
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const selection = await selectScreenshotRegion(display, options.platform);
-    if (!selection) {
-      return {
-        ok: false,
-        cancelled: true,
-        message: t("screenshot.cancelled")
-      };
+    let captured: NativeImage;
+    if (mode === "window") {
+      await options.delay(80);
+      captured = await captureMainWindowImage(options);
+    } else {
+      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      if (mode === "desktop") {
+        await options.delay(80);
+        try {
+          captured = await captureDisplayImage(display);
+        } catch (error) {
+          throw translateScreenCaptureError(error, options.platform);
+        }
+      } else {
+        const selection = await selectScreenshotRegion(display, options.platform);
+        if (!selection) {
+          return {
+            ok: false,
+            cancelled: true,
+            message: t("screenshot.cancelled")
+          };
+        }
+
+        await options.delay(80);
+        captured = await captureScreenshotImage(display, selection, options);
+      }
     }
 
-    await options.delay(80);
-    const cropped = await captureScreenshotImage(display, selection, options);
-    const buffer = cropped.toPNG();
+    const buffer = captured.toPNG();
     if (buffer.length > MAX_BRIDGE_SCREENSHOT_BYTES) {
       return {
         ok: false,
         message: t("screenshot.oversizedBridge")
       };
     }
-    const size = cropped.getSize();
+    const size = captured.getSize();
     return {
       ok: true,
       message: t("screenshot.capturedOne"),

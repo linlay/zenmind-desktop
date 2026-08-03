@@ -46,3 +46,85 @@ test("enterprise chat deletion remains a renderer-only sequence-aware hide", () 
   assert.doesNotMatch(panel, /electronAPI\.enterpriseChat\.delete/);
   assert.doesNotMatch(preload, /enterpriseChat\.deleteConversation/);
 });
+
+test("enterprise chat screenshot button opens three explicit capture levels", () => {
+  const panel = readSource(
+    "src",
+    "renderer",
+    "enterprise-chat",
+    "EnterpriseChatFloatingPanel.tsx"
+  );
+  const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
+  const runtime = readSource("src", "main", "enterprise-chat-runtime.ts");
+
+  assert.match(panel, /className="enterprise-chat-screenshot-menu"/);
+  assert.match(panel, /sendScreenshot\("region"\)/);
+  assert.match(panel, /sendScreenshot\("window"\)/);
+  assert.match(panel, /sendScreenshot\("desktop"\)/);
+  assert.doesNotMatch(panel, /onClick=\{\(\) => void sendScreenshot\(\)\}/);
+  assert.match(contract, /EnterpriseChatScreenshotMode = "region" \| "window" \| "desktop"/);
+  assert.match(runtime, /captureScreenshot\(mode\)/);
+});
+
+test("enterprise chat receives Desktop actions but exposes no action sending path", () => {
+  const panel = readSource(
+    "src",
+    "renderer",
+    "enterprise-chat",
+    "EnterpriseChatFloatingPanel.tsx"
+  );
+  const preload = readSource("src", "preload", "index.ts");
+  const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
+  const desktopApi = readSource("src", "shared", "contracts", "desktop-api.ts");
+  const handlers = readSource("src", "main", "ipc", "enterprise-chat-handlers.ts");
+  const runtime = readSource("src", "main", "enterprise-chat-runtime.ts");
+  const appRuntime = readSource("src", "main", "app", "runtime.ts");
+
+  assert.doesNotMatch(panel, /new-action|sendDesktopAction|desktopActionName/);
+  assert.doesNotMatch(preload, /enterpriseChat\.sendDesktopAction/);
+  assert.doesNotMatch(contract, /EnterpriseChatSendDesktopActionInput/);
+  assert.doesNotMatch(desktopApi, /sendDesktopAction/);
+  assert.doesNotMatch(handlers, /enterpriseChat\.sendDesktopAction/);
+  assert.doesNotMatch(runtime, /async sendDesktopAction\(/);
+  assert.match(panel, /className="enterprise-chat-action-confirm-backdrop"/);
+  assert.match(panel, /role="alertdialog"/);
+  assert.match(panel, /confirmed: true/);
+  assert.match(runtime, /input\?\.confirmed !== true/);
+  assert.doesNotMatch(
+    appRuntime,
+    /executeDesktopAction: async \(request\) => \{[\s\S]{0,700}showMessageBox\(/
+  );
+});
+
+test("current Desktop window capture temporarily hides enterprise chat chrome", () => {
+  const appRuntime = readSource("src", "main", "app", "runtime.ts");
+
+  assert.match(
+    appRuntime,
+    /ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS[\s\S]*enterprise-chat-floating[\s\S]*visibility: hidden !important/
+  );
+  assert.match(
+    appRuntime,
+    /captureEnterpriseChatScreenshot\(mode\)[\s\S]*mode !== "window"[\s\S]*insertCSS\([\s\S]*ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS[\s\S]*captureDesktopScreenshotForWebview\(mode\)[\s\S]*removeInsertedCSS\(insertedCssKey\)/
+  );
+});
+
+test("enterprise chat image preview escapes the compact panel through a portal", () => {
+  const panel = readSource(
+    "src",
+    "renderer",
+    "enterprise-chat",
+    "EnterpriseChatFloatingPanel.tsx"
+  );
+  const styles = readSource("src", "renderer", "styles", "enterprise-chat.css");
+
+  assert.match(panel, /import \{ createPortal \} from "react-dom"/);
+  assert.match(panel, /className="enterprise-chat-image-preview-trigger"/);
+  assert.match(
+    panel,
+    /createPortal\([\s\S]*className="enterprise-chat-image-preview-backdrop"[\s\S]*document\.body/
+  );
+  assert.match(styles, /\.enterprise-chat-image-preview-backdrop\s*\{[\s\S]*position:\s*fixed;[\s\S]*inset:\s*0;/);
+  assert.match(styles, /max-width:\s*calc\(100vw - 96px\)/);
+  assert.match(styles, /max-height:\s*calc\(100vh - 104px\)/);
+});

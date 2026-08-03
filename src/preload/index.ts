@@ -393,8 +393,6 @@ const api: DesktopApi = {
     sendFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendFiles", input),
     sendPastedFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendPastedFiles", input),
     sendScreenshot: (input) => ipcRenderer.invoke("enterpriseChat.sendScreenshot", input),
-    sendDesktopAction: (input) =>
-      ipcRenderer.invoke("enterpriseChat.sendDesktopAction", input),
     loadAttachment: (input) => ipcRenderer.invoke("enterpriseChat.loadAttachment", input),
     downloadAttachment: (input) =>
       ipcRenderer.invoke("enterpriseChat.downloadAttachment", input),

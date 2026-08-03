@@ -51,6 +51,7 @@ import type {
   AssistantNavAgentItemsResult,
   AssistantNavigationPushEvent,
   AssistantWorkerOpenRequest,
+  EnterpriseChatScreenshotMode,
   ServiceOpenLogViewerRequest,
   WebsChangedEvent,
 } from "../../shared/contracts";
@@ -198,6 +199,8 @@ export function createMainProcessRuntime() {
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
   const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(INSTALLER_SHUTDOWN_ARG);
+  const ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS =
+    ".enterprise-chat-floating { visibility: hidden !important; }";
   
   const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform, {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
@@ -258,30 +261,8 @@ export function createMainProcessRuntime() {
       });
       return result.canceled ? [] : result.filePaths;
     },
-    captureScreenshot: () => captureDesktopScreenshotForWebview(),
+    captureScreenshot: (mode) => captureEnterpriseChatScreenshot(mode),
     executeDesktopAction: async (request) => {
-      const safeArgs = JSON.stringify(request.args, (key, value) =>
-        /token|secret|password|authorization|cookie/iu.test(key) ? "[redacted]" : value
-      , 2).slice(0, 2_000);
-      const confirmation = await showMessageBox({
-        type: "warning",
-        title: t("enterpriseChat.desktopActionConfirmTitle"),
-        message: request.summary || request.action,
-        detail: `${request.action}\n\n${safeArgs}`,
-        buttons: [
-          t("enterpriseChat.desktopActionConfirm"),
-          t("enterpriseChat.desktopActionCancel")
-        ],
-        defaultId: 1,
-        cancelId: 1,
-        noLink: true
-      });
-      if (confirmation.response !== 0) {
-        return {
-          confirmed: false,
-          message: t("enterpriseChat.desktopActionCancelled")
-        };
-      }
       const response = await handleDesktopActionRequest(
         assistantBridgeRuntime.desktopActionOptions,
         {
@@ -875,12 +856,40 @@ export function createMainProcessRuntime() {
     });
   }
   
-  async function captureDesktopScreenshotForWebview() {
+  async function captureDesktopScreenshotForWebview(
+    mode: EnterpriseChatScreenshotMode = "region"
+  ) {
     return captureScreenshotForBridge({
       platform: mainProcessContext.platform,
       getMainWindow: () => appState.mainWindow,
       delay
-    });
+    }, mode);
+  }
+
+  async function captureEnterpriseChatScreenshot(mode: EnterpriseChatScreenshotMode) {
+    if (mode !== "window") {
+      return captureDesktopScreenshotForWebview(mode);
+    }
+    const targetWindow = appState.mainWindow;
+    if (
+      !targetWindow ||
+      targetWindow.isDestroyed() ||
+      targetWindow.webContents.isDestroyed()
+    ) {
+      return captureDesktopScreenshotForWebview(mode);
+    }
+
+    let insertedCssKey = "";
+    try {
+      insertedCssKey = await targetWindow.webContents.insertCSS(
+        ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS
+      );
+      return await captureDesktopScreenshotForWebview(mode);
+    } finally {
+      if (insertedCssKey && !targetWindow.webContents.isDestroyed()) {
+        await targetWindow.webContents.removeInsertedCSS(insertedCssKey).catch(() => undefined);
+      }
+    }
   }
   
   function refreshPluginDesktopGlobalShortcuts() {

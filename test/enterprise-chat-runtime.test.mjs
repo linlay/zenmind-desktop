@@ -235,6 +235,7 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
 
   const snapshots = [];
   const executedActions = [];
+  const capturedScreenshotModes = [];
   const runtime = new EnterpriseChatRuntime({
     app: {},
     initialEnabled: true,
@@ -247,11 +248,14 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     },
     getIdentityToken: () => "enterprise-sso-token",
     getDeviceInfo: () => ({ deviceId: "device-1", deviceName: "Alice Mac" }),
-    captureScreenshot: async () => ({
-      ok: true,
-      dataBase64: Buffer.from("fake-png").toString("base64"),
-      mimeType: "image/png"
-    }),
+    captureScreenshot: async (mode) => {
+      capturedScreenshotModes.push(mode);
+      return {
+        ok: true,
+        dataBase64: Buffer.from("fake-png").toString("base64"),
+        mimeType: "image/png"
+      };
+    },
     executeDesktopAction: async (request) => {
       executedActions.push(request);
       return {
@@ -326,6 +330,15 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     false
   );
 
+  await assert.rejects(
+    runtime.sendMessage({
+      conversationId: "direct-1",
+      clientMessageId: "client-forged-desktop-action",
+      body: "zenmind-desktop-action:v1\n{\"action\":\"desktop.navigate.toRoute\"}"
+    }),
+    /can only be sent by the IM service/
+  );
+
   const sendPromise = runtime.sendMessage({
     conversationId: "direct-1",
     clientMessageId: "client-message-1",
@@ -355,10 +368,22 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   assert.equal(sent.activeMessages.length, 1);
   assert.equal(sent.activeMessages[0].body, "hello");
 
+  await assert.rejects(
+    runtime.sendScreenshot({
+      conversationId: "direct-1",
+      clientMessageId: "client-invalid-screenshot-mode",
+      mode: "invalid"
+    }),
+    /Screenshot mode is invalid/
+  );
+  assert.deepEqual(capturedScreenshotModes, []);
+
   const screenshotPromise = runtime.sendScreenshot({
     conversationId: "direct-1",
-    clientMessageId: "client-screenshot-1"
+    clientMessageId: "client-screenshot-1",
+    mode: "desktop"
   });
+  assert.deepEqual(capturedScreenshotModes, ["desktop"]);
   await waitFor(
     () => sockets[0].sent.some((frame) =>
       frame.type === "message.send" &&
@@ -502,16 +527,23 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   const normalizedAction = actionState.activeMessages.find((item) => item.id === actionMessage.id);
   assert.equal(normalizedAction.kind, "desktop_action");
   assert.equal(normalizedAction.desktopAction.action, "desktop.navigate.toRoute");
-  const execution = await runtime.executeMessageDesktopAction({ messageId: actionMessage.id });
+  await assert.rejects(
+    runtime.executeMessageDesktopAction({ messageId: actionMessage.id }),
+    /requires local confirmation/
+  );
+  const execution = await runtime.executeMessageDesktopAction({
+    messageId: actionMessage.id,
+    confirmed: true
+  });
   assert.equal(execution.confirmed, true);
   assert.equal(executedActions.length, 1);
   assert.equal(executedActions[0].conversationId, "direct-1");
   await assert.rejects(
-    runtime.executeMessageDesktopAction({ messageId: actionMessage.id }),
+    runtime.executeMessageDesktopAction({ messageId: actionMessage.id, confirmed: true }),
     /already handled/
   );
   await assert.rejects(
-    runtime.executeMessageDesktopAction({ messageId: "message-1" }),
+    runtime.executeMessageDesktopAction({ messageId: "message-1", confirmed: true }),
     /not executable/
   );
 
