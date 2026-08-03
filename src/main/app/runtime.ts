@@ -268,6 +268,14 @@ export function createMainProcessRuntime() {
       });
       return result.canceled ? [] : result.filePaths;
     },
+    selectAvatar: async () => {
+      const result = await showFileDialog({
+        title: t("enterpriseChat.selectAvatar"),
+        properties: ["openFile"],
+        filters: [{ name: t("enterpriseChat.avatarImage"), extensions: ["png", "jpg", "jpeg", "webp"] }]
+      });
+      return result.canceled ? [] : result.filePaths;
+    },
     captureScreenshot: (mode) => captureEnterpriseChatScreenshot(mode),
     executeDesktopAction: async (request) => {
       const response = await handleDesktopActionRequest(

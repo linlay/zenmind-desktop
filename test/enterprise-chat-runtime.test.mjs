@@ -125,6 +125,41 @@ test("enterprise chat refreshes the Desktop JWT once after session exchange retu
   runtime.stop();
 });
 
+test("enterprise chat normalizes employee and service-bot directory identities", () => {
+  assert.deepEqual(
+    __testInternals.normalizeUser({ id: "employee-1", displayName: "Alice" }),
+    {
+      id: "employee-1",
+      displayName: "Alice",
+      email: "",
+      avatarUrl: "",
+      status: "",
+      kind: "employee",
+      alwaysOnline: false,
+      online: null
+    }
+  );
+  assert.deepEqual(
+    __testInternals.normalizeUser({
+      id: "bot-1",
+      displayName: "Support bot",
+      kind: "service_bot",
+      alwaysOnline: true,
+      online: false
+    }),
+    {
+      id: "bot-1",
+      displayName: "Support bot",
+      email: "",
+      avatarUrl: "",
+      status: "",
+      kind: "service_bot",
+      alwaysOnline: true,
+      online: true
+    }
+  );
+});
+
 test("enterprise chat exchanges the SSO token and completes a direct message flow", async (t) => {
   const sockets = [];
   const requests = [];
@@ -256,6 +291,10 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
         mimeType: "image/png"
       };
     },
+    createSupportBundle: async () => ({
+      filename: "desktop-support-test.zip",
+      bytes: Buffer.from("redacted-support-zip")
+    }),
     executeDesktopAction: async (request) => {
       executedActions.push(request);
       return {
@@ -429,6 +468,67 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     screenshotState.activeMessages.find((item) => item.id === "message-image-1")
       .attachments[0].contentType,
     "image/png"
+  );
+
+  const supportPromise = runtime.sendSupportBundle({
+    conversationId: "direct-1",
+    clientMessageId: "client-support-1"
+  });
+  await waitFor(
+    () => sockets[0].sent.some((frame) =>
+      frame.type === "message.send" &&
+      frame.payload.clientMessageId === "client-support-1"
+    ),
+    "support bundle message.send"
+  );
+  const supportUploadRequest = requests
+    .filter(({ url, init }) =>
+      new URL(url).pathname === "/api/v1/files" &&
+      init.method === "POST"
+    )
+    .at(-1);
+  const supportUpload = supportUploadRequest.init.body.get("file");
+  assert.equal(supportUpload.name, "desktop-support-test.zip");
+  assert.equal(supportUpload.type, "application/zip");
+  assert.equal(await supportUpload.text(), "redacted-support-zip");
+  const supportFrame = sockets[0].sent.find((frame) =>
+    frame.type === "message.send" &&
+    frame.payload.clientMessageId === "client-support-1"
+  );
+  assert.deepEqual(supportFrame.payload.fileIds, ["file-image-1"]);
+  sockets[0].receive({
+    v: 1,
+    frame: "response",
+    id: supportFrame.id,
+    type: "message.send",
+    ok: true,
+    result: {
+      duplicate: false,
+      message: {
+        id: "message-support-1",
+        conversationId: "direct-1",
+        seq: 3,
+        senderId: "alice",
+        clientMessageId: "client-support-1",
+        kind: "file",
+        body: "",
+        attachments: [{
+          id: "file-image-1",
+          name: "desktop-support-test.zip",
+          contentType: "application/zip",
+          sizeBytes: 20,
+          sha256: "support-hash",
+          createdAt: now
+        }],
+        createdAt: now + 2
+      }
+    }
+  });
+  const supportState = await supportPromise;
+  assert.equal(
+    supportState.activeMessages.find((item) => item.id === "message-support-1")
+      .attachments[0].name,
+    "desktop-support-test.zip"
   );
 
   const pastedBytes = Buffer.from("pasted attachment");

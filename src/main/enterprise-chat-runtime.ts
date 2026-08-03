@@ -17,11 +17,13 @@ import type {
   EnterpriseChatMessage,
   EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
+  EnterpriseChatSaveSelfProfileInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
   EnterpriseChatScreenshotMode,
   EnterpriseChatSendScreenshotInput,
+  EnterpriseChatSendSupportBundleInput,
   EnterpriseChatSnapshot,
   EnterpriseChatUser
 } from "../shared/contracts";
@@ -33,6 +35,13 @@ import {
 import { getDesktopActionDefinition } from "../shared/desktop-actions";
 import type { EpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
+import {
+  clearEnterpriseChatAvatar,
+  readEnterpriseChatSelfProfile,
+  saveEnterpriseChatAvatar,
+  saveEnterpriseChatMotto
+} from "./enterprise-chat-local-profile";
+import { createEnterpriseChatSupportBundle } from "./enterprise-chat-support-bundle";
 import {
   DEFAULT_ENTERPRISE_IM_BASE_URL,
   normalizeEnterpriseImBaseUrl
@@ -93,6 +102,8 @@ type EnterpriseChatRuntimeOptions = {
   getDeviceInfo?: () => { deviceId: string; deviceName: string };
   platform?: NodeJS.Platform;
   selectFiles?: () => Promise<string[]>;
+  selectAvatar?: () => Promise<string[]>;
+  createSupportBundle?: () => Promise<{ filename: string; bytes: Buffer }>;
   captureScreenshot?: (mode: EnterpriseChatScreenshotMode) => Promise<{
     ok: boolean;
     message?: string;
@@ -148,6 +159,9 @@ function readEpochMilliseconds(value: unknown): EpochMilliseconds {
 }
 
 function readOnline(value: Record<string, unknown>) {
+  if (value.alwaysOnline === true) {
+    return true;
+  }
   if (typeof value.online === "boolean") {
     return value.online;
   }
@@ -157,12 +171,15 @@ function readOnline(value: Record<string, unknown>) {
 
 function normalizeUser(value: unknown): EnterpriseChatUser {
   const record = isRecord(value) ? value : {};
+  const kind = readText(record.kind) === "service_bot" ? "service_bot" : "employee";
   return {
     id: readText(record.id),
     displayName: readText(record.displayName) || readText(record.email) || readText(record.id),
     email: readText(record.email),
     avatarUrl: readText(record.avatarUrl),
     status: readText(record.status),
+    kind,
+    alwaysOnline: record.alwaysOnline === true || kind === "service_bot",
     online: readOnline(record)
   };
 }
@@ -433,6 +450,8 @@ export class EnterpriseChatRuntime {
   private readonly getDeviceInfo: () => { deviceId: string; deviceName: string };
   private readonly platform: NodeJS.Platform;
   private readonly selectFiles: () => Promise<string[]>;
+  private readonly selectAvatar: () => Promise<string[]>;
+  private readonly createSupportBundle: () => Promise<{ filename: string; bytes: Buffer }>;
   private readonly captureScreenshot?: EnterpriseChatRuntimeOptions["captureScreenshot"];
   private readonly executeDesktopAction?: EnterpriseChatRuntimeOptions["executeDesktopAction"];
   private readonly onStateChanged?: (snapshot: EnterpriseChatSnapshot) => void;
@@ -464,6 +483,10 @@ export class EnterpriseChatRuntime {
     this.getDeviceInfo = options.getDeviceInfo ?? (() => getDesktopDeviceInfo(this.app));
     this.platform = options.platform ?? process.platform;
     this.selectFiles = options.selectFiles ?? (async () => []);
+    this.selectAvatar = options.selectAvatar ?? (async () => []);
+    this.createSupportBundle = options.createSupportBundle ?? (() =>
+      createEnterpriseChatSupportBundle(this.app, this.platform)
+    );
     this.captureScreenshot = options.captureScreenshot;
     this.executeDesktopAction = options.executeDesktopAction;
     this.onStateChanged = options.onStateChanged;
@@ -474,6 +497,11 @@ export class EnterpriseChatRuntime {
       message: "",
       serverUrl: this.serverUrl,
       currentUser: null,
+      selfProfile: {
+        motto: "",
+        avatarDataUrl: "",
+        hasCustomAvatar: false
+      },
       users: [],
       conversations: [],
       activeConversationId: "",
@@ -487,6 +515,7 @@ export class EnterpriseChatRuntime {
     return {
       ...this.snapshot,
       currentUser: this.snapshot.currentUser ? { ...this.snapshot.currentUser } : null,
+      selfProfile: { ...this.snapshot.selfProfile },
       users: this.snapshot.users.map((user) => ({ ...user })),
       conversations: this.snapshot.conversations.map((conversation) => ({
         ...conversation,
@@ -532,6 +561,7 @@ export class EnterpriseChatRuntime {
         connectionState: "disabled",
         message: "",
         currentUser: null,
+        selfProfile: { motto: "", avatarDataUrl: "", hasCustomAvatar: false },
         users: [],
         conversations: [],
         activeConversationId: "",
@@ -586,6 +616,7 @@ export class EnterpriseChatRuntime {
         connectionState: "signed_out",
         message: "",
         currentUser: null,
+        selfProfile: { motto: "", avatarDataUrl: "", hasCustomAvatar: false },
         users: [],
         conversations: [],
         activeConversationId: "",
@@ -631,8 +662,15 @@ export class EnterpriseChatRuntime {
         ? { ...bootstrapCurrentUser, ...directoryCurrentUser }
         : bootstrapCurrentUser;
       const visibleUsers = users.filter((user) => user.id && user.id !== currentUser.id);
+      const selfProfile = readEnterpriseChatSelfProfile(
+        this.app,
+        this.platform,
+        this.serverUrl,
+        currentUser.id
+      );
       this.updateSnapshot({
         currentUser,
+        selfProfile,
         users: visibleUsers,
         conversations: mergeConversationUsers(
           bootstrap.conversations,
@@ -652,6 +690,7 @@ export class EnterpriseChatRuntime {
         connectionState: "error",
         message: errorMessage(error),
         currentUser: null,
+        selfProfile: { motto: "", avatarDataUrl: "", hasCustomAvatar: false },
         users: [],
         conversations: [],
         activeConversationId: "",
@@ -823,6 +862,79 @@ export class EnterpriseChatRuntime {
       body: "",
       fileIds
     });
+  }
+
+  async sendSupportBundle(input: EnterpriseChatSendSupportBundleInput) {
+    const conversationId = readText(input?.conversationId);
+    const clientMessageId = readText(input?.clientMessageId);
+    if (!conversationId || !clientMessageId) {
+      throw new Error("conversationId and clientMessageId are required.");
+    }
+    await this.ensureSession();
+    this.assertMessageSendReady();
+    const bundle = await this.createSupportBundle();
+    const bundleBytes = Uint8Array.from(bundle.bytes);
+    const attachment = await this.uploadBlob(
+      new Blob([bundleBytes.buffer], { type: "application/zip" }),
+      bundle.filename
+    );
+    return this.sendMessagePayload({
+      conversationId,
+      clientMessageId,
+      body: "",
+      fileIds: [attachment.id]
+    });
+  }
+
+  async saveSelfProfile(input: EnterpriseChatSaveSelfProfileInput) {
+    const userId = this.snapshot.currentUser?.id ?? "";
+    if (!userId) {
+      throw new Error("Enterprise chat profile requires a signed-in user.");
+    }
+    const selfProfile = await saveEnterpriseChatMotto(
+      this.app,
+      this.platform,
+      this.serverUrl,
+      userId,
+      typeof input?.motto === "string" ? input.motto : ""
+    );
+    this.updateSnapshot({ selfProfile });
+    return this.getState();
+  }
+
+  async selectSelfAvatar() {
+    const userId = this.snapshot.currentUser?.id ?? "";
+    if (!userId) {
+      throw new Error("Enterprise chat profile requires a signed-in user.");
+    }
+    const selected = (await this.selectAvatar()).map((value) => value.trim()).filter(Boolean);
+    if (selected.length === 0) {
+      return this.getState();
+    }
+    const selfProfile = await saveEnterpriseChatAvatar(
+      this.app,
+      this.platform,
+      this.serverUrl,
+      userId,
+      selected[0]
+    );
+    this.updateSnapshot({ selfProfile });
+    return this.getState();
+  }
+
+  async clearSelfAvatar() {
+    const userId = this.snapshot.currentUser?.id ?? "";
+    if (!userId) {
+      throw new Error("Enterprise chat profile requires a signed-in user.");
+    }
+    const selfProfile = await clearEnterpriseChatAvatar(
+      this.app,
+      this.platform,
+      this.serverUrl,
+      userId
+    );
+    this.updateSnapshot({ selfProfile });
+    return this.getState();
   }
 
   async sendPastedFiles(input: EnterpriseChatSendPastedFilesInput) {
@@ -1068,6 +1180,7 @@ export class EnterpriseChatRuntime {
       connectionState: this.snapshot.enabled ? "signed_out" : "disabled",
       message: "",
       currentUser: null,
+      selfProfile: { motto: "", avatarDataUrl: "", hasCustomAvatar: false },
       users: [],
       conversations: [],
       activeConversationId: "",

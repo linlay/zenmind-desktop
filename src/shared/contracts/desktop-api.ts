@@ -27,10 +27,12 @@ import type {
   EnterpriseChatMarkReadInput,
   EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
+  EnterpriseChatSaveSelfProfileInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
   EnterpriseChatSendScreenshotInput,
+  EnterpriseChatSendSupportBundleInput,
   EnterpriseChatSnapshot,
   EnterpriseChatSnapshotListener
 } from "./enterprise-chat";
@@ -677,12 +679,16 @@ export interface DesktopApi {
     createGroup: (input: EnterpriseChatCreateGroupInput) => Promise<EnterpriseChatSnapshot>;
     sendMessage: (input: EnterpriseChatSendMessageInput) => Promise<EnterpriseChatSnapshot>;
     sendFiles: (input: EnterpriseChatSendFilesInput) => Promise<EnterpriseChatSnapshot>;
+    sendSupportBundle: (input: EnterpriseChatSendSupportBundleInput) => Promise<EnterpriseChatSnapshot>;
     sendPastedFiles: (input: EnterpriseChatSendPastedFilesInput) => Promise<EnterpriseChatSnapshot>;
     sendScreenshot: (input: EnterpriseChatSendScreenshotInput) => Promise<EnterpriseChatSnapshot>;
     loadAttachment: (input: EnterpriseChatAttachmentInput) => Promise<EnterpriseChatAttachmentData>;
     downloadAttachment: (input: EnterpriseChatAttachmentInput) => Promise<EnterpriseChatDownloadResult>;
     executeDesktopAction: (input: EnterpriseChatExecuteActionInput) => Promise<EnterpriseChatExecuteActionResult>;
     markRead: (input: EnterpriseChatMarkReadInput) => Promise<EnterpriseChatSnapshot>;
+    saveSelfProfile: (input: EnterpriseChatSaveSelfProfileInput) => Promise<EnterpriseChatSnapshot>;
+    selectSelfAvatar: () => Promise<EnterpriseChatSnapshot>;
+    clearSelfAvatar: () => Promise<EnterpriseChatSnapshot>;
     onStateChanged: (listener: EnterpriseChatSnapshotListener) => () => void;
   };
   settings: {

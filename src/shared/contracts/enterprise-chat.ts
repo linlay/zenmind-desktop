@@ -19,7 +19,15 @@ export interface EnterpriseChatUser {
   email: string;
   avatarUrl: string;
   status: string;
+  kind: "employee" | "service_bot";
+  alwaysOnline: boolean;
   online: boolean | null;
+}
+
+export interface EnterpriseChatSelfProfile {
+  motto: string;
+  avatarDataUrl: string;
+  hasCustomAvatar: boolean;
 }
 
 export interface EnterpriseChatMember {
@@ -79,6 +87,7 @@ export interface EnterpriseChatSnapshot {
   message: string;
   serverUrl: string;
   currentUser: EnterpriseChatUser | null;
+  selfProfile: EnterpriseChatSelfProfile;
   users: EnterpriseChatUser[];
   conversations: EnterpriseChatConversation[];
   activeConversationId: string;
@@ -109,6 +118,15 @@ export interface EnterpriseChatSendMessageInput {
 export interface EnterpriseChatSendFilesInput {
   conversationId: string;
   clientMessageId: string;
+}
+
+export interface EnterpriseChatSendSupportBundleInput {
+  conversationId: string;
+  clientMessageId: string;
+}
+
+export interface EnterpriseChatSaveSelfProfileInput {
+  motto: string;
 }
 
 export interface EnterpriseChatPastedFile {

@@ -48,6 +48,48 @@ test("enterprise chat renderer uses the compact panel and persistent list search
   assert.match(panel, /\[user\.displayName, user\.email\]/);
 });
 
+test("enterprise chat distinguishes people, groups, and service bots in Contacts", () => {
+  const panel = readSource(
+    "src",
+    "renderer",
+    "enterprise-chat",
+    "EnterpriseChatFloatingPanel.tsx"
+  );
+  const styles = readSource("src", "renderer", "styles", "enterprise-chat.css");
+  const runtime = readSource("src", "main", "enterprise-chat-runtime.ts");
+
+  assert.match(runtime, /record\.kind\) === "service_bot"/u);
+  assert.match(panel, /employeeContacts/);
+  assert.match(panel, /groupContacts/);
+  assert.match(panel, /botContacts/);
+  assert.match(panel, /<RobotOutlined \/>/);
+  assert.match(panel, /enterprise-chat-contact-kind is-group/);
+  assert.match(styles, /\.enterprise-chat-avatar\.is-person/);
+  assert.match(styles, /\.enterprise-chat-avatar\.is-bot/);
+  assert.match(styles, /\.enterprise-chat-contact-kind\.is-group/);
+});
+
+test("enterprise chat exposes an attachment menu and a local profile settings tab", () => {
+  const panel = readSource(
+    "src",
+    "renderer",
+    "enterprise-chat",
+    "EnterpriseChatFloatingPanel.tsx"
+  );
+  const preload = readSource("src", "preload", "index.ts");
+  const handlers = readSource("src", "main", "ipc", "enterprise-chat-handlers.ts");
+
+  assert.match(panel, /className="enterprise-chat-attachment-menu"/);
+  assert.match(panel, /sendSupportBundle/);
+  assert.match(panel, /view === "settings"/);
+  assert.match(panel, /snapshot\.selfProfile\.motto/);
+  assert.match(panel, /selectSelfAvatar/);
+  assert.match(preload, /enterpriseChat\.sendSupportBundle/);
+  assert.match(preload, /enterpriseChat\.saveSelfProfile/);
+  assert.match(handlers, /runtime\.sendSupportBundle/);
+  assert.match(handlers, /runtime\.saveSelfProfile/);
+});
+
 test("enterprise chat deletion remains a renderer-only sequence-aware hide", () => {
   const panel = readSource(
     "src",

@@ -52,6 +52,7 @@
 .enterprise-chat-conversation:focus-visible,
 .enterprise-chat-conversation-more:focus-visible,
 .enterprise-chat-conversation-menu button:focus-visible,
+.enterprise-chat-attachment-menu button:focus-visible,
 .enterprise-chat-screenshot-menu button:focus-visible,
 .enterprise-chat-action-card button:focus-visible,
 .enterprise-chat-action-confirm button:focus-visible,
@@ -408,6 +409,22 @@
   font-weight: 800;
 }
 
+.enterprise-chat-avatar.is-person {
+  border: 1px solid color-mix(in srgb, #3b82f6 26%, transparent);
+  background: color-mix(in srgb, #dbeafe 78%, var(--bg-base));
+  color: #2563eb;
+}
+
+.enterprise-chat-avatar.is-bot {
+  border: 1px solid color-mix(in srgb, #8b5cf6 30%, transparent);
+  background: color-mix(in srgb, #ede9fe 82%, var(--bg-base));
+  color: #7c3aed;
+}
+
+.enterprise-chat-avatar.is-bot.enterprise-chat-avatar-fallback {
+  font-size: 16px;
+}
+
 .enterprise-chat-group-avatar {
   background: linear-gradient(145deg, #e7f7f2, #d9f2e9);
   color: #158267;
@@ -464,6 +481,55 @@
   color: #16a34a;
 }
 
+.enterprise-chat-contact-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.enterprise-chat-contact-section + .enterprise-chat-contact-section {
+  margin-top: 8px;
+}
+
+.enterprise-chat-contact-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 4px 8px 3px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.enterprise-chat-contact-kind {
+  min-width: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.enterprise-chat-contact-kind.is-person {
+  background: color-mix(in srgb, #dbeafe 80%, var(--bg-base));
+  color: #2563eb;
+}
+
+.enterprise-chat-contact-kind.is-group {
+  background: color-mix(in srgb, #d1fae5 80%, var(--bg-base));
+  color: #047857;
+}
+
+.enterprise-chat-contact-kind.is-bot {
+  background: color-mix(in srgb, #ede9fe 82%, var(--bg-base));
+  color: #7c3aed;
+}
+
 .enterprise-chat-conversation-meta {
   display: flex;
   align-self: stretch;
@@ -496,7 +562,7 @@
   min-height: 48px;
   display: grid;
   flex: none;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-base) 96%, var(--enterprise-chat-accent) 4%);
 }
@@ -991,12 +1057,14 @@
   color: var(--enterprise-chat-accent-strong);
 }
 
-.enterprise-chat-screenshot-menu {
+.enterprise-chat-screenshot-menu,
+.enterprise-chat-attachment-menu {
   min-width: 164px;
   padding: 4px;
 }
 
-.enterprise-chat-screenshot-menu button {
+.enterprise-chat-screenshot-menu button,
+.enterprise-chat-attachment-menu button {
   width: 100%;
   min-height: 34px;
   display: flex;
@@ -1013,18 +1081,21 @@
   text-align: left;
 }
 
-.enterprise-chat-screenshot-menu button:hover {
+.enterprise-chat-screenshot-menu button:hover,
+.enterprise-chat-attachment-menu button:hover {
   background: var(--accent-fill-subtle);
   color: var(--accent-strong);
 }
 
-.enterprise-chat-screenshot-menu .anticon {
+.enterprise-chat-screenshot-menu .anticon,
+.enterprise-chat-attachment-menu .anticon {
   width: 16px;
   color: var(--ink-muted);
   font-size: 14px;
 }
 
-.enterprise-chat-screenshot-menu button:hover .anticon {
+.enterprise-chat-screenshot-menu button:hover .anticon,
+.enterprise-chat-attachment-menu button:hover .anticon {
   color: inherit;
 }
 
@@ -1133,6 +1204,86 @@
 .enterprise-chat-form > button:disabled {
   background: #cbd0dc;
   cursor: default;
+}
+
+.enterprise-chat-profile-form {
+  gap: 12px;
+}
+
+.enterprise-chat-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-base) 94%, var(--enterprise-chat-accent) 6%);
+}
+
+.enterprise-chat-profile-card > .enterprise-chat-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+}
+
+.enterprise-chat-profile-card > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.enterprise-chat-profile-card strong,
+.enterprise-chat-profile-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.enterprise-chat-profile-card strong {
+  font-size: 14px;
+}
+
+.enterprise-chat-profile-card small,
+.enterprise-chat-field-count {
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.enterprise-chat-profile-avatar-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.enterprise-chat-profile-avatar-actions button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.enterprise-chat-profile-avatar-actions button:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
+}
+
+.enterprise-chat-profile-avatar-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.enterprise-chat-field-count {
+  align-self: flex-end;
+  margin-top: -3px;
+  font-weight: 500;
 }
 
 .enterprise-chat-member-picker {
@@ -1266,6 +1417,18 @@
   color: var(--enterprise-chat-accent-strong);
 }
 
+[data-theme="dark"] .enterprise-chat-avatar.is-person {
+  border-color: rgba(96, 165, 250, 0.24);
+  background: #172844;
+  color: #93c5fd;
+}
+
+[data-theme="dark"] .enterprise-chat-avatar.is-bot {
+  border-color: rgba(167, 139, 250, 0.26);
+  background: #2a2144;
+  color: #c4b5fd;
+}
+
 [data-theme="dark"] .enterprise-chat-group-avatar {
   background: #263f3b;
   color: #76d3b7;
@@ -1330,6 +1493,12 @@
   border-color: var(--line-strong);
   background: color-mix(in srgb, var(--bg-base) 92%, var(--enterprise-chat-accent) 8%);
   color: var(--ink);
+}
+
+[data-theme="dark"] .enterprise-chat-profile-card,
+[data-theme="dark"] .enterprise-chat-profile-avatar-actions button {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--bg-base) 90%, var(--enterprise-chat-accent) 10%);
 }
 
 [data-theme="dark"] .enterprise-chat-error {

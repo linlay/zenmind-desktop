@@ -7,15 +7,19 @@ import {
   DesktopOutlined,
   DownloadOutlined,
   FileOutlined,
+  FileZipOutlined,
+  FolderOpenOutlined,
   LaptopOutlined,
   MessageOutlined,
   MoreOutlined,
   PaperClipOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RobotOutlined,
   SearchOutlined,
   ScissorOutlined,
   SendOutlined,
+  SettingOutlined,
   TeamOutlined,
   ThunderboltOutlined,
   UserOutlined
@@ -52,7 +56,7 @@ type EnterpriseChatFloatingPanelProps = {
   desktopSsoStatus: DesktopSsoStatus | null;
 };
 
-type PanelView = "chats" | "contacts" | "new-group" | "conversation";
+type PanelView = "chats" | "contacts" | "settings" | "new-group" | "conversation";
 type LauncherPosition = { x: number; y: number };
 type HiddenConversationPreference = {
   scope: string;
@@ -81,21 +85,34 @@ function initials(user: EnterpriseChatUser) {
   return source.slice(0, 2).toUpperCase();
 }
 
-function EnterpriseChatAvatar({ user }: { user: EnterpriseChatUser }) {
+function EnterpriseChatAvatar({
+  user,
+  customAvatarDataUrl = ""
+}: {
+  user: EnterpriseChatUser;
+  customAvatarDataUrl?: string;
+}) {
   const [failed, setFailed] = useState(false);
-  if (user.avatarUrl && !failed) {
+  const avatarUrl = customAvatarDataUrl || user.avatarUrl;
+  useEffect(() => setFailed(false), [avatarUrl]);
+  if (avatarUrl && !failed) {
     return (
       <img
-        className="enterprise-chat-avatar"
-        src={user.avatarUrl}
+        className={`enterprise-chat-avatar ${user.kind === "service_bot" ? "is-bot" : "is-person"}`}
+        src={avatarUrl}
         alt=""
         onError={() => setFailed(true)}
       />
     );
   }
   return (
-    <span className="enterprise-chat-avatar enterprise-chat-avatar-fallback" aria-hidden="true">
-      {initials(user)}
+    <span
+      className={`enterprise-chat-avatar enterprise-chat-avatar-fallback ${
+        user.kind === "service_bot" ? "is-bot" : "is-person"
+      }`}
+      aria-hidden="true"
+    >
+      {user.kind === "service_bot" ? <RobotOutlined /> : initials(user)}
     </span>
   );
 }
@@ -295,6 +312,8 @@ export function EnterpriseChatFloatingPanel({
   const [contactSearch, setContactSearch] = useState("");
   const [openConversationMenuId, setOpenConversationMenuId] = useState("");
   const [screenshotMenuOpen, setScreenshotMenuOpen] = useState(false);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [mottoDraft, setMottoDraft] = useState("");
   const [hiddenConversationPreferences, setHiddenConversationPreferences] = useState(
     readHiddenConversationPreferences
   );
@@ -390,6 +409,7 @@ export function EnterpriseChatFloatingPanel({
   useEffect(() => {
     if (!open || view !== "conversation") {
       setScreenshotMenuOpen(false);
+      setAttachmentMenuOpen(false);
     }
   }, [open, view]);
 
@@ -580,6 +600,12 @@ export function EnterpriseChatFloatingPanel({
   }, [previewImage]);
 
   const activePeer = directPeer(activeConversation, snapshot?.currentUser?.id ?? "");
+  const selfUser = snapshot?.currentUser
+    ? {
+        ...snapshot.currentUser,
+        avatarUrl: snapshot.selfProfile.avatarDataUrl || snapshot.currentUser.avatarUrl
+      }
+    : null;
   const pendingActionSender = activeConversation?.members.find(
     (member) => member.user.id === pendingActionMessage?.senderId
   )?.user;
@@ -657,6 +683,23 @@ export function EnterpriseChatFloatingPanel({
       normalizeSearchValue(value, locale).includes(normalizedContactSearch)
     );
   });
+  const employeeContacts = filteredUsers.filter((user) => user.kind !== "service_bot");
+  const botContacts = filteredUsers.filter((user) => user.kind === "service_bot");
+  const groupContacts = conversations.filter((conversation) => {
+    if (conversation.type !== "group") {
+      return false;
+    }
+    if (!normalizedContactSearch) {
+      return true;
+    }
+    return [
+      conversationTitle(conversation),
+      ...conversation.members.flatMap((member) => [member.user.displayName, member.user.email])
+    ].some((value) => normalizeSearchValue(value, locale).includes(normalizedContactSearch));
+  });
+  const contactCount = users.length + conversations.filter(
+    (conversation) => conversation.type === "group"
+  ).length;
   const filteredConversations = visibleConversations.filter((conversation) => {
     if (!normalizedChatSearch) {
       return true;
@@ -808,6 +851,77 @@ export function EnterpriseChatFloatingPanel({
         conversationId,
         clientMessageId: newClientMessageId()
       }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function sendSupportBundle() {
+    const conversationId = snapshot?.activeConversationId ?? "";
+    if (!conversationId || busy) {
+      return;
+    }
+    setAttachmentMenuOpen(false);
+    if (!window.confirm(t("enterpriseChat.supportBundleConfirm"))) {
+      return;
+    }
+    setBusy("support-bundle");
+    setError("");
+    try {
+      setSnapshot(await window.electronAPI.enterpriseChat.sendSupportBundle({
+        conversationId,
+        clientMessageId: newClientMessageId()
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveSelfProfile(event: FormEvent) {
+    event.preventDefault();
+    if (busy) {
+      return;
+    }
+    setBusy("profile");
+    setError("");
+    try {
+      setSnapshot(await window.electronAPI.enterpriseChat.saveSelfProfile({
+        motto: mottoDraft
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function selectSelfAvatar() {
+    if (busy) {
+      return;
+    }
+    setBusy("profile-avatar");
+    setError("");
+    try {
+      setSnapshot(await window.electronAPI.enterpriseChat.selectSelfAvatar());
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function clearSelfAvatar() {
+    if (busy) {
+      return;
+    }
+    setBusy("profile-avatar");
+    setError("");
+    try {
+      setSnapshot(await window.electronAPI.enterpriseChat.clearSelfAvatar());
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -1101,6 +1215,37 @@ export function EnterpriseChatFloatingPanel({
     );
   }
 
+  function renderUserContact(user: EnterpriseChatUser) {
+    const conversation = conversationForUser(snapshot?.conversations ?? [], user.id);
+    const isBot = user.kind === "service_bot";
+    return (
+      <button
+        type="button"
+        className={`enterprise-chat-user ${isBot ? "is-bot" : "is-person"}`}
+        key={user.id}
+        disabled={busy === `user:${user.id}`}
+        onClick={() => void openDirectConversation(user)}
+      >
+        <span className="enterprise-chat-avatar-wrap">
+          <EnterpriseChatAvatar user={user} />
+          <i className={presenceClass(user)} />
+        </span>
+        <span className="enterprise-chat-user-copy">
+          <strong>{user.displayName}</strong>
+          <small>
+            {conversation
+              ? conversationPreview(conversation)
+              : user.email || presenceLabel(user)}
+          </small>
+        </span>
+        <span className={`enterprise-chat-contact-kind ${isBot ? "is-bot" : "is-person"}`}>
+          {isBot ? <RobotOutlined /> : <UserOutlined />}
+          <span>{isBot ? t("enterpriseChat.robot") : t("enterpriseChat.person")}</span>
+        </span>
+      </button>
+    );
+  }
+
   return (
     <aside
       className="enterprise-chat-floating"
@@ -1135,13 +1280,29 @@ export function EnterpriseChatFloatingPanel({
             ) : (
               <>
                 <span className="enterprise-chat-header-icon" aria-hidden="true">
-                  {view === "contacts" ? <UserOutlined /> : <MessageOutlined />}
+                  {view === "contacts"
+                    ? <UserOutlined />
+                    : view === "settings"
+                      ? <SettingOutlined />
+                      : <MessageOutlined />}
                 </span>
                 <div className="enterprise-chat-header-copy">
-                  <strong>{view === "contacts" ? t("enterpriseChat.contacts") : t("enterpriseChat.title")}</strong>
+                  <strong>
+                    {view === "contacts"
+                      ? t("enterpriseChat.contacts")
+                      : view === "settings"
+                        ? t("enterpriseChat.settings")
+                        : t("enterpriseChat.title")}
+                  </strong>
                   <span>
-                    <i className={`enterprise-chat-connection-dot is-${snapshot.connectionState}`} />
-                    {connectionLabel}
+                    {view === "settings" ? (
+                      t("enterpriseChat.profileLocalHint")
+                    ) : (
+                      <>
+                        <i className={`enterprise-chat-connection-dot is-${snapshot.connectionState}`} />
+                        {connectionLabel}
+                      </>
+                    )}
                   </span>
                 </div>
                 {view === "chats" ? (
@@ -1157,15 +1318,17 @@ export function EnterpriseChatFloatingPanel({
                     <PlusOutlined />
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className="enterprise-chat-icon-button"
-                  aria-label={t("enterpriseChat.refresh")}
-                  disabled={busy === "refresh"}
-                  onClick={() => void refresh()}
-                >
-                  <ReloadOutlined spin={busy === "refresh"} />
-                </button>
+                {view !== "settings" ? (
+                  <button
+                    type="button"
+                    className="enterprise-chat-icon-button"
+                    aria-label={t("enterpriseChat.refresh")}
+                    disabled={busy === "refresh"}
+                    onClick={() => void refresh()}
+                  >
+                    <ReloadOutlined spin={busy === "refresh"} />
+                  </button>
+                ) : null}
               </>
             )}
             <button
@@ -1290,15 +1453,49 @@ export function EnterpriseChatFloatingPanel({
               </div>
               <form className="enterprise-chat-composer" onSubmit={(event) => void sendMessage(event)}>
                 <div className="enterprise-chat-composer-tools">
-                  <button
-                    type="button"
-                    title={t("enterpriseChat.sendFiles")}
-                    aria-label={t("enterpriseChat.sendFiles")}
+                  <Popover
+                    placement="top-start"
+                    open={attachmentMenuOpen}
+                    onOpenChange={setAttachmentMenuOpen}
                     disabled={Boolean(busy)}
-                    onClick={() => void sendFiles()}
+                    content={(
+                      <div
+                        className="enterprise-chat-attachment-menu"
+                        role="menu"
+                        aria-label={t("enterpriseChat.attachmentOptions")}
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setAttachmentMenuOpen(false);
+                            void sendFiles();
+                          }}
+                        >
+                          <FolderOpenOutlined />
+                          <span>{t("enterpriseChat.sendAnyFiles")}</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void sendSupportBundle()}
+                        >
+                          <FileZipOutlined />
+                          <span>{t("enterpriseChat.sendSupportBundle")}</span>
+                        </button>
+                      </div>
+                    )}
                   >
-                    <PaperClipOutlined />
-                  </button>
+                    <button
+                      type="button"
+                      title={t("enterpriseChat.attachmentOptions")}
+                      aria-label={t("enterpriseChat.attachmentOptions")}
+                      aria-haspopup="menu"
+                      disabled={Boolean(busy)}
+                    >
+                      <PaperClipOutlined />
+                    </button>
+                  </Popover>
                   <Popover
                     placement="top-start"
                     open={screenshotMenuOpen}
@@ -1417,15 +1614,71 @@ export function EnterpriseChatFloatingPanel({
                 {t("enterpriseChat.createGroup", { count: groupMemberIds.length })}
               </button>
             </form>
+          ) : view === "settings" ? (
+            <form
+              className="enterprise-chat-form enterprise-chat-profile-form"
+              onSubmit={(event) => void saveSelfProfile(event)}
+            >
+              {selfUser ? (
+                <div className="enterprise-chat-profile-card">
+                  <EnterpriseChatAvatar
+                    user={selfUser}
+                    customAvatarDataUrl={snapshot.selfProfile.avatarDataUrl}
+                  />
+                  <span>
+                    <strong>{selfUser.displayName}</strong>
+                    <small>{selfUser.email || selfUser.id}</small>
+                  </span>
+                </div>
+              ) : null}
+              <div className="enterprise-chat-profile-avatar-actions">
+                <button
+                  type="button"
+                  disabled={Boolean(busy)}
+                  onClick={() => void selectSelfAvatar()}
+                >
+                  <CameraOutlined />
+                  <span>{t("enterpriseChat.chooseAvatar")}</span>
+                </button>
+                {snapshot.selfProfile.hasCustomAvatar ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => void clearSelfAvatar()}
+                  >
+                    <DeleteOutlined />
+                    <span>{t("enterpriseChat.removeAvatar")}</span>
+                  </button>
+                ) : null}
+              </div>
+              <label>
+                <span>{t("enterpriseChat.motto")}</span>
+                <textarea
+                  value={mottoDraft}
+                  rows={4}
+                  maxLength={160}
+                  placeholder={t("enterpriseChat.mottoPlaceholder")}
+                  onChange={(event) => setMottoDraft(event.target.value)}
+                />
+                <small className="enterprise-chat-field-count">{mottoDraft.length}/160</small>
+              </label>
+              <p>{t("enterpriseChat.profileLocalDescription")}</p>
+              <button type="submit" disabled={Boolean(busy)}>
+                <CheckOutlined />
+                {busy === "profile"
+                  ? t("enterpriseChat.savingProfile")
+                  : t("enterpriseChat.saveProfile")}
+              </button>
+            </form>
           ) : view === "contacts" ? (
             <div className="enterprise-chat-directory">
-              {users.length === 0 ? (
+              {contactCount === 0 ? (
                 <div className="enterprise-chat-empty">
                   <UserOutlined />
-                  <strong>{t("enterpriseChat.noEmployees")}</strong>
-                  <span>{t("enterpriseChat.noEmployeesDescription")}</span>
+                  <strong>{t("enterpriseChat.noContacts")}</strong>
+                  <span>{t("enterpriseChat.noContactsDescription")}</span>
                 </div>
-              ) : filteredUsers.length === 0 ? (
+              ) : employeeContacts.length === 0 && botContacts.length === 0 && groupContacts.length === 0 ? (
                 <div className="enterprise-chat-empty">
                   <SearchOutlined />
                   <strong>{t("enterpriseChat.noSearchResults")}</strong>
@@ -1433,34 +1686,46 @@ export function EnterpriseChatFloatingPanel({
                 </div>
               ) : (
                 <div className="enterprise-chat-user-list">
-                  {filteredUsers.map((user) => {
-                    const conversation = conversationForUser(snapshot.conversations, user.id);
-                    return (
+                  {employeeContacts.length > 0 ? (
+                    <section className="enterprise-chat-contact-section">
+                      <h3><UserOutlined />{t("enterpriseChat.people")}</h3>
+                      {employeeContacts.map(renderUserContact)}
+                    </section>
+                  ) : null}
+                  {groupContacts.length > 0 ? (
+                    <section className="enterprise-chat-contact-section">
+                      <h3><TeamOutlined />{t("enterpriseChat.groups")}</h3>
+                      {groupContacts.map((conversation) => (
                       <button
                         type="button"
-                        className="enterprise-chat-user"
-                        key={user.id}
-                        disabled={busy === `user:${user.id}`}
-                        onClick={() => void openDirectConversation(user)}
+                        className="enterprise-chat-user is-group"
+                        key={conversation.id}
+                        disabled={busy === `conversation:${conversation.id}`}
+                        onClick={() => void openConversation(conversation.id)}
                       >
                         <span className="enterprise-chat-avatar-wrap">
-                          <EnterpriseChatAvatar user={user} />
-                          <i className={presenceClass(user)} />
+                          <span className="enterprise-chat-avatar enterprise-chat-group-avatar">
+                            <TeamOutlined />
+                          </span>
                         </span>
                         <span className="enterprise-chat-user-copy">
-                          <strong>{user.displayName}</strong>
-                          <small>
-                            {conversation
-                              ? conversationPreview(conversation)
-                              : user.email || presenceLabel(user)}
-                          </small>
+                          <strong>{conversationTitle(conversation)}</strong>
+                          <small>{t("enterpriseChat.groupMemberCount", { count: conversation.members.length })}</small>
                         </span>
-                        <span className={`enterprise-chat-presence ${presenceClass(user)}`}>
-                          {presenceLabel(user)}
+                        <span className="enterprise-chat-contact-kind is-group">
+                          <TeamOutlined />
+                          <span>{t("enterpriseChat.group")}</span>
                         </span>
                       </button>
-                    );
-                  })}
+                      ))}
+                    </section>
+                  ) : null}
+                  {botContacts.length > 0 ? (
+                    <section className="enterprise-chat-contact-section">
+                      <h3><RobotOutlined />{t("enterpriseChat.robots")}</h3>
+                      {botContacts.map(renderUserContact)}
+                    </section>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -1556,7 +1821,7 @@ export function EnterpriseChatFloatingPanel({
             </div>
           )}
 
-          {view === "chats" || view === "contacts" ? (
+          {view === "chats" || view === "contacts" || view === "settings" ? (
             <nav className="enterprise-chat-tabs" aria-label={t("enterpriseChat.navigation")}>
               <button
                 type="button"
@@ -1574,6 +1839,17 @@ export function EnterpriseChatFloatingPanel({
               >
                 <UserOutlined />
                 <span>{t("enterpriseChat.contacts")}</span>
+              </button>
+              <button
+                type="button"
+                className={view === "settings" ? "is-active" : ""}
+                onClick={() => {
+                  setMottoDraft(snapshot.selfProfile.motto);
+                  setView("settings");
+                }}
+              >
+                <SettingOutlined />
+                <span>{t("enterpriseChat.settings")}</span>
               </button>
             </nav>
           ) : null}

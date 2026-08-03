@@ -5,10 +5,12 @@ import type {
   EnterpriseChatMarkReadInput,
   EnterpriseChatOpenConversationInput,
   EnterpriseChatOpenDirectInput,
+  EnterpriseChatSaveSelfProfileInput,
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
-  EnterpriseChatSendScreenshotInput
+  EnterpriseChatSendScreenshotInput,
+  EnterpriseChatSendSupportBundleInput
 } from "../../shared/contracts";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 
@@ -44,6 +46,11 @@ export function registerEnterpriseChatIpcHandlers(
       runtime.sendFiles(input)
   );
   ipcMain.handle(
+    "enterpriseChat.sendSupportBundle",
+    async (_event: unknown, input: EnterpriseChatSendSupportBundleInput) =>
+      runtime.sendSupportBundle(input)
+  );
+  ipcMain.handle(
     "enterpriseChat.sendPastedFiles",
     async (_event: unknown, input: EnterpriseChatSendPastedFilesInput) =>
       runtime.sendPastedFiles(input)
@@ -73,4 +80,11 @@ export function registerEnterpriseChatIpcHandlers(
     async (_event: unknown, input: EnterpriseChatMarkReadInput) =>
       runtime.markRead(input)
   );
+  ipcMain.handle(
+    "enterpriseChat.saveSelfProfile",
+    async (_event: unknown, input: EnterpriseChatSaveSelfProfileInput) =>
+      runtime.saveSelfProfile(input)
+  );
+  ipcMain.handle("enterpriseChat.selectSelfAvatar", async () => runtime.selectSelfAvatar());
+  ipcMain.handle("enterpriseChat.clearSelfAvatar", async () => runtime.clearSelfAvatar());
 }

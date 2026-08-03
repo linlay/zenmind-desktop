@@ -391,6 +391,7 @@ const api: DesktopApi = {
     createGroup: (input) => ipcRenderer.invoke("enterpriseChat.createGroup", input),
     sendMessage: (input) => ipcRenderer.invoke("enterpriseChat.sendMessage", input),
     sendFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendFiles", input),
+    sendSupportBundle: (input) => ipcRenderer.invoke("enterpriseChat.sendSupportBundle", input),
     sendPastedFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendPastedFiles", input),
     sendScreenshot: (input) => ipcRenderer.invoke("enterpriseChat.sendScreenshot", input),
     loadAttachment: (input) => ipcRenderer.invoke("enterpriseChat.loadAttachment", input),
@@ -399,6 +400,9 @@ const api: DesktopApi = {
     executeDesktopAction: (input) =>
       ipcRenderer.invoke("enterpriseChat.executeDesktopAction", input),
     markRead: (input) => ipcRenderer.invoke("enterpriseChat.markRead", input),
+    saveSelfProfile: (input) => ipcRenderer.invoke("enterpriseChat.saveSelfProfile", input),
+    selectSelfAvatar: () => ipcRenderer.invoke("enterpriseChat.selectSelfAvatar"),
+    clearSelfAvatar: () => ipcRenderer.invoke("enterpriseChat.clearSelfAvatar"),
     onStateChanged: (listener: EnterpriseChatSnapshotListener) => {
       const handleStateChanged = (
         _event: Electron.IpcRendererEvent,
