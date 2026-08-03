@@ -3,12 +3,15 @@ import {
   CameraOutlined,
   CheckOutlined,
   CloseOutlined,
+  DeleteOutlined,
   DownloadOutlined,
   FileOutlined,
   MessageOutlined,
+  MoreOutlined,
   PaperClipOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SearchOutlined,
   SendOutlined,
   TeamOutlined,
   ThunderboltOutlined,
@@ -37,6 +40,7 @@ import type {
   EnterpriseChatSnapshot,
   EnterpriseChatUser
 } from "../../shared/contracts";
+import { Popover } from "../components/Popover";
 import { useI18n } from "../i18n/useI18n";
 
 type EnterpriseChatFloatingPanelProps = {
@@ -45,10 +49,18 @@ type EnterpriseChatFloatingPanelProps = {
 
 type PanelView = "chats" | "contacts" | "new-group" | "conversation" | "new-action";
 type LauncherPosition = { x: number; y: number };
+type HiddenConversationPreference = {
+  scope: string;
+  conversationId: string;
+  lastSeq: number;
+};
 
 const CHAT_LAUNCHER_POSITION_KEY = "zenmind.enterpriseChat.launcherPosition.v1";
+const CHAT_HIDDEN_CONVERSATIONS_KEY = "zenmind.enterpriseChat.hiddenConversations.v1";
 const CHAT_LAUNCHER_SIZE = 54 * 0.7;
 const CHAT_LAUNCHER_MARGIN = 12;
+const CHAT_PANEL_WIDTH = 400;
+const CHAT_PANEL_HEIGHT = 500;
 
 function hasCompleteEnterpriseLogin(status: DesktopSsoStatus | null) {
   return Boolean(
@@ -156,6 +168,47 @@ function readLauncherPosition() {
   return fallback;
 }
 
+function readHiddenConversationPreferences() {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(CHAT_HIDDEN_CONVERSATIONS_KEY) || "[]"
+    ) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.flatMap((value): HiddenConversationPreference[] => {
+      if (!value || typeof value !== "object") {
+        return [];
+      }
+      const record = value as Record<string, unknown>;
+      if (
+        typeof record.scope !== "string" || !record.scope ||
+        typeof record.conversationId !== "string" || !record.conversationId ||
+        typeof record.lastSeq !== "number" || !Number.isFinite(record.lastSeq)
+      ) {
+        return [];
+      }
+      return [{
+        scope: record.scope,
+        conversationId: record.conversationId,
+        lastSeq: Math.max(0, Math.trunc(record.lastSeq))
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function conversationPreferenceScope(snapshot: EnterpriseChatSnapshot | null) {
+  const serverUrl = snapshot?.serverUrl.trim() ?? "";
+  const userId = snapshot?.currentUser?.id.trim() ?? "";
+  return serverUrl && userId ? JSON.stringify([serverUrl, userId]) : "";
+}
+
+function normalizeSearchValue(value: string, locale: string) {
+  return value.trim().toLocaleLowerCase(locale);
+}
+
 function formatFileSize(sizeBytes: number) {
   if (sizeBytes < 1024) {
     return `${sizeBytes} B`;
@@ -227,6 +280,12 @@ export function EnterpriseChatFloatingPanel({
   const [actionSummary, setActionSummary] = useState("");
   const [actionResults, setActionResults] = useState<Record<string, string>>({});
   const [attachmentData, setAttachmentData] = useState<Record<string, string>>({});
+  const [chatSearch, setChatSearch] = useState("");
+  const [contactSearch, setContactSearch] = useState("");
+  const [openConversationMenuId, setOpenConversationMenuId] = useState("");
+  const [hiddenConversationPreferences, setHiddenConversationPreferences] = useState(
+    readHiddenConversationPreferences
+  );
   const [launcherPosition, setLauncherPosition] = useState<LauncherPosition>(readLauncherPosition);
   const [viewport, setViewport] = useState({
     width: window.innerWidth,
@@ -242,7 +301,9 @@ export function EnterpriseChatFloatingPanel({
     moved: boolean;
   } | null>(null);
   const suppressLauncherClickRef = useRef(false);
+  const searchPreferenceScopeRef = useRef("");
   const signedIn = hasCompleteEnterpriseLogin(desktopSsoStatus);
+  const preferenceScope = conversationPreferenceScope(snapshot);
 
   useEffect(() => {
     let cancelled = false;
@@ -289,6 +350,45 @@ export function EnterpriseChatFloatingPanel({
       JSON.stringify(launcherPosition)
     );
   }, [launcherPosition]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CHAT_HIDDEN_CONVERSATIONS_KEY,
+        JSON.stringify(hiddenConversationPreferences)
+      );
+    } catch {
+      // A failed renderer-only preference write must not break enterprise chat.
+    }
+  }, [hiddenConversationPreferences]);
+
+  useEffect(() => {
+    if (searchPreferenceScopeRef.current !== preferenceScope) {
+      searchPreferenceScopeRef.current = preferenceScope;
+      setChatSearch("");
+      setContactSearch("");
+      setOpenConversationMenuId("");
+    }
+  }, [preferenceScope]);
+
+  useEffect(() => {
+    if (!preferenceScope || !snapshot) {
+      return;
+    }
+    const lastSeqByConversationId = new Map(
+      snapshot.conversations.map((conversation) => [conversation.id, conversation.lastSeq] as const)
+    );
+    setHiddenConversationPreferences((current) => {
+      const next = current.filter((preference) => {
+        if (preference.scope !== preferenceScope) {
+          return true;
+        }
+        const lastSeq = lastSeqByConversationId.get(preference.conversationId);
+        return lastSeq === undefined || lastSeq <= preference.lastSeq;
+      });
+      return next.length === current.length ? current : next;
+    });
+  }, [preferenceScope, snapshot]);
 
   useEffect(() => {
     if (view !== "conversation" || !open || !snapshot?.activeMessages.length) {
@@ -363,18 +463,26 @@ export function EnterpriseChatFloatingPanel({
       .sort((left, right) => right.updatedAt - left.updatedAt),
     [snapshot?.conversations]
   );
+  const hiddenSeqByConversationId = useMemo(() => new Map(
+    hiddenConversationPreferences
+      .filter((preference) => preference.scope === preferenceScope)
+      .map((preference) => [preference.conversationId, preference.lastSeq] as const)
+  ), [hiddenConversationPreferences, preferenceScope]);
+  const visibleConversations = useMemo(
+    () => conversations.filter((conversation) => {
+      const hiddenAtSeq = hiddenSeqByConversationId.get(conversation.id);
+      return hiddenAtSeq === undefined || conversation.lastSeq > hiddenAtSeq;
+    }),
+    [conversations, hiddenSeqByConversationId]
+  );
   const activeConversation = snapshot?.conversations.find(
     (conversation) => conversation.id === snapshot.activeConversationId
   );
   const activePeer = directPeer(activeConversation, snapshot?.currentUser?.id ?? "");
-  const unreadCount = conversations.reduce(
-    (total, conversation) => total + conversation.unreadCount,
-    0
-  );
   const visible = signedIn && snapshot?.enabled === true;
 
-  const panelWidth = Math.min(460, viewport.width - 24);
-  const panelHeight = Math.min(540, viewport.height - 82);
+  const panelWidth = Math.min(CHAT_PANEL_WIDTH, viewport.width - 24);
+  const panelHeight = Math.min(CHAT_PANEL_HEIGHT, viewport.height - 82);
   const panelLeft = Math.max(
     12,
     Math.min(
@@ -435,6 +543,62 @@ export function EnterpriseChatFloatingPanel({
     return message.body;
   }
 
+  const normalizedChatSearch = normalizeSearchValue(chatSearch, locale);
+  const normalizedContactSearch = normalizeSearchValue(contactSearch, locale);
+  const filteredUsers = users.filter((user) => {
+    if (!normalizedContactSearch) {
+      return true;
+    }
+    return [user.displayName, user.email].some((value) =>
+      normalizeSearchValue(value, locale).includes(normalizedContactSearch)
+    );
+  });
+  const filteredConversations = visibleConversations.filter((conversation) => {
+    if (!normalizedChatSearch) {
+      return true;
+    }
+    const peer = conversation.type === "direct"
+      ? directPeer(conversation, snapshot?.currentUser?.id ?? "")
+      : null;
+    return [
+      conversationTitle(conversation),
+      peer?.email ?? "",
+      conversationPreview(conversation)
+    ].some((value) => normalizeSearchValue(value, locale).includes(normalizedChatSearch));
+  });
+  const unreadCount = visibleConversations.reduce(
+    (total, conversation) => total + conversation.unreadCount,
+    0
+  );
+
+  function restoreHiddenConversation(conversationId: string, scope = preferenceScope) {
+    if (!conversationId || !scope) {
+      return;
+    }
+    setHiddenConversationPreferences((current) => current.filter((preference) =>
+      preference.scope !== scope || preference.conversationId !== conversationId
+    ));
+  }
+
+  function hideConversation(conversation: EnterpriseChatConversation) {
+    setOpenConversationMenuId("");
+    if (!preferenceScope || !window.confirm(t("enterpriseChat.deleteConversationConfirm", {
+      name: conversationTitle(conversation)
+    }))) {
+      return;
+    }
+    setHiddenConversationPreferences((current) => [
+      ...current.filter((preference) =>
+        preference.scope !== preferenceScope || preference.conversationId !== conversation.id
+      ),
+      {
+        scope: preferenceScope,
+        conversationId: conversation.id,
+        lastSeq: conversation.lastSeq
+      }
+    ]);
+  }
+
   async function refresh() {
     setBusy("refresh");
     setError("");
@@ -468,6 +632,10 @@ export function EnterpriseChatFloatingPanel({
       const next = await window.electronAPI.enterpriseChat.openDirectConversation({
         userId: user.id
       });
+      restoreHiddenConversation(
+        next.activeConversationId,
+        conversationPreferenceScope(next)
+      );
       setSnapshot(next);
       setView("conversation");
       setDraft("");
@@ -914,6 +1082,46 @@ export function EnterpriseChatFloatingPanel({
             </button>
           </header>
 
+          {view === "chats" || view === "contacts" ? (
+            <div className="enterprise-chat-search" role="search">
+              <SearchOutlined aria-hidden="true" />
+              <input
+                type="search"
+                autoComplete="off"
+                value={view === "chats" ? chatSearch : contactSearch}
+                placeholder={view === "chats"
+                  ? t("enterpriseChat.searchChatsPlaceholder")
+                  : t("enterpriseChat.searchContactsPlaceholder")}
+                aria-label={view === "chats"
+                  ? t("enterpriseChat.searchChats")
+                  : t("enterpriseChat.searchContacts")}
+                onChange={(event) => {
+                  if (view === "chats") {
+                    setChatSearch(event.target.value);
+                  } else {
+                    setContactSearch(event.target.value);
+                  }
+                }}
+              />
+              {(view === "chats" ? chatSearch : contactSearch) ? (
+                <button
+                  type="button"
+                  aria-label={t("enterpriseChat.clearSearch")}
+                  title={t("enterpriseChat.clearSearch")}
+                  onClick={() => {
+                    if (view === "chats") {
+                      setChatSearch("");
+                    } else {
+                      setContactSearch("");
+                    }
+                  }}
+                >
+                  <CloseOutlined />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           {error ? <div className="enterprise-chat-error" role="alert">{error}</div> : null}
 
           {view === "conversation" ? (
@@ -1117,9 +1325,15 @@ export function EnterpriseChatFloatingPanel({
                   <strong>{t("enterpriseChat.noEmployees")}</strong>
                   <span>{t("enterpriseChat.noEmployeesDescription")}</span>
                 </div>
+              ) : filteredUsers.length === 0 ? (
+                <div className="enterprise-chat-empty">
+                  <SearchOutlined />
+                  <strong>{t("enterpriseChat.noSearchResults")}</strong>
+                  <span>{t("enterpriseChat.noSearchResultsDescription")}</span>
+                </div>
               ) : (
                 <div className="enterprise-chat-user-list">
-                  {users.map((user) => {
+                  {filteredUsers.map((user) => {
                     const conversation = conversationForUser(snapshot.conversations, user.id);
                     return (
                       <button
@@ -1152,50 +1366,91 @@ export function EnterpriseChatFloatingPanel({
             </div>
           ) : (
             <div className="enterprise-chat-conversation-list">
-              {conversations.length === 0 ? (
+              {visibleConversations.length === 0 ? (
                 <div className="enterprise-chat-empty">
                   <MessageOutlined />
                   <strong>{t("enterpriseChat.noConversations")}</strong>
                   <span>{t("enterpriseChat.noConversationsDescription")}</span>
                 </div>
-              ) : conversations.map((conversation) => {
+              ) : filteredConversations.length === 0 ? (
+                <div className="enterprise-chat-empty">
+                  <SearchOutlined />
+                  <strong>{t("enterpriseChat.noSearchResults")}</strong>
+                  <span>{t("enterpriseChat.noSearchResultsDescription")}</span>
+                </div>
+              ) : filteredConversations.map((conversation) => {
                 const peer = conversation.type === "direct"
                   ? directPeer(conversation, snapshot.currentUser?.id ?? "")
                   : null;
                 return (
-                  <button
-                    type="button"
-                    className="enterprise-chat-conversation"
-                    key={conversation.id}
-                    disabled={busy === `conversation:${conversation.id}`}
-                    onClick={() => void openConversation(conversation.id)}
-                  >
-                    <span className="enterprise-chat-avatar-wrap">
-                      {peer ? (
-                        <EnterpriseChatAvatar user={peer} />
-                      ) : (
-                        <span className="enterprise-chat-avatar enterprise-chat-group-avatar">
-                          <TeamOutlined />
-                        </span>
+                  <div className="enterprise-chat-conversation-row" key={conversation.id}>
+                    <button
+                      type="button"
+                      className="enterprise-chat-conversation"
+                      disabled={busy === `conversation:${conversation.id}`}
+                      onClick={() => void openConversation(conversation.id)}
+                    >
+                      <span className="enterprise-chat-avatar-wrap">
+                        {peer ? (
+                          <EnterpriseChatAvatar user={peer} />
+                        ) : (
+                          <span className="enterprise-chat-avatar enterprise-chat-group-avatar">
+                            <TeamOutlined />
+                          </span>
+                        )}
+                        {peer ? <i className={presenceClass(peer)} /> : null}
+                      </span>
+                      <span className="enterprise-chat-user-copy">
+                        <strong>{conversationTitle(conversation)}</strong>
+                        <small>{conversationPreview(conversation)}</small>
+                      </span>
+                      <span className="enterprise-chat-conversation-meta">
+                        <time>
+                          {new Intl.DateTimeFormat(locale, {
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          }).format(conversation.updatedAt)}
+                        </time>
+                        {conversation.unreadCount > 0 ? (
+                          <b>{Math.min(99, conversation.unreadCount)}</b>
+                        ) : null}
+                      </span>
+                    </button>
+                    <Popover
+                      placement="left-start"
+                      open={openConversationMenuId === conversation.id}
+                      onOpenChange={(nextOpen) => setOpenConversationMenuId(
+                        nextOpen ? conversation.id : ""
                       )}
-                      {peer ? <i className={presenceClass(peer)} /> : null}
-                    </span>
-                    <span className="enterprise-chat-user-copy">
-                      <strong>{conversationTitle(conversation)}</strong>
-                      <small>{conversationPreview(conversation)}</small>
-                    </span>
-                    <span className="enterprise-chat-conversation-meta">
-                      <time>
-                        {new Intl.DateTimeFormat(locale, {
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        }).format(conversation.updatedAt)}
-                      </time>
-                      {conversation.unreadCount > 0 ? (
-                        <b>{Math.min(99, conversation.unreadCount)}</b>
-                      ) : null}
-                    </span>
-                  </button>
+                      content={(
+                        <div
+                          className="enterprise-chat-conversation-menu"
+                          role="menu"
+                          aria-label={t("enterpriseChat.conversationActions")}
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => hideConversation(conversation)}
+                          >
+                            <DeleteOutlined />
+                            <span>{t("enterpriseChat.deleteConversation")}</span>
+                          </button>
+                        </div>
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="enterprise-chat-conversation-more"
+                        aria-label={t("enterpriseChat.conversationActionsFor", {
+                          name: conversationTitle(conversation)
+                        })}
+                        title={t("enterpriseChat.conversationActions")}
+                      >
+                        <MoreOutlined />
+                      </button>
+                    </Popover>
+                  </div>
                 );
               })}
             </div>
