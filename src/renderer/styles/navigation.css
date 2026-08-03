@@ -1239,7 +1239,7 @@
   min-height: 34px;
   gap: 8px;
   padding: 0 8px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 8px;
   appearance: none;
   background: transparent;
@@ -1250,6 +1250,16 @@
   font-weight: 400;
   line-height: 1.35;
   text-align: left;
+  transition:
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out,
+    color 0.2s ease-in-out;
+}
+
+.sidebar-group-heading:hover {
+  color: #1f2937;
+  background: rgba(136, 151, 172, 0.1);
+  border-color: rgba(136, 151, 172, 0.18);
 }
 
 .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
@@ -2846,6 +2856,12 @@
 
 :root[data-theme="dark"] .sidebar-group-heading {
   color: #a1a9b6;
+}
+
+:root[data-theme="dark"] .sidebar-group-heading:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 :root[data-theme="dark"] .sidebar-group-heading.is-active {
