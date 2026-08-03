@@ -707,10 +707,13 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
     true
   );
   assert.equal(electronBuilderConfig.mac.icon, brandBuildRelativePath(brand, "icons", "icon.icns"));
+  assert.equal(electronBuilderConfig.mac.extendInfo.CFBundleDevelopmentRegion, "zh-Hans");
+  assert.deepEqual(electronBuilderConfig.mac.extendInfo.CFBundleLocalizations, ["zh-Hans", "en"]);
   assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "CuteJ 使用麦克风将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "CuteJ 使用系统语音识别将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.notarize, false);
   assert.equal(electronBuilderConfig.mac.timestamp, undefined);
+  assert.deepEqual(electronBuilderConfig.electronLanguages, ["zh-CN", "en-US"]);
   assert.equal(electronBuilderConfig.win.icon, brandBuildRelativePath(brand, "icons", "icon.ico"));
   assert.equal(electronBuilderConfig.nsis.include, brandBuildRelativePath(brand, "installer", "installer.nsh"));
   assert.equal(electronBuilderConfig.nsis.allowToChangeInstallationDirectory, false);
@@ -876,8 +879,11 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.match(uninstallScript, /Desktop shutdown acknowledgement/u);
   assert.match(uninstallScript, /\[ "\$pid" = "\$\$" \] && continue/u);
   assert.match(uninstallScript, /exit 20/u);
+  assert.equal(electronBuilderConfig.mac.extendInfo.CFBundleDevelopmentRegion, "zh-Hans");
+  assert.deepEqual(electronBuilderConfig.mac.extendInfo.CFBundleLocalizations, ["zh-Hans", "en"]);
   assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "ZenMind 使用麦克风将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "ZenMind 使用系统语音识别将你的语音输入转成文字。");
+  assert.deepEqual(electronBuilderConfig.electronLanguages, ["zh-CN", "en-US"]);
   assert.match(rendererIndex, /<title>ZenMind<\/title>/u);
   assert.match(rendererIndex, /img-src[^"]*zenmind-pet:/u);
   assert.match(rendererIndex, /img-src[^"]*zenmind-website-favicon:/u);
