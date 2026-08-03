@@ -2308,11 +2308,14 @@
 
 .sidebar-web-item-actions-menu {
   z-index: 10001;
+  box-sizing: border-box;
   width: max-content;
-  min-width: 160px;
+  min-width: 196px;
+  max-width: min(240px, calc(100vw - 24px));
 }
 
 .sidebar-web-item-actions-menu button span {
+  min-width: 0;
   white-space: nowrap;
 }
 
