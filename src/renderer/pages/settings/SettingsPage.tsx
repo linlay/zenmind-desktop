@@ -335,13 +335,14 @@ function formatUsageDateTime(value: string, locale: SupportedLocale, fallback: s
   }).format(timestamp);
 }
 
-function formatBuildTimeInShanghai(value: string, locale: SupportedLocale) {
+function formatBuildTimeInLocalTimezone(value: string, locale: SupportedLocale) {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp) || timestamp <= 0) {
     return value;
   }
+  const resolvedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const formatter = new Intl.DateTimeFormat(locale, {
-    timeZone: "Asia/Shanghai",
+    timeZone: resolvedTimeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -359,7 +360,7 @@ function formatBuildTimeInShanghai(value: string, locale: SupportedLocale) {
   if (!values.year || !values.month || !values.day || !values.hour || !values.minute || !values.second) {
     return value;
   }
-  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second} UTC+8`;
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second} ${resolvedTimeZone}`;
 }
 
 function buildUsageDailyMap(items: DesktopUsageProfileTrafficBucket[]) {
@@ -2308,7 +2309,7 @@ function AboutAppCard({
     if (!appInfo.buildTime) {
       return t("common.error");
     }
-    return formatBuildTimeInShanghai(appInfo.buildTime, locale);
+    return formatBuildTimeInLocalTimezone(appInfo.buildTime, locale);
   }, [appInfo, locale, t]);
   const deviceId = useMemo(() => {
     if (deviceIdentity === null) {
