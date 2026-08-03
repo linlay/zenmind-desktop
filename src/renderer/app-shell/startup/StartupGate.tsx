@@ -8,6 +8,7 @@ import type { TranslateFunction } from "../../../shared/i18n";
 import { useI18n } from "../../i18n/useI18n";
 
 export function StartupLoadingScreen({
+  version,
   servicesLoading,
   servicesError,
   startupServices,
@@ -16,6 +17,7 @@ export function StartupLoadingScreen({
   onRefresh,
   onOpenControlCenter
 }: {
+  version: string;
   servicesLoading: boolean;
   servicesError: string;
   startupServices: Array<ServiceState | null>;
@@ -70,6 +72,7 @@ export function StartupLoadingScreen({
   return (
     <div className="startup-loading-screen">
       <div className="startup-loading-card" role="dialog" aria-labelledby="startup-loading-title">
+        {version ? <span className="startup-loading-version">{version}</span> : null}
         <h1 id="startup-loading-title">{title}</h1>
         <p className="startup-loading-status" aria-live="polite">{statusText}</p>
 

@@ -3,6 +3,7 @@ import type { TranslateFunction } from "../../shared/i18n";
 
 type DesktopShutdownOverlayProps = {
   progress: ShutdownProgress | null;
+  version: string;
   t: TranslateFunction;
 };
 
@@ -15,7 +16,7 @@ const phaseMessageKeys = {
   failed: "shutdown.progress.failed"
 } as const;
 
-export function DesktopShutdownOverlay({ progress, t }: DesktopShutdownOverlayProps) {
+export function DesktopShutdownOverlay({ progress, version, t }: DesktopShutdownOverlayProps) {
   if (!progress) {
     return null;
   }
@@ -26,6 +27,7 @@ export function DesktopShutdownOverlay({ progress, t }: DesktopShutdownOverlayPr
   return (
     <div className="desktop-shutdown-overlay" role="dialog" aria-modal="true" aria-labelledby="desktop-shutdown-title">
       <section className="desktop-shutdown-card">
+        {version ? <span className="desktop-shutdown-version">{version}</span> : null}
         <div className="desktop-shutdown-brand-mark" aria-hidden="true" />
         <div className="desktop-shutdown-copy">
           <h2 id="desktop-shutdown-title">{t("shutdown.progress.title")}</h2>
