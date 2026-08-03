@@ -5609,9 +5609,9 @@ export function AppSidebar({
   }
 
   const shouldRenderCollapsed = isCollapsed && !isSettingsMode;
-  const activeFixedToolItem = fixedToolItems.find((item) =>
-    isFixedToolRouteActive(item.to),
-  );
+  const activeToolMenuItem =
+    fixedToolItems.find((item) => isFixedToolRouteActive(item.to)) ??
+    (isFixedToolRouteActive(helpToolItem.to) ? helpToolItem : undefined);
   const shouldRenderDesktopSsoTrigger =
     desktopSsoStatus?.configured === true;
   const shouldRenderDesktopSsoTriggerAvatar =
@@ -5620,11 +5620,11 @@ export function AppSidebar({
   const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar
     ? getDesktopSsoUserLabel()
     : "";
-  const shouldRenderActiveFixedToolLabel =
-    shouldRenderDesktopSsoTriggerAvatar && Boolean(activeFixedToolItem);
+  const shouldRenderActiveToolMenuLabel =
+    shouldRenderDesktopSsoTriggerAvatar && Boolean(activeToolMenuItem);
   const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger
     ? desktopSsoStatus.authenticated
-      ? activeFixedToolItem?.label || desktopSsoUserLabel
+      ? activeToolMenuItem?.label || desktopSsoUserLabel
       : t("sidebar.sso.signedOut")
     : t("nav.settings");
 
@@ -5750,7 +5750,7 @@ export function AppSidebar({
                       "sidebar-link",
                       "sidebar-link-utility",
                       "sidebar-tool-menu-trigger",
-                      activeFixedToolItem ? "sidebar-link-active" : "",
+                      activeToolMenuItem ? "sidebar-link-active" : "",
                       toolMenuOpen ? "is-open" : "",
                     ]
                       .filter(Boolean)
@@ -5766,7 +5766,7 @@ export function AppSidebar({
                         <SidebarIllustration kind="settings" />
                       </span>
                     ) : shouldRenderDesktopSsoTriggerAvatar &&
-                      !shouldRenderActiveFixedToolLabel ? (
+                      !shouldRenderActiveToolMenuLabel ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}
                         label={desktopSsoUserLabel}
@@ -5775,7 +5775,7 @@ export function AppSidebar({
                     <span className="sidebar-link-label">
                       {toolMenuTriggerLabel}
                     </span>
-                    {shouldRenderActiveFixedToolLabel ? (
+                    {shouldRenderActiveToolMenuLabel ? (
                       <AccountMenuAvatar
                         avatarUrl={desktopSsoStatus.user?.avatarUrl}
                         label={desktopSsoUserLabel}

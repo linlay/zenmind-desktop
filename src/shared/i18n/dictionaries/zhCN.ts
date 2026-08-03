@@ -340,7 +340,7 @@ export const zhCNMessages = {
   "settings.general.noticeDeviceNameSaved": "设备名称已保存为 {name}。",
   "settings.general.noticeDeviceNameAuto": "设备名称将使用系统自动名称。",
   "settings.general.preventSleepWhileRunning": "运行时防止休眠",
-  "settings.general.preventSleepWhileRunningDescription": "在 Codex 运行聊天时，保持电脑唤醒。",
+  "settings.general.preventSleepWhileRunningDescription": "在桌面应用运行聊天时，保持电脑唤醒。",
   "settings.general.noticePreventSleepEnabled": "已开启对话运行时保持唤醒。",
   "settings.general.noticePreventSleepDisabled": "已关闭对话运行时保持唤醒。",
   "settings.general.desktopActionConfirmation": "Desktop Action 确认",

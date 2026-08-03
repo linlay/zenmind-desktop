@@ -340,7 +340,7 @@ export const enUSMessages = {
   "settings.general.noticeDeviceNameSaved": "Device name saved as {name}.",
   "settings.general.noticeDeviceNameAuto": "Device name will use the automatic system fallback.",
   "settings.general.preventSleepWhileRunning": "Prevent sleep while running",
-  "settings.general.preventSleepWhileRunningDescription": "Keep this computer awake while Codex conversations run.",
+  "settings.general.preventSleepWhileRunningDescription": "Keep this computer awake while chats are running in the desktop app.",
   "settings.general.noticePreventSleepEnabled": "Conversation wake lock is enabled.",
   "settings.general.noticePreventSleepDisabled": "Conversation wake lock is disabled.",
   "settings.general.desktopActionConfirmation": "Confirm Desktop Actions",

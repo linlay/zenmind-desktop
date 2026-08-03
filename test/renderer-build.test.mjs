@@ -945,7 +945,7 @@ test("fixed sidebar tool trigger exposes account state and Help affordance", () 
   );
   assert.match(
     sidebarSource,
-    /const activeFixedToolItem = fixedToolItems\.find\(\(item\) =>\s*isFixedToolRouteActive\(item\.to\),\s*\);[\s\S]{0,320}const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar[\s\S]{0,120}getDesktopSsoUserLabel\(\)[\s\S]{0,180}const shouldRenderActiveFixedToolLabel =[\s\S]{0,140}Boolean\(activeFixedToolItem\);[\s\S]{0,180}activeFixedToolItem\?\.label \|\| desktopSsoUserLabel/
+    /const activeToolMenuItem =[\s\S]{0,160}fixedToolItems\.find\(\(item\) => isFixedToolRouteActive\(item\.to\)\) \?\?[\s\S]{0,160}isFixedToolRouteActive\(helpToolItem\.to\) \? helpToolItem : undefined[\s\S]{0,320}const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar[\s\S]{0,120}getDesktopSsoUserLabel\(\)[\s\S]{0,180}const shouldRenderActiveToolMenuLabel =[\s\S]{0,140}Boolean\(activeToolMenuItem\);[\s\S]{0,180}activeToolMenuItem\?\.label \|\| desktopSsoUserLabel/
   );
   assert.match(
     sidebarSource,
@@ -963,14 +963,14 @@ test("fixed sidebar tool trigger exposes account state and Help affordance", () 
   assert.doesNotMatch(sidebarSource, /sidebar-settings-help-link/);
   assert.match(
     sidebarSource,
-    /activeFixedToolItem[\s\S]{0,80}\? "sidebar-link-active"\s*:\s*""/
+    /activeToolMenuItem[\s\S]{0,80}\? "sidebar-link-active"\s*:\s*""/
   );
   assert.match(
     sidebarSource,
     /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}[\s\S]{0,220}title=\{t\("nav\.settings"\)\}[\s\S]{0,700}<span className="sidebar-link-label">[\s\S]{0,80}\{toolMenuTriggerLabel\}/
   );
-  assert.match(triggerMarkup, /!shouldRenderActiveFixedToolLabel[\s\S]*?<AccountMenuAvatar[\s\S]*?label=\{desktopSsoUserLabel\}/);
-  assert.match(triggerMarkup, /\{toolMenuTriggerLabel\}[\s\S]*?shouldRenderActiveFixedToolLabel \? \([\s\S]*?<AccountMenuAvatar[\s\S]*?label=\{desktopSsoUserLabel\}[\s\S]*?sidebar-tool-menu-trigger-settings-icon/);
+  assert.match(triggerMarkup, /!shouldRenderActiveToolMenuLabel[\s\S]*?<AccountMenuAvatar[\s\S]*?label=\{desktopSsoUserLabel\}/);
+  assert.match(triggerMarkup, /\{toolMenuTriggerLabel\}[\s\S]*?shouldRenderActiveToolMenuLabel \? \([\s\S]*?<AccountMenuAvatar[\s\S]*?label=\{desktopSsoUserLabel\}[\s\S]*?sidebar-tool-menu-trigger-settings-icon/);
   assert.match(
     sidebarSource,
     /sidebar-link-label-collapsed"[\s\S]{0,160}\{getCollapsedSidebarLabel\(t\("nav\.settings"\)\)\}/
@@ -2592,10 +2592,11 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStyles, /\.settings-page \.settings-control-row-readonly\s*\{[\s\S]*?display:\s*flex;/);
   assert.match(enUS, /"settings\.general\.description":\s*"App behavior and system settings\."/);
   assert.match(enUS, /"settings\.general\.preventSleepWhileRunning":\s*"Prevent sleep while running"/);
+  assert.match(enUS, /"settings\.general\.preventSleepWhileRunningDescription":\s*"Keep this computer awake while chats are running in the desktop app\."/);
   assert.match(enUS, /"settings\.general\.desktopActionConfirmationDescription":\s*"Ask before local bridge actions make changes\."/);
   assert.match(zhCN, /"settings\.general\.description":\s*"应用行为与系统设置。"/);
   assert.match(zhCN, /"settings\.general\.preventSleepWhileRunning":\s*"运行时防止休眠"/);
-  assert.match(zhCN, /"settings\.general\.preventSleepWhileRunningDescription":\s*"在 Codex 运行聊天时，保持电脑唤醒。"/);
+  assert.match(zhCN, /"settings\.general\.preventSleepWhileRunningDescription":\s*"在桌面应用运行聊天时，保持电脑唤醒。"/);
   assert.doesNotMatch(settingsPage, /<Input\.Password[\s\S]*kanban\.cloud\.tokenPlaceholder/);
   assert.doesNotMatch(settingsPage, /controlProjectSelectOptions|controlProjectOptions|kanban\.cloud\.projectId|kanban\.cloud\.projectSelectHelp|kanban\.cloud\.projectFallbackHelp|selectedProjectId/);
   assert.doesNotMatch(enUS, /kanban\.cloud\.projectId|kanban\.cloud\.projectSelectHelp|kanban\.cloud\.projectFallbackHelp/);
@@ -6916,8 +6917,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /const shouldRenderDesktopSsoAccount = desktopSsoStatus\?\.configured === true;/);
   assert.match(sidebarSource, /const shouldRenderDesktopSsoTrigger =[\s\S]{0,100}desktopSsoStatus\?\.configured === true;/);
   assert.match(sidebarSource, /const shouldRenderDesktopSsoTriggerAvatar =[\s\S]{0,140}desktopSsoStatus\.authenticated;/);
-  assert.match(sidebarSource, /const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar[\s\S]{0,120}getDesktopSsoUserLabel\(\)[\s\S]{0,180}const shouldRenderActiveFixedToolLabel =[\s\S]{0,140}Boolean\(activeFixedToolItem\);/);
-  assert.match(sidebarSource, /const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger[\s\S]{0,160}activeFixedToolItem\?\.label \|\| desktopSsoUserLabel[\s\S]{0,100}t\("sidebar\.sso\.signedOut"\)[\s\S]{0,80}t\("nav\.settings"\);/);
+  assert.match(sidebarSource, /const activeToolMenuItem =[\s\S]{0,160}isFixedToolRouteActive\(helpToolItem\.to\) \? helpToolItem : undefined/);
+  assert.match(sidebarSource, /const desktopSsoUserLabel = shouldRenderDesktopSsoTriggerAvatar[\s\S]{0,120}getDesktopSsoUserLabel\(\)[\s\S]{0,180}const shouldRenderActiveToolMenuLabel =[\s\S]{0,140}Boolean\(activeToolMenuItem\);/);
+  assert.match(sidebarSource, /const toolMenuTriggerLabel = shouldRenderDesktopSsoTrigger[\s\S]{0,160}activeToolMenuItem\?\.label \|\| desktopSsoUserLabel[\s\S]{0,100}t\("sidebar\.sso\.signedOut"\)[\s\S]{0,80}t\("nav\.settings"\);/);
   assert.doesNotMatch(sidebarSource, /visibleToolItems/);
   assert.doesNotMatch(sidebarSource, /function renderDesktopSsoEntry\(\)/);
   assert.match(sidebarSource, /function AccountMenuAvatar\(\{ avatarUrl = "", label \}: AccountMenuAvatarProps\)/);
@@ -6946,8 +6948,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
   assert.match(sidebarSource, /avatarUrl=\{desktopSsoStatus\.user\?\.avatarUrl\}/);
-  assert.match(sidebarSource, /shouldRenderDesktopSsoTriggerAvatar &&[\s\S]{0,100}!shouldRenderActiveFixedToolLabel[\s\S]{0,100}<AccountMenuAvatar[\s\S]{0,160}label=\{desktopSsoUserLabel\}/);
-  assert.match(sidebarSource, /\{toolMenuTriggerLabel\}[\s\S]{0,120}shouldRenderActiveFixedToolLabel \? \([\s\S]{0,100}<AccountMenuAvatar[\s\S]{0,160}label=\{desktopSsoUserLabel\}/);
+  assert.match(sidebarSource, /shouldRenderDesktopSsoTriggerAvatar &&[\s\S]{0,100}!shouldRenderActiveToolMenuLabel[\s\S]{0,100}<AccountMenuAvatar[\s\S]{0,160}label=\{desktopSsoUserLabel\}/);
+  assert.match(sidebarSource, /\{toolMenuTriggerLabel\}[\s\S]{0,120}shouldRenderActiveToolMenuLabel \? \([\s\S]{0,100}<AccountMenuAvatar[\s\S]{0,160}label=\{desktopSsoUserLabel\}/);
   assert.match(sidebarSource, /className="sidebar-link-icon sidebar-tool-menu-trigger-settings-icon"/);
   assert.match(sidebarSource, /<span className="sidebar-link-label">\s*\{toolMenuTriggerLabel\}\s*<\/span>/);
   assert.match(sidebarSource, /renderAccountMenuIcon\([\s\S]{0,80}desktopSsoStatus\?\.authenticated \? "login" : "logout"[\s\S]{0,20}\)/);
@@ -6970,7 +6972,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /"登录中"|"重新打开"/);
   assert.doesNotMatch(sidebarSource, /\{renderDesktopSsoEntry\(\)\}/);
   assert.match(sidebarSource, /<SidebarIllustration kind="settings" \/>/);
-  assert.match(sidebarSource, /activeFixedToolItem[\s\S]{0,80}\? "sidebar-link-active"/);
+  assert.match(sidebarSource, /activeToolMenuItem[\s\S]{0,80}\? "sidebar-link-active"/);
   assert.match(enUS, /"sidebar\.sso\.signedOut": "Not signed in"/);
 
   assert.doesNotMatch(globalStyles, /\.sidebar-sso-entry\s*\{/);
