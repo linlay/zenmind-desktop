@@ -5459,6 +5459,8 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.match(externalWebviewPage, /nextPatch\.canGoForward = webview\.canGoForward\(\)/);
   assert.match(externalWebviewPage, /const handleGoForward = \(\) => \{[\s\S]*?activeWebview\.goForward\(\)/);
   assert.match(externalWebviewPage, /disabled=\{!activeTab\?\.canGoForward\}[\s\S]*?<SidebarActionIcon kind="forward" \/>/);
+  assert.match(externalWebviewPage, /onClick=\{handleReload\}[\s\S]*?<SidebarActionIcon kind="refresh" \/>/);
+  assert.doesNotMatch(externalWebviewPage, /function RefreshIcon\(/);
   assert.match(externalWebviewPage, /<SidebarActionIcon[\s\S]*?kind="sidebar_right"[\s\S]*?className="external-webview-copilot-button-icon"/);
   assert.doesNotMatch(externalWebviewStyles, /filter:\s*grayscale/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);

@@ -220,15 +220,6 @@ function moveItemByIdToIndex<T extends { id: string }>(items: T[], movedId: stri
   return nextItems;
 }
 
-function RefreshIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M15.1 7.2A6 6 0 1 0 16 10" />
-      <path d="M12.5 4.6h3.1v3.1" />
-    </svg>
-  );
-}
-
 function SearchIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -1627,7 +1618,7 @@ export function ExternalWebviewPage({
               aria-label={t("externalWebview.refresh")}
               title={t("externalWebview.refresh")}
             >
-              <RefreshIcon />
+              <SidebarActionIcon kind="refresh" />
             </button>
           </div>
           <div className="external-webview-toolbar-location">

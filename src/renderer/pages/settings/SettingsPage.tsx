@@ -5392,7 +5392,7 @@ export function SettingsPage({
               </div>
             </div>
 
-            <section className="config-panel web-detail-card">
+            <section className="config-panel web-detail-card webapp-runtime-settings-card">
               <div className="config-head">
                 <div className="config-title-main">
                   <div className="service-hero-copy">
