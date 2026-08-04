@@ -17,6 +17,7 @@ import {
 
 export type EmbeddedCdpSurface = {
   id: string;
+  targetGeneration?: string;
   label: string;
   url: string;
   kind?: "webview";
@@ -50,6 +51,7 @@ type EmbeddedCdpGatewayOptions = {
   getSurfaces: () => EmbeddedCdpSurface[] | Promise<EmbeddedCdpSurface[]>;
   resolveWebContents: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => WebContents | null | Promise<WebContents | null>;
   activateTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => Promise<void>;
+  closeTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => Promise<unknown>;
   version?: string;
   commandTimeoutMs?: number;
   logger?: Pick<Console, "debug" | "warn">;
@@ -73,6 +75,7 @@ type CdpResponse = {
 
 type CdpConnectionSession = {
   targetId: string;
+  webContentsId: number;
   debuggerRef: WebContents["debugger"];
   ownsAttach: boolean;
   messageListener: (event: unknown, method: string, params?: unknown) => void;
@@ -99,7 +102,8 @@ export class EmbeddedCdpTargetError extends Error {
 }
 
 function stableTargetId(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
-  const source = `webview:${surface.id}:${tab.tabId}:${tab.webContentsId}`;
+  const generation = surface.targetGeneration || String(tab.webContentsId);
+  const source = `webview:${generation}:${surface.id}:${tab.tabId}`;
   return `desktop-${crypto.createHash("sha1").update(source).digest("hex").slice(0, 16)}`;
 }
 
@@ -477,6 +481,20 @@ export class EmbeddedCdpGateway {
       };
     }
     const { surface, tab, targetId } = await this.resolveCommandTarget(request);
+    if (method === "Target.closeTarget") {
+      if (Object.keys(params).length > 0) {
+        throw new EmbeddedCdpInvalidArgsError("Target.closeTarget does not accept params after targetId resolution.");
+      }
+      if (!this.options.closeTarget) {
+        throw new Error("Target.closeTarget is unavailable.");
+      }
+      await this.options.closeTarget(surface, tab);
+      return {
+        targetId,
+        surfaceId: surface.id,
+        result: { success: true }
+      };
+    }
     const result = await this.handleWebContentsCommandOnce(surface, tab, targetId, method, params);
     return {
       targetId,
@@ -581,9 +599,24 @@ export class EmbeddedCdpGateway {
       return;
     }
     try {
+      if (method === "Target.closeTarget") {
+        const paramsTargetId = typeof command.params?.targetId === "string"
+          ? command.params.targetId.trim()
+          : "";
+        if (paramsTargetId && paramsTargetId !== targetId) {
+          throw new EmbeddedCdpInvalidArgsError("params.targetId conflicts with the current WebSocket target.");
+        }
+        const extraParamKeys = Object.keys(command.params ?? {}).filter((key) => key !== "targetId");
+        if (extraParamKeys.length > 0) {
+          throw new EmbeddedCdpInvalidArgsError("Target.closeTarget only accepts params.targetId.");
+        }
+      }
       const target = await this.resolveCommandTarget({ method, targetId });
       const result = await this.handleWebContentsCommand(connection, target, method, command.params ?? {});
       connection.sendJSON({ id, result });
+      if (method === "Target.closeTarget") {
+        this.releaseConnection(connection);
+      }
     } catch (error) {
       if (isDesktopCdpTimeoutError(error)) {
         this.releaseConnection(connection);
@@ -600,6 +633,10 @@ export class EmbeddedCdpGateway {
         connection.sendJSON(cdpError(id, -32000, error.message, { code: error.code }));
         return;
       }
+      if (error instanceof EmbeddedCdpInvalidArgsError) {
+        connection.sendJSON(cdpError(id, -32602, error.message, { code: error.code }));
+        return;
+      }
       connection.sendJSON(cdpError(
         id,
         -32000,
@@ -614,6 +651,13 @@ export class EmbeddedCdpGateway {
     method: string,
     params: Record<string, unknown>
   ) {
+    if (method === "Target.closeTarget") {
+      if (!this.options.closeTarget) {
+        throw new Error("Target.closeTarget is unavailable.");
+      }
+      await this.options.closeTarget(target.surface, target.tab);
+      return { success: true };
+    }
     const contents = await this.ensureWebContents(target.surface, target.tab);
     if (!contents || contents.isDestroyed()) {
       throw new Error("Embedded webContents target is unavailable.");
@@ -697,7 +741,7 @@ export class EmbeddedCdpGateway {
     contents: WebContents
   ): CdpConnectionSession {
     const current = this.sessions.get(connection);
-    if (current && current.targetId === targetId) {
+    if (current && current.targetId === targetId && current.webContentsId === contents.id) {
       return current;
     }
     if (current) {
@@ -718,6 +762,7 @@ export class EmbeddedCdpGateway {
     debuggerRef.on("message", messageListener);
     const session = {
       targetId,
+      webContentsId: contents.id,
       debuggerRef,
       ownsAttach,
       messageListener
@@ -732,7 +777,11 @@ export class EmbeddedCdpGateway {
       return;
     }
     this.sessions.delete(connection);
-    session.debuggerRef.off("message", session.messageListener);
+    try {
+      session.debuggerRef.off("message", session.messageListener);
+    } catch {
+      // The guest may already be destroyed by the shared tab-close transaction.
+    }
     if (session.ownsAttach && session.debuggerRef.isAttached()) {
       try {
         session.debuggerRef.detach();

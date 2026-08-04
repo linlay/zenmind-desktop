@@ -326,6 +326,20 @@ export function createMainProcessRuntime() {
       }
       return response.result;
     },
+    closeTab: async (surfaceId, tabId) => {
+      const response = await callDesktopActionRenderer({
+        requestId: `cdp-close-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        action: "desktop.web.closeTab",
+        args: { surfaceId, tabId }
+      }, {
+        getMainWindow: () => appState.mainWindow,
+        pendingRequests: appState.desktopActionRendererRequests
+      });
+      if (!response.ok) {
+        throw new Error(response.error?.message || "Desktop tab could not be closed.");
+      }
+      return response.result;
+    },
     version: `${PRODUCT_NAME}/${app.getVersion()} Electron/${process.versions.electron}`
   });
   

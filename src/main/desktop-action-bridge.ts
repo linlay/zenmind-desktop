@@ -1811,6 +1811,7 @@ async function executeAction(
     case "desktop.web.activateSurface":
     case "desktop.web.navigate":
     case "desktop.web.reload":
+    case "desktop.web.refreshSurface":
     case "desktop.web.goBack":
     case "desktop.web.openTab":
     case "desktop.web.closeTab":
@@ -2073,11 +2074,28 @@ export async function handleDesktopCdpRequest(
   if (!DESKTOP_CDP_PUBLIC_METHODS.some((candidate) => candidate === method)) {
     return cdpFail(method, "method_not_allowed", "This CDP method is not exposed by Desktop.");
   }
+  const params = { ...asRecord(request.params) };
+  let targetId = typeof request.targetId === "string" ? request.targetId.trim() : "";
+  if (method === "Target.closeTarget") {
+    const paramsTargetId = typeof params.targetId === "string" ? params.targetId.trim() : "";
+    if (targetId && paramsTargetId && targetId !== paramsTargetId) {
+      return cdpFail(method, "invalid_args", "targetId conflicts with params.targetId.");
+    }
+    targetId ||= paramsTargetId;
+    const extraParamKeys = Object.keys(params).filter((key) => key !== "targetId");
+    if (extraParamKeys.length > 0) {
+      return cdpFail(method, "invalid_args", "Target.closeTarget only accepts targetId.");
+    }
+    if (!targetId) {
+      return cdpFail(method, "target_required", "targetId is required for this CDP method.");
+    }
+    delete params.targetId;
+  }
   try {
     const response = await options.executeCdpCommand({
       method,
-      params: asRecord(request.params),
-      targetId: typeof request.targetId === "string" ? request.targetId.trim() : ""
+      params,
+      targetId
     });
     return {
       ok: true,

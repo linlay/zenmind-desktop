@@ -10,6 +10,7 @@ import type { AssistantPageContext } from "../../../shared/contracts";
 import type { EmbeddedCdpSurfaceKind } from "../../../shared/embedded-cdp";
 import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID } from "../../../shared/browser-surfaces";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
+import { closeWebTabFromOrder } from "../../../shared/web-tab-lifecycle";
 import {
   buildInteractElementScript,
   type EmbeddedWebInteractAction
@@ -125,6 +126,8 @@ type ExternalWebviewPaneProps = {
   surfaceLabel?: string;
   onTabStateChange: (tabId: string, patch: ExternalWebviewTabPatch) => void;
   onWebviewRefChange: (tabId: string, webview: Electron.WebviewTag | null) => void;
+  onCloseRequested: (tabId: string) => void;
+  onDomReady: (tabId: string) => void;
   onFaviconDiscovered?: (faviconUrl: string) => void;
 };
 
@@ -251,6 +254,8 @@ function ExternalWebviewPane({
   surfaceLabel,
   onTabStateChange,
   onWebviewRefChange,
+  onCloseRequested,
+  onDomReady,
   onFaviconDiscovered
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
@@ -315,6 +320,10 @@ function ExternalWebviewPane({
 
     const handleDomReady = () => {
       syncFromWebview();
+      onDomReady(tab.id);
+    };
+    const handleClose = () => {
+      onCloseRequested(tab.id);
     };
     const handleDidStartLoading = () => {
       syncFromWebview({ isLoading: true });
@@ -350,6 +359,7 @@ function ExternalWebviewPane({
     webview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
     webview.addEventListener("page-title-updated", handlePageTitleUpdated);
     webview.addEventListener("page-favicon-updated", handlePageFaviconUpdated);
+    webview.addEventListener("close", handleClose);
     syncFromWebview();
 
     return () => {
@@ -360,8 +370,9 @@ function ExternalWebviewPane({
       webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
+      webview.removeEventListener("close", handleClose);
     };
-  }, [onTabStateChange, tab.currentUrl, tab.id]);
+  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onTabStateChange, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -478,6 +489,63 @@ export function ExternalWebviewPage({
   } | null>(null);
   const tabPointerCleanupRef = useRef<(() => void) | null>(null);
   const suppressTabClickRef = useRef(false);
+  const refreshWaitersRef = useRef(new Map<string, {
+    finish: (result: { tabId: string; ok: boolean; code?: string; message?: string }) => void;
+  }>());
+
+  const commitBrowserState = (
+    update: (currentState: ExternalWebviewBrowserState) => ExternalWebviewBrowserState
+  ) => {
+    const currentState = browserStateRef.current;
+    const nextState = update(currentState);
+    if (nextState !== currentState) {
+      browserStateRef.current = nextState;
+      setBrowserState(nextState);
+    }
+    return nextState;
+  };
+
+  const syncEmbeddedCdpSurface = async (state: ExternalWebviewBrowserState) => {
+    const embeddedCdp = getEmbeddedCdpSurfaceApi();
+    if (!embeddedCdp || !registeredSurfaceKind || !surfaceId) {
+      return;
+    }
+    const registeredTabs = state.tabs
+      .filter((tab): tab is ExternalWebviewTabState & { guestId: number } => typeof tab.guestId === "number")
+      .map((tab) => ({
+        tabId: tab.id,
+        currentUrl: tab.currentUrl,
+        title: tab.title,
+        webContentsId: tab.guestId,
+        ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl } : {}),
+        canGoBack: tab.canGoBack,
+        canGoForward: tab.canGoForward,
+        isLoading: tab.isLoading
+      }));
+    if (registeredTabs.length === 0) {
+      await embeddedCdp.unregisterSurface({
+        registrationId: surfaceRegistrationId,
+        surfaceId
+      });
+      return;
+    }
+    const registeredActiveTabId = registeredTabs.some((tab) => tab.tabId === state.activeTabId)
+      ? state.activeTabId
+      : registeredTabs[0]?.tabId ?? null;
+    const response = await embeddedCdp.registerSurface({
+      registrationId: surfaceRegistrationId,
+      surfaceId,
+      surfaceKind: registeredSurfaceKind,
+      label: surfaceLabel ?? title,
+      url,
+      active: activeRef.current,
+      tabs: registeredTabs,
+      activeTabId: registeredActiveTabId
+    });
+    if (!response.ok) {
+      throw new Error("Embedded CDP surface could not be registered.");
+    }
+  };
 
   useEffect(() => {
     browserStateRef.current = browserState;
@@ -495,7 +563,9 @@ export function ExternalWebviewPage({
     surfaceKeyRef.current = nextSurfaceKey;
     webviewRefs.current.clear();
     faviconReportedRef.current = false;
-    setBrowserState(createInitialBrowserState());
+    const nextState = createInitialBrowserState();
+    browserStateRef.current = nextState;
+    setBrowserState(nextState);
     setAddressInputValue(url);
     setAddressInputUnlocked(false);
   }, [title, url, partition]);
@@ -509,7 +579,7 @@ export function ExternalWebviewPage({
       partition: options.partition,
       userAgent: options.userAgent
     });
-    setBrowserState((currentState) => {
+    commitBrowserState((currentState) => {
       const anchorTabId = options.afterTabId ?? currentState.activeTabId;
       const anchorIndex = currentState.tabs.findIndex((tab) => tab.id === anchorTabId);
       const insertionIndex = anchorIndex === -1 ? currentState.tabs.length : anchorIndex + 1;
@@ -526,7 +596,7 @@ export function ExternalWebviewPage({
   };
 
   const setActiveTab = (tabId: string) => {
-    setBrowserState((currentState) => {
+    commitBrowserState((currentState) => {
       if (currentState.activeTabId === tabId) {
         return currentState;
       }
@@ -669,6 +739,13 @@ export function ExternalWebviewPage({
 
   useEffect(() => () => {
     clearTabPointerListeners();
+    for (const [tabId, waiter] of refreshWaitersRef.current) {
+      waiter.finish({
+        tabId,
+        ok: false,
+        code: "surface_unmounted"
+      });
+    }
   }, []);
 
   const handleTabStripWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
@@ -679,39 +756,123 @@ export function ExternalWebviewPage({
     event.currentTarget.scrollLeft += event.deltaY;
   };
 
-  const closeTab = (tabId: string) => {
+  const closeTab = async (tabId: string) => {
     const currentState = browserStateRef.current;
-    if (currentState.tabs.length <= 1 && currentState.tabs[0]?.id === tabId && onCloseSurface) {
-      webviewRefs.current.delete(tabId);
-      onCloseSurface();
-      return;
+    const transition = closeWebTabFromOrder(
+      currentState.tabs.map((tab) => tab.id),
+      currentState.activeTabId,
+      tabId
+    );
+    if (!transition) {
+      return null;
     }
 
+    refreshWaitersRef.current.get(tabId)?.finish({
+      tabId,
+      ok: false,
+      code: "tab_closed"
+    });
     webviewRefs.current.delete(tabId);
-    setBrowserState((currentState) => {
-      if (currentState.tabs.length <= 1) {
-        return currentState;
-      }
+    const remainingTabs = currentState.tabs.filter((tab) => tab.id !== tabId);
+    const nextActiveTabId = transition.activeTabId ?? "";
+    const nextState = commitBrowserState(() => ({
+      tabs: remainingTabs,
+      activeTabId: nextActiveTabId
+    }));
+    await syncEmbeddedCdpSurface(nextState);
+    const closedSurface = remainingTabs.length === 0;
+    if (closedSurface) {
+      onCloseSurface?.();
+    }
+    return {
+      surfaceId: surfaceId ?? "",
+      closedTabId: tabId,
+      closedSurface,
+      remainingTabIds: remainingTabs.map((tab) => tab.id),
+      activeTabId: nextActiveTabId || null
+    };
+  };
 
-      const closingIndex = currentState.tabs.findIndex((tab) => tab.id === tabId);
-      if (closingIndex === -1) {
-        return currentState;
-      }
+  const finishRefreshWaiter = (tabId: string) => {
+    refreshWaitersRef.current.get(tabId)?.finish({ tabId, ok: true });
+  };
 
-      const remainingTabs = currentState.tabs.filter((tab) => tab.id !== tabId);
-      const nextActiveTabId = currentState.activeTabId === tabId
-        ? (remainingTabs[Math.max(0, closingIndex - 1)] ?? remainingTabs[0]).id
-        : currentState.activeTabId;
-
-      return {
-        tabs: remainingTabs,
-        activeTabId: nextActiveTabId
+  const waitForTabDomReady = (tabId: string, timeoutMs: number) => {
+    return new Promise<{ tabId: string; ok: boolean; code?: string; message?: string }>((resolve) => {
+      let settled = false;
+      const timer = window.setTimeout(() => {
+        finish({
+          tabId,
+          ok: false,
+          code: "dom_ready_timeout"
+        });
+      }, timeoutMs);
+      const finish = (result: { tabId: string; ok: boolean; code?: string; message?: string }) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        refreshWaitersRef.current.delete(tabId);
+        resolve(result);
       };
+      refreshWaitersRef.current.set(tabId, { finish });
     });
   };
 
+  const refreshSurface = async () => {
+    const snapshot = [...browserStateRef.current.tabs];
+    const deadline = Date.now() + 15_000;
+    const pending = snapshot.map((tab) => {
+      const webview = webviewRefs.current.get(tab.id);
+      if (!webview) {
+        return Promise.resolve({
+          tabId: tab.id,
+          ok: false,
+          code: "tab_unavailable",
+          message: t("externalWebview.error.tabUnavailable")
+        });
+      }
+      const ready = waitForTabDomReady(tab.id, Math.max(0, deadline - Date.now()));
+      try {
+        webview.reload();
+      } catch (error) {
+        refreshWaitersRef.current.get(tab.id)?.finish({
+          tabId: tab.id,
+          ok: false,
+          code: "reload_failed",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+      return ready;
+    });
+    const tabResults = await Promise.all(pending);
+    const refreshedTabIds = tabResults.filter((result) => result.ok).map((result) => result.tabId);
+    const failedTabs = tabResults
+      .filter((result) => !result.ok)
+      .map(({ tabId, code, message }) => ({
+        tabId,
+        code: code || "refresh_failed",
+        message: message || (
+          code === "tab_closed"
+            ? t("externalWebview.error.refreshTabClosed")
+            : code === "dom_ready_timeout"
+              ? t("externalWebview.error.refreshTimeout")
+              : code === "surface_unmounted"
+                ? t("externalWebview.error.refreshSurfaceUnmounted")
+                : t("externalWebview.error.refreshFailed")
+        )
+      }));
+    return {
+      surfaceId: surfaceId ?? "",
+      refreshedTabIds,
+      failedTabs,
+      activeTabId: browserStateRef.current.activeTabId || null
+    };
+  };
+
   const handleTabStateChange = (tabId: string, patch: ExternalWebviewTabPatch) => {
-    setBrowserState((currentState) => {
+    commitBrowserState((currentState) => {
       let changed = false;
       const nextTabs = currentState.tabs.map((tab) => {
         if (tab.id !== tabId) {
@@ -830,42 +991,7 @@ export function ExternalWebviewPage({
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
 
   useEffect(() => {
-    const embeddedCdp = getEmbeddedCdpSurfaceApi();
-    if (!embeddedCdp || !registeredSurfaceKind || !surfaceId) {
-      return;
-    }
-    const registeredTabs = browserState.tabs
-      .filter((tab): tab is ExternalWebviewTabState & { guestId: number } => typeof tab.guestId === "number")
-      .map((tab) => ({
-        tabId: tab.id,
-        currentUrl: tab.currentUrl,
-        title: tab.title,
-        webContentsId: tab.guestId,
-        ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl } : {}),
-        canGoBack: tab.canGoBack,
-        canGoForward: tab.canGoForward,
-        isLoading: tab.isLoading
-      }));
-    const registeredActiveTabId = registeredTabs.some((tab) => tab.tabId === browserState.activeTabId)
-      ? browserState.activeTabId
-      : null;
-    if (registeredTabs.length === 0) {
-      void embeddedCdp.unregisterSurface({
-        registrationId: surfaceRegistrationId,
-        surfaceId
-      }).catch(() => undefined);
-      return;
-    }
-    void embeddedCdp.registerSurface({
-      registrationId: surfaceRegistrationId,
-      surfaceId,
-      surfaceKind: registeredSurfaceKind,
-      label: surfaceLabel ?? title,
-      url,
-      active: active !== false,
-      tabs: registeredTabs,
-      activeTabId: registeredActiveTabId
-    }).catch(() => undefined);
+    void syncEmbeddedCdpSurface(browserState).catch(() => undefined);
   }, [
     active,
     browserState,
@@ -1243,6 +1369,21 @@ export function ExternalWebviewPage({
           targetWebview.reload();
           return { ok: true, result: getEmbeddedWebSurfaceState() };
         }
+        case "desktop.web.refreshSurface": {
+          const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+          if (!targetSurfaceId) {
+            return embeddedError("invalid_args", t("externalWebview.error.surfaceIdRequired"));
+          }
+          const result = await refreshSurface();
+          if (result.failedTabs.length > 0) {
+            return embeddedError(
+              "surface_refresh_partial",
+              t("externalWebview.error.surfaceRefreshPartial"),
+              result
+            );
+          }
+          return { ok: true, result };
+        }
         case "desktop.web.goBack": {
           const tabId = readTargetTabId(args);
           const targetWebview = webviewRefs.current.get(tabId);
@@ -1265,35 +1406,16 @@ export function ExternalWebviewPage({
           return { ok: true, result: { ...getEmbeddedWebSurfaceState(), openedTab: serializeTab(nextTab) } };
         }
         case "desktop.web.closeTab": {
-          const tabId = readTargetTabId(args);
-          const currentState = browserStateRef.current;
-          if (!currentState.tabs.some((tab) => tab.id === tabId)) {
+          const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+          const tabId = typeof args.tabId === "string" ? args.tabId.trim() : "";
+          if (!targetSurfaceId || !tabId) {
+            return embeddedError("invalid_args", t("externalWebview.error.closeArgsRequired"));
+          }
+          const result = await closeTab(tabId);
+          if (!result) {
             return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });
           }
-          if (currentState.tabs.length <= 1 && onCloseSurface) {
-            webviewRefs.current.delete(tabId);
-            onCloseSurface();
-            return { ok: true, result: { closedTabId: tabId, closedSurface: true } };
-          }
-          setBrowserState((state) => {
-            const targetIndex = state.tabs.findIndex((tab) => tab.id === tabId);
-            if (targetIndex === -1) {
-              return state;
-            }
-            if (state.tabs.length <= 1) {
-              return state;
-            }
-            const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
-            const nextActiveTabId = state.activeTabId === tabId
-              ? nextTabs[Math.max(0, targetIndex - 1)]?.id ?? nextTabs[0].id
-              : state.activeTabId;
-            webviewRefs.current.delete(tabId);
-            return {
-              tabs: nextTabs,
-              activeTabId: nextActiveTabId
-            };
-          });
-          return { ok: true, result: { closedTabId: tabId } };
+          return { ok: true, result };
         }
         case "desktop.web.switchTab": {
           const tabId = readTargetTabId(args);
@@ -1301,6 +1423,7 @@ export function ExternalWebviewPage({
             return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });
           }
           setActiveTab(tabId);
+          await syncEmbeddedCdpSurface(browserStateRef.current);
           return { ok: true, result: { ...getEmbeddedWebSurfaceState(), activeTabId: tabId } };
         }
         default:
@@ -1507,7 +1630,7 @@ export function ExternalWebviewPage({
                       className="external-webview-tab-close"
                       onClick={(event) => {
                         event.stopPropagation();
-                        closeTab(tab.id);
+                        void closeTab(tab.id).catch(() => undefined);
                       }}
                       aria-label={t("externalWebview.closeTab", { title: tab.title })}
                     >
@@ -1619,6 +1742,10 @@ export function ExternalWebviewPage({
             surfaceId={surfaceId}
             surfaceLabel={surfaceLabel ?? title}
             onTabStateChange={handleTabStateChange}
+            onCloseRequested={(tabId) => {
+              void closeTab(tabId).catch(() => undefined);
+            }}
+            onDomReady={finishRefreshWaiter}
             onWebviewRefChange={(tabId, webview) => {
               if (webview) {
                 webviewRefs.current.set(tabId, webview);

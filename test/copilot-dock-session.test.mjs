@@ -1,0 +1,94 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const typescript = require("typescript");
+
+function loadSessionModule() {
+  const source = fs.readFileSync(path.join(
+    process.cwd(),
+    "src",
+    "renderer",
+    "copilot",
+    "sidebar-copilot",
+    "copilotDockSession.ts"
+  ), "utf8");
+  const output = typescript.transpileModule(source, {
+    compilerOptions: {
+      module: typescript.ModuleKind.CommonJS,
+      target: typescript.ScriptTarget.ES2022
+    }
+  }).outputText;
+  const values = new Map();
+  const window = {
+    sessionStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key)
+    }
+  };
+  const module = { exports: {} };
+  const localRequire = (specifier) => {
+    if (specifier === "../../../shared/brand") {
+      return { STORAGE_NAMESPACE: "desktop-test" };
+    }
+    throw new Error(`Unexpected module: ${specifier}`);
+  };
+  new Function("exports", "module", "require", "window", output)(
+    module.exports,
+    module,
+    localRequire,
+    window
+  );
+  return { api: module.exports, values };
+}
+
+test("copilot dock session snapshot keeps only relative route identity", () => {
+  const { api, values } = loadSessionModule();
+  api.writeCopilotDockSessionSnapshot({
+    openPath: "/webs/website:docs",
+    surfaceId: "website:docs",
+    embedPath: "https://webclient.example/copilot/helper?chatId=chat-1&token=secret&code=hidden",
+    agentKey: "helper",
+    chatId: "chat-1"
+  });
+
+  const serialized = [...values.values()][0];
+  assert.equal(serialized.includes("webclient.example"), false);
+  assert.equal(serialized.includes("secret"), false);
+  assert.equal(serialized.includes("hidden"), false);
+  assert.equal(serialized.includes("/copilot/helper?chatId=chat-1"), true);
+  assert.deepEqual(api.readCopilotDockSessionSnapshot(), {
+    version: 1,
+    openPath: "/webs/website:docs",
+    surfaceId: "website:docs",
+    embedPath: "/copilot/helper?chatId=chat-1",
+    agentKey: "helper",
+    chatId: "chat-1"
+  });
+});
+
+test("copilot dock session rejects non-copilot paths and clears on explicit close", () => {
+  const { api, values } = loadSessionModule();
+  api.writeCopilotDockSessionSnapshot({
+    openPath: "/webs/website:docs",
+    surfaceId: "website:docs",
+    embedPath: "/agents/helper?chatId=chat-1",
+    agentKey: "helper"
+  });
+  assert.equal(values.size, 0);
+
+  api.writeCopilotDockSessionSnapshot({
+    openPath: "/webs/website:docs",
+    surfaceId: "website:docs",
+    embedPath: "/copilot/helper",
+    agentKey: "helper"
+  });
+  assert.equal(values.size, 1);
+  api.clearCopilotDockSessionSnapshot();
+  assert.equal(values.size, 0);
+  assert.equal(api.readCopilotDockSessionSnapshot(), null);
+});

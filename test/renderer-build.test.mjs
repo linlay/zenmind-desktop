@@ -5764,6 +5764,37 @@ test("webview surfaces publish complete tab registrations for embedded cdp", () 
   assert.match(browserRegistry, /contents\.getType\(\) !== "webview"/u);
 });
 
+test("website tab lifecycle, surface refresh, active styling, and copilot restore stay integrated", () => {
+  const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
+  const styles = readSourceFile("src", "renderer", "styles", "external-webview.css");
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const copilotDock = readSourceFile("src", "renderer", "copilot", "sidebar-copilot", "AgentWebclientCopilotDock.tsx");
+  const copilotSession = readSourceFile("src", "renderer", "copilot", "sidebar-copilot", "copilotDockSession.ts");
+  const desktopActions = readSourceFile("src", "shared", "desktop-actions.ts");
+  const desktopWs = readSourceFile("src", "shared", "desktop-ws.ts");
+  const desktopWsServer = readSourceFile("src", "main", "desktop-ws-server.ts");
+
+  assert.match(externalWebview, /webview\.addEventListener\("close", handleClose\)/u);
+  assert.match(externalWebview, /case "desktop\.web\.closeTab"[\s\S]{0,520}await closeTab\(tabId\)/u);
+  assert.match(externalWebview, /case "desktop\.web\.refreshSurface"/u);
+  assert.match(externalWebview, /const deadline = Date\.now\(\) \+ 15_000/u);
+  assert.match(externalWebview, /onDomReady=\{finishRefreshWaiter\}/u);
+  assert.match(desktopActions, /desktop\.web\.refreshSurface/u);
+  assert.match(desktopWs, /web\.refreshSurface/u);
+  assert.match(desktopWsServer, /"web\.refreshSurface":\s*"desktop\.web\.refreshSurface"/u);
+  assert.match(styles, /\.external-webview-tab\.is-active\s*\{[\s\S]{0,180}border-top-color:\s*var\(--browser-accent\)/u);
+  assert.match(styles, /\.external-webview-tab-trigger:focus-visible/u);
+  assert.match(styles, /:root\[data-theme="dark"\] \.external-webview-tab\.is-active/u);
+  assert.match(copilotSession, /window\.sessionStorage/u);
+  assert.match(copilotSession, /version:\s*1/u);
+  assert.match(copilotSession, /safeParams\.set\("chatId", chatId\)/u);
+  assert.doesNotMatch(copilotSession, /localStorage/u);
+  assert.match(appShell, /snapshot\.openPath !== location\.pathname/u);
+  assert.match(appShell, /clearCopilotDockSessionSnapshot\(\)/u);
+  assert.match(copilotDock, /restoredEmbedPath/u);
+  assert.match(copilotDock, /onCurrentEmbedPathChange/u);
+});
+
 test("desktop web surface state reads one exact surface without an active-surface fallback", () => {
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
@@ -7261,15 +7292,15 @@ test("embedded browser closing the final tab closes its webview surface", () => 
   );
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
 
-  assert.match(externalWebviewPage, /currentState\.tabs\.length <= 1[\s\S]{0,100}onCloseSurface/u);
-  assert.match(externalWebviewPage, /webviewRefs\.current\.delete\(tabId\);[\s\S]{0,60}onCloseSurface\(\);/u);
+  assert.match(externalWebviewPage, /const remainingTabs = currentState\.tabs\.filter[\s\S]{0,700}const closedSurface = remainingTabs\.length === 0/u);
+  assert.match(externalWebviewPage, /await syncEmbeddedCdpSurface\(nextState\);[\s\S]{0,160}onCloseSurface\?\.\(\);/u);
   assert.doesNotMatch(externalWebviewPage, /function createBlankTab\(\)/u);
   assert.match(embeddedSurfaceHosts, /onCloseSurface=\{onCloseWebItem \? \(\) => onCloseWebItem\(entryKey\) : undefined\}/u);
   assert.match(embeddedSurfaceHosts, /export function ExternalItemRoute\([\s\S]{0,120}onCloseSurface/u);
   assert.match(appShell, /onCloseSurface=\{\(\) => \{[\s\S]{0,120}setBuiltinBrowserSurfaceMounted\(false\);[\s\S]{0,120}requestSidebarNavigation\(EMPTY_WEB_SURFACE_ROUTE\);/u);
   assert.match(appShell, /onCloseWebItem=\{\(entryKey\) => \{[\s\S]{0,180}handleCloseWebEntry\(item\)/u);
   assert.match(externalWebviewPage, /const canClose = true;/u);
-  assert.match(externalWebviewPage, /closedSurface: true/u);
+  assert.match(externalWebviewPage, /closedSurface,[\s\S]{0,100}remainingTabIds/u);
 });
 
 test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overlay", () => {

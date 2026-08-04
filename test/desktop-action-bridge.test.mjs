@@ -1038,6 +1038,44 @@ test("desktop cdp bridge preserves current-surface target errors", async (t) => 
   assert.match(response.error.message, /current Desktop surface/u);
 });
 
+test("desktop cdp bridge normalizes Target.closeTarget ids and rejects conflicts", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const calls = [];
+  options.executeCdpCommand = async (request) => {
+    calls.push(request);
+    return {
+      targetId: request.targetId,
+      surfaceId: "website:current",
+      result: { success: true }
+    };
+  };
+
+  const paramsResponse = await handleDesktopCdpRequest(options, {
+    method: "Target.closeTarget",
+    params: { targetId: "desktop-from-params" }
+  });
+  assert.equal(paramsResponse.ok, true);
+  assert.deepEqual(paramsResponse.result, { success: true });
+  assert.equal(calls[0].targetId, "desktop-from-params");
+  assert.deepEqual(calls[0].params, {});
+
+  const topLevelResponse = await handleDesktopCdpRequest(options, {
+    method: "Target.closeTarget",
+    targetId: "desktop-top-level"
+  });
+  assert.equal(topLevelResponse.ok, true);
+  assert.equal(calls[1].targetId, "desktop-top-level");
+
+  const conflictResponse = await handleDesktopCdpRequest(options, {
+    method: "Target.closeTarget",
+    targetId: "desktop-one",
+    params: { targetId: "desktop-two" }
+  });
+  assert.equal(conflictResponse.ok, false);
+  assert.equal(conflictResponse.error.code, "invalid_args");
+  assert.equal(calls.length, 2);
+});
+
 test("desktop cdp bridge exposes only the documented public method set", async (t) => {
   const { options } = createDesktopActionOptions(t);
   let commandCalls = 0;

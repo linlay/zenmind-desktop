@@ -142,6 +142,135 @@ test("embedded cdp gateway command execution times out instead of hanging", asyn
   assert.equal(hanging.attached, false);
 });
 
+test("embedded cdp target ids survive guest replacement but change with a new surface generation", () => {
+  const tab = {
+    tabId: "stable-tab",
+    currentUrl: "https://example.test/",
+    title: "Stable",
+    webContentsId: 41
+  };
+  const surface = {
+    id: "website:stable",
+    targetGeneration: "surface-generation-1",
+    label: "Stable",
+    url: "https://example.test/",
+    surfaceKind: "website",
+    open: true
+  };
+  const firstTargetId = gatewayInternals.stableTargetId(surface, tab);
+  const replacementTargetId = gatewayInternals.stableTargetId(surface, {
+    ...tab,
+    webContentsId: 42
+  });
+  const rebuiltTargetId = gatewayInternals.stableTargetId({
+    ...surface,
+    targetGeneration: "surface-generation-2"
+  }, tab);
+
+  assert.equal(replacementTargetId, firstTargetId);
+  assert.notEqual(rebuiltTargetId, firstTargetId);
+});
+
+test("embedded cdp Target.closeTarget delegates the current tab to the host transaction", async () => {
+  const tab = {
+    tabId: "close-tab",
+    currentUrl: "https://example.test/close",
+    title: "Close",
+    webContentsId: 71
+  };
+  const surface = {
+    id: "website:close",
+    targetGeneration: "close-generation",
+    label: "Close",
+    url: "https://example.test/",
+    surfaceKind: "website",
+    open: true,
+    active: true,
+    tabs: [tab],
+    activeTabId: tab.tabId
+  };
+  const closeCalls = [];
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => [surface],
+    resolveWebContents: () => null,
+    closeTarget: async (resolvedSurface, resolvedTab) => {
+      closeCalls.push({ surfaceId: resolvedSurface.id, tabId: resolvedTab.tabId });
+    }
+  });
+  const targetId = gatewayInternals.stableTargetId(surface, tab);
+  const response = await gateway.executeCommand({
+    method: "Target.closeTarget",
+    targetId
+  });
+
+  assert.deepEqual(response.result, { success: true });
+  assert.equal(response.targetId, targetId);
+  assert.equal(response.surfaceId, surface.id);
+  assert.deepEqual(closeCalls, [{ surfaceId: surface.id, tabId: tab.tabId }]);
+
+  const websocketResponses = [];
+  const connection = { sendJSON: (payload) => websocketResponses.push(payload) };
+  await gateway.handleTextMessage(connection, targetId, JSON.stringify({
+    id: 9,
+    method: "Target.closeTarget",
+    params: { targetId }
+  }));
+  assert.deepEqual(websocketResponses, [{ id: 9, result: { success: true } }]);
+  assert.deepEqual(closeCalls, [
+    { surfaceId: surface.id, tabId: tab.tabId },
+    { surfaceId: surface.id, tabId: tab.tabId }
+  ]);
+
+  await gateway.handleTextMessage(connection, targetId, JSON.stringify({
+    id: 10,
+    method: "Target.closeTarget",
+    params: { targetId: "desktop-conflict" }
+  }));
+  assert.equal(websocketResponses[1].id, 10);
+  assert.equal(websocketResponses[1].error.code, -32602);
+  assert.equal(websocketResponses[1].error.data.code, "invalid_args");
+});
+
+test("embedded cdp debugger session rebinds when a stable target gets replacement contents", () => {
+  function createContents(id) {
+    let attached = false;
+    const listeners = new Set();
+    return {
+      id,
+      debugger: {
+        isAttached: () => attached,
+        attach: () => { attached = true; },
+        detach: () => { attached = false; },
+        on: (_event, listener) => listeners.add(listener),
+        off: (_event, listener) => listeners.delete(listener)
+      },
+      get attached() {
+        return attached;
+      },
+      get listenerCount() {
+        return listeners.size;
+      }
+    };
+  }
+  const first = createContents(81);
+  const second = createContents(82);
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => [],
+    resolveWebContents: () => null
+  });
+  const connection = { sendJSON() {} };
+
+  gateway.ensureDebuggerSession(connection, "desktop-stable", first);
+  gateway.ensureDebuggerSession(connection, "desktop-stable", second);
+
+  assert.equal(first.attached, false);
+  assert.equal(first.listenerCount, 0);
+  assert.equal(second.attached, true);
+  assert.equal(second.listenerCount, 1);
+  gateway.releaseConnection(connection);
+  assert.equal(second.attached, false);
+});
+
 test("embedded cdp target queries expose every live tab from the current surface only", async () => {
   const currentTabs = [
     {
@@ -543,7 +672,8 @@ test("browser surface registry uses explicit guest registrations for complete su
   docsContents.destroyed = true;
   const docsWithoutActiveGuest = registry.listBrowserSurfaces().find((surface) => surface.id === "website:docs");
   assert.equal(docsWithoutActiveGuest.open, true);
-  assert.equal(docsWithoutActiveGuest.activeTabId, null);
+  assert.equal(docsWithoutActiveGuest.activeTabId, "docs-tab-background");
+  assert.equal(docsWithoutActiveGuest.targetGeneration, "docs-registration");
   assert.deepEqual(docsWithoutActiveGuest.tabs.map((tab) => tab.tabId), ["docs-tab-background"]);
   docsBackgroundContents.destroyed = true;
   assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "website:docs").open, false);

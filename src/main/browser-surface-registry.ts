@@ -13,9 +13,11 @@ import {
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../shared/browser-surfaces";
+import { selectSurvivingTabId } from "../shared/web-tab-lifecycle";
 
 export type BrowserSurface = {
   id: string;
+  targetGeneration?: string;
   label: string;
   url: string;
   active: boolean;
@@ -202,7 +204,8 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     if (!registered) {
       return null;
     }
-    const tabs = registered.tabs.filter((tab) => {
+    const previousTabs = registered.tabs;
+    const tabs = previousTabs.filter((tab) => {
       const contents = options.webContents.fromId(tab.webContentsId);
       return Boolean(contents && !contents.isDestroyed() && contents.getType() === "webview");
     });
@@ -210,11 +213,15 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       registeredSurfaces.delete(surfaceId);
       return null;
     }
-    if (tabs.length !== registered.tabs.length) {
+    if (tabs.length !== previousTabs.length) {
       registered.tabs = tabs;
     }
-    if (registered.activeTabId && !tabs.some((tab) => tab.tabId === registered.activeTabId)) {
-      registered.activeTabId = null;
+    if (!registered.activeTabId || !tabs.some((tab) => tab.tabId === registered.activeTabId)) {
+      registered.activeTabId = selectSurvivingTabId(
+        previousTabs.map((tab) => tab.tabId),
+        tabs.map((tab) => tab.tabId),
+        registered.activeTabId
+      );
     }
     const activeTab = tabs.find((tab) => tab.tabId === registered.activeTabId) ?? null;
     const contents = activeTab ? options.webContents.fromId(activeTab.webContentsId) ?? null : null;
@@ -281,6 +288,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     const activeContents = resolved?.contents ?? contents;
     return {
       id: BUILTIN_BROWSER_SURFACE_ID,
+      ...(resolved?.registered.registrationId
+        ? { targetGeneration: resolved.registered.registrationId }
+        : {}),
       label: BUILTIN_BROWSER_SURFACE_LABEL,
       url,
       active: currentPageSnapshotMatchesSurface(BUILTIN_BROWSER_SURFACE_ID, activeContents),
@@ -305,6 +315,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         const activeTab = resolved?.activeTab ?? null;
         return {
           id: item.entryKey,
+          ...(resolved?.registered.registrationId
+            ? { targetGeneration: resolved.registered.registrationId }
+            : {}),
           label: item.label,
           url: item.url,
           copilotAgentKey: item.copilotAgentKey,

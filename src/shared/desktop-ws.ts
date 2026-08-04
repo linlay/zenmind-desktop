@@ -74,6 +74,7 @@ export const DESKTOP_WS_RESERVED_REQUEST_TYPES = [
   "web.activateSurface",
   "web.navigate",
   "web.reload",
+  "web.refreshSurface",
   "web.goBack",
   "web.openTab",
   "web.closeTab",

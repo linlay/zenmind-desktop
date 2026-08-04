@@ -268,6 +268,7 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "web.activateSurface": "desktop.web.activateSurface",
   "web.navigate": "desktop.web.navigate",
   "web.reload": "desktop.web.reload",
+  "web.refreshSurface": "desktop.web.refreshSurface",
   "web.goBack": "desktop.web.goBack",
   "web.openTab": "desktop.web.openTab",
   "web.closeTab": "desktop.web.closeTab",

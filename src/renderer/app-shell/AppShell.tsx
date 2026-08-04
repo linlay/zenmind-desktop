@@ -10,6 +10,12 @@ import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
+import {
+  clearCopilotDockSessionSnapshot,
+  readCopilotDockSessionSnapshot,
+  writeCopilotDockSessionSnapshot,
+  type CopilotDockSessionSnapshot
+} from "../copilot/sidebar-copilot/copilotDockSession";
 import { DebugModeContext } from "../debug/DebugModeContext";
 import { useServices } from "../services/ServicesContext";
 import { getAssistantPageContext } from "../copilot/page-context/assistantPageContext";
@@ -446,6 +452,13 @@ export function AppShell() {
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
+  const pendingCopilotRestoreRef = useRef<CopilotDockSessionSnapshot | null>(null);
+  const copilotRestoreInitializedRef = useRef(false);
+  const copilotRestoreAttemptedRef = useRef(false);
+  if (!copilotRestoreInitializedRef.current) {
+    pendingCopilotRestoreRef.current = readCopilotDockSessionSnapshot();
+    copilotRestoreInitializedRef.current = true;
+  }
   const bootstrapInitialNavigationDoneRef = useRef(false);
   const bootstrapHandoffNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/kanban");
@@ -486,7 +499,8 @@ export function AppShell() {
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
   const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
-  const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
+  const [assistantDockRestoredEmbedPath, setAssistantDockRestoredEmbedPath] = useState("");
+  const [, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
@@ -706,6 +720,11 @@ export function AppShell() {
     isCopilotAgentWebclientRoute(location.pathname);
   const assistantDockOpen = assistantDockOpenPath !== null;
   const assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location.pathname && !isAgentWebclientMainRoute;
+  const currentCopilotSurfaceId = activeWebEntryKey || (
+    location.pathname === BUILTIN_BROWSER_ROUTE
+      ? BUILTIN_BROWSER_SURFACE_ID
+      : `desktop-route:${location.pathname}`
+  );
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const effectiveSidebarCollapsed = sidebarCollapsed && !isSettingsRoute;
@@ -1416,13 +1435,46 @@ export function AppShell() {
       assistantDockOpenRequestPathRef.current = null;
       setAssistantDockOpenRequest(null);
     }
+    const requestedAgentKey = (request?.agentKey ?? request?.workerKey ?? resolvedCopilotAgentKey)
+      .trim()
+      .replace(/^agent:/u, "");
+    const requestedChatId = request?.chatId?.trim() ?? "";
+    const params = new URLSearchParams();
+    if (requestedChatId) {
+      params.set("chatId", requestedChatId);
+    }
+    const embedPath = createAgentWebclientCopilotPath(requestedAgentKey, params);
+    setAssistantDockRestoredEmbedPath(embedPath);
+    writeCopilotDockSessionSnapshot({
+      openPath: location.pathname,
+      surfaceId: currentCopilotSurfaceId,
+      embedPath,
+      agentKey: requestedAgentKey,
+      ...(requestedChatId ? { chatId: requestedChatId } : {})
+    });
     setAssistantDockOpenPath(location.pathname);
   }
 
   function closeAssistantDock() {
     setAssistantDockOpenPath(null);
     setAssistantDockOpenRequest(null);
+    setAssistantDockRestoredEmbedPath("");
     assistantDockOpenRequestPathRef.current = null;
+    clearCopilotDockSessionSnapshot();
+  }
+
+  function handleCopilotCurrentEmbedPathChange(embedPath: string, agentKey: string, chatId?: string) {
+    if (!assistantCopilotOpen) {
+      return;
+    }
+    setAssistantDockRestoredEmbedPath(embedPath);
+    writeCopilotDockSessionSnapshot({
+      openPath: location.pathname,
+      surfaceId: currentCopilotSurfaceId,
+      embedPath,
+      agentKey,
+      ...(chatId ? { chatId } : {})
+    });
   }
 
   async function handleEnvImport() {
@@ -1580,22 +1632,57 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (currentCopilotPreference?.enabled === false && assistantDockOpenPath === location.pathname && !assistantRunningRunId) {
+    if (currentCopilotPreference?.enabled === false && assistantDockOpenPath === location.pathname) {
       setAssistantDockOpenPath(null);
       setAssistantDockOpenRequest(null);
+      setAssistantDockRestoredEmbedPath("");
       assistantDockOpenRequestPathRef.current = null;
+      clearCopilotDockSessionSnapshot();
     }
-  }, [assistantDockOpenPath, assistantRunningRunId, currentCopilotPreference?.enabled, location.pathname]);
+  }, [assistantDockOpenPath, currentCopilotPreference?.enabled, location.pathname]);
+
+  useEffect(() => {
+    if (copilotRestoreAttemptedRef.current || !assistantSettings || !webItemsLoaded) {
+      return;
+    }
+    copilotRestoreAttemptedRef.current = true;
+    const snapshot = pendingCopilotRestoreRef.current;
+    pendingCopilotRestoreRef.current = null;
+    if (!snapshot) {
+      return;
+    }
+    if (
+      snapshot.openPath !== location.pathname ||
+      snapshot.surfaceId !== currentCopilotSurfaceId ||
+      isAgentWebclientMainRoute ||
+      currentCopilotPreference?.enabled === false
+    ) {
+      clearCopilotDockSessionSnapshot();
+      return;
+    }
+    assistantDockOpenRequestPathRef.current = null;
+    setAssistantDockOpenRequest(null);
+    setAssistantDockRestoredEmbedPath(snapshot.embedPath);
+    setAssistantDockOpenPath(snapshot.openPath);
+  }, [
+    assistantSettings,
+    currentCopilotPreference?.enabled,
+    currentCopilotSurfaceId,
+    isAgentWebclientMainRoute,
+    location.pathname,
+    webItemsLoaded
+  ]);
 
   useEffect(() => {
     if (
       assistantDockOpenPath &&
-      !isAgentWebclientMainRoute &&
       assistantDockOpenPath !== location.pathname
     ) {
       setAssistantDockOpenPath(null);
       setAssistantDockOpenRequest(null);
+      setAssistantDockRestoredEmbedPath("");
       assistantDockOpenRequestPathRef.current = null;
+      clearCopilotDockSessionSnapshot();
     }
   }, [assistantDockOpenPath, isAgentWebclientMainRoute, location.pathname]);
 
@@ -2964,9 +3051,11 @@ export function AppShell() {
         hostTheme={resolvedTheme}
         nativeDialogVisible={nativeDialogVisible || Boolean(desktopActionConfirmation)}
         openRequest={assistantDockOpenRequest}
+        restoredEmbedPath={assistantDockRestoredEmbedPath}
         resolvedAgentKey={resolvedCopilotAgentKey}
         onRunningRunIdChange={setAssistantRunningRunId}
         onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
+        onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}
       />
       <EnterpriseChatFloatingPanel desktopSsoStatus={desktopSsoStatus} />
       {desktopSsoLoginDialog ? (

@@ -3,6 +3,10 @@ import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
 import { createAgentWebclientCopilotPath } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
 import { useI18n } from "../../i18n/useI18n";
+import {
+  normalizeCopilotEmbedPath,
+  readCopilotChatId
+} from "./copilotDockSession";
 
 const PluginPage = lazy(() =>
   import("../../pages/plugin/PluginPage").then((module) => ({ default: module.PluginPage }))
@@ -70,22 +74,29 @@ export function AgentWebclientCopilotDock({
   hostTheme,
   nativeDialogVisible,
   openRequest,
+  restoredEmbedPath,
   resolvedAgentKey,
   onRunningRunIdChange,
-  onSelectedAgentKeyChange
+  onSelectedAgentKeyChange,
+  onCurrentEmbedPathChange
 }: {
   open: boolean;
   hostTheme: "light" | "dark";
   nativeDialogVisible: boolean;
   openRequest: AssistantWorkerOpenRequest | null;
+  restoredEmbedPath?: string;
   resolvedAgentKey: string;
   onRunningRunIdChange: (runId: string | null) => void;
   onSelectedAgentKeyChange?: (agentKey: string) => void;
+  onCurrentEmbedPathChange?: (embedPath: string, agentKey: string, chatId?: string) => void;
 }) {
   const { t } = useI18n();
   const [mounted, setMounted] = useState(open);
   const targetAgentKey = resolveTargetAgentKey(openRequest, resolvedAgentKey);
-  const targetEmbedPath = buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey);
+  const normalizedRestoredEmbedPath = normalizeCopilotEmbedPath(restoredEmbedPath ?? "");
+  const targetEmbedPath = openRequest
+    ? buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey)
+    : normalizedRestoredEmbedPath || buildAgentWebclientCopilotPath(null, resolvedAgentKey);
 
   useEffect(() => {
     if (open) {
@@ -100,11 +111,14 @@ export function AgentWebclientCopilotDock({
   }, [onRunningRunIdChange, open]);
 
   function handleCurrentUrlChange(currentUrl: string) {
+    const embedPath = normalizeCopilotEmbedPath(currentUrl);
     const selectedAgentKey = readCopilotAgentKeyFromUrl(currentUrl);
-    if (!selectedAgentKey) {
+    if (!selectedAgentKey || !embedPath) {
       return;
     }
     onSelectedAgentKeyChange?.(selectedAgentKey);
+    const chatId = readCopilotChatId(embedPath);
+    onCurrentEmbedPathChange?.(embedPath, selectedAgentKey, chatId || undefined);
   }
 
   return (

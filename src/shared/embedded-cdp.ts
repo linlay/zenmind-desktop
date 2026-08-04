@@ -5,6 +5,7 @@ export const EMBEDDED_CDP_GATEWAY_URL = `http://${EMBEDDED_CDP_GATEWAY_HOST}:${E
 export const DESKTOP_CDP_PUBLIC_METHODS = [
   "Target.getCurrentTarget",
   "Target.getTargets",
+  "Target.closeTarget",
   "Page.bringToFront",
   "Page.enable",
   "Page.navigate",

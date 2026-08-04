@@ -189,6 +189,8 @@
   align-items: center;
   min-width: 112px;
   max-width: 240px;
+  box-sizing: border-box;
+  border-top: 2px solid transparent;
   border-radius: 18px 18px 0 0;
   background: transparent;
   cursor: grab;
@@ -209,12 +211,16 @@
   opacity: 0.52;
 }
 
-.external-webview-tab:hover {
-  background: rgba(255, 255, 255, 0.2);
+.external-webview-tab:hover:not(.is-active) {
+  background: var(--browser-hover);
 }
 
 .external-webview-tab.is-active {
-  background: var(--browser-surface);
+  border-top-color: var(--browser-accent);
+  background: var(--browser-surface-strong);
+  box-shadow: 0 -1px 0 var(--browser-edge), 0 1px 0 var(--browser-surface-strong);
+  color: var(--browser-ink);
+  z-index: 1;
 }
 
 .external-webview-tab:not(.is-active)::after {
@@ -237,10 +243,20 @@
   padding: 0 12px;
   border: 0;
   background: transparent;
-  color: var(--browser-ink);
+  color: var(--browser-muted);
   text-align: left;
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+
+.external-webview-tab-trigger:focus-visible {
+  outline: 2px solid var(--browser-accent);
+  outline-offset: -3px;
+  border-radius: 14px 14px 2px 2px;
+}
+
+.external-webview-tab.is-active .external-webview-tab-trigger {
+  color: var(--browser-ink);
 }
 
 .external-webview-tab-favicon {
@@ -296,6 +312,20 @@
   text-overflow: ellipsis;
   font-size: 12px;
   font-weight: 500;
+}
+
+.external-webview-tab.is-active .external-webview-tab-title {
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .external-webview-tab.is-active {
+  border-top-color: #8ab4f8;
+  background: #343a44;
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.12), 0 1px 0 #343a44;
+}
+
+:root[data-theme="dark"] .external-webview-tab:not(.is-active)::after {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .external-webview-tab-close,

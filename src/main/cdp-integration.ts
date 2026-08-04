@@ -15,6 +15,7 @@ type CdpIntegrationOptions = {
   listServices: ServiceLister;
   isLoopbackUrl(value: string): unknown;
   switchTab(surfaceId: string, tabId: string): Promise<unknown>;
+  closeTab(surfaceId: string, tabId: string): Promise<unknown>;
   version: string;
 };
 
@@ -129,6 +130,10 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     await options.switchTab(surface.id, tab.tabId);
   }
 
+  async function closeTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
+    return options.closeTab(surface.id, tab.tabId);
+  }
+
   function start() {
     if (embeddedCdpGateway) {
       return embeddedCdpGateway;
@@ -137,6 +142,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
       getSurfaces: listSurfaces,
       resolveWebContents,
       activateTarget,
+      closeTarget,
       version: options.version
     });
     embeddedCdpGateway.start();
@@ -153,6 +159,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     listSurfaces,
     resolveWebContents,
     activateTarget,
+    closeTarget,
     start,
     stop
   };
