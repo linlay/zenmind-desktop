@@ -69,7 +69,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.copilot.setPagePreference", kind: "execute", category: "copilot", description: "Update one Desktop Copilot page preference without replacing other pages. Args: { pageKey, enabled?, agentKey? }; pageKey: controlCenter|market|help|agents|schedules|skills." },
 
   { name: "desktop.web.listSurfaces", kind: "read", category: "web", description: "List Desktop web surfaces." },
-  { name: "desktop.web.getActiveSurface", kind: "read", category: "web", description: "Read the active Desktop web surface." },
+  { name: "desktop.web.getSurfaceState", kind: "read", category: "web", description: "Read one Desktop web surface and its complete tab state. Args: { surfaceId }." },
   { name: "desktop.web.interactElement", kind: "execute", category: "web", description: "Interact with an element in the current Desktop web page." },
   { name: "desktop.web.executeScript", kind: "execute", category: "web", description: "Execute a script in the current Desktop web page." },
   { name: "desktop.web.activateSurface", kind: "execute", category: "web", description: "Activate a Desktop web surface." },

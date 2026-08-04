@@ -1,6 +1,6 @@
 import type {
-  EmbeddedCdpSiteSurfaceRegistration,
-  EmbeddedCdpSiteSurfaceRemoval
+  EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRemoval
 } from "../../shared/embedded-cdp";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 
@@ -24,24 +24,24 @@ export function registerEmbeddedCdpIpcHandlers(
     ownersWithCleanup.add(sender.id);
     sender.once?.("destroyed", () => {
       ownersWithCleanup.delete(sender.id);
-      browserSurfaces.unregisterSiteSurfacesForOwner(sender.id);
+      browserSurfaces.unregisterSurfacesForOwner(sender.id);
     });
   }
 
   ipcMain.handle(
-    "embeddedCdp.registerSiteSurface",
-    (event, input: EmbeddedCdpSiteSurfaceRegistration) => {
+    "embeddedCdp.registerSurface",
+    (event, input: EmbeddedCdpSurfaceRegistration) => {
       ensureOwnerCleanup(event.sender);
       return {
-        ok: browserSurfaces.registerSiteSurface(input, event.sender.id)
+        ok: browserSurfaces.registerSurface(input, event.sender.id)
       };
     }
   );
 
   ipcMain.handle(
-    "embeddedCdp.unregisterSiteSurface",
-    (event, input: EmbeddedCdpSiteSurfaceRemoval) => ({
-      ok: browserSurfaces.unregisterSiteSurface(input, event.sender.id)
+    "embeddedCdp.unregisterSurface",
+    (event, input: EmbeddedCdpSurfaceRemoval) => ({
+      ok: browserSurfaces.unregisterSurface(input, event.sender.id)
     })
   );
 }

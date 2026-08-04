@@ -49,6 +49,7 @@ import {
 } from "../../services/currentPageContext";
 import { registerPluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { registerDesktopActionProviderForScope } from "../../services/desktopActionRegistry";
+import { registerWebSurfaceStateProvider } from "../../services/webSurfaceStateRegistry";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
   EMBEDDED_WEB_SCRIPT_MAX_BYTES,
@@ -1379,6 +1380,60 @@ export function PluginPage({
   ]);
 
   useEffect(() => {
+    if (!surfaceId || !service) {
+      return undefined;
+    }
+    return registerWebSurfaceStateProvider(surfaceId, () => {
+      const targetWebview = webviewRef.current;
+      const currentUrl = webviewCurrentUrl || readCurrentWebviewUrl() || embeddedUrl || webUrl;
+      let canGoBack = false;
+      let canGoForward = false;
+      try {
+        canGoBack = targetWebview?.canGoBack() ?? false;
+        canGoForward = targetWebview?.canGoForward() ?? false;
+      } catch {
+        // The service guest may detach while its runtime is stopping.
+      }
+      const open = service.status === "running" && Boolean(targetWebview && embeddedUrl);
+      const tabId = `service-tab:${surfaceId}`;
+      return {
+        surface: {
+          id: surfaceId,
+          kind: "service",
+          label: serviceDisplayName,
+          url: embeddedUrl || webUrl,
+          route: surfaceRoute,
+          open,
+          active: active !== false
+        },
+        tabs: open
+          ? [{
+              tabId,
+              title: serviceDisplayName,
+              currentUrl,
+              active: true,
+              isLoading: !bridgeReady,
+              canGoBack,
+              canGoForward
+            }]
+          : [],
+        activeTabId: open ? tabId : null
+      };
+    });
+  }, [
+    active,
+    bridgeReady,
+    embeddedUrl,
+    service,
+    serviceDisplayName,
+    surfaceId,
+    surfaceRoute,
+    webUrl,
+    webviewCurrentUrl,
+    webviewSnapshotNonce
+  ]);
+
+  useEffect(() => {
     if (
       active === false ||
       service?.status !== "running" ||
@@ -1429,24 +1484,6 @@ export function PluginPage({
         }
 
         switch (request.action) {
-          case "desktop.web.getActiveSurface":
-            return {
-              ok: true,
-              result: {
-                surface: {
-                  id: surfaceId,
-                  surfaceId,
-                  serviceId: pluginId,
-                  label: serviceDisplayName,
-                  url: embeddedUrl,
-                  active: isSurfaceActive,
-                  currentUrl: webviewCurrentUrl || embeddedUrl,
-                  title: serviceDisplayName,
-                },
-                tabs: [],
-                activeTab: null,
-              },
-            };
           case "desktop.web.interactElement": {
             const response = await executeCurrentPageInteract(args);
             if (!response.ok) {

@@ -416,7 +416,8 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   const actionList = await client.waitFor((message) => message.id === "actions-1");
   const actionNames = actionList.data.actions.map((action) => action.action);
   assert.ok(actionNames.includes("web.listSurfaces"));
-  assert.ok(actionNames.includes("web.getActiveSurface"));
+  assert.ok(actionNames.includes("web.getSurfaceState"));
+  assert.equal(actionNames.includes("web.getActiveSurface"), false);
   assert.ok(actionNames.includes("web.entries.list"));
   assert.ok(actionNames.includes("web.website.list"));
   assert.ok(actionNames.includes("web.webapp.getStatus"));

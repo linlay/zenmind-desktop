@@ -19,6 +19,7 @@ import {
   setDesktopActionTranslator,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
+import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
 import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
@@ -2347,6 +2348,7 @@ export function AppShell() {
         .filter((service) => service.status === "running" && service.frontendMode !== "none" && service.healthMeta.webUrl)
         .map((service) => ({
           id: service.id,
+          kind: "service" as const,
           label: getServiceDisplayName(service.id, service.name, t),
           url: service.healthMeta.webUrl,
           route: service.id === "agent-webclient"
@@ -2358,6 +2360,7 @@ export function AppShell() {
       return [
         {
           id: BUILTIN_BROWSER_SURFACE_ID,
+          kind: "browser" as const,
           label: BUILTIN_BROWSER_SURFACE_LABEL,
           url: BUILTIN_BROWSER_DEFAULT_URL,
           route: BUILTIN_BROWSER_ROUTE,
@@ -2365,6 +2368,7 @@ export function AppShell() {
         },
         ...[...webItemMap.entries()].map(([entryKey, item]) => ({
           id: entryKey,
+          kind: item.kind,
           label: item.label,
           url: item.url,
           route: `/webs/${entryKey}`,
@@ -2406,6 +2410,43 @@ export function AppShell() {
       switch (request.action) {
         case "desktop.web.listSurfaces":
           return { ok: true, result: { surfaces: createSurfaceList() } };
+        case "desktop.web.getSurfaceState": {
+          const surfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+          if (!surfaceId) {
+            return {
+              ok: false,
+              error: {
+                code: "invalid_args",
+                message: "surfaceId is required"
+              }
+            };
+          }
+          const surface = createSurfaceList().find((candidate) => candidate.id === surfaceId);
+          if (!surface) {
+            return {
+              ok: false,
+              error: {
+                code: "surface_not_found",
+                message: t("desktopAction.surfaceNotFound"),
+                details: { surfaceId }
+              }
+            };
+          }
+          const state = readWebSurfaceState(surfaceId);
+          return state
+            ? { ok: true, result: state }
+            : {
+                ok: true,
+                result: {
+                  surface: {
+                    ...surface,
+                    open: false
+                  },
+                  tabs: [],
+                  activeTabId: null
+                }
+              };
+        }
         case "desktop.web.activateSurface": {
           const target = getSurfaceTarget(args);
           const surface = createSurfaceList().find((candidate) => surfaceMatchesTarget(candidate, target));

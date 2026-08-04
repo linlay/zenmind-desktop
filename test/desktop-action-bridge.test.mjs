@@ -712,6 +712,8 @@ test("Desktop web actions retain page interaction while page reads use CDP", asy
   };
 
   for (const action of [
+    "desktop.web.listSurfaces",
+    "desktop.web.getSurfaceState",
     "desktop.web.interactElement",
     "desktop.web.executeScript"
   ]) {
@@ -725,11 +727,14 @@ test("Desktop web actions retain page interaction while page reads use CDP", asy
   }
 
   assert.deepEqual(rendererActions.map((request) => request.action), [
+    "desktop.web.listSurfaces",
+    "desktop.web.getSurfaceState",
     "desktop.web.interactElement",
     "desktop.web.executeScript"
   ]);
 
   for (const action of [
+    "desktop.web.getActiveSurface",
     "desktop.web.getPageContext",
     "desktop.web.readPageData",
     "desktop.web.extractStructured",
@@ -1014,22 +1019,40 @@ test("desktop cdp bridge surfaces target timeout distinctly", async (t) => {
   assert.deepEqual(response.error.details.paramKeys, ["expression", "returnByValue"]);
 });
 
-test("desktop cdp bridge preserves invalid target scope errors", async (t) => {
+test("desktop cdp bridge preserves current-surface target errors", async (t) => {
   const { options } = createDesktopActionOptions(t);
   options.executeCdpCommand = async () => {
-    const error = new Error('params.scope must be either "sites" or "all".');
-    error.code = "invalid_args";
+    const error = new Error("The target does not belong to the current Desktop surface.");
+    error.code = "target_not_in_current_surface";
     throw error;
   };
 
   const response = await handleDesktopCdpRequest(options, {
-    method: "Target.getTargets",
-    params: { scope: "browser" }
+    method: "Runtime.evaluate",
+    params: { expression: "1+1" },
+    targetId: "desktop-background-target"
   });
 
   assert.equal(response.ok, false);
-  assert.equal(response.error.code, "invalid_args");
-  assert.match(response.error.message, /scope/u);
+  assert.equal(response.error.code, "target_not_in_current_surface");
+  assert.match(response.error.message, /current Desktop surface/u);
+});
+
+test("desktop cdp bridge exposes only the documented public method set", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  let commandCalls = 0;
+  options.executeCdpCommand = async () => {
+    commandCalls += 1;
+    return { result: {} };
+  };
+
+  const response = await handleDesktopCdpRequest(options, {
+    method: "Browser.getVersion"
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "method_not_allowed");
+  assert.equal(commandCalls, 0);
 });
 
 test("desktop action confirmation detail exposes debug context with redacted args", () => {

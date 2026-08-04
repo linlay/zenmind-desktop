@@ -7,7 +7,8 @@ import type {
 import { useLocation } from "react-router-dom";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
-import type { EmbeddedCdpSiteSurfaceKind } from "../../../shared/embedded-cdp";
+import type { EmbeddedCdpSurfaceKind } from "../../../shared/embedded-cdp";
+import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID } from "../../../shared/browser-surfaces";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import {
   buildInteractElementScript,
@@ -16,6 +17,7 @@ import {
 import { registerAssistantPageContextProvider } from "../../copilot/page-context/assistantPageContext";
 import { publishCurrentPageContextSnapshot } from "../../services/currentPageContext";
 import { registerDesktopActionProviderForScope } from "../../services/desktopActionRegistry";
+import { registerWebSurfaceStateProvider } from "../../services/webSurfaceStateRegistry";
 import { SidebarActionIcon } from "../../components/BrandMark";
 import {
   Favicon,
@@ -35,7 +37,7 @@ type ExternalWebviewPageProps = {
   url: string;
   active?: boolean | undefined;
   surfaceId?: string;
-  surfaceKind?: EmbeddedCdpSiteSurfaceKind;
+  surfaceKind?: EmbeddedCdpSurfaceKind;
   surfaceLabel?: string;
   chrome?: "browser" | "app";
   partition?: string;
@@ -101,11 +103,19 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
 })()`;
 
 const BLANK_EXTERNAL_WEBVIEW_URL = "about:blank";
-let siteSurfaceRegistrationSequence = 0;
+let surfaceRegistrationSequence = 0;
 
-function createSiteSurfaceRegistrationId() {
-  siteSurfaceRegistrationSequence += 1;
-  return `site-surface-${Date.now()}-${siteSurfaceRegistrationSequence}`;
+function createSurfaceRegistrationId() {
+  surfaceRegistrationSequence += 1;
+  return `web-surface-${Date.now()}-${surfaceRegistrationSequence}`;
+}
+
+function getEmbeddedCdpSurfaceApi() {
+  const embeddedCdp = window.electronAPI?.embeddedCdp;
+  return typeof embeddedCdp?.registerSurface === "function" &&
+    typeof embeddedCdp?.unregisterSurface === "function"
+    ? embeddedCdp
+    : null;
 }
 
 type ExternalWebviewPaneProps = {
@@ -401,7 +411,13 @@ export function ExternalWebviewPage({
   const desktopSsoAuthenticatedRef = useRef(false);
   const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
-  const [siteSurfaceRegistrationId] = useState(createSiteSurfaceRegistrationId);
+  const [surfaceRegistrationId] = useState(createSurfaceRegistrationId);
+  const registeredSurfaceKind = surfaceKind ?? (surfaceId === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
+  const registeredSurfaceRoute = surfaceId === BUILTIN_BROWSER_SURFACE_ID
+    ? BUILTIN_BROWSER_ROUTE
+    : surfaceId
+      ? `/webs/${surfaceId}`
+      : currentRoute;
   const faviconReportedRef = useRef(false);
   const initialFaviconTabIdRef = useRef("");
   const surfaceClassName = [
@@ -814,52 +830,65 @@ export function ExternalWebviewPage({
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
 
   useEffect(() => {
-    if (!surfaceKind || !surfaceId) {
+    const embeddedCdp = getEmbeddedCdpSurfaceApi();
+    if (!embeddedCdp || !registeredSurfaceKind || !surfaceId) {
       return;
     }
-    if (typeof activeTab?.guestId !== "number") {
-      void window.electronAPI.embeddedCdp.unregisterSiteSurface({
-        registrationId: siteSurfaceRegistrationId,
+    const registeredTabs = browserState.tabs
+      .filter((tab): tab is ExternalWebviewTabState & { guestId: number } => typeof tab.guestId === "number")
+      .map((tab) => ({
+        tabId: tab.id,
+        currentUrl: tab.currentUrl,
+        title: tab.title,
+        webContentsId: tab.guestId,
+        ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl } : {}),
+        canGoBack: tab.canGoBack,
+        canGoForward: tab.canGoForward,
+        isLoading: tab.isLoading
+      }));
+    const registeredActiveTabId = registeredTabs.some((tab) => tab.tabId === browserState.activeTabId)
+      ? browserState.activeTabId
+      : null;
+    if (registeredTabs.length === 0) {
+      void embeddedCdp.unregisterSurface({
+        registrationId: surfaceRegistrationId,
         surfaceId
       }).catch(() => undefined);
       return;
     }
-    void window.electronAPI.embeddedCdp.registerSiteSurface({
-      registrationId: siteSurfaceRegistrationId,
+    void embeddedCdp.registerSurface({
+      registrationId: surfaceRegistrationId,
       surfaceId,
-      surfaceKind,
+      surfaceKind: registeredSurfaceKind,
       label: surfaceLabel ?? title,
       url,
-      currentUrl: activeTab.currentUrl || url,
-      title: activeTab.title || title,
-      webContentsId: activeTab.guestId,
-      active: active !== false
+      active: active !== false,
+      tabs: registeredTabs,
+      activeTabId: registeredActiveTabId
     }).catch(() => undefined);
   }, [
     active,
-    activeTab?.currentUrl,
-    activeTab?.guestId,
-    activeTab?.id,
-    activeTab?.title,
-    siteSurfaceRegistrationId,
+    browserState,
+    registeredSurfaceKind,
+    surfaceRegistrationId,
     surfaceId,
-    surfaceKind,
     surfaceLabel,
     title,
     url
   ]);
 
   useEffect(() => {
-    if (!surfaceKind || !surfaceId) {
+    const embeddedCdp = getEmbeddedCdpSurfaceApi();
+    if (!embeddedCdp || !registeredSurfaceKind || !surfaceId) {
       return undefined;
     }
     return () => {
-      void window.electronAPI.embeddedCdp.unregisterSiteSurface({
-        registrationId: siteSurfaceRegistrationId,
+      void embeddedCdp.unregisterSurface({
+        registrationId: surfaceRegistrationId,
         surfaceId
       }).catch(() => undefined);
     };
-  }, [siteSurfaceRegistrationId, surfaceId, surfaceKind]);
+  }, [registeredSurfaceKind, surfaceRegistrationId, surfaceId]);
 
   useEffect(() => {
     setAddressInputUnlocked(false);
@@ -959,6 +988,39 @@ export function ExternalWebviewPage({
       activeTab: activeTabSnapshot
     };
   };
+
+  const getPublicWebSurfaceState = () => {
+    const currentState = browserStateRef.current;
+    return {
+      surface: {
+        id: surfaceId ?? "",
+        kind: registeredSurfaceKind ?? "browser" as const,
+        label: surfaceLabel ?? title,
+        url,
+        route: registeredSurfaceRoute,
+        open: currentState.tabs.length > 0,
+        active: activeRef.current
+      },
+      tabs: currentState.tabs.map((tab) => ({
+        tabId: tab.id,
+        title: tab.title,
+        currentUrl: tab.currentUrl,
+        ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl } : {}),
+        active: tab.id === currentState.activeTabId,
+        isLoading: tab.isLoading,
+        canGoBack: tab.canGoBack,
+        canGoForward: tab.canGoForward
+      })),
+      activeTabId: currentState.activeTabId || null
+    };
+  };
+
+  useEffect(() => {
+    if (!surfaceId || !registeredSurfaceKind) {
+      return undefined;
+    }
+    return registerWebSurfaceStateProvider(surfaceId, getPublicWebSurfaceState);
+  }, [registeredSurfaceKind, registeredSurfaceRoute, surfaceId, surfaceLabel, title, url]);
 
   const readActivePageContext = async () => {
     const { currentActiveTab, activeWebview } = getActiveWebviewState();
@@ -1144,8 +1206,6 @@ export function ExternalWebviewPage({
       }
 
       switch (request.action) {
-        case "desktop.web.getActiveSurface":
-          return { ok: true, result: getEmbeddedWebSurfaceState() };
         case "desktop.web.interactElement": {
           const response = await executeCurrentPageInteract(args);
           if (!response.ok) {

@@ -5743,22 +5743,41 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
   assert.match(cdpIntegration, /webContentsId:\s*input\.contents\?\.id/);
   assert.match(cdpIntegration, /active:\s*snapshotMatchesService/);
   assert.match(cdpIntegration, /currentPageSnapshot\.surfaceId === input\.service\.id/);
+  assert.match(cdpIntegration, /findWebContentsById\(currentPageSnapshot\.webContentsId\)/);
   assert.doesNotMatch(cdpIntegration, /failed to list iframe targets/);
 });
 
-test("site webviews publish exact open-target registrations for embedded cdp", () => {
+test("webview surfaces publish complete tab registrations for embedded cdp", () => {
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
   const browserRegistry = readSourceFile("src", "main", "browser-surface-registry.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
 
   assert.match(surfaceHosts, /surfaceKind=\{item\.kind\}/u);
-  assert.match(externalWebview, /embeddedCdp\.registerSiteSurface\(\{/u);
-  assert.match(externalWebview, /webContentsId:\s*activeTab\.guestId/u);
-  assert.match(externalWebview, /embeddedCdp\.unregisterSiteSurface\(\{/u);
-  assert.match(preload, /embeddedCdp\.registerSiteSurface/u);
-  assert.match(browserRegistry, /findRegisteredSiteWebContents/u);
+  assert.match(externalWebview, /function getEmbeddedCdpSurfaceApi\(\)/u);
+  assert.match(externalWebview, /embeddedCdp\.registerSurface\(\{/u);
+  assert.match(externalWebview, /tabs:\s*registeredTabs/u);
+  assert.match(externalWebview, /activeTabId:\s*registeredActiveTabId/u);
+  assert.match(externalWebview, /embeddedCdp\.unregisterSurface\(\{/u);
+  assert.match(preload, /embeddedCdp\.registerSurface/u);
+  assert.match(browserRegistry, /findRegisteredSurfaceWebContents/u);
   assert.match(browserRegistry, /contents\.getType\(\) !== "webview"/u);
+});
+
+test("desktop web surface state reads one exact surface without an active-surface fallback", () => {
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
+  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+
+  assert.match(appShell, /case "desktop\.web\.getSurfaceState"/u);
+  assert.match(appShell, /readWebSurfaceState\(surfaceId\)/u);
+  assert.match(appShell, /code:\s*"surface_not_found"/u);
+  assert.match(externalWebview, /registerWebSurfaceStateProvider\(surfaceId/u);
+  assert.match(externalWebview, /tabs:\s*currentState\.tabs\.map/u);
+  assert.match(pluginPage, /registerWebSurfaceStateProvider\(surfaceId/u);
+  assert.doesNotMatch(appShell, /case "desktop\.web\.getActiveSurface"/u);
+  assert.doesNotMatch(externalWebview, /case "desktop\.web\.getActiveSurface"/u);
+  assert.doesNotMatch(pluginPage, /case "desktop\.web\.getActiveSurface"/u);
 });
 
 test("assistant chat export writes directly to the download location", () => {

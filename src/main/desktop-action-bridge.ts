@@ -40,6 +40,7 @@ import {
 } from "../shared/desktop-actions";
 import { ActionBridgeTimeContractError, normalizeActionBridgeTimePayload } from "./action-bridge-time-normalizer";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-routes";
+import { DESKTOP_CDP_PUBLIC_METHODS } from "../shared/embedded-cdp";
 import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
 import type { AgentPlatformAssistantBridge } from "./assistant/core/agent-platform-bridge";
@@ -178,7 +179,6 @@ type DesktopCdpCallRequest = {
   params?: Record<string, unknown>;
   targetId?: string;
   sessionId?: string;
-  surfaceId?: string;
   source?: DesktopActionSource;
 };
 
@@ -1807,7 +1807,7 @@ async function executeAction(
     case "desktop.copilot.getPagePreferences":
     case "desktop.copilot.setPagePreference":
     case "desktop.web.listSurfaces":
-    case "desktop.web.getActiveSurface":
+    case "desktop.web.getSurfaceState":
     case "desktop.web.activateSurface":
     case "desktop.web.navigate":
     case "desktop.web.reload":
@@ -2070,12 +2070,14 @@ export async function handleDesktopCdpRequest(
   if (!method) {
     return cdpFail("unknown", "invalid_args", "method is required");
   }
+  if (!DESKTOP_CDP_PUBLIC_METHODS.some((candidate) => candidate === method)) {
+    return cdpFail(method, "method_not_allowed", "This CDP method is not exposed by Desktop.");
+  }
   try {
     const response = await options.executeCdpCommand({
       method,
       params: asRecord(request.params),
-      targetId: typeof request.targetId === "string" ? request.targetId.trim() : "",
-      surfaceId: typeof request.surfaceId === "string" ? request.surfaceId.trim() : ""
+      targetId: typeof request.targetId === "string" ? request.targetId.trim() : ""
     });
     return {
       ok: true,
@@ -2088,8 +2090,8 @@ export async function handleDesktopCdpRequest(
     if (isDesktopCdpTimeoutError(error)) {
       return cdpFail(method, DESKTOP_CDP_TARGET_TIMEOUT_CODE, error.message, readDesktopCdpErrorDetails(error));
     }
-    const errorCode = error && typeof error === "object" && "code" in error && error.code === "invalid_args"
-      ? "invalid_args"
+    const errorCode = error && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code
       : "cdp_failed";
     return cdpFail(method, errorCode, error instanceof Error ? error.message : String(error));
   }

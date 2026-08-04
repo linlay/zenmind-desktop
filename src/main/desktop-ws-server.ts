@@ -264,7 +264,7 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
 
   "web.entries.list": "desktop.web.list",
   "web.listSurfaces": "desktop.web.listSurfaces",
-  "web.getActiveSurface": "desktop.web.getActiveSurface",
+  "web.getSurfaceState": "desktop.web.getSurfaceState",
   "web.activateSurface": "desktop.web.activateSurface",
   "web.navigate": "desktop.web.navigate",
   "web.reload": "desktop.web.reload",

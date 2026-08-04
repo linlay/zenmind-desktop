@@ -1,9 +1,9 @@
 import type { WebContents } from "electron";
 import type { DesktopPageContextSnapshot, ServiceState } from "../shared/contracts";
-import { BUILTIN_BROWSER_SURFACE_ID } from "../shared/browser-surfaces";
 import {
   EmbeddedCdpGateway,
-  type EmbeddedCdpSurface
+  type EmbeddedCdpSurface,
+  type EmbeddedCdpSurfaceTab
 } from "./embedded-cdp-gateway";
 import type { BrowserSurfaceRegistry } from "./browser-surface-registry";
 
@@ -14,11 +14,7 @@ type CdpIntegrationOptions = {
   getCurrentPageSnapshot(): DesktopPageContextSnapshot | null;
   listServices: ServiceLister;
   isLoopbackUrl(value: string): unknown;
-  openBrowserUrl(input: { url: string; label?: string }): Promise<unknown>;
-  activateBrowserSurface(target: string): Promise<unknown>;
-  showMainWindow(targetPath: string): void;
-  delay(ms: number): Promise<void>;
-  assistantTargetPath: string;
+  switchTab(surfaceId: string, tabId: string): Promise<unknown>;
   version: string;
 };
 
@@ -50,17 +46,29 @@ export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): Emb
     ? snapshotBrowserTarget.currentUrl
     : "";
   const documentTitle = snapshotMatchesService ? currentPageSnapshot?.pageContext?.title : "";
+  const tabId = `service-tab:${input.service.id}`;
+  const currentUrl = snapshotCurrentUrl || input.contents?.getURL() || webUrl;
+  const title = documentTitle || input.service.name || input.service.id;
   return {
     id: input.service.id,
     label: input.service.name || input.service.id,
     url: webUrl,
     kind: "webview",
     active: snapshotMatchesService,
-    currentUrl: snapshotCurrentUrl || input.contents?.getURL(),
-    title: documentTitle || input.service.name || input.service.id,
+    currentUrl,
+    title,
     webContentsId: input.contents?.id,
     surfaceKind: "service",
     open: Boolean(input.contents),
+    tabs: input.contents
+      ? [{
+          tabId,
+          currentUrl,
+          title,
+          webContentsId: input.contents.id
+        }]
+      : [],
+    activeTabId: input.contents ? tabId : null,
     ...(surfaceRoute ? { surfaceRoute } : {}),
     ...(snapshotMatchesService && currentPageSnapshot?.embedPath ? { embedPath: currentPageSnapshot.embedPath } : {})
   };
@@ -79,12 +87,22 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     let serviceSurfaces: EmbeddedCdpSurface[] = [];
     try {
       const services = await options.listServices();
+      const currentPageSnapshot = options.getCurrentPageSnapshot();
+      const currentSurfaceId = currentPageSnapshot?.surfaceId ||
+        currentPageSnapshot?.pageContext?.browserTarget?.surfaceId ||
+        "";
       const surfaces = await Promise.all(services.map(async (service): Promise<EmbeddedCdpSurface | null> => {
         const webUrl = service.status === "running" ? service.healthMeta.webUrl.trim() : "";
+        const isCurrentService = currentPageSnapshot?.pageKind === "webview" && currentSurfaceId === service.id;
+        const contents = isCurrentService
+          ? typeof currentPageSnapshot.webContentsId === "number"
+            ? options.browserSurfaces.findWebContentsById(currentPageSnapshot.webContentsId)
+            : null
+          : options.browserSurfaces.findWebContentsForSurfaceUrl(webUrl);
         const surface = createEmbeddedCdpServiceSurface({
           service,
-          currentPageSnapshot: options.getCurrentPageSnapshot(),
-          contents: options.browserSurfaces.findWebContentsForSurfaceUrl(webUrl),
+          currentPageSnapshot,
+          contents,
           isLoopbackUrl: options.isLoopbackUrl
         });
         if (!surface) {
@@ -100,43 +118,15 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     return [...webviewSurfaces, ...serviceSurfaces];
   }
 
-  function resolveWebContents(surface: EmbeddedCdpSurface): WebContents | null {
-    if (surface.surfaceKind === "website" || surface.surfaceKind === "webapp") {
-      const registeredContents = options.browserSurfaces.findRegisteredSiteWebContents(surface.id);
-      if (registeredContents) {
-        return registeredContents;
-      }
-    }
-    if (surface.webContentsId) {
-      const contents = options.browserSurfaces.findWebContentsForSurfaceUrl(surface.currentUrl || surface.url);
-      if (contents && contents.id === surface.webContentsId && !contents.isDestroyed() && contents.getType() === "webview") {
-        return contents;
-      }
-    }
-    return options.browserSurfaces.findWebContentsForSurfaceUrl(surface.currentUrl || surface.url);
+  function resolveWebContents(_surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab): WebContents | null {
+    return options.browserSurfaces.findWebContentsById(tab.webContentsId);
   }
 
-  async function activateSurface(surface: EmbeddedCdpSurface) {
-    if (surface.id === BUILTIN_BROWSER_SURFACE_ID) {
-      await options.openBrowserUrl({ url: surface.currentUrl || surface.url, label: surface.label });
+  async function activateTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
+    if (surface.activeTabId === tab.tabId || (surface.tabs?.length ?? 0) <= 1) {
       return;
     }
-    try {
-      const services = await options.listServices();
-      if (services.some((service) => service.id === surface.id)) {
-        const targetPath = surface.id === "agent-webclient" ? options.assistantTargetPath : `/service/${surface.id}`;
-        options.showMainWindow(targetPath);
-        await options.delay(450);
-        return;
-      }
-    } catch {
-      // Fall through to custom sidebar activation if service state is unavailable.
-    }
-    await options.activateBrowserSurface(surface.id || surface.url);
-  }
-
-  async function openUrl(url: string) {
-    await options.openBrowserUrl({ url });
+    await options.switchTab(surface.id, tab.tabId);
   }
 
   function start() {
@@ -146,8 +136,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     embeddedCdpGateway = new EmbeddedCdpGateway({
       getSurfaces: listSurfaces,
       resolveWebContents,
-      activateSurface,
-      openUrl,
+      activateTarget,
       version: options.version
     });
     embeddedCdpGateway.start();
@@ -163,8 +152,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
   return {
     listSurfaces,
     resolveWebContents,
-    activateSurface,
-    openUrl,
+    activateTarget,
     start,
     stop
   };

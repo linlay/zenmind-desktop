@@ -1,13 +1,15 @@
 import type { WebContents } from "electron";
 import type { DesktopPageContextSnapshot } from "../shared/contracts";
 import type {
-  EmbeddedCdpSiteSurfaceRegistration,
-  EmbeddedCdpSiteSurfaceRemoval,
+  EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRemoval,
+  EmbeddedCdpSurfaceTabRegistration,
   EmbeddedCdpSiteSurfaceKind,
   EmbeddedCdpSurfaceKind
 } from "../shared/embedded-cdp";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
+  BUILTIN_BROWSER_ROUTE,
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../shared/browser-surfaces";
@@ -25,7 +27,11 @@ export type BrowserSurface = {
   embedPath?: string;
   surfaceKind: EmbeddedCdpSurfaceKind;
   open: boolean;
+  tabs: BrowserSurfaceTab[];
+  activeTabId: string | null;
 };
+
+export type BrowserSurfaceTab = EmbeddedCdpSurfaceTabRegistration;
 
 type WebContentsAccess = {
   getAllWebContents(): WebContents[];
@@ -47,7 +53,7 @@ export type BrowserSurfaceRegistryOptions = {
   getCurrentPageSnapshot(): DesktopPageContextSnapshot | null;
 };
 
-type RegisteredSiteSurface = EmbeddedCdpSiteSurfaceRegistration & {
+type RegisteredSurface = EmbeddedCdpSurfaceRegistration & {
   ownerWebContentsId: number;
 };
 
@@ -86,51 +92,92 @@ export function webEntryMatchesSurfaceTarget(item: BrowserSurface, target: strin
 }
 
 export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOptions) {
-  const registeredSiteSurfaces = new Map<string, RegisteredSiteSurface>();
+  const registeredSurfaces = new Map<string, RegisteredSurface>();
 
   function expectedSiteSurfaceIdPrefix(surfaceKind: EmbeddedCdpSiteSurfaceKind) {
     return `${surfaceKind}:`;
   }
 
-  function isValidSiteSurfaceRegistration(input: EmbeddedCdpSiteSurfaceRegistration) {
+  function isValidSurfaceTab(input: EmbeddedCdpSurfaceTabRegistration) {
+    return Boolean(
+      input &&
+      typeof input.tabId === "string" &&
+      input.tabId.trim() &&
+      typeof input.currentUrl === "string" &&
+      typeof input.title === "string" &&
+      Number.isSafeInteger(input.webContentsId) &&
+      input.webContentsId > 0 &&
+      typeof input.canGoBack === "boolean" &&
+      typeof input.canGoForward === "boolean" &&
+      typeof input.isLoading === "boolean"
+    );
+  }
+
+  function isValidSurfaceRegistration(input: EmbeddedCdpSurfaceRegistration) {
+    const sitePrefixValid = input?.surfaceKind !== "website" && input?.surfaceKind !== "webapp"
+      ? true
+      : input.surfaceId.startsWith(expectedSiteSurfaceIdPrefix(input.surfaceKind));
+    const validKinds: EmbeddedCdpSurfaceKind[] = ["website", "webapp", "browser", "service"];
+    const tabIds = new Set<string>();
+    const webContentsIds = new Set<number>();
     return Boolean(
       input &&
       typeof input.registrationId === "string" &&
       input.registrationId.trim() &&
       typeof input.surfaceId === "string" &&
-      input.surfaceId.startsWith(expectedSiteSurfaceIdPrefix(input.surfaceKind)) &&
-      (input.surfaceKind === "website" || input.surfaceKind === "webapp") &&
+      input.surfaceId.trim() &&
+      validKinds.includes(input.surfaceKind) &&
+      sitePrefixValid &&
       typeof input.label === "string" &&
       typeof input.url === "string" &&
-      typeof input.currentUrl === "string" &&
-      typeof input.title === "string" &&
-      Number.isSafeInteger(input.webContentsId) &&
-      input.webContentsId > 0 &&
-      typeof input.active === "boolean"
+      typeof input.active === "boolean" &&
+      Array.isArray(input.tabs) &&
+      input.tabs.every((tab) => {
+        if (!isValidSurfaceTab(tab)) {
+          return false;
+        }
+        const tabId = tab.tabId.trim();
+        if (tabIds.has(tabId) || webContentsIds.has(tab.webContentsId)) {
+          return false;
+        }
+        tabIds.add(tabId);
+        webContentsIds.add(tab.webContentsId);
+        return true;
+      }) &&
+      (input.activeTabId === null || (
+        typeof input.activeTabId === "string" &&
+        tabIds.has(input.activeTabId.trim())
+      ))
     );
   }
 
-  function registerSiteSurface(input: EmbeddedCdpSiteSurfaceRegistration, ownerWebContentsId: number) {
-    if (!isValidSiteSurfaceRegistration(input) || !Number.isSafeInteger(ownerWebContentsId)) {
+  function registerSurface(input: EmbeddedCdpSurfaceRegistration, ownerWebContentsId: number) {
+    if (!isValidSurfaceRegistration(input) || !Number.isSafeInteger(ownerWebContentsId)) {
       return false;
     }
-    registeredSiteSurfaces.set(input.surfaceId, {
+    registeredSurfaces.set(input.surfaceId, {
       ...input,
       registrationId: input.registrationId.trim(),
       surfaceId: input.surfaceId.trim(),
       label: input.label.trim(),
       url: input.url.trim(),
-      currentUrl: input.currentUrl.trim(),
-      title: input.title.trim(),
+      tabs: input.tabs.map((tab) => ({
+        ...tab,
+        tabId: tab.tabId.trim(),
+        currentUrl: tab.currentUrl.trim(),
+        title: tab.title.trim(),
+        ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl.trim() } : {})
+      })),
+      activeTabId: input.activeTabId?.trim() || null,
       ownerWebContentsId
     });
     return true;
   }
 
-  function unregisterSiteSurface(input: EmbeddedCdpSiteSurfaceRemoval, ownerWebContentsId: number) {
+  function unregisterSurface(input: EmbeddedCdpSurfaceRemoval, ownerWebContentsId: number) {
     const surfaceId = typeof input?.surfaceId === "string" ? input.surfaceId.trim() : "";
     const registrationId = typeof input?.registrationId === "string" ? input.registrationId.trim() : "";
-    const current = registeredSiteSurfaces.get(surfaceId);
+    const current = registeredSurfaces.get(surfaceId);
     if (
       !current ||
       current.registrationId !== registrationId ||
@@ -138,33 +185,56 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     ) {
       return false;
     }
-    registeredSiteSurfaces.delete(surfaceId);
+    registeredSurfaces.delete(surfaceId);
     return true;
   }
 
-  function unregisterSiteSurfacesForOwner(ownerWebContentsId: number) {
-    for (const [surfaceId, surface] of registeredSiteSurfaces) {
+  function unregisterSurfacesForOwner(ownerWebContentsId: number) {
+    for (const [surfaceId, surface] of registeredSurfaces) {
       if (surface.ownerWebContentsId === ownerWebContentsId) {
-        registeredSiteSurfaces.delete(surfaceId);
+        registeredSurfaces.delete(surfaceId);
       }
     }
   }
 
-  function resolveRegisteredSiteSurface(surfaceId: string) {
-    const registered = registeredSiteSurfaces.get(surfaceId);
+  function resolveRegisteredSurface(surfaceId: string) {
+    const registered = registeredSurfaces.get(surfaceId);
     if (!registered) {
       return null;
     }
-    const contents = options.webContents.fromId(registered.webContentsId);
-    if (!contents || contents.isDestroyed() || contents.getType() !== "webview") {
-      registeredSiteSurfaces.delete(surfaceId);
+    const tabs = registered.tabs.filter((tab) => {
+      const contents = options.webContents.fromId(tab.webContentsId);
+      return Boolean(contents && !contents.isDestroyed() && contents.getType() === "webview");
+    });
+    if (tabs.length === 0) {
+      registeredSurfaces.delete(surfaceId);
       return null;
     }
-    return { registered, contents };
+    if (tabs.length !== registered.tabs.length) {
+      registered.tabs = tabs;
+    }
+    if (registered.activeTabId && !tabs.some((tab) => tab.tabId === registered.activeTabId)) {
+      registered.activeTabId = null;
+    }
+    const activeTab = tabs.find((tab) => tab.tabId === registered.activeTabId) ?? null;
+    const contents = activeTab ? options.webContents.fromId(activeTab.webContentsId) ?? null : null;
+    return { registered, tabs, activeTab, contents };
   }
 
-  function findRegisteredSiteWebContents(surfaceId: string) {
-    return resolveRegisteredSiteSurface(surfaceId)?.contents ?? null;
+  function findRegisteredSurfaceWebContents(surfaceId: string, tabId?: string) {
+    const resolved = resolveRegisteredSurface(surfaceId);
+    if (!resolved) {
+      return null;
+    }
+    const tab = tabId
+      ? resolved.tabs.find((candidate) => candidate.tabId === tabId)
+      : resolved.activeTab;
+    return tab ? options.webContents.fromId(tab.webContentsId) ?? null : null;
+  }
+
+  function findWebContentsById(webContentsId: number) {
+    const contents = options.webContents.fromId(webContentsId);
+    return contents && !contents.isDestroyed() && contents.getType() === "webview" ? contents : null;
   }
 
   function currentPageSnapshotMatchesSurface(surfaceId: string, contents?: WebContents | null) {
@@ -206,16 +276,22 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   }
 
   function builtinBrowserSurface(contents: WebContents | null, url = BUILTIN_BROWSER_DEFAULT_URL): BrowserSurface {
+    const resolved = resolveRegisteredSurface(BUILTIN_BROWSER_SURFACE_ID);
+    const activeTab = resolved?.activeTab ?? null;
+    const activeContents = resolved?.contents ?? contents;
     return {
       id: BUILTIN_BROWSER_SURFACE_ID,
       label: BUILTIN_BROWSER_SURFACE_LABEL,
       url,
-      active: currentPageSnapshotMatchesSurface(BUILTIN_BROWSER_SURFACE_ID, contents),
-      currentUrl: contents?.getURL(),
-      title: contents?.getTitle(),
-      webContentsId: contents?.id,
+      active: currentPageSnapshotMatchesSurface(BUILTIN_BROWSER_SURFACE_ID, activeContents),
+      currentUrl: activeTab?.currentUrl || activeContents?.getURL(),
+      title: activeTab?.title || activeContents?.getTitle(),
+      webContentsId: activeTab?.webContentsId || activeContents?.id,
+      surfaceRoute: BUILTIN_BROWSER_ROUTE,
       surfaceKind: "browser",
-      open: Boolean(contents)
+      open: Boolean(resolved?.tabs.length || activeContents),
+      tabs: resolved?.tabs ?? [],
+      activeTabId: resolved?.registered.activeTabId ?? null
     };
   }
 
@@ -224,8 +300,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     return [
       builtinBrowserSurface(builtinContents),
       ...options.listWebEntries().items.map((item) => {
-        const resolved = resolveRegisteredSiteSurface(item.entryKey);
+        const resolved = resolveRegisteredSurface(item.entryKey);
         const contents = resolved?.contents ?? null;
+        const activeTab = resolved?.activeTab ?? null;
         return {
           id: item.entryKey,
           label: item.label,
@@ -233,11 +310,14 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
           copilotAgentKey: item.copilotAgentKey,
           active: Boolean(resolved?.registered.active) &&
             currentPageSnapshotMatchesSurface(item.entryKey, contents),
-          currentUrl: contents?.getURL(),
-          title: contents?.getTitle(),
-          webContentsId: contents?.id,
+          currentUrl: activeTab?.currentUrl || contents?.getURL(),
+          title: activeTab?.title || contents?.getTitle(),
+          webContentsId: activeTab?.webContentsId || contents?.id,
+          surfaceRoute: `/webs/${item.entryKey}`,
           surfaceKind: item.kind,
-          open: Boolean(contents)
+          open: Boolean(resolved?.tabs.length),
+          tabs: resolved?.tabs ?? [],
+          activeTabId: resolved?.registered.activeTabId ?? null
         };
       })
     ];
@@ -245,13 +325,14 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
 
   return {
     currentPageSnapshotMatchesSurface,
+    findWebContentsById,
     findWebContentsForSurfaceUrl,
-    findRegisteredSiteWebContents,
+    findRegisteredSurfaceWebContents,
     builtinBrowserSurface,
     listBrowserSurfaces,
-    registerSiteSurface,
-    unregisterSiteSurface,
-    unregisterSiteSurfacesForOwner,
+    registerSurface,
+    unregisterSurface,
+    unregisterSurfacesForOwner,
     webEntryMatchesSurfaceTarget
   };
 }

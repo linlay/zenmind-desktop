@@ -70,7 +70,7 @@ export const DESKTOP_WS_RESERVED_REQUEST_TYPES = [
   "kanban.issue.move",
   "web.entries.list",
   "web.listSurfaces",
-  "web.getActiveSurface",
+  "web.getSurfaceState",
   "web.activateSurface",
   "web.navigate",
   "web.reload",

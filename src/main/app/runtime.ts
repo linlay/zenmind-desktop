@@ -90,6 +90,7 @@ import {
   callAgentPlatform,
   handleDesktopActionRequest
 } from "../desktop-action-bridge";
+import { callDesktopActionRenderer } from "../desktop-action-renderer";
 import { emitDesktopWsPush } from "../desktop-ws-server";
 import {
   startTunnelHubRuntimeIfEnabled,
@@ -311,11 +312,20 @@ export function createMainProcessRuntime() {
     getCurrentPageSnapshot: () => appState.currentPageSnapshot,
     listServices: () => listServices(app),
     isLoopbackUrl: parseSafeLoopbackWebUrl,
-    openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
-    activateBrowserSurface: webSurfaceRuntime.activateBrowserSurface,
-    showMainWindow,
-    delay,
-    assistantTargetPath: ASSISTANT_TARGET_PATH,
+    switchTab: async (surfaceId, tabId) => {
+      const response = await callDesktopActionRenderer({
+        requestId: `cdp-switch-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        action: "desktop.web.switchTab",
+        args: { surfaceId, tabId }
+      }, {
+        getMainWindow: () => appState.mainWindow,
+        pendingRequests: appState.desktopActionRendererRequests
+      });
+      if (!response.ok) {
+        throw new Error(response.error?.message || "Desktop tab could not be activated.");
+      }
+      return response.result;
+    },
     version: `${PRODUCT_NAME}/${app.getVersion()} Electron/${process.versions.electron}`
   });
   

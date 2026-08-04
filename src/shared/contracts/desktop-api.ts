@@ -11,8 +11,8 @@ import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSear
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
-  EmbeddedCdpSiteSurfaceRegistration,
-  EmbeddedCdpSiteSurfaceRemoval
+  EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRemoval
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
@@ -734,8 +734,8 @@ export interface DesktopApi {
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
   };
   embeddedCdp: {
-    registerSiteSurface: (input: EmbeddedCdpSiteSurfaceRegistration) => Promise<{ ok: boolean }>;
-    unregisterSiteSurface: (input: EmbeddedCdpSiteSurfaceRemoval) => Promise<{ ok: boolean }>;
+    registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<{ ok: boolean }>;
+    unregisterSurface: (input: EmbeddedCdpSurfaceRemoval) => Promise<{ ok: boolean }>;
   };
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;
