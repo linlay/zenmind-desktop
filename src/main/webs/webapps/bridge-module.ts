@@ -13,11 +13,27 @@ export class DesktopBridgeError extends Error {
 }
 
 async function call(action, args = {}) {
-  const response = await fetch(ACTION_PATH, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, args })
-  });
+  let body;
+  try {
+    body = JSON.stringify({ action, args });
+  } catch {
+    throw new DesktopBridgeError(action, "invalid_args", "Desktop Bridge arguments must be JSON serializable.");
+  }
+  let response;
+  try {
+    response = await fetch(ACTION_PATH, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body
+    });
+  } catch (error) {
+    throw new DesktopBridgeError(
+      action,
+      "bridge_unavailable",
+      "Desktop Bridge is unavailable.",
+      { cause: error?.name || "Error" }
+    );
+  }
   let payload;
   try {
     payload = await response.json();
@@ -45,15 +61,8 @@ function reserved(action) {
   };
 }
 
-let capabilitiesPromise;
 async function listCapabilities() {
-  capabilitiesPromise ||= call("desktop.capabilities.list");
-  try {
-    return await capabilitiesPromise;
-  } catch (error) {
-    capabilitiesPromise = undefined;
-    throw error;
-  }
+  return call("desktop.capabilities.list");
 }
 
 export const desktop = Object.freeze({
@@ -90,10 +99,27 @@ export const desktop = Object.freeze({
             "Microphone capture is unavailable in this WebApp."
           );
         }
-        return navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, ...constraints },
-          video: false
-        });
+        if (!constraints || typeof constraints !== "object" || Array.isArray(constraints)) {
+          throw new DesktopBridgeError(
+            "desktop.native.microphone.open",
+            "invalid_args",
+            "Microphone constraints must be an object."
+          );
+        }
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, ...constraints },
+            video: false
+          });
+        } catch (error) {
+          const permissionDenied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+          throw new DesktopBridgeError(
+            "desktop.native.microphone.open",
+            permissionDenied ? "permission_denied" : "media_unavailable",
+            permissionDenied ? "Microphone permission was denied." : "Microphone capture failed.",
+            { cause: error?.name || "Error" }
+          );
+        }
       }
     }),
     clipboard: Object.freeze({

@@ -873,6 +873,7 @@ test("window manager grants media permissions only to the main window", async ()
   assert.equal(await permissionSession.request({ id: 202 }, "media", { mediaTypes: ["audio"] }), false);
   assert.equal(await permissionSession.request({ id: 303 }, "media", { mediaTypes: ["audio"] }), false);
   assert.equal(await permissionSession.request({ id: 101 }, "media", { mediaTypes: ["video"] }), false);
+  assert.equal(await permissionSession.request({ id: 101 }, "media", { mediaTypes: ["audio", "video"] }), true);
   assert.equal(nativePromptCount, 0);
 });
 
@@ -912,6 +913,11 @@ test("window manager grants audio-only media permission to an authorized WebApp 
     { id: 303 },
     "media",
     { mediaTypes: ["audio"], requestingUrl: "http://127.0.0.1:43123/" }
+  ), false);
+  assert.equal(await permissionSession.request(
+    { id: 202 },
+    "media",
+    { requestingUrl: "http://127.0.0.1:43123/" }
   ), false);
   assert.equal(requests.length, 2);
 });

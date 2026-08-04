@@ -430,14 +430,19 @@ export function configureMediaPermissions<TWindow extends MediaPermissionWindowL
       ? (details as { mediaTypes: string[] }).mediaTypes
       : undefined;
 
-    const isAudioRequest = !mediaTypes || (
-      mediaTypes.includes("audio") && !mediaTypes.includes("video")
-    );
+    const isMainWindowRequest = contents.id === mainContentsId;
+    const isMainWindowAudioRequest = !mediaTypes || mediaTypes.includes("audio");
+    const isWebappAudioOnlyRequest = mediaTypes !== undefined &&
+      mediaTypes.includes("audio") &&
+      !mediaTypes.includes("video");
     const allowed = permission === "media" &&
-      isAudioRequest &&
       (
-        contents.id === mainContentsId ||
-        options.isAllowedWebappMicrophoneRequest?.(contents, details) === true
+        (isMainWindowRequest && isMainWindowAudioRequest) ||
+        (
+          !isMainWindowRequest &&
+          isWebappAudioOnlyRequest &&
+          options.isAllowedWebappMicrophoneRequest?.(contents, details) === true
+        )
       );
     if (!allowed) {
       callback(false);

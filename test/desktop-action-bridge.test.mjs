@@ -183,6 +183,14 @@ test("desktop assistant chat forwards a general message without business prompts
   });
   assert.equal(invalid.ok, false);
   assert.equal(invalid.error.code, "invalid_args");
+
+  const oversized = await handleDesktopActionRequest(options, {
+    action: "desktop.assistant.chat",
+    args: { message: "x".repeat(12_001) },
+    permissionMode: "full_access"
+  });
+  assert.equal(oversized.ok, false);
+  assert.equal(oversized.error.code, "invalid_args");
 });
 
 test("desktop assistant complete uses the configured helper without exposing credentials", async (t) => {
@@ -228,6 +236,17 @@ test("local WebApp directory action uses the native picker and returns one selec
 test("WebApp Bridge native actions require page scope and enforce their public contracts", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   __testInternals.clearWebappActionRateLimits();
+  assert.equal(
+    DESKTOP_ACTION_DEFINITIONS.some((definition) =>
+      definition.name === "desktop.native.screen.capture" ||
+      definition.name === "desktop.native.clipboard.readText" ||
+      definition.name === "desktop.native.file.reveal" ||
+      definition.name.startsWith("desktop.native.window.") ||
+      definition.name.startsWith("desktop.native.camera.") ||
+      definition.name === "desktop.native.share.open"
+    ),
+    false
+  );
 
   const forbidden = await handleDesktopActionRequest(options, {
     action: "desktop.native.browser.openExternal",
@@ -251,6 +270,21 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(invalidProtocol.ok, false);
   assert.equal(invalidProtocol.error.code, "invalid_args");
 
+  for (let index = 1; index < 5; index += 1) {
+    const repeated = await handleWebappPageActionRequest(options, "bridge-v5", {
+      action: "desktop.native.browser.openExternal",
+      args: { url: `https://example.com/docs/${index}` }
+    });
+    assert.equal(repeated.ok, true);
+  }
+  const externalRateLimited = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.browser.openExternal",
+    args: { url: "https://example.com/docs/too-many" }
+  });
+  assert.equal(externalRateLimited.ok, false);
+  assert.equal(externalRateLimited.error.code, "rate_limited");
+  assert.equal(calls.externalUrls.length, 5);
+
   const selectedFiles = await handleWebappPageActionRequest(options, "bridge-v5", {
     action: "desktop.native.dialog.selectFiles",
     args: {
@@ -262,6 +296,15 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(selectedFiles.result.canceled, false);
   assert.equal(selectedFiles.result.files[0].name, "Writing");
   assert.deepEqual(calls.fileDialogs.at(-1).properties, ["openFile", "multiSelections"]);
+
+  const dialogCountBeforeInvalidFilter = calls.fileDialogs.length;
+  const invalidFilter = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.dialog.selectFiles",
+    args: { filters: [{ name: "Unsafe", extensions: ["../secret"] }] }
+  });
+  assert.equal(invalidFilter.ok, false);
+  assert.equal(invalidFilter.error.code, "invalid_args");
+  assert.equal(calls.fileDialogs.length, dialogCountBeforeInvalidFilter);
 
   const selectedDirectory = await handleWebappPageActionRequest(options, "bridge-v5", {
     action: "desktop.native.dialog.selectDirectory",
@@ -277,6 +320,17 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(savePath.ok, true);
   assert.equal(savePath.result.name, "report.xlsx");
   assert.equal(calls.saveDialogs.length, 1);
+
+  options.showFileDialog = async (dialogOptions) => {
+    calls.fileDialogs.push(dialogOptions);
+    return { canceled: true, filePaths: [] };
+  };
+  const canceledFiles = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.dialog.selectFiles",
+    args: {}
+  });
+  assert.equal(canceledFiles.ok, true);
+  assert.deepEqual(canceledFiles.result, { canceled: true, files: [] });
 
   const microphone = await handleWebappPageActionRequest(options, "bridge-v5", {
     action: "desktop.native.microphone.getPermission",
@@ -309,6 +363,21 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   });
   assert.equal(notification.ok, true);
   assert.equal(calls.notifications.length, 1);
+
+  for (let index = 1; index < 5; index += 1) {
+    const repeated = await handleWebappPageActionRequest(options, "bridge-v5", {
+      action: "desktop.native.notification.show",
+      args: { title: `Update ${index}`, body: "Still working" }
+    });
+    assert.equal(repeated.ok, true);
+  }
+  const rateLimited = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.notification.show",
+    args: { title: "One too many", body: "This notification must be rejected" }
+  });
+  assert.equal(rateLimited.ok, false);
+  assert.equal(rateLimited.error.code, "rate_limited");
+  assert.equal(calls.notifications.length, 5);
 });
 
 test("WebApp Bridge capability list distinguishes declared, reserved, and unavailable entries", async (t) => {

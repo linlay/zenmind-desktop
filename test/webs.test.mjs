@@ -17,7 +17,8 @@ const {
 } = require("../dist-electron/main/webs/websites/store.js");
 const {
   readWebappItemFromDir,
-  readWebappItems
+  readWebappItems,
+  writeCanonicalWebappManifest
 } = require("../dist-electron/main/webs/webapps/store.js");
 const {
   listWebappItems,
@@ -46,6 +47,9 @@ const {
   getWebappAllowedActions,
   isWebappActionAllowed
 } = require("../dist-electron/main/webs/webapps/capability-policy.js");
+const {
+  WEBAPP_BRIDGE_MODULE_SOURCE
+} = require("../dist-electron/main/webs/webapps/bridge-module.js");
 const {
   activateWebappInstall,
   commitWebappInstall,
@@ -1605,6 +1609,69 @@ test("schema v4 Node runtime uses scoped startup credentials and revokes them on
   assert.equal(__actionTokenTestInternals.size(), 0);
 });
 
+test("schema v5 backend receives an assistant token only when assistant.chat is declared", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-v5-runtime-"));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  __actionTokenTestInternals.clear();
+  t.after(async () => {
+    await webappRuntime.stopAll(app);
+    __actionTokenTestInternals.clear();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  writeWebapp(webappsRoot(homePath), "runtime-v5-no-chat", {
+    schemaVersion: 5,
+    desktopBridge: {
+      version: 1,
+      capabilities: ["native.clipboard.write"]
+    }
+  });
+  const withoutChat = await webappRuntime.start(app, "runtime-v5-no-chat");
+  assert.equal(withoutChat.ok, true);
+  assert.equal(__actionTokenTestInternals.size(), 1);
+  const withoutChatApi = await readUrl(new URL("/api/demo", withoutChat.state.webUrl).toString());
+  const withoutChatBody = JSON.parse(withoutChatApi.body);
+  assert.equal(withoutChatBody.desktopActionBridgeUrl, "http://127.0.0.1:11788");
+  assert.equal(withoutChatBody.desktopActionBridgeToken, "");
+  const undeclared = await postUrl(
+    new URL("/__desktop/actions/call", withoutChat.state.webUrl).toString(),
+    JSON.stringify({ action: "desktop.assistant.complete", args: { prompt: "hello" } }),
+    { Origin: new URL(withoutChat.state.webUrl).origin }
+  );
+  assert.equal(undeclared.statusCode, 403);
+  assert.deepEqual(JSON.parse(undeclared.body), {
+    ok: false,
+    action: "desktop.assistant.complete",
+    error: {
+      code: "forbidden",
+      message: "action is not allowed by the local WebApp capability policy"
+    }
+  });
+  await webappRuntime.stop(app, "runtime-v5-no-chat");
+  assert.equal(__actionTokenTestInternals.size(), 0);
+
+  writeWebapp(webappsRoot(homePath), "runtime-v5-chat", {
+    schemaVersion: 5,
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat"]
+    }
+  });
+  const withChat = await webappRuntime.start(app, "runtime-v5-chat");
+  assert.equal(withChat.ok, true);
+  assert.equal(__actionTokenTestInternals.size(), 2);
+  const withChatApi = await readUrl(new URL("/api/demo", withChat.state.webUrl).toString());
+  const withChatBody = JSON.parse(withChatApi.body);
+  assert.equal(withChatBody.desktopActionBridgeUrl, "http://127.0.0.1:11788/webapps");
+  assert.equal(typeof withChatBody.desktopActionBridgeToken, "string");
+  assert.equal(withChatBody.desktopActionBridgeToken.length >= 32, true);
+
+  const stopped = await webappRuntime.stop(app, "runtime-v5-chat");
+  assert.equal(stopped.ok, true);
+  assert.equal(__actionTokenTestInternals.size(), 0);
+});
+
 test("schema v4 proxy frontend routes the whole site through the gateway and preserves reserved paths", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-v4-proxy-"));
   const homePath = path.join(root, "home");
@@ -1700,6 +1767,143 @@ test("WebApp capability policy keeps backend tokens narrower than the local page
   assert.equal(isWebappActionAllowed(v5, "localPageGateway", "desktop.web.webapp.selectDirectory"), false);
 });
 
+test("WebApp Bridge SDK unwraps results and errors while reserved functions stay local", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const requests = [];
+  const mediaRequests = [];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (navigatorDescriptor) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    } else {
+      delete globalThis.navigator;
+    }
+  });
+
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    requests.push(request);
+    if (request.action === "desktop.capabilities.list") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          action: request.action,
+          result: {
+            bridgeVersion: 1,
+            capabilities: [
+              { id: "assistant.chat", status: "available", declared: true, permission: "not_required" },
+              { id: "native.screen.capture", status: "reserved", declared: false, permission: "unavailable" }
+            ]
+          }
+        })
+      };
+    }
+    if (request.action === "desktop.native.notification.show") {
+      return {
+        ok: false,
+        status: 403,
+        json: async () => ({
+          ok: false,
+          action: request.action,
+          error: { code: "forbidden", message: "not declared", details: { capability: "native.notification" } }
+        })
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        action: request.action,
+        result: request.action === "desktop.assistant.chat"
+          ? { text: "Hello", chatId: "chat-1", runId: "run-1" }
+          : { permission: "granted" }
+      })
+    };
+  };
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: async (constraints) => {
+          mediaRequests.push(constraints);
+          return { id: "stream-1" };
+        }
+      }
+    }
+  });
+
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(WEBAPP_BRIDGE_MODULE_SOURCE).toString("base64")}#${Date.now()}`;
+  const { desktop, DesktopBridgeError } = await import(moduleUrl);
+  assert.equal(desktop.assistant.complete, undefined);
+  assert.deepEqual(await desktop.assistant.chat({ message: "hello" }), {
+    text: "Hello",
+    chatId: "chat-1",
+    runId: "run-1"
+  });
+  assert.equal(await desktop.capabilities.has("assistant.chat"), true);
+  assert.equal(await desktop.capabilities.has("native.screen.capture"), false);
+  assert.equal(requests.filter((entry) => entry.action === "desktop.capabilities.list").length, 2);
+
+  const stream = await desktop.native.microphone.open({ autoGainControl: false });
+  assert.equal(stream.id, "stream-1");
+  assert.deepEqual(mediaRequests, [{
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+    video: false
+  }]);
+
+  await assert.rejects(
+    desktop.native.notification.show({ title: "Blocked" }),
+    (error) => error instanceof DesktopBridgeError &&
+      error.code === "forbidden" &&
+      error.action === "desktop.native.notification.show" &&
+      error.details.capability === "native.notification"
+  );
+  const requestCountBeforeReserved = requests.length;
+  const reservedFunctions = [
+    ["desktop.native.screen.capture", () => desktop.native.screen.capture()],
+    ["desktop.native.clipboard.readText", () => desktop.native.clipboard.readText()],
+    ["desktop.native.file.reveal", () => desktop.native.file.reveal()],
+    ["desktop.native.window.getState", () => desktop.native.window.getState()],
+    ["desktop.native.window.minimize", () => desktop.native.window.minimize()],
+    ["desktop.native.window.maximize", () => desktop.native.window.maximize()],
+    ["desktop.native.window.restore", () => desktop.native.window.restore()],
+    ["desktop.native.window.close", () => desktop.native.window.close()],
+    ["desktop.native.camera.getPermission", () => desktop.native.camera.getPermission()],
+    ["desktop.native.camera.requestAccess", () => desktop.native.camera.requestAccess()],
+    ["desktop.native.camera.open", () => desktop.native.camera.open()],
+    ["desktop.native.share.open", () => desktop.native.share.open()]
+  ];
+  for (const [action, invoke] of reservedFunctions) {
+    await assert.rejects(
+      invoke(),
+      (error) => error instanceof DesktopBridgeError &&
+        error.code === "not_implemented" &&
+        error.action === action
+    );
+  }
+  assert.equal(requests.length, requestCountBeforeReserved);
+
+  const circular = {};
+  circular.self = circular;
+  await assert.rejects(
+    desktop.native.clipboard.writeText(circular),
+    (error) => error instanceof DesktopBridgeError && error.code === "invalid_args"
+  );
+  globalThis.fetch = async () => {
+    throw new TypeError("network down");
+  };
+  await assert.rejects(
+    desktop.native.browser.openExternal({ url: "https://example.com" }),
+    (error) => error instanceof DesktopBridgeError &&
+      error.code === "bridge_unavailable" &&
+      error.details.cause === "TypeError"
+  );
+});
+
 test("schema v5 validates and preserves explicit Desktop Bridge capabilities", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-v5-manifest-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -1736,6 +1940,30 @@ test("schema v5 validates and preserves explicit Desktop Bridge capabilities", (
     () => readWebappItemFromDir(appDir),
     /duplicated/u
   );
+  writeJson(manifestPath, {
+    ...manifest,
+    desktopBridge: { version: 1, capabilities: ["native.future.power"] }
+  });
+  assert.throws(
+    () => readWebappItemFromDir(appDir),
+    /unknown desktopBridge capability/u
+  );
+  writeJson(manifestPath, {
+    ...manifest,
+    desktopBridge: { version: 2, capabilities: [] }
+  });
+  assert.throws(
+    () => readWebappItemFromDir(appDir),
+    /desktopBridge.version must be 1/u
+  );
+  writeJson(manifestPath, manifest);
+  writeCanonicalWebappManifest(appDir);
+  const canonicalManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  assert.equal(canonicalManifest.schemaVersion, 5);
+  assert.deepEqual(canonicalManifest.desktopBridge, {
+    version: 1,
+    capabilities: ["assistant.chat", "native.microphone"]
+  });
 });
 
 test("webapp runtime starts a frontend-only package without a backend process", async (t) => {

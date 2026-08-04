@@ -15,8 +15,8 @@ import {
 
 const HOST = "127.0.0.1";
 const DESKTOP_RESERVED_PREFIX = "/__desktop/";
-const DESKTOP_ASSISTANT_PATH = "/__desktop/actions/call";
-const DESKTOP_ASSISTANT_BODY_LIMIT = 64 * 1024;
+const DESKTOP_ACTION_PATH = "/__desktop/actions/call";
+const DESKTOP_ACTION_BODY_LIMIT = 64 * 1024;
 
 export type WebappGateway = {
   server: http.Server;
@@ -36,6 +36,30 @@ function writeText(res: http.ServerResponse, status: number, message: string) {
     "Cache-Control": "no-store"
   });
   res.end(message);
+}
+
+function writeBridgeError(
+  res: http.ServerResponse,
+  status: number,
+  action: string,
+  code: string,
+  message: string,
+  details?: unknown
+) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff"
+  });
+  res.end(JSON.stringify({
+    ok: false,
+    action: action || "unknown",
+    error: {
+      code,
+      message,
+      ...(details === undefined ? {} : { details })
+    }
+  }));
 }
 
 function getRequestPath(urlValue: string | undefined) {
@@ -346,7 +370,7 @@ function readRequestBody(req: http.IncomingMessage, limit: number) {
   });
 }
 
-async function handleDesktopAssistantRequest(
+async function handleDesktopBridgeRequest(
   options: { app: App; item: WebappEntry; pageActionToken: string },
   req: http.IncomingMessage,
   res: http.ServerResponse
@@ -358,7 +382,13 @@ async function handleDesktopAssistantRequest(
   }
   const origin = String(req.headers.origin || "").trim();
   if (!origin) {
-    writeText(res, 403, "Desktop assistant actions require the local WebApp origin");
+    writeBridgeError(
+      res,
+      403,
+      "unknown",
+      "forbidden",
+      "Desktop actions require the local WebApp origin"
+    );
     return;
   }
   try {
@@ -367,21 +397,34 @@ async function handleDesktopAssistantRequest(
     const loopback = originUrl.protocol === "http:" &&
       (originUrl.hostname === HOST || originUrl.hostname === "localhost");
     if (!loopback || originUrl.host.toLowerCase() !== host) {
-      writeText(res, 403, "Desktop assistant actions are available only from the local WebApp origin");
+      writeBridgeError(
+        res,
+        403,
+        "unknown",
+        "forbidden",
+        "Desktop actions are available only from the local WebApp origin"
+      );
       return;
     }
   } catch {
-    writeText(res, 403, "invalid request origin");
+    writeBridgeError(res, 403, "unknown", "forbidden", "invalid request origin");
     return;
   }
+  let action = "";
   try {
-    const parsed = JSON.parse(await readRequestBody(req, DESKTOP_ASSISTANT_BODY_LIMIT)) as {
+    const parsed = JSON.parse(await readRequestBody(req, DESKTOP_ACTION_BODY_LIMIT)) as {
       action?: unknown;
       args?: unknown;
     };
-    const action = typeof parsed.action === "string" ? parsed.action : "";
+    action = typeof parsed.action === "string" ? parsed.action : "";
     if (!isWebappActionAllowed(options.item, "localPageGateway", action)) {
-      writeText(res, 403, "action is not allowed by the local WebApp capability policy");
+      writeBridgeError(
+        res,
+        403,
+        action,
+        "forbidden",
+        "action is not allowed by the local WebApp capability policy"
+      );
       return;
     }
     const response = await fetch(
@@ -407,7 +450,17 @@ async function handleDesktopAssistantRequest(
     });
     res.end(body);
   } catch (error) {
-    writeText(res, 502, error instanceof Error ? error.message : String(error));
+    const isInputError = error instanceof SyntaxError ||
+      (error instanceof Error && error.message === "request body too large");
+    writeBridgeError(
+      res,
+      isInputError ? 400 : 502,
+      action,
+      isInputError ? "invalid_request" : "bridge_unavailable",
+      isInputError
+        ? "Desktop Bridge request body is invalid."
+        : "Desktop Action Bridge is unavailable."
+    );
   }
 }
 
@@ -451,15 +504,15 @@ export async function startWebappGateway(options: {
       const body = req.method === "HEAD" ? "" : WEBAPP_BRIDGE_MODULE_SOURCE;
       res.writeHead(200, {
         "Content-Type": "text/javascript; charset=utf-8",
-        "Content-Length": String(Buffer.byteLength(body)),
+        "Content-Length": String(Buffer.byteLength(WEBAPP_BRIDGE_MODULE_SOURCE)),
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff"
       });
       res.end(body);
       return;
     }
-    if (requestPath === DESKTOP_ASSISTANT_PATH) {
-      void handleDesktopAssistantRequest(options, req, res);
+    if (requestPath === DESKTOP_ACTION_PATH) {
+      void handleDesktopBridgeRequest(options, req, res);
       return;
     }
     if (requestPath.startsWith(DESKTOP_RESERVED_PREFIX)) {
