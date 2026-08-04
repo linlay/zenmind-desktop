@@ -697,6 +697,41 @@
   overflow: hidden;
 }
 
+.settings-page .webapp-runtime-settings-card .settings-control-grid {
+  display: grid;
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .webapp-runtime-settings-card .settings-control-row {
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+.settings-page .webapp-runtime-settings-card .settings-control-row + .settings-control-row {
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .webapp-runtime-settings-card .settings-control-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settings-page .webapp-runtime-settings-card .settings-control-row-copy small {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.settings-page .webapp-runtime-settings-card .ant-input,
+.settings-page .webapp-runtime-settings-card .ant-select {
+  width: 100%;
+  min-width: 0;
+}
+
 .settings-page .web-publish-panel .config-head {
   align-items: flex-start;
 }

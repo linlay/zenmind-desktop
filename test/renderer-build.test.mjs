@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { applyDarwinBundleLocalizationInfo } from "../scripts/platform/dev-darwin.mjs";
 
 const projectRoot = process.cwd();
 const require = createRequire(import.meta.url);
@@ -5406,6 +5407,7 @@ test("mac dev app uses a content-addressed icon filename to avoid stale Dock cac
   assert.match(darwinDev, /const sourceDockIconPath = path\.join\(iconRoot, "icon\.png"\);/);
   assert.match(darwinDev, /fs\.copyFileSync\(sourceDockIconPath, path\.join\(targetResourcesDir, "icon\.png"\)\);/);
   assert.match(darwinDev, /setPlistString\(plist,\s*"CFBundleIconFile",\s*targetIconFileName\)/);
+  assert.match(darwinDev, /plist = applyDarwinBundleLocalizationInfo\(plist\)/);
   assert.match(darwinDev, /function setPlistEnvironment\(plist,\s*env\)/);
   assert.match(darwinDev, /VITE_DEV_SERVER_URL:\s*"http:\/\/127\.0\.0\.1:5173"/);
   assert.match(darwinDev, /DESKTOP_BUILTIN_ASSETS_ROOT:\s*serviceAssetsRoot/);
@@ -5413,6 +5415,33 @@ test("mac dev app uses a content-addressed icon filename to avoid stale Dock cac
   assert.match(darwinDev, /spawn\("open",\s*\["-n",\s*"-W",\s*preparedApp\.appRoot,\s*"--args",\s*projectRoot\]/);
   assert.doesNotMatch(darwinDev, /const targetIconFileName = "icon\.icns";/);
   assert.doesNotMatch(darwinDev, /spawn\(prepareDarwinDevElectronBinary\(electronBinary,\s*projectRoot,\s*brand\),\s*\["\."\]/);
+});
+
+test("mac dev app localization metadata is inserted at the plist root without duplicate keys", () => {
+  const source = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>Nested</key>
+  <dict>
+    <key>value</key>
+    <string>test</string>
+  </dict>
+</dict>
+</plist>`;
+
+  const localized = applyDarwinBundleLocalizationInfo(source);
+  const repeated = applyDarwinBundleLocalizationInfo(localized);
+  const nestedClosingIndex = source.indexOf("</dict>");
+
+  assert.equal(repeated, localized);
+  assert.equal(localized.match(/<key>CFBundleDevelopmentRegion<\/key>/gu)?.length, 1);
+  assert.equal(localized.match(/<key>CFBundleLocalizations<\/key>/gu)?.length, 1);
+  assert.ok(localized.indexOf("<key>CFBundleDevelopmentRegion</key>") > nestedClosingIndex);
+  assert.match(localized, /<key>CFBundleDevelopmentRegion<\/key>\s*<string>zh-Hans<\/string>/u);
+  assert.match(
+    localized,
+    /<key>CFBundleLocalizations<\/key>\s*<array>\s*<string>zh-Hans<\/string>\s*<string>en<\/string>\s*<\/array>/u
+  );
 });
 
 test("external webview tabs use repeatable pointer reordering", () => {
@@ -5459,6 +5488,8 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.match(externalWebviewPage, /nextPatch\.canGoForward = webview\.canGoForward\(\)/);
   assert.match(externalWebviewPage, /const handleGoForward = \(\) => \{[\s\S]*?activeWebview\.goForward\(\)/);
   assert.match(externalWebviewPage, /disabled=\{!activeTab\?\.canGoForward\}[\s\S]*?<SidebarActionIcon kind="forward" \/>/);
+  assert.match(externalWebviewPage, /onClick=\{handleReload\}[\s\S]*?<SidebarActionIcon kind="refresh" \/>/);
+  assert.doesNotMatch(externalWebviewPage, /function RefreshIcon\(/);
   assert.match(externalWebviewPage, /<SidebarActionIcon[\s\S]*?kind="sidebar_right"[\s\S]*?className="external-webview-copilot-button-icon"/);
   assert.doesNotMatch(externalWebviewStyles, /filter:\s*grayscale/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);

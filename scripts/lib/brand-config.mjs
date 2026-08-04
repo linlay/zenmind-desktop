@@ -4,7 +4,9 @@ import { createHash } from "node:crypto";
 import { desktopBuiltinServicesRelativePath } from "./desktop-resources.mjs";
 
 export const DEFAULT_BRAND_ID = "zenmind";
-export const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
+export const SUPPORTED_LOCALES = Object.freeze(["zh-CN", "en-US"]);
+export const DARWIN_BUNDLE_DEVELOPMENT_REGION = "zh-Hans";
+export const DARWIN_BUNDLE_LOCALIZATIONS = Object.freeze(["zh-Hans", "en"]);
 export const INSTALLER_SHUTDOWN_ARG = "--desktop-shutdown-for-update";
 export const DESKTOP_PACKAGE_NAME = "desktop";
 
@@ -1123,6 +1125,8 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
     mac: {
       icon: brandBuildRelativePath(brand, "icons", "icon.icns"),
       extendInfo: {
+        CFBundleDevelopmentRegion: DARWIN_BUNDLE_DEVELOPMENT_REGION,
+        CFBundleLocalizations: DARWIN_BUNDLE_LOCALIZATIONS,
         NSMicrophoneUsageDescription: brand.mac.microphoneUsageDescription,
         NSSpeechRecognitionUsageDescription: brand.mac.speechRecognitionUsageDescription
       },
@@ -1132,7 +1136,7 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
       notarize: false,
       timestamp: shouldSkipMacTimestamp() ? "none" : undefined
     },
-    electronLanguages: ["zh-CN", "en-US"],
+    electronLanguages: SUPPORTED_LOCALES,
     afterPack: "./scripts/fix-mac-sign.js",
     afterSign: "./scripts/verify-mac-services-signing.js",
     win: {

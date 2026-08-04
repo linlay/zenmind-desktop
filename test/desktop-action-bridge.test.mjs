@@ -22,7 +22,8 @@ const {
   writeDesktopActionBridgeSettingsConfig
 } = require("../dist-electron/main/desktop-action-bridge-settings.js");
 const {
-  DESKTOP_ACTION_BRIDGE_HOST
+  DESKTOP_ACTION_BRIDGE_HOST,
+  DESKTOP_ACTION_DEFINITIONS
 } = require("../dist-electron/shared/desktop-actions.js");
 const {
   normalizeActionBridgeTimePayload
@@ -75,7 +76,7 @@ function createDesktopActionOptions(t) {
   const calls = {
     refreshState: 0,
     saveSettings: [],
-    translations: [],
+    completions: [],
     fileDialogs: []
   };
 
@@ -86,11 +87,11 @@ function createDesktopActionOptions(t) {
       app: createApp(homePath),
       assistantBridge: {
         completeText: async (request) => {
-          calls.translations.push(request);
+          calls.completions.push(request);
           return {
             ok: true,
-            runId: "run-translate",
-            chatId: "chat-translate",
+            runId: "run-assistant",
+            chatId: "chat-assistant",
             text: "Hello world",
             message: "Hello world"
           };
@@ -127,24 +128,25 @@ function createDesktopActionOptions(t) {
   };
 }
 
-test("desktop assistant translate validates language and returns model text", async (t) => {
+test("desktop assistant chat forwards a general message without business prompts", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   const response = await handleDesktopActionRequest(options, {
-    action: "desktop.assistant.translate",
-    args: { text: "你好，世界", targetLanguage: "en" },
+    action: "desktop.assistant.chat",
+    args: { message: "分析这段内容并给出建议" },
     permissionMode: "full_access"
   });
 
   assert.equal(response.ok, true);
-  assert.equal(response.result.translation, "Hello world");
-  assert.equal(response.result.targetLanguage, "en");
-  assert.equal(calls.translations.length, 1);
-  assert.match(calls.translations[0].message, /Translate the user text into English/u);
-  assert.match(calls.translations[0].message, /你好，世界/u);
+  assert.equal(response.result.text, "Hello world");
+  assert.equal(response.result.runId, "run-assistant");
+  assert.equal(calls.completions.length, 1);
+  assert.equal(calls.completions[0].message, "分析这段内容并给出建议");
+  assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name === "desktop.assistant.chat"), true);
+  assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name === "desktop.assistant.translate"), false);
 
   const invalid = await handleDesktopActionRequest(options, {
-    action: "desktop.assistant.translate",
-    args: { text: "hello", targetLanguage: "fr" },
+    action: "desktop.assistant.chat",
+    args: { message: "" },
     permissionMode: "full_access"
   });
   assert.equal(invalid.ok, false);
@@ -161,10 +163,10 @@ test("desktop assistant complete uses the configured helper without exposing cre
 
   assert.equal(response.ok, true);
   assert.equal(response.result.text, "Hello world");
-  assert.equal(response.result.runId, "run-translate");
-  assert.equal(calls.translations.length, 1);
-  assert.match(calls.translations[0].message, /只返回一句中文/u);
-  assert.match(calls.translations[0].message, /总结这段文字/u);
+  assert.equal(response.result.runId, "run-assistant");
+  assert.equal(calls.completions.length, 1);
+  assert.match(calls.completions[0].message, /只返回一句中文/u);
+  assert.match(calls.completions[0].message, /总结这段文字/u);
 
   const invalid = await handleDesktopActionRequest(options, {
     action: "desktop.assistant.complete",
